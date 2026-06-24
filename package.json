@@ -1,0 +1,38 @@
+{
+  "name": "smc-trading-terminal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Professional TradingView-style trading platform with Replay Mode, Smart Money Concepts, backtesting, journaling and analytics.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.3.9",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "lightweight-charts": "4.2.3",
+    "zustand": "5.0.3",
+    "@tanstack/react-query": "5.66.0",
+    "lucide-react": "0.474.0",
+    "framer-motion": "12.0.6",
+    "idb": "8.0.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "@types/node": "22.13.0",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "tailwindcss": "3.4.17",
+    "postcss": "8.5.1",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.19.0",
+    "eslint-config-next": "15.3.9"
+  }
+}

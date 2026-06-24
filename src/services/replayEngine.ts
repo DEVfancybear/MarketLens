@@ -1,0 +1,91 @@
+/**
+ * Replay engine helpers.
+ *
+ * The replay cursor (in replayStore) is the ONLY gate on visibility: callers
+ * derive the visible slice as candles[0..cursor]. These helpers never look
+ * beyond a supplied index/time, preserving the no-look-ahead guarantee.
+ */
+import { getHistorySync } from './marketData';
+import type { Candle, Direction, Timeframe } from '@/types';
+import { TF_SECONDS } from '@/types';
+import { utcHours } from '@/utils/time';
+import type { ReplaySpeed } from '@/store/replayStore';
+
+/** Milliseconds between auto-steps for a given speed (1x ≈ 1s per candle). */
+export function speedToIntervalMs(speed: ReplaySpeed): number {
+  return Math.max(16, 1000 / speed);
+}
+
+/** Largest index whose candle time is <= `time` (binary search). */
+export function indexAtOrBefore(candles: Candle[], time: number): number {
+  let lo = 0;
+  let hi = candles.length - 1;
+  let ans = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (candles[mid].time <= time) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return ans;
+}
+
+/** Simple structural trend from a window of closes (replay-safe). */
+export function quickTrend(visible: Candle[]): Direction | 'ranging' {
+  const n = visible.length;
+  if (n < 20) return 'ranging';
+  const window = visible.slice(-50);
+  const first = window[0].close;
+  const last = window[window.length - 1].close;
+  const change = (last - first) / first;
+  const threshold = 0.0015;
+  if (change > threshold) return 'bullish';
+  if (change < -threshold) return 'bearish';
+  return 'ranging';
+}
+
+export type SessionLabel = 'Asian' | 'London' | 'New York' | 'Closed';
+
+/** Current trading session for a UTC timestamp. */
+export function sessionAt(time: number): SessionLabel {
+  const h = utcHours(time);
+  // London 07–16, New York 13–21 (overlap favours NY), Asian 23–08.
+  if (h >= 13 && h < 21) return 'New York';
+  if (h >= 7 && h < 16) return 'London';
+  if (h >= 23 || h < 8) return 'Asian';
+  return 'Closed';
+}
+
+export interface MtfRow {
+  timeframe: Timeframe;
+  candle: Candle | null;
+  trend: Direction | 'ranging';
+}
+
+/**
+ * Multi-timeframe snapshot at a replay timestamp. Each higher timeframe is
+ * generated independently and truncated to bars closed at/just before `time`,
+ * so no higher-TF bar reveals information past the replay cursor.
+ */
+export function mtfSnapshot(
+  symbol: string,
+  time: number,
+  timeframes: Timeframe[] = ['5m', '15m', '1H', '4H', '1D'],
+): MtfRow[] {
+  return timeframes.map((tf) => {
+    const series = getHistorySync({ ticker: symbol, timeframe: tf, limit: 400 });
+    // Only bars whose *open* time has begun by `time`. The forming bar is the
+    // last with open <= time; we treat it as the current (developing) candle.
+    const idx = indexAtOrBefore(series, time);
+    const visible = series.slice(0, idx + 1);
+    return { timeframe: tf, candle: visible[visible.length - 1] ?? null, trend: quickTrend(visible) };
+  });
+}
+
+/** Convenience: bar span label for the active timeframe. */
+export function barSpanSeconds(tf: Timeframe): number {
+  return TF_SECONDS[tf];
+}
