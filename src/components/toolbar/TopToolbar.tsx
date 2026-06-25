@@ -6,6 +6,7 @@ import { SymbolSearch } from './SymbolSearch';
 import { IndicatorMenu } from './IndicatorMenu';
 import { SmcMenu } from './SmcMenu';
 import { ChartSettingsMenu } from './ChartSettingsMenu';
+import { ConnectionBadge } from './ConnectionBadge';
 import { IconButton } from '@/components/ui/IconButton';
 import { Dropdown, MenuItem } from '@/components/ui/Dropdown';
 import { useChartStore } from '@/store/chartStore';
@@ -120,6 +121,8 @@ export function TopToolbar() {
       </Dropdown>
 
       <div className="ml-auto flex items-center gap-0.5">
+        <ConnectionBadge />
+        <div className="mx-1 h-5 w-px bg-terminal-border" />
         <IconButton label="Screenshot" onClick={screenshot}>
           <Camera size={15} />
         </IconButton>

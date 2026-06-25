@@ -4,6 +4,23 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 1 Steps 12–14: Switch Hardening + Connection Badge (2026-06-25)
+- `src/store/marketDataStore.ts` — **`selectMarket()` made idempotent**. It now re-asserts the
+  kline subscription for the active key even when symbol+timeframe are unchanged (previously an
+  early `return` could leave the chart with REST history but **no live kline stream** whenever the
+  chart default already equalled the store default). `subscribe()` is dedup-guarded, so re-asserting
+  an existing subscription is a no-op; switching still unsubscribes the old kline before subscribing
+  the new one. Verified: Binance `UNSUBSCRIBE` is sent on switch (no socket leak) and the
+  `cancelled` guard in `useMarketData` prevents an abandoned symbol's history from overwriting
+  (Steps 12–13 — symbol/timeframe switching).
+- `src/components/toolbar/ConnectionBadge.tsx` (new) — Step 14 realtime-feed status chip. Reads
+  `useConnectionMeta()` (over `marketDataStore.connectionStatus`) and renders a 🟢/🟡/🔴 dot + label
+  from `CONNECTION_STATUS_META`; the dot pulses while connecting/reconnecting. Label hides below
+  `md` to keep the toolbar compact. Pure read — no sockets.
+- `src/components/toolbar/TopToolbar.tsx` — mounts `<ConnectionBadge />` in the right-side group
+  (divider before the icon buttons).
+- Build/type/lint green.
+
 ### Changed — Phase 1 Step 11: Realtime Chart Integration (2026-06-25)
 - `src/hooks/useMarketData.ts` — **rewritten from mock to realtime**. On symbol/timeframe change:
   `marketDataStore.selectMarket()` (subscribe kline, drop old) + load history via

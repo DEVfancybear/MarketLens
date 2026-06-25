@@ -157,13 +157,20 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
 
   /** Atomically switch the active symbol+timeframe (chart selection): drop the
    *  old kline subscription and add the new one. History loading is done by the
-   *  chart/hook layer. */
+   *  chart/hook layer.
+   *
+   *  Idempotent: when the selection is unchanged it still (re)asserts the kline
+   *  subscription for the active key. This matters on first mount — if the chart
+   *  default already equals the store default, an early-return would otherwise
+   *  leave the chart with history but no live kline stream. `subscribe()` dedupes,
+   *  so re-asserting an existing subscription is a no-op. */
   selectMarket: (symbol, timeframe) => {
     const { selectedSymbol, selectedTimeframe, unsubscribe, subscribe } = get();
-    if (symbol === selectedSymbol && timeframe === selectedTimeframe) return;
-    unsubscribe(selectedSymbol, selectedTimeframe); // drop old chart kline
-    set({ selectedSymbol: symbol, selectedTimeframe: timeframe });
-    subscribe({ symbol, channels: DEFAULT_CHANNELS, timeframe });
+    if (symbol !== selectedSymbol || timeframe !== selectedTimeframe) {
+      unsubscribe(selectedSymbol, selectedTimeframe); // drop old chart kline
+      set({ selectedSymbol: symbol, selectedTimeframe: timeframe });
+    }
+    subscribe({ symbol, channels: DEFAULT_CHANNELS, timeframe }); // dedup-guarded
   },
 
   // ---------------- data ingress ----------------

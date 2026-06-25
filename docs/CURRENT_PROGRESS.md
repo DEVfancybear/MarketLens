@@ -3,11 +3,15 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–10 ✅ · **Step 11 (realtime Chart) ✅** —
-  chart streams live (Binance crypto, no key needed). **Next: Steps 12–13 (symbol/timeframe switch
-  hardening), then 14 (status badge), 16 (perf), 17 (remove mock).**
+- **Phase 1 — Realtime Market Data Foundation.** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅**
+  · **Step 14 (connection-status badge) ✅**. Chart + watchlist stream live (Binance crypto, no key
+  needed). **Next: Step 16 (perf pass), then 17 (remove the last mock — `services/marketData.ts`).**
 
 ## Recently modified files
+- `src/store/marketDataStore.ts` (Step 12–13: `selectMarket` now idempotent — re-asserts kline sub
+  for the active key; prevents the latent "history but no live kline" gap when defaults align)
+- `src/components/toolbar/ConnectionBadge.tsx` (new — Step 14 🟢/🟡/🔴 feed-status chip)
+- `src/components/toolbar/TopToolbar.tsx` (Step 14: mounts `<ConnectionBadge />`)
 - `src/hooks/useMarketData.ts` (realtime rewrite — selection + history + mirror to chartStore)
 - `src/components/chart/PriceChart.tsx` (incremental `series.update`; registry precision)
 - `src/store/marketDataStore.ts` (`selectMarket`, kline-only chart channel)
@@ -80,8 +84,8 @@ _Last updated: 2026-06-25_
   dead code; build green (additive). Finish in Phase 3 or revert before Phase 1 if undesired.
 
 ## Remaining in Phase 1
-- Steps 12–13 (symbol/timeframe switch hardening), 14 (connection-status badge), 16 (perf pass),
-  17 (remove the last mock — `services/marketData.ts`, used only by replay MTF). See `NEXT_TASKS.md`.
+- Step 16 (perf pass) and 17 (remove the last mock — `services/marketData.ts`, used only by replay
+  MTF). Steps 12–14 are done. (Step 15 reconnect already lives in the providers.) See `NEXT_TASKS.md`.
 
 ## Not started (later phases)
 - Alert triggering (Phase 2), full drawing engine (Phase 3), indicator dialogs (Phase 5),

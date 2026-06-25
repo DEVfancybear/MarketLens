@@ -2,9 +2,9 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–11 are **complete** (service layer + hooks + realtime watchlist + **realtime chart**).
-The chart now streams live (Binance crypto needs no key). **Immediate next: Step 12 (symbol
-switching hardening) + Step 13 (timeframe switching).** Remaining steps:
+Steps 1–14 are **complete** (service layer + hooks + realtime watchlist + realtime chart + switch
+hardening + connection badge). The chart now streams live (Binance crypto needs no key).
+**Immediate next: Step 16 (performance pass), then Step 17 (remove the last mock).** Remaining steps:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -18,9 +18,9 @@ switching hardening) + Step 13 (timeframe switching).** Remaining steps:
 | 9 ✅ | Hooks | `useCandles.ts`, `useQuote.ts`, `useConnectionStatus.ts`, `useMarketDataFeed.ts` (DONE) | Read-only store selectors; no sockets. Mock `useMarketData.ts` left untouched (Step 11 retires it). |
 | 10 ✅ | Watchlist integration | `Watchlist.tsx` + `useMarketDataBootstrap` (`GlobalRuntime`) + `watchlistStore` (DONE) | Realtime per-row `useQuote`, registry symbols, memoized rows, minimal rerenders, bootstrap subscribes tickers. |
 | 11 ✅ | Chart integration | `useMarketData.ts` (realtime rewrite), `PriceChart.tsx`, `marketDataStore`, `chartStore`, `SymbolSearch` (DONE) | Realtime chart: select → kline sub + history → mirror store candles into `chartStore.candles`; `series.update` fast path; replay gate kept; chart/watchlist streams disjoint. |
-| 12 ⬅ | Symbol switching | verify/harden `selectMarket` + `useMarketData` | Already works via chartStore.setSymbol → useMarketData (selectMarket unsub old kline, sub new, load history). **Verify no leaks** (old kline UNSUBSCRIBE sent; engine reset) and rapid-switch race (history of an abandoned symbol must not overwrite — `cancelled` guard already in place). |
-| 13 ⬅ | Timeframe switching | verify/harden | Works via chartStore.setTimeframe → selectMarket. Verify history reloads at new TF + realtime resumes; chart pan/zoom intentionally re-fits on TF change (acceptable). |
-| 14 | Connection status | `TopToolbar` (new badge) | 🟢/🟡/🔴 from `marketDataStore.connectionStatus`. |
+| 12 ✅ | Symbol switching | `selectMarket` hardened (DONE) | Switches via chartStore.setSymbol → useMarketData → selectMarket (unsub old kline, sub new, load history). Verified: Binance `UNSUBSCRIBE` is sent on switch (no socket leak); engine reset; rapid-switch race covered by the `cancelled` guard. **Hardened:** `selectMarket` is now idempotent — re-asserts the kline sub for the active key even when symbol+TF are unchanged, so initial mount can never be left with history but no live kline (`subscribe()` dedupes). |
+| 13 ✅ | Timeframe switching | `selectMarket` hardened (DONE) | Switches via chartStore.setTimeframe → selectMarket. Verified history reloads at new TF + realtime resumes; chart pan/zoom intentionally re-fits on TF change (acceptable). Same idempotent `selectMarket` path as Step 12. |
+| 14 ✅ | Connection status | `ConnectionBadge.tsx` + `TopToolbar` (DONE) | 🟢/🟡/🔴 dot + label from `useConnectionMeta()` (over `marketDataStore.connectionStatus`), pulsing while connecting/reconnecting; label hides below `md`. |
 | 15 | Reconnect | inside provider | backoff 1s→2s→5s→10s→30s, infinite, auto-resubscribe. |
 | 16 | Performance | selectors, `React.memo`, `useMemo/useCallback` | 100+ symbols, 5000+ candles; prefer atomic Zustand selectors. |
 | 17 | Remove mock data | delete/replace `services/marketData.ts` mock paths | Update all callers: `useMarketData`, `Watchlist`, `replayEngine.mtfSnapshot`, `tradeStore` price feed, `SmcLayer`/`smcEngine` history. |
