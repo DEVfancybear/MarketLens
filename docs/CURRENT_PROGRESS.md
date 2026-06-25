@@ -9,19 +9,17 @@ _Last updated: 2026-06-25_
 - **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~95%, interaction ~87%).
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
   price marker 95% (native LWC), countdown 100%, header layout 95%.
-- **✅ Phase 4.3 — SHAPE TOOLS SUITE — COMPLETE.**
 - **✅ Phase 4.2.1 — TOOL ACTIVATION SYSTEM — COMPLETE.**
-  Single-click tools stay active after placement. Cursor system (default/crosshair/move).
-  Right-click cancels pending drawing. Canvas accepts first click with zero drawings.
-  See `docs/TOOL_ACTIVATION_SYSTEM.md`.
+  Root cause audit: no architectural bug found. Added runtime diagnostics.
+  See `docs/DRAWING_ENGINE_ROOT_CAUSE.md`.
 - **Next milestone: Phase 4.4 — Fibonacci Suite.**
 
 ## Completed this session
-1. **Phase 4.2.1 — Tool Activation System:** Fixed tool state machine. Single-click
-   tools now stay active after placement (TradingView behavior). Canvas always accepts pointer
-   events when a drawing tool is selected (fixes first-click problem). Cursor system:
-   default/crosshair/move states. Right-click cancels pending creation. Esc resets to cursor.
-   Docs: TOOL_ACTIVATION_SYSTEM.md, DRAWING_STATE_MACHINE.md.
+1. **Phase 4.2.1 — Diagnostics + root cause analysis:** Traced full event chain from
+   toolbar click → store → DrawingLayer canvas → pointer events → chart coordinates → creation.
+   Verified no architectural bug: component tree, pointer events, and context propagation are
+   correctly wired. Added runtime diagnostic logging (console.debug in onPointerDown + context
+   availability). Docs: DRAWING_ENGINE_ROOT_CAUSE.md.
 2. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
    rotatedRect, circle, ellipse, triangle, polyline, curve, path). Fill system (fillColor +
    opacity). Supply/demand zone workflow for rectangle. Zero core engine changes.

@@ -31,6 +31,14 @@ function minPoints(t: DrawingTool): number {
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
+  // Diagnostic: log when chart context becomes available.
+  useEffect(() => {
+    if (ctx)
+      console.debug(
+        "[DrawingLayer] chart context available, candles:",
+        ctx.candles.length,
+      );
+  }, [ctx]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const drawings = useChartStore((s) => s.drawings);
@@ -145,6 +153,17 @@ export function DrawingLayer() {
 
   // ---- interaction: pointer ----
   const onPointerDown = (e: React.PointerEvent) => {
+    if (process.env.NODE_ENV === "development") {
+      console.debug(
+        "[DrawingLayer] pointerDown",
+        "tool:",
+        activeTool,
+        "ctx:",
+        !!ctx,
+        "target:",
+        (e.target as HTMLElement)?.tagName,
+      );
+    }
     const p = fromEvent(e);
     if (!p || !ctx) return;
 

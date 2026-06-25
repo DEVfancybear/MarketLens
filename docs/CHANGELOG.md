@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Debug — Phase 4.2.1: Root cause analysis + runtime diagnostics (2026-06-25)
+- Full event chain traced: toolbar click → store.activeTool → DrawingLayer re-render →
+  canvas pointer-events:auto → onPointerDown → fromEvent (chart coords) → creation.
+- No architectural bug found. Component tree, pointer events, and context propagation are
+  correctly wired. Added console.debug diagnostics in DrawingLayer.onPointerDown and
+  chart context availability.
+- Docs: DRAWING_ENGINE_ROOT_CAUSE.md with event flow diagram and failure-point analysis.
+
 ### Fixed — Phase 4.2.1: Tool activation system (2026-06-25)
 - Single-click tools (horizontal, vertical, crossLine, etc.) now stay active after
   placement — matches TradingView behavior where you can draw multiple lines without
