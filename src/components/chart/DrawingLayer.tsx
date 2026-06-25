@@ -146,6 +146,15 @@ export function DrawingLayer() {
   }, [draw, ctx?.version]);
 
   // ---- interaction: pointer ----
+  /** Forward a pointer event to the LWC chart element for pan/zoom. */
+  const forwardToChart = (e: React.PointerEvent) => {
+    const chartEl = canvasRef.current?.parentElement
+      ?.previousElementSibling as HTMLElement | null;
+    if (!chartEl) return;
+    const clone = new PointerEvent(e.nativeEvent.type, e.nativeEvent);
+    chartEl.dispatchEvent(clone);
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     const p = fromEvent(e);
     if (!p || !ctx) return;
@@ -163,6 +172,8 @@ export function DrawingLayer() {
         };
         (e.target as Element).setPointerCapture(e.pointerId);
       }
+      // If we didn't hit a drawing, forward the event to the chart for pan.
+      if (!hit) forwardToChart(e);
       return;
     }
 
@@ -215,7 +226,10 @@ export function DrawingLayer() {
 
   const onPointerMove = (e: React.PointerEvent) => {
     const p = fromEvent(e);
-    if (!p) return;
+    if (!p) {
+      forwardToChart(e);
+      return;
+    }
     if (pending) {
       setPending([pending[0], p]);
       return;
@@ -243,6 +257,9 @@ export function DrawingLayer() {
       }
 
       updateDrawing(drag.id, { points: next });
+    } else if (activeTool === "cursor") {
+      // No drag, cursor mode — forward to chart for pan.
+      forwardToChart(e);
     }
   };
 
@@ -306,6 +323,17 @@ export function DrawingLayer() {
       ? "auto"
       : "none";
 
+  // Forward wheel events to the chart when the canvas is intercepting
+  // pointer events (has drawings). Otherwise zoom/pan would be broken.
+  const onWheel = (e: React.WheelEvent) => {
+    if (activeTool !== "cursor" || dragRef.current) return; // drawing mode or dragging — keep
+    const chartEl = canvasRef.current?.parentElement
+      ?.previousElementSibling as HTMLElement | null;
+    if (!chartEl) return;
+    chartEl.dispatchEvent(new WheelEvent(e.nativeEvent.type, e.nativeEvent));
+    e.preventDefault();
+  };
+
   return (
     <>
       <canvas
@@ -314,6 +342,7 @@ export function DrawingLayer() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onContextMenu={onCtxMenu}
+        onWheel={onWheel}
         className="absolute inset-0 h-full w-full"
         style={{
           cursor: cursorStyle,
