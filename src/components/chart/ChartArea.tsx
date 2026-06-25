@@ -5,7 +5,6 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { useVisibleCandles } from "@/hooks/useVisibleCandles";
 import { useChartStore } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import { PriceMarkerLabel } from "./PriceMarkerLabel";
 import { PriceChart } from "./PriceChart";
 import { IndicatorPane } from "./IndicatorPane";
 import { DrawingLayer } from "./DrawingLayer";
@@ -42,7 +41,7 @@ export function ChartArea() {
 
   return (
     <div className="relative flex h-full w-full flex-col">
-      {/* Compact TradingView chart header: symbol · exchange · TF | OHLC */}
+      {/* Chart header: symbol · exchange · TF + OHLC row */}
       <div className="pointer-events-none absolute left-3 top-1 z-10 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5 text-[11px] leading-none text-ink-muted">
           <span className="font-bold text-ink">{symbol}</span>
@@ -68,8 +67,7 @@ export function ChartArea() {
         )}
       </div>
 
-      {/* Price marker on RIGHT side: symbol + price + countdown */}
-      <PriceMarkerLabel />
+      {/* Price marker (countdown) is now a native createPriceLine inside PriceChart */}
 
       {loading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-terminal-bg/40">

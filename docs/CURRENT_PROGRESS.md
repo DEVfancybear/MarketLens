@@ -8,18 +8,17 @@ _Last updated: 2026-06-25_
 - **✅ OANDA Integration — COMPLETE** (forex/metals/indices realtime + historical data).
 - **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~95%, interaction ~87%).
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
-  price marker 95%, countdown 100%, header layout 95%.
-  Countdown moved to right-side price marker. Header is compact 11px.
-  See `docs/TRADINGVIEW_HEADER_AND_PRICE_MARKER_REPORT.md`.
+  price marker 95% (native LWC), countdown 100%, header layout 95%.
+  Countdown rendered via native `createPriceLine` on right price axis.
+  See `docs/PRICE_MARKER_ROOT_CAUSE_ANALYSIS.md`.
   See `docs/TRADINGVIEW_PARITY_REPORT.md` and `docs/UI_GAP_ANALYSIS.md`.
 - **Next milestone: Phase 4 — Drawing Engine.**
 
 ## Completed this session
-1. **Phase 3.5 — Header + price marker correction:** Moved countdown from top-left to
-   right-side price marker (matching TradingView's right price scale placement). Compact
-   11px chart header: symbol · exchange · TF + OHLC row, `top-1` offset. Price marker now
-   right-aligned with symbol + 16px price + 11px countdown. Disabled LWC's built-in
-   `lastValueVisible` to avoid double price display. Header parity: 50% → 95%.
+1. **Phase 3.5 — Root cause fix: native price marker.** Deleted `PriceMarkerLabel.tsx`
+   (free-floating HTML DOM overlay). Replace with native LWC features: `lastValueVisible: true`
+   for the price label, and a transparent `createPriceLine` for the countdown on the right
+   axis. Countdown moves with price scale; no CSS hacks. See `PRICE_MARKER_ROOT_CAUSE_ANALYSIS.md`.
 2. **Phase 3 — TradingView UI Parity (final pass):** Watchlist, toolbar, typography, and spacing
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the

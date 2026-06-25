@@ -7,6 +7,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
+  type IPriceLine,
 } from "lightweight-charts";
 import type { Candle } from "@/types";
 import { useChartStore } from "@/store/chartStore";
@@ -14,6 +15,8 @@ import { useUIStore } from "@/store/uiStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
+import { useCountdown } from "@/hooks/useCountdown";
+import { useMarketDataStore } from "@/store/marketDataStore";
 import { ChartContextObj, type ChartCtx } from "./ChartContext";
 import { setMainChart } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
@@ -51,6 +54,8 @@ export function PriceChart({
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
+  const countdown = useCountdown(timeframe);
+  const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
 
   // ---- Create chart once ----
@@ -138,7 +143,7 @@ export function PriceChart({
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: 0, // solid (TradingView style)
-      lastValueVisible: false, // our custom PriceMarkerLabel renders the price
+      lastValueVisible: true, // native price label on right axis
     });
 
     const volumeSeries = chart.addHistogramSeries({
@@ -373,6 +378,38 @@ export function PriceChart({
       });
     }
   }, [overlayIndicators, candles, ready]);
+
+  // ---- Countdown price line (TradingView: right-axis countdown label) ----
+  const countdownLineRef = useRef<IPriceLine | null>(null);
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series || !ready) return;
+    const price = lastQuote?.last ?? candles[candles.length - 1]?.close;
+    if (price == null) return;
+
+    // Remove old line; create new one at the current quote price.
+    if (countdownLineRef.current) {
+      series.removePriceLine(countdownLineRef.current);
+      countdownLineRef.current = null;
+    }
+
+    countdownLineRef.current = series.createPriceLine({
+      price,
+      color: "transparent", // invisible line — the priceLine already draws it
+      lineWidth: 1,
+      lineStyle: 0,
+      axisLabelVisible: true,
+      title: countdown, // countdown text on the right axis
+    });
+
+    return () => {
+      if (countdownLineRef.current) {
+        series.removePriceLine(countdownLineRef.current);
+        countdownLineRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, countdown, lastQuote?.last]);
 
   const ctx: ChartCtx | null = useMemo(() => {
     if (!ready || !chartRef.current || !candleSeriesRef.current) return null;

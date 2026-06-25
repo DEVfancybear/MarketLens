@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed — Phase 3.5: Native LWC price marker (root cause) (2026-06-25)
+- Deleted PriceMarkerLabel.tsx (HTML DOM overlay with static positioning).
+- Replaced with native LWC: lastValueVisible for price label, transparent
+  createPriceLine for countdown on right axis. Zero CSS, zero transforms.
+  Countdown moves with price scale automatically. See PRICE_MARKER_ROOT_CAUSE_ANALYSIS.md.
+
 ### Fixed — Phase 3.5: Countdown moved to right-side price marker (2026-06-25)
 - Corrected countdown position: was in top-left (wrong). Now on the right side
   of the chart, right-aligned, matching TradingView's price scale placement.
