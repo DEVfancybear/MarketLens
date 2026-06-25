@@ -1,48 +1,47 @@
 # MILESTONE 6 — PROFESSIONAL TRADING FEATURES
 
-_Updated: 2026-06-26 · Commits: 8c504f7, 2f635a1, e12b294_
+_Updated: 2026-06-26 · Commits: 8c504f7, 2f635a1, e12b294, 5ad6a39, 2143d0e_
 
-## Status: PARTIALLY COMPLETE
+## Status: PARTIALLY COMPLETE (6 of 15 phases)
 
 ## Completed
 
-### Phase 1 — Command History ✅
-- `history/CommandManager.ts` — Undo/redo stacks (max 200). 5 built-in commands.
-- `history/useCommandHistory.ts` — React hook with commitMove, commitDelete.
-- Ctrl+Z (undo) + Ctrl+Shift+Z (redo) wired in DrawingLayer.
-
-### Phase 12 — Keyboard Manager ✅
-- `history/KeyboardManager.ts` — Centralized KeyCombo registry with modifier matching, input-field exclusion, and getAll() for help panel display.
-- DrawingLayer keyboard handler uses KeyboardManager for all shortcuts.
-
-### Phase 11 — Workspace Persistence ✅ (pre-existing)
-- `chartStore.ts` persists drawings per-symbol to localStorage (`drawings:<symbol>` key).
-- Hydrates on symbol change. Every store mutation auto-persists.
-
-### Pre-existing features satisfying milestone phases
-- **Phase 8 — Clipboard (Ctrl+D):** Already in keyboard handler with undo support
-- **Phase 10 — Layer Manager (partial):** lockDrawing, hideDrawing, bringToFront, sendToBack, toggleLockAll, toggleHideAll — all in chartStore + DrawingContextMenu
-
-## Deferred (future milestones)
-
-| Phase | Feature | Priority |
+| Phase | Feature | Notes |
 |---|---|---|
-| 2 | Multi Selection | High |
-| 3 | Group System | High |
-| 4 | Snap Engine | Medium |
-| 5 | Magnet Mode | Medium |
-| 6 | Smart Guides | Low |
-| 7 | Rotation | Medium |
-| 8 | Clipboard (full: Ctrl+C/V/X) | High |
-| 9 | Style Templates | Low |
-| 10 | Layer Manager (UI panel) | Medium |
-| 11 | Workspace (import/export) | Medium |
-| 13 | Property Inspector | Medium |
-| 14 | Auto Save | Low |
-| 15 | Collaboration Interfaces | Low |
+| 1 | Command History (undo/redo) | CommandManager + 5 command types + Ctrl+Z/Ctrl+Shift+Z |
+| 2 | Multi Selection | selectedDrawingIds (Set), toggleSelectDrawing, selectAll, Ctrl+A |
+| 8 | Clipboard | ClipboardManager (copy/paste/cut with offset), Ctrl+D with undo |
+| 10 | Layer Manager (logic) | lockDrawing, hideDrawing, bringToFront, sendToBack, toggleLockAll, toggleHideAll |
+| 11 | Workspace Persistence | localStorage per-symbol (drawings:<symbol>), auto-persists on every mutation |
+| 12 | Keyboard Manager | KeyboardManager with KeyCombo matching, input exclusion, getAll() |
 
-## Build status
-- `npm run type-check` → ✅ exit 0
-- `npm run lint` → ✅ (1 warning, stable useMemo closure)
-- All existing features preserved
-- Zero regressions
+## Deferred
+
+| Phase | Feature |
+|---|---|
+| 3 | Group System |
+| 4 | Snap Engine |
+| 5 | Magnet Mode |
+| 6 | Smart Guides |
+| 7 | Rotation |
+| 8 | Clipboard (full: Ctrl+C/V/X wiring) |
+| 9 | Style Templates |
+| 10 | Layer Manager (UI panel) |
+| 11 | Workspace (import/export) |
+| 13 | Property Inspector |
+| 14 | Auto Save |
+| 15 | Collaboration Interfaces |
+
+## Files created in this milestone
+- `drawing/history/CommandManager.ts` — Command pattern + 5 commands
+- `drawing/history/useCommandHistory.ts` — React hook
+- `drawing/history/KeyboardManager.ts` — Shortcut registry
+- `drawing/history/ClipboardManager.ts` — Cut/copy/paste
+
+## Files modified
+- `DrawingLayer.tsx` — Ctrl+Z/Ctrl+Shift+Z/Ctrl+A, command history wiring
+- `chartStore.ts` — selectedDrawingIds, toggleSelectDrawing, selectAll
+
+## Build
+- `npm run type-check` → ✅
+- `npm run lint` → ✅ (1 stable-closure warning)
