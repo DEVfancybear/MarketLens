@@ -13,12 +13,12 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
 - **Phase 1 progress:** Step 1 (analysis) ✅ · Step 2 (`src/types/marketData.ts`) ✅ · Step 3
-  (`src/store/marketDataStore.ts`) ✅.
-- **Recommended next action:** Phase 1 **Step 4** — `src/services/market-data/providers/
-  BinanceProvider.ts`: ONE combined WS (ticker + kline + miniTicker), normalize → unified types,
-  auto-reconnect via `RECONNECT_BACKOFF_MS`, emit `MarketDataEvent`s into `marketDataStore` via
-  the `MarketDataServiceBinding` (`attachMarketDataService`). Then Steps 5–13 wire the chart /
-  watchlist over (`series.update(lastBar)`), and the `chartStore` reconciliation happens there.
+  (`src/store/marketDataStore.ts`) ✅ · Step 4 (`BinanceProvider.ts`) ✅.
+- **Recommended next action:** Phase 1 **Step 5** — `TwelveDataProvider.ts` (forex/metals/
+  indices) implementing the same `MarketDataServiceBinding`, API key from `.env.local` (never
+  commit). Then **Step 6** `MarketDataService` to own providers + route events into
+  `marketDataStore` via `attachMarketDataService`, **Step 7** `HistoricalDataService`, and
+  Steps 10–13 wire the watchlist/chart over (`series.update(lastBar)`) + `chartStore` reconcile.
 
 ---
 

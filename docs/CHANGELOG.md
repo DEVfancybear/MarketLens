@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 4: Binance Provider (2026-06-25)
+- `src/services/market-data/providers/BinanceProvider.ts` — single combined WebSocket to
+  `wss://stream.binance.com:9443/ws`; dynamic `SUBSCRIBE`/`UNSUBSCRIBE` (one socket, never one
+  per symbol) for `@ticker`, `@miniTicker`, `@kline_<interval>`.
+- Normalizes Binance payloads → unified `MarketDataEvent` (`quote` / `candle` / `status`).
+- Auto-reconnect walking `RECONNECT_BACKOFF_MS` (1→2→5→10→30s, infinite) with full
+  auto-resubscribe of active streams on reopen; SSR-guarded (`typeof WebSocket`).
+- Implements `MarketDataServiceBinding` (connect/disconnect/subscribe/unsubscribe) so it can be
+  attached to `marketDataStore` directly or via `MarketDataService` (Step 6).
+- Standalone (not bootstrapped into the app yet — Step 6/10–13). Build/type/lint green.
+
 ### Added — Phase 1 Step 3: Market Data Store (2026-06-25)
 - `src/store/marketDataStore.ts` — Zustand single source of truth: `quotes, candles,
   selectedSymbol, selectedTimeframe, connectionStatus, subscriptions, lastUpdate` + actions
