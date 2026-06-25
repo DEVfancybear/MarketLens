@@ -234,8 +234,14 @@ export function DrawingLayer() {
           i === 1 ? { time: p.time, price: p.price } : { ...pt },
         );
         updateDrawing(drag.id, { points: pts });
+      } else if (drag.orig.length === 1) {
+        // Single-point tools (horizontal, vertical, crossLine, text, etc.):
+        // snap the point to the pointer. No delta — direct follow.
+        updateDrawing(drag.id, {
+          points: [{ time: p.time, price: p.price }],
+        });
       } else {
-        // Drag body — translate all points by pointer delta.
+        // Multi-point body drag — translate all points by pointer delta.
         const dt = p.time - drag.startTime;
         const dp = p.price - drag.startPrice;
         updateDrawing(drag.id, {
