@@ -6,7 +6,7 @@ import { useChartStore } from "@/store/chartStore";
 import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
 import { renderDrawing, type Projector } from "./drawing/drawingRenderer";
-import { hitTest } from "./drawing/drawingHitTest";
+import { hitTest, type HitResult } from "./drawing/drawingHitTest";
 import {
   DrawingContextMenu,
   type DrawingMenuState,
@@ -51,6 +51,7 @@ export function DrawingLayer() {
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
   const dragRef = useRef<{
     id: string;
+    target: "p1" | "p2" | "body";
     startTime: number;
     startPrice: number;
     orig: Point[];
@@ -151,13 +152,14 @@ export function DrawingLayer() {
 
     if (activeTool === "cursor") {
       const hit = hitTest(drawings, p, toX, toY);
-      selectDrawing(hit?.id ?? null);
+      selectDrawing(hit?.drawing.id ?? null);
       if (hit && !drawingsLocked) {
         dragRef.current = {
-          id: hit.id,
+          id: hit.drawing.id,
+          target: hit.target,
           startTime: p.time,
           startPrice: p.price,
-          orig: hit.points,
+          orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
         };
         (e.target as Element).setPointerCapture(e.pointerId);
       }
@@ -220,14 +222,33 @@ export function DrawingLayer() {
     }
     const drag = dragRef.current;
     if (drag) {
-      const dt = p.time - drag.startTime;
-      const dp = p.price - drag.startPrice;
-      updateDrawing(drag.id, {
-        points: drag.orig.map((pt) => ({
-          time: pt.time + dt,
-          price: pt.price + dp,
-        })),
-      });
+      if (drag.target === "p1") {
+        // Drag only endpoint A — keep endpoint B anchored.
+        const dt = p.time - drag.startTime;
+        const dp = p.price - drag.startPrice;
+        const pts = drag.orig.map((pt, i) =>
+          i === 0 ? { time: pt.time + dt, price: pt.price + dp } : { ...pt },
+        );
+        updateDrawing(drag.id, { points: pts });
+      } else if (drag.target === "p2") {
+        // Drag only endpoint B — keep endpoint A anchored.
+        const dt = p.time - drag.startTime;
+        const dp = p.price - drag.startPrice;
+        const pts = drag.orig.map((pt, i) =>
+          i === 1 ? { time: pt.time + dt, price: pt.price + dp } : { ...pt },
+        );
+        updateDrawing(drag.id, { points: pts });
+      } else {
+        // Drag body — translate all points.
+        const dt = p.time - drag.startTime;
+        const dp = p.price - drag.startPrice;
+        updateDrawing(drag.id, {
+          points: drag.orig.map((pt) => ({
+            time: pt.time + dt,
+            price: pt.price + dp,
+          })),
+        });
+      }
     }
   };
 
@@ -248,7 +269,7 @@ export function DrawingLayer() {
     const hit = hitTest(drawings, p, toX, toY);
     if (hit) {
       e.preventDefault();
-      setCtxMenu({ id: hit.id, x: e.clientX, y: e.clientY });
+      setCtxMenu({ id: hit.drawing.id, x: e.clientX, y: e.clientY });
     }
   };
 

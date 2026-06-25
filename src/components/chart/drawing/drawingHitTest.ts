@@ -2,8 +2,8 @@
  * DrawingHitTest — pure hit-testing for drawing objects.
  *
  * Given a set of drawings and a (time,price) point, returns the topmost
- * drawing under the cursor. Used by DrawingLayer for selection and by
- * DrawingContextMenu for right-click targeting.
+ * hit with target discrimination (endpoint vs body). Used by DrawingLayer
+ * for selection + drag and by DrawingContextMenu for right-click targeting.
  *
  * Covers all tool types. No React, no state — pure function.
  */
@@ -11,14 +11,25 @@ import type { Drawing, Point } from "@/types";
 
 export type HitTestProjector = (v: number) => number | null;
 
+/** Which part of a drawing was hit — drives drag behaviour. */
+export type HitResult = {
+  drawing: Drawing;
+  target: "p1" | "p2" | "body";
+};
+
 const TOL = 8;
+const HANDLE_RADIUS = 10;
+
+function nearPoint(px: number, py: number, x: number, y: number): boolean {
+  return Math.hypot(px - x, py - y) <= HANDLE_RADIUS;
+}
 
 export function hitTest(
   drawings: Drawing[],
   p: Point,
   toX: HitTestProjector,
   toY: HitTestProjector,
-): Drawing | null {
+): HitResult | null {
   const px = toX(p.time);
   const py = toY(p.price);
   if (px == null || py == null) return null;
@@ -29,46 +40,61 @@ export function hitTest(
   for (let i = sorted.length - 1; i >= 0; i--) {
     const d = sorted[i];
     if (d.visible === false) continue;
-    if (isHit(d, px, py, toX, toY)) return d;
+    const result = resolveHit(d, px, py, toX, toY);
+    if (result) return result;
   }
   return null;
 }
 
-function isHit(
+function resolveHit(
   d: Drawing,
   px: number,
   py: number,
   toX: HitTestProjector,
   toY: HitTestProjector,
-): boolean {
+): HitResult | null {
   const pts = d.points;
 
   switch (d.tool) {
     case "horizontal":
     case "horizRay": {
       const y = toY(pts[0].price);
-      return y != null && Math.abs(y - py) < TOL;
+      if (y != null && Math.abs(y - py) < TOL) {
+        return { drawing: d, target: "body" };
+      }
+      return null;
     }
     case "vertical":
     case "crossLine": {
       const x = toX(pts[0].time);
-      return x != null && Math.abs(x - px) < TOL;
+      if (x != null && Math.abs(x - px) < TOL) {
+        return { drawing: d, target: "body" };
+      }
+      return null;
     }
     case "text":
     case "emoji": {
       const x = toX(pts[0].time);
       const y = toY(pts[0].price);
-      return (
-        x != null && y != null && Math.abs(x - px) < 40 && Math.abs(y - py) < 14
-      );
+      if (
+        x != null &&
+        y != null &&
+        Math.abs(x - px) < 40 &&
+        Math.abs(y - py) < 14
+      ) {
+        return { drawing: d, target: "body" };
+      }
+      return null;
     }
     case "long":
     case "short": {
       const yE = toY(pts[0].price);
-      if (yE != null && Math.abs(yE - py) < TOL) return true;
+      if (yE != null && Math.abs(yE - py) < TOL) {
+        return { drawing: d, target: "body" };
+      }
       const xL = toX(pts[0].time);
       const xR = pts[1] ? toX(pts[1].time) : null;
-      if (xL == null) return false;
+      if (xL == null) return null;
       const right = xR ?? xL + 130;
       const yS = d.stop != null ? toY(d.stop) : null;
       const yT = d.target != null ? toY(d.target) : null;
@@ -77,7 +103,10 @@ function isHit(
       const inY =
         (yS != null && py >= yS - TOL && py <= yS + TOL) ||
         (yT != null && py >= yT - TOL && py <= yT + TOL);
-      return inX && (inY || (yE != null && Math.abs(yE - py) < TOL));
+      if (inX && (inY || (yE != null && Math.abs(yE - py) < TOL))) {
+        return { drawing: d, target: "body" };
+      }
+      return null;
     }
     case "brush": {
       for (let j = 0; j < pts.length - 1; j++) {
@@ -92,51 +121,65 @@ function isHit(
           d2 != null &&
           distToSegment(px, py, a, b, c, d2) < TOL
         )
-          return true;
+          return { drawing: d, target: "body" };
       }
-      return false;
+      return null;
     }
   }
 
   // Two-point tools.
-  if (pts.length < 2) return false;
+  if (pts.length < 2) return null;
   const x1 = toX(pts[0].time),
     y1 = toY(pts[0].price);
   const x2 = toX(pts[1].time),
     y2 = toY(pts[1].price);
-  if (x1 == null || y1 == null || x2 == null || y2 == null) return false;
+  if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
 
+  // ---- Endpoint tools (Trend Line Suite) — priority: p1 → p2 → body ----
   switch (d.tool) {
     case "trendline":
     case "ray":
     case "extendedLine":
     case "infoLine":
     case "channel":
-      return distToSegment(px, py, x1, y1, x2, y2) < TOL;
+      if (nearPoint(px, py, x1, y1)) return { drawing: d, target: "p1" };
+      if (nearPoint(px, py, x2, y2)) return { drawing: d, target: "p2" };
+      if (distToSegment(px, py, x1, y1, x2, y2) < TOL)
+        return { drawing: d, target: "body" };
+      return null;
+  }
+
+  // ---- Shape tools — body-only hit testing ----
+  switch (d.tool) {
     case "rectangle":
     case "rotatedRect":
     case "fib":
-      return (
+      if (
         px >= Math.min(x1, x2) - TOL &&
         px <= Math.max(x1, x2) + TOL &&
         py >= Math.min(y1, y2) - TOL &&
         py <= Math.max(y1, y2) + TOL
-      );
+      )
+        return { drawing: d, target: "body" };
+      return null;
     case "circle": {
       const r = Math.hypot(x2 - x1, y2 - y1);
-      return (
+      if (
         Math.abs(Math.hypot(px - x1, py - y1) - r) < TOL ||
         Math.hypot(px - x1, py - y1) <= r + TOL
-      );
+      )
+        return { drawing: d, target: "body" };
+      return null;
     }
     case "ellipse": {
-      // Hit inside the bounding box as approximation.
-      return (
+      if (
         px >= Math.min(x1, x2) - TOL &&
         px <= Math.max(x1, x2) + TOL &&
         py >= Math.min(y1, y2) - TOL &&
         py <= Math.max(y1, y2) + TOL
-      );
+      )
+        return { drawing: d, target: "body" };
+      return null;
     }
     case "triangle":
     case "polyline":
@@ -154,7 +197,7 @@ function isHit(
           d2 != null &&
           distToSegment(px, py, a, b, c, d2) < TOL * 1.5
         )
-          return true;
+          return { drawing: d, target: "body" };
       }
       // Also check bounding box of all points.
       const xs = pts
@@ -174,12 +217,12 @@ function isHit(
           py >= minY - TOL &&
           py <= maxY + TOL
         )
-          return true;
+          return { drawing: d, target: "body" };
       }
-      return false;
+      return null;
     }
   }
-  return false;
+  return null;
 }
 
 function distToSegment(

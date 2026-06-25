@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — TradingView-style endpoint dragging for line tools (2026-06-26)
+- `drawingHitTest.ts`: Changed return type from `Drawing | null` to `HitResult | null`
+  (`{ drawing, target: "p1" | "p2" | "body" }`). Added `nearPoint()` with 10px handle
+  radius for endpoint hit detection. Line tools (trendline, ray, extendedLine,
+  infoLine, channel) now return endpoint priority (p1 → p2 → body). All other tools
+  return `target: "body"` — no behaviour change.
+- `DrawingLayer.tsx`: Updated `dragRef` to include `target`. `onPointerDown` stores
+  `HitResult` (target + deep-cloned orig points). `onPointerMove` now branches on
+  `target`: p1 drags only points[0], p2 drags only points[1], body translates all.
+  Context menu uses `hit.drawing.id`. Zero changes to creation workflow, shape tools,
+  selection, keyboard, or rendering.
+
 ### Changed — Clean up diagnostic console.log traces (2026-06-26)
 - Removed all temporary `console.log` diagnostics from `DrawingLayer.tsx` (chart context,
   canvas mount, pointerdown, fromEvent, tool creation, render, elementFromPoint,
