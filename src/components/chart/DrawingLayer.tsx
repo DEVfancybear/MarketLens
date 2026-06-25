@@ -57,6 +57,30 @@ export function DrawingLayer() {
     orig: Point[];
   } | null>(null);
 
+  // Stable refs for the native event handlers (avoids stale-closure issues).
+  const stateRef = useRef({
+    drawings: [] as Drawing[],
+    activeTool: "cursor" as DrawingTool,
+    pending: null as Point[] | null,
+    drag: null as typeof dragRef.current,
+    drawColor: "#2962ff",
+    drawingsLocked: false,
+    drawingsHidden: false,
+    selectedDrawingId: null as string | null,
+  });
+
+  // Keep stateRef in sync every render (safe — used only inside event callbacks).
+  stateRef.current = {
+    drawings,
+    activeTool,
+    pending,
+    drag: dragRef.current,
+    drawColor,
+    drawingsLocked,
+    drawingsHidden,
+    selectedDrawingId,
+  };
+
   const toX = useCallback(
     (time: number) =>
       ctx?.chart.timeScale().timeToCoordinate(time as UTCTimestamp) ?? null,
@@ -67,7 +91,7 @@ export function DrawingLayer() {
     [ctx],
   );
   const fromEvent = useCallback(
-    (e: React.PointerEvent | PointerEvent): Point | null => {
+    (e: PointerEvent): Point | null => {
       if (!ctx || !canvasRef.current) return null;
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -97,7 +121,9 @@ export function DrawingLayer() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
-    const visible = drawingsHidden ? [] : drawings;
+    const visible = stateRef.current.drawingsHidden
+      ? []
+      : stateRef.current.drawings;
     const projector: Projector = {
       toX,
       toY,
@@ -105,15 +131,16 @@ export function DrawingLayer() {
       height: rect.height,
     };
 
-    const all = pending
+    const pr = stateRef.current.pending;
+    const all = pr
       ? [
           ...visible,
           {
             id: "__pending",
-            tool: activeTool,
-            color: drawColor,
+            tool: stateRef.current.activeTool,
+            color: stateRef.current.drawColor,
             lineWidth: 1.5,
-            points: pending,
+            points: pr,
             visible: true,
           } as Drawing,
         ]
@@ -123,166 +150,174 @@ export function DrawingLayer() {
 
     for (const d of sorted) {
       if (d.visible === false) continue;
-      const selected = d.id === selectedDrawingId;
+      const selected = d.id === stateRef.current.selectedDrawingId;
       g.strokeStyle = d.color;
       g.fillStyle = d.color;
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
       renderDrawing(g, d, projector, selected);
     }
-  }, [
-    ctx,
-    drawings,
-    pending,
-    activeTool,
-    drawColor,
-    selectedDrawingId,
-    drawingsHidden,
-    toX,
-    toY,
-  ]);
+  }, [ctx, toX, toY]);
 
   useEffect(() => {
     draw();
   }, [draw, ctx?.version]);
 
-  // ---- interaction: pointer ----
-  /** Forward a pointer event to the LWC chart element for pan/zoom. */
-  const forwardToChart = (e: React.PointerEvent) => {
-    const chartEl = canvasRef.current?.parentElement
-      ?.previousElementSibling as HTMLElement | null;
-    if (!chartEl) return;
-    const clone = new PointerEvent(e.nativeEvent.type, e.nativeEvent);
-    chartEl.dispatchEvent(clone);
-  };
+  // ---- native pointer event handlers ----
+  // These are attached to the canvas with addEventListener so they fire
+  // regardless of pointer-events CSS. The canvas itself stays pointer-events:none
+  // in cursor mode, so chart zoom/pan work. In drawing mode, pointer-events:auto
+  // is set directly on the canvas element via style.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    const p = fromEvent(e);
-    if (!p || !ctx) return;
+    const handleDown = (e: PointerEvent) => {
+      const s = stateRef.current;
+      const p = fromEvent(e);
+      if (!p || !ctx) return;
 
-    if (activeTool === "cursor") {
-      const hit = hitTest(drawings, p, toX, toY);
-      selectDrawing(hit?.drawing.id ?? null);
-      if (hit && !drawingsLocked) {
-        dragRef.current = {
-          id: hit.drawing.id,
-          target: hit.target,
-          startTime: p.time,
-          startPrice: p.price,
-          orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
-        };
-        (e.target as Element).setPointerCapture(e.pointerId);
+      if (s.activeTool === "cursor") {
+        const hit = hitTest(s.drawings, p, toX, toY);
+        selectDrawing(hit?.drawing.id ?? null);
+        if (hit && !s.drawingsLocked) {
+          dragRef.current = {
+            id: hit.drawing.id,
+            target: hit.target,
+            startTime: p.time,
+            startPrice: p.price,
+            orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
+          };
+          canvas.setPointerCapture(e.pointerId);
+          e.stopPropagation();
+          e.preventDefault();
+        }
+        // If no hit, the event propagates naturally to the chart → pan works.
+        return;
       }
-      // If we didn't hit a drawing, forward the event to the chart for pan.
-      if (!hit) forwardToChart(e);
-      return;
-    }
 
-    // ---- tool creation ----
-    const needed = minPoints(activeTool);
+      // ---- drawing mode ----
+      e.stopPropagation();
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
 
-    // Text needs a prompt before placing.
-    if (activeTool === "text") {
-      const text = window.prompt("Text:") || "";
-      if (text)
+      const needed = minPoints(s.activeTool);
+
+      if (s.activeTool === "text") {
+        const text = window.prompt("Text:") || "";
+        if (text)
+          addDrawing({
+            id: uid("dw"),
+            tool: "text",
+            color: s.drawColor,
+            lineWidth: 1.5,
+            points: [p],
+            text,
+          });
+        else setActiveTool("cursor");
+        return;
+      }
+
+      if (needed === 1) {
         addDrawing({
           id: uid("dw"),
-          tool: "text",
-          color: drawColor,
+          tool: s.activeTool,
+          color: s.drawColor,
           lineWidth: 1.5,
           points: [p],
-          text,
         });
-      else setActiveTool("cursor");
-      return;
-    }
-
-    // Single-click tools: commit immediately, tool stays active (TradingView behavior).
-    if (needed === 1) {
-      addDrawing({
-        id: uid("dw"),
-        tool: activeTool,
-        color: drawColor,
-        lineWidth: 1.5,
-        points: [p],
-      });
-      // Tool remains active — user can place more of the same tool.
-      return;
-    }
-
-    // Two-click tools.
-    if (!pending) {
-      setPending([p]);
-    } else {
-      addDrawing({
-        id: uid("dw"),
-        tool: activeTool,
-        color: drawColor,
-        lineWidth: 1.5,
-        points: [pending[0], p],
-      });
-      setPending(null);
-    }
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const p = fromEvent(e);
-    if (!p) {
-      forwardToChart(e);
-      return;
-    }
-    if (pending) {
-      setPending([pending[0], p]);
-      return;
-    }
-    const drag = dragRef.current;
-    if (drag) {
-      const next = drag.orig.map((pt) => ({ ...pt }));
-
-      if (drag.target === "p1") {
-        // Snap endpoint A to pointer — keep all other points anchored.
-        next[0] = { time: p.time, price: p.price };
-      } else if (drag.target === "p2" && next.length > 1) {
-        // Snap endpoint B to pointer — keep all other points anchored.
-        next[1] = { time: p.time, price: p.price };
-      } else {
-        // Body drag — translate all points by pointer delta from click position.
-        const dt = p.time - drag.startTime;
-        const dp = p.price - drag.startPrice;
-        for (let i = 0; i < next.length; i++) {
-          next[i] = {
-            time: drag.orig[i].time + dt,
-            price: drag.orig[i].price + dp,
-          };
-        }
+        return;
       }
 
-      updateDrawing(drag.id, { points: next });
-    } else if (activeTool === "cursor") {
-      // No drag, cursor mode — forward to chart for pan.
-      forwardToChart(e);
-    }
-  };
+      // Two-click tools.
+      if (!s.pending) {
+        setPending([p]);
+      } else {
+        addDrawing({
+          id: uid("dw"),
+          tool: s.activeTool,
+          color: s.drawColor,
+          lineWidth: 1.5,
+          points: [s.pending[0], p],
+        });
+        setPending(null);
+      }
+    };
 
-  const onPointerUp = () => {
-    dragRef.current = null;
-  };
+    const handleMove = (e: PointerEvent) => {
+      const s = stateRef.current;
+      const p = fromEvent(e);
+      if (!p) return;
 
-  // Right-click context menu on drawings, or cancel pending creation.
-  const onCtxMenu = (e: React.MouseEvent) => {
-    // If a drawing is pending, right-click cancels it (TradingView behavior).
-    if (pending) {
-      e.preventDefault();
-      setPending(null);
-      return;
-    }
-    const p = fromEvent(e as unknown as React.PointerEvent);
-    if (!p) return;
-    const hit = hitTest(drawings, p, toX, toY);
-    if (hit) {
-      e.preventDefault();
-      setCtxMenu({ id: hit.drawing.id, x: e.clientX, y: e.clientY });
-    }
-  };
+      if (s.activeTool !== "cursor" && s.pending) {
+        setPending([s.pending[0], p]);
+        return;
+      }
+
+      const drag = dragRef.current;
+      if (drag) {
+        const next = drag.orig.map((pt) => ({ ...pt }));
+
+        if (drag.target === "p1") {
+          next[0] = { time: p.time, price: p.price };
+        } else if (drag.target === "p2" && next.length > 1) {
+          next[1] = { time: p.time, price: p.price };
+        } else {
+          const dt = p.time - drag.startTime;
+          const dp = p.price - drag.startPrice;
+          for (let i = 0; i < next.length; i++) {
+            next[i] = {
+              time: drag.orig[i].time + dt,
+              price: drag.orig[i].price + dp,
+            };
+          }
+        }
+
+        updateDrawing(drag.id, { points: next });
+        stateRef.current.drag = dragRef.current; // keep in sync
+      }
+      // In cursor mode with no drag: event propagates naturally to chart → pan works.
+    };
+
+    const handleUp = () => {
+      dragRef.current = null;
+      stateRef.current.drag = null;
+    };
+
+    const handleCtx = (e: MouseEvent) => {
+      const s = stateRef.current;
+      if (s.pending) {
+        e.preventDefault();
+        setPending(null);
+        return;
+      }
+      const p = fromEvent(e as unknown as PointerEvent);
+      if (!p) return;
+      const hit = hitTest(s.drawings, p, toX, toY);
+      if (hit) {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxMenu({ id: hit.drawing.id, x: e.clientX, y: e.clientY });
+      }
+    };
+
+    canvas.addEventListener("pointerdown", handleDown);
+    canvas.addEventListener("pointermove", handleMove);
+    canvas.addEventListener("pointerup", handleUp);
+    canvas.addEventListener("pointerleave", handleUp);
+    canvas.addEventListener("contextmenu", handleCtx);
+
+    return () => {
+      canvas.removeEventListener("pointerdown", handleDown);
+      canvas.removeEventListener("pointermove", handleMove);
+      canvas.removeEventListener("pointerup", handleUp);
+      canvas.removeEventListener("pointerleave", handleUp);
+      canvas.removeEventListener("contextmenu", handleCtx);
+    };
+    // toX/toY/ctx are stable via useCallback/useRef in their own scope.
+    // We intentionally only run this effect once (mount/unmount).
+    // The fromEvent closure references canvasRef which is a ref, not state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctx]);
 
   // ---- keyboard ----
   useEffect(() => {
@@ -297,7 +332,6 @@ export function DrawingLayer() {
         setPending(null);
         setActiveTool("cursor");
       }
-      // Ctrl+D → duplicate selected drawing.
       if (e.key === "d" && (e.ctrlKey || e.metaKey) && selectedDrawingId) {
         e.preventDefault();
         duplicateDrawing(selectedDrawingId);
@@ -307,42 +341,26 @@ export function DrawingLayer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedDrawingId, removeDrawing, setActiveTool, duplicateDrawing]);
 
-  // Canvas must accept pointer events when:
-  // - Any drawing tool is active (including cursor with existing drawings)
-  // - Pending creation preview is showing
-  // Cursor: crosshair for drawing tools, move cursor when dragging,
-  // default (pointer) for cursor mode.
-  let cursorStyle = "default";
-  if (activeTool !== "cursor") cursorStyle = "crosshair";
-  if (dragRef.current) cursorStyle = "move";
   const hasDrawings = drawings.length > 0;
-  // Always allow pointer events when a non-cursor tool is active, so
-  // the first click works even with zero prior drawings.
-  const pointerEvents =
-    activeTool !== "cursor" || hasDrawings || pending !== null
-      ? "auto"
-      : "none";
+  const drawingMode = activeTool !== "cursor";
 
-  // Forward wheel events to the chart when the canvas is intercepting
-  // pointer events (has drawings). Otherwise zoom/pan would be broken.
-  const onWheel = (e: React.WheelEvent) => {
-    if (activeTool !== "cursor" || dragRef.current) return; // drawing mode or dragging — keep
-    const chartEl = canvasRef.current?.parentElement
-      ?.previousElementSibling as HTMLElement | null;
-    if (!chartEl) return;
-    chartEl.dispatchEvent(new WheelEvent(e.nativeEvent.type, e.nativeEvent));
-    e.preventDefault();
-  };
+  // Cursor style for the canvas.
+  let cursorStyle = "default";
+  if (drawingMode) cursorStyle = "crosshair";
+  if (dragRef.current) cursorStyle = "move";
+
+  // Canvas pointer-events strategy:
+  //   Drawing mode → "auto" (we need to intercept everything for creation)
+  //   Cursor mode  → "none" (events pass through to chart; native
+  //                   addEventListener handles drawing selection/drag)
+  // The native pointerdown listener (above) fires regardless of CSS,
+  // so drawing selection works even with pointer-events:none.
+  const pointerEvents = drawingMode || pending !== null ? "auto" : "none";
 
   return (
     <>
       <canvas
         ref={canvasRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onContextMenu={onCtxMenu}
-        onWheel={onWheel}
         className="absolute inset-0 h-full w-full"
         style={{
           cursor: cursorStyle,

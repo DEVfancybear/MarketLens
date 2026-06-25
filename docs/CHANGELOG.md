@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed — DrawingLayer blocks chart zoom/pan regression (2026-06-26)
+- Root cause: the canvas overlay with `pointerEvents: "auto"` permanently intercepted
+  all pointer and wheel events when drawings existed, blocking the LWC chart underneath.
+  Previous forwarding approach (dispatchEvent clone) was broken — `new PointerEvent(type,
+  event)` is not valid constructor usage.
+- Fix: Switched to native `addEventListener` on the canvas element. Canvas stays
+  `pointerEvents: "none"` in cursor mode so chart zoom/pan/pinch work naturally.
+  The native pointerdown listener fires regardless of CSS pointer-events, hit-tests
+  drawings, and calls `setPointerCapture` when a drawing is hit — routing subsequent
+  events (move/up) through the canvas during drag. In drawing mode, canvas switches
+  to `pointerEvents: "auto"` for creation flows.
+- `stateRef` keeps closures stable across re-renders. Zero synthetic event handlers on
+  the canvas JSX — all interaction is native DOM.
+
 ### Changed — TradingView-style endpoint dragging for line tools (2026-06-26)
 - `drawingHitTest.ts`: Changed return type from `Drawing | null` to `HitResult | null`
   (`{ drawing, target: "p1" | "p2" | "body" }`). Added `nearPoint()` with 10px handle

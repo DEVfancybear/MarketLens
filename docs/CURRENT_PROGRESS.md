@@ -16,7 +16,12 @@ _Last updated: 2026-06-26_
 - **Next milestone: Phase 4.4 — Fibonacci Suite.**
 
 ## Completed this session
-1. **Flyout portal fix:** Fixed tool group flyout menus being clipped by TerminalLayout
+1. **Drawing interaction regression fix:** Fixed chart zoom/pan being blocked when drawings
+   exist. Switched canvas from synthetic React events + event forwarding to native
+   `addEventListener` with `pointerEvents: "none"` in cursor mode. Native listener fires
+   regardless of CSS, hit-tests drawings, captures pointer on hit. Chart gets all events
+   normally when not interacting with a drawing.
+2. **Flyout portal fix:** Fixed tool group flyout menus being clipped by TerminalLayout
    `overflow-hidden`. Flyout now renders via `createPortal` to `document.body` with
    position computed from button bounding rects (`btnRefs`).
 2. **Diagnostic cleanup:** Removed all temporary `console.log` traces from
