@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 7: Historical Data Service (2026-06-25)
+- `src/services/market-data/HistoricalDataService.ts` — REST history loader (500–5000 bars),
+  routed by the symbol registry, normalized to unified `MarketCandle[]` (ascending, `closed:true`).
+  Binance `GET /api/v3/klines` with `endTime` pagination (1000/request), TwelveData
+  `GET /time_series` (`outputsize`, `order=ASC`). `before` cursor for paging; dedupe + sort.
+  TwelveData key from `NEXT_PUBLIC_TWELVEDATA_API_KEY` (throws clearly if missing).
+- Pure fetch service — callers push into `marketDataStore.setCandles` (Steps 9–13).
+  `getHistoricalDataService()` singleton. Build/type/lint green.
+
 ### Added — Phase 1 Step 6: Market Data Service + Symbol Registry (2026-06-25)
 - `src/services/market-data/MarketDataService.ts` — owns BinanceProvider + TwelveDataProvider,
   routes each symbol to the right provider (via the registry), fans normalized

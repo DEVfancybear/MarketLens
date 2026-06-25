@@ -3,12 +3,13 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–5 ✅ · **Step 6 (MarketDataService +
-  symbol registry) ✅** · **Next: Step 7 (HistoricalDataService).**
+- **Phase 1 — Realtime Market Data Foundation.** Steps 1–6 ✅ · **Step 7 (HistoricalDataService)
+  ✅** · **Next: Step 8 (CandleEngine).**
 
 ## Recently modified files
-- `src/services/market-data/MarketDataService.ts` (new — provider orchestration + routing)
-- `src/services/market-data/symbols.ts` (new — canonical symbol registry)
+- `src/services/market-data/HistoricalDataService.ts` (new — REST history loader)
+- `src/services/market-data/MarketDataService.ts` (provider orchestration, Step 6)
+- `src/services/market-data/symbols.ts` (canonical symbol registry, Step 6)
 - `src/services/market-data/providers/{Binance,TwelveData}Provider.ts` (Steps 4–5)
 - `src/store/marketDataStore.ts` (single source of truth, Step 3)
 - `src/types/marketData.ts` (unified models, Step 2) · `src/types/index.ts` (barrel)

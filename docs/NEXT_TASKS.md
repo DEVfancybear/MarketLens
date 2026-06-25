@@ -2,9 +2,9 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–6 are **complete** (types, store, Binance + TwelveData providers, MarketDataService +
-symbol registry). **Immediate next: Step 7 (HistoricalDataService).** Remaining steps mapped to
-concrete files/integration seams:
+Steps 1–7 are **complete** (types, store, providers, service + registry, historical loader).
+**Immediate next: Step 8 (CandleEngine).** Remaining steps mapped to concrete files/integration
+seams:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -13,8 +13,8 @@ concrete files/integration seams:
 | 4 ✅ | Binance provider | `src/services/market-data/providers/BinanceProvider.ts` (DONE) | Single combined WS, dynamic SUBSCRIBE/UNSUBSCRIBE for ticker/miniTicker/kline, normalize → unified events, backoff reconnect + auto-resubscribe, implements `MarketDataServiceBinding`. |
 | 5 ✅ | TwelveData provider | `src/services/market-data/providers/TwelveDataProvider.ts` (DONE) | Price-only WS for forex/metals/indices; unified `quote` events; backoff reconnect; `symbolMap`; key from `NEXT_PUBLIC_TWELVEDATA_API_KEY`. `.env.example` added, `.gitignore` hardened. |
 | 6 ✅ | Market data service | `src/services/market-data/MarketDataService.ts` (+ `symbols.ts`) (DONE) | Owns both providers, routes via the symbol registry, fans events into the store, aggregates status, `getMarketDataService()` attaches it. |
-| 7 ⬅ | Historical service | `src/services/market-data/HistoricalDataService.ts` | REST history (500–5000 bars) before WS starts; pagination. Binance `GET /api/v3/klines`, TwelveData `GET /time_series`. Normalize → `MarketCandle[]` → `marketDataStore.setCandles`. Route via `symbols.ts`. |
-| 8 | Candle engine | `src/services/market-data/CandleEngine.ts` | Merge history + live ticks; update O/H/L/C/V of the forming bar; emit closed bars. |
+| 7 ✅ | Historical service | `src/services/market-data/HistoricalDataService.ts` (DONE) | REST 500–5000 bars, Binance `endTime` pagination + TwelveData `time_series` (`order=ASC`), normalized `MarketCandle[]`, `before` cursor, dedupe/sort, key-guarded. `getHistoricalDataService()`. |
+| 8 ⬅ | Candle engine | `src/services/market-data/CandleEngine.ts` | Merge history + realtime. Binance sends klines → store `updateCandle` already upserts. TwelveData sends price ticks → bucket into the forming bar via `TF_SECONDS`, emit on bar close. Seed from `HistoricalDataService`, feed `marketDataStore`. |
 | 9 | Hooks | `src/hooks/useMarketData.ts` (rewrite), `useCandles.ts`, `useQuote.ts` | Read from `marketDataStore` only; **must not** open sockets. |
 | 10 | Watchlist integration | `components/watchlist/Watchlist.tsx` | Replace `useQueries(['quote'])` with `useQuote` selectors; memoized rows; minimal rerenders. |
 | 11 | Chart integration | `components/chart/PriceChart.tsx`, `ChartArea.tsx` | History on load, then **`series.update(lastBar)`** for ticks (don't `setData` every tick). Keep `useVisibleCandles` replay gate intact. |
