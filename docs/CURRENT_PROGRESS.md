@@ -4,10 +4,13 @@ _Last updated: 2026-06-25_
 
 ## Current phase / milestone
 - **Phase 1 — Realtime Market Data Foundation.** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅**
-  · **Step 14 (connection-status badge) ✅**. Chart + watchlist stream live (Binance crypto, no key
-  needed). **Next: Step 16 (perf pass), then 17 (remove the last mock — `services/marketData.ts`).**
+  · **Step 14 (connection-status badge) ✅** · **Step 15 (reconnect hardening) ✅**. Chart + watchlist
+  stream live (Binance crypto, no key needed). **Next: Step 16 (perf pass), then 17 (remove the last
+  mock — `services/marketData.ts`).**
 
 ## Recently modified files
+- `src/services/market-data/providers/{Binance,TwelveData}Provider.ts` (Step 15: dead-socket
+  watchdog + instant reconnect on `window 'online'`; baseline backoff/auto-resubscribe verified)
 - `src/store/marketDataStore.ts` (Step 12–13: `selectMarket` now idempotent — re-asserts kline sub
   for the active key; prevents the latent "history but no live kline" gap when defaults align)
 - `src/components/toolbar/ConnectionBadge.tsx` (new — Step 14 🟢/🟡/🔴 feed-status chip)
@@ -44,9 +47,10 @@ _Last updated: 2026-06-25_
 - Persistence: localStorage (ui/drawings/indicators/watchlist/smc-settings) + IndexedDB
   (journal + screenshots).
 
-### Realtime market data (Phase 1 — Steps 1–11 done)
+### Realtime market data (Phase 1 — Steps 1–15 done)
 - Unified types + single-source `marketDataStore`; Binance + TwelveData WS providers (one socket
-  each, backoff reconnect + auto-resubscribe); `MarketDataService` routing via a canonical symbol
+  each, backoff reconnect + auto-resubscribe + dead-socket watchdog + `online` recovery);
+  `MarketDataService` routing via a canonical symbol
   registry; `HistoricalDataService` (REST 500–5000 bars, paginated); `CandleEngine` (tick→bar).
 - **Watchlist and chart stream live** (Binance crypto no-key; forex/metals/indices via TwelveData
   key). Read-only hooks + bootstrap; chart uses incremental `series.update` for the forming bar.
@@ -85,7 +89,7 @@ _Last updated: 2026-06-25_
 
 ## Remaining in Phase 1
 - Step 16 (perf pass) and 17 (remove the last mock — `services/marketData.ts`, used only by replay
-  MTF). Steps 12–14 are done. (Step 15 reconnect already lives in the providers.) See `NEXT_TASKS.md`.
+  MTF). Steps 12–15 are done. See `NEXT_TASKS.md`.
 
 ## Not started (later phases)
 - Alert triggering (Phase 2), full drawing engine (Phase 3), indicator dialogs (Phase 5),

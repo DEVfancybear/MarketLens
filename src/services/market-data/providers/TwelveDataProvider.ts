@@ -29,6 +29,15 @@ import type { MarketDataServiceBinding } from '@/store/marketDataStore';
 
 const TD_WS_BASE = 'wss://ws.twelvedata.com/v1/quotes/price';
 
+/**
+ * Dead-socket watchdog. TwelveData's WS emits a `heartbeat` frame roughly every
+ * 10s even when prices are quiet, so a silence longer than `STALE_TIMEOUT_MS` on
+ * an OPEN socket means it died without firing `onclose`. Recycle it so the normal
+ * reconnect path resubscribes.
+ */
+const STALE_TIMEOUT_MS = 45_000;
+const WATCHDOG_INTERVAL_MS = 15_000;
+
 type StatusValue = Extract<MarketDataEvent, { type: 'status' }>['status'];
 
 export interface TwelveDataProviderOptions {
@@ -62,6 +71,12 @@ export class TwelveDataProvider implements MarketDataServiceBinding {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private manualClose = false;
+
+  /** Epoch ms of the last inbound frame; drives the dead-socket watchdog. */
+  private lastMessageAt = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private onlineBound = false;
+  private readonly onOnline = () => this.handleOnline();
 
   constructor(opts: TwelveDataProviderOptions = {}) {
     this.base = opts.url ?? TD_WS_BASE;
@@ -98,6 +113,8 @@ export class TwelveDataProvider implements MarketDataServiceBinding {
       return;
     }
     this.manualClose = false;
+    this.bindOnline();
+    this.startWatchdog();
     this.emitStatus(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
 
     const ws = new WebSocket(`${this.base}?apikey=${encodeURIComponent(this.apiKey)}`);
@@ -105,6 +122,7 @@ export class TwelveDataProvider implements MarketDataServiceBinding {
 
     ws.onopen = () => {
       this.reconnectAttempt = 0;
+      this.lastMessageAt = Date.now();
       this.emitStatus('connected');
       if (this.symbols.size > 0) this.send({ action: 'subscribe', params: { symbols: [...this.symbols].join(',') } });
     };
@@ -122,6 +140,8 @@ export class TwelveDataProvider implements MarketDataServiceBinding {
 
   disconnect() {
     this.manualClose = true;
+    this.stopWatchdog();
+    this.unbindOnline();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -145,6 +165,57 @@ export class TwelveDataProvider implements MarketDataServiceBinding {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
+  }
+
+  // -------------------------------------------------------- dead-socket watchdog
+  private startWatchdog() {
+    if (this.watchdogTimer) return;
+    this.watchdogTimer = setInterval(() => this.checkStale(), WATCHDOG_INTERVAL_MS);
+  }
+
+  private stopWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  /** Recycle an OPEN-but-silent socket so the reconnect path resubscribes. */
+  private checkStale() {
+    if (this.manualClose || this.symbols.size === 0) return; // idle → expect no data
+    if (this.ws?.readyState !== WebSocket.OPEN) return;       // (re)connecting handled elsewhere
+    if (Date.now() - this.lastMessageAt <= STALE_TIMEOUT_MS) return;
+    this.emitStatus('reconnecting', 'No data — recycling stale socket');
+    try {
+      this.ws.close(); // → onclose → scheduleReconnect (+ auto-resubscribe)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // -------------------------------------------------------- network recovery
+  private bindOnline() {
+    if (this.onlineBound || typeof window === 'undefined') return;
+    window.addEventListener('online', this.onOnline);
+    this.onlineBound = true;
+  }
+
+  private unbindOnline() {
+    if (!this.onlineBound || typeof window === 'undefined') return;
+    window.removeEventListener('online', this.onOnline);
+    this.onlineBound = false;
+  }
+
+  /** Network came back — skip the remaining backoff and reconnect immediately. */
+  private handleOnline() {
+    if (this.manualClose) return;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempt = 0;
+    this.connect();
   }
 
   // --------------------------------------------------------------- subscriptions
@@ -175,6 +246,7 @@ export class TwelveDataProvider implements MarketDataServiceBinding {
 
   // ----------------------------------------------------------------- normalize
   private handleMessage(raw: string) {
+    this.lastMessageAt = Date.now(); // any frame (incl. heartbeats) proves liveness
     let msg: Record<string, unknown>;
     try {
       msg = JSON.parse(raw);

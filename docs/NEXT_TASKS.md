@@ -2,9 +2,10 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–14 are **complete** (service layer + hooks + realtime watchlist + realtime chart + switch
-hardening + connection badge). The chart now streams live (Binance crypto needs no key).
-**Immediate next: Step 16 (performance pass), then Step 17 (remove the last mock).** Remaining steps:
+Steps 1–15 are **complete** (service layer + hooks + realtime watchlist + realtime chart + switch
+hardening + connection badge + reconnect hardening). The chart now streams live (Binance crypto
+needs no key). **Immediate next: Step 16 (performance pass), then Step 17 (remove the last mock).**
+Remaining steps:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -21,7 +22,7 @@ hardening + connection badge). The chart now streams live (Binance crypto needs 
 | 12 ✅ | Symbol switching | `selectMarket` hardened (DONE) | Switches via chartStore.setSymbol → useMarketData → selectMarket (unsub old kline, sub new, load history). Verified: Binance `UNSUBSCRIBE` is sent on switch (no socket leak); engine reset; rapid-switch race covered by the `cancelled` guard. **Hardened:** `selectMarket` is now idempotent — re-asserts the kline sub for the active key even when symbol+TF are unchanged, so initial mount can never be left with history but no live kline (`subscribe()` dedupes). |
 | 13 ✅ | Timeframe switching | `selectMarket` hardened (DONE) | Switches via chartStore.setTimeframe → selectMarket. Verified history reloads at new TF + realtime resumes; chart pan/zoom intentionally re-fits on TF change (acceptable). Same idempotent `selectMarket` path as Step 12. |
 | 14 ✅ | Connection status | `ConnectionBadge.tsx` + `TopToolbar` (DONE) | 🟢/🟡/🔴 dot + label from `useConnectionMeta()` (over `marketDataStore.connectionStatus`), pulsing while connecting/reconnecting; label hides below `md`. |
-| 15 | Reconnect | inside provider | backoff 1s→2s→5s→10s→30s, infinite, auto-resubscribe. |
+| 15 ✅ | Reconnect | inside providers (DONE) | Backoff `1→2→5→10→30s` (holds at 30s), infinite, auto-resubscribe on `onopen`; `manualClose` suppresses reconnect on intentional disconnect. **Hardened:** dead-socket watchdog (recycle an OPEN-but-silent socket after 45s) + instant reconnect on `window 'online'`. Both SSR-guarded. |
 | 16 | Performance | selectors, `React.memo`, `useMemo/useCallback` | 100+ symbols, 5000+ candles; prefer atomic Zustand selectors. |
 | 17 | Remove mock data | delete/replace `services/marketData.ts` mock paths | Update all callers: `useMarketData`, `Watchlist`, `replayEngine.mtfSnapshot`, `tradeStore` price feed, `SmcLayer`/`smcEngine` history. |
 

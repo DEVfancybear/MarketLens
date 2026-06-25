@@ -15,7 +15,8 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
 - **Phase 1 progress:** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅** · **Step 14
-  (connection badge) ✅**. **The chart now streams live** (history via REST + realtime klines).
+  (connection badge) ✅** · **Step 15 (reconnect hardening) ✅**. **The chart now streams live**
+  (history via REST + realtime klines).
   Reconciliation chosen: `chartStore` stays the chart's selection + candle source
   (drawings/indicators/tool too); `useMarketData` bridges it to `marketDataStore` (select → history
   → mirror candles). `useVisibleCandles` replay gate intact. `selectMarket()` is now idempotent so
@@ -81,8 +82,11 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   `useMarketData` (chart: select → history → mirror candles into `chartStore`).
 - **Connection badge** `components/toolbar/ConnectionBadge.tsx` (Step 14) — 🟢/🟡/🔴 chip in the
   `TopToolbar` right group via `useConnectionMeta()`.
-- **Remaining Phase 1:** Step 16 (perf), 17 (remove the last mock). Steps 12–14 done; 15 (reconnect)
-  lives in the providers. Full plan in `NEXT_TASKS.md`.
+- **Reconnect (Step 15)** lives in the providers: backoff `1→2→5→10→30s`, infinite, auto-resubscribe
+  on `onopen`; plus a dead-socket watchdog (recycle an OPEN-but-silent socket after 45s) and instant
+  reconnect on `window 'online'`. Both SSR-guarded.
+- **Remaining Phase 1:** Step 16 (perf), 17 (remove the last mock). Steps 12–15 done. Full plan in
+  `NEXT_TASKS.md`.
 - **Still mock:** only `services/marketData.ts` behind `replayEngine.mtfSnapshot` (Step 17).
 
 ## 5. TradingView features already completed
@@ -100,7 +104,7 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 
 ## 6. Remaining / missing features
 - 🟡 **Phase 1 finish** — Steps 16–17 (perf pass, remove last mock). Switch hardening + status
-  badge (12–14) done.
+  badge + reconnect hardening (12–15) done.
 - 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
   and `CURRENT_STATE.md` §9). Belongs to Phase 3.
 - ❌ Alert **triggering**/notifications (Phase 2) — only alert lines render today.

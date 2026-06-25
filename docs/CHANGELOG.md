@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 1 Step 15: Reconnect Hardening (2026-06-25)
+- Baseline reconnect was already present (backoff `1→2→5→10→30s` holding at 30s, infinite retries,
+  auto-resubscribe on `onopen`, `manualClose` suppresses reconnect on intentional disconnect) and
+  was verified. Step 15 adds the two cases the `onclose`-driven path can't cover:
+- `src/services/market-data/providers/BinanceProvider.ts` and `TwelveDataProvider.ts` —
+  **dead-socket watchdog**: a `setInterval` (15s) records the last inbound-frame time (every frame,
+  incl. RPC acks / heartbeats) and, if an OPEN socket goes silent for `> 45s` while subscriptions
+  are active, force-closes it so the normal reconnect path resubscribes. Catches sockets that die
+  without firing `onclose` (sleeping tabs / flaky networks). Idle providers (no active subs) never
+  trigger it. TwelveData's ~10s heartbeats and Binance's per-second klines keep a live socket well
+  under the threshold, so no false recycles.
+- Same files — **instant network recovery**: a `window 'online'` listener clears the pending backoff
+  timer and reconnects immediately instead of waiting out the (up to 30s) backoff. Listener is
+  bound on `connect()` and removed on `disconnect()`; both new mechanisms are SSR-guarded.
+- Build/type/lint green.
+
 ### Changed — Phase 1 Steps 12–14: Switch Hardening + Connection Badge (2026-06-25)
 - `src/store/marketDataStore.ts` — **`selectMarket()` made idempotent**. It now re-asserts the
   kline subscription for the active key even when symbol+timeframe are unchanged (previously an
