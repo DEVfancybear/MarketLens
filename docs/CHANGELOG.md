@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed — Phase 4.2.1: Tool activation system (2026-06-25)
+- Single-click tools (horizontal, vertical, crossLine, etc.) now stay active after
+  placement — matches TradingView behavior where you can draw multiple lines without
+  re-selecting the tool. Two-click tools reset to cursor after completion.
+- Canvas always accepts pointer events when a drawing tool is selected, fixing the
+  bug where the first click on an empty chart was ignored.
+- Cursor system: default (idle), crosshair (drawing tool active), move (dragging).
+- Right-click cancels pending drawing creation. Esc resets to cursor + clears pending.
+- Live preview renders while dragging second point (already existed, now confirmed).
+- Docs: TOOL_ACTIVATION_SYSTEM.md, DRAWING_STATE_MACHINE.md.
+
 ### Added — Phase 4.3: Shape tools suite + fill system (2026-06-25)
 - 8 TradingView-style shape tools: rectangle, rotatedRect, circle, ellipse, triangle,
   polyline, curve, path. All support create/select/move/delete/persist.

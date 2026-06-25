@@ -182,7 +182,7 @@ export function DrawingLayer() {
       return;
     }
 
-    // Single-click tools: commit immediately.
+    // Single-click tools: commit immediately, tool stays active (TradingView behavior).
     if (needed === 1) {
       addDrawing({
         id: uid("dw"),
@@ -191,6 +191,7 @@ export function DrawingLayer() {
         lineWidth: 1.5,
         points: [p],
       });
+      // Tool remains active — user can place more of the same tool.
       return;
     }
 
@@ -233,8 +234,14 @@ export function DrawingLayer() {
     dragRef.current = null;
   };
 
-  // Right-click context menu on drawings.
+  // Right-click context menu on drawings, or cancel pending creation.
   const onCtxMenu = (e: React.MouseEvent) => {
+    // If a drawing is pending, right-click cancels it (TradingView behavior).
+    if (pending) {
+      e.preventDefault();
+      setPending(null);
+      return;
+    }
     const p = fromEvent(e as unknown as React.PointerEvent);
     if (!p) return;
     const hit = hitTest(drawings, p, toX, toY);
@@ -267,7 +274,21 @@ export function DrawingLayer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedDrawingId, removeDrawing, setActiveTool, duplicateDrawing]);
 
-  const interactive = activeTool !== "cursor" || pending !== null;
+  // Canvas must accept pointer events when:
+  // - Any drawing tool is active (including cursor with existing drawings)
+  // - Pending creation preview is showing
+  // Cursor: crosshair for drawing tools, move cursor when dragging,
+  // default (pointer) for cursor mode.
+  let cursorStyle = "default";
+  if (activeTool !== "cursor") cursorStyle = "crosshair";
+  if (dragRef.current) cursorStyle = "move";
+  const hasDrawings = drawings.length > 0;
+  // Always allow pointer events when a non-cursor tool is active, so
+  // the first click works even with zero prior drawings.
+  const pointerEvents =
+    activeTool !== "cursor" || hasDrawings || pending !== null
+      ? "auto"
+      : "none";
 
   return (
     <>
@@ -279,8 +300,8 @@ export function DrawingLayer() {
         onContextMenu={onCtxMenu}
         className="absolute inset-0 h-full w-full"
         style={{
-          cursor: activeTool === "cursor" ? "default" : "crosshair",
-          pointerEvents: interactive || drawings.length ? "auto" : "none",
+          cursor: cursorStyle,
+          pointerEvents,
         }}
       />
       {ctxMenu && (

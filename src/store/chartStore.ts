@@ -1,5 +1,5 @@
-'use client';
-import { create } from 'zustand';
+"use client";
+import { create } from "zustand";
 import type {
   Candle,
   Drawing,
@@ -7,10 +7,10 @@ import type {
   IndicatorConfig,
   IndicatorType,
   Timeframe,
-} from '@/types';
-import { localStore } from '@/services/storage';
-import { uid } from '@/utils/id';
-import { defaultIndicator } from '@/services/indicators';
+} from "@/types";
+import { localStore } from "@/services/storage";
+import { uid } from "@/utils/id";
+import { defaultIndicator } from "@/services/indicators";
 
 interface ChartState {
   symbol: string;
@@ -62,14 +62,14 @@ interface ChartState {
   updateIndicator: (id: string, patch: Partial<IndicatorConfig>) => void;
   removeIndicator: (id: string) => void;
 
-  setCrosshair: (c: ChartState['crosshair']) => void;
+  setCrosshair: (c: ChartState["crosshair"]) => void;
   /** Load persisted drawings/indicators from localStorage. Client-only. */
   hydrate: () => void;
 }
 
 // Default to a Binance crypto symbol so the chart streams live with no API key.
-const DEFAULT_SYMBOL = 'BTCUSDT';
-const DEFAULT_TF: Timeframe = '15m';
+const DEFAULT_SYMBOL = "BTCUSDT";
+const DEFAULT_TF: Timeframe = "15m";
 
 function drawingsKey(symbol: string) {
   return `drawings:${symbol}`;
@@ -85,8 +85,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   drawings: [],
   indicators: [],
 
-  activeTool: 'cursor',
-  drawColor: '#2962ff',
+  activeTool: "cursor",
+  drawColor: "#2962ff",
   selectedDrawingId: null,
   drawingsLocked: false,
   drawingsHidden: false,
@@ -95,7 +95,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   hydrate: () =>
     set({
       drawings: localStore.get<Drawing[]>(drawingsKey(get().symbol), []),
-      indicators: localStore.get<IndicatorConfig[]>('indicators', []),
+      indicators: localStore.get<IndicatorConfig[]>("indicators", []),
     }),
 
   setSymbol: (symbol) => {
@@ -124,11 +124,29 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const top = get().drawings.reduce((m, x) => Math.max(m, x.zIndex ?? 0), 0);
     const drawing = { visible: true, locked: false, zIndex: top + 1, ...d };
     const drawings = [...get().drawings, drawing];
-    set({ drawings, activeTool: 'cursor', selectedDrawingId: drawing.id });
+    // Single-click tools stay active (TradingView behavior).
+    // Two-click tools switch back to cursor after placement.
+    const singleClick = [
+      "horizontal",
+      "horizRay",
+      "vertical",
+      "crossLine",
+      "text",
+      "emoji",
+      "long",
+      "short",
+    ].includes(d.tool);
+    set({
+      drawings,
+      activeTool: singleClick ? get().activeTool : "cursor",
+      selectedDrawingId: drawing.id,
+    });
     localStore.set(drawingsKey(get().symbol), drawings);
   },
   updateDrawing: (id, patch) => {
-    const drawings = get().drawings.map((d) => (d.id === id ? { ...d, ...patch } : d));
+    const drawings = get().drawings.map((d) =>
+      d.id === id ? { ...d, ...patch } : d,
+    );
     set({ drawings });
     localStore.set(drawingsKey(get().symbol), drawings);
   },
@@ -143,7 +161,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const top = get().drawings.reduce((m, x) => Math.max(m, x.zIndex ?? 0), 0);
     const copy: Drawing = {
       ...src,
-      id: uid('dw'),
+      id: uid("dw"),
       zIndex: top + 1,
       points: src.points.map((p) => ({ ...p })),
     };
@@ -152,12 +170,16 @@ export const useChartStore = create<ChartState>((set, get) => ({
     localStore.set(drawingsKey(get().symbol), drawings);
   },
   lockDrawing: (id) => {
-    const drawings = get().drawings.map((d) => (d.id === id ? { ...d, locked: !d.locked } : d));
+    const drawings = get().drawings.map((d) =>
+      d.id === id ? { ...d, locked: !d.locked } : d,
+    );
     set({ drawings });
     localStore.set(drawingsKey(get().symbol), drawings);
   },
   hideDrawing: (id) => {
-    const drawings = get().drawings.map((d) => (d.id === id ? { ...d, visible: d.visible === false } : d));
+    const drawings = get().drawings.map((d) =>
+      d.id === id ? { ...d, visible: d.visible === false } : d,
+    );
     set({ drawings, selectedDrawingId: null });
     localStore.set(drawingsKey(get().symbol), drawings);
   },
@@ -166,7 +188,10 @@ export const useChartStore = create<ChartState>((set, get) => ({
     get().updateDrawing(id, { zIndex: top + 1 });
   },
   sendToBack: (id) => {
-    const bottom = get().drawings.reduce((m, x) => Math.min(m, x.zIndex ?? 0), 0);
+    const bottom = get().drawings.reduce(
+      (m, x) => Math.min(m, x.zIndex ?? 0),
+      0,
+    );
     get().updateDrawing(id, { zIndex: bottom - 1 });
   },
   toggleLockAll: () => set((s) => ({ drawingsLocked: !s.drawingsLocked })),
@@ -178,10 +203,10 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   addIndicator: (type) => {
-    const cfg = defaultIndicator(type, uid('ind'));
+    const cfg = defaultIndicator(type, uid("ind"));
     const indicators = [...get().indicators, cfg];
     set({ indicators });
-    localStore.set('indicators', indicators);
+    localStore.set("indicators", indicators);
   },
   toggleIndicator: (type) => {
     const current = get().indicators;
@@ -190,19 +215,21 @@ export const useChartStore = create<ChartState>((set, get) => ({
     // NEW array so subscribers (menu + chart) re-render.
     const indicators = has
       ? current.filter((i) => i.type !== type)
-      : [...current, defaultIndicator(type, uid('ind'))];
+      : [...current, defaultIndicator(type, uid("ind"))];
     set({ indicators });
-    localStore.set('indicators', indicators);
+    localStore.set("indicators", indicators);
   },
   updateIndicator: (id, patch) => {
-    const indicators = get().indicators.map((i) => (i.id === id ? { ...i, ...patch } : i));
+    const indicators = get().indicators.map((i) =>
+      i.id === id ? { ...i, ...patch } : i,
+    );
     set({ indicators });
-    localStore.set('indicators', indicators);
+    localStore.set("indicators", indicators);
   },
   removeIndicator: (id) => {
     const indicators = get().indicators.filter((i) => i.id !== id);
     set({ indicators });
-    localStore.set('indicators', indicators);
+    localStore.set("indicators", indicators);
   },
 
   setCrosshair: (crosshair) => set({ crosshair }),

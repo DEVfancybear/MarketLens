@@ -10,18 +10,23 @@ _Last updated: 2026-06-25_
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
   price marker 95% (native LWC), countdown 100%, header layout 95%.
 - **✅ Phase 4.3 — SHAPE TOOLS SUITE — COMPLETE.**
-  8 shape tools (rectangle, rotatedRect, circle, ellipse, triangle, polyline,
-  curve, path). Fill system (fillColor + opacity). Supply/demand zone workflow.
-  See `docs/SHAPE_TOOLS_ARCHITECTURE.md`.
+- **✅ Phase 4.2.1 — TOOL ACTIVATION SYSTEM — COMPLETE.**
+  Single-click tools stay active after placement. Cursor system (default/crosshair/move).
+  Right-click cancels pending drawing. Canvas accepts first click with zero drawings.
+  See `docs/TOOL_ACTIVATION_SYSTEM.md`.
 - **Next milestone: Phase 4.4 — Fibonacci Suite.**
 
 ## Completed this session
-1. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
+1. **Phase 4.2.1 — Tool Activation System:** Fixed tool state machine. Single-click
+   tools now stay active after placement (TradingView behavior). Canvas always accepts pointer
+   events when a drawing tool is selected (fixes first-click problem). Cursor system:
+   default/crosshair/move states. Right-click cancels pending creation. Esc resets to cursor.
+   Docs: TOOL_ACTIVATION_SYSTEM.md, DRAWING_STATE_MACHINE.md.
+2. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
    rotatedRect, circle, ellipse, triangle, polyline, curve, path). Fill system (fillColor +
-   opacity). Supply/demand zone workflow for rectangle. Zero core engine changes — creation
-   flow, context menu, and persistence inherited from 4.2. Toolbar: 4th category (ANNOTATIONS).
+   opacity). Supply/demand zone workflow for rectangle. Zero core engine changes.
    Docs: SHAPE_TOOLS_ARCHITECTURE.md, RECTANGLE_TOOL_GUIDE.md, SHAPE_TOOL_TEST_PLAN.md.
-2. **Phase 4.2 — Trend Line Suite:** Implemented 8 TradingView-style line tools (trendline,
+3. **Phase 4.2 — Trend Line Suite:** Implemented 8 TradingView-style line tools (trendline,
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
    last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real
