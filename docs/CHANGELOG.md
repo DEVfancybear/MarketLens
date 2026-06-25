@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Docs — Phase 2 audit (2026-06-25)
+- `docs/PHASE2_REVIEW.md` — verification of alert creation / triggering / deletion / history / toast /
+  browser notifications / duplicate prevention / mobile responsiveness against the actual code; all
+  core requirements pass; quality gates green.
+- `docs/PHASE2_GAPS.md` — gaps + missing TradingView parity. Headlines: G1 notification flags are
+  double-gated and stale (no per-alert edit UI); G2 stale previous-price can false-fire a re-created
+  cross alert; G5 no edit UI; G6 Alert Center backdrop blocks chart interaction on desktop. None
+  block Phase 2.
+
 ### Added — Phase 2: TradingView-style Alert Engine (2026-06-25)
 - **Phase 1 audit** — `docs/PHASE1_REVIEW.md` (success criteria verified) + `docs/PHASE1_GAPS.md`
   (open items; none block Phase 1). `docs/ALERT_ARCHITECTURE.md` added.
