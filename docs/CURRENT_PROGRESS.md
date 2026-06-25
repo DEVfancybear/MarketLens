@@ -3,11 +3,12 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–7 ✅ · **Step 8 (CandleEngine) ✅** —
-  **service layer complete**. **Next: Step 9 (read-only hooks; first UI-facing step).**
+- **Phase 1 — Realtime Market Data Foundation.** Steps 1–8 ✅ (service layer) · **Step 9
+  (read-only hooks) ✅** · **Next: Step 10 (Watchlist integration — first real UI swap).**
 
 ## Recently modified files
-- `src/services/market-data/CandleEngine.ts` (new — tick→bar merge)
+- `src/hooks/{useCandles,useQuote,useConnectionStatus,useMarketDataFeed}.ts` (new — store readers)
+- `src/services/market-data/CandleEngine.ts` (tick→bar merge, Step 8)
 - `src/services/market-data/MarketDataService.ts` (wired to CandleEngine for tick providers)
 - `src/services/market-data/HistoricalDataService.ts` (REST history loader, Step 7)
 - `src/services/market-data/symbols.ts` (canonical symbol registry, Step 6)

@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 9: Read-only Market Data Hooks (2026-06-25)
+- `src/hooks/useCandles.ts` — `useCandles(symbol?, timeframe?)` atomic store selector → candle
+  series (defaults to active selection).
+- `src/hooks/useQuote.ts` — `useQuote(symbol)` / `useLastPrice(symbol)` per-symbol selectors
+  (one per watchlist row → minimal rerenders).
+- `src/hooks/useConnectionStatus.ts` — `useConnectionStatus()` / `useConnectionMeta()` for the
+  Step-14 status badge.
+- `src/hooks/useMarketDataFeed.ts` — aggregate read hook (symbol/timeframe/candles/quote/status);
+  the realtime "useMarketData", to take over the `useMarketData.ts` filename in Step 11.
+- All read from `marketDataStore` only; **none open sockets**. Existing mock `useMarketData.ts`
+  left untouched (still drives the chart until Step 11). Build/type/lint green.
+
 ### Added — Phase 1 Step 8: Realtime Candle Engine (2026-06-25)
 - `src/services/market-data/CandleEngine.ts` — merges history + realtime into a forming bar
   (TradingView-style). `applyTick` buckets price ticks into the current bar via `TF_SECONDS`

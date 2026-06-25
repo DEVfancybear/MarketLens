@@ -12,16 +12,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Phase 1 progress:** Steps 1–7 ✅ · Step 8 (`CandleEngine.ts`, wired into `MarketDataService`)
-  ✅ — **the service layer is complete** (store → providers → service → history → candle engine).
-- **Recommended next action:** Phase 1 **Step 9** — first UI-facing step. Add read-only hooks
-  `src/hooks/useCandles.ts`, `useQuote.ts`, `useConnectionStatus.ts` that select from
-  `marketDataStore` (atomic selectors, no socket creation). Add a one-time bootstrap (e.g. in
-  `GlobalRuntime`) that calls `getMarketDataService()` + `getHistoricalDataService()` and
-  primes/subscribes the selected symbol. Then **Steps 10–13** swap the watchlist + chart from the
-  mock `useMarketData`/`chartStore` over to the store (`series.update(lastBar)`), and reconcile
-  `chartStore`. **Until Step 11, the app still renders mock data via the existing
-  `useMarketData.ts` — do not delete it yet.**
+- **Phase 1 progress:** Steps 1–8 ✅ (service layer) · Step 9 (read-only hooks
+  `useCandles`/`useQuote`/`useConnectionStatus`/`useMarketDataFeed`) ✅.
+- **Recommended next action:** Phase 1 **Step 10** — Watchlist integration (first real UI swap).
+  Add a one-time **bootstrap** (e.g. in `GlobalRuntime`) that calls `getMarketDataService()` and
+  subscribes the watchlist symbols for `ticker`. Switch `components/watchlist/Watchlist.tsx` from
+  the mock `useQueries(['quote'])` to per-row `useQuote` (memoized rows, green/red, minimal
+  rerenders). **Watchlist symbols must come from the registry (`MARKET_SYMBOLS`), e.g. crypto
+  BTCUSDT** — the current mock `SYMBOLS`/`watchlistStore` use ids like `BTCUSD`. Then **Steps
+  11–13** swap the chart (`series.update(lastBar)`) + reconcile `chartStore`. **The mock
+  `useMarketData.ts` still drives the chart until Step 11 — do not delete it yet.**
 - **Env:** TwelveData needs `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local` (see `.env.example`);
   Binance needs no key. App still runs fully on mock data until Steps 10–13 wire the providers in.
 
