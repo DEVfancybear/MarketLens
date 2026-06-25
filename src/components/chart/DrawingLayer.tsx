@@ -15,6 +15,7 @@ import {
   DeleteDrawingCommand,
   DuplicateDrawingCommand,
 } from "./drawing/history/CommandManager";
+import { KeyboardManager } from "./drawing/history/KeyboardManager";
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
