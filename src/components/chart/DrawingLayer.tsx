@@ -222,35 +222,27 @@ export function DrawingLayer() {
     }
     const drag = dragRef.current;
     if (drag) {
+      const next = drag.orig.map((pt) => ({ ...pt }));
+
       if (drag.target === "p1") {
-        // Snap endpoint A to pointer — keep endpoint B anchored.
-        const pts = drag.orig.map((pt, i) =>
-          i === 0 ? { time: p.time, price: p.price } : { ...pt },
-        );
-        updateDrawing(drag.id, { points: pts });
-      } else if (drag.target === "p2") {
-        // Snap endpoint B to pointer — keep endpoint A anchored.
-        const pts = drag.orig.map((pt, i) =>
-          i === 1 ? { time: p.time, price: p.price } : { ...pt },
-        );
-        updateDrawing(drag.id, { points: pts });
-      } else if (drag.orig.length === 1) {
-        // Single-point tools (horizontal, vertical, crossLine, text, etc.):
-        // snap the point to the pointer. No delta — direct follow.
-        updateDrawing(drag.id, {
-          points: [{ time: p.time, price: p.price }],
-        });
+        // Snap endpoint A to pointer — keep all other points anchored.
+        next[0] = { time: p.time, price: p.price };
+      } else if (drag.target === "p2" && next.length > 1) {
+        // Snap endpoint B to pointer — keep all other points anchored.
+        next[1] = { time: p.time, price: p.price };
       } else {
-        // Multi-point body drag — translate all points by pointer delta.
+        // Body drag — translate all points by pointer delta from click position.
         const dt = p.time - drag.startTime;
         const dp = p.price - drag.startPrice;
-        updateDrawing(drag.id, {
-          points: drag.orig.map((pt) => ({
-            time: pt.time + dt,
-            price: pt.price + dp,
-          })),
-        });
+        for (let i = 0; i < next.length; i++) {
+          next[i] = {
+            time: drag.orig[i].time + dt,
+            price: drag.orig[i].price + dp,
+          };
+        }
       }
+
+      updateDrawing(drag.id, { points: next });
     }
   };
 

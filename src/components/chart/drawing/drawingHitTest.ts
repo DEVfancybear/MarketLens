@@ -135,22 +135,19 @@ function resolveHit(
     y2 = toY(pts[1].price);
   if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
 
-  // ---- Endpoint tools (Trend Line Suite) — priority: p1 → p2 → body ----
+  // ---- All 2-point tools — endpoint priority: p1 → p2 → body ----
+  if (nearPoint(px, py, x1, y1)) return { drawing: d, target: "p1" };
+  if (nearPoint(px, py, x2, y2)) return { drawing: d, target: "p2" };
+
   switch (d.tool) {
     case "trendline":
     case "ray":
     case "extendedLine":
     case "infoLine":
     case "channel":
-      if (nearPoint(px, py, x1, y1)) return { drawing: d, target: "p1" };
-      if (nearPoint(px, py, x2, y2)) return { drawing: d, target: "p2" };
       if (distToSegment(px, py, x1, y1, x2, y2) < TOL)
         return { drawing: d, target: "body" };
       return null;
-  }
-
-  // ---- Shape tools — body-only hit testing ----
-  switch (d.tool) {
     case "rectangle":
     case "rotatedRect":
     case "fib":
