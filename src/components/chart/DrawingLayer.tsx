@@ -5,8 +5,10 @@ import { useChartCtx } from "./ChartContext";
 import { useChartStore } from "@/store/chartStore";
 import type { Drawing, Point } from "@/types";
 import { DrawingContextMenu } from "./DrawingContextMenu";
-import { usePointerController } from "./drawing/interaction/PointerController";
-import { createRenderLoop } from "./drawing/DrawingRendererLoop";
+import {
+  usePointerController,
+  createRenderLoop,
+} from "./drawing/engine/DrawingEngine";
 
 export function DrawingLayer() {
   const ctx = useChartCtx();

@@ -2,8 +2,8 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
-import { hitTest, type HitResult } from "../drawingHitTest";
-import { getAdapter, defaultMovePoints } from "../ToolAdapter";
+import { hitTest, type HitResult } from "../hittest/HitTestEngine";
+import { getAdapter, defaultMovePoints } from "../tools/ToolRegistry";
 import type {
   DrawingContextMenu,
   DrawingMenuState,

@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Milestone 1: foundation refactor, split into 5 modules (2026-06-26)
+- Reorganized `drawing/` into 5 subdirectories with clear responsibilities:
+  - `engine/DrawingEngine.ts` — thin orchestrator, re-exports public API
+  - `interaction/InteractionManager.ts` — state machine + document listeners (was PointerController)
+  - `renderer/CanvasRenderer.ts` — rAF render loop + dirty tracking (was DrawingRendererLoop)
+  - `hittest/HitTestEngine.ts` — candidate-based hit testing (was drawingHitTest)
+  - `tools/ToolRegistry.ts` + `tools/adapters.ts` — Tool adapter interface + 21 implementations
+- `DrawingLayer.tsx` now imports only from `engine/DrawingEngine.ts` — a single entry point.
+- Zero behavior changes. All algorithms identical. Existing bugs preserved.
+- Build / type-check / lint all pass.
+
 ### Changed — Tool adapter architecture: plugin-based drawing tools (2026-06-26)
 - `ToolAdapter.ts`: Interface with `render`, `hitTest`, `movePoints`, `boundingBox`,
   `minPoints`. Registry via `registerAdapter()` / `getAdapter()`. Shared helpers

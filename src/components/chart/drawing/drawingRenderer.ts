@@ -8,10 +8,10 @@
  * pixels so drawings stay pinned through zoom / pan / resize / timeframe change.
  */
 import type { Drawing, LineStyle } from "@/types";
-import { getAdapter } from "./ToolAdapter";
+import { getAdapter } from "./tools/ToolRegistry";
 
 // Import adapters to trigger registration.
-import "./adapters";
+import "./tools/adapters";
 
 export interface Projector {
   toX: (time: number) => number | null;

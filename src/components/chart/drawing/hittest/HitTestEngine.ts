@@ -8,10 +8,10 @@
  * hit candidate with target discrimination and pixel distance.
  */
 import type { Drawing, Point } from "@/types";
-import { getAdapter } from "./ToolAdapter";
+import { getAdapter } from "../tools/ToolRegistry";
 
 // Import adapters to trigger registration.
-import "./adapters";
+import "../tools/adapters";
 
 export type HitTestProjector = (v: number) => number | null;
 

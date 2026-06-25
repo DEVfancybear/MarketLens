@@ -12,8 +12,8 @@
  */
 import type { Drawing, Point as Pt, DrawingTool } from "@/types";
 import { FIB_LEVELS } from "@/types";
-import type { HitResult, HitTestProjector } from "./drawingHitTest";
-import type { Projector } from "./drawingRenderer";
+import type { HitResult, HitTestProjector } from "../hittest/HitTestEngine";
+import type { Projector } from "../drawingRenderer";
 import {
   type ToolAdapter,
   registerAdapter,
@@ -23,7 +23,7 @@ import {
   pointDist,
   distToSegment,
   distToRect,
-} from "./ToolAdapter";
+} from "./ToolRegistry";
 
 // ---- Canvas drawing helpers (minimised, shared) ----
 

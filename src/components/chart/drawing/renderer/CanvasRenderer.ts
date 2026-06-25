@@ -11,9 +11,9 @@
  * drawing canvas path.
  */
 import type { Drawing } from "@/types";
-import { renderDrawing, type Projector } from "./drawingRenderer";
+import { renderDrawing, type Projector } from "../drawingRenderer";
 import type { Point } from "@/types";
-import type { Machine } from "./interaction/PointerController";
+import type { Machine } from "../interaction/InteractionManager";
 
 export interface RenderLoopDeps {
   /** Ref to the overlay canvas. */
