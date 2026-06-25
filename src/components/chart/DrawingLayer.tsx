@@ -41,6 +41,24 @@ export function DrawingLayer() {
   }, [ctx]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Raw event listener to confirm canvas receives events at all.
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const onDown = (e: PointerEvent) => {
+      console.log("[DrawingLayer] RAW pointerdown on canvas", e.target);
+    };
+    const onMove = (e: PointerEvent) => {
+      // only log first move after a tool is selected, to avoid spam
+    };
+    c.addEventListener("pointerdown", onDown);
+    c.addEventListener("pointermove", onMove);
+    return () => {
+      c.removeEventListener("pointerdown", onDown);
+      c.removeEventListener("pointermove", onMove);
+    };
+  }, []);
+
   // Diagnostic: log when canvas mounts.
   useEffect(() => {
     if (canvasRef.current) {
