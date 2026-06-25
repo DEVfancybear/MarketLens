@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Debug — OANDA routing diagnostics (2026-06-25)
+- **Problem:** forex symbols still showed "--" with no indication why. The `subscribe()` method
+  in `MarketDataService` silently dropped subscriptions when no provider (OANDA/TwelveData) was
+  configured, producing zero logs or errors.
+- Added `console.debug`/`console.warn` logging to `MarketDataService` (constructor: key presence;
+  `route()`: no-provider warning; `subscribe()`: dropped-subscription warning) and `OandaProvider`
+  (`subscribe()`: symbol mapping; `connect()`: verification; `fetchPrices()`: URL, status, count).
+- `docs/OANDA_DEBUG_REPORT.md` — root cause analysis, trace, and verification steps.
+
 ### Added — OANDA forex/metals/indices provider (2026-06-25)
 - **Problem:** forex, metals, and indices showed "--" because they depended on TwelveData which
   required an unconfigured API key.

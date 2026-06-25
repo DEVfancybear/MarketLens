@@ -110,17 +110,21 @@ export class OandaProvider implements MarketDataServiceBinding {
     this.manualClose = false;
     this.emitStatus(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
 
+    console.debug("[OandaProvider] connect() verifying...");
     // Verify connectivity with a quick ping, then start the polling loop.
     this.verifyConnection()
       .then((ok) => {
         if (ok) {
+          console.debug("[OandaProvider] connection verified — starting poll");
           this.reconnectAttempt = 0;
           this.emitStatus("connected");
           this.startPolling();
+        } else {
+          console.warn("[OandaProvider] connection verification failed");
         }
       })
       .catch(() => {
-        // Handled inside verifyConnection → scheduleReconnect.
+        console.warn("[OandaProvider] connection verification threw");
       });
   }
 
@@ -138,11 +142,13 @@ export class OandaProvider implements MarketDataServiceBinding {
   // --------------------------------------------------------------- subscriptions
   subscribe(sub: MarketSubscription) {
     const oandaSymbol = this.toOanda(sub.symbol);
+    console.debug("[OandaProvider] subscribe", sub.symbol, "→", oandaSymbol);
     this.instruments.set(sub.symbol, sub);
 
     // If we're already polling, the next poll will pick up the new instrument.
     // If the poll loop has never started, connect() lazily.
     if (!this.pollTimer && !this.manualClose) {
+      console.debug("[OandaProvider] starting connect (first subscription)");
       this.connect();
     }
   }
@@ -178,14 +184,16 @@ export class OandaProvider implements MarketDataServiceBinding {
     if (this.instruments.size === 0) return;
     const instrumentList = [...this.instruments.keys()]
       .map((s) => this.toOanda(s))
-      .join("%2C"); // comma-encoded for URL
+      .join("%2C");
 
     const url = `${this.baseUrl}/accounts/${this.accountId}/pricing?instruments=${instrumentList}`;
+    console.debug("[OandaProvider] fetchPrices", url.substring(0, 80) + "...");
 
     try {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${this.apiKey}` },
       });
+      console.debug("[OandaProvider] fetchPrices status:", res.status);
       if (!res.ok) {
         if (res.status === 401) {
           this.emitStatus("error", "OANDA: Unauthorized — check API key");
@@ -198,12 +206,21 @@ export class OandaProvider implements MarketDataServiceBinding {
       }
       this.lastDataAt = Date.now();
       const data = (await res.json()) as OandaPricingResponse;
+      console.debug(
+        "[OandaProvider] received",
+        data.prices?.length ?? 0,
+        "prices",
+      );
       for (const price of data.prices ?? []) {
         const canonical = this.toCanonical(price.instrument);
         if (!this.instruments.has(canonical)) continue;
         this.emit(this.normalizePrice(canonical, price));
       }
     } catch (err) {
+      console.warn(
+        "[OandaProvider] fetchPrices error:",
+        (err as Error).message,
+      );
       this.handleFetchError(err as Error);
     }
   }

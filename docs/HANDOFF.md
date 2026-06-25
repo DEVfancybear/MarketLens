@@ -40,7 +40,11 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `DrawingLayer`/`DrawingToolbar`; expand to the full tool set; add a drawing context menu/hit-test/
   hotkeys — `AlertOverlay` is a good reference). See `NEXT_TASKS.md` §"Immediate tasks — Phase 3".
   (Optional cleanup: the legacy `Symbol`/`Quote` types in `types/market.ts` may be unused now.)
-- **OANDA Integration:** **COMPLETE ✅** — forex/metals/indices via OANDA v20 REST (pricing poll + historical), fallback to TwelveData. Fxcm/ICMarkets stubs in place.
+- **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
+  key presence, routing decisions, subscription attempts, and API call results to the console. Open
+  the browser console to see why forex symbols show "--". See `docs/OANDA_DEBUG_REPORT.md`.
+- **OANDA Integration:** **COMPLETE ✅** — forex/metals/indices via OANDA v20 REST (pricing poll +
+  historical), fallback to TwelveData. Fxcm/ICMarkets stubs in place.
 - **Runtime:** `npm run dev` → BTCUSDT chart + watchlist stream live from Binance (no key).
   OANDA (forex/metals/indices) needs `NEXT_PUBLIC_OANDA_API_KEY` + `NEXT_PUBLIC_OANDA_ACCOUNT_ID`
   in `.env.local`; TwelveData is the fallback for those symbols.

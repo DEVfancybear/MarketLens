@@ -83,7 +83,10 @@ export class MarketDataService implements MarketDataServiceBinding {
 
     // OANDA: the primary forex/metals/indices provider.
     const oandaKey = opts.oandaApiKey ?? process.env.NEXT_PUBLIC_OANDA_API_KEY;
+    const oandaAccountId =
+      opts.oandaAccountId ?? process.env.NEXT_PUBLIC_OANDA_ACCOUNT_ID;
     if (oandaKey) {
+      console.debug("[MarketDataService] OandaProvider ENABLED");
       this.oanda = new OandaProvider({
         onEvent,
         apiKey: oandaKey,
@@ -93,12 +96,18 @@ export class MarketDataService implements MarketDataServiceBinding {
       });
     } else {
       this.oanda = null;
+      console.debug(
+        "[MarketDataService] OandaProvider DISABLED — no NEXT_PUBLIC_OANDA_API_KEY",
+      );
     }
 
     // TwelveData: fallback for forex/metals/indices when OANDA is unavailable.
     const tdKey =
       opts.twelveDataApiKey ?? process.env.NEXT_PUBLIC_TWELVEDATA_API_KEY;
     if (tdKey) {
+      console.debug(
+        "[MarketDataService] TwelveDataProvider ENABLED (fallback)",
+      );
       this.twelve = new TwelveDataProvider({
         onEvent,
         apiKey: tdKey,
@@ -106,6 +115,7 @@ export class MarketDataService implements MarketDataServiceBinding {
       });
     } else {
       this.twelve = null;
+      console.debug("[MarketDataService] TwelveData DISABLED — no key");
     }
   }
 
@@ -119,11 +129,21 @@ export class MarketDataService implements MarketDataServiceBinding {
     if (meta.provider === "oanda") {
       if (this.oanda) return { provider: "oanda", binding: this.oanda };
       if (this.twelve) return { provider: "twelvedata", binding: this.twelve };
+      console.warn(
+        "[MarketDataService] No provider for",
+        symbol,
+        "— OANDA/TwelveData keys missing",
+      );
       return null;
     }
 
     if (meta.provider === "twelvedata") {
       if (this.twelve) return { provider: "twelvedata", binding: this.twelve };
+      console.warn(
+        "[MarketDataService] No provider for",
+        symbol,
+        "— TwelveData key missing",
+      );
       return null;
     }
 
@@ -145,7 +165,20 @@ export class MarketDataService implements MarketDataServiceBinding {
 
   subscribe(sub: MarketSubscription) {
     const routed = this.route(sub.symbol);
-    if (!routed) return;
+    if (!routed) {
+      console.warn(
+        "[MarketDataService] subscribe DROPPED for",
+        sub.symbol,
+        "— no route",
+      );
+      return;
+    }
+    console.debug(
+      "[MarketDataService] subscribe",
+      sub.symbol,
+      "→",
+      routed.provider,
+    );
     this.symbolsByProvider[routed.provider].add(sub.symbol);
     if (sub.timeframe) this.tfBySymbol.set(sub.symbol, sub.timeframe);
     routed.binding.subscribe(sub);
