@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 2: Market Data Types (2026-06-25)
+- `src/types/marketData.ts` — unified market-data model contract: `MarketQuote`,
+  `MarketCandle`, `MarketSymbol`, `ConnectionStatus` (+`ConnectionState`), `Timeframe`
+  (re-exported single-source from `market.ts`), plus supporting `MarketProvider`,
+  `AssetClass`, `MarketChannel`, `MarketSubscription`, `MarketDataEvent`,
+  `MarketDataListener`, `HistoryRequest`, and constants `SUPPORTED_TIMEFRAMES`,
+  `RECONNECT_BACKOFF_MS`, `CONNECTION_STATUS_META`, `subscriptionKey()`.
+- `src/types/index.ts` — re-export `./marketData` from the barrel (no `Timeframe` collision:
+  same symbol re-exported from `market`).
+- Types only; no runtime/UI wired yet, no mock data touched. Build/type/lint green.
+
 ### Added — 2026-06-25
 - `docs/`: `ARCHITECTURE.md`, `CURRENT_STATE.md`, `CURRENT_PROGRESS.md`, `NEXT_TASKS.md`,
   `HANDOFF.md`, `CHANGELOG.md` (Phase 1 Step 1 codebase analysis + handoff package).

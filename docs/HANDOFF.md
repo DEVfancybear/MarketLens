@@ -12,10 +12,11 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Last code commit:** `b00058e init project` (all source). The latest commit on top of it is a
-  docs/memory update (see `CHANGELOG.md`).
-- **Recommended next action:** start Phase 1 Step 2 — create `src/types/marketData.ts`, then
-  `marketDataStore`, then `BinanceProvider` (no API key) to prove the realtime path.
+- **Phase 1 progress:** Step 1 (analysis) ✅ · Step 2 (`src/types/marketData.ts`) ✅.
+- **Recommended next action:** Phase 1 **Step 3** — `src/stores/marketDataStore.ts` consuming the
+  Step-2 types; reconcile with `chartStore` (move symbol/timeframe/candles in, keep
+  drawings/indicators/tool in `chartStore`). Then `BinanceProvider` (no API key) to prove the
+  realtime path, then wire `PriceChart` to `series.update(lastBar)`.
 
 ---
 

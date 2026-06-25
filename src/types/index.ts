@@ -4,3 +4,4 @@ export * from './indicators';
 export * from './smc';
 export * from './trade';
 export * from './analytics';
+export * from './marketData';
