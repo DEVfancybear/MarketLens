@@ -12,13 +12,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Phase 1 progress:** Step 1 (analysis) ✅ · Step 2 (`src/types/marketData.ts`) ✅ · Step 3
-  (`src/store/marketDataStore.ts`) ✅ · Step 4 (`BinanceProvider.ts`) ✅.
-- **Recommended next action:** Phase 1 **Step 5** — `TwelveDataProvider.ts` (forex/metals/
-  indices) implementing the same `MarketDataServiceBinding`, API key from `.env.local` (never
-  commit). Then **Step 6** `MarketDataService` to own providers + route events into
-  `marketDataStore` via `attachMarketDataService`, **Step 7** `HistoricalDataService`, and
-  Steps 10–13 wire the watchlist/chart over (`series.update(lastBar)`) + `chartStore` reconcile.
+- **Phase 1 progress:** Steps 1–3 ✅ · Step 4 (`BinanceProvider.ts`) ✅ · Step 5
+  (`TwelveDataProvider.ts`) ✅.
+- **Recommended next action:** Phase 1 **Step 6** — `src/services/market-data/MarketDataService.ts`:
+  own both providers, route by `MarketSymbol.provider`/`assetClass`, set each provider's listener
+  to push `MarketDataEvent`s into `marketDataStore` (`updateQuote`/`updateCandle`/
+  `setConnectionStatus`), aggregate `connectionStatus`, and call `attachMarketDataService(...)`.
+  Then **Step 7** `HistoricalDataService` (REST), and Steps 10–13 wire watchlist/chart over
+  (`series.update(lastBar)`) + reconcile `chartStore`.
+- **Env:** TwelveData needs `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local` (see `.env.example`);
+  Binance needs no key. App still runs fully on mock data until Steps 10–13 wire the providers in.
 
 ---
 

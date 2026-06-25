@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 5: TwelveData Provider (2026-06-25)
+- `src/services/market-data/providers/TwelveDataProvider.ts` — single price WebSocket
+  (`wss://ws.twelvedata.com/v1/quotes/price`) for forex/metals/indices; one socket multiplexes
+  symbols via `subscribe`/`unsubscribe`. Emits unified `quote` events (TwelveData WS is
+  price-only; candles come from REST + CandleEngine). Backoff reconnect + auto-resubscribe;
+  implements `MarketDataServiceBinding`. Optional `symbolMap` (canonical ↔ "EUR/USD") with
+  reverse mapping on emitted events.
+- API key from `NEXT_PUBLIC_TWELVEDATA_API_KEY` (graceful error if missing). Added `.env.example`
+  template; hardened `.gitignore` (`.env`, `.env*.local`, keep `!.env.example`). No key committed.
+- Standalone until Step 6/10–13. Build/type/lint green.
+
 ### Added — Phase 1 Step 4: Binance Provider (2026-06-25)
 - `src/services/market-data/providers/BinanceProvider.ts` — single combined WebSocket to
   `wss://stream.binance.com:9443/ws`; dynamic `SUBSCRIBE`/`UNSUBSCRIBE` (one socket, never one

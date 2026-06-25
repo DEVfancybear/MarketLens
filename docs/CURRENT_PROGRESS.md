@@ -3,14 +3,15 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–2 (analysis + types) ✅ · Step 3
-  (marketDataStore) ✅ · **Step 4 (BinanceProvider) ✅** · **Next: Step 5 (TwelveData provider).**
+- **Phase 1 — Realtime Market Data Foundation.** Steps 1–3 ✅ · Step 4 (BinanceProvider) ✅ ·
+  **Step 5 (TwelveDataProvider) ✅** · **Next: Step 6 (MarketDataService).**
 
 ## Recently modified files
-- `src/services/market-data/providers/BinanceProvider.ts` (new — combined WS provider)
+- `src/services/market-data/providers/TwelveDataProvider.ts` (new — price WS provider)
+- `src/services/market-data/providers/BinanceProvider.ts` (combined WS provider, Step 4)
 - `src/store/marketDataStore.ts` (single source of truth, Step 3)
-- `src/types/marketData.ts` (unified market-data models, Step 2)
-- `src/types/index.ts` (barrel re-exports `./marketData`)
+- `src/types/marketData.ts` (unified models, Step 2) · `src/types/index.ts` (barrel)
+- `.env.example` (new), `.gitignore` (env hardening)
 - `docs/*` (progress/next-tasks/handoff/changelog updated)
 
 ## Build & quality status
