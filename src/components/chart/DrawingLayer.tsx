@@ -341,6 +341,15 @@ export function DrawingLayer() {
       ? "auto"
       : "none";
 
+  console.log("[DrawingLayer] render", {
+    tool: activeTool,
+    pointerEvents,
+    cursorStyle,
+    hasDrawings,
+    canvasW: canvasRef.current?.offsetWidth,
+    canvasH: canvasRef.current?.offsetHeight,
+  });
+
   return (
     <>
       <canvas
