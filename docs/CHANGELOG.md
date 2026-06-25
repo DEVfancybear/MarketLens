@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed — Drawing interaction lag and unreliability (2026-06-26)
+- Root cause: the native event listener effect depended on [ctx]. ctx is rebuilt
+  on every candle tick (version bump), causing all 5 event listeners to be torn down
+  and re-registered on every price update. This created lag, missed events during
+  re-registration windows, and stale closure captures.
+- Fix: Added ctxRef that holds the latest ctx via assignment-in-render.
+  toX, toY, fromEvent, and draw now use ctxRef.current with empty dep arrays
+  (stable forever). The native listener effect runs once on mount ([] deps).
+  No listener churn, no lag, instant drawing interaction.
+
 ### Fixed — DrawingLayer blocks chart zoom/pan regression (2026-06-26)
 - Root cause: the canvas overlay with `pointerEvents: "auto"` permanently intercepted
   all pointer and wheel events when drawings existed, blocking the LWC chart underneath.

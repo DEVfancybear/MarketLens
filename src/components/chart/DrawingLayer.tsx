@@ -81,33 +81,40 @@ export function DrawingLayer() {
     selectedDrawingId,
   };
 
+  // Stable ref to avoid effect re-registration on ctx.version bumps.
+  // ctx.chart and ctx.candleSeries are stable; only version/candles change.
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
+
   const toX = useCallback(
     (time: number) =>
-      ctx?.chart.timeScale().timeToCoordinate(time as UTCTimestamp) ?? null,
-    [ctx],
+      ctxRef.current?.chart
+        .timeScale()
+        .timeToCoordinate(time as UTCTimestamp) ?? null,
+    [],
   );
   const toY = useCallback(
-    (price: number) => ctx?.candleSeries.priceToCoordinate(price) ?? null,
-    [ctx],
+    (price: number) =>
+      ctxRef.current?.candleSeries.priceToCoordinate(price) ?? null,
+    [],
   );
-  const fromEvent = useCallback(
-    (e: PointerEvent): Point | null => {
-      if (!ctx || !canvasRef.current) return null;
-      const rect = canvasRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const time = ctx.chart.timeScale().coordinateToTime(x);
-      const price = ctx.candleSeries.coordinateToPrice(y);
-      if (time == null || price == null) return null;
-      return { time: time as number, price };
-    },
-    [ctx],
-  );
+  const fromEvent = useCallback((e: PointerEvent): Point | null => {
+    const c = ctxRef.current;
+    if (!c || !canvasRef.current) return null;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const time = c.chart.timeScale().coordinateToTime(x);
+    const price = c.candleSeries.coordinateToPrice(y);
+    if (time == null || price == null) return null;
+    return { time: time as number, price };
+  }, []);
 
   // ---- rendering ----
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !ctx) return;
+    const c = ctxRef.current;
+    if (!canvas || !c) return;
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     if (
@@ -156,7 +163,7 @@ export function DrawingLayer() {
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
       renderDrawing(g, d, projector, selected);
     }
-  }, [ctx, toX, toY]);
+  }, [toX, toY]);
 
   useEffect(() => {
     draw();
@@ -313,11 +320,10 @@ export function DrawingLayer() {
       canvas.removeEventListener("pointerleave", handleUp);
       canvas.removeEventListener("contextmenu", handleCtx);
     };
-    // toX/toY/ctx are stable via useCallback/useRef in their own scope.
-    // We intentionally only run this effect once (mount/unmount).
-    // The fromEvent closure references canvasRef which is a ref, not state.
+    // All closures (fromEvent, toX, toY, hitTest, store actions) are stable
+    // via ctxRef + empty-dep useCallbacks. Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx]);
+  }, []);
 
   // ---- keyboard ----
   useEffect(() => {
