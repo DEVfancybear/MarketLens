@@ -2,25 +2,27 @@
  * DrawingEngine — thin orchestrator for the drawing subsystem.
  *
  * Responsibilities:
- *   - Re-exports the interaction manager (usePointerController)
- *   - Re-exports the canvas render loop factory (createRenderLoop)
+ *   - Re-exports the drawing interaction manager
+ *   - Re-exports the canvas render loop factory
  *   - Re-exports the hit test function
+ *   - Re-exports the chart interaction manager
  *
  * DrawingLayer (React component) imports from here only.
  * All internal modules (tools, hittest, renderer, interaction) are
  * implementation details that DrawingLayer never imports directly.
  */
 
-// Interaction
+// Drawing interaction (state machine, pointer capture, creation, drag, context menu)
 export {
-  usePointerController,
-  type PointerController,
-  type PointerControllerOpts,
+  useDrawingInteractionManager,
+  type DrawingInteractionHandle,
+  type DrawingInteractionManagerOpts,
   type Machine,
   type InteractionState,
-} from "../interaction/InteractionManager";
+  INITIAL_MACHINE,
+} from "../interaction/DrawingInteractionManager";
 
-// Render loop
+// Render loop (rAF canvas rendering)
 export {
   createRenderLoop,
   type RenderLoop,
@@ -28,7 +30,11 @@ export {
 } from "../renderer/CanvasRenderer";
 
 // Hit testing
-export { hitTest, type HitResult, type HitTestProjector } from "../hittest/HitTestEngine";
+export {
+  hitTest,
+  type HitResult,
+  type HitTestProjector,
+} from "../hittest/HitTestEngine";
 
 // Tool registry (needed by older code paths)
 export { getAdapter, defaultMovePoints } from "../tools/ToolRegistry";

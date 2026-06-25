@@ -6,7 +6,7 @@ import { useChartStore } from "@/store/chartStore";
 import type { Drawing, Point } from "@/types";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import {
-  usePointerController,
+  useDrawingInteractionManager,
   createRenderLoop,
 } from "./drawing/engine/DrawingEngine";
 
@@ -27,7 +27,6 @@ export function DrawingLayer() {
   const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
 
-  // Stable refs.
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
@@ -57,7 +56,6 @@ export function DrawingLayer() {
     return { time: time as number, price };
   }, []);
 
-  // Stable snapshot for native listeners + render loop.
   const stateRef = useRef({
     drawings: [] as Drawing[],
     activeTool: "cursor" as Drawing["tool"],
@@ -73,17 +71,15 @@ export function DrawingLayer() {
     ctxReady: !!ctx,
   };
 
-  // ---- rAF render loop (no React re-renders for drawing frames) ----
   const renderLoopRef = useRef<ReturnType<typeof createRenderLoop> | null>(
     null,
   );
-
   const markDirtyRef = useRef<() => void>(() => {});
   const scheduleRedraw = useCallback(() => {
     markDirtyRef.current();
   }, []);
 
-  // ---- Pointer interaction -------
+  // ---- Drawing interaction ----
   const {
     cursorStyle,
     ctxMenu,
@@ -92,7 +88,7 @@ export function DrawingLayer() {
     machineRef,
     livePointsRef,
     drawingIdRef,
-  } = usePointerController({
+  } = useDrawingInteractionManager({
     canvasRef,
     fromEvent,
     toX,
@@ -105,10 +101,9 @@ export function DrawingLayer() {
     scheduleRedraw,
   });
 
-  // ---- Mount render loop ----
+  // ---- Render loop ----
   useEffect(() => {
     if (!ctx) return;
-
     const loop = createRenderLoop({
       canvasRef,
       toX,
@@ -128,7 +123,6 @@ export function DrawingLayer() {
         const chart = ctxRef.current?.chart;
         if (!chart) return () => {};
         chart.timeScale().subscribeVisibleLogicalRangeChange(() => cb());
-        // Also redraw on resize.
         const ro = new ResizeObserver(() => cb());
         const el = canvasRef.current?.parentElement;
         if (el) ro.observe(el);
@@ -137,24 +131,20 @@ export function DrawingLayer() {
         };
       },
     });
-
     renderLoopRef.current = loop;
     markDirtyRef.current = loop.markDirty;
-
     return () => {
       loop.destroy();
       renderLoopRef.current = null;
     };
-    // Run when ctx becomes available (chart mounts). Stable deps via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!ctx]);
 
-  // ---- keyboard ----
+  // ---- Keyboard ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-
       if ((e.key === "Delete" || e.key === "Backspace") && selectedDrawingId) {
         removeDrawing(selectedDrawingId);
       }
