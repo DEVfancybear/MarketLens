@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 8: Realtime Candle Engine (2026-06-25)
+- `src/services/market-data/CandleEngine.ts` — merges history + realtime into a forming bar
+  (TradingView-style). `applyTick` buckets price ticks into the current bar via `TF_SECONDS`
+  (O/H/L/C/V), emitting the previous bar as `closed` on rollover; `applyKline` passes through for
+  kline providers; `seedHistory` continues the last loaded bar; per-`symbol:timeframe` state.
+- `MarketDataService` wired to the engine: tick-only providers (TwelveData) now build candles
+  from `quote` ticks (seeded lazily from the store's history) and push `current`/`closed` bars via
+  `updateCandle`; kline providers (Binance) still push klines directly. Tracks active timeframe
+  per symbol (`tfBySymbol`) and resets engine state on unsubscribe.
+- Build/type/lint green. Realtime candle loop now closed for both provider kinds.
+
 ### Added — Phase 1 Step 7: Historical Data Service (2026-06-25)
 - `src/services/market-data/HistoricalDataService.ts` — REST history loader (500–5000 bars),
   routed by the symbol registry, normalized to unified `MarketCandle[]` (ascending, `closed:true`).

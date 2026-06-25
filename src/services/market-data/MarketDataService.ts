@@ -29,6 +29,14 @@ import {
 import { BinanceProvider } from './providers/BinanceProvider';
 import { TwelveDataProvider } from './providers/TwelveDataProvider';
 import { getMarketSymbol, twelveDataSymbolMap } from './symbols';
+import { CandleEngine } from './CandleEngine';
+
+/** Providers that stream price ticks only (no klines) → candles are built locally. */
+const TICK_ONLY: Record<MarketProvider, boolean> = {
+  binance: false,
+  twelvedata: true,
+  mock: false,
+};
 
 export interface MarketDataServiceOptions {
   twelveDataApiKey?: string;
@@ -44,6 +52,12 @@ export class MarketDataService implements MarketDataServiceBinding {
     twelvedata: new Set(),
     mock: new Set(),
   };
+
+  /** Builds candles from price ticks for tick-only providers. */
+  private readonly candleEngine = new CandleEngine();
+
+  /** Active kline timeframe per symbol (so ticks build the right bar). */
+  private readonly tfBySymbol = new Map<string, Timeframe>();
 
   /** Latest status reported by each provider. */
   private readonly statuses: Record<MarketProvider, ConnectionStatus> = {
@@ -86,6 +100,7 @@ export class MarketDataService implements MarketDataServiceBinding {
   subscribe(sub: MarketSubscription) {
     const { provider, binding } = this.route(sub.symbol);
     this.symbolsByProvider[provider].add(sub.symbol);
+    if (sub.timeframe) this.tfBySymbol.set(sub.symbol, sub.timeframe);
     binding.subscribe(sub);
   }
 
@@ -93,7 +108,13 @@ export class MarketDataService implements MarketDataServiceBinding {
     const { provider, binding } = this.route(symbol);
     // A timeframe-scoped unsubscribe is partial (drops the kline but keeps the
     // ticker), so the symbol stays "active" until a full unsubscribe.
-    if (!timeframe) this.symbolsByProvider[provider].delete(symbol);
+    if (!timeframe) {
+      this.symbolsByProvider[provider].delete(symbol);
+      this.tfBySymbol.delete(symbol);
+      this.candleEngine.reset(symbol);
+    } else {
+      this.candleEngine.reset(symbol, timeframe);
+    }
     binding.unsubscribe(symbol, timeframe);
   }
 
@@ -101,9 +122,29 @@ export class MarketDataService implements MarketDataServiceBinding {
   private handleEvent(event: MarketDataEvent) {
     const store = useMarketDataStore.getState();
     switch (event.type) {
-      case 'quote':
+      case 'quote': {
         store.updateQuote(event.quote);
+        // Tick-only providers (TwelveData) have no kline stream — build candles
+        // from price ticks via the CandleEngine and push them to the store.
+        if (TICK_ONLY[event.provider]) {
+          const tf = this.tfBySymbol.get(event.symbol);
+          if (tf) {
+            if (!this.candleEngine.getCurrent(event.symbol, tf)) {
+              this.candleEngine.seedHistory(event.symbol, tf, store.getCandles(event.symbol, tf));
+            }
+            const { current, closed } = this.candleEngine.applyTick(
+              event.symbol,
+              tf,
+              event.quote.last,
+              Math.floor(event.quote.timestamp / 1000),
+              event.quote.volume,
+            );
+            if (closed) store.updateCandle(event.symbol, tf, closed);
+            store.updateCandle(event.symbol, tf, current);
+          }
+        }
         break;
+      }
       case 'candle':
         store.updateCandle(event.symbol, event.timeframe, event.candle);
         break;

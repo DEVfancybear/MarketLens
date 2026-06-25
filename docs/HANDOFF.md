@@ -12,14 +12,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Phase 1 progress:** Steps 1–6 ✅ · Step 7 (`HistoricalDataService.ts`) ✅.
-- **Recommended next action:** Phase 1 **Step 8** — `src/services/market-data/CandleEngine.ts`:
-  merge historical candles with realtime. Binance emits klines (store `updateCandle` already
-  upserts the forming bar); TwelveData emits price ticks → bucket into the current bar using
-  `TF_SECONDS` and emit on bar close. Seed from `HistoricalDataService`, feed `marketDataStore`.
-  Then **Step 9** read-only hooks (`useMarketData`/`useCandles`/`useQuote`), and **Steps 10–13**
-  wire watchlist/chart over (`series.update(lastBar)`) + reconcile `chartStore`. Call
-  `getMarketDataService()` / `getHistoricalDataService()` at bootstrap to go live.
+- **Phase 1 progress:** Steps 1–7 ✅ · Step 8 (`CandleEngine.ts`, wired into `MarketDataService`)
+  ✅ — **the service layer is complete** (store → providers → service → history → candle engine).
+- **Recommended next action:** Phase 1 **Step 9** — first UI-facing step. Add read-only hooks
+  `src/hooks/useCandles.ts`, `useQuote.ts`, `useConnectionStatus.ts` that select from
+  `marketDataStore` (atomic selectors, no socket creation). Add a one-time bootstrap (e.g. in
+  `GlobalRuntime`) that calls `getMarketDataService()` + `getHistoricalDataService()` and
+  primes/subscribes the selected symbol. Then **Steps 10–13** swap the watchlist + chart from the
+  mock `useMarketData`/`chartStore` over to the store (`series.update(lastBar)`), and reconcile
+  `chartStore`. **Until Step 11, the app still renders mock data via the existing
+  `useMarketData.ts` — do not delete it yet.**
 - **Env:** TwelveData needs `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local` (see `.env.example`);
   Binance needs no key. App still runs fully on mock data until Steps 10–13 wire the providers in.
 
