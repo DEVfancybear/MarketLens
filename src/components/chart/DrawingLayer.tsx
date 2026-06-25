@@ -41,8 +41,25 @@ export function DrawingLayer() {
   }, [ctx]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Diagnostic: log when canvas mounts.
+  useEffect(() => {
+    if (canvasRef.current) {
+      const r = canvasRef.current.getBoundingClientRect();
+      console.debug("[DrawingLayer] canvas mounted", {
+        w: r.width,
+        h: r.height,
+        offsetH: canvasRef.current.offsetHeight,
+      });
+    }
+  }, []);
+
   const drawings = useChartStore((s) => s.drawings);
   const activeTool = useChartStore((s) => s.activeTool);
+
+  // Diagnostic: log every activeTool change.
+  useEffect(() => {
+    console.debug("[DrawingLayer] activeTool changed to:", activeTool);
+  }, [activeTool]);
   const drawColor = useChartStore((s) => s.drawColor);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const drawingsLocked = useChartStore((s) => s.drawingsLocked);
