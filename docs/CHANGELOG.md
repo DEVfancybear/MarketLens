@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 6: Market Data Service + Symbol Registry (2026-06-25)
+- `src/services/market-data/MarketDataService.ts` — owns BinanceProvider + TwelveDataProvider,
+  routes each symbol to the right provider (via the registry), fans normalized
+  `MarketDataEvent`s into `marketDataStore` (`updateQuote`/`updateCandle`/`setConnectionStatus`),
+  and aggregates a single `connectionStatus` (only providers with active subs count). Implements
+  `MarketDataServiceBinding`; `getMarketDataService()` lazily creates it and calls
+  `attachMarketDataService()`. Pure service, no UI.
+- `src/services/market-data/symbols.ts` — canonical symbol registry (config, not mock data):
+  `MARKET_SYMBOLS` with provider routing + `providerSymbol` (Binance "BTCUSDT", TwelveData
+  "XAU/USD"), `getMarketSymbol()`, `twelveDataSymbolMap()`.
+- Resolves the canonical↔provider symbol mapping flagged in Step 5. Not bootstrapped into the app
+  yet (Steps 10–13). Build/type/lint green.
+
 ### Added — Phase 1 Step 5: TwelveData Provider (2026-06-25)
 - `src/services/market-data/providers/TwelveDataProvider.ts` — single price WebSocket
   (`wss://ws.twelvedata.com/v1/quotes/price`) for forex/metals/indices; one socket multiplexes
