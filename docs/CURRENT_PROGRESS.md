@@ -40,6 +40,14 @@ _Last updated: 2026-06-25_
 - Persistence: localStorage (ui/drawings/indicators/watchlist/smc-settings) + IndexedDB
   (journal + screenshots).
 
+### Realtime market data (Phase 1 — Steps 1–11 done)
+- Unified types + single-source `marketDataStore`; Binance + TwelveData WS providers (one socket
+  each, backoff reconnect + auto-resubscribe); `MarketDataService` routing via a canonical symbol
+  registry; `HistoricalDataService` (REST 500–5000 bars, paginated); `CandleEngine` (tick→bar).
+- **Watchlist and chart stream live** (Binance crypto no-key; forex/metals/indices via TwelveData
+  key). Read-only hooks + bootstrap; chart uses incremental `series.update` for the forming bar.
+- Replay gate (`useVisibleCandles`) preserved over the realtime master series.
+
 ### Charting
 - Lightweight Charts candlesticks + volume, TradingView-style theme (background `#131722`,
   subtle grid, dashed crosshair with floating price/time labels, colored last-price line).
@@ -71,7 +79,10 @@ _Last updated: 2026-06-25_
   `drawingRenderer.ts` landed, but **not wired** into `DrawingLayer`/`DrawingToolbar`. Currently
   dead code; build green (additive). Finish in Phase 3 or revert before Phase 1 if undesired.
 
-## Not started
-- **Realtime market data (Phase 1)** — see `NEXT_TASKS.md`. Everything is currently mock.
+## Remaining in Phase 1
+- Steps 12–13 (symbol/timeframe switch hardening), 14 (connection-status badge), 16 (perf pass),
+  17 (remove the last mock — `services/marketData.ts`, used only by replay MTF). See `NEXT_TASKS.md`.
+
+## Not started (later phases)
 - Alert triggering (Phase 2), full drawing engine (Phase 3), indicator dialogs (Phase 5),
   MT5/broker integration + notifications (Phase 6).

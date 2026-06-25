@@ -32,10 +32,11 @@ reconnect, single market-data store, **no mock data**, no duplicate sockets.
 ### Cross-cutting cautions for Phase 1
 - Keep the **`useVisibleCandles()` replay gate** as the single visibility source — realtime
   must update the master series, and replay continues to slice it.
-- `tradeStore` consumes the latest visible candle (`useTradeRuntime`) — ensure live ticks flow
-  through the same path so pending orders/SL/TP still fill.
-- `replayEngine.mtfSnapshot` and `smcEngine` currently pull mock higher-TF history; repoint to
-  `HistoricalDataService`.
+- `tradeStore` consumes the latest visible candle (`useTradeRuntime`) — live ticks already flow
+  through `chartStore.candles`, so pending orders/SL/TP fill in realtime.
+- SMC now runs on the realtime `chartStore.candles` (via `useVisibleCandles`). Only
+  `replayEngine.mtfSnapshot` still pulls mock higher-TF history (`getHistorySync`) — repoint to
+  `HistoricalDataService` in Step 17.
 - **Secrets:** TwelveData/any keyed provider → `.env.local` (gitignored), never hardcode.
 
 ---
