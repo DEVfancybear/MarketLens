@@ -36,6 +36,8 @@ export interface Machine {
   dragTarget: "p1" | "p2" | "body" | null;
   dragStart: Point | null;
   dragOrig: Point[] | null;
+  /** Live point positions during drag (not yet committed to store). */
+  livePoints: Point[] | null;
 }
 
 export const INITIAL_MACHINE: Machine = {
@@ -46,6 +48,7 @@ export const INITIAL_MACHINE: Machine = {
   dragTarget: null,
   dragStart: null,
   dragOrig: null,
+  livePoints: null,
 };
 
 /** Tool → min points for creation. */
@@ -110,6 +113,10 @@ export interface PointerController {
   reset: () => void;
   /** Stale-closure-safe ref to current machine. */
   machineRef: React.RefObject<Machine | null>;
+  /** Live point positions during drag (updated per move, not in Zustand). */
+  livePointsRef: React.RefObject<Point[] | null>;
+  /** Drawing being dragged (committed to store on pointerup). */
+  drawingIdRef: React.RefObject<string | null>;
 }
 
 // ---- Hook ----
@@ -138,6 +145,11 @@ export function usePointerController(
 
   const scheduleRedrawRef = useRef(scheduleRedraw);
   scheduleRedrawRef.current = scheduleRedraw;
+
+  // Live drag state — written every move, read by render loop.
+  // Never committed to Zustand until pointerup.
+  const livePointsRef = useRef<Point[] | null>(null);
+  const drawingIdRef = useRef<string | null>(null);
 
   const pending: Point[] | null =
     machine.state === "Drawing" && machine.anchors.length > 0
@@ -267,12 +279,16 @@ export function usePointerController(
         const isHandle = hit.target === "p1" || hit.target === "p2";
         const dragTarget: Machine["dragTarget"] =
           hit.target === "p1" || hit.target === "p2" ? hit.target : "body";
+        const orig = [...hit.drawing.points.map((pt) => ({ ...pt }))];
+        drawingIdRef.current = hit.drawing.id;
+        livePointsRef.current = orig;
         transition({
           state: isHandle ? "ResizingHandle" : "MovingDrawing",
           drawingId: hit.drawing.id,
           dragTarget,
           dragStart: p,
-          dragOrig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
+          dragOrig: orig,
+          livePoints: orig,
         });
       }
     };
@@ -285,8 +301,8 @@ export function usePointerController(
       const p = fromEvent(e);
       if (!p) return;
 
+      // Compute new positions from original + delta.
       const next = m.dragOrig.map((pt) => ({ ...pt }));
-
       if (m.dragTarget === "p1") {
         next[0] = { time: p.time, price: p.price };
       } else if (m.dragTarget === "p2" && next.length > 1) {
@@ -302,12 +318,23 @@ export function usePointerController(
         }
       }
 
-      updateDrawing(m.drawingId!, { points: next });
+      // Store live positions in ref (NOT in Zustand).
+      livePointsRef.current = next;
+      // Schedule a redraw — render loop reads livePointsRef.
+      scheduleRedrawRef.current();
     };
 
     const handleUp = () => {
       const m = machineRef.current;
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
+        // Commit final position to Zustand.
+        if (livePointsRef.current && drawingIdRef.current) {
+          updateDrawing(drawingIdRef.current, {
+            points: livePointsRef.current,
+          });
+        }
+        livePointsRef.current = null;
+        drawingIdRef.current = null;
         reset();
       }
     };
@@ -367,6 +394,8 @@ export function usePointerController(
     transition,
     reset,
     machineRef,
+    livePointsRef,
+    drawingIdRef,
   };
 }
 

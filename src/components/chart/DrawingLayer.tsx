@@ -81,20 +81,27 @@ export function DrawingLayer() {
     markDirtyRef.current();
   }, []);
 
-  // ---- Pointer interaction ----
-  const { cursorStyle, ctxMenu, setCtxMenu, reset, machineRef } =
-    usePointerController({
-      canvasRef,
-      fromEvent,
-      toX,
-      toY,
-      getState: () => stateRef.current,
-      addDrawing,
-      updateDrawing,
-      selectDrawing,
-      setActiveTool,
-      scheduleRedraw,
-    });
+  // ---- Pointer interaction -------
+  const {
+    cursorStyle,
+    ctxMenu,
+    setCtxMenu,
+    reset,
+    machineRef,
+    livePointsRef,
+    drawingIdRef,
+  } = usePointerController({
+    canvasRef,
+    fromEvent,
+    toX,
+    toY,
+    getState: () => stateRef.current,
+    addDrawing,
+    updateDrawing,
+    selectDrawing,
+    setActiveTool,
+    scheduleRedraw,
+  });
 
   // ---- Mount render loop ----
   useEffect(() => {
@@ -112,6 +119,8 @@ export function DrawingLayer() {
         activeTool,
         machine: machineRef.current,
         chartReady: !!ctxRef.current,
+        livePoints: livePointsRef.current,
+        draggingId: drawingIdRef.current,
       }),
       onVersionChange: (cb: () => void) => {
         const chart = ctxRef.current?.chart;

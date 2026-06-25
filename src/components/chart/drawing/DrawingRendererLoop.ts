@@ -31,6 +31,10 @@ export interface RenderLoopDeps {
     activeTool: Drawing["tool"];
     machine: Machine | null;
     chartReady: boolean;
+    /** Live point positions during drag (not yet in store). */
+    livePoints: Point[] | null;
+    /** Drawing being dragged. */
+    draggingId: string | null;
   };
   /** Called when the chart viewport changes (version bump). */
   onVersionChange?: (cb: () => void) => () => void;
@@ -52,13 +56,40 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   let lastCanvasH = 0;
 
   // ---- Snapshot of last-rendered state (avoid redraws on identical data) ----
-  let lastDrawingsLen = -1;
+  let lastDrawingsHash = "";
   let lastSelectedId: string | null = null;
   let lastHidden = false;
   let lastMachineState = "";
   let lastMachineAnchorsLen = 0;
   let lastActiveTool = "";
   let lastDrawColor = "";
+  let lastLiveHash = "";
+
+  /** Quick content hash: drawing count + ids + point positions. */
+  function drawingsHash(ds: Drawing[]): string {
+    let h = String(ds.length);
+    for (let i = 0; i < ds.length; i++) {
+      const d = ds[i];
+      h += "|" + d.id + ":" + d.points.length;
+      for (let j = 0; j < d.points.length; j++) {
+        h +=
+          "," +
+          d.points[j].time.toFixed(0) +
+          "," +
+          d.points[j].price.toFixed(4);
+      }
+    }
+    return h;
+  }
+
+  function liveHash(pts: Point[] | null): string {
+    if (!pts) return "-";
+    let h = String(pts.length);
+    for (let j = 0; j < pts.length; j++) {
+      h += "," + pts[j].time.toFixed(0) + "," + pts[j].price.toFixed(4);
+    }
+    return h;
+  }
 
   // ---- Render function (pure, no deps) ----
   function render() {
@@ -74,39 +105,41 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     const cw = Math.round(rect.width * dpr);
     const ch = Math.round(rect.height * dpr);
 
-    // Resize canvas backing store if needed.
     if (canvas.width !== cw || canvas.height !== ch) {
       canvas.width = cw;
       canvas.height = ch;
     }
 
-    // Skip if nothing changed.
+    // Skip if nothing at all changed.
     const m = data.machine;
     const machineState = m?.state ?? "";
     const machineAnchorsLen = m?.anchors.length ?? 0;
+    const drawHash = drawingsHash(data.drawings);
+    const liveH = liveHash(data.livePoints);
 
     if (
-      data.drawings.length === lastDrawingsLen &&
+      drawHash === lastDrawingsHash &&
       data.selectedDrawingId === lastSelectedId &&
       data.drawingsHidden === lastHidden &&
       machineState === lastMachineState &&
       machineAnchorsLen === lastMachineAnchorsLen &&
       data.activeTool === lastActiveTool &&
       data.drawColor === lastDrawColor &&
+      liveH === lastLiveHash &&
       cw === lastCanvasW &&
       ch === lastCanvasH
     ) {
       return;
     }
 
-    // Update snapshot.
-    lastDrawingsLen = data.drawings.length;
+    lastDrawingsHash = drawHash;
     lastSelectedId = data.selectedDrawingId;
     lastHidden = data.drawingsHidden;
     lastMachineState = machineState;
     lastMachineAnchorsLen = machineAnchorsLen;
     lastActiveTool = data.activeTool;
     lastDrawColor = data.drawColor;
+    lastLiveHash = liveH;
     lastCanvasW = cw;
     lastCanvasH = ch;
 
@@ -115,7 +148,17 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
-    const visible = data.drawingsHidden ? [] : data.drawings;
+    // Build visible set, injecting live positions for the dragged drawing.
+    const visible: Drawing[] = data.drawingsHidden ? [] : [...data.drawings];
+    if (data.livePoints && data.draggingId) {
+      for (let i = 0; i < visible.length; i++) {
+        if (visible[i].id === data.draggingId) {
+          visible[i] = { ...visible[i], points: data.livePoints };
+          break;
+        }
+      }
+    }
+
     const projector: Projector = {
       toX,
       toY,

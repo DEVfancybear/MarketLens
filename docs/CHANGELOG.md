@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Optimize drag: in-memory positions, commit on pointerup (2026-06-26)
+- During drag (MovingDrawing/ResizingHandle), geometry is computed in-memory
+  via `livePointsRef` — no Zustand `updateDrawing` per move. Only
+  `scheduleRedraw` is called, minimizing React re-renders to state transitions
+  (start drag, end drag).
+- On pointerup: commit final `livePoints` to Zustand via a single
+  `updateDrawing` call.
+- Render loop reads `livePointsRef` + `draggingIdRef` from interaction state,
+  injects live positions into the drawn drawing array, and skips store drawings
+  for the dragged object.
+- Dirty detection upgraded from `.length` to content hash (`drawingsHash`,
+  `liveHash`) — catches point coordinate changes within same-length arrays.
+
 ### Changed — rAF render loop replaces React-driven drawing renders (2026-06-26)
 - Created `drawing/DrawingRendererLoop.ts`: requestAnimationFrame-based render
   loop with dirty-flag and change-detection snapshots. Only redraws when
