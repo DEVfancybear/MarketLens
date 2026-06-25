@@ -14,6 +14,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   (stable forever). The native listener effect runs once on mount ([] deps).
   No listener churn, no lag, instant drawing interaction.
 
+### Fixed — Native event listeners on container div (2026-06-26)
+- Previous fix attached `addEventListener("pointerdown", ...)` on the canvas
+  element, but the canvas had `pointerEvents: "none"` in cursor mode — meaning
+  pointer events never reached the canvas, making drawing selection impossible.
+  `pointerEvents: "none"` prevents the element from being the event target.
+- Fix: wrap canvas in a div that always receives pointer events. Canvas stays
+  `pointerEvents: "none"` (rendering only). Container div gets native listeners.
+  In cursor mode, events flow through the container to the chart (no blocking).
+  On drawing hit, `setPointerCapture` routes move/up through the container.
+  Drawing mode: `stopPropagation` + `setPointerCapture` on container.
+- Zero listener churn (empty deps). All closures stable via ctxRef + refs.
+
 ### Fixed — DrawingLayer blocks chart zoom/pan regression (2026-06-26)
 - Root cause: the canvas overlay with `pointerEvents: "auto"` permanently intercepted
   all pointer and wheel events when drawings existed, blocking the LWC chart underneath.

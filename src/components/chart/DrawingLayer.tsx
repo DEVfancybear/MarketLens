@@ -31,6 +31,7 @@ function minPoints(t: DrawingTool): number {
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const drawings = useChartStore((s) => s.drawings);
@@ -57,7 +58,7 @@ export function DrawingLayer() {
     orig: Point[];
   } | null>(null);
 
-  // Stable refs for the native event handlers (avoids stale-closure issues).
+  // Stable refs for native event handlers (no stale closures).
   const stateRef = useRef({
     drawings: [] as Drawing[],
     activeTool: "cursor" as DrawingTool,
@@ -65,11 +66,8 @@ export function DrawingLayer() {
     drag: null as typeof dragRef.current,
     drawColor: "#2962ff",
     drawingsLocked: false,
-    drawingsHidden: false,
-    selectedDrawingId: null as string | null,
   });
 
-  // Keep stateRef in sync every render (safe — used only inside event callbacks).
   stateRef.current = {
     drawings,
     activeTool,
@@ -77,12 +75,10 @@ export function DrawingLayer() {
     drag: dragRef.current,
     drawColor,
     drawingsLocked,
-    drawingsHidden,
-    selectedDrawingId,
   };
 
-  // Stable ref to avoid effect re-registration on ctx.version bumps.
   // ctx.chart and ctx.candleSeries are stable; only version/candles change.
+  // Use a ref to avoid triggering effect re-registration on every tick.
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
@@ -128,9 +124,7 @@ export function DrawingLayer() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
-    const visible = stateRef.current.drawingsHidden
-      ? []
-      : stateRef.current.drawings;
+    const visible = drawingsHidden ? [] : drawings;
     const projector: Projector = {
       toX,
       toY,
@@ -138,14 +132,14 @@ export function DrawingLayer() {
       height: rect.height,
     };
 
-    const pr = stateRef.current.pending;
+    const pr = pending;
     const all = pr
       ? [
           ...visible,
           {
             id: "__pending",
-            tool: stateRef.current.activeTool,
-            color: stateRef.current.drawColor,
+            tool: activeTool,
+            color: drawColor,
             lineWidth: 1.5,
             points: pr,
             visible: true,
@@ -157,31 +151,36 @@ export function DrawingLayer() {
 
     for (const d of sorted) {
       if (d.visible === false) continue;
-      const selected = d.id === stateRef.current.selectedDrawingId;
+      const selected = d.id === selectedDrawingId;
       g.strokeStyle = d.color;
       g.fillStyle = d.color;
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
       renderDrawing(g, d, projector, selected);
     }
-  }, [toX, toY]);
+  }, [
+    toX,
+    toY,
+    drawings,
+    pending,
+    activeTool,
+    drawColor,
+    selectedDrawingId,
+    drawingsHidden,
+  ]);
 
   useEffect(() => {
     draw();
   }, [draw, ctx?.version]);
 
-  // ---- native pointer event handlers ----
-  // These are attached to the canvas with addEventListener so they fire
-  // regardless of pointer-events CSS. The canvas itself stays pointer-events:none
-  // in cursor mode, so chart zoom/pan work. In drawing mode, pointer-events:auto
-  // is set directly on the canvas element via style.
+  // ---- native pointer events on CONTAINER div (always receives events) ----
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const el = containerRef.current;
+    if (!el) return;
 
     const handleDown = (e: PointerEvent) => {
       const s = stateRef.current;
       const p = fromEvent(e);
-      if (!p || !ctx) return;
+      if (!p || !ctxRef.current) return;
 
       if (s.activeTool === "cursor") {
         const hit = hitTest(s.drawings, p, toX, toY);
@@ -194,18 +193,16 @@ export function DrawingLayer() {
             startPrice: p.price,
             orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
           };
-          canvas.setPointerCapture(e.pointerId);
+          el.setPointerCapture(e.pointerId);
           e.stopPropagation();
-          e.preventDefault();
         }
-        // If no hit, the event propagates naturally to the chart → pan works.
+        // No hit → event passes through to chart (pan works).
         return;
       }
 
-      // ---- drawing mode ----
+      // Drawing mode.
       e.stopPropagation();
-      e.preventDefault();
-      canvas.setPointerCapture(e.pointerId);
+      el.setPointerCapture(e.pointerId);
 
       const needed = minPoints(s.activeTool);
 
@@ -235,7 +232,6 @@ export function DrawingLayer() {
         return;
       }
 
-      // Two-click tools.
       if (!s.pending) {
         setPending([p]);
       } else {
@@ -263,7 +259,6 @@ export function DrawingLayer() {
       const drag = dragRef.current;
       if (drag) {
         const next = drag.orig.map((pt) => ({ ...pt }));
-
         if (drag.target === "p1") {
           next[0] = { time: p.time, price: p.price };
         } else if (drag.target === "p2" && next.length > 1) {
@@ -278,16 +273,13 @@ export function DrawingLayer() {
             };
           }
         }
-
         updateDrawing(drag.id, { points: next });
-        stateRef.current.drag = dragRef.current; // keep in sync
       }
-      // In cursor mode with no drag: event propagates naturally to chart → pan works.
+      // No drag + cursor mode → event passes through to chart (pan works).
     };
 
     const handleUp = () => {
       dragRef.current = null;
-      stateRef.current.drag = null;
     };
 
     const handleCtx = (e: MouseEvent) => {
@@ -307,21 +299,20 @@ export function DrawingLayer() {
       }
     };
 
-    canvas.addEventListener("pointerdown", handleDown);
-    canvas.addEventListener("pointermove", handleMove);
-    canvas.addEventListener("pointerup", handleUp);
-    canvas.addEventListener("pointerleave", handleUp);
-    canvas.addEventListener("contextmenu", handleCtx);
+    el.addEventListener("pointerdown", handleDown);
+    el.addEventListener("pointermove", handleMove);
+    el.addEventListener("pointerup", handleUp);
+    el.addEventListener("pointerleave", handleUp);
+    el.addEventListener("contextmenu", handleCtx);
 
     return () => {
-      canvas.removeEventListener("pointerdown", handleDown);
-      canvas.removeEventListener("pointermove", handleMove);
-      canvas.removeEventListener("pointerup", handleUp);
-      canvas.removeEventListener("pointerleave", handleUp);
-      canvas.removeEventListener("contextmenu", handleCtx);
+      el.removeEventListener("pointerdown", handleDown);
+      el.removeEventListener("pointermove", handleMove);
+      el.removeEventListener("pointerup", handleUp);
+      el.removeEventListener("pointerleave", handleUp);
+      el.removeEventListener("contextmenu", handleCtx);
     };
-    // All closures (fromEvent, toX, toY, hitTest, store actions) are stable
-    // via ctxRef + empty-dep useCallbacks. Run once on mount.
+    // All callbacks are stable (empty-dep useCallbacks + refs). Run once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -347,33 +338,26 @@ export function DrawingLayer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedDrawingId, removeDrawing, setActiveTool, duplicateDrawing]);
 
-  const hasDrawings = drawings.length > 0;
   const drawingMode = activeTool !== "cursor";
 
-  // Cursor style for the canvas.
   let cursorStyle = "default";
   if (drawingMode) cursorStyle = "crosshair";
   if (dragRef.current) cursorStyle = "move";
 
-  // Canvas pointer-events strategy:
-  //   Drawing mode → "auto" (we need to intercept everything for creation)
-  //   Cursor mode  → "none" (events pass through to chart; native
-  //                   addEventListener handles drawing selection/drag)
-  // The native pointerdown listener (above) fires regardless of CSS,
-  // so drawing selection works even with pointer-events:none.
-  const pointerEvents = drawingMode || pending !== null ? "auto" : "none";
-
   return (
     <>
-      <canvas
-        ref={canvasRef}
+      {/* Container div: receives pointer events. Canvas inside: renders only. */}
+      <div
+        ref={containerRef}
         className="absolute inset-0 h-full w-full"
-        style={{
-          cursor: cursorStyle,
-          pointerEvents,
-          zIndex: 5,
-        }}
-      />
+        style={{ cursor: cursorStyle, zIndex: 5 }}
+      >
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 h-full w-full"
+          style={{ pointerEvents: "none", zIndex: 5 }}
+        />
+      </div>
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
       )}
