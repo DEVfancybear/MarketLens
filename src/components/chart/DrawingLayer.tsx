@@ -97,6 +97,13 @@ export function DrawingLayer() {
       const y = e.clientY - rect.top;
       const time = ctx.chart.timeScale().coordinateToTime(x);
       const price = ctx.candleSeries.coordinateToPrice(y);
+      // Brief trace (only on pointerDown, not every move).
+      console.log("[DrawingLayer] fromEvent", {
+        x: Math.round(x),
+        y: Math.round(y),
+        time,
+        price: price?.toFixed(4),
+      });
       if (time == null || price == null) return null;
       return { time: time as number, price };
     },
@@ -201,6 +208,12 @@ export function DrawingLayer() {
 
     // ---- tool creation ----
     const needed = minPoints(activeTool);
+    console.log("[DrawingLayer] tool creation", {
+      tool: activeTool,
+      needed,
+      price: p.price.toFixed(4),
+      pending: !!pending,
+    });
 
     // Text needs a prompt before placing.
     if (activeTool === "text") {
@@ -233,8 +246,10 @@ export function DrawingLayer() {
 
     // Two-click tools.
     if (!pending) {
+      console.log("[DrawingLayer] start preview, point 1 placed");
       setPending([p]);
     } else {
+      console.log("[DrawingLayer] complete drawing, point 2 placed");
       addDrawing({
         id: uid("dw"),
         tool: activeTool,
