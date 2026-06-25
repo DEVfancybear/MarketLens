@@ -25,9 +25,13 @@ export interface Alert {
   id: string;
   symbol: string;
   condition: AlertCondition;
-  /** Target price. (Kept as `price` for backward-compat with <AlertLines/>.) */
+  /** Target price. (Kept as `price` for backward-compat with the chart overlay.) */
   price: number;
   status: AlertStatus;
+  /** Disabled alerts render dimmed and are skipped by the engine. */
+  enabled: boolean;
+  /** Locked alerts cannot be dragged or deleted from the chart. */
+  locked: boolean;
   createdAt: number; // epoch seconds
   triggeredAt?: number; // epoch seconds
   triggerPrice?: number;
@@ -95,11 +99,20 @@ interface AlertState {
   triggeredAlerts: Alert[];
   history: AlertHistoryEntry[];
   settings: AlertSettings;
+  /** Chart-overlay selection (TradingView-style; only one at a time). Ephemeral. */
+  selectedAlertId: string | null;
+  /** Alert currently open in the edit dialog (or null). Ephemeral. */
+  editingAlertId: string | null;
 
   // CRUD
   createAlert: (input: CreateAlertInput) => Alert;
   updateAlert: (id: string, patch: Partial<Omit<Alert, 'id'>>) => void;
   deleteAlert: (id: string) => void;
+  duplicateAlert: (id: string) => Alert | undefined;
+
+  // chart-overlay selection / editing (not persisted)
+  selectAlert: (id: string | null) => void;
+  editAlert: (id: string | null) => void;
 
   // lifecycle
   triggerAlert: (id: string, triggerPrice: number) => Alert | undefined;
@@ -132,6 +145,8 @@ export const useAlertStore = create<AlertState>((set, get) => ({
   triggeredAlerts: [],
   history: [],
   settings: DEFAULT_SETTINGS,
+  selectedAlertId: null,
+  editingAlertId: null,
 
   createAlert: (input) => {
     const { settings } = get();
@@ -141,6 +156,8 @@ export const useAlertStore = create<AlertState>((set, get) => ({
       condition: input.condition,
       price: input.price,
       status: 'active',
+      enabled: true,
+      locked: false,
       createdAt: Date.now() / 1000,
       note: input.note,
       recurring: input.recurring ?? false,
@@ -164,9 +181,30 @@ export const useAlertStore = create<AlertState>((set, get) => ({
     set((s) => ({
       alerts: s.alerts.filter((a) => a.id !== id),
       triggeredAlerts: s.triggeredAlerts.filter((a) => a.id !== id),
+      selectedAlertId: s.selectedAlertId === id ? null : s.selectedAlertId,
+      editingAlertId: s.editingAlertId === id ? null : s.editingAlertId,
     }));
     persist(get);
   },
+
+  duplicateAlert: (id) => {
+    const src = get().alerts.find((a) => a.id === id) ?? get().triggeredAlerts.find((a) => a.id === id);
+    if (!src) return undefined;
+    const clone: Alert = {
+      ...src,
+      id: uid('alert'),
+      status: 'active',
+      createdAt: Date.now() / 1000,
+      triggeredAt: undefined,
+      triggerPrice: undefined,
+    };
+    set((s) => ({ alerts: [clone, ...s.alerts], selectedAlertId: clone.id }));
+    persist(get);
+    return clone;
+  },
+
+  selectAlert: (id) => set({ selectedAlertId: id }),
+  editAlert: (id) => set({ editingAlertId: id }),
 
   triggerAlert: (id, triggerPrice) => {
     const alert = get().alerts.find((a) => a.id === id);
@@ -232,9 +270,11 @@ export const useAlertStore = create<AlertState>((set, get) => ({
   hydrate: () => {
     const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
     if (!saved) return;
+    // Migrate alerts persisted before `enabled`/`locked` existed.
+    const migrate = (a: Alert): Alert => ({ ...a, enabled: a.enabled ?? true, locked: a.locked ?? false });
     set({
-      alerts: saved.alerts ?? [],
-      triggeredAlerts: saved.triggeredAlerts ?? [],
+      alerts: (saved.alerts ?? []).map(migrate),
+      triggeredAlerts: (saved.triggeredAlerts ?? []).map(migrate),
       history: saved.history ?? [],
       settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
     });

@@ -10,6 +10,7 @@ import { GlobalRuntime } from '@/components/layout/GlobalRuntime';
 import { Splash } from '@/components/layout/Splash';
 import { Toaster } from '@/components/notifications/Toaster';
 import { AlertCenter } from '@/components/alerts/AlertCenter';
+import { AlertEditDialog } from '@/components/alerts/AlertEditDialog';
 import { useStoreHydration } from '@/hooks/useStoreHydration';
 
 /**
@@ -33,6 +34,7 @@ export function Terminal() {
         bottom={<BottomPanel />}
       />
       <AlertCenter />
+      <AlertEditDialog />
       <Toaster />
     </>
   );

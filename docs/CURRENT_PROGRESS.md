@@ -11,8 +11,11 @@ _Last updated: 2026-06-25_
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
 
 ## Recently modified files
-- `src/store/alertStore.ts` (Phase 2 rewrite), `src/services/alertEngine.ts`,
-  `src/hooks/useAlertEngine.ts`, `src/components/alerts/AlertCenter.tsx`
+- `src/components/chart/AlertOverlay.tsx` (new — interactive alert lines), `AlertContextMenu.tsx`
+  (new), `src/components/alerts/AlertEditDialog.tsx` (new) — Phase 2.1 chart interactivity
+  (select/drag/delete/edit/right-click/long-press); `AlertLines.tsx` deleted
+- `src/store/alertStore.ts` (Phase 2 rewrite + 2.1 enabled/locked/selection),
+  `src/services/alertEngine.ts`, `src/hooks/useAlertEngine.ts`, `src/components/alerts/AlertCenter.tsx`
 - `src/store/toastStore.ts`, `src/components/notifications/Toaster.tsx`,
   `src/services/notifications/{notify,sound,browser}.ts`
 - `src/store/marketDataStore.ts` (refcounted subscriptions — `subRefs`)
@@ -106,8 +109,11 @@ _Last updated: 2026-06-25_
 - Notifications: in-app toast (`Toaster`), Web Audio chime, browser/system notification (permission
   from the Alert Center). Dispatch isolated in `notify.ts` (Phase 6 Firebase push seam).
 - Responsive **Alert Center** drawer (toolbar bell): create form, active / triggered / history,
-  notification settings. Alerts + history persisted to localStorage. Chart price lines + right-click
-  "Create Alert" (condition inferred from price). See `docs/ALERT_ARCHITECTURE.md`.
+  notification settings. Alerts + history persisted to localStorage.
+- **Interactive chart alerts (Phase 2.1):** alert lines are selectable, **draggable to change price**
+  (commits + persists on release), deletable, with hover grab-cursor, right-click / long-press menu
+  (Edit / Clone / Disable / Delete), an edit dialog, and Delete/Esc keyboard support. `enabled` +
+  `locked` per alert. See `docs/ALERT_ARCHITECTURE.md`.
 
 ## In progress (NOT shipped — see CURRENT_STATE.md §9)
 - **Left drawing-toolbar overhaul (Phase 3 scope):** types + store actions + pure

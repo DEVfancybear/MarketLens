@@ -4,6 +4,26 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 2.1: Interactive chart alerts (TradingView behaviour) (2026-06-25)
+- **Why alerts weren't interactive:** they were drawn with Lightweight Charts `series.createPriceLine`,
+  which receives no pointer events. Replaced with an interactive canvas overlay.
+- `src/components/chart/AlertOverlay.tsx` (new, replaces `AlertLines.tsx` — deleted) — canvas draws
+  alert lines + labels + handles; thin per-line DOM hit strips handle **hover (grab cursor),
+  click-to-select, drag-to-move, right-click + touch long-press**. The chart stays pannable
+  everywhere except on a line. Dragging moves the line locally (no lag) and commits the new price +
+  recomputed condition on release (persisted). Delete handle on the selected line.
+- `src/components/chart/AlertContextMenu.tsx` (new) — Edit · Clone · Disable/Enable · Delete.
+- `src/components/alerts/AlertEditDialog.tsx` (new) — edit condition / price / message / recurring /
+  enabled / per-alert sound + browser (resolves Phase 2 gaps **G5** no-edit-UI and **G1** non-editable
+  notification flags).
+- `src/store/alertStore.ts` — `Alert` gains `enabled` + `locked`; new `selectedAlertId` /
+  `editingAlertId` state and `selectAlert` / `duplicateAlert` / `editAlert` actions; `deleteAlert`
+  clears selection; `hydrate` migrates older persisted alerts. Selection/edit state is **not**
+  persisted; price/enabled/locked edits **are**.
+- `src/hooks/useAlertEngine.ts` — one-line guard: disabled alerts are skipped (engine otherwise
+  untouched).
+- Keyboard: **Delete** removes the selected alert, **Esc** deselects. Build/type/lint green.
+
 ### Docs — Phase 2 audit (2026-06-25)
 - `docs/PHASE2_REVIEW.md` — verification of alert creation / triggering / deletion / history / toast /
   browser notifications / duplicate prevention / mobile responsiveness against the actual code; all

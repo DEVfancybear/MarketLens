@@ -53,7 +53,25 @@ Binance / TwelveData WS  (one socket per provider — Phase 1)
 | Sound | `services/notifications/sound.ts` | Web Audio two-tone chime — no asset, lazy AudioContext, failure-safe. |
 | Browser | `services/notifications/browser.ts` | Notification API: support check, permission request, show. Permission requested **only** from the Alert Center. |
 | Alert Center UI | `components/alerts/AlertCenter.tsx` | Responsive slide-over: settings, create form, active / triggered / history. Toggled from the toolbar bell + `uiStore.alertCenterOpen`. |
-| Chart integration | `components/chart/AlertLines.tsx`, `ChartContextMenu.tsx` | Renders active-alert price lines; right-click "Create Alert" infers `crossUp`/`crossDown` from current price. |
+| Chart integration | `components/chart/AlertOverlay.tsx`, `AlertContextMenu.tsx`, `alerts/AlertEditDialog.tsx`, `ChartContextMenu.tsx` | **Interactive** alert lines (Phase 2.1): canvas draws the line/label/handles, thin DOM hit strips give hover/select/drag/right-click/long-press; edit dialog + alert context menu (Edit/Clone/Disable/Delete). Background right-click "Create Alert" infers `crossUp`/`crossDown` from current price. |
+
+### Interactive chart alerts (Phase 2.1)
+
+Lightweight Charts price lines (`createPriceLine`) are not pointer-interactive, so alert lines are
+rendered by `AlertOverlay` instead:
+
+- **Canvas** (pointer-events: none) draws each line, a right-side label chip, hover/selection styling
+  and drag handles; repaints on `ctx.version` (pan/zoom) and on selection/hover/drag changes.
+- **Per-line DOM hit strips** (pointer-events: auto, ~14px tall) handle interaction; the rest of the
+  chart stays pannable. Selection is `alertStore.selectedAlertId` (one at a time); click-outside and
+  **Esc** deselect, **Delete** removes the selected (unless `locked`).
+- **Drag** updates the line locally for lag-free movement, then commits `updateAlert({ price,
+  condition })` on release — the condition is recomputed by side (above/below or crossUp/crossDown,
+  family preserved). The engine reads the new price on the next tick.
+- **Touch:** strips use `touch-action: none`; drag works with touch and a ~500ms **long-press** opens
+  the context menu.
+- `Alert.enabled` (engine skips it, renders dimmed) and `Alert.locked` (no drag/delete) extend the
+  model; both persist. Selection/edit state does not.
 
 ## 4. Alert model
 
@@ -63,9 +81,11 @@ type AlertStatus = 'active' | 'triggered';
 
 interface Alert {
   id; symbol; condition; price /* target */; status;
+  enabled;              // disabled → engine skips, rendered dimmed (Phase 2.1)
+  locked;               // no drag/delete from the chart (Phase 2.1)
   createdAt; triggeredAt?; triggerPrice?; note?;
   recurring;            // re-arm vs once
-  sound; browser;       // per-alert channel flags
+  sound; browser;       // per-alert channel flags (editable via the edit dialog)
 }
 
 interface AlertHistoryEntry {

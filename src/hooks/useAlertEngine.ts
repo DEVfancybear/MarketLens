@@ -91,6 +91,7 @@ export function useAlertEngine() {
       }
 
       for (const alert of alerts) {
+        if (!alert.enabled) continue; // disabled alerts are not evaluated
         const curr = priceBySym.get(alert.symbol);
         if (curr === undefined) continue;
         const prev = prevPriceRef.current.get(alert.symbol);
