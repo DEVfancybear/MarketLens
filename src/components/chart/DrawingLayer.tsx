@@ -1,12 +1,12 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
 import { useChartStore } from "@/store/chartStore";
 import type { Drawing, Point } from "@/types";
-import { renderDrawing, type Projector } from "./drawing/drawingRenderer";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { usePointerController } from "./drawing/interaction/PointerController";
+import { createRenderLoop } from "./drawing/DrawingRendererLoop";
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
@@ -25,7 +25,7 @@ export function DrawingLayer() {
   const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
 
-  // Stable ref to avoid stale ctx in closures.
+  // Stable refs.
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
@@ -42,7 +42,6 @@ export function DrawingLayer() {
     [],
   );
 
-  /** Convert a PointerEvent to chart (time, price) coordinates. */
   const fromEvent = useCallback((e: PointerEvent): Point | null => {
     const c = ctxRef.current;
     const canvas = canvasRef.current;
@@ -56,7 +55,7 @@ export function DrawingLayer() {
     return { time: time as number, price };
   }, []);
 
-  // Stable state snapshot for PointerController's native listeners.
+  // Stable snapshot for native listeners + render loop.
   const stateRef = useRef({
     drawings: [] as Drawing[],
     activeTool: "cursor" as Drawing["tool"],
@@ -72,7 +71,17 @@ export function DrawingLayer() {
     ctxReady: !!ctx,
   };
 
-  // ---- Pointer interaction (extracted) ----
+  // ---- rAF render loop (no React re-renders for drawing frames) ----
+  const renderLoopRef = useRef<ReturnType<typeof createRenderLoop> | null>(
+    null,
+  );
+
+  const markDirtyRef = useRef<() => void>(() => {});
+  const scheduleRedraw = useCallback(() => {
+    markDirtyRef.current();
+  }, []);
+
+  // ---- Pointer interaction ----
   const { cursorStyle, ctxMenu, setCtxMenu, reset, machineRef } =
     usePointerController({
       canvasRef,
@@ -84,76 +93,50 @@ export function DrawingLayer() {
       updateDrawing,
       selectDrawing,
       setActiveTool,
+      scheduleRedraw,
     });
 
-  // ---- rendering ----
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const c = ctxRef.current;
-    if (!canvas || !c) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    if (
-      canvas.width !== rect.width * dpr ||
-      canvas.height !== rect.height * dpr
-    ) {
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-    }
-    const g = canvas.getContext("2d")!;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, rect.width, rect.height);
+  // ---- Mount render loop ----
+  useEffect(() => {
+    if (!ctx) return;
 
-    const visible = drawingsHidden ? [] : drawings;
-    const projector: Projector = {
+    const loop = createRenderLoop({
+      canvasRef,
       toX,
       toY,
-      width: rect.width,
-      height: rect.height,
+      getData: () => ({
+        drawings: stateRef.current.drawings,
+        drawingsHidden,
+        selectedDrawingId,
+        drawColor,
+        activeTool,
+        machine: machineRef.current,
+        chartReady: !!ctxRef.current,
+      }),
+      onVersionChange: (cb: () => void) => {
+        const chart = ctxRef.current?.chart;
+        if (!chart) return () => {};
+        chart.timeScale().subscribeVisibleLogicalRangeChange(() => cb());
+        // Also redraw on resize.
+        const ro = new ResizeObserver(() => cb());
+        const el = canvasRef.current?.parentElement;
+        if (el) ro.observe(el);
+        return () => {
+          ro.disconnect();
+        };
+      },
+    });
+
+    renderLoopRef.current = loop;
+    markDirtyRef.current = loop.markDirty;
+
+    return () => {
+      loop.destroy();
+      renderLoopRef.current = null;
     };
-
-    const m = machineRef.current;
-    const pr =
-      m?.state === "Drawing" && m.anchors.length > 0 ? m.anchors : null;
-    const tool = m?.state === "Drawing" ? (m.drawingTool ?? activeTool) : null;
-    const all =
-      pr && tool
-        ? [
-            ...visible,
-            {
-              id: "__pending",
-              tool,
-              color: drawColor,
-              lineWidth: 1.5,
-              points: pr,
-              visible: true,
-            } as Drawing,
-          ]
-        : visible;
-
-    const sorted = [...all].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
-    for (const d of sorted) {
-      if (d.visible === false) continue;
-      const selected = d.id === selectedDrawingId;
-      g.strokeStyle = d.color;
-      g.fillStyle = d.color;
-      g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
-      renderDrawing(g, d, projector, selected);
-    }
-  }, [
-    toX,
-    toY,
-    drawings,
-    drawingsHidden,
-    selectedDrawingId,
-    activeTool,
-    drawColor,
-    machineRef,
-  ]);
-
-  useEffect(() => {
-    draw();
-  }, [draw, ctx?.version]);
+    // Run when ctx becomes available (chart mounts). Stable deps via refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!ctx]);
 
   // ---- keyboard ----
   useEffect(() => {

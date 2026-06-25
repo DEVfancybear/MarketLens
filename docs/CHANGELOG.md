@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — rAF render loop replaces React-driven drawing renders (2026-06-26)
+- Created `drawing/DrawingRendererLoop.ts`: requestAnimationFrame-based render
+  loop with dirty-flag and change-detection snapshots. Only redraws when
+  drawings, selection, interaction state, or canvas size actually change.
+  Subscribes to chart `visibleLogicalRangeChange` + `ResizeObserver` for
+  viewport-driven redraws.
+- `DrawingLayer.tsx` replaced `useCallback(draw)` + `useEffect(draw, version)`
+  with `createRenderLoop()`. Removed React re-renders from the drawing render
+  path entirely. `PointerController` gained `scheduleRedraw` callback wired
+  to `loop.markDirty()`.
+- Zustand store subscriptions unchanged. Drawing data flows through stable
+  `stateRef` snapshot — no per-tick re-render churn.
+
 ### Changed — Extract PointerController from DrawingLayer (2026-06-26)
 - Extracted all pointer interaction logic (state machine, document listeners,
   pointerdown/move/up, setPointerCapture, hit-testing, context menu, cursor

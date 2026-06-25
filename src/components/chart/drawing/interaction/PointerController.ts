@@ -89,6 +89,8 @@ export interface PointerControllerOpts {
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
   selectDrawing: (id: string | null) => void;
   setActiveTool: (t: DrawingTool) => void;
+  /** Called when the controller modifies state that needs a redraw. */
+  scheduleRedraw: () => void;
 }
 
 // ---- Return type ----
@@ -125,6 +127,7 @@ export function usePointerController(
     updateDrawing,
     selectDrawing,
     setActiveTool,
+    scheduleRedraw,
   } = opts;
 
   const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
@@ -133,6 +136,9 @@ export function usePointerController(
   const machineRef = useRef<Machine>(machine);
   machineRef.current = machine;
 
+  const scheduleRedrawRef = useRef(scheduleRedraw);
+  scheduleRedrawRef.current = scheduleRedraw;
+
   const pending: Point[] | null =
     machine.state === "Drawing" && machine.anchors.length > 0
       ? machine.anchors
@@ -140,9 +146,13 @@ export function usePointerController(
 
   const transition = useCallback((next: Partial<Machine>) => {
     setMachine((prev) => ({ ...prev, ...next }));
+    scheduleRedrawRef.current();
   }, []);
 
-  const reset = useCallback(() => setMachine(INITIAL_MACHINE), []);
+  const reset = useCallback(() => {
+    setMachine(INITIAL_MACHINE);
+    scheduleRedrawRef.current();
+  }, []);
 
   // ---- Drawing mode: document-level listener ----
   useEffect(() => {
@@ -205,7 +215,11 @@ export function usePointerController(
         });
         reset();
       } else {
-        transition({ state: "Drawing", anchors: [p], drawingTool: cur.activeTool });
+        transition({
+          state: "Drawing",
+          anchors: [p],
+          drawingTool: cur.activeTool,
+        });
       }
     };
 
@@ -340,10 +354,7 @@ export function usePointerController(
   const drawingMode = getState().activeTool !== "cursor";
   let cursorStyle = "default";
   if (drawingMode) cursorStyle = "crosshair";
-  if (
-    machine.state === "MovingDrawing" ||
-    machine.state === "ResizingHandle"
-  ) {
+  if (machine.state === "MovingDrawing" || machine.state === "ResizingHandle") {
     cursorStyle = "move";
   }
 
