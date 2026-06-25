@@ -16,8 +16,15 @@ export type DrawingTool =
   | "crossLine"
   | "infoLine"
   | "channel"
-  // shapes
+  // shape tools
   | "rectangle"
+  | "rotatedRect"
+  | "circle"
+  | "ellipse"
+  | "triangle"
+  | "polyline"
+  | "curve"
+  | "path"
   | "fib"
   // annotations
   | "text"
@@ -40,6 +47,13 @@ export const DRAWING_TOOLS: DrawingTool[] = [
   "infoLine",
   "channel",
   "rectangle",
+  "rotatedRect",
+  "circle",
+  "ellipse",
+  "triangle",
+  "polyline",
+  "curve",
+  "path",
   "fib",
   "text",
   "emoji",
@@ -65,6 +79,10 @@ export interface BaseDrawing {
   text?: string;
   /** Line style: solid (default), dashed, or dotted. */
   lineStyle?: LineStyle;
+  /** Fill color for shapes (rectangle, circle, etc.). */
+  fillColor?: string;
+  /** Fill opacity (0–1). */
+  opacity?: number;
   /** Stacking order; higher renders on top. */
   zIndex?: number;
   locked?: boolean;

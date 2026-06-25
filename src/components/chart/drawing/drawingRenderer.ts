@@ -224,25 +224,42 @@ export function renderDrawing(
       return;
     }
     case "rectangle": {
-      g.save();
-      g.globalAlpha = 0.12;
-      g.fillRect(
-        Math.min(x1, x2),
-        Math.min(y1, y2),
-        Math.abs(x2 - x1),
-        Math.abs(y2 - y1),
-      );
-      g.restore();
-      g.strokeRect(
-        Math.min(x1, x2),
-        Math.min(y1, y2),
-        Math.abs(x2 - x1),
-        Math.abs(y2 - y1),
-      );
-      if (selected) {
-        handle(g, x1, y1, d.color);
-        handle(g, x2, y2, d.color);
+      renderRect(g, x1, y1, x2, y2, d, selected);
+      return;
+    }
+    case "rotatedRect": {
+      renderRotatedRect(g, pts, toX, toY, d, selected);
+      return;
+    }
+    case "circle": {
+      const r = circleRadius(pts, toX, toY);
+      if (r == null) return;
+      renderCircle(g, x1, y1, r, d, selected);
+      return;
+    }
+    case "ellipse": {
+      renderEllipse(g, pts, toX, toY, d, selected);
+      return;
+    }
+    case "triangle": {
+      renderPolygon(g, pts.slice(0, 3), toX, toY, d, selected);
+      return;
+    }
+    case "polyline":
+    case "path": {
+      if (pts.length < 2) {
+        renderSinglePoint(g, pts[0], toX, toY, d, selected);
+        return;
       }
+      renderPolyline(g, pts, toX, toY, d, selected, d.tool === "path");
+      return;
+    }
+    case "curve": {
+      if (pts.length < 3) {
+        renderSinglePoint(g, pts[0], toX, toY, d, selected);
+        return;
+      }
+      renderCurve(g, pts, toX, toY, d, selected);
       return;
     }
     case "channel": {
@@ -299,6 +316,239 @@ export function renderDrawing(
       return;
     }
   }
+}
+
+// ---- shape renderers ----
+
+function renderRect(
+  g: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  d: Drawing,
+  selected: boolean,
+) {
+  const ox = Math.min(x1, x2),
+    oy = Math.min(y1, y2);
+  const w = Math.abs(x2 - x1),
+    h = Math.abs(y2 - y1);
+  if (d.fillColor) {
+    g.save();
+    g.globalAlpha = d.opacity ?? 0.15;
+    g.fillStyle = d.fillColor;
+    g.fillRect(ox, oy, w, h);
+    g.restore();
+  } else {
+    g.save();
+    g.globalAlpha = 0.12;
+    g.fillStyle = d.color;
+    g.fillRect(ox, oy, w, h);
+    g.restore();
+  }
+  g.strokeRect(ox, oy, w, h);
+  if (selected) {
+    handle(g, x1, y1, d.color);
+    handle(g, x2, y2, d.color);
+  }
+}
+
+function renderRotatedRect(
+  g: CanvasRenderingContext2D,
+  pts: Point[],
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+  d: Drawing,
+  selected: boolean,
+) {
+  if (pts.length < 3) return;
+  const corners = pts.slice(0, 4).map((p) => project(p, toX, toY));
+  if (corners.some((c) => !c)) return;
+  const [a, b, c, e] = corners;
+  g.beginPath();
+  g.moveTo(a!.x, a!.y);
+  g.lineTo(b!.x, b!.y);
+  g.lineTo(c!.x, c!.y);
+  g.lineTo(e!.x, e!.y);
+  g.closePath();
+  if (d.fillColor) {
+    g.save();
+    g.globalAlpha = d.opacity ?? 0.15;
+    g.fillStyle = d.fillColor;
+    g.fill();
+    g.restore();
+  } else {
+    g.save();
+    g.globalAlpha = 0.12;
+    g.fillStyle = d.color;
+    g.fill();
+    g.restore();
+  }
+  g.stroke();
+  if (selected) corners.forEach((c2) => handle(g, c2!.x, c2!.y, d.color));
+}
+
+function circleRadius(
+  pts: Point[],
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+): number | null {
+  if (pts.length < 2) return 20; // default radius if single point
+  const c = project(pts[0], toX, toY);
+  const e = project(pts[1], toX, toY);
+  if (!c || !e) return null;
+  return Math.hypot(e.x - c.x, e.y - c.y);
+}
+
+function renderCircle(
+  g: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  d: Drawing,
+  selected: boolean,
+) {
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  if (d.fillColor) {
+    g.save();
+    g.globalAlpha = d.opacity ?? 0.15;
+    g.fillStyle = d.fillColor;
+    g.fill();
+    g.restore();
+  }
+  g.stroke();
+  if (selected) {
+    handle(g, cx, cy, d.color);
+    handle(g, cx + r, cy, d.color);
+  }
+}
+
+function renderEllipse(
+  g: CanvasRenderingContext2D,
+  pts: Point[],
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+  d: Drawing,
+  selected: boolean,
+) {
+  if (pts.length < 3) return;
+  const c = project(pts[0], toX, toY);
+  const rxPt = project(pts[1], toX, toY);
+  const ryPt = project(pts[2], toX, toY);
+  if (!c || !rxPt || !ryPt) return;
+  const rx = Math.abs(rxPt.x - c.x);
+  const ry = Math.abs(ryPt.y - c.y);
+  g.save();
+  g.beginPath();
+  g.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+  if (d.fillColor) {
+    g.globalAlpha = d.opacity ?? 0.15;
+    g.fillStyle = d.fillColor;
+    g.fill();
+  }
+  g.restore();
+  g.stroke();
+  if (selected) {
+    handle(g, c.x, c.y, d.color);
+    handle(g, rxPt.x, ryPt.y, d.color);
+  }
+}
+
+function renderPolygon(
+  g: CanvasRenderingContext2D,
+  pts: Point[],
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+  d: Drawing,
+  selected: boolean,
+) {
+  const proj = pts.map((p) => project(p, toX, toY));
+  if (proj.some((p2) => !p2)) return;
+  g.beginPath();
+  g.moveTo(proj[0]!.x, proj[0]!.y);
+  for (let i = 1; i < proj.length; i++) g.lineTo(proj[i]!.x, proj[i]!.y);
+  g.closePath();
+  if (d.fillColor) {
+    g.save();
+    g.globalAlpha = d.opacity ?? 0.15;
+    g.fillStyle = d.fillColor;
+    g.fill();
+    g.restore();
+  }
+  g.stroke();
+  if (selected) proj.forEach((p2) => handle(g, p2!.x, p2!.y, d.color));
+}
+
+function renderPolyline(
+  g: CanvasRenderingContext2D,
+  pts: Point[],
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+  d: Drawing,
+  selected: boolean,
+  closed: boolean,
+) {
+  const proj = pts.map((p) => project(p, toX, toY));
+  if (proj.length < 2) return;
+  g.beginPath();
+  g.moveTo(proj[0]!.x, proj[0]!.y);
+  for (let i = 1; i < proj.length; i++) {
+    const p2 = proj[i];
+    if (p2) g.lineTo(p2.x, p2.y);
+  }
+  if (closed) g.closePath();
+  if (closed && d.fillColor) {
+    g.save();
+    g.globalAlpha = d.opacity ?? 0.15;
+    g.fillStyle = d.fillColor;
+    g.fill();
+    g.restore();
+  }
+  g.stroke();
+  if (selected)
+    proj.forEach((p2) => {
+      if (p2) handle(g, p2.x, p2.y, d.color);
+    });
+}
+
+function renderCurve(
+  g: CanvasRenderingContext2D,
+  pts: Point[],
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+  d: Drawing,
+  selected: boolean,
+) {
+  const proj = pts.map((p) => project(p, toX, toY));
+  const valid = proj.filter((p2): p2 is { x: number; y: number } => p2 != null);
+  if (valid.length < 3) return;
+  g.beginPath();
+  g.moveTo(valid[0].x, valid[0].y);
+  // Bezier curve through points using midpoints as control points.
+  for (let i = 1; i < valid.length - 1; i++) {
+    const cp1x = (valid[i].x + valid[i - 1].x) / 2;
+    const cp1y = (valid[i].y + valid[i - 1].y) / 2;
+    const cp2x = (valid[i].x + valid[i + 1].x) / 2;
+    const cp2y = (valid[i].y + valid[i + 1].y) / 2;
+    g.quadraticCurveTo(valid[i].x, valid[i].y, cp2x, cp2y);
+  }
+  g.stroke();
+  if (selected) valid.forEach((p2) => handle(g, p2.x, p2.y, d.color));
+}
+
+function renderSinglePoint(
+  g: CanvasRenderingContext2D,
+  pt: Point,
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+  d: Drawing,
+  selected: boolean,
+) {
+  if (!selected) return;
+  const x = toX(pt.time),
+    y = toY(pt.price);
+  if (x != null && y != null) handle(g, x, y, d.color);
 }
 
 // ---- info line renderer ----

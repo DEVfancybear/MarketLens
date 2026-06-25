@@ -10,8 +10,8 @@ API key; forex/metals/indices via OANDA with a bearer token, or TwelveData as fa
 crosses), toast + browser + sound notifications, a responsive Alert Center, and **interactive chart
 alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press).
 **Phase 3 (TradingView UI Parity) is COMPLETE** — 95% visual parity.
-**Phase 4.2 (Trend Line Suite) is COMPLETE** — 8 tools + context menu + line styles.
-The next milestone is **Phase 4.3 — Advanced Drawing Features**.
+**Phase 4.3 (Shape Tools Suite) is COMPLETE** — 8 shapes + fill system + supply/demand zones.
+The next milestone is **Phase 4.4 — Fibonacci Suite**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.

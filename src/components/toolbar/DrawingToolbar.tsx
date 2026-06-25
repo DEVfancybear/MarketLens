@@ -9,6 +9,10 @@ import {
   Crosshair,
   Ruler,
   Square,
+  Circle,
+  Triangle,
+  PenTool,
+  Spline,
   Type,
   GitFork,
   Trash2,
@@ -18,7 +22,6 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useChartStore } from "@/store/chartStore";
 import type { DrawingTool } from "@/types";
 
-/** Toolbar tools with visual category separators. */
 const TOOL_CATEGORIES: {
   category?: string;
   items: { tool: DrawingTool; icon: React.ReactNode; label: string }[];
@@ -62,9 +65,23 @@ const TOOL_CATEGORIES: {
     category: "SHAPES",
     items: [
       { tool: "rectangle", icon: <Square size={18} />, label: "Rectangle" },
+      {
+        tool: "rotatedRect",
+        icon: <Square size={18} />,
+        label: "Rotated rect",
+      },
+      { tool: "circle", icon: <Circle size={18} />, label: "Circle" },
+      { tool: "ellipse", icon: <Circle size={18} />, label: "Ellipse" },
+      { tool: "triangle", icon: <Triangle size={18} />, label: "Triangle" },
+      { tool: "polyline", icon: <PenTool size={18} />, label: "Polyline" },
+      { tool: "curve", icon: <Spline size={18} />, label: "Curve" },
+      { tool: "path", icon: <PenTool size={18} />, label: "Path" },
       { tool: "fib", icon: <GitFork size={18} />, label: "Fibonacci" },
-      { tool: "text", icon: <Type size={18} />, label: "Text" },
     ],
+  },
+  {
+    category: "ANNOTATIONS",
+    items: [{ tool: "text", icon: <Type size={18} />, label: "Text" }],
   },
 ];
 

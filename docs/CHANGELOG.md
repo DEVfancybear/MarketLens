@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 4.3: Shape tools suite + fill system (2026-06-25)
+- 8 TradingView-style shape tools: rectangle, rotatedRect, circle, ellipse, triangle,
+  polyline, curve, path. All support create/select/move/delete/persist.
+- Fill system: Drawing.fillColor (custom fill color) + Drawing.opacity (0–1). Default
+  behavior preserved (stroke color at 12% opacity when fillColor is unset).
+- Rectangle supports supply/demand zone workflow with custom fill colors and opacity.
+- Zero core engine changes — creation flow, context menu, and persistence inherited
+  from Phase 4.2's generalized architecture.
+- Toolbar: 4th category (ANNOTATIONS) with Text tool. SHAPES category expanded to 9 tools.
+- Docs: SHAPE_TOOLS_ARCHITECTURE.md, RECTANGLE_TOOL_GUIDE.md, SHAPE_TOOL_TEST_PLAN.md.
+
 ### Added — Phase 4.2: Trend line suite + context menu + line styles (2026-06-25)
 - 8 TradingView-style line tools: trendline, ray, extendedLine, horizontal, horizRay,
   vertical, crossLine, infoLine. All support create/select/move/delete/persist.

@@ -9,20 +9,19 @@ _Last updated: 2026-06-25_
 - **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~95%, interaction ~87%).
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
   price marker 95% (native LWC), countdown 100%, header layout 95%.
-- **✅ Phase 4.2 — TREND LINE SUITE — COMPLETE.**
-  8 tools (trendline, ray, extendedLine, horizontal, horizRay, vertical,
-  crossLine, infoLine). DrawingContextMenu, line styles, Ctrl+D, visual
-  category groups in toolbar. See `docs/TREND_LINE_SUITE.md`.
-- **Next milestone: Phase 4.3 — Advanced drawing features.**
+- **✅ Phase 4.3 — SHAPE TOOLS SUITE — COMPLETE.**
+  8 shape tools (rectangle, rotatedRect, circle, ellipse, triangle, polyline,
+  curve, path). Fill system (fillColor + opacity). Supply/demand zone workflow.
+  See `docs/SHAPE_TOOLS_ARCHITECTURE.md`.
+- **Next milestone: Phase 4.4 — Fibonacci Suite.**
 
 ## Completed this session
-1. **Phase 4.2 — Trend Line Suite:** Implemented 8 TradingView-style line tools (trendline,
-   ray, extendedLine, horizontal, horizRay, vertical, crossLine, infoLine). Created
-   DrawingContextMenu (right-click → Clone/Lock/Show/Z-order/Delete). Added line style system
-   (solid/dashed/dotted on Drawing.lineStyle). Generalised creation flow (minPoints-based).
-   Ctrl+D duplicate. Visual category groups in toolbar. Docs: TREND_LINE_SUITE.md,
-   TOOL_INTERACTION_GUIDE.md, DRAWING_PERSISTENCE_TESTS.md.
-2. **Phase 4.1 — Wired canonical drawing renderer:** Replaced DrawingLayer's inline
+1. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
+   rotatedRect, circle, ellipse, triangle, polyline, curve, path). Fill system (fillColor +
+   opacity). Supply/demand zone workflow for rectangle. Zero core engine changes — creation
+   flow, context menu, and persistence inherited from 4.2. Toolbar: 4th category (ANNOTATIONS).
+   Docs: SHAPE_TOOLS_ARCHITECTURE.md, RECTANGLE_TOOL_GUIDE.md, SHAPE_TOOL_TEST_PLAN.md.
+2. **Phase 4.2 — Trend Line Suite:** Implemented 8 TradingView-style line tools (trendline,
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
    last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real

@@ -114,6 +114,7 @@ function isHit(
     case "channel":
       return distToSegment(px, py, x1, y1, x2, y2) < TOL;
     case "rectangle":
+    case "rotatedRect":
     case "fib":
       return (
         px >= Math.min(x1, x2) - TOL &&
@@ -121,6 +122,62 @@ function isHit(
         py >= Math.min(y1, y2) - TOL &&
         py <= Math.max(y1, y2) + TOL
       );
+    case "circle": {
+      const r = Math.hypot(x2 - x1, y2 - y1);
+      return (
+        Math.abs(Math.hypot(px - x1, py - y1) - r) < TOL ||
+        Math.hypot(px - x1, py - y1) <= r + TOL
+      );
+    }
+    case "ellipse": {
+      // Hit inside the bounding box as approximation.
+      return (
+        px >= Math.min(x1, x2) - TOL &&
+        px <= Math.max(x1, x2) + TOL &&
+        py >= Math.min(y1, y2) - TOL &&
+        py <= Math.max(y1, y2) + TOL
+      );
+    }
+    case "triangle":
+    case "polyline":
+    case "curve":
+    case "path": {
+      for (let j = 0; j < pts.length - 1; j++) {
+        const a = toX(pts[j].time),
+          b = toY(pts[j].price);
+        const c = toX(pts[j + 1].time),
+          d2 = toY(pts[j + 1].price);
+        if (
+          a != null &&
+          b != null &&
+          c != null &&
+          d2 != null &&
+          distToSegment(px, py, a, b, c, d2) < TOL * 1.5
+        )
+          return true;
+      }
+      // Also check bounding box of all points.
+      const xs = pts
+        .map((p) => toX(p.time))
+        .filter((v): v is number => v != null);
+      const ys = pts
+        .map((p) => toY(p.price))
+        .filter((v): v is number => v != null);
+      if (xs.length && ys.length) {
+        const minX = Math.min(...xs),
+          maxX = Math.max(...xs);
+        const minY = Math.min(...ys),
+          maxY = Math.max(...ys);
+        if (
+          px >= minX - TOL &&
+          px <= maxX + TOL &&
+          py >= minY - TOL &&
+          py <= maxY + TOL
+        )
+          return true;
+      }
+      return false;
+    }
   }
   return false;
 }
