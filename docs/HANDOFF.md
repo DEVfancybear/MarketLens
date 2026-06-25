@@ -12,11 +12,13 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Phase 1 progress:** Step 1 (analysis) ✅ · Step 2 (`src/types/marketData.ts`) ✅.
-- **Recommended next action:** Phase 1 **Step 3** — `src/stores/marketDataStore.ts` consuming the
-  Step-2 types; reconcile with `chartStore` (move symbol/timeframe/candles in, keep
-  drawings/indicators/tool in `chartStore`). Then `BinanceProvider` (no API key) to prove the
-  realtime path, then wire `PriceChart` to `series.update(lastBar)`.
+- **Phase 1 progress:** Step 1 (analysis) ✅ · Step 2 (`src/types/marketData.ts`) ✅ · Step 3
+  (`src/store/marketDataStore.ts`) ✅.
+- **Recommended next action:** Phase 1 **Step 4** — `src/services/market-data/providers/
+  BinanceProvider.ts`: ONE combined WS (ticker + kline + miniTicker), normalize → unified types,
+  auto-reconnect via `RECONNECT_BACKOFF_MS`, emit `MarketDataEvent`s into `marketDataStore` via
+  the `MarketDataServiceBinding` (`attachMarketDataService`). Then Steps 5–13 wire the chart /
+  watchlist over (`series.update(lastBar)`), and the `chartStore` reconciliation happens there.
 
 ---
 

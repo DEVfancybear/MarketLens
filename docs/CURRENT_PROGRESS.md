@@ -3,11 +3,12 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Step 1 (analysis) ✅ · **Step 2 (unified types)
-  ✅** · **Next: Step 3 (marketDataStore).**
+- **Phase 1 — Realtime Market Data Foundation.** Step 1 (analysis) ✅ · Step 2 (unified types) ✅
+  · **Step 3 (marketDataStore) ✅** · **Next: Step 4 (BinanceProvider).**
 
 ## Recently modified files
-- `src/types/marketData.ts` (new — unified market-data models)
+- `src/store/marketDataStore.ts` (new — single source of truth for market data)
+- `src/types/marketData.ts` (unified market-data models, Step 2)
 - `src/types/index.ts` (barrel re-exports `./marketData`)
 - `docs/*` (progress/next-tasks/handoff/changelog updated)
 

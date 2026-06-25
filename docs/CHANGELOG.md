@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 1 Step 3: Market Data Store (2026-06-25)
+- `src/store/marketDataStore.ts` — Zustand single source of truth: `quotes, candles,
+  selectedSymbol, selectedTimeframe, connectionStatus, subscriptions, lastUpdate` + actions
+  `connect/disconnect/subscribe/unsubscribe/changeSymbol/changeTimeframe` (intents) and
+  `updateQuote/updateCandle/setCandles/setConnectionStatus` (ingress) + selectors.
+- Pure store — no socket/provider logic; a `MarketDataServiceBinding` is attached at runtime via
+  `attachMarketDataService()` (Step 6) to avoid a store↔service cycle.
+- `updateCandle` does the TradingView-style realtime merge (upsert last bar by time; trim to
+  `MAX_CANDLES = 5000`).
+- Path note: placed in `src/store/` (existing convention), not `src/stores/` from the roadmap,
+  to avoid a duplicate store directory.
+- Standalone; not yet wired to chart/watchlist (Steps 10–13). Build/type/lint green.
+
 ### Added — Phase 1 Step 2: Market Data Types (2026-06-25)
 - `src/types/marketData.ts` — unified market-data model contract: `MarketQuote`,
   `MarketCandle`, `MarketSymbol`, `ConnectionStatus` (+`ConnectionState`), `Timeframe`

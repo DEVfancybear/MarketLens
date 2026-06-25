@@ -2,15 +2,15 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–2 are **complete**. Step 1 = codebase analysis (`CURRENT_STATE.md`); Step 2 = unified
-types (`src/types/marketData.ts`). **Immediate next: Step 3.** Remaining steps mapped to
-concrete files/integration seams in this repo:
+Steps 1–3 are **complete**. Step 1 = analysis (`CURRENT_STATE.md`); Step 2 = unified types
+(`src/types/marketData.ts`); Step 3 = `src/store/marketDataStore.ts`. **Immediate next: Step 4
+(BinanceProvider).** Remaining steps mapped to concrete files/integration seams:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
 | 2 ✅ | Market data types | `src/types/marketData.ts` (DONE) | `MarketQuote, MarketCandle, MarketSymbol, ConnectionStatus, Timeframe` + supporting types/consts. `Timeframe` single-sourced from `types/market.ts` (re-exported). Barrel updated. |
-| 3 ⬅ | Market data store | `src/stores/marketDataStore.ts` | Single source of truth: `quotes, candles, selectedSymbol, selectedTimeframe, connectionStatus, subscriptions, lastUpdate` + actions. **Reconcile with existing `chartStore`** (move symbol/timeframe/candles here; keep `chartStore` for drawings/indicators/tool). Consume the Step-2 types. |
-| 4 | Binance provider | `src/services/market-data/providers/BinanceProvider.ts` | ONE combined WS (`/stream?streams=`), ticker + kline + miniTicker, normalize → unified types, auto-reconnect. Never one socket per symbol. |
+| 3 ✅ | Market data store | `src/store/marketDataStore.ts` (DONE; note: `store/` not `stores/`) | Single source of truth with all required state + actions + a `MarketDataServiceBinding` seam (`attachMarketDataService`). Standalone; chart/`chartStore` reconciliation happens in Steps 10–13. |
+| 4 ⬅ | Binance provider | `src/services/market-data/providers/BinanceProvider.ts` | ONE combined WS (`/stream?streams=`), ticker + kline + miniTicker, normalize → unified types, auto-reconnect (`RECONNECT_BACKOFF_MS`). Never one socket per symbol. Emits `MarketDataEvent`s into the store via the service binding. |
 | 5 | TwelveData provider | `src/services/market-data/providers/TwelveDataProvider.ts` | Forex/metals/indices. Needs API key handling (env, **never commit**). |
 | 6 | Market data service | `src/services/market-data/MarketDataService.ts` | Provider routing + subscription manager + reconnect. No UI. Replaces `marketData.ts` as the data entry point. |
 | 7 | Historical service | `src/services/market-data/HistoricalDataService.ts` | REST history (500–5000 bars) before WS starts; pagination. Replaces `fetchHistory`. |
