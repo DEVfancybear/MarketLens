@@ -4,8 +4,8 @@ _Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-25._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) and Phase 2 (alert engine) are
-both COMPLETE.** The watchlist, chart, and replay MTF panel all stream live (Binance crypto with no
-API key; forex/metals/indices via TwelveData with a key); **there is no mock data anywhere**
+both COMPLETE, along with the OANDA integration.** The watchlist, chart, and replay MTF panel all stream live (Binance crypto with no
+API key; forex/metals/indices via OANDA with a bearer token, or TwelveData as fallback); **there is no mock data anywhere**
 (`services/marketData.ts` deleted). Phase 2 adds a TradingView-style alert engine (above/below/
 crosses), toast + browser + sound notifications, a responsive Alert Center, and **interactive chart
 alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press). The next
@@ -40,9 +40,10 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `DrawingLayer`/`DrawingToolbar`; expand to the full tool set; add a drawing context menu/hit-test/
   hotkeys — `AlertOverlay` is a good reference). See `NEXT_TASKS.md` §"Immediate tasks — Phase 3".
   (Optional cleanup: the legacy `Symbol`/`Quote` types in `types/market.ts` may be unused now.)
+- **OANDA Integration:** **COMPLETE ✅** — forex/metals/indices via OANDA v20 REST (pricing poll + historical), fallback to TwelveData. Fxcm/ICMarkets stubs in place.
 - **Runtime:** `npm run dev` → BTCUSDT chart + watchlist stream live from Binance (no key).
-  TwelveData (forex/metals/indices) need `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local`
-  (see `.env.example`).
+  OANDA (forex/metals/indices) needs `NEXT_PUBLIC_OANDA_API_KEY` + `NEXT_PUBLIC_OANDA_ACCOUNT_ID`
+  in `.env.local`; TwelveData is the fallback for those symbols.
 - **Mock status:** **none.** The chart, watchlist, and replay multi-timeframe panel are all
   realtime. The mock generator `services/marketData.ts` has been deleted (Step 17).
 
@@ -127,6 +128,9 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 ## 6. Remaining / missing features
 - ✅ **Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).** No mock data remains.
 - ✅ **Phase 2 — Alert Engine: COMPLETE.** Triggering + toast/browser/sound + Alert Center.
+- ✅ **OANDA Integration: COMPLETE.** Forex/metals/indices stream live via OANDA v20 REST
+  (pricing poll + historical candles). Fallback to TwelveData. Extension points for Fxcm and
+  ICMarkets providers.
 - 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
   and `CURRENT_STATE.md` §9). **Phase 3 — next milestone.**
 - ❌ Indicator settings dialogs (Phase 5).

@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — OANDA forex/metals/indices provider (2026-06-25)
+- **Problem:** forex, metals, and indices showed "--" because they depended on TwelveData which
+  required an unconfigured API key.
+- `src/services/market-data/providers/OandaProvider.ts` (new) — production-grade provider via OANDA
+  v20 REST API: bearer-token auth, 1s pricing poll, historical candles, backoff reconnect.
+- `src/services/market-data/providers/FxcmProvider.ts`, `ICMarketsProvider.ts` (new) — stubs.
+- `src/services/market-data/MarketDataService.ts` — wired OandaProvider with OANDA → TwelveData
+  fallback routing; `HistoricalDataService.ts` — added OANDA historical candles loadOanda().
+- `src/services/market-data/symbols.ts` — forex/metals/indices moved to provider 'oanda' with
+  underscore-format symbols; added USDCAD, USDCHF pairs.
+- `src/types/marketData.ts` — added 'oanda' to MarketProvider union.
+- `docs/FOREX_DATA_ANALYSIS.md`, `docs/OANDA_INTEGRATION.md` (new).
+- Config: NEXT_PUBLIC_OANDA_API_KEY + NEXT_PUBLIC_OANDA_ACCOUNT_ID in .env.local (gitignored).
+
 ### Added — Phase 2.1: Interactive chart alerts (TradingView behaviour) (2026-06-25)
 - **Why alerts weren't interactive:** they were drawn with Lightweight Charts `series.createPriceLine`,
   which receives no pointer events. Replaced with an interactive canvas overlay.

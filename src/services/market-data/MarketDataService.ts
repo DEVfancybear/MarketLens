@@ -1,55 +1,64 @@
 /**
  * MarketDataService (Phase 1, Step 6).
  *
- * Owns the concrete providers (Binance + TwelveData), routes each symbol to the
- * right one (via the symbol registry), fans normalized `MarketDataEvent`s into
- * `marketDataStore`, and aggregates a single connection status for the UI.
+ * Owns the concrete providers (Binance + OANDA + TwelveData), routes each
+ * symbol to the right one (via the symbol registry), fans normalized
+ * `MarketDataEvent`s into `marketDataStore`, and aggregates a single connection
+ * status for the UI.
  *
  * It implements `MarketDataServiceBinding`, so once `attachMarketDataService()`
  * binds it, the store's intents (`connect/disconnect/subscribe/unsubscribe`)
  * delegate here. Pure service layer — no React/UI.
  *
  * Reconnect/auto-resubscribe lives in the providers; this service only routes.
- *
- * NOTE: created but not bootstrapped into the app yet. Call
- * `getMarketDataService()` from app bootstrap in Steps 10–13 to go live.
  */
 import {
   attachMarketDataService,
   useMarketDataStore,
   type MarketDataServiceBinding,
-} from '@/store/marketDataStore';
+} from "@/store/marketDataStore";
 import {
   type ConnectionStatus,
   type MarketDataEvent,
   type MarketProvider,
   type MarketSubscription,
   type Timeframe,
-} from '@/types';
-import { BinanceProvider } from './providers/BinanceProvider';
-import { TwelveDataProvider } from './providers/TwelveDataProvider';
-import { getMarketSymbol, twelveDataSymbolMap } from './symbols';
-import { CandleEngine } from './CandleEngine';
+} from "@/types";
+import { BinanceProvider } from "./providers/BinanceProvider";
+import { TwelveDataProvider } from "./providers/TwelveDataProvider";
+import { OandaProvider } from "./providers/OandaProvider";
+import {
+  getMarketSymbol,
+  MARKET_SYMBOLS,
+  twelveDataSymbolMap,
+} from "./symbols";
+import { CandleEngine } from "./CandleEngine";
 
 /** Providers that stream price ticks only (no klines) → candles are built locally. */
 const TICK_ONLY: Record<MarketProvider, boolean> = {
   binance: false,
   twelvedata: true,
+  oanda: true,
   mock: false,
 };
 
 export interface MarketDataServiceOptions {
   twelveDataApiKey?: string;
+  oandaApiKey?: string;
+  oandaAccountId?: string;
+  oandaPractice?: boolean;
 }
 
 export class MarketDataService implements MarketDataServiceBinding {
   private readonly binance: BinanceProvider;
-  private readonly twelve: TwelveDataProvider;
+  private readonly twelve: TwelveDataProvider | null;
+  private readonly oanda: OandaProvider | null;
 
   /** Active canonical symbols per provider (drives connect()/status aggregation). */
   private readonly symbolsByProvider: Record<MarketProvider, Set<string>> = {
     binance: new Set(),
     twelvedata: new Set(),
+    oanda: new Set(),
     mock: new Set(),
   };
 
@@ -61,76 +70,119 @@ export class MarketDataService implements MarketDataServiceBinding {
 
   /** Latest status reported by each provider. */
   private readonly statuses: Record<MarketProvider, ConnectionStatus> = {
-    binance: 'disconnected',
-    twelvedata: 'disconnected',
-    mock: 'disconnected',
+    binance: "disconnected",
+    twelvedata: "disconnected",
+    oanda: "disconnected",
+    mock: "disconnected",
   };
 
   constructor(opts: MarketDataServiceOptions = {}) {
     const onEvent = (e: MarketDataEvent) => this.handleEvent(e);
+
     this.binance = new BinanceProvider({ onEvent });
-    this.twelve = new TwelveDataProvider({
-      onEvent,
-      apiKey: opts.twelveDataApiKey,
-      symbolMap: twelveDataSymbolMap(),
-    });
+
+    // OANDA: the primary forex/metals/indices provider.
+    const oandaKey = opts.oandaApiKey ?? process.env.NEXT_PUBLIC_OANDA_API_KEY;
+    if (oandaKey) {
+      this.oanda = new OandaProvider({
+        onEvent,
+        apiKey: oandaKey,
+        accountId: opts.oandaAccountId,
+        practice: opts.oandaPractice !== false,
+        symbolMap: buildOandaSymbolMap(),
+      });
+    } else {
+      this.oanda = null;
+    }
+
+    // TwelveData: fallback for forex/metals/indices when OANDA is unavailable.
+    const tdKey =
+      opts.twelveDataApiKey ?? process.env.NEXT_PUBLIC_TWELVEDATA_API_KEY;
+    if (tdKey) {
+      this.twelve = new TwelveDataProvider({
+        onEvent,
+        apiKey: tdKey,
+        symbolMap: twelveDataSymbolMap(),
+      });
+    } else {
+      this.twelve = null;
+    }
   }
 
   // --------------------------------------------------------------- routing
-  private route(symbol: string): { provider: MarketProvider; binding: MarketDataServiceBinding } {
+  private route(
+    symbol: string,
+  ): { provider: MarketProvider; binding: MarketDataServiceBinding } | null {
     const meta = getMarketSymbol(symbol);
-    if (meta?.provider === 'twelvedata') return { provider: 'twelvedata', binding: this.twelve };
-    // Default everything else to Binance (crypto).
-    return { provider: 'binance', binding: this.binance };
+    if (!meta) return null;
+
+    if (meta.provider === "oanda") {
+      if (this.oanda) return { provider: "oanda", binding: this.oanda };
+      if (this.twelve) return { provider: "twelvedata", binding: this.twelve };
+      return null;
+    }
+
+    if (meta.provider === "twelvedata") {
+      if (this.twelve) return { provider: "twelvedata", binding: this.twelve };
+      return null;
+    }
+
+    return { provider: "binance", binding: this.binance };
   }
 
   // --------------------------------------------------------------- binding API
   connect() {
-    // Reconnect providers that have active subscriptions; idle providers connect
-    // lazily on their first subscribe.
     if (this.symbolsByProvider.binance.size > 0) this.binance.connect();
-    if (this.symbolsByProvider.twelvedata.size > 0) this.twelve.connect();
+    if (this.symbolsByProvider.twelvedata.size > 0) this.twelve?.connect();
+    if (this.symbolsByProvider.oanda.size > 0) this.oanda?.connect();
   }
 
   disconnect() {
     this.binance.disconnect();
-    this.twelve.disconnect();
+    this.twelve?.disconnect();
+    this.oanda?.disconnect();
   }
 
   subscribe(sub: MarketSubscription) {
-    const { provider, binding } = this.route(sub.symbol);
-    this.symbolsByProvider[provider].add(sub.symbol);
+    const routed = this.route(sub.symbol);
+    if (!routed) return;
+    this.symbolsByProvider[routed.provider].add(sub.symbol);
     if (sub.timeframe) this.tfBySymbol.set(sub.symbol, sub.timeframe);
-    binding.subscribe(sub);
+    routed.binding.subscribe(sub);
   }
 
   unsubscribe(symbol: string, timeframe?: Timeframe) {
-    const { provider, binding } = this.route(symbol);
-    // A timeframe-scoped unsubscribe is partial (drops the kline but keeps the
-    // ticker), so the symbol stays "active" until a full unsubscribe.
+    const meta = getMarketSymbol(symbol);
+    if (!meta) return;
+
+    const provider = meta.provider;
     if (!timeframe) {
-      this.symbolsByProvider[provider].delete(symbol);
+      this.symbolsByProvider[provider]?.delete(symbol);
       this.tfBySymbol.delete(symbol);
       this.candleEngine.reset(symbol);
     } else {
       this.candleEngine.reset(symbol, timeframe);
     }
-    binding.unsubscribe(symbol, timeframe);
+
+    const routed = this.route(symbol);
+    if (routed) routed.binding.unsubscribe(symbol, timeframe);
   }
 
   // --------------------------------------------------------------- event routing
   private handleEvent(event: MarketDataEvent) {
     const store = useMarketDataStore.getState();
     switch (event.type) {
-      case 'quote': {
+      case "quote": {
         store.updateQuote(event.quote);
-        // Tick-only providers (TwelveData) have no kline stream — build candles
-        // from price ticks via the CandleEngine and push them to the store.
         if (TICK_ONLY[event.provider]) {
           const tf = this.tfBySymbol.get(event.symbol);
           if (tf) {
             if (!this.candleEngine.getCurrent(event.symbol, tf)) {
-              this.candleEngine.seedHistory(event.symbol, tf, store.getCandles(event.symbol, tf));
+              this.candleEngine.seedHistory(
+                event.symbol,
+                tf,
+                store.getCandles(event.symbol, tf),
+              );
             }
             const { current, closed } = this.candleEngine.applyTick(
               event.symbol,
@@ -145,10 +197,10 @@ export class MarketDataService implements MarketDataServiceBinding {
         }
         break;
       }
-      case 'candle':
+      case "candle":
         store.updateCandle(event.symbol, event.timeframe, event.candle);
         break;
-      case 'status':
+      case "status":
         this.statuses[event.provider] = event.status;
         store.setConnectionStatus(this.aggregateStatus());
         break;
@@ -157,16 +209,16 @@ export class MarketDataService implements MarketDataServiceBinding {
 
   /** Collapse per-provider statuses (only providers with active subs count). */
   private aggregateStatus(): ConnectionStatus {
-    const active = (Object.keys(this.symbolsByProvider) as MarketProvider[]).filter(
-      (p) => this.symbolsByProvider[p].size > 0,
-    );
-    if (active.length === 0) return 'disconnected';
+    const active = (
+      Object.keys(this.symbolsByProvider) as MarketProvider[]
+    ).filter((p) => this.symbolsByProvider[p].size > 0);
+    if (active.length === 0) return "disconnected";
     const s = active.map((p) => this.statuses[p]);
-    if (s.includes('connected')) return 'connected';
-    if (s.includes('connecting')) return 'connecting';
-    if (s.includes('reconnecting')) return 'reconnecting';
-    if (s.includes('error')) return 'error';
-    return 'disconnected';
+    if (s.includes("connected")) return "connected";
+    if (s.includes("connecting")) return "connecting";
+    if (s.includes("reconnecting")) return "reconnecting";
+    if (s.includes("error")) return "error";
+    return "disconnected";
   }
 }
 
@@ -175,12 +227,26 @@ let singleton: MarketDataService | null = null;
 
 /**
  * Lazily create the service and bind it to the store. Call once during app
- * bootstrap (Steps 10–13). Idempotent.
+ * bootstrap (GlobalRuntime → useMarketDataBootstrap). Idempotent.
  */
-export function getMarketDataService(opts?: MarketDataServiceOptions): MarketDataService {
+export function getMarketDataService(
+  opts?: MarketDataServiceOptions,
+): MarketDataService {
   if (!singleton) {
     singleton = new MarketDataService(opts);
     attachMarketDataService(singleton);
   }
   return singleton;
+}
+
+// ---- symbol maps -------------------------------------------------------------
+
+/** Canonical app id → OANDA instrument name (EUR_USD format). */
+function buildOandaSymbolMap(): Record<string, string> {
+  return Object.fromEntries(
+    MARKET_SYMBOLS.filter((s) => s.provider === "oanda").map((s) => [
+      s.id,
+      s.providerSymbol,
+    ]),
+  );
 }

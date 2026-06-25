@@ -5,6 +5,8 @@
 - **✅ Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).**
 - **✅ Phase 2 — Alert Engine: COMPLETE** (engine + notifications + Alert Center + audit + Phase 2.1
   interactive chart alerts).
+- **✅ OANDA Integration: COMPLETE** (forex/metals/indices via OANDA v20 REST; fallback to
+  TwelveData; extension points for FxcmProvider + ICMarketsProvider).
 - **▶ Phase 3 — Drawing Engine: NEXT (current focus).**
 
 ## Immediate tasks — Phase 3 (Drawing Engine)

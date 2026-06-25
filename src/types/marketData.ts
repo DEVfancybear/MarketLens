@@ -9,23 +9,29 @@
  * existed app-wide) and re-exported here so this module is the canonical
  * market-data type surface without creating a second, drifting definition.
  */
-import type { Timeframe } from './market';
+import type { Timeframe } from "./market";
 
-export type { Timeframe } from './market';
+export type { Timeframe } from "./market";
 
 /** Data origin. Each provider maps its native ids/payloads into the unified models. */
-export type MarketProvider = 'binance' | 'twelvedata' | 'mock';
+export type MarketProvider = "binance" | "twelvedata" | "oanda" | "mock";
 
 /** Asset class — drives provider routing and formatting. */
-export type AssetClass = 'crypto' | 'forex' | 'metal' | 'index' | 'stock' | 'commodity';
+export type AssetClass =
+  | "crypto"
+  | "forex"
+  | "metal"
+  | "index"
+  | "stock"
+  | "commodity";
 
 /** WebSocket / feed lifecycle state. */
 export type ConnectionStatus =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'reconnecting'
-  | 'error';
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "error";
 
 /** Per-provider connection detail (for the status badge + reconnect logic). */
 export interface ConnectionState {
@@ -101,7 +107,7 @@ export interface MarketQuote {
 }
 
 /** Streaming channels a provider may expose. */
-export type MarketChannel = 'ticker' | 'kline' | 'miniTicker';
+export type MarketChannel = "ticker" | "kline" | "miniTicker";
 
 /** A single symbol subscription. One socket multiplexes many of these. */
 export interface MarketSubscription {
@@ -119,15 +125,25 @@ export type SubscriptionKey = string;
  * A discriminated union so the service/store can switch exhaustively.
  */
 export type MarketDataEvent =
-  | { type: 'quote'; provider: MarketProvider; symbol: string; quote: MarketQuote }
   | {
-      type: 'candle';
+      type: "quote";
+      provider: MarketProvider;
+      symbol: string;
+      quote: MarketQuote;
+    }
+  | {
+      type: "candle";
       provider: MarketProvider;
       symbol: string;
       timeframe: Timeframe;
       candle: MarketCandle;
     }
-  | { type: 'status'; provider: MarketProvider; status: ConnectionStatus; error?: string };
+  | {
+      type: "status";
+      provider: MarketProvider;
+      status: ConnectionStatus;
+      error?: string;
+    };
 
 /** Listener used by the service layer to fan events out to the store. */
 export type MarketDataListener = (event: MarketDataEvent) => void;
@@ -147,7 +163,14 @@ export interface HistoryRequest {
 // ----------------------------------------------------------------------------
 
 /** Timeframes supported in Phase 1 (subset of the app-wide `Timeframe` union). */
-export const SUPPORTED_TIMEFRAMES = ['1m', '5m', '15m', '1H', '4H', '1D'] as const satisfies readonly Timeframe[];
+export const SUPPORTED_TIMEFRAMES = [
+  "1m",
+  "5m",
+  "15m",
+  "1H",
+  "4H",
+  "1D",
+] as const satisfies readonly Timeframe[];
 
 /** Reconnect backoff schedule in ms; providers walk this then hold at the last. */
 export const RECONNECT_BACKOFF_MS = [1000, 2000, 5000, 10000, 30000] as const;
@@ -157,14 +180,17 @@ export const CONNECTION_STATUS_META: Record<
   ConnectionStatus,
   { label: string; color: string; emoji: string }
 > = {
-  disconnected: { label: 'Disconnected', color: 'var(--bear)', emoji: '🔴' },
-  connecting: { label: 'Connecting', color: 'var(--choch)', emoji: '🟡' },
-  connected: { label: 'Connected', color: 'var(--bull)', emoji: '🟢' },
-  reconnecting: { label: 'Reconnecting', color: 'var(--choch)', emoji: '🟡' },
-  error: { label: 'Error', color: 'var(--bear)', emoji: '🔴' },
+  disconnected: { label: "Disconnected", color: "var(--bear)", emoji: "🔴" },
+  connecting: { label: "Connecting", color: "var(--choch)", emoji: "🟡" },
+  connected: { label: "Connected", color: "var(--bull)", emoji: "🟢" },
+  reconnecting: { label: "Reconnecting", color: "var(--choch)", emoji: "🟡" },
+  error: { label: "Error", color: "var(--bear)", emoji: "🔴" },
 };
 
 /** Canonical subscription key. Keep all keys flowing through here. */
-export function subscriptionKey(symbol: string, timeframe?: Timeframe): SubscriptionKey {
+export function subscriptionKey(
+  symbol: string,
+  timeframe?: Timeframe,
+): SubscriptionKey {
   return timeframe ? `${symbol}:${timeframe}` : symbol;
 }

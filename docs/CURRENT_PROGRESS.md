@@ -5,6 +5,7 @@ _Last updated: 2026-06-25_
 ## Current phase / milestone
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
 - **✅ Phase 2 — Alert Engine — COMPLETE** (+ audit + Phase 2.1 interactive chart alerts).
+- **✅ OANDA Integration — COMPLETE** (forex/metals/indices realtime + historical data).
 - **Next milestone: Phase 3 — Drawing Engine.**
 
 ## Completed this session
@@ -22,8 +23,18 @@ _Last updated: 2026-06-25_
    persist), deletable; right-click / long-press menu (Edit/Clone/Disable/Delete), edit dialog,
    keyboard (Delete/Esc), `enabled`/`locked`. Replaced static `AlertLines` with `AlertOverlay`.
    (Resolved Phase 2 gaps G1 + G5.)
+5. **OANDA Integration:** production-grade forex/metals/indices data provider via OANDA v20 REST
+   API. `OandaProvider` with bearer-token auth, 1s pricing poll, historical candles, reconnect
+   with backoff. Fallback to TwelveData when OANDA key is absent. Symbol mapping (EURUSD → EUR_USD,
+   etc.). Extension points for FxcmProvider and ICMarketsProvider. Docs: `FOREX_DATA_ANALYSIS.md`,
+   `OANDA_INTEGRATION.md`.
 
 ## Recently modified files
+- `src/services/market-data/providers/OandaProvider.ts` (new — OANDA forex/metals/indices provider),
+  `FxcmProvider.ts` (stub), `ICMarketsProvider.ts` (stub)
+- `src/services/market-data/MarketDataService.ts` (wired OandaProvider + fallback routing),
+  `HistoricalDataService.ts` (OANDA historical candles), `symbols.ts` (OANDA symbol registry)
+- `src/types/marketData.ts` (`'oanda'` added to `MarketProvider`)
 - `src/components/chart/AlertOverlay.tsx` (new — interactive alert lines), `AlertContextMenu.tsx`
   (new), `src/components/alerts/AlertEditDialog.tsx` (new) — Phase 2.1 chart interactivity
   (select/drag/delete/edit/right-click/long-press); `AlertLines.tsx` deleted
@@ -86,8 +97,8 @@ _Last updated: 2026-06-25_
   each, backoff reconnect + auto-resubscribe + dead-socket watchdog + `online` recovery);
   `MarketDataService` routing via a canonical symbol
   registry; `HistoricalDataService` (REST 500–5000 bars, paginated); `CandleEngine` (tick→bar).
-- **Watchlist and chart stream live** (Binance crypto no-key; forex/metals/indices via TwelveData
-  key). Read-only hooks + bootstrap; chart uses incremental `series.update` for the forming bar.
+- **Watchlist and chart stream live** (Binance crypto no-key; forex/metals/indices via OANDA or
+  TwelveData key). Read-only hooks + bootstrap; chart uses incremental `series.update` for the forming bar.
 - Replay gate (`useVisibleCandles`) preserved over the realtime master series.
 
 ### Charting
