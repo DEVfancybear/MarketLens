@@ -10,7 +10,8 @@
  *   3. Add the tool to DrawingTool union in types/drawing.ts
  *   Done — no switch changes anywhere else.
  */
-import type { Drawing, Point, DrawingTool } from "@/types";
+import type { Drawing, Point as Pt, DrawingTool } from "@/types";
+import { FIB_LEVELS } from "@/types";
 import type { HitResult, HitTestProjector } from "./drawingHitTest";
 import type { Projector } from "./drawingRenderer";
 import {
@@ -825,17 +826,123 @@ registerAdapter({
   },
 });
 
-// ---- Stub adapters for remaining tools (full implementations deferred) ----
-const stubAdapter = (
-  tool: DrawingTool,
-  minPoints: number,
-  render: ToolAdapter["render"],
-): ToolAdapter => ({
-  tool,
-  minPoints,
-  render,
+// ---- Remaining tools with proper render implementations ----
+
+// Shared projection helper.
+function project(
+  pt: Pt,
+  toX: (t: number) => number | null,
+  toY: (v: number) => number | null,
+) {
+  const x = toX(pt.time);
+  const y = toY(pt.price);
+  return x != null && y != null ? { x, y } : null;
+}
+
+const BULL = "#26a69a";
+const BEAR = "#ef5350";
+
+// ---- Fibonacci -------
+registerAdapter({
+  tool: "fib",
+  minPoints: 2,
+  render(g, d, proj, selected) {
+    const pts = d.points;
+    const x1 = proj.toX(pts[0].time),
+      y1 = proj.toY(pts[0].price);
+    const x2 = proj.toX(pts[1].time),
+      y2 = proj.toY(pts[1].price);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
+    const hi = pts[0].price,
+      lo = pts[1].price;
+    g.save();
+    g.font = "10px var(--font-mono)";
+    const left = Math.min(x1, x2),
+      right = Math.max(x1, x2);
+    for (const lvl of FIB_LEVELS) {
+      const price = hi + (lo - hi) * lvl;
+      const y = proj.toY(price);
+      if (y == null) continue;
+      g.globalAlpha = 0.7;
+      line(g, left, y, right, y);
+      g.globalAlpha = 1;
+      g.fillStyle = d.color;
+      g.fillText(
+        `${(lvl * 100).toFixed(1)}%  ${price.toFixed(4)}`,
+        right + 4,
+        y + 3,
+      );
+    }
+    g.restore();
+    if (selected) {
+      handle(g, x1, y1, d.color);
+      handle(g, x2, y2, d.color);
+    }
+  },
   hitTest(d, px, py, toX, toY) {
-    // Default: bounding box of all projected points.
+    const results: HitResult[] = [];
+    const x1 = toX(d.points[0].time),
+      y1 = toY(d.points[0].price);
+    const x2 = toX(d.points[1].time),
+      y2 = toY(d.points[1].price);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
+    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS)
+      results.push({
+        drawing: d,
+        target: "p1",
+        distance: pointDist(px, py, x1, y1),
+      });
+    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS)
+      results.push({
+        drawing: d,
+        target: "p2",
+        distance: pointDist(px, py, x2, y2),
+      });
+    const bodyDist = distToRect(px, py, x1, y1, x2, y2);
+    if (bodyDist < TOL)
+      results.push({ drawing: d, target: "body", distance: bodyDist });
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const x1 = toX(d.points[0].time),
+      y1 = toY(d.points[0].price);
+    const x2 = toX(d.points[1].time),
+      y2 = toY(d.points[1].price);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
+    return {
+      x: Math.min(x1, x2),
+      y: Math.min(y1, y2),
+      w: Math.abs(x2 - x1),
+      h: Math.abs(y2 - y1),
+    };
+  },
+});
+
+// ---- Triangle -------
+registerAdapter({
+  tool: "triangle",
+  minPoints: 3,
+  render(g, d, proj, selected) {
+    const pts = d.points.slice(0, 3);
+    const projPts = pts.map((p) => project(p, proj.toX, proj.toY));
+    if (projPts.some((p) => !p)) return;
+    g.beginPath();
+    g.moveTo(projPts[0]!.x, projPts[0]!.y);
+    for (let i = 1; i < projPts.length; i++)
+      g.lineTo(projPts[i]!.x, projPts[i]!.y);
+    g.closePath();
+    if (d.fillColor && d.fillColor !== "none") {
+      g.save();
+      g.globalAlpha = d.opacity ?? 0.15;
+      g.fillStyle = d.fillColor;
+      g.fill();
+      g.restore();
+    }
+    g.stroke();
+    if (selected) projPts.forEach((p) => handle(g, p!.x, p!.y, d.color));
+  },
+  hitTest(d, px, py, toX, toY) {
     const results: HitResult[] = [];
     const projected = d.points.map((pt) => ({
       x: toX(pt.time),
@@ -846,23 +953,21 @@ const stubAdapter = (
       if (pt.x == null || pt.y == null) continue;
       const dist = pointDist(px, py, pt.x, pt.y);
       if (dist <= HANDLE_RADIUS) {
-        const target =
-          i === 0
-            ? ("p1" as const)
-            : i === projected.length - 1
-              ? ("p2" as const)
-              : ("body" as const);
-        results.push({ drawing: d, target, distance: dist });
+        results.push({
+          drawing: d,
+          target: i === 0 ? "p1" : i === projected.length - 1 ? "p2" : "body",
+          distance: dist,
+        });
       }
     }
-    if (projected.length === 2) {
-      const x1 = projected[0].x!,
-        y1 = projected[0].y!;
-      const x2 = projected[1].x!,
-        y2 = projected[1].y!;
-      const bodyDist = distToRect(px, py, x1, y1, x2, y2);
-      if (bodyDist < TOL)
-        results.push({ drawing: d, target: "body", distance: bodyDist });
+    // Check each segment.
+    for (let j = 0; j < projected.length - 1; j++) {
+      const a = projected[j],
+        b = projected[j + 1];
+      if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
+      const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+      if (segDist < TOL * 1.5)
+        results.push({ drawing: d, target: "segment", distance: segDist });
     }
     return results;
   },
@@ -884,11 +989,391 @@ const stubAdapter = (
   },
 });
 
-registerAdapter(stubAdapter("fib", 2, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("triangle", 3, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("polyline", 2, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("curve", 2, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("path", 2, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("brush", 2, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("long", 1, (_g, _d, _p, _s) => {}));
-registerAdapter(stubAdapter("short", 1, (_g, _d, _p, _s) => {}));
+// ---- Polyline -------
+registerAdapter({
+  tool: "polyline",
+  minPoints: 2,
+  render(g, d, proj, selected) {
+    const pts = d.points;
+    if (pts.length < 2) return;
+    const projPts = pts.map((p) => project(p, proj.toX, proj.toY));
+    if (projPts.some((p) => !p)) return;
+    g.beginPath();
+    g.moveTo(projPts[0]!.x, projPts[0]!.y);
+    for (let i = 1; i < projPts.length; i++) {
+      if (projPts[i]) g.lineTo(projPts[i]!.x, projPts[i]!.y);
+    }
+    g.stroke();
+    if (selected)
+      projPts.forEach((p) => {
+        if (p) handle(g, p.x, p.y, d.color);
+      });
+  },
+  hitTest(d, px, py, toX, toY) {
+    const results: HitResult[] = [];
+    const projected = d.points.map((pt) => ({
+      x: toX(pt.time),
+      y: toY(pt.price),
+    }));
+    for (let i = 0; i < projected.length; i++) {
+      const pt = projected[i];
+      if (pt.x == null || pt.y == null) continue;
+      const dist = pointDist(px, py, pt.x, pt.y);
+      if (dist <= HANDLE_RADIUS)
+        results.push({
+          drawing: d,
+          target: i === 0 ? "p1" : i === projected.length - 1 ? "p2" : "body",
+          distance: dist,
+        });
+    }
+    for (let j = 0; j < projected.length - 1; j++) {
+      const a = projected[j],
+        b = projected[j + 1];
+      if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
+      const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+      if (segDist < TOL * 1.5)
+        results.push({ drawing: d, target: "segment", distance: segDist });
+    }
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const xs = d.points
+      .map((pt) => toX(pt.time))
+      .filter((v): v is number => v != null);
+    const ys = d.points
+      .map((pt) => toY(pt.price))
+      .filter((v): v is number => v != null);
+    if (xs.length === 0 || ys.length === 0) return null;
+    return {
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
+    };
+  },
+});
+
+// ---- Curve -------
+registerAdapter({
+  tool: "curve",
+  minPoints: 3,
+  render(g, d, proj, selected) {
+    const pts = d.points;
+    if (pts.length < 3) return;
+    const projPts = pts
+      .map((p) => project(p, proj.toX, proj.toY))
+      .filter((p): p is { x: number; y: number } => p != null);
+    if (projPts.length < 3) return;
+    g.beginPath();
+    g.moveTo(projPts[0].x, projPts[0].y);
+    for (let i = 1; i < projPts.length - 1; i++) {
+      const cp2x = (projPts[i].x + projPts[i + 1].x) / 2;
+      const cp2y = (projPts[i].y + projPts[i + 1].y) / 2;
+      g.quadraticCurveTo(projPts[i].x, projPts[i].y, cp2x, cp2y);
+    }
+    g.stroke();
+    if (selected) projPts.forEach((p) => handle(g, p.x, p.y, d.color));
+  },
+  hitTest(d, px, py, toX, toY) {
+    const results: HitResult[] = [];
+    const projected = d.points.map((pt) => ({
+      x: toX(pt.time),
+      y: toY(pt.price),
+    }));
+    for (let i = 0; i < projected.length; i++) {
+      const pt = projected[i];
+      if (pt.x == null || pt.y == null) continue;
+      const dist = pointDist(px, py, pt.x, pt.y);
+      if (dist <= HANDLE_RADIUS)
+        results.push({
+          drawing: d,
+          target: i === 0 ? "p1" : i === projected.length - 1 ? "p2" : "body",
+          distance: dist,
+        });
+    }
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const xs = d.points
+      .map((pt) => toX(pt.time))
+      .filter((v): v is number => v != null);
+    const ys = d.points
+      .map((pt) => toY(pt.price))
+      .filter((v): v is number => v != null);
+    if (xs.length === 0 || ys.length === 0) return null;
+    return {
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
+    };
+  },
+});
+
+// ---- Path (closed polyline) -------
+registerAdapter({
+  tool: "path",
+  minPoints: 2,
+  render(g, d, proj, selected) {
+    const pts = d.points;
+    if (pts.length < 2) return;
+    const projPts = pts.map((p) => project(p, proj.toX, proj.toY));
+    if (projPts.some((p) => !p)) return;
+    g.beginPath();
+    g.moveTo(projPts[0]!.x, projPts[0]!.y);
+    for (let i = 1; i < projPts.length; i++) {
+      if (projPts[i]) g.lineTo(projPts[i]!.x, projPts[i]!.y);
+    }
+    g.closePath();
+    if (d.fillColor && d.fillColor !== "none") {
+      g.save();
+      g.globalAlpha = d.opacity ?? 0.15;
+      g.fillStyle = d.fillColor;
+      g.fill();
+      g.restore();
+    }
+    g.stroke();
+    if (selected)
+      projPts.forEach((p) => {
+        if (p) handle(g, p.x, p.y, d.color);
+      });
+  },
+  hitTest(d, px, py, toX, toY) {
+    const results: HitResult[] = [];
+    const projected = d.points.map((pt) => ({
+      x: toX(pt.time),
+      y: toY(pt.price),
+    }));
+    for (let i = 0; i < projected.length; i++) {
+      const pt = projected[i];
+      if (pt.x == null || pt.y == null) continue;
+      const dist = pointDist(px, py, pt.x, pt.y);
+      if (dist <= HANDLE_RADIUS)
+        results.push({
+          drawing: d,
+          target: i === 0 ? "p1" : i === projected.length - 1 ? "p2" : "body",
+          distance: dist,
+        });
+    }
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const xs = d.points
+      .map((pt) => toX(pt.time))
+      .filter((v): v is number => v != null);
+    const ys = d.points
+      .map((pt) => toY(pt.price))
+      .filter((v): v is number => v != null);
+    if (xs.length === 0 || ys.length === 0) return null;
+    return {
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
+    };
+  },
+});
+
+// ---- Brush (freehand) -------
+registerAdapter({
+  tool: "brush",
+  minPoints: 2,
+  render(g, d, proj, selected) {
+    const pts = d.points;
+    if (pts.length < 2) return;
+    g.beginPath();
+    const p0 = project(pts[0], proj.toX, proj.toY);
+    if (!p0) return;
+    g.moveTo(p0.x, p0.y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = project(pts[i], proj.toX, proj.toY);
+      const b = project(pts[i + 1], proj.toX, proj.toY);
+      if (!a || !b) continue;
+      g.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+    }
+    const last = project(pts[pts.length - 1], proj.toX, proj.toY);
+    if (last) g.lineTo(last.x, last.y);
+    g.stroke();
+  },
+  hitTest(d, px, py, toX, toY) {
+    const results: HitResult[] = [];
+    const projected = d.points.map((pt) => ({
+      x: toX(pt.time),
+      y: toY(pt.price),
+    }));
+    for (let j = 0; j < projected.length - 1; j++) {
+      const a = projected[j],
+        b = projected[j + 1];
+      if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
+      const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+      if (segDist < TOL)
+        results.push({ drawing: d, target: "segment", distance: segDist });
+    }
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const xs = d.points
+      .map((pt) => toX(pt.time))
+      .filter((v): v is number => v != null);
+    const ys = d.points
+      .map((pt) => toY(pt.price))
+      .filter((v): v is number => v != null);
+    if (xs.length === 0 || ys.length === 0) return null;
+    return {
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      w: Math.max(...xs) - Math.min(...xs),
+      h: Math.max(...ys) - Math.min(...ys),
+    };
+  },
+});
+
+// ---- Long Position -------
+registerAdapter({
+  tool: "long",
+  minPoints: 1,
+  render(g, d, proj, selected) {
+    const entry = d.points[0].price,
+      stop = d.stop ?? entry,
+      target = d.target ?? entry;
+    const xL = proj.toX(d.points[0].time);
+    const xR = d.points[1] ? proj.toX(d.points[1].time) : null;
+    const yE = proj.toY(entry),
+      yS = proj.toY(stop),
+      yT = proj.toY(target);
+    if (xL == null || yE == null || yS == null || yT == null) return;
+    const right = xR ?? xL + 130;
+    g.save();
+    g.globalAlpha = 0.14;
+    g.fillStyle = BULL;
+    g.fillRect(
+      Math.min(xL, right),
+      Math.min(yE, yT),
+      Math.abs(right - xL),
+      Math.abs(yT - yE),
+    );
+    g.globalAlpha = 0.14;
+    g.fillStyle = BEAR;
+    g.fillRect(
+      Math.min(xL, right),
+      Math.min(yE, yS),
+      Math.abs(right - xL),
+      Math.abs(yS - yE),
+    );
+    g.restore();
+    g.strokeStyle = BULL;
+    line(g, xL, yE, right, yE);
+    g.save();
+    g.setLineDash([4, 3]);
+    g.strokeStyle = BEAR;
+    line(g, xL, yS, right, yS);
+    g.restore();
+    g.save();
+    g.setLineDash([4, 3]);
+    g.strokeStyle = BULL;
+    line(g, xL, yT, right, yT);
+    g.restore();
+    if (selected) {
+      handle(g, xL, yE, d.color);
+    }
+  },
+  hitTest(d, px, py, toX, toY) {
+    const results: HitResult[] = [];
+    const xL = toX(d.points[0].time),
+      yE = toY(d.points[0].price);
+    if (yE != null && Math.abs(yE - py) < TOL)
+      results.push({ drawing: d, target: "body", distance: Math.abs(yE - py) });
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const xL = toX(d.points[0].time),
+      yE = toY(d.points[0].price);
+    if (xL == null || yE == null) return null;
+    const xR = d.points[1] ? toX(d.points[1].time) : xL + 130;
+    const right = xR ?? xL + 130;
+    return {
+      x: Math.min(xL, right),
+      y: Math.min(yE, yE) - 50,
+      w: Math.abs(right - xL),
+      h: 100,
+    };
+  },
+});
+
+// ---- Short Position -------
+registerAdapter({
+  tool: "short",
+  minPoints: 1,
+  render(g, d, proj, selected) {
+    const entry = d.points[0].price,
+      stop = d.stop ?? entry,
+      target = d.target ?? entry;
+    const xL = proj.toX(d.points[0].time);
+    const xR = d.points[1] ? proj.toX(d.points[1].time) : null;
+    const yE = proj.toY(entry),
+      yS = proj.toY(stop),
+      yT = proj.toY(target);
+    if (xL == null || yE == null || yS == null || yT == null) return;
+    const right = xR ?? xL + 130;
+    g.save();
+    g.globalAlpha = 0.14;
+    g.fillStyle = BEAR;
+    g.fillRect(
+      Math.min(xL, right),
+      Math.min(yE, yT),
+      Math.abs(right - xL),
+      Math.abs(yT - yE),
+    );
+    g.globalAlpha = 0.14;
+    g.fillStyle = BULL;
+    g.fillRect(
+      Math.min(xL, right),
+      Math.min(yE, yS),
+      Math.abs(right - xL),
+      Math.abs(yS - yE),
+    );
+    g.restore();
+    g.strokeStyle = BEAR;
+    line(g, xL, yE, right, yE);
+    g.save();
+    g.setLineDash([4, 3]);
+    g.strokeStyle = BULL;
+    line(g, xL, yS, right, yS);
+    g.restore();
+    g.save();
+    g.setLineDash([4, 3]);
+    g.strokeStyle = BEAR;
+    line(g, xL, yT, right, yT);
+    g.restore();
+    if (selected) {
+      handle(g, xL, yE, d.color);
+    }
+  },
+  hitTest(d, px, py, toX, toY) {
+    const results: HitResult[] = [];
+    const xL = toX(d.points[0].time),
+      yE = toY(d.points[0].price);
+    if (yE != null && Math.abs(yE - py) < TOL)
+      results.push({ drawing: d, target: "body", distance: Math.abs(yE - py) });
+    return results;
+  },
+  movePoints: defaultMovePoints,
+  boundingBox(d, toX, toY) {
+    const xL = toX(d.points[0].time),
+      yE = toY(d.points[0].price);
+    if (xL == null || yE == null) return null;
+    const xR = d.points[1] ? toX(d.points[1].time) : xL + 130;
+    const right = xR ?? xL + 130;
+    return {
+      x: Math.min(xL, right),
+      y: Math.min(yE, yE) - 50,
+      w: Math.abs(right - xL),
+      h: 100,
+    };
+  },
+});
