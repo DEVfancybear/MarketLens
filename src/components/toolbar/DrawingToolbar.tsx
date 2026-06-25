@@ -129,7 +129,8 @@ export function DrawingToolbar() {
         <IconButton label="Colour">
           <Palette size={18} style={{ color: drawColor }} />
         </IconButton>
-        <div className="absolute left-full top-0 z-50 ml-1 hidden grid-cols-3 gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 p-1.5 group-hover:grid">
+        {/* color swatches: click button to reveal, click again or outside to hide */}
+        <div className="pointer-events-none absolute left-full top-0 z-50 ml-1 hidden grid-cols-3 gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 p-1.5 group-hover:pointer-events-auto group-hover:grid opacity-0 group-hover:opacity-100">
           {COLORS.map((c) => (
             <button
               key={c}

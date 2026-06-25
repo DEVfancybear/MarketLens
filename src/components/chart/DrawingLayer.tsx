@@ -55,20 +55,28 @@ export function DrawingLayer() {
   // Trace which element receives clicks on the chart area.
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      const el = e.target as HTMLElement;
-      const tag = el?.tagName;
-      const cls = el?.className?.substring?.(0, 60) ?? "";
-      const style = el ? window.getComputedStyle(el) : null;
-      console.log("[DrawingLayer] BODY click trace", {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return;
+      const tag = el.tagName;
+      const cls = el.className?.substring?.(0, 80) ?? "";
+      const style = window.getComputedStyle(el);
+      // Walk up to find containers.
+      let parent = el.parentElement;
+      let chain = el.tagName;
+      for (let i = 0; i < 8 && parent; i++) {
+        const pCls = parent.className?.substring?.(0, 50) ?? "";
+        chain += ` <- ${parent.tagName}[${pCls}]`;
+        parent = parent.parentElement;
+      }
+      console.log("[DrawingLayer] elementFromPoint", {
         tag,
-        cls,
         pointerEvents: style?.pointerEvents,
         zIndex: style?.zIndex,
-        id: el?.id,
+        chain,
       });
     };
-    document.addEventListener("pointerdown", onDown, true); // capture phase
-    return () => document.removeEventListener("pointerdown", onDown, true);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, []);
 
   // Diagnostic: log when canvas mounts.
