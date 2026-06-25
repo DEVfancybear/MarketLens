@@ -76,5 +76,10 @@ export const useReplayStore = create<ReplayState>((set, get) => ({
     const { total, anchor } = get();
     set({ cursor: Math.max(anchor, Math.min(total - 1, i)) });
   },
-  setTotal: (total) => set({ total }),
+  // Called once per realtime tick from the chart mirror; only the new-bar case
+  // actually changes the count. Guarding here keeps replay-store subscribers
+  // (transport, dashboard, toolbar) from re-rendering on every forming-bar tick.
+  setTotal: (total) => {
+    if (total !== get().total) set({ total });
+  },
 }));

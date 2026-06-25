@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 1 Step 16: Performance Pass (2026-06-25)
+- Eliminated per-realtime-tick re-renders in components that don't consume candle data:
+- `src/store/replayStore.ts` — `setTotal()` now **equality-guards** (`if (total !== get().total)`).
+  It's called once per tick from the chart mirror, but only a new bar changes the count; previously
+  every tick produced a fresh replay-store object that re-rendered every whole-store subscriber
+  (transport, dashboard, toolbar). Now they re-render only when the bar count actually changes.
+- `src/components/toolbar/TopToolbar.tsx` — dropped the whole-store `useChartStore()` destructure
+  (it pulled `candles`, which mutates every tick → full-toolbar re-render). Now selects `timeframe`
+  + `setTimeframe` atomically and reads `candles.length` lazily via `getState()` inside the replay
+  handler.
+- `src/components/toolbar/DrawingToolbar.tsx` and `src/components/chart/DrawingLayer.tsx` — converted
+  whole-store subscriptions to **atomic per-field selectors**. Neither reads `candles` (the drawing
+  canvas repaints on `ctx.version` for pan/zoom, not on candle data), so they no longer re-render on
+  every forming-bar tick.
+- Already in place (verified): watchlist rows are memoized + per-row `useQuote` (Step 10); chart uses
+  the O(1) `series.update` fast path (Step 11); candle series capped at `MAX_CANDLES = 5000`.
+- Build/type/lint green.
+
 ### Changed — Phase 1 Step 15: Reconnect Hardening (2026-06-25)
 - Baseline reconnect was already present (backoff `1→2→5→10→30s` holding at 30s, infinite retries,
   auto-resubscribe on `onopen`, `manualClose` suppresses reconnect on intentional disconnect) and

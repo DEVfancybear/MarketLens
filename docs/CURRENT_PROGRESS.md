@@ -4,11 +4,14 @@ _Last updated: 2026-06-25_
 
 ## Current phase / milestone
 - **Phase 1 — Realtime Market Data Foundation.** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅**
-  · **Step 14 (connection-status badge) ✅** · **Step 15 (reconnect hardening) ✅**. Chart + watchlist
-  stream live (Binance crypto, no key needed). **Next: Step 16 (perf pass), then 17 (remove the last
-  mock — `services/marketData.ts`).**
+  · **Step 14 (connection-status badge) ✅** · **Step 15 (reconnect hardening) ✅** · **Step 16 (perf
+  pass) ✅**. Chart + watchlist stream live (Binance crypto, no key needed). **Next: Step 17 (remove
+  the last mock — `services/marketData.ts`).**
 
 ## Recently modified files
+- `src/store/replayStore.ts` (Step 16: `setTotal` equality-guard — no per-tick replay churn)
+- `src/components/toolbar/TopToolbar.tsx`, `DrawingToolbar.tsx`, `src/components/chart/DrawingLayer.tsx`
+  (Step 16: whole-store subscriptions → atomic selectors; no per-tick re-renders)
 - `src/services/market-data/providers/{Binance,TwelveData}Provider.ts` (Step 15: dead-socket
   watchdog + instant reconnect on `window 'online'`; baseline backoff/auto-resubscribe verified)
 - `src/store/marketDataStore.ts` (Step 12–13: `selectMarket` now idempotent — re-asserts kline sub
@@ -88,8 +91,8 @@ _Last updated: 2026-06-25_
   dead code; build green (additive). Finish in Phase 3 or revert before Phase 1 if undesired.
 
 ## Remaining in Phase 1
-- Step 16 (perf pass) and 17 (remove the last mock — `services/marketData.ts`, used only by replay
-  MTF). Steps 12–15 are done. See `NEXT_TASKS.md`.
+- Step 17 (remove the last mock — `services/marketData.ts`, used only by replay MTF). Steps 12–16
+  are done. See `NEXT_TASKS.md`.
 
 ## Not started (later phases)
 - Alert triggering (Phase 2), full drawing engine (Phase 3), indicator dialogs (Phase 5),

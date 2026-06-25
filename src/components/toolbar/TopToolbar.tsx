@@ -17,7 +17,13 @@ import { cn } from '@/utils/cn';
 import { captureChart } from '@/components/chart/chartRegistry';
 
 export function TopToolbar() {
-  const { timeframe, setTimeframe, candles } = useChartStore();
+  // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
+  // on every realtime tick and would re-render the whole toolbar. Its length is
+  // read lazily in `toggleReplay` via getState(). `timeframe`/`setTimeframe` only
+  // change on user action. (replay/ui stores no longer churn per tick — see the
+  // guarded `replayStore.setTotal`.)
+  const timeframe = useChartStore((s) => s.timeframe);
+  const setTimeframe = useChartStore((s) => s.setTimeframe);
   const replay = useReplayStore();
   const ui = useUIStore();
 
@@ -27,7 +33,7 @@ export function TopToolbar() {
     } else if (replay.selecting) {
       replay.cancelSelect();
     } else {
-      if (candles.length < 50) return;
+      if (useChartStore.getState().candles.length < 50) return;
       // Enter TradingView-style bar selection: click a candle to start.
       replay.beginSelect();
       ui.setBottomTab('replay');

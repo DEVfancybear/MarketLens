@@ -15,16 +15,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
 - **Phase 1 progress:** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅** · **Step 14
-  (connection badge) ✅** · **Step 15 (reconnect hardening) ✅**. **The chart now streams live**
-  (history via REST + realtime klines).
+  (connection badge) ✅** · **Step 15 (reconnect hardening) ✅** · **Step 16 (perf pass) ✅**. **The
+  chart now streams live** (history via REST + realtime klines).
   Reconciliation chosen: `chartStore` stays the chart's selection + candle source
   (drawings/indicators/tool too); `useMarketData` bridges it to `marketDataStore` (select → history
   → mirror candles). `useVisibleCandles` replay gate intact. `selectMarket()` is now idempotent so
   the active kline is always (re)asserted on the active key.
-- **Recommended next action:** Phase 1 **Step 16** — performance pass (atomic Zustand selectors,
-  `React.memo`/`useMemo` on hot paths; target 100+ symbols, 5000+ candles). Then **Step 17** —
-  remove the last mock: repoint `replayEngine.mtfSnapshot` to `HistoricalDataService` and delete
-  `services/marketData.ts`. (Step 15 reconnect already lives in the providers.)
+- **Recommended next action:** Phase 1 **Step 17** — remove the last mock: repoint
+  `replayEngine.mtfSnapshot` to `HistoricalDataService` (async — note the MTF snapshot currently
+  pulls higher-TF history synchronously via the mock's `getHistorySync`, so the call site needs to
+  become async / pre-fetched), then delete `services/marketData.ts`. This is the final Phase 1 step.
 - **Runtime:** `npm run dev` → BTCUSDT chart + watchlist stream live from Binance (no key).
   TwelveData (forex/metals/indices) need `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local`
   (see `.env.example`).
@@ -85,7 +85,10 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - **Reconnect (Step 15)** lives in the providers: backoff `1→2→5→10→30s`, infinite, auto-resubscribe
   on `onopen`; plus a dead-socket watchdog (recycle an OPEN-but-silent socket after 45s) and instant
   reconnect on `window 'online'`. Both SSR-guarded.
-- **Remaining Phase 1:** Step 16 (perf), 17 (remove the last mock). Steps 12–15 done. Full plan in
+- **Perf (Step 16):** per-tick re-renders removed from non-candle consumers — `replayStore.setTotal`
+  equality-guarded; `TopToolbar`/`DrawingToolbar`/`DrawingLayer` use atomic selectors (don't pull
+  `candles`).
+- **Remaining Phase 1:** Step 17 (remove the last mock). Steps 12–16 done. Full plan in
   `NEXT_TASKS.md`.
 - **Still mock:** only `services/marketData.ts` behind `replayEngine.mtfSnapshot` (Step 17).
 
@@ -103,8 +106,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   toggle, fullscreen, screenshot export, resizable panels.
 
 ## 6. Remaining / missing features
-- 🟡 **Phase 1 finish** — Steps 16–17 (perf pass, remove last mock). Switch hardening + status
-  badge + reconnect hardening (12–15) done.
+- 🟡 **Phase 1 finish** — Step 17 only (remove the last mock). Switch hardening + status badge +
+  reconnect hardening + perf pass (12–16) done.
 - 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
   and `CURRENT_STATE.md` §9). Belongs to Phase 3.
 - ❌ Alert **triggering**/notifications (Phase 2) — only alert lines render today.
@@ -112,12 +115,12 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - ❌ Real broker/MT5 order routing + mobile notifications (Phase 6).
 
 ## 7. Where to continue Phase 1
-1. **Step 16** — performance pass: prefer atomic Zustand selectors, `React.memo`/`useMemo`/
-   `useCallback` on hot paths (watchlist rows, chart mirror). Target 100+ symbols, 5000+ candles
-   without jank. The candle series is already bounded to `MAX_CANDLES = 5000` in `marketDataStore`.
-2. **Step 17** — remove the last mock (`services/marketData.ts`): repoint
-   `replayEngine.mtfSnapshot` to `HistoricalDataService`, then delete the mock generator.
-3. Manual smoke test still worth doing: BTCUSDT ↔ ETHUSDT and 1m ↔ 1H switches — confirm the badge
+1. **Step 17 (final)** — remove the last mock (`services/marketData.ts`): repoint
+   `replayEngine.mtfSnapshot` to `HistoricalDataService`, then delete the mock generator. The
+   snapshot currently reads higher-TF history synchronously (mock `getHistorySync`); the REST
+   service is async, so the MTF call site must pre-fetch/await (or cache) the higher-TF series.
+   Audit other mock callers before deleting: `grep` for imports of `services/marketData`.
+2. Manual smoke test still worth doing: BTCUSDT ↔ ETHUSDT and 1m ↔ 1H switches — confirm the badge
    stays 🟢, the forming bar ticks, and no duplicate streams accumulate.
 
 ## 8. Known issues / gotchas

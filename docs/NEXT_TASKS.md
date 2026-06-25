@@ -2,9 +2,9 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–15 are **complete** (service layer + hooks + realtime watchlist + realtime chart + switch
-hardening + connection badge + reconnect hardening). The chart now streams live (Binance crypto
-needs no key). **Immediate next: Step 16 (performance pass), then Step 17 (remove the last mock).**
+Steps 1–16 are **complete** (service layer + hooks + realtime watchlist + realtime chart + switch
+hardening + connection badge + reconnect hardening + perf pass). The chart now streams live (Binance
+crypto needs no key). **Immediate next: Step 17 (remove the last mock — `services/marketData.ts`).**
 Remaining steps:
 
 | Step | Task | Create / Touch | Notes |
@@ -23,7 +23,7 @@ Remaining steps:
 | 13 ✅ | Timeframe switching | `selectMarket` hardened (DONE) | Switches via chartStore.setTimeframe → selectMarket. Verified history reloads at new TF + realtime resumes; chart pan/zoom intentionally re-fits on TF change (acceptable). Same idempotent `selectMarket` path as Step 12. |
 | 14 ✅ | Connection status | `ConnectionBadge.tsx` + `TopToolbar` (DONE) | 🟢/🟡/🔴 dot + label from `useConnectionMeta()` (over `marketDataStore.connectionStatus`), pulsing while connecting/reconnecting; label hides below `md`. |
 | 15 ✅ | Reconnect | inside providers (DONE) | Backoff `1→2→5→10→30s` (holds at 30s), infinite, auto-resubscribe on `onopen`; `manualClose` suppresses reconnect on intentional disconnect. **Hardened:** dead-socket watchdog (recycle an OPEN-but-silent socket after 45s) + instant reconnect on `window 'online'`. Both SSR-guarded. |
-| 16 | Performance | selectors, `React.memo`, `useMemo/useCallback` | 100+ symbols, 5000+ candles; prefer atomic Zustand selectors. |
+| 16 ✅ | Performance | atomic selectors on hot paths (DONE) | Removed per-tick re-renders from non-candle consumers: `replayStore.setTotal` equality-guarded; `TopToolbar`/`DrawingToolbar`/`DrawingLayer` converted from whole-store subscriptions to atomic per-field selectors. Already had: memoized watchlist rows + per-row `useQuote` (Step 10), O(1) `series.update` (Step 11), candle cap `MAX_CANDLES = 5000`. |
 | 17 | Remove mock data | delete/replace `services/marketData.ts` mock paths | Update all callers: `useMarketData`, `Watchlist`, `replayEngine.mtfSnapshot`, `tradeStore` price feed, `SmcLayer`/`smcEngine` history. |
 
 ### Phase 1 success criteria

@@ -15,10 +15,18 @@ import { uid } from '@/utils/id';
 export function DrawingLayer() {
   const ctx = useChartCtx();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const {
-    drawings, activeTool, drawColor, selectedDrawingId,
-    addDrawing, updateDrawing, selectDrawing, removeDrawing, setActiveTool,
-  } = useChartStore();
+  // Atomic selectors: this overlay does NOT read `candles`, so it must not
+  // subscribe to the whole store (that re-renders the canvas on every realtime
+  // tick). Repaint-on-pan/zoom is driven by `ctx.version` below, not by candles.
+  const drawings = useChartStore((s) => s.drawings);
+  const activeTool = useChartStore((s) => s.activeTool);
+  const drawColor = useChartStore((s) => s.drawColor);
+  const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
+  const addDrawing = useChartStore((s) => s.addDrawing);
+  const updateDrawing = useChartStore((s) => s.updateDrawing);
+  const selectDrawing = useChartStore((s) => s.selectDrawing);
+  const removeDrawing = useChartStore((s) => s.removeDrawing);
+  const setActiveTool = useChartStore((s) => s.setActiveTool);
 
   // In-progress drawing (first point placed, awaiting second).
   const [pending, setPending] = useState<Point[] | null>(null);

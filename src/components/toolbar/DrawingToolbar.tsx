@@ -19,7 +19,14 @@ const TOOLS: { tool: DrawingTool; icon: React.ReactNode; label: string }[] = [
 const COLORS = ['#2962ff', '#26a69a', '#ef5350', '#ff9800', '#ab47bc', '#ffffff'];
 
 export function DrawingToolbar() {
-  const { activeTool, setActiveTool, drawColor, setDrawColor, clearDrawings } = useChartStore();
+  // Atomic selectors — a whole-store subscription would re-render this toolbar on
+  // every realtime candle tick (chartStore.candles mutates per tick). These fields
+  // and actions only change on user interaction.
+  const activeTool = useChartStore((s) => s.activeTool);
+  const setActiveTool = useChartStore((s) => s.setActiveTool);
+  const drawColor = useChartStore((s) => s.drawColor);
+  const setDrawColor = useChartStore((s) => s.setDrawColor);
+  const clearDrawings = useChartStore((s) => s.clearDrawings);
 
   return (
     <div className="flex h-full flex-col items-center gap-1 py-2">
