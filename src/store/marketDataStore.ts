@@ -75,6 +75,10 @@ interface MarketDataState {
 
   // ---- subscription registry ----
   subscriptions: Record<SubscriptionKey, MarketSubscription>;
+  /** Reference count per subscription key — multiple consumers (watchlist,
+   *  chart, alerts) can share one stream; the provider stream is opened on the
+   *  first subscriber and torn down only when the last unsubscribes. */
+  subRefs: Record<SubscriptionKey, number>;
 
   /** Epoch ms of the most recent data mutation. */
   lastUpdate: number;
@@ -110,6 +114,7 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   selectedTimeframe: DEFAULT_TIMEFRAME,
   connectionStatus: 'disconnected',
   subscriptions: {},
+  subRefs: {},
   lastUpdate: 0,
 
   // ---------------- intents ----------------
@@ -125,18 +130,30 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
 
   subscribe: (sub) => {
     const key = subscriptionKey(sub.symbol, sub.channels.includes('kline') ? sub.timeframe : undefined);
-    if (get().subscriptions[key]) return; // already subscribed
-    set((s) => ({ subscriptions: { ...s.subscriptions, [key]: sub } }));
-    service?.subscribe(sub);
+    const refs = get().subRefs[key] ?? 0;
+    set((s) => ({
+      subscriptions: { ...s.subscriptions, [key]: sub },
+      subRefs: { ...s.subRefs, [key]: refs + 1 },
+    }));
+    if (refs === 0) service?.subscribe(sub); // first subscriber opens the stream
   },
 
   unsubscribe: (symbol, timeframe) => {
     const key = subscriptionKey(symbol, timeframe);
-    if (!get().subscriptions[key]) return;
+    const refs = get().subRefs[key] ?? 0;
+    if (refs === 0) return;
+    if (refs > 1) {
+      // Other consumers still need this stream — just drop a reference.
+      set((s) => ({ subRefs: { ...s.subRefs, [key]: refs - 1 } }));
+      return;
+    }
+    // Last subscriber → tear the stream down.
     set((s) => {
-      const next = { ...s.subscriptions };
-      delete next[key];
-      return { subscriptions: next };
+      const nextSubs = { ...s.subscriptions };
+      const nextRefs = { ...s.subRefs };
+      delete nextSubs[key];
+      delete nextRefs[key];
+      return { subscriptions: nextSubs, subRefs: nextRefs };
     });
     service?.unsubscribe(symbol, timeframe);
   },
@@ -224,5 +241,5 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
   getQuote: (symbol) => get().quotes[symbol],
 
   reset: () =>
-    set({ quotes: {}, candles: {}, subscriptions: {}, connectionStatus: 'disconnected', lastUpdate: 0 }),
+    set({ quotes: {}, candles: {}, subscriptions: {}, subRefs: {}, connectionStatus: 'disconnected', lastUpdate: 0 }),
 }));

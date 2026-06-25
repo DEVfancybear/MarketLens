@@ -23,6 +23,8 @@ interface UIState {
   rightOpen: boolean;
   bottomOpen: boolean;
   fullscreen: boolean;
+  /** Alert Center slide-over drawer visibility. */
+  alertCenterOpen: boolean;
   /** TradingView-style chart grid visibility (chart-settings toggle). */
   gridVisible: boolean;
   logs: { id: number; time: number; level: 'info' | 'warn' | 'error'; msg: string }[];
@@ -35,6 +37,8 @@ interface UIState {
   toggleRight: () => void;
   toggleBottom: () => void;
   setFullscreen: (v: boolean) => void;
+  toggleAlertCenter: () => void;
+  setAlertCenter: (v: boolean) => void;
   log: (level: 'info' | 'warn' | 'error', msg: string) => void;
   /** Load persisted UI prefs from localStorage. Call once on the client. */
   hydrate: () => void;
@@ -53,6 +57,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   rightOpen: true,
   bottomOpen: true,
   fullscreen: false,
+  alertCenterOpen: false,
   gridVisible: true,
   logs: [],
 
@@ -85,6 +90,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   toggleRight: () => set((s) => ({ rightOpen: !s.rightOpen })),
   toggleBottom: () => set((s) => ({ bottomOpen: !s.bottomOpen })),
   setFullscreen: (fullscreen) => set({ fullscreen }),
+  toggleAlertCenter: () => set((s) => ({ alertCenterOpen: !s.alertCenterOpen })),
+  setAlertCenter: (alertCenterOpen) => set({ alertCenterOpen }),
 
   log: (level, msg) =>
     set((s) => ({

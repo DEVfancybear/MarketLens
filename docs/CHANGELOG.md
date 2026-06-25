@@ -4,6 +4,32 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 2: TradingView-style Alert Engine (2026-06-25)
+- **Phase 1 audit** — `docs/PHASE1_REVIEW.md` (success criteria verified) + `docs/PHASE1_GAPS.md`
+  (open items; none block Phase 1). `docs/ALERT_ARCHITECTURE.md` added.
+- `src/store/marketDataStore.ts` — **reference-counted subscriptions** (`subRefs`). The provider
+  stream opens on the first subscriber and tears down only when the last unsubscribes, so the alert
+  engine and watchlist can share a symbol's ticker without clobbering each other (fixes Phase 1 gap
+  A1). Still one socket per provider.
+- `src/store/alertStore.ts` — full rewrite: `alerts` / `triggeredAlerts` / `history` / `settings`;
+  actions `createAlert` / `updateAlert` / `deleteAlert` / `triggerAlert` / `resetAlert` /
+  `clearTriggered` / `clearHistory` / `setSettings` / `hydrate`. Conditions: `above` / `below` /
+  `crossUp` / `crossDown`; one-time vs recurring; persisted to `localStorage`. Backward-compat
+  `add/remove/clear` retained for `AlertLines`/context menu.
+- `src/services/alertEngine.ts` (new) — pure evaluation (`conditionMet` / `isAlertTriggered` /
+  `inferCondition`).
+- `src/hooks/useAlertEngine.ts` (new, mounted in `GlobalRuntime`) — subscribes to `marketDataStore`
+  (**no polling, no new sockets**), refcount-subscribes alert-symbol tickers, remembers previous
+  prices for cross detection, triggers once with re-arm gating.
+- Notifications: `store/toastStore.ts` + `components/notifications/Toaster.tsx` (in-app),
+  `services/notifications/sound.ts` (Web Audio chime), `services/notifications/browser.ts`
+  (Notification API + permission), `services/notifications/notify.ts` (`deliverAlert` dispatcher —
+  the Phase 6 push seam).
+- `src/components/alerts/AlertCenter.tsx` (new) — responsive slide-over: settings, create form,
+  active / triggered / history. Toolbar **bell** button (with count badge) + `uiStore.alertCenterOpen`.
+- `ChartContextMenu` "Create Alert" now infers `crossUp`/`crossDown` from current price; `AlertLines`
+  shows the condition. Build/type/lint green.
+
 ### Changed — Phase 1 Step 17: Remove Last Mock — Phase 1 COMPLETE (2026-06-25)
 - **Deleted `src/services/marketData.ts`** (the seeded mock OHLCV generator) — the last mock data
   path in the app is gone. All candle/quote/symbol data now comes from the realtime pipeline.

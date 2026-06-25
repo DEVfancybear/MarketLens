@@ -3,11 +3,12 @@
 _Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-25._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
-Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) is
-COMPLETE (Steps 1–17): the watchlist, chart, and replay multi-timeframe panel all stream live**
-(Binance crypto with no API key; forex/metals/indices via TwelveData with a key). **There is no
-mock data anywhere in the app** — `services/marketData.ts` has been deleted. The next milestone is
-**Phase 2 (Alert Engine)**.
+Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) and Phase 2 (alert engine) are
+both COMPLETE.** The watchlist, chart, and replay MTF panel all stream live (Binance crypto with no
+API key; forex/metals/indices via TwelveData with a key); **there is no mock data anywhere**
+(`services/marketData.ts` deleted). Phase 2 adds a TradingView-style alert engine (above/below/
+crosses), toast + browser + sound notifications, and a responsive Alert Center. The next milestone
+is **Phase 3 (Drawing Engine)**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -22,11 +23,15 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   (drawings/indicators/tool too); `useMarketData` bridges it to `marketDataStore` (select → history
   → mirror candles). `useVisibleCandles` replay gate intact. `selectMarket()` is idempotent so
   the active kline is always (re)asserted on the active key.
-- **Recommended next action:** Start **Phase 2 — Alert Engine.** `alertStore` + `AlertLines` already
-  render alert price lines; the work is *triggering*: detect price crosses in the realtime pipeline
-  (`CandleEngine`/`marketDataStore` updates) and fire notifications. See the Phase 2 entry in
-  `NEXT_TASKS.md`. (Optional cleanup first: the legacy `Symbol`/`Quote` types in `types/market.ts`
-  may now be unused since the mock that produced them is gone — verify before removing.)
+- **Phase 2 progress:** **COMPLETE ✅.** `alertStore` (alerts/triggeredAlerts/history/settings),
+  pure `services/alertEngine.ts`, `hooks/useAlertEngine.ts` (mounted in `GlobalRuntime`; evaluates
+  off `marketDataStore` with reference-counted ticker subs — no polling, no new sockets), toast +
+  browser + sound notifications, responsive `AlertCenter` (toolbar bell). See
+  `docs/ALERT_ARCHITECTURE.md`. `marketDataStore` subscriptions are now refcounted (`subRefs`).
+- **Recommended next action:** Start **Phase 3 — Drawing Engine** (wire the unwired
+  `drawingRenderer.ts` + extended `types/drawing.ts` + `chartStore` drawing actions into
+  `DrawingLayer`/`DrawingToolbar`; expand to the full tool set). See `NEXT_TASKS.md` §Phase 3.
+  (Optional cleanup: the legacy `Symbol`/`Quote` types in `types/market.ts` may be unused now.)
 - **Runtime:** `npm run dev` → BTCUSDT chart + watchlist stream live from Binance (no key).
   TwelveData (forex/metals/indices) need `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local`
   (see `.env.example`).
@@ -103,26 +108,30 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - ✅ Bar Replay with click-to-select start, transport, speeds, scrubber, jump-to-date, MTF.
 - ✅ SMC suite (structure, FVG, OB, liquidity, displacement, sessions/kill-zones) off-thread.
 - ✅ Trade simulator + risk panel + journal (screenshots, CSV/Excel) + analytics dashboard.
+- ✅ **Alert engine (Phase 2)** — price above/below + crosses above/below, once-only/recurring,
+  evaluated off `marketDataStore` (no polling/sockets), toast + browser + sound, responsive Alert
+  Center (toolbar bell), persisted alerts + history. See `docs/ALERT_ARCHITECTURE.md`.
 - ✅ Watchlist (add/remove/sort, realtime), symbol search (registry), timeframe switching, theme
   toggle, fullscreen, screenshot export, resizable panels.
 
 ## 6. Remaining / missing features
 - ✅ **Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).** No mock data remains.
+- ✅ **Phase 2 — Alert Engine: COMPLETE.** Triggering + toast/browser/sound + Alert Center.
 - 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
-  and `CURRENT_STATE.md` §9). Belongs to Phase 3.
-- ❌ Alert **triggering**/notifications (**Phase 2 — next milestone**) — only alert lines render today.
+  and `CURRENT_STATE.md` §9). **Phase 3 — next milestone.**
 - ❌ Indicator settings dialogs (Phase 5).
-- ❌ Real broker/MT5 order routing + mobile notifications (Phase 6).
+- ❌ Real broker/MT5 order routing + Firebase mobile push (Phase 6 — alert dispatch seam ready in
+  `services/notifications/notify.ts`).
 
-## 7. Where to continue (Phase 2 — Alert Engine)
-1. **Phase 2 — Alert Engine.** `alertStore` holds alerts and `AlertLines` renders their price lines;
-   what's missing is *triggering*. Detect price crossings in the realtime pipeline (e.g. in
-   `CandleEngine`/the `marketDataStore` candle/quote updates), mark alerts triggered, and fire a
-   notification (in-app toast first; browser/push later in Phase 6). Keep it on the single
-   market-data source — no new sockets.
-2. Manual smoke test still worth doing for Phase 1: BTCUSDT ↔ ETHUSDT and 1m ↔ 1H switches — confirm
-   the badge stays 🟢, the forming bar ticks, no duplicate streams accumulate; arm replay and confirm
-   the MTF panel populates real higher-TF prices.
+## 7. Where to continue (Phase 3 — Drawing Engine)
+1. **Phase 3 — Drawing Engine.** Wire the already-landed-but-unwired refactor:
+   `components/chart/drawing/drawingRenderer.ts`, the extended `types/drawing.ts`, and the new
+   `chartStore` drawing actions into `DrawingLayer`/`DrawingToolbar`; expand to the full tool set
+   (17 tools), add a drawing context menu + hit-test module + hotkeys. See `NEXT_TASKS.md` §Phase 3.
+2. Manual smoke test for Phase 2: open the toolbar **bell**, create `BTCUSDT crosses above <price>`
+   and `BTCUSDT > <below-current>` — the latter fires immediately (level), the former on the next
+   upward cross; confirm one toast + chime, the alert moves to Triggered, and a History row is added.
+   Enable "Browser" to verify the system notification permission flow.
 
 ## 8. Known issues / gotchas
 - **`framer-motion` is broken** in this install (`motion-dom` export mismatch). It is **not
@@ -151,3 +160,6 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - Runtime loops: `components/layout/GlobalRuntime.tsx`.
 - Replay MTF real-data path: `hooks/useMtfSnapshotSeries.ts` → `services/replayEngine.ts`
   (`mtfSnapshot`) → `components/replay/ReplayDashboard.tsx`.
+- Alerts (Phase 2): `store/alertStore.ts`, `services/alertEngine.ts`, `hooks/useAlertEngine.ts`,
+  `components/alerts/AlertCenter.tsx`, `store/toastStore.ts` + `components/notifications/Toaster.tsx`,
+  `services/notifications/{notify,sound,browser}.ts`. Architecture: `docs/ALERT_ARCHITECTURE.md`.

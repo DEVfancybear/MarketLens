@@ -1,33 +1,254 @@
 'use client';
+/**
+ * Alert Store (Phase 2) — TradingView-style price alerts.
+ *
+ * Single source of truth for alert definitions, the alerts that have fired, and
+ * an immutable trigger history. Pure state + actions; price evaluation lives in
+ * the Alert Engine (`services/alertEngine.ts` + `hooks/useAlertEngine.ts`), which
+ * reads prices from `marketDataStore` — this store never touches the network.
+ *
+ * Lifecycle of a one-time alert:  alerts → (condition met) → triggeredAlerts,
+ * and a row is appended to `history`. `resetAlert` re-arms it (back to `alerts`).
+ * A `recurring` alert stays in `alerts` and only appends history on each fire
+ * (with a short re-arm so it doesn't spam every tick).
+ *
+ * Persisted to localStorage (key `alerts`); hydrated once on the client.
+ */
 import { create } from 'zustand';
 import { uid } from '@/utils/id';
+import { localStore } from '@/services/storage';
 
-export interface PriceAlert {
+export type AlertCondition = 'above' | 'below' | 'crossUp' | 'crossDown';
+export type AlertStatus = 'active' | 'triggered';
+
+export interface Alert {
   id: string;
   symbol: string;
+  condition: AlertCondition;
+  /** Target price. (Kept as `price` for backward-compat with <AlertLines/>.) */
   price: number;
-  createdAt: number;
+  status: AlertStatus;
+  createdAt: number; // epoch seconds
+  triggeredAt?: number; // epoch seconds
+  triggerPrice?: number;
+  note?: string;
+  /** Re-arm after firing ("Every time") vs fire once ("Only once"). */
+  recurring: boolean;
+  sound: boolean;
+  browser: boolean;
+}
+
+export interface AlertHistoryEntry {
+  id: string;
+  alertId: string;
+  symbol: string;
+  condition: AlertCondition;
+  targetPrice: number;
+  triggerPrice: number;
+  triggerTime: number; // epoch seconds
+}
+
+export interface AlertSettings {
+  toast: boolean;
+  sound: boolean;
+  browser: boolean;
+}
+
+export interface CreateAlertInput {
+  symbol: string;
+  condition: AlertCondition;
+  price: number;
+  note?: string;
+  recurring?: boolean;
+}
+
+/** Human-readable operator for a condition. */
+export const CONDITION_LABEL: Record<AlertCondition, string> = {
+  above: 'Price above',
+  below: 'Price below',
+  crossUp: 'Crossing up',
+  crossDown: 'Crossing down',
+};
+
+export const CONDITION_SYMBOL: Record<AlertCondition, string> = {
+  above: '≥',
+  below: '≤',
+  crossUp: '↗',
+  crossDown: '↘',
+};
+
+const STORAGE_KEY = 'alerts';
+const MAX_HISTORY = 200;
+const MAX_TRIGGERED = 50;
+/** Recurring alerts re-arm after this gap so one cross doesn't fire every tick. */
+export const RECURRING_REARM_MS = 60_000;
+
+interface PersistShape {
+  alerts: Alert[];
+  triggeredAlerts: Alert[];
+  history: AlertHistoryEntry[];
+  settings: AlertSettings;
 }
 
 interface AlertState {
-  alerts: PriceAlert[];
-  add: (symbol: string, price: number) => PriceAlert;
+  alerts: Alert[];
+  triggeredAlerts: Alert[];
+  history: AlertHistoryEntry[];
+  settings: AlertSettings;
+
+  // CRUD
+  createAlert: (input: CreateAlertInput) => Alert;
+  updateAlert: (id: string, patch: Partial<Omit<Alert, 'id'>>) => void;
+  deleteAlert: (id: string) => void;
+
+  // lifecycle
+  triggerAlert: (id: string, triggerPrice: number) => Alert | undefined;
+  resetAlert: (id: string) => void;
+
+  // bulk / settings
+  clearTriggered: () => void;
+  clearHistory: () => void;
+  setSettings: (patch: Partial<AlertSettings>) => void;
+
+  hydrate: () => void;
+
+  // ---- backward-compat (chart context menu) ----
+  /** Legacy one-click create. `condition` defaults to a plain price cross. */
+  add: (symbol: string, price: number, condition?: AlertCondition) => Alert;
   remove: (id: string) => void;
   clear: () => void;
 }
 
-/**
- * In-memory price alerts created from the chart context menu. Rendered on the
- * chart as price lines by <AlertLines/>. Created only at runtime (client), so
- * there is no SSR/hydration surface.
- */
+const DEFAULT_SETTINGS: AlertSettings = { toast: true, sound: true, browser: false };
+
+function persist(get: () => AlertState) {
+  const { alerts, triggeredAlerts, history, settings } = get();
+  const shape: PersistShape = { alerts, triggeredAlerts, history, settings };
+  localStore.set(STORAGE_KEY, shape);
+}
+
 export const useAlertStore = create<AlertState>((set, get) => ({
   alerts: [],
-  add: (symbol, price) => {
-    const alert: PriceAlert = { id: uid('alert'), symbol, price, createdAt: Date.now() / 1000 };
-    set({ alerts: [...get().alerts, alert] });
+  triggeredAlerts: [],
+  history: [],
+  settings: DEFAULT_SETTINGS,
+
+  createAlert: (input) => {
+    const { settings } = get();
+    const alert: Alert = {
+      id: uid('alert'),
+      symbol: input.symbol,
+      condition: input.condition,
+      price: input.price,
+      status: 'active',
+      createdAt: Date.now() / 1000,
+      note: input.note,
+      recurring: input.recurring ?? false,
+      sound: settings.sound,
+      browser: settings.browser,
+    };
+    set((s) => ({ alerts: [alert, ...s.alerts] }));
+    persist(get);
     return alert;
   },
-  remove: (id) => set({ alerts: get().alerts.filter((a) => a.id !== id) }),
-  clear: () => set({ alerts: [] }),
+
+  updateAlert: (id, patch) => {
+    set((s) => ({
+      alerts: s.alerts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      triggeredAlerts: s.triggeredAlerts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
+    persist(get);
+  },
+
+  deleteAlert: (id) => {
+    set((s) => ({
+      alerts: s.alerts.filter((a) => a.id !== id),
+      triggeredAlerts: s.triggeredAlerts.filter((a) => a.id !== id),
+    }));
+    persist(get);
+  },
+
+  triggerAlert: (id, triggerPrice) => {
+    const alert = get().alerts.find((a) => a.id === id);
+    if (!alert) return undefined;
+    const now = Date.now() / 1000;
+    const fired: Alert = { ...alert, status: 'triggered', triggeredAt: now, triggerPrice };
+    const entry: AlertHistoryEntry = {
+      id: uid('alh'),
+      alertId: alert.id,
+      symbol: alert.symbol,
+      condition: alert.condition,
+      targetPrice: alert.price,
+      triggerPrice,
+      triggerTime: now,
+    };
+
+    set((s) => {
+      const history = [entry, ...s.history].slice(0, MAX_HISTORY);
+      if (alert.recurring) {
+        // Stay armed; just stamp the last trigger time (engine re-arm gate).
+        return {
+          history,
+          alerts: s.alerts.map((a) => (a.id === id ? { ...a, triggeredAt: now, triggerPrice } : a)),
+        };
+      }
+      // One-time: move active → triggered.
+      return {
+        history,
+        alerts: s.alerts.filter((a) => a.id !== id),
+        triggeredAlerts: [fired, ...s.triggeredAlerts].slice(0, MAX_TRIGGERED),
+      };
+    });
+    persist(get);
+    return fired;
+  },
+
+  resetAlert: (id) => {
+    set((s) => {
+      const fired = s.triggeredAlerts.find((a) => a.id === id);
+      if (!fired) return s;
+      const rearmed: Alert = { ...fired, status: 'active', triggeredAt: undefined, triggerPrice: undefined };
+      return {
+        triggeredAlerts: s.triggeredAlerts.filter((a) => a.id !== id),
+        alerts: [rearmed, ...s.alerts],
+      };
+    });
+    persist(get);
+  },
+
+  clearTriggered: () => {
+    set({ triggeredAlerts: [] });
+    persist(get);
+  },
+  clearHistory: () => {
+    set({ history: [] });
+    persist(get);
+  },
+  setSettings: (patch) => {
+    set((s) => ({ settings: { ...s.settings, ...patch } }));
+    persist(get);
+  },
+
+  hydrate: () => {
+    const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
+    if (!saved) return;
+    set({
+      alerts: saved.alerts ?? [],
+      triggeredAlerts: saved.triggeredAlerts ?? [],
+      history: saved.history ?? [],
+      settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
+    });
+  },
+
+  // ---- backward-compat ----
+  add: (symbol, price, condition = 'crossUp') =>
+    get().createAlert({ symbol, condition, price }),
+  remove: (id) => get().deleteAlert(id),
+  clear: () => {
+    set({ alerts: [] });
+    persist(get);
+  },
 }));
+
+/** Selector: all alerts that should render a live price line (active only). */
+export const selectActiveAlerts = (s: AlertState) => s.alerts;

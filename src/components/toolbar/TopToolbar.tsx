@@ -1,8 +1,9 @@
 'use client';
 import {
-  Camera, Maximize2, Minimize2, Moon, Sun, PlayCircle, Layout as LayoutIcon, PanelRightClose, PanelRightOpen,
+  Camera, Maximize2, Minimize2, Moon, Sun, PlayCircle, Layout as LayoutIcon, PanelRightClose, PanelRightOpen, Bell,
 } from 'lucide-react';
 import { SymbolSearch } from './SymbolSearch';
+import { useAlertStore } from '@/store/alertStore';
 import { IndicatorMenu } from './IndicatorMenu';
 import { SmcMenu } from './SmcMenu';
 import { ChartSettingsMenu } from './ChartSettingsMenu';
@@ -26,6 +27,8 @@ export function TopToolbar() {
   const setTimeframe = useChartStore((s) => s.setTimeframe);
   const replay = useReplayStore();
   const ui = useUIStore();
+  const alertCount = useAlertStore((s) => s.alerts.length);
+  const toggleAlertCenter = useUIStore((s) => s.toggleAlertCenter);
 
   const toggleReplay = () => {
     if (replay.active) {
@@ -129,6 +132,19 @@ export function TopToolbar() {
       <div className="ml-auto flex items-center gap-0.5">
         <ConnectionBadge />
         <div className="mx-1 h-5 w-px bg-terminal-border" />
+        <button
+          onClick={toggleAlertCenter}
+          className="relative flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+          title="Alerts"
+          aria-label="Alerts"
+        >
+          <Bell size={15} />
+          {alertCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-choch px-0.5 text-[9px] font-bold text-black">
+              {alertCount}
+            </span>
+          )}
+        </button>
         <IconButton label="Screenshot" onClick={screenshot}>
           <Camera size={15} />
         </IconButton>

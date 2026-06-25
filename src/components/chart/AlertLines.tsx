@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import type { IPriceLine } from 'lightweight-charts';
 import { useChartCtx } from './ChartContext';
-import { useAlertStore } from '@/store/alertStore';
+import { useAlertStore, CONDITION_SYMBOL } from '@/store/alertStore';
 import { useChartStore } from '@/store/chartStore';
 
 /**
@@ -28,7 +28,7 @@ export function AlertLines() {
           lineWidth: 1,
           lineStyle: 2,
           axisLabelVisible: true,
-          title: 'Alert',
+          title: `⏰ ${CONDITION_SYMBOL[a.condition]}`,
         }),
       );
     return () => {

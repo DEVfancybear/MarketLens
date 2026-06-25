@@ -3,12 +3,21 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).** Switch hardening,
-  connection badge, reconnect hardening, perf pass, and **the last mock removed**. Chart + watchlist
-  stream live (Binance crypto, no key needed); replay MTF reads real higher-TF history. **Next
-  milestone: Phase 2 — Alert Engine.**
+- **✅ Phase 2 — Alert Engine — COMPLETE.** TradingView-style price alerts (above / below / crosses
+  above / crosses below), evaluated off the realtime `marketDataStore` (no polling, no new sockets,
+  reference-counted subscriptions), once-only + recurring, toast + browser + sound notifications,
+  responsive Alert Center, persisted alerts + history. Phase 1 audited (`PHASE1_REVIEW.md` /
+  `PHASE1_GAPS.md`). **Next milestone: Phase 3 — Drawing Engine.**
+- **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
 
 ## Recently modified files
+- `src/store/alertStore.ts` (Phase 2 rewrite), `src/services/alertEngine.ts`,
+  `src/hooks/useAlertEngine.ts`, `src/components/alerts/AlertCenter.tsx`
+- `src/store/toastStore.ts`, `src/components/notifications/Toaster.tsx`,
+  `src/services/notifications/{notify,sound,browser}.ts`
+- `src/store/marketDataStore.ts` (refcounted subscriptions — `subRefs`)
+- `src/components/layout/GlobalRuntime.tsx` (mount engine + hydrate alerts), `Terminal.tsx`
+  (Toaster + AlertCenter), `TopToolbar.tsx` (bell), `ChartContextMenu.tsx` / `AlertLines.tsx`
 - `src/services/marketData.ts` **(deleted — Step 17, last mock removed)**
 - `src/hooks/useMtfSnapshotSeries.ts` (new — real higher-TF history for replay MTF)
 - `src/services/replayEngine.ts` (Step 17: `mtfSnapshot` now pure, takes `seriesByTf`)
@@ -90,6 +99,16 @@ _Last updated: 2026-06-25_
 - Analytics: win rate, profit factor, avg RR, max DD, expectancy, equity/drawdown curve,
   R-distribution, monthly performance.
 
+### Alerts (Phase 2 — production-ready)
+- Conditions: price above / below, crosses above / below; one-time or recurring (60s re-arm).
+- Evaluated by `useAlertEngine` off `marketDataStore` (push, no polling); refcounted ticker
+  subscriptions so any symbol's alerts work without new sockets; once-only trigger, no duplicates.
+- Notifications: in-app toast (`Toaster`), Web Audio chime, browser/system notification (permission
+  from the Alert Center). Dispatch isolated in `notify.ts` (Phase 6 Firebase push seam).
+- Responsive **Alert Center** drawer (toolbar bell): create form, active / triggered / history,
+  notification settings. Alerts + history persisted to localStorage. Chart price lines + right-click
+  "Create Alert" (condition inferred from price). See `docs/ALERT_ARCHITECTURE.md`.
+
 ## In progress (NOT shipped — see CURRENT_STATE.md §9)
 - **Left drawing-toolbar overhaul (Phase 3 scope):** types + store actions + pure
   `drawingRenderer.ts` landed, but **not wired** into `DrawingLayer`/`DrawingToolbar`. Currently
@@ -100,5 +119,6 @@ _Last updated: 2026-06-25_
   Phase 2 (Alert Engine). See `NEXT_TASKS.md`.
 
 ## Not started (later phases)
-- Alert triggering (Phase 2), full drawing engine (Phase 3), indicator dialogs (Phase 5),
-  MT5/broker integration + notifications (Phase 6).
+- Full drawing engine (Phase 3), TradingView toolbar polish (Phase 4), indicator dialogs (Phase 5),
+  MT5/broker integration + Firebase mobile push (Phase 6 — alert dispatch seam is ready in
+  `services/notifications/notify.ts`).

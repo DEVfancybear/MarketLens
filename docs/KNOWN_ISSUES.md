@@ -1,32 +1,34 @@
 # KNOWN ISSUES
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-06-25 (after Phase 1 + Phase 2). Phase 1's old "mock data" limitations are
+**resolved** — see `PHASE1_REVIEW.md`. Remaining items below._
 
 ## Bugs / broken dependencies
 - **`framer-motion` install is broken** (`motion-dom` does not export `GroupPlaybackControls` /
-  `attachTimeline` / `NativeAnimationControls`). It is **not imported anywhere** (the chart
-  context menu uses a CSS pop-in animation). Importing it again will break `next build`.
+  `attachTimeline` / `NativeAnimationControls`). It is **not imported anywhere** (toasts + context
+  menu use CSS keyframes). Importing it again will break `next build`.
   _Fix:_ pin a compatible `framer-motion`/`motion-dom` pair, or remove it from `package.json`.
 
-## Limitations (by design, current phase)
-- **All market data is mock.** `services/marketData.ts` is a deterministic seeded generator.
-  Watchlist "realtime" quotes never move; there is no WebSocket / connection status / reconnect.
-  Phase 1 replaces this (see `NEXT_TASKS.md`).
-- **No incremental tick path.** `PriceChart` pushes data via `series.setData(...)` on every
-  visible-candle change. Realtime should use `series.update(lastBar)` for O(1) tick updates.
-- **No central market-data store.** Market state lives in `chartStore` + React Query cache;
-  Phase 1 introduces `marketDataStore` as the single source of truth.
+## Limitations (by design)
+- **TwelveData needs a key.** Forex/metals/indices quotes/candles require
+  `NEXT_PUBLIC_TWELVEDATA_API_KEY`; without it those rows show "—". Crypto (Binance) needs no key.
+- **Browser/system alert notifications require permission** and are off by default; enable from the
+  Alert Center. Mobile **push** (Firebase) is Phase 6 — the dispatch seam is ready in
+  `services/notifications/notify.ts`.
+- **Deep replay history is REST-bounded** (most-recent N bars per TF); replaying far into the past
+  is limited by provider history depth.
 
 ## Technical debt
 - **Unwired drawing refactor (Phase 3).** `types/drawing.ts` (new tools + `zIndex/locked/
   visible/stop/target`), new `chartStore` actions (`duplicateDrawing/lockDrawing/hideDrawing/
   bringToFront/sendToBack/toggleLockAll/toggleHideAll`), and `components/chart/drawing/
   drawingRenderer.ts` were added but are **not yet used** by `DrawingLayer`/`DrawingToolbar`.
-  Currently dead code; either finish in Phase 3 or revert before Phase 1.
-- **Mock history feeds replay/SMC.** `replayEngine.mtfSnapshot` and `smcEngine` pull higher-TF
-  history from the mock `getHistorySync`; repoint to `HistoricalDataService` when removing mock.
-- **`tradeStore` price feed** comes from the visible candle stream; ensure realtime ticks flow
-  through `useTradeRuntime` so order fills/SL/TP keep working.
+  Currently dead code; finish in Phase 3 (next milestone).
+- **Legacy `Symbol`/`Quote` types** in `types/market.ts` may be orphaned after the mock's deletion —
+  verify with a grep and remove if unused.
+- **`MarketDataService.symbolsByProvider` lingers chart-only symbols** (timeframe-scoped kline
+  unsubscribe doesn't remove the symbol). Cosmetic — affects only status aggregation. See
+  `PHASE1_GAPS.md` A2.
 
 ## Workarounds
 - **Windows `next build` worker race.** "Collecting page data" sometimes fails with

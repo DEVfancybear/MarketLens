@@ -108,7 +108,15 @@ src/
 | `journalStore` | closed-trade journal entries | **IndexedDB** `smc-terminal/journal` |
 | `analyticsStore` | starting equity, symbol filter | — |
 | `watchlistStore` | watchlist symbols, sort | localStorage `watchlist` |
-| `alertStore` | in-memory price alerts | runtime only |
+| `marketDataStore` | **realtime quotes/candles, selection, status, refcounted subscriptions** | runtime only |
+| `alertStore` | alerts / triggeredAlerts / history / settings (Phase 2) | localStorage `alerts` |
+| `toastStore` | transient in-app toasts | runtime only |
+
+**Alert architecture (Phase 2):** `marketDataStore` (SSOT) → `useAlertEngine` (push subscription,
+no polling/sockets; refcounted alert-symbol tickers) → pure `services/alertEngine.ts` (above/below/
+crossUp/crossDown) → `alertStore.triggerAlert` (once-only/recurring) → `services/notifications/
+notify.ts` → toast / sound / browser (Firebase push seam for Phase 6). UI: `components/alerts/
+AlertCenter.tsx` + chart `AlertLines`. Full detail in **`docs/ALERT_ARCHITECTURE.md`**.
 
 **Single source of truth for visibility:** `useVisibleCandles()` returns `chartStore.candles`
 (full) or, while replay is armed, `candles[0..replayCursor]`. Every chart/indicator/SMC/trade

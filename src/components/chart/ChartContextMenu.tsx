@@ -5,7 +5,8 @@ import { Bell, TrendingDown, TrendingUp, Plus, Minus } from 'lucide-react';
 import { useChartStore } from '@/store/chartStore';
 import { useTradeStore } from '@/store/tradeStore';
 import { useUIStore } from '@/store/uiStore';
-import { useAlertStore } from '@/store/alertStore';
+import { useAlertStore, CONDITION_SYMBOL } from '@/store/alertStore';
+import { inferCondition } from '@/services/alertEngine';
 import { getMarketSymbol } from '@/services/market-data/symbols';
 import { fmtPrice } from '@/utils/format';
 import { uid } from '@/utils/id';
@@ -46,7 +47,7 @@ export function ChartContextMenu({
   const place = useTradeStore((s) => s.place);
   const setBottomTab = useUIStore((s) => s.setBottomTab);
   const log = useUIStore((s) => s.log);
-  const addAlert = useAlertStore((s) => s.add);
+  const createAlert = useAlertStore((s) => s.createAlert);
 
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state.x, y: state.y });
@@ -110,8 +111,11 @@ export function ChartContextMenu({
       icon: <Bell size={14} className="text-choch" />,
       label: `Create Alert for ${symbol} at ${priceStr}`,
       onClick: act(() => {
-        addAlert(symbol, state.price);
-        log('info', `Alert created: ${symbol} @ ${priceStr}`);
+        const candles = useChartStore.getState().candles;
+        const current = candles[candles.length - 1]?.close;
+        const condition = inferCondition(state.price, current);
+        createAlert({ symbol, condition, price: state.price });
+        log('info', `Alert created: ${symbol} ${CONDITION_SYMBOL[condition]} ${priceStr}`);
       }),
     },
     { divider: true },

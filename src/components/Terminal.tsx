@@ -8,6 +8,8 @@ import { Watchlist } from '@/components/watchlist/Watchlist';
 import { BottomPanel } from '@/components/layout/BottomPanel';
 import { GlobalRuntime } from '@/components/layout/GlobalRuntime';
 import { Splash } from '@/components/layout/Splash';
+import { Toaster } from '@/components/notifications/Toaster';
+import { AlertCenter } from '@/components/alerts/AlertCenter';
 import { useStoreHydration } from '@/hooks/useStoreHydration';
 
 /**
@@ -30,6 +32,8 @@ export function Terminal() {
         watchlist={<Watchlist />}
         bottom={<BottomPanel />}
       />
+      <AlertCenter />
+      <Toaster />
     </>
   );
 }

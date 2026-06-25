@@ -4,7 +4,9 @@ import { useHotkeys } from '@/hooks/useHotkeys';
 import { useSmcEngine } from '@/hooks/useSmcEngine';
 import { useTradeRuntime } from '@/hooks/useTradeRuntime';
 import { useMarketDataBootstrap } from '@/hooks/useMarketDataBootstrap';
+import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { useJournalStore } from '@/store/journalStore';
+import { useAlertStore } from '@/store/alertStore';
 import { useEffect } from 'react';
 
 /**
@@ -17,12 +19,15 @@ export function GlobalRuntime() {
   useSmcEngine();
   useTradeRuntime();
   useMarketDataBootstrap(); // brings the realtime feed online + subscribes watchlist tickers
+  useAlertEngine(); // evaluates price alerts off the same realtime feed (no polling/sockets)
 
-  // Hydrate the journal from IndexedDB once on mount.
+  // Hydrate the journal from IndexedDB + alerts from localStorage once on mount.
   const loadJournal = useJournalStore((s) => s.load);
+  const hydrateAlerts = useAlertStore((s) => s.hydrate);
   useEffect(() => {
     void loadJournal();
-  }, [loadJournal]);
+    hydrateAlerts();
+  }, [loadJournal, hydrateAlerts]);
 
   return null;
 }

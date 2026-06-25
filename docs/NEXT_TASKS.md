@@ -45,9 +45,12 @@ reconnect, single market-data store, **no mock data**, no duplicate sockets.
 
 ## Later phases (roadmap, not started)
 
-- **Phase 2 — Alert Engine:** promote `alertStore` to triggered alerts (price cross detection
-  in `CandleEngine`), notifications. (`AlertLines` already renders alert price lines.)
-- **Phase 3 — Drawing Engine:** finish the in-progress toolbar overhaul (wire
+- **Phase 2 — Alert Engine:** ✅ **COMPLETE.** `alertStore` (alerts/triggered/history), pure
+  `alertEngine`, `useAlertEngine` (evaluates off `marketDataStore`, refcounted subs, once-only),
+  toast + browser + sound notifications, responsive Alert Center, persistence. See
+  `docs/ALERT_ARCHITECTURE.md`. Remaining alert polish (optional, later): inline edit of a target
+  price, alert sound picker, snooze.
+- **Phase 3 — Drawing Engine (next milestone):** finish the in-progress toolbar overhaul (wire
   `drawingRenderer.ts` into `DrawingLayer`, expand `DrawingToolbar` to 17 tools, add
   `DrawingContextMenu`, hit-test module, drawing hotkeys). See `CURRENT_STATE.md` §9.
 - **Phase 4 — TradingView Toolbar:** full left toolbar polish + tool settings.
