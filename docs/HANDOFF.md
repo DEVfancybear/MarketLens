@@ -8,8 +8,9 @@ both COMPLETE, along with the OANDA integration.** The watchlist, chart, and rep
 API key; forex/metals/indices via OANDA with a bearer token, or TwelveData as fallback); **there is no mock data anywhere**
 (`services/marketData.ts` deleted). Phase 2 adds a TradingView-style alert engine (above/below/
 crosses), toast + browser + sound notifications, a responsive Alert Center, and **interactive chart
-alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press). The next
-milestone is **Phase 3 (Drawing Engine)**.
+alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press). The roadmap
+has been refreshed with an 11-phase master plan (`docs/PHASE3_11_PLAN.md`). The next milestone is
+**Phase 3.1 — TradingView UI Parity (Layout System)**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.

@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Docs — Master roadmap + Phase 3–11 plan (2026-06-25)
+- `docs/PHASE3_11_PLAN.md` — comprehensive implementation plan covering all 9 remaining phases:
+  UI Parity, Drawing Engine, Left Toolbar, Indicator Engine, Push Notifications, MT5 Integration,
+  Trading Panel, Position Visualization, and Polish. Includes dependency map, file inventory,
+  and estimated effort per phase (18–27 hours total).
+- Updated `docs/NEXT_TASKS.md` with the new phase sequence; updated `docs/CURRENT_PROGRESS.md`
+  and `docs/HANDOFF.md` to reflect the roadmap refresh.
+
 ### Debug — OANDA routing diagnostics (2026-06-25)
 - **Problem:** forex symbols still showed "--" with no indication why. The `subscribe()` method
   in `MarketDataService` silently dropped subscriptions when no provider (OANDA/TwelveData) was

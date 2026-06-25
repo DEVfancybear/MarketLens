@@ -7,14 +7,15 @@ _Last updated: 2026-06-25_
 - **✅ Phase 2 — Alert Engine — COMPLETE** (+ audit + Phase 2.1 interactive chart alerts).
 - **✅ OANDA Integration — COMPLETE** (forex/metals/indices realtime + historical data).
 - **🔍 OANDA diagnostics added** — console logging for provider routing, API calls, and errors.
-- **Next milestone: Phase 3 — Drawing Engine.**
+- **📋 Roadmap updated** — New 11-phase master plan covering UI parity through final polish.
+  See `docs/PHASE3_11_PLAN.md`.
+- **Next milestone: Phase 3.1 — TradingView UI Parity (Layout System).**
 
 ## Completed this session
-1. **OANDA debug diagnostics:** Added console.debug/console.warn logging to MarketDataService
-   (constructor, route(), subscribe()) and OandaProvider (subscribe(), connect(), fetchPrices()).
-   These reveal whether the OANDA API key is missing, whether routing silently drops forex
-   subscriptions, and the HTTP status of pricing API calls. See OANDA_DEBUG_REPORT.md.
-2. **Phase 1 finish (Steps 12–17):** symbol/timeframe switch hardening (idempotent `selectMarket`),
+1. **Updated roadmap + Phase 3–11 plan:** Created `docs/PHASE3_11_PLAN.md` — comprehensive
+   implementation plan for all 9 remaining phases (UI parity through polish). See the plan for
+   detailed step-by-step tasks per phase.
+2. **OANDA debug diagnostics:** Added console.debug/console.warn logging to MarketDataService symbol/timeframe switch hardening (idempotent `selectMarket`),
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
    last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real
