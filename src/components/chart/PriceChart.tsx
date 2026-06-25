@@ -138,7 +138,7 @@ export function PriceChart({
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: 0, // solid (TradingView style)
-      lastValueVisible: true,
+      lastValueVisible: false, // our custom PriceMarkerLabel renders the price
     });
 
     const volumeSeries = chart.addHistogramSeries({

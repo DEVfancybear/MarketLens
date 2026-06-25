@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed — Phase 3.5: Countdown moved to right-side price marker (2026-06-25)
+- Corrected countdown position: was in top-left (wrong). Now on the right side
+  of the chart, right-aligned, matching TradingView's price scale placement.
+- Chart header is compact: symbol . exchange . TF (11px) + OHLC row (11px),
+  no countdown. top-1 (4px) offset.
+- PriceMarkerLabel repositioned to right side, 16px price, 11px symbol/countdown.
+- LWC lastValueVisible disabled to prevent double price display.
+
 ### Changed — Phase 3.5: Price marker + countdown parity (2026-06-25)
 - Created `PriceMarkerLabel.tsx` — TradingView-style price box in chart top-left:
   14px bold symbol, 26px bold green/red price, 12px countdown. Semi-transparent
