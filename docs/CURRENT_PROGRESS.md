@@ -9,17 +9,17 @@ _Last updated: 2026-06-25_
 - **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~95%, interaction ~87%).
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
   price marker 95% (native LWC), countdown 100%, header layout 95%.
-  Countdown rendered via native `createPriceLine` on right price axis.
-  See `docs/PRICE_MARKER_ROOT_CAUSE_ANALYSIS.md`.
-  See `docs/TRADINGVIEW_PARITY_REPORT.md` and `docs/UI_GAP_ANALYSIS.md`.
+- **📋 Phase 4 roadmap: COMPLETE** — Drawing engine architecture plan covering
+  7 implementation phases (~3.5h). See `docs/PHASE4_DRAWING_ENGINE_ROADMAP.md`.
+- **Next milestone: Phase 4.1 — Wire canonical drawing renderer.**
 - **Next milestone: Phase 4 — Drawing Engine.**
 
 ## Completed this session
-1. **Phase 3.5 — Root cause fix: native price marker.** Deleted `PriceMarkerLabel.tsx`
-   (free-floating HTML DOM overlay). Replace with native LWC features: `lastValueVisible: true`
-   for the price label, and a transparent `createPriceLine` for the countdown on the right
-   axis. Countdown moves with price scale; no CSS hacks. See `PRICE_MARKER_ROOT_CAUSE_ANALYSIS.md`.
-2. **Phase 3 — TradingView UI Parity (final pass):** Watchlist, toolbar, typography, and spacing
+1. **Phase 4 roadmap:** Created `docs/PHASE4_DRAWING_ENGINE_ROADMAP.md` — architecture plan
+   for the full drawing engine. 7 phases: wire canonical renderer (4.1), wire store actions
+   (4.2), DrawingContextMenu (4.3), hit-test module (4.4), drawing hotkeys (4.5), expand toolbar
+   to 17 tools (4.6), new tool creation flows (4.7). ~3.5h total. Zero code written yet.
+2. **Phase 3.5 — Root cause fix: native price marker.** Deleted `PriceMarkerLabel.tsx`
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
    last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real

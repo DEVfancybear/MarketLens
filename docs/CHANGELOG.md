@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Docs — Phase 4 drawing engine architecture roadmap (2026-06-25)
+- `docs/PHASE4_DRAWING_ENGINE_ROADMAP.md` — complete architecture plan for the
+  drawing engine foundation. 7 implementation phases (~3.5h): wire canonical
+  renderer, wire store actions, DrawingContextMenu, hit-test module, drawing
+  hotkeys, expand toolbar to 17 tools, new tool creation flows.
+- Includes architecture diagram, tool category breakdown, dependency map,
+  estimated complexity per phase, mobile support plan, and file inventory.
+
 ### Fixed — Phase 3.5: Native LWC price marker (root cause) (2026-06-25)
 - Deleted PriceMarkerLabel.tsx (HTML DOM overlay with static positioning).
 - Replaced with native LWC: lastValueVisible for price label, transparent
