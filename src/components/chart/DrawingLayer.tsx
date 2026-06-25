@@ -48,15 +48,27 @@ export function DrawingLayer() {
     const onDown = (e: PointerEvent) => {
       console.log("[DrawingLayer] RAW pointerdown on canvas", e.target);
     };
-    const onMove = (e: PointerEvent) => {
-      // only log first move after a tool is selected, to avoid spam
-    };
     c.addEventListener("pointerdown", onDown);
-    c.addEventListener("pointermove", onMove);
-    return () => {
-      c.removeEventListener("pointerdown", onDown);
-      c.removeEventListener("pointermove", onMove);
+    return () => c.removeEventListener("pointerdown", onDown);
+  }, []);
+
+  // Trace which element receives clicks on the chart area.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement;
+      const tag = el?.tagName;
+      const cls = el?.className?.substring?.(0, 60) ?? "";
+      const style = el ? window.getComputedStyle(el) : null;
+      console.log("[DrawingLayer] BODY click trace", {
+        tag,
+        cls,
+        pointerEvents: style?.pointerEvents,
+        zIndex: style?.zIndex,
+        id: el?.id,
+      });
     };
+    document.addEventListener("pointerdown", onDown, true); // capture phase
+    return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
 
   // Diagnostic: log when canvas mounts.
