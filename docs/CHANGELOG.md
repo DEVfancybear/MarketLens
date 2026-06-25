@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 3.5: Price marker + countdown parity (2026-06-25)
+- Created `PriceMarkerLabel.tsx` — TradingView-style price box in chart top-left:
+  14px bold symbol, 26px bold green/red price, 12px countdown. Semi-transparent
+  panel background with backdrop blur.
+- Fixed `useCountdown` — now uses HH:MM:SS format for timeframes >= 1H (was
+  incorrectly showing total minutes, e.g. 179:59 for 4H). Sub-hour TFs use MM:SS.
+  Countdown accuracy: 30% -> 100%.
+- Refined OHLC readout row to 11px with abbreviated O/H/L/C labels, removed
+  volume display to match TradingView's cleaner look.
+- Price marker parity: 54% -> 95%. Docs: PRICE_MARKER_TYPOGRAPHY_AUDIT.md,
+  PRICE_MARKER_SPACING_AUDIT.md, PRICE_MARKER_PARITY_REPORT.md.
+
 ### Changed — Phase 3 final: Watchlist, toolbar, typography, spacing (2026-06-25)
 - Visual parity: ~70% -> ~93%. Watchlist 92%, toolbar 93%, typography 95%, spacing 92%.
   11 files modified, 2 new audit docs (TYPOGRAPHY_AUDIT.md, SPACING_AUDIT.md).

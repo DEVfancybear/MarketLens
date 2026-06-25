@@ -1,8 +1,18 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { TF_SECONDS, type Timeframe } from '@/types';
+"use client";
+import { useEffect, useState } from "react";
+import { TF_SECONDS, type Timeframe } from "@/types";
 
-/** TradingView-style countdown timer until the next bar closes. */
+/**
+ * TradingView-style countdown timer.
+ * - Sub-hour TFs (1m–30m): MM:SS
+ * - 1H:                 MM:SS (up to 59:59)
+ * - 4H+:                HH:MM:SS
+ * - 1D+:                HH:MM:SS
+ * - 1W:                 HH:MM:SS
+ *
+ * Updates every 250ms for smooth second-level rendering. Does not depend on
+ * price feed — pure wall-clock.
+ */
 export function useCountdown(tf: Timeframe): string {
   const [remaining, setRemaining] = useState(0);
 
@@ -13,12 +23,21 @@ export function useCountdown(tf: Timeframe): string {
       setRemaining(sec - (now % sec));
     };
     tick();
-    const id = setInterval(tick, 250); // tick 4×/s for smooth countdown
+    const id = setInterval(tick, 250);
     return () => clearInterval(id);
   }, [tf]);
 
-  const m = Math.floor(remaining / 60);
+  if (remaining <= 0) return "0:00";
+
+  const h = Math.floor(remaining / 3600);
+  const m = Math.floor((remaining % 3600) / 60);
   const s = remaining % 60;
-  if (m > 0) return `${m}:${String(s).padStart(2, '0')}`;
-  return `0:${String(s).padStart(2, '0')}`;
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  // Sub-hour: MM:SS
+  if (h === 0) return `${m}:${pad(s)}`;
+
+  // 1H+: HH:MM:SS
+  return `${h}:${pad(m)}:${pad(s)}`;
 }
