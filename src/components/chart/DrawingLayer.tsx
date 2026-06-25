@@ -307,11 +307,30 @@ export function DrawingLayer() {
 
     // Forward wheel events to the LWC chart element (our container sits
     // above the chart in z-order and would otherwise block zoom).
+    // LWC chart div is the previous sibling of our container's parent
+    // (the ChartContextObj.Provider wrapper).
     const handleWheel = (e: WheelEvent) => {
-      // In drawing mode, allow wheel zoom on the chart.
-      const chartEl = el.previousElementSibling as HTMLElement | null;
+      const chartEl = el.parentElement
+        ?.previousElementSibling as HTMLElement | null;
       if (!chartEl) return;
-      chartEl.dispatchEvent(new WheelEvent("wheel", e));
+      chartEl.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaX: e.deltaX,
+          deltaY: e.deltaY,
+          deltaZ: e.deltaZ,
+          deltaMode: e.deltaMode,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          screenX: e.screenX,
+          screenY: e.screenY,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+          metaKey: e.metaKey,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
     };
     el.addEventListener("wheel", handleWheel, { passive: true });
 
