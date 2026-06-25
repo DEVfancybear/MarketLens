@@ -8,7 +8,8 @@ import { mtfSnapshot, quickTrend, sessionAt } from '@/services/replayEngine';
 import { fmtDateTime, parseDateInput } from '@/utils/time';
 import { fmtPrice } from '@/utils/format';
 import { indexAtOrBefore } from '@/services/replayEngine';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
+import { useMtfSnapshotSeries } from '@/hooks/useMtfSnapshotSeries';
 import { cn } from '@/utils/cn';
 import { CalendarClock } from 'lucide-react';
 
@@ -32,16 +33,18 @@ export function ReplayDashboard() {
   const snap = useSmcStore((s) => s.snapshot);
   const [dateInput, setDateInput] = useState('');
 
-  const prec = getSymbol(symbol)?.pricePrecision ?? 2;
+  const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const current = visible[visible.length - 1];
   const trend = snap.trend !== 'ranging' ? snap.trend : quickTrend(visible);
   const session = current ? sessionAt(current.time) : '—';
 
+  // Higher-TF history from the real HistoricalDataService (replaces the old mock).
+  const mtfSeries = useMtfSnapshotSeries(symbol, r.active);
   const mtf = useMemo(
-    () => (r.active && current ? mtfSnapshot(symbol, current.time) : []),
-    // Only the current candle's time matters for the snapshot.
+    () => (r.active && current ? mtfSnapshot(current.time, mtfSeries) : []),
+    // Only the current candle's time + the loaded series matter for the snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [r.active, symbol, current?.time],
+    [r.active, current?.time, mtfSeries],
   );
 
   const jump = () => {

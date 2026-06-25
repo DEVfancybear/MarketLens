@@ -1,6 +1,6 @@
 'use client';
 import { useTradeStore } from '@/store/tradeStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { fmtMoney, fmtPrice } from '@/utils/format';
 import { fmtDateTime } from '@/utils/time';
 import { cn } from '@/utils/cn';
@@ -32,7 +32,7 @@ export function PositionsTable() {
             </tr>
           )}
           {live.map((p) => {
-            const prec = getSymbol(p.symbol)?.pricePrecision ?? 2;
+            const prec = getMarketSymbol(p.symbol)?.pricePrecision ?? 2;
             const pnl = p.status === 'open' ? p.unrealizedPnl : 0;
             return (
               <tr key={p.id} className="border-t border-terminal-border [&>td]:px-2 [&>td]:py-1.5">

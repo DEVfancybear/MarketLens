@@ -2,10 +2,11 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–16 are **complete** (service layer + hooks + realtime watchlist + realtime chart + switch
-hardening + connection badge + reconnect hardening + perf pass). The chart now streams live (Binance
-crypto needs no key). **Immediate next: Step 17 (remove the last mock — `services/marketData.ts`).**
-Remaining steps:
+**✅ Phase 1 is COMPLETE — Steps 1–17 all done.** Service layer + hooks + realtime watchlist +
+realtime chart + switch hardening + connection badge + reconnect hardening + perf pass + **the last
+mock removed**. The chart streams live (Binance crypto needs no key); the replay MTF panel now reads
+real higher-TF history. **Next milestone: Phase 2 (Alert Engine) — see the roadmap below.** Step
+record:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -24,7 +25,7 @@ Remaining steps:
 | 14 ✅ | Connection status | `ConnectionBadge.tsx` + `TopToolbar` (DONE) | 🟢/🟡/🔴 dot + label from `useConnectionMeta()` (over `marketDataStore.connectionStatus`), pulsing while connecting/reconnecting; label hides below `md`. |
 | 15 ✅ | Reconnect | inside providers (DONE) | Backoff `1→2→5→10→30s` (holds at 30s), infinite, auto-resubscribe on `onopen`; `manualClose` suppresses reconnect on intentional disconnect. **Hardened:** dead-socket watchdog (recycle an OPEN-but-silent socket after 45s) + instant reconnect on `window 'online'`. Both SSR-guarded. |
 | 16 ✅ | Performance | atomic selectors on hot paths (DONE) | Removed per-tick re-renders from non-candle consumers: `replayStore.setTotal` equality-guarded; `TopToolbar`/`DrawingToolbar`/`DrawingLayer` converted from whole-store subscriptions to atomic per-field selectors. Already had: memoized watchlist rows + per-row `useQuote` (Step 10), O(1) `series.update` (Step 11), candle cap `MAX_CANDLES = 5000`. |
-| 17 | Remove mock data | delete/replace `services/marketData.ts` mock paths | Update all callers: `useMarketData`, `Watchlist`, `replayEngine.mtfSnapshot`, `tradeStore` price feed, `SmcLayer`/`smcEngine` history. |
+| 17 ✅ | Remove mock data | **deleted** `services/marketData.ts` (DONE) | `mtfSnapshot` made pure + fed by new `useMtfSnapshotSeries` (real `HistoricalDataService`); `getSymbol`→`getMarketSymbol` in 5 components. No mock data remains anywhere in the app. |
 
 ### Phase 1 success criteria
 Realtime watchlist + chart, historical + realtime candles, symbol/timeframe switching,
@@ -35,9 +36,9 @@ reconnect, single market-data store, **no mock data**, no duplicate sockets.
   must update the master series, and replay continues to slice it.
 - `tradeStore` consumes the latest visible candle (`useTradeRuntime`) — live ticks already flow
   through `chartStore.candles`, so pending orders/SL/TP fill in realtime.
-- SMC now runs on the realtime `chartStore.candles` (via `useVisibleCandles`). Only
-  `replayEngine.mtfSnapshot` still pulls mock higher-TF history (`getHistorySync`) — repoint to
-  `HistoricalDataService` in Step 17.
+- SMC now runs on the realtime `chartStore.candles` (via `useVisibleCandles`). The replay MTF panel
+  (`replayEngine.mtfSnapshot` + `useMtfSnapshotSeries`) now reads real higher-TF history from
+  `HistoricalDataService`. **No mock data remains.**
 - **Secrets:** TwelveData/any keyed provider → `.env.local` (gitignored), never hardcode.
 
 ---

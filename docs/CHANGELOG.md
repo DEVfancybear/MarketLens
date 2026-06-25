@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 1 Step 17: Remove Last Mock — Phase 1 COMPLETE (2026-06-25)
+- **Deleted `src/services/marketData.ts`** (the seeded mock OHLCV generator) — the last mock data
+  path in the app is gone. All candle/quote/symbol data now comes from the realtime pipeline.
+- `src/services/replayEngine.ts` — `mtfSnapshot()` is now **pure**: it takes a caller-supplied
+  `seriesByTf` map instead of importing the mock's `getHistorySync`. Signature changed from
+  `mtfSnapshot(symbol, time, tfs?)` → `mtfSnapshot(time, seriesByTf, tfs?)`. No-look-ahead is
+  unchanged — each series is still sliced to the bar at/just before the replay cursor.
+- `src/hooks/useMtfSnapshotSeries.ts` (new) — loads the 5 higher TFs (`5m/15m/1H/4H/1D`, 500 bars
+  each) for the active replay symbol from the real `HistoricalDataService` (Binance no-key; TwelveData
+  needs a key), cancellable, only while replay is active. Feeds the pure `mtfSnapshot`.
+- `src/components/replay/ReplayDashboard.tsx` — consumes `useMtfSnapshotSeries` + the new
+  `mtfSnapshot` signature.
+- Swapped the mock's `getSymbol(...)?.pricePrecision` for the registry's `getMarketSymbol(...)` in
+  `ReplayDashboard`, `SmcLayer`, `JournalPanel`, `OrderTicket`, `PositionsTable` (precision only).
+- **Phase 1 (Realtime Market Data Foundation) is complete — Steps 1–17 done.** Build/type/lint green.
+
 ### Changed — Phase 1 Step 16: Performance Pass (2026-06-25)
 - Eliminated per-realtime-tick re-renders in components that don't consume candle data:
 - `src/store/replayStore.ts` — `setTotal()` now **equality-guards** (`if (total !== get().total)`).

@@ -4,7 +4,7 @@ import type { UTCTimestamp } from 'lightweight-charts';
 import { useChartCtx } from '@/components/chart/ChartContext';
 import { useSmcStore } from '@/store/smcStore';
 import { useChartStore } from '@/store/chartStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { fmtPrice } from '@/utils/format';
 import { fmtDate } from '@/utils/time';
 
@@ -77,7 +77,7 @@ export function SmcLayer() {
     g.font = '10px var(--font-mono)';
     g.textBaseline = 'middle';
 
-    const prec = getSymbol(symbol)?.pricePrecision ?? 2;
+    const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
 
     /** TradingView-style filled chip label. */
     const chip = (text: string, x: number, y: number, color: string, align: 'left' | 'right' = 'left') => {

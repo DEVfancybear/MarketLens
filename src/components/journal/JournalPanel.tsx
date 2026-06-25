@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useJournalStore } from '@/store/journalStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { captureChart } from '@/components/chart/chartRegistry';
 import { exportCSV, exportExcel } from '@/services/exporters';
 import { fmtMoney, fmtPrice, fmtR } from '@/utils/format';
@@ -66,7 +66,7 @@ export function JournalPanel() {
           </div>
         )}
         {entries.map((e) => {
-          const prec = getSymbol(e.symbol)?.pricePrecision ?? 2;
+          const prec = getMarketSymbol(e.symbol)?.pricePrecision ?? 2;
           const isOpen = expanded === e.id;
           return (
             <div key={e.id} className="border-b border-terminal-border">

@@ -3,10 +3,11 @@
 _Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-25._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
-Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) is in
-progress and mostly done: the watchlist and chart now stream live** (Binance crypto with no API
-key; forex/metals/indices via TwelveData with a key). A small amount of mock remains only behind
-the replay multi-timeframe snapshot (removed in Step 17).
+Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) is
+COMPLETE (Steps 1–17): the watchlist, chart, and replay multi-timeframe panel all stream live**
+(Binance crypto with no API key; forex/metals/indices via TwelveData with a key). **There is no
+mock data anywhere in the app** — `services/marketData.ts` has been deleted. The next milestone is
+**Phase 2 (Alert Engine)**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -14,23 +15,23 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Phase 1 progress:** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅** · **Step 14
-  (connection badge) ✅** · **Step 15 (reconnect hardening) ✅** · **Step 16 (perf pass) ✅**. **The
-  chart now streams live** (history via REST + realtime klines).
+- **Phase 1 progress:** **COMPLETE — Steps 1–17 ✅.** Realtime watchlist + chart + replay MTF,
+  switch hardening, connection badge, reconnect hardening (watchdog + online recovery), perf pass,
+  and the **last mock deleted**. **The chart streams live** (history via REST + realtime klines).
   Reconciliation chosen: `chartStore` stays the chart's selection + candle source
   (drawings/indicators/tool too); `useMarketData` bridges it to `marketDataStore` (select → history
-  → mirror candles). `useVisibleCandles` replay gate intact. `selectMarket()` is now idempotent so
+  → mirror candles). `useVisibleCandles` replay gate intact. `selectMarket()` is idempotent so
   the active kline is always (re)asserted on the active key.
-- **Recommended next action:** Phase 1 **Step 17** — remove the last mock: repoint
-  `replayEngine.mtfSnapshot` to `HistoricalDataService` (async — note the MTF snapshot currently
-  pulls higher-TF history synchronously via the mock's `getHistorySync`, so the call site needs to
-  become async / pre-fetched), then delete `services/marketData.ts`. This is the final Phase 1 step.
+- **Recommended next action:** Start **Phase 2 — Alert Engine.** `alertStore` + `AlertLines` already
+  render alert price lines; the work is *triggering*: detect price crosses in the realtime pipeline
+  (`CandleEngine`/`marketDataStore` updates) and fire notifications. See the Phase 2 entry in
+  `NEXT_TASKS.md`. (Optional cleanup first: the legacy `Symbol`/`Quote` types in `types/market.ts`
+  may now be unused since the mock that produced them is gone — verify before removing.)
 - **Runtime:** `npm run dev` → BTCUSDT chart + watchlist stream live from Binance (no key).
   TwelveData (forex/metals/indices) need `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local`
   (see `.env.example`).
-- **Mock status:** the chart (`useMarketData.ts`) and watchlist are now realtime. The mock
-  generator `services/marketData.ts` remains only behind replay's multi-timeframe snapshot
-  (`replayEngine.mtfSnapshot`) — to remove in Step 17.
+- **Mock status:** **none.** The chart, watchlist, and replay multi-timeframe panel are all
+  realtime. The mock generator `services/marketData.ts` has been deleted (Step 17).
 
 ---
 
@@ -64,7 +65,7 @@ npm run lint         # next lint
   it slices `chartStore.candles`, which is now the realtime master series.
 - Pure domain engines (indicators, SMC, trade, analytics) consume only the candle array → safe.
 
-## 4. Realtime market data — current implementation (Phase 1, Steps 1–14 done)
+## 4. Realtime market data — current implementation (Phase 1 COMPLETE, Steps 1–17)
 Live pipeline: `provider → MarketDataService → marketDataStore → hooks → UI`.
 - **Types** `src/types/marketData.ts` (unified `MarketQuote/MarketCandle/MarketSymbol/
   ConnectionStatus/Timeframe` + events/consts).
@@ -88,9 +89,9 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - **Perf (Step 16):** per-tick re-renders removed from non-candle consumers — `replayStore.setTotal`
   equality-guarded; `TopToolbar`/`DrawingToolbar`/`DrawingLayer` use atomic selectors (don't pull
   `candles`).
-- **Remaining Phase 1:** Step 17 (remove the last mock). Steps 12–16 done. Full plan in
-  `NEXT_TASKS.md`.
-- **Still mock:** only `services/marketData.ts` behind `replayEngine.mtfSnapshot` (Step 17).
+- **Remaining Phase 1:** none — Steps 1–17 done. Full plan + Phase 2 roadmap in `NEXT_TASKS.md`.
+- **Still mock:** nothing — `services/marketData.ts` is deleted; replay MTF reads real higher-TF
+  history via `useMtfSnapshotSeries` → `HistoricalDataService`.
 
 ## 5. TradingView features already completed
 - ✅ **Realtime candles + watchlist** (Binance crypto no-key; TwelveData forex/metals/indices),
@@ -106,22 +107,22 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   toggle, fullscreen, screenshot export, resizable panels.
 
 ## 6. Remaining / missing features
-- 🟡 **Phase 1 finish** — Step 17 only (remove the last mock). Switch hardening + status badge +
-  reconnect hardening + perf pass (12–16) done.
+- ✅ **Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).** No mock data remains.
 - 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
   and `CURRENT_STATE.md` §9). Belongs to Phase 3.
-- ❌ Alert **triggering**/notifications (Phase 2) — only alert lines render today.
+- ❌ Alert **triggering**/notifications (**Phase 2 — next milestone**) — only alert lines render today.
 - ❌ Indicator settings dialogs (Phase 5).
 - ❌ Real broker/MT5 order routing + mobile notifications (Phase 6).
 
-## 7. Where to continue Phase 1
-1. **Step 17 (final)** — remove the last mock (`services/marketData.ts`): repoint
-   `replayEngine.mtfSnapshot` to `HistoricalDataService`, then delete the mock generator. The
-   snapshot currently reads higher-TF history synchronously (mock `getHistorySync`); the REST
-   service is async, so the MTF call site must pre-fetch/await (or cache) the higher-TF series.
-   Audit other mock callers before deleting: `grep` for imports of `services/marketData`.
-2. Manual smoke test still worth doing: BTCUSDT ↔ ETHUSDT and 1m ↔ 1H switches — confirm the badge
-   stays 🟢, the forming bar ticks, and no duplicate streams accumulate.
+## 7. Where to continue (Phase 2 — Alert Engine)
+1. **Phase 2 — Alert Engine.** `alertStore` holds alerts and `AlertLines` renders their price lines;
+   what's missing is *triggering*. Detect price crossings in the realtime pipeline (e.g. in
+   `CandleEngine`/the `marketDataStore` candle/quote updates), mark alerts triggered, and fire a
+   notification (in-app toast first; browser/push later in Phase 6). Keep it on the single
+   market-data source — no new sockets.
+2. Manual smoke test still worth doing for Phase 1: BTCUSDT ↔ ETHUSDT and 1m ↔ 1H switches — confirm
+   the badge stays 🟢, the forming bar ticks, no duplicate streams accumulate; arm replay and confirm
+   the MTF panel populates real higher-TF prices.
 
 ## 8. Known issues / gotchas
 - **`framer-motion` is broken** in this install (`motion-dom` export mismatch). It is **not
@@ -131,8 +132,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - **Unwired drawing refactor:** `components/chart/drawing/drawingRenderer.ts` and the new
   `chartStore` drawing actions / extended `types/drawing.ts` are **not used yet**. Either finish
   in Phase 3 or revert before Phase 1 to avoid confusion.
-- **Mock history still feeds replay MTF** (`replayEngine.mtfSnapshot`) — repoint to
-  `HistoricalDataService` in Step 17, then delete `services/marketData.ts`.
+- **Legacy types may be orphaned:** with `services/marketData.ts` deleted, the legacy `Symbol` and
+  `Quote` interfaces in `types/market.ts` may now be unused — verify with a grep before removing.
 - **Git on Windows:** `git` is installed but not on PATH — invoke it by full path
   `C:\Program Files\Git\cmd\git.exe`. Repo `origin → github.com/DEVfancybear/tradingview` on
   branch `master`. `.claude/settings.local.json` is gitignored (machine-local).
@@ -148,4 +149,5 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - Visibility gate: `hooks/useVisibleCandles.ts`.
 - Watchlist: `components/watchlist/Watchlist.tsx`, `store/watchlistStore.ts`.
 - Runtime loops: `components/layout/GlobalRuntime.tsx`.
-- Legacy mock (Step 17 removal): `services/marketData.ts`.
+- Replay MTF real-data path: `hooks/useMtfSnapshotSeries.ts` → `services/replayEngine.ts`
+  (`mtfSnapshot`) → `components/replay/ReplayDashboard.tsx`.

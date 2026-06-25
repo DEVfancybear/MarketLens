@@ -5,7 +5,6 @@
  * derive the visible slice as candles[0..cursor]. These helpers never look
  * beyond a supplied index/time, preserving the no-look-ahead guarantee.
  */
-import { getHistorySync } from './marketData';
 import type { Candle, Direction, Timeframe } from '@/types';
 import { TF_SECONDS } from '@/types';
 import { utcHours } from '@/utils/time';
@@ -66,17 +65,20 @@ export interface MtfRow {
 }
 
 /**
- * Multi-timeframe snapshot at a replay timestamp. Each higher timeframe is
- * generated independently and truncated to bars closed at/just before `time`,
- * so no higher-TF bar reveals information past the replay cursor.
+ * Multi-timeframe snapshot at a replay timestamp. Pure: the per-timeframe history
+ * is supplied by the caller (`seriesByTf`, loaded from the real
+ * HistoricalDataService — see `useMtfSnapshotSeries`). Each series is truncated to
+ * bars opened at/just before `time`, so no higher-TF bar reveals information past
+ * the replay cursor (the no-look-ahead guarantee).
  */
 export function mtfSnapshot(
-  symbol: string,
   time: number,
+  seriesByTf: Partial<Record<Timeframe, Candle[]>>,
   timeframes: Timeframe[] = ['5m', '15m', '1H', '4H', '1D'],
 ): MtfRow[] {
   return timeframes.map((tf) => {
-    const series = getHistorySync({ ticker: symbol, timeframe: tf, limit: 400 });
+    const series = seriesByTf[tf] ?? [];
+    if (series.length === 0) return { timeframe: tf, candle: null, trend: 'ranging' };
     // Only bars whose *open* time has begun by `time`. The forming bar is the
     // last with open <= time; we treat it as the current (developing) candle.
     const idx = indexAtOrBefore(series, time);

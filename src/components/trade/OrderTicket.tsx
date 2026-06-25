@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTradeStore } from '@/store/tradeStore';
 import { useChartStore } from '@/store/chartStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { computeRisk } from '@/services/tradeEngine';
 import { fmtMoney, fmtPrice } from '@/utils/format';
 import { on } from '@/utils/bus';
@@ -19,7 +19,7 @@ export function OrderTicket() {
   const place = useTradeStore((s) => s.place);
   const closeAll = useTradeStore((s) => s.closeAll);
 
-  const prec = getSymbol(symbol)?.pricePrecision ?? 2;
+  const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const [type, setType] = useState<OrderType>('market');
   const [entry, setEntry] = useState('');
   const [sl, setSl] = useState('');

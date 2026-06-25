@@ -3,12 +3,17 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–11 ✅ · **Steps 12–13 (switch hardening) ✅**
-  · **Step 14 (connection-status badge) ✅** · **Step 15 (reconnect hardening) ✅** · **Step 16 (perf
-  pass) ✅**. Chart + watchlist stream live (Binance crypto, no key needed). **Next: Step 17 (remove
-  the last mock — `services/marketData.ts`).**
+- **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).** Switch hardening,
+  connection badge, reconnect hardening, perf pass, and **the last mock removed**. Chart + watchlist
+  stream live (Binance crypto, no key needed); replay MTF reads real higher-TF history. **Next
+  milestone: Phase 2 — Alert Engine.**
 
 ## Recently modified files
+- `src/services/marketData.ts` **(deleted — Step 17, last mock removed)**
+- `src/hooks/useMtfSnapshotSeries.ts` (new — real higher-TF history for replay MTF)
+- `src/services/replayEngine.ts` (Step 17: `mtfSnapshot` now pure, takes `seriesByTf`)
+- `src/components/{replay/ReplayDashboard,smc/SmcLayer,journal/JournalPanel,trade/OrderTicket,trade/PositionsTable}.tsx`
+  (Step 17: `getSymbol`→`getMarketSymbol`)
 - `src/store/replayStore.ts` (Step 16: `setTotal` equality-guard — no per-tick replay churn)
 - `src/components/toolbar/TopToolbar.tsx`, `DrawingToolbar.tsx`, `src/components/chart/DrawingLayer.tsx`
   (Step 16: whole-store subscriptions → atomic selectors; no per-tick re-renders)
@@ -50,7 +55,7 @@ _Last updated: 2026-06-25_
 - Persistence: localStorage (ui/drawings/indicators/watchlist/smc-settings) + IndexedDB
   (journal + screenshots).
 
-### Realtime market data (Phase 1 — Steps 1–15 done)
+### Realtime market data (Phase 1 — Steps 1–17 ✅ COMPLETE, no mock data)
 - Unified types + single-source `marketDataStore`; Binance + TwelveData WS providers (one socket
   each, backoff reconnect + auto-resubscribe + dead-socket watchdog + `online` recovery);
   `MarketDataService` routing via a canonical symbol
@@ -91,8 +96,8 @@ _Last updated: 2026-06-25_
   dead code; build green (additive). Finish in Phase 3 or revert before Phase 1 if undesired.
 
 ## Remaining in Phase 1
-- Step 17 (remove the last mock — `services/marketData.ts`, used only by replay MTF). Steps 12–16
-  are done. See `NEXT_TASKS.md`.
+- **None — Phase 1 is complete (Steps 1–17).** No mock data remains in the app. Next milestone is
+  Phase 2 (Alert Engine). See `NEXT_TASKS.md`.
 
 ## Not started (later phases)
 - Alert triggering (Phase 2), full drawing engine (Phase 3), indicator dialogs (Phase 5),
