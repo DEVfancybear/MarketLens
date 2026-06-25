@@ -7,8 +7,9 @@ Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime ma
 both COMPLETE.** The watchlist, chart, and replay MTF panel all stream live (Binance crypto with no
 API key; forex/metals/indices via TwelveData with a key); **there is no mock data anywhere**
 (`services/marketData.ts` deleted). Phase 2 adds a TradingView-style alert engine (above/below/
-crosses), toast + browser + sound notifications, and a responsive Alert Center. The next milestone
-is **Phase 3 (Drawing Engine)**.
+crosses), toast + browser + sound notifications, a responsive Alert Center, and **interactive chart
+alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press). The next
+milestone is **Phase 3 (Drawing Engine)**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -23,14 +24,21 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   (drawings/indicators/tool too); `useMarketData` bridges it to `marketDataStore` (select → history
   → mirror candles). `useVisibleCandles` replay gate intact. `selectMarket()` is idempotent so
   the active kline is always (re)asserted on the active key.
-- **Phase 2 progress:** **COMPLETE ✅.** `alertStore` (alerts/triggeredAlerts/history/settings),
-  pure `services/alertEngine.ts`, `hooks/useAlertEngine.ts` (mounted in `GlobalRuntime`; evaluates
-  off `marketDataStore` with reference-counted ticker subs — no polling, no new sockets), toast +
-  browser + sound notifications, responsive `AlertCenter` (toolbar bell). See
-  `docs/ALERT_ARCHITECTURE.md`. `marketDataStore` subscriptions are now refcounted (`subRefs`).
+- **Phase 2 progress:** **COMPLETE ✅** (engine + audit + Phase 2.1). `alertStore`
+  (alerts/triggeredAlerts/history/settings + `selectedAlertId`/`editingAlertId`), pure
+  `services/alertEngine.ts`, `hooks/useAlertEngine.ts` (mounted in `GlobalRuntime`; evaluates off
+  `marketDataStore` with reference-counted ticker subs — no polling, no new sockets), toast +
+  browser + sound notifications, responsive `AlertCenter` (toolbar bell). `marketDataStore`
+  subscriptions are now refcounted (`subRefs`). Audited in `PHASE2_REVIEW.md` / `PHASE2_GAPS.md`.
+- **Phase 2.1 (interactive chart alerts):** `AlertOverlay` (replaces deleted `AlertLines`) — canvas
+  lines + DOM hit strips give **hover / select / drag-to-reprice / delete / right-click + touch
+  long-press**; `AlertContextMenu` (Edit/Clone/Disable/Delete), `AlertEditDialog`. `Alert` gained
+  `enabled`+`locked`; the engine skips disabled alerts. Selection is ephemeral; price/enabled/locked
+  persist. See `docs/ALERT_ARCHITECTURE.md` §"Interactive chart alerts".
 - **Recommended next action:** Start **Phase 3 — Drawing Engine** (wire the unwired
   `drawingRenderer.ts` + extended `types/drawing.ts` + `chartStore` drawing actions into
-  `DrawingLayer`/`DrawingToolbar`; expand to the full tool set). See `NEXT_TASKS.md` §Phase 3.
+  `DrawingLayer`/`DrawingToolbar`; expand to the full tool set; add a drawing context menu/hit-test/
+  hotkeys — `AlertOverlay` is a good reference). See `NEXT_TASKS.md` §"Immediate tasks — Phase 3".
   (Optional cleanup: the legacy `Symbol`/`Quote` types in `types/market.ts` may be unused now.)
 - **Runtime:** `npm run dev` → BTCUSDT chart + watchlist stream live from Binance (no key).
   TwelveData (forex/metals/indices) need `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local`
@@ -110,7 +118,9 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - ✅ Trade simulator + risk panel + journal (screenshots, CSV/Excel) + analytics dashboard.
 - ✅ **Alert engine (Phase 2)** — price above/below + crosses above/below, once-only/recurring,
   evaluated off `marketDataStore` (no polling/sockets), toast + browser + sound, responsive Alert
-  Center (toolbar bell), persisted alerts + history. See `docs/ALERT_ARCHITECTURE.md`.
+  Center (toolbar bell), persisted alerts + history. **Interactive chart alerts (2.1):** lines are
+  selectable / draggable-to-reprice / deletable / editable, right-click + long-press menu, Delete/Esc
+  keys, per-alert enable/lock. See `docs/ALERT_ARCHITECTURE.md`.
 - ✅ Watchlist (add/remove/sort, realtime), symbol search (registry), timeframe switching, theme
   toggle, fullscreen, screenshot export, resizable panels.
 
@@ -163,3 +173,6 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - Alerts (Phase 2): `store/alertStore.ts`, `services/alertEngine.ts`, `hooks/useAlertEngine.ts`,
   `components/alerts/AlertCenter.tsx`, `store/toastStore.ts` + `components/notifications/Toaster.tsx`,
   `services/notifications/{notify,sound,browser}.ts`. Architecture: `docs/ALERT_ARCHITECTURE.md`.
+- Interactive chart alerts (Phase 2.1): `components/chart/AlertOverlay.tsx` (canvas + DOM hit strips;
+  replaces the deleted `AlertLines.tsx`), `components/chart/AlertContextMenu.tsx`,
+  `components/alerts/AlertEditDialog.tsx`. Audit: `docs/PHASE2_REVIEW.md` / `docs/PHASE2_GAPS.md`.

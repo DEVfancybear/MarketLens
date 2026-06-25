@@ -1,12 +1,36 @@
 # NEXT TASKS
 
-## Phase 1 — Realtime Market Data Foundation (current phase)
+## Current status
 
-**✅ Phase 1 is COMPLETE — Steps 1–17 all done.** Service layer + hooks + realtime watchlist +
-realtime chart + switch hardening + connection badge + reconnect hardening + perf pass + **the last
-mock removed**. The chart streams live (Binance crypto needs no key); the replay MTF panel now reads
-real higher-TF history. **Next milestone: Phase 2 (Alert Engine) — see the roadmap below.** Step
-record:
+- **✅ Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).**
+- **✅ Phase 2 — Alert Engine: COMPLETE** (engine + notifications + Alert Center + audit + Phase 2.1
+  interactive chart alerts).
+- **▶ Phase 3 — Drawing Engine: NEXT (current focus).**
+
+## Immediate tasks — Phase 3 (Drawing Engine)
+
+The drawing refactor is **partially landed but unwired** (additive dead code; build green). Finish it:
+
+1. **Wire the renderer** — use `components/chart/drawing/drawingRenderer.ts` (+ extended
+   `types/drawing.ts` with `zIndex/locked/visible/stop/target`) inside `DrawingLayer` instead of the
+   inline `renderDrawing`.
+2. **Wire the new `chartStore` drawing actions** — `duplicateDrawing / lockDrawing / hideDrawing /
+   bringToFront / sendToBack / toggleLockAll / toggleHideAll`.
+3. **Expand `DrawingToolbar`** to the full TradingView tool set (~17 tools).
+4. **Add a `DrawingContextMenu`** (right-click a drawing: edit/clone/lock/hide/delete/z-order) and a
+   shared **hit-test** module + drawing **hotkeys**. The interactive `AlertOverlay` (Phase 2.1) is a
+   good reference pattern for canvas selection/drag/right-click/touch.
+5. Keep everything **persisted per symbol** (localStorage `drawings:<symbol>`), as today.
+
+Optional Phase 2 polish (non-blocking, from `PHASE2_GAPS.md`): clear stale `prevPrice` on unsubscribe
+(G2), evaluate on alert-create for instant level alerts (G3), de-double-gate notifications (G1
+remainder), Alert Center backdrop should not block chart on desktop (G6).
+
+---
+
+## Phase 1 — Realtime Market Data Foundation (✅ COMPLETE — record)
+
+Step record:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -45,14 +69,14 @@ reconnect, single market-data store, **no mock data**, no duplicate sockets.
 
 ## Later phases (roadmap, not started)
 
-- **Phase 2 — Alert Engine:** ✅ **COMPLETE.** `alertStore` (alerts/triggered/history), pure
-  `alertEngine`, `useAlertEngine` (evaluates off `marketDataStore`, refcounted subs, once-only),
-  toast + browser + sound notifications, responsive Alert Center, persistence. See
-  `docs/ALERT_ARCHITECTURE.md`. Remaining alert polish (optional, later): inline edit of a target
-  price, alert sound picker, snooze.
-- **Phase 3 — Drawing Engine (next milestone):** finish the in-progress toolbar overhaul (wire
-  `drawingRenderer.ts` into `DrawingLayer`, expand `DrawingToolbar` to 17 tools, add
-  `DrawingContextMenu`, hit-test module, drawing hotkeys). See `CURRENT_STATE.md` §9.
+- **Phase 2 — Alert Engine:** ✅ **COMPLETE** (incl. audit + Phase 2.1 interactive chart alerts:
+  select / drag-to-reprice / delete / edit dialog / right-click + long-press menu / keyboard;
+  `enabled`+`locked`). `alertStore`, pure `alertEngine`, `useAlertEngine` (off `marketDataStore`,
+  refcounted subs, once-only), toast + browser + sound, responsive Alert Center, persistence. See
+  `docs/ALERT_ARCHITECTURE.md`, `PHASE2_REVIEW.md`, `PHASE2_GAPS.md`. Optional polish items in
+  `PHASE2_GAPS.md` (e.g. once-per-bar-close firing, indicator/drawing alerts, webhook delivery).
+- **Phase 3 — Drawing Engine (NEXT — see "Immediate tasks" above):** finish the unwired toolbar
+  overhaul. See also `CURRENT_STATE.md` §9.
 - **Phase 4 — TradingView Toolbar:** full left toolbar polish + tool settings.
 - **Phase 5 — Indicator Engine:** indicator settings dialogs, more indicators, per-indicator
   params persistence.

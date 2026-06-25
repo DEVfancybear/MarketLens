@@ -3,12 +3,25 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **✅ Phase 2 — Alert Engine — COMPLETE.** TradingView-style price alerts (above / below / crosses
-  above / crosses below), evaluated off the realtime `marketDataStore` (no polling, no new sockets,
-  reference-counted subscriptions), once-only + recurring, toast + browser + sound notifications,
-  responsive Alert Center, persisted alerts + history. Phase 1 audited (`PHASE1_REVIEW.md` /
-  `PHASE1_GAPS.md`). **Next milestone: Phase 3 — Drawing Engine.**
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
+- **✅ Phase 2 — Alert Engine — COMPLETE** (+ audit + Phase 2.1 interactive chart alerts).
+- **Next milestone: Phase 3 — Drawing Engine.**
+
+## Completed this session
+1. **Phase 1 finish (Steps 12–17):** symbol/timeframe switch hardening (idempotent `selectMarket`),
+   connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
+   recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
+   last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real
+   `HistoricalDataService`). Phase 1 audited → `PHASE1_REVIEW.md` + `PHASE1_GAPS.md`.
+2. **Phase 2 — Alert Engine:** `alertStore` (alerts/triggered/history/settings), pure `alertEngine`,
+   `useAlertEngine` (evaluates off `marketDataStore`, refcounted subs, once-only), toast + browser +
+   sound notifications, responsive Alert Center, persistence. Reference-counted subscriptions
+   (`subRefs`) added to `marketDataStore`. `ALERT_ARCHITECTURE.md` written.
+3. **Phase 2 audit:** `PHASE2_REVIEW.md` + `PHASE2_GAPS.md`.
+4. **Phase 2.1 — interactive chart alerts:** alert lines are now selectable, draggable (reprice +
+   persist), deletable; right-click / long-press menu (Edit/Clone/Disable/Delete), edit dialog,
+   keyboard (Delete/Esc), `enabled`/`locked`. Replaced static `AlertLines` with `AlertOverlay`.
+   (Resolved Phase 2 gaps G1 + G5.)
 
 ## Recently modified files
 - `src/components/chart/AlertOverlay.tsx` (new — interactive alert lines), `AlertContextMenu.tsx`
@@ -20,7 +33,8 @@ _Last updated: 2026-06-25_
   `src/services/notifications/{notify,sound,browser}.ts`
 - `src/store/marketDataStore.ts` (refcounted subscriptions — `subRefs`)
 - `src/components/layout/GlobalRuntime.tsx` (mount engine + hydrate alerts), `Terminal.tsx`
-  (Toaster + AlertCenter), `TopToolbar.tsx` (bell), `ChartContextMenu.tsx` / `AlertLines.tsx`
+  (Toaster + AlertCenter + AlertEditDialog), `TopToolbar.tsx` (bell), `ChartContextMenu.tsx`
+  (directional create-alert)
 - `src/services/marketData.ts` **(deleted — Step 17, last mock removed)**
 - `src/hooks/useMtfSnapshotSeries.ts` (new — real higher-TF history for replay MTF)
 - `src/services/replayEngine.ts` (Step 17: `mtfSnapshot` now pure, takes `seriesByTf`)
@@ -120,9 +134,9 @@ _Last updated: 2026-06-25_
   `drawingRenderer.ts` landed, but **not wired** into `DrawingLayer`/`DrawingToolbar`. Currently
   dead code; build green (additive). Finish in Phase 3 or revert before Phase 1 if undesired.
 
-## Remaining in Phase 1
-- **None — Phase 1 is complete (Steps 1–17).** No mock data remains in the app. Next milestone is
-  Phase 2 (Alert Engine). See `NEXT_TASKS.md`.
+## Remaining in Phases 1 & 2
+- **None — Phases 1 and 2 are complete.** No mock data remains. Optional Phase 2 polish (non-blocking)
+  is tracked in `PHASE2_GAPS.md`. Next milestone is **Phase 3 — Drawing Engine**. See `NEXT_TASKS.md`.
 
 ## Not started (later phases)
 - Full drawing engine (Phase 3), TradingView toolbar polish (Phase 4), indicator dialogs (Phase 5),
