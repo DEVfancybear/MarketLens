@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Milestone 2: separate chart and drawing interaction (2026-06-26)
+- Created `ChartInteractionManager` — passive observer ensuring chart never blocked.
+- Created `DrawingInteractionManager` — state machine + pointer capture for drawings only.
+- Added `isPointerClaimed()` signal so chart knows when drawings own the pointer.
+- DrawingLayer now imports `useDrawingInteractionManager` from engine.
+- Old `InteractionManager` deleted — replaced by DrawingInteractionManager.
+- Chart interaction guarantees: canvas at `pointerEvents:none` → wheel/pan/pinch/crosshair
+  always work. Drawing only captures pointer during active creation/drag/resize.
+- Zero behavior changes. All algorithms identical. Build passes.
+
 ### Changed — Milestone 1: foundation refactor, split into 5 modules (2026-06-26)
 - Reorganized `drawing/` into 5 subdirectories with clear responsibilities:
   - `engine/DrawingEngine.ts` — thin orchestrator, re-exports public API
