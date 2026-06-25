@@ -3,6 +3,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../drawingHitTest";
+import { getAdapter, defaultMovePoints } from "../ToolAdapter";
 import type {
   DrawingContextMenu,
   DrawingMenuState,
@@ -51,21 +52,9 @@ export const INITIAL_MACHINE: Machine = {
   livePoints: null,
 };
 
-/** Tool → min points for creation. */
+/** Tool → min points for creation (delegates to adapter). */
 function minPoints(t: DrawingTool): number {
-  switch (t) {
-    case "horizontal":
-    case "horizRay":
-    case "vertical":
-    case "crossLine":
-    case "text":
-    case "emoji":
-    case "long":
-    case "short":
-      return 1;
-    default:
-      return 2;
-  }
+  return getAdapter(t)?.minPoints ?? 2;
 }
 
 // ---- Options passed into the controller ----
@@ -301,22 +290,11 @@ export function usePointerController(
       const p = fromEvent(e);
       if (!p) return;
 
-      // Compute new positions from original + delta.
-      const next = m.dragOrig.map((pt) => ({ ...pt }));
-      if (m.dragTarget === "p1") {
-        next[0] = { time: p.time, price: p.price };
-      } else if (m.dragTarget === "p2" && next.length > 1) {
-        next[1] = { time: p.time, price: p.price };
-      } else {
-        const dt = p.time - m.dragStart.time;
-        const dp = p.price - m.dragStart.price;
-        for (let i = 0; i < next.length; i++) {
-          next[i] = {
-            time: m.dragOrig[i].time + dt,
-            price: m.dragOrig[i].price + dp,
-          };
-        }
-      }
+      // Delegate point computation to the tool's adapter.
+      const adapter = getAdapter(m.drawingTool ?? "trendline");
+      const next = adapter
+        ? adapter.movePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart)
+        : defaultMovePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart);
 
       // Store live positions in ref (NOT in Zustand).
       livePointsRef.current = next;

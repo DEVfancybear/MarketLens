@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Tool adapter architecture: plugin-based drawing tools (2026-06-26)
+- `ToolAdapter.ts`: Interface with `render`, `hitTest`, `movePoints`, `boundingBox`,
+  `minPoints`. Registry via `registerAdapter()` / `getAdapter()`. Shared helpers
+  exported (`pointDist`, `distToSegment`, `distToRect`, `HANDLE_RADIUS`, `TOL`,
+  `defaultMovePoints`).
+- `adapters.ts`: One adapter per tool (14 full + 7 stubs). Registered on import.
+  Adding a tool requires only: implement `ToolAdapter`, call `registerAdapter()`.
+- `drawingRenderer.ts`: Delegates to `getAdapter(d.tool).render()` — no switch.
+- `drawingHitTest.ts`: Delegates to `getAdapter(d.tool).hitTest()` — no switch.
+- `PointerController.ts`: Delegates to `getAdapter().movePoints()` and
+  `getAdapter().minPoints` — no inline switch logic.
+- Zero giant switches remain. All tool-specific logic lives in adapters.
+
 ### Changed — Optimize drag: in-memory positions, commit on pointerup (2026-06-26)
 - During drag (MovingDrawing/ResizingHandle), geometry is computed in-memory
   via `livePointsRef` — no Zustand `updateDrawing` per move. Only
