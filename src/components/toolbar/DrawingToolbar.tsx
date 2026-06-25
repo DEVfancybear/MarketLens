@@ -153,7 +153,7 @@ export function DrawingToolbar() {
   };
 
   return (
-    <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-2">
+    <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
       {GROUPS.map((group, gi) => {
         const visibleTool = lastUsed[group.id] ?? group.defaultTool;
         const visibleIcon =
