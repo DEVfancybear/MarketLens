@@ -10,8 +10,9 @@ API key; forex/metals/indices via OANDA with a bearer token, or TwelveData as fa
 crosses), toast + browser + sound notifications, a responsive Alert Center, and **interactive chart
 alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press).
 **Phase 3 (TradingView UI Parity) is COMPLETE** — 95% visual parity.
-**Phase 4 (Drawing Engine) architecture plan is COMPLETE** (`docs/PHASE4_DRAWING_ENGINE_ROADMAP.md`).
-The next milestone is **Phase 4.1 — Wire the canonical drawing renderer**.
+**Phase 4.1 (Drawing Engine Foundation) is COMPLETE** — canonical renderer wired, hit-test
+  extracted to standalone module. See `docs/DRAWING_ENGINE_ARCHITECTURE.md`.
+The next milestone is **Phase 4.2 — Wire drawing store actions**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.

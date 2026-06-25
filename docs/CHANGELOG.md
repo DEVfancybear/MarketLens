@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 4.1: Wire drawing engine foundation (2026-06-25)
+- Wired the canonical `drawingRenderer.ts` (17-tool support) into `DrawingLayer.tsx`,
+  replacing the inline 7-tool renderer. Rendering now delegates to a pure canvas
+  function with zIndex-sorted rendering, locked-drawing dimming, and selection handles.
+- Extracted hit-testing to standalone `drawingHitTest.ts` — covers all 17 tools with
+  pixel-tolerance proximity detection. Used by DrawingLayer for selection and will
+  serve DrawingContextMenu (Phase 4.3).
+- Added global toggle respect: `drawingsLocked` blocks drag/delete, `drawingsHidden`
+  suppresses all rendering. Sorted by zIndex so higher-index drawings render on top.
+- Docs: `DRAWING_ENGINE_ARCHITECTURE.md`, `DRAWING_OBJECT_MODEL.md`,
+  `SELECTION_ENGINE.md`, `TOOL_REGISTRY.md`.
+
 ### Docs — Phase 4 drawing engine architecture roadmap (2026-06-25)
 - `docs/PHASE4_DRAWING_ENGINE_ROADMAP.md` — complete architecture plan for the
   drawing engine foundation. 7 implementation phases (~3.5h): wire canonical
