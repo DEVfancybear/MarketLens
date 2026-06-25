@@ -400,6 +400,7 @@ export function DrawingLayer() {
         style={{
           cursor: cursorStyle,
           pointerEvents,
+          zIndex: 5,
         }}
       />
       {ctxMenu && (
