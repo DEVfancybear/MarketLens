@@ -102,7 +102,7 @@ export function DrawingToolbar() {
   const clearDrawings = useChartStore((s) => s.clearDrawings);
 
   return (
-    <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
+    <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-2">
       {TOOL_CATEGORIES.map((cat, ci) => (
         <div
           key={cat.category ?? ci}

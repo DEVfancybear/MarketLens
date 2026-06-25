@@ -41,7 +41,7 @@ export function TerminalLayout({
       <div className="flex min-h-0 flex-1">
         {/* Left drawing rail (fixed width) */}
         <div
-          className="shrink-0 border-r border-terminal-border bg-terminal-panel"
+          className="shrink-0 border-r border-terminal-border bg-terminal-panel overflow-hidden"
           style={{ width: panels.left }}
         >
           {leftRail}
