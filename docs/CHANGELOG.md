@@ -14,6 +14,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   (stable forever). The native listener effect runs once on mount ([] deps).
   No listener churn, no lag, instant drawing interaction.
 
+### Fixed — Container div blocks chart wheel zoom (2026-06-26)
+- Container div at z-index:5 intercepts all wheel events, blocking LWC chart zoom.
+- Fix: add native wheel listener on container that clones and dispatches
+  the WheelEvent to the LWC chart element (container's previousElementSibling).
+  Passive listener — no preventDefault, chart handles zoom naturally.
+
 ### Fixed — Native event listeners on container div (2026-06-26)
 - Previous fix attached `addEventListener("pointerdown", ...)` on the canvas
   element, but the canvas had `pointerEvents: "none"` in cursor mode — meaning

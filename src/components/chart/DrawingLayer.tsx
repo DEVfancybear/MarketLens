@@ -305,12 +305,23 @@ export function DrawingLayer() {
     el.addEventListener("pointerleave", handleUp);
     el.addEventListener("contextmenu", handleCtx);
 
+    // Forward wheel events to the LWC chart element (our container sits
+    // above the chart in z-order and would otherwise block zoom).
+    const handleWheel = (e: WheelEvent) => {
+      // In drawing mode, allow wheel zoom on the chart.
+      const chartEl = el.previousElementSibling as HTMLElement | null;
+      if (!chartEl) return;
+      chartEl.dispatchEvent(new WheelEvent("wheel", e));
+    };
+    el.addEventListener("wheel", handleWheel, { passive: true });
+
     return () => {
       el.removeEventListener("pointerdown", handleDown);
       el.removeEventListener("pointermove", handleMove);
       el.removeEventListener("pointerup", handleUp);
       el.removeEventListener("pointerleave", handleUp);
       el.removeEventListener("contextmenu", handleCtx);
+      el.removeEventListener("wheel", handleWheel);
     };
     // All callbacks are stable (empty-dep useCallbacks + refs). Run once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
