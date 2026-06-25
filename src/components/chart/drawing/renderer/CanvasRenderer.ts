@@ -14,6 +14,9 @@ import type { Drawing } from "@/types";
 import { renderDrawing, type Projector } from "../drawingRenderer";
 import type { Point } from "@/types";
 import type { Machine } from "../interaction/DrawingInteractionManager";
+import { CoordinateCache } from "./CoordinateCache";
+import { SpatialIndex } from "./SpatialIndex";
+import { PerformanceMonitor } from "./PerformanceMonitor";
 
 export interface RenderLoopDeps {
   /** Ref to the overlay canvas. */
@@ -48,7 +51,21 @@ export interface RenderLoop {
 }
 
 export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
-  const { canvasRef, toX, toY, getData, onVersionChange } = deps;
+  const {
+    canvasRef,
+    toX: rawToX,
+    toY: rawToY,
+    getData,
+    onVersionChange,
+  } = deps;
+
+  const coordCache = new CoordinateCache();
+  const spatialIndex = new SpatialIndex();
+  const perf = PerformanceMonitor.get();
+
+  // Wrapped projectors that use the coordinate cache.
+  const toX = (time: number) => coordCache.timeToX(time, rawToX);
+  const toY = (price: number) => coordCache.priceToY(price, rawToY);
 
   let dirty = true;
   let rafId: number | null = null;
@@ -100,6 +117,11 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     const data = getData();
     if (!canvas || !data.chartReady) return;
 
+    const t0 = performance.now();
+
+    // Start new frame — clear coordinate cache.
+    coordCache.nextFrame();
+
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const cw = Math.round(rect.width * dpr);
@@ -149,11 +171,13 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     g.clearRect(0, 0, rect.width, rect.height);
 
     // Build visible set, injecting live positions for the dragged drawing.
-    const visible: Drawing[] = data.drawingsHidden ? [] : [...data.drawings];
+    const storeDrawings: Drawing[] = data.drawingsHidden
+      ? []
+      : [...data.drawings];
     if (data.livePoints && data.draggingId) {
-      for (let i = 0; i < visible.length; i++) {
-        if (visible[i].id === data.draggingId) {
-          visible[i] = { ...visible[i], points: data.livePoints };
+      for (let i = 0; i < storeDrawings.length; i++) {
+        if (storeDrawings[i].id === data.draggingId) {
+          storeDrawings[i] = { ...storeDrawings[i], points: data.livePoints };
           break;
         }
       }
@@ -173,7 +197,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     const all =
       pr && tool
         ? [
-            ...visible,
+            ...storeDrawings,
             {
               id: "__pending",
               tool,
@@ -183,9 +207,18 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
               visible: true,
             } as Drawing,
           ]
-        : visible;
+        : storeDrawings;
 
-    const sorted = [...all].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+    // Build spatial index for viewport culling.
+    spatialIndex.rebuild(all, toX, toY);
+
+    // Viewport-culled draw list.
+    const viewport = spatialIndex.queryViewport(0, 0, rect.width, rect.height);
+    const sorted = [...viewport].sort(
+      (a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0),
+    );
+
+    let drawn = 0;
     for (const d of sorted) {
       if (d.visible === false) continue;
       const selected = d.id === data.selectedDrawingId;
@@ -193,7 +226,12 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       g.fillStyle = d.color;
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
       renderDrawing(g, d, projector, selected);
+      drawn++;
     }
+
+    const skipped = all.length - drawn;
+    const renderMs = performance.now() - t0;
+    perf.recordFrame(renderMs, 0, drawn, skipped, all.length);
   }
 
   // ---- rAF loop ----
