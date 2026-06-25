@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Extract PointerController from DrawingLayer (2026-06-26)
+- Extracted all pointer interaction logic (state machine, document listeners,
+  pointerdown/move/up, setPointerCapture, hit-testing, context menu, cursor
+  style) into `drawing/interaction/PointerController.ts`.
+- `usePointerController(opts)` hook accepts canvasRef, coordinate converters,
+  store actions, and a `getState()` stable snapshot provider. Returns machine,
+  cursorStyle, ctxMenu, transition/reset helpers, and machineRef.
+- `DrawingLayer.tsx` now owns only: canvas rendering, keyboard shortcuts,
+  store subscriptions, and JSX. Zero pointer event handlers inline.
+- No feature changes. Pure responsibility extraction.
+
 ### Changed — Refactor hit-test with distance and candidate architecture (2026-06-26)
 - `HitResult` gains `distance: number` (pixel distance from pointer to hit target)
   and `target` expands to `"body" | "p1" | "p2" | "segment" | "label"`.
