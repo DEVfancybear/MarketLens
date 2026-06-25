@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Interaction state machine replaces dragRef + pending (2026-06-26)
+- Replaced scattered `dragRef` (nullable ref) and `pending` (useState) with a
+  unified `InteractionState` machine: Idle | Drawing | MovingDrawing | ResizingHandle.
+- Single `Machine` interface holds all interaction state: current state, anchors
+  (for Drawing), draggingId, dragTarget (p1/p2/body), dragStart, dragOrig.
+- `transition()` and `reset()` helpers replace imperative ref mutations.
+- `machineRef` mirrors state for stable native closures. Pending preview renders
+  from `machine.state === "Drawing" && machine.anchors.length > 0`.
+- No behavior changes — pure refactor. All existing features preserved.
+
 ### Changed — Refactor drawing interaction architecture (2026-06-26)
 - **Root problem:** Container div overlay at z-index:5 with pointerEvents:auto
   permanently blocked the LWC chart div (a sibling in the DOM, not a child).

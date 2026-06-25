@@ -12,6 +12,62 @@ import {
   type DrawingMenuState,
 } from "./DrawingContextMenu";
 
+// ============================================================================
+// Interaction State Machine
+// ============================================================================
+//
+// States:
+//   Idle            — nothing happening; chart handles zoom/pan/pinch
+//   Drawing         — creating a drawing (1st point placed, preview visible)
+//   MovingDrawing   — dragging an entire drawing (body hit)
+//   ResizingHandle  — dragging a single anchor point (p1 or p2 hit)
+//
+// PanningChart is NOT a DrawingLayer state — it's the Idle state where
+// events pass through to the chart. We don't intercept panning at all.
+//
+// Transitions:
+//   Idle -[pointerdown, drawing mode, 2-click tool]→ Drawing
+//   Idle -[pointerdown, drawing mode, 1-click tool]→ Idle (committed)
+//   Idle -[pointerdown, cursor mode, hit body]→ MovingDrawing
+//   Idle -[pointerdown, cursor mode, hit p1/p2]→ ResizingHandle
+//   Idle -[pointerdown, cursor mode, no hit]→ Idle (chart pans)
+//   Drawing -[pointermove]→ Drawing (update preview)
+//   Drawing -[pointerdown, 2nd click]→ Idle (completed)
+//   Drawing -[Escape / right-click]→ Idle (cancelled)
+//   MovingDrawing -[pointermove]→ MovingDrawing (update position)
+//   MovingDrawing -[pointerup]→ Idle
+//   ResizingHandle -[pointermove]→ ResizingHandle (update handle)
+//   ResizingHandle -[pointerup]→ Idle
+// ============================================================================
+
+type InteractionState = "Idle" | "Drawing" | "MovingDrawing" | "ResizingHandle";
+
+interface Machine {
+  state: InteractionState;
+  /** Anchor points placed so far during Drawing state. */
+  anchors: Point[];
+  /** Active tool during Drawing state. */
+  drawingTool: DrawingTool | null;
+  /** Drawing being dragged (Id = store drawing id). */
+  drawingId: string | null;
+  /** Which part of the drawing is being dragged. */
+  dragTarget: "p1" | "p2" | "body" | null;
+  /** Pointer position at drag start (for body delta translation). */
+  dragStart: Point | null;
+  /** Original drawing points at drag start. */
+  dragOrig: Point[] | null;
+}
+
+const INITIAL: Machine = {
+  state: "Idle",
+  anchors: [],
+  drawingTool: null,
+  drawingId: null,
+  dragTarget: null,
+  dragStart: null,
+  dragOrig: null,
+};
+
 /** Tool → min points for creation. */
 function minPoints(t: DrawingTool): number {
   switch (t) {
@@ -46,32 +102,26 @@ export function DrawingLayer() {
   const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
 
-  const [pending, setPending] = useState<Point[] | null>(null);
+  const [machine, setMachine] = useState<Machine>(INITIAL);
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
 
-  const dragRef = useRef<{
-    id: string;
-    target: "p1" | "p2" | "body";
-    startTime: number;
-    startPrice: number;
-    orig: Point[];
-  } | null>(null);
+  // For preview rendering: the current Drawing-state anchors.
+  const pending =
+    machine.state === "Drawing" && machine.anchors.length > 0
+      ? machine.anchors
+      : null;
 
-  // Stable ref to avoid stale closures in native listeners.
+  // Stable refs for native event handlers (no stale closures).
+  const machineRef = useRef(machine);
+  machineRef.current = machine;
+
   const stateRef = useRef({
     drawings: [] as Drawing[],
     activeTool: "cursor" as DrawingTool,
-    pending: null as Point[] | null,
     drawColor: "#2962ff",
     drawingsLocked: false,
   });
-  stateRef.current = {
-    drawings,
-    activeTool,
-    pending,
-    drawColor,
-    drawingsLocked,
-  };
+  stateRef.current = { drawings, activeTool, drawColor, drawingsLocked };
 
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -103,6 +153,13 @@ export function DrawingLayer() {
     return { time: time as number, price };
   }, []);
 
+  // ---- State machine transitions ----
+  const transition = useCallback((next: Partial<Machine>) => {
+    setMachine((prev) => ({ ...prev, ...next }));
+  }, []);
+
+  const reset = useCallback(() => setMachine(INITIAL), []);
+
   // ---- rendering ----
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -121,7 +178,6 @@ export function DrawingLayer() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
-    const s = stateRef.current;
     const visible = drawingsHidden ? [] : drawings;
     const projector: Projector = {
       toX,
@@ -130,20 +186,23 @@ export function DrawingLayer() {
       height: rect.height,
     };
 
-    const pr = s.pending;
-    const all = pr
-      ? [
-          ...visible,
-          {
-            id: "__pending",
-            tool: s.activeTool,
-            color: s.drawColor,
-            lineWidth: 1.5,
-            points: pr,
-            visible: true,
-          } as Drawing,
-        ]
-      : visible;
+    const m = machineRef.current;
+    const pr = m.state === "Drawing" && m.anchors.length > 0 ? m.anchors : null;
+    const tool = m.state === "Drawing" ? (m.drawingTool ?? activeTool) : null;
+    const all =
+      pr && tool
+        ? [
+            ...visible,
+            {
+              id: "__pending",
+              tool,
+              color: drawColor,
+              lineWidth: 1.5,
+              points: pr,
+              visible: true,
+            } as Drawing,
+          ]
+        : visible;
 
     const sorted = [...all].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
     for (const d of sorted) {
@@ -154,39 +213,35 @@ export function DrawingLayer() {
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
       renderDrawing(g, d, projector, selected);
     }
-  }, [toX, toY, drawings, drawingsHidden, selectedDrawingId]);
+  }, [
+    toX,
+    toY,
+    drawings,
+    drawingsHidden,
+    selectedDrawingId,
+    activeTool,
+    drawColor,
+  ]);
 
   useEffect(() => {
     draw();
   }, [draw, ctx?.version]);
 
-  // ---- Interaction architecture ----
-  //
-  // Chart interaction (zoom / pan / pinch) must ALWAYS work.
-  // Drawing interaction only intercepts events when actively creating
-  // or manipulating a drawing.
-  //
-  // Strategy:
-  //   Canvas   → pointerEvents:none  (rendering only, never blocks chart)
-  //   Document → conditional pointer listeners
-  //     - Drawing mode:   registered → intercept all pointer events
-  //     - Cursor + drag:  registered during drag via setPointerCapture
-  //     - Otherwise:      NOT registered → chart receives all events
-  //
-  // This avoids z-index fights, event forwarding hacks, and DOM traversal.
-
+  // ---- Drawing mode: document-level listener ----
   useEffect(() => {
-    const s = stateRef.current;
     const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    // Only register document listeners when in drawing mode.
-    // In cursor mode, listeners are added on-demand by the drag flow.
-    if (s.activeTool === "cursor") return;
+    // Only active in drawing mode.
+    if (activeTool === "cursor") return;
 
-    // ---- Drawing mode: intercept all pointer events ----
     const handleDown = (e: PointerEvent) => {
-      // Only handle events over our chart area.
-      if (!canvas || !isOverCanvas(e, canvas)) return;
+      if (!isOverCanvas(e, canvas)) return;
+      if (
+        machineRef.current.state !== "Idle" &&
+        machineRef.current.state !== "Drawing"
+      )
+        return;
 
       const p = fromEvent(e);
       if (!p || !ctxRef.current) return;
@@ -195,11 +250,12 @@ export function DrawingLayer() {
       e.stopPropagation();
       canvas.setPointerCapture(e.pointerId);
 
-      const needed = minPoints(s.activeTool);
+      const needed = minPoints(activeTool);
 
-      if (s.activeTool === "text") {
+      if (activeTool === "text") {
         const text = window.prompt("Text:") || "";
-        if (text)
+        if (text) {
+          const s = stateRef.current;
           addDrawing({
             id: uid("dw"),
             tool: "text",
@@ -208,14 +264,17 @@ export function DrawingLayer() {
             points: [p],
             text,
           });
-        else setActiveTool("cursor");
+        } else {
+          setActiveTool("cursor");
+        }
         return;
       }
 
       if (needed === 1) {
+        const s = stateRef.current;
         addDrawing({
           id: uid("dw"),
-          tool: s.activeTool,
+          tool: activeTool,
           color: s.drawColor,
           lineWidth: 1.5,
           points: [p],
@@ -223,27 +282,31 @@ export function DrawingLayer() {
         return;
       }
 
-      if (!s.pending) {
-        setPending([p]);
-      } else {
+      // Two-click tools.
+      const m = machineRef.current;
+      if (m.state === "Drawing") {
+        // Second click: complete the drawing.
         addDrawing({
           id: uid("dw"),
-          tool: s.activeTool,
-          color: s.drawColor,
+          tool: activeTool,
+          color: stateRef.current.drawColor,
           lineWidth: 1.5,
-          points: [s.pending[0], p],
+          points: [m.anchors[0], p],
         });
-        setPending(null);
+        reset();
+      } else {
+        // First click: enter Drawing state.
+        transition({ state: "Drawing", anchors: [p], drawingTool: activeTool });
       }
     };
 
     const handleMove = (e: PointerEvent) => {
-      if (!canvas || !isOverCanvas(e, canvas)) return;
-      const cur = stateRef.current;
-      if (!cur.pending) return;
+      if (!isOverCanvas(e, canvas)) return;
+      const m = machineRef.current;
+      if (m.state !== "Drawing") return;
       const p = fromEvent(e);
       if (!p) return;
-      setPending([cur.pending[0], p]);
+      transition({ anchors: [m.anchors[0], p] });
     };
 
     document.addEventListener("pointerdown", handleDown, true);
@@ -253,23 +316,18 @@ export function DrawingLayer() {
       document.removeEventListener("pointerdown", handleDown, true);
       document.removeEventListener("pointermove", handleMove, true);
     };
-    // Re-run when activeTool changes (entering/exiting drawing mode).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
-  // ---- Cursor mode: drawing selection + drag via document listener ----
-  // This effect runs once and stays active. In cursor mode, we listen for
-  // pointerdown on the document. If a drawing is hit, we capture and handle drag.
-  // If not, we do nothing → chart receives the event normally.
+  // ---- Cursor mode: drawing selection + drag ----
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const handleDown = (e: PointerEvent) => {
       const s = stateRef.current;
-      // Only handle cursor mode. Drawing mode is handled by the effect above.
       if (s.activeTool !== "cursor") return;
-      if (!canvas || !isOverCanvas(e, canvas)) return;
+      if (!isOverCanvas(e, canvas)) return;
 
       const p = fromEvent(e);
       if (!p || !ctxRef.current) return;
@@ -278,60 +336,67 @@ export function DrawingLayer() {
       selectDrawing(hit?.drawing.id ?? null);
 
       if (hit && !s.drawingsLocked) {
-        dragRef.current = {
-          id: hit.drawing.id,
-          target: hit.target,
-          startTime: p.time,
-          startPrice: p.price,
-          orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
-        };
         e.preventDefault();
         e.stopPropagation();
         canvas.setPointerCapture(e.pointerId);
+
+        const isHandle = hit.target === "p1" || hit.target === "p2";
+        transition({
+          state: isHandle ? "ResizingHandle" : "MovingDrawing",
+          drawingId: hit.drawing.id,
+          dragTarget: hit.target,
+          dragStart: p,
+          dragOrig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
+        });
       }
-      // No hit → do nothing. Event reaches the chart → pan works.
     };
 
     const handleMove = (e: PointerEvent) => {
-      const s = stateRef.current;
-      if (s.activeTool !== "cursor") return;
-
-      const drag = dragRef.current;
-      if (!drag) return;
+      const m = machineRef.current;
+      if (m.state !== "MovingDrawing" && m.state !== "ResizingHandle") return;
+      if (!m.dragOrig || !m.dragStart) return;
 
       const p = fromEvent(e);
       if (!p) return;
 
-      const next = drag.orig.map((pt) => ({ ...pt }));
-      if (drag.target === "p1") {
+      const next = m.dragOrig.map((pt) => ({ ...pt }));
+
+      if (m.dragTarget === "p1") {
         next[0] = { time: p.time, price: p.price };
-      } else if (drag.target === "p2" && next.length > 1) {
+      } else if (m.dragTarget === "p2" && next.length > 1) {
         next[1] = { time: p.time, price: p.price };
       } else {
-        const dt = p.time - drag.startTime;
-        const dp = p.price - drag.startPrice;
+        const dt = p.time - m.dragStart.time;
+        const dp = p.price - m.dragStart.price;
         for (let i = 0; i < next.length; i++) {
           next[i] = {
-            time: drag.orig[i].time + dt,
-            price: drag.orig[i].price + dp,
+            time: m.dragOrig[i].time + dt,
+            price: m.dragOrig[i].price + dp,
           };
         }
       }
-      updateDrawing(drag.id, { points: next });
+
+      updateDrawing(m.drawingId!, { points: next });
     };
 
     const handleUp = () => {
-      dragRef.current = null;
+      const m = machineRef.current;
+      if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
+        reset();
+      }
     };
 
     const handleCtx = (e: MouseEvent) => {
+      const m = machineRef.current;
       const s = stateRef.current;
-      if (!canvas || !isOverCanvas(e, canvas)) return;
-      if (s.pending) {
+      if (!isOverCanvas(e, canvas)) return;
+
+      if (m.state === "Drawing") {
         e.preventDefault();
-        setPending(null);
+        reset();
         return;
       }
+
       const p = fromEvent(e as unknown as PointerEvent);
       if (!p) return;
       const hit = hitTest(s.drawings, p, toX, toY);
@@ -342,7 +407,6 @@ export function DrawingLayer() {
       }
     };
 
-    // Use capture phase so we see events before the chart does.
     document.addEventListener("pointerdown", handleDown, true);
     document.addEventListener("pointermove", handleMove, true);
     document.addEventListener("pointerup", handleUp, true);
@@ -356,7 +420,6 @@ export function DrawingLayer() {
       document.removeEventListener("pointerleave", handleUp, true);
       canvas.removeEventListener("contextmenu", handleCtx);
     };
-    // Run once on mount. All state is accessed via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -370,7 +433,7 @@ export function DrawingLayer() {
         removeDrawing(selectedDrawingId);
       }
       if (e.key === "Escape") {
-        setPending(null);
+        reset();
         setActiveTool("cursor");
       }
       if (e.key === "d" && (e.ctrlKey || e.metaKey) && selectedDrawingId) {
@@ -380,18 +443,23 @@ export function DrawingLayer() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedDrawingId, removeDrawing, setActiveTool, duplicateDrawing]);
+  }, [
+    selectedDrawingId,
+    removeDrawing,
+    setActiveTool,
+    duplicateDrawing,
+    reset,
+  ]);
 
   const drawingMode = activeTool !== "cursor";
+  const activeState = machine.state;
   let cursorStyle = "default";
   if (drawingMode) cursorStyle = "crosshair";
-  if (dragRef.current) cursorStyle = "move";
+  if (activeState === "MovingDrawing" || activeState === "ResizingHandle")
+    cursorStyle = "move";
 
   return (
     <>
-      {/* Canvas: rendering only. pointerEvents:none always.
-          Chart zoom/pan/pinch always work through the LWC chart div.
-          Drawing interaction is handled by document-level listeners. */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full"
