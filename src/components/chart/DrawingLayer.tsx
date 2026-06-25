@@ -31,73 +31,11 @@ function minPoints(t: DrawingTool): number {
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
-  // Diagnostic: log when chart context becomes available.
-  useEffect(() => {
-    if (ctx)
-      console.log(
-        "[DrawingLayer] chart context available, candles:",
-        ctx.candles.length,
-      );
-  }, [ctx]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Raw event listener to confirm canvas receives events at all.
-  useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const onDown = (e: PointerEvent) => {
-      console.log("[DrawingLayer] RAW pointerdown on canvas", e.target);
-    };
-    c.addEventListener("pointerdown", onDown);
-    return () => c.removeEventListener("pointerdown", onDown);
-  }, []);
-
-  // Trace which element receives clicks on the chart area.
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      if (!el) return;
-      const tag = el.tagName;
-      const cls = el.className?.substring?.(0, 80) ?? "";
-      const style = window.getComputedStyle(el);
-      // Walk up to find containers.
-      let parent = el.parentElement;
-      let chain = el.tagName;
-      for (let i = 0; i < 8 && parent; i++) {
-        const pCls = parent.className?.substring?.(0, 50) ?? "";
-        chain += ` <- ${parent.tagName}[${pCls}]`;
-        parent = parent.parentElement;
-      }
-      console.log("[DrawingLayer] elementFromPoint", {
-        tag,
-        pointerEvents: style?.pointerEvents,
-        zIndex: style?.zIndex,
-        chain,
-      });
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, []);
-
-  // Diagnostic: log when canvas mounts.
-  useEffect(() => {
-    if (canvasRef.current) {
-      const r = canvasRef.current.getBoundingClientRect();
-      console.log("[DrawingLayer] canvas mounted", {
-        w: r.width,
-        h: r.height,
-        offsetH: canvasRef.current.offsetHeight,
-      });
-    }
-  }, []);
 
   const drawings = useChartStore((s) => s.drawings);
   const activeTool = useChartStore((s) => s.activeTool);
 
-  // Diagnostic: log every activeTool change.
-  useEffect(() => {
-    console.log("[DrawingLayer] activeTool changed to:", activeTool);
-  }, [activeTool]);
   const drawColor = useChartStore((s) => s.drawColor);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const drawingsLocked = useChartStore((s) => s.drawingsLocked);
@@ -135,13 +73,6 @@ export function DrawingLayer() {
       const y = e.clientY - rect.top;
       const time = ctx.chart.timeScale().coordinateToTime(x);
       const price = ctx.candleSeries.coordinateToPrice(y);
-      // Brief trace (only on pointerDown, not every move).
-      console.log("[DrawingLayer] fromEvent", {
-        x: Math.round(x),
-        y: Math.round(y),
-        time,
-        price: price?.toFixed(4),
-      });
       if (time == null || price == null) return null;
       return { time: time as number, price };
     },
@@ -215,17 +146,6 @@ export function DrawingLayer() {
 
   // ---- interaction: pointer ----
   const onPointerDown = (e: React.PointerEvent) => {
-    if (process.env.NODE_ENV === "development") {
-      console.log(
-        "[DrawingLayer] pointerDown",
-        "tool:",
-        activeTool,
-        "ctx:",
-        !!ctx,
-        "target:",
-        (e.target as HTMLElement)?.tagName,
-      );
-    }
     const p = fromEvent(e);
     if (!p || !ctx) return;
 
@@ -246,12 +166,6 @@ export function DrawingLayer() {
 
     // ---- tool creation ----
     const needed = minPoints(activeTool);
-    console.log("[DrawingLayer] tool creation", {
-      tool: activeTool,
-      needed,
-      price: p.price.toFixed(4),
-      pending: !!pending,
-    });
 
     // Text needs a prompt before placing.
     if (activeTool === "text") {
@@ -284,10 +198,8 @@ export function DrawingLayer() {
 
     // Two-click tools.
     if (!pending) {
-      console.log("[DrawingLayer] start preview, point 1 placed");
       setPending([p]);
     } else {
-      console.log("[DrawingLayer] complete drawing, point 2 placed");
       addDrawing({
         id: uid("dw"),
         tool: activeTool,
@@ -378,15 +290,6 @@ export function DrawingLayer() {
     activeTool !== "cursor" || hasDrawings || pending !== null
       ? "auto"
       : "none";
-
-  console.log("[DrawingLayer] render", {
-    tool: activeTool,
-    pointerEvents,
-    cursorStyle,
-    hasDrawings,
-    canvasW: canvasRef.current?.offsetWidth,
-    canvasH: canvasRef.current?.offsetHeight,
-  });
 
   return (
     <>

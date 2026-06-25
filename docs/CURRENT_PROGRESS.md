@@ -1,6 +1,6 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-25_
+_Last updated: 2026-06-26_
 
 ## Current phase / milestone
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
@@ -9,13 +9,20 @@ _Last updated: 2026-06-25_
 - **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~95%, interaction ~87%).
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
   price marker 95% (native LWC), countdown 100%, header layout 95%.
-- **✅ Phase 4.2.2 — TOOL GROUP SYSTEM — COMPLETE.**
-  Toolbar now shows 4 grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
-  Last-used tool per group becomes the visible icon. See `docs/TOOL_GROUP_ARCHITECTURE.md`.
+- **✅ Phase 4.3 — SHAPE TOOLS SUITE — COMPLETE.**
+- **✅ Phase 4.2.2 — TOOL GROUP SYSTEM — COMPLETE** (flyout portal fix).
+  Toolbar shows 4 grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
+  Flyout renders via `createPortal` to `document.body` to escape left-rail overflow.
 - **Next milestone: Phase 4.4 — Fibonacci Suite.**
 
 ## Completed this session
-1. **Phase 4.2.2 — Tool Group System:** Transformed flat 20-tool toolbar into
+1. **Flyout portal fix:** Fixed tool group flyout menus being clipped by TerminalLayout
+   `overflow-hidden`. Flyout now renders via `createPortal` to `document.body` with
+   position computed from button bounding rects (`btnRefs`).
+2. **Diagnostic cleanup:** Removed all temporary `console.log` traces from
+   `DrawingLayer.tsx` (7 diagnostic blocks) and `chartStore.ts` (`setActiveTool`).
+   Zero remaining debug logs in drawing engine or store.
+3. **Phase 4.2.2 — Tool Group System:** Transformed flat 20-tool toolbar into
    4 TradingView-style grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
    Last-used tool per group becomes the visible sidebar icon. Backdrop closes flyout
    on outside click. Docs: TOOL_GROUP_ARCHITECTURE.md, TOOLBAR_BEHAVIOR.md.

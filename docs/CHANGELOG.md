@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Clean up diagnostic console.log traces (2026-06-26)
+- Removed all temporary `console.log` diagnostics from `DrawingLayer.tsx` (chart context,
+  canvas mount, pointerdown, fromEvent, tool creation, render, elementFromPoint,
+  activeTool change, RAW pointerdown listeners — 7 blocks removed).
+- Removed `console.log` from `chartStore.ts` `setActiveTool`.
+- `npm run type-check` ✅ passes.
+
 ### Added — Phase 4.2.2: TradingView-style tool group system (2026-06-26)
 - Transformed flat 20-tool toolbar into 4 grouped icons with flyout menus: Cursor,
   Lines (8 tools), Shapes (9 tools), Text. Click a group → flyout appears → select

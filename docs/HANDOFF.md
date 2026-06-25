@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-25._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-26._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) and Phase 2 (alert engine) are
@@ -11,6 +11,8 @@ crosses), toast + browser + sound notifications, a responsive Alert Center, and 
 alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click + long-press).
 **Phase 3 (TradingView UI Parity) is COMPLETE** — 95% visual parity.
 **Phase 4.3 (Shape Tools Suite) is COMPLETE** — 8 shapes + fill system + supply/demand zones.
+**Phase 4.2.2 (Tool Group System) is COMPLETE** — flyout menus fixed via `createPortal`.
+All diagnostic `console.log` traces cleaned from drawing engine and chart store.
 The next milestone is **Phase 4.4 — Fibonacci Suite**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
