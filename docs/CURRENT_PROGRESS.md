@@ -9,17 +9,16 @@ _Last updated: 2026-06-25_
 - **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~95%, interaction ~87%).
   Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%,
   price marker 95% (native LWC), countdown 100%, header layout 95%.
-- **✅ Phase 4.2.1 — TOOL ACTIVATION SYSTEM — COMPLETE.**
-  Root cause audit: no architectural bug found. Added runtime diagnostics.
-  See `docs/DRAWING_ENGINE_ROOT_CAUSE.md`.
+- **✅ Phase 4.2.2 — TOOL GROUP SYSTEM — COMPLETE.**
+  Toolbar now shows 4 grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
+  Last-used tool per group becomes the visible icon. See `docs/TOOL_GROUP_ARCHITECTURE.md`.
 - **Next milestone: Phase 4.4 — Fibonacci Suite.**
 
 ## Completed this session
-1. **Phase 4.2.1 — Diagnostics + root cause analysis:** Traced full event chain from
-   toolbar click → store → DrawingLayer canvas → pointer events → chart coordinates → creation.
-   Verified no architectural bug: component tree, pointer events, and context propagation are
-   correctly wired. Added runtime diagnostic logging (console.debug in onPointerDown + context
-   availability). Docs: DRAWING_ENGINE_ROOT_CAUSE.md.
+1. **Phase 4.2.2 — Tool Group System:** Transformed flat 20-tool toolbar into
+   4 TradingView-style grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
+   Last-used tool per group becomes the visible sidebar icon. Backdrop closes flyout
+   on outside click. Docs: TOOL_GROUP_ARCHITECTURE.md, TOOLBAR_BEHAVIOR.md.
 2. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
    rotatedRect, circle, ellipse, triangle, polyline, curve, path). Fill system (fillColor +
    opacity). Supply/demand zone workflow for rectangle. Zero core engine changes.

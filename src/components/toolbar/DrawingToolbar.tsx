@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import {
   MousePointer2,
   TrendingUp,
@@ -22,66 +23,83 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useChartStore } from "@/store/chartStore";
 import type { DrawingTool } from "@/types";
 
-const TOOL_CATEGORIES: {
-  category?: string;
-  items: { tool: DrawingTool; icon: React.ReactNode; label: string }[];
-}[] = [
+// ---- Tool groups (TradingView pattern) ----
+
+interface ToolGroup {
+  id: string;
+  icon: React.ReactNode;
+  label: string;
+  defaultTool: DrawingTool;
+  tools: { tool: DrawingTool; icon: React.ReactNode; label: string }[];
+}
+
+const GROUPS: ToolGroup[] = [
   {
-    category: "MODES",
-    items: [
-      { tool: "cursor", icon: <MousePointer2 size={18} />, label: "Cursor" },
-    ],
+    id: "cursor",
+    icon: <MousePointer2 size={18} />,
+    label: "Cursor",
+    defaultTool: "cursor",
+    tools: [],
   },
   {
-    category: "LINES",
-    items: [
+    id: "lines",
+    icon: <TrendingUp size={18} />,
+    label: "Trend line",
+    defaultTool: "trendline",
+    tools: [
       {
         tool: "trendline",
-        icon: <TrendingUp size={18} />,
+        icon: <TrendingUp size={14} />,
         label: "Trend line",
       },
-      { tool: "ray", icon: <ArrowUpRight size={18} />, label: "Ray" },
+      { tool: "ray", icon: <ArrowUpRight size={14} />, label: "Ray" },
       {
         tool: "extendedLine",
-        icon: <GitBranch size={18} />,
+        icon: <GitBranch size={14} />,
         label: "Extended line",
       },
       {
         tool: "horizontal",
-        icon: <Minus size={18} />,
+        icon: <Minus size={14} />,
         label: "Horizontal line",
       },
-      { tool: "horizRay", icon: <Minus size={18} />, label: "Horizontal ray" },
+      { tool: "horizRay", icon: <Minus size={14} />, label: "Horizontal ray" },
       {
         tool: "vertical",
-        icon: <MoveVertical size={18} />,
+        icon: <MoveVertical size={14} />,
         label: "Vertical line",
       },
-      { tool: "crossLine", icon: <Crosshair size={18} />, label: "Cross line" },
-      { tool: "infoLine", icon: <Ruler size={18} />, label: "Info line" },
+      { tool: "crossLine", icon: <Crosshair size={14} />, label: "Cross line" },
+      { tool: "infoLine", icon: <Ruler size={14} />, label: "Info line" },
     ],
   },
   {
-    category: "SHAPES",
-    items: [
-      { tool: "rectangle", icon: <Square size={18} />, label: "Rectangle" },
+    id: "shapes",
+    icon: <Square size={18} />,
+    label: "Rectangle",
+    defaultTool: "rectangle",
+    tools: [
+      { tool: "rectangle", icon: <Square size={14} />, label: "Rectangle" },
       {
         tool: "rotatedRect",
-        icon: <Square size={18} />,
+        icon: <Square size={14} />,
         label: "Rotated rect",
       },
-      { tool: "circle", icon: <Circle size={18} />, label: "Circle" },
-      { tool: "ellipse", icon: <Circle size={18} />, label: "Ellipse" },
-      { tool: "triangle", icon: <Triangle size={18} />, label: "Triangle" },
-      { tool: "polyline", icon: <PenTool size={18} />, label: "Polyline" },
-      { tool: "curve", icon: <Spline size={18} />, label: "Curve" },
-      { tool: "path", icon: <PenTool size={18} />, label: "Path" },
-      { tool: "fib", icon: <GitFork size={18} />, label: "Fibonacci" },
+      { tool: "circle", icon: <Circle size={14} />, label: "Circle" },
+      { tool: "ellipse", icon: <Circle size={14} />, label: "Ellipse" },
+      { tool: "triangle", icon: <Triangle size={14} />, label: "Triangle" },
+      { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
+      { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
+      { tool: "path", icon: <PenTool size={14} />, label: "Path" },
+      { tool: "fib", icon: <GitFork size={14} />, label: "Fibonacci" },
     ],
   },
   {
-    category: "ANNOTATIONS",
-    items: [{ tool: "text", icon: <Type size={18} />, label: "Text" }],
+    id: "annotations",
+    icon: <Type size={18} />,
+    label: "Text",
+    defaultTool: "text",
+    tools: [{ tool: "text", icon: <Type size={14} />, label: "Text" }],
   },
 ];
 
@@ -94,33 +112,111 @@ const COLORS = [
   "#ffffff",
 ];
 
+/** Track which tool is "last used" per group for the visible icon. */
+function useLastUsed(): Record<string, DrawingTool> {
+  const activeTool = useChartStore((s) => s.activeTool);
+  const [lastUsed, setLastUsed] = useState<Record<string, DrawingTool>>({});
+  // When activeTool changes, update the last-used for its group.
+  if (typeof window !== "undefined") {
+    for (const g of GROUPS) {
+      const inGroup =
+        g.tools.some((t) => t.tool === activeTool) ||
+        g.defaultTool === activeTool;
+      if (inGroup && lastUsed[g.id] !== activeTool) {
+        // Defer state update to avoid render-loop.
+        setTimeout(
+          () => setLastUsed((prev) => ({ ...prev, [g.id]: activeTool })),
+          0,
+        );
+      }
+    }
+  }
+  return lastUsed;
+}
+
 export function DrawingToolbar() {
   const activeTool = useChartStore((s) => s.activeTool);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
   const drawColor = useChartStore((s) => s.drawColor);
   const setDrawColor = useChartStore((s) => s.setDrawColor);
   const clearDrawings = useChartStore((s) => s.clearDrawings);
+  const lastUsed = useLastUsed();
+
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  const isActive = (group: ToolGroup) => {
+    if (group.tools.length === 0) return activeTool === group.defaultTool;
+    return (
+      group.tools.some((t) => t.tool === activeTool) ||
+      activeTool === group.defaultTool
+    );
+  };
 
   return (
     <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-2">
-      {TOOL_CATEGORIES.map((cat, ci) => (
-        <div
-          key={cat.category ?? ci}
-          className="flex w-full flex-col items-center"
-        >
-          {ci > 0 && <div className="my-1 h-px w-6 bg-terminal-border" />}
-          {cat.items.map((t) => (
+      {GROUPS.map((group, gi) => {
+        const visibleTool = lastUsed[group.id] ?? group.defaultTool;
+        const visibleIcon =
+          group.tools.find((t) => t.tool === visibleTool)?.icon ?? group.icon;
+        const isGroupActive = isActive(group);
+        const hasFlyout = group.tools.length > 0;
+        const isOpen = openGroup === group.id;
+
+        return (
+          <div key={group.id} className="relative">
+            {/* Separator between groups */}
+            {gi > 0 && <div className="my-1 h-px w-6 bg-terminal-border" />}
+
+            {/* Group button */}
             <IconButton
-              key={t.tool}
-              label={t.label}
-              active={activeTool === t.tool}
-              onClick={() => setActiveTool(t.tool)}
+              label={group.label}
+              active={isGroupActive}
+              onClick={() => {
+                if (hasFlyout) {
+                  setOpenGroup(isOpen ? null : group.id);
+                } else {
+                  setActiveTool(group.defaultTool);
+                  setOpenGroup(null);
+                }
+              }}
             >
-              {t.icon}
+              {visibleIcon}
             </IconButton>
-          ))}
-        </div>
-      ))}
+
+            {/* Flyout menu */}
+            {hasFlyout && isOpen && (
+              <>
+                {/* Backdrop to close on outside click */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setOpenGroup(null)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setOpenGroup(null);
+                  }}
+                />
+                <div className="absolute left-full top-0 z-50 ml-1 w-44 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50">
+                  {group.tools.map((t) => (
+                    <button
+                      key={t.tool}
+                      onClick={() => {
+                        setActiveTool(t.tool);
+                        setOpenGroup(null);
+                      }}
+                      className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover ${
+                        activeTool === t.tool ? "text-brand" : "text-ink"
+                      }`}
+                    >
+                      <span className="shrink-0 text-ink-muted">{t.icon}</span>
+                      <span>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
 
       <div className="my-1 h-px w-6 bg-terminal-border" />
 
@@ -129,7 +225,6 @@ export function DrawingToolbar() {
         <IconButton label="Colour">
           <Palette size={18} style={{ color: drawColor }} />
         </IconButton>
-        {/* color swatches: click button to reveal, click again or outside to hide */}
         <div className="pointer-events-none absolute left-full top-0 z-50 ml-1 hidden grid-cols-3 gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 p-1.5 group-hover:pointer-events-auto group-hover:grid opacity-0 group-hover:opacity-100">
           {COLORS.map((c) => (
             <button

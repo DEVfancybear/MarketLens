@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 4.2.2: TradingView-style tool group system (2026-06-26)
+- Transformed flat 20-tool toolbar into 4 grouped icons with flyout menus: Cursor,
+  Lines (8 tools), Shapes (9 tools), Text. Click a group → flyout appears → select
+  tool → tool activated and flyout closes.
+- Last-used tool per group becomes the visible sidebar icon (matches TradingView).
+- Backdrop closes flyout on outside click. Only one flyout open at a time.
+- Visual parity: 18px sidebar icons, 14px flyout icons, TradingView-dark flyout,
+  brand-colored active tool, hover highlight.
+- Docs: TOOL_GROUP_ARCHITECTURE.md, TOOLBAR_BEHAVIOR.md.
+
 ### Debug — Phase 4.2.1: Root cause analysis + runtime diagnostics (2026-06-25)
 - Full event chain traced: toolbar click → store.activeTool → DrawingLayer re-render →
   canvas pointer-events:auto → onPointerDown → fromEvent (chart coords) → creation.
