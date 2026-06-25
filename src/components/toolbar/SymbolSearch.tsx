@@ -1,16 +1,19 @@
-'use client';
-import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
-import { Dropdown } from '@/components/ui/Dropdown';
-import { MARKET_SYMBOLS, getMarketSymbol } from '@/services/market-data/symbols';
-import { contractTagOf } from '@/services/exchange';
-import { useChartStore } from '@/store/chartStore';
-import { cn } from '@/utils/cn';
+"use client";
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
+import { Dropdown } from "@/components/ui/Dropdown";
+import {
+  MARKET_SYMBOLS,
+  getMarketSymbol,
+} from "@/services/market-data/symbols";
+import { contractTagOf } from "@/services/exchange";
+import { useChartStore } from "@/store/chartStore";
+import { cn } from "@/utils/cn";
 
 export function SymbolSearch() {
   const symbol = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
 
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -28,19 +31,21 @@ export function SymbolSearch() {
       trigger={(open) => (
         <button
           className={cn(
-            'flex h-7 items-center gap-2 rounded px-2 text-ink transition-colors hover:bg-terminal-hover',
-            open && 'bg-terminal-hover',
+            "flex h-8 items-center gap-2 rounded px-2 text-ink transition-colors hover:bg-terminal-hover",
+            open && "bg-terminal-hover",
           )}
         >
           <Search size={14} className="text-ink-muted" />
-          <span className="text-sm font-semibold tracking-tight text-ink">{symbol}</span>
+          <span className="text-sm font-semibold tracking-tight text-ink">
+            {symbol}
+          </span>
           {meta && (
             <span className="rounded bg-terminal-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
               {contractTagOf(meta.assetClass)}
             </span>
           )}
           <span className="text-[10px] font-medium uppercase tracking-wide text-ink-faint">
-            {meta?.exchange ?? ''}
+            {meta?.exchange ?? ""}
           </span>
         </button>
       )}
@@ -62,23 +67,27 @@ export function SymbolSearch() {
                 key={s.id}
                 onClick={() => {
                   setSymbol(s.id);
-                  setQ('');
+                  setQ("");
                   close();
                 }}
                 className={cn(
-                  'flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-terminal-hover',
-                  s.id === symbol && 'bg-brand/10',
+                  "flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-terminal-hover",
+                  s.id === symbol && "bg-brand/10",
                 )}
               >
                 <span className="text-xs font-semibold text-ink">{s.id}</span>
-                <span className="ml-2 truncate text-2xs text-ink-muted">{s.name}</span>
+                <span className="ml-2 truncate text-2xs text-ink-muted">
+                  {s.name}
+                </span>
                 <span className="ml-auto rounded bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
                   {s.exchange}
                 </span>
               </button>
             ))}
             {results.length === 0 && (
-              <div className="px-3 py-4 text-center text-xs text-ink-faint">No matches</div>
+              <div className="px-3 py-4 text-center text-xs text-ink-faint">
+                No matches
+              </div>
             )}
           </div>
         </div>

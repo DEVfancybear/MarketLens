@@ -1,7 +1,7 @@
-'use client';
-import { cn } from '@/utils/cn';
-import { useUIStore } from '@/store/uiStore';
-import { Resizer } from '@/components/ui/Resizer';
+"use client";
+import { cn } from "@/utils/cn";
+import { useUIStore } from "@/store/uiStore";
+import { Resizer } from "@/components/ui/Resizer";
 
 /**
  * Full-screen trading terminal frame:
@@ -32,8 +32,8 @@ export function TerminalLayout({
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg">
-      {/* Top toolbar */}
-      <div className="h-10 shrink-0 border-b border-terminal-border bg-terminal-panel">
+      {/* Top toolbar — Tight: TradingView = 36px */}
+      <div className="h-9 shrink-0 border-b border-terminal-border bg-terminal-panel">
         {toolbar}
       </div>
 
@@ -59,7 +59,7 @@ export function TerminalLayout({
                 min={140}
                 max={560}
                 value={panels.bottom}
-                onChange={(v) => setPanel('bottom', v)}
+                onChange={(v) => setPanel("bottom", v)}
               />
               <div
                 className="shrink-0 border-t border-terminal-border bg-terminal-panel"
@@ -80,10 +80,12 @@ export function TerminalLayout({
               min={220}
               max={460}
               value={panels.right}
-              onChange={(v) => setPanel('right', v)}
+              onChange={(v) => setPanel("right", v)}
             />
             <div
-              className={cn('shrink-0 border-l border-terminal-border bg-terminal-panel')}
+              className={cn(
+                "shrink-0 border-l border-terminal-border bg-terminal-panel",
+              )}
               style={{ width: panels.right }}
             >
               {watchlist}

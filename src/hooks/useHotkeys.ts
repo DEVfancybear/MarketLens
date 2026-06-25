@@ -1,7 +1,8 @@
-'use client';
-import { useEffect } from 'react';
-import { useReplayStore } from '@/store/replayStore';
-import { emit } from '@/utils/bus';
+"use client";
+import { useEffect } from "react";
+import { useReplayStore } from "@/store/replayStore";
+import { useUIStore } from "@/store/uiStore";
+import { emit } from "@/utils/bus";
 
 /**
  * Global keyboard shortcuts:
@@ -16,51 +17,63 @@ export function useHotkeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        (e.target as HTMLElement)?.isContentEditable
+      )
+        return;
 
       const r = useReplayStore.getState();
 
       switch (e.key) {
-        case ' ':
+        case " ":
           if (r.active) {
             e.preventDefault();
             r.playing ? r.pause() : r.play();
           }
           return;
-        case 'ArrowRight':
+        case "ArrowRight":
           if (r.active) {
             e.preventDefault();
             r.pause();
             r.step(e.shiftKey ? 10 : 1);
           }
           return;
-        case 'ArrowLeft':
+        case "ArrowLeft":
           if (r.active) {
             e.preventDefault();
             r.pause();
             r.step(e.shiftKey ? -10 : -1);
           }
           return;
-        case 'r':
-        case 'R':
+        case "r":
+        case "R":
           if (r.active) r.restart();
           return;
-        case 'b':
-        case 'B':
-          emit('trade:buy');
+        case "a":
+        case "A":
+          if (e.altKey) {
+            e.preventDefault();
+            useUIStore.getState().toggleAlertCenter();
+          }
           return;
-        case 's':
-        case 'S':
-          emit('trade:sell');
+        case "b":
+        case "B":
+          emit("trade:buy");
           return;
-        case 'x':
-        case 'X':
-          emit('trade:close');
+        case "s":
+        case "S":
+          emit("trade:sell");
+          return;
+        case "x":
+        case "X":
+          emit("trade:close");
           return;
       }
     };
 
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 }

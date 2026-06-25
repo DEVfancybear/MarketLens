@@ -1,5 +1,5 @@
-'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+"use client";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -7,16 +7,16 @@ import {
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
-} from 'lightweight-charts';
-import type { Candle } from '@/types';
-import { useChartStore } from '@/store/chartStore';
-import { useUIStore } from '@/store/uiStore';
-import { getMarketSymbol } from '@/services/market-data/symbols';
-import { chartColors, makeTimeFormatter } from './chartTheme';
-import { computeIndicator } from '@/services/indicators';
-import { ChartContextObj, type ChartCtx } from './ChartContext';
-import { setMainChart } from './chartRegistry';
-import { ChartContextMenu, type ContextMenuState } from './ChartContextMenu';
+} from "lightweight-charts";
+import type { Candle } from "@/types";
+import { useChartStore } from "@/store/chartStore";
+import { useUIStore } from "@/store/uiStore";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
+import { computeIndicator } from "@/services/indicators";
+import { ChartContextObj, type ChartCtx } from "./ChartContext";
+import { setMainChart } from "./chartRegistry";
+import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
@@ -35,12 +35,12 @@ export function PriceChart({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const indSeriesRef = useRef<Map<string, ISeriesApi<'Line'>[]>>(new Map());
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const indSeriesRef = useRef<Map<string, ISeriesApi<"Line">[]>>(new Map());
   const fittedRef = useRef(false);
   const prevCandlesRef = useRef<Candle[]>([]);
-  const prevThemeRef = useRef<string>('');
+  const prevThemeRef = useRef<string>("");
 
   const theme = useUIStore((s) => s.theme);
   const gridVisible = useUIStore((s) => s.gridVisible);
@@ -57,13 +57,13 @@ export function PriceChart({
   useEffect(() => {
     if (!containerRef.current) return;
     const c = chartColors(theme);
-    const gridColor = gridVisible ? c.grid : 'rgba(0,0,0,0)';
+    const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
     const chart = createChart(containerRef.current, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: c.background },
         textColor: c.text,
-        fontFamily: 'var(--font-sans)',
+        fontFamily: "var(--font-sans)",
         fontSize: 11,
         attributionLogo: false,
       },
@@ -85,7 +85,7 @@ export function PriceChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
-        barSpacing: 8,
+        barSpacing: BAR_SPACING[timeframe] ?? 8,
         minBarSpacing: 1.5,
         fixLeftEdge: false,
         lockVisibleTimeRangeOnResize: true,
@@ -97,11 +97,31 @@ export function PriceChart({
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: c.crosshair, width: 1, style: 2, labelBackgroundColor: c.crosshairLabelBg },
-        horzLine: { color: c.crosshair, width: 1, style: 2, labelBackgroundColor: c.crosshairLabelBg },
+        vertLine: {
+          color: c.crosshair,
+          width: 1,
+          style: 2,
+          labelBackgroundColor: c.crosshairLabelBg,
+        },
+        horzLine: {
+          color: c.crosshair,
+          width: 1,
+          style: 2,
+          labelBackgroundColor: c.crosshairLabelBg,
+        },
       },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
-      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true,
+      },
     });
 
     const candleSeries = chart.addCandlestickSeries({
@@ -113,22 +133,24 @@ export function PriceChart({
       wickDownColor: c.bear,
       borderVisible: false,
       wickVisible: true,
-      priceFormat: { type: 'price', precision, minMove: 1 / 10 ** precision },
+      priceFormat: { type: "price", precision, minMove: 1 / 10 ** precision },
       // Current-price line + colored axis label (red/green by last candle).
       priceLineVisible: true,
       priceLineWidth: 1,
-      priceLineStyle: 2,
+      priceLineStyle: 0, // solid (TradingView style)
       lastValueVisible: true,
     });
 
     const volumeSeries = chart.addHistogramSeries({
-      priceFormat: { type: 'volume' },
-      priceScaleId: 'vol',
+      priceFormat: { type: "volume" },
+      priceScaleId: "vol",
       color: c.volumeBull,
       priceLineVisible: false,
       lastValueVisible: false,
     });
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+    chart
+      .priceScale("vol")
+      .applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
@@ -149,7 +171,12 @@ export function PriceChart({
       setCrosshair({
         time: param.time as number,
         candle: data
-          ? { ...data, volume: (param.seriesData.get(volumeSeries) as { value: number })?.value ?? 0 }
+          ? {
+              ...data,
+              volume:
+                (param.seriesData.get(volumeSeries) as { value: number })
+                  ?.value ?? 0,
+            }
           : null,
       });
     });
@@ -175,22 +202,40 @@ export function PriceChart({
     const chart = chartRef.current;
     if (!chart) return;
     const c = chartColors(theme);
-    const gridColor = gridVisible ? c.grid : 'rgba(0,0,0,0)';
+    const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
     chart.applyOptions({
-      layout: { background: { type: ColorType.Solid, color: c.background }, textColor: c.text },
-      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      layout: {
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.text,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
       rightPriceScale: { borderColor: c.border },
-      timeScale: { borderColor: c.border },
+      timeScale: {
+        borderColor: c.border,
+        barSpacing: BAR_SPACING[timeframe] ?? 8,
+      },
       localization: { timeFormatter: makeTimeFormatter(timeframe) },
       crosshair: {
-        vertLine: { color: c.crosshair, labelBackgroundColor: c.crosshairLabelBg },
-        horzLine: { color: c.crosshair, labelBackgroundColor: c.crosshairLabelBg },
+        vertLine: {
+          color: c.crosshair,
+          labelBackgroundColor: c.crosshairLabelBg,
+        },
+        horzLine: {
+          color: c.crosshair,
+          labelBackgroundColor: c.crosshairLabelBg,
+        },
       },
     });
     candleSeriesRef.current?.applyOptions({
-      upColor: c.bull, downColor: c.bear,
-      borderUpColor: c.bull, borderDownColor: c.bear,
-      wickUpColor: c.bull, wickDownColor: c.bear,
+      upColor: c.bull,
+      downColor: c.bear,
+      borderUpColor: c.bull,
+      borderDownColor: c.bear,
+      wickUpColor: c.bull,
+      wickDownColor: c.bear,
     });
   }, [theme, gridVisible, timeframe]);
 
@@ -202,7 +247,8 @@ export function PriceChart({
     // Empty series => symbol/timeframe just changed; re-fit on next load.
     if (candles.length === 0) fittedRef.current = false;
     const c = chartColors(theme);
-    const volColor = (k: Candle) => (k.close >= k.open ? c.volumeBull : c.volumeBear);
+    const volColor = (k: Candle) =>
+      k.close >= k.open ? c.volumeBull : c.volumeBear;
 
     const prev = prevCandlesRef.current;
     const prevLast = prev[prev.length - 1];
@@ -213,28 +259,61 @@ export function PriceChart({
     // O(1) updates (TradingView-style). Anything else (symbol/timeframe change,
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
-    const formingTick = candles.length === prev.length && !!last && !!prevLast && last.time === prevLast.time;
+    const formingTick =
+      candles.length === prev.length &&
+      !!last &&
+      !!prevLast &&
+      last.time === prevLast.time;
     const appended =
-      candles.length === prev.length + 1 && !!prevLast && candles[candles.length - 2]?.time === prevLast.time;
+      candles.length === prev.length + 1 &&
+      !!prevLast &&
+      candles[candles.length - 2]?.time === prevLast.time;
 
     if (sameTheme && (formingTick || appended)) {
       // On append, finalize the previously-forming (now penultimate) bar first.
       if (appended) {
         const penult = candles[candles.length - 2];
-        cs.update({ time: penult.time as UTCTimestamp, open: penult.open, high: penult.high, low: penult.low, close: penult.close });
-        vs.update({ time: penult.time as UTCTimestamp, value: penult.volume, color: volColor(penult) });
+        cs.update({
+          time: penult.time as UTCTimestamp,
+          open: penult.open,
+          high: penult.high,
+          low: penult.low,
+          close: penult.close,
+        });
+        vs.update({
+          time: penult.time as UTCTimestamp,
+          value: penult.volume,
+          color: volColor(penult),
+        });
       }
-      cs.update({ time: last!.time as UTCTimestamp, open: last!.open, high: last!.high, low: last!.low, close: last!.close });
-      vs.update({ time: last!.time as UTCTimestamp, value: last!.volume, color: volColor(last!) });
+      cs.update({
+        time: last!.time as UTCTimestamp,
+        open: last!.open,
+        high: last!.high,
+        low: last!.low,
+        close: last!.close,
+      });
+      vs.update({
+        time: last!.time as UTCTimestamp,
+        value: last!.volume,
+        color: volColor(last!),
+      });
     } else {
       cs.setData(
         candles.map((k) => ({
           time: k.time as UTCTimestamp,
-          open: k.open, high: k.high, low: k.low, close: k.close,
+          open: k.open,
+          high: k.high,
+          low: k.low,
+          close: k.close,
         })),
       );
       vs.setData(
-        candles.map((k) => ({ time: k.time as UTCTimestamp, value: k.volume, color: volColor(k) })),
+        candles.map((k) => ({
+          time: k.time as UTCTimestamp,
+          value: k.volume,
+          color: volColor(k),
+        })),
       );
     }
 
@@ -288,14 +367,21 @@ export function PriceChart({
       }
       result.series.forEach((s, idx) => {
         series![idx].applyOptions({ color: s.color });
-        series![idx].setData(s.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+        series![idx].setData(
+          s.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+        );
       });
     }
   }, [overlayIndicators, candles, ready]);
 
   const ctx: ChartCtx | null = useMemo(() => {
     if (!ready || !chartRef.current || !candleSeriesRef.current) return null;
-    return { chart: chartRef.current, candleSeries: candleSeriesRef.current, candles, version };
+    return {
+      chart: chartRef.current,
+      candleSeries: candleSeriesRef.current,
+      candles,
+      version,
+    };
   }, [ready, candles, version]);
 
   // ---- Right-click context menu with exact price detection ----
@@ -316,7 +402,8 @@ export function PriceChart({
     const price = series.coordinateToPrice(localY);
     const t = chart.timeScale().coordinateToTime(localX);
     const fallbackPrice = candles[candles.length - 1]?.close ?? 0;
-    const fallbackTime = candles[candles.length - 1]?.time ?? Math.floor(Date.now() / 1000);
+    const fallbackTime =
+      candles[candles.length - 1]?.time ?? Math.floor(Date.now() / 1000);
 
     setMenu({
       visible: true,
@@ -330,7 +417,11 @@ export function PriceChart({
   return (
     <div className="relative h-full w-full" onContextMenu={onContextMenu}>
       <div ref={containerRef} className="h-full w-full" />
-      {ctx && <ChartContextObj.Provider value={ctx}>{children}</ChartContextObj.Provider>}
+      {ctx && (
+        <ChartContextObj.Provider value={ctx}>
+          {children}
+        </ChartContextObj.Provider>
+      )}
       {menu && <ChartContextMenu state={menu} onClose={() => setMenu(null)} />}
     </div>
   );

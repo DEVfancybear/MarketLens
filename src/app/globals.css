@@ -7,146 +7,170 @@
    ========================================================= */
 :root,
 .theme-dark {
-  --bg: #0b0e11;
-  --panel: #131722;
-  --panel-2: #1a1f2c;
-  --border: #2a2e39;
-  --hover: #222631;
+    --bg: #0b0e11;
+    --panel: #131722;
+    --panel-2: #1a1f2c;
+    --border: #2a2e39;
+    --hover: #222631;
 
-  --text: #d1d4dc;
-  --text-muted: #868993;
-  --text-faint: #5d606b;
+    --text: #d1d4dc;
+    --text-muted: #868993;
+    --text-faint: #5d606b;
 
-  --accent: #2962ff;
-  --accent-hover: #1e53e5;
+    --accent: #2962ff;
+    --accent-hover: #1e53e5;
 
-  --bull: #26a69a;
-  --bear: #ef5350;
+    --bull: #26a69a;
+    --bear: #ef5350;
 
-  --bos: #2962ff;
-  --choch: #ff9800;
-  --fvg: #5b9cf6;
-  --ob: #9c27b0;
-  --liquidity: #f06292;
+    --bos: #2962ff;
+    --choch: #ff9800;
+    --fvg: #5b9cf6;
+    --ob: #9c27b0;
+    --liquidity: #f06292;
 
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .theme-light {
-  --bg: #ffffff;
-  --panel: #f8f9fd;
-  --panel-2: #eef1f6;
-  --border: #e0e3eb;
-  --hover: #eef0f4;
+    --bg: #ffffff;
+    --panel: #f8f9fd;
+    --panel-2: #eef1f6;
+    --border: #e0e3eb;
+    --hover: #eef0f4;
 
-  --text: #131722;
-  --text-muted: #5d606b;
-  --text-faint: #9598a1;
+    --text: #131722;
+    --text-muted: #5d606b;
+    --text-faint: #9598a1;
 
-  --accent: #2962ff;
-  --accent-hover: #1e53e5;
+    --accent: #2962ff;
+    --accent-hover: #1e53e5;
 
-  --bull: #089981;
-  --bear: #f23645;
+    --bull: #089981;
+    --bear: #f23645;
 
-  --bos: #2962ff;
-  --choch: #ff9800;
-  --fvg: #1e88e5;
-  --ob: #8e24aa;
-  --liquidity: #e91e63;
+    --bos: #2962ff;
+    --choch: #ff9800;
+    --fvg: #1e88e5;
+    --ob: #8e24aa;
+    --liquidity: #e91e63;
 }
 
 * {
-  box-sizing: border-box;
+    box-sizing: border-box;
 }
 
 html,
 body {
-  height: 100%;
-  margin: 0;
-  padding: 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden; /* full-screen terminal, panels scroll internally */
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden; /* full-screen terminal, panels scroll internally */
 }
 
 /* Thin TradingView-style scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+    width: 8px;
+    height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+    background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+    background: var(--border);
+    border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-faint);
+    background: var(--text-faint);
 }
 
 /* Numeric tabular alignment for prices */
 .tabular {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
 }
 
 /* Reusable focus ring */
 .focus-ring:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 /* Chart right-click context menu pop-in */
 @keyframes contextPop {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 .context-menu-pop {
-  animation: contextPop 100ms ease-out;
+    animation: contextPop 100ms ease-out;
 }
 
 /* Toast slide/fade-in */
 @keyframes toastIn {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+    from {
+        opacity: 0;
+        transform: translateX(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Price flash (TradingView green/red pulse on tick) */
+@keyframes flashUp {
+    from {
+        background: rgba(38, 166, 154, 0.2);
+    }
+    to {
+        background: transparent;
+    }
+}
+@keyframes flashDown {
+    from {
+        background: rgba(239, 83, 80, 0.2);
+    }
+    to {
+        background: transparent;
+    }
+}
+.animate-watch-flash-up {
+    animation: flashUp 350ms ease-out;
+}
+.animate-watch-flash-down {
+    animation: flashDown 350ms ease-out;
 }
 
 /* Resizer handles */
 .resizer {
-  position: relative;
-  z-index: 20;
-  user-select: none;
+    position: relative;
+    z-index: 20;
+    user-select: none;
 }
 .resizer-col {
-  cursor: col-resize;
-  width: 5px;
+    cursor: col-resize;
+    width: 5px;
 }
 .resizer-row {
-  cursor: row-resize;
-  height: 5px;
+    cursor: row-resize;
+    height: 5px;
 }
 .resizer:hover,
 .resizer-active {
-  background: var(--accent);
+    background: var(--accent);
 }

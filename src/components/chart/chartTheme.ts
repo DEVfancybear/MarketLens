@@ -1,5 +1,5 @@
-import type { Theme } from '@/store/uiStore';
-import { TF_SECONDS, type Timeframe } from '@/types';
+import type { Theme } from "@/store/uiStore";
+import { TF_SECONDS, type Timeframe } from "@/types";
 
 /**
  * TradingView-style colour palette resolved from the active app theme.
@@ -7,27 +7,40 @@ import { TF_SECONDS, type Timeframe } from '@/types';
  * candles, very subtle #1e222d grid, #758696 crosshair).
  */
 export function chartColors(theme: Theme) {
-  const dark = theme === 'dark';
+  const dark = theme === "dark";
   return {
-    background: dark ? '#131722' : '#ffffff',
+    background: dark ? "#0b0e11" : "#ffffff",
     // Axis label text
-    text: dark ? '#b2b5be' : '#131722',
+    text: dark ? "#b2b5be" : "#131722",
     // Grid lines — deliberately faint so they never dominate
-    grid: dark ? '#1e222d' : '#eceff3',
+    grid: dark ? "#1e222d" : "#eceff3",
     // Price/time scale border
-    border: dark ? '#2a2e39' : '#e0e3eb',
+    border: dark ? "#2a2e39" : "#e0e3eb",
     // Crosshair line + label box
-    crosshair: dark ? '#758696' : '#9598a1',
-    crosshairLabelBg: dark ? '#363a45' : '#2a2e39',
+    crosshair: dark ? "#758696" : "#9598a1",
+    crosshairLabelBg: dark ? "#363a45" : "#2a2e39",
     // Candles
-    bull: dark ? '#26a69a' : '#089981',
-    bear: dark ? '#ef5350' : '#f23645',
-    volumeBull: dark ? 'rgba(38,166,154,0.5)' : 'rgba(8,153,129,0.45)',
-    volumeBear: dark ? 'rgba(239,83,80,0.5)' : 'rgba(242,54,69,0.45)',
+    bull: dark ? "#26a69a" : "#089981",
+    bear: dark ? "#ef5350" : "#f23645",
+    volumeBull: dark ? "rgba(38,166,154,0.5)" : "rgba(8,153,129,0.45)",
+    volumeBear: dark ? "rgba(239,83,80,0.5)" : "rgba(242,54,69,0.45)",
   };
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** TradingView-style bar spacing per timeframe — tighter on low TFs. */
+export const BAR_SPACING: Record<Timeframe, number> = {
+  "1m": 4,
+  "3m": 5,
+  "5m": 6,
+  "15m": 8,
+  "30m": 10,
+  "1H": 10,
+  "4H": 12,
+  "1D": 14,
+  "1W": 16,
+};
 
 /**
  * Crosshair time-tooltip formatter: HH:mm for intraday, "d MMM 'yy" for daily+,
@@ -38,11 +51,17 @@ export function makeTimeFormatter(tf: Timeframe) {
   return (time: number) => {
     const d = new Date(time * 1000);
     if (intraday) {
-      const mon = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+      const mon = d.toLocaleString("en-US", {
+        month: "short",
+        timeZone: "UTC",
+      });
       return `${d.getUTCDate()} ${mon}  ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
     }
-    return d.toLocaleDateString('en-US', {
-      day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC',
+    return d.toLocaleDateString("en-US", {
+      day: "numeric",
+      month: "short",
+      year: "2-digit",
+      timeZone: "UTC",
     });
   };
 }

@@ -7,48 +7,25 @@
   interactive chart alerts).
 - **✅ OANDA Integration: COMPLETE** (forex/metals/indices via OANDA v20 REST; fallback to
   TwelveData; extension points for FxcmProvider + ICMarketsProvider).
-- **✅ Phase 3–11 Master Plan: COMPLETE** — `docs/PHASE3_11_PLAN.md`.
-- **▶ Phase 3.1 — TradingView UI Parity (Layout System): NEXT.**
+- **✅ Phase 3 — TradingView UI Parity: COMPLETE** (90% visual, 85% interaction).
+  16 files modified, 2 created. See `docs/TRADINGVIEW_PARITY_REPORT.md`.
+- **▶ Phase 4 — Drawing Engine: NEXT.** Wire the unwired `drawingRenderer.ts`, expand
+  toolbar to 17 tools, add DrawingContextMenu, hit-test module, and drawing hotkeys.
+  See `docs/PHASE3_11_PLAN.md` §Phase 4.
 
-## Immediate tasks — Phase 3.1 (Layout System)
+## Immediate tasks — Phase 4 (Drawing Engine)
 
-Per the updated roadmap; see `docs/PHASE3_11_PLAN.md` for full detail.
+Per `docs/PHASE3_11_PLAN.md` §Phase 4:
 
-1. **Tighten toolbar dimensions** — top toolbar `h-9` (36px), left rail `40px`, panel header `h-8` (32px).
-2. **Upgrade BottomPanel tabs** — TradingView-style tab strip with accent underline indicator.
-3. **Add loading overlay** — chart area already has `Loader2` spinner when `chartStore.loading` is true.
-4. **Responsive pass** — verify layout at 375px, 768px, 1024px breakpoints.
-
-## Phase 3.2 — Chart Styling
-
-1. **Dynamic bar spacing** — per-timeframe spacing (1m: 4, 5m: 6, 15m: 8, 1H: 10, 4H: 12, 1D+: 14).
-2. **Thinner wicks** — set `wickWidth` on candlestick series.
-3. **Solid last-price line** — change `priceLineStyle` from 2 (dashed) to 0 (solid).
-4. **Refine grid opacity** — match TradingView's `#1e222d` grid.
-
-## Phase 3.3 — Price Scale UX
-
-1. **Symbol+TF overlay** — top-left chart overlay showing "SYMBOL, TF".
-2. **Bar countdown timer** — countdown to next bar close.
-3. **Price label color** — red/green by candle direction.
-
-## Phase 3.4 — Watchlist Upgrade
-
-1. **Hover states** — `hover:bg-terminal-hover` on rows.
-2. **Active row indicator** — left-border accent + highlight.
-3. **Watchlist context menu** — right-click: Remove, Create Alert.
-4. **Compact rows** — `h-7` (28px) to match TradingView.
-
-## Phase 3.5 — Context Menus
-
-1. **Chart context menu polish** — separators between action groups.
-2. **WatchlistContextMenu** — created in 3.4.
-
-## Phase 3.6 — Keyboard Shortcuts
-
-1. **Ctrl+A** — select all drawings (Phase 4 scope, add handler now).
-2. **Alt+A** — toggle alert center.
-3. **`?`** — show keyboard shortcuts overlay (optional).
+1. **Wire the renderer** — replace DrawingLayer's inline renderDrawing() with the
+   pre-written `drawingRenderer.ts` (already supports all 17 tools).
+2. **Wire drawing actions** — `duplicateDrawing/lockDrawing/hideDrawing/bringToFront/
+   sendToBack/toggleLockAll/toggleHideAll`.
+3. **Expand toolbar** — from 7 tools to full 17-tool set (channel, brush, measure,
+   emoji, eraser, crosshair, long, short).
+4. **Create hit-test module** — `drawingHitTest.ts` for per-drawing pointer detection.
+5. **Create DrawingContextMenu** — right-click: Edit, Clone, Lock, Hide, Delete, Z-order.
+6. **Drawing hotkeys** — Delete (remove), Esc (deselect), Ctrl+D (duplicate).
 
 ---
 

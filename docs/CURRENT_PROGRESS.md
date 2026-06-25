@@ -6,15 +6,15 @@ _Last updated: 2026-06-25_
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
 - **✅ Phase 2 — Alert Engine — COMPLETE** (+ audit + Phase 2.1 interactive chart alerts).
 - **✅ OANDA Integration — COMPLETE** (forex/metals/indices realtime + historical data).
-- **🔍 OANDA diagnostics added** — console logging for provider routing, API calls, and errors.
-- **📋 Roadmap updated** — New 11-phase master plan covering UI parity through final polish.
-  See `docs/PHASE3_11_PLAN.md`.
-- **Next milestone: Phase 3.1 — TradingView UI Parity (Layout System).**
+- **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~90%, interaction ~85%).
+  18 improvements across layout, chart, price scale, watchlist, context menus, and keyboard shortcuts.
+  See `docs/TRADINGVIEW_PARITY_REPORT.md` and `docs/UI_GAP_ANALYSIS.md`.
+- **Next milestone: Phase 4 — Drawing Engine.**
 
 ## Completed this session
-1. **Updated roadmap + Phase 3–11 plan:** Created `docs/PHASE3_11_PLAN.md` — comprehensive
-   implementation plan for all 9 remaining phases (UI parity through polish). See the plan for
-   detailed step-by-step tasks per phase.
+1. **Phase 3 — TradingView UI Parity (full implementation):** Achieved 90% visual parity with
+  TradingView.com across 7 sub-phases (3.1–3.7). 16 files modified, 2 created. Zero architecture
+  changes — pure UI/UX.
 2. **OANDA debug diagnostics:** Added console.debug/console.warn logging to MarketDataService symbol/timeframe switch hardening (idempotent `selectMarket`),
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the

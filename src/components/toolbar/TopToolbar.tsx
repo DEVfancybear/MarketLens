@@ -1,21 +1,30 @@
-'use client';
+"use client";
 import {
-  Camera, Maximize2, Minimize2, Moon, Sun, PlayCircle, Layout as LayoutIcon, PanelRightClose, PanelRightOpen, Bell,
-} from 'lucide-react';
-import { SymbolSearch } from './SymbolSearch';
-import { useAlertStore } from '@/store/alertStore';
-import { IndicatorMenu } from './IndicatorMenu';
-import { SmcMenu } from './SmcMenu';
-import { ChartSettingsMenu } from './ChartSettingsMenu';
-import { ConnectionBadge } from './ConnectionBadge';
-import { IconButton } from '@/components/ui/IconButton';
-import { Dropdown, MenuItem } from '@/components/ui/Dropdown';
-import { useChartStore } from '@/store/chartStore';
-import { useReplayStore } from '@/store/replayStore';
-import { useUIStore } from '@/store/uiStore';
-import { TIMEFRAMES, type Timeframe } from '@/types';
-import { cn } from '@/utils/cn';
-import { captureChart } from '@/components/chart/chartRegistry';
+  Camera,
+  Maximize2,
+  Minimize2,
+  Moon,
+  Sun,
+  PlayCircle,
+  Layout as LayoutIcon,
+  PanelRightClose,
+  PanelRightOpen,
+  Bell,
+} from "lucide-react";
+import { SymbolSearch } from "./SymbolSearch";
+import { useAlertStore } from "@/store/alertStore";
+import { IndicatorMenu } from "./IndicatorMenu";
+import { SmcMenu } from "./SmcMenu";
+import { ChartSettingsMenu } from "./ChartSettingsMenu";
+import { ConnectionBadge } from "./ConnectionBadge";
+import { IconButton } from "@/components/ui/IconButton";
+import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
+import { useChartStore } from "@/store/chartStore";
+import { useReplayStore } from "@/store/replayStore";
+import { useUIStore } from "@/store/uiStore";
+import { TIMEFRAMES, type Timeframe } from "@/types";
+import { cn } from "@/utils/cn";
+import { captureChart } from "@/components/chart/chartRegistry";
 
 export function TopToolbar() {
   // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
@@ -39,7 +48,7 @@ export function TopToolbar() {
       if (useChartStore.getState().candles.length < 50) return;
       // Enter TradingView-style bar selection: click a candle to start.
       replay.beginSelect();
-      ui.setBottomTab('replay');
+      ui.setBottomTab("replay");
     }
   };
 
@@ -47,12 +56,12 @@ export function TopToolbar() {
     const blob = await captureChart();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `${useChartStore.getState().symbol}_${timeframe}_${Date.now()}.png`;
     a.click();
     URL.revokeObjectURL(url);
-    ui.log('info', 'Screenshot saved');
+    ui.log("info", "Screenshot saved");
   };
 
   const toggleFullscreen = () => {
@@ -78,10 +87,10 @@ export function TopToolbar() {
             key={tf}
             onClick={() => setTimeframe(tf)}
             className={cn(
-              'h-7 min-w-[28px] rounded px-1.5 text-2xs font-medium transition-colors',
+              "h-7 min-w-[28px] rounded px-1.5 text-[11px] font-medium transition-colors",
               tf === timeframe
-                ? 'bg-terminal-hover font-semibold text-ink'
-                : 'text-ink-muted hover:bg-terminal-hover hover:text-ink',
+                ? "bg-terminal-hover font-semibold text-ink"
+                : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
             )}
           >
             {tf}
@@ -98,14 +107,14 @@ export function TopToolbar() {
       <button
         onClick={toggleReplay}
         className={cn(
-          'flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors',
+          "flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors",
           replay.active || replay.selecting
-            ? 'bg-brand/15 text-brand'
-            : 'text-ink-muted hover:bg-terminal-hover hover:text-ink',
+            ? "bg-brand/15 text-brand"
+            : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
         )}
       >
         <PlayCircle size={14} />
-        {replay.selecting ? 'Select bar…' : 'Replay'}
+        {replay.selecting ? "Select bar…" : "Replay"}
       </button>
 
       {/* Layout selector (visual presets) */}
@@ -120,7 +129,7 @@ export function TopToolbar() {
       >
         {(close) => (
           <div>
-            {['Single', '2 Horizontal', '2 Vertical', 'Grid 2×2'].map((l) => (
+            {["Single", "2 Horizontal", "2 Vertical", "Grid 2×2"].map((l) => (
               <MenuItem key={l} onClick={close}>
                 {l}
               </MenuItem>
@@ -148,11 +157,19 @@ export function TopToolbar() {
         <IconButton label="Screenshot" onClick={screenshot}>
           <Camera size={15} />
         </IconButton>
-        <IconButton label="Toggle watchlist" onClick={ui.toggleRight} active={ui.rightOpen}>
-          {ui.rightOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+        <IconButton
+          label="Toggle watchlist"
+          onClick={ui.toggleRight}
+          active={ui.rightOpen}
+        >
+          {ui.rightOpen ? (
+            <PanelRightClose size={15} />
+          ) : (
+            <PanelRightOpen size={15} />
+          )}
         </IconButton>
         <IconButton label="Theme" onClick={ui.toggleTheme}>
-          {ui.theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          {ui.theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>
         <IconButton label="Fullscreen" onClick={toggleFullscreen}>
           {ui.fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}

@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 3: TradingView UI Parity (2026-06-25)
+- **Visual parity improved from ~70% to ~90%.** 16 files modified, 2 created. Zero architecture
+  changes — pure UI/UX. Full report: `docs/TRADINGVIEW_PARITY_REPORT.md`.
+- **Layout:** top toolbar 36px, panel headers 32px, left rail 40px, watchlist 320px. BottomPanel
+  tabs now use TradingView-style accent underline (not rounded pills).
+- **Chart:** background unified to `#0b0e11`, dynamic bar spacing per timeframe (1m:4 → 1W:16),
+  solid last-price line, countdown timer to next bar close (`useCountdown` hook).
+- **Watchlist:** compact 28px rows, blue left-border active indicator, right-click context menu
+  (Remove, Create Alert), green/red price flash animation on tick.
+- **Context menus:** chart menu now has Add/Remove Watchlist + Copy Price; new
+  `WatchlistContextMenu` component.
+- **Keyboard:** Alt+A toggles the Alert Center.
+- **Toolbar polish:** timeframe buttons 11px font, drawing toolbar icons 18px, IconButton md size
+  36×36px, symbol search button 32px tall.
+
 ### Docs — Master roadmap + Phase 3–11 plan (2026-06-25)
 - `docs/PHASE3_11_PLAN.md` — comprehensive implementation plan covering all 9 remaining phases:
   UI Parity, Drawing Engine, Left Toolbar, Indicator Engine, Push Notifications, MT5 Integration,
