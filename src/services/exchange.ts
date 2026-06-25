@@ -1,24 +1,15 @@
-import type { Symbol as Sym } from '@/types';
+import type { AssetClass } from '@/types';
 
 /**
  * Presentational mapping from a symbol's asset class to a TradingView-style
- * exchange name and contract tag. Display-only — no effect on trading logic.
+ * contract tag. Display-only — no effect on trading logic. (Exchange name now
+ * comes directly from the registry's `MarketSymbol.exchange`.)
  */
-export function exchangeOf(type: Sym['type']): string {
-  switch (type) {
-    case 'crypto': return 'BINANCE';
-    case 'forex': return 'FX';
-    case 'commodity': return 'OANDA';
-    case 'index': return 'INDEX';
-    case 'stock': return 'NASDAQ';
-    default: return 'MARKET';
-  }
-}
-
-export function contractTagOf(type: Sym['type']): string {
-  switch (type) {
+export function contractTagOf(assetClass: AssetClass): string {
+  switch (assetClass) {
     case 'crypto': return 'Perpetual';
     case 'forex': return 'Spot';
+    case 'metal': return 'Spot';
     case 'commodity': return 'CFD';
     case 'index': return 'Index';
     case 'stock': return 'Equity';

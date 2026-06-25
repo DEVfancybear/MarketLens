@@ -38,7 +38,10 @@ const MAX_CANDLES = 5000;
 
 const DEFAULT_SYMBOL = 'BTCUSDT';
 const DEFAULT_TIMEFRAME: Timeframe = '1m';
-const DEFAULT_CHANNELS: MarketChannel[] = ['ticker', 'kline'];
+// The chart selection subscribes KLINE only (price comes from the candle close).
+// The watchlist subscribes TICKER separately, so the two never share a stream
+// and neither can tear down the other's subscriptions.
+const DEFAULT_CHANNELS: MarketChannel[] = ['kline'];
 
 /** Minimal surface the store calls on the (Step 6) service. */
 export interface MarketDataServiceBinding {
@@ -83,6 +86,8 @@ interface MarketDataState {
   unsubscribe: (symbol: string, timeframe?: Timeframe) => void;
   changeSymbol: (symbol: string) => void;
   changeTimeframe: (timeframe: Timeframe) => void;
+  /** Atomically switch symbol + timeframe (chart selection). */
+  selectMarket: (symbol: string, timeframe: Timeframe) => void;
 
   // ---- data ingress (service → store) ----
   updateQuote: (quote: MarketQuote) => void;
@@ -136,24 +141,29 @@ export const useMarketDataStore = create<MarketDataState>((set, get) => ({
     service?.unsubscribe(symbol, timeframe);
   },
 
-  /** Switch active symbol: unsubscribe old, subscribe new (no leaks). History
-   *  loading is performed by the chart/hook layer (Steps 11–13). */
+  /** Switch active symbol (kline only): unsubscribe old, subscribe new. No leaks. */
   changeSymbol: (symbol) => {
-    const { selectedSymbol, selectedTimeframe, unsubscribe, subscribe } = get();
+    const { selectedSymbol, selectedTimeframe } = get();
     if (symbol === selectedSymbol) return;
-    unsubscribe(selectedSymbol, selectedTimeframe);
-    unsubscribe(selectedSymbol); // ticker-only sub, if any
-    set({ selectedSymbol: symbol });
-    subscribe({ symbol, channels: DEFAULT_CHANNELS, timeframe: selectedTimeframe });
+    get().selectMarket(symbol, selectedTimeframe);
   },
 
   /** Switch active timeframe: re-subscribe kline at the new TF for the active symbol. */
   changeTimeframe: (timeframe) => {
-    const { selectedSymbol, selectedTimeframe, unsubscribe, subscribe } = get();
+    const { selectedSymbol, selectedTimeframe } = get();
     if (timeframe === selectedTimeframe) return;
-    unsubscribe(selectedSymbol, selectedTimeframe);
-    set({ selectedTimeframe: timeframe });
-    subscribe({ symbol: selectedSymbol, channels: DEFAULT_CHANNELS, timeframe });
+    get().selectMarket(selectedSymbol, timeframe);
+  },
+
+  /** Atomically switch the active symbol+timeframe (chart selection): drop the
+   *  old kline subscription and add the new one. History loading is done by the
+   *  chart/hook layer. */
+  selectMarket: (symbol, timeframe) => {
+    const { selectedSymbol, selectedTimeframe, unsubscribe, subscribe } = get();
+    if (symbol === selectedSymbol && timeframe === selectedTimeframe) return;
+    unsubscribe(selectedSymbol, selectedTimeframe); // drop old chart kline
+    set({ selectedSymbol: symbol, selectedTimeframe: timeframe });
+    subscribe({ symbol, channels: DEFAULT_CHANNELS, timeframe });
   },
 
   // ---------------- data ingress ----------------

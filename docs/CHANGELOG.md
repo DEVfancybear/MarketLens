@@ -4,6 +4,27 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 1 Step 11: Realtime Chart Integration (2026-06-25)
+- `src/hooks/useMarketData.ts` — **rewritten from mock to realtime**. On symbol/timeframe change:
+  `marketDataStore.selectMarket()` (subscribe kline, drop old) + load history via
+  `HistoricalDataService` → `setCandles`. Continuously mirrors the store's candle series into
+  `chartStore.candles`, so chart/indicators/SMC/replay/trade keep reading `chartStore.candles`
+  (via `useVisibleCandles`) unchanged — now realtime instead of mock. Verified: Binance klines
+  REST shape matches the parser.
+- `src/components/chart/PriceChart.tsx` — incremental `series.update(lastBar)` fast path for
+  forming-bar ticks and single appended bars (smooth O(1) realtime); full `setData` only on
+  symbol/timeframe/history/theme/replay changes. Precision via registry `getMarketSymbol`.
+- `store/marketDataStore.ts` — `DEFAULT_CHANNELS = ['kline']` (chart) so chart (kline) and
+  watchlist (ticker) never share a stream → no cross-teardown; added atomic `selectMarket()`;
+  `changeSymbol`/`changeTimeframe` delegate to it.
+- `store/chartStore.ts` — default symbol `BTCUSDT` (Binance, streams with no API key).
+- `Watchlist` click and `SymbolSearch` now use registry symbols (`MARKET_SYMBOLS`); precision in
+  `ChartArea`/`ChartContextMenu` via `getMarketSymbol`. `exchange.ts` `contractTagOf` takes
+  `AssetClass` (exchange label now from the registry).
+- Crypto charts stream live (history + realtime klines); forex/metals/indices need a TwelveData
+  key (history + tick-built candles). Mock `marketData.ts` still used only by replay MTF (Step 17).
+  Build/type/lint green.
+
 ### Changed — Phase 1 Step 10: Realtime Watchlist Integration (2026-06-25)
 - `components/watchlist/Watchlist.tsx` — removed mock React Query (`useQueries`/`fetchQuote`).
   Each row is now a memoized `WatchRow` reading its own `useQuote(ticker)` from `marketDataStore`

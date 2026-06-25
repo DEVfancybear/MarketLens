@@ -67,7 +67,8 @@ interface ChartState {
   hydrate: () => void;
 }
 
-const DEFAULT_SYMBOL = 'EURUSD';
+// Default to a Binance crypto symbol so the chart streams live with no API key.
+const DEFAULT_SYMBOL = 'BTCUSDT';
 const DEFAULT_TF: Timeframe = '15m';
 
 function drawingsKey(symbol: string) {

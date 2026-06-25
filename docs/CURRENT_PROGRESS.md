@@ -3,15 +3,18 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–9 ✅ · **Step 10 (realtime Watchlist) ✅**
-  — first live UI; opens real sockets. **Next: Step 11 (Chart integration — the big one).**
+- **Phase 1 — Realtime Market Data Foundation.** Steps 1–10 ✅ · **Step 11 (realtime Chart) ✅** —
+  chart streams live (Binance crypto, no key needed). **Next: Steps 12–13 (symbol/timeframe switch
+  hardening), then 14 (status badge), 16 (perf), 17 (remove mock).**
 
 ## Recently modified files
-- `src/components/watchlist/Watchlist.tsx` (realtime, per-row `useQuote`, registry symbols)
-- `src/hooks/useMarketDataBootstrap.ts` (new — feed bootstrap, mounted in `GlobalRuntime`)
-- `src/components/layout/GlobalRuntime.tsx` (mounts bootstrap)
-- `src/store/watchlistStore.ts` (registry defaults + migration)
-- `src/hooks/{useCandles,useQuote,useConnectionStatus,useMarketDataFeed}.ts` (store readers, Step 9)
+- `src/hooks/useMarketData.ts` (realtime rewrite — selection + history + mirror to chartStore)
+- `src/components/chart/PriceChart.tsx` (incremental `series.update`; registry precision)
+- `src/store/marketDataStore.ts` (`selectMarket`, kline-only chart channel)
+- `src/store/chartStore.ts` (default symbol BTCUSDT)
+- `src/components/toolbar/SymbolSearch.tsx`, `ChartArea.tsx`, `ChartContextMenu.tsx` (registry symbols)
+- `src/services/exchange.ts` (`contractTagOf(AssetClass)`)
+- `src/components/watchlist/Watchlist.tsx`, `useMarketDataBootstrap.ts` (Step 10)
 - `src/services/market-data/*` (service layer, Steps 3–8)
 - `src/services/market-data/HistoricalDataService.ts` (REST history loader, Step 7)
 - `src/services/market-data/symbols.ts` (canonical symbol registry, Step 6)

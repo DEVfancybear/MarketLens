@@ -11,7 +11,7 @@ import {
 import type { Candle } from '@/types';
 import { useChartStore } from '@/store/chartStore';
 import { useUIStore } from '@/store/uiStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { chartColors, makeTimeFormatter } from './chartTheme';
 import { computeIndicator } from '@/services/indicators';
 import { ChartContextObj, type ChartCtx } from './ChartContext';
@@ -39,6 +39,8 @@ export function PriceChart({
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const indSeriesRef = useRef<Map<string, ISeriesApi<'Line'>[]>>(new Map());
   const fittedRef = useRef(false);
+  const prevCandlesRef = useRef<Candle[]>([]);
+  const prevThemeRef = useRef<string>('');
 
   const theme = useUIStore((s) => s.theme);
   const gridVisible = useUIStore((s) => s.gridVisible);
@@ -49,7 +51,7 @@ export function PriceChart({
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
-  const precision = getSymbol(symbol)?.pricePrecision ?? 2;
+  const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -200,19 +202,45 @@ export function PriceChart({
     // Empty series => symbol/timeframe just changed; re-fit on next load.
     if (candles.length === 0) fittedRef.current = false;
     const c = chartColors(theme);
-    cs.setData(
-      candles.map((k) => ({
-        time: k.time as UTCTimestamp,
-        open: k.open, high: k.high, low: k.low, close: k.close,
-      })),
-    );
-    vs.setData(
-      candles.map((k) => ({
-        time: k.time as UTCTimestamp,
-        value: k.volume,
-        color: k.close >= k.open ? c.volumeBull : c.volumeBear,
-      })),
-    );
+    const volColor = (k: Candle) => (k.close >= k.open ? c.volumeBull : c.volumeBear);
+
+    const prev = prevCandlesRef.current;
+    const prevLast = prev[prev.length - 1];
+    const last = candles[candles.length - 1];
+
+    // Realtime fast path: a forming-bar tick (same length, same last time) or a
+    // single appended bar → series.update() instead of a full setData. Smooth
+    // O(1) updates (TradingView-style). Anything else (symbol/timeframe change,
+    // history load, replay slice, theme change) → setData.
+    const sameTheme = prevThemeRef.current === theme;
+    const formingTick = candles.length === prev.length && !!last && !!prevLast && last.time === prevLast.time;
+    const appended =
+      candles.length === prev.length + 1 && !!prevLast && candles[candles.length - 2]?.time === prevLast.time;
+
+    if (sameTheme && (formingTick || appended)) {
+      // On append, finalize the previously-forming (now penultimate) bar first.
+      if (appended) {
+        const penult = candles[candles.length - 2];
+        cs.update({ time: penult.time as UTCTimestamp, open: penult.open, high: penult.high, low: penult.low, close: penult.close });
+        vs.update({ time: penult.time as UTCTimestamp, value: penult.volume, color: volColor(penult) });
+      }
+      cs.update({ time: last!.time as UTCTimestamp, open: last!.open, high: last!.high, low: last!.low, close: last!.close });
+      vs.update({ time: last!.time as UTCTimestamp, value: last!.volume, color: volColor(last!) });
+    } else {
+      cs.setData(
+        candles.map((k) => ({
+          time: k.time as UTCTimestamp,
+          open: k.open, high: k.high, low: k.low, close: k.close,
+        })),
+      );
+      vs.setData(
+        candles.map((k) => ({ time: k.time as UTCTimestamp, value: k.volume, color: volColor(k) })),
+      );
+    }
+
+    prevCandlesRef.current = candles;
+    prevThemeRef.current = theme;
+
     // Fit the time scale once on the first non-empty load; afterwards leave the
     // user's pan/zoom intact so replay reveals candles at the right edge.
     if (!fittedRef.current && candles.length > 0) {

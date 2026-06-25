@@ -6,7 +6,7 @@ import { useChartStore } from '@/store/chartStore';
 import { useTradeStore } from '@/store/tradeStore';
 import { useUIStore } from '@/store/uiStore';
 import { useAlertStore } from '@/store/alertStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { fmtPrice } from '@/utils/format';
 import { uid } from '@/utils/id';
 import { emit } from '@/utils/bus';
@@ -51,7 +51,7 @@ export function ChartContextMenu({
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state.x, y: state.y });
 
-  const prec = getSymbol(symbol)?.pricePrecision ?? 2;
+  const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const priceStr = fmtPrice(state.price, prec);
 
   // ---- Clamp to viewport (auto-reposition near edges) ----

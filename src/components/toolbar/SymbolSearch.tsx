@@ -2,8 +2,8 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Dropdown } from '@/components/ui/Dropdown';
-import { SYMBOLS, getSymbol } from '@/services/marketData';
-import { exchangeOf, contractTagOf } from '@/services/exchange';
+import { MARKET_SYMBOLS, getMarketSymbol } from '@/services/market-data/symbols';
+import { contractTagOf } from '@/services/exchange';
 import { useChartStore } from '@/store/chartStore';
 import { cn } from '@/utils/cn';
 
@@ -14,13 +14,13 @@ export function SymbolSearch() {
 
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return SYMBOLS;
-    return SYMBOLS.filter(
-      (s) => s.ticker.toLowerCase().includes(t) || s.name.toLowerCase().includes(t),
+    if (!t) return MARKET_SYMBOLS;
+    return MARKET_SYMBOLS.filter(
+      (s) => s.id.toLowerCase().includes(t) || s.name.toLowerCase().includes(t),
     );
   }, [q]);
 
-  const meta = getSymbol(symbol);
+  const meta = getMarketSymbol(symbol);
 
   return (
     <Dropdown
@@ -36,11 +36,11 @@ export function SymbolSearch() {
           <span className="text-sm font-semibold tracking-tight text-ink">{symbol}</span>
           {meta && (
             <span className="rounded bg-terminal-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-              {contractTagOf(meta.type)}
+              {contractTagOf(meta.assetClass)}
             </span>
           )}
           <span className="text-[10px] font-medium uppercase tracking-wide text-ink-faint">
-            {meta ? exchangeOf(meta.type) : ''}
+            {meta?.exchange ?? ''}
           </span>
         </button>
       )}
@@ -59,21 +59,21 @@ export function SymbolSearch() {
           <div className="max-h-72 overflow-auto">
             {results.map((s) => (
               <button
-                key={s.ticker}
+                key={s.id}
                 onClick={() => {
-                  setSymbol(s.ticker);
+                  setSymbol(s.id);
                   setQ('');
                   close();
                 }}
                 className={cn(
                   'flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-terminal-hover',
-                  s.ticker === symbol && 'bg-brand/10',
+                  s.id === symbol && 'bg-brand/10',
                 )}
               >
-                <span className="text-xs font-semibold text-ink">{s.ticker}</span>
+                <span className="text-xs font-semibold text-ink">{s.id}</span>
                 <span className="ml-2 truncate text-2xs text-ink-muted">{s.name}</span>
                 <span className="ml-auto rounded bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
-                  {s.type}
+                  {s.exchange}
                 </span>
               </button>
             ))}

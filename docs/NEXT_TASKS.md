@@ -2,9 +2,9 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–10 are **complete** (full service layer + read hooks + **realtime watchlist**).
-**Immediate next: Step 11 (Chart integration)** — the big one. Remaining steps mapped to concrete
-files/integration seams:
+Steps 1–11 are **complete** (service layer + hooks + realtime watchlist + **realtime chart**).
+The chart now streams live (Binance crypto needs no key). **Immediate next: Step 12 (symbol
+switching hardening) + Step 13 (timeframe switching).** Remaining steps:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -17,9 +17,9 @@ files/integration seams:
 | 8 ✅ | Candle engine | `src/services/market-data/CandleEngine.ts` (DONE; wired into MarketDataService) | Tick→bar bucketing via `TF_SECONDS`, closed-bar emission, `seedHistory`, kline pass-through. TwelveData ticks now produce candles in the store. |
 | 9 ✅ | Hooks | `useCandles.ts`, `useQuote.ts`, `useConnectionStatus.ts`, `useMarketDataFeed.ts` (DONE) | Read-only store selectors; no sockets. Mock `useMarketData.ts` left untouched (Step 11 retires it). |
 | 10 ✅ | Watchlist integration | `Watchlist.tsx` + `useMarketDataBootstrap` (`GlobalRuntime`) + `watchlistStore` (DONE) | Realtime per-row `useQuote`, registry symbols, memoized rows, minimal rerenders, bootstrap subscribes tickers. |
-| 11 ⬅ | Chart integration | `ChartArea.tsx`, `PriceChart.tsx`, new `useChartFeed`/retire mock `useMarketData.ts` | On symbol/timeframe select: subscribe `['ticker','kline']` + prime history via `HistoricalDataService` → `setCandles`, then feed the store's candles to the chart. Prefer `series.update(lastBar)` for the forming bar (not `setData` every tick). **Keep the `useVisibleCandles` replay gate** — replay must still slice the (now realtime) master series. Reconcile: make the chart read `marketDataStore` candles for live, while `chartStore` keeps drawings/indicators/tool + the active symbol/timeframe (or move selection to `marketDataStore`). Big step — plan the `chartStore`↔`marketDataStore` split carefully. |
-| 12 | Symbol switching | store action `changeSymbol()` | unsubscribe old → subscribe new → load history → resume realtime. No leaks. |
-| 13 | Timeframe switching | store action `changeTimeframe()` | load new history, resume realtime, preserve chart state. |
+| 11 ✅ | Chart integration | `useMarketData.ts` (realtime rewrite), `PriceChart.tsx`, `marketDataStore`, `chartStore`, `SymbolSearch` (DONE) | Realtime chart: select → kline sub + history → mirror store candles into `chartStore.candles`; `series.update` fast path; replay gate kept; chart/watchlist streams disjoint. |
+| 12 ⬅ | Symbol switching | verify/harden `selectMarket` + `useMarketData` | Already works via chartStore.setSymbol → useMarketData (selectMarket unsub old kline, sub new, load history). **Verify no leaks** (old kline UNSUBSCRIBE sent; engine reset) and rapid-switch race (history of an abandoned symbol must not overwrite — `cancelled` guard already in place). |
+| 13 ⬅ | Timeframe switching | verify/harden | Works via chartStore.setTimeframe → selectMarket. Verify history reloads at new TF + realtime resumes; chart pan/zoom intentionally re-fits on TF change (acceptable). |
 | 14 | Connection status | `TopToolbar` (new badge) | 🟢/🟡/🔴 from `marketDataStore.connectionStatus`. |
 | 15 | Reconnect | inside provider | backoff 1s→2s→5s→10s→30s, infinite, auto-resubscribe. |
 | 16 | Performance | selectors, `React.memo`, `useMemo/useCallback` | 100+ symbols, 5000+ candles; prefer atomic Zustand selectors. |

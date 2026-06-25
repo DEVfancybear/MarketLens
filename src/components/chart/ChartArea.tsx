@@ -4,7 +4,7 @@ import type { IChartApi } from 'lightweight-charts';
 import { useMarketData } from '@/hooks/useMarketData';
 import { useVisibleCandles } from '@/hooks/useVisibleCandles';
 import { useChartStore } from '@/store/chartStore';
-import { getSymbol } from '@/services/marketData';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 import { fmtPrice, fmtVolume } from '@/utils/format';
 import { PriceChart } from './PriceChart';
 import { IndicatorPane } from './IndicatorPane';
@@ -27,7 +27,7 @@ export function ChartArea() {
   const crosshair = useChartStore((s) => s.crosshair);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
 
-  const precision = getSymbol(symbol)?.pricePrecision ?? 2;
+  const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const paneIndicators = useMemo(
     () => indicators.filter((i) => i.visible && i.separatePane),
     [indicators],
