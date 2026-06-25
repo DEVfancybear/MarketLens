@@ -33,6 +33,9 @@ const HIT_PX = 7; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
 const DRAG_THRESHOLD = 3;
 
+/** Flip to true to log the alert-render diagnostics (the 8 checks) to the console. */
+const ALERT_DEBUG = true;
+
 /** Recompute the condition while dragging, keeping the alert's family (level vs cross). */
 function sideCondition(base: AlertCondition, price: number, market: number | undefined): AlertCondition {
   if (market === undefined) return base;
@@ -82,9 +85,12 @@ export function AlertOverlay() {
   const displayPrice = (a: Alert) => (drag && drag.id === a.id ? drag.price : a.price);
 
   // ---------------------------------------------------------------- rendering
-  useEffect(() => {
+  const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !ctx) return;
+    if (!canvas || !ctx) {
+      if (ALERT_DEBUG) console.debug('[AlertOverlay] draw bail', { canvas: !!canvas, ctx: !!ctx }); // checks 2/7
+      return;
+    }
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
@@ -95,10 +101,25 @@ export function AlertOverlay() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
+    if (ALERT_DEBUG) {
+      const cs = getComputedStyle(canvas);
+      console.debug('[AlertOverlay] draw', {
+        storeAlerts: alerts.length, // check 1: does the store contain alerts?
+        symbolAlerts: symbolAlerts.length, // check 3: receiving alerts for this symbol?
+        symbol, // check 6: symbol the overlay filters on
+        canvasSize: { w: rect.width, h: rect.height }, // check 8: 0-size hides everything
+        css: { zIndex: cs.zIndex, visibility: cs.visibility, opacity: cs.opacity, display: cs.display }, // check 8
+      });
+    }
+
+    let drawn = 0;
     for (const a of symbolAlerts) {
       const price = drag && drag.id === a.id ? drag.price : a.price;
       const y = toY(price);
-      if (y == null) continue;
+      if (y == null) {
+        if (ALERT_DEBUG) console.debug('[AlertOverlay] skip line — priceToCoordinate null', { symbol: a.symbol, price }); // check 4
+        continue;
+      }
       const selected = a.id === selectedId;
       const hover = a.id === hoverId || (drag?.id === a.id);
       const base = a.enabled ? '#f7a600' : '#6b7280';
@@ -117,7 +138,7 @@ export function AlertOverlay() {
 
       // right-side label chip
       const label = `🔔 ${CONDITION_SYMBOL[a.condition]} ${fmtPrice(price, prec)}`;
-      g.font = '10px var(--font-mono, monospace)';
+      g.font = '10px monospace';
       const tw = g.measureText(label).width;
       const padX = 6;
       const chipW = tw + padX * 2;
@@ -146,8 +167,29 @@ export function AlertOverlay() {
         }
       }
       g.restore();
+      drawn += 1;
     }
-  }, [symbolAlerts, selectedId, hoverId, drag, ctx, toY, prec]);
+    if (ALERT_DEBUG) console.debug('[AlertOverlay] drew', drawn, 'line(s)'); // checks 4/5
+  }, [symbolAlerts, selectedId, hoverId, drag, ctx, toY, prec, alerts.length, symbol]);
+
+  // Repaint on data/selection/hover/drag/pan-zoom changes…
+  useEffect(() => { draw(); }, [draw]);
+
+  // …and on any container resize (covers the case where the overlay canvas is
+  // first laid out at zero size and would otherwise never get a redraw).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [draw]);
+
+  // Mount diagnostics (checks 2 + 7).
+  useEffect(() => {
+    if (ALERT_DEBUG) console.debug('[AlertOverlay] MOUNTED');
+    return () => { if (ALERT_DEBUG) console.debug('[AlertOverlay] UNMOUNTED'); };
+  }, []);
 
   // ---------------------------------------------------------------- keyboard
   useEffect(() => {
@@ -244,7 +286,7 @@ export function AlertOverlay() {
   };
 
   return (
-    <div ref={containerRef} className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+    <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ pointerEvents: 'none' }}>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ pointerEvents: 'none' }} />
 
       {symbolAlerts.map((a) => {
