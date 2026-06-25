@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Milestone 3: tool plugin architecture (2026-06-26)
+- Created `geometry/helpers.ts` — shared math (pointDist, distToSegment, distToRect,
+  projectPoint, defaultMovePoints, HANDLE_RADIUS, TOL).
+- Renamed `ToolAdapter` interface → `DrawingToolPlugin` with optional future methods
+  (getHandles, serialize, deserialize).
+- Renamed `registerAdapter/getAdapter` → `registerTool/getTool`.
+- Extracted 4 tools into individual plugins under `tools/plugins/`:
+  `HorizontalTool.ts`, `VerticalTool.ts`, `TrendLineTool.ts`, `RectangleTool.ts`.
+  Each implements `DrawingToolPlugin` and calls `registerTool()`.
+- Created `tools/plugins/shared.ts` — canvas draw helpers (line, handle, chip, applyStyle).
+- Remaining 17 tools stay in `adapters.ts` for future migration.
+- Zero behavior changes. All algorithms identical. Build passes.
+
 ### Changed — Milestone 2: separate chart and drawing interaction (2026-06-26)
 - Created `ChartInteractionManager` — passive observer ensuring chart never blocked.
 - Created `DrawingInteractionManager` — state machine + pointer capture for drawings only.

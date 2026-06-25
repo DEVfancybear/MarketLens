@@ -8,7 +8,7 @@
  * hit candidate with target discrimination and pixel distance.
  */
 import type { Drawing, Point } from "@/types";
-import { getAdapter } from "../tools/ToolRegistry";
+import { getTool } from "../tools/ToolRegistry";
 
 // Import adapters to trigger registration.
 import "../tools/adapters";
@@ -46,7 +46,7 @@ export function hitTest(
   const all: { drawing: Drawing; candidates: HitResult[] }[] = [];
   for (const d of drawings) {
     if (d.visible === false) continue;
-    const adapter = getAdapter(d.tool);
+    const adapter = getTool(d.tool);
     if (!adapter) continue;
     const candidates = adapter.hitTest(d, px, py, toX, toY);
     if (candidates.length > 0) all.push({ drawing: d, candidates });

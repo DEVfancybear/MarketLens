@@ -2,11 +2,11 @@
  * Tool adapters — one per drawing tool.
  *
  * Each adapter implements the ToolAdapter interface for its tool type.
- * Registered automatically on import via registerAdapter().
+ * Registered automatically on import via registerTool().
  *
  * To add a new tool:
  *   1. Create a new const adapter: ToolAdapter = { ... }
- *   2. Call registerAdapter(adapter)
+ *   2. Call registerTool(adapter)
  *   3. Add the tool to DrawingTool union in types/drawing.ts
  *   Done — no switch changes anywhere else.
  */
@@ -15,8 +15,7 @@ import { FIB_LEVELS } from "@/types";
 import type { HitResult, HitTestProjector } from "../hittest/HitTestEngine";
 import type { Projector } from "../drawingRenderer";
 import {
-  type ToolAdapter,
-  registerAdapter,
+  registerTool,
   defaultMovePoints,
   HANDLE_RADIUS,
   TOL,
@@ -86,38 +85,18 @@ function applyStyle(g: CanvasRenderingContext2D, style: string | undefined) {
   else g.setLineDash([]);
 }
 
-// ==================================================================
-// Adapter implementations
-// ==================================================================
+// Import individual tool plugins (Milestone 3 — migrated tools).
+import "./plugins/HorizontalTool";
+import "./plugins/VerticalTool";
+import "./plugins/TrendLineTool";
+import "./plugins/RectangleTool";
 
-// ---- Horizontal Line ----
-registerAdapter({
-  tool: "horizontal",
-  minPoints: 1,
-  render(g, d, proj, selected) {
-    const y = proj.toY(d.points[0].price);
-    if (y == null) return;
-    line(g, 0, y, proj.width, y);
-    chip(g, d.points[0].price.toFixed(4), 2, y - 9, d.color);
-    if (selected) handle(g, 0, y, d.color);
-  },
-  hitTest(d, px, py, toX, toY) {
-    const y = toY(d.points[0].price);
-    if (y != null && Math.abs(y - py) < TOL) {
-      return [{ drawing: d, target: "body", distance: Math.abs(y - py) }];
-    }
-    return [];
-  },
-  movePoints: defaultMovePoints,
-  boundingBox(d, toX, toY) {
-    const y = toY(d.points[0].price);
-    if (y == null) return null;
-    return { x: 0, y: y - TOL, w: 9999, h: TOL * 2 };
-  },
-});
+// ==================================================================
+// Remaining adapter implementations (future migration)
+// ==================================================================
 
 // ---- Horizontal Ray ----
-registerAdapter({
+registerTool({
   tool: "horizRay",
   minPoints: 1,
   render(g, d, proj, selected) {
@@ -143,33 +122,8 @@ registerAdapter({
   },
 });
 
-// ---- Vertical Line ----
-registerAdapter({
-  tool: "vertical",
-  minPoints: 1,
-  render(g, d, proj, selected) {
-    const x = proj.toX(d.points[0].time);
-    if (x == null) return;
-    line(g, x, 0, x, proj.height);
-    if (selected) handle(g, x, proj.height / 2, d.color);
-  },
-  hitTest(d, px, py, toX, toY) {
-    const x = toX(d.points[0].time);
-    if (x != null && Math.abs(x - px) < TOL) {
-      return [{ drawing: d, target: "body", distance: Math.abs(x - px) }];
-    }
-    return [];
-  },
-  movePoints: defaultMovePoints,
-  boundingBox(d, toX, toY) {
-    const x = toX(d.points[0].time);
-    if (x == null) return null;
-    return { x: x - TOL, y: 0, w: TOL * 2, h: 9999 };
-  },
-});
-
 // ---- Cross Line ----
-registerAdapter({
+registerTool({
   tool: "crossLine",
   minPoints: 1,
   render(g, d, proj, selected) {
@@ -201,65 +155,8 @@ registerAdapter({
   },
 });
 
-// ---- Trend Line ----
-registerAdapter({
-  tool: "trendline",
-  minPoints: 2,
-  render(g, d, proj, selected) {
-    const pts = d.points;
-    const x1 = proj.toX(pts[0].time),
-      y1 = proj.toY(pts[0].price);
-    const x2 = proj.toX(pts[1].time),
-      y2 = proj.toY(pts[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
-    line(g, x1, y1, x2, y2);
-    if (selected) {
-      handle(g, x1, y1, d.color);
-      handle(g, x2, y2, d.color);
-    }
-  },
-  hitTest(d, px, py, toX, toY) {
-    const results: HitResult[] = [];
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time),
-      y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p1",
-        distance: pointDist(px, py, x1, y1),
-      });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p2",
-        distance: pointDist(px, py, x2, y2),
-      });
-    const segDist = distToSegment(px, py, x1, y1, x2, y2);
-    if (segDist < TOL)
-      results.push({ drawing: d, target: "segment", distance: segDist });
-    return results;
-  },
-  movePoints: defaultMovePoints,
-  boundingBox(d, toX, toY) {
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time),
-      y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
-    return {
-      x: Math.min(x1, x2) - TOL,
-      y: Math.min(y1, y2) - TOL,
-      w: Math.abs(x2 - x1) + TOL * 2,
-      h: Math.abs(y2 - y1) + TOL * 2,
-    };
-  },
-});
-
 // ---- Ray (infinite right extension) ----
-registerAdapter({
+registerTool({
   tool: "ray",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -314,7 +211,7 @@ registerAdapter({
 });
 
 // ---- Extended Line (infinite both directions) ----
-registerAdapter({
+registerTool({
   tool: "extendedLine",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -370,76 +267,8 @@ registerAdapter({
   },
 });
 
-// ---- Rectangle ----
-registerAdapter({
-  tool: "rectangle",
-  minPoints: 2,
-  render(g, d, proj, selected) {
-    const x1 = proj.toX(d.points[0].time),
-      y1 = proj.toY(d.points[0].price);
-    const x2 = proj.toX(d.points[1].time),
-      y2 = proj.toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
-    const ox = Math.min(x1, x2),
-      oy = Math.min(y1, y2);
-    const w = Math.abs(x2 - x1),
-      h = Math.abs(y2 - y1);
-    if (d.fillColor && d.fillColor !== "none") {
-      g.save();
-      g.fillStyle = d.fillColor;
-      g.globalAlpha = d.opacity ?? 0.3;
-      g.fillRect(ox, oy, w, h);
-      g.globalAlpha = 1;
-      g.restore();
-    }
-    g.strokeRect(ox, oy, w, h);
-    if (selected) {
-      handle(g, x1, y1, d.color);
-      handle(g, x2, y2, d.color);
-    }
-  },
-  hitTest(d, px, py, toX, toY) {
-    const results: HitResult[] = [];
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time),
-      y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p1",
-        distance: pointDist(px, py, x1, y1),
-      });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p2",
-        distance: pointDist(px, py, x2, y2),
-      });
-    const bodyDist = distToRect(px, py, x1, y1, x2, y2);
-    if (bodyDist < TOL)
-      results.push({ drawing: d, target: "body", distance: bodyDist });
-    return results;
-  },
-  movePoints: defaultMovePoints,
-  boundingBox(d, toX, toY) {
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time),
-      y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
-    return {
-      x: Math.min(x1, x2),
-      y: Math.min(y1, y2),
-      w: Math.abs(x2 - x1),
-      h: Math.abs(y2 - y1),
-    };
-  },
-});
-
 // ---- Rotated Rectangle ----
-registerAdapter({
+registerTool({
   tool: "rotatedRect",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -501,7 +330,7 @@ registerAdapter({
 });
 
 // ---- Circle ----
-registerAdapter({
+registerTool({
   tool: "circle",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -558,7 +387,7 @@ registerAdapter({
 });
 
 // ---- Ellipse ----
-registerAdapter({
+registerTool({
   tool: "ellipse",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -620,7 +449,7 @@ registerAdapter({
 });
 
 // ---- Text ----
-registerAdapter({
+registerTool({
   tool: "text",
   minPoints: 1,
   render(g, d, proj, selected) {
@@ -664,7 +493,7 @@ registerAdapter({
 });
 
 // ---- Emoji ----
-registerAdapter({
+registerTool({
   tool: "emoji",
   minPoints: 1,
   render(g, d, proj, selected) {
@@ -707,7 +536,7 @@ registerAdapter({
 });
 
 // ---- Info Line ----
-registerAdapter({
+registerTool({
   tool: "infoLine",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -769,7 +598,7 @@ registerAdapter({
 });
 
 // ---- Channel ----
-registerAdapter({
+registerTool({
   tool: "channel",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -843,7 +672,7 @@ const BULL = "#26a69a";
 const BEAR = "#ef5350";
 
 // ---- Fibonacci -------
-registerAdapter({
+registerTool({
   tool: "fib",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -920,7 +749,7 @@ registerAdapter({
 });
 
 // ---- Triangle -------
-registerAdapter({
+registerTool({
   tool: "triangle",
   minPoints: 3,
   render(g, d, proj, selected) {
@@ -990,7 +819,7 @@ registerAdapter({
 });
 
 // ---- Polyline -------
-registerAdapter({
+registerTool({
   tool: "polyline",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -1055,7 +884,7 @@ registerAdapter({
 });
 
 // ---- Curve -------
-registerAdapter({
+registerTool({
   tool: "curve",
   minPoints: 3,
   render(g, d, proj, selected) {
@@ -1113,7 +942,7 @@ registerAdapter({
 });
 
 // ---- Path (closed polyline) -------
-registerAdapter({
+registerTool({
   tool: "path",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -1178,7 +1007,7 @@ registerAdapter({
 });
 
 // ---- Brush (freehand) -------
-registerAdapter({
+registerTool({
   tool: "brush",
   minPoints: 2,
   render(g, d, proj, selected) {
@@ -1233,7 +1062,7 @@ registerAdapter({
 });
 
 // ---- Long Position -------
-registerAdapter({
+registerTool({
   tool: "long",
   minPoints: 1,
   render(g, d, proj, selected) {
@@ -1306,7 +1135,7 @@ registerAdapter({
 });
 
 // ---- Short Position -------
-registerAdapter({
+registerTool({
   tool: "short",
   minPoints: 1,
   render(g, d, proj, selected) {

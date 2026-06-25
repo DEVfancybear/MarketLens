@@ -3,7 +3,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
-import { getAdapter, defaultMovePoints } from "../tools/ToolRegistry";
+import { getTool, defaultMovePoints } from "../tools/ToolRegistry";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
 
 // ============================================================================
@@ -39,7 +39,7 @@ export const INITIAL_MACHINE: Machine = {
 };
 
 function minPoints(t: DrawingTool): number {
-  return getAdapter(t)?.minPoints ?? 2;
+  return getTool(t)?.minPoints ?? 2;
 }
 
 // ---- Options ----
@@ -265,7 +265,7 @@ export function useDrawingInteractionManager(
       const p = fromEvent(e);
       if (!p) return;
 
-      const adapter = getAdapter(m.drawingTool ?? "trendline");
+      const adapter = getTool(m.drawingTool ?? "trendline");
       const next = adapter
         ? adapter.movePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart)
         : defaultMovePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart);

@@ -37,4 +37,4 @@ export {
 } from "../hittest/HitTestEngine";
 
 // Tool registry (needed by older code paths)
-export { getAdapter, defaultMovePoints } from "../tools/ToolRegistry";
+export { getTool, defaultMovePoints } from "../tools/ToolRegistry";

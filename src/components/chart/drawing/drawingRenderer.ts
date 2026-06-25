@@ -8,7 +8,7 @@
  * pixels so drawings stay pinned through zoom / pan / resize / timeframe change.
  */
 import type { Drawing, LineStyle } from "@/types";
-import { getAdapter } from "./tools/ToolRegistry";
+import { getTool } from "./tools/ToolRegistry";
 
 // Import adapters to trigger registration.
 import "./tools/adapters";
@@ -40,7 +40,7 @@ export function renderDrawing(
   proj: Projector,
   selected: boolean,
 ) {
-  const adapter = getAdapter(d.tool);
+  const adapter = getTool(d.tool);
   if (!adapter) return;
 
   g.strokeStyle = d.color;

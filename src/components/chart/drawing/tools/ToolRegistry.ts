@@ -1,82 +1,99 @@
 /**
  * ToolRegistry — plug-in interface and registry for drawing tools.
  *
- * Each drawing tool implements the ToolAdapter interface. The renderer
- * and hit-tester delegate to the adapter via a type-indexed registry.
+ * Each drawing tool implements the DrawingToolPlugin interface. The renderer,
+ * hit-tester, and interaction manager delegate to the plugin via the registry.
+ * No giant switch statements. No tool-specific logic outside plugins.
  *
- * Adding a new tool: implement ToolAdapter, call registerAdapter(), done.
+ * Adding a new tool: implement DrawingToolPlugin, call registerTool(), done.
  */
-import type { Drawing, DrawingTool, Point } from "@/types";
+import type { Drawing, Point } from "@/types";
+import type { DrawingTool } from "@/types";
 import type { HitResult, HitTestProjector } from "../hittest/HitTestEngine";
 import type { Projector } from "../drawingRenderer";
 
-export const HANDLE_RADIUS = 10;
-export const TOL = 8;
+// Re-export geometry helpers.
+export {
+  HANDLE_RADIUS,
+  TOL,
+  pointDist,
+  distToSegment,
+  distToRect,
+  projectPoint,
+  defaultMovePoints,
+} from "../geometry/helpers";
 
-export function pointDist(px: number, py: number, x: number, y: number): number {
-  return Math.hypot(px - x, py - y);
-}
+// ---------------------------------------------------------------------------
+// DrawingToolPlugin interface
+// ---------------------------------------------------------------------------
 
-export function distToSegment(
-  px: number, py: number,
-  x1: number, y1: number,
-  x2: number, y2: number,
-): number {
-  const dx = x2 - x1, dy = y2 - y1;
-  const len2 = dx * dx + dy * dy || 1;
-  let t = ((px - x1) * dx + (py - y1) * dy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-}
-
-export function distToRect(
-  px: number, py: number,
-  x1: number, y1: number,
-  x2: number, y2: number,
-): number {
-  const left = Math.min(x1, x2), right = Math.max(x1, x2);
-  const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
-  if (px >= left && px <= right && py >= top && py <= bottom) return 0;
-  return Math.hypot(
-    Math.max(left - px, 0, px - right),
-    Math.max(top - py, 0, py - bottom),
-  );
-}
-
-export interface ToolAdapter {
+export interface DrawingToolPlugin {
+  /** The tool type this plugin handles. */
   readonly tool: DrawingTool;
+
+  /** Minimum number of points needed to create this drawing. */
   readonly minPoints: number;
-  render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean): void;
-  hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[];
-  movePoints(origPoints: Point[], pointer: Point, dragTarget: "p1" | "p2" | "body", dragStart: Point): Point[];
-  boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector): { x: number; y: number; w: number; h: number } | null;
+
+  /** Render the drawing onto a canvas context. */
+  render(
+    g: CanvasRenderingContext2D,
+    d: Drawing,
+    proj: Projector,
+    selected: boolean,
+  ): void;
+
+  /** Compute all hit candidates for this drawing at the given pixel position. */
+  hitTest(
+    d: Drawing,
+    px: number,
+    py: number,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): HitResult[];
+
+  /** Compute new point positions when a drawing is being dragged. */
+  movePoints(
+    origPoints: Point[],
+    pointer: Point,
+    dragTarget: "p1" | "p2" | "body",
+    dragStart: Point,
+  ): Point[];
+
+  /** Compute the pixel bounding box of the drawing. */
+  boundingBox(
+    d: Drawing,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): { x: number; y: number; w: number; h: number } | null;
+
+  /** (Future) Return interactive handle positions. */
+  getHandles?: (
+    d: Drawing,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ) => { x: number; y: number; target: "p1" | "p2" }[];
+
+  /** (Future) Serialize drawing to storable format. */
+  serialize?: (d: Drawing) => Record<string, unknown>;
+
+  /** (Future) Deserialize stored data to Drawing. */
+  deserialize?: (data: Record<string, unknown>) => Partial<Drawing>;
 }
 
-const registry = new Map<DrawingTool, ToolAdapter>();
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
 
-export function registerAdapter(a: ToolAdapter): void {
-  registry.set(a.tool, a);
+const registry = new Map<DrawingTool, DrawingToolPlugin>();
+
+export function registerTool(t: DrawingToolPlugin): void {
+  registry.set(t.tool, t);
 }
 
-export function getAdapter(tool: DrawingTool): ToolAdapter | undefined {
+export function getTool(tool: DrawingTool): DrawingToolPlugin | undefined {
   return registry.get(tool);
 }
 
-export function defaultMovePoints(
-  origPoints: Point[], pointer: Point,
-  dragTarget: "p1" | "p2" | "body", dragStart: Point,
-): Point[] {
-  const next = origPoints.map((pt) => ({ ...pt }));
-  if (dragTarget === "p1") {
-    next[0] = { time: pointer.time, price: pointer.price };
-  } else if (dragTarget === "p2" && next.length > 1) {
-    next[1] = { time: pointer.time, price: pointer.price };
-  } else {
-    const dt = pointer.time - dragStart.time;
-    const dp = pointer.price - dragStart.price;
-    for (let i = 0; i < next.length; i++) {
-      next[i] = { time: origPoints[i].time + dt, price: origPoints[i].price + dp };
-    }
-  }
-  return next;
+export function allTools(): DrawingToolPlugin[] {
+  return [...registry.values()];
 }
