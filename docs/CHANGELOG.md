@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Refactor hit-test with distance and candidate architecture (2026-06-26)
+- `HitResult` gains `distance: number` (pixel distance from pointer to hit target)
+  and `target` expands to `"body" | "p1" | "p2" | "segment" | "label"`.
+- Architecture: each tool's resolver returns ALL viable hit candidates via
+  `resolveAllHits()`. The main `hitTest()` then picks the best: highest zIndex
+  drawing wins first; within a drawing, endpoints beat segments beat body;
+  identical-priority ties broken by closest distance.
+- `TARGET_PRIORITY` table drives the ordering — extensible for future targets.
+- New helpers: `pointDist`, `distToRect`, `distToCircle` — each returns raw
+  pixel distance. No duplicate hit-testing logic.
+- DrawingLayer normalizes `"segment"`/`"label"` hits to `"body"` drag behaviour.
+  All existing drag flows preserved.
+
 ### Changed — Interaction state machine replaces dragRef + pending (2026-06-26)
 - Replaced scattered `dragRef` (nullable ref) and `pending` (useState) with a
   unified `InteractionState` machine: Idle | Drawing | MovingDrawing | ResizingHandle.

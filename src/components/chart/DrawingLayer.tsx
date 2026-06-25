@@ -341,10 +341,13 @@ export function DrawingLayer() {
         canvas.setPointerCapture(e.pointerId);
 
         const isHandle = hit.target === "p1" || hit.target === "p2";
+        // Normalize: segment/label hits drag like body.
+        const dragTarget: Machine["dragTarget"] =
+          hit.target === "p1" || hit.target === "p2" ? hit.target : "body";
         transition({
           state: isHandle ? "ResizingHandle" : "MovingDrawing",
           drawingId: hit.drawing.id,
-          dragTarget: hit.target,
+          dragTarget,
           dragStart: p,
           dragOrig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
         });
