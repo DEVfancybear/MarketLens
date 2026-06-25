@@ -34,7 +34,7 @@ export function DrawingLayer() {
   // Diagnostic: log when chart context becomes available.
   useEffect(() => {
     if (ctx)
-      console.debug(
+      console.log(
         "[DrawingLayer] chart context available, candles:",
         ctx.candles.length,
       );
@@ -45,7 +45,7 @@ export function DrawingLayer() {
   useEffect(() => {
     if (canvasRef.current) {
       const r = canvasRef.current.getBoundingClientRect();
-      console.debug("[DrawingLayer] canvas mounted", {
+      console.log("[DrawingLayer] canvas mounted", {
         w: r.width,
         h: r.height,
         offsetH: canvasRef.current.offsetHeight,
@@ -58,7 +58,7 @@ export function DrawingLayer() {
 
   // Diagnostic: log every activeTool change.
   useEffect(() => {
-    console.debug("[DrawingLayer] activeTool changed to:", activeTool);
+    console.log("[DrawingLayer] activeTool changed to:", activeTool);
   }, [activeTool]);
   const drawColor = useChartStore((s) => s.drawColor);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
@@ -171,7 +171,7 @@ export function DrawingLayer() {
   // ---- interaction: pointer ----
   const onPointerDown = (e: React.PointerEvent) => {
     if (process.env.NODE_ENV === "development") {
-      console.debug(
+      console.log(
         "[DrawingLayer] pointerDown",
         "tool:",
         activeTool,

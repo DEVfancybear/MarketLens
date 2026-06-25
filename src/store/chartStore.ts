@@ -118,7 +118,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   setLoading: (loading) => set({ loading }),
 
   setActiveTool: (activeTool) => {
-    console.debug("[chartStore] setActiveTool", activeTool);
+    console.log("[chartStore] setActiveTool", activeTool);
     set({ activeTool });
   },
   setDrawColor: (drawColor) => set({ drawColor }),
