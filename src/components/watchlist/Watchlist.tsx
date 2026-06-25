@@ -1,48 +1,58 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { useQueries } from '@tanstack/react-query';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Plus, X, ArrowUpDown, Search } from 'lucide-react';
-import { fetchQuote, SYMBOLS, getSymbol } from '@/services/marketData';
+import { MARKET_SYMBOLS, getMarketSymbol } from '@/services/market-data/symbols';
 import { useWatchlistStore, type SortKey } from '@/store/watchlistStore';
+import { useMarketDataStore } from '@/store/marketDataStore';
+import { useQuote } from '@/hooks/useQuote';
 import { useChartStore } from '@/store/chartStore';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { Panel } from '@/components/ui/Panel';
 import { IconButton } from '@/components/ui/IconButton';
 import { fmtPrice, fmtPct, fmtVolume } from '@/utils/format';
 import { cn } from '@/utils/cn';
-import type { Quote } from '@/types';
+import type { MarketQuote } from '@/types';
 
+/** Stable empty map so symbol-sort never re-renders the parent on ticks. */
+const NO_QUOTES: Record<string, MarketQuote> = {};
+
+/**
+ * Realtime watchlist. Each row reads its own quote from `marketDataStore`
+ * (`useQuote`), so a tick on one symbol re-renders only that row. The parent
+ * reads the quotes map solely to compute sort order (cheap for a small list).
+ * No mock data, no React Query.
+ */
 export function Watchlist() {
-  const { symbols, sortKey, sortDir, add, remove, setSort } = useWatchlistStore();
+  const symbols = useWatchlistStore((s) => s.symbols);
+  const sortKey = useWatchlistStore((s) => s.sortKey);
+  const sortDir = useWatchlistStore((s) => s.sortDir);
+  const add = useWatchlistStore((s) => s.add);
+  const remove = useWatchlistStore((s) => s.remove);
+  const setSort = useWatchlistStore((s) => s.setSort);
+
   const activeSymbol = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
 
-  const quoteQueries = useQueries({
-    queries: symbols.map((ticker) => ({
-      queryKey: ['quote', ticker],
-      queryFn: () => fetchQuote(ticker),
-      refetchInterval: 15_000,
-    })),
-  });
+  // Quotes map used only for value-based sorting. For the default symbol sort we
+  // select a stable empty map so the parent does NOT re-render on every tick —
+  // only the individual ticked row (via its own useQuote) updates.
+  const quotes = useMarketDataStore((s) => (sortKey === 'symbol' ? NO_QUOTES : s.quotes));
 
-  const rows = useMemo(() => {
-    const data = symbols.map((ticker, i) => ({
-      ticker,
-      quote: quoteQueries[i]?.data as Quote | undefined,
-    }));
+  const ordered = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
-    return [...data].sort((a, b) => {
-      const qa = a.quote;
-      const qb = b.quote;
-      switch (sortKey) {
-        case 'price': return ((qa?.last ?? 0) - (qb?.last ?? 0)) * dir;
-        case 'change': return ((qa?.changePct ?? 0) - (qb?.changePct ?? 0)) * dir;
-        case 'volume': return ((qa?.volume ?? 0) - (qb?.volume ?? 0)) * dir;
-        default: return a.ticker.localeCompare(b.ticker) * dir;
-      }
+    const list = [...symbols];
+    if (sortKey === 'symbol') return list.sort((a, b) => a.localeCompare(b) * dir);
+    return list.sort((a, b) => {
+      const qa = quotes[a];
+      const qb = quotes[b];
+      const pick = (q?: MarketQuote) =>
+        sortKey === 'price' ? q?.last ?? 0 : sortKey === 'change' ? q?.changePct ?? 0 : q?.volume ?? 0;
+      return (pick(qa) - pick(qb)) * dir;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbols, sortKey, sortDir, quoteQueries.map((q) => q.dataUpdatedAt).join(',')]);
+  }, [symbols, sortKey, sortDir, quotes]);
+
+  const onSelect = useCallback((ticker: string) => setSymbol(ticker), [setSymbol]);
+  const onRemove = useCallback((ticker: string) => remove(ticker), [remove]);
 
   return (
     <Panel
@@ -59,43 +69,65 @@ export function Watchlist() {
         <span className="text-right">Last</span>
         <span className="text-right">Chg%</span>
       </div>
-      {rows.map(({ ticker, quote }) => {
-        const prec = getSymbol(ticker)?.pricePrecision ?? 2;
-        const up = (quote?.changePct ?? 0) >= 0;
-        return (
-          <div
-            key={ticker}
-            onClick={() => setSymbol(ticker)}
-            className={cn(
-              'group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-x-2 px-3 py-1.5 hover:bg-terminal-hover',
-              ticker === activeSymbol && 'bg-brand/10',
-            )}
-          >
-            <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-ink">{ticker}</div>
-              <div className="truncate text-[10px] text-ink-faint">{fmtVolume(quote?.volume ?? 0)}</div>
-            </div>
-            <div className="tabular text-right text-xs text-ink">
-              {quote ? fmtPrice(quote.last, prec) : '—'}
-            </div>
-            <div className="flex items-center justify-end gap-1">
-              <span className="tabular text-right text-xs" style={{ color: up ? 'var(--bull)' : 'var(--bear)' }}>
-                {quote ? fmtPct(quote.changePct) : '—'}
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); remove(ticker); }}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
-                title="Remove"
-              >
-                <X size={12} className="text-ink-faint hover:text-bear" />
-              </button>
-            </div>
-          </div>
-        );
-      })}
+      {ordered.map((ticker) => (
+        <WatchRow
+          key={ticker}
+          ticker={ticker}
+          active={ticker === activeSymbol}
+          onSelect={onSelect}
+          onRemove={onRemove}
+        />
+      ))}
     </Panel>
   );
 }
+
+interface RowProps {
+  ticker: string;
+  active: boolean;
+  onSelect: (t: string) => void;
+  onRemove: (t: string) => void;
+}
+
+/** Memoized so sibling ticks don't re-render this row; price comes from its own selector. */
+const WatchRow = memo(function WatchRow({ ticker, active, onSelect, onRemove }: RowProps) {
+  const quote = useQuote(ticker);
+  const meta = getMarketSymbol(ticker);
+  const prec = meta?.pricePrecision ?? 2;
+  const up = (quote?.changePct ?? 0) >= 0;
+
+  return (
+    <div
+      onClick={() => onSelect(ticker)}
+      className={cn(
+        'group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-x-2 px-3 py-1.5 hover:bg-terminal-hover',
+        active && 'bg-brand/10',
+      )}
+    >
+      <div className="min-w-0">
+        <div className="truncate text-xs font-semibold text-ink">{ticker}</div>
+        <div className="truncate text-[10px] text-ink-faint">
+          {quote ? fmtVolume(quote.volume) : meta?.exchange ?? ''}
+        </div>
+      </div>
+      <div className="tabular text-right text-xs text-ink">
+        {quote ? fmtPrice(quote.last, prec) : '—'}
+      </div>
+      <div className="flex items-center justify-end gap-1">
+        <span className="tabular text-right text-xs" style={{ color: up ? 'var(--bull)' : 'var(--bear)' }}>
+          {quote ? fmtPct(quote.changePct) : '—'}
+        </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(ticker); }}
+          className="opacity-0 transition-opacity group-hover:opacity-100"
+          title="Remove"
+        >
+          <X size={12} className="text-ink-faint hover:text-bear" />
+        </button>
+      </div>
+    </div>
+  );
+});
 
 function SortMenu({ sortKey, onSort }: { sortKey: SortKey; onSort: (k: SortKey) => void }) {
   const opts: { key: SortKey; label: string }[] = [
@@ -136,14 +168,14 @@ function SortMenu({ sortKey, onSort }: { sortKey: SortKey; onSort: (k: SortKey) 
 
 function AddSymbol({ onAdd, existing }: { onAdd: (t: string) => void; existing: string[] }) {
   const [q, setQ] = useState('');
-  const avail = SYMBOLS.filter((s) => !existing.includes(s.ticker));
+  const avail = MARKET_SYMBOLS.filter((s) => !existing.includes(s.id));
   const filtered = avail.filter(
-    (s) => s.ticker.toLowerCase().includes(q.toLowerCase()) || s.name.toLowerCase().includes(q.toLowerCase()),
+    (s) => s.id.toLowerCase().includes(q.toLowerCase()) || s.name.toLowerCase().includes(q.toLowerCase()),
   );
   return (
     <Dropdown
       align="right"
-      width={240}
+      width={260}
       trigger={() => (
         <IconButton size="sm" label="Add symbol">
           <Plus size={14} />
@@ -165,12 +197,15 @@ function AddSymbol({ onAdd, existing }: { onAdd: (t: string) => void; existing: 
           <div className="max-h-60 overflow-auto">
             {filtered.map((s) => (
               <button
-                key={s.ticker}
-                onClick={() => { onAdd(s.ticker); close(); }}
+                key={s.id}
+                onClick={() => { onAdd(s.id); close(); }}
                 className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-terminal-hover"
               >
-                <span className="text-xs font-semibold text-ink">{s.ticker}</span>
+                <span className="text-xs font-semibold text-ink">{s.id}</span>
                 <span className="ml-2 truncate text-2xs text-ink-muted">{s.name}</span>
+                <span className="ml-auto rounded bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
+                  {s.exchange}
+                </span>
               </button>
             ))}
             {filtered.length === 0 && (

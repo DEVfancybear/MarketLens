@@ -3,13 +3,16 @@
 _Last updated: 2026-06-25_
 
 ## Current phase / milestone
-- **Phase 1 — Realtime Market Data Foundation.** Steps 1–8 ✅ (service layer) · **Step 9
-  (read-only hooks) ✅** · **Next: Step 10 (Watchlist integration — first real UI swap).**
+- **Phase 1 — Realtime Market Data Foundation.** Steps 1–9 ✅ · **Step 10 (realtime Watchlist) ✅**
+  — first live UI; opens real sockets. **Next: Step 11 (Chart integration — the big one).**
 
 ## Recently modified files
-- `src/hooks/{useCandles,useQuote,useConnectionStatus,useMarketDataFeed}.ts` (new — store readers)
-- `src/services/market-data/CandleEngine.ts` (tick→bar merge, Step 8)
-- `src/services/market-data/MarketDataService.ts` (wired to CandleEngine for tick providers)
+- `src/components/watchlist/Watchlist.tsx` (realtime, per-row `useQuote`, registry symbols)
+- `src/hooks/useMarketDataBootstrap.ts` (new — feed bootstrap, mounted in `GlobalRuntime`)
+- `src/components/layout/GlobalRuntime.tsx` (mounts bootstrap)
+- `src/store/watchlistStore.ts` (registry defaults + migration)
+- `src/hooks/{useCandles,useQuote,useConnectionStatus,useMarketDataFeed}.ts` (store readers, Step 9)
+- `src/services/market-data/*` (service layer, Steps 3–8)
 - `src/services/market-data/HistoricalDataService.ts` (REST history loader, Step 7)
 - `src/services/market-data/symbols.ts` (canonical symbol registry, Step 6)
 - `src/services/market-data/providers/{Binance,TwelveData}Provider.ts` (Steps 4–5)

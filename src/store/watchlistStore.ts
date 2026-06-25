@@ -1,6 +1,7 @@
 'use client';
 import { create } from 'zustand';
 import { localStore } from '@/services/storage';
+import { getMarketSymbol } from '@/services/market-data/symbols';
 
 export type SortKey = 'symbol' | 'price' | 'change' | 'volume';
 
@@ -15,7 +16,8 @@ interface WatchlistState {
   hydrate: () => void;
 }
 
-const DEFAULT = ['EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'BTCUSD', 'ETHUSD', 'NAS100', 'SPX500'];
+// Registry-backed defaults (canonical ids: crypto = Binance pairs, fx/metals/index = TwelveData).
+const DEFAULT = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'EURUSD', 'GBPUSD', 'USDJPY', 'XAUUSD', 'SPX500'];
 
 export const useWatchlistStore = create<WatchlistState>((set, get) => ({
   // Deterministic default for SSR; persisted list loaded via hydrate().
@@ -23,7 +25,13 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
   sortKey: 'symbol',
   sortDir: 'asc',
 
-  hydrate: () => set({ symbols: localStore.get('watchlist', DEFAULT) }),
+  hydrate: () => {
+    // Migrate: drop any persisted ids no longer in the registry (e.g. old mock
+    // "BTCUSD"); fall back to defaults if nothing valid remains.
+    const persisted = localStore.get<string[]>('watchlist', DEFAULT);
+    const valid = persisted.filter((s) => getMarketSymbol(s));
+    set({ symbols: valid.length ? valid : DEFAULT });
+  },
 
   add: (ticker) => {
     if (get().symbols.includes(ticker)) return;

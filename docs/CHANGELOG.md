@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 1 Step 10: Realtime Watchlist Integration (2026-06-25)
+- `components/watchlist/Watchlist.tsx` — removed mock React Query (`useQueries`/`fetchQuote`).
+  Each row is now a memoized `WatchRow` reading its own `useQuote(ticker)` from `marketDataStore`
+  (a tick on one symbol re-renders only that row). Symbols + metadata now come from the registry
+  (`MARKET_SYMBOLS`). Parent reads the quotes map only for value-sorts; symbol-sort uses a stable
+  empty map so it never re-renders on ticks. Green/red from real change %.
+- `src/hooks/useMarketDataBootstrap.ts` (new) — mounted once in `GlobalRuntime`; creates the
+  MarketDataService and keeps watchlist symbols subscribed for `ticker` (diffs add/remove),
+  `connect()`/`disconnect()` lifecycle. This is the first point that opens live sockets.
+- `store/watchlistStore.ts` — registry-backed defaults (`BTCUSDT`, …); `hydrate()` migrates/drops
+  persisted ids not in the registry (e.g. old mock `BTCUSD`).
+- Crypto (Binance) shows real price + 24h change; forex/metals/indices (TwelveData) need
+  `NEXT_PUBLIC_TWELVEDATA_API_KEY` (rows show "—" without it; TD WS has no daily change → 0%).
+- Watchlist row click still drives the MOCK chart (chart swap is Step 11). Build/type/lint green.
+
 ### Added — Phase 1 Step 9: Read-only Market Data Hooks (2026-06-25)
 - `src/hooks/useCandles.ts` — `useCandles(symbol?, timeframe?)` atomic store selector → candle
   series (defaults to active selection).

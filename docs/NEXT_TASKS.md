@@ -2,9 +2,9 @@
 
 ## Phase 1 — Realtime Market Data Foundation (current phase)
 
-Steps 1–9 are **complete** (types, store, providers, service + registry, historical loader,
-candle engine, read-only hooks). **Immediate next: Step 10 (Watchlist integration)** — the first
-real UI swap. Remaining steps mapped to concrete files/integration seams:
+Steps 1–10 are **complete** (full service layer + read hooks + **realtime watchlist**).
+**Immediate next: Step 11 (Chart integration)** — the big one. Remaining steps mapped to concrete
+files/integration seams:
 
 | Step | Task | Create / Touch | Notes |
 |---|---|---|---|
@@ -16,8 +16,8 @@ real UI swap. Remaining steps mapped to concrete files/integration seams:
 | 7 ✅ | Historical service | `src/services/market-data/HistoricalDataService.ts` (DONE) | REST 500–5000 bars, Binance `endTime` pagination + TwelveData `time_series` (`order=ASC`), normalized `MarketCandle[]`, `before` cursor, dedupe/sort, key-guarded. `getHistoricalDataService()`. |
 | 8 ✅ | Candle engine | `src/services/market-data/CandleEngine.ts` (DONE; wired into MarketDataService) | Tick→bar bucketing via `TF_SECONDS`, closed-bar emission, `seedHistory`, kline pass-through. TwelveData ticks now produce candles in the store. |
 | 9 ✅ | Hooks | `useCandles.ts`, `useQuote.ts`, `useConnectionStatus.ts`, `useMarketDataFeed.ts` (DONE) | Read-only store selectors; no sockets. Mock `useMarketData.ts` left untouched (Step 11 retires it). |
-| 10 ⬅ | Watchlist integration | `components/watchlist/Watchlist.tsx` + a bootstrap (e.g. `GlobalRuntime`) | Bootstrap: call `getMarketDataService()` once + subscribe the watchlist symbols (ticker). Replace `useQueries(['quote'])` with per-row `useQuote`; memoized rows; green/red change; minimal rerenders. **Watchlist symbols must come from the registry (`MARKET_SYMBOLS`)** — e.g. crypto BTCUSDT. |
-| 11 | Chart integration | `components/chart/PriceChart.tsx`, `ChartArea.tsx` | History on load, then **`series.update(lastBar)`** for ticks (don't `setData` every tick). Keep `useVisibleCandles` replay gate intact. |
+| 10 ✅ | Watchlist integration | `Watchlist.tsx` + `useMarketDataBootstrap` (`GlobalRuntime`) + `watchlistStore` (DONE) | Realtime per-row `useQuote`, registry symbols, memoized rows, minimal rerenders, bootstrap subscribes tickers. |
+| 11 ⬅ | Chart integration | `ChartArea.tsx`, `PriceChart.tsx`, new `useChartFeed`/retire mock `useMarketData.ts` | On symbol/timeframe select: subscribe `['ticker','kline']` + prime history via `HistoricalDataService` → `setCandles`, then feed the store's candles to the chart. Prefer `series.update(lastBar)` for the forming bar (not `setData` every tick). **Keep the `useVisibleCandles` replay gate** — replay must still slice the (now realtime) master series. Reconcile: make the chart read `marketDataStore` candles for live, while `chartStore` keeps drawings/indicators/tool + the active symbol/timeframe (or move selection to `marketDataStore`). Big step — plan the `chartStore`↔`marketDataStore` split carefully. |
 | 12 | Symbol switching | store action `changeSymbol()` | unsubscribe old → subscribe new → load history → resume realtime. No leaks. |
 | 13 | Timeframe switching | store action `changeTimeframe()` | load new history, resume realtime, preserve chart state. |
 | 14 | Connection status | `TopToolbar` (new badge) | 🟢/🟡/🔴 from `marketDataStore.connectionStatus`. |

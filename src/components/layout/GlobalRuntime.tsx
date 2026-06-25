@@ -3,6 +3,7 @@ import { useReplayPlayback } from '@/hooks/useReplayPlayback';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { useSmcEngine } from '@/hooks/useSmcEngine';
 import { useTradeRuntime } from '@/hooks/useTradeRuntime';
+import { useMarketDataBootstrap } from '@/hooks/useMarketDataBootstrap';
 import { useJournalStore } from '@/store/journalStore';
 import { useEffect } from 'react';
 
@@ -15,6 +16,7 @@ export function GlobalRuntime() {
   useHotkeys();
   useSmcEngine();
   useTradeRuntime();
+  useMarketDataBootstrap(); // brings the realtime feed online + subscribes watchlist tickers
 
   // Hydrate the journal from IndexedDB once on mount.
   const loadJournal = useJournalStore((s) => s.load);

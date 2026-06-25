@@ -1,0 +1,61 @@
+'use client';
+/**
+ * useMarketDataBootstrap (Phase 1, Step 10).
+ *
+ * The single place that brings the realtime feed online. It creates the
+ * MarketDataService (which binds itself to `marketDataStore`) and keeps the
+ * watchlist symbols subscribed for `ticker` so live quotes flow into the store.
+ *
+ * This is intentionally NOT a read hook — it owns subscription lifecycle. It is
+ * mounted exactly once (from `GlobalRuntime`). Sockets are opened by the
+ * providers, never here directly.
+ *
+ * Crypto (Binance) streams real 24h change/percent; forex/metals/indices
+ * (TwelveData) stream price ticks only and require `NEXT_PUBLIC_TWELVEDATA_API_KEY`
+ * (rows show "—" until a key is configured).
+ */
+import { useEffect, useRef } from 'react';
+import { getMarketDataService } from '@/services/market-data/MarketDataService';
+import { getMarketSymbol } from '@/services/market-data/symbols';
+import { useMarketDataStore } from '@/store/marketDataStore';
+import { useWatchlistStore } from '@/store/watchlistStore';
+
+export function useMarketDataBootstrap() {
+  const symbols = useWatchlistStore((s) => s.symbols);
+  const subscribed = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    getMarketDataService(); // create + attach to the store (idempotent)
+    const store = useMarketDataStore.getState();
+
+    const desired = new Set(symbols.filter((s) => getMarketSymbol(s)));
+
+    // Subscribe newly-added watchlist symbols (ticker only).
+    for (const sym of desired) {
+      if (!subscribed.current.has(sym)) {
+        store.subscribe({ symbol: sym, channels: ['ticker'] });
+        subscribed.current.add(sym);
+      }
+    }
+    // Unsubscribe symbols removed from the watchlist.
+    for (const sym of [...subscribed.current]) {
+      if (!desired.has(sym)) {
+        store.unsubscribe(sym);
+        subscribed.current.delete(sym);
+      }
+    }
+
+    store.connect();
+  }, [symbols]);
+
+  // Tear down on unmount (full app teardown).
+  useEffect(() => {
+    const subs = subscribed.current;
+    return () => {
+      const store = useMarketDataStore.getState();
+      for (const sym of subs) store.unsubscribe(sym);
+      subs.clear();
+      store.disconnect();
+    };
+  }, []);
+}

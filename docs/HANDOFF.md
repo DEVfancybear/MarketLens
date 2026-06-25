@@ -12,16 +12,19 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
-- **Phase 1 progress:** Steps 1–8 ✅ (service layer) · Step 9 (read-only hooks
-  `useCandles`/`useQuote`/`useConnectionStatus`/`useMarketDataFeed`) ✅.
-- **Recommended next action:** Phase 1 **Step 10** — Watchlist integration (first real UI swap).
-  Add a one-time **bootstrap** (e.g. in `GlobalRuntime`) that calls `getMarketDataService()` and
-  subscribes the watchlist symbols for `ticker`. Switch `components/watchlist/Watchlist.tsx` from
-  the mock `useQueries(['quote'])` to per-row `useQuote` (memoized rows, green/red, minimal
-  rerenders). **Watchlist symbols must come from the registry (`MARKET_SYMBOLS`), e.g. crypto
-  BTCUSDT** — the current mock `SYMBOLS`/`watchlistStore` use ids like `BTCUSD`. Then **Steps
-  11–13** swap the chart (`series.update(lastBar)`) + reconcile `chartStore`. **The mock
-  `useMarketData.ts` still drives the chart until Step 11 — do not delete it yet.**
+- **Phase 1 progress:** Steps 1–9 ✅ · Step 10 (realtime Watchlist + `useMarketDataBootstrap`
+  in `GlobalRuntime` + registry-backed `watchlistStore`) ✅. **Live sockets now open at runtime.**
+- **Recommended next action:** Phase 1 **Step 11** — Chart integration (the big one). On
+  symbol/timeframe select, subscribe `['ticker','kline']` and prime history via
+  `HistoricalDataService` → `marketDataStore.setCandles`, then feed the store's candles to the
+  chart, preferring `series.update(lastBar)` for the forming bar. **Keep the `useVisibleCandles`
+  replay gate** (replay slices the realtime master series). Plan the `chartStore`↔`marketDataStore`
+  split: chart selection (symbol/timeframe) + candles move to `marketDataStore`; `chartStore`
+  keeps drawings/indicators/active tool. Retire the mock `useMarketData.ts` here (rename
+  `useMarketDataFeed` → `useMarketData`). The watchlist click currently sets `chartStore.symbol`
+  (still mock chart) — rewire to `marketDataStore.changeSymbol` in Step 11/12.
+- **Runtime note:** running `npm run dev` now opens a Binance WS (crypto quotes live). TwelveData
+  feeds need `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local`.
 - **Env:** TwelveData needs `NEXT_PUBLIC_TWELVEDATA_API_KEY` in `.env.local` (see `.env.example`);
   Binance needs no key. App still runs fully on mock data until Steps 10–13 wire the providers in.
 
