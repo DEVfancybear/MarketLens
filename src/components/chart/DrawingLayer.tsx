@@ -223,23 +223,19 @@ export function DrawingLayer() {
     const drag = dragRef.current;
     if (drag) {
       if (drag.target === "p1") {
-        // Drag only endpoint A — keep endpoint B anchored.
-        const dt = p.time - drag.startTime;
-        const dp = p.price - drag.startPrice;
+        // Snap endpoint A to pointer — keep endpoint B anchored.
         const pts = drag.orig.map((pt, i) =>
-          i === 0 ? { time: pt.time + dt, price: pt.price + dp } : { ...pt },
+          i === 0 ? { time: p.time, price: p.price } : { ...pt },
         );
         updateDrawing(drag.id, { points: pts });
       } else if (drag.target === "p2") {
-        // Drag only endpoint B — keep endpoint A anchored.
-        const dt = p.time - drag.startTime;
-        const dp = p.price - drag.startPrice;
+        // Snap endpoint B to pointer — keep endpoint A anchored.
         const pts = drag.orig.map((pt, i) =>
-          i === 1 ? { time: pt.time + dt, price: pt.price + dp } : { ...pt },
+          i === 1 ? { time: p.time, price: p.price } : { ...pt },
         );
         updateDrawing(drag.id, { points: pts });
       } else {
-        // Drag body — translate all points.
+        // Drag body — translate all points by pointer delta.
         const dt = p.time - drag.startTime;
         const dp = p.price - drag.startPrice;
         updateDrawing(drag.id, {
