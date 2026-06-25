@@ -43,14 +43,16 @@ export function ChartArea() {
     <div className="relative flex h-full w-full flex-col">
       {/* TradingView-style chart header: symbol + TF + countdown + OHLC */}
       <div className="pointer-events-none absolute left-3 top-2 z-10 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-        <span className="text-sm font-bold text-ink">{symbol}</span>
-        <span className="text-xs text-ink-muted">{timeframe}</span>
-        <span className="text-xs font-medium tabular text-ink-faint">
+        <span className="text-sm font-bold leading-none text-ink">
+          {symbol}
+        </span>
+        <span className="text-xs leading-none text-ink-muted">{timeframe}</span>
+        <span className="text-xs font-medium tabular leading-none text-ink-faint">
           {countdown}
         </span>
         {legend && (
           <span
-            className="flex gap-2 text-[11px]"
+            className="flex gap-1.5 text-[12px] leading-none"
             style={{ color: up ? "var(--bull)" : "var(--bear)" }}
           >
             <span>O</span>

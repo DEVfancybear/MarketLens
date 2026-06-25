@@ -48,7 +48,7 @@ export function DrawingToolbar() {
   const clearDrawings = useChartStore((s) => s.clearDrawings);
 
   return (
-    <div className="flex h-full flex-col items-center gap-1 py-2">
+    <div className="flex h-full flex-col items-center gap-0.5 py-2">
       {TOOLS.map((t) => (
         <IconButton
           key={t.tool}

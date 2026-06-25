@@ -36,7 +36,7 @@ export function SymbolSearch() {
           )}
         >
           <Search size={14} className="text-ink-muted" />
-          <span className="text-sm font-semibold tracking-tight text-ink">
+          <span className="text-sm font-bold leading-none tracking-tight text-ink">
             {symbol}
           </span>
           {meta && (

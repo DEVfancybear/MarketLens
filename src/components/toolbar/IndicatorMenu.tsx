@@ -1,16 +1,16 @@
-'use client';
-import { LineChart, Check } from 'lucide-react';
-import { Dropdown, MenuItem } from '@/components/ui/Dropdown';
-import { useChartStore } from '@/store/chartStore';
-import type { IndicatorType } from '@/types';
+"use client";
+import { LineChart, Check } from "lucide-react";
+import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
+import { useChartStore } from "@/store/chartStore";
+import type { IndicatorType } from "@/types";
 
 const OPTIONS: { type: IndicatorType; label: string }[] = [
-  { type: 'SMA', label: 'Simple Moving Average' },
-  { type: 'EMA', label: 'Exponential Moving Average' },
-  { type: 'VWAP', label: 'VWAP (session)' },
-  { type: 'RSI', label: 'Relative Strength Index' },
-  { type: 'MACD', label: 'MACD' },
-  { type: 'ADR', label: 'Average Daily Range' },
+  { type: "SMA", label: "Simple Moving Average" },
+  { type: "EMA", label: "Exponential Moving Average" },
+  { type: "VWAP", label: "VWAP (session)" },
+  { type: "RSI", label: "Relative Strength Index" },
+  { type: "MACD", label: "MACD" },
+  { type: "ADR", label: "Average Daily Range" },
 ];
 
 export function IndicatorMenu() {
@@ -23,7 +23,7 @@ export function IndicatorMenu() {
     <Dropdown
       width={240}
       trigger={() => (
-        <button className="flex h-7 items-center gap-1.5 rounded px-2 text-xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
+        <button className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
           <LineChart size={14} />
           Indicators
         </button>
@@ -35,8 +35,14 @@ export function IndicatorMenu() {
             Add indicator
           </div>
           {OPTIONS.map((o) => (
-            <MenuItem key={o.type} active={active.has(o.type)} onClick={() => toggleIndicator(o.type)}>
-              <span className="w-10 font-mono text-2xs text-brand">{o.type}</span>
+            <MenuItem
+              key={o.type}
+              active={active.has(o.type)}
+              onClick={() => toggleIndicator(o.type)}
+            >
+              <span className="w-10 font-mono text-2xs text-brand">
+                {o.type}
+              </span>
               <span className="flex-1">{o.label}</span>
               {active.has(o.type) && <Check size={13} className="text-bull" />}
             </MenuItem>

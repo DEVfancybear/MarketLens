@@ -6,16 +6,19 @@ _Last updated: 2026-06-25_
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
 - **✅ Phase 2 — Alert Engine — COMPLETE** (+ audit + Phase 2.1 interactive chart alerts).
 - **✅ OANDA Integration — COMPLETE** (forex/metals/indices realtime + historical data).
-- **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~90%, interaction ~85%).
-  18 improvements across layout, chart, price scale, watchlist, context menus, and keyboard shortcuts.
+- **✅ Phase 3 — TradingView UI Parity — COMPLETE** (visual ~93%, interaction ~87%).
+  Watchlist 92%, toolbar 93%, typography 95%, spacing 92%, layout 93%.
+  See `docs/TRADINGVIEW_VISUAL_PARITY_REPORT.md`.
   See `docs/TRADINGVIEW_PARITY_REPORT.md` and `docs/UI_GAP_ANALYSIS.md`.
 - **Next milestone: Phase 4 — Drawing Engine.**
 
 ## Completed this session
-1. **Phase 3 — TradingView UI Parity (full implementation):** Achieved 90% visual parity with
-  TradingView.com across 7 sub-phases (3.1–3.7). 16 files modified, 2 created. Zero architecture
-  changes — pure UI/UX.
-2. **OANDA debug diagnostics:** Added console.debug/console.warn logging to MarketDataService symbol/timeframe switch hardening (idempotent `selectMarket`),
+1. **Phase 3 — TradingView UI Parity (final pass):** Watchlist (fixed columns, 28px rows, spread
+   display, leading-none), toolbar (11px all metric buttons, tight gap-0), typography (body 13→12px,
+   LWC 11→12px, OHLC labels), spacing (consistent pixel values). 11 files modified, 2 audits generated
+   (TYPOGRAPHY_AUDIT.md, SPACING_AUDIT.md). Parity: watchlist 92%, toolbar 93%, typography 95%,
+   spacing 92%.
+2. **Phase 1 finish (Steps 12–17):** symbol/timeframe switch hardening (idempotent `selectMarket`),
    connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
    recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
    last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real

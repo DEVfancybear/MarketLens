@@ -102,7 +102,7 @@ export function Watchlist() {
         </>
       }
     >
-      <div className="grid grid-cols-[1fr_auto_auto] gap-x-2 px-3 py-1 text-[11px] uppercase tracking-wide text-ink-faint">
+      <div className="grid grid-cols-[1fr_70px_60px] gap-x-2 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
         <span>Symbol</span>
         <span className="text-right">Last</span>
         <span className="text-right">Chg%</span>
@@ -172,7 +172,7 @@ const WatchRow = memo(function WatchRow({
       onClick={() => onSelect(ticker)}
       onContextMenu={(e) => onContextMenu(e, ticker)}
       className={cn(
-        "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-x-2 px-3 py-1 transition-colors hover:bg-terminal-hover",
+        "group grid cursor-pointer grid-cols-[1fr_70px_60px] items-center gap-x-2 px-3 py-0.5 h-7 transition-colors hover:bg-terminal-hover",
         // Active: blue left border + subtle tint
         active && "border-l-[3px] border-l-brand bg-brand/5 pl-[9px]",
         // Price flash
@@ -181,19 +181,19 @@ const WatchRow = memo(function WatchRow({
       )}
     >
       <div className="min-w-0">
-        <div className="truncate text-xs font-semibold leading-tight text-ink">
+        <div className="truncate text-[13px] font-semibold leading-none text-ink">
           {ticker}
         </div>
-        <div className="truncate text-[10px] leading-tight text-ink-faint">
-          {quote ? fmtVolume(quote.volume) : (meta?.exchange ?? "")}
+        <div className="truncate text-[11px] leading-none text-ink-faint">
+          {meta?.exchange ?? ""}
         </div>
       </div>
-      <div className="tabular text-right text-xs leading-tight text-ink">
+      <div className="tabular text-right text-[13px] leading-none text-ink">
         {quote ? fmtPrice(quote.last, prec) : "—"}
       </div>
       <div className="flex items-center justify-end gap-1">
         <span
-          className="tabular text-right text-xs leading-tight"
+          className="tabular text-right text-[13px] leading-none"
           style={{ color: up ? "var(--bull)" : "var(--bear)" }}
         >
           {quote ? fmtPct(quote.changePct) : "—"}

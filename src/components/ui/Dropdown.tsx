@@ -1,17 +1,17 @@
-'use client';
-import { useEffect, useRef, useState } from 'react';
-import { cn } from '@/utils/cn';
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { cn } from "@/utils/cn";
 
 /** Click-to-open popover anchored under its trigger. */
 export function Dropdown({
   trigger,
   children,
-  align = 'left',
+  align = "left",
   width,
 }: {
   trigger: (open: boolean) => React.ReactNode;
   children: (close: () => void) => React.ReactNode;
-  align?: 'left' | 'right';
+  align?: "left" | "right";
   width?: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -20,14 +20,15 @@ export function Dropdown({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
     };
   }, [open]);
 
@@ -37,8 +38,8 @@ export function Dropdown({
       {open && (
         <div
           className={cn(
-            'absolute top-full z-50 mt-1 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-xl shadow-black/40',
-            align === 'right' ? 'right-0' : 'left-0',
+            "absolute top-full z-50 mt-1 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-xl shadow-black/40",
+            align === "right" ? "right-0" : "left-0",
           )}
           style={{ width }}
         >
@@ -64,8 +65,8 @@ export function MenuItem({
     <button
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-ink hover:bg-terminal-hover',
-        active && 'text-brand',
+        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover",
+        active && "text-brand",
         className,
       )}
     >

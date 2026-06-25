@@ -75,7 +75,7 @@ export function TopToolbar() {
   };
 
   return (
-    <div className="flex h-full items-center gap-1 px-2">
+    <div className="flex h-full items-center gap-0 px-2">
       <SymbolSearch />
 
       <div className="mx-1 h-5 w-px bg-terminal-border" />
@@ -107,7 +107,7 @@ export function TopToolbar() {
       <button
         onClick={toggleReplay}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors",
+          "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
           replay.active || replay.selecting
             ? "bg-brand/15 text-brand"
             : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
@@ -121,7 +121,7 @@ export function TopToolbar() {
       <Dropdown
         width={160}
         trigger={() => (
-          <button className="flex h-7 items-center gap-1.5 rounded px-2 text-xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
+          <button className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
             <LayoutIcon size={14} />
             Layout
           </button>
@@ -138,7 +138,7 @@ export function TopToolbar() {
         )}
       </Dropdown>
 
-      <div className="ml-auto flex items-center gap-0.5">
+      <div className="ml-auto flex items-center gap-0">
         <ConnectionBadge />
         <div className="mx-1 h-5 w-px bg-terminal-border" />
         <button

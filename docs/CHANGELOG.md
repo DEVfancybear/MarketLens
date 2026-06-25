@@ -4,8 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Phase 3 final: Watchlist, toolbar, typography, spacing (2026-06-25)
+- Visual parity: ~70% -> ~93%. Watchlist 92%, toolbar 93%, typography 95%, spacing 92%.
+  11 files modified, 2 new audit docs (TYPOGRAPHY_AUDIT.md, SPACING_AUDIT.md).
+
 ### Changed — Phase 3: TradingView UI Parity (2026-06-25)
-- **Visual parity improved from ~70% to ~90%.** 16 files modified, 2 created. Zero architecture
+- Visual parity improved from ~70% to ~90%. 16 files modified, 2 created. Zero architecture
   changes — pure UI/UX. Full report: `docs/TRADINGVIEW_PARITY_REPORT.md`.
 - **Layout:** top toolbar 36px, panel headers 32px, left rail 40px, watchlist 320px. BottomPanel
   tabs now use TradingView-style accent underline (not rounded pills).
