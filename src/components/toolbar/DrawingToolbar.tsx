@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   MousePointer2,
@@ -117,21 +117,24 @@ const COLORS = [
 function useLastUsed(): Record<string, DrawingTool> {
   const activeTool = useChartStore((s) => s.activeTool);
   const [lastUsed, setLastUsed] = useState<Record<string, DrawingTool>>({});
-  // When activeTool changes, update the last-used for its group.
-  if (typeof window !== "undefined") {
+
+  // When activeTool changes, update the last-used record for its group.
+  // useEffect runs after render — no render-loop or cross-component warning.
+  useEffect(() => {
     for (const g of GROUPS) {
       const inGroup =
         g.tools.some((t) => t.tool === activeTool) ||
         g.defaultTool === activeTool;
       if (inGroup && lastUsed[g.id] !== activeTool) {
-        // Defer state update to avoid render-loop.
-        setTimeout(
-          () => setLastUsed((prev) => ({ ...prev, [g.id]: activeTool })),
-          0,
-        );
+        setLastUsed((prev) => ({ ...prev, [g.id]: activeTool }));
+        break;
       }
     }
-  }
+    // We intentionally only depend on activeTool — the group lookup is
+    // stable and lastUsed is a stale-closure-safe functional updater.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
   return lastUsed;
 }
 
