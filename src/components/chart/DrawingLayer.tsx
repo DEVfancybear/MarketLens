@@ -25,6 +25,9 @@ export function DrawingLayer() {
   const activeTool = useChartStore((s) => s.activeTool);
   const drawColor = useChartStore((s) => s.drawColor);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
+  const selectedDrawingIds = useChartStore((s) => s.selectedDrawingIds);
+  const toggleSelectDrawing = useChartStore((s) => s.toggleSelectDrawing);
+  const selectAll = useChartStore((s) => s.selectAll);
   const drawingsLocked = useChartStore((s) => s.drawingsLocked);
   const drawingsHidden = useChartStore((s) => s.drawingsHidden);
   const addDrawing = useChartStore((s) => s.addDrawing);
@@ -222,6 +225,12 @@ export function DrawingLayer() {
         reset();
         setActiveTool("cursor");
       }
+      // Ctrl+A → Select all
+      if (e.key === "a" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
       if (e.key === "d" && (e.ctrlKey || e.metaKey) && selectedDrawingId) {
         e.preventDefault();
         const d = storeRef.current.drawings.find(
@@ -241,7 +250,7 @@ export function DrawingLayer() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedDrawingId, setActiveTool, reset, undo, redo, execute]);
+  }, [selectedDrawingId, setActiveTool, reset, undo, redo, execute, selectAll]);
 
   return (
     <>

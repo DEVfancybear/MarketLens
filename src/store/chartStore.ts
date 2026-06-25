@@ -27,6 +27,8 @@ interface ChartState {
   activeTool: DrawingTool;
   drawColor: string;
   selectedDrawingId: string | null;
+  /** Multi-selection set (includes the singleton selectedDrawingId). */
+  selectedDrawingIds: Set<string>;
   /** Global locks (TradingView "Lock all" / "Hide all"). */
   drawingsLocked: boolean;
   drawingsHidden: boolean;
@@ -46,6 +48,10 @@ interface ChartState {
   removeDrawing: (id: string) => void;
   duplicateDrawing: (id: string) => void;
   selectDrawing: (id: string | null) => void;
+  /** Multi-select: add/remove from selection set. */
+  toggleSelectDrawing: (id: string) => void;
+  /** Select all visible drawings. */
+  selectAll: () => void;
   clearDrawings: () => void;
   /** Per-drawing layer & visibility actions. */
   lockDrawing: (id: string) => void;
@@ -88,6 +94,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   activeTool: "cursor",
   drawColor: "#2962ff",
   selectedDrawingId: null,
+  selectedDrawingIds: new Set(),
   drawingsLocked: false,
   drawingsHidden: false,
   crosshair: null,
@@ -106,6 +113,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       loading: true,
       drawings: localStore.get<Drawing[]>(drawingsKey(symbol), []),
       selectedDrawingId: null,
+      selectedDrawingIds: new Set(),
     });
   },
 
@@ -196,9 +204,38 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
   toggleLockAll: () => set((s) => ({ drawingsLocked: !s.drawingsLocked })),
   toggleHideAll: () => set((s) => ({ drawingsHidden: !s.drawingsHidden })),
-  selectDrawing: (selectedDrawingId) => set({ selectedDrawingId }),
+  selectDrawing: (selectedDrawingId) => {
+    set({
+      selectedDrawingId,
+      selectedDrawingIds: selectedDrawingId
+        ? new Set([selectedDrawingId])
+        : new Set(),
+    });
+  },
+  toggleSelectDrawing: (id) => {
+    const prev = get().selectedDrawingIds;
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    set({
+      selectedDrawingIds: next,
+      selectedDrawingId: next.size === 1 ? [...next][0] : null,
+    });
+  },
+  selectAll: () => {
+    const ids = new Set(
+      get()
+        .drawings.filter((d) => d.visible !== false)
+        .map((d) => d.id),
+    );
+    set({ selectedDrawingIds: ids, selectedDrawingId: null });
+  },
   clearDrawings: () => {
-    set({ drawings: [], selectedDrawingId: null });
+    set({
+      drawings: [],
+      selectedDrawingId: null,
+      selectedDrawingIds: new Set(),
+    });
     localStore.set(drawingsKey(get().symbol), []);
   },
 
