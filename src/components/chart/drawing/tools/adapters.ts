@@ -90,6 +90,7 @@ import "./plugins/HorizontalTool";
 import "./plugins/VerticalTool";
 import "./plugins/TrendLineTool";
 import "./plugins/RectangleTool";
+import "./plugins/RayTool";
 
 // ==================================================================
 // Remaining adapter implementations (future migration)
@@ -152,61 +153,6 @@ registerTool({
     const y = toY(d.points[0].price);
     if (x == null || y == null) return null;
     return { x: x - TOL, y: y - TOL, w: TOL * 2, h: TOL * 2 };
-  },
-});
-
-// ---- Ray (infinite right extension) ----
-registerTool({
-  tool: "ray",
-  minPoints: 2,
-  render(g, d, proj, selected) {
-    const pts = d.points;
-    const x1 = proj.toX(pts[0].time),
-      y1 = proj.toY(pts[0].price);
-    const x2 = proj.toX(pts[1].time),
-      y2 = proj.toY(pts[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
-    const dx = x2 - x1,
-      dy = y2 - y1;
-    const extendX = proj.width + 100;
-    const extendY = dy !== 0 ? y1 + (dy / (dx || 1)) * (extendX - x1) : y1;
-    line(g, x1, y1, extendX, extendY);
-    if (selected) {
-      handle(g, x1, y1, d.color);
-      handle(g, x2, y2, d.color);
-    }
-  },
-  hitTest(d, px, py, toX, toY) {
-    // Treat same as trendline for hit testing.
-    const results: HitResult[] = [];
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time),
-      y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p1",
-        distance: pointDist(px, py, x1, y1),
-      });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p2",
-        distance: pointDist(px, py, x2, y2),
-      });
-    const segDist = distToSegment(px, py, x1, y1, x2, y2);
-    if (segDist < TOL)
-      results.push({ drawing: d, target: "segment", distance: segDist });
-    return results;
-  },
-  movePoints: defaultMovePoints,
-  boundingBox(d, toX, toY) {
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    if (x1 == null || y1 == null) return null;
-    return { x: x1, y: 0, w: 9999, h: 9999 };
   },
 });
 
