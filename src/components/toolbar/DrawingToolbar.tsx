@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   MousePointer2,
   TrendingUp,
@@ -143,6 +144,7 @@ export function DrawingToolbar() {
   const lastUsed = useLastUsed();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const isActive = (group: ToolGroup) => {
     if (group.tools.length === 0) return activeTool === group.defaultTool;
@@ -168,52 +170,69 @@ export function DrawingToolbar() {
             {gi > 0 && <div className="my-1 h-px w-6 bg-terminal-border" />}
 
             {/* Group button */}
-            <IconButton
-              label={group.label}
-              active={isGroupActive}
-              onClick={() => {
-                if (hasFlyout) {
-                  setOpenGroup(isOpen ? null : group.id);
-                } else {
-                  setActiveTool(group.defaultTool);
-                  setOpenGroup(null);
-                }
+            <div
+              ref={(el) => {
+                btnRefs.current[group.id] = el;
               }}
             >
-              {visibleIcon}
-            </IconButton>
-
-            {/* Flyout menu */}
-            {hasFlyout && isOpen && (
-              <>
-                {/* Backdrop to close on outside click */}
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setOpenGroup(null)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
+              <IconButton
+                label={group.label}
+                active={isGroupActive}
+                onClick={() => {
+                  if (hasFlyout) {
+                    setOpenGroup(isOpen ? null : group.id);
+                  } else {
+                    setActiveTool(group.defaultTool);
                     setOpenGroup(null);
-                  }}
-                />
-                <div className="absolute left-full top-0 z-50 ml-1 w-44 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50">
-                  {group.tools.map((t) => (
-                    <button
-                      key={t.tool}
-                      onClick={() => {
-                        setActiveTool(t.tool);
+                  }
+                }}
+              >
+                {visibleIcon}
+              </IconButton>
+            </div>
+
+            {/* Flyout menu — portal to body to escape overflow:hidden */}
+            {hasFlyout &&
+              isOpen &&
+              typeof document !== "undefined" &&
+              (() => {
+                const btn = btnRefs.current[group.id];
+                if (!btn) return null;
+                const rect = btn.getBoundingClientRect();
+                return createPortal(
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setOpenGroup(null)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
                         setOpenGroup(null);
                       }}
-                      className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover ${
-                        activeTool === t.tool ? "text-brand" : "text-ink"
-                      }`}
+                    />
+                    <div
+                      className="fixed z-50 w-44 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
+                      style={{ left: rect.right + 4, top: rect.top }}
                     >
-                      <span className="shrink-0 text-ink-muted">{t.icon}</span>
-                      <span>{t.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+                      {group.tools.map((t) => (
+                        <button
+                          key={t.tool}
+                          onClick={() => {
+                            setActiveTool(t.tool);
+                            setOpenGroup(null);
+                          }}
+                          className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover ${activeTool === t.tool ? "text-brand" : "text-ink"}`}
+                        >
+                          <span className="shrink-0 text-ink-muted">
+                            {t.icon}
+                          </span>
+                          <span>{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>,
+                  document.body,
+                );
+              })()}
           </div>
         );
       })}
