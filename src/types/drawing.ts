@@ -2,32 +2,53 @@
 
 export type DrawingTool =
   // modes (do not create a drawing)
-  | 'cursor'
-  | 'crosshair'
-  | 'eraser'
-  | 'measure'
+  | "cursor"
+  | "crosshair"
+  | "eraser"
+  | "measure"
   // line tools
-  | 'trendline'
-  | 'horizontal'
-  | 'vertical'
-  | 'channel'
+  | "trendline"
+  | "ray"
+  | "extendedLine"
+  | "horizontal"
+  | "horizRay"
+  | "vertical"
+  | "crossLine"
+  | "infoLine"
+  | "channel"
   // shapes
-  | 'rectangle'
-  | 'fib'
+  | "rectangle"
+  | "fib"
   // annotations
-  | 'text'
-  | 'emoji'
+  | "text"
+  | "emoji"
   // positions
-  | 'long'
-  | 'short'
+  | "long"
+  | "short"
   // freehand
-  | 'brush';
+  | "brush";
 
 /** Tools that actually persist a drawing object (vs. interaction modes). */
 export const DRAWING_TOOLS: DrawingTool[] = [
-  'trendline', 'horizontal', 'vertical', 'channel',
-  'rectangle', 'fib', 'text', 'emoji', 'long', 'short', 'brush',
+  "trendline",
+  "ray",
+  "extendedLine",
+  "horizontal",
+  "horizRay",
+  "vertical",
+  "crossLine",
+  "infoLine",
+  "channel",
+  "rectangle",
+  "fib",
+  "text",
+  "emoji",
+  "long",
+  "short",
+  "brush",
 ];
+
+export type LineStyle = "solid" | "dashed" | "dotted";
 
 export interface Point {
   /** UTC timestamp (seconds). */
@@ -42,6 +63,8 @@ export interface BaseDrawing {
   lineWidth: number;
   points: Point[];
   text?: string;
+  /** Line style: solid (default), dashed, or dotted. */
+  lineStyle?: LineStyle;
   /** Stacking order; higher renders on top. */
   zIndex?: number;
   locked?: boolean;
@@ -57,4 +80,9 @@ export type Drawing = BaseDrawing;
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 
 /** Tools whose icon should look "pressed" but that don't add a persistent object. */
-export const MODE_TOOLS: DrawingTool[] = ['cursor', 'crosshair', 'eraser', 'measure'];
+export const MODE_TOOLS: DrawingTool[] = [
+  "cursor",
+  "crosshair",
+  "eraser",
+  "measure",
+];

@@ -3,28 +3,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
 import { useChartStore } from "@/store/chartStore";
-import { FIB_LEVELS, type Drawing, type Point } from "@/types";
+import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
 import { renderDrawing, type Projector } from "./drawing/drawingRenderer";
 import { hitTest } from "./drawing/drawingHitTest";
+import {
+  DrawingContextMenu,
+  type DrawingMenuState,
+} from "./DrawingContextMenu";
 
-/**
- * Transparent canvas laid over the price chart that renders user drawings and
- * handles their creation / selection / movement. All geometry is stored in
- * (time, price) space and projected to pixels each frame, so drawings stay
- * pinned to the data through pan & zoom.
- *
- * Rendering delegates to the standalone `drawingRenderer.ts` (17-tool support).
- * Hit-testing delegates to the standalone `drawingHitTest.ts`.
- * Interaction (pointer events, drag, creation) is handled here.
- */
+/** Tool → min points for creation. */
+function minPoints(t: DrawingTool): number {
+  switch (t) {
+    case "horizontal":
+    case "horizRay":
+    case "vertical":
+    case "crossLine":
+    case "text":
+    case "emoji":
+    case "long":
+    case "short":
+      return 1;
+    default:
+      return 2;
+  }
+}
+
 export function DrawingLayer() {
   const ctx = useChartCtx();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Atomic selectors — this component does NOT subscribe to `candles`,
-  // so realtime ticks never re-render the canvas. Repaint is driven by
-  // `ctx.version` (pan/zoom/resize) and by drawing state changes.
   const drawings = useChartStore((s) => s.drawings);
   const activeTool = useChartStore((s) => s.activeTool);
   const drawColor = useChartStore((s) => s.drawColor);
@@ -35,10 +43,11 @@ export function DrawingLayer() {
   const updateDrawing = useChartStore((s) => s.updateDrawing);
   const selectDrawing = useChartStore((s) => s.selectDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
+  const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
 
-  // In-progress drawing (first point placed, awaiting subsequent points).
   const [pending, setPending] = useState<Point[] | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
   const dragRef = useRef<{
     id: string;
     startTime: number;
@@ -46,7 +55,6 @@ export function DrawingLayer() {
     orig: Point[];
   } | null>(null);
 
-  // ---- coordinate helpers ----
   const toX = useCallback(
     (time: number) =>
       ctx?.chart.timeScale().timeToCoordinate(time as UTCTimestamp) ?? null,
@@ -70,14 +78,7 @@ export function DrawingLayer() {
     [ctx],
   );
 
-  const projRef = useRef<Projector>({
-    toX: () => null,
-    toY: () => null,
-    width: 0,
-    height: 0,
-  });
-
-  // ---- rendering (delegates to drawingRenderer.ts) ----
+  // ---- rendering ----
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !ctx) return;
@@ -94,19 +95,14 @@ export function DrawingLayer() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
-    // Resolve visible drawings (respect global hide toggle).
     const visible = drawingsHidden ? [] : drawings;
-
-    // Build projector for this frame.
     const projector: Projector = {
       toX,
       toY,
       width: rect.width,
       height: rect.height,
     };
-    projRef.current = projector;
 
-    // Append pending preview as a virtual drawing.
     const all = pending
       ? [
           ...visible,
@@ -121,7 +117,6 @@ export function DrawingLayer() {
         ]
       : visible;
 
-    // Sort by zIndex so higher indices render on top.
     const sorted = [...all].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
 
     for (const d of sorted) {
@@ -130,8 +125,6 @@ export function DrawingLayer() {
       g.strokeStyle = d.color;
       g.fillStyle = d.color;
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
-
-      // ---- delegate to the canonical 17-tool renderer ----
       renderDrawing(g, d, projector, selected);
     }
   }, [
@@ -146,12 +139,11 @@ export function DrawingLayer() {
     toY,
   ]);
 
-  // Repaint whenever data, version (pan/zoom/resize) or drawings change.
   useEffect(() => {
     draw();
   }, [draw, ctx?.version]);
 
-  // ---- interaction ----
+  // ---- interaction: pointer ----
   const onPointerDown = (e: React.PointerEvent) => {
     const p = fromEvent(e);
     if (!p || !ctx) return;
@@ -171,27 +163,10 @@ export function DrawingLayer() {
       return;
     }
 
-    // Single-click tools: horizontal, vertical, text.
-    if (activeTool === "horizontal") {
-      addDrawing({
-        id: uid("dw"),
-        tool: "horizontal",
-        color: drawColor,
-        lineWidth: 1.5,
-        points: [p],
-      });
-      return;
-    }
-    if (activeTool === "vertical") {
-      addDrawing({
-        id: uid("dw"),
-        tool: "vertical",
-        color: drawColor,
-        lineWidth: 1.5,
-        points: [p],
-      });
-      return;
-    }
+    // ---- tool creation ----
+    const needed = minPoints(activeTool);
+
+    // Text needs a prompt before placing.
     if (activeTool === "text") {
       const text = window.prompt("Text:") || "";
       if (text)
@@ -207,7 +182,19 @@ export function DrawingLayer() {
       return;
     }
 
-    // Two-click tools: trendline, rectangle, fib.
+    // Single-click tools: commit immediately.
+    if (needed === 1) {
+      addDrawing({
+        id: uid("dw"),
+        tool: activeTool,
+        color: drawColor,
+        lineWidth: 1.5,
+        points: [p],
+      });
+      return;
+    }
+
+    // Two-click tools.
     if (!pending) {
       setPending([p]);
     } else {
@@ -225,13 +212,10 @@ export function DrawingLayer() {
   const onPointerMove = (e: React.PointerEvent) => {
     const p = fromEvent(e);
     if (!p) return;
-
-    // Live preview of pending second point.
     if (pending) {
       setPending([pending[0], p]);
       return;
     }
-    // Dragging a selected drawing.
     const drag = dragRef.current;
     if (drag) {
       const dt = p.time - drag.startTime;
@@ -249,11 +233,23 @@ export function DrawingLayer() {
     dragRef.current = null;
   };
 
-  // Keyboard: Delete / Escape.
+  // Right-click context menu on drawings.
+  const onCtxMenu = (e: React.MouseEvent) => {
+    const p = fromEvent(e as unknown as React.PointerEvent);
+    if (!p) return;
+    const hit = hitTest(drawings, p, toX, toY);
+    if (hit) {
+      e.preventDefault();
+      setCtxMenu({ id: hit.id, x: e.clientX, y: e.clientY });
+    }
+  };
+
+  // ---- keyboard ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
+
       if ((e.key === "Delete" || e.key === "Backspace") && selectedDrawingId) {
         removeDrawing(selectedDrawingId);
       }
@@ -261,24 +257,35 @@ export function DrawingLayer() {
         setPending(null);
         setActiveTool("cursor");
       }
+      // Ctrl+D → duplicate selected drawing.
+      if (e.key === "d" && (e.ctrlKey || e.metaKey) && selectedDrawingId) {
+        e.preventDefault();
+        duplicateDrawing(selectedDrawingId);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedDrawingId, removeDrawing, setActiveTool]);
+  }, [selectedDrawingId, removeDrawing, setActiveTool, duplicateDrawing]);
 
   const interactive = activeTool !== "cursor" || pending !== null;
 
   return (
-    <canvas
-      ref={canvasRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      className="absolute inset-0 h-full w-full"
-      style={{
-        cursor: activeTool === "cursor" ? "default" : "crosshair",
-        pointerEvents: interactive || drawings.length ? "auto" : "none",
-      }}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onContextMenu={onCtxMenu}
+        className="absolute inset-0 h-full w-full"
+        style={{
+          cursor: activeTool === "cursor" ? "default" : "crosshair",
+          pointerEvents: interactive || drawings.length ? "auto" : "none",
+        }}
+      />
+      {ctxMenu && (
+        <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
+      )}
+    </>
   );
 }

@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added — Phase 4.2: Trend line suite + context menu + line styles (2026-06-25)
+- 8 TradingView-style line tools: trendline, ray, extendedLine, horizontal, horizRay,
+  vertical, crossLine, infoLine. All support create/select/move/delete/persist.
+- DrawingContextMenu — right-click any drawing: Clone, Lock/Unlock, Show/Hide, Bring to
+  Front, Send to Back, Delete. Portal-rendered, Esc/outside-click close.
+- Line style system: Drawing.lineStyle ('solid'|'dashed'|'dotted') renders with
+  setLineDash. Selection handles always solid.
+- Ctrl+D duplicate selected drawing. Generalized creation flow (minPoints-based
+  dispatcher — any 1- or 2-point tool works without code changes).
+- DrawingToolbar: 12 tools with 3 visual category groups (MODES, LINES, SHAPES).
+- Docs: TREND_LINE_SUITE.md, TOOL_INTERACTION_GUIDE.md, DRAWING_PERSISTENCE_TESTS.md.
+
 ### Added — Phase 4.1: Wire drawing engine foundation (2026-06-25)
 - Wired the canonical `drawingRenderer.ts` (17-tool support) into `DrawingLayer.tsx`,
   replacing the inline 7-tool renderer. Rendering now delegates to a pure canvas

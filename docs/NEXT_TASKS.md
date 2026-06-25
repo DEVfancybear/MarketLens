@@ -9,9 +9,8 @@
   TwelveData; extension points for FxcmProvider + ICMarketsProvider).
 - **✅ Phase 3 — TradingView UI Parity: COMPLETE** (90% visual, 85% interaction).
   16 files modified, 2 created. See `docs/TRADINGVIEW_PARITY_REPORT.md`.
-- **✅ Phase 4.1 — Drawing Engine Foundation: COMPLETE** (renderer wired, hit-test extracted).
-- **▶ Phase 4.2 — Wire drawing store actions: NEXT** (duplicate, lock, hide, z-order).
-  See `docs/PHASE4_DRAWING_ENGINE_ROADMAP.md`.
+- **✅ Phase 4.2 — Trend Line Suite: COMPLETE** (8 tools + context menu + line styles).
+- **▶ Phase 4.3 — Advanced Drawing Features: NEXT.**
 
 ## Immediate tasks — Phase 4 (Drawing Engine)
 
