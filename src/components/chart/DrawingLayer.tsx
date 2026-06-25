@@ -6,7 +6,7 @@ import { useChartStore } from "@/store/chartStore";
 import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
 import { renderDrawing, type Projector } from "./drawing/drawingRenderer";
-import { hitTest, type HitResult } from "./drawing/drawingHitTest";
+import { hitTest } from "./drawing/drawingHitTest";
 import {
   DrawingContextMenu,
   type DrawingMenuState,
@@ -31,12 +31,10 @@ function minPoints(t: DrawingTool): number {
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
-  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const drawings = useChartStore((s) => s.drawings);
   const activeTool = useChartStore((s) => s.activeTool);
-
   const drawColor = useChartStore((s) => s.drawColor);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const drawingsLocked = useChartStore((s) => s.drawingsLocked);
@@ -50,6 +48,7 @@ export function DrawingLayer() {
 
   const [pending, setPending] = useState<Point[] | null>(null);
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
+
   const dragRef = useRef<{
     id: string;
     target: "p1" | "p2" | "body";
@@ -58,27 +57,22 @@ export function DrawingLayer() {
     orig: Point[];
   } | null>(null);
 
-  // Stable refs for native event handlers (no stale closures).
+  // Stable ref to avoid stale closures in native listeners.
   const stateRef = useRef({
     drawings: [] as Drawing[],
     activeTool: "cursor" as DrawingTool,
     pending: null as Point[] | null,
-    drag: null as typeof dragRef.current,
     drawColor: "#2962ff",
     drawingsLocked: false,
   });
-
   stateRef.current = {
     drawings,
     activeTool,
     pending,
-    drag: dragRef.current,
     drawColor,
     drawingsLocked,
   };
 
-  // ctx.chart and ctx.candleSeries are stable; only version/candles change.
-  // Use a ref to avoid triggering effect re-registration on every tick.
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
 
@@ -94,10 +88,13 @@ export function DrawingLayer() {
       ctxRef.current?.candleSeries.priceToCoordinate(price) ?? null,
     [],
   );
+
+  /** Convert a PointerEvent to chart (time, price) coordinates. */
   const fromEvent = useCallback((e: PointerEvent): Point | null => {
     const c = ctxRef.current;
-    if (!c || !canvasRef.current) return null;
-    const rect = canvasRef.current.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!c || !canvas) return null;
+    const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const time = c.chart.timeScale().coordinateToTime(x);
@@ -124,6 +121,7 @@ export function DrawingLayer() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
+    const s = stateRef.current;
     const visible = drawingsHidden ? [] : drawings;
     const projector: Projector = {
       toX,
@@ -132,14 +130,14 @@ export function DrawingLayer() {
       height: rect.height,
     };
 
-    const pr = pending;
+    const pr = s.pending;
     const all = pr
       ? [
           ...visible,
           {
             id: "__pending",
-            tool: activeTool,
-            color: drawColor,
+            tool: s.activeTool,
+            color: s.drawColor,
             lineWidth: 1.5,
             points: pr,
             visible: true,
@@ -148,7 +146,6 @@ export function DrawingLayer() {
       : visible;
 
     const sorted = [...all].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
-
     for (const d of sorted) {
       if (d.visible === false) continue;
       const selected = d.id === selectedDrawingId;
@@ -157,52 +154,46 @@ export function DrawingLayer() {
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
       renderDrawing(g, d, projector, selected);
     }
-  }, [
-    toX,
-    toY,
-    drawings,
-    pending,
-    activeTool,
-    drawColor,
-    selectedDrawingId,
-    drawingsHidden,
-  ]);
+  }, [toX, toY, drawings, drawingsHidden, selectedDrawingId]);
 
   useEffect(() => {
     draw();
   }, [draw, ctx?.version]);
 
-  // ---- native pointer events on CONTAINER div (always receives events) ----
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+  // ---- Interaction architecture ----
+  //
+  // Chart interaction (zoom / pan / pinch) must ALWAYS work.
+  // Drawing interaction only intercepts events when actively creating
+  // or manipulating a drawing.
+  //
+  // Strategy:
+  //   Canvas   → pointerEvents:none  (rendering only, never blocks chart)
+  //   Document → conditional pointer listeners
+  //     - Drawing mode:   registered → intercept all pointer events
+  //     - Cursor + drag:  registered during drag via setPointerCapture
+  //     - Otherwise:      NOT registered → chart receives all events
+  //
+  // This avoids z-index fights, event forwarding hacks, and DOM traversal.
 
+  useEffect(() => {
+    const s = stateRef.current;
+    const canvas = canvasRef.current;
+
+    // Only register document listeners when in drawing mode.
+    // In cursor mode, listeners are added on-demand by the drag flow.
+    if (s.activeTool === "cursor") return;
+
+    // ---- Drawing mode: intercept all pointer events ----
     const handleDown = (e: PointerEvent) => {
-      const s = stateRef.current;
+      // Only handle events over our chart area.
+      if (!canvas || !isOverCanvas(e, canvas)) return;
+
       const p = fromEvent(e);
       if (!p || !ctxRef.current) return;
 
-      if (s.activeTool === "cursor") {
-        const hit = hitTest(s.drawings, p, toX, toY);
-        selectDrawing(hit?.drawing.id ?? null);
-        if (hit && !s.drawingsLocked) {
-          dragRef.current = {
-            id: hit.drawing.id,
-            target: hit.target,
-            startTime: p.time,
-            startPrice: p.price,
-            orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
-          };
-          el.setPointerCapture(e.pointerId);
-          e.stopPropagation();
-        }
-        // No hit → event passes through to chart (pan works).
-        return;
-      }
-
-      // Drawing mode.
+      e.preventDefault();
       e.stopPropagation();
-      el.setPointerCapture(e.pointerId);
+      canvas.setPointerCapture(e.pointerId);
 
       const needed = minPoints(s.activeTool);
 
@@ -247,35 +238,86 @@ export function DrawingLayer() {
     };
 
     const handleMove = (e: PointerEvent) => {
+      if (!canvas || !isOverCanvas(e, canvas)) return;
+      const cur = stateRef.current;
+      if (!cur.pending) return;
+      const p = fromEvent(e);
+      if (!p) return;
+      setPending([cur.pending[0], p]);
+    };
+
+    document.addEventListener("pointerdown", handleDown, true);
+    document.addEventListener("pointermove", handleMove, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleDown, true);
+      document.removeEventListener("pointermove", handleMove, true);
+    };
+    // Re-run when activeTool changes (entering/exiting drawing mode).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
+  // ---- Cursor mode: drawing selection + drag via document listener ----
+  // This effect runs once and stays active. In cursor mode, we listen for
+  // pointerdown on the document. If a drawing is hit, we capture and handle drag.
+  // If not, we do nothing → chart receives the event normally.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleDown = (e: PointerEvent) => {
       const s = stateRef.current;
+      // Only handle cursor mode. Drawing mode is handled by the effect above.
+      if (s.activeTool !== "cursor") return;
+      if (!canvas || !isOverCanvas(e, canvas)) return;
+
+      const p = fromEvent(e);
+      if (!p || !ctxRef.current) return;
+
+      const hit = hitTest(s.drawings, p, toX, toY);
+      selectDrawing(hit?.drawing.id ?? null);
+
+      if (hit && !s.drawingsLocked) {
+        dragRef.current = {
+          id: hit.drawing.id,
+          target: hit.target,
+          startTime: p.time,
+          startPrice: p.price,
+          orig: [...hit.drawing.points.map((pt) => ({ ...pt }))],
+        };
+        e.preventDefault();
+        e.stopPropagation();
+        canvas.setPointerCapture(e.pointerId);
+      }
+      // No hit → do nothing. Event reaches the chart → pan works.
+    };
+
+    const handleMove = (e: PointerEvent) => {
+      const s = stateRef.current;
+      if (s.activeTool !== "cursor") return;
+
+      const drag = dragRef.current;
+      if (!drag) return;
+
       const p = fromEvent(e);
       if (!p) return;
 
-      if (s.activeTool !== "cursor" && s.pending) {
-        setPending([s.pending[0], p]);
-        return;
-      }
-
-      const drag = dragRef.current;
-      if (drag) {
-        const next = drag.orig.map((pt) => ({ ...pt }));
-        if (drag.target === "p1") {
-          next[0] = { time: p.time, price: p.price };
-        } else if (drag.target === "p2" && next.length > 1) {
-          next[1] = { time: p.time, price: p.price };
-        } else {
-          const dt = p.time - drag.startTime;
-          const dp = p.price - drag.startPrice;
-          for (let i = 0; i < next.length; i++) {
-            next[i] = {
-              time: drag.orig[i].time + dt,
-              price: drag.orig[i].price + dp,
-            };
-          }
+      const next = drag.orig.map((pt) => ({ ...pt }));
+      if (drag.target === "p1") {
+        next[0] = { time: p.time, price: p.price };
+      } else if (drag.target === "p2" && next.length > 1) {
+        next[1] = { time: p.time, price: p.price };
+      } else {
+        const dt = p.time - drag.startTime;
+        const dp = p.price - drag.startPrice;
+        for (let i = 0; i < next.length; i++) {
+          next[i] = {
+            time: drag.orig[i].time + dt,
+            price: drag.orig[i].price + dp,
+          };
         }
-        updateDrawing(drag.id, { points: next });
       }
-      // No drag + cursor mode → event passes through to chart (pan works).
+      updateDrawing(drag.id, { points: next });
     };
 
     const handleUp = () => {
@@ -284,6 +326,7 @@ export function DrawingLayer() {
 
     const handleCtx = (e: MouseEvent) => {
       const s = stateRef.current;
+      if (!canvas || !isOverCanvas(e, canvas)) return;
       if (s.pending) {
         e.preventDefault();
         setPending(null);
@@ -299,50 +342,21 @@ export function DrawingLayer() {
       }
     };
 
-    el.addEventListener("pointerdown", handleDown);
-    el.addEventListener("pointermove", handleMove);
-    el.addEventListener("pointerup", handleUp);
-    el.addEventListener("pointerleave", handleUp);
-    el.addEventListener("contextmenu", handleCtx);
-
-    // Forward wheel events to the LWC chart element (our container sits
-    // above the chart in z-order and would otherwise block zoom).
-    // LWC chart div is the previous sibling of our container's parent
-    // (the ChartContextObj.Provider wrapper).
-    const handleWheel = (e: WheelEvent) => {
-      const chartEl = el.parentElement
-        ?.previousElementSibling as HTMLElement | null;
-      if (!chartEl) return;
-      chartEl.dispatchEvent(
-        new WheelEvent("wheel", {
-          deltaX: e.deltaX,
-          deltaY: e.deltaY,
-          deltaZ: e.deltaZ,
-          deltaMode: e.deltaMode,
-          clientX: e.clientX,
-          clientY: e.clientY,
-          screenX: e.screenX,
-          screenY: e.screenY,
-          ctrlKey: e.ctrlKey,
-          shiftKey: e.shiftKey,
-          altKey: e.altKey,
-          metaKey: e.metaKey,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    };
-    el.addEventListener("wheel", handleWheel, { passive: true });
+    // Use capture phase so we see events before the chart does.
+    document.addEventListener("pointerdown", handleDown, true);
+    document.addEventListener("pointermove", handleMove, true);
+    document.addEventListener("pointerup", handleUp, true);
+    document.addEventListener("pointerleave", handleUp, true);
+    canvas.addEventListener("contextmenu", handleCtx);
 
     return () => {
-      el.removeEventListener("pointerdown", handleDown);
-      el.removeEventListener("pointermove", handleMove);
-      el.removeEventListener("pointerup", handleUp);
-      el.removeEventListener("pointerleave", handleUp);
-      el.removeEventListener("contextmenu", handleCtx);
-      el.removeEventListener("wheel", handleWheel);
+      document.removeEventListener("pointerdown", handleDown, true);
+      document.removeEventListener("pointermove", handleMove, true);
+      document.removeEventListener("pointerup", handleUp, true);
+      document.removeEventListener("pointerleave", handleUp, true);
+      canvas.removeEventListener("contextmenu", handleCtx);
     };
-    // All callbacks are stable (empty-dep useCallbacks + refs). Run once.
+    // Run once on mount. All state is accessed via refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -369,28 +383,37 @@ export function DrawingLayer() {
   }, [selectedDrawingId, removeDrawing, setActiveTool, duplicateDrawing]);
 
   const drawingMode = activeTool !== "cursor";
-
   let cursorStyle = "default";
   if (drawingMode) cursorStyle = "crosshair";
   if (dragRef.current) cursorStyle = "move";
 
   return (
     <>
-      {/* Container div: receives pointer events. Canvas inside: renders only. */}
-      <div
-        ref={containerRef}
+      {/* Canvas: rendering only. pointerEvents:none always.
+          Chart zoom/pan/pinch always work through the LWC chart div.
+          Drawing interaction is handled by document-level listeners. */}
+      <canvas
+        ref={canvasRef}
         className="absolute inset-0 h-full w-full"
-        style={{ cursor: cursorStyle, zIndex: 5 }}
-      >
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 h-full w-full"
-          style={{ pointerEvents: "none", zIndex: 5 }}
-        />
-      </div>
+        style={{ cursor: cursorStyle, pointerEvents: "none", zIndex: 5 }}
+      />
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
       )}
     </>
+  );
+}
+
+/** Check whether a pointer event is over the chart canvas area. */
+function isOverCanvas(
+  e: PointerEvent | MouseEvent,
+  canvas: HTMLCanvasElement,
+): boolean {
+  const rect = canvas.getBoundingClientRect();
+  return (
+    e.clientX >= rect.left &&
+    e.clientX <= rect.right &&
+    e.clientY >= rect.top &&
+    e.clientY <= rect.bottom
   );
 }

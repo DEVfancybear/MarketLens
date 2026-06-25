@@ -4,6 +4,23 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed — Refactor drawing interaction architecture (2026-06-26)
+- **Root problem:** Container div overlay at z-index:5 with pointerEvents:auto
+  permanently blocked the LWC chart div (a sibling in the DOM, not a child).
+  Events don't pass through to sibling elements. This caused accumulated
+  regressions: wheel forwarding hacks, broken pan, event constructor bugs,
+  DOM traversal fragility.
+- **New architecture:** Canvas at pointerEvents:none always — rendering only,
+  never blocks the chart. Drawing interaction uses document-level capture-phase
+  listeners with isOverCanvas() filtering.
+  - Drawing mode: activeTool-dependent effect registers document listeners
+    for creation (pointerdown + pointermove in capture phase).
+  - Cursor mode: persistent effect listens for pointerdown on document.
+    If a drawing is hit → setPointerCapture on canvas → move/up handled.
+    If no hit → do nothing → event reaches chart → pan works.
+  - Chart zoom/pan/pinch: always work because the canvas never intercepts.
+  - Zero event forwarding, zero z-index fights, zero DOM traversal hacks.
+
 ### Fixed — Drawing interaction lag and unreliability (2026-06-26)
 - Root cause: the native event listener effect depended on [ctx]. ctx is rebuilt
   on every candle tick (version bump), causing all 5 event listeners to be torn down
