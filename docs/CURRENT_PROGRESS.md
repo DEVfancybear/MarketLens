@@ -21,7 +21,13 @@ _Last updated: 2026-06-26_
 - **Next milestone: Phase 5 — Left Toolbar / Indicator Engine.**
 
 ## Completed this session
-1. **Phase 4.4 — Fibonacci Suite:** Implemented Fibonacci retracement (`fibRetracement`) and
+1. **TrendLineTool hit-test vocabulary fix:** Changed hitTest target from `"segment"` to
+   `"body"` to align with the interaction manager's dragTarget vocabulary (`"p1" | "p2" | "body"`).
+   Previously the interaction manager silently re-mapped `"segment"` → `"body"` at line 243 of
+   `DrawingInteractionManager.ts`; now the pipeline is consistent end-to-end. Behavior unchanged —
+   defaultMovePoints already handles all three trendline drag modes correctly. Removed unused
+   `applyStyle` import from TrendLineTool.
+2. **Phase 4.4 — Fibonacci Suite:** Implemented Fibonacci retracement (`fibRetracement`) and
    Fibonacci extension (`fibExtension`) drawing tools. Retracement: 2-point (high→low), auto-levels
    at 0/0.236/0.382/0.5/0.618/0.786/1, dashed anchor trend line, percentage + price labels.
    Extension: 2-point (A→B impulse), levels projected from B using A→B as base unit, ratios
@@ -68,6 +74,8 @@ _Last updated: 2026-06-26_
    `OANDA_INTEGRATION.md`.
 
 ## Recently modified files
+- `src/components/chart/drawing/tools/plugins/TrendLineTool.ts` (audit: `"segment"` → `"body"`
+  hitTest target, removed unused `applyStyle` import)
 - `src/components/chart/drawing/tools/plugins/FibRetracementTool.ts` (new — Phase 4.4),
   `FibExtensionTool.ts` (new — Phase 4.4)
 - `src/components/chart/drawing/tools/adapters.ts` (Phase 4.4: imported FibRetracementTool +

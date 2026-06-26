@@ -167,6 +167,25 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   imported** anywhere (the context menu uses a CSS pop animation). If you need motion later,
   pin a matching `framer-motion`/`motion-dom` pair; otherwise consider removing it from
   `package.json`.
+- **Adapter resolution during drag:** `DrawingInteractionManager.ts:268` resolves
+  `getTool(m.drawingTool ?? "trendline")` — but `m.drawingTool` is always `null` during drag
+  (only set during creation mode). The `"trendline"` fallback works because all tools currently
+  share `defaultMovePoints`, but any tool with a custom `movePoints` would be silently broken.
+  Fix: resolve via `hit.drawing.tool` from the stored hit result instead.
+- **Ctrl+D creates duplicate drawings with empty id `""`:** `DrawingLayer.tsx:234-249` calls
+  `duplicateDrawing(d.id)` AND `execute(new DuplicateDrawingCommand({...d, id:""}))` — two copies
+  created, second with empty id. Drawings with id `""` all respond to the same
+  `updateDrawing`/`removeDrawing` calls (cross-contamination).
+- **Context menu bypasses undo history:** `DrawingContextMenu.tsx` calls store actions directly
+  (`removeDrawing`, `duplicateDrawing`, etc.) without creating Command history. Keyboard
+  equivalents (Delete, Ctrl+D) DO create history. Inconsistent undo behavior.
+- **Drag operations not undoable:** `commitMove`/`commitDelete` are defined in
+  `useCommandHistory.ts` but never called. `handleUp` calls `updateDrawing` directly.
+- **`addDrawing` doesn't deep-copy points:** `chartStore.ts:133` does `{ ...d }` — the store
+  drawing shares `d.points` with the caller. Latent risk if callers reuse arrays.
+- **Hit-test vocabulary inconsistency:** Several line tools (Ray, ExtendedLine, Channel,
+  Brush, Polyline, Triangle) return `"segment"` from hitTest, which is silently re-mapped to
+  `"body"` in the interaction manager. TrendLineTool was fixed; others remain.
 - **Drawing tools fully wired:** All drawing tools (line, shape, fib) use the production
   `DrawingToolPlugin` architecture via `ToolRegistry`. `renderDrawing` + `HitTestEngine` delegate
   through adapters. No giant switch statements remain. The old note about "unwired refactor" in
