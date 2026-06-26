@@ -24,6 +24,7 @@ export interface RenderLoopDeps {
     chartReady: boolean;
     livePoints: Point[] | null;
     draggingId: string | null;
+    hoveredId: string | null;
   };
   onVersionChange?: (cb: () => void) => () => void;
 }
@@ -191,6 +192,9 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     );
 
     let drawn = 0;
+    // Hover highlight
+    const hovered = data.hoveredId ? sorted.find(d => d.id === data.hoveredId && d.visible !== false) : null;
+    if (hovered && !data.drawingsHidden) { g.save(); g.globalAlpha = 0.3; g.strokeStyle = hovered.color; g.fillStyle = hovered.color; g.lineWidth = (hovered.lineWidth || 1.5) * 2.5; renderDrawing(g, hovered, projector, false); g.restore(); }
     for (const d of sorted) {
       if (d.visible === false) continue;
       const selected = d.id === data.selectedDrawingId;

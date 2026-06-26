@@ -110,6 +110,7 @@ export function DrawingLayer() {
     machineRef,
     livePointsRef,
     drawingIdRef,
+    hoveredIdRef,
   } = useDrawingInteractionManager({
     canvasRef,
     fromEvent,
@@ -147,6 +148,7 @@ export function DrawingLayer() {
         chartReady: !!ctxRef.current,
         livePoints: livePointsRef.current,
         draggingId: drawingIdRef.current,
+        hoveredId: hoveredIdRef.current,
       }),
       onVersionChange: (cb: () => void) => {
         const chart = ctxRef.current?.chart;
