@@ -5,6 +5,7 @@ import type { Drawing } from "@/types";
 import { renderDrawing, type Projector } from "../drawingRenderer";
 import type { Point } from "@/types";
 import type { Machine } from "../interaction/DrawingInteractionManager";
+import { getTool } from "../tools/ToolRegistry";
 import { CoordinateCache } from "./CoordinateCache";
 import { SpatialIndex } from "./SpatialIndex";
 import { PerformanceMonitor } from "./PerformanceMonitor";
@@ -52,7 +53,6 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   let rafId: number | null = null;
   let lastCanvasW = 0;
   let lastCanvasH = 0;
-
   let lastDrawingsHash = "";
   let lastSelectedId: string | null = null;
   let lastHidden = false;
@@ -163,12 +163,13 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       height: rect.height,
     };
 
+    // Only inject the preview drawing when enough anchors are placed.
     const pr =
       m?.state === "Drawing" && m.anchors.length > 0 ? m.anchors : null;
     const tool =
       m?.state === "Drawing" ? (m.drawingTool ?? data.activeTool) : null;
     const all =
-      pr && tool
+      pr && tool && pr.length >= (getTool(tool)?.minPoints ?? 2)
         ? [
             ...storeDrawings,
             {

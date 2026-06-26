@@ -120,7 +120,7 @@ export function useDrawingInteractionManager(
       try {
         canvas.releasePointerCapture(pid);
       } catch {
-        // pointer may already be released
+        /* ok */
       }
     }
     activePointerIdRef.current = null;
