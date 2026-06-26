@@ -18,7 +18,7 @@ export type HitTestProjector = (v: number) => number | null;
 /** Part of the drawing that was hit + pixel distance from pointer. */
 export type HitResult = {
   drawing: Drawing;
-  target: "body" | "p1" | "p2" | "segment" | "label";
+  target: "body" | "p1" | "p2";
   /** Pixel distance from the pointer to the hit target. */
   distance: number;
 };
@@ -27,8 +27,6 @@ export type HitResult = {
 const TARGET_PRIORITY: Record<HitResult["target"], number> = {
   p1: 0,
   p2: 0,
-  segment: 1,
-  label: 2,
   body: 3,
 };
 

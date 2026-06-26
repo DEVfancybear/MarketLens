@@ -5,14 +5,21 @@ import type { Drawing } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
-  type DrawingToolPlugin, registerTool, defaultMovePoints,
+  type DrawingToolPlugin,
+  registerTool,
+  defaultMovePoints,
 } from "../ToolRegistry";
 import { handle } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "text",
   minPoints: 1,
-  render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
+  render(
+    g: CanvasRenderingContext2D,
+    d: Drawing,
+    proj: Projector,
+    selected: boolean,
+  ) {
     const x = proj.toX(d.points[0].time),
       y = proj.toY(d.points[0].price);
     if (x == null || y == null) return;
@@ -24,7 +31,13 @@ const plugin: DrawingToolPlugin = {
     if (selected) handle(g, x, y, d.color);
     g.restore();
   },
-  hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
+  hitTest(
+    d: Drawing,
+    px: number,
+    py: number,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): HitResult[] {
     const x = toX(d.points[0].time),
       y = toY(d.points[0].price);
     if (
@@ -36,7 +49,7 @@ const plugin: DrawingToolPlugin = {
       return [
         {
           drawing: d,
-          target: "label",
+          target: "body",
           distance: Math.max(Math.abs(x - px), Math.abs(y - py)),
         },
       ];

@@ -238,9 +238,10 @@ export function useDrawingInteractionManager(
         canvas.setPointerCapture(e.pointerId);
         pointerClaimedRef.current = true;
 
+        // Canonical drag target mapping — only three allowed values.
         const isHandle = hit.target === "p1" || hit.target === "p2";
         const dragTarget: Machine["dragTarget"] =
-          hit.target === "p1" || hit.target === "p2" ? hit.target : "body";
+          hit.target === "p1" ? "p1" : hit.target === "p2" ? "p2" : "body";
         const orig: Point[] = [
           ...hit.drawing.points.map((pt: Point) => ({ ...pt })),
         ];

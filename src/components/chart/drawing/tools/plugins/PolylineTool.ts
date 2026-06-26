@@ -5,8 +5,13 @@ import type { Drawing, Point as Pt } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
-  type DrawingToolPlugin, registerTool, defaultMovePoints,
-  HANDLE_RADIUS, TOL, pointDist, distToSegment,
+  type DrawingToolPlugin,
+  registerTool,
+  defaultMovePoints,
+  HANDLE_RADIUS,
+  TOL,
+  pointDist,
+  distToSegment,
 } from "../ToolRegistry";
 import { handle } from "./shared";
 
@@ -23,7 +28,12 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "polyline",
   minPoints: 2,
-  render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
+  render(
+    g: CanvasRenderingContext2D,
+    d: Drawing,
+    proj: Projector,
+    selected: boolean,
+  ) {
     const pts = d.points;
     if (pts.length < 2) return;
     const projPts = pts.map((p) => project(p, proj.toX, proj.toY));
@@ -39,7 +49,13 @@ const plugin: DrawingToolPlugin = {
         if (p) handle(g, p.x, p.y, d.color);
       });
   },
-  hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
+  hitTest(
+    d: Drawing,
+    px: number,
+    py: number,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): HitResult[] {
     const results: HitResult[] = [];
     const projected = d.points.map((pt) => ({
       x: toX(pt.time),
@@ -62,7 +78,7 @@ const plugin: DrawingToolPlugin = {
       if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
       const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
       if (segDist < TOL * 1.5)
-        results.push({ drawing: d, target: "segment", distance: segDist });
+        results.push({ drawing: d, target: "body", distance: segDist });
     }
     return results;
   },

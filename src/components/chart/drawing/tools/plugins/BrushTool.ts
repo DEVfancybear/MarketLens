@@ -5,8 +5,11 @@ import type { Drawing, Point as Pt } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
-  type DrawingToolPlugin, registerTool, defaultMovePoints,
-  TOL, distToSegment,
+  type DrawingToolPlugin,
+  registerTool,
+  defaultMovePoints,
+  TOL,
+  distToSegment,
 } from "../ToolRegistry";
 
 function project(
@@ -22,7 +25,12 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "brush",
   minPoints: 2,
-  render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
+  render(
+    g: CanvasRenderingContext2D,
+    d: Drawing,
+    proj: Projector,
+    selected: boolean,
+  ) {
     const pts = d.points;
     if (pts.length < 2) return;
     g.beginPath();
@@ -39,7 +47,13 @@ const plugin: DrawingToolPlugin = {
     if (last) g.lineTo(last.x, last.y);
     g.stroke();
   },
-  hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
+  hitTest(
+    d: Drawing,
+    px: number,
+    py: number,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): HitResult[] {
     const results: HitResult[] = [];
     const projected = d.points.map((pt) => ({
       x: toX(pt.time),
@@ -51,7 +65,7 @@ const plugin: DrawingToolPlugin = {
       if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
       const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
       if (segDist < TOL)
-        results.push({ drawing: d, target: "segment", distance: segDist });
+        results.push({ drawing: d, target: "body", distance: segDist });
     }
     return results;
   },

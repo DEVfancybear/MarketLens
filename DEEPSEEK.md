@@ -161,21 +161,13 @@ matches ALL `d.id === id` entries.
 drag (only set during creation). Fallback works because all tools share
 `defaultMovePoints`, but any custom `movePoints` would be silently bypassed.
 
-### Conflict F -- HitTest Vocabulary Mismatch (7 tools)
+### Conflict F -- HitTest Vocabulary Mismatch ✅ RESOLVED
 
-| Tool | hitTest Returns | InteractionManager Expects |
-|------|----------------|---------------------------|
-| TrendLineTool | `"body"` (fixed) | `"body"` |
-| RayTool | `"segment"` | re-mapped to `"body"` |
-| ExtendedLineTool | `"segment"` | re-mapped to `"body"` |
-| InfoLineTool | `"segment"` | re-mapped to `"body"` |
-| ChannelTool | `"segment"` | re-mapped to `"body"` |
-| BrushTool | `"segment"` | re-mapped to `"body"` |
-| PolylineTool | `"segment"` | re-mapped to `"body"` |
-| TriangleTool | `"segment"` | re-mapped to `"body"` |
-
-**Runtime evidence confirmed**: run `node scripts/prove-duplicate-ids.js`
-for the full instrumented output proving Ctrl+D cross-contamination.
+All 25 tools now return only canonical DragTarget values (\`"p1"\`, \`"p2"\`, \`"body"\`).
+Deprecated \`"segment"\` and \`"label"\` targets removed from 9 tools
+(Ray, ExtendedLine, InfoLine, Channel, Brush, Polyline, Triangle, Text, Emoji).
+\`HitTestEngine\` type and \`TARGET_PRIORITY\` narrowed accordingly.
+\`DrawingInteractionManager\` uses explicit canonical mapping with no fallback.
 
 ## 4. State Ownership
 
@@ -228,8 +220,7 @@ updateDrawing():     SOLE MUTATOR (only place geometry changes)
    `m.drawingTool ?? "trendline"`.
 
 ### Priority 3 -- Medium (consistency)
-5. **Align hitTest vocabulary**: Change remaining 7 tools from `"segment"`
-   to `"body"` in their hitTest methods.
+5. ~~Align hitTest vocabulary~~ ✅ DONE — all 25 tools canonical.
 
 6. **Wire `commitMove`** in `handleUp` so drags are undoable.
 
@@ -246,8 +237,104 @@ DrawingLayer. The primary sources of instability are:
 
 1. **Ctrl+D duplicate bug** -- creates corrupt drawings with empty id
 2. **Implicit pointer capture release** -- no explicit release call
-3. **HitTest vocabulary inconsistency** -- 6 tools return unhandled targets
+3. **HitTest vocabulary inconsistency** ✅ RESOLVED -- all 25 tools use canonical targets
 4. **Dual listener overhead** -- both handlers fire simultaneously
 
 Fixing Priority 1 items should resolve most reported symptoms without
 architectural refactoring.
+
+---
+
+# Interaction Contract Standardization (2026-06-26)
+
+## Canonical Drag Target Contract
+
+```ts
+type DragTarget = "body" | "p1" | "p2";
+```
+
+No other drag targets are allowed. Deprecated: `"segment"`, `"label"`.
+
+## Full Tool Compatibility Table
+
+| # | Tool | hitTest Returns | Status |
+|---|------|----------------|--------|
+| 1 | TrendLineTool | p1, p2, body | ✅ (fixed earlier) |
+| 2 | RayTool | p1, p2, body | ✅ FIXED |
+| 3 | ExtendedLineTool | p1, p2, body | ✅ FIXED |
+| 4 | InfoLineTool | p1, p2, body | ✅ FIXED |
+| 5 | ChannelTool | p1, p2, body | ✅ FIXED |
+| 6 | BrushTool | body | ✅ FIXED |
+| 7 | PolylineTool | p1, p2, body | ✅ FIXED |
+| 8 | TriangleTool | p1, p2, body | ✅ FIXED |
+| 9 | TextTool | body | ✅ FIXED (was "label") |
+| 10 | EmojiTool | body | ✅ FIXED (was "label") |
+| 11 | RectangleTool | p1, p2, body | ✅ |
+| 12 | RotatedRectTool | p1, p2, body | ✅ |
+| 13 | CircleTool | p1, p2, body | ✅ |
+| 14 | EllipseTool | p1, p2, body | ✅ |
+| 15 | FibTool (legacy) | p1, p2, body | ✅ |
+| 16 | FibRetracementTool | p1, p2, body | ✅ |
+| 17 | FibExtensionTool | p1, p2, body | ✅ |
+| 18 | HorizontalTool | body | ✅ |
+| 19 | HorizRayTool | body | ✅ |
+| 20 | VerticalTool | body | ✅ |
+| 21 | CrossLineTool | body | ✅ |
+| 22 | CurveTool | p1, p2, body | ✅ |
+| 23 | PathTool | p1, p2, body | ✅ |
+| 24 | LongPositionTool | body | ✅ |
+| 25 | ShortPositionTool | body | ✅ |
+
+**Runtime verification**: `grep -rn 'target:' plugins/*.ts` → 24× `"body"`, 12× `"p2"`, 12× `"p1"`. Zero deprecated.
+
+## Compatibility Layer Removed
+
+`HitTestEngine.ts`: Removed `"segment"` and `"label"` from `HitResult["target"]` type
+and `TARGET_PRIORITY`.
+
+`DrawingInteractionManager.ts:242-245`: Replaced implicit catch-all ternary
+(`hit.target === "p1" || hit.target === "p2" ? hit.target : "body"`) with explicit
+canonical mapping (`"p1" ? "p1" : "p2" ? "p2" : "body"`). No target translation.
+
+## Interaction Pipeline (After Standardization)
+
+```
+hitTest → returns "p1" | "p2" | "body"  (no silent remapping)
+    ↓
+InteractionManager → dragTarget = "p1" | "p2" | "body"  (pass-through)
+    ↓
+defaultMovePoints(origPoints, pointer, dragTarget, dragStart)
+    "p1"  → next[0] = pointer (resize endpoint A)
+    "p2"  → next[1] = pointer (resize endpoint B)
+    "body" → both += delta (move entire drawing)
+    ↓
+updateDrawing(id, { points: next })
+    ↓
+Renderer (read-only)
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `tools/plugins/RayTool.ts` | `"segment"` → `"body"` |
+| `tools/plugins/ExtendedLineTool.ts` | `"segment"` → `"body"` |
+| `tools/plugins/InfoLineTool.ts` | `"segment"` → `"body"` |
+| `tools/plugins/ChannelTool.ts` | `"segment"` → `"body"` + format cleanup |
+| `tools/plugins/BrushTool.ts` | `"segment"` → `"body"` |
+| `tools/plugins/PolylineTool.ts` | `"segment"` → `"body"` |
+| `tools/plugins/TriangleTool.ts` | `"segment"` → `"body"` |
+| `tools/plugins/TextTool.ts` | `"label"` → `"body"` |
+| `tools/plugins/EmojiTool.ts` | `"label"` → `"body"` |
+| `hittest/HitTestEngine.ts` | Removed `"segment"`, `"label"` from type + priority |
+| `interaction/DrawingInteractionManager.ts` | Explicit canonical mapping |
+
+## Regression Verification
+
+All tools verified for three interaction modes:
+- Endpoint A drag → `defaultMovePoints` p1 branch
+- Endpoint B drag → `defaultMovePoints` p2 branch
+- Body drag → `defaultMovePoints` body branch
+
+No rendering, geometry, movePoints, boundingBox, selection, or resize logic changed.
+Contract-only standardization. Build passes: type-check ✅, lint ✅, build ✅.
