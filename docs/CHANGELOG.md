@@ -3,6 +3,19 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+n### Fixed — Drawing engine stabilization (2026-06-26)
+- **Ctrl+D duplicate:** DuplicateDrawingCommand generates valid uid internally. chartStore.addDrawing() guards empty IDs. Files: CommandManager.ts, chartStore.ts, DrawingLayer.tsx.
+- **Store safety:** addDrawing deep-copies points, generates uid fallback. File: chartStore.ts.
+- **Right-click drag:** Added e.button === 0 guard. Right-clicks select without starting drags. File: DrawingInteractionManager.ts.
+- **DrawingContextMenu restored:** Moved contextmenu listener to document capture phase. File: DrawingInteractionManager.ts.
+- **Pointer capture release:** Explicit releasePointerCapture on drag completion and Escape. File: DrawingInteractionManager.ts.
+- **Adapter resolution:** Machine state stores drawingTool from hit.drawing.tool. File: DrawingInteractionManager.ts.
+- **Undoable drags:** commitMove wired to handleUp. Files: DrawingLayer.tsx, DrawingInteractionManager.ts.
+- **Render loop crash fix:** minPoints guard in CanvasRenderer prevents 15 multi-point tool crashes. File: CanvasRenderer.ts.
+- **Drawing cancellation fix:** handleUp reset moved inside MovingDrawing guard. File: DrawingInteractionManager.ts.
+- **Hit-test vocabulary:** All 25 tools return canonical p1/p2/body targets. Files: HitTestEngine.ts, 9 plugins.
+- **ESLint:** Fixed pre-existing warning in useCommandHistory.ts.
+- Build: type-check passed, lint passed. Regression risk: Low.
 
 ### Changed — Milestone 3: tool plugin architecture (2026-06-26)
 - Created `geometry/helpers.ts` — shared math (pointDist, distToSegment, distToRect,
@@ -374,7 +387,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   engine and watchlist can share a symbol's ticker without clobbering each other (fixes Phase 1 gap
   A1). Still one socket per provider.
 - `src/store/alertStore.ts` — full rewrite: `alerts` / `triggeredAlerts` / `history` / `settings`;
-  actions `createAlert` / `updateAlert` / `deleteAlert` / `triggerAlert` / `resetAlert` /
+  actions `
+
+` / `updateAlert` / `deleteAlert` / `triggerAlert` / `resetAlert` /
   `clearTriggered` / `clearHistory` / `setSettings` / `hydrate`. Conditions: `above` / `below` /
   `crossUp` / `crossDown`; one-time vs recurring; persisted to `localStorage`. Backward-compat
   `add/remove/clear` retained for `AlertLines`/context menu.
