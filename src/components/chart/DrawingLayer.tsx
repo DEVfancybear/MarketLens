@@ -55,8 +55,12 @@ export function DrawingLayer() {
     const cv = canvasRef.current;
     if (!c || !cv) return null;
     const r = cv.getBoundingClientRect();
-    const t = c.chart.timeScale().coordinateToTime(e.clientX - r.left);
-    const p = c.candleSeries.coordinateToPrice(e.clientY - r.top);
+    const lx = e.clientX - r.left;
+    const ly = e.clientY - r.top;
+    const tsWidth = c.chart.timeScale().width();
+    const adjX = r.width > 0 ? lx * (tsWidth / r.width) : lx;
+    const t = c.chart.timeScale().coordinateToTime(adjX);
+    const p = c.candleSeries.coordinateToPrice(ly);
     if (t == null || p == null) return null;
     return { time: t as number, price: p };
   }, []);
