@@ -3,7 +3,14 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
-n### Removed — Dead code cleanup (2026-06-26)
+n### Refactored — Separate rendering from interaction (2026-06-26)
+- Moved keyboard shortcuts from DrawingLayer into DrawingInteractionManager.
+  All interaction (pointer events, keyboard, context menu) consolidated in one
+  module. Added hover detection via hitTest on cursor-mode pointermove. Added
+  selectedDrawingId to getState closure. DrawingLayer is now pure orchestration.
+  CanvasRenderer unchanged (already pure). Regression risk: Low.
+  Files: DrawingInteractionManager.ts, DrawingLayer.tsx.
+### Removed — Dead code cleanup (2026-06-26)
 - Removed unused livePoints field from Machine interface. The renderer reads
   livePointsRef for drag preview; machine.livePoints was set but never consumed.
   No behavioral change. File: DrawingInteractionManager.ts.

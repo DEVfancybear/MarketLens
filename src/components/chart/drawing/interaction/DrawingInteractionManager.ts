@@ -5,6 +5,15 @@ import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
 import { getTool, defaultMovePoints } from "../tools/ToolRegistry";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
+import type { Command } from "../history/CommandManager";
+import {
+  DeleteDrawingCommand,
+  DuplicateDrawingCommand,
+} from "../history/CommandManager";
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export type InteractionState =
   | "Idle"
@@ -36,6 +45,10 @@ function minPoints(t: DrawingTool): number {
   return getTool(t)?.minPoints ?? 2;
 }
 
+// ============================================================================
+// Options — ALL interaction concerns consolidated
+// ============================================================================
+
 export interface DrawingInteractionManagerOpts {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   fromEvent: (e: PointerEvent) => Point | null;
@@ -47,18 +60,28 @@ export interface DrawingInteractionManagerOpts {
     drawColor: string;
     drawingsLocked: boolean;
     ctxReady: boolean;
+    selectedDrawingId: string | null;
   };
   addDrawing: (d: Drawing) => void;
   updateDrawing: (id: string, patch: Partial<Drawing>) => void;
+  removeDrawing: (id: string) => void;
   selectDrawing: (id: string | null) => void;
   setActiveTool: (t: DrawingTool) => void;
   scheduleRedraw: () => void;
   commitMove?: (id: string, newPoints: Point[], oldPoints: Point[]) => void;
+  executeCommand?: (cmd: Command) => void;
+  undo?: () => void;
+  redo?: () => void;
+  selectAll?: () => void;
+  duplicateDrawing?: (id: string) => void;
 }
+
+// ============================================================================
+// Return type
+// ============================================================================
 
 export interface DrawingInteractionHandle {
   machine: Machine;
-  pending: Point[] | null;
   cursorStyle: string;
   ctxMenu: DrawingMenuState | null;
   setCtxMenu: (m: DrawingMenuState | null) => void;
@@ -66,8 +89,13 @@ export interface DrawingInteractionHandle {
   machineRef: React.RefObject<Machine | null>;
   livePointsRef: React.RefObject<Point[] | null>;
   drawingIdRef: React.RefObject<string | null>;
+  hoveredIdRef: React.RefObject<string | null>;
   isPointerClaimed: () => boolean;
 }
+
+// ============================================================================
+// Hook — single owner of ALL pointer interaction + keyboard shortcuts
+// ============================================================================
 
 export function useDrawingInteractionManager(
   opts: DrawingInteractionManagerOpts,
@@ -80,10 +108,16 @@ export function useDrawingInteractionManager(
     getState,
     addDrawing,
     updateDrawing,
+    removeDrawing,
     selectDrawing,
     setActiveTool,
     scheduleRedraw,
     commitMove,
+    executeCommand,
+    undo,
+    redo,
+    selectAll,
+    duplicateDrawing,
   } = opts;
 
   const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
@@ -97,14 +131,10 @@ export function useDrawingInteractionManager(
 
   const livePointsRef = useRef<Point[] | null>(null);
   const drawingIdRef = useRef<string | null>(null);
+  const hoveredIdRef = useRef<string | null>(null);
 
   const pointerClaimedRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
-
-  const pending: Point[] | null =
-    machine.state === "Drawing" && machine.anchors.length > 0
-      ? machine.anchors
-      : null;
 
   const transition = useCallback((next: Partial<Machine>) => {
     setMachine((prev) => ({ ...prev, ...next }));
@@ -131,7 +161,9 @@ export function useDrawingInteractionManager(
     scheduleRedrawRef.current();
   }, [releaseCapture]);
 
-  // ---- Drawing mode: document-level listener ----
+  // ================================================================
+  // DRAWING MODE — creation of new drawings
+  // ================================================================
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -222,7 +254,9 @@ export function useDrawingInteractionManager(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getState().activeTool]);
 
-  // ---- Cursor mode: drawing selection + drag ----
+  // ================================================================
+  // CURSOR MODE — selection, drag, hover, context menu
+  // ================================================================
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -266,19 +300,45 @@ export function useDrawingInteractionManager(
 
     const handleMove = (e: PointerEvent) => {
       const m = machineRef.current;
-      if (m.state !== "MovingDrawing" && m.state !== "ResizingHandle") return;
-      if (!m.dragOrig || !m.dragStart || !m.drawingTool) return;
 
+      // Drag path
+      if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
+        if (!m.dragOrig || !m.dragStart || !m.drawingTool) return;
+        const p = fromEvent(e);
+        if (!p) return;
+        const adapter = getTool(m.drawingTool);
+        const next = adapter
+          ? adapter.movePoints(
+              m.dragOrig,
+              p,
+              m.dragTarget ?? "body",
+              m.dragStart,
+            )
+          : defaultMovePoints(
+              m.dragOrig,
+              p,
+              m.dragTarget ?? "body",
+              m.dragStart,
+            );
+        livePointsRef.current = next;
+        scheduleRedrawRef.current();
+        return;
+      }
+
+      // Hover path
+      const cur = getState();
+      if (cur.activeTool !== "cursor") return;
+      if (!canvas || !isOverCanvas(e, canvas)) {
+        hoveredIdRef.current = null;
+        return;
+      }
       const p = fromEvent(e);
-      if (!p) return;
-
-      const adapter = getTool(m.drawingTool);
-      const next = adapter
-        ? adapter.movePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart)
-        : defaultMovePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart);
-
-      livePointsRef.current = next;
-      scheduleRedrawRef.current();
+      if (!p) {
+        hoveredIdRef.current = null;
+        return;
+      }
+      const hit = hitTest(cur.drawings, p, toX, toY);
+      hoveredIdRef.current = hit?.drawing.id ?? null;
     };
 
     const handleUp = () => {
@@ -292,7 +352,6 @@ export function useDrawingInteractionManager(
             commitMove(id, newPoints, m.dragOrig);
           }
         }
-        // Only release capture + reset on drag completion — NOT on idle pointerup.
         releaseCapture();
         livePointsRef.current = null;
         drawingIdRef.current = null;
@@ -304,13 +363,11 @@ export function useDrawingInteractionManager(
       const m = machineRef.current;
       const cur = getState();
       if (!canvas || !isOverCanvas(e, canvas)) return;
-
       if (m.state === "Drawing") {
         e.preventDefault();
         reset();
         return;
       }
-
       const p = fromEvent(e as unknown as PointerEvent);
       if (!p) return;
       const hit = hitTest(cur.drawings, p, toX, toY);
@@ -337,7 +394,84 @@ export function useDrawingInteractionManager(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Cursor style ----
+  // ================================================================
+  // KEYBOARD — shortcuts consolidated here
+  // ================================================================
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      // Ctrl+Z → Undo
+      if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        undo?.();
+        return;
+      }
+      // Ctrl+Shift+Z → Redo
+      if (e.key === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        redo?.();
+        return;
+      }
+      // Escape → cancel drawing / switch to cursor
+      if (e.key === "Escape") {
+        reset();
+        setActiveTool("cursor");
+        return;
+      }
+      // Ctrl+A → Select all
+      if (e.key === "a" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        selectAll?.();
+        return;
+      }
+
+      const selId = getState().selectedDrawingId;
+      if (!selId) return;
+
+      // Delete / Backspace → delete selected drawing
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const d = getState().drawings.find((x) => x.id === selId);
+        if (d && executeCommand) {
+          executeCommand(
+            new DeleteDrawingCommand(addDrawing, removeDrawing, d),
+          );
+        }
+      }
+      // Ctrl+D → duplicate selected drawing
+      if (e.key === "d" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const d = getState().drawings.find((x) => x.id === selId);
+        if (d) {
+          duplicateDrawing?.(d.id);
+          if (executeCommand) {
+            executeCommand(
+              new DuplicateDrawingCommand(addDrawing, removeDrawing, d),
+            );
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    undo,
+    redo,
+    reset,
+    setActiveTool,
+    selectAll,
+    addDrawing,
+    removeDrawing,
+    executeCommand,
+    duplicateDrawing,
+    getState,
+  ]);
+
+  // ================================================================
+  // CURSOR STYLE
+  // ================================================================
   const drawingMode = getState().activeTool !== "cursor";
   let cursorStyle = "default";
   if (drawingMode) cursorStyle = "crosshair";
@@ -347,7 +481,6 @@ export function useDrawingInteractionManager(
 
   return {
     machine,
-    pending,
     cursorStyle,
     ctxMenu,
     setCtxMenu,
@@ -355,6 +488,7 @@ export function useDrawingInteractionManager(
     machineRef,
     livePointsRef,
     drawingIdRef,
+    hoveredIdRef,
     isPointerClaimed: () => pointerClaimedRef.current,
   };
 }
