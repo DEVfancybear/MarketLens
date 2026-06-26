@@ -345,14 +345,14 @@ export function useDrawingInteractionManager(
     document.addEventListener("pointermove", handleMove, true);
     document.addEventListener("pointerup", handleUp, true);
     document.addEventListener("pointerleave", handleUp, true);
-    canvas.addEventListener("contextmenu", handleCtx);
+    document.addEventListener("contextmenu", handleCtx, true);
 
     return () => {
       document.removeEventListener("pointerdown", handleDown, true);
       document.removeEventListener("pointermove", handleMove, true);
       document.removeEventListener("pointerup", handleUp, true);
       document.removeEventListener("pointerleave", handleUp, true);
-      canvas.removeEventListener("contextmenu", handleCtx);
+      document.removeEventListener("contextmenu", handleCtx, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
