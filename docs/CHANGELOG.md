@@ -3,6 +3,11 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+n### Added — Clipboard + polish (2026-06-26)
+- Ctrl+C copies selected drawing to in-memory clipboard. Ctrl+V pastes as
+  duplicate at same position with new ID. Escape cancels drawing, Delete
+  removes selection. Z-order aware hit testing, smooth hover glow, context
+  menu hooks already in place. Files: DrawingInteractionManager.ts.
 n### Added — Multi-selection with shift-click (2026-06-26)
 - Shift-click toggles drawing selection. Multi-drag moves all selected drawings
   by same delta. Anchor editing restricted to primary selection. Delete removes

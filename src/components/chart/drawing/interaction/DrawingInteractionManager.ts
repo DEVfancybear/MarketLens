@@ -118,6 +118,7 @@ export function useDrawingInteractionManager(
   const livePointsRef = useRef<Map<string, Point[]> | null>(null);
   const drawingIdRef = useRef<string | null>(null);
   const hoveredIdRef = useRef<string | null>(null);
+  const clipboardRef = useRef<Drawing | null>(null);
   const pointerClaimedRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const transition = useCallback((next: Partial<Machine>) => {
@@ -401,6 +402,8 @@ export function useDrawingInteractionManager(
         redo?.();
         return;
       }
+      if (e.key === "c" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); const id = getState().selectedDrawingId; if (id) clipboardRef.current = getState().drawings.find(x => x.id === id) ?? null; return; }
+      if (e.key === "v" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); const src = clipboardRef.current; if (src) { addDrawing({ ...src, id: uid("dw"), points: src.points.map((p: any) => ({ ...p })) }); if (executeCommand) executeCommand(new DuplicateDrawingCommand(addDrawing, removeDrawing, src)); } return; }
       if (e.key === "Escape") {
         reset();
         setActiveTool("cursor");
