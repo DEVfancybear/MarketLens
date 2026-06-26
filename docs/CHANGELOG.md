@@ -3,6 +3,12 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+n### Added — Multi-selection with shift-click (2026-06-26)
+- Shift-click toggles drawing selection. Multi-drag moves all selected drawings
+  by same delta. Anchor editing restricted to primary selection. Delete removes
+  all selected. Renderer uses Map-based livePoints for multi-drag. One history
+  entry per drawing on mouse up. Files: DrawingInteractionManager.ts,
+  CanvasRenderer.ts, DrawingLayer.tsx.
 n### Added — TradingView-style hit testing system (2026-06-26)
 - Hits now follow TradingView priority: anchor > body > none. Topmost drawing
   (highest zIndex) wins for same priority level, then closest distance.

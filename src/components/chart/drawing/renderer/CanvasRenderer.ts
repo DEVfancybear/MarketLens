@@ -22,7 +22,8 @@ export interface RenderLoopDeps {
     activeTool: Drawing["tool"];
     machine: Machine | null;
     chartReady: boolean;
-    livePoints: Point[] | null;
+    /** Map of drawing ID → live points during drag. */
+    livePoints: Map<string, Point[]> | null;
     draggingId: string | null;
     hoveredId: string | null;
   };
@@ -52,8 +53,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
 
   let dirty = true;
   let rafId: number | null = null;
-  let lastCanvasW = 0;
-  let lastCanvasH = 0;
+  let lastCanvasW = 0,
+    lastCanvasH = 0;
   let lastDrawingsHash = "";
   let lastSelectedId: string | null = null;
   let lastHidden = false;
@@ -79,11 +80,12 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     return h;
   }
 
-  function liveHash(pts: Point[] | null): string {
-    if (!pts) return "-";
-    let h = String(pts.length);
-    for (let j = 0; j < pts.length; j++) {
-      h += "," + pts[j].time.toFixed(0) + "," + pts[j].price.toFixed(4);
+  function liveHash(pts: Map<string, Point[]> | null): string {
+    if (!pts || pts.size === 0) return "-";
+    let h = String(pts.size);
+    for (const arr of pts.values()) {
+      for (const pt of arr)
+        h += "," + pt.time.toFixed(0) + "," + pt.price.toFixed(4);
     }
     return h;
   }
@@ -91,19 +93,15 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   function render() {
     rafId = null;
     dirty = false;
-
     const canvas = canvasRef.current;
     const data = getData();
     if (!canvas || !data.chartReady) return;
-
     const t0 = performance.now();
     coordCache.nextFrame();
-
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    const cw = Math.round(rect.width * dpr);
-    const ch = Math.round(rect.height * dpr);
-
+    const cw = Math.round(rect.width * dpr),
+      ch = Math.round(rect.height * dpr);
     if (canvas.width !== cw || canvas.height !== ch) {
       canvas.width = cw;
       canvas.height = ch;
@@ -126,9 +124,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       liveH === lastLiveHash &&
       cw === lastCanvasW &&
       ch === lastCanvasH
-    ) {
+    )
       return;
-    }
 
     lastDrawingsHash = drawHash;
     lastSelectedId = data.selectedDrawingId;
@@ -148,12 +145,10 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     const storeDrawings: Drawing[] = data.drawingsHidden
       ? []
       : [...data.drawings];
-    if (data.livePoints && data.draggingId) {
+    if (data.livePoints && data.livePoints.size > 0) {
       for (let i = 0; i < storeDrawings.length; i++) {
-        if (storeDrawings[i].id === data.draggingId) {
-          storeDrawings[i] = { ...storeDrawings[i], points: data.livePoints };
-          break;
-        }
+        const pts = data.livePoints.get(storeDrawings[i].id);
+        if (pts) storeDrawings[i] = { ...storeDrawings[i], points: pts };
       }
     }
 
@@ -163,8 +158,6 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       width: rect.width,
       height: rect.height,
     };
-
-    // Only inject the preview drawing when enough anchors are placed.
     const pr =
       m?.state === "Drawing" && m.anchors.length > 0 ? m.anchors : null;
     const tool =
@@ -185,16 +178,24 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         : storeDrawings;
 
     spatialIndex.rebuild(all, toX, toY);
-
     const viewport = spatialIndex.queryViewport(0, 0, rect.width, rect.height);
     const sorted = [...viewport].sort(
       (a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0),
     );
 
     let drawn = 0;
-    // Hover highlight
-    const hovered = data.hoveredId ? sorted.find(d => d.id === data.hoveredId && d.visible !== false) : null;
-    if (hovered && !data.drawingsHidden) { g.save(); g.globalAlpha = 0.3; g.strokeStyle = hovered.color; g.fillStyle = hovered.color; g.lineWidth = (hovered.lineWidth || 1.5) * 2.5; renderDrawing(g, hovered, projector, false); g.restore(); }
+    const hovered = data.hoveredId
+      ? sorted.find((d) => d.id === data.hoveredId && d.visible !== false)
+      : null;
+    if (hovered && !data.drawingsHidden) {
+      g.save();
+      g.globalAlpha = 0.3;
+      g.strokeStyle = hovered.color;
+      g.fillStyle = hovered.color;
+      g.lineWidth = (hovered.lineWidth || 1.5) * 2.5;
+      renderDrawing(g, hovered, projector, false);
+      g.restore();
+    }
     for (const d of sorted) {
       if (d.visible === false) continue;
       const selected = d.id === data.selectedDrawingId;
@@ -205,28 +206,21 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       drawn++;
     }
 
-    const skipped = all.length - drawn;
     const renderMs = performance.now() - t0;
-    perf.recordFrame(renderMs, 0, drawn, skipped, all.length);
+    perf.recordFrame(renderMs, 0, drawn, all.length - drawn, all.length);
   }
 
   function schedule() {
     if (rafId !== null) return;
     rafId = requestAnimationFrame(() => render());
   }
-
   function markDirty() {
     dirty = true;
     schedule();
   }
-
   let unsubVersion: (() => void) | undefined;
-  if (onVersionChange) {
-    unsubVersion = onVersionChange(() => markDirty());
-  }
-
+  if (onVersionChange) unsubVersion = onVersionChange(() => markDirty());
   schedule();
-
   return {
     markDirty,
     destroy: () => {
