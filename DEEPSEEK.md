@@ -34,6 +34,12 @@ A task is NOT complete until all regressions pass.
 
 ## Root cause: Ctrl+D creates drawings with empty id `""`
 
+**CONFIRMED by runtime evidence** — `scripts/prove-duplicate-ids.js`
+reproduces the exact code path and produces instrumentation logs proving:
+- `updateDrawing("")` matches 2 drawings, corrupts both in one call
+- `removeDrawing("")` mass-deletes all empty-id drawings
+- `addDrawing` accepts `id: ""` with zero validation
+
 `DrawingLayer.tsx:234-249` calls both `duplicateDrawing(d.id)` AND
 `execute(new DuplicateDrawingCommand({...d, id:""}))` — two copies created.
 The command-created copy has `id: ""`.
@@ -155,17 +161,21 @@ matches ALL `d.id === id` entries.
 drag (only set during creation). Fallback works because all tools share
 `defaultMovePoints`, but any custom `movePoints` would be silently bypassed.
 
-### Conflict F -- HitTest Vocabulary Mismatch (6 tools)
+### Conflict F -- HitTest Vocabulary Mismatch (7 tools)
 
 | Tool | hitTest Returns | InteractionManager Expects |
 |------|----------------|---------------------------|
 | TrendLineTool | `"body"` (fixed) | `"body"` |
 | RayTool | `"segment"` | re-mapped to `"body"` |
 | ExtendedLineTool | `"segment"` | re-mapped to `"body"` |
+| InfoLineTool | `"segment"` | re-mapped to `"body"` |
 | ChannelTool | `"segment"` | re-mapped to `"body"` |
 | BrushTool | `"segment"` | re-mapped to `"body"` |
 | PolylineTool | `"segment"` | re-mapped to `"body"` |
 | TriangleTool | `"segment"` | re-mapped to `"body"` |
+
+**Runtime evidence confirmed**: run `node scripts/prove-duplicate-ids.js`
+for the full instrumented output proving Ctrl+D cross-contamination.
 
 ## 4. State Ownership
 
@@ -218,7 +228,7 @@ updateDrawing():     SOLE MUTATOR (only place geometry changes)
    `m.drawingTool ?? "trendline"`.
 
 ### Priority 3 -- Medium (consistency)
-5. **Align hitTest vocabulary**: Change remaining 6 tools from `"segment"`
+5. **Align hitTest vocabulary**: Change remaining 7 tools from `"segment"`
    to `"body"` in their hitTest methods.
 
 6. **Wire `commitMove`** in `handleUp` so drags are undoable.
