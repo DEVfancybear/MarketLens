@@ -3,7 +3,12 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import type { Drawing, Point, DrawingTool } from "@/types";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
-import { getTool, defaultMovePoints } from "../tools/ToolRegistry";
+import {
+  getTool,
+  defaultMove,
+  defaultMoveAnchor,
+  defaultMovePoints,
+} from "../tools/ToolRegistry";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
 import type { Command } from "../history/CommandManager";
 import {
@@ -26,7 +31,8 @@ export interface Machine {
   anchors: Point[];
   drawingTool: DrawingTool | null;
   drawingId: string | null;
-  dragTarget: "p1" | "p2" | "body" | null;
+  /** Which anchor index is being dragged (-1 = body). */
+  dragAnchor: number;
   dragStart: Point | null;
   dragOrig: Point[] | null;
 }
@@ -36,7 +42,7 @@ export const INITIAL_MACHINE: Machine = {
   anchors: [],
   drawingTool: null,
   drawingId: null,
-  dragTarget: null,
+  dragAnchor: -1,
   dragStart: null,
   dragOrig: null,
 };
@@ -46,7 +52,7 @@ function minPoints(t: DrawingTool): number {
 }
 
 // ============================================================================
-// Options — ALL interaction concerns consolidated
+// Options
 // ============================================================================
 
 export interface DrawingInteractionManagerOpts {
@@ -94,7 +100,7 @@ export interface DrawingInteractionHandle {
 }
 
 // ============================================================================
-// Hook — single owner of ALL pointer interaction + keyboard shortcuts
+// Hook
 // ============================================================================
 
 export function useDrawingInteractionManager(
@@ -162,7 +168,7 @@ export function useDrawingInteractionManager(
   }, [releaseCapture]);
 
   // ================================================================
-  // DRAWING MODE — creation of new drawings
+  // DRAWING MODE
   // ================================================================
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -255,7 +261,7 @@ export function useDrawingInteractionManager(
   }, [getState().activeTool]);
 
   // ================================================================
-  // CURSOR MODE — selection, drag, hover, context menu
+  // CURSOR MODE — polymorphic selection + drag + hover + context menu
   // ================================================================
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -279,19 +285,33 @@ export function useDrawingInteractionManager(
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
 
-        const isHandle = hit.target === "p1" || hit.target === "p2";
-        const dragTarget: Machine["dragTarget"] =
-          hit.target === "p1" ? "p1" : hit.target === "p2" ? "p2" : "body";
+        // Polymorphic: resolve anchor index from adapter.
+        const isBody = hit.target === "body";
+        let anchorIndex = -1;
+        if (!isBody) {
+          const adapter = getTool(hit.drawing.tool);
+          if (adapter) {
+            const anchors = adapter.getAnchors(hit.drawing, toX, toY);
+            const found = anchors.find((a) => a.target === hit.target);
+            anchorIndex = found ? found.index : -1;
+          }
+          // Fallback for tools without getAnchors: p1→0, p2→1
+          if (anchorIndex < 0) {
+            anchorIndex =
+              hit.target === "p1" ? 0 : hit.target === "p2" ? 1 : -1;
+          }
+        }
+
         const orig: Point[] = [
           ...hit.drawing.points.map((pt: Point) => ({ ...pt })),
         ];
         drawingIdRef.current = hit.drawing.id;
         livePointsRef.current = orig;
         transition({
-          state: isHandle ? "ResizingHandle" : "MovingDrawing",
+          state: isBody ? "MovingDrawing" : "ResizingHandle",
           drawingId: hit.drawing.id,
           drawingTool: hit.drawing.tool,
-          dragTarget,
+          dragAnchor: anchorIndex,
           dragStart: p,
           dragOrig: orig,
         });
@@ -301,25 +321,26 @@ export function useDrawingInteractionManager(
     const handleMove = (e: PointerEvent) => {
       const m = machineRef.current;
 
-      // Drag path
+      // Drag path — polymorphic via adapter.move() / adapter.moveAnchor()
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
         if (!m.dragOrig || !m.dragStart || !m.drawingTool) return;
         const p = fromEvent(e);
         if (!p) return;
+
         const adapter = getTool(m.drawingTool);
-        const next = adapter
-          ? adapter.movePoints(
-              m.dragOrig,
-              p,
-              m.dragTarget ?? "body",
-              m.dragStart,
-            )
-          : defaultMovePoints(
-              m.dragOrig,
-              p,
-              m.dragTarget ?? "body",
-              m.dragStart,
-            );
+        let next: Point[];
+        if (m.dragAnchor >= 0) {
+          // Anchor drag — move a single point.
+          next = adapter
+            ? adapter.moveAnchor(m.dragOrig, m.dragAnchor, p)
+            : defaultMoveAnchor(m.dragOrig, m.dragAnchor, p);
+        } else {
+          // Body drag — translate all points.
+          next = adapter
+            ? adapter.move(m.dragOrig, p, m.dragStart)
+            : defaultMove(m.dragOrig, p, m.dragStart);
+        }
+
         livePointsRef.current = next;
         scheduleRedrawRef.current();
         return;
@@ -395,32 +416,28 @@ export function useDrawingInteractionManager(
   }, []);
 
   // ================================================================
-  // KEYBOARD — shortcuts consolidated here
+  // KEYBOARD
   // ================================================================
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      // Ctrl+Z → Undo
       if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault();
         undo?.();
         return;
       }
-      // Ctrl+Shift+Z → Redo
       if (e.key === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
         e.preventDefault();
         redo?.();
         return;
       }
-      // Escape → cancel drawing / switch to cursor
       if (e.key === "Escape") {
         reset();
         setActiveTool("cursor");
         return;
       }
-      // Ctrl+A → Select all
       if (e.key === "a" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault();
         selectAll?.();
@@ -430,7 +447,6 @@ export function useDrawingInteractionManager(
       const selId = getState().selectedDrawingId;
       if (!selId) return;
 
-      // Delete / Backspace → delete selected drawing
       if (e.key === "Delete" || e.key === "Backspace") {
         const d = getState().drawings.find((x) => x.id === selId);
         if (d && executeCommand) {
@@ -439,7 +455,6 @@ export function useDrawingInteractionManager(
           );
         }
       }
-      // Ctrl+D → duplicate selected drawing
       if (e.key === "d" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         const d = getState().drawings.find((x) => x.id === selId);

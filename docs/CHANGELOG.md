@@ -3,6 +3,13 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+n### Added — Universal DrawingAdapter interface (2026-06-26)
+- Introduced DrawingAdapter with move(), moveAnchor(), getAnchors(). Every tool
+  implements the adapter via polymorphism. registerTool auto-wraps simple tools
+  with default implementations derived from existing movePoints. Selection and
+  dragging no longer depend on tool type — all interaction dispatches through
+  adapter methods. Zero tool files changed.
+  Files: ToolRegistry.ts, DrawingInteractionManager.ts, DrawingEngine.ts.
 n### Refactored — Separate rendering from interaction (2026-06-26)
 - Moved keyboard shortcuts from DrawingLayer into DrawingInteractionManager.
   All interaction (pointer events, keyboard, context menu) consolidated in one
