@@ -7,7 +7,6 @@ import {
   getTool,
   defaultMove,
   defaultMoveAnchor,
-  defaultMovePoints,
 } from "../tools/ToolRegistry";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
 import type { Command } from "../history/CommandManager";
@@ -285,22 +284,9 @@ export function useDrawingInteractionManager(
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
 
-        // Polymorphic: resolve anchor index from adapter.
-        const isBody = hit.target === "body";
-        let anchorIndex = -1;
-        if (!isBody) {
-          const adapter = getTool(hit.drawing.tool);
-          if (adapter) {
-            const anchors = adapter.getAnchors(hit.drawing, toX, toY);
-            const found = anchors.find((a) => a.target === hit.target);
-            anchorIndex = found ? found.index : -1;
-          }
-          // Fallback for tools without getAnchors: p1→0, p2→1
-          if (anchorIndex < 0) {
-            anchorIndex =
-              hit.target === "p1" ? 0 : hit.target === "p2" ? 1 : -1;
-          }
-        }
+                // Anchor index resolved by HitTestEngine — use directly.
+        const isBody = hit.anchorIndex != null ? hit.anchorIndex < 0 : true;
+        const anchorIndex = hit.anchorIndex ?? -1;
 
         const orig: Point[] = [
           ...hit.drawing.points.map((pt: Point) => ({ ...pt })),

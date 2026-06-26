@@ -1,11 +1,13 @@
 /**
- * DrawingHitTest — pure hit-testing for drawing objects.
+ * DrawingHitTest — TradingView-style pure hit-testing for drawing objects.
  *
- * Delegates to per-tool adapters via getAdapter(). No giant switch.
- * To add a tool, register an adapter in adapters.ts — this file never changes.
+ * Priority:
+ *   1. Anchor hit (any drawing) — topmost drawing wins, then closest distance.
+ *   2. Body hit — topmost drawing wins, then closest distance.
+ *   3. No hit — returns null.
  *
- * Given a set of drawings and a (time,price) point, returns the best
- * hit candidate with target discrimination and pixel distance.
+ * Delegates to per-tool adapters via getTool(). No switch statements.
+ * Tolerance is in screen pixels (HANDLE_RADIUS/TOL from geometry helpers).
  */
 import type { Drawing, Point } from "@/types";
 import { getTool } from "../tools/ToolRegistry";
@@ -18,17 +20,21 @@ export type HitTestProjector = (v: number) => number | null;
 /** Part of the drawing that was hit + pixel distance from pointer. */
 export type HitResult = {
   drawing: Drawing;
+  /** "body" for line/area hit, or anchor label for handle hit. */
   target: "body" | "p1" | "p2";
+  /** Zero-based index into drawing.points for anchor hits, -1 for body. */
+  anchorIndex?: number;
   /** Pixel distance from the pointer to the hit target. */
   distance: number;
 };
 
-/** Priority ordering: lower = more important. */
-const TARGET_PRIORITY: Record<HitResult["target"], number> = {
-  p1: 0,
-  p2: 0,
-  body: 3,
-};
+/** TradingView priority: anchor > body. Primary sort: isAnchor desc, zIndex desc, distance asc. */
+function hitScore(h: HitResult, z: number): number {
+  const isAnchor = h.target !== "body" ? 1 : 0;
+  // Pack priority into a single number for sorting.
+  // Higher = better. isAnchor dominates, then zIndex, then -distance.
+  return isAnchor * 1e12 + z * 1e6 + (1000 - Math.min(h.distance, 999));
+}
 
 export function hitTest(
   drawings: Drawing[],
@@ -40,40 +46,44 @@ export function hitTest(
   const py = toY(p.price);
   if (px == null || py == null) return null;
 
-  // Collect all viable hits across all visible drawings.
-  const all: { drawing: Drawing; candidates: HitResult[] }[] = [];
+  // Collect all candidate hits across all visible drawings.
+  const allCandidates: { hit: HitResult; zIndex: number }[] = [];
+
   for (const d of drawings) {
     if (d.visible === false) continue;
     const adapter = getTool(d.tool);
     if (!adapter) continue;
+
     const candidates = adapter.hitTest(d, px, py, toX, toY);
-    if (candidates.length > 0) all.push({ drawing: d, candidates });
-  }
-
-  if (all.length === 0) return null;
-
-  // Pick best: highest zIndex first, then target priority, then distance.
-  all.sort((a, b) => (a.drawing.zIndex ?? 0) - (b.drawing.zIndex ?? 0));
-
-  let best: HitResult | null = null;
-  for (const { drawing, candidates } of all) {
-    let bestForDrawing: HitResult | null = null;
     for (const c of candidates) {
-      if (
-        !bestForDrawing ||
-        TARGET_PRIORITY[c.target] < TARGET_PRIORITY[bestForDrawing.target] ||
-        (TARGET_PRIORITY[c.target] === TARGET_PRIORITY[bestForDrawing.target] &&
-          c.distance < bestForDrawing.distance)
-      ) {
-        bestForDrawing = c;
+      // Resolve anchor index from the adapter.
+      const isAnchor = c.target !== "body";
+      let anchorIdx = -1;
+      if (isAnchor) {
+        const anchors = adapter.getAnchors(d, toX, toY);
+        const found = anchors.find((a) => a.target === c.target);
+        anchorIdx = found
+          ? found.index
+          : c.target === "p1"
+            ? 0
+            : c.target === "p2"
+              ? 1
+              : -1;
       }
-    }
-    if (bestForDrawing) {
-      if (!best || (drawing.zIndex ?? 0) > (best.drawing.zIndex ?? 0)) {
-        best = bestForDrawing;
-      }
+
+      allCandidates.push({
+        hit: { ...c, anchorIndex: anchorIdx },
+        zIndex: d.zIndex ?? 0,
+      });
     }
   }
 
-  return best;
+  if (allCandidates.length === 0) return null;
+
+  // Sort by TradingView priority: anchor > body, then topmost drawing, then closest.
+  allCandidates.sort(
+    (a, b) => hitScore(b.hit, b.zIndex) - hitScore(a.hit, a.zIndex),
+  );
+
+  return allCandidates[0].hit;
 }

@@ -3,6 +3,13 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+n### Added — TradingView-style hit testing system (2026-06-26)
+- Hits now follow TradingView priority: anchor > body > none. Topmost drawing
+  (highest zIndex) wins for same priority level, then closest distance.
+  HitResult now carries anchorIndex for direct anchor resolution. HitTestEngine
+  enriches tool results with anchor indices — tools unchanged. Interaction
+  manager uses hit.anchorIndex directly.
+  Files: HitTestEngine.ts, DrawingInteractionManager.ts.
 n### Added — Universal DrawingAdapter interface (2026-06-26)
 - Introduced DrawingAdapter with move(), moveAnchor(), getAnchors(). Every tool
   implements the adapter via polymorphism. registerTool auto-wraps simple tools
