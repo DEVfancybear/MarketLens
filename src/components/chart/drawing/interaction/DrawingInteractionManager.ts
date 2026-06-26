@@ -6,10 +6,6 @@ import { hitTest, type HitResult } from "../hittest/HitTestEngine";
 import { getTool, defaultMovePoints } from "../tools/ToolRegistry";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
 
-// ============================================================================
-// Interaction State Machine
-// ============================================================================
-
 export type InteractionState =
   | "Idle"
   | "Drawing"
@@ -42,8 +38,6 @@ function minPoints(t: DrawingTool): number {
   return getTool(t)?.minPoints ?? 2;
 }
 
-// ---- Options ----
-
 export interface DrawingInteractionManagerOpts {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   fromEvent: (e: PointerEvent) => Point | null;
@@ -61,11 +55,8 @@ export interface DrawingInteractionManagerOpts {
   selectDrawing: (id: string | null) => void;
   setActiveTool: (t: DrawingTool) => void;
   scheduleRedraw: () => void;
-  /** Persist drag as an undoable command (optional). */
   commitMove?: (id: string, newPoints: Point[], oldPoints: Point[]) => void;
 }
-
-// ---- Return type ----
 
 export interface DrawingInteractionHandle {
   machine: Machine;
@@ -77,11 +68,8 @@ export interface DrawingInteractionHandle {
   machineRef: React.RefObject<Machine | null>;
   livePointsRef: React.RefObject<Point[] | null>;
   drawingIdRef: React.RefObject<string | null>;
-  /** True when drawings have claimed the pointer (chart should yield). */
   isPointerClaimed: () => boolean;
 }
-
-// ---- Hook ----
 
 export function useDrawingInteractionManager(
   opts: DrawingInteractionManagerOpts,
@@ -125,7 +113,6 @@ export function useDrawingInteractionManager(
     scheduleRedrawRef.current();
   }, []);
 
-  /** Release pointer capture if claimed, clearing the ref. */
   const releaseCapture = useCallback(() => {
     const canvas = canvasRef.current;
     const pid = activePointerIdRef.current;
@@ -260,7 +247,6 @@ export function useDrawingInteractionManager(
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
 
-        // Canonical drag target mapping — only three allowed values.
         const isHandle = hit.target === "p1" || hit.target === "p2";
         const dragTarget: Machine["dragTarget"] =
           hit.target === "p1" ? "p1" : hit.target === "p2" ? "p2" : "body";
@@ -304,11 +290,7 @@ export function useDrawingInteractionManager(
         if (livePointsRef.current && drawingIdRef.current) {
           const newPoints = livePointsRef.current;
           const id = drawingIdRef.current;
-
-          // Persist geometrically ...
           updateDrawing(id, { points: newPoints });
-
-          // ... and as an undoable command (if provided).
           if (commitMove && m.dragOrig) {
             commitMove(id, newPoints, m.dragOrig);
           }
