@@ -3,6 +3,15 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Infinite React re-render loop on chart pan (2026-06-27)
+- Throttled version-bump callback via requestAnimationFrame. ResizeObserver
+  and subscribeVisibleLogicalRangeChange could fire synchronously during
+  React renders, creating setVersion → render → bump → setVersion loop.
+  rAF coalesces multiple bumps to one per frame, breaking the cycle.
+  Files: PriceChart.tsx.
+  Root cause: synchronous bump during render triggers cascade.
+  Regression risk: Low. Version updates delayed by at most one frame.
+
 ### Fixed — Hit-test tolerance too small for line body selection (2026-06-27)
 - Increased TOL from 8px to 20px. Users clicking on drawn TrendLines were
   consistently getting MISS because the perpendicular distance (~16.6px)

@@ -44,6 +44,7 @@ export function PriceChart({
   const fittedRef = useRef(false);
   const prevCandlesRef = useRef<Candle[]>([]);
   const prevThemeRef = useRef<string>("");
+  const bumpRafRef = useRef<number | null>(null);
 
   const theme = useUIStore((s) => s.theme);
   const gridVisible = useUIStore((s) => s.gridVisible);
@@ -164,7 +165,13 @@ export function PriceChart({
     setMainChart(chart);
     onReady?.(chart);
 
-    const bump = () => setVersion((v) => v + 1);
+    const bump = () => {
+      if (bumpRafRef.current !== null) return;
+      bumpRafRef.current = requestAnimationFrame(() => {
+        bumpRafRef.current = null;
+        setVersion((v) => v + 1);
+      });
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(bump);
 
     chart.subscribeCrosshairMove((param) => {
