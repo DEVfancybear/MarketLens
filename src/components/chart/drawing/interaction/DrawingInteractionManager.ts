@@ -20,7 +20,6 @@ export interface Machine {
   dragTarget: "p1" | "p2" | "body" | null;
   dragStart: Point | null;
   dragOrig: Point[] | null;
-  livePoints: Point[] | null;
 }
 
 export const INITIAL_MACHINE: Machine = {
@@ -31,7 +30,6 @@ export const INITIAL_MACHINE: Machine = {
   dragTarget: null,
   dragStart: null,
   dragOrig: null,
-  livePoints: null,
 };
 
 function minPoints(t: DrawingTool): number {
@@ -262,7 +260,6 @@ export function useDrawingInteractionManager(
           dragTarget,
           dragStart: p,
           dragOrig: orig,
-          livePoints: orig,
         });
       }
     };

@@ -3,6 +3,11 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+n### Removed — Dead code cleanup (2026-06-26)
+- Removed unused livePoints field from Machine interface. The renderer reads
+  livePointsRef for drag preview; machine.livePoints was set but never consumed.
+  No behavioral change. File: DrawingInteractionManager.ts.
+  Build: type-check passed, lint passed.
 n### Fixed — Drawing engine stabilization (2026-06-26)
 - **Ctrl+D duplicate:** DuplicateDrawingCommand generates valid uid internally. chartStore.addDrawing() guards empty IDs. Files: CommandManager.ts, chartStore.ts, DrawingLayer.tsx.
 - **Store safety:** addDrawing deep-copies points, generates uid fallback. File: chartStore.ts.
