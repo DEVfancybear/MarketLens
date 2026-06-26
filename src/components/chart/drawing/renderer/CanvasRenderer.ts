@@ -199,7 +199,6 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     for (const d of sorted) {
       if (d.visible === false) continue;
       const selected = d.id === data.selectedDrawingId;
-      if (d.id !== '__pending') console.log('[VERIFY render]', JSON.stringify({ id: d.id.slice(0,10), selId: data.selectedDrawingId?.slice(0,10) ?? null, selected }));
       g.strokeStyle = d.color;
       g.fillStyle = d.color;
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
