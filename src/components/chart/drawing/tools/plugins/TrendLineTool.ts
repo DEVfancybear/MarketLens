@@ -25,6 +25,13 @@ const plugin: DrawingToolPlugin = {
     selected: boolean,
   ) {
     const pts = d.points;
+    // Guard: during preview only 1 anchor may be placed — draw a dot.
+    if (pts.length < 2) {
+      const x = proj.toX(pts[0].time),
+        y = proj.toY(pts[0].price);
+      if (x != null && y != null) handle(g, x, y, d.color);
+      return;
+    }
     const x1 = proj.toX(pts[0].time),
       y1 = proj.toY(pts[0].price);
     const x2 = proj.toX(pts[1].time),
