@@ -253,7 +253,7 @@ export function useDrawingInteractionManager(
       const hit = hitTest(cur.drawings, p, toX, toY);
       selectDrawing(hit?.drawing.id ?? null);
 
-      if (hit && !cur.drawingsLocked) {
+      if (hit && !cur.drawingsLocked && e.button === 0) {
         e.preventDefault();
         e.stopPropagation();
         canvas.setPointerCapture(e.pointerId);
