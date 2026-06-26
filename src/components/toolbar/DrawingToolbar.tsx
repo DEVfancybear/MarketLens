@@ -17,6 +17,7 @@ import {
   Spline,
   Type,
   GitFork,
+  ArrowBigUp,
   Trash2,
   Palette,
 } from "lucide-react";
@@ -92,7 +93,16 @@ const GROUPS: ToolGroup[] = [
       { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
       { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
       { tool: "path", icon: <PenTool size={14} />, label: "Path" },
-      { tool: "fib", icon: <GitFork size={14} />, label: "Fibonacci" },
+      {
+        tool: "fibRetracement",
+        icon: <GitFork size={14} />,
+        label: "Fib Retracement",
+      },
+      {
+        tool: "fibExtension",
+        icon: <ArrowBigUp size={14} />,
+        label: "Fib Extension",
+      },
     ],
   },
   {

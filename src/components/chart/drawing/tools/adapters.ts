@@ -34,7 +34,9 @@ import "./plugins/CurveTool";
 import "./plugins/PathTool";
 
 // Milestone 4 Phase 3 — financial tools
-import "./plugins/FibTool";
+import "./plugins/FibTool"; // legacy (kept for backward compat)
+import "./plugins/FibRetracementTool";
+import "./plugins/FibExtensionTool";
 import "./plugins/LongPositionTool";
 import "./plugins/ShortPositionTool";
 

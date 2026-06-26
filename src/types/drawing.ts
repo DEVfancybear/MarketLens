@@ -26,6 +26,8 @@ export type DrawingTool =
   | "curve"
   | "path"
   | "fib"
+  | "fibRetracement"
+  | "fibExtension"
   // annotations
   | "text"
   | "emoji"
@@ -55,6 +57,8 @@ export const DRAWING_TOOLS: DrawingTool[] = [
   "curve",
   "path",
   "fib",
+  "fibRetracement",
+  "fibExtension",
   "text",
   "emoji",
   "long",
@@ -96,6 +100,11 @@ export type Drawing = BaseDrawing;
 
 /** Standard Fibonacci retracement ratios. */
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+
+/** Standard Fibonacci extension / expansion ratios (projected beyond B). */
+export const FIB_EXT_LEVELS = [
+  -0.272, -0.618, 0, 0.618, 1, 1.272, 1.382, 1.618, 2, 2.618,
+] as const;
 
 /** Tools whose icon should look "pressed" but that don't add a persistent object. */
 export const MODE_TOOLS: DrawingTool[] = [
