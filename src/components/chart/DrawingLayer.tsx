@@ -71,6 +71,7 @@ export function DrawingLayer() {
     drawColor: "#2962ff",
     drawingsLocked: false,
     ctxReady: false,
+    drawingsHidden: false,
     selectedDrawingId: null as string | null,
     selectedDrawingIds: new Set<string>(),
   });
@@ -80,6 +81,7 @@ export function DrawingLayer() {
     drawColor,
     drawingsLocked,
     ctxReady: !!ctx,
+    drawingsHidden,
     selectedDrawingId,
     selectedDrawingIds,
   };
@@ -134,8 +136,8 @@ export function DrawingLayer() {
       toY,
       getData: () => ({
         drawings: stateRef.current.drawings,
-        drawingsHidden,
-        selectedDrawingId,
+        drawingsHidden: stateRef.current.drawingsHidden,
+        selectedDrawingId: stateRef.current.selectedDrawingId,
         drawColor,
         activeTool,
         machine: machineRef.current,
