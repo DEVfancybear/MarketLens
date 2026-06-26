@@ -6,7 +6,7 @@
  */
 import type { Point } from "@/types";
 
-export const HANDLE_RADIUS = 10;
+export const HANDLE_RADIUS = 24;
 export const TOL = 20;
 
 /** Euclidean distance between two pixel points. */

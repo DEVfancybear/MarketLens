@@ -3,6 +3,15 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Endpoint handles not detected; body hit won instead (2026-06-27)
+- Increased HANDLE_RADIUS from 10px to 24px. Handle radius was smaller than
+  body tolerance (TOL=20), so clicking near an endpoint always triggered
+  body-drag instead of anchor-resize. Now HANDLE_RADIUS > TOL guarantees
+  endpoint hits take priority. Also removed debug instrumentation.
+  Files: geometry/helpers.ts, DrawingInteractionManager.ts.
+  Root cause: HANDLE_RADIUS(10) < TOL(20) caused handle-hit to fail silently.
+  Regression risk: None. Larger radius only improves endpoint detection.
+
 ### Fixed — Infinite React re-render loop on chart pan (2026-06-27)
 - Throttled version-bump callback via requestAnimationFrame. ResizeObserver
   and subscribeVisibleLogicalRangeChange could fire synchronously during
