@@ -78,12 +78,15 @@ export function hitTest(
     }
   }
 
-  if (allCandidates.length === 0) return null;
+  if (allCandidates.length === 0) {
+    return null;
+  }
 
   // Sort by TradingView priority: anchor > body, then topmost drawing, then closest.
   allCandidates.sort(
     (a, b) => hitScore(b.hit, b.zIndex) - hitScore(a.hit, a.zIndex),
   );
 
-  return allCandidates[0].hit;
+  const best = allCandidates[0].hit;
+  return best;
 }

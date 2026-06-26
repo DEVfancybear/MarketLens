@@ -7,20 +7,29 @@
 import type { Point } from "@/types";
 
 export const HANDLE_RADIUS = 10;
-export const TOL = 8;
+export const TOL = 20;
 
 /** Euclidean distance between two pixel points. */
-export function pointDist(px: number, py: number, x: number, y: number): number {
+export function pointDist(
+  px: number,
+  py: number,
+  x: number,
+  y: number,
+): number {
   return Math.hypot(px - x, py - y);
 }
 
 /** Shortest distance from pixel point to line segment. */
 export function distToSegment(
-  px: number, py: number,
-  x1: number, y1: number,
-  x2: number, y2: number,
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
 ): number {
-  const dx = x2 - x1, dy = y2 - y1;
+  const dx = x2 - x1,
+    dy = y2 - y1;
   const len2 = dx * dx + dy * dy || 1;
   let t = ((px - x1) * dx + (py - y1) * dy) / len2;
   t = Math.max(0, Math.min(1, t));
@@ -29,12 +38,17 @@ export function distToSegment(
 
 /** Distance from pixel point to axis-aligned rectangle (0 if inside). */
 export function distToRect(
-  px: number, py: number,
-  x1: number, y1: number,
-  x2: number, y2: number,
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
 ): number {
-  const left = Math.min(x1, x2), right = Math.max(x1, x2);
-  const top = Math.min(y1, y2), bottom = Math.max(y1, y2);
+  const left = Math.min(x1, x2),
+    right = Math.max(x1, x2);
+  const top = Math.min(y1, y2),
+    bottom = Math.max(y1, y2);
   if (px >= left && px <= right && py >= top && py <= bottom) return 0;
   return Math.hypot(
     Math.max(left - px, 0, px - right),
@@ -48,14 +62,17 @@ export function projectPoint(
   toX: (t: number) => number | null,
   toY: (v: number) => number | null,
 ): { x: number; y: number } | null {
-  const x = toX(pt.time), y = toY(pt.price);
+  const x = toX(pt.time),
+    y = toY(pt.price);
   return x != null && y != null ? { x, y } : null;
 }
 
 /** Default movePoints logic (works for most 2-point tools). */
 export function defaultMovePoints(
-  origPoints: Point[], pointer: Point,
-  dragTarget: "p1" | "p2" | "body", dragStart: Point,
+  origPoints: Point[],
+  pointer: Point,
+  dragTarget: "p1" | "p2" | "body",
+  dragStart: Point,
 ): Point[] {
   const next = origPoints.map((pt) => ({ ...pt }));
   if (dragTarget === "p1") {
@@ -66,7 +83,10 @@ export function defaultMovePoints(
     const dt = pointer.time - dragStart.time;
     const dp = pointer.price - dragStart.price;
     for (let i = 0; i < next.length; i++) {
-      next[i] = { time: origPoints[i].time + dt, price: origPoints[i].price + dp };
+      next[i] = {
+        time: origPoints[i].time + dt,
+        price: origPoints[i].price + dp,
+      };
     }
   }
   return next;

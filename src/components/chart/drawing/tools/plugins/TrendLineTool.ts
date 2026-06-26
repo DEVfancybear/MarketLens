@@ -49,19 +49,21 @@ const plugin: DrawingToolPlugin = {
     const x2 = toX(d.points[1].time),
       y2 = toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS)
+    const d1 = pointDist(px, py, x1, y1);
+    const d2 = pointDist(px, py, x2, y2);
+    const segDist = distToSegment(px, py, x1, y1, x2, y2);
+    if (d1 <= HANDLE_RADIUS)
       results.push({
         drawing: d,
         target: "p1",
-        distance: pointDist(px, py, x1, y1),
+        distance: d1,
       });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS)
+    if (d2 <= HANDLE_RADIUS)
       results.push({
         drawing: d,
         target: "p2",
-        distance: pointDist(px, py, x2, y2),
+        distance: d2,
       });
-    const segDist = distToSegment(px, py, x1, y1, x2, y2);
     if (segDist < TOL)
       results.push({ drawing: d, target: "body", distance: segDist });
     return results;

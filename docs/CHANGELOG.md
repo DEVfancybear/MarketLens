@@ -3,6 +3,15 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Hit-test tolerance too small for line body selection (2026-06-27)
+- Increased TOL from 8px to 20px. Users clicking on drawn TrendLines were
+  consistently getting MISS because the perpendicular distance (~16.6px)
+  exceeded the 8px threshold despite visual alignment. TradingView uses
+  12-16px typically; 20px gives comfortable click-target for line bodies.
+  Files: geometry/helpers.ts.
+  Root cause: TOL=8 too small for practical hit-testing.
+  Regression risk: None. Larger TOL only affects body hit radius.
+
 ### Fixed — pointerEvents:none canvas blocks drag interaction (2026-06-27)
 - Removed setPointerCapture from handleDown. Canvas has pointerEvents:none
   CSS which prevents the browser from dispatching captured pointermove/pointerup
