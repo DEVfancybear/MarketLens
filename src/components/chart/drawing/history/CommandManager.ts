@@ -8,6 +8,7 @@
  * Snapshots are NOT used — each command stores only the delta.
  */
 import type { Drawing, Point } from "@/types";
+import { uid } from "@/utils/id";
 
 export interface Command {
   /** Human-readable label (for UI display). */
@@ -55,8 +56,12 @@ export class CommandManager {
     return true;
   }
 
-  get canUndo(): boolean { return this.undoStack.length > 0; }
-  get canRedo(): boolean { return this.redoStack.length > 0; }
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
 
   /** Clear all history. */
   clear(): void {
@@ -66,7 +71,9 @@ export class CommandManager {
 
   /** Get the last command label (for UI). */
   get lastUndoLabel(): string | null {
-    return this.undoStack.length > 0 ? this.undoStack[this.undoStack.length - 1].label : null;
+    return this.undoStack.length > 0
+      ? this.undoStack[this.undoStack.length - 1].label
+      : null;
   }
 }
 
@@ -80,8 +87,12 @@ export class CreateDrawingCommand implements Command {
     private removeFn: (id: string) => void,
     private drawing: Drawing,
   ) {}
-  execute() { this.addFn(this.drawing); }
-  undo() { this.removeFn(this.drawing.id); }
+  execute() {
+    this.addFn(this.drawing);
+  }
+  undo() {
+    this.removeFn(this.drawing.id);
+  }
 }
 
 /** Removes a drawing. Undo recreates it. */
@@ -92,8 +103,12 @@ export class DeleteDrawingCommand implements Command {
     private removeFn: (id: string) => void,
     private drawing: Drawing,
   ) {}
-  execute() { this.removeFn(this.drawing.id); }
-  undo() { this.addFn(this.drawing); }
+  execute() {
+    this.removeFn(this.drawing.id);
+  }
+  undo() {
+    this.addFn(this.drawing);
+  }
 }
 
 /** Moves/resizes a drawing (point change). Undo restores original points. */
@@ -105,20 +120,36 @@ export class MoveDrawingCommand implements Command {
     private newPoints: Point[],
     private oldPoints: Point[],
   ) {}
-  execute() { this.updateFn(this.drawingId, { points: this.newPoints }); }
-  undo() { this.updateFn(this.drawingId, { points: this.oldPoints }); }
+  execute() {
+    this.updateFn(this.drawingId, { points: this.newPoints });
+  }
+  undo() {
+    this.updateFn(this.drawingId, { points: this.oldPoints });
+  }
 }
 
 /** Duplicates a drawing. Undo removes the copy. */
 export class DuplicateDrawingCommand implements Command {
   readonly label = "Duplicate Drawing";
+  private copyId: string | null = null;
   constructor(
     private addFn: (d: Drawing) => void,
     private removeFn: (id: string) => void,
-    private drawing: Drawing,
+    private sourceDrawing: Drawing,
   ) {}
-  execute() { this.addFn(this.drawing); }
-  undo() { this.removeFn(this.drawing.id); }
+  execute() {
+    // Always generate a fresh valid ID to prevent empty-id corruption.
+    this.copyId = uid("dw");
+    const copy: Drawing = {
+      ...this.sourceDrawing,
+      id: this.copyId,
+      points: this.sourceDrawing.points.map((p) => ({ ...p })),
+    };
+    this.addFn(copy);
+  }
+  undo() {
+    if (this.copyId) this.removeFn(this.copyId);
+  }
 }
 
 /** Changes drawing properties (color, style, locked, hidden, etc.). */
@@ -130,6 +161,10 @@ export class PropertyChangeCommand implements Command {
     private newProps: Partial<Drawing>,
     private oldProps: Partial<Drawing>,
   ) {}
-  execute() { this.updateFn(this.drawingId, this.newProps); }
-  undo() { this.updateFn(this.drawingId, this.oldProps); }
+  execute() {
+    this.updateFn(this.drawingId, this.newProps);
+  }
+  undo() {
+    this.updateFn(this.drawingId, this.oldProps);
+  }
 }

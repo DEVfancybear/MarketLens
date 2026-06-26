@@ -1,6 +1,6 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-26_
+_Last updated: 2026-06-26 (drawing engine stability fixes)_
 
 ## Current phase / milestone
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
@@ -21,59 +21,76 @@ _Last updated: 2026-06-26_
 - **Next milestone: Phase 5 — Left Toolbar / Indicator Engine.**
 
 ## Completed this session
-1. **TrendLineTool hit-test vocabulary fix:** Changed hitTest target from `"segment"` to
+1. **Drawing engine stability fixes (5 files, 4 priorities):**
+   - **Critical — Ctrl+D fix:** `DuplicateDrawingCommand` now generates its own valid `uid("dw")`
+     instead of trusting the caller's ID. Ctrl+D handler in `DrawingLayer.tsx` no longer calls
+     `duplicateDrawing` + command simultaneously (was creating 2 copies, 1 with `id:""`).
+   - **Critical — Store guard:** `chartStore.addDrawing()` now generates `uid("dw")` if `d.id` is empty/falsy,
+     and deep-copies points (`d.points.map(p => ({...p}))`) to prevent shared-reference corruption.
+   - **High — Pointer capture release:** `DrawingInteractionManager` now stores `activePointerIdRef`
+     and calls `releasePointerCapture()` explicitly in `handleUp`, `reset()`, and Escape paths.
+   - **High — Adapter resolution:** Machine state now stores `drawingTool` from `hit.drawing.tool`
+     during cursor-mode drag start, eliminating the `?? "trendline"` fallback.
+   - **Medium — Undoable drags:** `commitMove` wired from `useCommandHistory` through to
+     `DrawingInteractionManager.handleUp`, so drag operations are recorded as `MoveDrawingCommand`.
+   - Build: type-check ✅ · lint ✅ (0 warnings) · build ✅ · zero `id:""` occurrences.
+2. **TrendLineTool hit-test vocabulary fix:** Changed hitTest target from `"segment"` to
    `"body"` to align with the interaction manager's dragTarget vocabulary (`"p1" | "p2" | "body"`).
    Previously the interaction manager silently re-mapped `"segment"` → `"body"` at line 243 of
    `DrawingInteractionManager.ts`; now the pipeline is consistent end-to-end. Behavior unchanged —
    defaultMovePoints already handles all three trendline drag modes correctly. Removed unused
    `applyStyle` import from TrendLineTool.
-2. **Phase 4.4 — Fibonacci Suite:** Implemented Fibonacci retracement (`fibRetracement`) and
+3. **Phase 4.4 — Fibonacci Suite:** Implemented Fibonacci retracement (`fibRetracement`) and
    Fibonacci extension (`fibExtension`) drawing tools. Retracement: 2-point (high→low), auto-levels
    at 0/0.236/0.382/0.5/0.618/0.786/1, dashed anchor trend line, percentage + price labels.
    Extension: 2-point (A→B impulse), levels projected from B using A→B as base unit, ratios
    -0.272 through 2.618. Both use the `DrawingToolPlugin` architecture (render/hitTest/movePoints/
    boundingBox). `FIB_EXT_LEVELS` added to types. Shapes flyout updated to show both tools.
    Legacy `fib` tool + plugin retained for backward compatibility.
-2. **Drawing interaction regression fix:** Fixed chart zoom/pan being blocked when drawings
+4. **Drawing interaction regression fix:** Fixed chart zoom/pan being blocked when drawings
    exist. Switched canvas from synthetic React events + event forwarding to native
    `addEventListener` with `pointerEvents: "none"` in cursor mode. Native listener fires
    regardless of CSS, hit-tests drawings, captures pointer on hit. Chart gets all events
    normally when not interacting with a drawing.
-2. **Flyout portal fix:** Fixed tool group flyout menus being clipped by TerminalLayout
+5. **Flyout portal fix:** Fixed tool group flyout menus being clipped by TerminalLayout
    `overflow-hidden`. Flyout now renders via `createPortal` to `document.body` with
    position computed from button bounding rects (`btnRefs`).
-2. **Diagnostic cleanup:** Removed all temporary `console.log` traces from
+6. **Diagnostic cleanup:** Removed all temporary `console.log` traces from
    `DrawingLayer.tsx` (7 diagnostic blocks) and `chartStore.ts` (`setActiveTool`).
    Zero remaining debug logs in drawing engine or store.
-3. **Phase 4.2.2 — Tool Group System:** Transformed flat 20-tool toolbar into
+7. **Phase 4.2.2 — Tool Group System:** Transformed flat 20-tool toolbar into
    4 TradingView-style grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
    Last-used tool per group becomes the visible sidebar icon. Backdrop closes flyout
    on outside click. Docs: TOOL_GROUP_ARCHITECTURE.md, TOOLBAR_BEHAVIOR.md.
-2. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
+8. **Phase 4.3 — Shape Tools Suite:** Implemented 8 TradingView-style shape tools (rectangle,
    rotatedRect, circle, ellipse, triangle, polyline, curve, path). Fill system (fillColor +
    opacity). Supply/demand zone workflow for rectangle. Zero core engine changes.
    Docs: SHAPE_TOOLS_ARCHITECTURE.md, RECTANGLE_TOOL_GUIDE.md, SHAPE_TOOL_TEST_PLAN.md.
-3. **Phase 4.2 — Trend Line Suite:** Implemented 8 TradingView-style line tools (trendline,
-   connection-status badge (Step 14), reconnect hardening (Step 15 — dead-socket watchdog + `online`
-   recovery), performance pass (Step 16 — atomic selectors, guarded `setTotal`), and **removal of the
-   last mock** (Step 17 — deleted `services/marketData.ts`; replay MTF now uses real
-   `HistoricalDataService`). Phase 1 audited → `PHASE1_REVIEW.md` + `PHASE1_GAPS.md`.
-2. **Phase 2 — Alert Engine:** `alertStore` (alerts/triggered/history/settings), pure `alertEngine`,
+9. **Phase 4.2 — Trend Line Suite:** Implemented 8 TradingView-style line tools (trendline,
+   ray, extendedLine, infoLine, channel, horizontal, horizRay, vertical, crossLine, brush) via
+   plugin architecture. Right-click `DrawingContextMenu` (Delete/Clone/Lock/Hide/Bring/Send).
+   Style customization (color, line width).
+10. **Phase 2 — Alert Engine:** `alertStore` (alerts/triggered/history/settings), pure `alertEngine`,
    `useAlertEngine` (evaluates off `marketDataStore`, refcounted subs, once-only), toast + browser +
    sound notifications, responsive Alert Center, persistence. Reference-counted subscriptions
    (`subRefs`) added to `marketDataStore`. `ALERT_ARCHITECTURE.md` written.
-3. **Phase 2 audit:** `PHASE2_REVIEW.md` + `PHASE2_GAPS.md`.
-4. **Phase 2.1 — interactive chart alerts:** alert lines are now selectable, draggable (reprice +
+11. **Phase 2 audit:** `PHASE2_REVIEW.md` + `PHASE2_GAPS.md`.
+12. **Phase 2.1 — interactive chart alerts:** alert lines are now selectable, draggable (reprice +
    persist), deletable; right-click / long-press menu (Edit/Clone/Disable/Delete), edit dialog,
    keyboard (Delete/Esc), `enabled`/`locked`. Replaced static `AlertLines` with `AlertOverlay`.
    (Resolved Phase 2 gaps G1 + G5.)
-5. **OANDA Integration:** production-grade forex/metals/indices data provider via OANDA v20 REST
+13. **OANDA Integration:** production-grade forex/metals/indices data provider via OANDA v20 REST
    API. `OandaProvider` with bearer-token auth, 1s pricing poll, historical candles, reconnect
    with backoff. Fallback to TwelveData when OANDA key is absent. Symbol mapping (EURUSD → EUR_USD,
    etc.). Extension points for FxcmProvider and ICMarketsProvider. Docs: `FOREX_DATA_ANALYSIS.md`,
    `OANDA_INTEGRATION.md`.
 
 ## Recently modified files
+- `src/components/chart/drawing/history/CommandManager.ts` (critical: DuplicateDrawingCommand generates valid uid)
+- `src/store/chartStore.ts` (guard: empty-id fallback + deep-copy points)
+- `src/components/chart/DrawingLayer.tsx` (fix: Ctrl+D single-create + commitMove wiring)
+- `src/components/chart/drawing/interaction/DrawingInteractionManager.ts` (releasePointerCapture, adapter resolution, commitMove)
+- `src/components/chart/drawing/history/useCommandHistory.ts` (fix: ESLint warning)
 - `src/components/chart/drawing/tools/plugins/TrendLineTool.ts` (audit: `"segment"` → `"body"`
   hitTest target, removed unused `applyStyle` import)
 - `src/components/chart/drawing/tools/plugins/FibRetracementTool.ts` (new — Phase 4.4),
@@ -207,3 +224,5 @@ _Last updated: 2026-06-26_
 - Full drawing engine (Phase 3), TradingView toolbar polish (Phase 4), indicator dialogs (Phase 5),
   MT5/broker integration + Firebase mobile push (Phase 6 — alert dispatch seam is ready in
   `services/notifications/notify.ts`).
+- 🟡 **DrawingContextMenu fix needed:** canvas `pointerEvents:"none"` blocks contextmenu event.
+  Move listener to document capture phase to restore right-click drawing menu (Clone/Delete/Lock/Hide).

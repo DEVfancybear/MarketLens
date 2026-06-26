@@ -61,6 +61,8 @@ export interface DrawingInteractionManagerOpts {
   selectDrawing: (id: string | null) => void;
   setActiveTool: (t: DrawingTool) => void;
   scheduleRedraw: () => void;
+  /** Persist drag as an undoable command (optional). */
+  commitMove?: (id: string, newPoints: Point[], oldPoints: Point[]) => void;
 }
 
 // ---- Return type ----
@@ -95,6 +97,7 @@ export function useDrawingInteractionManager(
     selectDrawing,
     setActiveTool,
     scheduleRedraw,
+    commitMove,
   } = opts;
 
   const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
@@ -110,6 +113,7 @@ export function useDrawingInteractionManager(
   const drawingIdRef = useRef<string | null>(null);
 
   const pointerClaimedRef = useRef(false);
+  const activePointerIdRef = useRef<number | null>(null);
 
   const pending: Point[] | null =
     machine.state === "Drawing" && machine.anchors.length > 0
@@ -121,11 +125,26 @@ export function useDrawingInteractionManager(
     scheduleRedrawRef.current();
   }, []);
 
+  /** Release pointer capture if claimed, clearing the ref. */
+  const releaseCapture = useCallback(() => {
+    const canvas = canvasRef.current;
+    const pid = activePointerIdRef.current;
+    if (canvas && pid != null) {
+      try {
+        canvas.releasePointerCapture(pid);
+      } catch {
+        // pointer may already be released
+      }
+    }
+    activePointerIdRef.current = null;
+  }, [canvasRef]);
+
   const reset = useCallback(() => {
     setMachine(INITIAL_MACHINE);
+    releaseCapture();
     pointerClaimedRef.current = false;
     scheduleRedrawRef.current();
-  }, []);
+  }, [releaseCapture]);
 
   // ---- Drawing mode: document-level listener ----
   useEffect(() => {
@@ -145,6 +164,7 @@ export function useDrawingInteractionManager(
       e.preventDefault();
       e.stopPropagation();
       canvas.setPointerCapture(e.pointerId);
+      activePointerIdRef.current = e.pointerId;
       pointerClaimedRef.current = true;
 
       const cur = getState();
@@ -163,6 +183,7 @@ export function useDrawingInteractionManager(
           });
         } else {
           setActiveTool("cursor");
+          releaseCapture();
           pointerClaimedRef.current = false;
         }
         return;
@@ -236,6 +257,7 @@ export function useDrawingInteractionManager(
         e.preventDefault();
         e.stopPropagation();
         canvas.setPointerCapture(e.pointerId);
+        activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
 
         // Canonical drag target mapping — only three allowed values.
@@ -250,6 +272,7 @@ export function useDrawingInteractionManager(
         transition({
           state: isHandle ? "ResizingHandle" : "MovingDrawing",
           drawingId: hit.drawing.id,
+          drawingTool: hit.drawing.tool,
           dragTarget,
           dragStart: p,
           dragOrig: orig,
@@ -261,12 +284,12 @@ export function useDrawingInteractionManager(
     const handleMove = (e: PointerEvent) => {
       const m = machineRef.current;
       if (m.state !== "MovingDrawing" && m.state !== "ResizingHandle") return;
-      if (!m.dragOrig || !m.dragStart) return;
+      if (!m.dragOrig || !m.dragStart || !m.drawingTool) return;
 
       const p = fromEvent(e);
       if (!p) return;
 
-      const adapter = getTool(m.drawingTool ?? "trendline");
+      const adapter = getTool(m.drawingTool);
       const next = adapter
         ? adapter.movePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart)
         : defaultMovePoints(m.dragOrig, p, m.dragTarget ?? "body", m.dragStart);
@@ -279,14 +302,22 @@ export function useDrawingInteractionManager(
       const m = machineRef.current;
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
         if (livePointsRef.current && drawingIdRef.current) {
-          updateDrawing(drawingIdRef.current, {
-            points: livePointsRef.current,
-          });
+          const newPoints = livePointsRef.current;
+          const id = drawingIdRef.current;
+
+          // Persist geometrically ...
+          updateDrawing(id, { points: newPoints });
+
+          // ... and as an undoable command (if provided).
+          if (commitMove && m.dragOrig) {
+            commitMove(id, newPoints, m.dragOrig);
+          }
         }
-        livePointsRef.current = null;
-        drawingIdRef.current = null;
-        reset();
       }
+      releaseCapture();
+      livePointsRef.current = null;
+      drawingIdRef.current = null;
+      reset();
     };
 
     const handleCtx = (e: MouseEvent) => {

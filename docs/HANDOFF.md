@@ -44,6 +44,10 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   -0.272–2.618 projected from B via A→B impulse). Both registered in `adapters.ts`, exposed
   in Shapes flyout. Legacy `fib` tool + `FibTool` plugin retained for backward compat.
   `FIB_EXT_LEVELS` added to `types/drawing.ts`.
+- **Drawing engine stability fixes (2026-06-26):** Ctrl+D duplicate bug fixed (empty-id
+  corruption eliminated), store now guards against empty IDs + deep-copies points, explicit
+  pointer capture release added, adapter resolution during drag fixed, drag operations now
+  undoable via commitMove. See `CURRENT_PROGRESS.md` for details.
 - **Recommended next action:** Start **Phase 5 — Left Toolbar / Indicator Engine** (full
   `drawingRenderer.ts` + extended `types/drawing.ts` + `chartStore` drawing actions into
   `DrawingLayer`/`DrawingToolbar`; add indicator settings dialogs + parameter customization).
@@ -77,7 +81,7 @@ npm run lint         # next lint
   known Next-on-Windows race (the project sits under `Downloads`, which AV/sync tools watch),
   **not** a code error — re-run `npm run build` once (warm chunks) and it passes.
 
-## 2. Current status (verified 2026-06-25)
+## 2. Current status (verified 2026-06-26)
 - type-check ✅ · lint ✅ (0 warnings) · build ✅ · no TODO/FIXME markers.
 
 ## 3. Existing architecture (1-minute version)
@@ -167,25 +171,30 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   imported** anywhere (the context menu uses a CSS pop animation). If you need motion later,
   pin a matching `framer-motion`/`motion-dom` pair; otherwise consider removing it from
   `package.json`.
-- **Adapter resolution during drag:** `DrawingInteractionManager.ts:268` resolves
-  `getTool(m.drawingTool ?? "trendline")` — but `m.drawingTool` is always `null` during drag
-  (only set during creation mode). The `"trendline"` fallback works because all tools currently
-  share `defaultMovePoints`, but any tool with a custom `movePoints` would be silently broken.
-  Fix: resolve via `hit.drawing.tool` from the stored hit result instead.
-- **Ctrl+D creates duplicate drawings with empty id `""`:** `DrawingLayer.tsx:234-249` calls
-  `duplicateDrawing(d.id)` AND `execute(new DuplicateDrawingCommand({...d, id:""}))` — two copies
-  created, second with empty id. Drawings with id `""` all respond to the same
-  `updateDrawing`/`removeDrawing` calls (cross-contamination).
+- **✅ Adapter resolution during drag — FIXED (2026-06-26):** Machine state now stores `drawingTool`
+  from `hit.drawing.tool` during cursor-mode drag start. No more fallback to `"trendline"`.
+- **✅ Ctrl+D duplicate — FIXED (2026-06-26):** `DuplicateDrawingCommand` generates its own valid
+  `uid("dw")` internally — no double-create, no empty-id corruption. `chartStore.addDrawing()` now
+  guards against empty/falsy IDs with `id: d.id || uid("dw")`.
+- **✅ Drag operations undoable — FIXED (2026-06-26):** `commitMove` wired from `useCommandHistory`
+  through to `DrawingInteractionManager.handleUp`, so drags are recorded as `MoveDrawingCommand`
+  and Ctrl+Z can undo them.
+- **✅ addDrawing deep-copies points — FIXED (2026-06-26):** `chartStore.ts` now does
+  `d.points.map(p => ({...p}))` to eliminate shared-reference risk.
+- **✅ Hit-test vocabulary — FIXED (2026-06-26):** All 25 drawing tools now return only canonical
+  `"p1"`, `"p2"`, `"body"` targets. `HitTestEngine` type + `TARGET_PRIORITY` narrowed.
+- **✅ Pointer capture release — ADDED (2026-06-26):** `DrawingInteractionManager` now explicitly
+  releases pointer capture via `activePointerIdRef` in `handleUp`, `reset()`, and Escape paths.
+  No more leaked captures blocking chart interaction.
+- **🟡 DrawingContextMenu broken:** The canvas has `pointerEvents:"none"` which blocks the
+  `contextmenu` mouse event from reaching `canvas.addEventListener("contextmenu", handleCtx)`.
+  Right-clicking a drawing opens only `ChartContextMenu` (Create Alert, Trade, H-line) — the
+  drawing-specific context menu (Clone, Delete, Lock, Hide, Bring/Send) never appears.
+  **Fix:** move the `contextmenu` listener from the canvas to the document (capture phase),
+  matching the pointer event architecture, and gate with `isOverCanvas`.
 - **Context menu bypasses undo history:** `DrawingContextMenu.tsx` calls store actions directly
   (`removeDrawing`, `duplicateDrawing`, etc.) without creating Command history. Keyboard
   equivalents (Delete, Ctrl+D) DO create history. Inconsistent undo behavior.
-- **Drag operations not undoable:** `commitMove`/`commitDelete` are defined in
-  `useCommandHistory.ts` but never called. `handleUp` calls `updateDrawing` directly.
-- **`addDrawing` doesn't deep-copy points:** `chartStore.ts:133` does `{ ...d }` — the store
-  drawing shares `d.points` with the caller. Latent risk if callers reuse arrays.
-- **Hit-test vocabulary inconsistency:** Several line tools (Ray, ExtendedLine, Channel,
-  Brush, Polyline, Triangle) return `"segment"` from hitTest, which is silently re-mapped to
-  `"body"` in the interaction manager. TrendLineTool was fixed; others remain.
 - **Drawing tools fully wired:** All drawing tools (line, shape, fib) use the production
   `DrawingToolPlugin` architecture via `ToolRegistry`. `renderDrawing` + `HitTestEngine` delegate
   through adapters. No giant switch statements remain. The old note about "unwired refactor" in

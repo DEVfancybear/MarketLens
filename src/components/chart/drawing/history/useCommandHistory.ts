@@ -51,8 +51,9 @@ export function useCommandHistory(
       execute,
       undo: () => managerRef.current.undo(),
       redo: () => managerRef.current.redo(),
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }),
+    // commitMove and commitDelete are stable (managerRef never changes).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 }

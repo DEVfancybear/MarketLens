@@ -130,7 +130,14 @@ export const useChartStore = create<ChartState>((set, get) => ({
 
   addDrawing: (d) => {
     const top = get().drawings.reduce((m, x) => Math.max(m, x.zIndex ?? 0), 0);
-    const drawing = { visible: true, locked: false, zIndex: top + 1, ...d };
+    const drawing = {
+      visible: true,
+      locked: false,
+      zIndex: top + 1,
+      ...d,
+      id: d.id || uid("dw"),
+      points: d.points ? d.points.map((p) => ({ ...p })) : [],
+    };
     const drawings = [...get().drawings, drawing];
     // Single-click tools stay active (TradingView behavior).
     // Two-click tools switch back to cursor after placement.
