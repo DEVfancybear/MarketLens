@@ -295,11 +295,12 @@ export function useDrawingInteractionManager(
             commitMove(id, newPoints, m.dragOrig);
           }
         }
+        // Only release capture + reset on drag completion — NOT on idle pointerup.
+        releaseCapture();
+        livePointsRef.current = null;
+        drawingIdRef.current = null;
+        reset();
       }
-      releaseCapture();
-      livePointsRef.current = null;
-      drawingIdRef.current = null;
-      reset();
     };
 
     const handleCtx = (e: MouseEvent) => {
