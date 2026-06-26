@@ -14,16 +14,16 @@
 - **✅ Phase 4.2.1 — Tool Activation: COMPLETE** (state machine, cursor system, live preview).
 - **✅ Phase 4.2.2 — Tool Group System: COMPLETE** (4 grouped icons + flyout portal fix).
 - **✅ Phase 4.3 — Shape Tools Suite: COMPLETE** (8 shapes + fill + supply/demand zones).
-- **▶ Phase 4.4 — Fibonacci Suite: NEXT.**
+- **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + fibExtension,
+  plugin architecture, 2-point creation, auto-levels with labels, full hitTest/movePoints/boundingBox).
+- **▶ Phase 5 — Left Toolbar / Indicator Engine: NEXT.**
 
-## Immediate tasks — Phase 4.4 (Fibonacci Suite)
+## Immediate tasks — Phase 5 (Left Toolbar / Indicator Engine)
 
-1. Implement Fibonacci retracement tool (draw from high→low or low→high, auto-levels at
-   0, 0.236, 0.382, 0.5, 0.618, 0.786, 1).
-2. Implement Fibonacci extension tool (three points, projects beyond 1.0).
-3. Each level renders as a horizontal line with label; clickable/draggable for repricing.
-4. Extend `types/drawing.ts` (add `fibRetracement`/`fibExtension` to DrawingTool).
-5. Add `case` in `drawingRenderer.ts` and `drawingHitTest.ts`.
+1. Full 17-tool TradingView left toolbar with visual grouping and separators.
+2. Indicator settings dialogs with parameter customization (SMA/EMA length, RSI period, etc.).
+3. Indicator style customization (colors, line width, overlay vs. pane).
+4. Hotkey system for drawing tools and indicators.
 
 ---
 

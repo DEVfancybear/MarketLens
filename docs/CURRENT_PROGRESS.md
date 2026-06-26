@@ -13,10 +13,22 @@ _Last updated: 2026-06-26_
 - **✅ Phase 4.2.2 — TOOL GROUP SYSTEM — COMPLETE** (flyout portal fix).
   Toolbar shows 4 grouped icons (Cursor, Lines, Shapes, Text) with flyout menus.
   Flyout renders via `createPortal` to `document.body` to escape left-rail overflow.
-- **Next milestone: Phase 4.4 — Fibonacci Suite.**
+- **✅ Phase 4.4 — FIBONACCI SUITE — COMPLETE.**
+  Fib retracement (2-point, auto-levels at standard ratios) and fib extension
+  (2-point, levels projected beyond B via A→B impulse). Both use the plugin
+  architecture with full render/hitTest/movePoints/boundingBox support.
+  Legacy `fib` tool kept for backward compat.
+- **Next milestone: Phase 5 — Left Toolbar / Indicator Engine.**
 
 ## Completed this session
-1. **Drawing interaction regression fix:** Fixed chart zoom/pan being blocked when drawings
+1. **Phase 4.4 — Fibonacci Suite:** Implemented Fibonacci retracement (`fibRetracement`) and
+   Fibonacci extension (`fibExtension`) drawing tools. Retracement: 2-point (high→low), auto-levels
+   at 0/0.236/0.382/0.5/0.618/0.786/1, dashed anchor trend line, percentage + price labels.
+   Extension: 2-point (A→B impulse), levels projected from B using A→B as base unit, ratios
+   -0.272 through 2.618. Both use the `DrawingToolPlugin` architecture (render/hitTest/movePoints/
+   boundingBox). `FIB_EXT_LEVELS` added to types. Shapes flyout updated to show both tools.
+   Legacy `fib` tool + plugin retained for backward compatibility.
+2. **Drawing interaction regression fix:** Fixed chart zoom/pan being blocked when drawings
    exist. Switched canvas from synthetic React events + event forwarding to native
    `addEventListener` with `pointerEvents: "none"` in cursor mode. Native listener fires
    regardless of CSS, hit-tests drawings, captures pointer on hit. Chart gets all events
@@ -56,6 +68,14 @@ _Last updated: 2026-06-26_
    `OANDA_INTEGRATION.md`.
 
 ## Recently modified files
+- `src/components/chart/drawing/tools/plugins/FibRetracementTool.ts` (new — Phase 4.4),
+  `FibExtensionTool.ts` (new — Phase 4.4)
+- `src/components/chart/drawing/tools/adapters.ts` (Phase 4.4: imported FibRetracementTool +
+  FibExtensionTool)
+- `src/types/drawing.ts` (Phase 4.4: added `fibRetracement`/`fibExtension` to DrawingTool +
+  `FIB_EXT_LEVELS`)
+- `src/components/toolbar/DrawingToolbar.tsx` (Phase 4.4: shapes flyout updated with
+  fibRetracement + fibExtension)
 - `src/services/market-data/providers/OandaProvider.ts` (new — OANDA forex/metals/indices provider),
   `FxcmProvider.ts` (stub), `ICMarketsProvider.ts` (stub)
 - `src/services/market-data/MarketDataService.ts` (wired OandaProvider + fallback routing),
@@ -131,8 +151,8 @@ _Last updated: 2026-06-26_
 - Lightweight Charts candlesticks + volume, TradingView-style theme (background `#131722`,
   subtle grid, dashed crosshair with floating price/time labels, colored last-price line).
 - Indicators: SMA, EMA, VWAP, RSI, MACD, ADR (overlay + stacked panes), toggle on/off.
-- Drawing tools (current shipped set): trend line, horizontal, vertical, rectangle, text, fib —
-  create / move / select / delete, persisted per symbol.
+- Drawing tools (current shipped set): trend line, horizontal, vertical, rectangle, text,
+  fib retracement, fib extension — create / move / select / delete, persisted per symbol.
 - Right-click **chart context menu** (price detection via `coordinateToPrice`): create alert,
   sell-limit, buy-stop, add-order (ticket prefill), draw horizontal line.
 

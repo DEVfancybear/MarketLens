@@ -12,8 +12,8 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 **Phase 3 (TradingView UI Parity) is COMPLETE** — 95% visual parity.
 **Phase 4.3 (Shape Tools Suite) is COMPLETE** — 8 shapes + fill system + supply/demand zones.
 **Phase 4.2.2 (Tool Group System) is COMPLETE** — flyout menus fixed via `createPortal`.
-All diagnostic `console.log` traces cleaned from drawing engine and chart store.
-The next milestone is **Phase 4.4 — Fibonacci Suite**.
+**Phase 4.4 (Fibonacci Suite) is COMPLETE** — fib retracement + fib extension drawing tools.
+The next milestone is **Phase 5 — Left Toolbar / Indicator Engine**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -39,10 +39,15 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   long-press**; `AlertContextMenu` (Edit/Clone/Disable/Delete), `AlertEditDialog`. `Alert` gained
   `enabled`+`locked`; the engine skips disabled alerts. Selection is ephemeral; price/enabled/locked
   persist. See `docs/ALERT_ARCHITECTURE.md` §"Interactive chart alerts".
-- **Recommended next action:** Start **Phase 3 — Drawing Engine** (wire the unwired
+- **Phase 4.4 (Fibonacci Suite):** `FibRetracementTool` (2-point, retracement levels 0–1,
+  dashed anchor trend line, % + price labels) + `FibExtensionTool` (2-point, extension levels
+  -0.272–2.618 projected from B via A→B impulse). Both registered in `adapters.ts`, exposed
+  in Shapes flyout. Legacy `fib` tool + `FibTool` plugin retained for backward compat.
+  `FIB_EXT_LEVELS` added to `types/drawing.ts`.
+- **Recommended next action:** Start **Phase 5 — Left Toolbar / Indicator Engine** (full
   `drawingRenderer.ts` + extended `types/drawing.ts` + `chartStore` drawing actions into
-  `DrawingLayer`/`DrawingToolbar`; expand to the full tool set; add a drawing context menu/hit-test/
-  hotkeys — `AlertOverlay` is a good reference). See `NEXT_TASKS.md` §"Immediate tasks — Phase 3".
+  `DrawingLayer`/`DrawingToolbar`; add indicator settings dialogs + parameter customization).
+  See `NEXT_TASKS.md` §"Immediate tasks — Phase 5".
   (Optional cleanup: the legacy `Symbol`/`Quote` types in `types/market.ts` may be unused now.)
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
@@ -139,17 +144,19 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - ✅ **OANDA Integration: COMPLETE.** Forex/metals/indices stream live via OANDA v20 REST
   (pricing poll + historical candles). Fallback to TwelveData. Extension points for Fxcm and
   ICMarkets providers.
+- ✅ **Phase 4.4 — Fibonacci Suite: COMPLETE.** Fib retracement + fib extension drawing tools
+  with full plugin support. Legacy `fib` tool retained for backward compatibility.
 - 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
-  and `CURRENT_STATE.md` §9). **Phase 3 — next milestone.**
-- ❌ Indicator settings dialogs (Phase 5).
+  and `CURRENT_STATE.md` §9). **Phase 5 — next milestone.**
+- 🟡 Indicator settings dialogs (Phase 5).
 - ❌ Real broker/MT5 order routing + Firebase mobile push (Phase 6 — alert dispatch seam ready in
   `services/notifications/notify.ts`).
 
-## 7. Where to continue (Phase 3 — Drawing Engine)
-1. **Phase 3 — Drawing Engine.** Wire the already-landed-but-unwired refactor:
-   `components/chart/drawing/drawingRenderer.ts`, the extended `types/drawing.ts`, and the new
-   `chartStore` drawing actions into `DrawingLayer`/`DrawingToolbar`; expand to the full tool set
-   (17 tools), add a drawing context menu + hit-test module + hotkeys. See `NEXT_TASKS.md` §Phase 3.
+## 7. Where to continue (Phase 5 — Left Toolbar / Indicator Engine)
+1. **Phase 5 — Left Toolbar / Indicator Engine.** Full 17-tool TradingView-style left toolbar
+   with visual grouping and separators. Indicator settings dialogs with parameter customization
+   (SMA/EMA length, RSI period, etc.). Hotkey system for tools and indicators.
+   See `NEXT_TASKS.md` §"Immediate tasks — Phase 5".
 2. Manual smoke test for Phase 2: open the toolbar **bell**, create `BTCUSDT crosses above <price>`
    and `BTCUSDT > <below-current>` — the latter fires immediately (level), the former on the next
    upward cross; confirm one toast + chime, the alert moves to Triggered, and a History row is added.
@@ -160,9 +167,10 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   imported** anywhere (the context menu uses a CSS pop animation). If you need motion later,
   pin a matching `framer-motion`/`motion-dom` pair; otherwise consider removing it from
   `package.json`.
-- **Unwired drawing refactor:** `components/chart/drawing/drawingRenderer.ts` and the new
-  `chartStore` drawing actions / extended `types/drawing.ts` are **not used yet**. Either finish
-  in Phase 3 or revert before Phase 1 to avoid confusion.
+- **Drawing tools fully wired:** All drawing tools (line, shape, fib) use the production
+  `DrawingToolPlugin` architecture via `ToolRegistry`. `renderDrawing` + `HitTestEngine` delegate
+  through adapters. No giant switch statements remain. The old note about "unwired refactor" in
+  previous handoffs is obsolete — the subsystem has been fully integrated and extended.
 - **Legacy types may be orphaned:** with `services/marketData.ts` deleted, the legacy `Symbol` and
   `Quote` interfaces in `types/market.ts` may now be unused — verify with a grep before removing.
 - **Git on Windows:** `git` is installed but not on PATH — invoke it by full path
@@ -177,6 +185,11 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - Chart bridge / data: `hooks/useMarketData.ts` (chart), `hooks/useMarketDataBootstrap.ts`
   (watchlist feed), `hooks/{useCandles,useQuote,useConnectionStatus}.ts`, `store/chartStore.ts`.
 - Chart: `components/chart/PriceChart.tsx`, `ChartContext.tsx`, `ChartArea.tsx`.
+- Drawing subsystem: `components/chart/DrawingLayer.tsx`,
+  `components/chart/drawing/drawingRenderer.ts`,
+  `components/chart/drawing/hittest/HitTestEngine.ts`,
+  `components/chart/drawing/tools/{ToolRegistry,adapters}.ts`,
+  `components/chart/drawing/tools/plugins/{FibRetracement,FibExtension}Tool.ts` (Phase 4.4).
 - Visibility gate: `hooks/useVisibleCandles.ts`.
 - Watchlist: `components/watchlist/Watchlist.tsx`, `store/watchlistStore.ts`.
 - Runtime loops: `components/layout/GlobalRuntime.tsx`.
