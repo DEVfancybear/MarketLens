@@ -3,7 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
-n### Added — Clipboard + polish (2026-06-26)
+### Fixed — pointerEvents:none canvas blocks drag interaction (2026-06-27)
+- Removed setPointerCapture from handleDown. Canvas has pointerEvents:none
+  CSS which prevents the browser from dispatching captured pointermove/pointerup
+  events to any listener. Document-level capture-phase listeners already fire
+  for all pointer events without needing pointer capture. Fix enables body drag,
+  endpoint resize, and all cursor-mode interactions.
+  Files: DrawingInteractionManager.ts.
+  Root cause: pointerEvents:none on canvas silences captured events.
+  Regression risk: None. releaseCapture silently handles no-capture state.
+
+### Added — Clipboard + polish (2026-06-26)
 - Ctrl+C copies selected drawing to in-memory clipboard. Ctrl+V pastes as
   duplicate at same position with new ID. Escape cancels drawing, Delete
   removes selection. Z-order aware hit testing, smooth hover glow, context

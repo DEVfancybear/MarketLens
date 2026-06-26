@@ -248,7 +248,9 @@ export function useDrawingInteractionManager(
       if (hit && !cur.drawingsLocked && e.button === 0) {
         e.preventDefault();
         e.stopPropagation();
-        canvas.setPointerCapture(e.pointerId);
+        // setPointerCapture is NOT used because canvas has pointerEvents:"none"
+        // which prevents captured events from reaching ANY listener.
+        // Instead, document-level capture-phase listeners catch all events.
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
 
@@ -285,6 +287,7 @@ export function useDrawingInteractionManager(
 
     const handleMove = (e: PointerEvent) => {
       const m = machineRef.current;
+
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
         if (!m.dragStart || !m.drawingTool) return;
         const p = fromEvent(e);
@@ -314,6 +317,7 @@ export function useDrawingInteractionManager(
           multiMap.set(m.drawingId!, next);
         }
         livePointsRef.current = multiMap;
+
         scheduleRedrawRef.current();
         return;
       }
@@ -335,6 +339,7 @@ export function useDrawingInteractionManager(
 
     const handleUp = () => {
       const m = machineRef.current;
+
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
         const multiMap = livePointsRef.current;
         if (multiMap && multiMap.size > 0) {
@@ -402,8 +407,30 @@ export function useDrawingInteractionManager(
         redo?.();
         return;
       }
-      if (e.key === "c" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); const id = getState().selectedDrawingId; if (id) clipboardRef.current = getState().drawings.find(x => x.id === id) ?? null; return; }
-      if (e.key === "v" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); const src = clipboardRef.current; if (src) { addDrawing({ ...src, id: uid("dw"), points: src.points.map((p: any) => ({ ...p })) }); if (executeCommand) executeCommand(new DuplicateDrawingCommand(addDrawing, removeDrawing, src)); } return; }
+      if (e.key === "c" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        const id = getState().selectedDrawingId;
+        if (id)
+          clipboardRef.current =
+            getState().drawings.find((x) => x.id === id) ?? null;
+        return;
+      }
+      if (e.key === "v" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        const src = clipboardRef.current;
+        if (src) {
+          addDrawing({
+            ...src,
+            id: uid("dw"),
+            points: src.points.map((p: any) => ({ ...p })),
+          });
+          if (executeCommand)
+            executeCommand(
+              new DuplicateDrawingCommand(addDrawing, removeDrawing, src),
+            );
+        }
+        return;
+      }
       if (e.key === "Escape") {
         reset();
         setActiveTool("cursor");
