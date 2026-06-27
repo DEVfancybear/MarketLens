@@ -24,6 +24,7 @@ Binance / TwelveData WS  (one socket per provider — Phase 1)
     • ensures a ticker subscription per alert symbol (refcounted → no new sockets,
       never tears down a watchlist subscription)
     • remembers previous price per symbol (for cross detection)
+    • tracks seenAlertIds → new alerts skip stale prev on first eval
     • on each price change → pure evaluation
         │
         ├─ services/alertEngine.ts  (pure: conditionMet / isAlertTriggered / inferCondition)
@@ -53,7 +54,7 @@ Binance / TwelveData WS  (one socket per provider — Phase 1)
 | Sound | `services/notifications/sound.ts` | Web Audio two-tone chime — no asset, lazy AudioContext, failure-safe. |
 | Browser | `services/notifications/browser.ts` | Notification API: support check, permission request, show. Permission requested **only** from the Alert Center. |
 | Alert Center UI | `components/alerts/AlertCenter.tsx` | Responsive slide-over: settings, create form, active / triggered / history. Toggled from the toolbar bell + `uiStore.alertCenterOpen`. |
-| Chart integration | `components/chart/AlertLines.tsx` (NEW), `components/chart/AlertOverlay.tsx`, `AlertContextMenu.tsx`, `alerts/AlertEditDialog.tsx`, `ChartContextMenu.tsx` | **AlertLines** uses native `createPriceLine` for guaranteed visibility (no canvas timing issues). **AlertOverlay** provides interactive canvas lines (drag/select/right-click). Background right-click "Create Alert" infers `crossUp`/`crossDown` from current price. |
+| Chart integration | `components/chart/AlertLines.tsx`, `components/chart/AlertOverlay.tsx`, `components/chart/alertLineRegistry.ts`, `AlertContextMenu.tsx`, `alerts/AlertEditDialog.tsx`, `ChartContextMenu.tsx` | **AlertLines** uses native `createPriceLine` for guaranteed visibility. **AlertOverlay** provides interactive dragging. `alertLineRegistry` is a shared `Map<string, IPriceLine>` so drag updates the native line in real-time via `applyOptions`. Background right-click "Create Alert" infers `crossUp`/`crossDown` from current price. |
 
 ### Alert lines on chart (dual-layer: AlertLines + AlertOverlay)
 
@@ -77,9 +78,10 @@ lag-free interaction.
 - **Per-line DOM hit strips** (pointer-events: auto, ~14px tall) handle interaction; the rest of the
   chart stays pannable. Selection is `alertStore.selectedAlertId` (one at a time); click-outside and
   **Esc** deselect, **Delete** removes the selected (unless `locked`).
-- **Drag** updates the line locally for lag-free movement, then commits `updateAlert({ price,
-  condition })` on release — the condition is recomputed by side (above/below or crossUp/crossDown,
-  family preserved). The engine reads the new price on the next tick.
+- **Drag** updates the native line in real-time via `alertLineRegistry`
+  (`line.applyOptions({ price })`) so the trendline follows the cursor instantly.
+  Hit strip position updates via direct DOM (`style.top`). On release, commits
+  `updateAlert({ price, condition })` with recomputed condition.
 - **Touch:** strips use `touch-action: none`; drag works with touch and a ~500ms **long-press** opens
   the context menu.
 - `Alert.enabled` (engine skips it, renders dimmed) and `Alert.locked` (no drag/delete) extend the
@@ -119,6 +121,10 @@ interface AlertHistoryEntry {
 - **No duplicate triggers:** a one-time alert leaves `alerts` on fire (can't re-match). A recurring
   alert is gated by `RECURRING_REARM_MS` (60s) so a single cross doesn't fire every tick.
 - **Cross detection** uses the engine's per-symbol previous-price memory (in the hook, not the store).
+- **First-evaluation gate (`seenAlertIds`):** new alerts skip cross detection on their first
+  evaluation (`prev` treated as `undefined`). This prevents a stale `prev` price (recorded before
+  the alert existed) from causing an immediate false `crossUp`/`crossDown` trigger. `above`/`below`
+  don't depend on `prev` and may trigger on the first evaluation — intentional.
 
 ## 6. No new sockets / no polling (how)
 

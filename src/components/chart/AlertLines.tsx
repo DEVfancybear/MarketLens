@@ -6,6 +6,7 @@ import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
 import { useChartStore } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
+import { alertLineRegistry } from "./alertLineRegistry";
 
 /**
  * AlertLines — draws native lightweight-charts price lines for active alerts.
@@ -43,6 +44,7 @@ export function AlertLines() {
       const alert = symbolAlerts.find((a) => a.id === id);
       if (!alert || alert.price !== line.options().price) {
         series.removePriceLine(line);
+        alertLineRegistry.delete(id);
         existing.delete(id);
       }
     }
@@ -60,12 +62,13 @@ export function AlertLines() {
         title: label,
       });
       existing.set(a.id, line);
+      alertLineRegistry.set(a.id, line);
     }
 
     return () => {
-      // Full cleanup only on unmount or when symbolAlerts changes entirely.
-      for (const [, line] of existing) {
+      for (const [id, line] of existing) {
         series.removePriceLine(line);
+        alertLineRegistry.delete(id);
       }
       existing.clear();
     };

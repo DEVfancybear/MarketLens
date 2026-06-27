@@ -28,6 +28,7 @@ import {
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
+import { alertLineRegistry } from "./alertLineRegistry";
 
 const HIT_PX = 7; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
@@ -327,22 +328,44 @@ export function AlertOverlay() {
     const startY = e.clientY;
     const origPrice = a.price;
     let moved = false;
+    let lastPrice = origPrice;
+    let rafId: number | null = null;
 
     const onMove = (ev: PointerEvent) => {
-      if (!moved && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-      moved = true;
       clearLongPress();
-      // Update DOM directly for lag-free dragging — no React state during drag.
       const newPrice = priceAt(ev.clientY);
       if (newPrice == null || newPrice <= 0) return;
-      // Move the hit strip in sync with the pointer.
+      // Track whether this is a real drag (3px threshold for commit).
+      if (!moved && Math.abs(ev.clientY - startY) >= DRAG_THRESHOLD) {
+        moved = true;
+      }
+      lastPrice = newPrice;
+      // Update hit strip (instant direct DOM).
       const newY = toY(newPrice);
       if (newY != null) target.style.top = `${newY - HIT_PX}px`;
-      // Update drag state for canvas redraw (batched via rAF).
-      setDrag({ id: a.id, price: newPrice });
+      // Update native line in real-time so it follows the cursor.
+      const nativeLine = alertLineRegistry.get(a.id);
+      if (nativeLine) {
+        try {
+          nativeLine.applyOptions({ price: newPrice });
+        } catch {
+          /* ignore */
+        }
+      }
+      // Batch React state updates at 60fps for smooth canvas redraw.
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          setDrag({ id: a.id, price: lastPrice });
+        });
+      }
     };
 
     const onUp = (ev: PointerEvent) => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       target.removeEventListener("pointermove", onMove as EventListener);
       target.removeEventListener("pointerup", onUp as EventListener);
       try {
@@ -351,12 +374,9 @@ export function AlertOverlay() {
         /* ignore */
       }
       clearLongPress();
-      if (moved) {
-        const finalPrice = priceAt(ev.clientY);
-        if (finalPrice != null && finalPrice > 0 && finalPrice !== origPrice) {
-          const condition = sideCondition(a.condition, finalPrice, marketPrice);
-          updateAlert(a.id, { price: finalPrice, condition });
-        }
+      if (moved && lastPrice !== origPrice) {
+        const condition = sideCondition(a.condition, lastPrice, marketPrice);
+        updateAlert(a.id, { price: lastPrice, condition });
       }
       setDrag(null);
     };

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 /**
  * Alert Store (Phase 2) — TradingView-style price alerts.
  *
@@ -14,12 +14,12 @@
  *
  * Persisted to localStorage (key `alerts`); hydrated once on the client.
  */
-import { create } from 'zustand';
-import { uid } from '@/utils/id';
-import { localStore } from '@/services/storage';
+import { create } from "zustand";
+import { uid } from "@/utils/id";
+import { localStore } from "@/services/storage";
 
-export type AlertCondition = 'above' | 'below' | 'crossUp' | 'crossDown';
-export type AlertStatus = 'active' | 'triggered';
+export type AlertCondition = "above" | "below" | "crossUp" | "crossDown";
+export type AlertStatus = "active" | "triggered";
 
 export interface Alert {
   id: string;
@@ -68,20 +68,20 @@ export interface CreateAlertInput {
 
 /** Human-readable operator for a condition. */
 export const CONDITION_LABEL: Record<AlertCondition, string> = {
-  above: 'Price above',
-  below: 'Price below',
-  crossUp: 'Crossing up',
-  crossDown: 'Crossing down',
+  above: "Price above",
+  below: "Price below",
+  crossUp: "Crossing up",
+  crossDown: "Crossing down",
 };
 
 export const CONDITION_SYMBOL: Record<AlertCondition, string> = {
-  above: '≥',
-  below: '≤',
-  crossUp: '↗',
-  crossDown: '↘',
+  above: "≥",
+  below: "≤",
+  crossUp: "↗",
+  crossDown: "↘",
 };
 
-const STORAGE_KEY = 'alerts';
+const STORAGE_KEY = "alerts";
 const MAX_HISTORY = 200;
 const MAX_TRIGGERED = 50;
 /** Recurring alerts re-arm after this gap so one cross doesn't fire every tick. */
@@ -106,7 +106,7 @@ interface AlertState {
 
   // CRUD
   createAlert: (input: CreateAlertInput) => Alert;
-  updateAlert: (id: string, patch: Partial<Omit<Alert, 'id'>>) => void;
+  updateAlert: (id: string, patch: Partial<Omit<Alert, "id">>) => void;
   deleteAlert: (id: string) => void;
   duplicateAlert: (id: string) => Alert | undefined;
 
@@ -132,7 +132,11 @@ interface AlertState {
   clear: () => void;
 }
 
-const DEFAULT_SETTINGS: AlertSettings = { toast: true, sound: true, browser: false };
+const DEFAULT_SETTINGS: AlertSettings = {
+  toast: true,
+  sound: true,
+  browser: false,
+};
 
 function persist(get: () => AlertState) {
   const { alerts, triggeredAlerts, history, settings } = get();
@@ -151,11 +155,11 @@ export const useAlertStore = create<AlertState>((set, get) => ({
   createAlert: (input) => {
     const { settings } = get();
     const alert: Alert = {
-      id: uid('alert'),
+      id: uid("alert"),
       symbol: input.symbol,
       condition: input.condition,
       price: input.price,
-      status: 'active',
+      status: "active",
       enabled: true,
       locked: false,
       createdAt: Date.now() / 1000,
@@ -172,7 +176,9 @@ export const useAlertStore = create<AlertState>((set, get) => ({
   updateAlert: (id, patch) => {
     set((s) => ({
       alerts: s.alerts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
-      triggeredAlerts: s.triggeredAlerts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      triggeredAlerts: s.triggeredAlerts.map((a) =>
+        a.id === id ? { ...a, ...patch } : a,
+      ),
     }));
     persist(get);
   },
@@ -188,12 +194,14 @@ export const useAlertStore = create<AlertState>((set, get) => ({
   },
 
   duplicateAlert: (id) => {
-    const src = get().alerts.find((a) => a.id === id) ?? get().triggeredAlerts.find((a) => a.id === id);
+    const src =
+      get().alerts.find((a) => a.id === id) ??
+      get().triggeredAlerts.find((a) => a.id === id);
     if (!src) return undefined;
     const clone: Alert = {
       ...src,
-      id: uid('alert'),
-      status: 'active',
+      id: uid("alert"),
+      status: "active",
       createdAt: Date.now() / 1000,
       triggeredAt: undefined,
       triggerPrice: undefined,
@@ -210,9 +218,14 @@ export const useAlertStore = create<AlertState>((set, get) => ({
     const alert = get().alerts.find((a) => a.id === id);
     if (!alert) return undefined;
     const now = Date.now() / 1000;
-    const fired: Alert = { ...alert, status: 'triggered', triggeredAt: now, triggerPrice };
+    const fired: Alert = {
+      ...alert,
+      status: "triggered",
+      triggeredAt: now,
+      triggerPrice,
+    };
     const entry: AlertHistoryEntry = {
-      id: uid('alh'),
+      id: uid("alh"),
       alertId: alert.id,
       symbol: alert.symbol,
       condition: alert.condition,
@@ -227,7 +240,9 @@ export const useAlertStore = create<AlertState>((set, get) => ({
         // Stay armed; just stamp the last trigger time (engine re-arm gate).
         return {
           history,
-          alerts: s.alerts.map((a) => (a.id === id ? { ...a, triggeredAt: now, triggerPrice } : a)),
+          alerts: s.alerts.map((a) =>
+            a.id === id ? { ...a, triggeredAt: now, triggerPrice } : a,
+          ),
         };
       }
       // One-time: move active → triggered.
@@ -245,7 +260,12 @@ export const useAlertStore = create<AlertState>((set, get) => ({
     set((s) => {
       const fired = s.triggeredAlerts.find((a) => a.id === id);
       if (!fired) return s;
-      const rearmed: Alert = { ...fired, status: 'active', triggeredAt: undefined, triggerPrice: undefined };
+      const rearmed: Alert = {
+        ...fired,
+        status: "active",
+        triggeredAt: undefined,
+        triggerPrice: undefined,
+      };
       return {
         triggeredAlerts: s.triggeredAlerts.filter((a) => a.id !== id),
         alerts: [rearmed, ...s.alerts],
@@ -271,7 +291,11 @@ export const useAlertStore = create<AlertState>((set, get) => ({
     const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
     if (!saved) return;
     // Migrate alerts persisted before `enabled`/`locked` existed.
-    const migrate = (a: Alert): Alert => ({ ...a, enabled: a.enabled ?? true, locked: a.locked ?? false });
+    const migrate = (a: Alert): Alert => ({
+      ...a,
+      enabled: a.enabled ?? true,
+      locked: a.locked ?? false,
+    });
     set({
       alerts: (saved.alerts ?? []).map(migrate),
       triggeredAlerts: (saved.triggeredAlerts ?? []).map(migrate),
@@ -281,7 +305,7 @@ export const useAlertStore = create<AlertState>((set, get) => ({
   },
 
   // ---- backward-compat ----
-  add: (symbol, price, condition = 'crossUp') =>
+  add: (symbol, price, condition = "crossUp") =>
     get().createAlert({ symbol, condition, price }),
   remove: (id) => get().deleteAlert(id),
   clear: () => {
