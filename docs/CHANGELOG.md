@@ -3,7 +3,20 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
-### Added — AlertLines: native chart price lines for guaranteed alert visibility (2026-06-27)
+### Added — Inline Text editor on chart replacing browser prompt (2026-06-27)
+- Text tool now opens an inline `<input>` on the chart at the click position
+  instead of `window.prompt()`. TradingView-style: click → type → Enter/Escape.
+- Empty placeholder drawing created without auto-selection to avoid the handle
+  circle while typing. On save, placeholder replaced with fresh drawing.
+- `TextTool` plugin: removed selection handle circle (text annotations don't
+  show handles in TradingView).
+- `CanvasRenderer.drawingsHash`: now includes `d.text` so text-only updates
+  invalidate the render memo.
+- `DrawingInteractionManager`: added optional `onTextPlace` callback for
+  inline editing; falls back to `window.prompt()` when not provided.
+  Files: drawing/TextEditor.tsx (NEW), drawing/tools/plugins/TextTool.ts,
+  drawing/renderer/CanvasRenderer.ts, drawing/interaction/DrawingInteractionManager.ts,
+  chart/DrawingLayer.tsx.
 - New `AlertLines` component using lightweight-charts' built-in `createPriceLine` API
   instead of custom canvas overlay. This guarantees alert lines are always visible
   immediately after creation — same mechanism as `TradeLevels` entry/SL/TP lines.

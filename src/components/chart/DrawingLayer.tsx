@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
 import { useChartStore } from "@/store/chartStore";
@@ -11,6 +11,8 @@ import {
 } from "./drawing/engine/DrawingEngine";
 import { useCommandHistory } from "./drawing/history/useCommandHistory";
 import { CreateDrawingCommand } from "./drawing/history/CommandManager";
+import { TextEditor } from "./drawing/TextEditor";
+import { uid } from "@/utils/id";
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
@@ -30,6 +32,14 @@ export function DrawingLayer() {
   const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
   const setActiveTool = useChartStore((s) => s.setActiveTool);
   const selectAll = useChartStore((s) => s.selectAll);
+
+  const [textEdit, setTextEdit] = useState<{
+    drawingId: string;
+    x: number;
+    y: number;
+    color: string;
+    point: Point;
+  } | null>(null);
 
   const { commitMove, undo, redo, execute } = useCommandHistory(
     addDrawing,
@@ -102,6 +112,29 @@ export function DrawingLayer() {
     markDirtyRef.current();
   }, []);
 
+  // Handle Text tool placement: create an empty drawing and show inline editor.
+  const handleTextPlace = useCallback(
+    (point: Point, color: string) => {
+      const canvas = canvasRef.current;
+      if (!canvas || !ctx) return;
+      const id = uid("dw");
+      const x =
+        ctx.chart.timeScale().timeToCoordinate(point.time as UTCTimestamp) ?? 0;
+      const y = ctx.candleSeries.priceToCoordinate(point.price) ?? 0;
+      const drawing: Drawing = {
+        id,
+        tool: "text",
+        color,
+        lineWidth: 1.5,
+        points: [point],
+        text: "",
+      };
+      addDrawing(drawing);
+      setTextEdit({ drawingId: id, x, y, color, point });
+    },
+    [ctx, addDrawing],
+  );
+
   // The render loop is dirty-driven: it only repaints when markDirty() is called.
   // Store mutations that bypass the interaction manager — delete (keyboard/menu),
   // undo/redo, color change, lock/hide, selection change — update `drawings` but
@@ -146,6 +179,7 @@ export function DrawingLayer() {
     redo,
     selectAll,
     duplicateDrawing,
+    onTextPlace: handleTextPlace,
   });
 
   useEffect(() => {
@@ -194,6 +228,34 @@ export function DrawingLayer() {
       />
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
+      )}
+      {textEdit && (
+        <TextEditor
+          initialText=""
+          x={textEdit.x}
+          y={textEdit.y}
+          onSaveAction={(text) => {
+            // Remove the empty placeholder and create a fresh drawing with text.
+            removeDrawing(textEdit.drawingId);
+            const fresh: Drawing = {
+              id: textEdit.drawingId,
+              tool: "text",
+              color: textEdit.color,
+              lineWidth: 1.5,
+              points: [textEdit.point],
+              text,
+            };
+            addDrawing(fresh);
+            execute(new CreateDrawingCommand(addDrawing, removeDrawing, fresh));
+            setTextEdit(null);
+            scheduleRedraw();
+          }}
+          onCancelAction={() => {
+            removeDrawing(textEdit.drawingId);
+            setTextEdit(null);
+            scheduleRedraw();
+          }}
+        />
       )}
     </>
   );

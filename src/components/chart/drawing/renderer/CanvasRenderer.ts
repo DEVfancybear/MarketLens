@@ -80,6 +80,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
           "," +
           d.points[j].price.toFixed(4);
       }
+      // Include text so text-only updates invalidate the memo.
+      if (d.text != null) h += ":text=" + d.text;
     }
     return h;
   }

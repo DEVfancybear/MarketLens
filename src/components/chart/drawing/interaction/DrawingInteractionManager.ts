@@ -70,6 +70,8 @@ export interface DrawingInteractionManagerOpts {
   redo?: () => void;
   selectAll?: () => void;
   duplicateDrawing?: (id: string) => void;
+  /** Called when Text tool is used. If provided, replaces window.prompt. */
+  onTextPlace?: (point: Point, color: string) => void;
 }
 
 export interface DrawingInteractionHandle {
@@ -107,6 +109,7 @@ export function useDrawingInteractionManager(
     redo,
     selectAll,
     duplicateDrawing,
+    onTextPlace,
   } = opts;
 
   const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
@@ -164,20 +167,27 @@ export function useDrawingInteractionManager(
       const cur = getState();
       const n = minPoints(cur.activeTool);
       if (cur.activeTool === "text") {
-        const t = window.prompt("Text:") || "";
-        if (t)
-          addDrawing({
-            id: uid("dw"),
-            tool: "text",
-            color: cur.drawColor,
-            lineWidth: 1.5,
-            points: [p],
-            text: t,
-          });
-        else {
-          setActiveTool("cursor");
+        if (onTextPlace) {
+          onTextPlace(p, cur.drawColor);
           releaseCapture();
           pointerClaimedRef.current = false;
+          setActiveTool("cursor");
+        } else {
+          const t = window.prompt("Text:") || "";
+          if (t)
+            addDrawing({
+              id: uid("dw"),
+              tool: "text",
+              color: cur.drawColor,
+              lineWidth: 1.5,
+              points: [p],
+              text: t,
+            });
+          else {
+            setActiveTool("cursor");
+            releaseCapture();
+            pointerClaimedRef.current = false;
+          }
         }
         return;
       }
