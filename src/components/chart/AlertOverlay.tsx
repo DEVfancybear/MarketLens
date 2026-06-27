@@ -77,11 +77,6 @@ export function AlertOverlay() {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; price: number } | null>(null);
   const [menu, setMenu] = useState<AlertMenuState | null>(null);
-  const dragSession = useRef<{
-    id: string;
-    startY: number;
-    moved: boolean;
-  } | null>(null);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
@@ -316,49 +311,58 @@ export function AlertOverlay() {
     e.preventDefault();
     selectAlert(a.id);
     setMenu(null);
-    (e.target as Element).setPointerCapture(e.pointerId);
 
     // Long-press → context menu (touch).
     if (e.pointerType === "touch") {
       clearLongPress();
       longPress.current = setTimeout(() => {
-        dragSession.current = null; // a long-press is not a drag
         openMenu(a, e.clientX, e.clientY);
       }, LONG_PRESS_MS);
     }
 
     if (a.locked) return; // locked alerts select but don't drag
-    dragSession.current = { id: a.id, startY: e.clientY, moved: false };
-  };
 
-  const onStripPointerMove = (a: Alert) => (e: React.PointerEvent) => {
-    const session = dragSession.current;
-    if (!session || session.id !== a.id) return;
-    // Require a real movement before treating it as a drag (so a click that
-    // jitters a pixel doesn't commit a no-op price change).
-    if (!session.moved && Math.abs(e.clientY - session.startY) < DRAG_THRESHOLD)
-      return;
-    const p = priceAt(e.clientY);
-    if (p == null || p <= 0) return;
-    session.moved = true;
-    clearLongPress();
-    setDrag({ id: a.id, price: p });
-  };
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const origPrice = a.price;
+    let moved = false;
 
-  const onStripPointerUp = (a: Alert) => (e: React.PointerEvent) => {
-    clearLongPress();
-    try {
-      (e.target as Element).releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-    const session = dragSession.current;
-    dragSession.current = null;
-    if (session?.moved && drag && drag.id === a.id) {
-      const condition = sideCondition(a.condition, drag.price, marketPrice);
-      updateAlert(a.id, { price: drag.price, condition }); // commit + persist
-    }
-    setDrag(null);
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
+      moved = true;
+      clearLongPress();
+      // Update DOM directly for lag-free dragging — no React state during drag.
+      const newPrice = priceAt(ev.clientY);
+      if (newPrice == null || newPrice <= 0) return;
+      // Move the hit strip in sync with the pointer.
+      const newY = toY(newPrice);
+      if (newY != null) target.style.top = `${newY - HIT_PX}px`;
+      // Update drag state for canvas redraw (batched via rAF).
+      setDrag({ id: a.id, price: newPrice });
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      target.removeEventListener("pointermove", onMove as EventListener);
+      target.removeEventListener("pointerup", onUp as EventListener);
+      try {
+        target.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+      clearLongPress();
+      if (moved) {
+        const finalPrice = priceAt(ev.clientY);
+        if (finalPrice != null && finalPrice > 0 && finalPrice !== origPrice) {
+          const condition = sideCondition(a.condition, finalPrice, marketPrice);
+          updateAlert(a.id, { price: finalPrice, condition });
+        }
+      }
+      setDrag(null);
+    };
+
+    target.addEventListener("pointermove", onMove as EventListener);
+    target.addEventListener("pointerup", onUp as EventListener);
   };
 
   const onStripContextMenu = (a: Alert) => (e: React.MouseEvent) => {
@@ -367,17 +371,57 @@ export function AlertOverlay() {
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 h-full w-full"
-      style={{ pointerEvents: "none" }}
-    >
-      <canvas
-        ref={canvasRef}
+    <>
+      <div
+        ref={containerRef}
         className="absolute inset-0 h-full w-full"
         style={{ pointerEvents: "none" }}
-      />
+      >
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 h-full w-full"
+          style={{ pointerEvents: "none" }}
+        />
 
+        {/* Delete handle for the selected alert */}
+        {(() => {
+          const sel = symbolAlerts.find(
+            (a) => a.id === selectedId && !a.locked,
+          );
+          if (!sel) return null;
+          const y = toY(displayPrice(sel));
+          if (y == null) return null;
+          return (
+            <button
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onClick={() => deleteAlert(sel.id)}
+              className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110"
+              style={{ top: y - 10, left: 8, pointerEvents: "auto" }}
+              title="Delete alert (Del)"
+              aria-label="Delete alert"
+            >
+              <X size={12} />
+            </button>
+          );
+        })()}
+
+        {menu && (
+          <AlertContextMenu
+            state={menu}
+            onClose={() => setMenu(null)}
+            onEdit={(id) => editAlert(id)}
+            onClone={(id) => duplicateAlert(id)}
+            onToggleEnabled={(id, enabled) => updateAlert(id, { enabled })}
+            onDelete={(id) => deleteAlert(id)}
+          />
+        )}
+      </div>
+
+      {/* Hit strips rendered OUTSIDE the pointer-events:none container
+          so they reliably receive pointer events in all browsers. */}
       {symbolAlerts.map((a) => {
         const y = toY(displayPrice(a));
         if (y == null) return null;
@@ -386,14 +430,10 @@ export function AlertOverlay() {
           <div
             key={a.id}
             onPointerDown={onStripPointerDown(a)}
-            onPointerMove={onStripPointerMove(a)}
-            onPointerUp={onStripPointerUp(a)}
-            onPointerEnter={() => !dragSession.current && setHoverId(a.id)}
-            onPointerLeave={() =>
-              !dragSession.current && setHoverId((h) => (h === a.id ? null : h))
-            }
+            onPointerEnter={() => setHoverId(a.id)}
+            onPointerLeave={() => setHoverId((h) => (h === a.id ? null : h))}
             onContextMenu={onStripContextMenu(a)}
-            className="absolute left-0 right-0"
+            className="absolute left-0 right-0 z-10"
             style={{
               top: y - HIT_PX,
               height: HIT_PX * 2,
@@ -404,41 +444,7 @@ export function AlertOverlay() {
           />
         );
       })}
-
-      {/* Delete handle for the selected alert */}
-      {(() => {
-        const sel = symbolAlerts.find((a) => a.id === selectedId && !a.locked);
-        if (!sel) return null;
-        const y = toY(displayPrice(sel));
-        if (y == null) return null;
-        return (
-          <button
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            onClick={() => deleteAlert(sel.id)}
-            className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110"
-            style={{ top: y - 10, left: 8, pointerEvents: "auto" }}
-            title="Delete alert (Del)"
-            aria-label="Delete alert"
-          >
-            <X size={12} />
-          </button>
-        );
-      })()}
-
-      {menu && (
-        <AlertContextMenu
-          state={menu}
-          onClose={() => setMenu(null)}
-          onEdit={(id) => editAlert(id)}
-          onClone={(id) => duplicateAlert(id)}
-          onToggleEnabled={(id, enabled) => updateAlert(id, { enabled })}
-          onDelete={(id) => deleteAlert(id)}
-        />
-      )}
-    </div>
+    </>
   );
 }
 

@@ -24,6 +24,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
      Added `seenAlertIds` first-evaluation gate.
   Files: chart/AlertOverlay.tsx, hooks/useAlertEngine.ts.
 
+### Fixed — Alert trendline drag not working after selection (2026-06-27)
+- Selecting an alert line and dragging it up/down to change the price did not
+  work. Two root causes:
+  1. Hit strips were rendered inside a `pointer-events: none` container, which
+     blocked pointer events in some browsers despite child `pointer-events: auto`.
+     Moved hit strips outside the container with `z-index: 10`.
+  2. React `onPointerMove`/`onPointerUp` handlers broke during re-renders
+     triggered by `setDrag`. Replaced with native DOM event listeners
+     (`addEventListener`) that survive React reconciliation, plus direct
+     `target.style.top` updates for lag-free dragging.
+  Files: chart/AlertOverlay.tsx.
+
 ### Fixed — Alert lines disappearing on chart zoom (2026-06-27)
 - `AlertLines` effect depended on `ctx` (which changes on every zoom/pan via
   `ctx.version`), causing all native price lines to be removed and recreated

@@ -66,8 +66,11 @@ This is the primary mechanism for drawing alert price lines. Advantages:
   native lines reposition automatically with the price scale).
 
 **AlertOverlay** (canvas, interactive) — provides drag-to-move, click-to-select,
-right-click context menu, hover styling, and keyboard delete. This is a secondary
-layer rendered on top of the native lines for interaction only.
+right-click context menu, hover styling, and keyboard delete. Hit strips are
+rendered OUTSIDE the `pointer-events:none` container with `z-index:10` to ensure
+reliable pointer event delivery across browsers. Drag uses native DOM event
+listeners (`pointermove`/`pointerup`) with direct `style.top` updates for
+lag-free interaction.
 
 - **Canvas** (pointer-events: none) draws each line, a right-side label chip, hover/selection styling
   and drag handles; repaints on `ctx.version` (pan/zoom) and on selection/hover/drag changes.
