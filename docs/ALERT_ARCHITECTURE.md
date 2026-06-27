@@ -1,6 +1,6 @@
 # ALERT ARCHITECTURE (Phase 2)
 
-_TradingView-style price alert engine. Last updated 2026-06-25._
+_TradingView-style price alert engine. Last updated 2026-06-27._
 
 ## 1. Goals & constraints
 
@@ -53,12 +53,20 @@ Binance / TwelveData WS  (one socket per provider — Phase 1)
 | Sound | `services/notifications/sound.ts` | Web Audio two-tone chime — no asset, lazy AudioContext, failure-safe. |
 | Browser | `services/notifications/browser.ts` | Notification API: support check, permission request, show. Permission requested **only** from the Alert Center. |
 | Alert Center UI | `components/alerts/AlertCenter.tsx` | Responsive slide-over: settings, create form, active / triggered / history. Toggled from the toolbar bell + `uiStore.alertCenterOpen`. |
-| Chart integration | `components/chart/AlertOverlay.tsx`, `AlertContextMenu.tsx`, `alerts/AlertEditDialog.tsx`, `ChartContextMenu.tsx` | **Interactive** alert lines (Phase 2.1): canvas draws the line/label/handles, thin DOM hit strips give hover/select/drag/right-click/long-press; edit dialog + alert context menu (Edit/Clone/Disable/Delete). Background right-click "Create Alert" infers `crossUp`/`crossDown` from current price. |
+| Chart integration | `components/chart/AlertLines.tsx` (NEW), `components/chart/AlertOverlay.tsx`, `AlertContextMenu.tsx`, `alerts/AlertEditDialog.tsx`, `ChartContextMenu.tsx` | **AlertLines** uses native `createPriceLine` for guaranteed visibility (no canvas timing issues). **AlertOverlay** provides interactive canvas lines (drag/select/right-click). Background right-click "Create Alert" infers `crossUp`/`crossDown` from current price. |
 
-### Interactive chart alerts (Phase 2.1)
+### Alert lines on chart (dual-layer: AlertLines + AlertOverlay)
 
-Lightweight Charts price lines (`createPriceLine`) are not pointer-interactive, so alert lines are
-rendered by `AlertOverlay` instead:
+**AlertLines** (native, non-interactive) — uses lightweight-charts' built-in `createPriceLine` API.
+This is the primary mechanism for drawing alert price lines. Advantages:
+- Drawn by the chart engine itself — zero timing issues, zero canvas hacks.
+- Automatically scrolls with the price scale.
+- Shows a right-axis label with the alert symbol and price.
+- Lines are removed/recreated on every symbolAlerts change (simple, reliable).
+
+**AlertOverlay** (canvas, interactive) — provides drag-to-move, click-to-select,
+right-click context menu, hover styling, and keyboard delete. This is a secondary
+layer rendered on top of the native lines for interaction only.
 
 - **Canvas** (pointer-events: none) draws each line, a right-side label chip, hover/selection styling
   and drag handles; repaints on `ctx.version` (pan/zoom) and on selection/hover/drag changes.

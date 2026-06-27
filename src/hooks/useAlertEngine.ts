@@ -1,4 +1,4 @@
-'use client';
+"use client";
 /**
  * useAlertEngine (Phase 2) — drives the Alert Engine from realtime prices.
  *
@@ -15,13 +15,13 @@
  *     and dispatches notifications. Previous prices are remembered per symbol so
  *     `crossUp`/`crossDown` edges are detected.
  */
-import { useEffect, useRef } from 'react';
-import { useMarketDataStore } from '@/store/marketDataStore';
-import { useAlertStore, RECURRING_REARM_MS } from '@/store/alertStore';
-import { getMarketSymbol } from '@/services/market-data/symbols';
-import { isAlertTriggered } from '@/services/alertEngine';
-import { deliverAlert } from '@/services/notifications/notify';
-import { subscriptionKey } from '@/types';
+import { useEffect, useRef } from "react";
+import { useMarketDataStore } from "@/store/marketDataStore";
+import { useAlertStore, RECURRING_REARM_MS } from "@/store/alertStore";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { isAlertTriggered } from "@/services/alertEngine";
+import { deliverAlert } from "@/services/notifications/notify";
+import { subscriptionKey } from "@/types";
 
 type MarketDataState = ReturnType<typeof useMarketDataStore.getState>;
 
@@ -39,20 +39,26 @@ export function useAlertEngine() {
   // the symbol set actually changes (not on every alert edit).
   const alertSymbolsKey = useAlertStore((s) => {
     const set = new Set(s.alerts.map((a) => a.symbol));
-    return [...set].sort().join(',');
+    return [...set].sort().join(",");
   });
 
   const subscribedRef = useRef<Set<string>>(new Set());
   const prevPriceRef = useRef<Map<string, number>>(new Map());
+  /** Alert IDs that have been evaluated at least once. New alerts skip cross
+   *  detection on their first evaluation to prevent a stale `prev` price
+   *  (recorded before the alert existed) from causing an immediate trigger. */
+  const seenAlertIds = useRef<Set<string>>(new Set());
 
   // ---- 1. keep alert-symbol tickers subscribed (refcounted) ----
   useEffect(() => {
-    const desired = new Set(alertSymbolsKey ? alertSymbolsKey.split(',') : []);
+    const desired = new Set(alertSymbolsKey ? alertSymbolsKey.split(",") : []);
     const subbed = subscribedRef.current;
 
     for (const sym of desired) {
       if (!subbed.has(sym) && getMarketSymbol(sym)) {
-        useMarketDataStore.getState().subscribe({ symbol: sym, channels: ['ticker'] });
+        useMarketDataStore
+          .getState()
+          .subscribe({ symbol: sym, channels: ["ticker"] });
         subbed.add(sym);
       }
     }
@@ -94,7 +100,10 @@ export function useAlertEngine() {
         if (!alert.enabled) continue; // disabled alerts are not evaluated
         const curr = priceBySym.get(alert.symbol);
         if (curr === undefined) continue;
-        const prev = prevPriceRef.current.get(alert.symbol);
+        // First-time evaluation: ignore stale prev price (recorded before
+        // the alert existed) to prevent spurious crossUp/crossDown triggers.
+        const isNew = !seenAlertIds.current.has(alert.id);
+        const prev = isNew ? undefined : prevPriceRef.current.get(alert.symbol);
         const rearmBlocked =
           alert.recurring &&
           alert.triggeredAt !== undefined &&
@@ -102,6 +111,15 @@ export function useAlertEngine() {
         if (!rearmBlocked && isAlertTriggered(alert, prev, curr)) {
           const fired = triggerAlert(alert.id, curr);
           if (fired) deliverAlert(fired, curr, settings);
+        }
+        seenAlertIds.current.add(alert.id);
+      }
+
+      // Clean up seenAlertIds for alerts that no longer exist.
+      if (seenAlertIds.current.size > alerts.length * 2) {
+        const activeIds = new Set(alerts.map((a) => a.id));
+        for (const id of seenAlertIds.current) {
+          if (!activeIds.has(id)) seenAlertIds.current.delete(id);
         }
       }
 

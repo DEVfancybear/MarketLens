@@ -1,4 +1,4 @@
-'use client';
+"use client";
 /**
  * AlertOverlay (Phase 2.1) — TradingView-style interactive alert lines.
  *
@@ -15,19 +15,19 @@
  * updates the line locally for lag-free movement and commits the new price (with
  * a recalculated above/below condition) on release. The engine is untouched.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
-import { useChartCtx } from './ChartContext';
-import { useChartStore } from '@/store/chartStore';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { useChartCtx } from "./ChartContext";
+import { useChartStore } from "@/store/chartStore";
 import {
   useAlertStore,
   CONDITION_SYMBOL,
   type Alert,
   type AlertCondition,
-} from '@/store/alertStore';
-import { getMarketSymbol } from '@/services/market-data/symbols';
-import { fmtPrice } from '@/utils/format';
-import { AlertContextMenu, type AlertMenuState } from './AlertContextMenu';
+} from "@/store/alertStore";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { fmtPrice } from "@/utils/format";
+import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
 
 const HIT_PX = 7; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
@@ -37,11 +37,16 @@ const DRAG_THRESHOLD = 3;
 const ALERT_DEBUG = true;
 
 /** Recompute the condition while dragging, keeping the alert's family (level vs cross). */
-function sideCondition(base: AlertCondition, price: number, market: number | undefined): AlertCondition {
+function sideCondition(
+  base: AlertCondition,
+  price: number,
+  market: number | undefined,
+): AlertCondition {
   if (market === undefined) return base;
   const above = price >= market;
-  if (base === 'crossUp' || base === 'crossDown') return above ? 'crossUp' : 'crossDown';
-  return above ? 'above' : 'below';
+  if (base === "crossUp" || base === "crossDown")
+    return above ? "crossUp" : "crossDown";
+  return above ? "above" : "below";
 }
 
 export function AlertOverlay() {
@@ -60,69 +65,108 @@ export function AlertOverlay() {
 
   const symbolAlerts = alerts.filter((a) => a.symbol === symbol);
 
+  // Stash render data in refs so the draw callback always reads the latest values
+  // without depending on symbolAlerts (which changes reference on every render).
+  const alertsRef = useRef(alerts);
+  const symbolRef = useRef(symbol);
+  const selectedIdRef = useRef(selectedId);
+  alertsRef.current = alerts;
+  symbolRef.current = symbol;
+  selectedIdRef.current = selectedId;
+
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; price: number } | null>(null);
   const [menu, setMenu] = useState<AlertMenuState | null>(null);
-  const dragSession = useRef<{ id: string; startY: number; moved: boolean } | null>(null);
+  const dragSession = useRef<{
+    id: string;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const marketPrice = ctx?.candles[ctx.candles.length - 1]?.close;
 
   const toY = useCallback(
-    (price: number): number | null => ctx?.candleSeries.priceToCoordinate(price) ?? null,
+    (price: number): number | null =>
+      ctx?.candleSeries.priceToCoordinate(price) ?? null,
     [ctx],
   );
   const priceAt = useCallback(
     (clientY: number): number | null => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect || !ctx) return null;
-      return ctx.candleSeries.coordinateToPrice(clientY - rect.top) as number | null;
+      return ctx.candleSeries.coordinateToPrice(clientY - rect.top) as
+        | number
+        | null;
     },
     [ctx],
   );
 
-  const displayPrice = (a: Alert) => (drag && drag.id === a.id ? drag.price : a.price);
+  const displayPrice = (a: Alert) =>
+    drag && drag.id === a.id ? drag.price : a.price;
 
   // ---------------------------------------------------------------- rendering
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !ctx) {
-      if (ALERT_DEBUG) console.debug('[AlertOverlay] draw bail', { canvas: !!canvas, ctx: !!ctx }); // checks 2/7
+      if (ALERT_DEBUG)
+        console.debug("[AlertOverlay] draw bail", {
+          canvas: !!canvas,
+          ctx: !!ctx,
+        }); // checks 2/7
       return;
     }
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+    if (
+      canvas.width !== rect.width * dpr ||
+      canvas.height !== rect.height * dpr
+    ) {
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
     }
-    const g = canvas.getContext('2d')!;
+    const g = canvas.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
+    // Read latest data from refs to avoid stale-closure on symbolAlerts.
+    const latestAlerts = alertsRef.current;
+    const latestSymbol = symbolRef.current;
+    const latestSelectedId = selectedIdRef.current;
+    const filtered = latestAlerts.filter((a) => a.symbol === latestSymbol);
+
     if (ALERT_DEBUG) {
       const cs = getComputedStyle(canvas);
-      console.debug('[AlertOverlay] draw', {
-        storeAlerts: alerts.length, // check 1: does the store contain alerts?
-        symbolAlerts: symbolAlerts.length, // check 3: receiving alerts for this symbol?
-        symbol, // check 6: symbol the overlay filters on
-        canvasSize: { w: rect.width, h: rect.height }, // check 8: 0-size hides everything
-        css: { zIndex: cs.zIndex, visibility: cs.visibility, opacity: cs.opacity, display: cs.display }, // check 8
+      console.debug("[AlertOverlay] draw", {
+        storeAlerts: latestAlerts.length,
+        symbolAlerts: filtered.length,
+        symbol: latestSymbol,
+        canvasSize: { w: rect.width, h: rect.height },
+        css: {
+          zIndex: cs.zIndex,
+          visibility: cs.visibility,
+          opacity: cs.opacity,
+          display: cs.display,
+        },
       });
     }
 
     let drawn = 0;
-    for (const a of symbolAlerts) {
+    for (const a of filtered) {
       const price = drag && drag.id === a.id ? drag.price : a.price;
       const y = toY(price);
       if (y == null) {
-        if (ALERT_DEBUG) console.debug('[AlertOverlay] skip line — priceToCoordinate null', { symbol: a.symbol, price }); // check 4
+        if (ALERT_DEBUG)
+          console.debug("[AlertOverlay] skip line — priceToCoordinate null", {
+            symbol: a.symbol,
+            price,
+          }); // check 4
         continue;
       }
-      const selected = a.id === selectedId;
-      const hover = a.id === hoverId || (drag?.id === a.id);
-      const base = a.enabled ? '#f7a600' : '#6b7280';
+      const selected = a.id === latestSelectedId;
+      const hover = a.id === hoverId || drag?.id === a.id;
+      const base = a.enabled ? "#f7a600" : "#6b7280";
 
       // line
       g.save();
@@ -138,26 +182,30 @@ export function AlertOverlay() {
 
       // right-side label chip
       const label = `🔔 ${CONDITION_SYMBOL[a.condition]} ${fmtPrice(price, prec)}`;
-      g.font = '10px monospace';
+      g.font = "10px monospace";
       const tw = g.measureText(label).width;
       const padX = 6;
       const chipW = tw + padX * 2;
       const chipH = 16;
       const chipX = rect.width - chipW - 6;
       const chipY = y - chipH / 2;
-      g.fillStyle = a.enabled ? '#f7a600' : '#6b7280';
+      g.fillStyle = a.enabled ? "#f7a600" : "#6b7280";
       g.globalAlpha = a.enabled ? 1 : 0.6;
       roundRect(g, chipX, chipY, chipW, chipH, 3);
       g.fill();
-      g.fillStyle = '#1a1a1a';
+      g.fillStyle = "#1a1a1a";
       g.globalAlpha = 1;
-      g.textBaseline = 'middle';
+      g.textBaseline = "middle";
       g.fillText(label, chipX + padX, y + 0.5);
 
       // selection handles
       if (selected) {
-        for (const hx of [rect.width * 0.25, rect.width * 0.5, rect.width * 0.75]) {
-          g.fillStyle = '#fff';
+        for (const hx of [
+          rect.width * 0.25,
+          rect.width * 0.5,
+          rect.width * 0.75,
+        ]) {
+          g.fillStyle = "#fff";
           g.strokeStyle = base;
           g.lineWidth = 1.5;
           g.beginPath();
@@ -169,17 +217,41 @@ export function AlertOverlay() {
       g.restore();
       drawn += 1;
     }
-    if (ALERT_DEBUG) console.debug('[AlertOverlay] drew', drawn, 'line(s)'); // checks 4/5
-  }, [symbolAlerts, selectedId, hoverId, drag, ctx, toY, prec, alerts.length, symbol]);
+    if (ALERT_DEBUG) console.debug("[AlertOverlay] drew", drawn, "line(s)"); // checks 4/5
+  }, [ctx, toY, prec, hoverId, drag]);
 
   // Repaint on data/selection/hover/drag/pan-zoom changes…
-  useEffect(() => { draw(); }, [draw]);
+  useEffect(() => {
+    draw();
+  }, [draw, alerts.length]);
+
+  // Backup: direct Zustand subscription ensures draw fires even if React
+  // batches the re-render in a way that misses the effect trigger.
+  // Uses a ref so we don't resubscribe when `draw` changes.
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+  useEffect(() => {
+    let rafId: number | null = null;
+    const unsub = useAlertStore.subscribe(() => {
+      // Coalesce multiple store updates into a single rAF.
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          drawRef.current();
+        });
+      }
+    });
+    return () => {
+      unsub();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   // …and on any container resize (covers the case where the overlay canvas is
   // first laid out at zero size and would otherwise never get a redraw).
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => draw());
     ro.observe(el);
     return () => ro.disconnect();
@@ -187,26 +259,30 @@ export function AlertOverlay() {
 
   // Mount diagnostics (checks 2 + 7).
   useEffect(() => {
-    if (ALERT_DEBUG) console.debug('[AlertOverlay] MOUNTED');
-    return () => { if (ALERT_DEBUG) console.debug('[AlertOverlay] UNMOUNTED'); };
+    if (ALERT_DEBUG) console.debug("[AlertOverlay] MOUNTED");
+    return () => {
+      if (ALERT_DEBUG) console.debug("[AlertOverlay] UNMOUNTED");
+    };
   }, []);
 
   // ---------------------------------------------------------------- keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (!selectedId) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const a = useAlertStore.getState().alerts.find((x) => x.id === selectedId);
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const a = useAlertStore
+          .getState()
+          .alerts.find((x) => x.id === selectedId);
         if (a && !a.locked) deleteAlert(selectedId);
-      } else if (e.key === 'Escape') {
+      } else if (e.key === "Escape") {
         selectAlert(null);
         setMenu(null);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, deleteAlert, selectAlert]);
 
   // ------------------------------------------------------- click-outside deselect
@@ -216,8 +292,8 @@ export function AlertOverlay() {
       const root = containerRef.current;
       if (root && !root.contains(e.target as Node)) selectAlert(null);
     };
-    window.addEventListener('pointerdown', onDown);
-    return () => window.removeEventListener('pointerdown', onDown);
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
   }, [menu, selectAlert]);
 
   if (!ctx) return null;
@@ -243,7 +319,7 @@ export function AlertOverlay() {
     (e.target as Element).setPointerCapture(e.pointerId);
 
     // Long-press → context menu (touch).
-    if (e.pointerType === 'touch') {
+    if (e.pointerType === "touch") {
       clearLongPress();
       longPress.current = setTimeout(() => {
         dragSession.current = null; // a long-press is not a drag
@@ -260,7 +336,8 @@ export function AlertOverlay() {
     if (!session || session.id !== a.id) return;
     // Require a real movement before treating it as a drag (so a click that
     // jitters a pixel doesn't commit a no-op price change).
-    if (!session.moved && Math.abs(e.clientY - session.startY) < DRAG_THRESHOLD) return;
+    if (!session.moved && Math.abs(e.clientY - session.startY) < DRAG_THRESHOLD)
+      return;
     const p = priceAt(e.clientY);
     if (p == null || p <= 0) return;
     session.moved = true;
@@ -270,7 +347,11 @@ export function AlertOverlay() {
 
   const onStripPointerUp = (a: Alert) => (e: React.PointerEvent) => {
     clearLongPress();
-    try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    try {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
     const session = dragSession.current;
     dragSession.current = null;
     if (session?.moved && drag && drag.id === a.id) {
@@ -286,8 +367,16 @@ export function AlertOverlay() {
   };
 
   return (
-    <div ref={containerRef} className="absolute inset-0 h-full w-full" style={{ pointerEvents: 'none' }}>
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ pointerEvents: 'none' }} />
+    <div
+      ref={containerRef}
+      className="absolute inset-0 h-full w-full"
+      style={{ pointerEvents: "none" }}
+    >
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full"
+        style={{ pointerEvents: "none" }}
+      />
 
       {symbolAlerts.map((a) => {
         const y = toY(displayPrice(a));
@@ -300,15 +389,17 @@ export function AlertOverlay() {
             onPointerMove={onStripPointerMove(a)}
             onPointerUp={onStripPointerUp(a)}
             onPointerEnter={() => !dragSession.current && setHoverId(a.id)}
-            onPointerLeave={() => !dragSession.current && setHoverId((h) => (h === a.id ? null : h))}
+            onPointerLeave={() =>
+              !dragSession.current && setHoverId((h) => (h === a.id ? null : h))
+            }
             onContextMenu={onStripContextMenu(a)}
             className="absolute left-0 right-0"
             style={{
               top: y - HIT_PX,
               height: HIT_PX * 2,
-              pointerEvents: 'auto',
-              cursor: a.locked ? 'not-allowed' : dragging ? 'grabbing' : 'grab',
-              touchAction: 'none',
+              pointerEvents: "auto",
+              cursor: a.locked ? "not-allowed" : dragging ? "grabbing" : "grab",
+              touchAction: "none",
             }}
           />
         );
@@ -322,10 +413,13 @@ export function AlertOverlay() {
         if (y == null) return null;
         return (
           <button
-            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
             onClick={() => deleteAlert(sel.id)}
             className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110"
-            style={{ top: y - 10, left: 8, pointerEvents: 'auto' }}
+            style={{ top: y - 10, left: 8, pointerEvents: "auto" }}
             title="Delete alert (Del)"
             aria-label="Delete alert"
           >
@@ -348,7 +442,14 @@ export function AlertOverlay() {
   );
 }
 
-function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
   g.beginPath();
   g.moveTo(x + r, y);
   g.arcTo(x + w, y, x + w, y + h, r);

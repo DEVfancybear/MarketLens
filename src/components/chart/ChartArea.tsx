@@ -9,6 +9,7 @@ import { PriceChart } from "./PriceChart";
 import { IndicatorPane } from "./IndicatorPane";
 import { DrawingLayer } from "./DrawingLayer";
 import { AlertOverlay } from "./AlertOverlay";
+import { AlertLines } from "./AlertLines";
 import { ReplaySelectionLayer } from "@/components/replay/ReplaySelectionLayer";
 import { SmcLayer } from "@/components/smc/SmcLayer";
 import { TradeLevels } from "@/components/trade/TradeLevels";
@@ -79,6 +80,7 @@ export function ChartArea() {
         <PriceChart candles={candles} onReady={setMainChart}>
           <SmcLayer />
           <TradeLevels />
+          <AlertLines />
           <AlertOverlay />
           <DrawingLayer />
           <ReplaySelectionLayer />
