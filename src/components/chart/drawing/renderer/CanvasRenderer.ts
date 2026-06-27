@@ -63,7 +63,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   let lastSelectedId: string | null = null;
   let lastHidden = false;
   let lastMachineState = "";
-  let lastMachineAnchorsLen = 0;
+  let lastMachineAnchorsSig = "";
   let lastActiveTool = "";
   let lastDrawColor = "";
   let lastLiveHash = "";
@@ -113,7 +113,15 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
 
     const m = data.machine;
     const machineState = m?.state ?? "";
-    const machineAnchorsLen = m?.anchors.length ?? 0;
+    // Signature of the in-progress (rubber-band) anchors. Must include their
+    // POSITIONS, not just the count — otherwise the live preview freezes after the
+    // first move because the anchor count stops changing while the pointer moves.
+    let machineAnchorsSig = "-";
+    if (m && m.anchors.length > 0) {
+      machineAnchorsSig = String(m.anchors.length);
+      for (const a of m.anchors)
+        machineAnchorsSig += "," + a.time.toFixed(0) + "," + a.price.toFixed(4);
+    }
     const drawHash = drawingsHash(data.drawings);
     const liveH = liveHash(data.livePoints);
 
@@ -123,7 +131,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       data.selectedDrawingId === lastSelectedId &&
       data.drawingsHidden === lastHidden &&
       machineState === lastMachineState &&
-      machineAnchorsLen === lastMachineAnchorsLen &&
+      machineAnchorsSig === lastMachineAnchorsSig &&
       data.activeTool === lastActiveTool &&
       data.drawColor === lastDrawColor &&
       liveH === lastLiveHash &&
@@ -137,7 +145,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     lastSelectedId = data.selectedDrawingId;
     lastHidden = data.drawingsHidden;
     lastMachineState = machineState;
-    lastMachineAnchorsLen = machineAnchorsLen;
+    lastMachineAnchorsSig = machineAnchorsSig;
     lastActiveTool = data.activeTool;
     lastDrawColor = data.drawColor;
     lastLiveHash = liveH;

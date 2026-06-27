@@ -3,6 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Live rubber-band preview froze while drawing a two-point tool (2026-06-27)
+- After the first click of a two-point tool (trend line, etc.), moving the pointer toward
+  the second point showed no live preview — the line only appeared on the second click.
+  Root cause: the render-loop memo guard tracked the in-progress machine anchors by COUNT
+  (`machineAnchorsLen`) only. After the first move the count stops changing (stays 2) while
+  the pointer keeps moving, so the guard skipped every subsequent repaint and the preview
+  froze. Replaced the count with a signature that includes anchor POSITIONS
+  (`machineAnchorsSig`), so the rubber-band tracks the cursor in real time.
+  Files: renderer/CanvasRenderer.ts.
+  Regression risk: Low. Same memo mechanism, finer-grained key.
+
 ### Fixed — Deleted drawing lingered for seconds before disappearing (2026-06-27)
 - Deleting a drawing (keyboard/context menu), undo/redo, color change, lock/hide, and
   selection changes updated the store but the canvas only repainted seconds later (on
