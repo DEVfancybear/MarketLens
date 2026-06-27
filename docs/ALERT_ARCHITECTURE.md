@@ -62,7 +62,8 @@ This is the primary mechanism for drawing alert price lines. Advantages:
 - Drawn by the chart engine itself — zero timing issues, zero canvas hacks.
 - Automatically scrolls with the price scale.
 - Shows a right-axis label with the alert symbol and price.
-- Lines are removed/recreated on every symbolAlerts change (simple, reliable).
+- Lines are only recreated when the alert set changes (not on zoom/pan —
+  native lines reposition automatically with the price scale).
 
 **AlertOverlay** (canvas, interactive) — provides drag-to-move, click-to-select,
 right-click context menu, hover styling, and keyboard delete. This is a secondary

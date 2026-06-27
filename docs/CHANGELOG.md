@@ -3,6 +3,35 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — AlertLines: native chart price lines for guaranteed alert visibility (2026-06-27)
+- New `AlertLines` component using lightweight-charts' built-in `createPriceLine` API
+  instead of custom canvas overlay. This guarantees alert lines are always visible
+  immediately after creation — same mechanism as `TradeLevels` entry/SL/TP lines.
+- Lines reposition automatically on zoom/pan (no recreate needed).
+- Shows right-axis label with alert symbol, condition, and target price.
+- Dual-layer design: `AlertLines` for visibility, `AlertOverlay` for interaction.
+  Files: chart/AlertLines.tsx, chart/ChartArea.tsx, chart/AlertOverlay.tsx.
+
+### Fixed — Alert trendline not appearing on chart after creation (2026-06-27)
+- Creating an alert via right-click context menu saved the alert but showed no
+  horizontal line on the chart. Two root causes:
+  1. `AlertOverlay`'s `draw` callback depended on `symbolAlerts` (new array every
+     render via `.filter()`), causing perpetual `useCallback` recreation and rAF
+     cancellation. Refactored to read data from refs (`alertsRef`, `symbolRef`).
+  2. `useAlertEngine` used a `prev` price recorded BEFORE the alert existed for
+     cross detection, causing spurious immediate `crossUp`/`crossDown` triggers
+     that moved the alert to `triggeredAlerts` before the user saw the line.
+     Added `seenAlertIds` first-evaluation gate.
+  Files: chart/AlertOverlay.tsx, hooks/useAlertEngine.ts.
+
+### Fixed — Alert lines disappearing on chart zoom (2026-06-27)
+- `AlertLines` effect depended on `ctx` (which changes on every zoom/pan via
+  `ctx.version`), causing all native price lines to be removed and recreated
+  on every zoom step. Moved `candleSeries` to a stable `seriesRef` so the effect
+  only runs when alert data actually changes — native lines reposition
+  automatically with the price scale.
+  Files: chart/AlertLines.tsx.
+
 ### Added — Chart right-click: Reset view / Remove drawings / Remove indicators (2026-06-27)
 - Added the three TradingView chart context-menu actions:
   - **Reset chart view** — `chartRegistry.resetChartView()` calls `resetTimeScale()` +
