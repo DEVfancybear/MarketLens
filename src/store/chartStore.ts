@@ -67,6 +67,8 @@ interface ChartState {
   toggleIndicator: (type: IndicatorType) => void;
   updateIndicator: (id: string, patch: Partial<IndicatorConfig>) => void;
   removeIndicator: (id: string) => void;
+  /** Remove every indicator (TradingView "Remove indicators"). */
+  clearIndicators: () => void;
 
   setCrosshair: (c: ChartState["crosshair"]) => void;
   /** Load persisted drawings/indicators from localStorage. Client-only. */
@@ -274,6 +276,10 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const indicators = get().indicators.filter((i) => i.id !== id);
     set({ indicators });
     localStore.set("indicators", indicators);
+  },
+  clearIndicators: () => {
+    set({ indicators: [] });
+    localStore.set("indicators", []);
   },
 
   setCrosshair: (crosshair) => set({ crosshair }),

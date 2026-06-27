@@ -3,6 +3,16 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Chart right-click: Reset view / Remove drawings / Remove indicators (2026-06-27)
+- Added the three TradingView chart context-menu actions:
+  - **Reset chart view** — `chartRegistry.resetChartView()` calls `resetTimeScale()` +
+    `scrollToRealTime()` and re-enables right price-scale `autoScale`.
+  - **Remove drawings** — `chartStore.clearDrawings()` (existing); disabled when none.
+  - **Remove indicators** — new `chartStore.clearIndicators()`; disabled when none.
+  - Menu items support a `disabled` state (greyed, non-interactive) like TradingView.
+  Files: store/chartStore.ts (clearIndicators), chart/chartRegistry.ts (resetChartView),
+  chart/ChartContextMenu.tsx.
+
 ### Docs — Refreshed stale drawing-engine architecture docs (2026-06-27)
 - Updated the current-architecture drawing docs to match the implemented plugin/adapter
   engine (they described an obsolete `switch(d.tool)` / `drawingHitTest.ts` design):

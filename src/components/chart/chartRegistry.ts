@@ -14,6 +14,18 @@ export function getMainChart(): IChartApi | null {
   return mainChart;
 }
 
+/**
+ * Reset the chart viewport to its default (TradingView "Reset chart view"):
+ * restores default bar spacing + scroll position and re-enables price autoscale.
+ */
+export function resetChartView(): boolean {
+  if (!mainChart) return false;
+  mainChart.timeScale().resetTimeScale();
+  mainChart.timeScale().scrollToRealTime();
+  mainChart.priceScale("right").applyOptions({ autoScale: true });
+  return true;
+}
+
 /** Capture the chart as a PNG blob. */
 export async function captureChart(): Promise<Blob | null> {
   if (!mainChart) return null;

@@ -10,7 +10,11 @@ import {
   Star,
   Copy,
   StarOff,
+  Maximize2,
+  Eraser,
+  LineChart,
 } from "lucide-react";
+import { resetChartView } from "./chartRegistry";
 import { useChartStore } from "@/store/chartStore";
 import { useTradeStore } from "@/store/tradeStore";
 import { useUIStore } from "@/store/uiStore";
@@ -42,6 +46,7 @@ type MenuItem =
       icon: React.ReactNode;
       label: string;
       danger?: boolean;
+      disabled?: boolean;
       onClick: () => void;
     };
 
@@ -60,6 +65,10 @@ export function ChartContextMenu({
   const symbol = useChartStore((s) => s.symbol);
   const addDrawing = useChartStore((s) => s.addDrawing);
   const drawColor = useChartStore((s) => s.drawColor);
+  const drawingsCount = useChartStore((s) => s.drawings.length);
+  const indicatorsCount = useChartStore((s) => s.indicators.length);
+  const clearDrawings = useChartStore((s) => s.clearDrawings);
+  const clearIndicators = useChartStore((s) => s.clearIndicators);
   const place = useTradeStore((s) => s.place);
   const setBottomTab = useUIStore((s) => s.setBottomTab);
   const log = useUIStore((s) => s.log);
@@ -221,6 +230,32 @@ export function ChartContextMenu({
         });
       }),
     },
+    { divider: true },
+    {
+      icon: <Maximize2 size={14} className="text-ink-muted" />,
+      label: "Reset chart view",
+      onClick: act(() => {
+        if (resetChartView()) log("info", "Chart view reset");
+      }),
+    },
+    {
+      icon: <Eraser size={14} className="text-ink-muted" />,
+      label: "Remove drawings",
+      disabled: drawingsCount === 0,
+      onClick: act(() => {
+        clearDrawings();
+        log("info", `Removed ${drawingsCount} drawing(s)`);
+      }),
+    },
+    {
+      icon: <LineChart size={14} className="text-ink-muted" />,
+      label: "Remove indicators",
+      disabled: indicatorsCount === 0,
+      onClick: act(() => {
+        clearIndicators();
+        log("info", `Removed ${indicatorsCount} indicator(s)`);
+      }),
+    },
   ];
 
   if (typeof document === "undefined") return null;
@@ -245,10 +280,12 @@ export function ChartContextMenu({
             key={(it as Exclude<MenuItem, { divider: true }>).label}
             role="menuitem"
             tabIndex={-1}
+            disabled={(it as Exclude<MenuItem, { divider: true }>).disabled}
             onClick={(it as Exclude<MenuItem, { divider: true }>).onClick}
             className={cn(
               "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs text-ink outline-none transition-colors",
               "hover:bg-terminal-hover focus:bg-terminal-hover",
+              "disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent disabled:focus:bg-transparent",
             )}
           >
             <span className="shrink-0">
