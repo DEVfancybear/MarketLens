@@ -3,6 +3,21 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Endpoint grab moved the whole line instead of the anchor (2026-06-27)
+- Clicking a trend-line endpoint dragged the entire line instead of resizing/rotating
+  around the opposite anchor (TradingView grabs the endpoint). Root cause: `fromEvent`
+  in `DrawingLayer.tsx` rescaled the pointer X by `timeScale().width() / canvas.width`
+  before `coordinateToTime`. But `timeScale().width()` excludes the right price axis,
+  so the scaling COMPRESSED every click's X — an error that grows toward the right edge
+  (~30–45px on a wide chart). For a near-horizontal line the offset stayed within body
+  TOL but exceeded HANDLE_RADIUS from the endpoint, so the body hit won. Now the local X
+  maps 1:1 to a time-scale coordinate (`coordinateToTime(lx)`), matching the chart's own
+  `onContextMenu` and the unscaled `timeToCoordinate` used for rendering/hit-testing.
+  Files: DrawingLayer.tsx.
+  Note: prior TOL(8→20) / HANDLE_RADIUS(10→24) bumps were compensating for this same
+  coordinate error; left as-is (generous hit zones are fine), but the X bug is now fixed at source.
+  Regression risk: Low. Hit-testing now matches the rendered geometry exactly.
+
 ### Fixed — Drawings drift off candles when panning the chart (2026-06-27)
 - Drawings were not staying pinned to their (time,price) anchors on pan/zoom; they
   appeared frozen at a screen pixel and drifted off their candles (not TradingView-like).

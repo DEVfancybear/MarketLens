@@ -55,11 +55,15 @@ export function DrawingLayer() {
     const cv = canvasRef.current;
     if (!c || !cv) return null;
     const r = cv.getBoundingClientRect();
+    // The canvas, the chart container, and the time-scale pane all share the same
+    // left edge and CSS-pixel width, so the local X maps 1:1 to a time-scale
+    // coordinate. Do NOT rescale by timeScale().width() (which excludes the right
+    // price axis) — that compresses every click's X and shifts hit-testing along
+    // the line, making endpoint grabs miss and select the body instead. This
+    // matches PriceChart's own coordinateToTime(localX) usage.
     const lx = e.clientX - r.left;
     const ly = e.clientY - r.top;
-    const tsWidth = c.chart.timeScale().width();
-    const adjX = r.width > 0 ? lx * (tsWidth / r.width) : lx;
-    const t = c.chart.timeScale().coordinateToTime(adjX);
+    const t = c.chart.timeScale().coordinateToTime(lx);
     const p = c.candleSeries.coordinateToPrice(ly);
     if (t == null || p == null) return null;
     return { time: t as number, price: p };
