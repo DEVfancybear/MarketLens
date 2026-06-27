@@ -30,7 +30,7 @@ import { fmtPrice } from "@/utils/format";
 import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
 import { alertLineRegistry } from "./alertLineRegistry";
 
-const HIT_PX = 7; // half-height of the interactive hit strip / proximity
+const HIT_PX = 12; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
 const DRAG_THRESHOLD = 3;
 
@@ -286,7 +286,20 @@ export function AlertOverlay() {
     const onDown = (e: PointerEvent) => {
       if (menu) return; // menu has its own outside handling
       const root = containerRef.current;
-      if (root && !root.contains(e.target as Node)) selectAlert(null);
+      if (!root) return;
+      // Only deselect if the click is truly outside the chart overlay area.
+      // (Hit strips + delete button are now rendered outside `containerRef`.)
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      // Check if click is inside the chart overlay container.
+      if (root.contains(target)) return;
+      // Check if click is on a hit strip or delete button (outside container).
+      if (
+        target.closest("[data-alert-strip]") ||
+        target.closest("[data-alert-delete]")
+      )
+        return;
+      selectAlert(null);
     };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
@@ -310,6 +323,7 @@ export function AlertOverlay() {
   const onStripPointerDown = (a: Alert) => (e: React.PointerEvent) => {
     if (e.button === 2) return; // right-click handled by onContextMenu
     e.preventDefault();
+    e.stopPropagation(); // prevent window click-outside from clearing selection
     selectAlert(a.id);
     setMenu(null);
 
@@ -387,6 +401,7 @@ export function AlertOverlay() {
 
   const onStripContextMenu = (a: Alert) => (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     openMenu(a, e.clientX, e.clientY);
   };
 
@@ -403,31 +418,6 @@ export function AlertOverlay() {
           style={{ pointerEvents: "none" }}
         />
 
-        {/* Delete handle for the selected alert */}
-        {(() => {
-          const sel = symbolAlerts.find(
-            (a) => a.id === selectedId && !a.locked,
-          );
-          if (!sel) return null;
-          const y = toY(displayPrice(sel));
-          if (y == null) return null;
-          return (
-            <button
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-              }}
-              onClick={() => deleteAlert(sel.id)}
-              className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110"
-              style={{ top: y - 10, left: 8, pointerEvents: "auto" }}
-              title="Delete alert (Del)"
-              aria-label="Delete alert"
-            >
-              <X size={12} />
-            </button>
-          );
-        })()}
-
         {menu && (
           <AlertContextMenu
             state={menu}
@@ -439,6 +429,37 @@ export function AlertOverlay() {
           />
         )}
       </div>
+
+      {/* Delete button — rendered outside the pointer-events:none container
+          so it reliably receives clicks (same root cause as the hit strips). */}
+      {(() => {
+        const sel = symbolAlerts.find((a) => a.id === selectedId && !a.locked);
+        if (!sel) return null;
+        const y = toY(displayPrice(sel));
+        if (y == null) return null;
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const id = sel.id;
+              const store = useAlertStore.getState();
+              store.deleteAlert(id);
+              const line = alertLineRegistry.get(id);
+              if (line && ctx) {
+                ctx.candleSeries.removePriceLine(line);
+                alertLineRegistry.delete(id);
+              }
+            }}
+            className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110 z-50"
+            data-alert-delete=""
+            style={{ top: y - 10, left: 8, pointerEvents: "auto" }}
+            title="Delete alert (Del)"
+            aria-label="Delete alert"
+          >
+            <X size={12} />
+          </button>
+        );
+      })()}
 
       {/* Hit strips rendered OUTSIDE the pointer-events:none container
           so they reliably receive pointer events in all browsers. */}
@@ -454,6 +475,7 @@ export function AlertOverlay() {
             onPointerLeave={() => setHoverId((h) => (h === a.id ? null : h))}
             onContextMenu={onStripContextMenu(a)}
             className="absolute left-0 right-0 z-10"
+            data-alert-strip=""
             style={{
               top: y - HIT_PX,
               height: HIT_PX * 2,

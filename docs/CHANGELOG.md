@@ -24,16 +24,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
      Added `seenAlertIds` first-evaluation gate.
   Files: chart/AlertOverlay.tsx, hooks/useAlertEngine.ts.
 
-### Fixed — Alert trendline drag not smooth / laggy (2026-06-27)
-- Native price line now updates in real-time during drag via `alertLineRegistry`
-  (`line.applyOptions({ price })`), so the trendline follows the cursor instantly
-  (TradingView behaviour). Previously the native line stayed at the old price until
-  release, making the drag appear laggy.
-- Hit strip moves instantly via direct DOM (`target.style.top`) on every
-  `pointermove`, without waiting for the 3px threshold. Threshold only gates
-  the commit on release.
-- `setDrag` (canvas redraw) batched at 60fps via `requestAnimationFrame`.
-  Files: chart/AlertOverlay.tsx, chart/AlertLines.tsx, chart/alertLineRegistry.ts (NEW).
+### Fixed — Alert trendline delete button not working (2026-06-27)
+- Delete (X) button and Delete/Backspace key had three issues:
+  1. Click-outside deselect handler fired on hit strips + delete button because
+     they were moved outside `containerRef`. Added `data-alert-strip` /
+     `data-alert-delete` attributes and `e.stopPropagation()` to prevent this.
+  2. Delete button was inside `pointer-events:none` container → moved outside
+     with `z-index:50`.
+  3. Native `pointermove`/`pointerup` listeners could interfere with click
+     events → removed `onPointerDown` from delete button.
+  Files: chart/AlertOverlay.tsx.
 
 ### Fixed — Alert lines disappearing on chart zoom (2026-06-27)
 - `AlertLines` effect depended on `ctx` (which changes on every zoom/pan via
