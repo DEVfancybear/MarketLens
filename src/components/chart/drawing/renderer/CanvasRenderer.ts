@@ -52,6 +52,10 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   const toY = (price: number) => coordCache.priceToY(price, rawToY);
 
   let dirty = true;
+  // Forces the next render to bypass the data-only memo guard. Set when the chart
+  // viewport changes (pan/zoom/resize) — the drawing data is unchanged but every
+  // (time,price)→pixel mapping has shifted, so the canvas MUST be repainted.
+  let forceNext = true;
   let rafId: number | null = null;
   let lastCanvasW = 0,
     lastCanvasH = 0;
@@ -114,6 +118,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     const liveH = liveHash(data.livePoints);
 
     if (
+      !forceNext &&
       drawHash === lastDrawingsHash &&
       data.selectedDrawingId === lastSelectedId &&
       data.drawingsHidden === lastHidden &&
@@ -127,6 +132,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     )
       return;
 
+    forceNext = false;
     lastDrawingsHash = drawHash;
     lastSelectedId = data.selectedDrawingId;
     lastHidden = data.drawingsHidden;
@@ -214,12 +220,15 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     if (rafId !== null) return;
     rafId = requestAnimationFrame(() => render());
   }
-  function markDirty() {
+  function markDirty(force = false) {
+    if (force) forceNext = true;
     dirty = true;
     schedule();
   }
   let unsubVersion: (() => void) | undefined;
-  if (onVersionChange) unsubVersion = onVersionChange(() => markDirty());
+  // Viewport changes (pan/zoom/resize) keep the drawing data identical but shift
+  // every pixel mapping, so force a repaint that bypasses the data-only guard.
+  if (onVersionChange) unsubVersion = onVersionChange(() => markDirty(true));
   schedule();
   return {
     markDirty,

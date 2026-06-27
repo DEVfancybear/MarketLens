@@ -3,6 +3,24 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Drawings drift off candles when panning the chart (2026-06-27)
+- Drawings were not staying pinned to their (time,price) anchors on pan/zoom; they
+  appeared frozen at a screen pixel and drifted off their candles (not TradingView-like).
+  Two compounding bugs:
+  1. `CoordinateCache.nextFrame()` only cleared its time/price→pixel maps when they
+     exceeded 100 entries; otherwise it bumped an unused `generation` counter. With a
+     few drawings the cache was never cleared, so every frame reused the pixel computed
+     on the FIRST frame. Now it clears both maps every frame (cache is frame-local only).
+  2. `CanvasRenderer` render loop early-returned via a data-only memo guard (drawing hash
+     + canvas size). Neither changes on pan/zoom, so the `markDirty()` fired by
+     `subscribeVisibleLogicalRangeChange` was a no-op. Added a `forceNext` flag set by the
+     viewport subscription (`markDirty(true)`) that bypasses the guard so the canvas
+     repaints — and re-projects — on every pan/zoom/resize frame.
+  Files: renderer/CoordinateCache.ts, renderer/CanvasRenderer.ts.
+  Root cause: stale per-frame coordinate cache + viewport changes not invalidating the
+  render memo. Either alone unpins drawings from candles.
+  Regression risk: Low. One repaint per rAF on pan (intended); cache still dedupes within a frame.
+
 ### Fixed — Endpoint handles not detected; body hit won instead (2026-06-27)
 - Increased HANDLE_RADIUS from 10px to 24px. Handle radius was smaller than
   body tolerance (TOL=20), so clicking near an endpoint always triggered

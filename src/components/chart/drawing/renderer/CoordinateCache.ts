@@ -3,27 +3,21 @@
  *
  * During a single render frame, dozens of (time,price)→pixel conversions happen.
  * This cache avoids redundant LWC API calls by storing results keyed by (time, price).
- * Invalidated at the start of each new frame via a generation counter.
+ * Invalidated at the start of each new frame.
+ *
+ * IMPORTANT: the cache is ONLY valid within a single frame. Between frames the chart
+ * may have panned/zoomed/resized, so the same (time,price) now maps to a different
+ * pixel. The cache MUST be cleared every frame — otherwise drawings keep their
+ * first-computed pixel and stop tracking the candles when the chart is panned.
  */
 export class CoordinateCache {
   private timeCache = new Map<number, number>();
   private priceCache = new Map<number, number>();
-  private generation = 0;
 
   /** Call at the start of each render frame to invalidate. */
   nextFrame(): void {
-    if (this.timeCache.size > 100 || this.priceCache.size > 100) {
-      this.timeCache.clear();
-      this.priceCache.clear();
-    } else {
-      this.generation++;
-    }
-    // If generation overflows, clear and reset.
-    if (this.generation > 1_000_000) {
-      this.generation = 0;
-      this.timeCache.clear();
-      this.priceCache.clear();
-    }
+    this.timeCache.clear();
+    this.priceCache.clear();
   }
 
   /** Get or compute a time→pixel-x mapping. */
