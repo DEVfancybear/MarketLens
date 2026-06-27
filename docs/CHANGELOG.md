@@ -3,6 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Deleted drawing lingered for seconds before disappearing (2026-06-27)
+- Deleting a drawing (keyboard/context menu), undo/redo, color change, lock/hide, and
+  selection changes updated the store but the canvas only repainted seconds later (on
+  the next pan/realtime tick). Root cause: the drawing render loop is dirty-driven
+  (`markDirty()`), and only the interaction manager's own transitions + pan/zoom/resize
+  triggered it — store mutations that bypass the interaction manager had no repaint
+  trigger. Added a `useEffect` in `DrawingLayer` that calls `markDirty()` whenever any
+  render-relevant store state changes (`drawings`, selection, hidden, color, active tool).
+  Files: DrawingLayer.tsx.
+  Regression risk: Low. One coalesced rAF repaint per store change.
+
 ### Fixed — Endpoint grab moved the whole line instead of the anchor (2026-06-27)
 - Clicking a trend-line endpoint dragged the entire line instead of resizing/rotating
   around the opposite anchor (TradingView grabs the endpoint). Root cause: `fromEvent`

@@ -102,6 +102,22 @@ export function DrawingLayer() {
     markDirtyRef.current();
   }, []);
 
+  // The render loop is dirty-driven: it only repaints when markDirty() is called.
+  // Store mutations that bypass the interaction manager — delete (keyboard/menu),
+  // undo/redo, color change, lock/hide, selection change — update `drawings` but
+  // would otherwise not repaint until the next pan/tick. Force a repaint whenever
+  // any render-relevant store state changes so the canvas updates immediately.
+  useEffect(() => {
+    markDirtyRef.current();
+  }, [
+    drawings,
+    selectedDrawingId,
+    selectedDrawingIds,
+    drawingsHidden,
+    drawColor,
+    activeTool,
+  ]);
+
   const {
     cursorStyle,
     ctxMenu,
