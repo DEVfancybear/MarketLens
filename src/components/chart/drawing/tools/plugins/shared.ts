@@ -55,7 +55,14 @@ export function chip(
   g.fillStyle = color;
   g.globalAlpha = 0.85;
   g.beginPath();
-  g.roundRect(x, y, w, 18, 4);
+  // Use arcTo-based roundRect for cross-browser compatibility.
+  const r = 4;
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + 18, r);
+  g.arcTo(x + w, y + 18, x, y + 18, r);
+  g.arcTo(x, y + 18, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
   g.fill();
   g.globalAlpha = 1;
   g.fillStyle = "#fff";

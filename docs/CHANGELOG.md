@@ -3,7 +3,12 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
-### Added — Inline Text editor on chart replacing browser prompt (2026-06-27)
+### Fixed — InfoLine tool drag not smooth during rubber-band preview (2026-06-27)
+- InfoLine's price/percentage chip label is now skipped during rubber-band preview
+  (`id === "__pending"`), matching TrendLine smoothness. Chip renders only after
+  the drawing is placed.
+- Replaced native `g.roundRect()` in `chip()` with cross-browser `arcTo` path.
+  Files: drawing/tools/plugins/InfoLineTool.ts, drawing/tools/plugins/shared.ts.
 - Text tool now opens an inline `<input>` on the chart at the click position
   instead of `window.prompt()`. TradingView-style: click → type → Enter/Escape.
 - Empty placeholder drawing created without auto-selection to avoid the handle

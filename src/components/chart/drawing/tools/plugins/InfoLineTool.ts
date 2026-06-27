@@ -30,12 +30,16 @@ const plugin: DrawingToolPlugin = {
       y2 = proj.toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return;
     line(g, x1, y1, x2, y2);
-    const diff = d.points[1].price - d.points[0].price;
-    const pct = d.points[0].price ? (diff / d.points[0].price) * 100 : 0;
-    const label = `${diff >= 0 ? "+" : ""}${diff.toFixed(4)} (${pct.toFixed(2)}%)`;
-    const cx = (x1 + x2) / 2,
-      cy = (y1 + y2) / 2;
-    chip(g, label, cx - 40, cy - 9, d.color);
+    // Only show the price label for finalized drawings, not during rubber-band
+    // preview — makes dragging as smooth as trendline.
+    if (d.id !== "__pending") {
+      const diff = d.points[1].price - d.points[0].price;
+      const pct = d.points[0].price ? (diff / d.points[0].price) * 100 : 0;
+      const label = `${diff >= 0 ? "+" : ""}${diff.toFixed(4)} (${pct.toFixed(2)}%)`;
+      const cx = (x1 + x2) / 2,
+        cy = (y1 + y2) / 2;
+      chip(g, label, cx - 40, cy - 9, d.color);
+    }
     if (selected) {
       handle(g, x1, y1, d.color);
       handle(g, x2, y2, d.color);
