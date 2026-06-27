@@ -1,60 +1,44 @@
 # TOOL REGISTRY
 
-_Date: 2026-06-25._
+_Date: 2026-06-25. Rewritten 2026-06-27 — a formal adapter registry was implemented; this
+doc previously (and incorrectly) said the engine used decentralized `switch` statements._
 
 ## Current architecture
 
-The drawing engine does NOT use a formal tool registry pattern. Instead, tools are decentralized:
+The drawing engine **does** use a formal tool registry. Every tool is a self-registering
+**plugin** implementing the `DrawingAdapter` interface; the renderer, hit-tester, and
+interaction manager all delegate to it polymorphically. There are **no `switch(d.tool)`
+statements** anywhere in the engine.
 
 | Concern | Location |
 |---|---|
 | Tool identifiers (union type) | `types/drawing.ts` → `DrawingTool` |
 | Tool list (for toolbar) | `types/drawing.ts` → `DRAWING_TOOLS` + `MODE_TOOLS` |
-| Rendering per tool | `drawingRenderer.ts` → `switch(d.tool)` |
-| Hit-test per tool | `drawingHitTest.ts` → `switch(d.tool)` |
-| Creation flow per tool | `DrawingLayer.tsx` → `if/else` on `activeTool` |
+| Adapter interface + registry | `drawing/tools/ToolRegistry.ts` → `DrawingAdapter`, `registerTool`, `getTool` |
+| Per-tool implementation | `drawing/tools/plugins/*Tool.ts` (one file per tool) |
+| Registration | `drawing/tools/adapters.ts` (side-effect `import`s) |
+| Rendering per tool | `drawingRenderer.ts` → `getTool(d.tool).render()` |
+| Hit-test per tool | `hittest/HitTestEngine.ts` → `getTool(d.tool).hitTest()` |
+| Creation/move/resize | `interaction/DrawingInteractionManager.ts` → `getTool(...).move()/moveAnchor()` |
 | Toolbar icons per tool | `DrawingToolbar.tsx` → `TOOLS` array |
 
-## Why no formal registry
+## The `DrawingAdapter` interface
 
-For the current 17-tool set, the decentralized approach is simpler and avoids premature abstraction. Each concern (rendering, hit-test, creation) is a simple `switch` statement — adding a tool means adding a `case` in 3 files. This is maintainable at the current scale.
+Each plugin implements (see `ToolRegistry.ts` for the full signature):
 
-## Formal registry design (if needed in future)
+| Method | Purpose |
+|---|---|
+| `tool`, `minPoints` | identity + how many points before the object is committed |
+| `render(g, d, proj, selected)` | draw the object (+ handles when selected) |
+| `hitTest(d, px, py, toX, toY)` | return candidate hits — anchors (`p1`/`p2`/…) **and** `body` |
+| `movePoints(...)` / `move()` / `moveAnchor()` | translate the object / drag one anchor |
+| `boundingBox(d, toX, toY)` | pixel bbox for the spatial index / viewport cull |
+| `getAnchors(d, toX, toY)` | handle positions (defaults to one per point) |
 
-If the tool set grows beyond ~30 tools, or if tools need per-type state (e.g., a tool-specific settings panel), a formal registry could be introduced:
-
-```ts
-interface ToolDefinition {
-  id: DrawingTool;
-  category: 'mode' | 'line' | 'shape' | 'annotation' | 'position' | 'freehand';
-  icon: React.ReactNode;
-  label: string;
-  createOnSingleClick: boolean;
-  persistable: boolean;
-  minPoints: number;
-  maxPoints: number;
-  defaultColor: string;
-  defaultLineWidth: number;
-}
-
-const TOOL_REGISTRY: Record<DrawingTool, ToolDefinition> = {
-  trendline: {
-    id: 'trendline',
-    category: 'line',
-    icon: <TrendingUp size={18} />,
-    label: 'Trend Line',
-    createOnSingleClick: false, // two-click
-    persistable: true,
-    minPoints: 2,
-    maxPoints: 2,
-    defaultColor: '#2962ff',
-    defaultLineWidth: 1.5,
-  },
-  // ...
-};
-```
-
-This is NOT implemented — the decentralized approach is sufficient for Phase 4.
+`registerTool()` accepts either a full adapter or a "simple" plugin and auto-wraps the
+latter with default `move` / `moveAnchor` / `getAnchors`, so most tools implement only the
+core methods. Adding a tool therefore means writing one plugin file and importing it in
+`adapters.ts` — no engine file changes. See `DRAWING_ENGINE_ARCHITECTURE.md` → Extensibility.
 
 ## Tool categories (for toolbar grouping)
 

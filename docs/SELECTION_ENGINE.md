@@ -1,44 +1,47 @@
 # SELECTION ENGINE
 
-_Date: 2026-06-25._
+_Date: 2026-06-25. Updated 2026-06-27 — multi-selection (shift-click, Ctrl+A, move-multiple)
+is implemented; hit-test moved to `hittest/HitTestEngine.ts`._
 
 ## Architecture
 
-Selection is currently **single-selection** via `chartStore.selectedDrawingId`. The DrawingLayer uses this to determine which drawing renders with handles and thicker lines.
+Selection supports both **single** (`chartStore.selectedDrawingId`) and **multi**
+(`chartStore.selectedDrawingIds: Set<string>`) selection. The DrawingLayer/CanvasRenderer use
+these to decide which drawings render with handles and thicker lines. Interaction is handled
+by `interaction/DrawingInteractionManager.ts`.
 
 ## Current state
 
 | Feature | Status |
 |---|---|
-| Single selection (click) | ✅ Dedicated `selectDrawing()` action + `selectedDrawingId` in chartStore |
-| Hit-test | ✅ `drawingHitTest.ts` (all 17 tools) |
-| Selection rendering | ✅ `drawingRenderer.ts` renders handles + thicker line for selected drawing |
+| Single selection (click) | ✅ `selectDrawing()` action + `selectedDrawingId` in chartStore |
+| Hit-test | ✅ `hittest/HitTestEngine.ts` → adapter `hitTest()` per tool (anchor > body priority) |
+| Selection rendering | ✅ `drawingRenderer.ts` / `CanvasRenderer` render handles + thicker line when selected |
 | Deselect (click empty) | ✅ `selectDrawing(null)` on miss |
-| Deselect (Esc) | ✅ Keyboard handler in DrawingLayer |
-| Delete selected | ✅ `Delete`/`Backspace` key |
-| Drag-to-move selected | ✅ `dragged` ref with pointer capture |
-| Locked drawing protection | ✅ Drag blocked via `drawingsLocked` check; Delete blocked by locked check (store-side) |
-| Multi-selection (Ctrl+click) | ❌ Not yet implemented |
-| Selection box (drag-to-select) | ❌ Not yet implemented |
-| Select all (Ctrl+A) | ❌ Not yet implemented |
-| Move multiple selected | ❌ Depends on multi-select |
+| Deselect (Esc) | ✅ Keyboard handler in DrawingInteractionManager |
+| Delete selected | ✅ `Delete`/`Backspace` key (multi-aware, via history commands) |
+| Drag-to-move selected | ✅ Document-level capture-phase pointer handling (no `setPointerCapture`) |
+| Locked drawing protection | ✅ Drag blocked via `drawingsLocked` check; Delete blocked store-side |
+| Multi-selection (Shift+click) | ✅ `toggleSelectDrawing()` → `selectedDrawingIds` |
+| Select all (Ctrl+A) | ✅ `selectAll()` keyboard handler |
+| Move multiple selected | ✅ `multiDragOrig` snapshot translated by drag delta |
+| Selection box (drag-to-select marquee) | ❌ Not yet implemented |
 
-## Multi-selection design (planned)
+## Multi-selection (implemented)
 
-```ts
-// chartStore additions
-selectedDrawingIds: Set<string>;  // multi-selection set
-selectDrawing: (id: string | null, additive?: boolean) => void;
-deselectAll: () => void;
-selectAll: () => void;
-deleteSelected: () => void;
-lockSelected: () => void;
-hideSelected: () => void;
-```
+`chartStore` exposes `selectedDrawingIds: Set<string>`, `toggleSelectDrawing(id)`,
+`selectAll()`, plus the single `selectDrawing(id)`. In `DrawingInteractionManager`:
 
-When `multi` is true (Ctrl held), the click adds/removes from the set rather than replacing. When `multi` is false, it replaces.
+- **Shift+click** on a drawing → `toggleSelectDrawing()` (add/remove from the set).
+- **Plain click** → `selectDrawing()` replaces the selection.
+- **Ctrl/Cmd+A** → `selectAll()`.
+- **Dragging** any member of a multi-selection moves the whole set: a `multiDragOrig`
+  snapshot of every selected drawing's points is translated by the pointer delta and
+  committed on pointerup (each with its own history command).
 
-## Selection box design
+> Note: multi-add uses **Shift**, not Ctrl (Ctrl/Cmd is reserved for A/C/V/Z/D shortcuts).
+
+## Selection box design (not yet implemented)
 
 - Pointer-down on empty chart area + drag → render selection rectangle
 - On pointer-up: compute all drawings whose bounding box intersects the selection rect
@@ -51,9 +54,9 @@ When `multi` is true (Ctrl held), the click adds/removes from the set rather tha
 - Cannot be moved (DrawingLayer's drag handler checks `!drawingsLocked`)
 - Render dimmed in the canvas (drawingRenderer renders locked drawings at lower opacity)
 
-## Hover state
+## Hover state (implemented)
 
-Currently not implemented. Planned for Phase 4.x:
-- `hoveredDrawingId` in chartStore
-- On pointer-move with cursor tool → hitTest → set hoveredDrawingId
-- Render a subtle hover highlight (slightly brighter color, or dotted border)
+Implemented as transient interaction state (not in the store, to avoid re-renders):
+- `hoveredIdRef` in `DrawingInteractionManager`.
+- On pointer-move with the cursor tool → `hitTest` → set `hoveredIdRef`.
+- `CanvasRenderer` draws the hovered drawing with a translucent thicker highlight pass.

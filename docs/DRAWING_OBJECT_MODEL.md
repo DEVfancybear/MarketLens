@@ -57,10 +57,16 @@ interface Drawing {
 
 ## Extension points
 
-To add a new drawing tool:
-1. Add to `DrawingTool` union in `types/drawing.ts`
-2. Add to `DRAWING_TOOLS` array (if it creates persistent objects)
-3. Add render case in `drawingRenderer.ts`
-4. Add hit-test case in `drawingHitTest.ts`
-5. Add creation flow in `DrawingLayer.tsx` (onPointerDown)
-6. Add toolbar icon in `DrawingToolbar.tsx` (Phase 4.6)
+To add a new drawing tool (plugin/adapter architecture — no `switch` cases):
+1. Create `drawing/tools/plugins/MyNewTool.ts` implementing the `DrawingAdapter` plugin
+   (`render`, `hitTest`, `movePoints`, `boundingBox`; optional `move`/`moveAnchor`/`getAnchors`)
+   and call `registerTool(plugin)` at module load.
+2. Add `import "./plugins/MyNewTool";` to `drawing/tools/adapters.ts`.
+3. Add the tool id to the `DrawingTool` union (and `DRAWING_TOOLS`, if it creates persistent
+   objects) in `types/drawing.ts`.
+4. Add the toolbar icon in `DrawingToolbar.tsx`.
+
+Creation/move/resize, hit-testing, and rendering are all driven by the adapter via
+`getTool(tool)` — `DrawingLayer.tsx`, the renderer, and the interaction manager are
+tool-agnostic and need no changes. See `TOOL_REGISTRY.md` and
+`DRAWING_ENGINE_ARCHITECTURE.md` → Extensibility.

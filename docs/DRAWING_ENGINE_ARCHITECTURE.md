@@ -8,57 +8,93 @@ The Drawing Engine is a canvas-based overlay system that renders user drawings (
 
 ## Architecture layers
 
+> The engine is **plugin/adapter based** — there is no giant `switch` and no
+> `drawingHitTest.ts`. Every tool is a self-registering plugin under
+> `drawing/tools/plugins/`, and the renderer / hit-tester / interaction manager delegate
+> to it polymorphically via `ToolRegistry.getTool(tool)`.
+
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                     Interaction Layer                          │
-│  DrawingLayer.tsx   ← pointer events, drag, creation flows    │
-│  DrawingToolbar.tsx ← tool selection, color picker             │
-│  DrawingContextMenu ← right-click actions (Phase 4.3)          │
-└───────────────────────────┬────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                     Interaction Layer                              │
+│  DrawingLayer.tsx              ← React wiring: pointer→data         │
+│                                  (fromEvent), projectors, render    │
+│                                  loop setup, store↔canvas glue      │
+│  interaction/                  ← pointer state machine: create,     │
+│    DrawingInteractionManager     move, resize-anchor, multi-drag,   │
+│                                  hover, keyboard                    │
+│  DrawingToolbar.tsx            ← tool selection, color picker       │
+│  DrawingContextMenu.tsx        ← right-click actions               │
+│  history/ (CommandManager,     ← undo/redo, clipboard, keyboard     │
+│    useCommandHistory, ...)                                          │
+└───────────────────────────┬────────────────────────────────────────┘
                             │ reads/writes
-┌───────────────────────────▼────────────────────────────────────┐
-│                     State Layer                                │
-│  chartStore.ts        ← single source of truth                 │
-│  drawings[], selectedDrawingId, activeTool, drawColor          │
-│  Persistence: localStorage `drawings:<symbol>`                 │
-└───────────────────────────┬────────────────────────────────────┘
+┌───────────────────────────▼────────────────────────────────────────┐
+│                     State Layer                                    │
+│  chartStore.ts        ← single source of truth                     │
+│  drawings[], selectedDrawingId, selectedDrawingIds, activeTool,    │
+│  drawColor, drawingsHidden, drawingsLocked                         │
+│  Persistence: localStorage `drawings:<symbol>`                     │
+└───────────────────────────┬────────────────────────────────────────┘
                             │ delegates to
-┌───────────────────────────▼────────────────────────────────────┐
-│                     Rendering Layer                            │
-│  drawingRenderer.ts   ← pure canvas renderer (17 tools)        │
-│  drawingHitTest.ts    ← pure hit-test (17 tools)               │
-│  Projector: (time,price) → (x,y) pixels                        │
-└────────────────────────────────────────────────────────────────┘
+┌───────────────────────────▼────────────────────────────────────────┐
+│                     Rendering / Geometry Layer                     │
+│  renderer/CanvasRenderer.ts   ← dirty-driven rAF render loop +      │
+│                                  memo guard (see render contract)   │
+│  renderer/CoordinateCache.ts  ← frame-local (time,price)→px cache   │
+│  renderer/SpatialIndex.ts     ← viewport cull for many drawings     │
+│  drawingRenderer.ts           ← renderDrawing(): delegates to       │
+│                                  adapter.render()                   │
+│  hittest/HitTestEngine.ts     ← hitTest(): delegates to             │
+│                                  adapter.hitTest() (anchor > body)   │
+│  tools/ToolRegistry.ts        ← DrawingAdapter interface + registry │
+│  tools/plugins/*Tool.ts       ← one plugin per tool (render +       │
+│                                  hitTest + move/anchor + bbox)      │
+│  tools/adapters.ts            ← side-effect imports = registration  │
+│  geometry/helpers.ts          ← HANDLE_RADIUS, TOL, distances       │
+│  Projector: (time,price) → (x,y) pixels                            │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Data flow
 
 ```
 1. User clicks canvas with 'trendline' tool active
-   → DrawingLayer.onPointerDown → setPending([point])
+   → DrawingInteractionManager (Drawing-mode pointerdown) → machine = Drawing, anchors=[p1]
 
-2. User clicks second point
-   → DrawingLayer.onPointerDown → addDrawing({ tool: 'trendline', points: [p1, p2] })
+2. User moves the pointer (before the 2nd click)
+   → pointermove → machine.anchors = [p1, cursor] → scheduleRedraw (markDirty)
+   → CanvasRenderer paints a live "rubber-band" preview (a __pending drawing)
+
+3. User clicks second point
+   → pointerdown → addDrawing({ tool:'trendline', points:[p1,p2] }) + history CreateCommand
    → chartStore.addDrawing() → appends to drawings[], persists to localStorage
+   → DrawingLayer's store-change effect → markDirty → repaint
 
-3. Chart pan/zoom (ctx.version bumps)
-   → DrawingLayer.draw() re-renders all drawings via drawingRenderer.ts
-   → each drawing's (time,price) points are projected via Projector to pixel coords
-   → canvas draws lines, handles, labels
+4. Chart pan/zoom/resize
+   → onVersionChange (subscribeVisibleLogicalRangeChange + ResizeObserver) → markDirty(true)
+   → CanvasRenderer re-projects every drawing's (time,price) → pixels and repaints
+     (forceNext bypasses the memo guard; CoordinateCache is cleared for the frame)
 
-4. User clicks 'cursor' tool + clicks near a drawing
-   → DrawingLayer.onPointerDown → hitTest(drawings, point, toX, toY)
-   → selectDrawing(hit.id)
-   → canvas re-renders with that drawing in "selected" state (thicker line, visible handles)
+5. User picks 'cursor' tool and clicks near a drawing
+   → DrawingInteractionManager (cursor pointerdown) → hitTest(drawings, point, toX, toY)
+   → selectDrawing(hit.id); if hit a handle → ResizingHandle, else → MovingDrawing
+   → store-change effect / scheduleRedraw → repaint in "selected" state (handles visible)
 ```
+
+See **Render loop & repaint contract** below for exactly what triggers a repaint and how
+the memo guard decides whether a frame is actually painted.
 
 ## Single source of truth
 
 - **chartStore.drawings[]** is the SSOT for all drawing objects
-- **chartStore.selectedDrawingId** drives selection rendering
+- **chartStore.selectedDrawingId / selectedDrawingIds** drive selection rendering
 - **chartStore.activeTool** determines the current creation mode
-- **drawingRenderer.ts** and **drawingHitTest.ts** are pure functions — they read the Drawing model but never modify state
+- **drawingRenderer.ts** (`renderDrawing`) and **hittest/HitTestEngine.ts** (`hitTest`) are
+  pure — they read the Drawing model and delegate to the tool adapter, never mutating state
 - **Persistence** is co-located with state mutations in chartStore
+- Transient interaction state (in-progress anchors, live drag points) lives in the
+  **interaction machine / refs**, NOT the store — it is committed to the store only on
+  pointerup (via `updateDrawing` + a history command)
 
 ## Render loop & repaint contract (READ THIS BEFORE TOUCHING THE CANVAS)
 
@@ -159,12 +195,20 @@ so **local X maps 1:1 to a time-scale coordinate**: `coordinateToTime(clientX - 
 
 ## Extensibility
 
-New tools require changes in exactly 3 files:
+New tools are **plugins**, not `switch` cases. Adding one touches 2–3 files and nothing
+in the render loop, store, interaction machine, or persistence:
 
 | File | Change |
 |---|---|
-| `types/drawing.ts` | Add tool to `DrawingTool` union + `DRAWING_TOOLS` array |
-| `drawingRenderer.ts` | Add a `case` in the render switch |
-| `drawingHitTest.ts` | Add a `case` in the `isHit` function |
+| `tools/plugins/MyNewTool.ts` | Implement the plugin: `tool`, `minPoints`, `render()`, `hitTest()`, `movePoints()`, `boundingBox()` (and optional `move`/`moveAnchor`/`getAnchors`); call `registerTool(plugin)`. Reuse `geometry/helpers.ts` (`HANDLE_RADIUS`, `TOL`, `distToSegment`, …) and `plugins/shared.ts` (`line`, `handle`). |
+| `tools/adapters.ts` | Add `import "./plugins/MyNewTool";` (side-effect registration). |
+| `types/drawing.ts` | Add the tool id to the `DrawingTool` union + `DRAWING_TOOLS` (only if it's a new id, so the toolbar/types know it). |
 
-Everything else (store, canvas, interaction, persistence, context menu) is tool-agnostic.
+`registerTool` auto-wraps a simple plugin with default `move` / `moveAnchor` / `getAnchors`
+(translate-all / move-one-anchor / point-anchors), so most tools only implement the four
+core methods. `getTool(tool)` returns the registered adapter; renderer, hit-tester, and
+interaction manager all go through it — no tool-specific branching anywhere else.
+
+> When adding a tool, make sure its `hitTest()` returns anchor candidates (`p1`/`p2`/…)
+> as well as a `body` candidate — `HitTestEngine` prioritises anchors over body so endpoint
+> grabs work (see the `fromEvent` note in the render contract for the coordinate pitfall).

@@ -3,6 +3,19 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Docs — Refreshed stale drawing-engine architecture docs (2026-06-27)
+- Updated the current-architecture drawing docs to match the implemented plugin/adapter
+  engine (they described an obsolete `switch(d.tool)` / `drawingHitTest.ts` design):
+  - `DRAWING_ENGINE_ARCHITECTURE.md`: rewrote Architecture layers, Data flow, SSOT, and
+    Extensibility around `ToolRegistry`/plugins; added the Render loop & repaint contract.
+  - `TOOL_REGISTRY.md`: the doc previously said the engine used decentralized switches and
+    had no registry — inverted to document the actual `DrawingAdapter` registry.
+  - `DRAWING_OBJECT_MODEL.md`: "add a tool" steps now describe writing a plugin + importing
+    it in `adapters.ts` (no engine-file edits).
+  - `SELECTION_ENGINE.md`: marked multi-select (Shift+click), Ctrl+A, move-multiple, and
+    hover as implemented; corrected hit-test path to `hittest/HitTestEngine.ts`.
+  - Historical/point-in-time docs (PHASE/MILESTONE/ROADMAP/audits) left as-is by design.
+
 ### Fixed — Live rubber-band preview froze while drawing a two-point tool (2026-06-27)
 - After the first click of a two-point tool (trend line, etc.), moving the pointer toward
   the second point showed no live preview — the line only appeared on the second click.
