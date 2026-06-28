@@ -73,6 +73,38 @@ export function useHotkeys() {
       const r = getReplayState();
       const mod = e.ctrlKey || e.metaKey;
 
+      // --- Escape: re-select > initial select > drawing deselect > tool cancel ---
+      if (e.key === "Escape" && !mod) {
+        // Re-select mode takes top priority — cancel it before anything else.
+        if (r.reSelecting) {
+          e.preventDefault();
+          r.cancelReSelect();
+          return;
+        }
+        // Initial bar selection.
+        if (r.selecting) {
+          e.preventDefault();
+          r.cancelSelect();
+          return;
+        }
+        const store = getDefaultStore();
+        // Don't deselect if a dialog is open (indicator / position settings).
+        if (
+          store.get(editingIndicatorIdAtom) ||
+          store.get(editingDrawingIdAtom)
+        )
+          return;
+        if (
+          store.get(selectedDrawingIdAtom) ||
+          store.get(activeToolAtom) !== "cursor"
+        ) {
+          e.preventDefault();
+          store.set(selectDrawingAtom, null);
+          store.set(setActiveToolAtom, "cursor");
+        }
+        return;
+      }
+
       // --- Drawing tool hotkeys (1–9) ---
       if (!mod && !e.shiftKey && !e.altKey && TOOL_SLOTS[e.key]) {
         e.preventDefault();
@@ -81,7 +113,12 @@ export function useHotkeys() {
       }
 
       // --- Alt+key line-tool shortcuts (Alt+T/H/J/V/C) ---
-      if (e.altKey && !mod && !e.shiftKey && ALT_TOOL_SLOTS[e.key.toLowerCase()]) {
+      if (
+        e.altKey &&
+        !mod &&
+        !e.shiftKey &&
+        ALT_TOOL_SLOTS[e.key.toLowerCase()]
+      ) {
         e.preventDefault();
         getDefaultStore().set(
           setActiveToolAtom,
@@ -131,40 +168,23 @@ export function useHotkeys() {
         return;
       }
 
-      // --- Escape: deselect / cancel tool ---
-      if (e.key === "Escape" && !mod) {
-        const store = getDefaultStore();
-        // Don't deselect if a dialog is open (indicator / position settings);
-        // the dialog handles its own Escape-to-close.
-        if (store.get(editingIndicatorIdAtom) || store.get(editingDrawingIdAtom))
-          return;
-        if (
-          store.get(selectedDrawingIdAtom) ||
-          store.get(activeToolAtom) !== "cursor"
-        ) {
-          e.preventDefault();
-          store.set(selectDrawingAtom, null);
-          store.set(setActiveToolAtom, "cursor");
-        }
-        return;
-      }
-
+      // Replay-transport keys checked against the replay state (r).
       switch (e.key) {
         case " ":
-          if (r.active) {
+          if (r.active && !r.reSelecting) {
             e.preventDefault();
             r.playing ? r.pause() : r.play();
           }
           return;
         case "ArrowRight":
-          if (r.active) {
+          if (r.active && !r.reSelecting) {
             e.preventDefault();
             r.pause();
             r.step(e.shiftKey ? 10 : 1);
           }
           return;
         case "ArrowLeft":
-          if (r.active) {
+          if (r.active && !r.reSelecting) {
             e.preventDefault();
             r.pause();
             r.step(e.shiftKey ? -10 : -1);
@@ -172,7 +192,7 @@ export function useHotkeys() {
           return;
         case "r":
         case "R":
-          if (r.active) r.restart();
+          if (r.active && !r.reSelecting) r.restart();
           return;
         case "a":
         case "A":

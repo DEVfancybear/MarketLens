@@ -35,6 +35,37 @@ _Last updated: 2026-06-28 (Zustand → Jotai migration)_
    Now extrapolates time from the fractional logical index + bar interval, so all tools drag
    smoothly across the whole chart.
 
+### Replay "Select Bar" feature (2026-06-29)
+
+1. **Replay state machine**: Added `reSelectingAtom` boolean — a 5th state where replay remains
+   armed but the user can pick a different bar to restart from. Added `beginReSelectAtom`,
+   `cancelReSelectAtom`, `confirmReSelectAtom` write atoms.
+
+2. **ReplayControls**: "Select Bar" button placed between speed controls and Exit Replay
+   (TradingView order). When active, shows an orange re-select banner with Cancel (Esc) button.
+
+3. **ReplaySelectionLayer**: Extended to handle both initial `selecting` and `reSelecting` modes.
+   Hover data stored in refs only (`hoverIdxRef`, `dirtyRef`) — zero React state, zero store
+   updates during mouse move. Re-select mode uses orange visual theme to distinguish from initial
+   selection. Right-click cancels re-select. Full candle list access enables picking any bar
+   including future bars past the cursor.
+
+4. **Hotkeys**: ESC priority chain: reSelect → initial select → drawing deselect → tool cancel.
+   Replay transport keys (Space, Arrows, R) blocked during reSelect.
+
+5. **TopToolbar**: `toggleReplay()` now handles reSelecting → cancelReSelect. Button shows
+   "Cancel select" label during re-select mode.
+
+### Summary of files changed (this session)
+- `replayStore.ts` — +4 write atoms, +1 state atom, extended interfaces
+- `ReplayControls.tsx` — Select Bar button + re-select UI
+- `ReplaySelectionLayer.tsx` — ref-based hover, dual-mode draw, right-click cancel
+- `useHotkeys.ts` — ESC priority fix, transport keys guarded during reSelect
+- `TopToolbar.tsx` — reSelect toggle in toolbar button
+- `ARCHITECTURE.md` — updated replayStore row + SSOT paragraph
+- `CHANGELOG.md` — Select Bar feature entry
+- `CURRENT_PROGRESS.md` — this section
+
 ### Floating drawing settings toolbar (2026-06-28)
 
 1. **`DrawingSettingsToolbar.tsx` (NEW)**: a TradingView-style floating toolbar shown above
@@ -150,6 +181,14 @@ Build ✅ · type-check ✅ · lint ✅ (0 warnings).
 - `npm run lint` → ✅ PASS (0 warnings)
 - `npm run build` → ✅ PASS
 - TODO/FIXME/HACK in `src/` → **0**
+
+### Replay "Select Bar" feature (2026-06-29)
+
+5th replay state added: `ReSelecting` (active=true, playing=false, reSelecting=true).
+See `CHANGELOG.md` §"Added — Replay Select Bar" for full detail.
+
+Files: replayStore.ts, ReplayControls.tsx, ReplaySelectionLayer.tsx, useHotkeys.ts,
+TopToolbar.tsx. Docs: ARCHITECTURE.md, CHANGELOG.md, CURRENT_PROGRESS.md.
 
 ### Zustand → Jotai migration (2026-06-28)
 
