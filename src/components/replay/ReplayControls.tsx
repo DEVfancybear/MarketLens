@@ -9,6 +9,8 @@ import {
   ChevronsRight,
   ChevronsLeft,
   Power,
+  BarChart3,
+  X,
 } from "lucide-react";
 import { useReplayStore, REPLAY_SPEEDS } from "@/store/replayStore";
 import { useAtomValue } from "jotai";
@@ -21,6 +23,29 @@ export function ReplayControls() {
   const candles = useAtomValue(candlesAtom);
   const atEnd = r.cursor >= r.total - 1;
 
+  // ── Re-select mode (Select Bar while replay is already active) ──
+  if (r.active && r.reSelecting) {
+    return (
+      <div className="flex items-center gap-3">
+        <span className="flex items-center gap-2 rounded bg-choch/15 px-3 py-1.5 text-xs font-semibold text-choch">
+          <BarChart3 size={13} /> Click a bar on the chart to restart replay
+          from that candle
+        </span>
+        <button
+          onClick={r.cancelReSelect}
+          className="flex items-center gap-1 rounded border border-terminal-border px-2.5 py-1.5 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
+        >
+          <X size={12} /> Cancel (Esc)
+        </button>
+        <span className="text-2xs text-ink-faint">
+          Replay will restart from the selected bar. Current position is
+          preserved until you click.
+        </span>
+      </div>
+    );
+  }
+
+  // ── Idle / initial selection ──
   if (!r.active) {
     if (r.selecting) {
       return (
@@ -68,6 +93,7 @@ export function ReplayControls() {
     );
   }
 
+  // ── Replay active (not re-selecting) ──
   return (
     <div className="flex flex-wrap items-center gap-1">
       <IconButton label="Restart (R)" onClick={r.restart}>
@@ -151,6 +177,20 @@ export function ReplayControls() {
           </button>
         ))}
       </div>
+
+      <div className="mx-2 h-5 w-px bg-terminal-border" />
+
+      {/* Select Bar — TradingView-style bar re-select while replay is active */}
+      <button
+        onClick={r.beginReSelect}
+        className={cn(
+          "flex items-center gap-1.5 rounded px-2 py-1 text-2xs transition-colors",
+          "text-ink-muted hover:bg-terminal-hover hover:text-choch",
+        )}
+        title="Select Bar — choose a different starting candle"
+      >
+        <BarChart3 size={13} /> Select Bar
+      </button>
 
       <div className="mx-2 h-5 w-px bg-terminal-border" />
 
