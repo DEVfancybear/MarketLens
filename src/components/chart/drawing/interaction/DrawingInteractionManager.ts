@@ -148,6 +148,9 @@ export function useDrawingInteractionManager(
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // Any tool change cancels an in-progress multi-point draw so a half-placed
+    // anchor can't bleed into the newly selected tool.
+    if (machineRef.current.state === "Drawing") reset();
     const s = getState();
     if (s.activeTool === "cursor") return;
     const hD = (e: PointerEvent) => {
@@ -513,12 +516,16 @@ export function useDrawingInteractionManager(
   };
 }
 
-/** True if the event originated inside a floating drawing-UI surface
- *  (settings toolbar, its popovers, context menu) — those must be allowed to
- *  handle their own clicks without the chart hit-tester intercepting. */
+/** True if the event originated inside a floating chart-UI surface that
+ *  overlays the canvas (drawing settings toolbar + popovers, the left
+ *  toolbar's tool flyout, context menus). Such clicks must NOT be treated as
+ *  chart clicks — otherwise an armed single-click tool (e.g. horizontal ray)
+ *  would create a phantom drawing under the menu before the button's own
+ *  onClick runs. Coordinate-based `isOverCanvas` can't tell these apart, so we
+ *  test the event target's DOM ancestry. */
 function isOverDrawingUI(e: PointerEvent | MouseEvent): boolean {
   const t = e.target as HTMLElement | null;
-  return !!t?.closest?.("[data-drawing-toolbar]");
+  return !!t?.closest?.("[data-drawing-toolbar],[data-chart-ui]");
 }
 
 function isOverCanvas(

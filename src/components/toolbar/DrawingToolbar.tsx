@@ -304,6 +304,7 @@ export function DrawingToolbar() {
                 return createPortal(
                   <>
                     <div
+                      data-chart-ui
                       className="fixed inset-0 z-40"
                       onClick={() => setOpenGroup(null)}
                       onContextMenu={(e) => {
@@ -312,6 +313,7 @@ export function DrawingToolbar() {
                       }}
                     />
                     <div
+                      data-chart-ui
                       className="fixed z-50 w-44 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
                       style={{ left: rect.right + 4, top: rect.top }}
                     >

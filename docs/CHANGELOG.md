@@ -3,6 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Phantom drawing created when picking a tool from the flyout (2026-06-28)
+- With an armed single-click tool (e.g. Horizontal ray, which stays active after use),
+  clicking a tool in the left toolbar's flyout — which overlays the chart — fired the
+  document-capture `pointerdown` first and created a phantom drawing under the menu before
+  the button's onClick switched tools. Symptom: "select Cursor → a horizontal ray appears".
+- `isOverDrawingUI` now also matches `[data-chart-ui]`; the toolbar flyout (backdrop + menu)
+  is tagged with it, so clicks there no longer reach the chart drawing handler.
+- Switching the active tool now cancels any in-progress multi-point draw (resets the
+  interaction machine) so a half-placed anchor can't bleed into the next tool.
+  Files: drawing/interaction/DrawingInteractionManager.ts, toolbar/DrawingToolbar.tsx.
+
 ### Added — Floating drawing settings toolbar (2026-06-28)
 - Selecting any drawing on the chart now pops a **TradingView-style floating toolbar**
   above it (`DrawingSettingsToolbar.tsx`) for inline editing — no separate dialog needed.
