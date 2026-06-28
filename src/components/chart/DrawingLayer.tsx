@@ -22,6 +22,7 @@ import {
 } from "@/store/chartStore";
 import type { Drawing, Point } from "@/types";
 import { DrawingContextMenu } from "./DrawingContextMenu";
+import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
 import {
   useDrawingInteractionManager,
   createRenderLoop,
@@ -243,6 +244,7 @@ export function DrawingLayer() {
         className="absolute inset-0 h-full w-full"
         style={{ cursor: cursorStyle, pointerEvents: "none", zIndex: 5 }}
       />
+      <DrawingSettingsToolbar />
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
       )}

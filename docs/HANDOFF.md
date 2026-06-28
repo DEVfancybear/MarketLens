@@ -58,6 +58,12 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
   Escape deselect/cancel). Left rail width increased 40->52px. See `CURRENT_PROGRESS.md`.
+- **Floating drawing settings toolbar (2026-06-28):** Selecting a drawing now pops a
+  TradingView-style floating toolbar above it (`chart/DrawingSettingsToolbar.tsx`, mounted in
+  `DrawingLayer`) with inline stroke colour / fill / line width / line style / clone / lock /
+  delete. It positions off the selection's projected points and tracks pan/zoom via
+  `ChartContext.version`. `DrawingInteractionManager` ignores pointer events over
+  `[data-drawing-toolbar]` (`isOverDrawingUI`) so clicks don't deselect/drag. See `CHANGELOG.md`.
 - **Line suite parity (2026-06-28):** Added the **`trendAngle`** tool (`TrendAngleTool.ts`) —
   a 2-point line that always renders its screen angle in degrees (dashed baseline + sweep arc +
   degree chip), matching TradingView's "Trend angle". The plain `trendline` now shows a stats

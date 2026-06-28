@@ -151,6 +151,7 @@ export function useDrawingInteractionManager(
     const s = getState();
     if (s.activeTool === "cursor") return;
     const hD = (e: PointerEvent) => {
+      if (isOverDrawingUI(e)) return;
       if (!canvas || !isOverCanvas(e, canvas)) return;
       const m = machineRef.current;
       if (m.state !== "Idle" && m.state !== "Drawing") return;
@@ -240,6 +241,9 @@ export function useDrawingInteractionManager(
     const handleDown = (e: PointerEvent) => {
       const cur = getState();
       if (cur.activeTool !== "cursor") return;
+      // Ignore clicks that land on the floating drawing settings toolbar /
+      // its popovers — they must not deselect the drawing or start a drag.
+      if (isOverDrawingUI(e)) return;
       if (!canvas || !isOverCanvas(e, canvas)) return;
       const p = fromEvent(e);
       if (!p || !cur.ctxReady) return;
@@ -507,6 +511,14 @@ export function useDrawingInteractionManager(
     hoveredIdRef,
     isPointerClaimed: () => pointerClaimedRef.current,
   };
+}
+
+/** True if the event originated inside a floating drawing-UI surface
+ *  (settings toolbar, its popovers, context menu) — those must be allowed to
+ *  handle their own clicks without the chart hit-tester intercepting. */
+function isOverDrawingUI(e: PointerEvent | MouseEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  return !!t?.closest?.("[data-drawing-toolbar]");
 }
 
 function isOverCanvas(

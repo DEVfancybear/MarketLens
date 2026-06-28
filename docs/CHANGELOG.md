@@ -3,6 +3,20 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Floating drawing settings toolbar (2026-06-28)
+- Selecting any drawing on the chart now pops a **TradingView-style floating toolbar**
+  above it (`DrawingSettingsToolbar.tsx`) for inline editing — no separate dialog needed.
+- Controls: stroke colour (palette + custom picker), fill colour (shapes only, with
+  "No fill"), line width (1–4px), line style (solid / dashed / dotted), clone, lock/unlock,
+  delete. Each control writes via `updateDrawingAtom` / store actions; changes persist.
+- Auto-positions above the selection's projected anchor points (falls back below when
+  there's no room) and follows the drawing on pan / zoom / resize via `ChartContext.version`.
+- `DrawingInteractionManager` now ignores pointer events that originate on the toolbar
+  (`isOverDrawingUI` / `[data-drawing-toolbar]`) so clicking a control no longer deselects
+  the drawing or starts a drag.
+  Files: chart/DrawingSettingsToolbar.tsx (NEW), chart/DrawingLayer.tsx,
+  drawing/interaction/DrawingInteractionManager.ts.
+
 ### Added — Trend Angle tool + TradingView-style line suite parity (2026-06-28)
 - **New `trendAngle` drawing tool** — two-point trend line that always renders the
   visual angle (degrees) between the line and a horizontal baseline, drawn with a

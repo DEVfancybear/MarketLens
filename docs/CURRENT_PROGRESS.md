@@ -17,6 +17,20 @@ _Last updated: 2026-06-28 (Zustand → Jotai migration)_
 
 ## Completed this session
 
+### Floating drawing settings toolbar (2026-06-28)
+
+1. **`DrawingSettingsToolbar.tsx` (NEW)**: a TradingView-style floating toolbar shown above
+   the selected drawing. Inline controls for stroke colour, fill (shapes), line width,
+   line style, clone, lock, delete. Writes through `updateDrawingAtom` + store actions.
+
+2. **Positioning**: projects the selection's anchor points, floats above (falls back below),
+   clamps to the chart container, and tracks pan/zoom/resize via `ChartContext.version`
+   re-renders.
+
+3. **Interaction guard**: `DrawingInteractionManager` now bails on pointer events over
+   `[data-drawing-toolbar]` (`isOverDrawingUI`) — toolbar clicks no longer deselect the
+   drawing or begin a drag. Mounted in `DrawingLayer`.
+
 ### Trend Angle tool + line suite parity (2026-06-28)
 
 1. **New `trendAngle` tool** (`TrendAngleTool.ts`): two-point line that always shows the
