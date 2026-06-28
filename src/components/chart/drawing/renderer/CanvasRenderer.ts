@@ -31,7 +31,7 @@ export interface RenderLoopDeps {
 }
 
 export interface RenderLoop {
-  markDirty: () => void;
+  markDirty: (force?: boolean) => void;
   destroy: () => void;
 }
 

@@ -10,6 +10,11 @@ _Last updated: 2026-06-25 (after Phase 1 + Phase 2). Phase 1's old "mock data" l
   _Fix:_ pin a compatible `framer-motion`/`motion-dom` pair, or remove it from `package.json`.
 
 ## Limitations (by design)
+- **Position-tool TP/SL highlight uses the live last price.** The Long/Short tool
+  brightens its profit/risk zone from `candlesAtom`'s last close. In **replay mode**
+  this is the master series' final close, not the replay-cursor price, so the
+  highlight is not replay-aware. Acceptable for live use; revisit if positions need
+  to be back-tested through the replay cursor.
 - **TwelveData needs a key.** Forex/metals/indices quotes/candles require
   `NEXT_PUBLIC_TWELVEDATA_API_KEY`; without it those rows show "—". Crypto (Binance) needs no key.
 - **Browser/system alert notifications require permission** and are off by default; enable from the

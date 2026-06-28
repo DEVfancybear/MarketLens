@@ -73,12 +73,19 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   and labels (prices, %, R/R). Target handle = `p1`, stop handle = `p2` (both set right-edge
   time); body/entry drag moves all. `long`/`short` removed from `SINGLE_CLICK_TOOLS` so they
   return to cursor after placement. See `CHANGELOG.md`.
-- **Floating drawing settings toolbar (2026-06-28):** Selecting a drawing now pops a
-  TradingView-style floating toolbar above it (`chart/DrawingSettingsToolbar.tsx`, mounted in
+- **Floating drawing settings toolbar (2026-06-28):** Selecting a drawing pops a
+  TradingView-style floating toolbar (`chart/DrawingSettingsToolbar.tsx`, mounted in
   `DrawingLayer`) with inline stroke colour / fill / line width / line style / clone / lock /
-  delete. It positions off the selection's projected points and tracks pan/zoom via
-  `ChartContext.version`. `DrawingInteractionManager` ignores pointer events over
-  `[data-drawing-toolbar]` (`isOverDrawingUI`) so clicks don't deselect/drag. See `CHANGELOG.md`.
+  delete. **It now defaults to the chart's top-centre (not pinned next to the object) and is
+  draggable via a `GripVertical` handle — the dragged position is kept (clamped) until the
+  selection clears (2026-06-28 bug pass).** `DrawingInteractionManager` ignores pointer events
+  over `[data-drawing-toolbar]` (`isOverDrawingUI`) so clicks don't deselect/drag. See `CHANGELOG.md`.
+- **Position/drawing-tool bug pass (2026-06-28):** (1) settings toolbar draggable + top-pinned;
+  (2) Long/Short tool highlights the profit/risk zone when price reaches target/stop
+  (`PositionTool.ts` reads `candlesAtom`; `DrawingLayer` force-repaints per tick only when a
+  position tool exists; `RenderLoop.markDirty(force?)`); (3) `DrawingLayer.fromEvent` extrapolates
+  time in chart whitespace so dragging (esp. rectangles at the right edge) no longer stalls. See
+  `CHANGELOG.md` / `KNOWN_ISSUES.md`.
 - **Line suite parity (2026-06-28):** Added the **`trendAngle`** tool (`TrendAngleTool.ts`) —
   a 2-point line that always renders its screen angle in degrees (dashed baseline + sweep arc +
   degree chip), matching TradingView's "Trend angle". The plain `trendline` now shows a stats

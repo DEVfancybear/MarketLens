@@ -1,6 +1,5 @@
 "use client";
 import { useLayoutEffect, useRef, useState, useEffect } from "react";
-import type { UTCTimestamp } from "lightweight-charts";
 import {
   Copy,
   Lock,
@@ -10,6 +9,7 @@ import {
   Minus,
   Check,
   Settings,
+  GripVertical,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -22,7 +22,6 @@ import {
   setEditingDrawingAtom,
 } from "@/store/chartStore";
 import { useChartCtx } from "./ChartContext";
-import { getTool } from "./drawing/tools/ToolRegistry";
 import type { Drawing, LineStyle } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -74,63 +73,91 @@ export function DrawingSettingsToolbar() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [menu, setMenu] = useState<Menu>(null);
+  // Once the user has dragged the toolbar we stop auto-positioning it and only
+  // keep it clamped inside the chart — TradingView keeps it where you put it.
+  const draggedRef = useRef(false);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    baseLeft: number;
+    baseTop: number;
+  } | null>(null);
 
   const drawing = drawings.find((d) => d.id === selectedId) ?? null;
+  // Re-clamp on pan/zoom/resize: the provider hands a new ctx (and version) then.
+  const ctxVersion = ctx?.version;
 
-  // Project the drawing's anchor points to find where to float the toolbar.
-  // Re-reads ctx.version implicitly because the component re-renders whenever
-  // the chart's visible range / size changes (new ctx object from the Provider).
-  let anchor: { centerX: number; topY: number; bottomY: number } | null = null;
-  if (ctx && drawing) {
-    const xs: number[] = [];
-    const ys: number[] = [];
-    for (const p of drawing.points) {
-      const x = ctx.chart.timeScale().timeToCoordinate(p.time as UTCTimestamp);
-      const y = ctx.candleSeries.priceToCoordinate(p.price);
-      if (x != null) xs.push(x);
-      if (y != null) ys.push(y);
-    }
-    if (xs.length && ys.length) {
-      anchor = {
-        centerX: (Math.min(...xs) + Math.max(...xs)) / 2,
-        topY: Math.min(...ys),
-        bottomY: Math.max(...ys),
-      };
-    }
-  }
-
-  const aCenterX = anchor?.centerX;
-  const aTopY = anchor?.topY;
-  const aBottomY = anchor?.bottomY;
-
+  // Default placement: pinned to the TOP-CENTRE of the chart (TradingView's
+  // floating object toolbar), independent of where the drawing sits. After the
+  // user drags it we keep their position and only clamp it into view.
   useLayoutEffect(() => {
     const el = rootRef.current;
-    if (el == null || aCenterX == null || aTopY == null || aBottomY == null) {
+    if (el == null || drawing == null) {
       setPos(null);
       return;
     }
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
     const parent = el.offsetParent as HTMLElement | null;
     const pw = parent?.clientWidth ?? window.innerWidth;
     const ph = parent?.clientHeight ?? window.innerHeight;
-    const pad = 6;
-    const left = Math.max(
-      pad + w / 2,
-      Math.min(pw - pad - w / 2, aCenterX),
-    );
-    let top = aTopY - h - 10;
-    if (top < pad) top = aBottomY + 12; // not enough room above → go below
-    top = Math.max(pad, Math.min(ph - pad - h, top));
-    setPos((prev) =>
-      prev && prev.left === left && prev.top === top ? prev : { left, top },
-    );
-  }, [aCenterX, aTopY, aBottomY]);
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const pad = 8;
+    setPos((prev) => {
+      if (!draggedRef.current || !prev) return { left: pw / 2, top: pad };
+      const left = Math.max(pad + w / 2, Math.min(pw - pad - w / 2, prev.left));
+      const top = Math.max(pad, Math.min(ph - pad - h, prev.top));
+      return prev.left === left && prev.top === top ? prev : { left, top };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, ctxVersion, drawing == null]);
 
   // Close any open popover when the selection changes / clears.
   useEffect(() => {
     setMenu(null);
   }, [selectedId]);
+
+  // --- Drag the toolbar by its grip handle ---
+  const onGripDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!pos) return;
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseLeft: pos.left,
+      baseTop: pos.top,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onGripMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    draggedRef.current = true;
+    const el = rootRef.current;
+    const parent = el?.offsetParent as HTMLElement | null;
+    const pw = parent?.clientWidth ?? window.innerWidth;
+    const ph = parent?.clientHeight ?? window.innerHeight;
+    const w = el?.offsetWidth ?? 0;
+    const h = el?.offsetHeight ?? 0;
+    const pad = 6;
+    const left = Math.max(
+      pad + w / 2,
+      Math.min(pw - pad - w / 2, d.baseLeft + (e.clientX - d.startX)),
+    );
+    const top = Math.max(
+      pad,
+      Math.min(ph - pad - h, d.baseTop + (e.clientY - d.startY)),
+    );
+    setPos({ left, top });
+  };
+  const onGripUp = (e: React.PointerEvent) => {
+    dragRef.current = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* ok */
+    }
+  };
 
   if (!drawing) return null;
 
@@ -157,6 +184,19 @@ export function DrawingSettingsToolbar() {
       }}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {/* Drag handle — move the toolbar anywhere on the chart */}
+      <button
+        aria-label="Move toolbar"
+        title="Drag to move"
+        onPointerDown={onGripDown}
+        onPointerMove={onGripMove}
+        onPointerUp={onGripUp}
+        className="flex h-7 cursor-move items-center justify-center px-0.5 text-ink-muted hover:text-ink"
+      >
+        <GripVertical size={15} />
+      </button>
+      <Sep />
+
       {/* Stroke colour */}
       <ToolbarButton
         label="Colour"

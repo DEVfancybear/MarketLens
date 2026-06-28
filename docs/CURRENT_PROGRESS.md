@@ -17,6 +17,24 @@ _Last updated: 2026-06-28 (Zustand → Jotai migration)_
 
 ## Completed this session
 
+### Position/drawing-tool bug pass (2026-06-28)
+
+1. **Settings toolbar is now draggable + top-pinned** (`DrawingSettingsToolbar.tsx`): no longer
+   hard-pinned next to the object. Defaults to the chart's **top-centre** on select (like
+   TradingView's object toolbar) and can be dragged anywhere via a `GripVertical` handle; the
+   dragged position is kept (clamped into view) until the selection clears.
+
+2. **Position tool TP/SL highlight** (`PositionTool.ts` + `DrawingLayer.tsx` + `CanvasRenderer.ts`):
+   when price reaches the target/stop the corresponding zone brightens (stronger fill + glow
+   outline + "✓ HIT" / "✕ HIT" label), direction-agnostic for Long & Short. Price read from
+   `candlesAtom`; a non-React `candlesAtom` subscription force-repaints the canvas per tick only
+   when a long/short tool exists. `RenderLoop.markDirty(force?)` added.
+
+3. **Smooth drag into whitespace** (`DrawingLayer.fromEvent`): dragging stalled past the last bar
+   because `coordinateToTime()` returns `null` there (hit rectangles drawn at the right edge most).
+   Now extrapolates time from the fractional logical index + bar interval, so all tools drag
+   smoothly across the whole chart.
+
 ### Floating drawing settings toolbar (2026-06-28)
 
 1. **`DrawingSettingsToolbar.tsx` (NEW)**: a TradingView-style floating toolbar shown above

@@ -3,6 +3,34 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Position/drawing-tool bug pass (2026-06-28)
+Four reported bugs around the Long/Short position tool and drawing tools:
+1. **Settings toolbar was hard-pinned next to the drawing.** The floating
+   `DrawingSettingsToolbar` projected the selection's points and floated directly
+   above them. It is now **draggable** — a `GripVertical` handle lets the user move
+   it anywhere on the chart; the position is remembered (only clamped into view)
+   until the selection clears. Files: chart/DrawingSettingsToolbar.tsx.
+2. **Settings toolbar now defaults to the TOP-CENTRE of the chart** (TradingView's
+   floating object toolbar) regardless of where the drawing was placed, instead of
+   hugging the object. Auto-positions to top-centre on select; user drags override.
+   File: chart/DrawingSettingsToolbar.tsx.
+3. **TP/SL zones now highlight when price reaches them.** `PositionTool` reads the
+   latest price from `candlesAtom` and, direction-agnostically (Long & Short),
+   brightens the profit zone when the target is reached and the risk zone when the
+   stop is reached (stronger fill + glow outline + "✓ HIT" / "✕ HIT" on the label).
+   `DrawingLayer` adds a **non-React** `candlesAtom` subscription that force-repaints
+   the canvas on each tick *only when a long/short tool is present* (so idle charts
+   stay cheap and the per-tick React-render optimisation is preserved). `RenderLoop.
+   markDirty` now accepts an optional `force` flag. Files: chart/drawing/tools/
+   plugins/PositionTool.ts, chart/DrawingLayer.tsx, chart/drawing/renderer/CanvasRenderer.ts.
+4. **Rectangle (and any tool) dragged smoothly into chart whitespace.** Dragging
+   stalled the instant the pointer left the data range because
+   `timeScale().coordinateToTime()` returns `null` past the last bar — common when
+   placing supply/demand rectangles at the right edge. `DrawingLayer.fromEvent` now
+   falls back to extrapolating the time from the fractional logical index and the
+   bar interval (mirroring how `timeToCoordinate` maps future times), so drags stay
+   smooth everywhere. File: chart/DrawingLayer.tsx.
+
 ### Fixed — Single-click tools kept duplicating instead of selecting (2026-06-28)
 - Horizontal / Horizontal-ray / Vertical / Cross / Info line / Text / Emoji stayed armed
   after placing one object, so clicking the placed object spawned another endlessly instead

@@ -10,9 +10,11 @@
  * The green zone is profit (entry→target); the red zone is risk (entry→stop) —
  * direction-agnostic, so the same renderer serves both Long and Short.
  */
+import { getDefaultStore } from "jotai";
 import type { Drawing, DrawingTool, Point } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
+import { candlesAtom } from "@/store/chartStore";
 import {
   type DrawingAdapter,
   type Anchor,
@@ -26,6 +28,13 @@ import { line, handle, chip } from "./shared";
 const BULL = "#26a69a";
 const BEAR = "#ef5350";
 const ENTRY = "#b2b5be";
+
+/** Latest traded price from the chart's master candle series, or null. */
+function currentPrice(): number | null {
+  const candles = getDefaultStore().get(candlesAtom);
+  const last = candles[candles.length - 1];
+  return last ? last.close : null;
+}
 
 function fmtPrice(p: number): string {
   const a = Math.abs(p);
@@ -72,14 +81,42 @@ function render(
   const left = Math.min(xL, xR);
   const w = Math.abs(xR - xL);
 
+  // Has price reached the target / stop? (direction-agnostic — works for both
+  // Long and Short.) When it has, TradingView brightens that zone so the trader
+  // sees the outcome of the position at a glance.
+  const price = currentPrice();
+  const reachedTarget =
+    price != null && (target >= entry ? price >= target : price <= target);
+  const reachedStop =
+    price != null && (stop <= entry ? price <= stop : price >= stop);
+  const baseAlpha = d.opacity ?? 0.15;
+  const hitAlpha = Math.max(0.4, baseAlpha + 0.3);
+
   // --- Zones ---
   g.save();
-  g.globalAlpha = d.opacity ?? 0.15;
+  g.globalAlpha = reachedTarget ? hitAlpha : baseAlpha;
   g.fillStyle = BULL;
   g.fillRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
+  g.globalAlpha = reachedStop ? hitAlpha : baseAlpha;
   g.fillStyle = BEAR;
   g.fillRect(left, Math.min(yE, yS), w, Math.abs(yS - yE));
   g.restore();
+
+  // Glow outline + badge on whichever zone has been hit.
+  if (reachedTarget || reachedStop) {
+    g.save();
+    g.setLineDash([]);
+    g.lineWidth = 2;
+    if (reachedTarget) {
+      g.strokeStyle = BULL;
+      g.strokeRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
+    }
+    if (reachedStop) {
+      g.strokeStyle = BEAR;
+      g.strokeRect(left, Math.min(yE, yS), w, Math.abs(yS - yE));
+    }
+    g.restore();
+  }
 
   // --- Lines ---
   g.save();
@@ -124,14 +161,14 @@ function render(
     chip(g, `Entry ${fmtPrice(entry)}${qtyTxt}`, xL, yE - 9, ENTRY);
     chip(
       g,
-      `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}`,
+      `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget ? "  ✓ HIT" : ""}`,
       midX - 60,
       (yE + yT) / 2 - 9,
       BULL,
     );
     chip(
       g,
-      `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}`,
+      `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop ? "  ✕ HIT" : ""}`,
       midX - 60,
       (yE + yS) / 2 - 9,
       BEAR,

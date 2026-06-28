@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, getDefaultStore } from "jotai";
 import {
+  candlesAtom,
   drawingsAtom,
   activeToolAtom,
   drawColorAtom,
@@ -91,7 +92,23 @@ export function DrawingLayer() {
     // matches PriceChart's own coordinateToTime(localX) usage.
     const lx = e.clientX - r.left;
     const ly = e.clientY - r.top;
-    const t = c.chart.timeScale().coordinateToTime(lx);
+    const ts = c.chart.timeScale();
+    let t = ts.coordinateToTime(lx) as number | null;
+    if (t == null) {
+      // Whitespace past the last bar (or before the first): coordinateToTime
+      // returns null there, which would stall a drag the moment the pointer
+      // leaves the data range — the cause of the "laggy" rectangle move. The
+      // time scale extrapolates future times linearly (timeToCoordinate maps
+      // them back fine), so we mirror that: derive the time from the fractional
+      // logical index and the bar interval to keep dragging smooth everywhere.
+      const logical = ts.coordinateToLogical(lx);
+      const candles = getDefaultStore().get(candlesAtom);
+      if (logical != null && candles.length >= 2) {
+        const lastIdx = candles.length - 1;
+        const interval = candles[lastIdx].time - candles[lastIdx - 1].time;
+        t = candles[lastIdx].time + (logical - lastIdx) * interval;
+      }
+    }
     const p = c.candleSeries.coordinateToPrice(ly);
     if (t == null || p == null) return null;
     return { time: t as number, price: p };
@@ -231,7 +248,20 @@ export function DrawingLayer() {
       },
     });
     markDirtyRef.current = loop.markDirty;
+    // Position tools highlight their profit/risk zone once price reaches the
+    // target / stop. Price changes don't touch any drawing-data signature, so
+    // the render memo would skip the repaint — force one on each candle tick
+    // (only when a long/short tool is present, to keep idle charts cheap). This
+    // subscription is non-React, so it doesn't re-render the component per tick.
+    const store = getDefaultStore();
+    const unsubPrice = store.sub(candlesAtom, () => {
+      const ds = stateRef.current.drawings;
+      if (ds.some((d) => d.tool === "long" || d.tool === "short")) {
+        loop.markDirty(true);
+      }
+    });
     return () => {
+      unsubPrice();
       loop.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
