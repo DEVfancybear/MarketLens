@@ -16,23 +16,21 @@
 - **✅ Phase 4.3 — Shape Tools Suite: COMPLETE** (8 shapes + fill + supply/demand zones).
 - **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + fibExtension,
   plugin architecture, 2-point creation, auto-levels with labels, full hitTest/movePoints/boundingBox).
-- **▶ Phase 5 — Left Toolbar / Indicator Engine: NEXT.**
+- **✅ Phase 5 — Left Toolbar / Indicator Engine: COMPLETE** (see below).
 
-## Immediate tasks — Phase 5 (Left Toolbar / Indicator Engine)
+## Completed — Phase 5 (Left Toolbar / Indicator Engine)
 
-1. Full 17-tool TradingView left toolbar with visual grouping and separators.
+1. Full 17+ tool TradingView left toolbar with 9 visual groups and separators.
 2. Indicator settings dialogs with parameter customization (SMA/EMA length, RSI period, etc.).
 3. Indicator style customization (colors, line width, overlay vs. pane).
-4. Hotkey system for drawing tools and indicators.
+4. Hotkey system for drawing tools and indicators (1–9 switch tools, Delete, Ctrl+D, Ctrl+A, Ctrl+I, etc.).
 
 ---
 
 ## Later phases (from PHASE3_11_PLAN.md)
 
-- **Phase 5 — Left Toolbar:** full 17-tool TradingView toolbar with visual grouping.
-- **Phase 6 — Indicator Engine:** settings dialogs, parameter customization.
-- **Phase 7 — Push Notifications:** Firebase Cloud Messaging.
-- **Phase 8 — MT5 Integration:** MT5 Bridge Service.
-- **Phase 9 — Trading Panel:** TradingView-style order panel.
-- **Phase 10 — Position Visualization:** interactive entry/SL/TP lines.
-- **Phase 11 — Polish & Optimization:** performance, memory, mobile, accessibility.
+- **Phase 6 — Push Notifications:** Firebase Cloud Messaging.
+- **Phase 7 — MT5 Integration:** MT5 Bridge Service.
+- **Phase 8 — Trading Panel:** TradingView-style order panel.
+- **Phase 9 — Position Visualization:** interactive entry/SL/TP lines.
+- **Phase 10 — Polish & Optimization:** performance, memory, mobile, accessibility.

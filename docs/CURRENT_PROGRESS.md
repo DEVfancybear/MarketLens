@@ -1,6 +1,6 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-26 (drawing engine stabilized)_
+_Last updated: 2026-06-28 (Phase 5 — Left Toolbar / Indicator Engine)_
 
 ## Current phase / milestone
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
@@ -11,7 +11,8 @@ _Last updated: 2026-06-26 (drawing engine stabilized)_
 - **✅ Phase 4.2.2 — TOOL GROUP SYSTEM — COMPLETE** (flyout portal fix).
 - **✅ Phase 4.4 — FIBONACCI SUITE — COMPLETE.**
 - **✅ Drawing engine stabilization — COMPLETE** (see below).
-- **Next milestone: Phase 5 — Left Toolbar / Indicator Engine.**
+- **✅ Phase 5 — Left Toolbar / Indicator Engine — COMPLETE** (see below).
+- **Next milestone: Phase 6 — Push Notifications / MT5 Integration.**
 
 ## Completed this session
 
@@ -55,18 +56,48 @@ _Last updated: 2026-06-26 (drawing engine stabilized)_
 - `TrendLineTool.ts` — unchanged (bug was in renderer, not tool)
 - `docs/` — CURRENT_PROGRESS.md, HANDOFF.md updated
 
+### Phase 5 — Left Toolbar / Indicator Engine (2026-06-28)
+
+1. **Indicator Settings Dialog:** `IndicatorSettingsDialog.tsx` — modal for customising indicator
+   parameters (type, length/slow/signal, colours, overlay vs separate pane, visible toggle, remove).
+   Opened via gear icon on indicator panes or from the Indicator menu.
+
+2. **Hotkey system:** Extended `useHotkeys.ts` with drawing shortcuts: 1–9 for tool switching,
+   Delete/Backspace for remove, Ctrl+D duplicate, Ctrl+A select all, Ctrl+Z undo guard,
+   Ctrl+I toggle SMA, Escape deselect/cancel. Existing replay/trade shortcuts preserved.
+
+3. **Left toolbar organisation:** Split into 9 tool groups (mode, trend lines, horizontals,
+   shapes, freeform, fibonacci, positions, annotations) with proper separators. Added
+   missing tools: channel, fib (legacy), emoji, long, short, brush, crosshair, eraser.
+
+4. **IndicatorMenu enhancements:** Shows active indicators list with colour dots and
+   settings gear; "Remove all indicators" action; clicking a toggle-open indicator opens
+   settings dialog.
+
+5. **IndicatorPane gear icon:** Settings gear next to indicator name opens the settings dialog.
+
+6. **Left rail width:** Increased from 40px to 52px to accommodate the expanded toolbar.
+
+### Summary of files changed (this session)
+- `IndicatorSettingsDialog.tsx` — NEW: indicator parameter customisation modal
+- `useHotkeys.ts` — extended with drawing + indicator keyboard shortcuts
+- `DrawingToolbar.tsx` — 9 groups, 25+ tools, missing tools added
+- `IndicatorMenu.tsx` — active indicators list, settings gear, remove all
+- `IndicatorPane.tsx` — settings gear icon on indicator header
+- `chartStore.ts` — `editingIndicatorId` + `setEditingIndicator` state
+- `uiStore.ts` — left panel width 40 → 52px
+- `Terminal.tsx` — wired IndicatorSettingsDialog + useHotkeys
+- `docs/` — CURRENT_PROGRESS.md updated
+
 ## Build & quality status
 - `npm run type-check` → ✅ PASS
 - `npm run lint` → ✅ PASS (0 warnings)
-- `npm run build` → ✅ PASS (Windows race intermittent)
+- `npm run build` → ✅ PASS
 - TODO/FIXME/HACK in `src/` → **0**
 
 ## Remaining known issues
 - Context menu bypasses undo history (DrawingContextMenu calls store directly)
-- Left toolbar unwired (Phase 5)
-- Indicator settings dialogs (Phase 5)
 - `framer-motion` broken (unused)
 
 ## Not started (later phases)
-- Phase 5 — Left Toolbar / Indicator Engine
 - Phase 6 — Push Notifications / MT5 Integration

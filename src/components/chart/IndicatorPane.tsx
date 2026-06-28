@@ -1,19 +1,19 @@
-'use client';
-import { useEffect, useRef } from 'react';
+"use client";
+import { useEffect, useRef } from "react";
 import {
   createChart,
   ColorType,
   CrosshairMode,
   type IChartApi,
   type UTCTimestamp,
-} from 'lightweight-charts';
-import type { Candle, IndicatorConfig } from '@/types';
-import { useUIStore } from '@/store/uiStore';
-import { useChartStore } from '@/store/chartStore';
-import { chartColors } from './chartTheme';
-import { computeIndicator } from '@/services/indicators';
-import { IconButton } from '@/components/ui/IconButton';
-import { X } from 'lucide-react';
+} from "lightweight-charts";
+import type { Candle, IndicatorConfig } from "@/types";
+import { useUIStore } from "@/store/uiStore";
+import { useChartStore } from "@/store/chartStore";
+import { chartColors } from "./chartTheme";
+import { computeIndicator } from "@/services/indicators";
+import { IconButton } from "@/components/ui/IconButton";
+import { X, Settings } from "lucide-react";
 
 /**
  * Sub-pane chart for separate-pane indicators (RSI, MACD). Its time scale is
@@ -32,6 +32,7 @@ export function IndicatorPane({
   const chartRef = useRef<IChartApi | null>(null);
   const theme = useUIStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
+  const setEditingIndicator = useChartStore((s) => s.setEditingIndicator);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -39,14 +40,19 @@ export function IndicatorPane({
     const chart = createChart(containerRef.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
+        background: { type: ColorType.Solid, color: "transparent" },
         textColor: c.text,
-        fontFamily: 'var(--font-sans)',
+        fontFamily: "var(--font-sans)",
         fontSize: 10,
       },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       rightPriceScale: { borderColor: c.border },
-      timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false, visible: false },
+      timeScale: {
+        borderColor: c.border,
+        timeVisible: true,
+        secondsVisible: false,
+        visible: false,
+      },
       crosshair: { mode: CrosshairMode.Normal },
       handleScroll: false,
       handleScale: false,
@@ -81,23 +87,49 @@ export function IndicatorPane({
     // Clear previous series by removing & recreating is heavy; instead track here.
     const result = computeIndicator(cfg, candles);
     const created = result.series.map((s) => {
-      const isHist = s.key === 'hist';
+      const isHist = s.key === "hist";
       const series = isHist
         ? chart.addHistogramSeries({ color: s.color, priceLineVisible: false })
-        : chart.addLineSeries({ color: s.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+        : chart.addLineSeries({
+            color: s.color,
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: true,
+          });
       series.setData(
         s.data.map((p) => ({
           time: p.time as UTCTimestamp,
           value: p.value,
-          ...(isHist ? { color: p.value >= 0 ? chartColors(theme).bull : chartColors(theme).bear } : {}),
+          ...(isHist
+            ? {
+                color:
+                  p.value >= 0
+                    ? chartColors(theme).bull
+                    : chartColors(theme).bear,
+              }
+            : {}),
         })),
       );
       return series;
     });
 
-    if (cfg.type === 'RSI' && created[0]) {
-      created[0].createPriceLine({ price: 70, color: chartColors(theme).bear, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
-      created[0].createPriceLine({ price: 30, color: chartColors(theme).bull, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+    if (cfg.type === "RSI" && created[0]) {
+      created[0].createPriceLine({
+        price: 70,
+        color: chartColors(theme).bear,
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: "",
+      });
+      created[0].createPriceLine({
+        price: 30,
+        color: chartColors(theme).bull,
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: "",
+      });
     }
 
     return () => {
@@ -117,13 +149,24 @@ export function IndicatorPane({
 
   return (
     <div className="relative h-[120px] w-full border-t border-terminal-border">
-      <div className="absolute left-2 top-1 z-10 flex items-center gap-2 text-2xs text-ink-muted">
+      <div className="absolute left-2 top-1 z-10 flex items-center gap-1 text-2xs text-ink-muted">
         <span className="font-semibold">
-          {cfg.type} {cfg.type !== 'VWAP' ? cfg.length : ''}
+          {cfg.type} {cfg.type !== "VWAP" ? cfg.length : ""}
         </span>
+        <button
+          onClick={() => setEditingIndicator(cfg.id)}
+          className="rounded p-0.5 text-ink-muted hover:text-ink hover:bg-terminal-hover"
+          title={`${cfg.type} settings`}
+        >
+          <Settings size={10} />
+        </button>
       </div>
       <div className="absolute right-1 top-0.5 z-10">
-        <IconButton size="sm" label="Remove" onClick={() => removeIndicator(cfg.id)}>
+        <IconButton
+          size="sm"
+          label="Remove"
+          onClick={() => removeIndicator(cfg.id)}
+        >
           <X size={12} />
         </IconButton>
       </div>

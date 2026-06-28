@@ -32,6 +32,8 @@ interface ChartState {
   /** Global locks (TradingView "Lock all" / "Hide all"). */
   drawingsLocked: boolean;
   drawingsHidden: boolean;
+  /** Indicator being edited in the settings dialog. */
+  editingIndicatorId: string | null;
 
   /** Crosshair readout pushed from the chart. */
   crosshair: { time: number; candle: Candle | null } | null;
@@ -71,6 +73,7 @@ interface ChartState {
   clearIndicators: () => void;
 
   setCrosshair: (c: ChartState["crosshair"]) => void;
+  setEditingIndicator: (id: string | null) => void;
   /** Load persisted drawings/indicators from localStorage. Client-only. */
   hydrate: () => void;
 }
@@ -99,6 +102,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   selectedDrawingIds: new Set(),
   drawingsLocked: false,
   drawingsHidden: false,
+  editingIndicatorId: null,
   crosshair: null,
 
   hydrate: () =>
@@ -148,6 +152,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
       "horizRay",
       "vertical",
       "crossLine",
+      "infoLine",
       "text",
       "emoji",
       "long",
@@ -283,4 +288,5 @@ export const useChartStore = create<ChartState>((set, get) => ({
   },
 
   setCrosshair: (crosshair) => set({ crosshair }),
+  setEditingIndicator: (editingIndicatorId) => set({ editingIndicatorId }),
 }));

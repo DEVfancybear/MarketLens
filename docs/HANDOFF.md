@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-26._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-28._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) and Phase 2 (alert engine) are
@@ -13,7 +13,8 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 **Phase 4.3 (Shape Tools Suite) is COMPLETE** — 8 shapes + fill system + supply/demand zones.
 **Phase 4.2.2 (Tool Group System) is COMPLETE** — flyout menus fixed via `createPortal`.
 **Phase 4.4 (Fibonacci Suite) is COMPLETE** — fib retracement + fib extension drawing tools.
-The next milestone is **Phase 5 — Left Toolbar / Indicator Engine**.
+**Phase 5 (Left Toolbar / Indicator Engine) is COMPLETE** — 9-group toolbar, indicator settings dialogs, hotkey system.
+The next milestone is **Phase 6 — Push Notifications / MT5 Integration**.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -48,11 +49,14 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   corruption eliminated), store now guards against empty IDs + deep-copies points, explicit
   pointer capture release added, adapter resolution during drag fixed, drag operations now
   undoable via commitMove. See `CURRENT_PROGRESS.md` for details.
-- **Recommended next action:** Start **Phase 5 — Left Toolbar / Indicator Engine** (full
-  `drawingRenderer.ts` + extended `types/drawing.ts` + `chartStore` drawing actions into
-  `DrawingLayer`/`DrawingToolbar`; add indicator settings dialogs + parameter customization).
-  See `NEXT_TASKS.md` §"Immediate tasks — Phase 5".
-  (Optional cleanup: the legacy `Symbol`/`Quote` types in `types/market.ts` may be unused now.)
+- **Phase 5 (Left Toolbar / Indicator Engine):** `DrawingToolbar` reorganised into 9 tool groups
+  (mode, trend lines, horizontals, shapes, freeform, fibonacci, positions, annotations) with
+  25+ tools. `IndicatorSettingsDialog` modal for customising indicator type, length(s), colours,
+  pane assignment, and visibility. `IndicatorMenu` shows active indicators with settings gear and
+  remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
+  shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
+  Escape deselect/cancel). Left rail width increased 40→52px. See `CURRENT_PROGRESS.md`.
+- **Recommended next action:** Start **Phase 6 — Push Notifications / MT5 Integration.**
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
   the browser console to see why forex symbols show "--". See `docs/OANDA_DEBUG_REPORT.md`.
@@ -150,17 +154,16 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   ICMarkets providers.
 - ✅ **Phase 4.4 — Fibonacci Suite: COMPLETE.** Fib retracement + fib extension drawing tools
   with full plugin support. Legacy `fib` tool retained for backward compatibility.
-- 🟡 **Left drawing toolbar overhaul** — partially landed and **unwired** (see §8 Known Issues
-  and `CURRENT_STATE.md` §9). **Phase 5 — next milestone.**
-- 🟡 Indicator settings dialogs (Phase 5).
+- ✅ **Phase 5 — Left Toolbar / Indicator Engine: COMPLETE.** 9-group toolbar (25+ tools),
+  indicator settings dialog (type/length/colour/pane/visibility), hotkey system (1–9 switch,
+  Delete, Ctrl+D, Ctrl+A, Ctrl+I, Escape).
 - ❌ Real broker/MT5 order routing + Firebase mobile push (Phase 6 — alert dispatch seam ready in
   `services/notifications/notify.ts`).
 
-## 7. Where to continue (Phase 5 — Left Toolbar / Indicator Engine)
-1. **Phase 5 — Left Toolbar / Indicator Engine.** Full 17-tool TradingView-style left toolbar
-   with visual grouping and separators. Indicator settings dialogs with parameter customization
-   (SMA/EMA length, RSI period, etc.). Hotkey system for tools and indicators.
-   See `NEXT_TASKS.md` §"Immediate tasks — Phase 5".
+## 7. Where to continue (Phase 6 — Push Notifications / MT5 Integration)
+1. **Phase 6 — Push Notifications / MT5 Integration.** Firebase Cloud Messaging for mobile push
+   notifications. MT5 Bridge Service for real broker order routing.
+   See `NEXT_TASKS.md` §"Later phases".
 2. Manual smoke test for Phase 2: open the toolbar **bell**, create `BTCUSDT crosses above <price>`
    and `BTCUSDT > <below-current>` — the latter fires immediately (level), the former on the next
    upward cross; confirm one toast + chime, the alert moves to Triggered, and a History row is added.
@@ -186,12 +189,9 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - **✅ Pointer capture release — ADDED (2026-06-26):** `DrawingInteractionManager` now explicitly
   releases pointer capture via `activePointerIdRef` in `handleUp`, `reset()`, and Escape paths.
   No more leaked captures blocking chart interaction.
-- **🟡 DrawingContextMenu broken:** The canvas has `pointerEvents:"none"` which blocks the
-  `contextmenu` mouse event from reaching `canvas.addEventListener("contextmenu", handleCtx)`.
-  Right-clicking a drawing opens only `ChartContextMenu` (Create Alert, Trade, H-line) — the
-  drawing-specific context menu (Clone, Delete, Lock, Hide, Bring/Send) never appears.
-  **Fix:** move the `contextmenu` listener from the canvas to the document (capture phase),
-  matching the pointer event architecture, and gate with `isOverCanvas`.
+- **✅ DrawingContextMenu restored (2026-06-26):** Moved `contextmenu` listener from canvas
+  (blocked by `pointerEvents:"none"`) to document capture phase. Right-clicking a drawing now
+  opens the drawing-specific context menu (Clone, Delete, Lock, Hide, Bring/Send).
 - **Context menu bypasses undo history:** `DrawingContextMenu.tsx` calls store actions directly
   (`removeDrawing`, `duplicateDrawing`, etc.) without creating Command history. Keyboard
   equivalents (Delete, Ctrl+D) DO create history. Inconsistent undo behavior.
@@ -218,6 +218,9 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   `components/chart/drawing/hittest/HitTestEngine.ts`,
   `components/chart/drawing/tools/{ToolRegistry,adapters}.ts`,
   `components/chart/drawing/tools/plugins/{FibRetracement,FibExtension}Tool.ts` (Phase 4.4).
+- Left toolbar + indicators (Phase 5): `components/toolbar/DrawingToolbar.tsx`,
+  `components/toolbar/IndicatorMenu.tsx`, `components/toolbar/IndicatorSettingsDialog.tsx`,
+  `components/chart/IndicatorPane.tsx`, `hooks/useHotkeys.ts`.
 - Visibility gate: `hooks/useVisibleCandles.ts`.
 - Watchlist: `components/watchlist/Watchlist.tsx`, `store/watchlistStore.ts`.
 - Runtime loops: `components/layout/GlobalRuntime.tsx`.

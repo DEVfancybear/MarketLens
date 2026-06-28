@@ -1,17 +1,19 @@
-'use client';
+"use client";
 
-import { TerminalLayout } from '@/components/layout/TerminalLayout';
-import { TopToolbar } from '@/components/toolbar/TopToolbar';
-import { DrawingToolbar } from '@/components/toolbar/DrawingToolbar';
-import { ChartArea } from '@/components/chart/ChartArea';
-import { Watchlist } from '@/components/watchlist/Watchlist';
-import { BottomPanel } from '@/components/layout/BottomPanel';
-import { GlobalRuntime } from '@/components/layout/GlobalRuntime';
-import { Splash } from '@/components/layout/Splash';
-import { Toaster } from '@/components/notifications/Toaster';
-import { AlertCenter } from '@/components/alerts/AlertCenter';
-import { AlertEditDialog } from '@/components/alerts/AlertEditDialog';
-import { useStoreHydration } from '@/hooks/useStoreHydration';
+import { TerminalLayout } from "@/components/layout/TerminalLayout";
+import { TopToolbar } from "@/components/toolbar/TopToolbar";
+import { DrawingToolbar } from "@/components/toolbar/DrawingToolbar";
+import { IndicatorSettingsDialog } from "@/components/toolbar/IndicatorSettingsDialog";
+import { ChartArea } from "@/components/chart/ChartArea";
+import { Watchlist } from "@/components/watchlist/Watchlist";
+import { BottomPanel } from "@/components/layout/BottomPanel";
+import { GlobalRuntime } from "@/components/layout/GlobalRuntime";
+import { Splash } from "@/components/layout/Splash";
+import { Toaster } from "@/components/notifications/Toaster";
+import { AlertCenter } from "@/components/alerts/AlertCenter";
+import { AlertEditDialog } from "@/components/alerts/AlertEditDialog";
+import { useStoreHydration } from "@/hooks/useStoreHydration";
+import { useHotkeys } from "@/hooks/useHotkeys";
 
 /**
  * The full client-only trading terminal. Imported via `dynamic(..., {ssr:false})`
@@ -21,6 +23,7 @@ import { useStoreHydration } from '@/hooks/useStoreHydration';
  */
 export function Terminal() {
   const hydrated = useStoreHydration();
+  useHotkeys();
   if (!hydrated) return <Splash />;
 
   return (
@@ -35,6 +38,7 @@ export function Terminal() {
       />
       <AlertCenter />
       <AlertEditDialog />
+      <IndicatorSettingsDialog />
       <Toaster />
     </>
   );

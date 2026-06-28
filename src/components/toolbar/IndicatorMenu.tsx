@@ -1,8 +1,9 @@
 "use client";
-import { LineChart, Check } from "lucide-react";
+import { LineChart, Check, Settings } from "lucide-react";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { useChartStore } from "@/store/chartStore";
 import type { IndicatorType } from "@/types";
+import { cn } from "@/utils/cn";
 
 const OPTIONS: { type: IndicatorType; label: string }[] = [
   { type: "SMA", label: "Simple Moving Average" },
@@ -16,12 +17,14 @@ const OPTIONS: { type: IndicatorType; label: string }[] = [
 export function IndicatorMenu() {
   const indicators = useChartStore((s) => s.indicators);
   const toggleIndicator = useChartStore((s) => s.toggleIndicator);
+  const removeIndicator = useChartStore((s) => s.removeIndicator);
+  const setEditingIndicator = useChartStore((s) => s.setEditingIndicator);
   // Derived from live store state every render — never stale.
   const active = new Set(indicators.map((i) => i.type));
 
   return (
     <Dropdown
-      width={240}
+      width={280}
       trigger={() => (
         <button className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
           <LineChart size={14} />
@@ -29,7 +32,7 @@ export function IndicatorMenu() {
         </button>
       )}
     >
-      {() => (
+      {(close) => (
         <div>
           <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
             Add indicator
@@ -38,7 +41,22 @@ export function IndicatorMenu() {
             <MenuItem
               key={o.type}
               active={active.has(o.type)}
-              onClick={() => toggleIndicator(o.type)}
+              onClick={() => {
+                toggleIndicator(o.type);
+                if (!active.has(o.type)) {
+                  setTimeout(() => {
+                    const added = useChartStore
+                      .getState()
+                      .indicators.find((i) => i.type === o.type);
+                    if (added) {
+                      close();
+                      setEditingIndicator(added.id);
+                    }
+                  }, 0);
+                } else {
+                  close();
+                }
+              }}
             >
               <span className="w-10 font-mono text-2xs text-brand">
                 {o.type}
@@ -47,6 +65,63 @@ export function IndicatorMenu() {
               {active.has(o.type) && <Check size={13} className="text-bull" />}
             </MenuItem>
           ))}
+
+          {/* Active indicators with settings gear */}
+          {indicators.filter((i) => i.visible).length > 0 && (
+            <>
+              <div className="mx-3 my-1 border-t border-terminal-border" />
+              <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
+                Active indicators
+              </div>
+              {indicators
+                .filter((i) => i.visible)
+                .map((ind) => (
+                  <div
+                    key={ind.id}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 text-[11px] text-ink",
+                      "hover:bg-terminal-hover",
+                    )}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ background: ind.color }}
+                    />
+                    <span className="flex-1 truncate">
+                      {ind.type}
+                      {ind.length > 0 && ` (${ind.length})`}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        close();
+                        setEditingIndicator(ind.id);
+                      }}
+                      className="rounded p-0.5 text-ink-muted hover:text-ink hover:bg-terminal-hover/50"
+                      title="Settings"
+                    >
+                      <Settings size={11} />
+                    </button>
+                  </div>
+                ))}
+            </>
+          )}
+
+          {/* Remove all */}
+          {indicators.length > 0 && (
+            <>
+              <div className="mx-3 my-1 border-t border-terminal-border" />
+              <button
+                onClick={() => {
+                  useChartStore.getState().clearIndicators();
+                  close();
+                }}
+                className="w-full px-3 py-1.5 text-left text-[11px] text-bear hover:bg-bear/10"
+              >
+                Remove all indicators
+              </button>
+            </>
+          )}
         </div>
       )}
     </Dropdown>

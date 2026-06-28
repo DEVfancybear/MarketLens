@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   MousePointer2,
+  Target,
+  Eraser,
   TrendingUp,
   Minus,
   MoveVertical,
@@ -16,8 +18,12 @@ import {
   PenTool,
   Spline,
   Type,
+  Smile,
   GitFork,
   ArrowBigUp,
+  ChartCandlestick,
+  ChartNoAxesColumn,
+  Paintbrush,
   Trash2,
   Palette,
 } from "lucide-react";
@@ -36,13 +42,19 @@ interface ToolGroup {
 }
 
 const GROUPS: ToolGroup[] = [
+  // --- Mode tools ---
   {
     id: "cursor",
     icon: <MousePointer2 size={18} />,
     label: "Cursor",
     defaultTool: "cursor",
-    tools: [],
+    tools: [
+      { tool: "cursor", icon: <MousePointer2 size={14} />, label: "Cursor" },
+      { tool: "crosshair", icon: <Target size={14} />, label: "Crosshair" },
+      { tool: "eraser", icon: <Eraser size={14} />, label: "Eraser" },
+    ],
   },
+  // --- Trend lines ---
   {
     id: "lines",
     icon: <TrendingUp size={18} />,
@@ -60,6 +72,16 @@ const GROUPS: ToolGroup[] = [
         icon: <GitBranch size={14} />,
         label: "Extended line",
       },
+      { tool: "channel", icon: <GitBranch size={14} />, label: "Channel" },
+    ],
+  },
+  // --- Horizontal / vertical ---
+  {
+    id: "horizontals",
+    icon: <Minus size={18} />,
+    label: "Horizontal line",
+    defaultTool: "horizontal",
+    tools: [
       {
         tool: "horizontal",
         icon: <Minus size={14} />,
@@ -75,6 +97,7 @@ const GROUPS: ToolGroup[] = [
       { tool: "infoLine", icon: <Ruler size={14} />, label: "Info line" },
     ],
   },
+  // --- Shapes ---
   {
     id: "shapes",
     icon: <Square size={18} />,
@@ -90,9 +113,28 @@ const GROUPS: ToolGroup[] = [
       { tool: "circle", icon: <Circle size={14} />, label: "Circle" },
       { tool: "ellipse", icon: <Circle size={14} />, label: "Ellipse" },
       { tool: "triangle", icon: <Triangle size={14} />, label: "Triangle" },
+    ],
+  },
+  // --- Freeform ---
+  {
+    id: "freeform",
+    icon: <PenTool size={18} />,
+    label: "Polyline",
+    defaultTool: "polyline",
+    tools: [
       { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
       { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
       { tool: "path", icon: <PenTool size={14} />, label: "Path" },
+      { tool: "brush", icon: <Paintbrush size={14} />, label: "Brush" },
+    ],
+  },
+  // --- Fibonacci ---
+  {
+    id: "fibonacci",
+    icon: <GitFork size={18} />,
+    label: "Fib Retracement",
+    defaultTool: "fibRetracement",
+    tools: [
       {
         tool: "fibRetracement",
         icon: <GitFork size={14} />,
@@ -103,14 +145,38 @@ const GROUPS: ToolGroup[] = [
         icon: <ArrowBigUp size={14} />,
         label: "Fib Extension",
       },
+      { tool: "fib", icon: <GitFork size={14} />, label: "Fib (legacy)" },
     ],
   },
+  // --- Positions ---
+  {
+    id: "positions",
+    icon: <ChartCandlestick size={18} />,
+    label: "Long position",
+    defaultTool: "long",
+    tools: [
+      {
+        tool: "long",
+        icon: <ChartCandlestick size={14} />,
+        label: "Long position",
+      },
+      {
+        tool: "short",
+        icon: <ChartNoAxesColumn size={14} />,
+        label: "Short position",
+      },
+    ],
+  },
+  // --- Annotations ---
   {
     id: "annotations",
     icon: <Type size={18} />,
     label: "Text",
     defaultTool: "text",
-    tools: [{ tool: "text", icon: <Type size={14} />, label: "Text" }],
+    tools: [
+      { tool: "text", icon: <Type size={14} />, label: "Text" },
+      { tool: "emoji", icon: <Smile size={14} />, label: "Emoji" },
+    ],
   },
 ];
 

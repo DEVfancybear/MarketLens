@@ -51,7 +51,7 @@ interface UIState {
 
 // SSR-safe deterministic defaults — identical on server and first client render.
 // Persisted values are loaded later via hydrate() to avoid hydration mismatches.
-const DEFAULT_PANELS: PanelSizes = { right: 320, bottom: 240, left: 40 };
+const DEFAULT_PANELS: PanelSizes = { right: 320, bottom: 240, left: 52 };
 
 let logId = 0;
 
