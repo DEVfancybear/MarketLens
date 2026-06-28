@@ -3,6 +3,14 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Favorites quick-access bar (2026-06-29)
+- Starred drawing tools now show as a **quick-access bar** at the top of the
+  `DrawingToolbar` (above the tool groups, with a brand-coloured divider). Each
+  favorite is a one-click tool button; **right-click removes** it. Driven by the
+  same persisted `tv:favTools` set as the flyout stars, so the two stay in sync.
+  A module-level `TOOL_BY_ID` lookup resolves icons/labels. File:
+  toolbar/DrawingToolbar.tsx.
+
 ### Added — Shapes (rectangle) group: multi-point engine + TradingView parity (2026-06-29)
 Brought the Shapes toolbar group to TradingView parity (UI + function). See
 `docs/SHAPES_GROUP_IMPLEMENTATION.md` for the full design/impact write-up.

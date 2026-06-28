@@ -222,6 +222,11 @@ const GROUPS: ToolGroup[] = [
   },
 ];
 
+/** Flat tool lookup (first occurrence wins) for the favorites quick-bar. */
+const TOOL_BY_ID = new Map<DrawingTool, ToolItem>();
+for (const g of GROUPS)
+  for (const t of g.tools) if (!TOOL_BY_ID.has(t.tool)) TOOL_BY_ID.set(t.tool, t);
+
 const COLORS = [
   "#2962ff",
   "#26a69a",
@@ -296,6 +301,11 @@ export function DrawingToolbar() {
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Favorited tools (in the order they were starred) for the quick-access bar.
+  const favList = [...favorites].filter((t) =>
+    TOOL_BY_ID.has(t as DrawingTool),
+  ) as DrawingTool[];
+
   const isActive = (group: ToolGroup) => {
     if (group.tools.length === 0) return activeTool === group.defaultTool;
     return (
@@ -306,6 +316,35 @@ export function DrawingToolbar() {
 
   return (
     <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
+      {/* Favorites quick-access bar — starred tools, TradingView-style */}
+      {favList.length > 0 && (
+        <>
+          {favList.map((tool) => {
+            const meta = TOOL_BY_ID.get(tool);
+            if (!meta) return null;
+            return (
+              <IconButton
+                key={`fav-${tool}`}
+                label={`${meta.label} (favorite — right-click to remove)`}
+                active={activeTool === tool}
+                onClick={() => {
+                  setActiveTool(tool);
+                  setOpenGroup(null);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  toggleFavorite(tool);
+                }}
+              >
+                <span className="[&_svg]:h-[18px] [&_svg]:w-[18px]">
+                  {meta.icon}
+                </span>
+              </IconButton>
+            );
+          })}
+          <div className="my-1 h-0.5 w-6 rounded-full bg-brand/40" />
+        </>
+      )}
       {GROUPS.map((group, gi) => {
         const visibleTool = lastUsed[group.id] ?? group.defaultTool;
         const visibleIcon =
