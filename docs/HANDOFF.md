@@ -206,6 +206,11 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   previous handoffs is obsolete — the subsystem has been fully integrated and extended.
 - **Legacy types may be orphaned:** with `services/marketData.ts` deleted, the legacy `Symbol` and
   `Quote` interfaces in `types/market.ts` may now be unused — verify with a grep before removing.
+- **⚠ Jotai compat hook + useEffect danger:** The `useXStore(selector)` compatibility hooks
+  (e.g. `useAlertStore((s) => s.hydrate)`) create **unstable function references** on every
+  render because they recompute the state object from all atoms. Never use them in `useEffect`
+  dependency arrays for actions that mutate atoms — it causes infinite re-render loops.
+  **Fix:** use `useSetAtom(writeAtom)` directly for actions, as it returns a stable reference.
 - **Git on Windows:** `git` is installed but not on PATH — invoke it by full path
   `C:\Program Files\Git\cmd\git.exe`. Repo `origin → github.com/DEVfancybear/tradingview` on
   branch `master`. `.claude/settings.local.json` is gitignored (machine-local).

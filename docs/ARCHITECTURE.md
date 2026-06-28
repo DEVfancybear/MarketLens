@@ -158,6 +158,10 @@ Key optimisations:
 | Non-React read | `getDefaultStore().get(candlesAtom)` |
 | Non-React write | `getDefaultStore().set(logAtom, { level, msg })` |
 
+> **⚠ Gotcha:** `useXStore(selector)` returns unstable references (new state object per render).
+> Never destructure action functions from it into `useEffect` deps — use `useSetAtom(writeAtom)`
+> instead. Example: `useAlertStore((s) => s.hydrate)` → `useSetAtom(hydrateAtom)`.
+
 **Alert architecture (Phase 2):** `marketDataStore` (SSOT) → `useAlertEngine` (push subscription,
 no polling/sockets; refcounted alert-symbol tickers) → pure `services/alertEngine.ts` (above/below/
 crossUp/crossDown) → `alertStore.triggerAlert` (once-only/recurring) → `services/notifications/

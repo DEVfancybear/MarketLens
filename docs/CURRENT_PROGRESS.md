@@ -107,6 +107,17 @@ Key patterns:
 - `useStore((s) => s.action)` → `useSetAtom(actionAtom)`
 - `useStore.getState()` → `getDefaultStore().get/set(atom)`
 
+### Jotai hydration fix (2026-06-28)
+
+**Infinite re-render loop in `GlobalRuntime`:** Fixed by replacing
+`useAlertStore((s) => s.hydrate)` with `useSetAtom(hydrateAtom)`. The
+compatibility `useXStore(selector)` hook reads all atoms and creates new
+function references on every render — in a `useEffect` dependency array,
+this causes the effect to re-fire after `hydrate()` mutates atoms, creating
+an infinite loop. `useSetAtom` returns a stable function reference that
+never changes. Pattern to avoid: never destructure action functions from
+`useXStore(selector)` if they're used as `useEffect` dependencies.
+
 ## Remaining known issues
 - Context menu bypasses undo history (DrawingContextMenu calls store directly)
 - `framer-motion` broken (unused)

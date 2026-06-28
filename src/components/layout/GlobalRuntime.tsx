@@ -7,7 +7,7 @@ import { useMarketDataBootstrap } from "@/hooks/useMarketDataBootstrap";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { loadJournalAtom } from "@/store/journalStore";
 import { useSetAtom } from "jotai";
-import { useAlertStore } from "@/store/alertStore";
+import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
 import { useEffect } from "react";
 
 /**
@@ -22,9 +22,9 @@ export function GlobalRuntime() {
   useMarketDataBootstrap(); // brings the realtime feed online + subscribes watchlist tickers
   useAlertEngine(); // evaluates price alerts off the same realtime feed (no polling/sockets)
 
-  // Hydrate the journal from IndexedDB + alerts from localStorage once on mount.
+  // Hydrate journal + alerts from persisted storage (IndexedDB / localStorage).
   const loadJournal = useSetAtom(loadJournalAtom);
-  const hydrateAlerts = useAlertStore((s) => s.hydrate);
+  const hydrateAlerts = useSetAtom(hydrateAlertsAtom);
   useEffect(() => {
     void loadJournal();
     hydrateAlerts();
