@@ -195,6 +195,17 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
 
     spatialIndex.rebuild(all, toX, toY);
     const viewport = spatialIndex.queryViewport(0, 0, rect.width, rect.height);
+    // Long/Short tools must never be culled — their right edge can sit in
+    // whitespace where timeToCoordinate returns null and the bbox collapses.
+    for (const d of storeDrawings) {
+      if (
+        d.visible !== false &&
+        (d.tool === "long" || d.tool === "short") &&
+        !viewport.some((v) => v.id === d.id)
+      ) {
+        viewport.push(d);
+      }
+    }
     const sorted = [...viewport].sort(
       (a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0),
     );

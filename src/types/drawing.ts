@@ -108,6 +108,12 @@ export interface BaseDrawing {
   qtyPrecision?: number;
   /** Whether the on-chart info labels are shown (default true). */
   showLabels?: boolean;
+  /** Position tool trade lifecycle status. */
+  tradeStatus?: "pending" | "running" | "tp_hit" | "sl_hit";
+  /** UNIX time (seconds) of the candle that first hit TP or SL. */
+  hitTime?: number;
+  /** Price level at which the hit occurred (target or stop price). */
+  hitPrice?: number;
 }
 
 export type Drawing = BaseDrawing;

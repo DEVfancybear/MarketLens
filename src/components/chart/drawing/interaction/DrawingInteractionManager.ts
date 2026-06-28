@@ -287,6 +287,18 @@ export function useDrawingInteractionManager(
         const orig = hit.drawing.points.map((pt: Point) => ({ ...pt }));
         drawingIdRef.current = hit.drawing.id;
         livePointsRef.current = null;
+        // Clear TP/SL hit status when the user starts dragging.  Clearing
+        // hitTime too lets the renderer fresh-detect with live points during
+        // the drag so the highlight updates in real-time (no delay).
+        if (
+          hit.drawing.tradeStatus === "tp_hit" ||
+          hit.drawing.tradeStatus === "sl_hit"
+        ) {
+          updateDrawing({
+            id: hit.drawing.id,
+            patch: { tradeStatus: undefined, hitTime: undefined },
+          });
+        }
         transition({
           state: isBody ? "MovingDrawing" : "ResizingHandle",
           drawingId: hit.drawing.id,

@@ -62,11 +62,35 @@ function geometry(d: Drawing, proj: Projector): Geo | null {
   const xL = proj.toX(p0.time);
   if (xL == null) return null;
   const xR = d.points[1] ? proj.toX(d.points[1].time) : xL + 130;
+  if (xR == null) return null;
   const yE = proj.toY(entry);
   const yT = proj.toY(target);
   const yS = proj.toY(stop);
-  if (xR == null || yE == null || yT == null || yS == null) return null;
+  if (yE == null || yT == null || yS == null) return null;
   return { xL, xR, yE, yT, yS, entry, target, stop };
+}
+
+/** Scan candles after entry for the first bar that reached target or stop. */
+function findHitCandle(d: Drawing, geo: Geo) {
+  const candles = getDefaultStore().get(candlesAtom);
+  if (candles.length === 0) return null;
+  const isLong = d.tool === "long";
+  const entryTime = d.points[0]?.time ?? 0;
+  for (const c of candles) {
+    if (c.time <= entryTime) continue;
+    if (isLong) {
+      if (c.high >= geo.target)
+        return { status: "tp_hit" as const, time: c.time, price: geo.target };
+      if (c.low <= geo.stop)
+        return { status: "sl_hit" as const, time: c.time, price: geo.stop };
+    } else {
+      if (c.low <= geo.target)
+        return { status: "tp_hit" as const, time: c.time, price: geo.target };
+      if (c.high >= geo.stop)
+        return { status: "sl_hit" as const, time: c.time, price: geo.stop };
+    }
+  }
+  return null;
 }
 
 function render(
@@ -77,6 +101,53 @@ function render(
 ) {
   const geo = geometry(d, proj);
   if (!geo) return;
+
+  // Save the original (unfrozen) right edge for handle rendering.
+  // Handles must match getAnchors() positions which use geometry() independently.
+  const origXR = geo.xR;
+
+  // ── Hit detection & frozen right edge ──
+  // If the drawing already has a persisted tradeStatus, use it to freeze the
+  // right edge (survives pan/zoom).  Otherwise scan candles for a first hit.
+  // hitTime is stored as an OFFSET from entry, so the freeze follows the
+  // position when the user drags the drawing.
+  let hit: {
+    status: "tp_hit" | "sl_hit";
+    candleTime: number;
+    candlePrice: number;
+  } | null = null;
+  if (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit") {
+    hit = {
+      status: d.tradeStatus,
+      candleTime: d.hitTime ?? 0,
+      candlePrice: d.hitPrice ?? 0,
+    };
+    const frozenTime = d.points[0].time + hit.candleTime;
+    const frozenX = proj.toX(frozenTime);
+    // Only extend the right edge to the hit candle — never shrink.
+    // TradingView preserves the user's intended width; freeze is a cap, not a crop.
+    if (frozenX != null && frozenX > geo.xR) geo.xR = frozenX;
+  } else if (d.hitTime == null) {
+    // Only fresh-detect if never hit before.  When tradeStatus was cleared
+    // by a drag but hitTime is still present, skip detection — the
+    // subscription will re-detect if appropriate.
+    const fresh = findHitCandle(d, geo);
+    if (fresh) {
+      const offset = fresh.time - d.points[0].time;
+      hit = {
+        status: fresh.status,
+        candleTime: offset,
+        candlePrice: fresh.price,
+      };
+      const frozenTime = d.points[0].time + offset;
+      const frozenX = proj.toX(frozenTime);
+      // Only extend — never shrink (same as persisted path above).
+      if (frozenX != null && frozenX > geo.xR) geo.xR = frozenX;
+      // The persistent update is handled by the candle subscription in
+      // DrawingLayer — we only freeze the geometry here for rendering.
+    }
+  }
+
   const { xL, xR, yE, yT, yS, entry, target, stop } = geo;
   const left = Math.min(xL, xR);
   const w = Math.abs(xR - xL);
@@ -91,27 +162,32 @@ function render(
     price != null && (stop <= entry ? price <= stop : price >= stop);
   const baseAlpha = d.opacity ?? 0.15;
   const hitAlpha = Math.max(0.4, baseAlpha + 0.3);
+  const loseAlpha = baseAlpha * 0.4; // dim losing zone ~40 % of normal
+  const isTpHit = hit?.status === "tp_hit";
+  const isSlHit = hit?.status === "sl_hit";
 
   // --- Zones ---
   g.save();
-  g.globalAlpha = reachedTarget ? hitAlpha : baseAlpha;
+  g.globalAlpha =
+    reachedTarget || isTpHit ? hitAlpha : isSlHit ? loseAlpha : baseAlpha;
   g.fillStyle = BULL;
   g.fillRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
-  g.globalAlpha = reachedStop ? hitAlpha : baseAlpha;
+  g.globalAlpha =
+    reachedStop || isSlHit ? hitAlpha : isTpHit ? loseAlpha : baseAlpha;
   g.fillStyle = BEAR;
   g.fillRect(left, Math.min(yE, yS), w, Math.abs(yS - yE));
   g.restore();
 
   // Glow outline + badge on whichever zone has been hit.
-  if (reachedTarget || reachedStop) {
+  if (reachedTarget || reachedStop || hit) {
     g.save();
     g.setLineDash([]);
     g.lineWidth = 2;
-    if (reachedTarget) {
+    if (reachedTarget || isTpHit) {
       g.strokeStyle = BULL;
       g.strokeRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
     }
-    if (reachedStop) {
+    if (reachedStop || isSlHit) {
       g.strokeStyle = BEAR;
       g.strokeRect(left, Math.min(yE, yS), w, Math.abs(yS - yE));
     }
@@ -161,14 +237,14 @@ function render(
     chip(g, `Entry ${fmtPrice(entry)}${qtyTxt}`, xL, yE - 9, ENTRY);
     chip(
       g,
-      `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget ? "  ✓ HIT" : ""}`,
+      `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? "  ✓ HIT" : ""}`,
       midX - 60,
       (yE + yT) / 2 - 9,
       BULL,
     );
     chip(
       g,
-      `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop ? "  ✕ HIT" : ""}`,
+      `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? "  ✕ HIT" : ""}`,
       midX - 60,
       (yE + yS) / 2 - 9,
       BEAR,
@@ -176,11 +252,32 @@ function render(
     chip(g, `R/R ${rr.toFixed(2)}`, xR + 6, yE - 9, ENTRY);
   }
 
+  // --- Hit overlay (dashed trajectory) ---
+  if (hit) {
+    const hitColor = hit.status === "tp_hit" ? BULL : BEAR;
+    const frozenTime = d.points[0].time + hit.candleTime;
+    const hitX = proj.toX(frozenTime) ?? xR;
+    const hitY = hit.status === "tp_hit" ? yT : yS;
+
+    g.save();
+    g.strokeStyle = hitColor;
+    g.lineWidth = 2;
+    g.setLineDash([4, 4]);
+    g.beginPath();
+    g.moveTo(xR, yE);
+    g.lineTo(hitX, hitY);
+    g.stroke();
+    g.restore();
+  }
+
   // --- Handles ---
+  // Use origXR so handle positions match getAnchors() / hit-test.  The frozen
+  // xR is only for zones, lines, labels and the hit overlay.  Handles must
+  // stay at the editable position so interaction remains independent.
   if (selected) {
     handle(g, xL, yE, ENTRY);
-    handle(g, xR, yT, BULL);
-    handle(g, xR, yS, BEAR);
+    handle(g, origXR, yT, BULL);
+    handle(g, origXR, yS, BEAR);
   }
 }
 
@@ -196,8 +293,11 @@ function hitTest(
   const { xL, xR, yE, yT, yS } = geo;
   const results: HitResult[] = [];
 
+  const dE = pointDist(px, py, xL, yE);
   const dT = pointDist(px, py, xR, yT);
   const dS = pointDist(px, py, xR, yS);
+  if (dE <= HANDLE_RADIUS)
+    results.push({ drawing: d, target: "p0", distance: dE });
   if (dT <= HANDLE_RADIUS)
     results.push({ drawing: d, target: "p1", distance: dT });
   if (dS <= HANDLE_RADIUS)
@@ -226,30 +326,48 @@ function getAnchors(
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return [];
   return [
+    { index: 0, x: geo.xL, y: geo.yE, target: "p0" },
     { index: 1, x: geo.xR, y: geo.yT, target: "p1" },
     { index: 2, x: geo.xR, y: geo.yS, target: "p2" },
   ];
 }
 
 /** Drag a single handle. p1 = target, p2 = stop; both also set the right edge. */
-function moveAnchor(origPoints: Point[], index: number, pointer: Point): Point[] {
+function moveAnchor(
+  origPoints: Point[],
+  index: number,
+  pointer: Point,
+): Point[] {
   const next = origPoints.map((pt) => ({ ...pt }));
-  if (index === 1) {
-    next[1] = { time: pointer.time, price: pointer.price };
-    if (next[2]) next[2] = { ...next[2], time: pointer.time };
+  // Clamp non-finite values that can appear during extreme drags.
+  const safeTime = Number.isFinite(pointer.time)
+    ? pointer.time
+    : (origPoints[0]?.time ?? 0);
+  const safePrice = Number.isFinite(pointer.price)
+    ? pointer.price
+    : (origPoints[0]?.price ?? 0);
+  if (index === 0) {
+    // Entry handle: adjust the entry price only; the left-edge time stays put
+    // so the box keeps its width (TradingView drags the entry line vertically).
+    next[0] = { ...next[0], price: safePrice };
+  } else if (index === 1) {
+    next[1] = { time: safeTime, price: safePrice };
+    if (next[2]) next[2] = { ...next[2], time: safeTime };
   } else if (index === 2) {
-    next[2] = { time: pointer.time, price: pointer.price };
-    if (next[1]) next[1] = { ...next[1], time: pointer.time };
+    next[2] = { time: safeTime, price: safePrice };
+    if (next[1]) next[1] = { ...next[1], time: safeTime };
   } else if (next[index]) {
-    next[index] = { time: pointer.time, price: pointer.price };
+    next[index] = { time: safeTime, price: safePrice };
   }
   return next;
 }
 
 /** Move the whole box (translate all points). */
 function move(origPoints: Point[], pointer: Point, dragStart: Point): Point[] {
-  const dt = pointer.time - dragStart.time;
-  const dp = pointer.price - dragStart.price;
+  let dt = pointer.time - dragStart.time;
+  let dp = pointer.price - dragStart.price;
+  if (!Number.isFinite(dt)) dt = 0;
+  if (!Number.isFinite(dp)) dp = 0;
   return origPoints.map((pt) => ({ time: pt.time + dt, price: pt.price + dp }));
 }
 
@@ -274,7 +392,8 @@ function makeAdapter(tool: DrawingTool): DrawingAdapter {
     render,
     hitTest,
     // movePoints kept for SimpleTool compat; the engine uses move/moveAnchor.
-    movePoints: (orig, pointer, _t, dragStart) => move(orig, pointer, dragStart),
+    movePoints: (orig, pointer, _t, dragStart) =>
+      move(orig, pointer, dragStart),
     move,
     moveAnchor,
     getAnchors,

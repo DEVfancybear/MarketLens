@@ -67,13 +67,40 @@ export function DrawingLayer() {
   );
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
-  const toX = useCallback(
-    (time: number) =>
-      ctxRef.current?.chart
-        .timeScale()
-        .timeToCoordinate(time as UTCTimestamp) ?? null,
-    [],
-  );
+  const toX = useCallback((time: number) => {
+    const chart = ctxRef.current?.chart;
+    if (!chart) return null;
+    const ts = chart.timeScale();
+    const x = ts.timeToCoordinate(time as UTCTimestamp);
+    if (x != null) return x;
+    // Whitespace fallback: the time lies past the last bar (or before the
+    // first), where timeToCoordinate() returns null. Extrapolate linearly from
+    // the uniform bar spacing of two anchor candles that DO project, so the
+    // right edge of a position box keeps tracking instead of collapsing onto
+    // the last candle.
+    const candles = getDefaultStore().get(candlesAtom);
+    if (candles.length < 2) return null;
+    // Anchor = nearest candle (scanning back from the last) that still projects.
+    let i = candles.length - 1;
+    let cx: number | null = null;
+    for (; i >= 1; i--) {
+      cx = ts.timeToCoordinate(candles[i].time as UTCTimestamp);
+      if (cx != null) break;
+    }
+    if (cx == null) return null;
+    // Reference = an earlier candle that also projects, to measure bar width.
+    let px: number | null = null;
+    let j = i - 1;
+    for (; j >= 0; j--) {
+      px = ts.timeToCoordinate(candles[j].time as UTCTimestamp);
+      if (px != null) break;
+    }
+    if (px == null) return cx;
+    const span = i - j;
+    const barW = (cx - px) / span; // pixels per bar
+    const iv = (candles[i].time - candles[j].time) / span || 1; // seconds per bar
+    return cx + ((time - candles[i].time) / iv) * barW;
+  }, []);
   const toY = useCallback(
     (price: number) =>
       ctxRef.current?.candleSeries.priceToCoordinate(price) ?? null,
@@ -95,18 +122,16 @@ export function DrawingLayer() {
     const ts = c.chart.timeScale();
     let t = ts.coordinateToTime(lx) as number | null;
     if (t == null) {
-      // Whitespace past the last bar (or before the first): coordinateToTime
-      // returns null there, which would stall a drag the moment the pointer
-      // leaves the data range — the cause of the "laggy" rectangle move. The
-      // time scale extrapolates future times linearly (timeToCoordinate maps
-      // them back fine), so we mirror that: derive the time from the fractional
-      // logical index and the bar interval to keep dragging smooth everywhere.
+      // Whitespace past the last bar: coordinateToTime returns null.
+      // Extrapolate using bar-aligned times so timeToCoordinate can map
+      // them back.  Non-integer times can produce null projections.
       const logical = ts.coordinateToLogical(lx);
       const candles = getDefaultStore().get(candlesAtom);
       if (logical != null && candles.length >= 2) {
         const lastIdx = candles.length - 1;
         const interval = candles[lastIdx].time - candles[lastIdx - 1].time;
-        t = candles[lastIdx].time + (logical - lastIdx) * interval;
+        const idx = Math.round(logical);
+        t = candles[lastIdx].time + (idx - lastIdx) * interval;
       }
     }
     const p = c.candleSeries.coordinateToPrice(ly);
@@ -251,12 +276,122 @@ export function DrawingLayer() {
     // Position tools highlight their profit/risk zone once price reaches the
     // target / stop. Price changes don't touch any drawing-data signature, so
     // the render memo would skip the repaint — force one on each candle tick
-    // (only when a long/short tool is present, to keep idle charts cheap). This
-    // subscription is non-React, so it doesn't re-render the component per tick.
+    // (only when a long/short tool is present, to keep idle charts cheap).
+    // Also detect TP/SL hits and persist tradeStatus so the frozen width
+    // survives pan/zoom/re-render. This subscription is non-React.
     const store = getDefaultStore();
     const unsubPrice = store.sub(candlesAtom, () => {
       const ds = stateRef.current.drawings;
-      if (ds.some((d) => d.tool === "long" || d.tool === "short")) {
+      let hasPosition = false;
+      for (const d of ds) {
+        if (d.tool === "long" || d.tool === "short") {
+          hasPosition = true;
+          // Skip while the user is dragging this drawing — its store points
+          // are stale and hit detection would use the wrong geometry.
+          if (drawingIdRef.current === d.id) continue;
+          // Only detect hits for unresolved drawings.
+          if (
+            d.tradeStatus !== "tp_hit" &&
+            d.tradeStatus !== "sl_hit" &&
+            d.points.length >= 3
+          ) {
+            const entry = d.points[0].price;
+            const target = d.points[1]?.price ?? d.target ?? entry;
+            const stop = d.points[2]?.price ?? d.stop ?? entry;
+            const entryTime = d.points[0].time;
+            const isLong = d.tool === "long";
+            const candles = store.get(candlesAtom);
+            let hit: {
+              status: "tp_hit" | "sl_hit";
+              time: number;
+              price: number;
+            } | null = null;
+            for (const c of candles) {
+              if (c.time <= entryTime) continue;
+              if (isLong) {
+                if (c.high >= target) {
+                  hit = {
+                    status: "tp_hit",
+                    time: c.time - entryTime,
+                    price: target,
+                  };
+                  break;
+                }
+                if (c.low <= stop) {
+                  hit = {
+                    status: "sl_hit",
+                    time: c.time - entryTime,
+                    price: stop,
+                  };
+                  break;
+                }
+              } else {
+                if (c.low <= target) {
+                  hit = {
+                    status: "tp_hit",
+                    time: c.time - entryTime,
+                    price: target,
+                  };
+                  break;
+                }
+                if (c.high >= stop) {
+                  hit = {
+                    status: "sl_hit",
+                    time: c.time - entryTime,
+                    price: stop,
+                  };
+                  break;
+                }
+              }
+            }
+            // Also check live price for intra-candle hit.
+            if (!hit) {
+              const last = candles[candles.length - 1];
+              if (last && last.time > entryTime) {
+                const px = last.close;
+                if (isLong) {
+                  if (px >= target)
+                    hit = {
+                      status: "tp_hit",
+                      time: last.time - entryTime,
+                      price: target,
+                    };
+                  else if (px <= stop)
+                    hit = {
+                      status: "sl_hit",
+                      time: last.time - entryTime,
+                      price: stop,
+                    };
+                } else {
+                  if (px <= target)
+                    hit = {
+                      status: "tp_hit",
+                      time: last.time - entryTime,
+                      price: target,
+                    };
+                  else if (px >= stop)
+                    hit = {
+                      status: "sl_hit",
+                      time: last.time - entryTime,
+                      price: stop,
+                    };
+                }
+              }
+            }
+            if (hit) {
+              updateDrawing({
+                id: d.id,
+                patch: {
+                  tradeStatus: hit.status,
+                  hitTime: hit.time,
+                  hitPrice: hit.price,
+                },
+              });
+            }
+          }
+        }
+      }
+      if (hasPosition) {
         loop.markDirty(true);
       }
     });

@@ -3,6 +3,27 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Long/Short position resizing/disappearing in whitespace (2026-06-29)
+Two reported bugs where the position box changed size or vanished when dragged:
+1. **Box collapsed/disappeared dragging into whitespace, then snapped larger
+   coming back over candles.** Root cause: the `toX` whitespace fallback in
+   `DrawingLayer` never extrapolated past the last bar — its extrapolation branch
+   only ran for non-last candles (`i + 1 < candles.length`), but the loop hit the
+   last candle first and returned that candle's X verbatim. So every whitespace
+   time mapped to the last candle's X, pinning the right (and eventually left) edge
+   onto it → width collapsed; releasing the pin on the way back → sudden enlarge.
+   `toX` now finds the nearest two candles that still project and extrapolates
+   linearly with the uniform bar spacing (matching `fromEvent`'s inverse), so the
+   box keeps its size everywhere. Fixes all drawings dragged into whitespace, not
+   just positions. File: chart/DrawingLayer.tsx.
+2. **Entry line is now an independent draggable handle** (TradingView parity).
+   Previously only the target/stop handles were grabbable; the entry could only be
+   moved by dragging the whole body. Added a `p0` anchor at the entry/left edge —
+   dragging it adjusts the entry price only (left-edge time fixed, box width kept).
+   Anchor hits dominate body hits, so the small entry dot resizes while the rest of
+   the entry line still moves the box. Files: chart/drawing/tools/plugins/
+   PositionTool.ts, chart/drawing/hittest/HitTestEngine.ts (added `"p0"` target).
+
 ### Fixed — Position/drawing-tool bug pass (2026-06-28)
 Four reported bugs around the Long/Short position tool and drawing tools:
 1. **Settings toolbar was hard-pinned next to the drawing.** The floating

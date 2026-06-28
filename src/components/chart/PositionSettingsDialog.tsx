@@ -168,6 +168,16 @@ export function PositionSettingsDialog() {
             <span className="text-base font-semibold text-ink">
               {isLong ? "Long position" : "Short position"}
             </span>
+            {drawing.tradeStatus === "tp_hit" && (
+              <span className="rounded-full bg-bull/20 px-2 py-0.5 text-xs font-medium text-bull">
+                TP Hit
+              </span>
+            )}
+            {drawing.tradeStatus === "sl_hit" && (
+              <span className="rounded-full bg-bear/20 px-2 py-0.5 text-xs font-medium text-bear">
+                SL Hit
+              </span>
+            )}
             <Pencil size={14} className="text-ink-muted" />
           </div>
           <button
@@ -310,7 +320,8 @@ export function PositionSettingsDialog() {
                 <div className="flex justify-between py-0.5">
                   <span className="text-ink-muted">Profit</span>
                   <span className="text-bull">
-                    +{profitAmount.toFixed(2)} {drawing.accountCurrency ?? "USD"}
+                    +{profitAmount.toFixed(2)}{" "}
+                    {drawing.accountCurrency ?? "USD"}
                   </span>
                 </div>
                 <div className="flex justify-between py-0.5">
@@ -357,7 +368,9 @@ export function PositionSettingsDialog() {
           {tab === "visibility" && (
             <Row label="Labels">
               <button
-                onClick={() => patch({ showLabels: drawing.showLabels === false })}
+                onClick={() =>
+                  patch({ showLabels: drawing.showLabels === false })
+                }
                 className={cn(
                   "rounded border px-2.5 py-1 text-xs transition-colors",
                   drawing.showLabels !== false

@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-28 (Jotai migration)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-29 (Long/Short position whitespace-resize fix + draggable entry handle)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
