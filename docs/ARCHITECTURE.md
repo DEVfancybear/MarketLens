@@ -119,7 +119,7 @@ All state is managed through **Jotai atoms** — each store module exports:
 |---|---|---|---|
 | `uiStore` | theme, panels, bottomTab, rightOpen, bottomOpen, fullscreen, alertCenterOpen, gridVisible, logs | `logAtom`, `hydrateAtom`, `toggleThemeAtom` | localStorage `ui` |
 | `chartStore` | symbol, timeframe, candles, drawings, indicators, activeTool, drawColor, selectedDrawingId, selectedDrawingIds, drawingsLocked, drawingsHidden, editingIndicatorId, crosshair, loading | `addDrawingAtom`, `updateDrawingAtom`, `removeDrawingAtom`, `toggleIndicatorAtom`, ... (30 write atoms) | localStorage `drawings:<symbol>`, `indicators` |
-| `replayStore` | active, selecting, reSelecting, playing, speed, cursor, anchor, total | `armAtom`, `disarmAtom`, `stepAtom`, `beginReSelectAtom`, `cancelReSelectAtom`, `confirmReSelectAtom` | — |
+| `replayStore` | active, selecting, playing, speed, cursor, anchor, total | `armAtom`, `disarmAtom`, `stepAtom` | — |
 | `smcStore` | snapshot, settings | `toggleSmcAtom`, `hydrateSmcAtom` | localStorage `smc-settings` |
 | `tradeStore` | equity, startingEquity, positions, price, time, tradeSymbol | `placeOrderAtom`, `closePositionAtom`, `closeAllAtom` | — |
 | `journalStore` | entries, loaded | `addJournalEntryAtom`, `removeJournalEntryAtom` (async) | **IndexedDB** `smc-terminal/journal` |
@@ -170,9 +170,7 @@ AlertCenter.tsx` + chart `AlertOverlay`. Full detail in **`docs/ALERT_ARCHITECTU
 
 **Single source of truth for visibility:** `useVisibleCandles()` returns `candlesAtom` value
 (full) or, while replay is armed, `candles[0..replayCursor]`. Every chart/indicator/SMC/trade
-computation reads from it — the structural no-look-ahead guarantee. During **re-select mode**
-(`reSelectingAtom`), visible candles remain unchanged (hover previews use the full list read
-directly from `candlesAtom` in the overlay canvas).
+computation reads from it — the structural no-look-ahead guarantee.
 
 > Atoms init with deterministic SSR-safe defaults; persisted values load in
 > `useStoreHydration()` after mount via `getDefaultStore().set(hydrateAtom)`.

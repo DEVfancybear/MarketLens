@@ -63,10 +63,7 @@ export function TopToolbar() {
   const alertCount = useAlertStore((s) => s.alerts.length);
 
   const toggleReplay = () => {
-    if (replay.active && replay.reSelecting) {
-      // Cancel re-select mode, return to paused replay.
-      replay.cancelReSelect();
-    } else if (replay.active) {
+    if (replay.active) {
       replay.disarm();
     } else if (replay.selecting) {
       replay.cancelSelect();
@@ -140,11 +137,7 @@ export function TopToolbar() {
         )}
       >
         <PlayCircle size={14} />
-        {replay.reSelecting
-          ? "Cancel select"
-          : replay.selecting
-            ? "Select bar…"
-            : "Replay"}
+        {replay.selecting ? "Select bar…" : "Replay"}
       </button>
 
       {/* Layout selector (visual presets) */}
