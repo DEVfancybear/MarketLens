@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useUIStore } from '@/store/uiStore';
+import { useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useAtomValue } from "jotai";
+import { themeAtom } from "@/store/uiStore";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -13,7 +14,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }),
   );
-  const theme = useUIStore((s) => s.theme);
+  const theme = useAtomValue(themeAtom);
 
   // Sync the persisted theme onto <html> on mount and whenever it changes.
   useEffect(() => {

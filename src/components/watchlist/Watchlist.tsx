@@ -5,12 +5,24 @@ import {
   MARKET_SYMBOLS,
   getMarketSymbol,
 } from "@/services/market-data/symbols";
-import { useWatchlistStore, type SortKey } from "@/store/watchlistStore";
-import { useMarketDataStore } from "@/store/marketDataStore";
+import {
+  watchlistSymbolsAtom,
+  watchlistSortKeyAtom,
+  watchlistSortDirAtom,
+  addWatchlistSymbolAtom,
+  removeWatchlistSymbolAtom,
+  setWatchlistSortAtom,
+  type SortKey,
+} from "@/store/watchlistStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  useMarketDataStore,
+  getMarketDataState,
+} from "@/store/marketDataStore";
 import { useQuote } from "@/hooks/useQuote";
-import { useChartStore } from "@/store/chartStore";
-import { useAlertStore } from "@/store/alertStore";
-import { useUIStore } from "@/store/uiStore";
+import { symbolAtom, setSymbolAtom } from "@/store/chartStore";
+import { useAlertStore, getAlertState } from "@/store/alertStore";
+import { setAlertCenterAtom } from "@/store/uiStore";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Panel } from "@/components/ui/Panel";
 import { IconButton } from "@/components/ui/IconButton";
@@ -32,16 +44,16 @@ const NO_QUOTES: Record<string, MarketQuote> = {};
  * No mock data, no React Query.
  */
 export function Watchlist() {
-  const symbols = useWatchlistStore((s) => s.symbols);
-  const sortKey = useWatchlistStore((s) => s.sortKey);
-  const sortDir = useWatchlistStore((s) => s.sortDir);
-  const add = useWatchlistStore((s) => s.add);
-  const remove = useWatchlistStore((s) => s.remove);
-  const setSort = useWatchlistStore((s) => s.setSort);
+  const symbols = useAtomValue(watchlistSymbolsAtom);
+  const sortKey = useAtomValue(watchlistSortKeyAtom);
+  const sortDir = useAtomValue(watchlistSortDirAtom);
+  const add = useSetAtom(addWatchlistSymbolAtom);
+  const remove = useSetAtom(removeWatchlistSymbolAtom);
+  const setSort = useSetAtom(setWatchlistSortAtom);
 
-  const activeSymbol = useChartStore((s) => s.symbol);
-  const setSymbol = useChartStore((s) => s.setSymbol);
-  const setAlertCenter = useUIStore((s) => s.setAlertCenter);
+  const activeSymbol = useAtomValue(symbolAtom);
+  const setSymbol = useSetAtom(setSymbolAtom);
+  const setAlertCenter = useSetAtom(setAlertCenterAtom);
 
   // Quotes map used only for value-based sorting. For the default symbol sort we
   // select a stable empty map so the parent does NOT re-render on every tick —
@@ -83,8 +95,8 @@ export function Watchlist() {
 
   const onCreateAlert = useCallback(
     (ticker: string) => {
-      const store = useAlertStore.getState();
-      const quote = useMarketDataStore.getState().quotes[ticker];
+      const store = getAlertState();
+      const quote = getMarketDataState().quotes[ticker];
       const price = quote?.last ?? 0;
       store.createAlert({ symbol: ticker, condition: "crossUp", price });
       setAlertCenter(true);

@@ -1,9 +1,11 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-28._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-28 (Jotai migration)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
-Concept backtesting. It is feature-rich and builds clean. **Phase 1 (realtime market data) and Phase 2 (alert engine) are
+Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
+render optimisation — components subscribe only to the atoms they need via `useAtomValue`/`useSetAtom`.
+`zustand` has been removed from dependencies. It is feature-rich and builds clean. **Phase 1 (realtime market data) and Phase 2 (alert engine) are
 both COMPLETE, along with the OANDA integration.** The watchlist, chart, and replay MTF panel all stream live (Binance crypto with no
 API key; forex/metals/indices via OANDA with a bearer token, or TwelveData as fallback); **there is no mock data anywhere**
 (`services/marketData.ts` deleted). Phase 2 adds a TradingView-style alert engine (above/below/
@@ -55,7 +57,13 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   pane assignment, and visibility. `IndicatorMenu` shows active indicators with settings gear and
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
-  Escape deselect/cancel). Left rail width increased 40→52px. See `CURRENT_PROGRESS.md`.
+  Escape deselect/cancel). Left rail width increased 40->52px. See `CURRENT_PROGRESS.md`.
+- **Jotai migration (2026-06-28):** All 11 Zustand stores (`create()`) replaced with Jotai
+  atoms (`atom()`). Each store module now exports individual state atoms, write atoms for
+  actions, a backward-compatible `useXStore()` hook, and a `getXState()` non-React accessor.
+  Components use `useAtomValue`/`useSetAtom` for fine-grained subscriptions — updating
+  `candlesAtom` no longer re-renders `TopToolbar`, `DrawingToolbar`, or other unrelated
+  components. `zustand` removed from dependencies. See `ARCHITECTURE.md` for full details.
 - **Recommended next action:** Start **Phase 6 — Push Notifications / MT5 Integration.**
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
@@ -85,19 +93,16 @@ npm run lint         # next lint
   known Next-on-Windows race (the project sits under `Downloads`, which AV/sync tools watch),
   **not** a code error — re-run `npm run build` once (warm chunks) and it passes.
 
-## 2. Current status (verified 2026-06-26)
+## 2. Current status (verified 2026-06-28)
 - type-check ✅ · lint ✅ (0 warnings) · build ✅ · no TODO/FIXME markers.
 
 ## 3. Existing architecture (1-minute version)
 - Browser-only Next app; the whole terminal is a `dynamic(ssr:false)` client chunk.
-- **10 Zustand stores** (`ui, chart, replay, smc, trade, journal, analytics, watchlist, alert,
-  marketData`). The realtime feed has its own single-source-of-truth `marketDataStore`; the
-  chart's selection + candle series live in `chartStore` and are bridged from `marketDataStore`
-  by `useMarketData`.
+- **11 Jotai atom modules** (`ui`, `chart`, `replay`, `smc`, `trade`, `journal`, `analytics`, `watchlist`, `alert`, `marketData`, `toast`). Each exports individual `atom()` primitives, write atoms for actions, and a backward-compatible `useXStore(selector?)` hook. The realtime feed has its own single-source-of-truth `marketDataStore`; the chart's selection + candle series live in `chartStore` and are bridged from `marketDataStore` by `useMarketData`.
 - Chart = Lightweight Charts + **canvas overlays** (SMC, drawings, replay picker, alerts) that
   project (time,price)→pixels and repaint on `ChartContext.version`.
 - **`useVisibleCandles()` is the single visibility gate** — the no-look-ahead replay guarantee;
-  it slices `chartStore.candles`, which is now the realtime master series.
+  it reads from `candlesAtom` (realtime master series, Jotai atom).
 - Pure domain engines (indicators, SMC, trade, analytics) consume only the candle array → safe.
 
 ## 4. Realtime market data — current implementation (Phase 1 COMPLETE, Steps 1–17)

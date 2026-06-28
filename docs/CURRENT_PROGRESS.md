@@ -1,6 +1,6 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-28 (Phase 5 — Left Toolbar / Indicator Engine)_
+_Last updated: 2026-06-28 (Zustand → Jotai migration)_
 
 ## Current phase / milestone
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**
@@ -12,6 +12,7 @@ _Last updated: 2026-06-28 (Phase 5 — Left Toolbar / Indicator Engine)_
 - **✅ Phase 4.4 — FIBONACCI SUITE — COMPLETE.**
 - **✅ Drawing engine stabilization — COMPLETE** (see below).
 - **✅ Phase 5 — Left Toolbar / Indicator Engine — COMPLETE** (see below).
+- **✅ Jotai migration — COMPLETE** (all 11 stores converted, Zustand removed).
 - **Next milestone: Phase 6 — Push Notifications / MT5 Integration.**
 
 ## Completed this session
@@ -94,6 +95,17 @@ _Last updated: 2026-06-28 (Phase 5 — Left Toolbar / Indicator Engine)_
 - `npm run lint` → ✅ PASS (0 warnings)
 - `npm run build` → ✅ PASS
 - TODO/FIXME/HACK in `src/` → **0**
+
+### Zustand → Jotai migration (2026-06-28)
+
+All 11 Zustand stores replaced with Jotai atoms. ~60 consumer files updated.
+Each store now exports individual atoms + write atoms for fine-grained subscriptions.
+`zustand` package removed from dependencies.
+
+Key patterns:
+- `useStore((s) => s.field)` → `useAtomValue(fieldAtom)`
+- `useStore((s) => s.action)` → `useSetAtom(actionAtom)`
+- `useStore.getState()` → `getDefaultStore().get/set(atom)`
 
 ## Remaining known issues
 - Context menu bypasses undo history (DrawingContextMenu calls store directly)

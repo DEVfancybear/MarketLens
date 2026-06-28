@@ -17,16 +17,17 @@
 import { useEffect, useRef } from "react";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import { useMarketDataStore } from "@/store/marketDataStore";
-import { useWatchlistStore } from "@/store/watchlistStore";
+import { getMarketDataState } from "@/store/marketDataStore";
+import { watchlistSymbolsAtom } from "@/store/watchlistStore";
+import { useAtomValue } from "jotai";
 
 export function useMarketDataBootstrap() {
-  const symbols = useWatchlistStore((s) => s.symbols);
+  const symbols = useAtomValue(watchlistSymbolsAtom);
   const subscribed = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     getMarketDataService(); // create + attach to the store (idempotent)
-    const store = useMarketDataStore.getState();
+    const store = getMarketDataState();
 
     const desired = new Set(symbols.filter((s) => getMarketSymbol(s)));
 
@@ -52,7 +53,7 @@ export function useMarketDataBootstrap() {
   useEffect(() => {
     const subs = subscribed.current;
     return () => {
-      const store = useMarketDataStore.getState();
+      const store = getMarketDataState();
       for (const sym of subs) store.unsubscribe(sym);
       subs.clear();
       store.disconnect();

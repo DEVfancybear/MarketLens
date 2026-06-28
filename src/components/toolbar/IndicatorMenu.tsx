@@ -1,7 +1,15 @@
 "use client";
 import { LineChart, Check, Settings } from "lucide-react";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import { getDefaultStore } from "jotai";
+import {
+  indicatorsAtom,
+  toggleIndicatorAtom,
+  removeIndicatorAtom,
+  setEditingIndicatorAtom,
+  clearIndicatorsAtom,
+} from "@/store/chartStore";
 import type { IndicatorType } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -15,10 +23,10 @@ const OPTIONS: { type: IndicatorType; label: string }[] = [
 ];
 
 export function IndicatorMenu() {
-  const indicators = useChartStore((s) => s.indicators);
-  const toggleIndicator = useChartStore((s) => s.toggleIndicator);
-  const removeIndicator = useChartStore((s) => s.removeIndicator);
-  const setEditingIndicator = useChartStore((s) => s.setEditingIndicator);
+  const indicators = useAtomValue(indicatorsAtom);
+  const toggleIndicator = useSetAtom(toggleIndicatorAtom);
+  const removeIndicator = useSetAtom(removeIndicatorAtom);
+  const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   // Derived from live store state every render — never stale.
   const active = new Set(indicators.map((i) => i.type));
 
@@ -45,9 +53,9 @@ export function IndicatorMenu() {
                 toggleIndicator(o.type);
                 if (!active.has(o.type)) {
                   setTimeout(() => {
-                    const added = useChartStore
-                      .getState()
-                      .indicators.find((i) => i.type === o.type);
+                    const added = getDefaultStore()
+                      .get(indicatorsAtom)
+                      .find((i) => i.type === o.type);
                     if (added) {
                       close();
                       setEditingIndicator(added.id);
@@ -113,7 +121,7 @@ export function IndicatorMenu() {
               <div className="mx-3 my-1 border-t border-terminal-border" />
               <button
                 onClick={() => {
-                  useChartStore.getState().clearIndicators();
+                  getDefaultStore().set(clearIndicatorsAtom);
                   close();
                 }}
                 className="w-full px-3 py-1.5 text-left text-[11px] text-bear hover:bg-bear/10"

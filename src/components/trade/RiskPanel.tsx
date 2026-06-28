@@ -1,32 +1,44 @@
-'use client';
-import { useTradeStore } from '@/store/tradeStore';
-import { fmtMoney } from '@/utils/format';
-import { fmtR } from '@/utils/format';
-import { rMultiple } from '@/services/tradeEngine';
-import { cn } from '@/utils/cn';
+"use client";
+import { equityAtom, positionsAtom } from "@/store/tradeStore";
+import { fmtMoney } from "@/utils/format";
+import { fmtR } from "@/utils/format";
+import { rMultiple } from "@/services/tradeEngine";
+import { useAtomValue } from "jotai";
+import { cn } from "@/utils/cn";
 
 /**
  * Floating risk panel pinned to the chart. Shows account equity and live risk
  * exposure for open positions in the current view.
  */
 export function RiskPanel() {
-  const equity = useTradeStore((s) => s.equity);
-  const positions = useTradeStore((s) => s.positions);
+  const equity = useAtomValue(equityAtom);
+  const positions = useAtomValue(positionsAtom);
 
-  const open = positions.filter((p) => p.status === 'open');
+  const open = positions.filter((p) => p.status === "open");
   if (open.length === 0) return null;
 
   const openPnl = open.reduce((s, p) => s + p.unrealizedPnl, 0);
   const totalRisk = open.reduce((s, p) => s + p.riskAmount, 0);
   const blendedR = open.length
-    ? open.reduce((s, p) => s + rMultiple(p.unrealizedPnl, p.riskAmount), 0) / open.length
+    ? open.reduce((s, p) => s + rMultiple(p.unrealizedPnl, p.riskAmount), 0) /
+      open.length
     : 0;
 
   return (
     <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-44 rounded-md border border-terminal-border bg-terminal-panel/95 p-2.5 shadow-lg shadow-black/40 backdrop-blur">
-      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-faint">Risk monitor</div>
-      <Row label="Open P/L" value={fmtMoney(openPnl)} accent={openPnl >= 0 ? 'var(--bull)' : 'var(--bear)'} />
-      <Row label="Open R" value={fmtR(blendedR)} accent={blendedR >= 0 ? 'var(--bull)' : 'var(--bear)'} />
+      <div className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-faint">
+        Risk monitor
+      </div>
+      <Row
+        label="Open P/L"
+        value={fmtMoney(openPnl)}
+        accent={openPnl >= 0 ? "var(--bull)" : "var(--bear)"}
+      />
+      <Row
+        label="Open R"
+        value={fmtR(blendedR)}
+        accent={blendedR >= 0 ? "var(--bull)" : "var(--bear)"}
+      />
       <Row label="Risk on" value={fmtMoney(totalRisk)} accent="var(--bear)" />
       <Row label="Positions" value={String(open.length)} />
       <div className="mt-1.5 border-t border-terminal-border pt-1.5">
@@ -36,11 +48,24 @@ export function RiskPanel() {
   );
 }
 
-function Row({ label, value, accent, bold }: { label: string; value: string; accent?: string; bold?: boolean }) {
+function Row({
+  label,
+  value,
+  accent,
+  bold,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+  bold?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between py-0.5 text-2xs">
       <span className="text-ink-faint">{label}</span>
-      <span className={cn('tabular', bold ? 'font-bold text-ink' : 'font-semibold')} style={{ color: accent }}>
+      <span
+        className={cn("tabular", bold ? "font-bold text-ink" : "font-semibold")}
+        style={{ color: accent }}
+      >
         {value}
       </span>
     </div>

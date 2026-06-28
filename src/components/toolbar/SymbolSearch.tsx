@@ -7,12 +7,13 @@ import {
   getMarketSymbol,
 } from "@/services/market-data/symbols";
 import { contractTagOf } from "@/services/exchange";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import { symbolAtom, setSymbolAtom } from "@/store/chartStore";
 import { cn } from "@/utils/cn";
 
 export function SymbolSearch() {
-  const symbol = useChartStore((s) => s.symbol);
-  const setSymbol = useChartStore((s) => s.setSymbol);
+  const symbol = useAtomValue(symbolAtom);
+  const setSymbol = useSetAtom(setSymbolAtom);
   const [q, setQ] = useState("");
 
   const results = useMemo(() => {

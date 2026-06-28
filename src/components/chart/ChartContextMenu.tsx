@@ -15,11 +15,26 @@ import {
   LineChart,
 } from "lucide-react";
 import { resetChartView } from "./chartRegistry";
-import { useChartStore } from "@/store/chartStore";
-import { useTradeStore } from "@/store/tradeStore";
-import { useUIStore } from "@/store/uiStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import { getDefaultStore } from "jotai";
+import {
+  symbolAtom,
+  drawColorAtom,
+  candlesAtom,
+  drawingsAtom,
+  indicatorsAtom,
+  addDrawingAtom,
+  clearDrawingsAtom,
+  clearIndicatorsAtom,
+} from "@/store/chartStore";
+import { placeOrderAtom } from "@/store/tradeStore";
+import { setBottomTabAtom, logAtom } from "@/store/uiStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
-import { useWatchlistStore } from "@/store/watchlistStore";
+import {
+  watchlistSymbolsAtom,
+  addWatchlistSymbolAtom,
+  removeWatchlistSymbolAtom,
+} from "@/store/watchlistStore";
 import { inferCondition } from "@/services/alertEngine";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
@@ -62,20 +77,22 @@ export function ChartContextMenu({
   state: ContextMenuState;
   onClose: () => void;
 }) {
-  const symbol = useChartStore((s) => s.symbol);
-  const addDrawing = useChartStore((s) => s.addDrawing);
-  const drawColor = useChartStore((s) => s.drawColor);
-  const drawingsCount = useChartStore((s) => s.drawings.length);
-  const indicatorsCount = useChartStore((s) => s.indicators.length);
-  const clearDrawings = useChartStore((s) => s.clearDrawings);
-  const clearIndicators = useChartStore((s) => s.clearIndicators);
-  const place = useTradeStore((s) => s.place);
-  const setBottomTab = useUIStore((s) => s.setBottomTab);
-  const log = useUIStore((s) => s.log);
+  const symbol = useAtomValue(symbolAtom);
+  const addDrawing = useSetAtom(addDrawingAtom);
+  const drawColor = useAtomValue(drawColorAtom);
+  const drawings = useAtomValue(drawingsAtom);
+  const drawingsCount = drawings.length;
+  const indicators = useAtomValue(indicatorsAtom);
+  const indicatorsCount = indicators.length;
+  const clearDrawings = useSetAtom(clearDrawingsAtom);
+  const clearIndicators = useSetAtom(clearIndicatorsAtom);
+  const place = useSetAtom(placeOrderAtom);
+  const setBottomTab = useSetAtom(setBottomTabAtom);
+  const log = useSetAtom(logAtom);
   const createAlert = useAlertStore((s) => s.createAlert);
-  const watchlistSymbols = useWatchlistStore((s) => s.symbols);
-  const addToWatchlist = useWatchlistStore((s) => s.add);
-  const removeFromWatchlist = useWatchlistStore((s) => s.remove);
+  const watchlistSymbols = useAtomValue(watchlistSymbolsAtom);
+  const addToWatchlist = useSetAtom(addWatchlistSymbolAtom);
+  const removeFromWatchlist = useSetAtom(removeWatchlistSymbolAtom);
 
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state.x, y: state.y });
@@ -148,7 +165,7 @@ export function ChartContextMenu({
       icon: <Bell size={14} className="text-choch" />,
       label: `Create Alert for ${symbol} at ${priceStr}`,
       onClick: act(() => {
-        const candles = useChartStore.getState().candles;
+        const candles = getDefaultStore().get(candlesAtom);
         const current = candles[candles.length - 1]?.close;
         const condition = inferCondition(state.price, current);
         createAlert({ symbol, condition, price: state.price });

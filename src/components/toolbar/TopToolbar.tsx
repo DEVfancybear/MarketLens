@@ -19,9 +19,25 @@ import { ChartSettingsMenu } from "./ChartSettingsMenu";
 import { ConnectionBadge } from "./ConnectionBadge";
 import { IconButton } from "@/components/ui/IconButton";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue, useSetAtom, getDefaultStore } from "jotai";
+import {
+  timeframeAtom,
+  setTimeframeAtom,
+  candlesAtom,
+  symbolAtom,
+} from "@/store/chartStore";
 import { useReplayStore } from "@/store/replayStore";
-import { useUIStore } from "@/store/uiStore";
+import {
+  themeAtom,
+  rightOpenAtom,
+  fullscreenAtom,
+  toggleThemeAtom,
+  toggleRightAtom,
+  setFullscreenAtom,
+  setBottomTabAtom,
+  logAtom,
+  toggleAlertCenterAtom,
+} from "@/store/uiStore";
 import { TIMEFRAMES, type Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
 import { captureChart } from "@/components/chart/chartRegistry";
@@ -32,12 +48,19 @@ export function TopToolbar() {
   // read lazily in `toggleReplay` via getState(). `timeframe`/`setTimeframe` only
   // change on user action. (replay/ui stores no longer churn per tick — see the
   // guarded `replayStore.setTotal`.)
-  const timeframe = useChartStore((s) => s.timeframe);
-  const setTimeframe = useChartStore((s) => s.setTimeframe);
+  const timeframe = useAtomValue(timeframeAtom);
+  const setTimeframe = useSetAtom(setTimeframeAtom);
   const replay = useReplayStore();
-  const ui = useUIStore();
+  const theme = useAtomValue(themeAtom);
+  const rightOpen = useAtomValue(rightOpenAtom);
+  const fullscreen = useAtomValue(fullscreenAtom);
+  const toggleTheme = useSetAtom(toggleThemeAtom);
+  const toggleRight = useSetAtom(toggleRightAtom);
+  const setFullscreen = useSetAtom(setFullscreenAtom);
+  const setBottomTab = useSetAtom(setBottomTabAtom);
+  const doLog = useSetAtom(logAtom);
+  const toggleAlertCenter = useSetAtom(toggleAlertCenterAtom);
   const alertCount = useAlertStore((s) => s.alerts.length);
-  const toggleAlertCenter = useUIStore((s) => s.toggleAlertCenter);
 
   const toggleReplay = () => {
     if (replay.active) {
@@ -45,10 +68,10 @@ export function TopToolbar() {
     } else if (replay.selecting) {
       replay.cancelSelect();
     } else {
-      if (useChartStore.getState().candles.length < 50) return;
+      if (getDefaultStore().get(candlesAtom).length < 50) return;
       // Enter TradingView-style bar selection: click a candle to start.
       replay.beginSelect();
-      ui.setBottomTab("replay");
+      setBottomTab("replay");
     }
   };
 
@@ -58,19 +81,19 @@ export function TopToolbar() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${useChartStore.getState().symbol}_${timeframe}_${Date.now()}.png`;
+    a.download = `${getDefaultStore().get(symbolAtom)}_${timeframe}_${Date.now()}.png`;
     a.click();
     URL.revokeObjectURL(url);
-    ui.log("info", "Screenshot saved");
+    doLog("info", "Screenshot saved");
   };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen?.();
-      ui.setFullscreen(true);
+      setFullscreen(true);
     } else {
       document.exitFullscreen?.();
-      ui.setFullscreen(false);
+      setFullscreen(false);
     }
   };
 
@@ -159,20 +182,20 @@ export function TopToolbar() {
         </IconButton>
         <IconButton
           label="Toggle watchlist"
-          onClick={ui.toggleRight}
-          active={ui.rightOpen}
+          onClick={toggleRight}
+          active={rightOpen}
         >
-          {ui.rightOpen ? (
+          {rightOpen ? (
             <PanelRightClose size={15} />
           ) : (
             <PanelRightOpen size={15} />
           )}
         </IconButton>
-        <IconButton label="Theme" onClick={ui.toggleTheme}>
-          {ui.theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+        <IconButton label="Theme" onClick={toggleTheme}>
+          {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>
         <IconButton label="Fullscreen" onClick={toggleFullscreen}>
-          {ui.fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </IconButton>
       </div>
     </div>

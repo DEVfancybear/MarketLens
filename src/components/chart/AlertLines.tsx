@@ -2,8 +2,9 @@
 import { useEffect, useRef } from "react";
 import type { IPriceLine, ISeriesApi } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
+import { useAtomValue } from "jotai";
+import { symbolAtom } from "@/store/chartStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
-import { useChartStore } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { alertLineRegistry } from "./alertLineRegistry";
@@ -22,7 +23,7 @@ import { alertLineRegistry } from "./alertLineRegistry";
  */
 export function AlertLines() {
   const ctx = useChartCtx();
-  const symbol = useChartStore((s) => s.symbol);
+  const symbol = useAtomValue(symbolAtom);
   const alerts = useAlertStore((s) => s.alerts);
   const linesRef = useRef<Map<string, IPriceLine>>(new Map());
   // Stable ref to the candle series — never changes after chart init.

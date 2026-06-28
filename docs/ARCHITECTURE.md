@@ -3,9 +3,8 @@
 SMC Trading Terminal — a TradingView/FXReplay/TradeZella-style web terminal focused on
 Smart Money Concept backtesting via a no-look-ahead Replay engine.
 
-> Scope: the **current** architecture as built. Reference for Phase 1 (Realtime Market Data
-> Foundation). See `CURRENT_STATE.md` for the Phase-1 gap analysis and `NEXT_TASKS.md` for
-> planned work.
+> Scope: the **current** architecture as built (updated 2026-06-28 for Jotai migration).
+> See `CURRENT_STATE.md` for the Phase-1 gap analysis and `NEXT_TASKS.md` for planned work.
 
 ---
 
@@ -17,13 +16,18 @@ Smart Money Concept backtesting via a no-look-ahead Replay engine.
 | Language | TypeScript (strict) | 5.7 |
 | UI | React | 19 |
 | Charts | TradingView **Lightweight Charts** | 4.2.3 |
-| State | **Zustand** | 5 |
+| State | **Jotai** (atoms) | 2.x |
 | Async/data | **@tanstack/react-query** | 5 |
 | Styling | TailwindCSS + CSS variables | 3.4 |
 | Icons | lucide-react | — |
 | Persistence | IndexedDB (`idb`) + localStorage | — |
 | Workers | Native Web Worker (SMC compute) | — |
 
+> **2026-06-28**: All 11 Zustand stores migrated to Jotai atoms. Components now subscribe to
+> individual atoms via `useAtomValue`/`useSetAtom` instead of store-wide selectors, providing
+> fine-grained render optimisation. Non-React code accesses atoms via `getDefaultStore()`.
+> `zustand` has been removed from dependencies. See `docs/CURRENT_PROGRESS.md` §Jotai migration.
+>
 > `framer-motion` is in `package.json` but its installed build is broken (`motion-dom` export
 > mismatch). It is **not imported anywhere**; animations use CSS. See `HANDOFF.md` → Known Issues.
 
@@ -51,6 +55,7 @@ PriceChart (lightweight-charts: candles + volume + overlay indicators)
        ├─ SmcLayer              canvas overlay — SMC objects          pointer-events:none
        ├─ TradeLevels           price lines for open positions
        ├─ AlertLines            price lines for alerts
+       ├─ AlertOverlay          interactive chart alerts
        ├─ DrawingLayer          canvas overlay — user drawings        pointer-events:auto*
        └─ ReplaySelectionLayer  canvas overlay — bar-replay picker    z-30, auto when selecting
   + ChartContextMenu            right-click price actions (portal)
@@ -71,71 +76,115 @@ src/
     Terminal.tsx          client root (hydration gate)
     layout/               TerminalLayout, BottomPanel, GlobalRuntime, Splash
     chart/                PriceChart, ChartArea, ChartContext, IndicatorPane,
-                          DrawingLayer, ChartContextMenu, AlertLines, chartTheme,
-                          chartRegistry, drawing/drawingRenderer.ts
+                          DrawingLayer, ChartContextMenu, AlertLines, AlertOverlay,
+                          chartTheme, chartRegistry
+    alerts/               AlertCenter, AlertEditDialog
     smc/                  SmcLayer
     toolbar/              TopToolbar, DrawingToolbar, SymbolSearch, IndicatorMenu,
-                          SmcMenu, ChartSettingsMenu
+                          IndicatorSettingsDialog, SmcMenu, ChartSettingsMenu
     watchlist/            Watchlist
     replay/               ReplayPanel, ReplayControls, ReplayDashboard, ReplaySelectionLayer
     trade/                TradePanel, OrderTicket, PositionsTable, RiskPanel, TradeLevels
     journal/              JournalPanel
     analytics/            AnalyticsPanel, EquityChart
     ui/                   IconButton, Panel, Resizer, Dropdown
+    notifications/        Toaster
   hooks/          useMarketData, useVisibleCandles, useReplayPlayback, useHotkeys,
                   useSmcEngine, useTradeRuntime, useStoreHydration, useResizable
-  services/       marketData.ts (MOCK), indicators.ts, replayEngine.ts, tradeEngine.ts,
-                  analyticsEngine.ts, exporters.ts, storage.ts, exchange.ts,
-                  smc/ (structure, fvg, orderBlock, liquidity, displacement, session, smcEngine)
-  store/          uiStore, chartStore, replayStore, smcStore, tradeStore, journalStore,
-                  analyticsStore, watchlistStore, alertStore
-  types/          market, drawing, indicators, smc, trade, analytics, index
+  services/       indicators.ts, replayEngine.ts, tradeEngine.ts, analyticsEngine.ts,
+                  alertEngine.ts, exporters.ts, storage.ts, exchange.ts,
+                  market-data/{MarketDataService, HistoricalDataService, CandleEngine, symbols, providers/*},
+                  notifications/{notify, sound, browser}, smc/{structure, fvg, orderBlock, liquidity, ...}
+  store/          **Jotai atom modules**: uiStore, chartStore, replayStore, smcStore, tradeStore,
+                  journalStore, analyticsStore, watchlistStore, marketDataStore, alertStore, toastStore
+                  (each exports individual `atom()` + write atoms + `useXStore()` compat hook)
+  types/          market, marketData, drawing, indicators, smc, trade, analytics, index
   utils/          format, time, math, cn, id, bus
   workers/        smc.worker.ts
 ```
 
 ---
 
-## 4. State management (Zustand stores)
+## 4. State management (Jotai atoms)
 
-| Store | Owns | Persistence |
-|---|---|---|
-| `uiStore` | theme, panel sizes, bottom tab, fullscreen, grid toggle, logs | localStorage `ui` |
-| `chartStore` | **symbol, timeframe, candles (master series)**, drawings, indicators, active tool, crosshair | localStorage `drawings:<symbol>`, `indicators` |
-| `replayStore` | armed/selecting/playing, speed, cursor, anchor, total | — |
-| `smcStore` | SMC snapshot + per-group visibility settings | localStorage `smc-settings` |
-| `tradeStore` | equity, positions, current sim price/time | — |
-| `journalStore` | closed-trade journal entries | **IndexedDB** `smc-terminal/journal` |
-| `analyticsStore` | starting equity, symbol filter | — |
-| `watchlistStore` | watchlist symbols, sort | localStorage `watchlist` |
-| `marketDataStore` | **realtime quotes/candles, selection, status, refcounted subscriptions** | runtime only |
-| `alertStore` | alerts / triggeredAlerts / history / settings (Phase 2) | localStorage `alerts` |
-| `toastStore` | transient in-app toasts | runtime only |
+All state is managed through **Jotai atoms** — each store module exports:
+
+1. **Individual state atoms** — `atom<Type>(defaultValue)` for each piece of state
+2. **Write atoms** — `atom(null, (get, set, ...args) => { ... })` for action methods
+3. **Compatibility hook** — `useXStore(selector?)` for backward-compatible selector-based access
+4. **Non-React accessor** — `getXState()` using `getDefaultStore()` for services/hooks
+
+### Atom modules
+
+| Module | State atoms | Key atoms | Persistence |
+|---|---|---|---|
+| `uiStore` | theme, panels, bottomTab, rightOpen, bottomOpen, fullscreen, alertCenterOpen, gridVisible, logs | `logAtom`, `hydrateAtom`, `toggleThemeAtom` | localStorage `ui` |
+| `chartStore` | symbol, timeframe, candles, drawings, indicators, activeTool, drawColor, selectedDrawingId, selectedDrawingIds, drawingsLocked, drawingsHidden, editingIndicatorId, crosshair, loading | `addDrawingAtom`, `updateDrawingAtom`, `removeDrawingAtom`, `toggleIndicatorAtom`, ... (30 write atoms) | localStorage `drawings:<symbol>`, `indicators` |
+| `replayStore` | active, selecting, playing, speed, cursor, anchor, total | `armAtom`, `disarmAtom`, `stepAtom` | — |
+| `smcStore` | snapshot, settings | `toggleSmcAtom`, `hydrateSmcAtom` | localStorage `smc-settings` |
+| `tradeStore` | equity, startingEquity, positions, price, time, tradeSymbol | `placeOrderAtom`, `closePositionAtom`, `closeAllAtom` | — |
+| `journalStore` | entries, loaded | `addJournalEntryAtom`, `removeJournalEntryAtom` (async) | **IndexedDB** `smc-terminal/journal` |
+| `analyticsStore` | startingEquity, symbolFilter | `setStartingEquityAtom`, `setSymbolFilterAtom` | — |
+| `watchlistStore` | symbols, sortKey, sortDir | `addWatchlistSymbolAtom`, `removeWatchlistSymbolAtom` | localStorage `watchlist` |
+| `marketDataStore` | quotes, candles, selectedSymbol, selectedTimeframe, connectionStatus, subscriptions, subRefs, lastUpdate | `updateCandleAtom`, `selectMarketAtom`, `subscribeAtom` | runtime only |
+| `alertStore` | alerts, triggeredAlerts, history, settings, selectedAlertId, editingAlertId | `createAlertAtom`, `triggerAlertAtom`, `deleteAlertAtom` | localStorage `alerts` |
+| `toastStore` | toasts | `pushToastAtom`, `dismissToastAtom` | runtime only |
+
+### Render optimisation by example
+
+Before (Zustand — component re-renders on *any* store change):
+```tsx
+const symbol = useChartStore((s) => s.symbol);   // re-renders when candles tick
+```
+
+After (Jotai — component only re-renders when *that atom* changes):
+```tsx
+const symbol = useAtomValue(symbolAtom);          // only re-renders on symbol change
+```
+
+Key optimisations:
+- `TopToolbar` no longer re-renders on every candle tick
+- `DrawingToolbar` subscribes to 5 atoms instead of full 30-field chartStore
+- `ChartArea` subscribes to 5 atoms instead of full chartStore
+- `AlertOverlay` subscribes only to `alertsAtom` + `selectedAlertIdAtom`
+- `PriceChart` indicator overlay only re-renders when `indicatorsAtom` changes
+
+### Access patterns
+
+| Context | Pattern |
+|---|---|
+| React state read | `useAtomValue(symbolAtom)` |
+| React action call | `useSetAtom(addDrawingAtom)` → `addDrawing(drawing)` |
+| React compat (legacy) | `useChartStore((s) => s.symbol)` |
+| Non-React read | `getDefaultStore().get(candlesAtom)` |
+| Non-React write | `getDefaultStore().set(logAtom, { level, msg })` |
 
 **Alert architecture (Phase 2):** `marketDataStore` (SSOT) → `useAlertEngine` (push subscription,
 no polling/sockets; refcounted alert-symbol tickers) → pure `services/alertEngine.ts` (above/below/
 crossUp/crossDown) → `alertStore.triggerAlert` (once-only/recurring) → `services/notifications/
 notify.ts` → toast / sound / browser (Firebase push seam for Phase 6). UI: `components/alerts/
-AlertCenter.tsx` + chart `AlertLines`. Full detail in **`docs/ALERT_ARCHITECTURE.md`**.
+AlertCenter.tsx` + chart `AlertOverlay`. Full detail in **`docs/ALERT_ARCHITECTURE.md`**.
 
-**Single source of truth for visibility:** `useVisibleCandles()` returns `chartStore.candles`
+**Single source of truth for visibility:** `useVisibleCandles()` returns `candlesAtom` value
 (full) or, while replay is armed, `candles[0..replayCursor]`. Every chart/indicator/SMC/trade
 computation reads from it — the structural no-look-ahead guarantee.
 
-> Stores init with deterministic SSR-safe defaults; persisted values load in
-> `useStoreHydration()` after mount.
+> Atoms init with deterministic SSR-safe defaults; persisted values load in
+> `useStoreHydration()` after mount via `getDefaultStore().set(hydrateAtom)`.
 
 ---
 
-## 5. Data flow (current — MOCK)
+## 5. Data flow
 
 ```
-services/marketData.ts (seeded mulberry32 PRNG → 1m OHLCV → aggregate to TF)
-        │  fetchHistory({ticker, timeframe, limit})   [~60ms simulated latency]
+MarketDataService (Binance WS / OANDA REST / TwelveData)
+        │  realtime kline + ticker
         ▼
-hooks/useMarketData.ts (React Query: ['history', symbol, timeframe], limit 2000)
+marketDataStore (quotesAtom / candlesAtom / updateCandleAtom)
         ▼
-chartStore.setCandles()  → master series
+useMarketData (selectMarket → history → mirror into chartStore)
+        ▼
+chartStore.setCandlesAtom  → candlesAtom (master series)
         ▼
 useVisibleCandles()  → replay-aware slice
         ├─ PriceChart.setData()      candles + volume
@@ -144,20 +193,15 @@ useVisibleCandles()  → replay-aware slice
         └─ useTradeRuntime           fills pending orders, SL/TP
 ```
 
-- **Quotes:** `Watchlist` uses `useQueries(['quote', ticker])` with `refetchInterval: 15000`,
-  but `fetchQuote` derives from the deterministic generator anchored to the current hour, so
-  values are effectively static between symbol changes — **faux realtime**.
-- **No WebSocket layer, no connection status, no reconnect, no central market-data store.**
-  Phase 1 introduces all of these.
-
 ---
 
 ## 6. Runtime loops (`GlobalRuntime`, headless)
 
 - `useReplayPlayback` — rAF clock advancing the replay cursor at 1×–100×.
-- `useHotkeys` — Space/←/→/R (replay), B/S/X (trade) via `utils/bus`.
-- `useSmcEngine` — posts visible candles to `smc.worker` (throttled ~90ms) → `smcStore`.
-- `useTradeRuntime` — streams the latest visible candle into `tradeStore`.
+- `useHotkeys` — drawing shortcuts (1–9, Delete, Ctrl+D/Z/A/I, Escape) + replay transport (Space/←/→/R) + trade (B/S/X).
+- `useSmcEngine` — posts visible candles to `smc.worker` (throttled ~90ms) → `setSmcSnapshotAtom`.
+- `useTradeRuntime` — streams the latest visible candle into `setTradeMarketAtom`.
+- `useAlertEngine` — pushes `marketDataTickAtom` subscription, evaluates alerts on price ticks.
 - Journal hydrate from IndexedDB on mount.
 
 ---
@@ -178,21 +222,20 @@ All consume only the candle array passed in → inherently look-ahead-free.
 
 ## 8. Persistence
 
-- **localStorage:** `ui`, `drawings:<symbol>`, `indicators`, `watchlist`, `smc-settings`.
+- **localStorage:** `ui`, `drawings:<symbol>`, `indicators`, `watchlist`, `smc-settings`, `alerts`.
 - **IndexedDB** (`services/storage.ts`, db `smc-terminal` v1): `journal` + `screenshots` via
   `idb`. SSR-guarded and lazy.
 
 ---
 
-## 9. Integration seams for Phase 1 (realtime)
+## 9. Drawing subsystem
 
-Insertion points so realtime work needs no rewrites:
+The drawing engine uses a document-level pointer-event architecture:
+- `DrawingLayer` canvas is `pointerEvents:"none"` — purely a rendering surface
+- All pointer/keyboard events handled via document capture-phase listeners in `DrawingInteractionManager`
+- 25 drawing tools registered via `ToolRegistry` plugin architecture
+- Hit testing via `HitTestEngine` (canonical targets: `"p1" | "p2" | "body"`)
+- Command history via `CommandManager` + `useCommandHistory` for undo/redo
+- All tools' hitTest vocabulary standardised (2026-06-26 audit)
 
-1. **`services/marketData.ts`** — `fetchHistory` / `fetchQuote` are the only data sources; swap
-   their bodies (or route through a new `MarketDataService`) and the rest is agnostic.
-2. **`chartStore.setCandles` / `useMarketData`** — where history lands; a realtime engine should
-   append/update the last bar here (or via a new `marketDataStore`).
-3. **`Watchlist`** — reads `useQueries(['quote'])`; repoint to a realtime quotes selector.
-4. **`SYMBOLS`** (`marketData.ts`) — hardcoded symbol registry to replace/extend.
-5. **`PriceChart`** — already supports incremental `setData`; realtime should prefer
-   `series.update(lastBar)` for O(1) tick updates (not yet wired).
+Full architecture audit in `DEEPSEEK.md` §"Full Interaction Pipeline Audit".

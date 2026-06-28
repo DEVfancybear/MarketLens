@@ -2,21 +2,17 @@
 /**
  * Alert Store (Phase 2) — TradingView-style price alerts.
  *
- * Single source of truth for alert definitions, the alerts that have fired, and
- * an immutable trigger history. Pure state + actions; price evaluation lives in
- * the Alert Engine (`services/alertEngine.ts` + `hooks/useAlertEngine.ts`), which
- * reads prices from `marketDataStore` — this store never touches the network.
- *
- * Lifecycle of a one-time alert:  alerts → (condition met) → triggeredAlerts,
- * and a row is appended to `history`. `resetAlert` re-arms it (back to `alerts`).
- * A `recurring` alert stays in `alerts` and only appends history on each fire
- * (with a short re-arm so it doesn't spam every tick).
- *
- * Persisted to localStorage (key `alerts`); hydrated once on the client.
+ * Converted from Zustand to Jotai atoms. Each state field is an individual
+ * atom; each action is a write atom. A compatibility `useAlertStore` hook
+ * and `getAlertState()` for non-React code keep the existing API.
  */
-import { create } from "zustand";
+import { atom, useAtomValue } from "jotai";
+import { getDefaultStore } from "jotai";
 import { uid } from "@/utils/id";
 import { localStore } from "@/services/storage";
+
+/** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
+export const alertTickAtom = atom<number>(0);
 
 export type AlertCondition = "above" | "below" | "crossUp" | "crossDown";
 export type AlertStatus = "active" | "triggered";
@@ -25,18 +21,14 @@ export interface Alert {
   id: string;
   symbol: string;
   condition: AlertCondition;
-  /** Target price. (Kept as `price` for backward-compat with the chart overlay.) */
   price: number;
   status: AlertStatus;
-  /** Disabled alerts render dimmed and are skipped by the engine. */
   enabled: boolean;
-  /** Locked alerts cannot be dragged or deleted from the chart. */
   locked: boolean;
-  createdAt: number; // epoch seconds
-  triggeredAt?: number; // epoch seconds
+  createdAt: number;
+  triggeredAt?: number;
   triggerPrice?: number;
   note?: string;
-  /** Re-arm after firing ("Every time") vs fire once ("Only once"). */
   recurring: boolean;
   sound: boolean;
   browser: boolean;
@@ -49,7 +41,7 @@ export interface AlertHistoryEntry {
   condition: AlertCondition;
   targetPrice: number;
   triggerPrice: number;
-  triggerTime: number; // epoch seconds
+  triggerTime: number;
 }
 
 export interface AlertSettings {
@@ -94,66 +86,41 @@ interface PersistShape {
   settings: AlertSettings;
 }
 
-interface AlertState {
-  alerts: Alert[];
-  triggeredAlerts: Alert[];
-  history: AlertHistoryEntry[];
-  settings: AlertSettings;
-  /** Chart-overlay selection (TradingView-style; only one at a time). Ephemeral. */
-  selectedAlertId: string | null;
-  /** Alert currently open in the edit dialog (or null). Ephemeral. */
-  editingAlertId: string | null;
-
-  // CRUD
-  createAlert: (input: CreateAlertInput) => Alert;
-  updateAlert: (id: string, patch: Partial<Omit<Alert, "id">>) => void;
-  deleteAlert: (id: string) => void;
-  duplicateAlert: (id: string) => Alert | undefined;
-
-  // chart-overlay selection / editing (not persisted)
-  selectAlert: (id: string | null) => void;
-  editAlert: (id: string | null) => void;
-
-  // lifecycle
-  triggerAlert: (id: string, triggerPrice: number) => Alert | undefined;
-  resetAlert: (id: string) => void;
-
-  // bulk / settings
-  clearTriggered: () => void;
-  clearHistory: () => void;
-  setSettings: (patch: Partial<AlertSettings>) => void;
-
-  hydrate: () => void;
-
-  // ---- backward-compat (chart context menu) ----
-  /** Legacy one-click create. `condition` defaults to a plain price cross. */
-  add: (symbol: string, price: number, condition?: AlertCondition) => Alert;
-  remove: (id: string) => void;
-  clear: () => void;
-}
-
 const DEFAULT_SETTINGS: AlertSettings = {
   toast: true,
   sound: true,
   browser: false,
 };
 
-function persist(get: () => AlertState) {
-  const { alerts, triggeredAlerts, history, settings } = get();
-  const shape: PersistShape = { alerts, triggeredAlerts, history, settings };
+// ── Persistence helper ───────────────────────────────────────────────────────
+
+function persist() {
+  const store = getDefaultStore();
+  const shape: PersistShape = {
+    alerts: store.get(alertsAtom),
+    triggeredAlerts: store.get(triggeredAlertsAtom),
+    history: store.get(historyAtom),
+    settings: store.get(settingsAtom),
+  };
   localStore.set(STORAGE_KEY, shape);
+  // Bump tick so external subscribers (AlertOverlay canvas) re-render.
+  store.set(alertTickAtom, store.get(alertTickAtom) + 1);
 }
 
-export const useAlertStore = create<AlertState>((set, get) => ({
-  alerts: [],
-  triggeredAlerts: [],
-  history: [],
-  settings: DEFAULT_SETTINGS,
-  selectedAlertId: null,
-  editingAlertId: null,
+// ── State atoms ──────────────────────────────────────────────────────────────
+export const alertsAtom = atom<Alert[]>([]);
+export const triggeredAlertsAtom = atom<Alert[]>([]);
+export const historyAtom = atom<AlertHistoryEntry[]>([]);
+export const settingsAtom = atom<AlertSettings>(DEFAULT_SETTINGS);
+export const selectedAlertIdAtom = atom<string | null>(null);
+export const editingAlertIdAtom = atom<string | null>(null);
 
-  createAlert: (input) => {
-    const { settings } = get();
+// ── Write atoms: CRUD ────────────────────────────────────────────────────────
+
+export const createAlertAtom = atom(
+  null,
+  (get, set, input: CreateAlertInput): Alert => {
+    const settings = get(settingsAtom);
     const alert: Alert = {
       id: uid("alert"),
       symbol: input.symbol,
@@ -168,35 +135,49 @@ export const useAlertStore = create<AlertState>((set, get) => ({
       sound: settings.sound,
       browser: settings.browser,
     };
-    set((s) => ({ alerts: [alert, ...s.alerts] }));
-    persist(get);
+    set(alertsAtom, [alert, ...get(alertsAtom)]);
+    persist();
     return alert;
   },
+);
 
-  updateAlert: (id, patch) => {
-    set((s) => ({
-      alerts: s.alerts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
-      triggeredAlerts: s.triggeredAlerts.map((a) =>
+export const updateAlertAtom = atom(
+  null,
+  (get, set, id: string, patch: Partial<Omit<Alert, "id">>) => {
+    set(
+      alertsAtom,
+      get(alertsAtom).map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    );
+    set(
+      triggeredAlertsAtom,
+      get(triggeredAlertsAtom).map((a) =>
         a.id === id ? { ...a, ...patch } : a,
       ),
-    }));
-    persist(get);
+    );
+    persist();
   },
+);
 
-  deleteAlert: (id) => {
-    set((s) => ({
-      alerts: s.alerts.filter((a) => a.id !== id),
-      triggeredAlerts: s.triggeredAlerts.filter((a) => a.id !== id),
-      selectedAlertId: s.selectedAlertId === id ? null : s.selectedAlertId,
-      editingAlertId: s.editingAlertId === id ? null : s.editingAlertId,
-    }));
-    persist(get);
-  },
+export const deleteAlertAtom = atom(null, (get, set, id: string) => {
+  set(
+    alertsAtom,
+    get(alertsAtom).filter((a) => a.id !== id),
+  );
+  set(
+    triggeredAlertsAtom,
+    get(triggeredAlertsAtom).filter((a) => a.id !== id),
+  );
+  if (get(selectedAlertIdAtom) === id) set(selectedAlertIdAtom, null);
+  if (get(editingAlertIdAtom) === id) set(editingAlertIdAtom, null);
+  persist();
+});
 
-  duplicateAlert: (id) => {
+export const duplicateAlertAtom = atom(
+  null,
+  (get, set, id: string): Alert | undefined => {
     const src =
-      get().alerts.find((a) => a.id === id) ??
-      get().triggeredAlerts.find((a) => a.id === id);
+      get(alertsAtom).find((a) => a.id === id) ??
+      get(triggeredAlertsAtom).find((a) => a.id === id);
     if (!src) return undefined;
     const clone: Alert = {
       ...src,
@@ -206,16 +187,29 @@ export const useAlertStore = create<AlertState>((set, get) => ({
       triggeredAt: undefined,
       triggerPrice: undefined,
     };
-    set((s) => ({ alerts: [clone, ...s.alerts], selectedAlertId: clone.id }));
-    persist(get);
+    set(alertsAtom, [clone, ...get(alertsAtom)]);
+    set(selectedAlertIdAtom, clone.id);
+    persist();
     return clone;
   },
+);
 
-  selectAlert: (id) => set({ selectedAlertId: id }),
-  editAlert: (id) => set({ editingAlertId: id }),
+// ── Write atoms: selection / editing ─────────────────────────────────────────
 
-  triggerAlert: (id, triggerPrice) => {
-    const alert = get().alerts.find((a) => a.id === id);
+export const selectAlertAtom = atom(null, (_get, set, id: string | null) => {
+  set(selectedAlertIdAtom, id);
+});
+
+export const editAlertAtom = atom(null, (_get, set, id: string | null) => {
+  set(editingAlertIdAtom, id);
+});
+
+// ── Write atoms: lifecycle ───────────────────────────────────────────────────
+
+export const triggerAlertAtom = atom(
+  null,
+  (get, set, id: string, triggerPrice: number): Alert | undefined => {
+    const alert = get(alertsAtom).find((a) => a.id === id);
     if (!alert) return undefined;
     const now = Date.now() / 1000;
     const fired: Alert = {
@@ -234,85 +228,192 @@ export const useAlertStore = create<AlertState>((set, get) => ({
       triggerTime: now,
     };
 
-    set((s) => {
-      const history = [entry, ...s.history].slice(0, MAX_HISTORY);
-      if (alert.recurring) {
-        // Stay armed; just stamp the last trigger time (engine re-arm gate).
-        return {
-          history,
-          alerts: s.alerts.map((a) =>
-            a.id === id ? { ...a, triggeredAt: now, triggerPrice } : a,
-          ),
-        };
-      }
+    set(historyAtom, [entry, ...get(historyAtom)].slice(0, MAX_HISTORY));
+
+    if (alert.recurring) {
+      // Stay armed; just stamp the last trigger time (engine re-arm gate).
+      set(
+        alertsAtom,
+        get(alertsAtom).map((a) =>
+          a.id === id ? { ...a, triggeredAt: now, triggerPrice } : a,
+        ),
+      );
+    } else {
       // One-time: move active → triggered.
-      return {
-        history,
-        alerts: s.alerts.filter((a) => a.id !== id),
-        triggeredAlerts: [fired, ...s.triggeredAlerts].slice(0, MAX_TRIGGERED),
-      };
-    });
-    persist(get);
+      set(
+        alertsAtom,
+        get(alertsAtom).filter((a) => a.id !== id),
+      );
+      set(
+        triggeredAlertsAtom,
+        [fired, ...get(triggeredAlertsAtom)].slice(0, MAX_TRIGGERED),
+      );
+    }
+    persist();
     return fired;
   },
+);
 
-  resetAlert: (id) => {
-    set((s) => {
-      const fired = s.triggeredAlerts.find((a) => a.id === id);
-      if (!fired) return s;
-      const rearmed: Alert = {
-        ...fired,
-        status: "active",
-        triggeredAt: undefined,
-        triggerPrice: undefined,
-      };
-      return {
-        triggeredAlerts: s.triggeredAlerts.filter((a) => a.id !== id),
-        alerts: [rearmed, ...s.alerts],
-      };
-    });
-    persist(get);
-  },
+export const resetAlertAtom = atom(null, (get, set, id: string) => {
+  const fired = get(triggeredAlertsAtom).find((a) => a.id === id);
+  if (!fired) return;
+  const rearmed: Alert = {
+    ...fired,
+    status: "active",
+    triggeredAt: undefined,
+    triggerPrice: undefined,
+  };
+  set(
+    triggeredAlertsAtom,
+    get(triggeredAlertsAtom).filter((a) => a.id !== id),
+  );
+  set(alertsAtom, [rearmed, ...get(alertsAtom)]);
+  persist();
+});
 
-  clearTriggered: () => {
-    set({ triggeredAlerts: [] });
-    persist(get);
-  },
-  clearHistory: () => {
-    set({ history: [] });
-    persist(get);
-  },
-  setSettings: (patch) => {
-    set((s) => ({ settings: { ...s.settings, ...patch } }));
-    persist(get);
-  },
+// ── Write atoms: bulk / settings ─────────────────────────────────────────────
 
-  hydrate: () => {
-    const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
-    if (!saved) return;
-    // Migrate alerts persisted before `enabled`/`locked` existed.
-    const migrate = (a: Alert): Alert => ({
-      ...a,
-      enabled: a.enabled ?? true,
-      locked: a.locked ?? false,
-    });
-    set({
-      alerts: (saved.alerts ?? []).map(migrate),
-      triggeredAlerts: (saved.triggeredAlerts ?? []).map(migrate),
-      history: saved.history ?? [],
-      settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
-    });
-  },
+export const clearTriggeredAtom = atom(null, (_get, set) => {
+  set(triggeredAlertsAtom, []);
+  persist();
+});
 
-  // ---- backward-compat ----
-  add: (symbol, price, condition = "crossUp") =>
-    get().createAlert({ symbol, condition, price }),
-  remove: (id) => get().deleteAlert(id),
-  clear: () => {
-    set({ alerts: [] });
-    persist(get);
+export const clearHistoryAtom = atom(null, (_get, set) => {
+  set(historyAtom, []);
+  persist();
+});
+
+export const setSettingsAtom = atom(
+  null,
+  (get, set, patch: Partial<AlertSettings>) => {
+    set(settingsAtom, { ...get(settingsAtom), ...patch });
+    persist();
   },
+);
+
+// ── Write atoms: hydration ───────────────────────────────────────────────────
+
+export const hydrateAtom = atom(null, (_get, set) => {
+  const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
+  if (!saved) return;
+  const migrate = (a: Alert): Alert => ({
+    ...a,
+    enabled: a.enabled ?? true,
+    locked: a.locked ?? false,
+  });
+  set(alertsAtom, (saved.alerts ?? []).map(migrate));
+  set(triggeredAlertsAtom, (saved.triggeredAlerts ?? []).map(migrate));
+  set(historyAtom, saved.history ?? []);
+  set(settingsAtom, { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) });
+});
+
+// ── Write atoms: backward-compat (chart context menu) ────────────────────────
+
+export const addAlertAtom = atom(
+  null,
+  (
+    get,
+    set,
+    symbol: string,
+    price: number,
+    condition: AlertCondition = "crossUp",
+  ): Alert => {
+    return getDefaultStore().set(createAlertAtom, { symbol, condition, price });
+  },
+);
+
+export const removeAlertAtom = atom(null, (get, set, id: string) => {
+  set(deleteAlertAtom, id);
+});
+
+export const clearAlertsAtom = atom(null, (_get, set) => {
+  set(alertsAtom, []);
+  persist();
+});
+
+// ── Combined interface (for compatibility hook + getState) ───────────────────
+
+interface AlertState {
+  alerts: Alert[];
+  triggeredAlerts: Alert[];
+  history: AlertHistoryEntry[];
+  settings: AlertSettings;
+  selectedAlertId: string | null;
+  editingAlertId: string | null;
+}
+
+export interface AlertActions {
+  createAlert: (input: CreateAlertInput) => Alert;
+  updateAlert: (id: string, patch: Partial<Omit<Alert, "id">>) => void;
+  deleteAlert: (id: string) => void;
+  duplicateAlert: (id: string) => Alert | undefined;
+  selectAlert: (id: string | null) => void;
+  editAlert: (id: string | null) => void;
+  triggerAlert: (id: string, triggerPrice: number) => Alert | undefined;
+  resetAlert: (id: string) => void;
+  clearTriggered: () => void;
+  clearHistory: () => void;
+  setSettings: (patch: Partial<AlertSettings>) => void;
+  hydrate: () => void;
+  add: (symbol: string, price: number, condition?: AlertCondition) => Alert;
+  remove: (id: string) => void;
+  clear: () => void;
+}
+
+export type AlertStoreInterface = AlertState & AlertActions;
+
+const alertStateAtom = atom<AlertState>((get) => ({
+  alerts: get(alertsAtom),
+  triggeredAlerts: get(triggeredAlertsAtom),
+  history: get(historyAtom),
+  settings: get(settingsAtom),
+  selectedAlertId: get(selectedAlertIdAtom),
+  editingAlertId: get(editingAlertIdAtom),
 }));
 
+const alertCombinedAtom = atom<AlertStoreInterface>((get) => {
+  const state = get(alertStateAtom);
+  const store = getDefaultStore();
+  return {
+    ...state,
+    createAlert: (input) => store.set(createAlertAtom, input) as Alert,
+    updateAlert: (id, patch) => store.set(updateAlertAtom, id, patch),
+    deleteAlert: (id) => store.set(deleteAlertAtom, id),
+    duplicateAlert: (id) =>
+      store.set(duplicateAlertAtom, id) as Alert | undefined,
+    selectAlert: (id) => store.set(selectAlertAtom, id),
+    editAlert: (id) => store.set(editAlertAtom, id),
+    triggerAlert: (id, triggerPrice) =>
+      store.set(triggerAlertAtom, id, triggerPrice) as Alert | undefined,
+    resetAlert: (id) => store.set(resetAlertAtom, id),
+    clearTriggered: () => store.set(clearTriggeredAtom),
+    clearHistory: () => store.set(clearHistoryAtom),
+    setSettings: (patch) => store.set(setSettingsAtom, patch),
+    hydrate: () => store.set(hydrateAtom),
+    add: (symbol, price, condition?) =>
+      store.set(addAlertAtom, symbol, price, condition) as Alert,
+    remove: (id) => store.set(removeAlertAtom, id),
+    clear: () => store.set(clearAlertsAtom),
+  };
+});
+
+// ── Compatibility hook ───────────────────────────────────────────────────────
+export function useAlertStore(): AlertStoreInterface;
+export function useAlertStore<T>(
+  selector: (state: AlertStoreInterface) => T,
+): T;
+export function useAlertStore<T>(
+  selector?: (state: AlertStoreInterface) => T,
+): AlertStoreInterface | T {
+  const combined = useAtomValue(alertCombinedAtom);
+  if (!selector) return combined;
+  return selector(combined);
+}
+
+// Static getState() for non-React code.
+export function getAlertState(): AlertStoreInterface {
+  return getDefaultStore().get(alertCombinedAtom);
+}
+
 /** Selector: all alerts that should render a live price line (active only). */
-export const selectActiveAlerts = (s: AlertState) => s.alerts;
+export const selectActiveAlerts = (s: AlertStoreInterface) => s.alerts;

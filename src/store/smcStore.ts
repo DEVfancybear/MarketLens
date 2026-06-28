@@ -1,7 +1,8 @@
-'use client';
-import { create } from 'zustand';
-import { localStore } from '@/services/storage';
-import type { SmcSnapshot } from '@/types';
+"use client";
+import { atom, useAtomValue } from "jotai";
+import { getDefaultStore } from "jotai";
+import { localStore } from "@/services/storage";
+import type { SmcSnapshot } from "@/types";
 
 /** Toggle visibility of each SMC overlay group. */
 export interface SmcSettings {
@@ -24,17 +25,8 @@ const EMPTY: SmcSnapshot = {
   displacements: [],
   sessions: [],
   killZones: [],
-  trend: 'ranging',
+  trend: "ranging",
 };
-
-interface SmcState {
-  snapshot: SmcSnapshot;
-  settings: SmcSettings;
-  setSnapshot: (s: SmcSnapshot) => void;
-  toggle: (key: keyof SmcSettings) => void;
-  /** Load persisted SMC overlay settings from localStorage. Client-only. */
-  hydrate: () => void;
-}
 
 const DEFAULT_SETTINGS: SmcSettings = {
   structure: true,
@@ -47,18 +39,72 @@ const DEFAULT_SETTINGS: SmcSettings = {
   swings: true,
 };
 
-export const useSmcStore = create<SmcState>((set, get) => ({
-  snapshot: EMPTY,
-  // Deterministic defaults for SSR; persisted settings loaded via hydrate().
-  settings: DEFAULT_SETTINGS,
-  hydrate: () => set({ settings: localStore.get('smc-settings', DEFAULT_SETTINGS) }),
-  setSnapshot: (snapshot) => set({ snapshot }),
-  toggle: (key) => {
-    const enabled = !get().settings[key];
-    const settings = { ...get().settings, [key]: enabled };
-    set({ settings });
-    localStore.set('smc-settings', settings);
-    // Debug trace: confirms the menu → state hop fired for this feature.
-    console.debug('SMC toggle:', { feature: key, enabled });
+// ── State atoms ────────────────────────────────────────────────────────────
+export const smcSnapshotAtom = atom<SmcSnapshot>(EMPTY);
+export const smcSettingsAtom = atom<SmcSettings>(DEFAULT_SETTINGS);
+
+// ── Write atoms (actions) ──────────────────────────────────────────────────
+export const setSmcSnapshotAtom = atom(
+  null,
+  (_get, set, snapshot: SmcSnapshot) => {
+    set(smcSnapshotAtom, snapshot);
   },
+);
+
+export const toggleSmcAtom = atom(null, (get, set, key: keyof SmcSettings) => {
+  const enabled = !get(smcSettingsAtom)[key];
+  const settings = { ...get(smcSettingsAtom), [key]: enabled };
+  set(smcSettingsAtom, settings);
+  localStore.set("smc-settings", settings);
+  console.debug("SMC toggle:", { feature: key, enabled });
+});
+
+export const hydrateSmcAtom = atom(null, (_get, set) => {
+  set(smcSettingsAtom, localStore.get("smc-settings", DEFAULT_SETTINGS));
+});
+
+// ── Combined state + actions (for compatibility hook) ──────────────────────
+interface SmcState {
+  snapshot: SmcSnapshot;
+  settings: SmcSettings;
+}
+
+export interface SmcActions {
+  setSnapshot: (s: SmcSnapshot) => void;
+  toggle: (key: keyof SmcSettings) => void;
+  hydrate: () => void;
+}
+
+type SmcStoreInterface = SmcState & SmcActions;
+
+const smcStateAtom = atom<SmcState>((get) => ({
+  snapshot: get(smcSnapshotAtom),
+  settings: get(smcSettingsAtom),
 }));
+
+const smcCombinedAtom = atom<SmcStoreInterface>((get) => {
+  const state = get(smcStateAtom);
+  const store = getDefaultStore();
+  return {
+    ...state,
+    setSnapshot: (s) => store.set(setSmcSnapshotAtom, s),
+    toggle: (k) => store.set(toggleSmcAtom, k),
+    hydrate: () => store.set(hydrateSmcAtom),
+  };
+});
+
+// ── Compatibility hook ─────────────────────────────────────────────────────
+export function useSmcStore(): SmcStoreInterface;
+export function useSmcStore<T>(selector: (state: SmcStoreInterface) => T): T;
+export function useSmcStore<T>(
+  selector?: (state: SmcStoreInterface) => T,
+): SmcStoreInterface | T {
+  const combined = useAtomValue(smcCombinedAtom);
+  if (!selector) return combined;
+  return selector(combined);
+}
+
+// Static getState() for non-React code.
+export function getSmcState(): SmcStoreInterface {
+  return getDefaultStore().get(smcCombinedAtom);
+}

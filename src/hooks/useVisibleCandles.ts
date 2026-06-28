@@ -1,8 +1,9 @@
-'use client';
-import { useMemo } from 'react';
-import { useChartStore } from '@/store/chartStore';
-import { useReplayStore } from '@/store/replayStore';
-import type { Candle } from '@/types';
+"use client";
+import { useMemo } from "react";
+import { useAtomValue } from "jotai";
+import { candlesAtom } from "@/store/chartStore";
+import { activeAtom, cursorAtom } from "@/store/replayStore";
+import type { Candle } from "@/types";
 
 /**
  * The single source of truth for "what the user is allowed to see".
@@ -13,9 +14,9 @@ import type { Candle } from '@/types';
  * candles simply do not exist downstream of this hook.
  */
 export function useVisibleCandles(): Candle[] {
-  const candles = useChartStore((s) => s.candles);
-  const active = useReplayStore((s) => s.active);
-  const cursor = useReplayStore((s) => s.cursor);
+  const candles = useAtomValue(candlesAtom);
+  const active = useAtomValue(activeAtom);
+  const cursor = useAtomValue(cursorAtom);
 
   return useMemo(() => {
     if (!active) return candles;

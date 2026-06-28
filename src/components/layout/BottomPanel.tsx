@@ -1,5 +1,11 @@
 "use client";
-import { useUIStore, type BottomTab } from "@/store/uiStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  bottomTabAtom,
+  setBottomTabAtom,
+  logsAtom,
+  type BottomTab,
+} from "@/store/uiStore";
 import { cn } from "@/utils/cn";
 import { fmtDateTime } from "@/utils/time";
 import { ReplayPanel } from "@/components/replay/ReplayPanel";
@@ -20,7 +26,8 @@ const TABS: { key: BottomTab; label: string }[] = [
  * on the active tab — no background fill, no rounded pills. Compact 32px bar.
  */
 export function BottomPanel() {
-  const { bottomTab, setBottomTab } = useUIStore();
+  const bottomTab = useAtomValue(bottomTabAtom);
+  const setBottomTab = useSetAtom(setBottomTabAtom);
 
   return (
     <div className="flex h-full flex-col">
@@ -57,7 +64,7 @@ export function BottomPanel() {
 }
 
 function LogsView() {
-  const logs = useUIStore((s) => s.logs);
+  const logs = useAtomValue(logsAtom);
   return (
     <div className="h-full overflow-auto p-2 font-mono text-2xs">
       {logs.length === 0 && (

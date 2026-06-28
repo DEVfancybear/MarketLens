@@ -1,15 +1,24 @@
-'use client';
+"use client";
 import {
-  Play, Pause, Square, RotateCcw, ChevronRight, ChevronLeft, ChevronsRight, ChevronsLeft, Power,
-} from 'lucide-react';
-import { useReplayStore, REPLAY_SPEEDS } from '@/store/replayStore';
-import { useChartStore } from '@/store/chartStore';
-import { cn } from '@/utils/cn';
-import { IconButton } from '@/components/ui/IconButton';
+  Play,
+  Pause,
+  Square,
+  RotateCcw,
+  ChevronRight,
+  ChevronLeft,
+  ChevronsRight,
+  ChevronsLeft,
+  Power,
+} from "lucide-react";
+import { useReplayStore, REPLAY_SPEEDS } from "@/store/replayStore";
+import { useAtomValue } from "jotai";
+import { candlesAtom } from "@/store/chartStore";
+import { cn } from "@/utils/cn";
+import { IconButton } from "@/components/ui/IconButton";
 
 export function ReplayControls() {
   const r = useReplayStore();
-  const candles = useChartStore((s) => s.candles);
+  const candles = useAtomValue(candlesAtom);
   const atEnd = r.cursor >= r.total - 1;
 
   if (!r.active) {
@@ -26,7 +35,8 @@ export function ReplayControls() {
             Cancel (Esc)
           </button>
           <span className="text-2xs text-ink-faint">
-            The selection cursor snaps to the nearest candle. Everything after it is hidden — no look-ahead.
+            The selection cursor snaps to the nearest candle. Everything after
+            it is hidden — no look-ahead.
           </span>
         </div>
       );
@@ -63,10 +73,22 @@ export function ReplayControls() {
       <IconButton label="Restart (R)" onClick={r.restart}>
         <RotateCcw size={15} />
       </IconButton>
-      <IconButton label="Prev 10 (Shift+←)" onClick={() => { r.pause(); r.step(-10); }}>
+      <IconButton
+        label="Prev 10 (Shift+←)"
+        onClick={() => {
+          r.pause();
+          r.step(-10);
+        }}
+      >
         <ChevronsLeft size={16} />
       </IconButton>
-      <IconButton label="Prev candle (←)" onClick={() => { r.pause(); r.step(-1); }}>
+      <IconButton
+        label="Prev candle (←)"
+        onClick={() => {
+          r.pause();
+          r.step(-1);
+        }}
+      >
         <ChevronLeft size={16} />
       </IconButton>
 
@@ -74,18 +96,36 @@ export function ReplayControls() {
         onClick={() => (r.playing ? r.pause() : r.play())}
         disabled={atEnd}
         className={cn(
-          'mx-1 flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors disabled:opacity-40',
-          r.playing ? 'bg-choch hover:opacity-90' : 'bg-brand hover:bg-brand-hover',
+          "mx-1 flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors disabled:opacity-40",
+          r.playing
+            ? "bg-choch hover:opacity-90"
+            : "bg-brand hover:bg-brand-hover",
         )}
         title="Play / Pause (Space)"
       >
-        {r.playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+        {r.playing ? (
+          <Pause size={16} />
+        ) : (
+          <Play size={16} className="ml-0.5" />
+        )}
       </button>
 
-      <IconButton label="Next candle (→)" onClick={() => { r.pause(); r.step(1); }}>
+      <IconButton
+        label="Next candle (→)"
+        onClick={() => {
+          r.pause();
+          r.step(1);
+        }}
+      >
         <ChevronRight size={16} />
       </IconButton>
-      <IconButton label="Next 10 (Shift+→)" onClick={() => { r.pause(); r.step(10); }}>
+      <IconButton
+        label="Next 10 (Shift+→)"
+        onClick={() => {
+          r.pause();
+          r.step(10);
+        }}
+      >
         <ChevronsRight size={16} />
       </IconButton>
       <IconButton label="Stop" onClick={r.stop}>
@@ -101,8 +141,10 @@ export function ReplayControls() {
             key={s}
             onClick={() => r.setSpeed(s)}
             className={cn(
-              'h-6 rounded px-1.5 text-2xs font-semibold transition-colors',
-              r.speed === s ? 'bg-brand/20 text-brand' : 'text-ink-muted hover:bg-terminal-hover',
+              "h-6 rounded px-1.5 text-2xs font-semibold transition-colors",
+              r.speed === s
+                ? "bg-brand/20 text-brand"
+                : "text-ink-muted hover:bg-terminal-hover",
             )}
           >
             {s}x

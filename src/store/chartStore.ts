@@ -1,5 +1,6 @@
 "use client";
-import { create } from "zustand";
+import { atom, getDefaultStore } from "jotai";
+import { useAtomValue } from "jotai";
 import type {
   Candle,
   Drawing,
@@ -12,72 +13,6 @@ import { localStore } from "@/services/storage";
 import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
 
-interface ChartState {
-  symbol: string;
-  timeframe: Timeframe;
-
-  /** Master series for the current symbol+timeframe (full, untruncated). */
-  candles: Candle[];
-  loading: boolean;
-
-  /** Drawings & indicators (persisted per symbol in localStorage). */
-  drawings: Drawing[];
-  indicators: IndicatorConfig[];
-
-  activeTool: DrawingTool;
-  drawColor: string;
-  selectedDrawingId: string | null;
-  /** Multi-selection set (includes the singleton selectedDrawingId). */
-  selectedDrawingIds: Set<string>;
-  /** Global locks (TradingView "Lock all" / "Hide all"). */
-  drawingsLocked: boolean;
-  drawingsHidden: boolean;
-  /** Indicator being edited in the settings dialog. */
-  editingIndicatorId: string | null;
-
-  /** Crosshair readout pushed from the chart. */
-  crosshair: { time: number; candle: Candle | null } | null;
-
-  setSymbol: (s: string) => void;
-  setTimeframe: (tf: Timeframe) => void;
-  setCandles: (c: Candle[]) => void;
-  setLoading: (v: boolean) => void;
-
-  setActiveTool: (t: DrawingTool) => void;
-  setDrawColor: (c: string) => void;
-  addDrawing: (d: Drawing) => void;
-  updateDrawing: (id: string, patch: Partial<Drawing>) => void;
-  removeDrawing: (id: string) => void;
-  duplicateDrawing: (id: string) => void;
-  selectDrawing: (id: string | null) => void;
-  /** Multi-select: add/remove from selection set. */
-  toggleSelectDrawing: (id: string) => void;
-  /** Select all visible drawings. */
-  selectAll: () => void;
-  clearDrawings: () => void;
-  /** Per-drawing layer & visibility actions. */
-  lockDrawing: (id: string) => void;
-  hideDrawing: (id: string) => void;
-  bringToFront: (id: string) => void;
-  sendToBack: (id: string) => void;
-  /** Global toggles. */
-  toggleLockAll: () => void;
-  toggleHideAll: () => void;
-
-  addIndicator: (type: IndicatorType) => void;
-  /** Add the indicator if no instance of this type exists, otherwise remove it. */
-  toggleIndicator: (type: IndicatorType) => void;
-  updateIndicator: (id: string, patch: Partial<IndicatorConfig>) => void;
-  removeIndicator: (id: string) => void;
-  /** Remove every indicator (TradingView "Remove indicators"). */
-  clearIndicators: () => void;
-
-  setCrosshair: (c: ChartState["crosshair"]) => void;
-  setEditingIndicator: (id: string | null) => void;
-  /** Load persisted drawings/indicators from localStorage. Client-only. */
-  hydrate: () => void;
-}
-
 // Default to a Binance crypto symbol so the chart streams live with no API key.
 const DEFAULT_SYMBOL = "BTCUSDT";
 const DEFAULT_TF: Timeframe = "15m";
@@ -86,207 +21,331 @@ function drawingsKey(symbol: string) {
   return `drawings:${symbol}`;
 }
 
-export const useChartStore = create<ChartState>((set, get) => ({
-  symbol: DEFAULT_SYMBOL,
-  timeframe: DEFAULT_TF,
-  candles: [],
-  loading: false,
+const SINGLE_CLICK_TOOLS = new Set<DrawingTool>([
+  "horizontal",
+  "horizRay",
+  "vertical",
+  "crossLine",
+  "infoLine",
+  "text",
+  "emoji",
+  "long",
+  "short",
+]);
 
-  // SSR-safe empty defaults; persisted state loaded in hydrate() on the client.
-  drawings: [],
-  indicators: [],
+// ---------------------------------------------------------------------------
+// Primitive atoms (one per state field)
+// ---------------------------------------------------------------------------
 
-  activeTool: "cursor",
-  drawColor: "#2962ff",
-  selectedDrawingId: null,
-  selectedDrawingIds: new Set(),
-  drawingsLocked: false,
-  drawingsHidden: false,
-  editingIndicatorId: null,
-  crosshair: null,
+export const symbolAtom = atom<string>(DEFAULT_SYMBOL);
+export const timeframeAtom = atom<Timeframe>(DEFAULT_TF);
+export const candlesAtom = atom<Candle[]>([]);
+export const loadingAtom = atom<boolean>(false);
+export const drawingsAtom = atom<Drawing[]>([]);
+export const indicatorsAtom = atom<IndicatorConfig[]>([]);
+export const activeToolAtom = atom<DrawingTool>("cursor");
+export const drawColorAtom = atom<string>("#2962ff");
+export const selectedDrawingIdAtom = atom<string | null>(null);
+export const selectedDrawingIdsAtom = atom<Set<string>>(new Set<string>());
+export const drawingsLockedAtom = atom<boolean>(false);
+export const drawingsHiddenAtom = atom<boolean>(false);
+export const editingIndicatorIdAtom = atom<string | null>(null);
+export const crosshairAtom = atom<{
+  time: number;
+  candle: Candle | null;
+} | null>(null);
 
-  hydrate: () =>
-    set({
-      drawings: localStore.get<Drawing[]>(drawingsKey(get().symbol), []),
-      indicators: localStore.get<IndicatorConfig[]>("indicators", []),
-    }),
+// ---------------------------------------------------------------------------
+// Write atoms (actions) that read / modify multiple atoms
+// ---------------------------------------------------------------------------
 
-  setSymbol: (symbol) => {
-    if (symbol === get().symbol) return;
-    set({
-      symbol,
-      candles: [],
-      loading: true,
-      drawings: localStore.get<Drawing[]>(drawingsKey(symbol), []),
-      selectedDrawingId: null,
-      selectedDrawingIds: new Set(),
-    });
+export const setSymbolAtom = atom(null, (_get, set, symbol: string) => {
+  if (symbol === _get(symbolAtom)) return;
+  set(symbolAtom, symbol);
+  set(candlesAtom, []);
+  set(loadingAtom, true);
+  set(drawingsAtom, localStore.get<Drawing[]>(drawingsKey(symbol), []));
+  set(selectedDrawingIdAtom, null);
+  set(selectedDrawingIdsAtom, new Set());
+});
+
+export const setTimeframeAtom = atom(
+  null,
+  (_get, set, timeframe: Timeframe) => {
+    if (timeframe === _get(timeframeAtom)) return;
+    set(timeframeAtom, timeframe);
+    set(candlesAtom, []);
+    set(loadingAtom, true);
   },
+);
 
-  setTimeframe: (timeframe) => {
-    if (timeframe === get().timeframe) return;
-    set({ timeframe, candles: [], loading: true });
-  },
+export const setCandlesAtom = atom(null, (_get, set, candles: Candle[]) => {
+  set(candlesAtom, candles);
+  set(loadingAtom, false);
+});
 
-  setCandles: (candles) => set({ candles, loading: false }),
-  setLoading: (loading) => set({ loading }),
+export const setLoadingAtom = atom(null, (_get, set, loading: boolean) => {
+  set(loadingAtom, loading);
+});
 
-  setActiveTool: (activeTool) => set({ activeTool }),
-  setDrawColor: (drawColor) => set({ drawColor }),
+export const setActiveToolAtom = atom(null, (_get, set, t: DrawingTool) => {
+  set(activeToolAtom, t);
+});
 
-  addDrawing: (d) => {
-    const top = get().drawings.reduce((m, x) => Math.max(m, x.zIndex ?? 0), 0);
-    const drawing = {
-      visible: true,
-      locked: false,
-      zIndex: top + 1,
-      ...d,
-      id: d.id || uid("dw"),
-      points: d.points ? d.points.map((p) => ({ ...p })) : [],
-    };
-    const drawings = [...get().drawings, drawing];
-    // Single-click tools stay active (TradingView behavior).
-    // Two-click tools switch back to cursor after placement.
-    const singleClick = [
-      "horizontal",
-      "horizRay",
-      "vertical",
-      "crossLine",
-      "infoLine",
-      "text",
-      "emoji",
-      "long",
-      "short",
-    ].includes(d.tool);
-    set({
-      drawings,
-      activeTool: singleClick ? get().activeTool : "cursor",
-      selectedDrawingId: drawing.id,
-    });
-    localStore.set(drawingsKey(get().symbol), drawings);
-  },
-  updateDrawing: (id, patch) => {
-    const drawings = get().drawings.map((d) =>
+export const setDrawColorAtom = atom(null, (_get, set, c: string) => {
+  set(drawColorAtom, c);
+});
+
+export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
+  const top = _get(drawingsAtom).reduce(
+    (m, x) => Math.max(m, x.zIndex ?? 0),
+    0,
+  );
+  const drawing: Drawing = {
+    visible: true,
+    locked: false,
+    zIndex: top + 1,
+    ...d,
+    id: d.id || uid("dw"),
+    points: d.points ? d.points.map((p) => ({ ...p })) : [],
+  };
+  const drawings = [..._get(drawingsAtom), drawing];
+  // Single-click tools stay active; two-click tools switch back to cursor.
+  const singleClick = SINGLE_CLICK_TOOLS.has(d.tool);
+  set(drawingsAtom, drawings);
+  set(activeToolAtom, singleClick ? _get(activeToolAtom) : "cursor");
+  set(selectedDrawingIdAtom, drawing.id);
+  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+});
+
+export const updateDrawingAtom = atom(
+  null,
+  (_get, set, arg: { id: string; patch: Partial<Drawing> }) => {
+    const { id, patch } = arg;
+    const drawings = _get(drawingsAtom).map((d) =>
       d.id === id ? { ...d, ...patch } : d,
     );
-    set({ drawings });
-    localStore.set(drawingsKey(get().symbol), drawings);
+    set(drawingsAtom, drawings);
+    localStore.set(drawingsKey(_get(symbolAtom)), drawings);
   },
-  removeDrawing: (id) => {
-    const drawings = get().drawings.filter((d) => d.id !== id);
-    set({ drawings, selectedDrawingId: null });
-    localStore.set(drawingsKey(get().symbol), drawings);
-  },
-  duplicateDrawing: (id) => {
-    const src = get().drawings.find((d) => d.id === id);
-    if (!src) return;
-    const top = get().drawings.reduce((m, x) => Math.max(m, x.zIndex ?? 0), 0);
-    const copy: Drawing = {
-      ...src,
-      id: uid("dw"),
-      zIndex: top + 1,
-      points: src.points.map((p) => ({ ...p })),
-    };
-    const drawings = [...get().drawings, copy];
-    set({ drawings, selectedDrawingId: copy.id });
-    localStore.set(drawingsKey(get().symbol), drawings);
-  },
-  lockDrawing: (id) => {
-    const drawings = get().drawings.map((d) =>
-      d.id === id ? { ...d, locked: !d.locked } : d,
-    );
-    set({ drawings });
-    localStore.set(drawingsKey(get().symbol), drawings);
-  },
-  hideDrawing: (id) => {
-    const drawings = get().drawings.map((d) =>
-      d.id === id ? { ...d, visible: d.visible === false } : d,
-    );
-    set({ drawings, selectedDrawingId: null });
-    localStore.set(drawingsKey(get().symbol), drawings);
-  },
-  bringToFront: (id) => {
-    const top = get().drawings.reduce((m, x) => Math.max(m, x.zIndex ?? 0), 0);
-    get().updateDrawing(id, { zIndex: top + 1 });
-  },
-  sendToBack: (id) => {
-    const bottom = get().drawings.reduce(
-      (m, x) => Math.min(m, x.zIndex ?? 0),
-      0,
-    );
-    get().updateDrawing(id, { zIndex: bottom - 1 });
-  },
-  toggleLockAll: () => set((s) => ({ drawingsLocked: !s.drawingsLocked })),
-  toggleHideAll: () => set((s) => ({ drawingsHidden: !s.drawingsHidden })),
-  selectDrawing: (selectedDrawingId) => {
-    set({
-      selectedDrawingId,
-      selectedDrawingIds: selectedDrawingId
-        ? new Set([selectedDrawingId])
-        : new Set(),
-    });
-  },
-  toggleSelectDrawing: (id) => {
-    const prev = get().selectedDrawingIds;
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    set({
-      selectedDrawingIds: next,
-      selectedDrawingId: next.size === 1 ? [...next][0] : null,
-    });
-  },
-  selectAll: () => {
-    const ids = new Set(
-      get()
-        .drawings.filter((d) => d.visible !== false)
-        .map((d) => d.id),
-    );
-    set({ selectedDrawingIds: ids, selectedDrawingId: null });
-  },
-  clearDrawings: () => {
-    set({
-      drawings: [],
-      selectedDrawingId: null,
-      selectedDrawingIds: new Set(),
-    });
-    localStore.set(drawingsKey(get().symbol), []);
-  },
+);
 
-  addIndicator: (type) => {
-    const cfg = defaultIndicator(type, uid("ind"));
-    const indicators = [...get().indicators, cfg];
-    set({ indicators });
-    localStore.set("indicators", indicators);
+export const removeDrawingAtom = atom(null, (_get, set, id: string) => {
+  const drawings = _get(drawingsAtom).filter((d) => d.id !== id);
+  set(drawingsAtom, drawings);
+  set(selectedDrawingIdAtom, null);
+  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+});
+
+export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
+  const src = _get(drawingsAtom).find((d) => d.id === id);
+  if (!src) return;
+  const top = _get(drawingsAtom).reduce(
+    (m, x) => Math.max(m, x.zIndex ?? 0),
+    0,
+  );
+  const copy: Drawing = {
+    ...src,
+    id: uid("dw"),
+    zIndex: top + 1,
+    points: src.points.map((p) => ({ ...p })),
+  };
+  const drawings = [..._get(drawingsAtom), copy];
+  set(drawingsAtom, drawings);
+  set(selectedDrawingIdAtom, copy.id);
+  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+});
+
+export const lockDrawingAtom = atom(null, (_get, set, id: string) => {
+  const drawings = _get(drawingsAtom).map((d) =>
+    d.id === id ? { ...d, locked: !d.locked } : d,
+  );
+  set(drawingsAtom, drawings);
+  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+});
+
+export const hideDrawingAtom = atom(null, (_get, set, id: string) => {
+  const drawings = _get(drawingsAtom).map((d) =>
+    d.id === id ? { ...d, visible: d.visible === false } : d,
+  );
+  set(drawingsAtom, drawings);
+  set(selectedDrawingIdAtom, null);
+  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+});
+
+export const bringToFrontAtom = atom(null, (_get, set, id: string) => {
+  const top = _get(drawingsAtom).reduce(
+    (m, x) => Math.max(m, x.zIndex ?? 0),
+    0,
+  );
+  set(updateDrawingAtom, { id, patch: { zIndex: top + 1 } });
+});
+
+export const sendToBackAtom = atom(null, (_get, set, id: string) => {
+  const bottom = _get(drawingsAtom).reduce(
+    (m, x) => Math.min(m, x.zIndex ?? 0),
+    0,
+  );
+  set(updateDrawingAtom, { id, patch: { zIndex: bottom - 1 } });
+});
+
+export const toggleLockAllAtom = atom(null, (_get, set) => {
+  set(drawingsLockedAtom, !_get(drawingsLockedAtom));
+});
+
+export const toggleHideAllAtom = atom(null, (_get, set) => {
+  set(drawingsHiddenAtom, !_get(drawingsHiddenAtom));
+});
+
+export const selectDrawingAtom = atom(
+  null,
+  (_get, set, selectedDrawingId: string | null) => {
+    set(selectedDrawingIdAtom, selectedDrawingId);
+    set(
+      selectedDrawingIdsAtom,
+      selectedDrawingId ? new Set([selectedDrawingId]) : new Set(),
+    );
   },
-  toggleIndicator: (type) => {
-    const current = get().indicators;
+);
+
+export const toggleSelectDrawingAtom = atom(null, (_get, set, id: string) => {
+  const prev = _get(selectedDrawingIdsAtom);
+  const next = new Set(prev);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  set(selectedDrawingIdsAtom, next);
+  set(selectedDrawingIdAtom, next.size === 1 ? [...next][0] : null);
+});
+
+export const selectAllAtom = atom(null, (_get, set) => {
+  const ids = new Set(
+    _get(drawingsAtom)
+      .filter((d) => d.visible !== false)
+      .map((d) => d.id),
+  );
+  set(selectedDrawingIdsAtom, ids);
+  set(selectedDrawingIdAtom, null);
+});
+
+export const clearDrawingsAtom = atom(null, (_get, set) => {
+  set(drawingsAtom, []);
+  set(selectedDrawingIdAtom, null);
+  set(selectedDrawingIdsAtom, new Set());
+  localStore.set(drawingsKey(_get(symbolAtom)), []);
+});
+
+export const addIndicatorAtom = atom(null, (_get, set, type: IndicatorType) => {
+  const cfg = defaultIndicator(type, uid("ind"));
+  const indicators = [..._get(indicatorsAtom), cfg];
+  set(indicatorsAtom, indicators);
+  localStore.set("indicators", indicators);
+});
+
+export const toggleIndicatorAtom = atom(
+  null,
+  (_get, set, type: IndicatorType) => {
+    const current = _get(indicatorsAtom);
     const has = current.some((i) => i.type === type);
-    // Off if any instance of this type exists; on otherwise. Always produce a
-    // NEW array so subscribers (menu + chart) re-render.
     const indicators = has
       ? current.filter((i) => i.type !== type)
       : [...current, defaultIndicator(type, uid("ind"))];
-    set({ indicators });
+    set(indicatorsAtom, indicators);
     localStore.set("indicators", indicators);
   },
-  updateIndicator: (id, patch) => {
-    const indicators = get().indicators.map((i) =>
+);
+
+export const updateIndicatorAtom = atom(
+  null,
+  (_get, set, arg: { id: string; patch: Partial<IndicatorConfig> }) => {
+    const { id, patch } = arg;
+    const indicators = _get(indicatorsAtom).map((i) =>
       i.id === id ? { ...i, ...patch } : i,
     );
-    set({ indicators });
+    set(indicatorsAtom, indicators);
     localStore.set("indicators", indicators);
   },
-  removeIndicator: (id) => {
-    const indicators = get().indicators.filter((i) => i.id !== id);
-    set({ indicators });
-    localStore.set("indicators", indicators);
-  },
-  clearIndicators: () => {
-    set({ indicators: [] });
-    localStore.set("indicators", []);
-  },
+);
 
-  setCrosshair: (crosshair) => set({ crosshair }),
-  setEditingIndicator: (editingIndicatorId) => set({ editingIndicatorId }),
+export const removeIndicatorAtom = atom(null, (_get, set, id: string) => {
+  const indicators = _get(indicatorsAtom).filter((i) => i.id !== id);
+  set(indicatorsAtom, indicators);
+  localStore.set("indicators", indicators);
+});
+
+export const clearIndicatorsAtom = atom(null, (_get, set) => {
+  set(indicatorsAtom, []);
+  localStore.set("indicators", []);
+});
+
+export const setCrosshairAtom = atom(
+  null,
+  (
+    _get,
+    set,
+    c: {
+      time: number;
+      candle: Candle | null;
+    } | null,
+  ) => {
+    set(crosshairAtom, c);
+  },
+);
+
+export const setEditingIndicatorAtom = atom(
+  null,
+  (_get, set, id: string | null) => {
+    set(editingIndicatorIdAtom, id);
+  },
+);
+
+export const hydrateAtom = atom(null, (_get, set) => {
+  set(
+    drawingsAtom,
+    localStore.get<Drawing[]>(drawingsKey(_get(symbolAtom)), []),
+  );
+  set(indicatorsAtom, localStore.get<IndicatorConfig[]>("indicators", []));
+});
+
+// ---------------------------------------------------------------------------
+// Derived read-only atom (for compatibility / getChartState)
+// ---------------------------------------------------------------------------
+
+export const chartStateAtom = atom((get) => ({
+  symbol: get(symbolAtom),
+  timeframe: get(timeframeAtom),
+  candles: get(candlesAtom),
+  loading: get(loadingAtom),
+  drawings: get(drawingsAtom),
+  indicators: get(indicatorsAtom),
+  activeTool: get(activeToolAtom),
+  drawColor: get(drawColorAtom),
+  selectedDrawingId: get(selectedDrawingIdAtom),
+  selectedDrawingIds: get(selectedDrawingIdsAtom),
+  drawingsLocked: get(drawingsLockedAtom),
+  drawingsHidden: get(drawingsHiddenAtom),
+  editingIndicatorId: get(editingIndicatorIdAtom),
+  crosshair: get(crosshairAtom),
 }));
+
+// ---------------------------------------------------------------------------
+// Non-React helper
+// ---------------------------------------------------------------------------
+
+export function getChartState() {
+  return getDefaultStore().get(chartStateAtom);
+}
+
+// ---------------------------------------------------------------------------
+// Compatibility hook (state reading only)
+// ---------------------------------------------------------------------------
+
+type ChartStateSnapshot = ReturnType<typeof getChartState>;
+
+export function useChartStore(): ChartStateSnapshot;
+export function useChartStore<T>(selector: (state: ChartStateSnapshot) => T): T;
+export function useChartStore<T = ChartStateSnapshot>(
+  selector?: (state: ChartStateSnapshot) => T,
+): T {
+  const state = useAtomValue(chartStateAtom);
+  return (selector ? selector(state) : state) as T;
+}

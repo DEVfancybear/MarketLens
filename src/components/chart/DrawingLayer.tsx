@@ -2,7 +2,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  drawingsAtom,
+  activeToolAtom,
+  drawColorAtom,
+  selectedDrawingIdAtom,
+  selectedDrawingIdsAtom,
+  drawingsLockedAtom,
+  drawingsHiddenAtom,
+  addDrawingAtom,
+  updateDrawingAtom,
+  selectDrawingAtom,
+  toggleSelectDrawingAtom,
+  removeDrawingAtom,
+  duplicateDrawingAtom,
+  setActiveToolAtom,
+  selectAllAtom,
+} from "@/store/chartStore";
 import type { Drawing, Point } from "@/types";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import {
@@ -17,21 +34,21 @@ import { uid } from "@/utils/id";
 export function DrawingLayer() {
   const ctx = useChartCtx();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawings = useChartStore((s) => s.drawings);
-  const activeTool = useChartStore((s) => s.activeTool);
-  const drawColor = useChartStore((s) => s.drawColor);
-  const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
-  const selectedDrawingIds = useChartStore((s) => s.selectedDrawingIds);
-  const drawingsLocked = useChartStore((s) => s.drawingsLocked);
-  const drawingsHidden = useChartStore((s) => s.drawingsHidden);
-  const addDrawing = useChartStore((s) => s.addDrawing);
-  const updateDrawing = useChartStore((s) => s.updateDrawing);
-  const selectDrawing = useChartStore((s) => s.selectDrawing);
-  const toggleSelectDrawing = useChartStore((s) => s.toggleSelectDrawing);
-  const removeDrawing = useChartStore((s) => s.removeDrawing);
-  const duplicateDrawing = useChartStore((s) => s.duplicateDrawing);
-  const setActiveTool = useChartStore((s) => s.setActiveTool);
-  const selectAll = useChartStore((s) => s.selectAll);
+  const drawings = useAtomValue(drawingsAtom);
+  const activeTool = useAtomValue(activeToolAtom);
+  const drawColor = useAtomValue(drawColorAtom);
+  const selectedDrawingId = useAtomValue(selectedDrawingIdAtom);
+  const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
+  const drawingsLocked = useAtomValue(drawingsLockedAtom);
+  const drawingsHidden = useAtomValue(drawingsHiddenAtom);
+  const addDrawing = useSetAtom(addDrawingAtom);
+  const updateDrawing = useSetAtom(updateDrawingAtom);
+  const selectDrawing = useSetAtom(selectDrawingAtom);
+  const toggleSelectDrawing = useSetAtom(toggleSelectDrawingAtom);
+  const removeDrawing = useSetAtom(removeDrawingAtom);
+  const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
+  const setActiveTool = useSetAtom(setActiveToolAtom);
+  const selectAll = useSetAtom(selectAllAtom);
 
   const [textEdit, setTextEdit] = useState<{
     drawingId: string;

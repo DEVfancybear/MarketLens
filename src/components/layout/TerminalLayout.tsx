@@ -1,6 +1,12 @@
 "use client";
 import { cn } from "@/utils/cn";
-import { useUIStore } from "@/store/uiStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  panelsAtom,
+  rightOpenAtom,
+  bottomOpenAtom,
+  setPanelAtom,
+} from "@/store/uiStore";
 import { Resizer } from "@/components/ui/Resizer";
 
 /**
@@ -28,7 +34,10 @@ export function TerminalLayout({
   watchlist: React.ReactNode;
   bottom: React.ReactNode;
 }) {
-  const { panels, rightOpen, bottomOpen, setPanel } = useUIStore();
+  const panels = useAtomValue(panelsAtom);
+  const rightOpen = useAtomValue(rightOpenAtom);
+  const bottomOpen = useAtomValue(bottomOpenAtom);
+  const setPanel = useSetAtom(setPanelAtom);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg">

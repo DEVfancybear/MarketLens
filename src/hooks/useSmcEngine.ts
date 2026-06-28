@@ -1,9 +1,10 @@
-'use client';
-import { useEffect, useRef } from 'react';
-import { useVisibleCandles } from '@/hooks/useVisibleCandles';
-import { useSmcStore } from '@/store/smcStore';
-import { computeSmc } from '@/services/smc/smcEngine';
-import type { SmcSnapshot } from '@/types';
+"use client";
+import { useEffect, useRef } from "react";
+import { useVisibleCandles } from "@/hooks/useVisibleCandles";
+import { setSmcSnapshotAtom } from "@/store/smcStore";
+import { useSetAtom } from "jotai";
+import { computeSmc } from "@/services/smc/smcEngine";
+import type { SmcSnapshot } from "@/types";
 
 const THROTTLE_MS = 90;
 
@@ -15,7 +16,7 @@ const THROTTLE_MS = 90;
  */
 export function useSmcEngine() {
   const candles = useVisibleCandles();
-  const setSnapshot = useSmcStore((s) => s.setSnapshot);
+  const setSnapshot = useSetAtom(setSmcSnapshotAtom);
 
   const workerRef = useRef<Worker | null>(null);
   const reqRef = useRef(0);
@@ -26,8 +27,12 @@ export function useSmcEngine() {
   // Spin up the worker once.
   useEffect(() => {
     try {
-      const worker = new Worker(new URL('../workers/smc.worker.ts', import.meta.url));
-      worker.onmessage = (e: MessageEvent<{ reqId: number; snapshot?: SmcSnapshot }>) => {
+      const worker = new Worker(
+        new URL("../workers/smc.worker.ts", import.meta.url),
+      );
+      worker.onmessage = (
+        e: MessageEvent<{ reqId: number; snapshot?: SmcSnapshot }>,
+      ) => {
         // Only accept the latest in-flight request.
         if (e.data.snapshot && e.data.reqId === reqRef.current) {
           setSnapshot(e.data.snapshot);

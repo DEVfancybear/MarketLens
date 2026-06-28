@@ -1,8 +1,9 @@
-'use client';
-import { useEffect } from 'react';
-import { useVisibleCandles } from '@/hooks/useVisibleCandles';
-import { useChartStore } from '@/store/chartStore';
-import { useTradeStore } from '@/store/tradeStore';
+"use client";
+import { useEffect } from "react";
+import { useVisibleCandles } from "@/hooks/useVisibleCandles";
+import { useAtomValue, useSetAtom } from "jotai";
+import { symbolAtom } from "@/store/chartStore";
+import { setTradeMarketAtom } from "@/store/tradeStore";
 
 /**
  * Streams the most recently revealed candle into the trade simulator so pending
@@ -11,11 +12,11 @@ import { useTradeStore } from '@/store/tradeStore';
  */
 export function useTradeRuntime() {
   const candles = useVisibleCandles();
-  const symbol = useChartStore((s) => s.symbol);
-  const setMarket = useTradeStore((s) => s.setMarket);
+  const symbol = useAtomValue(symbolAtom);
+  const setMarket = useSetAtom(setTradeMarketAtom);
 
   useEffect(() => {
     const last = candles[candles.length - 1];
-    if (last) setMarket(symbol, last);
+    if (last) setMarket({ symbol, candle: last });
   }, [candles, symbol, setMarket]);
 }

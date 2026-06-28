@@ -28,7 +28,14 @@ import {
   Palette,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  activeToolAtom,
+  drawColorAtom,
+  setActiveToolAtom,
+  setDrawColorAtom,
+  clearDrawingsAtom,
+} from "@/store/chartStore";
 import type { DrawingTool } from "@/types";
 
 // ---- Tool groups (TradingView pattern) ----
@@ -191,7 +198,7 @@ const COLORS = [
 
 /** Track which tool is "last used" per group for the visible icon. */
 function useLastUsed(): Record<string, DrawingTool> {
-  const activeTool = useChartStore((s) => s.activeTool);
+  const activeTool = useAtomValue(activeToolAtom);
   const [lastUsed, setLastUsed] = useState<Record<string, DrawingTool>>({});
 
   // When activeTool changes, update the last-used record for its group.
@@ -215,11 +222,11 @@ function useLastUsed(): Record<string, DrawingTool> {
 }
 
 export function DrawingToolbar() {
-  const activeTool = useChartStore((s) => s.activeTool);
-  const setActiveTool = useChartStore((s) => s.setActiveTool);
-  const drawColor = useChartStore((s) => s.drawColor);
-  const setDrawColor = useChartStore((s) => s.setDrawColor);
-  const clearDrawings = useChartStore((s) => s.clearDrawings);
+  const activeTool = useAtomValue(activeToolAtom);
+  const setActiveTool = useSetAtom(setActiveToolAtom);
+  const drawColor = useAtomValue(drawColorAtom);
+  const setDrawColor = useSetAtom(setDrawColorAtom);
+  const clearDrawings = useSetAtom(clearDrawingsAtom);
   const lastUsed = useLastUsed();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);

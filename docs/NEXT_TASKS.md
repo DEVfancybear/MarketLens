@@ -17,6 +17,7 @@
 - **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + fibExtension,
   plugin architecture, 2-point creation, auto-levels with labels, full hitTest/movePoints/boundingBox).
 - **✅ Phase 5 — Left Toolbar / Indicator Engine: COMPLETE** (see below).
+- **✅ Jotai migration — COMPLETE** (all 11 stores converted to atoms, Zustand removed).
 
 ## Completed — Phase 5 (Left Toolbar / Indicator Engine)
 

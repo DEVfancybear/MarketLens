@@ -3,7 +3,14 @@ import { useMemo, useState } from "react";
 import type { IChartApi } from "lightweight-charts";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useVisibleCandles } from "@/hooks/useVisibleCandles";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue } from "jotai";
+import {
+  symbolAtom,
+  timeframeAtom,
+  loadingAtom,
+  indicatorsAtom,
+  crosshairAtom,
+} from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { PriceChart } from "./PriceChart";
 import { IndicatorPane } from "./IndicatorPane";
@@ -21,11 +28,11 @@ import { fmtPrice } from "@/utils/format";
 export function ChartArea() {
   useMarketData();
   const candles = useVisibleCandles();
-  const symbol = useChartStore((s) => s.symbol);
-  const timeframe = useChartStore((s) => s.timeframe);
-  const loading = useChartStore((s) => s.loading);
-  const indicators = useChartStore((s) => s.indicators);
-  const crosshair = useChartStore((s) => s.crosshair);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const loading = useAtomValue(loadingAtom);
+  const indicators = useAtomValue(indicatorsAtom);
+  const crosshair = useAtomValue(crosshairAtom);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
 
   const meta = getMarketSymbol(symbol);

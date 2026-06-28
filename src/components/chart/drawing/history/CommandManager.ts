@@ -115,16 +115,16 @@ export class DeleteDrawingCommand implements Command {
 export class MoveDrawingCommand implements Command {
   readonly label = "Move Drawing";
   constructor(
-    private updateFn: (id: string, patch: Partial<Drawing>) => void,
+    private updateFn: (arg: { id: string; patch: Partial<Drawing> }) => void,
     private drawingId: string,
     private newPoints: Point[],
     private oldPoints: Point[],
   ) {}
   execute() {
-    this.updateFn(this.drawingId, { points: this.newPoints });
+    this.updateFn({ id: this.drawingId, patch: { points: this.newPoints } });
   }
   undo() {
-    this.updateFn(this.drawingId, { points: this.oldPoints });
+    this.updateFn({ id: this.drawingId, patch: { points: this.oldPoints } });
   }
 }
 
@@ -156,15 +156,15 @@ export class DuplicateDrawingCommand implements Command {
 export class PropertyChangeCommand implements Command {
   readonly label = "Change Properties";
   constructor(
-    private updateFn: (id: string, patch: Partial<Drawing>) => void,
+    private updateFn: (arg: { id: string; patch: Partial<Drawing> }) => void,
     private drawingId: string,
     private newProps: Partial<Drawing>,
     private oldProps: Partial<Drawing>,
   ) {}
   execute() {
-    this.updateFn(this.drawingId, this.newProps);
+    this.updateFn({ id: this.drawingId, patch: this.newProps });
   }
   undo() {
-    this.updateFn(this.drawingId, this.oldProps);
+    this.updateFn({ id: this.drawingId, patch: this.oldProps });
   }
 }

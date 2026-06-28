@@ -14,7 +14,7 @@
  */
 import {
   attachMarketDataService,
-  useMarketDataStore,
+  getMarketDataState,
   type MarketDataServiceBinding,
 } from "@/store/marketDataStore";
 import {
@@ -203,7 +203,7 @@ export class MarketDataService implements MarketDataServiceBinding {
 
   // --------------------------------------------------------------- event routing
   private handleEvent(event: MarketDataEvent) {
-    const store = useMarketDataStore.getState();
+    const store = getMarketDataState();
     switch (event.type) {
       case "quote": {
         store.updateQuote(event.quote);

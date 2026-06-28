@@ -1,4 +1,4 @@
-'use client';
+"use client";
 /**
  * useMarketData (Phase 1, Step 11) — realtime chart feed.
  *
@@ -15,25 +15,32 @@
  *
  * No sockets are created here; the MarketDataService/providers own connections.
  */
-import { useEffect } from 'react';
-import { useChartStore } from '@/store/chartStore';
-import { useReplayStore } from '@/store/replayStore';
-import { useUIStore } from '@/store/uiStore';
-import { useMarketDataStore } from '@/store/marketDataStore';
-import { useCandles } from '@/hooks/useCandles';
-import { getMarketDataService } from '@/services/market-data/MarketDataService';
-import { getHistoricalDataService } from '@/services/market-data/HistoricalDataService';
-import type { Candle } from '@/types';
+import { useEffect } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  symbolAtom,
+  timeframeAtom,
+  setCandlesAtom,
+  setLoadingAtom,
+} from "@/store/chartStore";
+import { disarmAtom, setTotalAtom } from "@/store/replayStore";
+import { getDefaultStore } from "jotai";
+import { logAtom } from "@/store/uiStore";
+import { getMarketDataState } from "@/store/marketDataStore";
+import { useCandles } from "@/hooks/useCandles";
+import { getMarketDataService } from "@/services/market-data/MarketDataService";
+import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
+import type { Candle } from "@/types";
 
 const HISTORY_BARS = 1500;
 
 export function useMarketData() {
-  const symbol = useChartStore((s) => s.symbol);
-  const timeframe = useChartStore((s) => s.timeframe);
-  const setCandles = useChartStore((s) => s.setCandles);
-  const setLoading = useChartStore((s) => s.setLoading);
-  const disarm = useReplayStore((s) => s.disarm);
-  const setTotal = useReplayStore((s) => s.setTotal);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const setCandles = useSetAtom(setCandlesAtom);
+  const setLoading = useSetAtom(setLoadingAtom);
+  const disarm = useSetAtom(disarmAtom);
+  const setTotal = useSetAtom(setTotalAtom);
 
   // Realtime candle series from the store for the active symbol+timeframe.
   const liveCandles = useCandles(symbol, timeframe);
@@ -42,7 +49,7 @@ export function useMarketData() {
   useEffect(() => {
     let cancelled = false;
     getMarketDataService(); // ensure the service exists + is bound to the store
-    useMarketDataStore.getState().selectMarket(symbol, timeframe);
+    getMarketDataState().selectMarket(symbol, timeframe);
     disarm(); // a new market invalidates any replay cursor
     setLoading(true);
 
@@ -51,13 +58,17 @@ export function useMarketData() {
       .then((hist) => {
         if (cancelled) return;
         // Seed the store; realtime klines then merge onto this via updateCandle.
-        useMarketDataStore.getState().setCandles(symbol, timeframe, hist);
+        getMarketDataState().setCandles(symbol, timeframe, hist);
         setLoading(false);
       })
       .catch((err) => {
         if (cancelled) return;
         setLoading(false);
-        useUIStore.getState().log('error', `History load failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`);
+        getDefaultStore().set(
+          logAtom,
+          "error",
+          `History load failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
+        );
       });
 
     return () => {

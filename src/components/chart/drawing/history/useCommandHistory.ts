@@ -23,7 +23,7 @@ export interface UseCommandHistory {
 export function useCommandHistory(
   addDrawing: (d: Drawing) => void,
   removeDrawing: (id: string) => void,
-  updateDrawing: (id: string, patch: Partial<Drawing>) => void,
+  updateDrawing: (arg: { id: string; patch: Partial<Drawing> }) => void,
 ): UseCommandHistory {
   const managerRef = useRef(new CommandManager());
 

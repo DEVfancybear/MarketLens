@@ -1,75 +1,84 @@
-'use client';
-import { create } from 'zustand';
-import type { Candle, OrderRequest, Position } from '@/types';
+"use client";
+import { atom, getDefaultStore } from "jotai";
+import { useAtomValue } from "jotai";
+import { useMemo } from "react";
+import type { Candle, OrderRequest, Position } from "@/types";
 import {
-  checkExit, checkPendingTrigger, computeRisk, realizedFor, rMultiple, unrealized,
-} from '@/services/tradeEngine';
-import { uid } from '@/utils/id';
-import { useJournalStore } from './journalStore';
-import { useUIStore } from './uiStore';
+  checkExit,
+  checkPendingTrigger,
+  computeRisk,
+  realizedFor,
+  rMultiple,
+  unrealized,
+} from "@/services/tradeEngine";
+import { uid } from "@/utils/id";
+import { addJournalEntryAtom } from "./journalStore";
+import { logAtom } from "./uiStore";
 
 const STARTING_EQUITY = 10_000;
 
-interface TradeState {
-  equity: number;
-  startingEquity: number;
-  positions: Position[];
-  /** Latest known price/time (from the visible candle stream). */
-  price: number;
-  time: number;
-  symbol: string;
+// ── Individual state atoms ───────────────────────────────────────────────────
+export const equityAtom = atom(STARTING_EQUITY);
+export const startingEquityAtom = atom(STARTING_EQUITY);
+export const positionsAtom = atom<Position[]>([]);
+export const priceAtom = atom(0);
+export const timeAtom = atom(0);
+export const tradeSymbolAtom = atom("");
 
-  setMarket: (symbol: string, candle: Candle) => void;
-  place: (order: OrderRequest) => void;
-  closePosition: (id: string, fraction?: number) => void;
-  cancelPending: (id: string) => void;
-  closeAll: () => void;
-  reset: () => void;
-}
+// ── Write atoms (actions) ────────────────────────────────────────────────────
 
-export const useTradeStore = create<TradeState>((set, get) => ({
-  equity: STARTING_EQUITY,
-  startingEquity: STARTING_EQUITY,
-  positions: [],
-  price: 0,
-  time: 0,
-  symbol: '',
-
-  /** Feed the latest candle: refresh marks and process pending/exit triggers. */
-  setMarket: (symbol, candle) => {
+/** Feed the latest candle: refresh marks and process pending/exit triggers. */
+export const setTradeMarketAtom = atom(
+  null,
+  (get, set, payload: { symbol: string; candle: Candle }) => {
+    const { symbol, candle } = payload;
     const price = candle.close;
-    const state = get();
 
-    const positions = state.positions.map((p) => ({ ...p }));
+    const positions = get(positionsAtom).map((p) => ({ ...p }));
     const justClosed: Position[] = [];
     let equityDelta = 0;
 
     for (const p of positions) {
-      if (p.status === 'pending') {
+      if (p.status === "pending") {
         const trig = checkPendingTrigger(p, candle);
-        if (trig?.type === 'fill') {
-          p.status = 'open';
+        if (trig?.type === "fill") {
+          p.status = "open";
           p.openTime = candle.time;
-          p.fills.push({ time: candle.time, price: trig.price, quantity: p.quantity, kind: 'open' });
-          useUIStore.getState().log('info', `${p.side.toUpperCase()} ${p.symbol} filled @ ${trig.price}`);
+          p.fills.push({
+            time: candle.time,
+            price: trig.price,
+            quantity: p.quantity,
+            kind: "open",
+          });
+          getDefaultStore().set(
+            logAtom,
+            "info",
+            `${p.side.toUpperCase()} ${p.symbol} filled @ ${trig.price}`,
+          );
         }
       }
-      if (p.status === 'open') {
+      if (p.status === "open") {
         const exit = checkExit(p, candle);
         if (exit) {
-          // Realize only the still-open remainder at the exit price.
           const pnl = realizedFor(p, exit.price, p.remaining);
           p.realizedPnl += pnl;
           equityDelta += pnl;
-          p.fills.push({ time: candle.time, price: exit.price, quantity: -p.remaining, kind: 'close' });
+          p.fills.push({
+            time: candle.time,
+            price: exit.price,
+            quantity: -p.remaining,
+            kind: "close",
+          });
           p.remaining = 0;
-          p.status = 'closed';
+          p.status = "closed";
           p.closeTime = candle.time;
           p.unrealizedPnl = 0;
           justClosed.push(p);
-          useUIStore
-            .getState()
-            .log(exit.type === 'target' ? 'info' : 'warn', `${p.symbol} ${exit.type} hit @ ${exit.price} (${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)})`);
+          getDefaultStore().set(
+            logAtom,
+            exit.type === "target" ? "info" : "warn",
+            `${p.symbol} ${exit.type} hit @ ${exit.price} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)})`,
+          );
         } else {
           p.unrealizedPnl = unrealized(p, price);
         }
@@ -78,60 +87,79 @@ export const useTradeStore = create<TradeState>((set, get) => ({
 
     justClosed.forEach((p) => journalize(p));
 
-    set({ symbol, price, time: candle.time, positions, equity: state.equity + equityDelta });
+    set(tradeSymbolAtom, symbol);
+    set(priceAtom, price);
+    set(timeAtom, candle.time);
+    set(positionsAtom, positions);
+    set(equityAtom, get(equityAtom) + equityDelta);
   },
+);
 
-  place: (order) => {
-    const { price, time, equity, symbol } = get();
-    const entryPrice = order.price ?? price;
-    if (!entryPrice) return;
-    const risk = computeRisk(order, price, equity);
-    const isMarket = order.type === 'market';
+export const placeOrderAtom = atom(null, (get, set, order: OrderRequest) => {
+  const price = get(priceAtom);
+  const time = get(timeAtom);
+  const equity = get(equityAtom);
+  const symbol = get(tradeSymbolAtom);
+  const entryPrice = order.price ?? price;
+  if (!entryPrice) return;
+  const risk = computeRisk(order, price, equity);
+  const isMarket = order.type === "market";
 
-    const pos: Position = {
-      id: uid('pos'),
-      symbol: order.symbol || symbol,
-      side: order.side,
-      type: order.type,
-      status: isMarket ? 'open' : 'pending',
-      entry: isMarket ? price : entryPrice,
-      quantity: risk.positionSize,
-      remaining: risk.positionSize,
-      stopLoss: order.stopLoss,
-      takeProfit: order.takeProfit,
-      riskPct: order.riskPct,
-      riskAmount: risk.riskAmount,
-      openTime: time,
-      realizedPnl: 0,
-      unrealizedPnl: 0,
-      fills: isMarket
-        ? [{ time, price, quantity: risk.positionSize, kind: 'open' }]
-        : [],
-      notes: order.notes,
-    };
+  const pos: Position = {
+    id: uid("pos"),
+    symbol: order.symbol || symbol,
+    side: order.side,
+    type: order.type,
+    status: isMarket ? "open" : "pending",
+    entry: isMarket ? price : entryPrice,
+    quantity: risk.positionSize,
+    remaining: risk.positionSize,
+    stopLoss: order.stopLoss,
+    takeProfit: order.takeProfit,
+    riskPct: order.riskPct,
+    riskAmount: risk.riskAmount,
+    openTime: time,
+    realizedPnl: 0,
+    unrealizedPnl: 0,
+    fills: isMarket
+      ? [{ time, price, quantity: risk.positionSize, kind: "open" }]
+      : [],
+    notes: order.notes,
+  };
 
-    set({ positions: [pos, ...get().positions] });
-    useUIStore
-      .getState()
-      .log('info', `${isMarket ? 'Market' : order.type} ${order.side.toUpperCase()} ${pos.symbol} ${risk.positionSize.toFixed(4)} @ ${pos.entry.toFixed(5)}`);
-  },
+  set(positionsAtom, [pos, ...get(positionsAtom)]);
+  getDefaultStore().set(
+    logAtom,
+    "info",
+    `${isMarket ? "Market" : order.type} ${order.side.toUpperCase()} ${pos.symbol} ${risk.positionSize.toFixed(4)} @ ${pos.entry.toFixed(5)}`,
+  );
+});
 
-  closePosition: (id, fraction = 1) => {
-    const { price, time } = get();
-    const positions = get().positions.map((p) => ({ ...p }));
+export const closePositionAtom = atom(
+  null,
+  (get, set, payload: { id: string; fraction?: number }) => {
+    const { id, fraction = 1 } = payload;
+    const price = get(priceAtom);
+    const time = get(timeAtom);
+    const positions = get(positionsAtom).map((p) => ({ ...p }));
     const p = positions.find((x) => x.id === id);
-    if (!p || p.status !== 'open') return;
+    if (!p || p.status !== "open") return;
 
     const qty = Math.min(p.remaining, p.remaining * fraction);
     const pnl = realizedFor(p, price, qty);
     p.realizedPnl += pnl;
     p.remaining -= qty;
-    p.fills.push({ time, price, quantity: -qty, kind: p.remaining > 1e-9 ? 'partial' : 'close' });
+    p.fills.push({
+      time,
+      price,
+      quantity: -qty,
+      kind: p.remaining > 1e-9 ? "partial" : "close",
+    });
 
     let equityDelta = pnl;
     if (p.remaining <= 1e-9) {
       p.remaining = 0;
-      p.status = 'closed';
+      p.status = "closed";
       p.closeTime = time;
       p.unrealizedPnl = 0;
       journalize(p);
@@ -139,38 +167,55 @@ export const useTradeStore = create<TradeState>((set, get) => ({
       p.unrealizedPnl = unrealized(p, price);
     }
 
-    set({ positions, equity: get().equity + equityDelta });
-    useUIStore.getState().log('info', `Closed ${(fraction * 100).toFixed(0)}% ${p.symbol} (${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)})`);
+    set(positionsAtom, positions);
+    set(equityAtom, get(equityAtom) + equityDelta);
+    getDefaultStore().set(
+      logAtom,
+      "info",
+      `Closed ${(fraction * 100).toFixed(0)}% ${p.symbol} (${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)})`,
+    );
   },
+);
 
-  cancelPending: (id) => {
-    set({
-      positions: get().positions.map((p) =>
-        p.id === id && p.status === 'pending' ? { ...p, status: 'cancelled' } : p,
-      ),
-    });
-  },
+export const cancelPendingAtom = atom(null, (get, set, id: string) => {
+  set(
+    positionsAtom,
+    get(positionsAtom).map((p) =>
+      p.id === id && p.status === "pending"
+        ? { ...p, status: "cancelled" as const }
+        : p,
+    ),
+  );
+});
 
-  closeAll: () => {
-    get().positions.filter((p) => p.status === 'open').forEach((p) => get().closePosition(p.id, 1));
-  },
+export const closeAllAtom = atom(null, (get, set) => {
+  const positions = get(positionsAtom);
+  for (const p of positions.filter((p) => p.status === "open")) {
+    set(closePositionAtom, { id: p.id, fraction: 1 });
+  }
+});
 
-  reset: () =>
-    set({ positions: [], equity: get().startingEquity, price: 0, time: 0 }),
-}));
+export const resetTradeAtom = atom(null, (get, set) => {
+  set(positionsAtom, []);
+  set(equityAtom, get(startingEquityAtom));
+  set(priceAtom, 0);
+  set(timeAtom, 0);
+});
 
-// --- helpers ---
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Persist a closed position as a journal entry. */
 function journalize(p: Position) {
-  if (p.status !== 'closed') return;
-  const closeFills = p.fills.filter((f) => f.kind !== 'open');
-  const exitQty = closeFills.reduce((s, f) => s + Math.abs(f.quantity), 0) || p.quantity;
+  if (p.status !== "closed") return;
+  const closeFills = p.fills.filter((f) => f.kind !== "open");
+  const exitQty =
+    closeFills.reduce((s, f) => s + Math.abs(f.quantity), 0) || p.quantity;
   const exitPrice =
-    closeFills.reduce((s, f) => s + f.price * Math.abs(f.quantity), 0) / (exitQty || 1);
+    closeFills.reduce((s, f) => s + f.price * Math.abs(f.quantity), 0) /
+    (exitQty || 1);
 
-  useJournalStore.getState().add({
-    id: uid('jrn'),
+  getDefaultStore().set(addJournalEntryAtom, {
+    id: uid("jrn"),
     symbol: p.symbol,
     side: p.side,
     entryTime: p.openTime,
@@ -183,4 +228,69 @@ function journalize(p: Position) {
     riskAmount: p.riskAmount,
     notes: p.notes,
   });
+}
+
+// ── Combined state (read-only derived atom) ──────────────────────────────────
+export interface TradeState {
+  equity: number;
+  startingEquity: number;
+  positions: Position[];
+  price: number;
+  time: number;
+  symbol: string;
+}
+
+export interface TradeActions {
+  setMarket: (symbol: string, candle: Candle) => void;
+  place: (order: OrderRequest) => void;
+  closePosition: (id: string, fraction?: number) => void;
+  cancelPending: (id: string) => void;
+  closeAll: () => void;
+  reset: () => void;
+}
+
+type TradeStoreInterface = TradeState & TradeActions;
+
+const tradeStateAtom = atom<TradeState>((get) => ({
+  equity: get(equityAtom),
+  startingEquity: get(startingEquityAtom),
+  positions: get(positionsAtom),
+  price: get(priceAtom),
+  time: get(timeAtom),
+  symbol: get(tradeSymbolAtom),
+}));
+
+const tradeCombinedAtom = atom<TradeStoreInterface>((get) => {
+  const state = get(tradeStateAtom);
+  const store = getDefaultStore();
+  return {
+    ...state,
+    setMarket: (symbol, candle) =>
+      store.set(setTradeMarketAtom, { symbol, candle }),
+    place: (order) => store.set(placeOrderAtom, order),
+    closePosition: (id, fraction = 1) =>
+      store.set(closePositionAtom, { id, fraction }),
+    cancelPending: (id) => store.set(cancelPendingAtom, id),
+    closeAll: () => store.set(closeAllAtom),
+    reset: () => store.set(resetTradeAtom),
+  };
+});
+
+// ── Compatibility hook ───────────────────────────────────────────────────────
+export function useTradeStore(): TradeStoreInterface;
+export function useTradeStore<T>(
+  selector: (state: TradeStoreInterface) => T,
+): T;
+export function useTradeStore<T>(
+  selector?: (state: TradeStoreInterface) => T,
+): TradeStoreInterface | T {
+  const combined = useAtomValue(tradeCombinedAtom);
+  if (!selector) return combined;
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return useMemo(() => selector(combined), [combined, selector]);
+}
+
+// ── Non-React accessor ───────────────────────────────────────────────────────
+export function getTradeState(): TradeStoreInterface {
+  return getDefaultStore().get(tradeCombinedAtom);
 }

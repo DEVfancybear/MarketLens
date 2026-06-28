@@ -1,7 +1,12 @@
 "use client";
 import { Boxes } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
-import { useSmcStore, type SmcSettings } from "@/store/smcStore";
+import {
+  smcSettingsAtom,
+  toggleSmcAtom,
+  type SmcSettings,
+} from "@/store/smcStore";
+import { useAtomValue, useSetAtom } from "jotai";
 import { cn } from "@/utils/cn";
 
 const ITEMS: { key: keyof SmcSettings; label: string; color: string }[] = [
@@ -24,8 +29,8 @@ const ITEMS: { key: keyof SmcSettings; label: string; color: string }[] = [
 ];
 
 export function SmcMenu() {
-  const settings = useSmcStore((s) => s.settings);
-  const toggle = useSmcStore((s) => s.toggle);
+  const settings = useAtomValue(smcSettingsAtom);
+  const toggle = useSetAtom(toggleSmcAtom);
 
   return (
     <Dropdown

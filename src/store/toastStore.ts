@@ -1,13 +1,13 @@
-'use client';
+"use client";
 /**
  * Toast store — transient in-app notifications rendered by <Toaster/>.
  * Generic (used by the Alert Engine today; usable anywhere). Client-only, no
  * persistence. Auto-dismiss is handled by the Toaster component.
  */
-import { create } from 'zustand';
-import { uid } from '@/utils/id';
+import { atom, getDefaultStore } from "jotai";
+import { uid } from "@/utils/id";
 
-export type ToastVariant = 'info' | 'success' | 'warn' | 'error' | 'alert';
+export type ToastVariant = "info" | "success" | "warn" | "error" | "alert";
 
 export interface Toast {
   id: string;
@@ -29,28 +29,69 @@ export interface PushToastInput {
 const DEFAULT_DURATION = 6000;
 const MAX_TOASTS = 5;
 
-interface ToastState {
+export interface ToastState {
   toasts: Toast[];
-  push: (input: PushToastInput) => string;
-  dismiss: (id: string) => void;
-  clear: () => void;
 }
 
-export const useToastStore = create<ToastState>((set) => ({
-  toasts: [],
-  push: (input) => {
-    const toast: Toast = {
-      id: uid('toast'),
-      title: input.title,
-      message: input.message,
-      variant: input.variant ?? 'info',
-      createdAt: Date.now(),
-      duration: input.duration ?? DEFAULT_DURATION,
-    };
-    // Newest on top; cap the stack.
-    set((s) => ({ toasts: [toast, ...s.toasts].slice(0, MAX_TOASTS) }));
-    return toast.id;
-  },
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
-  clear: () => set({ toasts: [] }),
+// ---------------------------------------------------------------------------
+// Individual state atoms
+// ---------------------------------------------------------------------------
+export const toastsAtom = atom<Toast[]>([]);
+
+// ---------------------------------------------------------------------------
+// Derived read-only atom (used by compatibility hook)
+// ---------------------------------------------------------------------------
+export const toastStateAtom = atom<ToastState>((get) => ({
+  toasts: get(toastsAtom),
 }));
+
+// ---------------------------------------------------------------------------
+// Write atoms (actions)
+// ---------------------------------------------------------------------------
+
+export const pushToastAtom = atom(null, (_get, set, input: PushToastInput) => {
+  const toast: Toast = {
+    id: uid("toast"),
+    title: input.title,
+    message: input.message,
+    variant: input.variant ?? "info",
+    createdAt: Date.now(),
+    duration: input.duration ?? DEFAULT_DURATION,
+  };
+  set(toastsAtom, (prev) => [toast, ...prev].slice(0, MAX_TOASTS));
+});
+
+export const dismissToastAtom = atom(null, (_get, set, id: string) => {
+  set(toastsAtom, (prev) => prev.filter((t) => t.id !== id));
+});
+
+export const clearToastsAtom = atom(null, (_get, set) => {
+  set(toastsAtom, []);
+});
+
+// ---------------------------------------------------------------------------
+// Non-React accessor — mirrors `useToastStore.getState()` for non-React code.
+// ---------------------------------------------------------------------------
+export function getToastState() {
+  return { toasts: getDefaultStore().get(toastsAtom) };
+}
+
+// ---------------------------------------------------------------------------
+// Compatibility hook — mirrors `useToastStore(selector?)` from Zustand.
+// Prefer `useAtomValue(toastsAtom)` etc. in new code for optimal rendering.
+// ---------------------------------------------------------------------------
+import { useAtomValue } from "jotai";
+import { useMemo } from "react";
+
+export function useToastStore(): ToastState;
+export function useToastStore<T>(selector: (state: ToastState) => T): T;
+export function useToastStore<T>(
+  selector?: (state: ToastState) => T,
+): ToastState | T {
+  const state = useAtomValue(toastStateAtom);
+  if (selector) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useMemo(() => selector(state), [state, selector]);
+  }
+  return state;
+}

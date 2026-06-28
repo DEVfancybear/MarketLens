@@ -1,8 +1,19 @@
 "use client";
 import { useEffect } from "react";
-import { useReplayStore } from "@/store/replayStore";
-import { useUIStore } from "@/store/uiStore";
-import { useChartStore } from "@/store/chartStore";
+import { getReplayState } from "@/store/replayStore";
+import { getDefaultStore } from "jotai";
+import { toggleAlertCenterAtom } from "@/store/uiStore";
+import {
+  setActiveToolAtom,
+  selectedDrawingIdAtom,
+  removeDrawingAtom,
+  selectAllAtom,
+  duplicateDrawingAtom,
+  toggleIndicatorAtom,
+  editingIndicatorIdAtom,
+  activeToolAtom,
+  selectDrawingAtom,
+} from "@/store/chartStore";
 import { emit } from "@/utils/bus";
 import type { DrawingTool } from "@/types";
 
@@ -48,22 +59,22 @@ export function useHotkeys() {
       )
         return;
 
-      const r = useReplayStore.getState();
+      const r = getReplayState();
       const mod = e.ctrlKey || e.metaKey;
 
       // --- Drawing tool hotkeys (1–9) ---
       if (!mod && !e.shiftKey && !e.altKey && TOOL_SLOTS[e.key]) {
         e.preventDefault();
-        useChartStore.getState().setActiveTool(TOOL_SLOTS[e.key]);
+        getDefaultStore().set(setActiveToolAtom, TOOL_SLOTS[e.key]);
         return;
       }
 
       // --- Delete selected drawing ---
       if ((e.key === "Delete" || e.key === "Backspace") && !mod) {
-        const id = useChartStore.getState().selectedDrawingId;
+        const id = getDefaultStore().get(selectedDrawingIdAtom);
         if (id) {
           e.preventDefault();
-          useChartStore.getState().removeDrawing(id);
+          getDefaultStore().set(removeDrawingAtom, id);
         }
         return;
       }
@@ -71,16 +82,16 @@ export function useHotkeys() {
       // --- Select all drawings ---
       if (mod && e.key === "a") {
         e.preventDefault();
-        useChartStore.getState().selectAll();
+        getDefaultStore().set(selectAllAtom);
         return;
       }
 
       // --- Duplicate selected drawing ---
       if (mod && e.key === "d") {
-        const id = useChartStore.getState().selectedDrawingId;
+        const id = getDefaultStore().get(selectedDrawingIdAtom);
         if (id) {
           e.preventDefault();
-          useChartStore.getState().duplicateDrawing(id);
+          getDefaultStore().set(duplicateDrawingAtom, id);
         }
         return;
       }
@@ -95,19 +106,22 @@ export function useHotkeys() {
       // --- Ctrl+I: toggle SMA ---
       if (mod && e.key === "i") {
         e.preventDefault();
-        useChartStore.getState().toggleIndicator("SMA");
+        getDefaultStore().set(toggleIndicatorAtom, "SMA");
         return;
       }
 
       // --- Escape: deselect / cancel tool ---
       if (e.key === "Escape" && !mod) {
-        const state = useChartStore.getState();
+        const store = getDefaultStore();
         // Don't deselect if a dialog is open (indicator settings).
-        if (state.editingIndicatorId) return;
-        if (state.selectedDrawingId || state.activeTool !== "cursor") {
+        if (store.get(editingIndicatorIdAtom)) return;
+        if (
+          store.get(selectedDrawingIdAtom) ||
+          store.get(activeToolAtom) !== "cursor"
+        ) {
           e.preventDefault();
-          state.selectDrawing(null);
-          state.setActiveTool("cursor");
+          store.set(selectDrawingAtom, null);
+          store.set(setActiveToolAtom, "cursor");
         }
         return;
       }
@@ -141,7 +155,7 @@ export function useHotkeys() {
         case "A":
           if (e.altKey) {
             e.preventDefault();
-            useUIStore.getState().toggleAlertCenter();
+            getDefaultStore().set(toggleAlertCenterAtom);
           }
           return;
         case "b":

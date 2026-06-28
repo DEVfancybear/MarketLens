@@ -1,7 +1,7 @@
-'use client';
-import { useEffect, useRef } from 'react';
-import { useReplayStore } from '@/store/replayStore';
-import { speedToIntervalMs } from '@/services/replayEngine';
+"use client";
+import { useEffect, useRef } from "react";
+import { getReplayState } from "@/store/replayStore";
+import { speedToIntervalMs } from "@/services/replayEngine";
 
 /**
  * Drives the replay clock. While `playing`, advances the cursor by one candle
@@ -15,7 +15,7 @@ export function useReplayPlayback() {
 
   useEffect(() => {
     const tick = (now: number) => {
-      const { playing, speed, cursor, total, step, pause } = useReplayStore.getState();
+      const { playing, speed, cursor, total, step, pause } = getReplayState();
       if (!playing) {
         lastRef.current = now;
         accRef.current = 0;

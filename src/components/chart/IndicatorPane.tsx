@@ -8,8 +8,12 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { Candle, IndicatorConfig } from "@/types";
-import { useUIStore } from "@/store/uiStore";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import { themeAtom } from "@/store/uiStore";
+import {
+  removeIndicatorAtom,
+  setEditingIndicatorAtom,
+} from "@/store/chartStore";
 import { chartColors } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
 import { IconButton } from "@/components/ui/IconButton";
@@ -30,9 +34,9 @@ export function IndicatorPane({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const theme = useUIStore((s) => s.theme);
-  const removeIndicator = useChartStore((s) => s.removeIndicator);
-  const setEditingIndicator = useChartStore((s) => s.setEditingIndicator);
+  const theme = useAtomValue(themeAtom);
+  const removeIndicator = useSetAtom(removeIndicatorAtom);
+  const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
 
   useEffect(() => {
     if (!containerRef.current) return;

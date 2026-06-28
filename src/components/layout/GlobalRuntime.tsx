@@ -1,13 +1,14 @@
-'use client';
-import { useReplayPlayback } from '@/hooks/useReplayPlayback';
-import { useHotkeys } from '@/hooks/useHotkeys';
-import { useSmcEngine } from '@/hooks/useSmcEngine';
-import { useTradeRuntime } from '@/hooks/useTradeRuntime';
-import { useMarketDataBootstrap } from '@/hooks/useMarketDataBootstrap';
-import { useAlertEngine } from '@/hooks/useAlertEngine';
-import { useJournalStore } from '@/store/journalStore';
-import { useAlertStore } from '@/store/alertStore';
-import { useEffect } from 'react';
+"use client";
+import { useReplayPlayback } from "@/hooks/useReplayPlayback";
+import { useHotkeys } from "@/hooks/useHotkeys";
+import { useSmcEngine } from "@/hooks/useSmcEngine";
+import { useTradeRuntime } from "@/hooks/useTradeRuntime";
+import { useMarketDataBootstrap } from "@/hooks/useMarketDataBootstrap";
+import { useAlertEngine } from "@/hooks/useAlertEngine";
+import { loadJournalAtom } from "@/store/journalStore";
+import { useSetAtom } from "jotai";
+import { useAlertStore } from "@/store/alertStore";
+import { useEffect } from "react";
 
 /**
  * Headless component that mounts global runtime loops: the replay clock,
@@ -22,7 +23,7 @@ export function GlobalRuntime() {
   useAlertEngine(); // evaluates price alerts off the same realtime feed (no polling/sockets)
 
   // Hydrate the journal from IndexedDB + alerts from localStorage once on mount.
-  const loadJournal = useJournalStore((s) => s.load);
+  const loadJournal = useSetAtom(loadJournalAtom);
   const hydrateAlerts = useAlertStore((s) => s.hydrate);
   useEffect(() => {
     void loadJournal();

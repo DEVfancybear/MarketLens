@@ -1,5 +1,5 @@
 "use client";
-import { create } from "zustand";
+import { atom, getDefaultStore } from "jotai";
 import { localStore } from "@/services/storage";
 
 export type Theme = "dark" | "light";
@@ -16,16 +16,15 @@ interface PanelSizes {
   left: number;
 }
 
-interface UIState {
+/** Shape exposed by the compatibility hook / getUIState(). */
+export interface UIState {
   theme: Theme;
   panels: PanelSizes;
   bottomTab: BottomTab;
   rightOpen: boolean;
   bottomOpen: boolean;
   fullscreen: boolean;
-  /** Alert Center slide-over drawer visibility. */
   alertCenterOpen: boolean;
-  /** TradingView-style chart grid visibility (chart-settings toggle). */
   gridVisible: boolean;
   logs: {
     id: number;
@@ -33,80 +32,154 @@ interface UIState {
     level: "info" | "warn" | "error";
     msg: string;
   }[];
-
-  setTheme: (t: Theme) => void;
-  toggleGrid: () => void;
-  toggleTheme: () => void;
-  setPanel: (key: keyof PanelSizes, value: number) => void;
-  setBottomTab: (t: BottomTab) => void;
-  toggleRight: () => void;
-  toggleBottom: () => void;
-  setFullscreen: (v: boolean) => void;
-  toggleAlertCenter: () => void;
-  setAlertCenter: (v: boolean) => void;
-  log: (level: "info" | "warn" | "error", msg: string) => void;
-  /** Load persisted UI prefs from localStorage. Call once on the client. */
-  hydrate: () => void;
 }
 
 // SSR-safe deterministic defaults — identical on server and first client render.
-// Persisted values are loaded later via hydrate() to avoid hydration mismatches.
 const DEFAULT_PANELS: PanelSizes = { right: 320, bottom: 240, left: 52 };
 
-let logId = 0;
+// ---------------------------------------------------------------------------
+// Individual state atoms
+// ---------------------------------------------------------------------------
+export const themeAtom = atom<Theme>("dark");
+export const panelsAtom = atom<PanelSizes>(DEFAULT_PANELS);
+export const bottomTabAtom = atom<BottomTab>("replay");
+export const rightOpenAtom = atom<boolean>(true);
+export const bottomOpenAtom = atom<boolean>(true);
+export const fullscreenAtom = atom<boolean>(false);
+export const alertCenterOpenAtom = atom<boolean>(false);
+export const gridVisibleAtom = atom<boolean>(true);
+export const logsAtom = atom<
+  { id: number; time: number; level: "info" | "warn" | "error"; msg: string }[]
+>([]);
 
-export const useUIStore = create<UIState>((set, get) => ({
-  theme: "dark",
-  panels: DEFAULT_PANELS,
-  bottomTab: "replay",
-  rightOpen: true,
-  bottomOpen: true,
-  fullscreen: false,
-  alertCenterOpen: false,
-  gridVisible: true,
-  logs: [],
+// Internal counter for log ids.
+const logIdAtom = atom(0);
 
-  hydrate: () => {
-    const persisted = localStore.get("ui", {
-      theme: get().theme,
-      panels: get().panels,
-    });
-    set({ theme: persisted.theme, panels: persisted.panels });
-    if (typeof document !== "undefined") {
-      document.documentElement.className = `theme-${persisted.theme}`;
-    }
-  },
-
-  setTheme: (theme) => {
-    set({ theme });
-    localStore.set("ui", { theme, panels: get().panels });
-    if (typeof document !== "undefined") {
-      document.documentElement.className = `theme-${theme}`;
-    }
-  },
-  toggleTheme: () => get().setTheme(get().theme === "dark" ? "light" : "dark"),
-
-  toggleGrid: () => set((s) => ({ gridVisible: !s.gridVisible })),
-
-  setPanel: (key, value) => {
-    const panels = { ...get().panels, [key]: value };
-    set({ panels });
-    localStore.set("ui", { theme: get().theme, panels });
-  },
-
-  setBottomTab: (bottomTab) => set({ bottomTab, bottomOpen: true }),
-  toggleRight: () => set((s) => ({ rightOpen: !s.rightOpen })),
-  toggleBottom: () => set((s) => ({ bottomOpen: !s.bottomOpen })),
-  setFullscreen: (fullscreen) => set({ fullscreen }),
-  toggleAlertCenter: () =>
-    set((s) => ({ alertCenterOpen: !s.alertCenterOpen })),
-  setAlertCenter: (alertCenterOpen) => set({ alertCenterOpen }),
-
-  log: (level, msg) =>
-    set((s) => ({
-      logs: [
-        { id: ++logId, time: Date.now() / 1000, level, msg },
-        ...s.logs,
-      ].slice(0, 200),
-    })),
+// ---------------------------------------------------------------------------
+// Derived read-only atom (all state — used by compatibility hook)
+// ---------------------------------------------------------------------------
+export const uiStateAtom = atom<UIState>((get) => ({
+  theme: get(themeAtom),
+  panels: get(panelsAtom),
+  bottomTab: get(bottomTabAtom),
+  rightOpen: get(rightOpenAtom),
+  bottomOpen: get(bottomOpenAtom),
+  fullscreen: get(fullscreenAtom),
+  alertCenterOpen: get(alertCenterOpenAtom),
+  gridVisible: get(gridVisibleAtom),
+  logs: get(logsAtom),
 }));
+
+// ---------------------------------------------------------------------------
+// Write atoms (actions)
+// ---------------------------------------------------------------------------
+
+export const setThemeAtom = atom(null, (get, set, theme: Theme) => {
+  set(themeAtom, theme);
+  localStore.set("ui", { theme, panels: get(panelsAtom) });
+  if (typeof document !== "undefined") {
+    document.documentElement.className = `theme-${theme}`;
+  }
+});
+
+export const toggleGridAtom = atom(null, (get, set) => {
+  set(gridVisibleAtom, (prev) => !prev);
+});
+
+export const toggleThemeAtom = atom(null, (get, set) => {
+  const theme = get(themeAtom) === "dark" ? "light" : "dark";
+  set(setThemeAtom, theme);
+});
+
+export const setPanelAtom = atom(
+  null,
+  (get, set, key: keyof PanelSizes, value: number) => {
+    const panels = { ...get(panelsAtom), [key]: value };
+    set(panelsAtom, panels);
+    localStore.set("ui", { theme: get(themeAtom), panels });
+  },
+);
+
+export const setBottomTabAtom = atom(null, (_get, set, tab: BottomTab) => {
+  set(bottomTabAtom, tab);
+  set(bottomOpenAtom, true);
+});
+
+export const toggleRightAtom = atom(null, (get, set) => {
+  set(rightOpenAtom, (prev) => !prev);
+});
+
+export const toggleBottomAtom = atom(null, (get, set) => {
+  set(bottomOpenAtom, (prev) => !prev);
+});
+
+export const setFullscreenAtom = atom(null, (_get, set, v: boolean) => {
+  set(fullscreenAtom, v);
+});
+
+export const toggleAlertCenterAtom = atom(null, (get, set) => {
+  set(alertCenterOpenAtom, (prev) => !prev);
+});
+
+export const setAlertCenterAtom = atom(null, (_get, set, v: boolean) => {
+  set(alertCenterOpenAtom, v);
+});
+
+export const logAtom = atom(
+  null,
+  (get, set, level: "info" | "warn" | "error", msg: string) => {
+    const id = get(logIdAtom) + 1;
+    set(logIdAtom, id);
+    set(logsAtom, (prev) =>
+      [{ id, time: Date.now() / 1000, level, msg }, ...prev].slice(0, 200),
+    );
+  },
+);
+
+export const hydrateAtom = atom(null, (get, set) => {
+  const persisted = localStore.get("ui", {
+    theme: get(themeAtom),
+    panels: get(panelsAtom),
+  });
+  set(themeAtom, persisted.theme);
+  set(panelsAtom, persisted.panels);
+  if (typeof document !== "undefined") {
+    document.documentElement.className = `theme-${persisted.theme}`;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Non-React accessor — mirrors `useUIStore.getState()` for non-React code.
+// ---------------------------------------------------------------------------
+export function getUIState() {
+  const store = getDefaultStore();
+  return {
+    theme: store.get(themeAtom),
+    panels: store.get(panelsAtom),
+    bottomTab: store.get(bottomTabAtom),
+    rightOpen: store.get(rightOpenAtom),
+    bottomOpen: store.get(bottomOpenAtom),
+    fullscreen: store.get(fullscreenAtom),
+    alertCenterOpen: store.get(alertCenterOpenAtom),
+    gridVisible: store.get(gridVisibleAtom),
+    logs: store.get(logsAtom),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Compatibility hook — mirrors `useUIStore(selector?)` from Zustand.
+// Prefer `useAtomValue(themeAtom)` etc. in new code for optimal rendering.
+// ---------------------------------------------------------------------------
+import { useAtomValue } from "jotai";
+import { useMemo } from "react";
+
+export function useUIStore(): UIState;
+export function useUIStore<T>(selector: (state: UIState) => T): T;
+export function useUIStore<T>(selector?: (state: UIState) => T): UIState | T {
+  const state = useAtomValue(uiStateAtom);
+  if (selector) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useMemo(() => selector(state), [state, selector]);
+  }
+  return state;
+}

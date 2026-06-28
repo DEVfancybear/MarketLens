@@ -10,8 +10,14 @@ import {
   type IPriceLine,
 } from "lightweight-charts";
 import type { Candle } from "@/types";
-import { useChartStore } from "@/store/chartStore";
-import { useUIStore } from "@/store/uiStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  symbolAtom,
+  timeframeAtom,
+  indicatorsAtom,
+  setCrosshairAtom,
+} from "@/store/chartStore";
+import { themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
@@ -46,12 +52,12 @@ export function PriceChart({
   const prevThemeRef = useRef<string>("");
   const bumpRafRef = useRef<number | null>(null);
 
-  const theme = useUIStore((s) => s.theme);
-  const gridVisible = useUIStore((s) => s.gridVisible);
-  const symbol = useChartStore((s) => s.symbol);
-  const timeframe = useChartStore((s) => s.timeframe);
-  const indicators = useChartStore((s) => s.indicators);
-  const setCrosshair = useChartStore((s) => s.setCrosshair);
+  const theme = useAtomValue(themeAtom);
+  const gridVisible = useAtomValue(gridVisibleAtom);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const indicators = useAtomValue(indicatorsAtom);
+  const setCrosshair = useSetAtom(setCrosshairAtom);
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);

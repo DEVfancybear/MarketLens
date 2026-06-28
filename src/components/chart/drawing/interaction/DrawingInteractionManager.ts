@@ -12,10 +12,7 @@ import {
 } from "../history/CommandManager";
 
 export type InteractionState =
-  | "Idle"
-  | "Drawing"
-  | "MovingDrawing"
-  | "ResizingHandle";
+  "Idle" | "Drawing" | "MovingDrawing" | "ResizingHandle";
 
 export interface Machine {
   state: InteractionState;
@@ -58,7 +55,7 @@ export interface DrawingInteractionManagerOpts {
     selectedDrawingIds: Set<string>;
   };
   addDrawing: (d: Drawing) => void;
-  updateDrawing: (id: string, patch: Partial<Drawing>) => void;
+  updateDrawing: (arg: { id: string; patch: Partial<Drawing> }) => void;
   removeDrawing: (id: string) => void;
   selectDrawing: (id: string | null) => void;
   toggleSelectDrawing: (id: string) => void;
@@ -354,7 +351,7 @@ export function useDrawingInteractionManager(
         const multiMap = livePointsRef.current;
         if (multiMap && multiMap.size > 0) {
           for (const [id, pts] of multiMap) {
-            updateDrawing(id, { points: pts });
+            updateDrawing({ id, patch: { points: pts } });
             if (commitMove) {
               const orig = m.multiDragOrig.get(id) ?? m.dragOrig;
               if (orig) commitMove(id, pts, orig);

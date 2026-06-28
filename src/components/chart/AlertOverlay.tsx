@@ -18,9 +18,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { useChartCtx } from "./ChartContext";
-import { useChartStore } from "@/store/chartStore";
+import { useAtomValue } from "jotai";
+import { getDefaultStore } from "jotai";
+import { symbolAtom } from "@/store/chartStore";
 import {
   useAlertStore,
+  getAlertState,
+  alertTickAtom,
   CONDITION_SYMBOL,
   type Alert,
   type AlertCondition,
@@ -55,7 +59,7 @@ export function AlertOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const symbol = useChartStore((s) => s.symbol);
+  const symbol = useAtomValue(symbolAtom);
   const alerts = useAlertStore((s) => s.alerts);
   const selectedId = useAlertStore((s) => s.selectedAlertId);
   const selectAlert = useAlertStore((s) => s.selectAlert);
@@ -93,8 +97,7 @@ export function AlertOverlay() {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect || !ctx) return null;
       return ctx.candleSeries.coordinateToPrice(clientY - rect.top) as
-        | number
-        | null;
+        number | null;
     },
     [ctx],
   );
@@ -228,7 +231,7 @@ export function AlertOverlay() {
   drawRef.current = draw;
   useEffect(() => {
     let rafId: number | null = null;
-    const unsub = useAlertStore.subscribe(() => {
+    const unsub = getDefaultStore().sub(alertTickAtom, () => {
       // Coalesce multiple store updates into a single rAF.
       if (rafId === null) {
         rafId = requestAnimationFrame(() => {
@@ -268,9 +271,7 @@ export function AlertOverlay() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (!selectedId) return;
       if (e.key === "Delete" || e.key === "Backspace") {
-        const a = useAlertStore
-          .getState()
-          .alerts.find((x) => x.id === selectedId);
+        const a = getAlertState().alerts.find((x) => x.id === selectedId);
         if (a && !a.locked) deleteAlert(selectedId);
       } else if (e.key === "Escape") {
         selectAlert(null);
@@ -442,7 +443,7 @@ export function AlertOverlay() {
             onClick={(e) => {
               e.stopPropagation();
               const id = sel.id;
-              const store = useAlertStore.getState();
+              const store = getAlertState();
               store.deleteAlert(id);
               const line = alertLineRegistry.get(id);
               if (line && ctx) {

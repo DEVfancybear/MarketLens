@@ -16,17 +16,27 @@
  *     `crossUp`/`crossDown` edges are detected.
  */
 import { useEffect, useRef } from "react";
-import { useMarketDataStore } from "@/store/marketDataStore";
-import { useAlertStore, RECURRING_REARM_MS } from "@/store/alertStore";
+import { getDefaultStore } from "jotai";
+import {
+  getMarketDataState,
+  marketDataTickAtom,
+  type MarketDataStoreInterface,
+} from "@/store/marketDataStore";
+import {
+  useAlertStore,
+  getAlertState,
+  RECURRING_REARM_MS,
+} from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { isAlertTriggered } from "@/services/alertEngine";
 import { deliverAlert } from "@/services/notifications/notify";
 import { subscriptionKey } from "@/types";
 
-type MarketDataState = ReturnType<typeof useMarketDataStore.getState>;
-
 /** Latest price for a symbol: prefer the ticker quote, fall back to candle close. */
-function latestPrice(md: MarketDataState, symbol: string): number | undefined {
+function latestPrice(
+  md: MarketDataStoreInterface,
+  symbol: string,
+): number | undefined {
   const q = md.quotes[symbol];
   if (q && Number.isFinite(q.last)) return q.last;
   const series = md.candles[subscriptionKey(symbol, md.selectedTimeframe)];
@@ -56,15 +66,13 @@ export function useAlertEngine() {
 
     for (const sym of desired) {
       if (!subbed.has(sym) && getMarketSymbol(sym)) {
-        useMarketDataStore
-          .getState()
-          .subscribe({ symbol: sym, channels: ["ticker"] });
+        getMarketDataState().subscribe({ symbol: sym, channels: ["ticker"] });
         subbed.add(sym);
       }
     }
     for (const sym of [...subbed]) {
       if (!desired.has(sym)) {
-        useMarketDataStore.getState().unsubscribe(sym);
+        getMarketDataState().unsubscribe(sym);
         subbed.delete(sym);
       }
     }
@@ -74,7 +82,7 @@ export function useAlertEngine() {
   useEffect(() => {
     const subbed = subscribedRef.current;
     return () => {
-      for (const sym of subbed) useMarketDataStore.getState().unsubscribe(sym);
+      for (const sym of subbed) getMarketDataState().unsubscribe(sym);
       subbed.clear();
     };
   }, []);
@@ -82,8 +90,8 @@ export function useAlertEngine() {
   // ---- 2. evaluate on every price update (no polling) ----
   useEffect(() => {
     const evaluate = () => {
-      const md = useMarketDataStore.getState();
-      const { alerts, triggerAlert, settings } = useAlertStore.getState();
+      const md = getMarketDataState();
+      const { alerts, triggerAlert, settings } = getAlertState();
       if (alerts.length === 0) return;
       const now = Date.now();
 
@@ -128,6 +136,7 @@ export function useAlertEngine() {
     };
 
     evaluate(); // catch already-satisfied level alerts immediately
-    return useMarketDataStore.subscribe(evaluate);
+    const store = getDefaultStore();
+    return store.sub(marketDataTickAtom, evaluate);
   }, []);
 }
