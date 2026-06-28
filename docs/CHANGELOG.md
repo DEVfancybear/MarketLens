@@ -3,33 +3,6 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
-### Added — Replay "Select Bar" feature (TradingView parity) (2026-06-29)
-- Added a **Select Bar** button to the replay transport controls that enters a
-  dedicated re-select mode while replay is already active. Matches TradingView's
-  Bar Replay → Select Bar behaviour.
-  - **State machine**: New `reSelectingAtom` boolean creates a 5th replay state
-    (`ReSelecting`) — replay remains armed, playback is auto-paused, cursor/anchor
-    unchanged during hover.
-  - **Transient preview**: Hover data stored in refs (`hoverIdxRef`, `dirtyRef`),
-    never React state. Mouse move triggers only a lightweight canvas repaint — zero
-    store updates, zero React re-renders, zero candle rebuilds.
-  - **Snap-to-candle**: Binary search (`indexAtOrBefore`) snaps to existing candles
-    only, never empty pixel positions. Shows vertical guide line + date label chip +
-    shaded "future" region (orange tint to distinguish from initial selection).
-  - **Click confirms**: Moves replay `anchor` + `cursor` to the chosen bar, rebuilds
-    visible candles. Remains paused (TradingView does NOT auto-play).
-  - **Cancel**: ESC, Right-click, or pressing Select Bar again cancels without
-    changing replay position. Repeatable unlimited times.
-  - **Full candle access**: During re-select the overlay reads the FULL candle list
-    from `candlesAtom`, so the user can pick any bar including "future" ones past
-    the current cursor.
-  Files: store/replayStore.ts (+`reSelectingAtom`, `beginReSelectAtom`,
-  `cancelReSelectAtom`, `confirmReSelectAtom`), components/replay/ReplayControls.tsx
-  (+Select Bar button + re-select UI), components/replay/ReplaySelectionLayer.tsx
-  (ref-based hover, dual-mode draw, right-click cancel), hooks/useHotkeys.ts
-  (ESC priority: reSelect > select > drawing), components/toolbar/TopToolbar.tsx
-  (reSelect toggle + Cancel select label).
-
 ### Fixed — Chart "view jump" when dragging a trendline / alert fast (2026-06-29)
 - Dragging a drawing (e.g. trendline) or an alert line quickly made the chart
   pan/scroll ("view jump"). Cause: `handleScroll.pressedMouseMove` is on, and on

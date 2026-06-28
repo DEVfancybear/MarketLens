@@ -8,7 +8,6 @@ export const REPLAY_SPEEDS: ReplaySpeed[] = [1, 2, 5, 10, 25, 50, 100];
 // ── State atoms ────────────────────────────────────────────────────────────
 export const activeAtom = atom(false);
 export const selectingAtom = atom(false);
-export const reSelectingAtom = atom(false);
 export const playingAtom = atom(false);
 export const speedAtom = atom<ReplaySpeed>(5);
 export const cursorAtom = atom(0);
@@ -26,33 +25,11 @@ export const cancelSelectAtom = atom(null, (_get, set) => {
   set(selectingAtom, false);
 });
 
-// ── Re-select mode (Select Bar while replay is already active) ──────────────
-export const beginReSelectAtom = atom(null, (get, set) => {
-  if (!get(activeAtom)) return; // only valid when replay is armed
-  set(reSelectingAtom, true);
-  set(playingAtom, false); // auto-pause
-});
-
-export const cancelReSelectAtom = atom(null, (_get, set) => {
-  set(reSelectingAtom, false);
-});
-
-/** Commit the re-selection: move anchor + cursor to the chosen bar. */
-export const confirmReSelectAtom = atom(null, (get, set, index: number) => {
-  const total = get(totalAtom);
-  const clamped = Math.max(0, Math.min(total - 1, index));
-  set(anchorAtom, clamped);
-  set(cursorAtom, clamped);
-  set(reSelectingAtom, false);
-  // remain paused — tradingview does NOT auto-play after a bar re-select
-});
-
 export const armAtom = atom(
   null,
   (_get, set, anchor: number, total: number) => {
     set(activeAtom, true);
     set(selectingAtom, false);
-    set(reSelectingAtom, false);
     set(playingAtom, false);
     set(anchorAtom, anchor);
     set(cursorAtom, anchor);
@@ -63,7 +40,6 @@ export const armAtom = atom(
 export const disarmAtom = atom(null, (_get, set) => {
   set(activeAtom, false);
   set(selectingAtom, false);
-  set(reSelectingAtom, false);
   set(playingAtom, false);
 });
 
@@ -117,7 +93,6 @@ export const setTotalAtom = atom(null, (get, set, total: number) => {
 interface ReplayState {
   active: boolean;
   selecting: boolean;
-  reSelecting: boolean;
   playing: boolean;
   speed: ReplaySpeed;
   cursor: number;
@@ -128,9 +103,6 @@ interface ReplayState {
 export interface ReplayActions {
   beginSelect: () => void;
   cancelSelect: () => void;
-  beginReSelect: () => void;
-  cancelReSelect: () => void;
-  confirmReSelect: (index: number) => void;
   arm: (anchor: number, total: number) => void;
   disarm: () => void;
   play: () => void;
@@ -148,7 +120,6 @@ type ReplayStoreInterface = ReplayState & ReplayActions;
 const replayStateAtom = atom<ReplayState>((get) => ({
   active: get(activeAtom),
   selecting: get(selectingAtom),
-  reSelecting: get(reSelectingAtom),
   playing: get(playingAtom),
   speed: get(speedAtom),
   cursor: get(cursorAtom),
@@ -163,9 +134,6 @@ const replayCombinedAtom = atom<ReplayStoreInterface>((get) => {
     ...state,
     beginSelect: () => store.set(beginSelectAtom),
     cancelSelect: () => store.set(cancelSelectAtom),
-    beginReSelect: () => store.set(beginReSelectAtom),
-    cancelReSelect: () => store.set(cancelReSelectAtom),
-    confirmReSelect: (i) => store.set(confirmReSelectAtom, i),
     arm: (a, t) => store.set(armAtom, a, t),
     disarm: () => store.set(disarmAtom),
     play: () => store.set(playAtom),
