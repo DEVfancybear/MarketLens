@@ -12,7 +12,7 @@ Smart Money Concept backtesting via a no-look-ahead Replay engine.
 
 | Concern | Choice | Version |
 |---|---|---|
-| Framework | Next.js (App Router) | 15.3.9 |
+| Framework | Next.js (App Router) | 16.2.9 |
 | Language | TypeScript (strict) | 5.7 |
 | UI | React | 19 |
 | Charts | TradingView **Lightweight Charts** | 4.2.3 |
@@ -23,10 +23,9 @@ Smart Money Concept backtesting via a no-look-ahead Replay engine.
 | Persistence | IndexedDB (`idb`) + localStorage | — |
 | Workers | Native Web Worker (SMC compute) | — |
 
-> **2026-06-28**: All 11 Zustand stores migrated to Jotai atoms. Components now subscribe to
-> individual atoms via `useAtomValue`/`useSetAtom` instead of store-wide selectors, providing
-> fine-grained render optimisation. Non-React code accesses atoms via `getDefaultStore()`.
-> `zustand` has been removed from dependencies. See `docs/CURRENT_PROGRESS.md` §Jotai migration.
+> **2026-06-28**: Upgraded to Next.js 16.2.9 (Turbopack). `next lint` removed in v16 —
+> linting now runs via `eslint` directly with flat config (`eslint.config.mjs`).
+> All 11 Zustand stores migrated to Jotai atoms — see below.
 >
 > `framer-motion` is in `package.json` but its installed build is broken (`motion-dom` export
 > mismatch). It is **not imported anywhere**; animations use CSS. See `HANDOFF.md` → Known Issues.
