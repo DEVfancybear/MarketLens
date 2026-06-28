@@ -23,6 +23,7 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "curve",
   minPoints: 3,
+  freeform: true,
   render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
     const pts = d.points;
     if (pts.length < 3) return;

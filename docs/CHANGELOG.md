@@ -3,6 +3,31 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Shapes (rectangle) group: multi-point engine + TradingView parity (2026-06-29)
+Brought the Shapes toolbar group to TradingView parity (UI + function). See
+`docs/SHAPES_GROUP_IMPLEMENTATION.md` for the full design/impact write-up.
+- **Multi-point drawing engine** (`DrawingInteractionManager`): added an
+  additive, opt-in flow for tools with >2 points. Two new optional plugin fields
+  (`maxPoints`, `freeform`) in `ToolRegistry`. First click starts, each click
+  appends, fixed-count tools auto-commit at `maxPoints`, freeform tools finish on
+  double-click / right-click; pointer-move previews to the cursor; Escape/tool
+  change cancels. **1-point and 2-point tool paths are unchanged** (low blast
+  radius).
+- **Fixed previously-broken tools:** `triangle` & `curve` (needed 3 points but
+  only ever got 2 → invisible) now work; `polyline` & `path` are true
+  multi-segment; `rotatedRect` is now a **real rotated rectangle** (3-point:
+  edge + perpendicular width) with 3 draggable handles.
+- **New tools:** `arc` (3-point quadratic through a peak) and `doubleCurve`
+  (4-point cubic S-curve). Added to the `DrawingTool` union + `DRAWING_TOOLS`.
+- **Toolbar flyout** (`DrawingToolbar`): section headers ("SHAPES"), favorite
+  **stars** persisted in `localStorage` (`tv:favTools`), hotkey labels, and the
+  Shapes group reordered to TradingView's full SHAPES list (Rectangle, Rotated
+  rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double
+  curve). Brush moved to its own "Brushes" group.
+- `HitTestEngine` target union extended with `p3` (4th handle for double curve).
+- Deferred (documented): Brushes/Highlighter & Arrows sections; a favorites
+  quick-access bar.
+
 ### Added — Text font-size control (TradingView-style) (2026-06-29)
 - Text/emoji annotations gain a `fontSize` property (default 13). The floating
   toolbar shows a font-size button (current size) with a size-picker popover

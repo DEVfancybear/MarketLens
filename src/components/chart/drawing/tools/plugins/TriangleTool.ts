@@ -28,6 +28,7 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "triangle",
   minPoints: 3,
+  maxPoints: 3,
   render(
     g: CanvasRenderingContext2D,
     d: Drawing,

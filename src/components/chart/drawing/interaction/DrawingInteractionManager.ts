@@ -116,6 +116,9 @@ export function useDrawingInteractionManager(
   const scheduleRedrawRef = useRef(scheduleRedraw);
   scheduleRedrawRef.current = scheduleRedraw;
   const livePointsRef = useRef<Map<string, Point[]> | null>(null);
+  // Confirmed click points for an in-progress multi-point draw (polyline, path,
+  // curve, triangle, arc, double-curve). Empty for 1-/2-point tools.
+  const committedRef = useRef<Point[]>([]);
   const drawingIdRef = useRef<string | null>(null);
   const hoveredIdRef = useRef<string | null>(null);
   const clipboardRef = useRef<Drawing | null>(null);
@@ -141,6 +144,7 @@ export function useDrawingInteractionManager(
     setMachine(INITIAL_MACHINE);
     releaseCapture();
     pointerClaimedRef.current = false;
+    committedRef.current = [];
     scheduleRedrawRef.current();
   }, [releaseCapture]);
 
@@ -202,6 +206,46 @@ export function useDrawingInteractionManager(
         });
         return;
       }
+
+      // ---- Multi-point tools (triangle, arc, double-curve, polyline, …) ----
+      // Opt-in via the plugin's `freeform`/`maxPoints` flags; 1-/2-point tools
+      // skip this entirely and keep their original path below.
+      const adapter = getTool(cur.activeTool);
+      const maxPts = adapter?.maxPoints;
+      const isMulti = !!adapter?.freeform || (maxPts ?? 0) > 2 || n > 2;
+      if (isMulti) {
+        const commit = (pts: Point[]) => {
+          addDrawing({
+            id: uid("dw"),
+            tool: cur.activeTool,
+            color: cur.drawColor,
+            lineWidth: 1.5,
+            points: pts.map((q) => ({ ...q })),
+          });
+          committedRef.current = [];
+          reset();
+        };
+        if (m.state !== "Drawing") {
+          committedRef.current = [p];
+          transition({
+            state: "Drawing",
+            anchors: [p],
+            drawingTool: cur.activeTool,
+          });
+          return;
+        }
+        // A double-click (detail ≥ 2) finishes a freeform draw.
+        if (adapter?.freeform && (e as PointerEvent).detail >= 2) {
+          if (committedRef.current.length >= n) commit(committedRef.current);
+          return;
+        }
+        const next = [...committedRef.current, p];
+        committedRef.current = next;
+        if (maxPts != null && next.length >= maxPts) commit(next);
+        else transition({ anchors: next });
+        return;
+      }
+
       if (m.state === "Drawing") {
         addDrawing({
           id: uid("dw"),
@@ -225,7 +269,11 @@ export function useDrawingInteractionManager(
       if (m.state !== "Drawing") return;
       const p = fromEvent(e);
       if (!p) return;
-      transition({ anchors: [m.anchors[0], p] });
+      // Multi-point draw: preview the already-committed points plus the live
+      // cursor as the next vertex. 2-point tools keep [start, cursor].
+      const committed = committedRef.current;
+      if (committed.length > 0) transition({ anchors: [...committed, p] });
+      else transition({ anchors: [m.anchors[0], p] });
     };
     document.addEventListener("pointerdown", hD, true);
     document.addEventListener("pointermove", hM, true);
@@ -390,6 +438,19 @@ export function useDrawingInteractionManager(
       if (!canvas || !isOverCanvas(e, canvas)) return;
       if (m.state === "Drawing") {
         e.preventDefault();
+        // Right-click finishes an in-progress freeform draw (else cancels).
+        const tool = m.drawingTool ?? cur.activeTool;
+        const adapter = getTool(tool);
+        const pts = committedRef.current;
+        if (adapter?.freeform && pts.length >= adapter.minPoints) {
+          addDrawing({
+            id: uid("dw"),
+            tool,
+            color: cur.drawColor,
+            lineWidth: 1.5,
+            points: pts.map((q) => ({ ...q })),
+          });
+        }
         reset();
         return;
       }

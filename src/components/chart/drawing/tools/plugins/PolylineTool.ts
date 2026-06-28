@@ -28,6 +28,7 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "polyline",
   minPoints: 2,
+  freeform: true,
   render(
     g: CanvasRenderingContext2D,
     d: Drawing,

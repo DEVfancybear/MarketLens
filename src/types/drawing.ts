@@ -25,6 +25,8 @@ export type DrawingTool =
   | "triangle"
   | "polyline"
   | "curve"
+  | "doubleCurve"
+  | "arc"
   | "path"
   | "fib"
   | "fibRetracement"
@@ -57,6 +59,8 @@ export const DRAWING_TOOLS: DrawingTool[] = [
   "triangle",
   "polyline",
   "curve",
+  "doubleCurve",
+  "arc",
   "path",
   "fib",
   "fibRetracement",

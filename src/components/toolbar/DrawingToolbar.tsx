@@ -1,6 +1,7 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/utils/cn";
 import {
   MousePointer2,
   Target,
@@ -26,6 +27,9 @@ import {
   Paintbrush,
   Trash2,
   Palette,
+  Star,
+  Waypoints,
+  PenLine,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -45,6 +49,8 @@ interface ToolItem {
   icon: React.ReactNode;
   label: string;
   hotkey?: string;
+  /** Optional section header shown above this item in the flyout. */
+  section?: string;
 }
 
 interface ToolGroup {
@@ -120,35 +126,48 @@ const GROUPS: ToolGroup[] = [
       { tool: "channel", icon: <GitBranch size={14} />, label: "Channel" },
     ],
   },
-  // --- Shapes ---
+  // --- Shapes (matches TradingView "SHAPES" menu) ---
   {
     id: "shapes",
     icon: <Square size={18} />,
     label: "Rectangle",
     defaultTool: "rectangle",
     tools: [
-      { tool: "rectangle", icon: <Square size={14} />, label: "Rectangle" },
+      {
+        tool: "rectangle",
+        icon: <Square size={14} />,
+        label: "Rectangle",
+        hotkey: "Alt+Shift+R",
+        section: "SHAPES",
+      },
       {
         tool: "rotatedRect",
-        icon: <Square size={14} />,
-        label: "Rotated rect",
+        icon: <Square size={14} className="rotate-12" />,
+        label: "Rotated rectangle",
       },
+      { tool: "path", icon: <Waypoints size={14} />, label: "Path" },
       { tool: "circle", icon: <Circle size={14} />, label: "Circle" },
       { tool: "ellipse", icon: <Circle size={14} />, label: "Ellipse" },
+      { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
       { tool: "triangle", icon: <Triangle size={14} />, label: "Triangle" },
+      { tool: "arc", icon: <Spline size={14} />, label: "Arc" },
+      { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
+      { tool: "doubleCurve", icon: <PenLine size={14} />, label: "Double curve" },
     ],
   },
-  // --- Freeform ---
+  // --- Brushes ---
   {
-    id: "freeform",
-    icon: <PenTool size={18} />,
-    label: "Polyline",
-    defaultTool: "polyline",
+    id: "brushes",
+    icon: <Paintbrush size={18} />,
+    label: "Brush",
+    defaultTool: "brush",
     tools: [
-      { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
-      { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
-      { tool: "path", icon: <PenTool size={14} />, label: "Path" },
-      { tool: "brush", icon: <Paintbrush size={14} />, label: "Brush" },
+      {
+        tool: "brush",
+        icon: <Paintbrush size={14} />,
+        label: "Brush",
+        section: "BRUSHES",
+      },
     ],
   },
   // --- Fibonacci ---
@@ -237,6 +256,34 @@ function useLastUsed(): Record<string, DrawingTool> {
   return lastUsed;
 }
 
+const FAV_KEY = "tv:favTools";
+
+/** Favorite tools (persisted) — star toggle in the flyout, TradingView-style. */
+function useFavorites(): [Set<string>, (tool: string) => void] {
+  const [fav, setFav] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      return new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+  const toggle = useCallback((tool: string) => {
+    setFav((prev) => {
+      const next = new Set(prev);
+      if (next.has(tool)) next.delete(tool);
+      else next.add(tool);
+      try {
+        localStorage.setItem(FAV_KEY, JSON.stringify([...next]));
+      } catch {
+        /* storage unavailable */
+      }
+      return next;
+    });
+  }, []);
+  return [fav, toggle];
+}
+
 export function DrawingToolbar() {
   const activeTool = useAtomValue(activeToolAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
@@ -244,6 +291,7 @@ export function DrawingToolbar() {
   const setDrawColor = useSetAtom(setDrawColorAtom);
   const clearDrawings = useSetAtom(clearDrawingsAtom);
   const lastUsed = useLastUsed();
+  const [favorites, toggleFavorite] = useFavorites();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -317,26 +365,62 @@ export function DrawingToolbar() {
                       className="fixed z-50 w-44 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
                       style={{ left: rect.right + 4, top: rect.top }}
                     >
-                      {group.tools.map((t) => (
-                        <button
-                          key={t.tool}
-                          onClick={() => {
-                            setActiveTool(t.tool);
-                            setOpenGroup(null);
-                          }}
-                          className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover ${activeTool === t.tool ? "text-brand" : "text-ink"}`}
-                        >
-                          <span className="shrink-0 text-ink-muted">
-                            {t.icon}
-                          </span>
-                          <span className="flex-1">{t.label}</span>
-                          {t.hotkey && (
-                            <span className="shrink-0 text-[10px] text-ink-muted">
-                              {t.hotkey}
-                            </span>
-                          )}
-                        </button>
-                      ))}
+                      {group.tools.map((t, ti) => {
+                        const showHeader =
+                          t.section &&
+                          t.section !== group.tools[ti - 1]?.section;
+                        const fav = favorites.has(t.tool);
+                        return (
+                          <div key={t.tool}>
+                            {showHeader && (
+                              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                                {t.section}
+                              </div>
+                            )}
+                            <button
+                              onClick={() => {
+                                setActiveTool(t.tool);
+                                setOpenGroup(null);
+                              }}
+                              className={cn(
+                                "group/item flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover",
+                                activeTool === t.tool ? "text-brand" : "text-ink",
+                              )}
+                            >
+                              <span className="shrink-0 text-ink-muted">
+                                {t.icon}
+                              </span>
+                              <span className="flex-1">{t.label}</span>
+                              {t.hotkey && (
+                                <span className="shrink-0 text-[10px] text-ink-muted">
+                                  {t.hotkey}
+                                </span>
+                              )}
+                              <span
+                                role="button"
+                                aria-label={
+                                  fav ? "Remove favorite" : "Add favorite"
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(t.tool);
+                                }}
+                                className={cn(
+                                  "shrink-0 transition-opacity",
+                                  fav
+                                    ? "text-yellow-400"
+                                    : "text-ink-faint opacity-0 hover:text-ink group-hover/item:opacity-100",
+                                )}
+                              >
+                                <Star
+                                  size={13}
+                                  fill={fav ? "currentColor" : "none"}
+                                />
+                              </span>
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </>,
                   document.body,

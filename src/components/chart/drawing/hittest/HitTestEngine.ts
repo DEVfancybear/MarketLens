@@ -21,7 +21,7 @@ export type HitTestProjector = (v: number) => number | null;
 export type HitResult = {
   drawing: Drawing;
   /** "body" for line/area hit, or anchor label for handle hit. */
-  target: "body" | "p0" | "p1" | "p2";
+  target: "body" | "p0" | "p1" | "p2" | "p3";
   /** Zero-based index into drawing.points for anchor hits, -1 for body. */
   anchorIndex?: number;
   /** Pixel distance from the pointer to the hit target. */

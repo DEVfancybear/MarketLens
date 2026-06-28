@@ -48,6 +48,12 @@ export interface Anchor {
 export interface DrawingAdapter {
   readonly tool: DrawingTool;
   readonly minPoints: number;
+  /** Fixed total point count — the engine auto-commits once reached (e.g. 3 for
+   *  triangle/arc, 4 for double curve). Omit for 1/2-point or freeform tools. */
+  readonly maxPoints?: number;
+  /** Unbounded click-to-add tool (polyline/path/curve). Finishes on
+   *  double-click or right-click. */
+  readonly freeform?: boolean;
 
   render(
     g: CanvasRenderingContext2D,
@@ -131,6 +137,8 @@ export function defaultGetAnchors(
 export interface SimpleTool {
   readonly tool: DrawingTool;
   readonly minPoints: number;
+  readonly maxPoints?: number;
+  readonly freeform?: boolean;
   render(
     g: CanvasRenderingContext2D,
     d: Drawing,

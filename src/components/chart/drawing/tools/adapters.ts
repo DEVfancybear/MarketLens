@@ -32,6 +32,8 @@ import "./plugins/RotatedRectTool";
 import "./plugins/TriangleTool";
 import "./plugins/PolylineTool";
 import "./plugins/CurveTool";
+import "./plugins/DoubleCurveTool";
+import "./plugins/ArcTool";
 import "./plugins/PathTool";
 
 // Milestone 4 Phase 3 — financial tools

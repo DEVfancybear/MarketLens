@@ -23,6 +23,7 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "path",
   minPoints: 2,
+  freeform: true,
   render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
     const pts = d.points;
     if (pts.length < 2) return;
