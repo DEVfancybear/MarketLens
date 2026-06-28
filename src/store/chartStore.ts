@@ -21,16 +21,6 @@ function drawingsKey(symbol: string) {
   return `drawings:${symbol}`;
 }
 
-const SINGLE_CLICK_TOOLS = new Set<DrawingTool>([
-  "horizontal",
-  "horizRay",
-  "vertical",
-  "crossLine",
-  "infoLine",
-  "text",
-  "emoji",
-]);
-
 // ---------------------------------------------------------------------------
 // Primitive atoms (one per state field)
 // ---------------------------------------------------------------------------
@@ -135,10 +125,11 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     ];
   }
   const drawings = [..._get(drawingsAtom), drawing];
-  // Single-click tools stay active; two-click tools switch back to cursor.
-  const singleClick = SINGLE_CLICK_TOOLS.has(d.tool);
   set(drawingsAtom, drawings);
-  set(activeToolAtom, singleClick ? _get(activeToolAtom) : "cursor");
+  // TradingView behaviour: after a drawing is placed, return to the cursor so
+  // the new object can immediately be selected and dragged — clicking it again
+  // must not keep spawning duplicates.
+  set(activeToolAtom, "cursor");
   set(selectedDrawingIdAtom, drawing.id);
   localStore.set(drawingsKey(_get(symbolAtom)), drawings);
 });

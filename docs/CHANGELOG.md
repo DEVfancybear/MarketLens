@@ -3,6 +3,14 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Single-click tools kept duplicating instead of selecting (2026-06-28)
+- Horizontal / Horizontal-ray / Vertical / Cross / Info line / Text / Emoji stayed armed
+  after placing one object, so clicking the placed object spawned another endlessly instead
+  of selecting it. Now every tool returns to the cursor after one placement (TradingView
+  behaviour) — the new object is auto-selected and immediately drag-and-droppable.
+  Removed `SINGLE_CLICK_TOOLS`; `addDrawingAtom` always switches to `cursor`.
+  File: store/chartStore.ts.
+
 ### Added — Position tool settings dialog (TradingView-style) (2026-06-28)
 - New `PositionSettingsDialog.tsx` — modal with Inputs / Style / Visibility tabs for the
   Long/Short position tool, opened from a gear button on the floating drawing toolbar.
