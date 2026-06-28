@@ -3,6 +3,16 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Changed — Drawing settings toolbar icons match TradingView (2026-06-29)
+The floating `DrawingSettingsToolbar` now mirrors TradingView's object toolbar:
+- **Line color** uses a **pencil** icon (was a generic palette) with the colored
+  underline bar; for text/emoji tools it switches to a **"T"** (text color).
+- **Background/fill** uses a **paint-bucket** icon with a colored underline (was a
+  plain square swatch).
+- **Line width** renders an actual line of the selected thickness next to the
+  "Npx" label (was a static dash icon).
+File: chart/DrawingSettingsToolbar.tsx.
+
 ### Fixed — Long/Short position resizing/disappearing in whitespace (2026-06-29)
 Two reported bugs where the position box changed size or vanished when dragged:
 1. **Box collapsed/disappeared dragging into whitespace, then snapped larger

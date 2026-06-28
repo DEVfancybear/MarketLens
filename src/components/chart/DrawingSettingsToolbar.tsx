@@ -5,8 +5,9 @@ import {
   Lock,
   Unlock,
   Trash2,
-  Palette,
-  Minus,
+  Pencil,
+  PaintBucket,
+  Type,
   Check,
   Settings,
   GripVertical,
@@ -166,6 +167,7 @@ export function DrawingSettingsToolbar() {
 
   const showLine = !NO_LINE_TOOLS.has(drawing.tool);
   const showFill = FILL_TOOLS.has(drawing.tool);
+  const isTextTool = drawing.tool === "text" || drawing.tool === "emoji";
   const hasSettings = drawing.tool === "long" || drawing.tool === "short";
 
   const Sep = () => <div className="mx-0.5 h-5 w-px bg-terminal-border" />;
@@ -197,14 +199,14 @@ export function DrawingSettingsToolbar() {
       </button>
       <Sep />
 
-      {/* Stroke colour */}
+      {/* Stroke / text colour — pencil for line & shape tools, "T" for text */}
       <ToolbarButton
-        label="Colour"
+        label={isTextTool ? "Text color" : "Line color"}
         active={menu === "color"}
         onClick={() => setMenu(menu === "color" ? null : "color")}
       >
         <span className="relative flex h-4 w-4 items-center justify-center">
-          <Palette size={15} />
+          {isTextTool ? <Type size={15} /> : <Pencil size={15} />}
           <span
             className="absolute -bottom-1 left-1/2 h-1 w-3.5 -translate-x-1/2 rounded-full"
             style={{ background: drawing.color }}
@@ -225,14 +227,17 @@ export function DrawingSettingsToolbar() {
       {showFill && (
         <>
           <ToolbarButton
-            label="Fill"
+            label="Background color"
             active={menu === "fill"}
             onClick={() => setMenu(menu === "fill" ? null : "fill")}
           >
-            <span
-              className="h-4 w-4 rounded-sm border border-white/30"
-              style={{ background: drawing.fillColor ?? "transparent" }}
-            />
+            <span className="relative flex h-4 w-4 items-center justify-center">
+              <PaintBucket size={15} />
+              <span
+                className="absolute -bottom-1 left-1/2 h-1 w-3.5 -translate-x-1/2 rounded-full"
+                style={{ background: drawing.fillColor ?? "transparent" }}
+              />
+            </span>
           </ToolbarButton>
           {menu === "fill" && (
             <ColorPopover
@@ -256,8 +261,18 @@ export function DrawingSettingsToolbar() {
             active={menu === "width"}
             onClick={() => setMenu(menu === "width" ? null : "width")}
           >
-            <span className="flex items-center gap-1 text-[11px] text-ink">
-              <Minus size={14} />
+            <span className="flex items-center gap-1.5 text-[11px] text-ink">
+              <svg width="20" height="12" className="text-ink">
+                <line
+                  x1="1"
+                  y1="6"
+                  x2="19"
+                  y2="6"
+                  stroke="currentColor"
+                  strokeWidth={drawing.lineWidth ?? 2}
+                  strokeLinecap="round"
+                />
+              </svg>
               {drawing.lineWidth ?? 2}px
             </span>
           </ToolbarButton>
