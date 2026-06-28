@@ -13,6 +13,7 @@ import {
   editingIndicatorIdAtom,
   activeToolAtom,
   selectDrawingAtom,
+  editingDrawingIdAtom,
 } from "@/store/chartStore";
 import { emit } from "@/utils/bus";
 import type { DrawingTool } from "@/types";
@@ -133,8 +134,10 @@ export function useHotkeys() {
       // --- Escape: deselect / cancel tool ---
       if (e.key === "Escape" && !mod) {
         const store = getDefaultStore();
-        // Don't deselect if a dialog is open (indicator settings).
-        if (store.get(editingIndicatorIdAtom)) return;
+        // Don't deselect if a dialog is open (indicator / position settings);
+        // the dialog handles its own Escape-to-close.
+        if (store.get(editingIndicatorIdAtom) || store.get(editingDrawingIdAtom))
+          return;
         if (
           store.get(selectedDrawingIdAtom) ||
           store.get(activeToolAtom) !== "cursor"

@@ -4,6 +4,7 @@ import { TerminalLayout } from "@/components/layout/TerminalLayout";
 import { TopToolbar } from "@/components/toolbar/TopToolbar";
 import { DrawingToolbar } from "@/components/toolbar/DrawingToolbar";
 import { IndicatorSettingsDialog } from "@/components/toolbar/IndicatorSettingsDialog";
+import { PositionSettingsDialog } from "@/components/chart/PositionSettingsDialog";
 import { ChartArea } from "@/components/chart/ChartArea";
 import { Watchlist } from "@/components/watchlist/Watchlist";
 import { BottomPanel } from "@/components/layout/BottomPanel";
@@ -39,6 +40,7 @@ export function Terminal() {
       <AlertCenter />
       <AlertEditDialog />
       <IndicatorSettingsDialog />
+      <PositionSettingsDialog />
       <Toaster />
     </>
   );

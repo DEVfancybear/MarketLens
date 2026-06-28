@@ -9,6 +9,7 @@ import {
   Palette,
   Minus,
   Check,
+  Settings,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -18,6 +19,7 @@ import {
   removeDrawingAtom,
   duplicateDrawingAtom,
   lockDrawingAtom,
+  setEditingDrawingAtom,
 } from "@/store/chartStore";
 import { useChartCtx } from "./ChartContext";
 import { getTool } from "./drawing/tools/ToolRegistry";
@@ -67,6 +69,7 @@ export function DrawingSettingsToolbar() {
   const removeDrawing = useSetAtom(removeDrawingAtom);
   const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
   const lockDrawing = useSetAtom(lockDrawingAtom);
+  const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -136,6 +139,7 @@ export function DrawingSettingsToolbar() {
 
   const showLine = !NO_LINE_TOOLS.has(drawing.tool);
   const showFill = FILL_TOOLS.has(drawing.tool);
+  const hasSettings = drawing.tool === "long" || drawing.tool === "short";
 
   const Sep = () => <div className="mx-0.5 h-5 w-px bg-terminal-border" />;
 
@@ -296,6 +300,15 @@ export function DrawingSettingsToolbar() {
       )}
 
       <Sep />
+      {/* Settings (position tools) */}
+      {hasSettings && (
+        <ToolbarButton
+          label="Settings"
+          onClick={() => setEditingDrawing(drawing.id)}
+        >
+          <Settings size={15} />
+        </ToolbarButton>
+      )}
       {/* Clone */}
       <ToolbarButton
         label="Clone"

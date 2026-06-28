@@ -323,6 +323,15 @@ export const setEditingIndicatorAtom = atom(
   },
 );
 
+/** Drawing currently open in a settings dialog (e.g. position tool). */
+export const editingDrawingIdAtom = atom<string | null>(null);
+export const setEditingDrawingAtom = atom(
+  null,
+  (_get, set, id: string | null) => {
+    set(editingDrawingIdAtom, id);
+  },
+);
+
 export const hydrateAtom = atom(null, (_get, set) => {
   set(
     drawingsAtom,

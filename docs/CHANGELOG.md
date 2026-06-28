@@ -3,6 +3,25 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Position tool settings dialog (TradingView-style) (2026-06-28)
+- New `PositionSettingsDialog.tsx` — modal with Inputs / Style / Visibility tabs for the
+  Long/Short position tool, opened from a gear button on the floating drawing toolbar.
+- Inputs: Account size + currency, Lot size, Risk (% or amount), Entry price, Leverage,
+  Profit level (Ticks + Price), Stop level (Ticks + Price), QTY precision — plus a live
+  computed summary (Quantity, Risk, Profit, Risk/Reward). Editing prices moves the
+  corresponding point; editing Ticks recomputes price from the inferred min-tick on the
+  correct side for long/short. Changes apply live.
+- Style: line width + zone opacity. Visibility: show/hide on-chart labels.
+- `Drawing` gained position fields: `accountSize`, `accountCurrency`, `lotSize`,
+  `riskValue`, `riskUnit`, `leverage`, `qtyPrecision`, `showLabels`.
+- `PositionTool` render now honours `opacity` (zones), `showLabels`, and prints Qty +
+  profit/risk money amounts on the labels when account/risk are set.
+- `chartStore` adds `editingDrawingIdAtom` / `setEditingDrawingAtom`; dialog mounted in
+  `Terminal`; Escape is guarded in `useHotkeys` so it closes the dialog without deselecting.
+  Files: chart/PositionSettingsDialog.tsx (NEW), chart/DrawingSettingsToolbar.tsx,
+  chart/drawing/tools/plugins/PositionTool.ts, store/chartStore.ts, types/drawing.ts,
+  Terminal.tsx, hooks/useHotkeys.ts.
+
 ### Changed — Long/Short position tool rebuilt TradingView-style (2026-06-28)
 - The old position tools defaulted `stop`/`target` to `entry`, so the box was invisible and
   there was no way to set risk/reward. Rebuilt as a points-based 3-point box that works with

@@ -74,7 +74,7 @@ function render(
 
   // --- Zones ---
   g.save();
-  g.globalAlpha = 0.15;
+  g.globalAlpha = d.opacity ?? 0.15;
   g.fillStyle = BULL;
   g.fillRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
   g.fillStyle = BEAR;
@@ -95,29 +95,49 @@ function render(
   g.restore();
 
   // --- Labels ---
-  const risk = Math.abs(entry - stop);
-  const reward = Math.abs(target - entry);
-  const rr = risk > 0 ? reward / risk : 0;
-  const tPct = entry ? ((target - entry) / entry) * 100 : 0;
-  const sPct = entry ? ((stop - entry) / entry) * 100 : 0;
-  const midX = left + w / 2;
+  if (d.showLabels !== false) {
+    const risk = Math.abs(entry - stop);
+    const reward = Math.abs(target - entry);
+    const rr = risk > 0 ? reward / risk : 0;
+    const tPct = entry ? ((target - entry) / entry) * 100 : 0;
+    const sPct = entry ? ((stop - entry) / entry) * 100 : 0;
+    const midX = left + w / 2;
 
-  chip(g, `Entry ${fmtPrice(entry)}`, xL, yE - 9, ENTRY);
-  chip(
-    g,
-    `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%`,
-    midX - 55,
-    (yE + yT) / 2 - 9,
-    BULL,
-  );
-  chip(
-    g,
-    `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%`,
-    midX - 55,
-    (yE + yS) / 2 - 9,
-    BEAR,
-  );
-  chip(g, `R/R ${rr.toFixed(2)}`, xR + 6, yE - 9, ENTRY);
+    // Money amounts when account/risk are configured.
+    let qtyTxt = "";
+    let profitTxt = "";
+    let riskTxt = "";
+    if (d.accountSize != null && d.riskValue != null) {
+      const riskAmount =
+        (d.riskUnit ?? "%") === "%"
+          ? d.accountSize * (d.riskValue / 100)
+          : d.riskValue;
+      const qty = risk > 0 ? (riskAmount / risk) * (d.lotSize ?? 1) : 0;
+      const profitAmount = qty * reward;
+      const cur = d.accountCurrency ?? "USD";
+      const prec = d.qtyPrecision ?? 2;
+      qtyTxt = `  Qty ${qty.toFixed(prec)}`;
+      profitTxt = `  +${profitAmount.toFixed(2)} ${cur}`;
+      riskTxt = `  -${riskAmount.toFixed(2)} ${cur}`;
+    }
+
+    chip(g, `Entry ${fmtPrice(entry)}${qtyTxt}`, xL, yE - 9, ENTRY);
+    chip(
+      g,
+      `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}`,
+      midX - 60,
+      (yE + yT) / 2 - 9,
+      BULL,
+    );
+    chip(
+      g,
+      `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}`,
+      midX - 60,
+      (yE + yS) / 2 - 9,
+      BEAR,
+    );
+    chip(g, `R/R ${rr.toFixed(2)}`, xR + 6, yE - 9, ENTRY);
+  }
 
   // --- Handles ---
   if (selected) {

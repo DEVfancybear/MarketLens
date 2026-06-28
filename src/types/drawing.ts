@@ -96,6 +96,18 @@ export interface BaseDrawing {
   /** Position tools (long/short): stop-loss & take-profit price levels. */
   stop?: number;
   target?: number;
+  /** Long/Short position tool settings (TradingView-style). */
+  accountSize?: number;
+  accountCurrency?: string;
+  lotSize?: number;
+  /** Risk value — interpreted as % of account or absolute amount per `riskUnit`. */
+  riskValue?: number;
+  riskUnit?: "%" | "amount";
+  leverage?: number;
+  /** Decimal places for the computed position quantity. */
+  qtyPrecision?: number;
+  /** Whether the on-chart info labels are shown (default true). */
+  showLabels?: boolean;
 }
 
 export type Drawing = BaseDrawing;
