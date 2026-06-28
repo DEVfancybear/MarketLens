@@ -338,6 +338,10 @@ export function AlertOverlay() {
 
     if (a.locked) return; // locked alerts select but don't drag
 
+    // Freeze chart pan/zoom for the duration of the drag so a fast vertical
+    // move can't leak through and scroll the view.
+    ctx.chart.applyOptions({ handleScroll: false, handleScale: false });
+
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     const startY = e.clientY;
@@ -389,6 +393,8 @@ export function AlertOverlay() {
         /* ignore */
       }
       clearLongPress();
+      // Re-enable chart pan/zoom now the drag is over.
+      ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
       if (moved && lastPrice !== origPrice) {
         const condition = sideCondition(a.condition, lastPrice, marketPrice);
         updateAlert(a.id, { price: lastPrice, condition });

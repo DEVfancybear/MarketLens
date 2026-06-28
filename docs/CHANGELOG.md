@@ -3,6 +3,18 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Chart "view jump" when dragging a trendline / alert fast (2026-06-29)
+- Dragging a drawing (e.g. trendline) or an alert line quickly made the chart
+  pan/scroll ("view jump"). Cause: `handleScroll.pressedMouseMove` is on, and on
+  a fast drag the pointer/mouse events leak through to the chart's pan handler
+  (the drawing canvas is `pointerEvents:none` and the manager can't use pointer
+  capture). Fix: **freeze the chart's pan & zoom for the duration of the drag**
+  (`handleScroll`/`handleScale` → false) and restore on release.
+  - `DrawingLayer`: toggled whenever the interaction machine is not `Idle`
+    (covers create, move, and resize).
+  - `AlertOverlay`: toggled around the alert-line drag.
+  Files: chart/DrawingLayer.tsx, chart/AlertOverlay.tsx.
+
 ### Added — Favorites quick-access bar (2026-06-29)
 - Starred drawing tools now show as a **quick-access bar** at the top of the
   `DrawingToolbar` (above the tool groups, with a brand-coloured divider). Each

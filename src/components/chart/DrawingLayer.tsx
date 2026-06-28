@@ -212,6 +212,7 @@ export function DrawingLayer() {
   ]);
 
   const {
+    machine,
     cursorStyle,
     ctxMenu,
     setCtxMenu,
@@ -241,6 +242,17 @@ export function DrawingLayer() {
     duplicateDrawing,
     onTextPlace: handleTextPlace,
   });
+
+  // While a drawing is being created or dragged/resized, freeze the chart's
+  // pan & zoom. Otherwise a fast pointer move leaks through to the chart's
+  // pressedMouseMove handler and scrolls the view ("view jump"). Restored to
+  // fully-enabled the instant the interaction returns to Idle.
+  useEffect(() => {
+    const chart = ctxRef.current?.chart;
+    if (!chart) return;
+    const busy = machine.state !== "Idle";
+    chart.applyOptions({ handleScroll: !busy, handleScale: !busy });
+  }, [machine.state]);
 
   useEffect(() => {
     if (!ctx) return;
