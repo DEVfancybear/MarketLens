@@ -80,8 +80,9 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
           "," +
           d.points[j].price.toFixed(4);
       }
-      // Include text so text-only updates invalidate the memo.
+      // Include text/fontSize so text-only updates invalidate the memo.
       if (d.text != null) h += ":text=" + d.text;
+      if (d.fontSize != null) h += ":fs=" + d.fontSize;
     }
     return h;
   }

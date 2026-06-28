@@ -24,8 +24,9 @@ const plugin: DrawingToolPlugin = {
       y = proj.toY(d.points[0].price);
     if (x == null || y == null) return;
     const txt = d.text || "";
+    const fs = d.fontSize ?? 13;
     g.save();
-    g.font = "13px var(--font-sans)";
+    g.font = `${fs}px var(--font-sans)`;
     g.fillStyle = d.color;
     g.fillText(txt, x, y);
     // Don't show selection handle for text — user finds circle distracting.
@@ -40,17 +41,18 @@ const plugin: DrawingToolPlugin = {
   ): HitResult[] {
     const x = toX(d.points[0].time),
       y = toY(d.points[0].price);
-    if (
-      x != null &&
-      y != null &&
-      Math.abs(x - px) < 40 &&
-      Math.abs(y - py) < 14
-    ) {
+    if (x == null || y == null) return [];
+    // Text is drawn left-anchored on an alphabetic baseline, so it spans
+    // [x, x+width] × [y-ascent, y+descent]. Approximate width/height from the
+    // font size so the hit box scales when the user changes the size.
+    const fs = d.fontSize ?? 13;
+    const w = Math.max(20, (d.text?.length ?? 0) * fs * 0.55);
+    if (px >= x - 4 && px <= x + w + 4 && py >= y - fs && py <= y + fs * 0.35) {
       return [
         {
           drawing: d,
           target: "body",
-          distance: Math.max(Math.abs(x - px), Math.abs(y - py)),
+          distance: Math.max(2, Math.abs(y - (y - fs / 2))),
         },
       ];
     }
@@ -61,7 +63,9 @@ const plugin: DrawingToolPlugin = {
     const x = toX(d.points[0].time),
       y = toY(d.points[0].price);
     if (x == null || y == null) return null;
-    return { x: x - 20, y: y - 7, w: 40, h: 14 };
+    const fs = d.fontSize ?? 13;
+    const w = Math.max(20, (d.text?.length ?? 0) * fs * 0.55);
+    return { x: x - 4, y: y - fs, w: w + 8, h: fs * 1.35 };
   },
 };
 

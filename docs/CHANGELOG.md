@@ -3,6 +3,15 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Text font-size control (TradingView-style) (2026-06-29)
+- Text/emoji annotations gain a `fontSize` property (default 13). The floating
+  toolbar shows a font-size button (current size) with a size-picker popover
+  (10–40px), matching TradingView's "16" control. `TextTool` renders at the chosen
+  size and scales its hit box / bounding box accordingly; `CanvasRenderer` hashes
+  `fontSize` so size changes repaint. Files: types/drawing.ts, chart/drawing/tools/
+  plugins/TextTool.ts, chart/drawing/renderer/CanvasRenderer.ts,
+  chart/DrawingSettingsToolbar.tsx.
+
 ### Changed — Drawing settings toolbar icons match TradingView (2026-06-29)
 The floating `DrawingSettingsToolbar` now mirrors TradingView's object toolbar:
 - **Line color** uses a **pencil** icon (was a generic palette) with the colored

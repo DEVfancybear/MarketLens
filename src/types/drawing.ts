@@ -83,6 +83,8 @@ export interface BaseDrawing {
   lineWidth: number;
   points: Point[];
   text?: string;
+  /** Font size (px) for text / emoji annotations. Defaults to 13. */
+  fontSize?: number;
   /** Line style: solid (default), dashed, or dotted. */
   lineStyle?: LineStyle;
   /** Fill color for shapes (rectangle, circle, etc.). */

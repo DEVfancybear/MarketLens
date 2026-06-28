@@ -37,6 +37,7 @@ const COLORS = [
   "#787b86",
 ];
 const WIDTHS = [1, 2, 3, 4];
+const FONT_SIZES = [10, 11, 12, 14, 16, 20, 24, 28, 32, 40];
 const STYLES: { value: LineStyle; label: string; dash: string }[] = [
   { value: "solid", label: "Solid", dash: "" },
   { value: "dashed", label: "Dashed", dash: "6 4" },
@@ -54,7 +55,7 @@ const FILL_TOOLS = new Set<Drawing["tool"]>([
 /** Tools that have no stroke width / style controls. */
 const NO_LINE_TOOLS = new Set<Drawing["tool"]>(["text", "emoji"]);
 
-type Menu = "color" | "fill" | "width" | "style" | null;
+type Menu = "color" | "fill" | "width" | "style" | "fontSize" | null;
 
 /**
  * TradingView-style floating toolbar that appears above the selected drawing,
@@ -221,6 +222,40 @@ export function DrawingSettingsToolbar() {
             setMenu(null);
           }}
         />
+      )}
+
+      {/* Font size (text / emoji) */}
+      {isTextTool && (
+        <>
+          <ToolbarButton
+            label="Font size"
+            active={menu === "fontSize"}
+            onClick={() => setMenu(menu === "fontSize" ? null : "fontSize")}
+          >
+            <span className="text-[12px] tabular-nums text-ink">
+              {drawing.fontSize ?? 13}
+            </span>
+          </ToolbarButton>
+          {menu === "fontSize" && (
+            <Popover>
+              {FONT_SIZES.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    patch({ fontSize: s });
+                    setMenu(null);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                >
+                  <span>{s}px</span>
+                  {(drawing.fontSize ?? 13) === s && (
+                    <Check size={13} className="text-brand" />
+                  )}
+                </button>
+              ))}
+            </Popover>
+          )}
+        </>
       )}
 
       {/* Fill colour (shapes only) */}
