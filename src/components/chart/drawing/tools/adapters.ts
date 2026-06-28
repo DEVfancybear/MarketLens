@@ -19,6 +19,7 @@ import "./plugins/RectangleTool";
 // Milestone 4 Phase 1 — linear tools
 import "./plugins/RayTool";
 import "./plugins/ExtendedLineTool";
+import "./plugins/TrendAngleTool";
 import "./plugins/InfoLineTool";
 import "./plugins/HorizRayTool";
 import "./plugins/CrossLineTool";

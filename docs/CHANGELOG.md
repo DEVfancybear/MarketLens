@@ -3,6 +3,24 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Trend Angle tool + TradingView-style line suite parity (2026-06-28)
+- **New `trendAngle` drawing tool** — two-point trend line that always renders the
+  visual angle (degrees) between the line and a horizontal baseline, drawn with a
+  dashed reference baseline + sweep arc + degree chip at the first anchor. Mirrors
+  TradingView's "Trend angle" tool. Files: drawing/tools/plugins/TrendAngleTool.ts (NEW),
+  drawing/tools/adapters.ts, types/drawing.ts (`trendAngle` added to `DrawingTool` +
+  `DRAWING_TOOLS`).
+- **TrendLine stats chip** — the basic trend line now shows a TradingView-style label
+  (price change, % change, angle°) while drawing (`__pending`) and when selected.
+  File: drawing/tools/plugins/TrendLineTool.ts.
+- **Shared helpers** `angleDeg()` + `angleArc()` added to drawing/tools/plugins/shared.ts.
+- **Toolbar LINES group** consolidated to match TradingView's "LINES" menu: Trend line,
+  Ray, Info line, Extended line, Trend angle, Horizontal line, Horizontal ray, Vertical
+  line, Cross line, Channel — with inline hotkey labels. The separate "horizontals"
+  group was merged in. File: components/toolbar/DrawingToolbar.tsx.
+- **Hotkeys** Alt+T (trend line), Alt+H (horizontal), Alt+J (horizontal ray),
+  Alt+V (vertical), Alt+C (cross line). File: hooks/useHotkeys.ts.
+
 ### Fixed — InfoLine tool drag not smooth during rubber-band preview (2026-06-27)
 - InfoLine's price/percentage chip label is now skipped during rubber-band preview
   (`id === "__pending"`), matching TrendLine smoothness. Chip renders only after

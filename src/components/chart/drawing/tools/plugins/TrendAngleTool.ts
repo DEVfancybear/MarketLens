@@ -1,5 +1,7 @@
 /**
- * TrendLineTool — renders and hit-tests a two-point trend line.
+ * TrendAngleTool — a two-point trend line that always displays the angle
+ * (in degrees) between the line and a horizontal baseline, drawn with an arc
+ * at the first anchor. Mirrors TradingView's "Trend angle" tool.
  */
 import type { Drawing } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
@@ -13,10 +15,10 @@ import {
   pointDist,
   distToSegment,
 } from "../ToolRegistry";
-import { line, handle, chip, angleDeg } from "./shared";
+import { line, handle, chip, angleDeg, angleArc } from "./shared";
 
 const plugin: DrawingToolPlugin = {
-  tool: "trendline",
+  tool: "trendAngle",
   minPoints: 2,
   render(
     g: CanvasRenderingContext2D,
@@ -31,16 +33,9 @@ const plugin: DrawingToolPlugin = {
       y2 = proj.toY(pts[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return;
     line(g, x1, y1, x2, y2);
-    // TradingView-style stats chip: shown while drawing (pending) and when
-    // selected — price change, % change, and the visual angle.
-    if (selected || d.id === "__pending") {
-      const diff = pts[1].price - pts[0].price;
-      const pct = pts[0].price ? (diff / pts[0].price) * 100 : 0;
-      const deg = angleDeg(x1, y1, x2, y2);
-      const sign = diff >= 0 ? "+" : "";
-      const label = `${sign}${diff.toFixed(4)} (${sign}${pct.toFixed(2)}%) ${deg.toFixed(1)}°`;
-      chip(g, label, x2 + 8, y2 - 9, d.color);
-    }
+    angleArc(g, x1, y1, x2, y2, d.color);
+    const deg = angleDeg(x1, y1, x2, y2);
+    chip(g, `${deg.toFixed(1)}°`, x1 + 32, y1 - 9, d.color);
     if (selected) {
       handle(g, x1, y1, d.color);
       handle(g, x2, y2, d.color);
@@ -63,17 +58,9 @@ const plugin: DrawingToolPlugin = {
     const d2 = pointDist(px, py, x2, y2);
     const segDist = distToSegment(px, py, x1, y1, x2, y2);
     if (d1 <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p1",
-        distance: d1,
-      });
+      results.push({ drawing: d, target: "p1", distance: d1 });
     if (d2 <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p2",
-        distance: d2,
-      });
+      results.push({ drawing: d, target: "p2", distance: d2 });
     if (segDist < TOL)
       results.push({ drawing: d, target: "body", distance: segDist });
     return results;
@@ -86,10 +73,10 @@ const plugin: DrawingToolPlugin = {
       y2 = toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
     return {
-      x: Math.min(x1, x2) - TOL,
-      y: Math.min(y1, y2) - TOL,
-      w: Math.abs(x2 - x1) + TOL * 2,
-      h: Math.abs(y2 - y1) + TOL * 2,
+      x: Math.min(x1, x2) - 40,
+      y: Math.min(y1, y2) - 18,
+      w: Math.abs(x2 - x1) + 80,
+      h: Math.abs(y2 - y1) + 36,
     };
   },
 };

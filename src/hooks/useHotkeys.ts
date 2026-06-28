@@ -30,12 +30,22 @@ const TOOL_SLOTS: Record<string, DrawingTool> = {
   "9": "short",
 };
 
+/** Alt+key line-tool shortcuts (TradingView LINES menu). */
+const ALT_TOOL_SLOTS: Record<string, DrawingTool> = {
+  t: "trendline",
+  h: "horizontal",
+  j: "horizRay",
+  v: "vertical",
+  c: "crossLine",
+};
+
 /**
  * Global keyboard shortcuts:
  *   Space        play/pause           R       restart replay
  *   →  / ←       next / prev candle   B / S   buy / sell
  *   Shift+→/←    ±10 candles          X       close position
  *   1–9          switch drawing tools
+ *   Alt+T/H/J/V/C trend / horizontal / horiz-ray / vertical / cross line
  *   Delete       remove selected drawing
  *   Ctrl/Cmd+D   duplicate selected drawing
  *   Ctrl/Cmd+A   select all drawings
@@ -66,6 +76,16 @@ export function useHotkeys() {
       if (!mod && !e.shiftKey && !e.altKey && TOOL_SLOTS[e.key]) {
         e.preventDefault();
         getDefaultStore().set(setActiveToolAtom, TOOL_SLOTS[e.key]);
+        return;
+      }
+
+      // --- Alt+key line-tool shortcuts (Alt+T/H/J/V/C) ---
+      if (e.altKey && !mod && !e.shiftKey && ALT_TOOL_SLOTS[e.key.toLowerCase()]) {
+        e.preventDefault();
+        getDefaultStore().set(
+          setActiveToolAtom,
+          ALT_TOOL_SLOTS[e.key.toLowerCase()],
+        );
         return;
       }
 

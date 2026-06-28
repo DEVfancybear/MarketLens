@@ -40,12 +40,19 @@ import type { DrawingTool } from "@/types";
 
 // ---- Tool groups (TradingView pattern) ----
 
+interface ToolItem {
+  tool: DrawingTool;
+  icon: React.ReactNode;
+  label: string;
+  hotkey?: string;
+}
+
 interface ToolGroup {
   id: string;
   icon: React.ReactNode;
   label: string;
   defaultTool: DrawingTool;
-  tools: { tool: DrawingTool; icon: React.ReactNode; label: string }[];
+  tools: ToolItem[];
 }
 
 const GROUPS: ToolGroup[] = [
@@ -61,7 +68,7 @@ const GROUPS: ToolGroup[] = [
       { tool: "eraser", icon: <Eraser size={14} />, label: "Eraser" },
     ],
   },
-  // --- Trend lines ---
+  // --- Lines (matches TradingView "LINES" menu) ---
   {
     id: "lines",
     icon: <TrendingUp size={18} />,
@@ -72,36 +79,45 @@ const GROUPS: ToolGroup[] = [
         tool: "trendline",
         icon: <TrendingUp size={14} />,
         label: "Trend line",
+        hotkey: "Alt+T",
       },
       { tool: "ray", icon: <ArrowUpRight size={14} />, label: "Ray" },
+      { tool: "infoLine", icon: <Ruler size={14} />, label: "Info line" },
       {
         tool: "extendedLine",
         icon: <GitBranch size={14} />,
         label: "Extended line",
       },
-      { tool: "channel", icon: <GitBranch size={14} />, label: "Channel" },
-    ],
-  },
-  // --- Horizontal / vertical ---
-  {
-    id: "horizontals",
-    icon: <Minus size={18} />,
-    label: "Horizontal line",
-    defaultTool: "horizontal",
-    tools: [
+      {
+        tool: "trendAngle",
+        icon: <Triangle size={14} />,
+        label: "Trend angle",
+      },
       {
         tool: "horizontal",
         icon: <Minus size={14} />,
         label: "Horizontal line",
+        hotkey: "Alt+H",
       },
-      { tool: "horizRay", icon: <Minus size={14} />, label: "Horizontal ray" },
+      {
+        tool: "horizRay",
+        icon: <Minus size={14} />,
+        label: "Horizontal ray",
+        hotkey: "Alt+J",
+      },
       {
         tool: "vertical",
         icon: <MoveVertical size={14} />,
         label: "Vertical line",
+        hotkey: "Alt+V",
       },
-      { tool: "crossLine", icon: <Crosshair size={14} />, label: "Cross line" },
-      { tool: "infoLine", icon: <Ruler size={14} />, label: "Info line" },
+      {
+        tool: "crossLine",
+        icon: <Crosshair size={14} />,
+        label: "Cross line",
+        hotkey: "Alt+C",
+      },
+      { tool: "channel", icon: <GitBranch size={14} />, label: "Channel" },
     ],
   },
   // --- Shapes ---
@@ -311,7 +327,12 @@ export function DrawingToolbar() {
                           <span className="shrink-0 text-ink-muted">
                             {t.icon}
                           </span>
-                          <span>{t.label}</span>
+                          <span className="flex-1">{t.label}</span>
+                          {t.hotkey && (
+                            <span className="shrink-0 text-[10px] text-ink-muted">
+                              {t.hotkey}
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>

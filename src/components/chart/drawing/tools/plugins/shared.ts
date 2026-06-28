@@ -42,6 +42,55 @@ export function handle(
   g.restore();
 }
 
+/**
+ * Visual screen angle (degrees) of the segment p1→p2, measured from the
+ * horizontal axis. Positive = upward (TradingView convention, where the
+ * y-axis is inverted because canvas y grows downward).
+ */
+export function angleDeg(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
+  return (Math.atan2(y1 - y2, x2 - x1) * 180) / Math.PI;
+}
+
+/**
+ * Draw a small arc at the origin point illustrating the angle between the
+ * horizontal baseline and the segment p1→p2 (TradingView "Trend angle" style).
+ */
+export function angleArc(
+  g: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: string,
+) {
+  const radius = 28;
+  // Baseline points to the right; the segment ends at the screen angle.
+  const a = Math.atan2(y2 - y1, x2 - x1); // canvas-space angle (y down)
+  g.save();
+  g.strokeStyle = color;
+  g.globalAlpha = 0.6;
+  g.lineWidth = 1;
+  g.setLineDash([]);
+  // Reference baseline (dashed, horizontal to the right).
+  g.beginPath();
+  g.setLineDash([4, 3]);
+  g.moveTo(x1, y1);
+  g.lineTo(x1 + radius + 14, y1);
+  g.stroke();
+  // Arc sweeping from the baseline to the trend segment.
+  g.beginPath();
+  g.setLineDash([]);
+  const ccw = a < 0; // upward segments sweep counter-clockwise in canvas space
+  g.arc(x1, y1, radius, 0, a, ccw);
+  g.stroke();
+  g.restore();
+}
+
 export function chip(
   g: CanvasRenderingContext2D,
   text: string,

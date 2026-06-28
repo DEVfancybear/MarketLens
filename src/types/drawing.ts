@@ -10,6 +10,7 @@ export type DrawingTool =
   | "trendline"
   | "ray"
   | "extendedLine"
+  | "trendAngle"
   | "horizontal"
   | "horizRay"
   | "vertical"
@@ -42,6 +43,7 @@ export const DRAWING_TOOLS: DrawingTool[] = [
   "trendline",
   "ray",
   "extendedLine",
+  "trendAngle",
   "horizontal",
   "horizRay",
   "vertical",

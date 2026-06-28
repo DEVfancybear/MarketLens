@@ -17,6 +17,29 @@ _Last updated: 2026-06-28 (Zustand → Jotai migration)_
 
 ## Completed this session
 
+### Trend Angle tool + line suite parity (2026-06-28)
+
+1. **New `trendAngle` tool** (`TrendAngleTool.ts`): two-point line that always shows the
+   visual angle in degrees with a dashed baseline + sweep arc + degree chip at p1
+   (TradingView "Trend angle"). Registered in `adapters.ts`; `trendAngle` added to the
+   `DrawingTool` union + `DRAWING_TOOLS` in `types/drawing.ts`.
+
+2. **TrendLine stats chip**: the plain trend line now shows price change / % change /
+   angle° while drawing and when selected (`TrendLineTool.ts`).
+
+3. **Shared geometry helpers**: `angleDeg()` + `angleArc()` added to `plugins/shared.ts`.
+
+4. **Toolbar LINES group** consolidated to mirror TradingView's "LINES" flyout (9 line
+   tools + channel, in TradingView order, with inline hotkey labels). Merged the old
+   "horizontals" group in. `ToolItem.hotkey` field added (`DrawingToolbar.tsx`).
+
+5. **Hotkeys**: Alt+T / Alt+H / Alt+J / Alt+V / Alt+C bound to trend / horizontal /
+   horiz-ray / vertical / cross line (`useHotkeys.ts`).
+
+Build ✅ · type-check ✅ · lint ✅ (0 warnings).
+
+## Earlier this session
+
 ### Drawing engine stabilization (2026-06-26)
 
 1. **Ctrl+D duplicate bug (critical):** `DuplicateDrawingCommand` generates valid `uid("dw")` internally.

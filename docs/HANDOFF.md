@@ -58,6 +58,14 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
   Escape deselect/cancel). Left rail width increased 40->52px. See `CURRENT_PROGRESS.md`.
+- **Line suite parity (2026-06-28):** Added the **`trendAngle`** tool (`TrendAngleTool.ts`) —
+  a 2-point line that always renders its screen angle in degrees (dashed baseline + sweep arc +
+  degree chip), matching TradingView's "Trend angle". The plain `trendline` now shows a stats
+  chip (price change / % / angle°) while drawing + when selected. New `angleDeg()`/`angleArc()`
+  helpers in `plugins/shared.ts`. The toolbar **LINES** group was consolidated to mirror
+  TradingView's LINES menu (Trend line, Ray, Info line, Extended line, Trend angle, Horizontal
+  line, Horizontal ray, Vertical line, Cross line, Channel) with inline hotkey labels, and
+  Alt+T/H/J/V/C hotkeys were added. See `CHANGELOG.md`.
 - **Jotai migration (2026-06-28):** All 11 Zustand stores (`create()`) replaced with Jotai
   atoms (`atom()`). Each store module now exports individual state atoms, write atoms for
   actions, a backward-compatible `useXStore()` hook, and a `getXState()` non-React accessor.
