@@ -29,8 +29,6 @@ const SINGLE_CLICK_TOOLS = new Set<DrawingTool>([
   "infoLine",
   "text",
   "emoji",
-  "long",
-  "short",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -109,6 +107,33 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     id: d.id || uid("dw"),
     points: d.points ? d.points.map((p) => ({ ...p })) : [],
   };
+  // Long/Short position tools: a single click only gives the entry point.
+  // Auto-expand to a TradingView-style 3-point box — points[0]=entry,
+  // points[1]={rightEdgeTime, targetPrice}, points[2]={rightEdgeTime, stopPrice}
+  // — so the profit/risk zones are immediately visible and draggable.
+  if (
+    (drawing.tool === "long" || drawing.tool === "short") &&
+    drawing.points.length === 1
+  ) {
+    const entry = drawing.points[0].price;
+    const tEntry = drawing.points[0].time;
+    const candles = _get(candlesAtom);
+    const interval =
+      candles.length >= 2
+        ? candles[candles.length - 1].time - candles[candles.length - 2].time
+        : 3600;
+    const tRight = tEntry + interval * 20; // ~20-bar default width
+    const risk = 0.01; // 1% default risk
+    const rr = 2; // default 1 : 2 reward-to-risk
+    const isLong = drawing.tool === "long";
+    const target = entry * (1 + (isLong ? risk * rr : -risk * rr));
+    const stop = entry * (1 + (isLong ? -risk : risk));
+    drawing.points = [
+      { time: tEntry, price: entry },
+      { time: tRight, price: target },
+      { time: tRight, price: stop },
+    ];
+  }
   const drawings = [..._get(drawingsAtom), drawing];
   // Single-click tools stay active; two-click tools switch back to cursor.
   const singleClick = SINGLE_CLICK_TOOLS.has(d.tool);

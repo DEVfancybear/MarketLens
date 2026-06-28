@@ -38,8 +38,7 @@ import "./plugins/PathTool";
 import "./plugins/FibTool"; // legacy (kept for backward compat)
 import "./plugins/FibRetracementTool";
 import "./plugins/FibExtensionTool";
-import "./plugins/LongPositionTool";
-import "./plugins/ShortPositionTool";
+import "./plugins/PositionTool";
 
 // Milestone 4 Phase 4 — freehand + annotations
 import "./plugins/BrushTool";

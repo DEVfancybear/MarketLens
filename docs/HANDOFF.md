@@ -58,6 +58,14 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
   Escape deselect/cancel). Left rail width increased 40->52px. See `CURRENT_PROGRESS.md`.
+- **Long/Short position tool (2026-06-28):** Rebuilt TradingView-style in `PositionTool.ts`
+  (replaces the old `LongPositionTool`/`ShortPositionTool`). Points-based geometry
+  (`[0]=entry, [1]={rightEdge,target}, [2]={rightEdge,stop}`) so the drag engine moves it.
+  `chartStore.addDrawingAtom` auto-expands a single click into a default box (±1%, 2:1 R/R,
+  ~20-bar width from candle interval). Green profit / red risk zones, entry/target/stop lines,
+  and labels (prices, %, R/R). Target handle = `p1`, stop handle = `p2` (both set right-edge
+  time); body/entry drag moves all. `long`/`short` removed from `SINGLE_CLICK_TOOLS` so they
+  return to cursor after placement. See `CHANGELOG.md`.
 - **Floating drawing settings toolbar (2026-06-28):** Selecting a drawing now pops a
   TradingView-style floating toolbar above it (`chart/DrawingSettingsToolbar.tsx`, mounted in
   `DrawingLayer`) with inline stroke colour / fill / line width / line style / clone / lock /

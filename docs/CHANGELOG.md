@@ -3,6 +3,22 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Changed — Long/Short position tool rebuilt TradingView-style (2026-06-28)
+- The old position tools defaulted `stop`/`target` to `entry`, so the box was invisible and
+  there was no way to set risk/reward. Rebuilt as a points-based 3-point box that works with
+  the standard drag engine: points[0]=entry, points[1]={rightEdge,target}, points[2]={rightEdge,stop}.
+- `chartStore.addDrawingAtom` auto-initialises a single click into a full box — entry at the
+  click, target/stop at ±1%×(2:1 R/R) defaults, ~20-bar width derived from the candle interval.
+- New `PositionTool.ts` (replaces `LongPositionTool.ts` + `ShortPositionTool.ts`): green profit
+  zone (entry→target), red risk zone (entry→stop), entry/target/stop lines, and labels for
+  entry / target (+%) / stop (+%) / Risk-Reward ratio. Direction-agnostic renderer shared by
+  long & short.
+- Draggable handles: target ("p1") and stop ("p2") set their price + the right-edge time;
+  dragging the body/entry line moves the whole box. Long/Short now return to the cursor after
+  one click (removed from `SINGLE_CLICK_TOOLS`) so handles are immediately adjustable.
+  Files: drawing/tools/plugins/PositionTool.ts (NEW), drawing/tools/adapters.ts, store/chartStore.ts;
+  removed drawing/tools/plugins/{LongPositionTool,ShortPositionTool}.ts.
+
 ### Fixed — Phantom drawing created when picking a tool from the flyout (2026-06-28)
 - With an armed single-click tool (e.g. Horizontal ray, which stays active after use),
   clicking a tool in the left toolbar's flyout — which overlays the chart — fired the
