@@ -26,9 +26,50 @@ export function resetChartView(): boolean {
   return true;
 }
 
-/** Capture the chart as a PNG blob. */
+/**
+ * Capture the chart as a PNG blob — TradingView-style, i.e. WITH every overlay.
+ *
+ * `IChartApi.takeScreenshot()` only renders lightweight-charts' own canvases
+ * (candles, grid, axes, native price lines). The drawing tools, long/short
+ * positions and SMC overlays live on separate `<canvas>` elements stacked over
+ * the chart, so we composite each of those onto the base screenshot at its
+ * on-screen position, scaled to the screenshot's pixel resolution.
+ */
 export async function captureChart(): Promise<Blob | null> {
   if (!mainChart) return null;
-  const canvas = mainChart.takeScreenshot();
-  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+  const shot = mainChart.takeScreenshot();
+  try {
+    const chartEl = mainChart.chartElement();
+    const root = chartEl?.parentElement;
+    const g = shot.getContext("2d");
+    if (g && chartEl && root) {
+      const base = chartEl.getBoundingClientRect();
+      const scaleX = base.width ? shot.width / base.width : 1;
+      const scaleY = base.height ? shot.height / base.height : 1;
+      // Overlay canvases = every <canvas> under the chart root that is NOT one of
+      // lightweight-charts' own internal canvases. Draw in ascending z-index so
+      // stacking order matches what the user sees.
+      const overlays = Array.from(root.querySelectorAll("canvas"))
+        .filter((cv) => !chartEl.contains(cv) && cv.width > 0 && cv.height > 0)
+        .map((cv) => ({
+          cv,
+          z: Number(getComputedStyle(cv).zIndex) || 0,
+        }))
+        .sort((a, b) => a.z - b.z);
+      for (const { cv } of overlays) {
+        const r = cv.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        g.drawImage(
+          cv,
+          (r.left - base.left) * scaleX,
+          (r.top - base.top) * scaleY,
+          r.width * scaleX,
+          r.height * scaleY,
+        );
+      }
+    }
+  } catch {
+    /* If compositing fails for any reason, fall back to the chart-only shot. */
+  }
+  return new Promise((resolve) => shot.toBlob((b) => resolve(b), "image/png"));
 }

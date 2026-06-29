@@ -3,6 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Screenshot now includes drawings & positions (2026-06-29)
+- The chart screenshot only contained candles/axes — drawing tools, long/short
+  positions and SMC overlays were missing. Cause: `IChartApi.takeScreenshot()`
+  renders only lightweight-charts' own canvases, but those overlays live on
+  separate `<canvas>` elements stacked over the chart.
+- `captureChart` now composites every overlay canvas onto the base screenshot at
+  its on-screen position (scaled to the screenshot's pixel resolution, drawn in
+  ascending z-index order). Falls back to the chart-only shot if compositing
+  throws. Covers both the toolbar screenshot button and the journal capture.
+  Files: chart/chartRegistry.ts.
+
 ### Fixed — Can't finish a freeform draw (Path / Polyline) (2026-06-29)
 - Double-clicking never finished a Path/Polyline: the finish check relied on
   `PointerEvent.detail >= 2`, but `detail` is 0 on `pointerdown` in most
