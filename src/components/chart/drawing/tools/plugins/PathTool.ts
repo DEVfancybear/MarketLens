@@ -1,14 +1,15 @@
 /**
- * PathTool — renders and hit-tests a closed polygon path.
+ * PathTool — TradingView "Path": a series of connected straight segments with a
+ * single arrowhead at the final point. Open (not closed) and never filled.
  */
 import type { Drawing, Point as Pt } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
-  HANDLE_RADIUS, TOL, pointDist,
+  HANDLE_RADIUS, TOL, pointDist, distToSegment,
 } from "../ToolRegistry";
-import { handle } from "./shared";
+import { handle, arrowHead } from "./shared";
 
 function project(
   pt: Pt,
@@ -29,20 +30,18 @@ const plugin: DrawingToolPlugin = {
     if (pts.length < 2) return;
     const projPts = pts.map((p) => project(p, proj.toX, proj.toY));
     if (projPts.some((p) => !p)) return;
+    // Open connected segments (no closePath, no fill).
     g.beginPath();
     g.moveTo(projPts[0]!.x, projPts[0]!.y);
     for (let i = 1; i < projPts.length; i++) {
-      if (projPts[i]) g.lineTo(projPts[i]!.x, projPts[i]!.y);
-    }
-    g.closePath();
-    if (d.fillColor && d.fillColor !== "none") {
-      g.save();
-      g.globalAlpha = d.opacity ?? 0.15;
-      g.fillStyle = d.fillColor;
-      g.fill();
-      g.restore();
+      g.lineTo(projPts[i]!.x, projPts[i]!.y);
     }
     g.stroke();
+    // Single arrowhead at the terminal point, aimed along the last segment.
+    const tip = projPts[projPts.length - 1]!;
+    const prev = projPts[projPts.length - 2]!;
+    const size = Math.max(10, (d.lineWidth || 1.5) * 4);
+    arrowHead(g, prev.x, prev.y, tip.x, tip.y, d.color, size);
     if (selected)
       projPts.forEach((p) => {
         if (p) handle(g, p.x, p.y, d.color);
@@ -64,6 +63,15 @@ const plugin: DrawingToolPlugin = {
           target: i === 0 ? "p1" : i === projected.length - 1 ? "p2" : "body",
           distance: dist,
         });
+    }
+    // Segment bodies (so the path line itself can be grabbed / moved).
+    for (let j = 0; j < projected.length - 1; j++) {
+      const a = projected[j],
+        b = projected[j + 1];
+      if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
+      const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+      if (segDist < TOL * 1.5)
+        results.push({ drawing: d, target: "body", distance: segDist });
     }
     return results;
   },

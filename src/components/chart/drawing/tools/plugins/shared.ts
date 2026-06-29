@@ -24,6 +24,34 @@ export function line(
   g.stroke();
 }
 
+/**
+ * Filled triangular arrowhead at the tip (x2,y2), oriented along the segment
+ * (x1,y1)→(x2,y2). Used by the Path tool (TradingView draws a single arrow at
+ * the end of the connected segments).
+ */
+export function arrowHead(
+  g: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: string,
+  size = 11,
+) {
+  const ang = Math.atan2(y2 - y1, x2 - x1);
+  const spread = Math.PI / 7; // ~26° half-angle
+  g.save();
+  g.setLineDash([]);
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(x2, y2);
+  g.lineTo(x2 - size * Math.cos(ang - spread), y2 - size * Math.sin(ang - spread));
+  g.lineTo(x2 - size * Math.cos(ang + spread), y2 - size * Math.sin(ang + spread));
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
 export function handle(
   g: CanvasRenderingContext2D,
   x: number,

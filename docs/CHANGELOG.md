@@ -3,6 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Path tool now matches TradingView (open + arrowhead) (2026-06-29)
+- The Path tool was rendering a **closed, filled polygon**. TradingView's Path is
+  a series of connected straight segments that is **open** (never closed/filled)
+  with a **single arrowhead at the final point**, aimed along the last segment.
+- Rewrote `PathTool.render`: stroke the open polyline, drop `closePath`/fill, and
+  draw a filled triangular arrowhead at the terminal point (size scales with line
+  width). Added a reusable `arrowHead()` helper in `shared.ts`.
+- Hit-testing now also covers the segment bodies (via `distToSegment`), so the
+  path line itself is grabbable/movable, not just its vertices.
+  Files: chart/drawing/tools/plugins/PathTool.ts, chart/drawing/tools/plugins/shared.ts.
+
 ### Fixed — Position box "grows / pins to SL bar" while dragging (2026-06-29)
 - When dragging a long/short position *fast* and the live geometry crossed its
   own stop/target, the box suddenly **enlarged and looked pinned at the SL/TP

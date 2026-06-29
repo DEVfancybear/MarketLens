@@ -17,6 +17,13 @@ _Last updated: 2026-06-28 (Zustand → Jotai migration)_
 
 ## Completed this session
 
+### Path tool TradingView parity (2026-06-29)
+- Path tool was a closed filled polygon; TradingView's Path is an open connected
+  polyline with a single arrowhead at the end. Rewrote `PathTool.render` (open,
+  no fill, terminal arrowhead via new `arrowHead()` in `shared.ts`) and added
+  segment-body hit-testing so the line is grabbable.
+  Files: `chart/drawing/tools/plugins/PathTool.ts`, `chart/drawing/tools/plugins/shared.ts`.
+
 ### Position box "grows/pins to SL bar" during drag fix (2026-06-29)
 - The real symptom: dragging a long/short position fast across its own stop/target
   made the box suddenly enlarge & pin to the SL/TP candle. Cause: drag start clears
