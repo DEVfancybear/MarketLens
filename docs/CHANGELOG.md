@@ -3,6 +3,41 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Position box "grows / pins to SL bar" while dragging (2026-06-29)
+- When dragging a long/short position *fast* and the live geometry crossed its
+  own stop/target, the box suddenly **enlarged and looked pinned at the SL/TP
+  candle** mid-drag. Cause: on drag start `handleDown` clears `tradeStatus` +
+  `hitTime`, so `PositionTool.render` took the fresh-detect branch every frame;
+  the moment `findHitCandle` matched it extended the box's right edge (`geo.xR`)
+  to the hit candle.
+- Fix: the renderer now marks the live-drag clone with a transient `_dragging`
+  flag (set in `CanvasRenderer` when applying `livePoints`), and `PositionTool`
+  skips the TP/SL hit-freeze entirely while `_dragging` is set. The freeze is
+  re-evaluated normally once the drag commits (the box snaps to the stop-out bar
+  only after release, as intended). `_dragging` is render-only, never persisted.
+  Files: types/drawing.ts (+`_dragging`), chart/drawing/renderer/CanvasRenderer.ts,
+  chart/drawing/tools/plugins/PositionTool.ts.
+
+### Fixed — Residual "view jump" when dragging a position tool fast (2026-06-29)
+- Follow-up to the trendline/alert fix below. Dragging or resizing an existing
+  drawing (notably the long/short **position tool**, especially within a dense
+  candle cluster, and most visibly when dragging right→left which reveals
+  history) *fast* still jumped/zoomed the view.
+- **Real root cause**: lightweight-charts pans/scales off **mouse events**
+  (`mousedown`/`mousemove`), but the interaction manager only ever stopped
+  *pointer* events (`pointerdown`). Because the drawing canvas is
+  `pointerEvents:"none"`, the raw mouse events flowed straight through to the
+  chart underneath. The option-only freeze (`handleScroll`/`handleScale → false`)
+  was a band-aid that raced against the first leaked move.
+- **Fix**: while a body-move / handle-resize drag is active, swallow the raw
+  `mousedown`/`mousemove`/`wheel`/`touchstart`/`touchmove` events in the
+  capture phase so they never reach LWC's handlers at all. Gated by a
+  synchronous `dragActiveRef` set on pointerdown and cleared on release
+  (pointerup / pointerleave / reset). The chart pan/zoom option-freeze
+  (`freezeChart(busy)`, threaded from `DrawingLayer`) is kept as a second line
+  of defence.
+  Files: chart/DrawingLayer.tsx, chart/drawing/interaction/DrawingInteractionManager.ts.
+
 ### Added — Replay "Select Bar" feature (TradingView parity) (2026-06-29)
 - Added a **Select Bar** button to the replay transport controls that enters a
   dedicated re-select mode while replay is already active. Matches TradingView's

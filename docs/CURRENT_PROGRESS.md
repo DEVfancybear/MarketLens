@@ -17,6 +17,26 @@ _Last updated: 2026-06-28 (Zustand → Jotai migration)_
 
 ## Completed this session
 
+### Position box "grows/pins to SL bar" during drag fix (2026-06-29)
+- The real symptom: dragging a long/short position fast across its own stop/target
+  made the box suddenly enlarge & pin to the SL/TP candle. Cause: drag start clears
+  `tradeStatus`/`hitTime`, so `PositionTool.render` fresh-detected each frame and
+  extended `geo.xR` to the hit candle. Fix: transient `_dragging` flag on the
+  live-drag clone (`CanvasRenderer`) → `PositionTool` skips the hit-freeze while
+  dragging; freeze re-applies on commit. `_dragging` never persisted.
+  Files: `types/drawing.ts`, `chart/drawing/renderer/CanvasRenderer.ts`,
+  `chart/drawing/tools/plugins/PositionTool.ts`.
+
+### Position-tool fast-drag "view jump" fix (2026-06-29)
+- Fixed residual chart view jump/zoom when dragging or resizing the long/short
+  position tool *fast* (worst in dense candle clusters, most visible right→left).
+  Real cause: lightweight-charts pans off **mouse events**, but the manager only
+  stopped *pointer* events — and the drawing canvas is `pointerEvents:"none"`, so
+  mouse events flowed straight to the chart. Fix: capture-phase blocker swallows
+  `mousedown`/`mousemove`/`wheel`/`touch*` during a drag (gated by synchronous
+  `dragActiveRef`); the option-freeze (`freezeChart`) is kept as backup.
+  Files: `chart/DrawingLayer.tsx`, `chart/drawing/interaction/DrawingInteractionManager.ts`.
+
 ### Position/drawing-tool bug pass (2026-06-28)
 
 1. **Settings toolbar is now draggable + top-pinned** (`DrawingSettingsToolbar.tsx`): no longer

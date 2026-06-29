@@ -106,6 +106,16 @@ export function DrawingLayer() {
       ctxRef.current?.candleSeries.priceToCoordinate(price) ?? null,
     [],
   );
+  // Imperatively freeze the chart's pan & zoom. Called synchronously the moment
+  // a drag/draw begins (in the pointerdown handler) so the very first
+  // pointermove of a *fast* drag can't leak through to the chart's
+  // pressedMouseMove handler before React has a chance to run the effect below.
+  const freezeChart = useCallback((busy: boolean) => {
+    ctxRef.current?.chart?.applyOptions({
+      handleScroll: !busy,
+      handleScale: !busy,
+    });
+  }, []);
   const fromEvent = useCallback((e: PointerEvent): Point | null => {
     const c = ctxRef.current;
     const cv = canvasRef.current;
@@ -241,12 +251,16 @@ export function DrawingLayer() {
     selectAll,
     duplicateDrawing,
     onTextPlace: handleTextPlace,
+    freezeChart,
   });
 
   // While a drawing is being created or dragged/resized, freeze the chart's
   // pan & zoom. Otherwise a fast pointer move leaks through to the chart's
-  // pressedMouseMove handler and scrolls the view ("view jump"). Restored to
-  // fully-enabled the instant the interaction returns to Idle.
+  // pressedMouseMove handler and scrolls the view ("view jump"). The freeze is
+  // applied *synchronously* at pointerdown via `freezeChart` (see the manager)
+  // to win the race against the first leaked pointermove of a fast drag; this
+  // effect is the reconciling backstop that restores full pan/zoom the instant
+  // the interaction returns to Idle.
   useEffect(() => {
     const chart = ctxRef.current?.chart;
     if (!chart) return;

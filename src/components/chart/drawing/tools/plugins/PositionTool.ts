@@ -116,7 +116,13 @@ function render(
     candleTime: number;
     candlePrice: number;
   } | null = null;
-  if (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit") {
+  // While the user is actively dragging this position, never apply the TP/SL
+  // hit-freeze: it extends the right edge to the hit candle, which makes the box
+  // appear to suddenly grow / get pinned at the SL bar mid-drag. The freeze is
+  // (re-)evaluated normally once the drag is committed and `_dragging` is gone.
+  if (d._dragging) {
+    hit = null;
+  } else if (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit") {
     hit = {
       status: d.tradeStatus,
       candleTime: d.hitTime ?? 0,

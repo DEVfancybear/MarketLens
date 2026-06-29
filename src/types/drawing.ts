@@ -120,6 +120,13 @@ export interface BaseDrawing {
   hitTime?: number;
   /** Price level at which the hit occurred (target or stop price). */
   hitPrice?: number;
+  /**
+   * Transient render-only flag: true on the cloned drawing the renderer builds
+   * from live drag points. Tools use it to suppress mid-drag side effects (e.g.
+   * the position tool's TP/SL hit-freeze that would otherwise snap-extend the
+   * box width while the user is still dragging). Never persisted to the store.
+   */
+  _dragging?: boolean;
 }
 
 export type Drawing = BaseDrawing;

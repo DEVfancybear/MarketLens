@@ -165,7 +165,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     if (data.livePoints && data.livePoints.size > 0) {
       for (let i = 0; i < storeDrawings.length; i++) {
         const pts = data.livePoints.get(storeDrawings[i].id);
-        if (pts) storeDrawings[i] = { ...storeDrawings[i], points: pts };
+        if (pts)
+          storeDrawings[i] = { ...storeDrawings[i], points: pts, _dragging: true };
       }
     }
 

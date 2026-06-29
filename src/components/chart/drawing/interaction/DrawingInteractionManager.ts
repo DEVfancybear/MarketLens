@@ -69,6 +69,13 @@ export interface DrawingInteractionManagerOpts {
   duplicateDrawing?: (id: string) => void;
   /** Called when Text tool is used. If provided, replaces window.prompt. */
   onTextPlace?: (point: Point, color: string) => void;
+  /**
+   * Synchronously freeze (busy=true) / restore (busy=false) the chart's pan &
+   * zoom. Invoked the instant a drag or draw begins — inside the pointerdown
+   * handler, before any pointermove can fire — so a fast drag can't leak the
+   * first move(s) into the chart's pressedMouseMove pan/scale handler.
+   */
+  freezeChart?: (busy: boolean) => void;
 }
 
 export interface DrawingInteractionHandle {
@@ -107,7 +114,10 @@ export function useDrawingInteractionManager(
     selectAll,
     duplicateDrawing,
     onTextPlace,
+    freezeChart,
   } = opts;
+  const freezeChartRef = useRef(freezeChart);
+  freezeChartRef.current = freezeChart;
 
   const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
@@ -123,6 +133,13 @@ export function useDrawingInteractionManager(
   const hoveredIdRef = useRef<string | null>(null);
   const clipboardRef = useRef<Drawing | null>(null);
   const pointerClaimedRef = useRef(false);
+  // True for the exact duration of a body-move / handle-resize drag. Set
+  // synchronously on pointerdown and cleared on release. Gates the capture-phase
+  // mouse/touch/wheel blocker below so a fast drag can't leak ANY event into
+  // lightweight-charts' own mouse handlers (LWC listens to mousedown/mousemove,
+  // NOT pointer events, so merely stopping pointerdown propagation never blocked
+  // its pan; the option-freeze raced against the first leaked move).
+  const dragActiveRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const transition = useCallback((next: Partial<Machine>) => {
     setMachine((prev) => ({ ...prev, ...next }));
@@ -144,7 +161,10 @@ export function useDrawingInteractionManager(
     setMachine(INITIAL_MACHINE);
     releaseCapture();
     pointerClaimedRef.current = false;
+    dragActiveRef.current = false;
     committedRef.current = [];
+    // Restore chart pan/zoom synchronously when the interaction ends.
+    freezeChartRef.current?.(false);
     scheduleRedrawRef.current();
   }, [releaseCapture]);
 
@@ -315,6 +335,11 @@ export function useDrawingInteractionManager(
         // Instead, document-level capture-phase listeners catch all events.
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
+        // Block LWC's mouse handlers for the whole drag (see dragActiveRef) and
+        // freeze pan/zoom as a second line of defence. Both are applied
+        // synchronously here, before the first move can fire.
+        dragActiveRef.current = true;
+        freezeChartRef.current?.(true);
 
         const selIds = cur.selectedDrawingIds;
         const isMulti = selIds.size > 1 && selIds.has(hit.drawing.id);
@@ -413,6 +438,9 @@ export function useDrawingInteractionManager(
 
     const handleUp = () => {
       const m = machineRef.current;
+      // Always release the chart-event block on any pointer release, even if the
+      // machine never reached a drag state, so the blocker can never get stuck.
+      dragActiveRef.current = false;
 
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
         const multiMap = livePointsRef.current;
@@ -464,17 +492,39 @@ export function useDrawingInteractionManager(
       }
     };
 
+    // While a body-move / handle-resize drag is in progress, swallow the raw
+    // mouse / touch / wheel events in the capture phase so they never reach
+    // lightweight-charts' own listeners (which pan & scale the view). This is
+    // what actually stops the "view jump": LWC reacts to mousedown/mousemove,
+    // and the drawing canvas being pointerEvents:"none" means those events would
+    // otherwise flow straight to the chart underneath.
+    const blockChartEvent = (e: Event) => {
+      if (!dragActiveRef.current) return;
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+    };
+
     document.addEventListener("pointerdown", handleDown, true);
     document.addEventListener("pointermove", handleMove, true);
     document.addEventListener("pointerup", handleUp, true);
     document.addEventListener("pointerleave", handleUp, true);
     document.addEventListener("contextmenu", handleCtx, true);
+    document.addEventListener("mousedown", blockChartEvent, true);
+    document.addEventListener("mousemove", blockChartEvent, true);
+    document.addEventListener("wheel", blockChartEvent, true);
+    document.addEventListener("touchstart", blockChartEvent, true);
+    document.addEventListener("touchmove", blockChartEvent, true);
     return () => {
       document.removeEventListener("pointerdown", handleDown, true);
       document.removeEventListener("pointermove", handleMove, true);
       document.removeEventListener("pointerup", handleUp, true);
       document.removeEventListener("pointerleave", handleUp, true);
       document.removeEventListener("contextmenu", handleCtx, true);
+      document.removeEventListener("mousedown", blockChartEvent, true);
+      document.removeEventListener("mousemove", blockChartEvent, true);
+      document.removeEventListener("wheel", blockChartEvent, true);
+      document.removeEventListener("touchstart", blockChartEvent, true);
+      document.removeEventListener("touchmove", blockChartEvent, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
