@@ -40,33 +40,40 @@ export async function captureChart(): Promise<Blob | null> {
   const shot = mainChart.takeScreenshot();
   try {
     const chartEl = mainChart.chartElement();
-    const root = chartEl?.parentElement;
     const g = shot.getContext("2d");
-    if (g && chartEl && root) {
+    if (g && chartEl) {
+      // The overlay canvases (drawings, positions, SMC) are siblings of the
+      // lightweight-charts element, NOT inside it: `chartElement()` returns LWC's
+      // own `div.tv-lightweight-charts`, whose parent is the createChart()
+      // container — the overlays live one level higher. Walk up ancestors until
+      // we reach a scope that actually contains non-LWC canvases.
+      let scope: HTMLElement | null = chartEl.parentElement;
+      let overlays: HTMLCanvasElement[] = [];
+      while (scope) {
+        overlays = Array.from(scope.querySelectorAll("canvas")).filter(
+          (cv) => !chartEl.contains(cv) && cv.width > 0 && cv.height > 0,
+        );
+        if (overlays.length > 0) break;
+        scope = scope.parentElement;
+      }
       const base = chartEl.getBoundingClientRect();
       const scaleX = base.width ? shot.width / base.width : 1;
       const scaleY = base.height ? shot.height / base.height : 1;
-      // Overlay canvases = every <canvas> under the chart root that is NOT one of
-      // lightweight-charts' own internal canvases. Draw in ascending z-index so
-      // stacking order matches what the user sees.
-      const overlays = Array.from(root.querySelectorAll("canvas"))
-        .filter((cv) => !chartEl.contains(cv) && cv.width > 0 && cv.height > 0)
-        .map((cv) => ({
-          cv,
-          z: Number(getComputedStyle(cv).zIndex) || 0,
-        }))
-        .sort((a, b) => a.z - b.z);
-      for (const { cv } of overlays) {
-        const r = cv.getBoundingClientRect();
-        if (r.width === 0 || r.height === 0) continue;
-        g.drawImage(
-          cv,
-          (r.left - base.left) * scaleX,
-          (r.top - base.top) * scaleY,
-          r.width * scaleX,
-          r.height * scaleY,
-        );
-      }
+      // Draw in ascending z-index so stacking order matches what the user sees.
+      overlays
+        .map((cv) => ({ cv, z: Number(getComputedStyle(cv).zIndex) || 0 }))
+        .sort((a, b) => a.z - b.z)
+        .forEach(({ cv }) => {
+          const r = cv.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return;
+          g.drawImage(
+            cv,
+            (r.left - base.left) * scaleX,
+            (r.top - base.top) * scaleY,
+            r.width * scaleX,
+            r.height * scaleY,
+          );
+        });
     }
   } catch {
     /* If compositing fails for any reason, fall back to the chart-only shot. */

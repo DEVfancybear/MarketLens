@@ -12,6 +12,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   its on-screen position (scaled to the screenshot's pixel resolution, drawn in
   ascending z-index order). Falls back to the chart-only shot if compositing
   throws. Covers both the toolbar screenshot button and the journal capture.
+- Note: `chartElement()` returns LWC's own `div.tv-lightweight-charts` (a child
+  of the createChart container); the overlays are siblings one level higher, so
+  the implementation walks up ancestors until it finds the scope that actually
+  contains the non-LWC canvases.
   Files: chart/chartRegistry.ts.
 
 ### Fixed — Can't finish a freeform draw (Path / Polyline) (2026-06-29)
