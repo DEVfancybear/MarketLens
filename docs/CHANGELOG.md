@@ -3,6 +3,16 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Can't finish a freeform draw (Path / Polyline) (2026-06-29)
+- Double-clicking never finished a Path/Polyline: the finish check relied on
+  `PointerEvent.detail >= 2`, but `detail` is 0 on `pointerdown` in most
+  browsers, so the second click just dropped another point.
+- Now double-click is detected manually (a second primary press within 350ms and
+  <6px of the previous), which commits the in-progress freeform draw. Right-click
+  still finishes via the contextmenu handler, and non-primary mouse buttons no
+  longer drop a stray point first (`hD` ignores `button > 0`).
+  Files: chart/drawing/interaction/DrawingInteractionManager.ts.
+
 ### Fixed — Path tool now matches TradingView (open + arrowhead) (2026-06-29)
 - The Path tool was rendering a **closed, filled polygon**. TradingView's Path is
   a series of connected straight segments that is **open** (never closed/filled)

@@ -141,6 +141,10 @@ export function useDrawingInteractionManager(
   // its pan; the option-freeze raced against the first leaked move).
   const dragActiveRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
+  // Manual double-click detection for finishing freeform draws (Path, Polyline…).
+  // `PointerEvent.detail` is unreliable on `pointerdown` (0 in many browsers), so
+  // we track the previous down's time + screen position instead.
+  const lastDownRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const transition = useCallback((next: Partial<Machine>) => {
     setMachine((prev) => ({ ...prev, ...next }));
     scheduleRedrawRef.current();
@@ -180,6 +184,10 @@ export function useDrawingInteractionManager(
     const hD = (e: PointerEvent) => {
       if (isOverDrawingUI(e)) return;
       if (!canvas || !isOverCanvas(e, canvas)) return;
+      // Only the primary (left / touch / pen) button draws. Right / middle
+      // clicks are left to the contextmenu handler, which finishes a freeform
+      // draw — otherwise a right-click would also drop a stray point first.
+      if (e.button > 0) return;
       const m = machineRef.current;
       if (m.state !== "Idle" && m.state !== "Drawing") return;
       const p = fromEvent(e);
@@ -247,6 +255,7 @@ export function useDrawingInteractionManager(
         };
         if (m.state !== "Drawing") {
           committedRef.current = [p];
+          lastDownRef.current = { x: e.clientX, y: e.clientY, t: e.timeStamp };
           transition({
             state: "Drawing",
             anchors: [p],
@@ -254,9 +263,18 @@ export function useDrawingInteractionManager(
           });
           return;
         }
-        // A double-click (detail ≥ 2) finishes a freeform draw.
-        if (adapter?.freeform && (e as PointerEvent).detail >= 2) {
+        // A double-click finishes a freeform draw: a second press at (almost) the
+        // same spot within 350ms. The first press of the double already committed
+        // its point, so we finish with the points we have (no duplicate added).
+        const prev = lastDownRef.current;
+        const isDouble =
+          !!prev &&
+          e.timeStamp - prev.t < 350 &&
+          Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6;
+        lastDownRef.current = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+        if (adapter?.freeform && isDouble) {
           if (committedRef.current.length >= n) commit(committedRef.current);
+          else reset();
           return;
         }
         const next = [...committedRef.current, p];
