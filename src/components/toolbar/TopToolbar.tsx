@@ -79,14 +79,28 @@ export function TopToolbar() {
   };
 
   const screenshot = async () => {
-    const blob = await captureChart();
-    if (!blob) return;
+    let blob: Blob | null = null;
+    try {
+      blob = await captureChart();
+    } catch (err) {
+      doLog("error", `Screenshot failed: ${(err as Error).message}`);
+      return;
+    }
+    if (!blob) {
+      doLog("warn", "Screenshot failed: chart not ready");
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `${getDefaultStore().get(symbolAtom)}_${timeframe}_${Date.now()}.png`;
+    // The anchor must be in the document for click() to trigger a download in
+    // Firefox/strict browsers; revoke is deferred so the browser has time to
+    // read the blob (revoking synchronously after click() can abort the save).
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
     doLog("info", "Screenshot saved");
   };
 

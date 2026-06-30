@@ -78,5 +78,19 @@ export async function captureChart(): Promise<Blob | null> {
   } catch {
     /* If compositing fails for any reason, fall back to the chart-only shot. */
   }
-  return new Promise((resolve) => shot.toBlob((b) => resolve(b), "image/png"));
+  return new Promise((resolve) => {
+    try {
+      shot.toBlob((b) => resolve(b), "image/png");
+    } catch {
+      // toBlob can throw (e.g. a tainted canvas after compositing). Retry with a
+      // clean chart-only screenshot so the user still gets a usable image.
+      try {
+        mainChart!
+          .takeScreenshot()
+          .toBlob((b) => resolve(b), "image/png");
+      } catch {
+        resolve(null);
+      }
+    }
+  });
 }

@@ -1,6 +1,22 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-30 (ObjectSettingsDialog TradingView-parity redesign)_
+_Last updated: 2026-07-01 (Position SL-hit priority + screenshot save fixes)_
+
+## Completed this session (2026-07-01)
+
+### Position tool — SL hit priority on ambiguous bars
+- TP/SL detection checked the target before the stop within a single bar, so a
+  bar piercing both levels falsely reported a TP hit. Stop is now evaluated
+  first in all three sites (`PositionTool.findHitCandle`, `DrawingLayer` candle
+  scan + live-price fallback) → ambiguous bars resolve to a stop hit
+  (TradingView/backtest convention). Cross-bar chronology unchanged.
+
+### Chart screenshot save fix
+- Download anchor now appended to the DOM before `click()` (detached anchors are
+  ignored in Firefox) and `revokeObjectURL` deferred (synchronous revoke aborted
+  the download). `screenshot()` wraps capture in try/catch; `captureChart` guards
+  the final `toBlob` and retries chart-only on throw.
+- type-check ✅ · lint ✅ · build ✅.
 
 ## Completed this session (2026-06-30)
 

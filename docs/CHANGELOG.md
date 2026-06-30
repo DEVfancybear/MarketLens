@@ -4,6 +4,27 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - SL hit lost to TP when one bar pierces both levels (2026-07-01)
+- The TP/SL hit scan checked the target before the stop within a single bar, so
+  a wide bar that pierced both levels was reported as a take-profit hit even
+  though the outcome is ambiguous. Now the stop is evaluated first in all three
+  detection sites, so an ambiguous bar conservatively resolves to a stop hit
+  (TradingView / standard backtest convention); chronological order across
+  separate bars is unchanged. Existing positions re-detect after a drag.
+  Files: PositionTool.ts (`findHitCandle`), DrawingLayer.tsx (candle scan + live
+  price fallback).
+
+### Fixed - Chart screenshot failed to save / errored (2026-07-01)
+- The download anchor was never attached to the DOM (Firefox/strict browsers
+  ignore `click()` on a detached anchor) and `URL.revokeObjectURL` ran
+  synchronously right after `click()`, which can abort the download. The anchor
+  is now appended/removed around the click and the object URL is revoked after a
+  delay. `screenshot()` also wraps `captureChart()` in try/catch and logs.
+- `captureChart` now wraps the final `shot.toBlob` (it was outside the
+  compositing try) and retries with a clean chart-only screenshot if it throws,
+  so a tainted/oversized composite can't reject the whole capture.
+  Files: TopToolbar.tsx, chartRegistry.ts.
+
 ### Fixed - TP/SL hit status overridden by live price after reversal (2026-06-30)
 - When SL was hit first but price later reversed and reached TP, the renderer
   showed both zones as bright and both labels displayed HIT simultaneously.

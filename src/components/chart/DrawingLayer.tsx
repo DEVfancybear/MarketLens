@@ -334,15 +334,10 @@ export function DrawingLayer() {
             } | null = null;
             for (const c of candles) {
               if (c.time <= entryTime) continue;
+              // Stop checked before target: a single bar piercing both levels
+              // resolves to a stop hit (conservative — never assume the
+              // optimistic fill). Chronology across separate bars is preserved.
               if (isLong) {
-                if (c.high >= target) {
-                  hit = {
-                    status: "tp_hit",
-                    time: c.time - entryTime,
-                    price: target,
-                  };
-                  break;
-                }
                 if (c.low <= stop) {
                   hit = {
                     status: "sl_hit",
@@ -351,8 +346,7 @@ export function DrawingLayer() {
                   };
                   break;
                 }
-              } else {
-                if (c.low <= target) {
+                if (c.high >= target) {
                   hit = {
                     status: "tp_hit",
                     time: c.time - entryTime,
@@ -360,11 +354,20 @@ export function DrawingLayer() {
                   };
                   break;
                 }
+              } else {
                 if (c.high >= stop) {
                   hit = {
                     status: "sl_hit",
                     time: c.time - entryTime,
                     price: stop,
+                  };
+                  break;
+                }
+                if (c.low <= target) {
+                  hit = {
+                    status: "tp_hit",
+                    time: c.time - entryTime,
+                    price: target,
                   };
                   break;
                 }
@@ -375,31 +378,32 @@ export function DrawingLayer() {
               const last = candles[candles.length - 1];
               if (last && last.time > entryTime) {
                 const px = last.close;
+                // Stop checked first here too (conservative on ambiguity).
                 if (isLong) {
-                  if (px >= target)
-                    hit = {
-                      status: "tp_hit",
-                      time: last.time - entryTime,
-                      price: target,
-                    };
-                  else if (px <= stop)
+                  if (px <= stop)
                     hit = {
                       status: "sl_hit",
                       time: last.time - entryTime,
                       price: stop,
+                    };
+                  else if (px >= target)
+                    hit = {
+                      status: "tp_hit",
+                      time: last.time - entryTime,
+                      price: target,
                     };
                 } else {
-                  if (px <= target)
-                    hit = {
-                      status: "tp_hit",
-                      time: last.time - entryTime,
-                      price: target,
-                    };
-                  else if (px >= stop)
+                  if (px >= stop)
                     hit = {
                       status: "sl_hit",
                       time: last.time - entryTime,
                       price: stop,
+                    };
+                  else if (px <= target)
+                    hit = {
+                      status: "tp_hit",
+                      time: last.time - entryTime,
+                      price: target,
                     };
                 }
               }

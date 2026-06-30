@@ -98,16 +98,21 @@ function findHitCandle(d: Drawing, geo: Geo) {
   const entryTime = d.points[0]?.time ?? 0;
   for (const c of candles) {
     if (c.time <= entryTime) continue;
+    // Stop is checked BEFORE target: when a single bar pierces both levels the
+    // outcome is ambiguous, so we conservatively resolve it as a stop hit
+    // (TradingView / standard backtest convention — never assume the optimistic
+    // fill). Across separate bars the earliest bar to touch either level still
+    // wins, so chronological order is preserved.
     if (isLong) {
-      if (c.high >= geo.target)
-        return { status: "tp_hit" as const, time: c.time, price: geo.target };
       if (c.low <= geo.stop)
         return { status: "sl_hit" as const, time: c.time, price: geo.stop };
-    } else {
-      if (c.low <= geo.target)
+      if (c.high >= geo.target)
         return { status: "tp_hit" as const, time: c.time, price: geo.target };
+    } else {
       if (c.high >= geo.stop)
         return { status: "sl_hit" as const, time: c.time, price: geo.stop };
+      if (c.low <= geo.target)
+        return { status: "tp_hit" as const, time: c.time, price: geo.target };
     }
   }
   return null;
