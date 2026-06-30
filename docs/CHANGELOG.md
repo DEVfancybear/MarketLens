@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Position counted TP/SL before the entry was ever filled (2026-07-01)
+- The TP/SL detector evaluated levels from the entry time even if price never
+  traded through the entry. A long limit placed below market that first spiked
+  UP to the target (without retracing to the entry) was wrongly marked a
+  take-profit, even though the order was never filled — and the later crash that
+  filled the entry and hit the stop was ignored. Now `detectPositionHit` models
+  the order in two phases: (1) it stays *pending* until a bar's range straddles
+  the entry (market fill on the entry bar, or a later limit fill), then (2)
+  evaluates TP/SL from the fill onward (stop-before-target on ambiguous bars).
+  The renderer and the `DrawingLayer` candle subscription now share this single
+  detector, so they can never diverge; the old duplicated scan + live-price
+  fallback in `DrawingLayer` were removed.
+  Files: PositionTool.ts (new exported `detectPositionHit`), DrawingLayer.tsx.
+
 ### Fixed - Stale persisted TP hit never corrected to SL (2026-07-01)
 - Follow-up to the stop-first fix below: a position whose `tradeStatus` was
   saved as `tp_hit` by the OLD logic stayed wrong forever, because both the

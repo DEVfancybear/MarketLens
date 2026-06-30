@@ -31,6 +31,7 @@ import {
 import { useCommandHistory } from "./drawing/history/useCommandHistory";
 import { CreateDrawingCommand } from "./drawing/history/CommandManager";
 import { TextEditor } from "./drawing/TextEditor";
+import { detectPositionHit } from "./drawing/tools/plugins/PositionTool";
 import { uid } from "@/utils/id";
 
 export function DrawingLayer() {
@@ -317,96 +318,21 @@ export function DrawingLayer() {
           if (drawingIdRef.current === d.id) continue;
           // Re-derive from candles every tick — even for already-resolved
           // drawings — so a stale persisted status (e.g. a tp_hit that should
-          // be sl_hit under the corrected stop-first logic) self-corrects.
+          // be sl_hit under the corrected fill/stop-first logic) self-corrects.
+          // Uses the SAME detector as the renderer so the two never diverge.
           // The write below is guarded to fire only when the value changes.
           if (d.points.length >= 3) {
-            const entry = d.points[0].price;
-            const target = d.points[1]?.price ?? d.target ?? entry;
-            const stop = d.points[2]?.price ?? d.stop ?? entry;
             const entryTime = d.points[0].time;
-            const isLong = d.tool === "long";
-            const candles = store.get(candlesAtom);
-            let hit: {
-              status: "tp_hit" | "sl_hit";
-              time: number;
-              price: number;
-            } | null = null;
-            for (const c of candles) {
-              if (c.time <= entryTime) continue;
-              // Stop checked before target: a single bar piercing both levels
-              // resolves to a stop hit (conservative — never assume the
-              // optimistic fill). Chronology across separate bars is preserved.
-              if (isLong) {
-                if (c.low <= stop) {
-                  hit = {
-                    status: "sl_hit",
-                    time: c.time - entryTime,
-                    price: stop,
-                  };
-                  break;
+            const found = detectPositionHit(d, store.get(candlesAtom));
+            // hitTime is persisted as an OFFSET from entry so the freeze follows
+            // the position when it is dragged.
+            const hit = found
+              ? {
+                  status: found.status,
+                  time: found.time - entryTime,
+                  price: found.price,
                 }
-                if (c.high >= target) {
-                  hit = {
-                    status: "tp_hit",
-                    time: c.time - entryTime,
-                    price: target,
-                  };
-                  break;
-                }
-              } else {
-                if (c.high >= stop) {
-                  hit = {
-                    status: "sl_hit",
-                    time: c.time - entryTime,
-                    price: stop,
-                  };
-                  break;
-                }
-                if (c.low <= target) {
-                  hit = {
-                    status: "tp_hit",
-                    time: c.time - entryTime,
-                    price: target,
-                  };
-                  break;
-                }
-              }
-            }
-            // Also check live price for intra-candle hit.
-            if (!hit) {
-              const last = candles[candles.length - 1];
-              if (last && last.time > entryTime) {
-                const px = last.close;
-                // Stop checked first here too (conservative on ambiguity).
-                if (isLong) {
-                  if (px <= stop)
-                    hit = {
-                      status: "sl_hit",
-                      time: last.time - entryTime,
-                      price: stop,
-                    };
-                  else if (px >= target)
-                    hit = {
-                      status: "tp_hit",
-                      time: last.time - entryTime,
-                      price: target,
-                    };
-                } else {
-                  if (px >= stop)
-                    hit = {
-                      status: "sl_hit",
-                      time: last.time - entryTime,
-                      price: stop,
-                    };
-                  else if (px <= target)
-                    hit = {
-                      status: "tp_hit",
-                      time: last.time - entryTime,
-                      price: target,
-                    };
-                }
-              }
-            }
+              : null;
             // Write only when the resolved hit actually differs from what is
             // already stored — otherwise this per-tick subscription would loop
             // updating the store with identical values.
@@ -430,7 +356,7 @@ export function DrawingLayer() {
               d.tradeStatus === "sl_hit"
             ) {
               // Previously resolved but no longer hits anything (e.g. levels
-              // edited) — clear the stale status.
+              // edited, or still pending fill) — clear the stale status.
               updateDrawing({
                 id: d.id,
                 patch: {

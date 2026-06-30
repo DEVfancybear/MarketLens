@@ -90,29 +90,85 @@ function geometry(d: Drawing, proj: Projector): Geo | null {
   return { xL, xR, yE, yT, yS, entry, target, stop };
 }
 
-/** Scan candles after entry for the first bar that reached target or stop. */
-function findHitCandle(d: Drawing, geo: Geo) {
-  const candles = getDefaultStore().get(candlesAtom);
-  if (candles.length === 0) return null;
+/** Minimal candle shape needed for hit detection. */
+interface HitCandle {
+  time: number;
+  high: number;
+  low: number;
+}
+
+/** Resolved outcome of a position: which level was hit, when, at what price. */
+export interface PositionHit {
+  status: "tp_hit" | "sl_hit";
+  /** Absolute candle time of the hit bar. */
+  time: number;
+  /** The level price that was hit (target or stop). */
+  price: number;
+}
+
+/**
+ * Determine a position's outcome from the candle series — the single source of
+ * truth for TP/SL highlighting.
+ *
+ * Two phases, matching how a real order behaves:
+ *
+ *  1. **Fill (pending → running).** The order is not live until price actually
+ *     trades through the entry level. We scan forward from the entry time for
+ *     the first bar whose range straddles the entry price. Until then the
+ *     position is *pending* and CANNOT hit TP/SL — this is why a long limit
+ *     placed below market that first spikes up to the target (without ever
+ *     retracing to the entry) is NOT a take-profit: it was never filled.
+ *       - If the very first bar at/after the entry time already straddles the
+ *         entry (entry ≈ market), it's a market fill; we skip TP/SL on that bar
+ *         (intra-bar order vs. the entry is unknowable) and start the next bar.
+ *       - If the fill happens on a later bar (a true limit fill), the remainder
+ *         of that bar is post-entry, so TP/SL is evaluated on it.
+ *
+ *  2. **TP/SL.** From the fill onward, the first bar to touch either level wins
+ *     (chronological). Within one bar the **stop is checked before the target**,
+ *     so a bar that pierces both resolves conservatively to a stop hit
+ *     (TradingView / standard backtest convention — never assume the optimistic
+ *     fill).
+ */
+export function detectPositionHit(
+  d: Drawing,
+  candles: readonly HitCandle[],
+): PositionHit | null {
+  const p0 = d.points[0];
+  if (!p0 || candles.length === 0) return null;
+  const entry = p0.price;
+  const target = d.points[1]?.price ?? d.target ?? entry;
+  const stop = d.points[2]?.price ?? d.stop ?? entry;
+  const entryTime = p0.time;
   const isLong = d.tool === "long";
-  const entryTime = d.points[0]?.time ?? 0;
+
+  let filled = false;
+  let firstBar = true;
   for (const c of candles) {
-    if (c.time <= entryTime) continue;
-    // Stop is checked BEFORE target: when a single bar pierces both levels the
-    // outcome is ambiguous, so we conservatively resolve it as a stop hit
-    // (TradingView / standard backtest convention — never assume the optimistic
-    // fill). Across separate bars the earliest bar to touch either level still
-    // wins, so chronological order is preserved.
+    if (c.time < entryTime) continue;
+    if (!filled) {
+      // Has price traded through the entry level yet?
+      if (c.low <= entry && entry <= c.high) {
+        filled = true;
+        if (firstBar) {
+          // Market fill on the entry bar — don't judge TP/SL on it.
+          firstBar = false;
+          continue;
+        }
+        // Limit fill on a later bar — fall through to evaluate TP/SL here.
+      } else {
+        firstBar = false;
+        continue; // still pending — entry not reached
+      }
+    }
     if (isLong) {
-      if (c.low <= geo.stop)
-        return { status: "sl_hit" as const, time: c.time, price: geo.stop };
-      if (c.high >= geo.target)
-        return { status: "tp_hit" as const, time: c.time, price: geo.target };
+      if (c.low <= stop) return { status: "sl_hit", time: c.time, price: stop };
+      if (c.high >= target)
+        return { status: "tp_hit", time: c.time, price: target };
     } else {
-      if (c.high >= geo.stop)
-        return { status: "sl_hit" as const, time: c.time, price: geo.stop };
-      if (c.low <= geo.target)
-        return { status: "tp_hit" as const, time: c.time, price: geo.target };
+      if (c.high >= stop) return { status: "sl_hit", time: c.time, price: stop };
+      if (c.low <= target)
+        return { status: "tp_hit", time: c.time, price: target };
     }
   }
   return null;
@@ -150,7 +206,8 @@ function render(
   // appear to suddenly grow / get pinned at the SL bar mid-drag. The freeze is
   // (re-)evaluated normally once the drag is committed and `_dragging` is gone.
   if (!d._dragging) {
-    const fresh = findHitCandle(d, geo);
+    const candles = getDefaultStore().get(candlesAtom);
+    const fresh = detectPositionHit(d, candles);
     if (fresh) {
       hit = {
         status: fresh.status,
@@ -158,7 +215,7 @@ function render(
         candlePrice: fresh.price,
       };
     } else if (
-      getDefaultStore().get(candlesAtom).length === 0 &&
+      candles.length === 0 &&
       (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
     ) {
       // No candles to verify against — trust the persisted freeze for now.
