@@ -202,17 +202,27 @@ function render(
   const isTpHit = hit?.status === "tp_hit";
   const isSlHit = hit?.status === "sl_hit";
 
-  // ── Zones (fill only — no visible stroke) ──
-  // TradingView uses pre-mixed dark colours rather than alpha-blending
-  // bright green/red over the chart background.  User-adjustable opacity
-  // is still respected via globalAlpha.
+  // ── Zones (fill alpha) ──
+  // Hit status (isTpHit / isSlHit) takes ABSOLUTE priority over live-price
+  // checks (reachedTarget / reachedStop).  Once TP or SL is confirmed hit,
+  // the opposite zone stays dimmed even if price later crosses its level.
   g.save();
-  g.globalAlpha =
-    reachedTarget || isTpHit ? hitAlpha : isSlHit ? loseAlpha : baseAlpha;
+  g.globalAlpha = isTpHit
+    ? hitAlpha
+    : isSlHit
+      ? loseAlpha
+      : reachedTarget
+        ? hitAlpha
+        : baseAlpha;
   g.fillStyle = POSITION_COLORS.PROFIT_FILL;
   g.fillRect(snapLeft, profitTop, snapW, profitH);
-  g.globalAlpha =
-    reachedStop || isSlHit ? hitAlpha : isTpHit ? loseAlpha : baseAlpha;
+  g.globalAlpha = isSlHit
+    ? hitAlpha
+    : isTpHit
+      ? loseAlpha
+      : reachedStop
+        ? hitAlpha
+        : baseAlpha;
   g.fillStyle = POSITION_COLORS.LOSS_FILL;
   g.fillRect(snapLeft, lossTop, snapW, lossH);
   g.restore();
@@ -325,8 +335,8 @@ function render(
 
     // Build label strings first so we can measure their pixel width.
     const entryLabel = `Entry ${fmtPrice(entry)}${qtyTxt}`;
-    const targetLabel = `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? " \u2713 HIT" : ""}`;
-    const stopLabel = `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? " \u2715 HIT" : ""}`;
+    const targetLabel = `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${isTpHit ? " \u2713 HIT" : ""}`;
+    const stopLabel = `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${isSlHit ? " \u2715 HIT" : ""}`;
     const rrLabel = `R/R ${rr.toFixed(2)}`;
 
     // Pre-measure for right-alignment (target, stop, RR at the right edge).

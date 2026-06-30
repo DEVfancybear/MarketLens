@@ -4,7 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
-### Changed — Position tool visual parity with TradingView (2026-06-30)
+### Fixed - TP/SL hit status overridden by live price after reversal (2026-06-30)
+- When SL was hit first but price later reversed and reached TP, the renderer
+  showed both zones as bright and both labels displayed HIT simultaneously.
+  Root cause: reachedTarget/reachedStop (live-price) had equal priority to
+  isTpHit/isSlHit (persisted) via ||. Reordered ternaries so confirmed hit
+  status takes absolute priority. Label HIT badges now only reflect confirmed
+  hits, never live price.
+  File: PositionTool.ts.
+
+### Changed - Position tool visual parity with TradingView (2026-06-30)
 - Replaced alpha-blended bright teal/red fills (`#26a69a` / `#ef5350`) with
   TradingView's pre-mixed dark palette: profit fill `#0E2B26`, loss fill
   `#3C171A`. This avoids stacking alpha every frame and produces the correct
