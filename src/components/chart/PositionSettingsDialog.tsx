@@ -29,7 +29,7 @@ type Tab = "inputs" | "style" | "visibility";
 
 /** A number input that keeps its own text so the user can type freely; it
  *  commits the parsed value on every valid keystroke. */
-function NumberField({
+export function NumberField({
   value,
   onCommit,
   className,
@@ -58,7 +58,7 @@ function NumberField({
   );
 }
 
-function Row({
+export function Row({
   label,
   children,
 }: {
@@ -73,7 +73,7 @@ function Row({
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <div className="mt-3 mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
       {children}

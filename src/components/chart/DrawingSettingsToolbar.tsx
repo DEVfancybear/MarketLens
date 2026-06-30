@@ -9,9 +9,12 @@ import {
   PaintBucket,
   Type,
   Check,
-  Settings,
+  Hexagon,
+  LayoutTemplate,
   GripVertical,
   MoreHorizontal,
+  Plus,
+  X,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -22,10 +25,14 @@ import {
   duplicateDrawingAtom,
   lockDrawingAtom,
   setEditingDrawingAtom,
+  drawingTemplatesAtom,
+  saveTemplateAtom,
+  applyTemplateAtom,
+  deleteTemplateAtom,
 } from "@/store/chartStore";
 import { useChartCtx } from "./ChartContext";
 import { useDrawingActions } from "./drawing/useDrawingActions";
-import type { Drawing, LineStyle } from "@/types";
+import { styleFamily, type Drawing, type LineStyle } from "@/types";
 import { cn } from "@/utils/cn";
 
 const COLORS = [
@@ -57,7 +64,15 @@ const FILL_TOOLS = new Set<Drawing["tool"]>([
 /** Tools that have no stroke width / style controls. */
 const NO_LINE_TOOLS = new Set<Drawing["tool"]>(["text", "emoji"]);
 
-type Menu = "color" | "fill" | "width" | "style" | "fontSize" | "more" | null;
+type Menu =
+  | "color"
+  | "fill"
+  | "width"
+  | "style"
+  | "fontSize"
+  | "templates"
+  | "more"
+  | null;
 
 /**
  * TradingView-style floating toolbar that appears above the selected drawing,
@@ -73,6 +88,10 @@ export function DrawingSettingsToolbar() {
   const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
   const lockDrawing = useSetAtom(lockDrawingAtom);
   const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
+  const templates = useAtomValue(drawingTemplatesAtom);
+  const saveTemplate = useSetAtom(saveTemplateAtom);
+  const applyTemplate = useSetAtom(applyTemplateAtom);
+  const deleteTemplate = useSetAtom(deleteTemplateAtom);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -173,7 +192,15 @@ export function DrawingSettingsToolbar() {
   const showLine = !NO_LINE_TOOLS.has(drawing.tool);
   const showFill = FILL_TOOLS.has(drawing.tool);
   const isTextTool = drawing.tool === "text" || drawing.tool === "emoji";
-  const hasSettings = drawing.tool === "long" || drawing.tool === "short";
+  // Templates are scoped to the selected object's style family (TradingView
+  // won't offer a text preset for a trendline).
+  const family = styleFamily(drawing.tool);
+  const familyTemplates = templates.filter((t) => t.family === family);
+  const onSaveTemplate = () => {
+    const name = window.prompt("Save drawing template as:");
+    if (name && name.trim()) saveTemplate({ id: drawing.id, name });
+    setMenu(null);
+  };
 
   const Sep = () => <div className="mx-0.5 h-5 w-px bg-terminal-border" />;
 
@@ -394,14 +421,70 @@ export function DrawingSettingsToolbar() {
       )}
 
       <Sep />
-      {/* Settings (position tools) */}
-      {hasSettings && (
-        <ToolbarButton
-          label="Settings"
-          onClick={() => setEditingDrawing(drawing.id)}
-        >
-          <Settings size={15} />
-        </ToolbarButton>
+      {/* Settings — opens the object's full settings dialog (every tool). */}
+      <ToolbarButton
+        label="Settings"
+        onClick={() => setEditingDrawing(drawing.id)}
+      >
+        <Hexagon size={15} />
+      </ToolbarButton>
+
+      {/* Templates — save / apply a reusable style preset for this family. */}
+      <ToolbarButton
+        label="Templates"
+        active={menu === "templates"}
+        onClick={() => setMenu(menu === "templates" ? null : "templates")}
+      >
+        <LayoutTemplate size={15} />
+      </ToolbarButton>
+      {menu === "templates" && (
+        <Popover>
+          <button
+            onClick={onSaveTemplate}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+          >
+            <Plus size={13} className="text-ink-muted" />
+            Save as template…
+          </button>
+          {familyTemplates.length > 0 && (
+            <div className="my-1 h-px bg-terminal-border" />
+          )}
+          {familyTemplates.map((t) => (
+            <div
+              key={t.name}
+              className="group flex items-center gap-2 rounded px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
+            >
+              <button
+                onClick={() => {
+                  applyTemplate({ id: drawing.id, template: t });
+                  setMenu(null);
+                }}
+                className="flex flex-1 items-center gap-2 text-left"
+              >
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full border border-terminal-border"
+                  style={{ background: t.color }}
+                />
+                <span className="truncate">{t.name}</span>
+              </button>
+              <button
+                aria-label={`Delete ${t.name}`}
+                title="Delete template"
+                onClick={() =>
+                  deleteTemplate({ name: t.name, family: t.family })
+                }
+                className="rounded p-0.5 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          {familyTemplates.length === 0 && (
+            <div className="px-2 py-1.5 text-[10px] text-ink-faint">
+              No saved templates
+            </div>
+          )}
+        </Popover>
       )}
       {/* Clone */}
       <ToolbarButton

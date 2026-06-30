@@ -1,6 +1,25 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-28 (Zustand → Jotai migration)_
+_Last updated: 2026-06-30 (Drawing toolbar Settings hexagon + Style Templates)_
+
+## Completed this session (2026-06-30)
+
+### Drawing toolbar — Settings (hexagon) + Style Templates (plan §1, §2)
+- **⬡ Settings for every object:** floating `DrawingSettingsToolbar` now shows a
+  hexagon settings button for all drawings. New `ObjectSettingsDialog` (non-position
+  tools) with family-based tabs — line/shape → Style · Coordinates · Visibility;
+  text/emoji → Style · Visibility. Position tool keeps `PositionSettingsDialog`.
+- **▦ Templates:** save the selected object's style as a named, global, family-scoped
+  preset; apply/delete from the toolbar popover. Style-only (never points/id). New
+  `DrawingTemplate` type + template atoms, persisted under `drawingTemplates`.
+- **Repaint fix:** `CanvasRenderer.drawingsHash()` now includes style fields so
+  toolbar/dialog/template edits repaint immediately.
+- **Anchor (§3) deferred** — high blast radius (needs viewport dims in the hit-test
+  pipeline); no dead button added. See `DRAWING_TOOLBAR_PLAN.md`.
+- Files: `chart/ObjectSettingsDialog.tsx` (new), `chart/PositionSettingsDialog.tsx`,
+  `chart/DrawingSettingsToolbar.tsx`, `store/chartStore.ts`, `types/drawing.ts`,
+  `components/Terminal.tsx`, `chart/drawing/renderer/CanvasRenderer.ts`.
+- type-check ✅ · lint ✅ · build ✅.
 
 ## Current phase / milestone
 - **✅ Phase 1 — Realtime Market Data Foundation — COMPLETE (Steps 1–17).**

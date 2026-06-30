@@ -1,6 +1,17 @@
 # Drawing Toolbar — Remaining TradingView Buttons (PLAN)
 
-_Plan only — not yet implemented. Created 2026-06-29._
+_Created 2026-06-29._
+
+## Status (updated 2026-06-30)
+- ✅ **§4 More** — overflow menu shipped (shared `useDrawingActions`).
+- ✅ **§1 Settings (hexagon)** — hexagon button for every object; non-position
+  tools open the new `ObjectSettingsDialog` (Style · Coordinates · Visibility).
+- ✅ **§2 Templates** — global, family-scoped style presets (save/apply/delete)
+  in the toolbar popover; persisted under `drawingTemplates`.
+- ⏸ **§3 Anchor** — DEFERRED. Even the text-only Phase 1 needs viewport
+  dimensions threaded through the hit-test/drag pipeline (`hitTest` adapters only
+  receive scalar `(v) => px` projectors, not width/height), a high blast radius
+  for marginal value. Revisit only if a real need appears. No dead UI was added.
 
 Target: bring the floating `DrawingSettingsToolbar` to full TradingView parity by
 adding four controls seen in TV's object toolbar:

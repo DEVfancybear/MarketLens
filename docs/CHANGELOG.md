@@ -3,6 +3,34 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Drawing toolbar Settings (hexagon) + Style Templates (2026-06-30)
+- **⬡ Settings (every object):** the floating `DrawingSettingsToolbar` now shows a
+  hexagon settings button for **all** drawings (was previously only the long/short
+  gear). New `ObjectSettingsDialog` opens for non-position tools with tabs picked
+  by family — line/shape → _Style · Coordinates · Visibility_, text/emoji → _Style ·
+  Visibility_. Style tab: colour, line width, line style, and (shapes) fill + opacity;
+  Coordinates tab: editable price + date/time per point; Visibility: show/hide on
+  chart. The long/short `PositionSettingsDialog` is untouched (still wins for
+  positions, so the two dialogs never collide). Plan §1.
+- **▦ Templates (style presets):** a templates button saves the selected object's
+  style as a named, **global**, family-scoped preset and re-applies it to another
+  object of the same family (style-only — never points/id, so a template can't move
+  or duplicate objects). New `DrawingTemplate` type + `drawingTemplatesAtom` /
+  `saveTemplateAtom` / `applyTemplateAtom` / `deleteTemplateAtom`, persisted via
+  `localStore` under `drawingTemplates` and hydrated in `hydrateAtom`. Plan §2.
+- **Repaint correctness:** `CanvasRenderer.drawingsHash()` now folds in the style
+  fields (`color`, `lineWidth`, `lineStyle`, `fillColor`, `opacity`, `showLabels`,
+  `visible`) so toolbar / dialog / template edits repaint immediately instead of
+  waiting for the next pan/zoom. Cross-cutting note in the plan.
+- **Anchor (plan §3) intentionally deferred** — it needs viewport dimensions threaded
+  through the hit-test/drag pipeline (adapters only receive scalar projectors), a high
+  blast radius for marginal value; documented in `DRAWING_TOOLBAR_PLAN.md`. No dead
+  button was added.
+  Files: chart/ObjectSettingsDialog.tsx (new), chart/PositionSettingsDialog.tsx
+  (export shared NumberField/Row/SectionTitle), chart/DrawingSettingsToolbar.tsx,
+  store/chartStore.ts, types/drawing.ts, components/Terminal.tsx,
+  chart/drawing/renderer/CanvasRenderer.ts.
+
 ### Added — Drawing toolbar "⋯ More" overflow menu (2026-06-30)
 - Added a `⋯` button to the floating `DrawingSettingsToolbar` that opens the same
   action list as the right-click menu (Settings, Clone, Lock/Unlock, Show/Hide,

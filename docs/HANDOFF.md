@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-29 (Long/Short position whitespace-resize fix + draggable entry handle)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-30 (Drawing toolbar Settings hexagon + Style Templates — plan §1/§2)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -100,6 +100,14 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   Components use `useAtomValue`/`useSetAtom` for fine-grained subscriptions — updating
   `candlesAtom` no longer re-renders `TopToolbar`, `DrawingToolbar`, or other unrelated
   components. `zustand` removed from dependencies. See `ARCHITECTURE.md` for full details.
+- **Drawing toolbar parity (2026-06-30):** floating `DrawingSettingsToolbar` gained a
+  **⬡ Settings** button for every object (new `ObjectSettingsDialog` — Style/Coordinates/
+  Visibility tabs by family; long/short keeps `PositionSettingsDialog`) and a **▦ Templates**
+  popover (global, family-scoped, style-only presets — `DrawingTemplate` +
+  `saveTemplateAtom`/`applyTemplateAtom`/`deleteTemplateAtom`, persisted under
+  `drawingTemplates`). `CanvasRenderer.drawingsHash()` now folds in style fields so edits
+  repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
+  hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
 - **Recommended next action:** Start **Phase 6 — Push Notifications / MT5 Integration.**
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open

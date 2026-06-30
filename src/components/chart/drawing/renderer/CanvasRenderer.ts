@@ -83,6 +83,24 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       // Include text/fontSize so text-only updates invalidate the memo.
       if (d.text != null) h += ":text=" + d.text;
       if (d.fontSize != null) h += ":fs=" + d.fontSize;
+      // Include style fields so colour / width / line-style / fill / opacity /
+      // label / visibility edits (toolbar + settings dialog + templates) repaint
+      // immediately instead of waiting for the next pan/zoom.
+      h +=
+        ":st=" +
+        d.color +
+        "," +
+        (d.lineWidth ?? "") +
+        "," +
+        (d.lineStyle ?? "") +
+        "," +
+        (d.fillColor ?? "") +
+        "," +
+        (d.opacity ?? "") +
+        "," +
+        (d.showLabels === false ? "0" : "1") +
+        "," +
+        (d.visible === false ? "0" : "1");
     }
     return h;
   }

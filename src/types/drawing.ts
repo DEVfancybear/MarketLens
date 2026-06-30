@@ -131,6 +131,57 @@ export interface BaseDrawing {
 
 export type Drawing = BaseDrawing;
 
+/**
+ * Style families used for the floating toolbar settings/templates. A template
+ * saved from a shape can only be applied to another shape, etc. (TradingView
+ * scopes its style templates the same way).
+ */
+export type StyleFamily = "line" | "shape" | "text";
+
+/** Tools that carry a fill (shapes) → the "shape" style family. */
+export const SHAPE_TOOLS: DrawingTool[] = [
+  "rectangle",
+  "rotatedRect",
+  "circle",
+  "ellipse",
+  "triangle",
+];
+
+/** Map a tool to its style family for settings/templates. */
+export function styleFamily(tool: DrawingTool): StyleFamily {
+  if (tool === "text" || tool === "emoji") return "text";
+  if (SHAPE_TOOLS.includes(tool)) return "shape";
+  return "line";
+}
+
+/**
+ * A reusable style preset ("template") the user can save from one object and
+ * apply to another of the same family. Style-only — never points / id — so a
+ * bad template can't move or duplicate objects.
+ */
+export interface DrawingTemplate {
+  name: string;
+  family: StyleFamily;
+  color: string;
+  lineWidth?: number;
+  lineStyle?: LineStyle;
+  fillColor?: string;
+  opacity?: number;
+  fontSize?: number;
+  showLabels?: boolean;
+}
+
+/** The subset of `Drawing` fields a template applies. */
+export const TEMPLATE_STYLE_KEYS = [
+  "color",
+  "lineWidth",
+  "lineStyle",
+  "fillColor",
+  "opacity",
+  "fontSize",
+  "showLabels",
+] as const;
+
 /** Standard Fibonacci retracement ratios. */
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 

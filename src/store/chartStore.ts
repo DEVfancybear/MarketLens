@@ -4,11 +4,13 @@ import { useAtomValue } from "jotai";
 import type {
   Candle,
   Drawing,
+  DrawingTemplate,
   DrawingTool,
   IndicatorConfig,
   IndicatorType,
   Timeframe,
 } from "@/types";
+import { TEMPLATE_STYLE_KEYS, styleFamily } from "@/types";
 import { localStore } from "@/services/storage";
 import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
@@ -20,6 +22,10 @@ const DEFAULT_TF: Timeframe = "15m";
 function drawingsKey(symbol: string) {
   return `drawings:${symbol}`;
 }
+
+// Style templates are GLOBAL (not per-symbol) — a trendline preset applies on
+// any chart, mirroring TradingView's template list.
+const TEMPLATES_KEY = "drawingTemplates";
 
 // ---------------------------------------------------------------------------
 // Primitive atoms (one per state field)
@@ -323,12 +329,83 @@ export const setEditingDrawingAtom = atom(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Drawing style templates (global, style-only presets)
+// ---------------------------------------------------------------------------
+
+export const drawingTemplatesAtom = atom<DrawingTemplate[]>([]);
+
+/** Extract the style-only subset from a drawing. */
+function styleSubset(d: Drawing): Partial<Drawing> {
+  const out: Partial<Drawing> = {};
+  for (const k of TEMPLATE_STYLE_KEYS) {
+    const v = d[k];
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
+/** Save the selected drawing's style as a named, family-scoped template. */
+export const saveTemplateAtom = atom(
+  null,
+  (_get, set, arg: { id: string; name: string }) => {
+    const d = _get(drawingsAtom).find((x) => x.id === arg.id);
+    if (!d) return;
+    const name = arg.name.trim();
+    if (!name) return;
+    const template: DrawingTemplate = {
+      name,
+      family: styleFamily(d.tool),
+      color: d.color,
+      ...styleSubset(d),
+    };
+    // Replace any existing template with the same name + family.
+    const next = [
+      ..._get(drawingTemplatesAtom).filter(
+        (t) => !(t.name === name && t.family === template.family),
+      ),
+      template,
+    ];
+    set(drawingTemplatesAtom, next);
+    localStore.set(TEMPLATES_KEY, next);
+  },
+);
+
+/** Apply a saved template's style subset to a drawing (never points/id). */
+export const applyTemplateAtom = atom(
+  null,
+  (_get, set, arg: { id: string; template: DrawingTemplate }) => {
+    const { id, template } = arg;
+    const patch: Partial<Drawing> = { color: template.color };
+    for (const k of TEMPLATE_STYLE_KEYS) {
+      const v = template[k as keyof DrawingTemplate];
+      if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
+    }
+    set(updateDrawingAtom, { id, patch });
+  },
+);
+
+export const deleteTemplateAtom = atom(
+  null,
+  (_get, set, arg: { name: string; family: DrawingTemplate["family"] }) => {
+    const next = _get(drawingTemplatesAtom).filter(
+      (t) => !(t.name === arg.name && t.family === arg.family),
+    );
+    set(drawingTemplatesAtom, next);
+    localStore.set(TEMPLATES_KEY, next);
+  },
+);
+
 export const hydrateAtom = atom(null, (_get, set) => {
   set(
     drawingsAtom,
     localStore.get<Drawing[]>(drawingsKey(_get(symbolAtom)), []),
   );
   set(indicatorsAtom, localStore.get<IndicatorConfig[]>("indicators", []));
+  set(
+    drawingTemplatesAtom,
+    localStore.get<DrawingTemplate[]>(TEMPLATES_KEY, []),
+  );
 });
 
 // ---------------------------------------------------------------------------

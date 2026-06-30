@@ -5,6 +5,7 @@ import { TopToolbar } from "@/components/toolbar/TopToolbar";
 import { DrawingToolbar } from "@/components/toolbar/DrawingToolbar";
 import { IndicatorSettingsDialog } from "@/components/toolbar/IndicatorSettingsDialog";
 import { PositionSettingsDialog } from "@/components/chart/PositionSettingsDialog";
+import { ObjectSettingsDialog } from "@/components/chart/ObjectSettingsDialog";
 import { ChartArea } from "@/components/chart/ChartArea";
 import { Watchlist } from "@/components/watchlist/Watchlist";
 import { BottomPanel } from "@/components/layout/BottomPanel";
@@ -41,6 +42,7 @@ export function Terminal() {
       <AlertEditDialog />
       <IndicatorSettingsDialog />
       <PositionSettingsDialog />
+      <ObjectSettingsDialog />
       <Toaster />
     </>
   );
