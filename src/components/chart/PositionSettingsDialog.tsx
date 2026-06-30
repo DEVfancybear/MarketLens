@@ -339,12 +339,12 @@ export function PositionSettingsDialog() {
                   type="range"
                   min={1}
                   max={5}
-                  value={drawing.lineWidth ?? 1.5}
+                  value={drawing.lineWidth ?? 1}
                   onChange={(e) => patch({ lineWidth: Number(e.target.value) })}
                   className="flex-1 accent-brand"
                 />
                 <span className="w-10 text-right text-xs text-ink">
-                  {drawing.lineWidth ?? 1.5}px
+                  {drawing.lineWidth ?? 1}px
                 </span>
               </Row>
               <Row label="Zone opacity">
