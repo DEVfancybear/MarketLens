@@ -93,7 +93,8 @@ export function SmcLayer() {
       color: string,
       align: "left" | "right" = "left",
     ) => {
-      g.font = "10px var(--font-sans)";
+      // Canvas can't resolve var(--font-sans); use a concrete family.
+      g.font = '10px "Inter", system-ui, sans-serif';
       const padX = 4;
       const w = g.measureText(text).width + padX * 2;
       const h = 14;

@@ -8,7 +8,7 @@ import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
   HANDLE_RADIUS, TOL, pointDist, distToRect,
 } from "../ToolRegistry";
-import { handle, applyStyle, line } from "./shared";
+import { handle, applyStyle, line, canvasFont } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "rectangle",
@@ -46,7 +46,7 @@ const plugin: DrawingToolPlugin = {
       g.save();
       g.setLineDash([]);
       const fs = d.fontSize ?? 14;
-      g.font = `${d.italic ? "italic " : ""}${d.bold ? "bold " : ""}${fs}px var(--font-sans)`;
+      g.font = canvasFont(fs, { bold: d.bold, italic: d.italic });
       g.fillStyle = d.textColor || d.color;
       const pad = 6;
       const hAlign = d.textHAlign ?? "center";

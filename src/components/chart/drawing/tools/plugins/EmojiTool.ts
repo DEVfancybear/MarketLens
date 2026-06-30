@@ -9,7 +9,7 @@ import {
   registerTool,
   defaultMovePoints,
 } from "../ToolRegistry";
-import { handle } from "./shared";
+import { handle, canvasFont } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "emoji",
@@ -24,9 +24,10 @@ const plugin: DrawingToolPlugin = {
       y = proj.toY(d.points[0].price);
     if (x == null || y == null) return;
     g.save();
-    g.font = "20px var(--font-sans)";
+    const fs = d.fontSize ?? 20;
+    g.font = canvasFont(fs);
     g.fillStyle = d.color;
-    g.fillText(d.text || "", x - 9, y + 7);
+    g.fillText(d.text || "", x - fs * 0.45, y + fs * 0.35);
     g.restore();
     if (selected) handle(g, x, y, d.color);
   },

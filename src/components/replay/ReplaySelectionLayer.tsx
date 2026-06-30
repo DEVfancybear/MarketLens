@@ -143,7 +143,8 @@ export function ReplaySelectionLayer() {
 
     // Date label chip.
     const label = fmtDateTime(data[hoverIdx].time);
-    g.font = "10px var(--font-sans)";
+    // Canvas can't resolve var(--font-sans); use a concrete family.
+    g.font = '10px "Inter", system-ui, sans-serif';
     const w = g.measureText(label).width + 12;
     const chipColor = reSelecting ? "#ff9800" : accent;
     g.fillStyle = chipColor;

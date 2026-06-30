@@ -9,7 +9,7 @@ import {
   registerTool,
   defaultMovePoints,
 } from "../ToolRegistry";
-import { handle } from "./shared";
+import { canvasFont } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "text",
@@ -26,7 +26,7 @@ const plugin: DrawingToolPlugin = {
     const txt = d.text || "";
     const fs = d.fontSize ?? 13;
     g.save();
-    g.font = `${d.italic ? "italic " : ""}${d.bold ? "bold " : ""}${fs}px var(--font-sans)`;
+    g.font = canvasFont(fs, { bold: d.bold, italic: d.italic });
     g.fillStyle = d.textColor || d.color;
     g.fillText(txt, x, y);
     // Don't show selection handle for text — user finds circle distracting.

@@ -3,6 +3,20 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Fixed — Canvas text ignored font size / bold / italic (2026-06-30)
+- Changing a text/emoji or rectangle-text object's **font size, Bold or Italic**
+  had no visible effect. Root cause: canvas `ctx.font` cannot resolve CSS custom
+  properties — `"28px var(--font-sans)"` is an unparseable font string, so the
+  whole assignment was silently ignored and the context kept its previous/default
+  font. Size + bold + italic therefore never applied.
+- Added `fontFamily()` (resolves `--font-sans` once, cached) and `canvasFont(size,
+  {bold, italic})` in `plugins/shared.ts`; `TextTool`, `RectangleTool`, `EmojiTool`
+  and `chip()` now build valid font strings through it (emoji also honours
+  `fontSize`). `SmcLayer` / `ReplaySelectionLayer` label fonts switched to a concrete
+  family for the same reason.
+  Files: chart/drawing/tools/plugins/{shared,TextTool,RectangleTool,EmojiTool}.ts,
+  smc/SmcLayer.tsx, replay/ReplaySelectionLayer.tsx.
+
 ### Changed — ObjectSettingsDialog redesigned for TradingView parity (2026-06-30)
 - Reworked the generic settings dialog to match TradingView's object dialog
   (user-reported mismatch). Tabs are now **Style · Text · Coordinates · Visibility**

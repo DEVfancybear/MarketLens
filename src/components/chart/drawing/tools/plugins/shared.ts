@@ -2,6 +2,34 @@
  * Shared canvas drawing helpers used by all tool plugins.
  */
 
+// Canvas `ctx.font` cannot resolve CSS custom properties: `"28px var(--font-sans)"`
+// is an UNPARSEABLE font string, so the whole assignment is silently ignored and
+// size/bold/italic never take effect. Resolve `--font-sans` to a concrete family
+// once (cached) and build canvas font strings from it instead.
+let _fontFamily: string | null = null;
+export function fontFamily(): string {
+  if (_fontFamily) return _fontFamily;
+  if (typeof window !== "undefined") {
+    const v = getComputedStyle(document.documentElement)
+      .getPropertyValue("--font-sans")
+      .trim();
+    _fontFamily = v || '"Inter", system-ui, sans-serif';
+  } else {
+    _fontFamily = '"Inter", system-ui, sans-serif';
+  }
+  return _fontFamily;
+}
+
+/** Build a valid canvas font string (optionally bold / italic). */
+export function canvasFont(
+  sizePx: number,
+  opts?: { bold?: boolean; italic?: boolean },
+): string {
+  const i = opts?.italic ? "italic " : "";
+  const b = opts?.bold ? "bold " : "";
+  return `${i}${b}${sizePx}px ${fontFamily()}`;
+}
+
 export function applyStyle(
   g: CanvasRenderingContext2D,
   style: string | undefined,
@@ -127,7 +155,7 @@ export function chip(
   color: string,
 ) {
   g.save();
-  g.font = "11px var(--font-sans)";
+  g.font = canvasFont(11);
   const w = g.measureText(text).width + 10;
   g.fillStyle = color;
   g.globalAlpha = 0.85;
