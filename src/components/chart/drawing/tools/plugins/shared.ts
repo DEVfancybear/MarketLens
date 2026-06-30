@@ -20,14 +20,15 @@ export function fontFamily(): string {
   return _fontFamily;
 }
 
-/** Build a valid canvas font string (optionally bold / italic). */
+/** Build a valid canvas font string (optionally bold / italic / weight). */
 export function canvasFont(
   sizePx: number,
-  opts?: { bold?: boolean; italic?: boolean },
+  opts?: { bold?: boolean; italic?: boolean; weight?: number },
 ): string {
   const i = opts?.italic ? "italic " : "";
+  const w = opts?.weight != null ? `${opts.weight} ` : "";
   const b = opts?.bold ? "bold " : "";
-  return `${i}${b}${sizePx}px ${fontFamily()}`;
+  return `${i}${w}${b}${sizePx}px ${fontFamily()}`;
 }
 
 export function applyStyle(
@@ -160,25 +161,29 @@ export function chip(
   y: number,
   color: string,
   bgAlpha?: number,
+  /** Border radius (default 4). TradingView positions use 2 for tighter look. */
+  radius?: number,
 ) {
   g.save();
-  g.font = canvasFont(11);
-  const w = g.measureText(text).width + 10;
+  g.font = canvasFont(11, { weight: 500 });
+  const w = g.measureText(text).width + 6; // 3 px horizontal padding each side
   g.fillStyle = color;
   g.globalAlpha = bgAlpha ?? 0.85;
+  const r = radius ?? 4;
+  const h = 15; // compact TradingView chip height
   g.beginPath();
-  // Use arcTo-based roundRect for cross-browser compatibility.
-  const r = 4;
+  // arcTo-based roundRect for cross-browser compatibility.
   g.moveTo(x + r, y);
-  g.arcTo(x + w, y, x + w, y + 18, r);
-  g.arcTo(x + w, y + 18, x, y + 18, r);
-  g.arcTo(x, y + 18, x, y, r);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
   g.fill();
   g.globalAlpha = 1;
   g.fillStyle = "#fff";
   g.textBaseline = "middle";
-  g.fillText(text, x + 5, y + 9);
+  // Vertically centered in 15 px chip: 15/2 = 7.5 → use 8 for slight optical adjustment.
+  g.fillText(text, x + 3, y + 8);
   g.restore();
 }

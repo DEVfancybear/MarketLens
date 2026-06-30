@@ -284,42 +284,53 @@ function render(
 
     // Build label strings first so we can measure their pixel width.
     const entryLabel = `Entry ${fmtPrice(entry)}${qtyTxt}`;
-    const targetLabel = `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? "  \u2713 HIT" : ""}`;
-    const stopLabel = `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? "  \u2715 HIT" : ""}`;
+    const targetLabel = `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? " \u2713 HIT" : ""}`;
+    const stopLabel = `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? " \u2715 HIT" : ""}`;
     const rrLabel = `R/R ${rr.toFixed(2)}`;
 
     // Pre-measure for right-alignment (target, stop, RR at the right edge).
+    // chip() horizontal padding = 6 px total (3 each side).
     g.save();
-    g.font = canvasFont(11);
-    const targetW = g.measureText(targetLabel).width + 10; // 10 = chip padding
-    const stopW = g.measureText(stopLabel).width + 10;
-    const rrW = g.measureText(rrLabel).width + 10;
+    g.font = canvasFont(11, { weight: 500 });
+    const targetW = g.measureText(targetLabel).width + 6;
+    const stopW = g.measureText(stopLabel).width + 6;
+    const rrW = g.measureText(rrLabel).width + 6;
     g.restore();
 
     const rightEdge = snapLeft + snapW;
 
-    // Entry: left edge, above the entry line (TradingView left-align).
-    chip(g, entryLabel, xL, yE - 9, POSITION_COLORS.ENTRY_LINE, 0.92);
-    // Target: right edge, vertically centred in the profit zone.
+    // Entry: left edge, sits ON the entry line (TradingView: touches line).
+    chip(g, entryLabel, xL, yE - 15, POSITION_COLORS.ENTRY_LINE, 0.92, 2);
+    // Target: right edge, sits ON the TP line.
     chip(
       g,
       targetLabel,
       rightEdge - targetW,
-      (yE + yT) / 2 - 9,
+      yT - 15,
       POSITION_COLORS.LONG_LABEL,
       0.92,
+      2,
     );
-    // Stop: right edge, vertically centred in the loss zone.
+    // Stop: right edge, sits ON the SL line.
     chip(
       g,
       stopLabel,
       rightEdge - stopW,
-      (yE + yS) / 2 - 9,
+      yS - 15,
       POSITION_COLORS.SHORT_LABEL,
       0.92,
+      2,
     );
     // R/R: right edge, same vertical level as the entry line.
-    chip(g, rrLabel, rightEdge - rrW, yE - 9, POSITION_COLORS.ENTRY_LINE, 0.92);
+    chip(
+      g,
+      rrLabel,
+      rightEdge - rrW,
+      yE - 15,
+      POSITION_COLORS.ENTRY_LINE,
+      0.92,
+      2,
+    );
   }
 
   // --- Hit overlay (dashed trajectory) ---
