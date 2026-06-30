@@ -73,8 +73,14 @@ export function arrowHead(
   g.fillStyle = color;
   g.beginPath();
   g.moveTo(x2, y2);
-  g.lineTo(x2 - size * Math.cos(ang - spread), y2 - size * Math.sin(ang - spread));
-  g.lineTo(x2 - size * Math.cos(ang + spread), y2 - size * Math.sin(ang + spread));
+  g.lineTo(
+    x2 - size * Math.cos(ang - spread),
+    y2 - size * Math.sin(ang - spread),
+  );
+  g.lineTo(
+    x2 - size * Math.cos(ang + spread),
+    y2 - size * Math.sin(ang + spread),
+  );
   g.closePath();
   g.fill();
   g.restore();
@@ -153,12 +159,13 @@ export function chip(
   x: number,
   y: number,
   color: string,
+  bgAlpha?: number,
 ) {
   g.save();
   g.font = canvasFont(11);
   const w = g.measureText(text).width + 10;
   g.fillStyle = color;
-  g.globalAlpha = 0.85;
+  g.globalAlpha = bgAlpha ?? 0.85;
   g.beginPath();
   // Use arcTo-based roundRect for cross-browser compatibility.
   const r = 4;

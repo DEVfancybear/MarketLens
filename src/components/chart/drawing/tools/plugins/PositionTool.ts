@@ -286,7 +286,7 @@ function render(
     const rightEdge = snapLeft + snapW;
 
     // Entry: left edge, above the entry line (TradingView left-align).
-    chip(g, entryLabel, xL, yE - 9, POSITION_COLORS.ENTRY_LINE);
+    chip(g, entryLabel, xL, yE - 9, POSITION_COLORS.ENTRY_LINE, 0.92);
     // Target: right edge, vertically centred in the profit zone.
     chip(
       g,
@@ -294,6 +294,7 @@ function render(
       rightEdge - targetW,
       (yE + yT) / 2 - 9,
       POSITION_COLORS.LONG_LABEL,
+      0.92,
     );
     // Stop: right edge, vertically centred in the loss zone.
     chip(
@@ -302,9 +303,10 @@ function render(
       rightEdge - stopW,
       (yE + yS) / 2 - 9,
       POSITION_COLORS.SHORT_LABEL,
+      0.92,
     );
     // R/R: right edge, same vertical level as the entry line.
-    chip(g, rrLabel, rightEdge - rrW, yE - 9, POSITION_COLORS.ENTRY_LINE);
+    chip(g, rrLabel, rightEdge - rrW, yE - 9, POSITION_COLORS.ENTRY_LINE, 0.92);
   }
 
   // --- Hit overlay (dashed trajectory) ---
