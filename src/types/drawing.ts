@@ -114,6 +114,22 @@ export interface BaseDrawing {
   qtyPrecision?: number;
   /** Whether the on-chart info labels are shown (default true). */
   showLabels?: boolean;
+  // --- TradingView object-settings parity (shapes & text) ---
+  /** Bold / italic for text (text tool + text inside a shape). */
+  bold?: boolean;
+  italic?: boolean;
+  /** Horizontal alignment of a shape's inner text. */
+  textHAlign?: "left" | "center" | "right";
+  /** Vertical alignment of a shape's inner text. */
+  textVAlign?: "top" | "middle" | "bottom";
+  /** Color of a shape's inner text (falls back to `color`). */
+  textColor?: string;
+  /** Shape extension across the chart (rectangle): none/left/right/both. */
+  extend?: "none" | "left" | "right" | "both";
+  /** Draw a horizontal middle line through a rectangle. */
+  showMiddleLine?: boolean;
+  middleLineColor?: string;
+  middleLineStyle?: LineStyle;
   /** Position tool trade lifecycle status. */
   tradeStatus?: "pending" | "running" | "tp_hit" | "sl_hit";
   /** UNIX time (seconds) of the candle that first hit TP or SL. */
@@ -169,6 +185,15 @@ export interface DrawingTemplate {
   opacity?: number;
   fontSize?: number;
   showLabels?: boolean;
+  bold?: boolean;
+  italic?: boolean;
+  textColor?: string;
+  textHAlign?: "left" | "center" | "right";
+  textVAlign?: "top" | "middle" | "bottom";
+  extend?: "none" | "left" | "right" | "both";
+  showMiddleLine?: boolean;
+  middleLineColor?: string;
+  middleLineStyle?: LineStyle;
 }
 
 /** The subset of `Drawing` fields a template applies. */
@@ -180,6 +205,15 @@ export const TEMPLATE_STYLE_KEYS = [
   "opacity",
   "fontSize",
   "showLabels",
+  "bold",
+  "italic",
+  "textColor",
+  "textHAlign",
+  "textVAlign",
+  "extend",
+  "showMiddleLine",
+  "middleLineColor",
+  "middleLineStyle",
 ] as const;
 
 /** Standard Fibonacci retracement ratios. */

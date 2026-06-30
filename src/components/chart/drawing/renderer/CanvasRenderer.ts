@@ -101,6 +101,26 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         (d.showLabels === false ? "0" : "1") +
         "," +
         (d.visible === false ? "0" : "1");
+      // Shape/text parity fields (extend, middle line, inner text alignment).
+      h +=
+        ":x=" +
+        (d.extend ?? "") +
+        "," +
+        (d.showMiddleLine ? "1" : "0") +
+        "," +
+        (d.middleLineColor ?? "") +
+        "," +
+        (d.middleLineStyle ?? "") +
+        "," +
+        (d.bold ? "1" : "0") +
+        "," +
+        (d.italic ? "1" : "0") +
+        "," +
+        (d.textColor ?? "") +
+        "," +
+        (d.textHAlign ?? "") +
+        "," +
+        (d.textVAlign ?? "");
     }
     return h;
   }

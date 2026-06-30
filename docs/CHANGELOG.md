@@ -3,6 +3,29 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Changed — ObjectSettingsDialog redesigned for TradingView parity (2026-06-30)
+- Reworked the generic settings dialog to match TradingView's object dialog
+  (user-reported mismatch). Tabs are now **Style · Text · Coordinates · Visibility**
+  with a **Template ▼ · Cancel · Ok** footer; edits apply **live for preview** and
+  **Cancel reverts** to the snapshot captured on open (full revert, including fields
+  added during editing), **Ok** commits.
+- **Style tab (rectangle):** _Extend_ (none/left/right/both), _Border_ (colour swatch
+  + width/style line widget), _Middle line_ (checkbox + colour + style), _Background_
+  (checkbox + colour swatch with an opacity slider). Other shapes show Border +
+  Background; lines show a single Line widget.
+- **Text tab (rectangle + text/emoji):** colour swatch, font-size select, **Bold** /
+  **Italic** toggles, an "Add text" textarea, and (rectangle) vertical + horizontal
+  **Text alignment** dropdowns.
+- **Rendering wired (not fake UI):** new `Drawing` fields `bold`, `italic`, `textColor`,
+  `textHAlign`, `textVAlign`, `extend`, `showMiddleLine`, `middleLineColor`,
+  `middleLineStyle`. `RectangleTool` now draws the extension, the middle line, and
+  inner aligned/bold/italic text; `TextTool` honours bold/italic + `textColor`. All
+  new fields are in `drawingsHash()` (immediate repaint) and `TEMPLATE_STYLE_KEYS`
+  (templates capture them).
+  Files: chart/ObjectSettingsDialog.tsx, chart/drawing/tools/plugins/RectangleTool.ts,
+  chart/drawing/tools/plugins/TextTool.ts, chart/drawing/renderer/CanvasRenderer.ts,
+  types/drawing.ts, store/chartStore.ts.
+
 ### Added — Drawing toolbar Settings (hexagon) + Style Templates (2026-06-30)
 - **⬡ Settings (every object):** the floating `DrawingSettingsToolbar` now shows a
   hexagon settings button for **all** drawings (was previously only the long/short

@@ -1,8 +1,18 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-06-30 (Drawing toolbar Settings hexagon + Style Templates)_
+_Last updated: 2026-06-30 (ObjectSettingsDialog TradingView-parity redesign)_
 
 ## Completed this session (2026-06-30)
+
+### ObjectSettingsDialog redesigned to match TradingView
+- Tabs **Style · Text · Coordinates · Visibility** + **Template ▼ · Cancel · Ok**
+  footer; live preview with Cancel-revert (snapshot) and Ok-commit.
+- Style (rectangle): Extend · Border · Middle line · Background (colour swatches,
+  width/style line widgets, opacity slider). Text tab: colour/font/Bold/Italic +
+  textarea + alignment. Wired into `RectangleTool`/`TextTool` rendering via new
+  model fields (`bold/italic/textColor/textHAlign/textVAlign/extend/showMiddleLine/
+  middleLineColor/middleLineStyle`), folded into `drawingsHash` + `TEMPLATE_STYLE_KEYS`.
+- type-check ✅ · lint ✅ · build ✅.
 
 ### Drawing toolbar — Settings (hexagon) + Style Templates (plan §1, §2)
 - **⬡ Settings for every object:** floating `DrawingSettingsToolbar` now shows a

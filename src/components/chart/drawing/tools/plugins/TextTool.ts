@@ -26,8 +26,8 @@ const plugin: DrawingToolPlugin = {
     const txt = d.text || "";
     const fs = d.fontSize ?? 13;
     g.save();
-    g.font = `${fs}px var(--font-sans)`;
-    g.fillStyle = d.color;
+    g.font = `${d.italic ? "italic " : ""}${d.bold ? "bold " : ""}${fs}px var(--font-sans)`;
+    g.fillStyle = d.textColor || d.color;
     g.fillText(txt, x, y);
     // Don't show selection handle for text — user finds circle distracting.
     g.restore();
