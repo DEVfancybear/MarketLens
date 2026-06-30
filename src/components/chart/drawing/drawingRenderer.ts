@@ -20,9 +20,6 @@ export interface Projector {
   height: number;
 }
 
-const BULL = "#26a69a";
-const BEAR = "#ef5350";
-
 /** Apply lineStyle to the canvas context before stroking. */
 export function applyStyle(
   g: CanvasRenderingContext2D,

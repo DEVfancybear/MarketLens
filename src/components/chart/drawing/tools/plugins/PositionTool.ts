@@ -25,9 +25,29 @@ import {
 } from "../ToolRegistry";
 import { line, handle, chip } from "./shared";
 
-const BULL = "#26a69a";
-const BEAR = "#ef5350";
-const ENTRY = "#b2b5be";
+/**
+ * TradingView Position Tool colour palette.
+ *
+ * Fill colours are pre-mixed dark tones — TradingView does NOT use alpha
+ * blending over bright green/red. This avoids stacking alpha every frame
+ * and produces the correct subtle tint on both dark and light charts.
+ */
+export const POSITION_COLORS = {
+  /** Profit zone fill — dark teal-green, no alpha needed. */
+  PROFIT_FILL: "#0E2B26",
+  /** Loss zone fill — dark red, no alpha needed. */
+  LOSS_FILL: "#3C171A",
+  /** Entry line — crisp 1 px TradingView teal. */
+  ENTRY_LINE: "#089981",
+  /** Take-profit dashed line — matches entry / long label. */
+  TP_LINE: "#089981",
+  /** Stop-loss dashed line — TradingView short red. */
+  SL_LINE: "#F23645",
+  /** Label used for long-side labels (profit side). */
+  LONG_LABEL: "#089981",
+  /** Label used for short-side labels (loss side). */
+  SHORT_LABEL: "#F23645",
+} as const;
 
 /** Latest traded price from the chart's master candle series, or null. */
 function currentPrice(): number | null {
@@ -158,6 +178,16 @@ function render(
   const left = Math.min(xL, xR);
   const w = Math.abs(xR - xL);
 
+  // ── Anti-alias: snap fill geometry to integer pixels ──
+  // TradingView renders crisp rectangles; floating-point fills produce
+  // blurry semi-transparent edges on most browsers.
+  const snapLeft = Math.round(left);
+  const snapW = Math.round(w);
+  const profitTop = Math.round(Math.min(yE, yT));
+  const profitH = Math.round(Math.abs(yT - yE));
+  const lossTop = Math.round(Math.min(yE, yS));
+  const lossH = Math.round(Math.abs(yS - yE));
+
   // Has price reached the target / stop? (direction-agnostic — works for both
   // Long and Short.) When it has, TradingView brightens that zone so the trader
   // sees the outcome of the position at a glance.
@@ -172,48 +202,47 @@ function render(
   const isTpHit = hit?.status === "tp_hit";
   const isSlHit = hit?.status === "sl_hit";
 
-  // --- Zones ---
+  // ── Zones (fill only — no visible stroke) ──
+  // TradingView uses pre-mixed dark colours rather than alpha-blending
+  // bright green/red over the chart background.  User-adjustable opacity
+  // is still respected via globalAlpha.
   g.save();
   g.globalAlpha =
     reachedTarget || isTpHit ? hitAlpha : isSlHit ? loseAlpha : baseAlpha;
-  g.fillStyle = BULL;
-  g.fillRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
+  g.fillStyle = POSITION_COLORS.PROFIT_FILL;
+  g.fillRect(snapLeft, profitTop, snapW, profitH);
   g.globalAlpha =
     reachedStop || isSlHit ? hitAlpha : isTpHit ? loseAlpha : baseAlpha;
-  g.fillStyle = BEAR;
-  g.fillRect(left, Math.min(yE, yS), w, Math.abs(yS - yE));
+  g.fillStyle = POSITION_COLORS.LOSS_FILL;
+  g.fillRect(snapLeft, lossTop, snapW, lossH);
   g.restore();
 
-  // Glow outline + badge on whichever zone has been hit.
-  if (reachedTarget || reachedStop || hit) {
-    g.save();
-    g.setLineDash([]);
-    g.lineWidth = 2;
-    if (reachedTarget || isTpHit) {
-      g.strokeStyle = BULL;
-      g.strokeRect(left, Math.min(yE, yT), w, Math.abs(yT - yE));
-    }
-    if (reachedStop || isSlHit) {
-      g.strokeStyle = BEAR;
-      g.strokeRect(left, Math.min(yE, yS), w, Math.abs(yS - yE));
-    }
-    g.restore();
-  }
-
-  // --- Lines ---
+  // ── Lines ──
+  // TradingView entry line: crisp 1 px (default), user-adjustable via
+  // lineWidth.  For odd-integer widths (1, 3, 5...) offset by 0.5 so the
+  // stroke sits on whole-pixel centres instead of straddling two pixels.
+  const lw = d.lineWidth || 1;
+  const crispOffset = lw % 2 === 1 ? 0.5 : 0;
   g.save();
-  g.lineWidth = d.lineWidth || 1.5;
-  g.strokeStyle = ENTRY;
+  g.lineWidth = lw;
+  g.strokeStyle = POSITION_COLORS.ENTRY_LINE;
   g.setLineDash([]);
-  line(g, xL, yE, xR, yE);
+  const lineYE = Math.round(yE) + crispOffset;
+  line(g, snapLeft, lineYE, snapLeft + snapW, lineYE);
+  // TP / SL dashed lines
+  g.lineWidth = lw;
   g.setLineDash([5, 3]);
-  g.strokeStyle = BULL;
-  line(g, xL, yT, xR, yT);
-  g.strokeStyle = BEAR;
-  line(g, xL, yS, xR, yS);
+  g.strokeStyle = POSITION_COLORS.TP_LINE;
+  const lineYT = Math.round(yT) + crispOffset;
+  line(g, snapLeft, lineYT, snapLeft + snapW, lineYT);
+  g.strokeStyle = POSITION_COLORS.SL_LINE;
+  const lineYS = Math.round(yS) + crispOffset;
+  line(g, snapLeft, lineYS, snapLeft + snapW, lineYS);
   g.restore();
 
   // --- Labels ---
+  // Long labels (#089981) signal the profit/entry side; short labels
+  // (#F23645) signal the loss/stop side.
   if (d.showLabels !== false) {
     const risk = Math.abs(entry - stop);
     const reward = Math.abs(target - entry);
@@ -240,34 +269,43 @@ function render(
       riskTxt = `  -${riskAmount.toFixed(2)} ${cur}`;
     }
 
-    chip(g, `Entry ${fmtPrice(entry)}${qtyTxt}`, xL, yE - 9, ENTRY);
+    chip(
+      g,
+      `Entry ${fmtPrice(entry)}${qtyTxt}`,
+      xL,
+      yE - 9,
+      POSITION_COLORS.ENTRY_LINE,
+    );
     chip(
       g,
       `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? "  ✓ HIT" : ""}`,
       midX - 60,
       (yE + yT) / 2 - 9,
-      BULL,
+      POSITION_COLORS.LONG_LABEL,
     );
     chip(
       g,
       `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? "  ✕ HIT" : ""}`,
       midX - 60,
       (yE + yS) / 2 - 9,
-      BEAR,
+      POSITION_COLORS.SHORT_LABEL,
     );
-    chip(g, `R/R ${rr.toFixed(2)}`, xR + 6, yE - 9, ENTRY);
+    chip(g, `R/R ${rr.toFixed(2)}`, xR + 6, yE - 9, POSITION_COLORS.ENTRY_LINE);
   }
 
   // --- Hit overlay (dashed trajectory) ---
   if (hit) {
-    const hitColor = hit.status === "tp_hit" ? BULL : BEAR;
+    const hitColor =
+      hit.status === "tp_hit"
+        ? POSITION_COLORS.TP_LINE
+        : POSITION_COLORS.SL_LINE;
     const frozenTime = d.points[0].time + hit.candleTime;
     const hitX = proj.toX(frozenTime) ?? xR;
     const hitY = hit.status === "tp_hit" ? yT : yS;
 
     g.save();
     g.strokeStyle = hitColor;
-    g.lineWidth = 2;
+    g.lineWidth = 1;
     g.setLineDash([4, 4]);
     g.beginPath();
     g.moveTo(xR, yE);
@@ -276,14 +314,14 @@ function render(
     g.restore();
   }
 
-  // --- Handles ---
+  // --- Handles (selected state only) ---
   // Use origXR so handle positions match getAnchors() / hit-test.  The frozen
   // xR is only for zones, lines, labels and the hit overlay.  Handles must
   // stay at the editable position so interaction remains independent.
   if (selected) {
-    handle(g, xL, yE, ENTRY);
-    handle(g, origXR, yT, BULL);
-    handle(g, origXR, yS, BEAR);
+    handle(g, xL, yE, POSITION_COLORS.ENTRY_LINE);
+    handle(g, origXR, yT, POSITION_COLORS.LONG_LABEL);
+    handle(g, origXR, yS, POSITION_COLORS.SHORT_LABEL);
   }
 }
 

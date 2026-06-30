@@ -3,6 +3,26 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+
+### Changed — Position tool visual parity with TradingView (2026-06-30)
+- Replaced alpha-blended bright teal/red fills (`#26a69a` / `#ef5350`) with
+  TradingView's pre-mixed dark palette: profit fill `#0E2B26`, loss fill
+  `#3C171A`. This avoids stacking alpha every frame and produces the correct
+  subtle tint on both dark and light charts.
+- Entry line changed from gray `#b2b5be` to teal `#089981` (TradingView's
+  entry line colour). TP dashed line now `#089981`, SL dashed line `#F23645`.
+- Removed the 2 px glow outline on TP/SL hit zones — TradingView indicates
+  hits via label badges (`✓ HIT` / `✕ HIT`) and fill alpha changes only.
+- Fills aligned to integer pixels (`Math.round`) and lines offset by 0.5 px
+  for odd-integer widths to eliminate canvas anti-alias blur.
+- Default line width reduced from 1.5 to 1 px (user-adjustable via
+  PositionSettingsDialog still respected).
+- Centralised all position colours in an exported `POSITION_COLORS` constant
+  at the top of `PositionTool.ts`.
+- Removed dead `BULL`/`BEAR` constants from `drawingRenderer.ts`.
+  Files: chart/drawing/tools/plugins/PositionTool.ts,
+  chart/drawing/drawingRenderer.ts.
+
 ### Fixed — Canvas text ignored font size / bold / italic (2026-06-30)
 - Changing a text/emoji or rectangle-text object's **font size, Bold or Italic**
   had no visible effect. Root cause: canvas `ctx.font` cannot resolve CSS custom
