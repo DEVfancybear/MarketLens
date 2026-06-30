@@ -27,6 +27,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Label chip background opacity increased from 0.85 to 0.92 for closer
   TradingView match (new optional `bgAlpha` param on shared `chip()` helper).
 - Pixel-aligned the hit-overlay dashed diagonal trajectory line.
+- Added 1 px dashed borders on profit/loss rectangles (alpha 0.18).
+- Added pre-hit diagonal guide lines (alpha 0.12) from entry right edge to
+  TP/SL levels, visible even before a hit occurs.
+- Changed TP/SL dash pattern from [5,3] to [4,4] (TradingView ~4 on/4 off).
+- Compacted label chips: height 18 to 15 px, horizontal padding 5 to 3 px,
+  border radius 4 to 2. Labels now sit ON their respective lines.
+- Hit icon spacing reduced from double to single space.
+- Added optional weight param to canvasFont(); chip text now weight 500.
+- Fixed render order: fills, borders, lines, guides, labels, selection.
   Files: chart/drawing/tools/plugins/PositionTool.ts,
   chart/drawing/tools/plugins/shared.ts,
   chart/drawing/drawingRenderer.ts,
