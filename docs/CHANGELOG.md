@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Long/Short Position settings UI parity (2026-07-01)
+- Rebuilt the Long/Short Position settings dialog to match TradingView's
+  Inputs/Style/Visibility layout from the user reference. Inputs now use compact
+  TradingView-like fields and selectors, including Default account currency and
+  Default QTY precision.
+- Added Style controls for line style/width, stop color, target color, label
+  text color/font size, Price labels, Stats multi-select, Compact stats mode,
+  and Always show stats.
+- `PositionTool` now applies those settings on the canvas: custom line style,
+  target/stop colors, configurable label font/text color, percent/ticks/RR/amount
+  stats, compact labels, and always-visible stats. Shared label chips now accept
+  font size and text color.
+- New long/short drawings default to the reference workflow values: account
+  `1000`, risk `25%`, lot size `1`, leverage `10000`, Default currency,
+  visible price labels, default target/stop/text colors, and percent stats.
+  Files: PositionSettingsDialog.tsx, PositionTool.ts, shared.ts, chartStore.ts,
+  types/drawing.ts.
+
 ### Fixed - Position counted TP/SL before the entry was ever filled (2026-07-01)
 - The TP/SL detector evaluated levels from the entry time even if price never
   traded through the entry. A long limit placed below market that first spiked

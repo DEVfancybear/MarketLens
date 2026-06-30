@@ -1,8 +1,15 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-01 (Position SL-hit priority + screenshot save fixes)_
+_Last updated: 2026-07-01 (TradingView-style Position settings parity)_
 
 ## Completed this session (2026-07-01)
+
+### Long/Short position settings parity
+- Rebuilt `PositionSettingsDialog` to match the TradingView Long/Short Position settings UI shown in the reference: dark modal, Inputs/Style/Visibility tabs, fixed-width numeric fields, Default currency selector, section headers, line style picker, color swatches, text font control, price-label checkbox, Stats multi-select, Compact stats mode, and Always show stats.
+- Wired the Style tab into the renderer. `PositionTool` now respects custom line style, target/stop colors, text color/font size, selected stat fields (`percent`, `ticks`, `rr`, `amount`), compact labels, and always-visible stats. Label chips now scale with font size via `shared.chip()`.
+- Added position defaults for newly placed long/short tools to match the reference workflow: account size `1000`, risk `25%`, lot size `1`, leverage `10000`, Default currency, default target/stop/text colors, and percent stats.
+- Files: `PositionSettingsDialog.tsx`, `PositionTool.ts`, `shared.ts`, `chartStore.ts`, `types/drawing.ts`.
+- type-check pass; lint pass; build pass.
 
 ### Position tool — SL hit priority on ambiguous bars
 - TP/SL detection checked the target before the stop within a single bar, so a

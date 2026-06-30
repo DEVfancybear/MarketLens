@@ -23,7 +23,7 @@ import {
   TOL,
   pointDist,
 } from "../ToolRegistry";
-import { line, handle, chip, canvasFont } from "./shared";
+import { line, handle, chip, canvasFont, applyStyle } from "./shared";
 
 /**
  * TradingView Position Tool colour palette.
@@ -60,6 +60,19 @@ function fmtPrice(p: number): string {
   const a = Math.abs(p);
   const dec = a >= 1000 ? 2 : a >= 1 ? 3 : 6;
   return p.toFixed(dec);
+}
+
+function fmtCurrency(amount: number, currency: string): string {
+  const suffix = currency === "Default" ? "" : ` ${currency}`;
+  return `${amount.toFixed(2)}${suffix}`;
+}
+
+/** Minimum price increment inferred from magnitude (matches the settings dialog). */
+function inferTick(price: number): number {
+  const a = Math.abs(price);
+  if (a >= 1000) return 0.001;
+  if (a >= 1) return 0.0001;
+  return 0.00001;
 }
 
 interface Geo {
@@ -248,6 +261,16 @@ function render(
   const lossTop = Math.round(Math.min(yE, yS));
   const lossH = Math.round(Math.abs(yS - yE));
 
+  // ── Colours (user-overridable via the Style tab) ──
+  // A custom Target/Stop colour drives BOTH that side's line and zone fill;
+  // when unset we keep TradingView's pre-mixed defaults (bright line + dark fill)
+  // so the look is unchanged out of the box.
+  const entryCol = d.color || POSITION_COLORS.ENTRY_LINE;
+  const tpLine = d.targetColor || POSITION_COLORS.TP_LINE;
+  const slLine = d.stopColor || POSITION_COLORS.SL_LINE;
+  const tpFill = d.targetColor || POSITION_COLORS.PROFIT_FILL;
+  const slFill = d.stopColor || POSITION_COLORS.LOSS_FILL;
+
   // Has price reached the target / stop? (direction-agnostic — works for both
   // Long and Short.) When it has, TradingView brightens that zone so the trader
   // sees the outcome of the position at a glance.
@@ -274,7 +297,7 @@ function render(
       : reachedTarget
         ? hitAlpha
         : baseAlpha;
-  g.fillStyle = POSITION_COLORS.PROFIT_FILL;
+  g.fillStyle = tpFill;
   g.fillRect(snapLeft, profitTop, snapW, profitH);
   g.globalAlpha = isSlHit
     ? hitAlpha
@@ -283,7 +306,7 @@ function render(
       : reachedStop
         ? hitAlpha
         : baseAlpha;
-  g.fillStyle = POSITION_COLORS.LOSS_FILL;
+  g.fillStyle = slFill;
   g.fillRect(snapLeft, lossTop, snapW, lossH);
   g.restore();
 
@@ -294,9 +317,9 @@ function render(
   g.globalAlpha = 0.18;
   g.lineWidth = 1;
   g.setLineDash([4, 4]);
-  g.strokeStyle = POSITION_COLORS.TP_LINE;
+  g.strokeStyle = tpLine;
   g.strokeRect(snapLeft + 0.5, profitTop + 0.5, snapW - 1, profitH - 1);
-  g.strokeStyle = POSITION_COLORS.SL_LINE;
+  g.strokeStyle = slLine;
   g.strokeRect(snapLeft + 0.5, lossTop + 0.5, snapW - 1, lossH - 1);
   g.restore();
 
@@ -308,17 +331,19 @@ function render(
   const crispOffset = lw % 2 === 1 ? 0.5 : 0;
   g.save();
   g.lineWidth = lw;
-  g.strokeStyle = POSITION_COLORS.ENTRY_LINE;
-  g.setLineDash([]);
+  g.strokeStyle = entryCol;
+  applyStyle(g, d.lineStyle);
   const lineYE = Math.round(yE) + crispOffset;
   line(g, snapLeft, lineYE, snapLeft + snapW, lineYE);
-  // TP / SL dashed lines (TradingView ~4 on / 4 off pattern).
+  // TP / SL follow the user-selected line style. Defaults stay solid for the
+  // entry and dashed for the levels only when no explicit style is set.
   g.lineWidth = lw;
-  g.setLineDash([4, 4]);
-  g.strokeStyle = POSITION_COLORS.TP_LINE;
+  if (d.lineStyle) applyStyle(g, d.lineStyle);
+  else g.setLineDash([4, 4]);
+  g.strokeStyle = tpLine;
   const lineYT = Math.round(yT) + crispOffset;
   line(g, snapLeft, lineYT, snapLeft + snapW, lineYT);
-  g.strokeStyle = POSITION_COLORS.SL_LINE;
+  g.strokeStyle = slLine;
   const lineYS = Math.round(yS) + crispOffset;
   line(g, snapLeft, lineYS, snapLeft + snapW, lineYS);
   g.restore();
@@ -326,10 +351,7 @@ function render(
   // --- Hit overlay / diagonal guide ---
   // TradingView draws this BEFORE labels so it appears behind them.
   if (hit) {
-    const hitColor =
-      hit.status === "tp_hit"
-        ? POSITION_COLORS.TP_LINE
-        : POSITION_COLORS.SL_LINE;
+    const hitColor = hit.status === "tp_hit" ? tpLine : slLine;
     const frozenTime = d.points[0].time + hit.candleTime;
     const hitX = proj.toX(frozenTime) ?? xR;
     const hitY = hit.status === "tp_hit" ? yT : yS;
@@ -351,12 +373,12 @@ function render(
     g.globalAlpha = 0.12;
     g.lineWidth = 1;
     g.setLineDash([4, 4]);
-    g.strokeStyle = POSITION_COLORS.TP_LINE;
+    g.strokeStyle = tpLine;
     g.beginPath();
     g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
     g.lineTo(Math.round(xR), Math.round(yT) + 0.5);
     g.stroke();
-    g.strokeStyle = POSITION_COLORS.SL_LINE;
+    g.strokeStyle = slLine;
     g.beginPath();
     g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
     g.lineTo(Math.round(xR), Math.round(yS) + 0.5);
@@ -374,6 +396,13 @@ function render(
     const rr = risk > 0 ? reward / risk : 0;
     const tPct = entry ? ((target - entry) / entry) * 100 : 0;
     const sPct = entry ? ((stop - entry) / entry) * 100 : 0;
+    const tTicks = Math.round(reward / inferTick(entry));
+    const sTicks = Math.round(risk / inferTick(entry));
+    const stats = new Set(d.positionStats ?? ["percent"]);
+    const showStats = selected || !!d.alwaysShowStats;
+    const compact = !!d.compactStats;
+    const fontSize = d.fontSize ?? 11;
+    const textColor = d.textColor ?? "#fff";
 
     // Money amounts when account/risk are configured.
     let qtyTxt = "";
@@ -388,21 +417,42 @@ function render(
       const profitAmount = qty * reward;
       const cur = d.accountCurrency ?? "USD";
       const prec = d.qtyPrecision ?? 2;
-      qtyTxt = `  Qty ${qty.toFixed(prec)}`;
-      profitTxt = `  +${profitAmount.toFixed(2)} ${cur}`;
-      riskTxt = `  -${riskAmount.toFixed(2)} ${cur}`;
+      qtyTxt = showStats && stats.has("amount") ? `  Qty ${qty.toFixed(prec)}` : "";
+      profitTxt =
+        showStats && stats.has("amount")
+          ? `  +${fmtCurrency(profitAmount, cur)}`
+          : "";
+      riskTxt =
+        showStats && stats.has("amount")
+          ? `  -${fmtCurrency(riskAmount, cur)}`
+          : "";
     }
 
     // Build label strings first so we can measure their pixel width.
-    const entryLabel = `Entry ${fmtPrice(entry)}${qtyTxt}`;
-    const targetLabel = `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${isTpHit ? " \u2713 HIT" : ""}`;
-    const stopLabel = `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${isSlHit ? " \u2715 HIT" : ""}`;
-    const rrLabel = `R/R ${rr.toFixed(2)}`;
+    const targetParts = [compact ? `TP ${fmtPrice(target)}` : `Target ${fmtPrice(target)}`];
+    const stopParts = [compact ? `SL ${fmtPrice(stop)}` : `Stop ${fmtPrice(stop)}`];
+    if (showStats && stats.has("percent")) {
+      targetParts.push(`${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%`);
+      stopParts.push(`${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%`);
+    }
+    if (showStats && stats.has("ticks")) {
+      targetParts.push(compact ? `${tTicks}t` : `${tTicks} ticks`);
+      stopParts.push(compact ? `${sTicks}t` : `${sTicks} ticks`);
+    }
+    if (profitTxt) targetParts.push(profitTxt.trim());
+    if (riskTxt) stopParts.push(riskTxt.trim());
+    if (isTpHit) targetParts.push(compact ? "HIT" : "\u2713 HIT");
+    if (isSlHit) stopParts.push(compact ? "HIT" : "\u2715 HIT");
+
+    const entryLabel = `${compact ? "E" : "Entry"} ${fmtPrice(entry)}${qtyTxt}`;
+    const targetLabel = targetParts.join(compact ? " " : "  ");
+    const stopLabel = stopParts.join(compact ? " " : "  ");
+    const rrLabel = `${compact ? "RR" : "R/R"} ${rr.toFixed(2)}`;
 
     // Pre-measure for right-alignment (target, stop, RR at the right edge).
     // chip() horizontal padding = 6 px total (3 each side).
     g.save();
-    g.font = canvasFont(11, { weight: 500 });
+    g.font = canvasFont(fontSize, { weight: 500 });
     const targetW = g.measureText(targetLabel).width + 6;
     const stopW = g.measureText(stopLabel).width + 6;
     const rrW = g.measureText(rrLabel).width + 6;
@@ -411,37 +461,40 @@ function render(
     const rightEdge = snapLeft + snapW;
 
     // Entry: left edge, sits ON the entry line (TradingView: touches line).
-    chip(g, entryLabel, xL, yE - 15, POSITION_COLORS.ENTRY_LINE, 0.92, 2);
+    const chipY = (y: number) => y - Math.max(15, fontSize + 4);
+    chip(g, entryLabel, xL, chipY(yE), entryCol, 0.92, 2, {
+      fontSize,
+      textColor,
+    });
     // Target: right edge, sits ON the TP line.
     chip(
       g,
       targetLabel,
       rightEdge - targetW,
-      yT - 15,
-      POSITION_COLORS.LONG_LABEL,
+      chipY(yT),
+      tpLine,
       0.92,
       2,
+      { fontSize, textColor },
     );
     // Stop: right edge, sits ON the SL line.
     chip(
       g,
       stopLabel,
       rightEdge - stopW,
-      yS - 15,
-      POSITION_COLORS.SHORT_LABEL,
+      chipY(yS),
+      slLine,
       0.92,
       2,
+      { fontSize, textColor },
     );
     // R/R: right edge, same vertical level as the entry line.
-    chip(
-      g,
-      rrLabel,
-      rightEdge - rrW,
-      yE - 15,
-      POSITION_COLORS.ENTRY_LINE,
-      0.92,
-      2,
-    );
+    if (showStats && stats.has("rr")) {
+      chip(g, rrLabel, rightEdge - rrW, chipY(yE), entryCol, 0.92, 2, {
+        fontSize,
+        textColor,
+      });
+    }
   }
 
   // --- Handles (selected state only) ---

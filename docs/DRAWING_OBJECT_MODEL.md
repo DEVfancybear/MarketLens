@@ -34,6 +34,21 @@ interface Drawing {
   visible?: boolean;   // render toggle (false = hidden)
   stop?: number;       // position tools: stop-loss price
   target?: number;     // position tools: take-profit price
+
+  // Long/Short position settings
+  accountSize?: number;
+  accountCurrency?: string;       // "Default" or ISO-like display label
+  lotSize?: number;
+  riskValue?: number;
+  riskUnit?: '%' | 'amount';
+  leverage?: number;
+  qtyPrecision?: number;
+  showLabels?: boolean;
+  stopColor?: string;
+  targetColor?: string;
+  positionStats?: ('percent' | 'ticks' | 'rr' | 'amount')[];
+  compactStats?: boolean;
+  alwaysShowStats?: boolean;
 }
 ```
 
@@ -44,7 +59,7 @@ interface Drawing {
 | horizontal | 1 | Y-only (price) |
 | vertical | 1 | X-only (time) |
 | text, emoji | 1 | position + text content |
-| long, short | 1–2 | 1=entry, 2=projection width |
+| long, short | 3 | `[0]=entry left edge`, `[1]=target right edge`, `[2]=stop right edge`; a single click auto-expands to this 3-point box |
 | trendline, rectangle, fib | 2 | Vector-based |
 | channel | 2–3 | 2 main + optional offset |
 | brush | N | Freehand path, recorded per-pointer-move |

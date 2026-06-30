@@ -124,6 +124,20 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     const isLong = drawing.tool === "long";
     const target = entry * (1 + (isLong ? risk * rr : -risk * rr));
     const stop = entry * (1 + (isLong ? -risk : risk));
+    drawing.color = drawing.color || "#089981";
+    drawing.lineWidth = drawing.lineWidth || 1;
+    drawing.accountSize = drawing.accountSize ?? 1000;
+    drawing.accountCurrency = drawing.accountCurrency ?? "Default";
+    drawing.lotSize = drawing.lotSize ?? 1;
+    drawing.riskValue = drawing.riskValue ?? 25;
+    drawing.riskUnit = drawing.riskUnit ?? "%";
+    drawing.leverage = drawing.leverage ?? 10000;
+    drawing.showLabels = drawing.showLabels ?? true;
+    drawing.targetColor = drawing.targetColor ?? "#089981";
+    drawing.stopColor = drawing.stopColor ?? "#f23645";
+    drawing.textColor = drawing.textColor ?? "#ffffff";
+    drawing.fontSize = drawing.fontSize ?? 12;
+    drawing.positionStats = drawing.positionStats ?? ["percent"];
     drawing.points = [
       { time: tEntry, price: entry },
       { time: tRight, price: target },

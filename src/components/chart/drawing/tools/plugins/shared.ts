@@ -163,14 +163,17 @@ export function chip(
   bgAlpha?: number,
   /** Border radius (default 4). TradingView positions use 2 for tighter look. */
   radius?: number,
+  /** Optional font size (px, default 11) and text colour (default #fff). */
+  opts?: { fontSize?: number; textColor?: string },
 ) {
   g.save();
-  g.font = canvasFont(11, { weight: 500 });
+  const fs = opts?.fontSize ?? 11;
+  g.font = canvasFont(fs, { weight: 500 });
   const w = g.measureText(text).width + 6; // 3 px horizontal padding each side
   g.fillStyle = color;
   g.globalAlpha = bgAlpha ?? 0.85;
   const r = radius ?? 4;
-  const h = 15; // compact TradingView chip height
+  const h = Math.max(15, fs + 4); // chip height grows with font size
   g.beginPath();
   // arcTo-based roundRect for cross-browser compatibility.
   g.moveTo(x + r, y);
@@ -181,9 +184,9 @@ export function chip(
   g.closePath();
   g.fill();
   g.globalAlpha = 1;
-  g.fillStyle = "#fff";
+  g.fillStyle = opts?.textColor ?? "#fff";
   g.textBaseline = "middle";
-  // Vertically centered in 15 px chip: 15/2 = 7.5 → use 8 for slight optical adjustment.
-  g.fillText(text, x + 3, y + 8);
+  // Vertically centered in the chip.
+  g.fillText(text, x + 3, y + h / 2 + 0.5);
   g.restore();
 }

@@ -58,13 +58,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
   Escape deselect/cancel). Left rail width increased 40->52px. See `CURRENT_PROGRESS.md`.
-- **Position settings dialog (2026-06-28):** `chart/PositionSettingsDialog.tsx` — TradingView-style
-  Inputs/Style/Visibility modal for the long/short tool, opened via the gear on the floating
-  drawing toolbar (`editingDrawingIdAtom` / `setEditingDrawingAtom`, mounted in `Terminal`).
-  Inputs cover account size/currency, lot size, risk (%/amount), entry, leverage, profit & stop
-  (ticks+price), qty precision, with a live Qty/Risk/Profit/RR summary. `Drawing` gained
-  `accountSize/accountCurrency/lotSize/riskValue/riskUnit/leverage/qtyPrecision/showLabels`;
-  `PositionTool` render uses `opacity`/`showLabels` and prints Qty + money P/L on labels. See `CHANGELOG.md`.
+- **Position settings dialog (updated 2026-07-01):** `chart/PositionSettingsDialog.tsx` is a
+  TradingView-style Inputs/Style/Visibility modal for the long/short tool, opened via the gear
+  on the floating drawing toolbar (`editingDrawingIdAtom` / `setEditingDrawingAtom`, mounted in
+  `Terminal`). Inputs cover account size/currency (including Default), lot size, risk (%/amount),
+  entry, leverage, profit & stop (ticks+price), qty precision, with a live Qty/Risk/Profit/RR
+  summary. Style now matches the TradingView reference: Lines picker, Stop color, Target color,
+  Text color/font size, Price labels, Stats multi-select, Compact stats mode, and Always show
+  stats. `Drawing` now includes the position account/risk fields plus `stopColor`, `targetColor`,
+  `positionStats`, `compactStats`, and `alwaysShowStats`; `PositionTool` applies line style,
+  colors, text style, and selected stats on-canvas. See `CHANGELOG.md`.
 - **Long/Short position tool (2026-06-28):** Rebuilt TradingView-style in `PositionTool.ts`
   (replaces the old `LongPositionTool`/`ShortPositionTool`). Points-based geometry
   (`[0]=entry, [1]={rightEdge,target}, [2]={rightEdge,stop}`) so the drag engine moves it.

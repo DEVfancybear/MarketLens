@@ -74,6 +74,22 @@ export const DRAWING_TOOLS: DrawingTool[] = [
 
 export type LineStyle = "solid" | "dashed" | "dotted";
 
+/**
+ * Optional metrics the Long/Short position tool can append to its on-chart
+ * labels (TradingView's "Stats" multi-select). `percent` = price offset %,
+ * `ticks` = offset in ticks, `rr` = risk/reward, `amount` = money P/L (needs
+ * account + risk configured).
+ */
+export type PositionStat = "percent" | "ticks" | "rr" | "amount";
+
+/** All position stats in display order, with human labels for the dropdown. */
+export const POSITION_STATS: { id: PositionStat; label: string }[] = [
+  { id: "percent", label: "TP/SL price offset, %" },
+  { id: "ticks", label: "TP/SL price offset, ticks" },
+  { id: "rr", label: "Risk/Reward ratio" },
+  { id: "amount", label: "Risk/Reward amount" },
+];
+
 export interface Point {
   /** UTC timestamp (seconds). */
   time: number;
@@ -114,6 +130,16 @@ export interface BaseDrawing {
   qtyPrecision?: number;
   /** Whether the on-chart info labels are shown (default true). */
   showLabels?: boolean;
+  /** Position tool — stop/loss zone & line colour (default TradingView red). */
+  stopColor?: string;
+  /** Position tool — target/profit zone & line colour (default TV green). */
+  targetColor?: string;
+  /** Position tool — which extra stats appear on the labels. */
+  positionStats?: PositionStat[];
+  /** Position tool — render the stat chips in a tighter, abbreviated form. */
+  compactStats?: boolean;
+  /** Position tool — keep stats visible even when the tool isn't selected. */
+  alwaysShowStats?: boolean;
   // --- TradingView object-settings parity (shapes & text) ---
   /** Bold / italic for text (text tool + text inside a shape). */
   bold?: boolean;
