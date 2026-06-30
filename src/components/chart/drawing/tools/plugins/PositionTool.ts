@@ -217,6 +217,19 @@ function render(
   g.fillRect(snapLeft, lossTop, snapW, lossH);
   g.restore();
 
+  // ── Zone borders (1 px dashed, very subtle) ──
+  // TradingView draws a thin dashed border on both profit and loss
+  // rectangles.  Low alpha so it never dominates.
+  g.save();
+  g.globalAlpha = 0.18;
+  g.lineWidth = 1;
+  g.setLineDash([4, 4]);
+  g.strokeStyle = POSITION_COLORS.TP_LINE;
+  g.strokeRect(snapLeft + 0.5, profitTop + 0.5, snapW - 1, profitH - 1);
+  g.strokeStyle = POSITION_COLORS.SL_LINE;
+  g.strokeRect(snapLeft + 0.5, lossTop + 0.5, snapW - 1, lossH - 1);
+  g.restore();
+
   // ── Lines ──
   // TradingView entry line: crisp 1 px (default), user-adjustable via
   // lineWidth.  For odd-integer widths (1, 3, 5...) offset by 0.5 so the
@@ -229,9 +242,9 @@ function render(
   g.setLineDash([]);
   const lineYE = Math.round(yE) + crispOffset;
   line(g, snapLeft, lineYE, snapLeft + snapW, lineYE);
-  // TP / SL dashed lines
+  // TP / SL dashed lines (TradingView ~4 on / 4 off pattern).
   g.lineWidth = lw;
-  g.setLineDash([5, 3]);
+  g.setLineDash([4, 4]);
   g.strokeStyle = POSITION_COLORS.TP_LINE;
   const lineYT = Math.round(yT) + crispOffset;
   line(g, snapLeft, lineYT, snapLeft + snapW, lineYT);
@@ -328,6 +341,25 @@ function render(
     g.beginPath();
     g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
     g.lineTo(Math.round(hitX), Math.round(hitY) + 0.5);
+    g.stroke();
+    g.restore();
+  } else {
+    // --- Diagonal guide lines (pre-hit, always visible) ---
+    // TradingView shows very faint dashed diagonals from the entry right
+    // edge to the TP and SL levels even before a hit, as visual guides.
+    g.save();
+    g.globalAlpha = 0.12;
+    g.lineWidth = 1;
+    g.setLineDash([4, 4]);
+    g.strokeStyle = POSITION_COLORS.TP_LINE;
+    g.beginPath();
+    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.lineTo(Math.round(xR), Math.round(yT) + 0.5);
+    g.stroke();
+    g.strokeStyle = POSITION_COLORS.SL_LINE;
+    g.beginPath();
+    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.lineTo(Math.round(xR), Math.round(yS) + 0.5);
     g.stroke();
     g.restore();
   }
