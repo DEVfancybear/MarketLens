@@ -20,8 +20,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Centralised all position colours in an exported `POSITION_COLORS` constant
   at the top of `PositionTool.ts`.
 - Removed dead `BULL`/`BEAR` constants from `drawingRenderer.ts`.
+- TP/SL/RR labels right-aligned at the box right edge with pre-measured text
+  widths instead of the previous hardcoded `midX - 60` centre guess.
+- Added TradingView-style dashed selection outline (`#9598a1`, 4 px padding)
+  around the entire position when selected.
+- Label chip background opacity increased from 0.85 to 0.92 for closer
+  TradingView match (new optional `bgAlpha` param on shared `chip()` helper).
+- Pixel-aligned the hit-overlay dashed diagonal trajectory line.
   Files: chart/drawing/tools/plugins/PositionTool.ts,
-  chart/drawing/drawingRenderer.ts.
+  chart/drawing/tools/plugins/shared.ts,
+  chart/drawing/drawingRenderer.ts,
+  chart/PositionSettingsDialog.tsx.
 
 ### Fixed — Canvas text ignored font size / bold / italic (2026-06-30)
 - Changing a text/emoji or rectangle-text object's **font size, Bold or Italic**
