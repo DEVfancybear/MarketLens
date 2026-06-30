@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Position SL labels and side normalization (2026-07-01)
+- Stop/target labels on Long/Short position drawings are now clamped inside the
+  chart viewport, so an SL near or outside the visible bottom edge no longer
+  renders as a clipped chip over the lower pane.
+- Editing Entry price now preserves the existing TP/SL distances on the correct
+  side for the position direction. Editing Profit/Stop price from the Inputs tab
+  normalizes the entered price to the correct side of Entry for Long vs Short,
+  preventing inverted green/red zones after changing SL.
+  Files: PositionSettingsDialog.tsx, PositionTool.ts.
+
 ### Changed - Long/Short Position settings UI parity (2026-07-01)
 - Rebuilt the Long/Short Position settings dialog to match TradingView's
   Inputs/Style/Visibility layout from the user reference. Inputs now use compact

@@ -67,6 +67,10 @@ function fmtCurrency(amount: number, currency: string): string {
   return `${amount.toFixed(2)}${suffix}`;
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
 /** Minimum price increment inferred from magnitude (matches the settings dialog). */
 function inferTick(price: number): number {
   const a = Math.abs(price);
@@ -459,10 +463,19 @@ function render(
     g.restore();
 
     const rightEdge = snapLeft + snapW;
+    const chipH = Math.max(15, fontSize + 4);
+    const labelPad = 2;
+    const labelY = (y: number) =>
+      clamp(y - chipH, labelPad, Math.max(labelPad, proj.height - chipH - labelPad));
+    const labelX = (x: number, width: number) =>
+      clamp(x, labelPad, Math.max(labelPad, proj.width - width - labelPad));
 
     // Entry: left edge, sits ON the entry line (TradingView: touches line).
-    const chipY = (y: number) => y - Math.max(15, fontSize + 4);
-    chip(g, entryLabel, xL, chipY(yE), entryCol, 0.92, 2, {
+    g.save();
+    g.font = canvasFont(fontSize, { weight: 500 });
+    const entryW = g.measureText(entryLabel).width + 6;
+    g.restore();
+    chip(g, entryLabel, labelX(xL, entryW), labelY(yE), entryCol, 0.92, 2, {
       fontSize,
       textColor,
     });
@@ -470,8 +483,8 @@ function render(
     chip(
       g,
       targetLabel,
-      rightEdge - targetW,
-      chipY(yT),
+      labelX(rightEdge - targetW, targetW),
+      labelY(yT),
       tpLine,
       0.92,
       2,
@@ -481,8 +494,8 @@ function render(
     chip(
       g,
       stopLabel,
-      rightEdge - stopW,
-      chipY(yS),
+      labelX(rightEdge - stopW, stopW),
+      labelY(yS),
       slLine,
       0.92,
       2,
@@ -490,10 +503,16 @@ function render(
     );
     // R/R: right edge, same vertical level as the entry line.
     if (showStats && stats.has("rr")) {
-      chip(g, rrLabel, rightEdge - rrW, chipY(yE), entryCol, 0.92, 2, {
-        fontSize,
-        textColor,
-      });
+      chip(
+        g,
+        rrLabel,
+        labelX(rightEdge - rrW, rrW),
+        labelY(yE),
+        entryCol,
+        0.92,
+        2,
+        { fontSize, textColor },
+      );
     }
   }
 

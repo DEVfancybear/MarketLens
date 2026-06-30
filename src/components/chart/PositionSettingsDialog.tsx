@@ -417,6 +417,22 @@ export function PositionSettingsDialog() {
   const stopDir = isLong ? -1 : 1;
   const profitTicks = Math.round(Math.abs(target - entry) / tick);
   const stopTicks = Math.round(Math.abs(stop - entry) / tick);
+  const priceOnSide = (price: number, dir: 1 | -1) =>
+    entry + dir * Math.abs(price - entry);
+  const setEntryPrice = (price: number) => {
+    const pts = drawing.points.map((p) => ({ ...p }));
+    if (!pts[0]) return;
+    const profitDist = Math.abs(target - entry);
+    const stopDist = Math.abs(stop - entry);
+    pts[0] = { ...pts[0], price };
+    if (pts[1]) pts[1] = { ...pts[1], price: price + profitDir * profitDist };
+    if (pts[2]) pts[2] = { ...pts[2], price: price + stopDir * stopDist };
+    patch({ points: pts });
+  };
+  const setProfitPrice = (price: number) =>
+    setPointPrice(1, priceOnSide(price, profitDir));
+  const setStopPrice = (price: number) =>
+    setPointPrice(2, priceOnSide(price, stopDir));
 
   const accountSize = drawing.accountSize ?? 10000;
   const riskValue = drawing.riskValue ?? 1;
@@ -536,7 +552,7 @@ export function PositionSettingsDialog() {
               <Row label="Entry price">
                 <NumberField
                   value={Number(entry.toFixed(6))}
-                  onCommit={(v) => setPointPrice(0, v)}
+                  onCommit={setEntryPrice}
                   className="h-[34px] w-[100px]"
                 />
               </Row>
@@ -561,7 +577,7 @@ export function PositionSettingsDialog() {
               <Row label="Price">
                 <NumberField
                   value={Number(target.toFixed(6))}
-                  onCommit={(v) => setPointPrice(1, v)}
+                  onCommit={setProfitPrice}
                   className="h-[34px] w-[100px]"
                 />
               </Row>
@@ -579,7 +595,7 @@ export function PositionSettingsDialog() {
               <Row label="Price">
                 <NumberField
                   value={Number(stop.toFixed(6))}
-                  onCommit={(v) => setPointPrice(2, v)}
+                  onCommit={setStopPrice}
                   className="h-[34px] w-[100px]"
                 />
               </Row>
