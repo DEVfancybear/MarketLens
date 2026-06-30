@@ -335,6 +335,22 @@ function render(
   // xR is only for zones, lines, labels and the hit overlay.  Handles must
   // stay at the editable position so interaction remains independent.
   if (selected) {
+    // Selection outline: dashed rectangle around the entire position.
+    // TradingView shows this in addition to the anchor handles.
+    const selTop = Math.min(yE, yT, yS);
+    const selBot = Math.max(yE, yT, yS);
+    g.save();
+    g.strokeStyle = "#9598a1";
+    g.lineWidth = 1;
+    g.setLineDash([4, 3]);
+    g.strokeRect(
+      Math.round(left) - 4,
+      Math.round(selTop) - 4,
+      Math.round(w) + 8,
+      Math.round(selBot - selTop) + 8,
+    );
+    g.restore();
+
     handle(g, xL, yE, POSITION_COLORS.ENTRY_LINE);
     handle(g, origXR, yT, POSITION_COLORS.LONG_LABEL);
     handle(g, origXR, yS, POSITION_COLORS.SHORT_LABEL);
