@@ -3,6 +3,17 @@
 All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
+### Added — Drawing toolbar "⋯ More" overflow menu (2026-06-30)
+- Added a `⋯` button to the floating `DrawingSettingsToolbar` that opens the same
+  action list as the right-click menu (Settings, Clone, Lock/Unlock, Show/Hide,
+  Bring to Front, Send to Back, Delete) — TradingView object-toolbar parity
+  (plan §4 in `docs/DRAWING_TOOLBAR_PLAN.md`).
+- Extracted a single source of truth, `useDrawingActions(drawing, onAfter)`, now
+  shared by both `DrawingContextMenu` and the toolbar popover (no duplicated menu
+  code). The context menu also gains a "Settings" entry.
+  Files: chart/drawing/useDrawingActions.tsx (new), chart/DrawingContextMenu.tsx,
+  chart/DrawingSettingsToolbar.tsx.
+
 ### Fixed — Screenshot now includes drawings & positions (2026-06-29)
 - The chart screenshot only contained candles/axes — drawing tools, long/short
   positions and SMC overlays were missing. Cause: `IChartApi.takeScreenshot()`

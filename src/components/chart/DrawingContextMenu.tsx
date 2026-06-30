@@ -1,26 +1,9 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Trash2,
-  Copy,
-  Lock,
-  Unlock,
-  Eye,
-  EyeOff,
-  ChevronUp,
-  ChevronDown,
-} from "lucide-react";
-import { useAtomValue, useSetAtom } from "jotai";
-import {
-  drawingsAtom,
-  removeDrawingAtom,
-  duplicateDrawingAtom,
-  lockDrawingAtom,
-  hideDrawingAtom,
-  bringToFrontAtom,
-  sendToBackAtom,
-} from "@/store/chartStore";
+import { useAtomValue } from "jotai";
+import { drawingsAtom } from "@/store/chartStore";
+import { useDrawingActions } from "./drawing/useDrawingActions";
 import { cn } from "@/utils/cn";
 
 export interface DrawingMenuState {
@@ -37,13 +20,8 @@ interface Props {
 /** Right-click context menu for a drawing on the chart. */
 export function DrawingContextMenu({ state, onClose }: Props) {
   const drawings = useAtomValue(drawingsAtom);
-  const drawing = drawings.find((d) => d.id === state.id);
-  const removeDrawing = useSetAtom(removeDrawingAtom);
-  const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
-  const lockDrawing = useSetAtom(lockDrawingAtom);
-  const hideDrawing = useSetAtom(hideDrawingAtom);
-  const bringToFront = useSetAtom(bringToFrontAtom);
-  const sendToBack = useSetAtom(sendToBackAtom);
+  const drawing = drawings.find((d) => d.id === state.id) ?? null;
+  const items = useDrawingActions(drawing, onClose);
 
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state.x, y: state.y });
@@ -78,60 +56,6 @@ export function DrawingContextMenu({ state, onClose }: Props) {
   }, [onClose]);
 
   if (typeof document === "undefined" || !drawing) return null;
-
-  const act = (fn: (id: string) => void) => () => {
-    fn(drawing.id);
-    onClose();
-  };
-
-  const items = [
-    {
-      icon: <Copy size={14} className="text-ink-muted" />,
-      label: "Clone",
-      onClick: act(duplicateDrawing),
-    },
-    { divider: true as const },
-    drawing.locked
-      ? {
-          icon: <Unlock size={14} className="text-choch" />,
-          label: "Unlock",
-          onClick: act(lockDrawing),
-        }
-      : {
-          icon: <Lock size={14} className="text-ink-muted" />,
-          label: "Lock",
-          onClick: act(lockDrawing),
-        },
-    drawing.visible === false
-      ? {
-          icon: <Eye size={14} className="text-bull" />,
-          label: "Show",
-          onClick: act(hideDrawing),
-        }
-      : {
-          icon: <EyeOff size={14} className="text-ink-muted" />,
-          label: "Hide",
-          onClick: act(hideDrawing),
-        },
-    { divider: true as const },
-    {
-      icon: <ChevronUp size={14} className="text-ink-muted" />,
-      label: "Bring to Front",
-      onClick: act(bringToFront),
-    },
-    {
-      icon: <ChevronDown size={14} className="text-ink-muted" />,
-      label: "Send to Back",
-      onClick: act(sendToBack),
-    },
-    { divider: true as const },
-    {
-      icon: <Trash2 size={14} className="text-bear" />,
-      label: "Delete",
-      onClick: act(removeDrawing),
-      danger: true,
-    },
-  ];
 
   return createPortal(
     <div

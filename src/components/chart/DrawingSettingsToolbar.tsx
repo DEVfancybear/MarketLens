@@ -11,6 +11,7 @@ import {
   Check,
   Settings,
   GripVertical,
+  MoreHorizontal,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -23,6 +24,7 @@ import {
   setEditingDrawingAtom,
 } from "@/store/chartStore";
 import { useChartCtx } from "./ChartContext";
+import { useDrawingActions } from "./drawing/useDrawingActions";
 import type { Drawing, LineStyle } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -55,7 +57,7 @@ const FILL_TOOLS = new Set<Drawing["tool"]>([
 /** Tools that have no stroke width / style controls. */
 const NO_LINE_TOOLS = new Set<Drawing["tool"]>(["text", "emoji"]);
 
-type Menu = "color" | "fill" | "width" | "style" | "fontSize" | null;
+type Menu = "color" | "fill" | "width" | "style" | "fontSize" | "more" | null;
 
 /**
  * TradingView-style floating toolbar that appears above the selected drawing,
@@ -160,6 +162,8 @@ export function DrawingSettingsToolbar() {
       /* ok */
     }
   };
+
+  const moreItems = useDrawingActions(drawing, () => setMenu(null));
 
   if (!drawing) return null;
 
@@ -422,6 +426,36 @@ export function DrawingSettingsToolbar() {
       >
         <Trash2 size={15} />
       </ToolbarButton>
+
+      {/* More — overflow menu (same actions as right-click) */}
+      <ToolbarButton
+        label="More"
+        active={menu === "more"}
+        onClick={() => setMenu(menu === "more" ? null : "more")}
+      >
+        <MoreHorizontal size={15} />
+      </ToolbarButton>
+      {menu === "more" && (
+        <Popover>
+          {moreItems.map((it, i) =>
+            "divider" in it && it.divider ? (
+              <div key={i} className="my-1 h-px bg-terminal-border" />
+            ) : (
+              <button
+                key={i}
+                onClick={it.onClick}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover",
+                  "danger" in it && it.danger ? "text-bear" : "text-ink",
+                )}
+              >
+                {it.icon}
+                {it.label}
+              </button>
+            ),
+          )}
+        </Popover>
+      )}
     </div>
   );
 }
