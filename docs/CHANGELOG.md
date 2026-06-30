@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Position stop zones overlapping volume pane (2026-07-01)
+- Long/Short position rendering is now clipped to the price pane above the
+  volume overlay. Far-away SL/TP levels still show their line and label at the
+  nearest visible price-pane edge, but fills, borders, guides, labels, selection
+  outlines, and handles no longer draw over the volume bars.
+  File: PositionTool.ts.
+
 ### Fixed - Position SL labels and side normalization (2026-07-01)
 - Stop/target labels on Long/Short position drawings are now clamped inside the
   chart viewport, so an SL near or outside the visible bottom edge no longer

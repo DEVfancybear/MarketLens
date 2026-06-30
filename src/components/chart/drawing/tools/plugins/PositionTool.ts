@@ -49,6 +49,10 @@ export const POSITION_COLORS = {
   SHORT_LABEL: "#F23645",
 } as const;
 
+/** PriceChart renders volume in the lower 15% overlay. Keep position drawings
+ * inside the price pane so far-away SL labels/zones do not cover volume bars. */
+const PRICE_PANE_BOTTOM_RATIO = 0.85;
+
 /** Latest traded price from the chart's master candle series, or null. */
 function currentPrice(): number | null {
   const candles = getDefaultStore().get(candlesAtom);
@@ -254,16 +258,27 @@ function render(
   const { xL, xR, yE, yT, yS, entry, target, stop } = geo;
   const left = Math.min(xL, xR);
   const w = Math.abs(xR - xL);
+  const pricePaneBottom = Math.floor(proj.height * PRICE_PANE_BOTTOM_RATIO) - 2;
+  const clipTop = 0;
+  const clipBottom = Math.max(clipTop + 1, pricePaneBottom);
+  const clampToPricePane = (y: number) => clamp(y, clipTop, clipBottom);
+  const clippedBand = (a: number, b: number) => {
+    const top = clampToPricePane(Math.min(a, b));
+    const bottom = clampToPricePane(Math.max(a, b));
+    return { top, h: Math.max(0, bottom - top) };
+  };
 
   // ── Anti-alias: snap fill geometry to integer pixels ──
   // TradingView renders crisp rectangles; floating-point fills produce
   // blurry semi-transparent edges on most browsers.
   const snapLeft = Math.round(left);
   const snapW = Math.round(w);
-  const profitTop = Math.round(Math.min(yE, yT));
-  const profitH = Math.round(Math.abs(yT - yE));
-  const lossTop = Math.round(Math.min(yE, yS));
-  const lossH = Math.round(Math.abs(yS - yE));
+  const profitBand = clippedBand(yE, yT);
+  const lossBand = clippedBand(yE, yS);
+  const profitTop = Math.round(profitBand.top);
+  const profitH = Math.round(profitBand.h);
+  const lossTop = Math.round(lossBand.top);
+  const lossH = Math.round(lossBand.h);
 
   // ── Colours (user-overridable via the Style tab) ──
   // A custom Target/Stop colour drives BOTH that side's line and zone fill;
@@ -302,7 +317,7 @@ function render(
         ? hitAlpha
         : baseAlpha;
   g.fillStyle = tpFill;
-  g.fillRect(snapLeft, profitTop, snapW, profitH);
+  if (profitH > 0) g.fillRect(snapLeft, profitTop, snapW, profitH);
   g.globalAlpha = isSlHit
     ? hitAlpha
     : isTpHit
@@ -311,7 +326,7 @@ function render(
         ? hitAlpha
         : baseAlpha;
   g.fillStyle = slFill;
-  g.fillRect(snapLeft, lossTop, snapW, lossH);
+  if (lossH > 0) g.fillRect(snapLeft, lossTop, snapW, lossH);
   g.restore();
 
   // ── Zone borders (1 px dashed, very subtle) ──
@@ -322,9 +337,11 @@ function render(
   g.lineWidth = 1;
   g.setLineDash([4, 4]);
   g.strokeStyle = tpLine;
-  g.strokeRect(snapLeft + 0.5, profitTop + 0.5, snapW - 1, profitH - 1);
+  if (profitH > 1)
+    g.strokeRect(snapLeft + 0.5, profitTop + 0.5, snapW - 1, profitH - 1);
   g.strokeStyle = slLine;
-  g.strokeRect(snapLeft + 0.5, lossTop + 0.5, snapW - 1, lossH - 1);
+  if (lossH > 1)
+    g.strokeRect(snapLeft + 0.5, lossTop + 0.5, snapW - 1, lossH - 1);
   g.restore();
 
   // ── Lines ──
@@ -337,7 +354,7 @@ function render(
   g.lineWidth = lw;
   g.strokeStyle = entryCol;
   applyStyle(g, d.lineStyle);
-  const lineYE = Math.round(yE) + crispOffset;
+  const lineYE = Math.round(clampToPricePane(yE)) + crispOffset;
   line(g, snapLeft, lineYE, snapLeft + snapW, lineYE);
   // TP / SL follow the user-selected line style. Defaults stay solid for the
   // entry and dashed for the levels only when no explicit style is set.
@@ -345,10 +362,10 @@ function render(
   if (d.lineStyle) applyStyle(g, d.lineStyle);
   else g.setLineDash([4, 4]);
   g.strokeStyle = tpLine;
-  const lineYT = Math.round(yT) + crispOffset;
+  const lineYT = Math.round(clampToPricePane(yT)) + crispOffset;
   line(g, snapLeft, lineYT, snapLeft + snapW, lineYT);
   g.strokeStyle = slLine;
-  const lineYS = Math.round(yS) + crispOffset;
+  const lineYS = Math.round(clampToPricePane(yS)) + crispOffset;
   line(g, snapLeft, lineYS, snapLeft + snapW, lineYS);
   g.restore();
 
@@ -358,14 +375,14 @@ function render(
     const hitColor = hit.status === "tp_hit" ? tpLine : slLine;
     const frozenTime = d.points[0].time + hit.candleTime;
     const hitX = proj.toX(frozenTime) ?? xR;
-    const hitY = hit.status === "tp_hit" ? yT : yS;
+    const hitY = clampToPricePane(hit.status === "tp_hit" ? yT : yS);
 
     g.save();
     g.strokeStyle = hitColor;
     g.lineWidth = 1;
     g.setLineDash([4, 4]);
     g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.moveTo(Math.round(xR), Math.round(clampToPricePane(yE)) + 0.5);
     g.lineTo(Math.round(hitX), Math.round(hitY) + 0.5);
     g.stroke();
     g.restore();
@@ -379,13 +396,13 @@ function render(
     g.setLineDash([4, 4]);
     g.strokeStyle = tpLine;
     g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
-    g.lineTo(Math.round(xR), Math.round(yT) + 0.5);
+    g.moveTo(Math.round(xR), Math.round(clampToPricePane(yE)) + 0.5);
+    g.lineTo(Math.round(xR), Math.round(clampToPricePane(yT)) + 0.5);
     g.stroke();
     g.strokeStyle = slLine;
     g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
-    g.lineTo(Math.round(xR), Math.round(yS) + 0.5);
+    g.moveTo(Math.round(xR), Math.round(clampToPricePane(yE)) + 0.5);
+    g.lineTo(Math.round(xR), Math.round(clampToPricePane(yS)) + 0.5);
     g.stroke();
     g.restore();
   }
@@ -466,7 +483,11 @@ function render(
     const chipH = Math.max(15, fontSize + 4);
     const labelPad = 2;
     const labelY = (y: number) =>
-      clamp(y - chipH, labelPad, Math.max(labelPad, proj.height - chipH - labelPad));
+      clamp(
+        clampToPricePane(y) - chipH,
+        labelPad,
+        Math.max(labelPad, clipBottom - chipH - labelPad),
+      );
     const labelX = (x: number, width: number) =>
       clamp(x, labelPad, Math.max(labelPad, proj.width - width - labelPad));
 
@@ -523,8 +544,8 @@ function render(
   if (selected) {
     // Selection outline: dashed rectangle around the entire position.
     // TradingView shows this in addition to the anchor handles.
-    const selTop = Math.min(yE, yT, yS);
-    const selBot = Math.max(yE, yT, yS);
+    const selTop = clampToPricePane(Math.min(yE, yT, yS));
+    const selBot = clampToPricePane(Math.max(yE, yT, yS));
     g.save();
     g.strokeStyle = "#9598a1";
     g.lineWidth = 1;
@@ -537,9 +558,12 @@ function render(
     );
     g.restore();
 
-    handle(g, xL, yE, POSITION_COLORS.ENTRY_LINE);
-    handle(g, origXR, yT, POSITION_COLORS.LONG_LABEL);
-    handle(g, origXR, yS, POSITION_COLORS.SHORT_LABEL);
+    if (yE >= clipTop && yE <= clipBottom)
+      handle(g, xL, yE, POSITION_COLORS.ENTRY_LINE);
+    if (yT >= clipTop && yT <= clipBottom)
+      handle(g, origXR, yT, POSITION_COLORS.LONG_LABEL);
+    if (yS >= clipTop && yS <= clipBottom)
+      handle(g, origXR, yS, POSITION_COLORS.SHORT_LABEL);
   }
 }
 
