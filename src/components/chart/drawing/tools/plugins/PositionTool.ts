@@ -23,7 +23,7 @@ import {
   TOL,
   pointDist,
 } from "../ToolRegistry";
-import { line, handle, chip } from "./shared";
+import { line, handle, chip, canvasFont } from "./shared";
 
 /**
  * TradingView Position Tool colour palette.
@@ -241,15 +241,15 @@ function render(
   g.restore();
 
   // --- Labels ---
-  // Long labels (#089981) signal the profit/entry side; short labels
-  // (#F23645) signal the loss/stop side.
+  // TradingView layout: Entry label left-aligned, TP/SL labels right-aligned
+  // at the right edge of the box, R/R label at the right near entry.
+  // We pre-measure every label so x-offsets are exact — no magic constants.
   if (d.showLabels !== false) {
     const risk = Math.abs(entry - stop);
     const reward = Math.abs(target - entry);
     const rr = risk > 0 ? reward / risk : 0;
     const tPct = entry ? ((target - entry) / entry) * 100 : 0;
     const sPct = entry ? ((stop - entry) / entry) * 100 : 0;
-    const midX = left + w / 2;
 
     // Money amounts when account/risk are configured.
     let qtyTxt = "";
@@ -269,28 +269,42 @@ function render(
       riskTxt = `  -${riskAmount.toFixed(2)} ${cur}`;
     }
 
+    // Build label strings first so we can measure their pixel width.
+    const entryLabel = `Entry ${fmtPrice(entry)}${qtyTxt}`;
+    const targetLabel = `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? "  \u2713 HIT" : ""}`;
+    const stopLabel = `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? "  \u2715 HIT" : ""}`;
+    const rrLabel = `R/R ${rr.toFixed(2)}`;
+
+    // Pre-measure for right-alignment (target, stop, RR at the right edge).
+    g.save();
+    g.font = canvasFont(11);
+    const targetW = g.measureText(targetLabel).width + 10; // 10 = chip padding
+    const stopW = g.measureText(stopLabel).width + 10;
+    const rrW = g.measureText(rrLabel).width + 10;
+    g.restore();
+
+    const rightEdge = snapLeft + snapW;
+
+    // Entry: left edge, above the entry line (TradingView left-align).
+    chip(g, entryLabel, xL, yE - 9, POSITION_COLORS.ENTRY_LINE);
+    // Target: right edge, vertically centred in the profit zone.
     chip(
       g,
-      `Entry ${fmtPrice(entry)}${qtyTxt}`,
-      xL,
-      yE - 9,
-      POSITION_COLORS.ENTRY_LINE,
-    );
-    chip(
-      g,
-      `Target ${fmtPrice(target)}  ${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%${profitTxt}${reachedTarget || isTpHit ? "  ✓ HIT" : ""}`,
-      midX - 60,
+      targetLabel,
+      rightEdge - targetW,
       (yE + yT) / 2 - 9,
       POSITION_COLORS.LONG_LABEL,
     );
+    // Stop: right edge, vertically centred in the loss zone.
     chip(
       g,
-      `Stop ${fmtPrice(stop)}  ${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%${riskTxt}${reachedStop || isSlHit ? "  ✕ HIT" : ""}`,
-      midX - 60,
+      stopLabel,
+      rightEdge - stopW,
       (yE + yS) / 2 - 9,
       POSITION_COLORS.SHORT_LABEL,
     );
-    chip(g, `R/R ${rr.toFixed(2)}`, xR + 6, yE - 9, POSITION_COLORS.ENTRY_LINE);
+    // R/R: right edge, same vertical level as the entry line.
+    chip(g, rrLabel, rightEdge - rrW, yE - 9, POSITION_COLORS.ENTRY_LINE);
   }
 
   // --- Hit overlay (dashed trajectory) ---
