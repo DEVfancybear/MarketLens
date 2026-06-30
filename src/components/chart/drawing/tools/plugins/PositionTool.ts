@@ -308,6 +308,8 @@ function render(
   }
 
   // --- Hit overlay (dashed trajectory) ---
+  // TradingView draws a dashed diagonal from the entry right edge to the
+  // TP/SL price at the hit candle.  Pixel-align for crisp rendering.
   if (hit) {
     const hitColor =
       hit.status === "tp_hit"
@@ -322,8 +324,8 @@ function render(
     g.lineWidth = 1;
     g.setLineDash([4, 4]);
     g.beginPath();
-    g.moveTo(xR, yE);
-    g.lineTo(hitX, hitY);
+    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.lineTo(Math.round(hitX), Math.round(hitY) + 0.5);
     g.stroke();
     g.restore();
   }
