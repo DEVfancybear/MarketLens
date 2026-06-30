@@ -4,13 +4,26 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Stale persisted TP hit never corrected to SL (2026-07-01)
+- Follow-up to the stop-first fix below: a position whose `tradeStatus` was
+  saved as `tp_hit` by the OLD logic stayed wrong forever, because both the
+  renderer and the candle subscription **skipped re-checking any position that
+  already had a hit status**. Now the candle data is the single source of truth:
+  `PositionTool.render` re-derives the outcome via `findHitCandle` on every paint
+  (overriding stale persisted status; persisted value used only as a fallback
+  when no candles are loaded), and the `DrawingLayer` subscription re-detects
+  even resolved positions and rewrites the store only when the value changes
+  (clearing it if nothing is hit). Existing wrong positions self-correct on the
+  next repaint — no need to re-place them.
+  Files: PositionTool.ts, DrawingLayer.tsx.
+
 ### Fixed - SL hit lost to TP when one bar pierces both levels (2026-07-01)
 - The TP/SL hit scan checked the target before the stop within a single bar, so
   a wide bar that pierced both levels was reported as a take-profit hit even
   though the outcome is ambiguous. Now the stop is evaluated first in all three
   detection sites, so an ambiguous bar conservatively resolves to a stop hit
   (TradingView / standard backtest convention); chronological order across
-  separate bars is unchanged. Existing positions re-detect after a drag.
+  separate bars is unchanged.
   Files: PositionTool.ts (`findHitCandle`), DrawingLayer.tsx (candle scan + live
   price fallback).
 

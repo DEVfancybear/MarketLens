@@ -132,8 +132,12 @@ function render(
   const origXR = geo.xR;
 
   // ── Hit detection & frozen right edge ──
-  // If the drawing already has a persisted tradeStatus, use it to freeze the
-  // right edge (survives pan/zoom).  Otherwise scan candles for a first hit.
+  // The candle data is the source of truth: re-derive the TP/SL outcome every
+  // render via findHitCandle (which now resolves stop-before-target). This
+  // OVERRIDES any persisted tradeStatus, so a stale hit saved by older logic
+  // (e.g. a tp_hit that should have been sl_hit) self-corrects on next paint.
+  // The persisted tradeStatus/hitTime is only trusted as a fallback when no
+  // candles are loaded yet (so the freeze survives a cold reload before data).
   // hitTime is stored as an OFFSET from entry, so the freeze follows the
   // position when the user drags the drawing.
   let hit: {
@@ -145,37 +149,31 @@ function render(
   // hit-freeze: it extends the right edge to the hit candle, which makes the box
   // appear to suddenly grow / get pinned at the SL bar mid-drag. The freeze is
   // (re-)evaluated normally once the drag is committed and `_dragging` is gone.
-  if (d._dragging) {
-    hit = null;
-  } else if (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit") {
-    hit = {
-      status: d.tradeStatus,
-      candleTime: d.hitTime ?? 0,
-      candlePrice: d.hitPrice ?? 0,
-    };
-    const frozenTime = d.points[0].time + hit.candleTime;
-    const frozenX = proj.toX(frozenTime);
-    // Only extend the right edge to the hit candle — never shrink.
-    // TradingView preserves the user's intended width; freeze is a cap, not a crop.
-    if (frozenX != null && frozenX > geo.xR) geo.xR = frozenX;
-  } else if (d.hitTime == null) {
-    // Only fresh-detect if never hit before.  When tradeStatus was cleared
-    // by a drag but hitTime is still present, skip detection — the
-    // subscription will re-detect if appropriate.
+  if (!d._dragging) {
     const fresh = findHitCandle(d, geo);
     if (fresh) {
-      const offset = fresh.time - d.points[0].time;
       hit = {
         status: fresh.status,
-        candleTime: offset,
+        candleTime: fresh.time - d.points[0].time,
         candlePrice: fresh.price,
       };
-      const frozenTime = d.points[0].time + offset;
+    } else if (
+      getDefaultStore().get(candlesAtom).length === 0 &&
+      (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
+    ) {
+      // No candles to verify against — trust the persisted freeze for now.
+      hit = {
+        status: d.tradeStatus,
+        candleTime: d.hitTime ?? 0,
+        candlePrice: d.hitPrice ?? 0,
+      };
+    }
+    if (hit) {
+      const frozenTime = d.points[0].time + hit.candleTime;
       const frozenX = proj.toX(frozenTime);
-      // Only extend — never shrink (same as persisted path above).
+      // Only extend the right edge to the hit candle — never shrink.
+      // TradingView preserves the user's intended width; freeze is a cap.
       if (frozenX != null && frozenX > geo.xR) geo.xR = frozenX;
-      // The persistent update is handled by the candle subscription in
-      // DrawingLayer — we only freeze the geometry here for rendering.
     }
   }
 

@@ -315,12 +315,11 @@ export function DrawingLayer() {
           // Skip while the user is dragging this drawing — its store points
           // are stale and hit detection would use the wrong geometry.
           if (drawingIdRef.current === d.id) continue;
-          // Only detect hits for unresolved drawings.
-          if (
-            d.tradeStatus !== "tp_hit" &&
-            d.tradeStatus !== "sl_hit" &&
-            d.points.length >= 3
-          ) {
+          // Re-derive from candles every tick — even for already-resolved
+          // drawings — so a stale persisted status (e.g. a tp_hit that should
+          // be sl_hit under the corrected stop-first logic) self-corrects.
+          // The write below is guarded to fire only when the value changes.
+          if (d.points.length >= 3) {
             const entry = d.points[0].price;
             const target = d.points[1]?.price ?? d.target ?? entry;
             const stop = d.points[2]?.price ?? d.stop ?? entry;
@@ -408,13 +407,36 @@ export function DrawingLayer() {
                 }
               }
             }
+            // Write only when the resolved hit actually differs from what is
+            // already stored — otherwise this per-tick subscription would loop
+            // updating the store with identical values.
             if (hit) {
+              if (
+                d.tradeStatus !== hit.status ||
+                d.hitTime !== hit.time ||
+                d.hitPrice !== hit.price
+              ) {
+                updateDrawing({
+                  id: d.id,
+                  patch: {
+                    tradeStatus: hit.status,
+                    hitTime: hit.time,
+                    hitPrice: hit.price,
+                  },
+                });
+              }
+            } else if (
+              d.tradeStatus === "tp_hit" ||
+              d.tradeStatus === "sl_hit"
+            ) {
+              // Previously resolved but no longer hits anything (e.g. levels
+              // edited) — clear the stale status.
               updateDrawing({
                 id: d.id,
                 patch: {
-                  tradeStatus: hit.status,
-                  hitTime: hit.time,
-                  hitPrice: hit.price,
+                  tradeStatus: undefined,
+                  hitTime: undefined,
+                  hitPrice: undefined,
                 },
               });
             }
