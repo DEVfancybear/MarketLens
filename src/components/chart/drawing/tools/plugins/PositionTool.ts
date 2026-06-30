@@ -253,6 +253,47 @@ function render(
   line(g, snapLeft, lineYS, snapLeft + snapW, lineYS);
   g.restore();
 
+  // --- Hit overlay / diagonal guide ---
+  // TradingView draws this BEFORE labels so it appears behind them.
+  if (hit) {
+    const hitColor =
+      hit.status === "tp_hit"
+        ? POSITION_COLORS.TP_LINE
+        : POSITION_COLORS.SL_LINE;
+    const frozenTime = d.points[0].time + hit.candleTime;
+    const hitX = proj.toX(frozenTime) ?? xR;
+    const hitY = hit.status === "tp_hit" ? yT : yS;
+
+    g.save();
+    g.strokeStyle = hitColor;
+    g.lineWidth = 1;
+    g.setLineDash([4, 4]);
+    g.beginPath();
+    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.lineTo(Math.round(hitX), Math.round(hitY) + 0.5);
+    g.stroke();
+    g.restore();
+  } else {
+    // --- Diagonal guide lines (pre-hit, always visible) ---
+    // TradingView shows very faint dashed diagonals from the entry right
+    // edge to the TP and SL levels even before a hit, as visual guides.
+    g.save();
+    g.globalAlpha = 0.12;
+    g.lineWidth = 1;
+    g.setLineDash([4, 4]);
+    g.strokeStyle = POSITION_COLORS.TP_LINE;
+    g.beginPath();
+    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.lineTo(Math.round(xR), Math.round(yT) + 0.5);
+    g.stroke();
+    g.strokeStyle = POSITION_COLORS.SL_LINE;
+    g.beginPath();
+    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
+    g.lineTo(Math.round(xR), Math.round(yS) + 0.5);
+    g.stroke();
+    g.restore();
+  }
+
   // --- Labels ---
   // TradingView layout: Entry label left-aligned, TP/SL labels right-aligned
   // at the right edge of the box, R/R label at the right near entry.
@@ -331,48 +372,6 @@ function render(
       0.92,
       2,
     );
-  }
-
-  // --- Hit overlay (dashed trajectory) ---
-  // TradingView draws a dashed diagonal from the entry right edge to the
-  // TP/SL price at the hit candle.  Pixel-align for crisp rendering.
-  if (hit) {
-    const hitColor =
-      hit.status === "tp_hit"
-        ? POSITION_COLORS.TP_LINE
-        : POSITION_COLORS.SL_LINE;
-    const frozenTime = d.points[0].time + hit.candleTime;
-    const hitX = proj.toX(frozenTime) ?? xR;
-    const hitY = hit.status === "tp_hit" ? yT : yS;
-
-    g.save();
-    g.strokeStyle = hitColor;
-    g.lineWidth = 1;
-    g.setLineDash([4, 4]);
-    g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
-    g.lineTo(Math.round(hitX), Math.round(hitY) + 0.5);
-    g.stroke();
-    g.restore();
-  } else {
-    // --- Diagonal guide lines (pre-hit, always visible) ---
-    // TradingView shows very faint dashed diagonals from the entry right
-    // edge to the TP and SL levels even before a hit, as visual guides.
-    g.save();
-    g.globalAlpha = 0.12;
-    g.lineWidth = 1;
-    g.setLineDash([4, 4]);
-    g.strokeStyle = POSITION_COLORS.TP_LINE;
-    g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
-    g.lineTo(Math.round(xR), Math.round(yT) + 0.5);
-    g.stroke();
-    g.strokeStyle = POSITION_COLORS.SL_LINE;
-    g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(yE) + 0.5);
-    g.lineTo(Math.round(xR), Math.round(yS) + 0.5);
-    g.stroke();
-    g.restore();
   }
 
   // --- Handles (selected state only) ---
