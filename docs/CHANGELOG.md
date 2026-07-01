@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert touches use post-arm candle range (2026-07-01)
+- Browser-open alerts now track per-alert observed high/low after the alert is armed. This catches
+  a new wick touch without falsely triggering from high/low that existed before the alert was
+  created or moved.
+
 ### Fixed - Alerts no longer fire from old candle wicks (2026-07-01)
 - Browser-open alert evaluation no longer reuses the current candle's historical high/low, preventing
   a newly created or moved alert from firing because of a wick that happened before the alert was

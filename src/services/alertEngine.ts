@@ -18,6 +18,9 @@ export interface AlertPriceSnapshot {
   open?: number;
   high?: number;
   low?: number;
+  candleTime?: number;
+  candleHigh?: number;
+  candleLow?: number;
 }
 
 export function conditionMet(

@@ -27,6 +27,7 @@ import {
   useAlertStore,
   getAlertState,
   RECURRING_REARM_MS,
+  type Alert,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import {
@@ -36,9 +37,29 @@ import {
 import { deliverAlert } from "@/services/notifications/notify";
 import { subscriptionKey } from "@/types";
 
-/** Latest realtime price for a symbol. Do not reuse an in-progress candle's
- * historical high/low here; if an alert is created mid-candle, that old wick
- * would falsely trigger a newly armed line. */
+interface ObservedAlertRange {
+  signature: string;
+  symbol: string;
+  candleTime?: number;
+  candleHigh?: number;
+  candleLow?: number;
+  high: number;
+  low: number;
+}
+
+function alertSignature(alert: Alert): string {
+  return [
+    alert.condition,
+    alert.symbol,
+    alert.price,
+    alert.recurring,
+    alert.updatedAt,
+  ].join(":");
+}
+
+/** Latest realtime price for a symbol plus raw active-candle bounds. The raw
+ * bounds are not used directly; each alert tracks only the portion observed
+ * after it was armed. */
 function latestPriceSnapshot(
   md: MarketDataStoreInterface,
   symbol: string,
@@ -58,6 +79,9 @@ function latestPriceSnapshot(
     open: current,
     high: current,
     low: current,
+    candleTime: last?.time,
+    candleHigh: last?.high,
+    candleLow: last?.low,
   };
 }
 
@@ -72,6 +96,7 @@ export function useAlertEngine() {
 
   const subscribedRef = useRef<Set<string>>(new Set());
   const prevPriceRef = useRef<Map<string, number>>(new Map());
+  const observedRangeRef = useRef<Map<string, ObservedAlertRange>>(new Map());
   /** Alert IDs that have been evaluated at least once. New alerts skip cross
    *  detection on their first evaluation to prevent a stale `prev` price
    *  (recorded before the alert existed) from causing an immediate trigger. */
@@ -152,12 +177,17 @@ export function useAlertEngine() {
         // the alert existed) to prevent spurious crossUp/crossDown triggers.
         const isNew = !seenAlertIds.current.has(alert.id);
         const prev = isNew ? undefined : prevPriceRef.current.get(alert.symbol);
+        const observed = observedSinceArm(
+          observedRangeRef.current,
+          alert,
+          curr,
+        );
         const rearmBlocked =
           alert.recurring &&
           alert.triggeredAt !== undefined &&
           now - alert.triggeredAt * 1000 < RECURRING_REARM_MS;
-        if (!rearmBlocked && isAlertTriggered(alert, prev, curr)) {
-          const fired = triggerAlert(alert.id, curr.current);
+        if (!rearmBlocked && isAlertTriggered(alert, prev, observed)) {
+          const fired = triggerAlert(alert.id, observed.current);
           if (fired) deliverAlert(fired, curr.current, settings);
         }
         seenAlertIds.current.add(alert.id);
@@ -169,6 +199,9 @@ export function useAlertEngine() {
         for (const id of seenAlertIds.current) {
           if (!activeIds.has(id)) seenAlertIds.current.delete(id);
         }
+        for (const id of observedRangeRef.current.keys()) {
+          if (!activeIds.has(id)) observedRangeRef.current.delete(id);
+        }
       }
 
       // Remember prices for next-tick cross detection.
@@ -179,4 +212,72 @@ export function useAlertEngine() {
     const store = getDefaultStore();
     return store.sub(marketDataTickAtom, evaluate);
   }, []);
+}
+
+function observedSinceArm(
+  ranges: Map<string, ObservedAlertRange>,
+  alert: Alert,
+  snapshot: AlertPriceSnapshot,
+): AlertPriceSnapshot {
+  const signature = alertSignature(alert);
+  const existing = ranges.get(alert.id);
+  if (!existing || existing.signature !== signature) {
+    ranges.set(alert.id, {
+      signature,
+      symbol: alert.symbol,
+      candleTime: snapshot.candleTime,
+      candleHigh: snapshot.candleHigh,
+      candleLow: snapshot.candleLow,
+      high: snapshot.current,
+      low: snapshot.current,
+    });
+    return {
+      ...snapshot,
+      open: snapshot.current,
+      high: snapshot.current,
+      low: snapshot.current,
+    };
+  }
+
+  let high = Math.max(existing.high, snapshot.current);
+  let low = Math.min(existing.low, snapshot.current);
+
+  if (snapshot.candleTime !== undefined) {
+    if (existing.candleTime !== snapshot.candleTime) {
+      high = Math.max(high, snapshot.candleHigh ?? snapshot.current);
+      low = Math.min(low, snapshot.candleLow ?? snapshot.current);
+    } else {
+      if (
+        snapshot.candleHigh !== undefined &&
+        existing.candleHigh !== undefined &&
+        snapshot.candleHigh > existing.candleHigh
+      ) {
+        high = Math.max(high, snapshot.candleHigh);
+      }
+      if (
+        snapshot.candleLow !== undefined &&
+        existing.candleLow !== undefined &&
+        snapshot.candleLow < existing.candleLow
+      ) {
+        low = Math.min(low, snapshot.candleLow);
+      }
+    }
+  }
+
+  ranges.set(alert.id, {
+    signature,
+    symbol: alert.symbol,
+    candleTime: snapshot.candleTime,
+    candleHigh: snapshot.candleHigh,
+    candleLow: snapshot.candleLow,
+    high,
+    low,
+  });
+
+  return {
+    ...snapshot,
+    open: snapshot.current,
+    high,
+    low,
+  };
 }

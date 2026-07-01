@@ -112,15 +112,15 @@ interface AlertHistoryEntry {
 
 | Condition | Fires when |
 |---|---|
-| `above` | current realtime price `>= target` |
-| `below` | current realtime price `<= target` |
-| `crossUp` | `previous < target` and current realtime price `>= target` |
-| `crossDown` | `previous > target` and current realtime price `<= target` |
+| `above` | current realtime price or post-arm observed high `>= target` |
+| `below` | current realtime price or post-arm observed low `<= target` |
+| `crossUp` | `previous < target` and current/post-arm observed high `>= target` |
+| `crossDown` | `previous > target` and current/post-arm observed low `<= target` |
 
 - **Price source:** ticker quote (`quotes[symbol].last`); falls back to the latest candle close.
-  Browser-open evaluation intentionally does not reuse the active candle's historical high/low,
-  because an alert created mid-candle must not fire from a wick that happened before the alert was
-  armed.
+  Browser-open evaluation stores a per-alert observed high/low after the alert is armed. It can
+  catch a new wick touch, but it does not reuse the active candle's earlier high/low from before the
+  alert existed or was moved.
 - **No duplicate triggers:** a one-time alert leaves `alerts` on fire (can't re-match). A recurring
   alert is gated by `RECURRING_REARM_MS` (60s) so a single cross doesn't fire every tick.
 - **Cross detection** uses the engine's per-symbol previous-price memory (in the hook, not the store).
