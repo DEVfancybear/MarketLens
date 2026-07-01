@@ -45,7 +45,7 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/app/api/push/alerts/sync/route.ts` | Stores the latest push-enabled alert snapshot per token. |
 | `src/app/api/push/evaluate/route.ts` | Evaluates server-stored alerts and sends FCM. |
 | `src/app/firebase-messaging-sw.js/route.ts` | Dynamic service worker with public Firebase config injected from env. |
-| `src/server/pushAlertStore.ts` | File-backed server store for tokens and alert snapshots. |
+| `src/server/pushAlertStore.ts` | Firestore-backed server store for tokens and alert snapshots, with local file fallback when Firebase Admin is not configured. |
 | `src/server/pushAlertEvaluator.ts` | Server-side price polling and alert trigger evaluation. |
 | `scripts/push-alert-worker.mjs` | Local worker loop for closed-browser push evaluation. |
 | `src/components/alerts/AlertCenter.tsx` | Push toggle/status/error UI. |
@@ -122,8 +122,8 @@ If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in produ
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.
 - Unsupported browser/service worker: Push toggle is disabled.
 - Permission denied: Push toggle is disabled until the user changes browser site settings.
-- Missing Firebase Admin env: token registration can succeed, but `/api/push/send` and
-  `/api/push/evaluate` cannot send FCM.
+- Missing Firebase Admin env: token registration falls back to local `.data/push-alerts.json`, but
+  `/api/push/send` and `/api/push/evaluate` cannot send FCM.
 - FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
 - Worker not running: browser-open push still works, but closed-browser alert evaluation does not.
 - Missing server-side market data credentials: Binance crypto alerts still work; OANDA/TwelveData
@@ -157,6 +157,8 @@ If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in produ
 
 ## Persistence Note
 
-The first implementation uses a file-backed server store at `.data/push-alerts.json`. That is
-appropriate for local and single-server deployments. Multi-instance or serverless deployments
-should replace `pushAlertStore.ts` with Redis, Postgres, Firestore, or another shared durable store.
+When Firebase Admin env is configured, synced push devices and alerts are stored in Firestore
+collection `pushAlertDevices`. This is the expected production/Vercel path.
+
+When Firebase Admin env is missing, local development falls back to `.data/push-alerts.json`.
+That fallback is not suitable for Vercel/serverless persistence and should not be committed.

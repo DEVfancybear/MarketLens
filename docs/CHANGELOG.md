@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Push alert sync uses Firestore in production (2026-07-01)
+- `pushAlertStore` now stores FCM tokens and push-enabled alert snapshots in
+  Firestore collection `pushAlertDevices` whenever Firebase Admin env is
+  configured. The `.data/push-alerts.json` file remains only as a local fallback
+  for development without Firebase Admin.
+
 ### Added - Phase 6B MT5 bridge plan docs (2026-07-01)
 - Added `docs/PHASE6B_MT5_BRIDGE_PLAN.md`, a detailed MT5 bridge implementation
   plan covering topology, protocol, frontend modules, store design, risk

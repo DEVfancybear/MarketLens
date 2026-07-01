@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { firebaseAdminConfigured, getFirebaseFirestore } from "./firebaseAdmin";
 import type {
   PushAlertDb,
   PushAlertSyncRequest,
@@ -9,6 +10,7 @@ import type {
 const DB_VERSION = 1;
 const STORE_DIR = ".data";
 const STORE_FILE = `${STORE_DIR}/push-alerts.json`;
+const COLLECTION = "pushAlertDevices";
 
 function emptyDb(): PushAlertDb {
   return { version: DB_VERSION, devices: {} };
@@ -63,7 +65,66 @@ function pruneState(device: PushDeviceRecord): PushDeviceRecord {
   return { ...device, alertState };
 }
 
+function firestoreEnabled(): boolean {
+  return firebaseAdminConfigured();
+}
+
+function tokenDocId(token: string): string {
+  return Buffer.from(token).toString("base64url");
+}
+
+function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
+  return {
+    token: String(data.token),
+    alerts: Array.isArray(data.alerts) ? (data.alerts as ServerPushAlert[]) : [],
+    settingsPush: Boolean(data.settingsPush),
+    lastPrices:
+      data.lastPrices && typeof data.lastPrices === "object"
+        ? (data.lastPrices as Record<string, number>)
+        : {},
+    alertState:
+      data.alertState && typeof data.alertState === "object"
+        ? (data.alertState as PushDeviceRecord["alertState"])
+        : {},
+    createdAt: Number(data.createdAt ?? Date.now()),
+    updatedAt: Number(data.updatedAt ?? Date.now()),
+  };
+}
+
+async function getFirestoreDevice(
+  token: string,
+): Promise<PushDeviceRecord | undefined> {
+  const snap = await getFirebaseFirestore()
+    .collection(COLLECTION)
+    .doc(tokenDocId(token))
+    .get();
+  if (!snap.exists) return undefined;
+  return fromFirestore(snap.data() ?? {});
+}
+
+async function setFirestoreDevice(device: PushDeviceRecord): Promise<void> {
+  await getFirebaseFirestore()
+    .collection(COLLECTION)
+    .doc(tokenDocId(device.token))
+    .set(device);
+}
+
 export async function registerPushDevice(token: string): Promise<void> {
+  if (firestoreEnabled()) {
+    const now = Date.now();
+    const existing = await getFirestoreDevice(token);
+    await setFirestoreDevice({
+      token,
+      alerts: existing?.alerts ?? [],
+      settingsPush: existing?.settingsPush ?? false,
+      lastPrices: existing?.lastPrices ?? {},
+      alertState: existing?.alertState ?? {},
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    });
+    return;
+  }
+
   const db = await readDb();
   const now = Date.now();
   const existing = db.devices[token];
@@ -80,6 +141,14 @@ export async function registerPushDevice(token: string): Promise<void> {
 }
 
 export async function unregisterPushDevice(token: string): Promise<void> {
+  if (firestoreEnabled()) {
+    await getFirebaseFirestore()
+      .collection(COLLECTION)
+      .doc(tokenDocId(token))
+      .delete();
+    return;
+  }
+
   const db = await readDb();
   delete db.devices[token];
   await writeDb(db);
@@ -88,6 +157,27 @@ export async function unregisterPushDevice(token: string): Promise<void> {
 export async function syncPushAlerts(
   request: PushAlertSyncRequest,
 ): Promise<{ stored: number }> {
+  if (firestoreEnabled()) {
+    const now = Date.now();
+    const existing = await getFirestoreDevice(request.token);
+    const alerts = request.settingsPush
+      ? request.alerts
+          .map(sanitizeAlert)
+          .filter((alert): alert is ServerPushAlert => Boolean(alert))
+      : [];
+    const device = pruneState({
+      token: request.token,
+      alerts,
+      settingsPush: Boolean(request.settingsPush),
+      lastPrices: existing?.lastPrices ?? {},
+      alertState: existing?.alertState ?? {},
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    });
+    await setFirestoreDevice(device);
+    return { stored: device.alerts.length };
+  }
+
   const db = await readDb();
   const now = Date.now();
   const existing = db.devices[request.token];
@@ -113,6 +203,11 @@ export async function syncPushAlerts(
 }
 
 export async function listPushDevices(): Promise<PushDeviceRecord[]> {
+  if (firestoreEnabled()) {
+    const snap = await getFirebaseFirestore().collection(COLLECTION).get();
+    return snap.docs.map((doc) => fromFirestore(doc.data()));
+  }
+
   const db = await readDb();
   return Object.values(db.devices);
 }
@@ -121,6 +216,18 @@ export async function updatePushDevice(
   token: string,
   patch: Pick<PushDeviceRecord, "lastPrices" | "alertState">,
 ): Promise<void> {
+  if (firestoreEnabled()) {
+    const existing = await getFirestoreDevice(token);
+    if (!existing) return;
+    await setFirestoreDevice({
+      ...existing,
+      lastPrices: patch.lastPrices,
+      alertState: patch.alertState,
+      updatedAt: Date.now(),
+    });
+    return;
+  }
+
   const db = await readDb();
   const existing = db.devices[token];
   if (!existing) return;

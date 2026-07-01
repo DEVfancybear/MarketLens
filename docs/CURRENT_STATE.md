@@ -108,7 +108,7 @@ Push architecture:
 ```text
 browser alert store + FCM token
   -> /api/push/register + /api/push/alerts/sync
-  -> .data/push-alerts.json server store
+  -> Firestore pushAlertDevices collection (or local .data fallback)
   -> npm run push-worker
   -> /api/push/evaluate
   -> Firebase Admin FCM send
@@ -166,8 +166,9 @@ The first recommended milestone is protocol plus mock bridge:
 
 ## 9. Known Operational Notes
 
-- `.data/push-alerts.json` is a runtime server store for push alerts and should not be committed if
-  created locally.
+- Firestore collection `pushAlertDevices` is the production/serverless store for push alert sync.
+- `.data/push-alerts.json` is only a local fallback when Firebase Admin is not configured and should
+  not be committed if created locally.
 - Firebase Admin values must stay server-only and must not use `NEXT_PUBLIC_*`.
 - MT5 credentials must remain in the bridge service, never in browser code.
 - Phase 6B must keep simulator mode as the default and leave it functional when MT5 is disabled.

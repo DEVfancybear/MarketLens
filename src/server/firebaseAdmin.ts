@@ -1,4 +1,5 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 
 export interface FirebasePushMessage {
@@ -20,7 +21,7 @@ export function firebaseAdminConfigured(): boolean {
   );
 }
 
-function ensureFirebaseAdmin() {
+export function ensureFirebaseAdmin() {
   if (getApps().length > 0) return;
   initializeApp({
     credential: cert({
@@ -29,6 +30,11 @@ function ensureFirebaseAdmin() {
       privateKey: privateKey(),
     }),
   });
+}
+
+export function getFirebaseFirestore() {
+  ensureFirebaseAdmin();
+  return getFirestore();
 }
 
 export async function sendFirebasePush(

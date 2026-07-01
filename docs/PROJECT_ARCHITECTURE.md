@@ -224,10 +224,9 @@ Browser-side:
 
 Server-side:
 
-- `.data/push-alerts.json` stores synced push tokens and push-enabled alert snapshots for the
-  closed-browser push worker.
-- This file-backed store is suitable for local/single-server use. Multi-instance deployments should
-  replace it with a shared durable store.
+- Firestore collection `pushAlertDevices` stores synced push tokens and push-enabled alert snapshots
+  for the closed-browser push worker in production/serverless deployments.
+- `.data/push-alerts.json` is only a local fallback when Firebase Admin is not configured.
 
 ## 9. Operational Commands
 
