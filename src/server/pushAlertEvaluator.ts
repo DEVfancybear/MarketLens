@@ -120,10 +120,12 @@ function formatAlert(alert: ServerPushAlert, triggerPrice: number) {
 
 async function fetchBinancePrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const res = await fetch(
-    `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=${BINANCE_LOOKBACK_1M_CANDLES}`,
+    `https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=${BINANCE_LOOKBACK_1M_CANDLES}`,
     { cache: "no-store" },
   );
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    throw new Error(`Binance klines request failed (${res.status} ${res.statusText})`);
+  }
   const body = (await res.json()) as Array<
     [number, string, string, string, string, string, number]
   >;
@@ -146,7 +148,9 @@ async function fetchBinancePrice(symbol: string): Promise<PriceSnapshot | undefi
         Number.isFinite(k.close),
     );
   const last = candles[candles.length - 1];
-  if (!last) return undefined;
+  if (!last) {
+    throw new Error("Binance klines response contained no usable candles");
+  }
   return {
     current: last.close,
     open: last.open,

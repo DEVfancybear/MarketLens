@@ -4,6 +4,16 @@ _Last updated: 2026-07-01 (TradingView-style Position settings parity)_
 
 ## Completed this session (2026-07-01)
 
+### Closed-browser push: fix Binance geo-block on server-side price fetch
+- Diagnosed cron-job.org-triggered `/api/push/evaluate` runs skipping every crypto alert with
+  "price unavailable" and an empty `errors` array. Root cause: `fetchBinancePrice` called
+  `api.binance.com`, which returns HTTP 451 for requests from US-hosted server IPs (Vercel
+  serverless), and the failure was swallowed (`return undefined`) instead of surfaced.
+- Fix: switched to `data-api.binance.vision` (Binance's unrestricted market-data mirror) and made
+  fetch/parse failures throw so they show up in the evaluation's `errors` array.
+- Files: `src/server/pushAlertEvaluator.ts`.
+- type-check ✅.
+
 ### Long/Short position settings parity
 - Rebuilt `PositionSettingsDialog` to match the TradingView Long/Short Position settings UI shown in the reference: dark modal, Inputs/Style/Visibility tabs, fixed-width numeric fields, Default currency selector, section headers, line style picker, color swatches, text font control, price-label checkbox, Stats multi-select, Compact stats mode, and Always show stats.
 - Wired the Style tab into the renderer. `PositionTool` now respects custom line style, target/stop colors, text color/font size, selected stat fields (`percent`, `ticks`, `rr`, `amount`), compact labels, and always-visible stats. Label chips now scale with font size via `shared.chip()`.

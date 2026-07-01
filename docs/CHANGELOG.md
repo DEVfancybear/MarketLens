@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Closed-browser push crypto price fetch blocked in production (2026-07-01)
+- `fetchBinancePrice` in `pushAlertEvaluator.ts` now calls `data-api.binance.vision` instead of
+  `api.binance.com`. The latter returns HTTP 451 for requests from US-hosted server IPs (e.g. Vercel
+  serverless functions), which caused every crypto push alert to be silently skipped with
+  "price unavailable" even though `errors` stayed empty.
+- Binance fetch failures (non-OK response, empty candle set) now throw instead of returning
+  `undefined`, so `/api/push/evaluate` surfaces the real failure reason in its `errors` array
+  instead of an unexplained skip.
+
 ### Fixed - Firestore push sync strips undefined fields (2026-07-01)
 - Push alert Firestore writes now remove nested `undefined` values before `.set()`, fixing sync
   failures such as `alerts.0.note` being undefined.

@@ -36,6 +36,11 @@ _Last updated: 2026-06-25 (after Phase 1 + Phase 2). Phase 1's old "mock data" l
   `PHASE1_GAPS.md` A2.
 
 ## Workarounds
+- **`api.binance.com` returns HTTP 451 from US-hosted server IPs** (e.g. Vercel serverless
+  functions), which silently broke closed-browser crypto push alerts ("price unavailable" with no
+  entry in `errors`). Server-side crypto price/kline fetches (`pushAlertEvaluator.ts`) use
+  `data-api.binance.vision` instead — Binance's unrestricted public market-data mirror. Client-side
+  fetches (browser) are not affected and can keep using `api.binance.com`.
 - **Windows `next build` worker race.** "Collecting page data" sometimes fails with
   `Cannot find module './<chunk>.js'` or `/_not-found`. This is a Next-on-Windows race (project
   under `Downloads`, watched by AV/sync), **not** a code error. _Workaround:_ re-run

@@ -114,6 +114,13 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `drawingTemplates`). `CanvasRenderer.drawingsHash()` now folds in style fields so edits
   repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
   hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
+- **Closed-browser push — Binance geo-block fix (2026-07-01):** cron-job.org-triggered
+  `/api/push/evaluate` runs were skipping every crypto alert with "price unavailable" and no
+  `errors` entry. Cause: `pushAlertEvaluator.ts`'s `fetchBinancePrice` called `api.binance.com`,
+  which returns HTTP 451 for requests from US-hosted server IPs (Vercel serverless), and the
+  failure was swallowed instead of surfaced. Fixed by switching to `data-api.binance.vision`
+  (Binance's unrestricted market-data mirror) and making fetch/parse failures throw so they land
+  in the evaluation's `errors` array. See `KNOWN_ISSUES.md` Workarounds.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
