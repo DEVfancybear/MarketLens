@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - hitTest() bounding-box pre-filter (2026-07-02)
+- `HitTestEngine.hitTest()` ran every drawing's full per-tool `hitTest()` on every cursor-mode
+  pointerdown/hover, even ones nowhere near the click. Added a cheap `adapter.boundingBox()`
+  pre-filter (padded by `HANDLE_RADIUS` for safety, since adapters pad their own boxes
+  inconsistently) that skips the full test when it can't possibly hit. Purely additive; verified
+  via Playwright that miss/hit selection, body drag, and endpoint drag are unaffected.
+
 ### Added - Server→client push-trigger reconciliation (2026-07-02)
 - A real server-confirmed closed-browser trigger could stay invisible to the client (alert still
   "Active", line still on chart) when the crossing happened inside a chart-timeframe candle that

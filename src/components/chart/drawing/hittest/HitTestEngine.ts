@@ -10,10 +10,17 @@
  * Tolerance is in screen pixels (HANDLE_RADIUS/TOL from geometry helpers).
  */
 import type { Drawing, Point } from "@/types";
-import { getTool } from "../tools/ToolRegistry";
+import { getTool, HANDLE_RADIUS } from "../tools/ToolRegistry";
 
 // Import adapters to trigger registration.
 import "../tools/adapters";
+
+// Extra margin added on top of each adapter's own boundingBox() padding before
+// the cheap pre-filter below (see hitTest()) rejects a drawing. Adapters pad
+// inconsistently (some by TOL, some less, e.g. TextTool), so this uses the
+// largest tolerance constant in the codebase to guarantee the pre-filter can
+// never reject a drawing that a full hitTest() would have hit.
+const BBOX_MARGIN = HANDLE_RADIUS;
 
 export type HitTestProjector = (v: number) => number | null;
 
@@ -53,6 +60,19 @@ export function hitTest(
     if (d.visible === false) continue;
     const adapter = getTool(d.tool);
     if (!adapter) continue;
+
+    // Cheap reject before the (potentially per-tool-expensive) full hitTest:
+    // skip drawings whose bounding box, padded by a safety margin, can't
+    // possibly contain the click. `null` means "can't compute right now" —
+    // fall through to the full test rather than risk a false reject.
+    const box = adapter.boundingBox(d, toX, toY);
+    if (box) {
+      const left = box.x - BBOX_MARGIN;
+      const top = box.y - BBOX_MARGIN;
+      const right = box.x + box.w + BBOX_MARGIN;
+      const bottom = box.y + box.h + BBOX_MARGIN;
+      if (px < left || px > right || py < top || py > bottom) continue;
+    }
 
     const candidates = adapter.hitTest(d, px, py, toX, toY);
     for (const c of candidates) {

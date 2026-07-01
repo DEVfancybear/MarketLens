@@ -257,14 +257,22 @@ Channel/Polyline/Triangle/Rectangle/RotatedRect/Circle/Ellipse/Fib(legacy+Retrac
 Curve/Path use `p1`/`p2`/`body`; Brush/Text/Emoji/Horizontal/HorizRay/Vertical/CrossLine/Long-
 Position/ShortPosition are `body`-only (no resizable endpoints).
 
-## Known unresolved perf notes (minor, not user-visible bugs)
+## Perf notes
 
-- **Dual listener overhead.** Both the cursor-mode (permanent) and drawing-mode (conditional,
-  `activeTool !== "cursor"`) document capture-phase listeners run their own `isOverCanvas()` +
-  `getState()` + `fromEvent()` on every pointer event while a drawing tool is active — the cursor
-  handler then early-returns. Wasted work, not a correctness bug.
-- **`hitTest()` runs on every idle pointerdown** in cursor mode, even clicks that hit nothing.
-  Cheap per-call but adds up with many drawings on screen.
-
-Neither has a reported user-visible symptom; revisit only if drag/click latency becomes a
-complaint with a large drawing count.
+- **`hitTest()` bounding-box pre-filter — fixed 2026-07-02.** Every cursor-mode pointerdown/hover
+  used to call every drawing's (potentially expensive, per-tool) `adapter.hitTest()`, even ones
+  nowhere near the click. `hitTest()` (`hittest/HitTestEngine.ts`) now calls the cheap
+  `adapter.boundingBox()` first and skips the full test when the click can't possibly land inside
+  it, padded by `HANDLE_RADIUS` (24px) as a safety margin — adapters pad their own boxes
+  inconsistently (e.g. `TextTool` pads less than `TOL`), so the margin is deliberately generous to
+  guarantee this can never reject a drawing a full hitTest would have hit. Purely additive (same
+  results, less wasted work); verified via Playwright that miss/hit selection, body drag, and
+  endpoint drag are all unaffected.
+- **Dual listener overhead — accepted, not fixed.** Both the cursor-mode (permanent) and
+  drawing-mode (conditional, `activeTool !== "cursor"`) document capture-phase listeners run their
+  own early-return checks on every pointer event while a drawing tool is active. Looked at fixing
+  this by gating listener attachment on `activeTool`, but `getState()` here is `() =>
+  stateRef.current` (a ref read, not a reconstruction) — the actual cost is negligible — while
+  tearing down/reattaching listeners on tool change risks stranding an in-progress drag if the tool
+  changes mid-drag (a real regression for a fix with no measurable benefit). Left as-is per the
+  architecture rule above: don't patch around pointer events for a cost that isn't real.
