@@ -14,6 +14,13 @@ interface EvaluationResult {
   errors: string[];
 }
 
+interface PriceSnapshot {
+  current: number;
+  open?: number;
+  high?: number;
+  low?: number;
+}
+
 function alertSignature(alert: ServerPushAlert): string {
   return `${alert.condition}:${alert.symbol}:${alert.price}:${alert.recurring}`;
 }
@@ -29,17 +36,21 @@ function conditionMet(
   condition: PushAlertCondition,
   target: number,
   prev: number | undefined,
-  curr: number,
+  price: PriceSnapshot,
 ): boolean {
+  const curr = price.current;
+  const high = price.high ?? curr;
+  const low = price.low ?? curr;
+  const open = price.open ?? prev;
   switch (condition) {
     case "above":
-      return curr >= target;
+      return high >= target;
     case "below":
-      return curr <= target;
+      return low <= target;
     case "crossUp":
-      return prev !== undefined && prev < target && curr >= target;
+      return (prev !== undefined ? prev < target : open !== undefined && open < target) && high >= target;
     case "crossDown":
-      return prev !== undefined && prev > target && curr <= target;
+      return (prev !== undefined ? prev > target : open !== undefined && open > target) && low <= target;
   }
 }
 
@@ -51,18 +62,31 @@ function formatAlert(alert: ServerPushAlert, triggerPrice: number) {
   };
 }
 
-async function fetchBinancePrice(symbol: string): Promise<number | undefined> {
+async function fetchBinancePrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const res = await fetch(
-    `https://api.binance.com/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`,
+    `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=1`,
     { cache: "no-store" },
   );
   if (!res.ok) return undefined;
-  const body = (await res.json()) as { price?: string };
-  const price = Number(body.price);
-  return Number.isFinite(price) ? price : undefined;
+  const body = (await res.json()) as Array<
+    [number, string, string, string, string, string]
+  >;
+  const k = body[0];
+  if (!k) return undefined;
+  const open = Number(k[1]);
+  const high = Number(k[2]);
+  const low = Number(k[3]);
+  const close = Number(k[4]);
+  if (!Number.isFinite(close)) return undefined;
+  return {
+    current: close,
+    open: Number.isFinite(open) ? open : undefined,
+    high: Number.isFinite(high) ? high : close,
+    low: Number.isFinite(low) ? low : close,
+  };
 }
 
-async function fetchOandaPrice(symbol: string): Promise<number | undefined> {
+async function fetchOandaPrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const key = process.env.OANDA_API_KEY ?? process.env.NEXT_PUBLIC_OANDA_API_KEY;
   const account =
     process.env.OANDA_ACCOUNT_ID ?? process.env.NEXT_PUBLIC_OANDA_ACCOUNT_ID;
@@ -93,11 +117,11 @@ async function fetchOandaPrice(symbol: string): Promise<number | undefined> {
   const item = body.prices?.[0];
   const bid = Number(item?.bids?.[0]?.price ?? item?.closeoutBid);
   const ask = Number(item?.asks?.[0]?.price ?? item?.closeoutAsk);
-  if (Number.isFinite(bid) && Number.isFinite(ask)) return (bid + ask) / 2;
+  if (Number.isFinite(bid) && Number.isFinite(ask)) return { current: (bid + ask) / 2 };
   return undefined;
 }
 
-async function fetchTwelveDataPrice(symbol: string): Promise<number | undefined> {
+async function fetchTwelveDataPrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const key = process.env.TWELVEDATA_API_KEY ?? process.env.NEXT_PUBLIC_TWELVEDATA_API_KEY;
   if (!key) return undefined;
   const market = getMarketSymbol(symbol);
@@ -112,10 +136,10 @@ async function fetchTwelveDataPrice(symbol: string): Promise<number | undefined>
   if (!res.ok) return undefined;
   const body = (await res.json()) as { price?: string };
   const price = Number(body.price);
-  return Number.isFinite(price) ? price : undefined;
+  return Number.isFinite(price) ? { current: price } : undefined;
 }
 
-async function fetchCurrentPrice(symbol: string): Promise<number | undefined> {
+async function fetchCurrentPrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const market = getMarketSymbol(symbol);
   if (market?.provider === "binance" || symbol.endsWith("USDT")) {
     return fetchBinancePrice(symbol);
@@ -155,7 +179,7 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
     for (const alert of device.alerts) symbols.add(alert.symbol);
   }
 
-  const prices: Record<string, number> = {};
+  const prices: Record<string, PriceSnapshot> = {};
   await Promise.all(
     [...symbols].map(async (symbol) => {
       try {
@@ -177,8 +201,8 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
 
     for (const alert of device.alerts) {
       result.alerts += 1;
-      const current = prices[alert.symbol];
-      if (current === undefined) {
+      const price = prices[alert.symbol];
+      if (price === undefined) {
         result.skipped += 1;
         continue;
       }
@@ -191,8 +215,9 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
         state?.lastTriggeredAt !== undefined &&
         now - state.lastTriggeredAt < RECURRING_REARM_MS;
 
-      if (!oneTimeFired && !rearmBlocked && conditionMet(alert.condition, alert.price, prev, current)) {
-        const message = formatAlert(alert, current);
+      if (!oneTimeFired && !rearmBlocked && conditionMet(alert.condition, alert.price, prev, price)) {
+        const triggerPrice = price.current;
+        const message = formatAlert(alert, triggerPrice);
         try {
           await sendFirebasePush({
             token: device.token,
@@ -203,7 +228,7 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
               symbol: alert.symbol,
               condition: alert.condition,
               targetPrice: String(alert.price),
-              triggerPrice: String(current),
+              triggerPrice: String(triggerPrice),
               source: "server-worker",
             },
           });
@@ -226,7 +251,7 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
         };
       }
 
-      lastPrices[alert.symbol] = current;
+      lastPrices[alert.symbol] = price.current;
     }
 
     await updatePushDevice(device.token, { lastPrices, alertState });

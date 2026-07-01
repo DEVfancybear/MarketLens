@@ -107,12 +107,8 @@ npm run push-worker
 `npm run push-worker` loads `.env.local` and `.env` before polling, so `PUSH_WORKER_SECRET` should
 match the value used by the running Next server.
 
-For Vercel production, `vercel.json` registers a cron job that calls `/api/push/evaluate` once per
-minute. Vercel cron requests are accepted by the endpoint when they include Vercel's cron
-user-agent and `x-vercel-cron-schedule` header.
-
-For non-Vercel production, replace `npm run push-worker` with a process manager, scheduled job, or
-hosted cron that calls:
+For Vercel production on plans without Vercel Cron, use an external scheduler such as
+cron-job.org. Configure it to call:
 
 ```text
 POST /api/push/evaluate
@@ -120,6 +116,11 @@ Header: x-push-worker-secret: <PUSH_WORKER_SECRET>
 ```
 
 If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in production.
+
+For Binance crypto symbols, server-side evaluation reads the current 1m candle open/high/low/close,
+so a cron run can catch alerts whose price was touched within that minute even if the current spot
+price has already moved back. Non-Binance symbols fall back to current-price polling unless a richer
+server-side quote source is added later.
 
 ## Failure Modes
 
