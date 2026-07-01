@@ -1,68 +1,266 @@
 # PROJECT ARCHITECTURE
 
-Canonical subsystem architecture (per the project memory contract in `.claude/CLAUDE.md`).
-For the detailed layer/render/data-flow write-up see **`ARCHITECTURE.md`**; this file adds the
-subsystem-specific sections and forward-looking (planned) architecture.
+_Last updated 2026-07-01. Canonical high-level subsystem architecture._
 
----
+For lower-level render/data-flow details, see `docs/ARCHITECTURE.md`. For the current handoff and
+next action, see `docs/HANDOFF.md` and `docs/CURRENT_STATE.md`.
 
-## System architecture
-Browser-only Next.js 15 (App Router) SPA. The terminal is a `dynamic(ssr:false)` client chunk.
-Lightweight Charts renders price; **HTML5 canvas overlays** render everything custom (SMC,
-drawings, replay picker) by projecting (time,price)→pixels via chart APIs and repainting on
-`ChartContext.version`. Zustand holds state; React Query loads (currently mock) history.
+## 1. Application Shape
 
-## Folder structure
-See `ARCHITECTURE.md` §3 for the full tree. Top level: `src/{app,components,hooks,services,
-store,types,utils,workers}` + `docs/`.
+The project is a TradingView-style web terminal built on Next.js App Router, React 19, TypeScript,
+Tailwind, Jotai, and Lightweight Charts.
 
-## State management
-9 Zustand stores (`ARCHITECTURE.md` §4). Visibility single-source = `useVisibleCandles()`
-(replay gate). Stores init with SSR-safe defaults, hydrate post-mount via `useStoreHydration`.
-Persistence: localStorage + IndexedDB.
+The primary terminal experience is browser-rendered. Server routes are now also used for Firebase
+push notification dispatch and closed-browser push alert evaluation.
 
-## Data flow
-`marketData.ts (MOCK)` → `useMarketData` (React Query) → `chartStore.candles` →
-`useVisibleCandles()` → chart / indicators / SMC worker / trade runtime. See `ARCHITECTURE.md` §5.
+Top-level areas:
 
-## WebSocket architecture — **PLANNED (Phase 1, not yet built)**
-Target design:
+```text
+src/app          Next routes, layout, Firebase service worker route, push APIs
+src/components   chart, alerts, toolbar, trade, layout, notifications
+src/hooks        runtime loops and feature hooks
+src/services     market data, alert engine, notifications, trade engine
+src/server       server-only Firebase/push-alert worker helpers
+src/store        Jotai atom modules
+src/types        shared domain types
+src/workers      browser Web Workers
+scripts          local operational scripts such as push-alert worker
+docs             architecture, plans, handoff, audits
 ```
-MarketDataService (routing, subscriptions, reconnect)
-  ├─ BinanceProvider   (ONE combined WS: ticker + kline + miniTicker)   crypto
-  └─ TwelveDataProvider (forex / metals / indices)                      keyed
-        normalize → unified types → marketDataStore → useCandles/useQuote hooks
+
+## 2. State Management
+
+State is managed with Jotai atoms. Zustand has been removed.
+
+Major atom modules:
+
+- `uiStore`
+- `chartStore`
+- `marketDataStore`
+- `watchlistStore`
+- `alertStore`
+- `notificationStore`
+- `tradeStore`
+- `journalStore`
+- `analyticsStore`
+- `replayStore`
+- `smcStore`
+- `toastStore`
+
+Pattern:
+
+- Primitive atoms hold focused state slices.
+- Write atoms hold mutations/actions.
+- Some stores expose compatibility hooks for older call sites.
+- Runtime code should prefer `useSetAtom(writeAtom)` for effect dependencies because compatibility
+  hooks can create unstable function references.
+
+## 3. Market Data Architecture
+
+The mock-data architecture has been replaced by live market-data providers.
+
+```text
+Provider
+  -> MarketDataService
+  -> marketDataStore
+  -> hooks/useMarketData and read-only market hooks
+  -> chartStore candle mirror
+  -> useVisibleCandles()
+  -> chart, replay, SMC, indicators, trade simulator
 ```
-Rules: one socket per provider (never per symbol), backoff reconnect 1→2→5→10→30s (infinite),
-auto-resubscribe, `CandleEngine` merges history + ticks into the forming bar. Hooks read the
-store only; they never open sockets. **Current code has none of this** — all mock.
 
-## Trading architecture (simulator — implemented)
-`tradeStore` (equity, positions) + `services/tradeEngine.ts` (risk sizing, market/limit/stop
-triggering, SL/TP exits, R-multiple). `useTradeRuntime` streams the latest visible candle to
-fill pending orders and trip SL/TP. UI: `OrderTicket`, `PositionsTable`, `RiskPanel`,
-`TradeLevels` (entry/SL/TP price lines). Closed trades auto-journal (IndexedDB) → analytics.
-**Planned (Phase 6):** replace the simulator with a real MT5/broker bridge.
+Provider responsibilities:
 
-## Alert architecture (partial)
-`alertStore` (in-memory price alerts) + `AlertLines` (renders alert price lines on the candle
-series). Created from the chart right-click context menu. **Missing (Phase 2):** trigger
-detection (price-cross in `CandleEngine`) and notifications (Firebase push per roadmap).
+- Binance provider streams crypto with no API key.
+- OANDA provider handles forex/metals/indices when configured.
+- TwelveData remains a keyed fallback/extension path.
+- Providers normalize quotes/candles into shared market-data types.
+- Subscriptions are reference-counted so watchlist, chart, and alerts can share symbols.
 
-## Drawing architecture
-**Shipped:** `chartStore.drawings` (persisted `drawings:<symbol>`) + `DrawingLayer` canvas
-overlay (create/move/select/delete for trend/horizontal/vertical/rectangle/text/fib) +
-`DrawingToolbar` (7 tools). Right-click chart context menu adds a horizontal line.
-**In progress (Phase 3, unwired):** extended `types/drawing.ts` (channel/brush/measure/long/
-short/emoji/eraser), `chartStore` layer/lock/hide/duplicate actions, and pure
-`components/chart/drawing/drawingRenderer.ts`. Not yet wired into `DrawingLayer`/`DrawingToolbar`
-(dead code; build green). See `KNOWN_ISSUES.md`.
+Rules:
 
-## MT5 architecture — **PLANNED (Phase 6, not started)**
-Bridge service to route real orders / positions; replace `tradeStore` simulation; mobile/push
-notifications. No code yet.
+- Hooks do not open their own sockets.
+- One socket per provider class, not one socket per symbol.
+- Reconnect/resubscribe behavior belongs in providers/service layer.
+- `marketDataStore` is the realtime source of truth; `chartStore` keeps chart UI selection and a
+  candle mirror for existing chart consumers.
 
-## Technology stack
-Next 15.3.9 · React 19 · TypeScript 5.7 (strict) · Lightweight Charts 4.2.3 · Zustand 5 ·
-React Query 5 · Tailwind 3.4 · idb 8 · Web Workers. (`framer-motion` present but broken/unused —
-see `KNOWN_ISSUES.md`.)
+## 4. Chart And Rendering Architecture
+
+Lightweight Charts renders the main candle chart and built-in series. Custom TradingView-like
+features render through DOM/canvas layers projected from chart coordinates.
+
+Main chart overlays:
+
+- SMC layer.
+- Drawing layer.
+- Alert overlay.
+- Replay selection layer.
+- Trade/position levels.
+
+The chart context exposes coordinate conversion and a render version so overlays repaint when the
+viewport changes.
+
+Drawing tools are plugin-oriented:
+
+- Trend line suite.
+- Shape suite.
+- Fibonacci retracement/extension.
+- Long/short position tool.
+- Floating drawing settings toolbar.
+- Object settings dialogs and style templates.
+
+## 5. Alert Architecture
+
+Alert evaluation is complete and isolated from notification delivery.
+
+```text
+marketDataStore price updates
+  -> useAlertEngine
+  -> services/alertEngine.ts
+  -> alertStore.triggerAlert
+  -> services/notifications/notify.ts
+  -> toast / sound / browser notification / Firebase push
+```
+
+Implemented alert features:
+
+- Above/below/crossUp/crossDown.
+- Once-only and recurring alerts.
+- Alert Center with active, triggered, and history lists.
+- Interactive chart alert lines.
+- Toast, sound, browser, and Firebase push delivery.
+- Server-side push alert sync and evaluator for closed-browser notifications.
+
+Closed-browser push architecture:
+
+```text
+Browser syncs token + push-enabled alerts
+  -> /api/push/register
+  -> /api/push/alerts/sync
+  -> src/server/pushAlertStore.ts
+  -> npm run push-worker or external cron
+  -> /api/push/evaluate
+  -> Firebase Admin FCM
+```
+
+Docs:
+
+- `docs/ALERT_ARCHITECTURE.md`
+- `docs/PHASE6A_PUSH_NOTIFICATIONS.md`
+
+## 6. Trading Architecture
+
+The implemented trading system is a simulator.
+
+```text
+visible candle
+  -> useTradeRuntime
+  -> tradeStore
+  -> services/tradeEngine.ts
+  -> positions/equity/journal
+```
+
+Simulator responsibilities:
+
+- Market/limit/stop placement.
+- Pending order trigger checks.
+- SL/TP exits.
+- Risk sizing.
+- Realized/unrealized PnL.
+- R-multiple.
+- Auto-journal of closed trades.
+
+UI:
+
+- `OrderTicket`
+- `PositionsTable`
+- `RiskPanel`
+- `TradePanel`
+- `TradeLevels`
+
+MT5 live execution is planned but not implemented. It must be added as a separate execution mode,
+not by replacing simulator internals.
+
+Docs:
+
+- `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
+
+## 7. Phase 6B Target Architecture
+
+Planned MT5 topology:
+
+```text
+Browser client
+  -> WebSocket JSON protocol
+  -> MT5 Bridge Service
+  -> MT5 terminal / broker account
+```
+
+Browser responsibilities:
+
+- Execution mode UI.
+- WebSocket bridge client.
+- Account/position/order state display.
+- Live command confirmation.
+- Risk guards and diagnostics.
+
+Bridge responsibilities:
+
+- Broker credentials and MT5 login.
+- Symbol metadata.
+- Order placement/modification/close.
+- Account and position snapshots.
+- Execution report mapping.
+
+The simulator must remain default and functional when MT5 is disabled.
+
+## 8. Persistence
+
+Browser-side:
+
+- localStorage for settings, drawings, alerts, templates, and lightweight state.
+- IndexedDB for journal entries and screenshots.
+
+Server-side:
+
+- `.data/push-alerts.json` stores synced push tokens and push-enabled alert snapshots for the
+  closed-browser push worker.
+- This file-backed store is suitable for local/single-server use. Multi-instance deployments should
+  replace it with a shared durable store.
+
+## 9. Operational Commands
+
+Core checks:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Runtime:
+
+```bash
+npm run dev
+npm run start
+npm run push-worker
+```
+
+Closed-browser push requires the Next server and either `npm run push-worker` or an external cron
+calling `/api/push/evaluate`.
+
+## 10. Technology Stack
+
+- Next.js 16
+- React 19
+- TypeScript 5.7 strict mode
+- Jotai
+- Lightweight Charts 4.2.3
+- React Query
+- Tailwind CSS
+- Firebase / Firebase Admin for push notifications
+- IndexedDB via `idb`
+- Web Workers for compute-heavy browser work
+
+`framer-motion` remains present but should be treated cautiously; see `docs/KNOWN_ISSUES.md`.

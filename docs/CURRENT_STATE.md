@@ -1,98 +1,173 @@
-# CURRENT STATE — Phase 1, Step 1 (Codebase Analysis)
+# CURRENT STATE
 
-> Analysis only. No implementation code in this step. Goal: map what exists before replacing
-> mock data with a realtime market-data architecture.
+_Last updated 2026-07-01 after Phase 6A closed-browser push worker and Phase 6B MT5 bridge plan._
 
-Validation at time of writing (2026-06-25):
-`tsc --noEmit` ✅ exit 0 · `next lint` ✅ 0 warnings · `next build` ✅ · no TODO/FIXME markers.
+This file replaces the old Phase 1 mock-data audit. The app is now a live-data, Jotai-based
+TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and a
+planned MT5 bridge.
 
----
+Validation most recently run:
 
-## 1. Existing chart implementation
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
 
-- **Library:** TradingView Lightweight Charts 4.2.3 (`components/chart/PriceChart.tsx`).
-- One candlestick series + one volume histogram (overlay price scale `vol`).
-- Overlay indicators (SMA/EMA/VWAP/ADR) added as line series on the main chart; RSI/MACD live
-  in stacked `IndicatorPane` sub-charts time-synced to the main chart.
-- Data is pushed with `series.setData(...)` on every `useVisibleCandles()` change (full array).
-  **There is no `series.update(tick)` incremental path yet** — relevant for realtime.
-- Coordinate conversion + canvas overlays (`SmcLayer`, `DrawingLayer`, `ReplaySelectionLayer`,
-  `AlertLines`, `TradeLevels`) are already correct and synced via `ChartContext.version`.
+All passed during Phase 6A closed-browser push implementation.
 
-## 2. Existing stores (Zustand)
+## 1. Runtime
 
-`uiStore, chartStore, replayStore, smcStore, tradeStore, journalStore, analyticsStore,
-watchlistStore, alertStore`.
+- Next.js App Router SPA; the terminal UI is mounted as a browser-only client experience.
+- React 19, TypeScript strict mode, Tailwind, Lightweight Charts 4.2.3.
+- State management is Jotai atoms. Zustand has been removed.
+- Persistence uses localStorage for lightweight settings and IndexedDB for journal screenshots/data.
+- Global loops mount from `src/components/layout/GlobalRuntime.tsx`.
 
-- **Market data currently lives in `chartStore`** (`symbol`, `timeframe`, `candles`), loaded by
-  `hooks/useMarketData.ts` (React Query). There is **no dedicated `marketDataStore`** — Phase 1
-  Step 3 creates one as the single source of truth.
-- No duplicate market-data stores. `chartStore.symbol` (active chart symbol),
-  `watchlistStore.symbols` (watchlist), and `tradeStore.symbol` (sim) are distinct concerns,
-  but all resolve symbols against the same hardcoded `SYMBOLS` registry.
+## 2. Market Data
 
-## 3. Existing WebSocket code
+Realtime market data is implemented. The old mock `services/marketData.ts` path is gone.
 
-- **None.** There is no WebSocket, no `provider`, no `ConnectionStatus`, no reconnect logic.
-- Realtime is simulated by: (a) `setTimeout(60ms)` in `fetchHistory`, and (b) React Query
-  `refetchInterval: 15000` on watchlist quotes — but the underlying generator is deterministic,
-  so polled values don't actually change.
+Current flow:
 
-## 4. Existing watchlist
+```text
+market-data provider
+  -> MarketDataService
+  -> marketDataStore
+  -> chartStore bridge/useMarketData
+  -> useVisibleCandles()
+  -> chart, indicators, SMC, replay, trade runtime
+```
 
-- `components/watchlist/Watchlist.tsx` + `store/watchlistStore.ts`.
-- Quotes via `useQueries(['quote', ticker])` → `fetchQuote(ticker)` (MOCK).
-- Renders last price, daily change %, volume; supports add/remove/sort. Green/red already keyed
-  off `changePct`, but **the % never moves** because data is static/deterministic.
+Providers:
 
-## 5. Existing symbol selector
+- Binance provider for crypto symbols with no API key.
+- OANDA provider for forex/metals/indices when `NEXT_PUBLIC_OANDA_API_KEY` and
+  `NEXT_PUBLIC_OANDA_ACCOUNT_ID` are configured.
+- TwelveData fallback/extension path where configured.
 
-- `components/toolbar/SymbolSearch.tsx` → `chartStore.setSymbol()`.
-- On change: clears candles, sets loading, swaps persisted drawings, **disarms replay**, React
-  Query refetches history. No subscribe/unsubscribe (no socket to manage).
+The provider architecture uses one socket per provider, not one socket per symbol, with reconnect
+and resubscribe handling.
 
-## 6. Existing timeframe selector
+## 3. State Stores
 
-- `TopToolbar` timeframe buttons → `chartStore.setTimeframe()`.
-- Supported TFs: `1m, 3m, 5m, 15m, 30m, 1H, 4H, 1D, 1W` (`types/market.ts` `TF_SECONDS`).
-- On change: clears candles + refetch. Chart re-fits once on first load, then preserves
-  pan/zoom on subsequent updates.
+The project uses atom modules under `src/store/`:
 
----
+- `uiStore`
+- `chartStore`
+- `replayStore`
+- `smcStore`
+- `tradeStore`
+- `journalStore`
+- `analyticsStore`
+- `watchlistStore`
+- `alertStore`
+- `marketDataStore`
+- `toastStore`
+- `notificationStore`
 
-## 7. Mock / fake / hardcoded inventory (to remove in Phase 1, Step 17)
+Each store exposes focused atoms and, where needed, a compatibility hook such as `useAlertStore()`
+or `useTradeStore()`.
 
-| Item | Location | Notes |
-|---|---|---|
-| Seeded candle generator | `services/marketData.ts` → `generate1m`, `aggregate`, `getHistorySync` | mulberry32 PRNG, volatility clustering, displacement impulses |
-| Mock history fetch | `services/marketData.ts` → `fetchHistory` | `setTimeout(60ms)` fake latency |
-| Mock quote | `services/marketData.ts` → `fetchQuote` | derived from daily candles, deterministic |
-| Hardcoded symbols | `services/marketData.ts` → `SYMBOLS` (10) | EURUSD, GBPUSD, USDJPY, XAUUSD, BTCUSD, ETHUSD, NAS100, SPX500, AAPL, TSLA |
-| Per-symbol price profiles | `services/marketData.ts` → `profile()` | start price/drift/vol/volume |
-| Default watchlist | `store/watchlistStore.ts` → `DEFAULT` | 8 symbols |
-| Exchange/contract labels | `services/exchange.ts` | display-only mapping (type → BINANCE/FX/…) |
-| MTF replay snapshot | `services/replayEngine.ts` → `mtfSnapshot` | calls `getHistorySync` (mock) |
+Important caution: compatibility hooks that return action functions can create unstable references.
+Inside effects, prefer `useSetAtom(writeAtom)` for actions.
 
-> Note: the replay engine and SMC also call `getHistorySync` (mock). When the realtime engine
-> lands, `mtfSnapshot` must source higher-TF history from the new `HistoricalDataService`.
+## 4. Chart And Tools
 
-## 8. Duplicate stores / risks
+The chart uses Lightweight Charts with canvas overlays for custom UI:
 
-- No literal duplicate stores. **Risk:** market state is split across `chartStore` and React
-  Query cache; Phase 1 should centralize into `marketDataStore` and treat `chartStore` as
-  chart-UI-only (active symbol/timeframe + drawings/indicators).
+- SMC overlays.
+- Drawing layer.
+- Replay selection layer.
+- Alert overlay.
+- Trade levels and position visualization.
 
-## 9. In-progress work (NOT part of Phase 1)
+Drawing/tool status:
 
-A **left drawing-toolbar overhaul** was started and is **partially landed**:
-- ✅ `types/drawing.ts` extended (channel, brush, measure, long/short, emoji, eraser, crosshair;
-  `zIndex/locked/visible/stop/target`).
-- ✅ `chartStore` actions added: `duplicateDrawing, lockDrawing, hideDrawing, bringToFront,
-  sendToBack, toggleLockAll, toggleHideAll`, `drawingsLocked/Hidden`.
-- ✅ `components/chart/drawing/drawingRenderer.ts` (pure renderer for all new types).
-- ❌ **Not wired:** `DrawingLayer.tsx` still uses the old inline renderer/7-tool flow;
-  `DrawingToolbar.tsx` still shows the old 7 tools; no `DrawingContextMenu`, no `drawingHitTest`
-  module, no drawing keyboard-shortcut hook.
-- **Net effect:** `drawingRenderer.ts` is currently **dead (unused) code**; the build is green
-  because the changes are additive. This belongs to **Phase 3 (Drawing Engine)** per the
-  roadmap and should be completed there or explicitly reverted before Phase 1 if undesired.
+- Trend line suite, grouped toolbar, shape tools, Fibonacci tools, long/short position tools, and
+  object settings/templates are implemented.
+- Long/short position settings have TradingView-like Inputs/Style/Visibility dialogs.
+- Position rendering is clipped above the volume pane to avoid SL/TP fills covering volume.
+
+## 5. Alerts
+
+Phase 2 alert engine is complete.
+
+Implemented:
+
+- Price above/below/crossUp/crossDown evaluation.
+- Once-only and recurring alerts.
+- Active, triggered, and history lists.
+- Toast, sound, browser notification, and Firebase push channels.
+- Interactive chart alerts with select, drag-to-reprice, edit, delete, context menu, and lock/enable
+  flags.
+- Closed-browser push delivery through server-side sync and worker evaluation.
+
+Push architecture:
+
+```text
+browser alert store + FCM token
+  -> /api/push/register + /api/push/alerts/sync
+  -> .data/push-alerts.json server store
+  -> npm run push-worker
+  -> /api/push/evaluate
+  -> Firebase Admin FCM send
+```
+
+Closed-browser push requires a running Next server plus `npm run push-worker` or an external cron
+calling `/api/push/evaluate`.
+
+Docs:
+
+- `docs/ALERT_ARCHITECTURE.md`
+- `docs/PHASE6A_PUSH_NOTIFICATIONS.md`
+
+## 6. Trading
+
+Simulator trading is implemented and remains the default execution mode.
+
+Implemented:
+
+- `tradeStore` stores simulator equity, positions, latest trade price/time, and actions.
+- `services/tradeEngine.ts` handles risk sizing, pending trigger checks, SL/TP exits, realized and
+  unrealized PnL, and R-multiple calculations.
+- `useTradeRuntime` feeds visible candles into the simulator.
+- Closed simulator trades auto-journal into IndexedDB.
+- UI includes `OrderTicket`, `PositionsTable`, `RiskPanel`, `TradePanel`, and `TradeLevels`.
+
+MT5 live execution is not implemented yet. Phase 6B is planned in detail:
+
+- `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
+
+## 7. Phase Status
+
+- Phase 1 realtime market data: complete.
+- Phase 2 alert engine: complete.
+- OANDA integration: complete.
+- Phase 3 TradingView UI parity: complete enough for current roadmap.
+- Phase 4 drawing engine/tool suites: complete for current line/shape/fib/position tooling.
+- Phase 5 left toolbar / indicator engine: complete.
+- Phase 6A Firebase push notifications: complete, including closed-browser worker mode.
+- Phase 6B MT5 bridge: planned, not implemented.
+
+## 8. Current Next Action
+
+Start Phase 6B implementation from:
+
+- `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
+- `docs/PHASE6_IMPLEMENTATION_PLAN.md`
+
+The first recommended milestone is protocol plus mock bridge:
+
+1. Create `docs/MT5_BRIDGE_PROTOCOL.md`.
+2. Add `src/types/mt5.ts`.
+3. Add `scripts/mock-mt5-bridge.mjs`.
+4. Add MT5 env placeholders.
+
+## 9. Known Operational Notes
+
+- `.data/push-alerts.json` is a runtime server store for push alerts and should not be committed if
+  created locally.
+- Firebase Admin values must stay server-only and must not use `NEXT_PUBLIC_*`.
+- MT5 credentials must remain in the bridge service, never in browser code.
+- Phase 6B must keep simulator mode as the default and leave it functional when MT5 is disabled.
