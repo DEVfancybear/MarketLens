@@ -78,6 +78,9 @@ is looking to enable it) with "Preserve log" on, removed again once confirmed.
 - **`MarketDataService.symbolsByProvider` lingers chart-only symbols** (timeframe-scoped kline
   unsubscribe doesn't remove the symbol). Cosmetic — affects only status aggregation. See
   `PHASE1_GAPS.md` A2.
+- **Drawing interaction: dual listener overhead + hitTest on every idle pointerdown.** Minor,
+  no reported user-visible symptom. See `DRAWING_ENGINE_ARCHITECTURE.md` "Known unresolved perf
+  notes".
 
 ## Workarounds
 - **`api.binance.com` returns HTTP 451 from US-hosted server IPs** (e.g. Vercel serverless

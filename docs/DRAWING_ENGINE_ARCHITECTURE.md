@@ -1,6 +1,22 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25 · Phase 4.1 wired. Updated 2026-06-27 with the render loop & repaint contract._
+_Date: 2026-06-25 · Phase 4.1 wired. Updated 2026-06-27 with the render loop & repaint contract.
+Updated 2026-07-02: merged in the standing architecture rule, the canonical drag-target contract,
+and the outstanding perf notes from the DeepSeek investigation log (`DEEPSEEK.md`)._
+
+## Architecture rule (read before touching drawing/chart interaction)
+
+Never fix a drawing-interaction bug by adding a conditional hack or patching around pointer
+events. Chart interaction and drawing interaction must stay independent (canvas
+`pointerEvents:"none"` + document capture-phase listeners — see the render/interaction layers
+below). TradingView's behavior is the reference implementation. If fixing one bug causes another
+interaction regression, stop and fix the interaction architecture itself rather than layering
+another special case on top.
+
+Before considering any drawing/chart-interaction task complete, manually verify all of: chart wheel
+zoom, chart pan, crosshair, drawing creation, drawing selection, drawing movement, endpoint
+dragging, context menu, delete, duplicate. A task touching this area is not done until all of these
+still work, not just the one you were fixing.
 
 ## Overview
 
@@ -212,3 +228,43 @@ interaction manager all go through it — no tool-specific branching anywhere el
 > When adding a tool, make sure its `hitTest()` returns anchor candidates (`p1`/`p2`/…)
 > as well as a `body` candidate — `HitTestEngine` prioritises anchors over body so endpoint
 > grabs work (see the `fromEvent` note in the render contract for the coordinate pitfall).
+
+## Canonical drag-target contract
+
+```ts
+type DragTarget = "body" | "p1" | "p2";
+```
+
+No other drag targets are allowed — `"segment"` and `"label"` were deprecated and removed (all 25
+tools migrated 2026-06-26; `HitTestEngine`'s type + `TARGET_PRIORITY` no longer accept them, and
+`DrawingInteractionManager` maps `hit.target` through with no silent fallback remapping).
+
+```
+hitTest → returns "p1" | "p2" | "body"  (no silent remapping)
+    ↓
+InteractionManager → dragTarget = "p1" | "p2" | "body"  (pass-through)
+    ↓
+defaultMovePoints(origPoints, pointer, dragTarget, dragStart)
+    "p1"   → next[0] = pointer (resize endpoint A)
+    "p2"   → next[1] = pointer (resize endpoint B)
+    "body" → both += delta (move entire drawing)
+    ↓
+updateDrawing(id, { points: next })
+```
+
+All 25 registered tools return only canonical targets: TrendLine/Ray/ExtendedLine/InfoLine/
+Channel/Polyline/Triangle/Rectangle/RotatedRect/Circle/Ellipse/Fib(legacy+Retracement+Extension)/
+Curve/Path use `p1`/`p2`/`body`; Brush/Text/Emoji/Horizontal/HorizRay/Vertical/CrossLine/Long-
+Position/ShortPosition are `body`-only (no resizable endpoints).
+
+## Known unresolved perf notes (minor, not user-visible bugs)
+
+- **Dual listener overhead.** Both the cursor-mode (permanent) and drawing-mode (conditional,
+  `activeTool !== "cursor"`) document capture-phase listeners run their own `isOverCanvas()` +
+  `getState()` + `fromEvent()` on every pointer event while a drawing tool is active — the cursor
+  handler then early-returns. Wasted work, not a correctness bug.
+- **`hitTest()` runs on every idle pointerdown** in cursor mode, even clicks that hit nothing.
+  Cheap per-call but adds up with many drawings on screen.
+
+Neither has a reported user-visible symptom; revisit only if drag/click latency becomes a
+complaint with a large drawing count.
