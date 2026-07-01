@@ -164,6 +164,26 @@ Server push sends a data-first Web Push payload with `title` and `body` mirrored
 absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
 the background notification.
 
+## Web Push's Fundamental Limitation
+
+Browser push delivery (FCM webpush) requires the browser's own background process to stay alive,
+even with every tab/window closed — the OS doesn't deliver it directly, the browser vendor's push
+service does, and that needs a resident (if minimized/backgrounded) browser process to relay it to
+the service worker. If the browser application itself is fully quit/killed, no web push
+implementation — including this one — can deliver a notification until it's reopened. `TTL` (see
+below) only controls how long the push service holds the message while waiting for that
+reconnection; it doesn't remove the requirement.
+
+Telegram/Discord delivery does not have this limitation: it's a plain server-to-API call made by
+`/api/push/evaluate`, independent of any browser or service worker state. Prefer those channels
+(or use them alongside FCM push) when reliable closed-browser delivery matters more than needing
+the browser open at all.
+
+FCM `webpush.headers.TTL` (`src/server/firebaseAdmin.ts`) is 86400s (24h, previously 300s/5min).
+If the browser doesn't reconnect within TTL, the push service drops the message even though the
+server-side send reports success (`messageId` returned, no error) — a 5-minute TTL was silently
+losing pushes for any realistically long closed-browser window.
+
 ## Failure Modes
 
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.

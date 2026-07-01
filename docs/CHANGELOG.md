@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Push TTL too short + duplicate-trigger race (2026-07-02)
+- FCM webpush TTL was 300s; if the browser reconnected to the push service after that, the message
+  was already dropped, so a closed browser could easily miss a push for good even though the
+  server-side send succeeded. Bumped to 86400s (24h) in `src/server/firebaseAdmin.ts`.
+- Overlapping `evaluatePushAlerts()` calls (in-process worker interval vs. a manual/cron call
+  landing at the same time) could each read Firestore before the other's write landed, firing a
+  one-time alert more than once (reproduced live: 3x for one crossing). Added an in-process
+  `inFlight` promise lock in `src/server/pushAlertEvaluator.ts` so overlapping calls share one
+  evaluation.
+- Confirmed Telegram delivery works independently of the browser/service worker (plain server-side
+  HTTP call) via `/api/notifications/test` — recommended as the more reliable closed-browser
+  channel, since browser push fundamentally requires the browser's background process to stay
+  alive, which is outside this codebase's control.
+
 ### Fixed - Closed-browser push never fired because no evaluator was running (2026-07-01)
 - Closed-browser alert delivery always required a separate always-on process
   (`npm run push-worker` or an external cron hitting `/api/push/evaluate`); with neither running,

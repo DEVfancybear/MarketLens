@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-01 (In-process closed-browser push worker)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Push TTL + duplicate-trigger race fix)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -162,6 +162,19 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   Next's `register()` hook on server boot (skipped on Vercel/`DISABLE_PUSH_WORKER=true`), so
   `npm run start`/`npm run dev` alone now delivers closed-browser push. Verified against a real
   `next start` + `/api/push/evaluate?debug=1` call. See `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Closed-browser push still silent after the in-process worker — TTL + race fix (2026-07-02):**
+  user retested and still got no FCM notification. Investigated the live server directly (Firestore
+  device/alert docs, `/api/push/evaluate?debug=1`, `/api/notifications/test`) rather than guessing:
+  confirmed Telegram delivery works and doesn't depend on the browser at all (recommended as the
+  reliable channel); found FCM `webpush.headers.TTL` was only 300s, meaning the push service drops
+  the message if the browser doesn't reconnect within 5 minutes — bumped to 86400s in
+  `firebaseAdmin.ts`; found and fixed a real duplicate-trigger race (overlapping
+  `evaluatePushAlerts()` calls read Firestore before each other's write landed, firing a one-time
+  alert 3x in the live log) with an in-process `inFlight` promise lock in `pushAlertEvaluator.ts`.
+  Also documented (`PHASE6A_PUSH_NOTIFICATIONS.md` "Web Push's Fundamental Limitation") that
+  browser push delivery inherently requires the browser's background process to stay alive even
+  with all tabs closed — fully quitting the browser defeats any web push implementation, not just
+  this one.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.

@@ -59,7 +59,10 @@ export async function sendFirebasePush(
     data,
     webpush: {
       headers: {
-        TTL: "300",
+        // 24h, not the previous 300s: the push service drops undelivered
+        // messages once TTL elapses, and a closed browser can easily stay
+        // closed longer than 5 minutes before it's reopened / reconnects.
+        TTL: "86400",
         Urgency: "high",
       },
       fcmOptions: {

@@ -232,8 +232,24 @@ function shouldEvaluate(device: PushDeviceRecord, alert: ServerPushAlert) {
   return { signature, state };
 }
 
-export async function evaluatePushAlerts(
+// Serializes evaluate calls within this process: the in-process worker's
+// setInterval and an overlapping manual/cron call otherwise both read
+// Firestore before either write lands, sending the same trigger twice.
+let inFlight: Promise<EvaluationResult> | null = null;
+
+export function evaluatePushAlerts(
   options: { debug?: boolean } = {},
+): Promise<EvaluationResult> {
+  if (inFlight) return inFlight;
+  const run = runEvaluation(options).finally(() => {
+    if (inFlight === run) inFlight = null;
+  });
+  inFlight = run;
+  return run;
+}
+
+async function runEvaluation(
+  options: { debug?: boolean },
 ): Promise<EvaluationResult> {
   const result: EvaluationResult = {
     devices: 0,

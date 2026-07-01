@@ -1,8 +1,39 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-01 (In-process closed-browser push worker)_
+_Last updated: 2026-07-02 (Push TTL + duplicate-trigger race fix)_
 
-## Completed this session (2026-07-01)
+## Completed this session (2026-07-02)
+
+### Closed-browser push still silent after the in-process worker fix
+- User re-tested after the in-process worker fix and still got no FCM push notification when a
+  price touched their alert level while the browser was closed.
+- Investigated the live running server directly (Firestore device/alert records,
+  `/api/push/evaluate?debug=1`, `/api/notifications/test`) instead of guessing:
+  - **Telegram delivery confirmed working** via the test endpoint — it doesn't depend on the
+    browser/service worker at all, since it's a plain server → Telegram Bot API call. Recommended
+    to the user as the reliable closed-browser channel alongside/instead of FCM push.
+  - **Found the FCM push TTL was only 300 seconds** (`firebaseAdmin.ts`'s `webpush.headers.TTL`).
+    If the browser/device doesn't reconnect to the push service within 5 minutes of the send, the
+    push service drops the message for good — closing the browser for any realistic test duration
+    silently loses the notification even though the server-side send succeeds (`messageId`
+    returned, no error). Bumped to 86400s (24h).
+  - **Found a real duplicate-trigger race**: manually firing two/three concurrent
+    `/api/push/evaluate` calls (which happens naturally when the in-process worker's interval
+    overlaps a manual or cron call) let each call read Firestore before the other's write landed,
+    so a one-time alert fired 3 times in the live server log (`triggered=1` x3) instead of once.
+    Fixed with an in-process `inFlight` promise lock in `evaluatePushAlerts()` so overlapping calls
+    within the same server process share one evaluation instead of racing. Verified by firing 3
+    concurrent evaluate calls and confirming identical, single-evaluation results.
+  - Also flagged the fundamental Web Push limitation (not fixable in this codebase): browser
+    push delivery requires the browser's own background process to stay alive even with every
+    tab/window closed. If the user fully quits/kills the browser app, no web push implementation
+    can delivered until it's reopened — this is why Telegram/Discord are the more reliable
+    closed-browser channels.
+- Files: `src/server/firebaseAdmin.ts`, `src/server/pushAlertEvaluator.ts`.
+- type-check ✅ · build ✅ · manually verified against a real `next start` instance (live Firestore
+  device records, concurrent evaluate calls, live Telegram test send).
+
+## Completed 2026-07-01
 
 ### Closed-browser push silently never fired (no evaluator was running)
 - User report: create an alert, close the browser, no push notification arrives; reopening the
