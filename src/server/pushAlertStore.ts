@@ -46,15 +46,16 @@ function sanitizeAlert(alert: ServerPushAlert): ServerPushAlert | null {
   ) {
     return null;
   }
-  return {
+  const sanitized: ServerPushAlert = {
     id: String(alert.id),
     symbol: String(alert.symbol).toUpperCase(),
     condition: alert.condition,
     price: alert.price,
-    note: alert.note ? String(alert.note).slice(0, 240) : undefined,
     recurring: Boolean(alert.recurring),
     updatedAt: Number.isFinite(alert.updatedAt) ? alert.updatedAt : Date.now(),
   };
+  if (alert.note) sanitized.note = String(alert.note).slice(0, 240);
+  return sanitized;
 }
 
 function pruneState(device: PushDeviceRecord): PushDeviceRecord {
@@ -71,6 +72,20 @@ function firestoreEnabled(): boolean {
 
 function tokenDocId(token: string): string {
   return Buffer.from(token).toString("base64url");
+}
+
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(stripUndefined) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, stripUndefined(v)]),
+    ) as T;
+  }
+  return value;
 }
 
 function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
@@ -106,7 +121,7 @@ async function setFirestoreDevice(device: PushDeviceRecord): Promise<void> {
   await getFirebaseFirestore()
     .collection(COLLECTION)
     .doc(tokenDocId(device.token))
-    .set(device);
+    .set(stripUndefined(device));
 }
 
 export async function registerPushDevice(token: string): Promise<void> {

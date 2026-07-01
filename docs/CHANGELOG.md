@@ -4,6 +4,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Firestore push sync strips undefined fields (2026-07-01)
+- Push alert Firestore writes now remove nested `undefined` values before `.set()`, fixing sync
+  failures such as `alerts.0.note` being undefined.
+
 ### Fixed - Background FCM payload is data-first (2026-07-01)
 - Server push now sends a data-first Web Push payload with `title` and `body` mirrored into `data`,
   an absolute `fcmOptions.link`, TTL/urgency headers, and debug `messageId` reporting from
