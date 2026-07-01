@@ -1,8 +1,31 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-01 (TradingView-style Position settings parity)_
+_Last updated: 2026-07-01 (In-process closed-browser push worker)_
 
 ## Completed this session (2026-07-01)
+
+### Closed-browser push silently never fired (no evaluator was running)
+- User report: create an alert, close the browser, no push notification arrives; reopening the
+  tab immediately shows the alert as triggered (via the existing reopen-recovery scan).
+- Root cause: closed-browser delivery has always required a *second*, always-running process
+  (`npm run push-worker`, or an external cron hitting `/api/push/evaluate`) — `useAlertEngine` only
+  evaluates alerts while a browser tab is open. Checked the running processes on the dev machine:
+  neither `next dev`/`next start` nor `push-alert-worker.mjs` was running, so nothing was ever
+  polling prices while the tab was closed. This is the documented "Worker not running" failure
+  mode in `docs/PHASE6A_PUSH_NOTIFICATIONS.md` — not a new bug in the evaluation/delivery code
+  (which was already fixed earlier today for the data-only FCM payload and the Binance geo-block).
+- Fix: added `src/instrumentation.ts`, which starts the same `evaluatePushAlerts()` evaluator
+  in-process via a `setInterval` when the Next server boots (`register()` hook), so `npm run dev`
+  / `npm run start` alone is enough — no second terminal to remember. Skipped when
+  `process.env.VERCEL` is set (serverless functions can't host a long-lived interval; use the
+  documented external cron there) or when `DISABLE_PUSH_WORKER=true`. `scripts/push-alert-worker.mjs`
+  is kept as-is for that external/Vercel case.
+- Verified end-to-end: built + started `next start`, confirmed the
+  `[push-worker] in-process closed-browser evaluation started` log line appears, and called
+  `POST /api/push/evaluate?debug=1` with the local `PUSH_WORKER_SECRET` — returned `ok:true` with
+  the registered devices.
+- Files: `src/instrumentation.ts` (new).
+- type-check ✅ · build ✅ · manually verified against a real `next start` instance.
 
 ### Alert line no longer "jumps" when dragged near the live price
 - Root cause (found via a scripted Playwright repro against a clean dev server, not guesswork):

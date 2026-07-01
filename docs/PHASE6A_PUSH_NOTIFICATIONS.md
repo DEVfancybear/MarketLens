@@ -102,7 +102,19 @@ OANDA when configured and fall back to TwelveData when available.
 
 ## Closed-Browser Worker
 
-Run the app server and the push worker as two processes:
+**Local / self-hosted (default):** `src/instrumentation.ts` starts the same evaluator in-process
+when the Next server boots (`register()` hook, `setInterval` on `PUSH_WORKER_INTERVAL_MS`), so a
+single process is enough:
+
+```bash
+npm run start   # or npm run dev
+```
+
+Look for `[push-worker] in-process closed-browser evaluation started` in the server log. Set
+`DISABLE_PUSH_WORKER=true` to opt out (e.g. to run the standalone worker instead).
+
+The standalone worker script still exists for cases where the in-process loop isn't wanted (e.g.
+running the evaluator on a separate box from the web process):
 
 ```bash
 npm run start
@@ -112,8 +124,9 @@ npm run push-worker
 `npm run push-worker` loads `.env.local` and `.env` before polling, so `PUSH_WORKER_SECRET` should
 match the value used by the running Next server.
 
-For Vercel production on plans without Vercel Cron, use an external scheduler such as
-cron-job.org. Configure it to call:
+**Vercel / serverless:** `src/instrumentation.ts` skips starting the in-process loop when
+`process.env.VERCEL` is set, since serverless functions can't host a long-lived interval. Use an
+external scheduler such as cron-job.org. Configure it to call:
 
 ```text
 POST /api/push/evaluate
@@ -163,6 +176,9 @@ the background notification.
   after redeploy. The app now waits for `/firebase-messaging-sw.js` to activate before requesting
   an FCM token, and the worker calls `skipWaiting()`/`clients.claim()` on install/activate.
 - Worker not running: browser-open push still works, but closed-browser alert evaluation does not.
+  As of the in-process worker, this only applies on Vercel/serverless (or with
+  `DISABLE_PUSH_WORKER=true`) where nothing is calling `/api/push/evaluate` on a schedule — check
+  for the `[push-worker] in-process closed-browser evaluation started` boot log otherwise.
 - Missing server-side market data credentials: Binance crypto alerts still work; OANDA/TwelveData
   symbols are skipped until server credentials are configured.
 

@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Closed-browser push never fired because no evaluator was running (2026-07-01)
+- Closed-browser alert delivery always required a separate always-on process
+  (`npm run push-worker` or an external cron hitting `/api/push/evaluate`); with neither running,
+  alerts were never evaluated while the tab was closed, even though the FCM send path itself was
+  correct.
+- Added `src/instrumentation.ts`, which starts the same `evaluatePushAlerts()` loop in-process via
+  Next's `register()` hook when the server boots, so `npm run dev`/`npm run start` alone delivers
+  closed-browser push. Skipped on Vercel (`process.env.VERCEL`) or with `DISABLE_PUSH_WORKER=true`;
+  `scripts/push-alert-worker.mjs` remains for that external-cron case.
+
 ### Added - Telegram and Discord alert notifications (2026-07-01)
 - Added server-side Telegram Bot API and Discord webhook delivery for alert notifications.
   Browser-open alerts now fan out through `/api/notifications/send`; closed-browser worker alerts

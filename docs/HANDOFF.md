@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-06-30 (Drawing toolbar Settings hexagon + Style Templates — plan §1/§2)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-01 (In-process closed-browser push worker)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -152,6 +152,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   failure was swallowed instead of surfaced. Fixed by switching to `data-api.binance.vision`
   (Binance's unrestricted market-data mirror) and making fetch/parse failures throw so they land
   in the evaluation's `errors` array. See `KNOWN_ISSUES.md` Workarounds.
+- **Closed-browser push never fired — no evaluator was running (2026-07-01):** user reported
+  closing the browser after setting an alert produced no push notification, only showing up on
+  reopen. Root cause: closed-browser delivery needs a second always-on process
+  (`npm run push-worker` or an external cron); neither was running (verified via the OS process
+  list — no `next` or `push-alert-worker.mjs` process at all), which is the pre-existing "Worker
+  not running" failure mode, not a regression in the FCM/evaluate code fixed earlier the same day.
+  Fixed by adding `src/instrumentation.ts`, which starts `evaluatePushAlerts()` in-process via
+  Next's `register()` hook on server boot (skipped on Vercel/`DISABLE_PUSH_WORKER=true`), so
+  `npm run start`/`npm run dev` alone now delivers closed-browser push. Verified against a real
+  `next start` + `/api/push/evaluate?debug=1` call. See `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
