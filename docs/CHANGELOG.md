@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert line stays after price visibly crosses it mid-session (2026-07-01)
+- `observedSinceArm`'s "continuing" branch (the normal, browser-still-open path) only ever widened
+  the observed high/low forward from the single most-recent tick's candle. Any candle that closed
+  during a missed tick — a websocket reconnect, a backgrounded/throttled browser tab, or a brief
+  gap in the kline stream — was silently dropped, so a real crossing could go undetected even while
+  the tab stayed open and the chart visibly showed the candle piercing the alert line.
+- `observedSinceArm` (`hooks/useAlertEngine.ts`) now uses one unified rule for every observation,
+  first or continuing: rescan the loaded candle series for anything at/after the last-known point
+  and fold it in. Walks the series backward from the newest candle and stops at the cutoff, so the
+  common per-tick case only touches 1-2 candles instead of scanning the whole array.
+- Files: `src/hooks/useAlertEngine.ts`.
+
 ### Fixed - Alert stays "pending" after reopening if the touch happened in an older candle (2026-07-01)
 - On reopen/reload, `useAlertEngine`'s recovery only inspected the single most-recent (currently
   forming) candle's high/low. If the price actually crossed the alert level while the browser was

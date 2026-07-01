@@ -203,7 +203,6 @@ export function useAlertEngine() {
           observedRangeRef.current,
           alert,
           curr,
-          mountedAtRef.current,
           series,
         );
         const rearmBlocked =
@@ -238,84 +237,64 @@ export function useAlertEngine() {
   }, []);
 }
 
+/**
+ * Tracks each alert's observed high/low since it was armed. Rather than only
+ * ever widening forward from the single most-recent tick's candle (which
+ * silently drops any candle that closed during a missed tick — a websocket
+ * reconnect, a backgrounded/throttled tab, or reopening the browser
+ * entirely), every call rescans the loaded candle series for anything newer
+ * than the last-known point and folds it in. This makes recovery uniform
+ * across "just armed", "reopened after being closed", and "gap while still
+ * open" — all three are just "rescan the series since X".
+ */
 function observedSinceArm(
   ranges: Map<string, ObservedAlertRange>,
   alert: Alert,
   snapshot: AlertPriceSnapshot,
-  mountedAt: number,
   series?: MarketCandle[],
 ): AlertPriceSnapshot {
   const signature = alertSignature(alert);
   const existing = ranges.get(alert.id);
-  if (!existing || existing.signature !== signature) {
-    const existedBeforeThisBrowserSession = alert.createdAt * 1000 < mountedAt;
-    let high = snapshot.current;
-    let low = snapshot.current;
+  const isFirstObservation = !existing || existing.signature !== signature;
 
-    if (existedBeforeThisBrowserSession && series?.length) {
-      // The alert armed in a previous browser session (page reload/reopen).
-      // Scan every loaded candle since the alert was last armed instead of
-      // only the currently-forming candle, so a touch that happened while
-      // the browser was closed (in an already-closed candle) is still caught.
-      const sinceMs = alert.updatedAt * 1000;
-      for (const c of series) {
-        if (c.time * 1000 < sinceMs) continue;
-        high = Math.max(high, c.high);
-        low = Math.min(low, c.low);
-      }
-    } else {
-      const candleOpenMs =
-        snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
-      const includeFullCandle =
-        candleOpenMs !== undefined &&
-        alert.updatedAt * 1000 <= candleOpenMs &&
-        snapshot.candleHigh !== undefined &&
-        snapshot.candleLow !== undefined;
-      if (includeFullCandle) {
-        high = Math.max(snapshot.candleHigh ?? snapshot.current, snapshot.current);
-        low = Math.min(snapshot.candleLow ?? snapshot.current, snapshot.current);
-      }
-    }
-
-    ranges.set(alert.id, {
-      signature,
-      symbol: alert.symbol,
-      candleTime: snapshot.candleTime,
-      candleHigh: snapshot.candleHigh,
-      candleLow: snapshot.candleLow,
-      high,
-      low,
-    });
-    return {
-      ...snapshot,
-      open: snapshot.current,
-      high,
-      low,
-    };
+  let high: number;
+  let low: number;
+  let sinceMs: number;
+  if (isFirstObservation) {
+    high = snapshot.current;
+    low = snapshot.current;
+    sinceMs = alert.updatedAt * 1000;
+  } else {
+    high = existing.high;
+    low = existing.low;
+    sinceMs = existing.candleTime !== undefined ? existing.candleTime * 1000 : 0;
   }
 
-  let high = Math.max(existing.high, snapshot.current);
-  let low = Math.min(existing.low, snapshot.current);
+  high = Math.max(high, snapshot.current);
+  low = Math.min(low, snapshot.current);
 
-  if (snapshot.candleTime !== undefined) {
-    if (existing.candleTime !== snapshot.candleTime) {
-      high = Math.max(high, snapshot.candleHigh ?? snapshot.current);
-      low = Math.min(low, snapshot.candleLow ?? snapshot.current);
-    } else {
-      if (
-        snapshot.candleHigh !== undefined &&
-        existing.candleHigh !== undefined &&
-        snapshot.candleHigh > existing.candleHigh
-      ) {
-        high = Math.max(high, snapshot.candleHigh);
-      }
-      if (
-        snapshot.candleLow !== undefined &&
-        existing.candleLow !== undefined &&
-        snapshot.candleLow < existing.candleLow
-      ) {
-        low = Math.min(low, snapshot.candleLow);
-      }
+  if (series?.length) {
+    // `series` is time-ascending; walk backward from the newest candle and
+    // stop as soon as we pass the cutoff. In the common "continuing" case
+    // this touches only the current (and maybe the just-closed) candle —
+    // full first-observation recovery scans are the rare case.
+    for (let i = series.length - 1; i >= 0; i--) {
+      const c = series[i];
+      if (c.time * 1000 < sinceMs) break;
+      high = Math.max(high, c.high);
+      low = Math.min(low, c.low);
+    }
+  } else {
+    const candleOpenMs =
+      snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
+    if (
+      candleOpenMs !== undefined &&
+      candleOpenMs >= sinceMs &&
+      snapshot.candleHigh !== undefined &&
+      snapshot.candleLow !== undefined
+    ) {
+      high = Math.max(high, snapshot.candleHigh);
+      low = Math.min(low, snapshot.candleLow);
     }
   }
 

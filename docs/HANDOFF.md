@@ -114,6 +114,13 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `drawingTemplates`). `CanvasRenderer.drawingsHash()` now folds in style fields so edits
   repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
   hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
+- **Alert line survives a visible mid-session crossing (2026-07-01):** `observedSinceArm`'s
+  continuing (browser-still-open) branch previously only widened the observed high/low forward
+  from the single most-recent tick's candle, so a websocket reconnect, backgrounded/throttled tab,
+  or kline-stream gap could silently drop a candle — a crossing visibly happening on the chart
+  wasn't detected and the alert line never disappeared. Unified with the reopen-recovery path: every
+  observation now rescans the loaded candle series since the last-known point (walking backward from
+  the newest candle, stopping at the cutoff for O(1-2) cost per tick in the steady state).
 - **Alert stuck "pending" after reopen (2026-07-01):** `useAlertEngine`'s reopen recovery
   (`observedSinceArm` in `hooks/useAlertEngine.ts`) only looked at the latest forming candle's
   high/low, so a level crossed while the browser was closed inside an already-closed (older)

@@ -4,6 +4,16 @@ _Last updated: 2026-07-01 (TradingView-style Position settings parity)_
 
 ## Completed this session (2026-07-01)
 
+### Alert line survives a visible mid-session crossing
+- `observedSinceArm`'s continuing (browser-still-open) branch only widened forward from the latest
+  tick's single candle, so a websocket reconnect / backgrounded tab / kline gap could drop a candle
+  entirely — a real crossing visible on the chart never got detected.
+- Fix: unified first-observation and continuing paths into one rule — rescan the loaded candle
+  series for anything since the last-known point (walking backward from the newest candle, stopping
+  at the cutoff, so the steady-state cost stays O(1-2) candles per tick).
+- Files: `src/hooks/useAlertEngine.ts`.
+- type-check ✅ · lint ✅ · build ✅.
+
 ### Alert stuck "pending" after reopen if the touch happened in an older candle
 - `useAlertEngine`'s reopen recovery (`observedSinceArm`) only checked the current forming candle's
   high/low, so a level crossed while the browser was closed but inside an already-closed candle
