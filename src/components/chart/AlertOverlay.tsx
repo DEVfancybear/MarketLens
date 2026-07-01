@@ -39,7 +39,7 @@ const LONG_PRESS_MS = 500;
 const DRAG_THRESHOLD = 3;
 
 /** Flip to true to log the alert-render diagnostics (the 8 checks) to the console. */
-const ALERT_DEBUG = true;
+const ALERT_DEBUG = false;
 
 /** Recompute the condition while dragging, keeping the alert's family (level vs cross). */
 function sideCondition(
@@ -339,8 +339,15 @@ export function AlertOverlay() {
     if (a.locked) return; // locked alerts select but don't drag
 
     // Freeze chart pan/zoom for the duration of the drag so a fast vertical
-    // move can't leak through and scroll the view.
+    // move can't leak through and scroll the view. Also freeze the right price
+    // scale's auto-scaling: otherwise every forming-bar tick re-fits the price
+    // range and the whole view visibly jumps under the cursor — most noticeable
+    // when the alert is dragged near the current price (where the live bar
+    // moves). The prior autoScale mode is restored on pointer-up.
+    const priceScale = ctx.chart.priceScale("right");
+    const prevAutoScale = priceScale.options().autoScale ?? true;
     ctx.chart.applyOptions({ handleScroll: false, handleScale: false });
+    priceScale.applyOptions({ autoScale: false });
 
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
@@ -393,8 +400,10 @@ export function AlertOverlay() {
         /* ignore */
       }
       clearLongPress();
-      // Re-enable chart pan/zoom now the drag is over.
+      // Re-enable chart pan/zoom and restore the prior auto-scale mode now the
+      // drag is over. Restoring to the same range doesn't move the view.
       ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
+      priceScale.applyOptions({ autoScale: prevAutoScale });
       if (moved && lastPrice !== origPrice) {
         const condition = sideCondition(a.condition, lastPrice, marketPrice);
         updateAlert(a.id, { price: lastPrice, condition });

@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart view jumped while dragging an alert line near the price (2026-07-01)
+- Dragging an interactive alert line froze pan/zoom but not the right price
+  scale's auto-scaling, so each forming-bar tick re-fit the price range and the
+  whole view jumped under the cursor — worst near the current price where the
+  live bar moves. The drag now also sets `autoScale: false` on the right price
+  scale and restores the prior mode on pointer-up (restoring to the same range
+  doesn't move the view). Also disabled the leftover per-tick `ALERT_DEBUG`
+  console logging.
+  File: AlertOverlay.tsx.
+
 ### Fixed - Position stop zones overlapping volume pane (2026-07-01)
 - Long/Short position rendering is now clipped to the price pane above the
   volume overlay. Far-away SL/TP levels still show their line and label at the
