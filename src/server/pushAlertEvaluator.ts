@@ -13,6 +13,25 @@ interface EvaluationResult {
   triggered: number;
   skipped: number;
   errors: string[];
+  debug?: AlertEvaluationDebug[];
+}
+
+interface AlertEvaluationDebug {
+  token: string;
+  alertId: string;
+  symbol: string;
+  condition: PushAlertCondition;
+  target: number;
+  prev?: number;
+  current?: number;
+  open?: number;
+  high?: number;
+  low?: number;
+  since?: number;
+  candles?: number;
+  met?: boolean;
+  skipped?: string;
+  blocked?: string;
 }
 
 interface PriceSnapshot {
@@ -69,25 +88,14 @@ function priceWindow(snapshot: PriceSnapshot, since: number): PriceSnapshot {
   if (!snapshot.candles?.length) return snapshot;
   const candles = snapshot.candles.filter((c) => c.closeTime >= since);
   const window = candles.length > 0 ? candles : [snapshot.candles[snapshot.candles.length - 1]];
-  const exactWindow = window[0].openTime < since ? window.slice(1) : window;
-  if (exactWindow.length === 0) {
-    const last = window[window.length - 1];
-    return {
-      current: last.close,
-      open: snapshot.current,
-      high: snapshot.current,
-      low: snapshot.current,
-      candles: window,
-    };
-  }
-  const first = exactWindow[0];
-  const last = exactWindow[exactWindow.length - 1];
+  const first = window[0];
+  const last = window[window.length - 1];
   return {
     current: last.close,
-    open: first.open,
-    high: Math.max(...exactWindow.map((c) => c.high)),
-    low: Math.min(...exactWindow.map((c) => c.low)),
-    candles: exactWindow,
+    open: first.openTime < since ? snapshot.current : first.open,
+    high: Math.max(...window.map((c) => c.high)),
+    low: Math.min(...window.map((c) => c.low)),
+    candles: window,
   };
 }
 
@@ -207,7 +215,9 @@ function shouldEvaluate(device: PushDeviceRecord, alert: ServerPushAlert) {
   return { signature, state };
 }
 
-export async function evaluatePushAlerts(): Promise<EvaluationResult> {
+export async function evaluatePushAlerts(
+  options: { debug?: boolean } = {},
+): Promise<EvaluationResult> {
   const result: EvaluationResult = {
     devices: 0,
     alerts: 0,
@@ -215,6 +225,7 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
     skipped: 0,
     errors: [],
   };
+  if (options.debug) result.debug = [];
 
   if (!firebaseAdminConfigured()) {
     result.errors.push("Firebase Admin is not configured.");
@@ -255,6 +266,14 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
       const price = prices[alert.symbol];
       if (price === undefined) {
         result.skipped += 1;
+        result.debug?.push({
+          token: device.token.slice(-8),
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          target: alert.price,
+          skipped: "price unavailable",
+        });
         continue;
       }
 
@@ -271,8 +290,35 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
         alert.recurring &&
         state?.lastTriggeredAt !== undefined &&
         now - state.lastTriggeredAt < RECURRING_REARM_MS;
+      const met = conditionMet(
+        alert.condition,
+        alert.price,
+        prev,
+        priceWindowSinceLastEval,
+      );
 
-      if (!oneTimeFired && !rearmBlocked && conditionMet(alert.condition, alert.price, prev, priceWindowSinceLastEval)) {
+      result.debug?.push({
+        token: device.token.slice(-8),
+        alertId: alert.id,
+        symbol: alert.symbol,
+        condition: alert.condition,
+        target: alert.price,
+        prev,
+        current: priceWindowSinceLastEval.current,
+        open: priceWindowSinceLastEval.open,
+        high: priceWindowSinceLastEval.high,
+        low: priceWindowSinceLastEval.low,
+        since,
+        candles: priceWindowSinceLastEval.candles?.length,
+        met,
+        blocked: oneTimeFired
+          ? "one-time fired"
+          : rearmBlocked
+            ? "recurring rearm"
+            : undefined,
+      });
+
+      if (!oneTimeFired && !rearmBlocked && met) {
         const triggerPrice = priceWindowSinceLastEval.current;
         const message = formatAlert(alert, triggerPrice);
         try {

@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Closed-browser worker catches first-minute touches (2026-07-01)
+- Server-side push evaluation now includes the first Binance one-minute candle that overlaps the
+  alert evaluation window, so cron can catch a touch that happens shortly after the browser closes.
+- `/api/push/evaluate?debug=1` now returns per-alert evaluation diagnostics for troubleshooting
+  closed-browser push without exposing full FCM tokens.
+
 ### Fixed - Alert touches use post-arm candle range (2026-07-01)
 - Browser-open alerts now track per-alert observed high/low after the alert is armed. This catches
   a new wick touch without falsely triggering from high/low that existed before the alert was

@@ -22,7 +22,9 @@ async function evaluate(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
-  const result = await evaluatePushAlerts();
+  const result = await evaluatePushAlerts({
+    debug: req.nextUrl.searchParams.get("debug") === "1",
+  });
   return NextResponse.json({ ok: true, ...result });
 }
 
