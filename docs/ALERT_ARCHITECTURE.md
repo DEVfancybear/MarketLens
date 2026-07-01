@@ -150,6 +150,8 @@ interface AlertHistoryEntry {
   `notifications/push.ts` (token registration + send) and a `settings.push` flag. No change to the
   engine, store, or evaluation is required — that is the reason dispatch is isolated from evaluation.
 
+Detailed Phase 6A implementation docs: `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+
 ## 9. Persistence
 
 `alerts`, `triggeredAlerts`, `history`, and `settings` persist to `localStorage` (key `alerts`) and

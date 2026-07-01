@@ -28,10 +28,20 @@
 
 ---
 
+## Next milestone - Phase 6
+
+Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
+
+- **Phase 6A - Push Notifications:** Firebase Cloud Messaging as the next alert delivery channel.
+  Implemented in `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Phase 6B - MT5 Bridge Integration:** external bridge client, live execution mode, account and
+  position sync, with simulator fallback.
+
+---
+
 ## Later phases (from PHASE3_11_PLAN.md)
 
-- **Phase 6 — Push Notifications:** Firebase Cloud Messaging.
-- **Phase 7 — MT5 Integration:** MT5 Bridge Service.
+- **Phase 6 - Push Notifications + MT5 Integration:** see `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 - **Phase 8 — Trading Panel:** TradingView-style order panel.
 - **Phase 9 — Position Visualization:** interactive entry/SL/TP lines.
 - **Phase 10 — Polish & Optimization:** performance, memory, mobile, accessibility.
