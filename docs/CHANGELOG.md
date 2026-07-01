@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Screenshot overlay clipping (2026-07-01)
+- `captureChart()` now crops each overlay canvas to the actual Lightweight Charts
+  screenshot bounds before compositing. This prevents SMC/drawing/alert overlays
+  from spilling outside the captured chart area or appearing heavier/misaligned
+  in exported screenshots.
+  File: chartRegistry.ts.
+
 ### Fixed - Push subscription waits for active service worker (2026-07-01)
 - Fixed Firebase push registration failing with
   `Subscription failed - no active Service Worker` after deployment/service

@@ -60,18 +60,52 @@ export async function captureChart(): Promise<Blob | null> {
       const scaleX = base.width ? shot.width / base.width : 1;
       const scaleY = base.height ? shot.height / base.height : 1;
       // Draw in ascending z-index so stacking order matches what the user sees.
+      // Crop every overlay to the chart screenshot bounds. Some overlay canvases
+      // are full-pane absolute layers and can report geometry that extends past
+      // the LWC screenshot rect (especially around the right price scale / lower
+      // volume area). Drawing the full bitmap at a negative or oversized offset
+      // makes exported screenshots look much heavier than the live UI.
       overlays
         .map((cv) => ({ cv, z: Number(getComputedStyle(cv).zIndex) || 0 }))
         .sort((a, b) => a.z - b.z)
         .forEach(({ cv }) => {
+          const style = getComputedStyle(cv);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            Number(style.opacity) === 0
+          ) {
+            return;
+          }
           const r = cv.getBoundingClientRect();
           if (r.width === 0 || r.height === 0) return;
+          const ix1 = Math.max(r.left, base.left);
+          const iy1 = Math.max(r.top, base.top);
+          const ix2 = Math.min(r.right, base.right);
+          const iy2 = Math.min(r.bottom, base.bottom);
+          if (ix2 <= ix1 || iy2 <= iy1) return;
+
+          const cssToBitmapX = cv.width / r.width;
+          const cssToBitmapY = cv.height / r.height;
+          const sx = (ix1 - r.left) * cssToBitmapX;
+          const sy = (iy1 - r.top) * cssToBitmapY;
+          const sw = (ix2 - ix1) * cssToBitmapX;
+          const sh = (iy2 - iy1) * cssToBitmapY;
+          const dx = (ix1 - base.left) * scaleX;
+          const dy = (iy1 - base.top) * scaleY;
+          const dw = (ix2 - ix1) * scaleX;
+          const dh = (iy2 - iy1) * scaleY;
+
           g.drawImage(
             cv,
-            (r.left - base.left) * scaleX,
-            (r.top - base.top) * scaleY,
-            r.width * scaleX,
-            r.height * scaleY,
+            sx,
+            sy,
+            sw,
+            sh,
+            dx,
+            dy,
+            dw,
+            dh,
           );
         });
     }
