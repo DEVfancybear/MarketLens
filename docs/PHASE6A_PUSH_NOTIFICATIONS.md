@@ -107,8 +107,12 @@ npm run push-worker
 `npm run push-worker` loads `.env.local` and `.env` before polling, so `PUSH_WORKER_SECRET` should
 match the value used by the running Next server.
 
-For production, replace `npm run push-worker` with a process manager, scheduled job, or hosted cron
-that calls:
+For Vercel production, `vercel.json` registers a cron job that calls `/api/push/evaluate` once per
+minute. Vercel cron requests are accepted by the endpoint when they include Vercel's cron
+user-agent and `x-vercel-cron-schedule` header.
+
+For non-Vercel production, replace `npm run push-worker` with a process manager, scheduled job, or
+hosted cron that calls:
 
 ```text
 POST /api/push/evaluate

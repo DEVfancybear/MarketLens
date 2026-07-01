@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Vercel cron for closed-browser push evaluation (2026-07-01)
+- Added `vercel.json` with a once-per-minute cron for `/api/push/evaluate`, so
+  deployed Vercel apps can evaluate Firestore-synced alerts while the browser is
+  closed. The evaluate endpoint still accepts the local worker secret header and
+  now also accepts official Vercel Cron requests.
+
 ### Fixed - Screenshot overlay clipping (2026-07-01)
 - `captureChart()` now crops each overlay canvas to the actual Lightweight Charts
   screenshot bounds before compositing. This prevents SMC/drawing/alert overlays
