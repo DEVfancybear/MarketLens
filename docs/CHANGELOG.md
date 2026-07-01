@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert stays "pending" after reopening if the touch happened in an older candle (2026-07-01)
+- On reopen/reload, `useAlertEngine`'s recovery only inspected the single most-recent (currently
+  forming) candle's high/low. If the price actually crossed the alert level while the browser was
+  closed but that touch happened in an already-closed candle (not the latest one), the alert never
+  saw it and stayed armed/pending indefinitely, even after the level had clearly been crossed.
+- `observedSinceArm` (`hooks/useAlertEngine.ts`) now scans every loaded candle since the alert was
+  last armed (`alert.updatedAt`) for alerts that predate the current browser session, aggregating
+  high/low across the full gap instead of just the latest bar. Added a guard so the very first
+  observation for a pre-existing alert waits for candle history to finish loading rather than
+  locking in a single-point range from a live quote that arrived before the REST candle backfill.
+- Files: `src/hooks/useAlertEngine.ts`.
+
 ### Fixed - Closed-browser push notifications not displaying (2026-07-01)
 - `sendFirebasePush` still set `webpush.notification.title/body` even after the earlier "data-first"
   fix (ca600cc). Any FCM message carrying a `notification` payload (top-level or nested under

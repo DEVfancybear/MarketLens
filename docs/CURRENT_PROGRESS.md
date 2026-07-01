@@ -4,6 +4,17 @@ _Last updated: 2026-07-01 (TradingView-style Position settings parity)_
 
 ## Completed this session (2026-07-01)
 
+### Alert stuck "pending" after reopen if the touch happened in an older candle
+- `useAlertEngine`'s reopen recovery (`observedSinceArm`) only checked the current forming candle's
+  high/low, so a level crossed while the browser was closed but inside an already-closed candle
+  (not the latest bar) was never detected — the alert stayed armed forever after reopening.
+- Fix: for alerts that predate the current browser session, scan every loaded candle since the
+  alert's `updatedAt` and aggregate high/low across the whole gap. Added a guard so this recovery
+  waits for candle history to load before locking in a range, instead of collapsing to a single
+  point if a live quote arrives before the REST candle backfill.
+- Files: `src/hooks/useAlertEngine.ts`.
+- type-check ✅ · build ✅.
+
 ### Closed-browser push: notifications weren't displaying at all
 - `sendFirebasePush` (`firebaseAdmin.ts`) still populated `webpush.notification.title/body`, which
   makes FCM auto-display the notification via the browser's built-in handling and skip the custom

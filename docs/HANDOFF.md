@@ -114,6 +114,13 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `drawingTemplates`). `CanvasRenderer.drawingsHash()` now folds in style fields so edits
   repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
   hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
+- **Alert stuck "pending" after reopen (2026-07-01):** `useAlertEngine`'s reopen recovery
+  (`observedSinceArm` in `hooks/useAlertEngine.ts`) only looked at the latest forming candle's
+  high/low, so a level crossed while the browser was closed inside an already-closed (older)
+  candle was never detected and the alert stayed armed indefinitely after reopening. Fixed by
+  scanning every loaded candle since `alert.updatedAt` for alerts that predate the browser
+  session, plus a guard that waits for candle history to load before locking in the recovered
+  range.
 - **Closed-browser push — notifications weren't displaying (2026-07-01):** `sendFirebasePush`
   (`firebaseAdmin.ts`) still set `webpush.notification.title/body` after the earlier "data-first"
   attempt (ca600cc), which made FCM auto-display the notification and skip the SW's custom

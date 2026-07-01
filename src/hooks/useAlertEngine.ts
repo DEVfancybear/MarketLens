@@ -35,7 +35,7 @@ import {
   type AlertPriceSnapshot,
 } from "@/services/alertEngine";
 import { deliverAlert } from "@/services/notifications/notify";
-import { subscriptionKey } from "@/types";
+import { subscriptionKey, type MarketCandle } from "@/types";
 
 interface ObservedAlertRange {
   signature: string;
@@ -59,11 +59,13 @@ function alertSignature(alert: Alert): string {
 
 /** Latest realtime price for a symbol plus raw active-candle bounds. The raw
  * bounds are not used directly; each alert tracks only the portion observed
- * after it was armed. */
+ * after it was armed. Also returns the loaded candle series so a freshly
+ * (re)mounted engine can recover the full high/low range spanned while the
+ * browser was closed, not just the currently-forming candle. */
 function latestPriceSnapshot(
   md: MarketDataStoreInterface,
   symbol: string,
-): AlertPriceSnapshot | undefined {
+): { snapshot: AlertPriceSnapshot; series?: MarketCandle[] } | undefined {
   const q = md.quotes[symbol];
   const series = md.candles[subscriptionKey(symbol, md.selectedTimeframe)];
   const last = series?.[series.length - 1];
@@ -75,13 +77,16 @@ function latestPriceSnapshot(
         : undefined;
   if (current === undefined) return undefined;
   return {
-    current,
-    open: current,
-    high: current,
-    low: current,
-    candleTime: last?.time,
-    candleHigh: last?.high,
-    candleLow: last?.low,
+    snapshot: {
+      current,
+      open: current,
+      high: current,
+      low: current,
+      candleTime: last?.time,
+      candleHigh: last?.high,
+      candleLow: last?.low,
+    },
+    series,
   };
 }
 
@@ -163,10 +168,14 @@ export function useAlertEngine() {
 
       // One price lookup per distinct symbol.
       const priceBySym = new Map<string, AlertPriceSnapshot>();
+      const seriesBySym = new Map<string, MarketCandle[] | undefined>();
       for (const a of alerts) {
         if (!priceBySym.has(a.symbol)) {
           const p = latestPriceSnapshot(md, a.symbol);
-          if (p !== undefined) priceBySym.set(a.symbol, p);
+          if (p !== undefined) {
+            priceBySym.set(a.symbol, p.snapshot);
+            seriesBySym.set(a.symbol, p.series);
+          }
         }
       }
 
@@ -174,6 +183,18 @@ export function useAlertEngine() {
         if (!alert.enabled) continue; // disabled alerts are not evaluated
         const curr = priceBySym.get(alert.symbol);
         if (curr === undefined) continue;
+        const series = seriesBySym.get(alert.symbol);
+        // An alert that predates this browser session needs its candle history
+        // loaded before its first observation is locked in — otherwise the
+        // recovered range would collapse to a single point (the live price)
+        // and a touch that happened while the browser was closed gets missed
+        // permanently (the range only widens forward from here on).
+        const isFirstObservation = !observedRangeRef.current.has(alert.id);
+        const existedBeforeThisBrowserSession =
+          alert.createdAt * 1000 < mountedAtRef.current;
+        if (isFirstObservation && existedBeforeThisBrowserSession && !series?.length) {
+          continue;
+        }
         // First-time evaluation: ignore stale prev price (recorded before
         // the alert existed) to prevent spurious crossUp/crossDown triggers.
         const isNew = !seenAlertIds.current.has(alert.id);
@@ -183,6 +204,7 @@ export function useAlertEngine() {
           alert,
           curr,
           mountedAtRef.current,
+          series,
         );
         const rearmBlocked =
           alert.recurring &&
@@ -221,25 +243,39 @@ function observedSinceArm(
   alert: Alert,
   snapshot: AlertPriceSnapshot,
   mountedAt: number,
+  series?: MarketCandle[],
 ): AlertPriceSnapshot {
   const signature = alertSignature(alert);
   const existing = ranges.get(alert.id);
   if (!existing || existing.signature !== signature) {
-    const candleOpenMs =
-      snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
     const existedBeforeThisBrowserSession = alert.createdAt * 1000 < mountedAt;
-    const includeFullCandle =
-      candleOpenMs !== undefined &&
-      (alert.updatedAt * 1000 <= candleOpenMs ||
-        existedBeforeThisBrowserSession) &&
-      snapshot.candleHigh !== undefined &&
-      snapshot.candleLow !== undefined;
-    const high = includeFullCandle
-      ? Math.max(snapshot.candleHigh ?? snapshot.current, snapshot.current)
-      : snapshot.current;
-    const low = includeFullCandle
-      ? Math.min(snapshot.candleLow ?? snapshot.current, snapshot.current)
-      : snapshot.current;
+    let high = snapshot.current;
+    let low = snapshot.current;
+
+    if (existedBeforeThisBrowserSession && series?.length) {
+      // The alert armed in a previous browser session (page reload/reopen).
+      // Scan every loaded candle since the alert was last armed instead of
+      // only the currently-forming candle, so a touch that happened while
+      // the browser was closed (in an already-closed candle) is still caught.
+      const sinceMs = alert.updatedAt * 1000;
+      for (const c of series) {
+        if (c.time * 1000 < sinceMs) continue;
+        high = Math.max(high, c.high);
+        low = Math.min(low, c.low);
+      }
+    } else {
+      const candleOpenMs =
+        snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
+      const includeFullCandle =
+        candleOpenMs !== undefined &&
+        alert.updatedAt * 1000 <= candleOpenMs &&
+        snapshot.candleHigh !== undefined &&
+        snapshot.candleLow !== undefined;
+      if (includeFullCandle) {
+        high = Math.max(snapshot.candleHigh ?? snapshot.current, snapshot.current);
+        low = Math.min(snapshot.candleLow ?? snapshot.current, snapshot.current);
+      }
+    }
 
     ranges.set(alert.id, {
       signature,
