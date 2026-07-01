@@ -2,7 +2,7 @@
 /**
  * AlertEditDialog (Phase 2.1) — modal to edit an existing alert (opened from the
  * alert right-click menu "Edit Alert"). Edits condition / target price / message /
- * recurring / enabled / per-alert sound/browser/push flags via `updateAlert`.
+ * recurring / enabled / per-alert sound/browser/push/external flags via `updateAlert`.
  * Driven by `alertStore.editingAlertId`.
  */
 import { useEffect, useState } from 'react';
@@ -49,6 +49,8 @@ export function AlertEditDialog() {
   const [sound, setSound] = useState(true);
   const [browser, setBrowser] = useState(false);
   const [push, setPush] = useState(false);
+  const [telegram, setTelegram] = useState(false);
+  const [discord, setDiscord] = useState(false);
 
   // Load the alert into the form whenever the edit target changes.
   useEffect(() => {
@@ -61,6 +63,8 @@ export function AlertEditDialog() {
     setSound(alert.sound);
     setBrowser(alert.browser);
     setPush(alert.push);
+    setTelegram(alert.telegram);
+    setDiscord(alert.discord);
   }, [alert?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -88,6 +92,8 @@ export function AlertEditDialog() {
       sound,
       browser,
       push,
+      telegram,
+      discord,
     });
     close();
   };
@@ -152,6 +158,8 @@ export function AlertEditDialog() {
             <Chk on={sound} onClick={() => setSound((v) => !v)} label="Sound" />
             <Chk on={browser} onClick={() => setBrowser((v) => !v)} label="Browser" />
             <Chk on={push} onClick={() => setPush((v) => !v)} label="Push" />
+            <Chk on={telegram} onClick={() => setTelegram((v) => !v)} label="Telegram" />
+            <Chk on={discord} onClick={() => setDiscord((v) => !v)} label="Discord" />
           </div>
         </div>
 

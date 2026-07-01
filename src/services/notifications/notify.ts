@@ -20,6 +20,7 @@ import { pushRegistrationAtom } from "@/store/notificationStore";
 import { playAlertSound } from "./sound";
 import { showBrowserNotification } from "./browser";
 import { sendAlertPush } from "./push";
+import { sendExternalAlert } from "./external";
 import {
   CONDITION_SYMBOL,
   type Alert,
@@ -68,20 +69,38 @@ export function deliverAlert(
   }
   if (alert.push && settings.push) {
     const registration = getDefaultStore().get(pushRegistrationAtom);
-    if (!registration?.token) return;
-
-    void sendAlertPush({
-      token: registration.token,
-      title,
-      body,
+    if (registration?.token) {
+      void sendAlertPush({
+        token: registration.token,
+        title,
+        body,
+        alert,
+        triggerPrice,
+      }).then((result) => {
+        if (!result.ok) {
+          getDefaultStore().set(
+            logAtom,
+            "warn",
+            `Push notification failed: ${result.error}`,
+          );
+        }
+      });
+    }
+  }
+  if ((alert.telegram && settings.telegram) || (alert.discord && settings.discord)) {
+    void sendExternalAlert({
       alert,
       triggerPrice,
+      channels: {
+        telegram: alert.telegram && settings.telegram,
+        discord: alert.discord && settings.discord,
+      },
     }).then((result) => {
       if (!result.ok) {
         getDefaultStore().set(
           logAtom,
           "warn",
-          `Push notification failed: ${result.error}`,
+          `External alert notification failed: ${result.error}`,
         );
       }
     });

@@ -8,11 +8,16 @@ export interface ServerPushAlert {
   note?: string;
   recurring: boolean;
   updatedAt: number;
+  push?: boolean;
+  telegram?: boolean;
+  discord?: boolean;
 }
 
 export interface PushAlertSyncRequest {
   token: string;
   settingsPush: boolean;
+  settingsTelegram?: boolean;
+  settingsDiscord?: boolean;
   alerts: ServerPushAlert[];
 }
 
@@ -20,6 +25,8 @@ export interface PushDeviceRecord {
   token: string;
   alerts: ServerPushAlert[];
   settingsPush: boolean;
+  settingsTelegram: boolean;
+  settingsDiscord: boolean;
   lastPrices: Record<string, number>;
   alertState: Record<
     string,

@@ -1,6 +1,6 @@
 # PHASE 6A TELEGRAM AND DISCORD ALERT CHANNELS
 
-_Planned 2026-07-01. Scope: server-side Telegram and Discord delivery for alert notifications._
+_Implemented 2026-07-01. Scope: server-side Telegram and Discord delivery for alert notifications._
 
 ## 1. Objective
 
@@ -24,6 +24,7 @@ Implemented Phase 6A already provides:
 - Per-alert channel flags for toast, sound, browser, and Firebase push.
 - Server-side FCM send through Firebase Admin.
 - Firestore/local fallback storage for push-enabled alert snapshots.
+- Telegram and Discord delivery through server-only API routes and the closed-browser worker.
 
 Telegram and Discord should reuse the existing alert trigger and closed-browser evaluator flow. They
 must not create a second alert engine.
@@ -223,9 +224,10 @@ implementation can rely on existing alert trigger once-only logic and server eva
 
 ### Milestone A - Docs and Configuration
 
-- Add this plan.
-- Add `.env.example` placeholders.
-- Update Phase 6 docs and changelog.
+- Status: complete.
+- Added this plan.
+- Added `.env.example` placeholders.
+- Updated Phase 6 docs and changelog.
 
 Exit criteria:
 
@@ -233,10 +235,11 @@ Exit criteria:
 
 ### Milestone B - Server Senders
 
-- Add `telegram.ts` and `discord.ts` server-side senders.
-- Add shared formatter and timeout handling.
-- Add capabilities endpoint.
-- Add test endpoint.
+- Status: complete.
+- Added server-side Telegram/Discord senders in `src/server/externalNotifications.ts`.
+- Added shared formatter and timeout handling.
+- Added capabilities endpoint.
+- Added test endpoint.
 
 Exit criteria:
 
@@ -245,10 +248,11 @@ Exit criteria:
 
 ### Milestone C - Browser-Open Alert Dispatch
 
-- Add global/per-alert channel flags.
-- Add Alert Center and edit dialog UI.
-- Add `/api/notifications/send`.
-- Wire `deliverAlert()` after existing local channels and Firebase push.
+- Status: complete.
+- Added global/per-alert channel flags.
+- Added Alert Center and edit dialog UI.
+- Added `/api/notifications/send`.
+- Wired `deliverAlert()` after existing local channels and Firebase push.
 
 Exit criteria:
 
@@ -258,9 +262,12 @@ Exit criteria:
 
 ### Milestone D - Closed-Browser Worker Dispatch
 
-- Extend the synced alert snapshot to include `telegram` and `discord` flags.
-- Update `/api/push/evaluate` to send Telegram/Discord when an alert is met.
-- Add debug output showing external channel delivery status.
+- Status: complete.
+- Extended the synced alert snapshot to include `telegram` and `discord` flags.
+- Updated `/api/push/evaluate` to send Telegram/Discord when an alert is met.
+- Added debug output showing external channel delivery status.
+- Added an external-only sync token so Telegram/Discord closed-browser delivery does not require
+  Firebase Messaging to be configured.
 
 Exit criteria:
 
@@ -269,9 +276,10 @@ Exit criteria:
 
 ### Milestone E - Hardening
 
-- Add retry guard with short timeout.
-- Add rate-limit/backoff notes for Telegram/Discord errors.
-- Add manual QA checklist and troubleshooting section to Phase 6A docs.
+- Status: partial.
+- Added short request timeout.
+- Test endpoint can be protected with `ALERT_WEBHOOK_SECRET`.
+- Retry/backoff remains a future hardening step if Telegram/Discord rate limits become noisy.
 
 Exit criteria:
 

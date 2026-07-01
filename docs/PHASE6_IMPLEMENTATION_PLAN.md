@@ -5,7 +5,7 @@ _Created 2026-07-01. Scope: code plan for the next production milestone after Ph
 Implementation status:
 
 - **Phase 6A - Push notifications:** implemented. See `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
-- **Phase 6A extension - Telegram/Discord alert channels:** planned. See
+- **Phase 6A extension - Telegram/Discord alert channels:** implemented. See
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 - **Phase 6B - MT5 bridge:** planned in detail. See `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
@@ -195,9 +195,8 @@ Update `.env.example` with placeholders only.
 
 ## 6. Workstream 6B - MT5 Bridge Integration
 
-Before starting Phase 6B implementation, the optional Phase 6A Telegram/Discord extension can be
-implemented from `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md` if external messaging alerts are higher
-priority than live MT5 routing.
+The optional Phase 6A Telegram/Discord extension is implemented in
+`docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 
 ### 6.1 Target Behavior
 

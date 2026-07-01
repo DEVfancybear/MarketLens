@@ -2,6 +2,7 @@ import { getMarketSymbol, oandaInstrument } from "@/services/market-data/symbols
 import type { PushAlertCondition } from "@/types/pushAlerts";
 import type { PushDeviceRecord, ServerPushAlert } from "@/types/pushAlerts";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
+import { sendExternalAlertNotifications } from "./externalNotifications";
 import { listPushDevices, updatePushDevice } from "./pushAlertStore";
 
 const RECURRING_REARM_MS = 60_000;
@@ -33,6 +34,7 @@ interface AlertEvaluationDebug {
   skipped?: string;
   blocked?: string;
   messageId?: string;
+  external?: Array<{ channel: string; ok: boolean; error?: string }>;
 }
 
 interface PriceSnapshot {
@@ -242,17 +244,20 @@ export async function evaluatePushAlerts(
   };
   if (options.debug) result.debug = [];
 
-  if (!firebaseAdminConfigured()) {
-    result.errors.push("Firebase Admin is not configured.");
-    return result;
-  }
+  const canSendFirebase = firebaseAdminConfigured();
 
   const devices = await listPushDevices();
   result.devices = devices.length;
 
   const symbols = new Set<string>();
   for (const device of devices) {
-    if (!device.settingsPush) continue;
+    if (
+      !device.settingsPush &&
+      !device.settingsTelegram &&
+      !device.settingsDiscord
+    ) {
+      continue;
+    }
     for (const alert of device.alerts) symbols.add(alert.symbol);
   }
 
@@ -272,7 +277,14 @@ export async function evaluatePushAlerts(
 
   const now = Date.now();
   for (const device of devices) {
-    if (!device.settingsPush || device.alerts.length === 0) continue;
+    if (
+      (!device.settingsPush &&
+        !device.settingsTelegram &&
+        !device.settingsDiscord) ||
+      device.alerts.length === 0
+    ) {
+      continue;
+    }
     const lastPrices = { ...device.lastPrices };
     const alertState = { ...device.alertState };
 
@@ -337,21 +349,63 @@ export async function evaluatePushAlerts(
       if (!oneTimeFired && !rearmBlocked && met) {
         const triggerPrice = priceWindowSinceLastEval.current;
         const message = formatAlert(alert, triggerPrice);
+        let deliverySucceeded = false;
+
         try {
-          const messageId = await sendFirebasePush({
-            token: device.token,
-            title: message.title,
-            body: message.body,
-            data: {
-              alertId: alert.id,
-              symbol: alert.symbol,
-              condition: alert.condition,
-              targetPrice: String(alert.price),
-              triggerPrice: String(triggerPrice),
-              source: "server-worker",
-            },
-          });
-          debugEntry.messageId = messageId;
+          if (device.settingsPush && alert.push && canSendFirebase) {
+            const messageId = await sendFirebasePush({
+              token: device.token,
+              title: message.title,
+              body: message.body,
+              data: {
+                alertId: alert.id,
+                symbol: alert.symbol,
+                condition: alert.condition,
+                targetPrice: String(alert.price),
+                triggerPrice: String(triggerPrice),
+                source: "server-worker",
+              },
+            });
+            debugEntry.messageId = messageId;
+            deliverySucceeded = true;
+          } else if (device.settingsPush && alert.push && !canSendFirebase) {
+            result.errors.push("Firebase Admin is not configured.");
+          }
+        } catch (error) {
+          result.errors.push(
+            `${alert.symbol}/${alert.id}: ${error instanceof Error ? error.message : "push send failed"}`,
+          );
+        }
+
+        const externalResults = await sendExternalAlertNotifications(
+          {
+            alertId: alert.id,
+            symbol: alert.symbol,
+            condition: alert.condition,
+            targetPrice: alert.price,
+            triggerPrice,
+            note: alert.note,
+            triggeredAt: now,
+            source: "closed-browser-worker",
+          },
+          {
+            telegram: device.settingsTelegram && alert.telegram,
+            discord: device.settingsDiscord && alert.discord,
+          },
+        );
+        if (externalResults.length > 0) {
+          debugEntry.external = externalResults;
+          deliverySucceeded ||= externalResults.some((item) => item.ok);
+          for (const item of externalResults) {
+            if (!item.ok) {
+              result.errors.push(
+                `${alert.symbol}/${alert.id}/${item.channel}: ${item.error ?? "external send failed"}`,
+              );
+            }
+          }
+        }
+
+        if (deliverySucceeded) {
           result.triggered += 1;
           alertState[alert.id] = {
             signature,
@@ -359,10 +413,13 @@ export async function evaluatePushAlerts(
             lastEvaluatedAt: now,
             oneTimeFired: !alert.recurring,
           };
-        } catch (error) {
-          result.errors.push(
-            `${alert.symbol}/${alert.id}: ${error instanceof Error ? error.message : "push send failed"}`,
-          );
+        } else {
+          alertState[alert.id] = {
+            signature,
+            lastTriggeredAt: state?.lastTriggeredAt,
+            lastEvaluatedAt: now,
+            oneTimeFired: state?.oneTimeFired,
+          };
         }
       } else {
         alertState[alert.id] = {

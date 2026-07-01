@@ -220,10 +220,14 @@ export async function unregisterServerPushToken(token: string): Promise<void> {
 export async function syncServerPushAlerts({
   token,
   settingsPush,
+  settingsTelegram,
+  settingsDiscord,
   alerts,
 }: {
   token: string;
   settingsPush: boolean;
+  settingsTelegram?: boolean;
+  settingsDiscord?: boolean;
   alerts: Alert[];
 }, init?: Pick<RequestInit, "keepalive">): Promise<{ ok: true } | { ok: false; error: string }> {
   const serverAlerts: ServerPushAlert[] = alerts.map((alert) => ({
@@ -234,12 +238,17 @@ export async function syncServerPushAlerts({
     note: alert.note,
     recurring: alert.recurring,
     updatedAt: Math.round((alert.updatedAt ?? alert.createdAt) * 1000),
+    push: alert.push,
+    telegram: alert.telegram,
+    discord: alert.discord,
   }));
   return postJson(
     "/api/push/alerts/sync",
     {
       token,
       settingsPush,
+      settingsTelegram,
+      settingsDiscord,
       alerts: serverAlerts,
     },
     init,

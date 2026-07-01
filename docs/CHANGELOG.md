@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Telegram and Discord alert notifications (2026-07-01)
+- Added server-side Telegram Bot API and Discord webhook delivery for alert notifications.
+  Browser-open alerts now fan out through `/api/notifications/send`; closed-browser worker alerts
+  now send external messages from `/api/push/evaluate`.
+- Added `/api/notifications/capabilities` and `/api/notifications/test` so setup can be checked
+  without exposing bot tokens or webhook URLs to the browser.
+- Added global Alert Center toggles and per-alert edit flags for Telegram and Discord. Existing
+  saved alerts/settings migrate both channels to disabled.
+- Added external-only alert snapshot sync, so Telegram/Discord closed-browser delivery can run
+  without Firebase Messaging being configured.
+
 ### Added - Phase 6A Telegram/Discord alert channel plan (2026-07-01)
 - Added `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`, a detailed implementation plan for server-side
   Telegram Bot API and Discord webhook alert delivery in both browser-open and closed-browser worker

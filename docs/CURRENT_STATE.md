@@ -1,7 +1,7 @@
 # CURRENT STATE
 
-_Last updated 2026-07-01 after Phase 6A closed-browser push worker, Telegram/Discord alert channel
-plan, and Phase 6B MT5 bridge plan._
+_Last updated 2026-07-01 after Phase 6A closed-browser push worker, Telegram/Discord alert
+channels, and Phase 6B MT5 bridge plan._
 
 This file replaces the old Phase 1 mock-data audit. The app is now a live-data, Jotai-based
 TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and a
@@ -100,7 +100,7 @@ Implemented:
 - Once-only and recurring alerts.
 - Active, triggered, and history lists.
 - Toast, sound, browser notification, and Firebase push channels.
-- Planned Telegram and Discord external alert channels.
+- Telegram and Discord external alert channels.
 - Interactive chart alerts with select, drag-to-reprice, edit, delete, context menu, and lock/enable
   flags.
 - Closed-browser push delivery through server-side sync and worker evaluation.
@@ -151,16 +151,12 @@ MT5 live execution is not implemented yet. Phase 6B is planned in detail:
 - Phase 4 drawing engine/tool suites: complete for current line/shape/fib/position tooling.
 - Phase 5 left toolbar / indicator engine: complete.
 - Phase 6A Firebase push notifications: complete, including closed-browser worker mode.
-- Phase 6A Telegram/Discord alert channels: planned, not implemented.
+- Phase 6A Telegram/Discord alert channels: complete.
 - Phase 6B MT5 bridge: planned, not implemented.
 
 ## 8. Current Next Action
 
-If Telegram/Discord alert delivery is the immediate priority, start from:
-
-- `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`
-
-Otherwise start Phase 6B implementation from:
+Start Phase 6B implementation from:
 
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
 - `docs/PHASE6_IMPLEMENTATION_PLAN.md`

@@ -34,6 +34,8 @@ export interface Alert {
   sound: boolean;
   browser: boolean;
   push: boolean;
+  telegram: boolean;
+  discord: boolean;
 }
 
 export interface AlertHistoryEntry {
@@ -51,6 +53,8 @@ export interface AlertSettings {
   sound: boolean;
   browser: boolean;
   push: boolean;
+  telegram: boolean;
+  discord: boolean;
 }
 
 export interface CreateAlertInput {
@@ -94,6 +98,8 @@ const DEFAULT_SETTINGS: AlertSettings = {
   sound: true,
   browser: false,
   push: false,
+  telegram: false,
+  discord: false,
 };
 
 // ── Persistence helper ───────────────────────────────────────────────────────
@@ -140,6 +146,8 @@ export const createAlertAtom = atom(
       sound: settings.sound,
       browser: settings.browser,
       push: settings.push,
+      telegram: settings.telegram,
+      discord: settings.discord,
     };
     set(alertsAtom, [alert, ...get(alertsAtom)]);
     persist();
@@ -313,6 +321,8 @@ export const hydrateAtom = atom(null, (_get, set) => {
     sound: a.sound ?? true,
     browser: a.browser ?? false,
     push: a.push ?? false,
+    telegram: a.telegram ?? false,
+    discord: a.discord ?? false,
   });
   set(alertsAtom, (saved.alerts ?? []).map(migrate));
   set(triggeredAlertsAtom, (saved.triggeredAlerts ?? []).map(migrate));

@@ -53,6 +53,9 @@ function sanitizeAlert(alert: ServerPushAlert): ServerPushAlert | null {
     price: alert.price,
     recurring: Boolean(alert.recurring),
     updatedAt: Number.isFinite(alert.updatedAt) ? alert.updatedAt : Date.now(),
+    push: Boolean(alert.push),
+    telegram: Boolean(alert.telegram),
+    discord: Boolean(alert.discord),
   };
   if (alert.note) sanitized.note = String(alert.note).slice(0, 240);
   return sanitized;
@@ -93,6 +96,8 @@ function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
     token: String(data.token),
     alerts: Array.isArray(data.alerts) ? (data.alerts as ServerPushAlert[]) : [],
     settingsPush: Boolean(data.settingsPush),
+    settingsTelegram: Boolean(data.settingsTelegram),
+    settingsDiscord: Boolean(data.settingsDiscord),
     lastPrices:
       data.lastPrices && typeof data.lastPrices === "object"
         ? (data.lastPrices as Record<string, number>)
@@ -132,6 +137,8 @@ export async function registerPushDevice(token: string): Promise<void> {
       token,
       alerts: existing?.alerts ?? [],
       settingsPush: existing?.settingsPush ?? false,
+      settingsTelegram: existing?.settingsTelegram ?? false,
+      settingsDiscord: existing?.settingsDiscord ?? false,
       lastPrices: existing?.lastPrices ?? {},
       alertState: existing?.alertState ?? {},
       createdAt: existing?.createdAt ?? now,
@@ -147,6 +154,8 @@ export async function registerPushDevice(token: string): Promise<void> {
     token,
     alerts: existing?.alerts ?? [],
     settingsPush: existing?.settingsPush ?? false,
+    settingsTelegram: existing?.settingsTelegram ?? false,
+    settingsDiscord: existing?.settingsDiscord ?? false,
     lastPrices: existing?.lastPrices ?? {},
     alertState: existing?.alertState ?? {},
     createdAt: existing?.createdAt ?? now,
@@ -175,7 +184,11 @@ export async function syncPushAlerts(
   if (firestoreEnabled()) {
     const now = Date.now();
     const existing = await getFirestoreDevice(request.token);
-    const alerts = request.settingsPush
+    const shouldStoreAlerts =
+      request.settingsPush ||
+      Boolean(request.settingsTelegram) ||
+      Boolean(request.settingsDiscord);
+    const alerts = shouldStoreAlerts
       ? request.alerts
           .map(sanitizeAlert)
           .filter((alert): alert is ServerPushAlert => Boolean(alert))
@@ -184,6 +197,8 @@ export async function syncPushAlerts(
       token: request.token,
       alerts,
       settingsPush: Boolean(request.settingsPush),
+      settingsTelegram: Boolean(request.settingsTelegram),
+      settingsDiscord: Boolean(request.settingsDiscord),
       lastPrices: existing?.lastPrices ?? {},
       alertState: existing?.alertState ?? {},
       createdAt: existing?.createdAt ?? now,
@@ -196,7 +211,11 @@ export async function syncPushAlerts(
   const db = await readDb();
   const now = Date.now();
   const existing = db.devices[request.token];
-  const alerts = request.settingsPush
+  const shouldStoreAlerts =
+    request.settingsPush ||
+    Boolean(request.settingsTelegram) ||
+    Boolean(request.settingsDiscord);
+  const alerts = shouldStoreAlerts
     ? request.alerts
         .map(sanitizeAlert)
         .filter((alert): alert is ServerPushAlert => Boolean(alert))
@@ -206,6 +225,8 @@ export async function syncPushAlerts(
     token: request.token,
     alerts,
     settingsPush: Boolean(request.settingsPush),
+    settingsTelegram: Boolean(request.settingsTelegram),
+    settingsDiscord: Boolean(request.settingsDiscord),
     lastPrices: existing?.lastPrices ?? {},
     alertState: existing?.alertState ?? {},
     createdAt: existing?.createdAt ?? now,

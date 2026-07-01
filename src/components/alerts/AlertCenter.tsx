@@ -17,6 +17,8 @@ import {
   Monitor,
   MessageSquare,
   Smartphone,
+  Send,
+  Hash,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { alertCenterOpenAtom, setAlertCenterAtom } from "@/store/uiStore";
@@ -38,6 +40,10 @@ import {
   type BrowserPermission,
 } from "@/services/notifications/browser";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import {
+  getExternalNotificationCapabilities,
+  type ExternalNotificationCapabilities,
+} from "@/services/notifications/external";
 import { subscriptionKey } from "@/types";
 import { fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
@@ -112,6 +118,9 @@ export function AlertCenter() {
   const [price, setPrice] = useState("");
   const [recurring, setRecurring] = useState(false);
   const [perm, setPerm] = useState<BrowserPermission>("unsupported");
+  const [externalCaps, setExternalCaps] =
+    useState<ExternalNotificationCapabilities | null>(null);
+  const [externalError, setExternalError] = useState<string | null>(null);
 
   const livePrice = useLivePrice(symbol);
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
@@ -135,6 +144,29 @@ export function AlertCenter() {
     if (open) void refreshPush();
   }, [open, refreshPush]);
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getExternalNotificationCapabilities()
+      .then((caps) => {
+        if (cancelled) return;
+        setExternalCaps(caps);
+        setExternalError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setExternalCaps(null);
+        setExternalError(
+          error instanceof Error
+            ? error.message
+            : "External notification setup check failed.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   const sortedSymbols = useMemo(() => MARKET_SYMBOLS.map((s) => s.id), []);
 
   const submit = () => {
@@ -157,6 +189,14 @@ export function AlertCenter() {
   const enablePushForActiveAlerts = () => {
     for (const alert of alerts) {
       if (!alert.push) updateAlert(alert.id, { push: true });
+    }
+  };
+
+  const enableExternalForActiveAlerts = (
+    channel: "telegram" | "discord",
+  ) => {
+    for (const alert of alerts) {
+      if (!alert[channel]) updateAlert(alert.id, { [channel]: true });
     }
   };
 
@@ -260,9 +300,40 @@ export function AlertCenter() {
               icon={<Smartphone size={12} />}
               label={pushLabel}
             />
+            <Toggle
+              on={settings.telegram && Boolean(externalCaps?.telegram.enabled)}
+              onClick={() => {
+                const next = !settings.telegram;
+                setSettings({ telegram: next });
+                if (next) enableExternalForActiveAlerts("telegram");
+              }}
+              disabled={!externalCaps?.telegram.enabled}
+              icon={<Send size={12} />}
+              label={
+                externalCaps?.telegram.configured ? "Telegram" : "Tele setup"
+              }
+            />
+            <Toggle
+              on={settings.discord && Boolean(externalCaps?.discord.enabled)}
+              onClick={() => {
+                const next = !settings.discord;
+                setSettings({ discord: next });
+                if (next) enableExternalForActiveAlerts("discord");
+              }}
+              disabled={!externalCaps?.discord.enabled}
+              icon={<Hash size={12} />}
+              label={
+                externalCaps?.discord.configured ? "Discord" : "Disc setup"
+              }
+            />
             {push.error && (
               <div className="basis-full text-[10px] leading-4 text-bear">
                 {push.error}
+              </div>
+            )}
+            {externalError && (
+              <div className="basis-full text-[10px] leading-4 text-bear">
+                {externalError}
               </div>
             )}
           </div>

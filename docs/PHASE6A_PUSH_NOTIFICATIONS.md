@@ -7,9 +7,9 @@ _Implemented 2026-07-01._
 Phase 6A adds Firebase Cloud Messaging (FCM) as an optional alert delivery channel. It does not
 change alert evaluation, alert persistence, market-data subscriptions, or simulator behavior.
 
-Telegram and Discord are planned as server-side Phase 6A external alert channel extensions. They
-should reuse the same alert trigger and closed-browser worker flow without changing alert semantics.
-See `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
+Telegram and Discord are implemented as server-side Phase 6A external alert channel extensions. They
+reuse the same alert trigger and closed-browser worker flow without changing alert semantics. See
+`docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 
 Runtime modes:
 

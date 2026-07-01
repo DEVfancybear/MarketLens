@@ -36,7 +36,7 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
   including closed-browser delivery through `npm run push-worker`. Implemented in
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **Phase 6A extension - Telegram/Discord Alert Channels:** server-side external message delivery
-  for browser-open and closed-browser alerts. Planned in
+  for browser-open and closed-browser alerts. Implemented in
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 - **Phase 6B - MT5 Bridge Integration:** external bridge client, live execution mode, account and
   position sync, with simulator fallback. Detailed plan:
