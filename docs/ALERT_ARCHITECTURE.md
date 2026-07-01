@@ -114,8 +114,8 @@ interface AlertHistoryEntry {
 |---|---|
 | `above` | current realtime price or post-arm observed high `>= target` |
 | `below` | current realtime price or post-arm observed low `<= target` |
-| `crossUp` | `previous < target` and current/post-arm observed high `>= target` |
-| `crossDown` | `previous > target` and current/post-arm observed low `<= target` |
+| `crossUp` | post-arm observed range crosses the level: `low < target && high >= target` |
+| `crossDown` | post-arm observed range crosses the level: `high > target && low <= target` |
 
 - **Price source:** ticker quote (`quotes[symbol].last`); falls back to the latest candle close.
   Browser-open evaluation stores a per-alert observed high/low after the alert is armed. It can

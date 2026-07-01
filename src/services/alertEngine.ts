@@ -44,15 +44,17 @@ export function conditionMet(
       return low <= target;
     case 'crossUp':
       return (
-        (prev !== undefined
-          ? prev < target
-          : open !== undefined && open < target) && high >= target
+        high >= target &&
+        (low < target ||
+          (prev !== undefined && prev < target) ||
+          (open !== undefined && open < target))
       );
     case 'crossDown':
       return (
-        (prev !== undefined
-          ? prev > target
-          : open !== undefined && open > target) && low <= target
+        low <= target &&
+        (high > target ||
+          (prev !== undefined && prev > target) ||
+          (open !== undefined && open > target))
       );
     default:
       return false;

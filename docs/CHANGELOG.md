@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Crossing alerts trigger from observed range (2026-07-01)
+- `crossUp` and `crossDown` now evaluate the observed price range, not only the previous tick.
+  This fires alerts when candles move through a line and then close back away from it, for both
+  browser-open and closed-browser worker evaluation.
+
 ### Fixed - Closed-browser worker catches first-minute touches (2026-07-01)
 - Server-side push evaluation now includes the first Binance one-minute candle that overlaps the
   alert evaluation window, so cron can catch a touch that happens shortly after the browser closes.

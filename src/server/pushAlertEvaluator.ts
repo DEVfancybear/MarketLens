@@ -78,9 +78,19 @@ function conditionMet(
     case "below":
       return low <= target;
     case "crossUp":
-      return (prev !== undefined ? prev < target : open !== undefined && open < target) && high >= target;
+      return (
+        high >= target &&
+        (low < target ||
+          (prev !== undefined && prev < target) ||
+          (open !== undefined && open < target))
+      );
     case "crossDown":
-      return (prev !== undefined ? prev > target : open !== undefined && open > target) && low <= target;
+      return (
+        low <= target &&
+        (high > target ||
+          (prev !== undefined && prev > target) ||
+          (open !== undefined && open > target))
+      );
   }
 }
 
