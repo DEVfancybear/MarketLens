@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Reopened sessions catch existing alert range (2026-07-01)
+- Alerts that existed before the current browser session now use the current candle's full high/low
+  on first evaluation, so reopening the app after closed-browser time can clear alerts that crossed
+  while the browser was closed.
+
 ### Fixed - Existing alerts recover range after reload (2026-07-01)
 - Browser-open alert evaluation now uses the current candle's full high/low on first evaluation when
   the alert already existed before that candle opened. This prevents a reload/deploy from losing a

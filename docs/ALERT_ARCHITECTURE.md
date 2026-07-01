@@ -121,7 +121,9 @@ interface AlertHistoryEntry {
   Browser-open evaluation stores a per-alert observed high/low after the alert is armed. It can
   catch a new wick touch, but it does not reuse the active candle's earlier high/low from before the
   alert existed or was moved. If an alert already existed before the current candle opened, the
-  first evaluation can safely use that candle's full high/low range.
+  first evaluation can safely use that candle's full high/low range. If an alert existed before the
+  current browser session started, the first evaluation also uses the current candle's full range so
+  reopening the app can catch up after closed-browser time.
 - **No duplicate triggers:** a one-time alert leaves `alerts` on fire (can't re-match). A recurring
   alert is gated by `RECURRING_REARM_MS` (60s) so a single cross doesn't fire every tick.
 - **Cross detection** uses the engine's per-symbol previous-price memory (in the hook, not the store).

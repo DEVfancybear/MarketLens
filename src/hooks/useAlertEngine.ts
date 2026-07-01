@@ -97,6 +97,7 @@ export function useAlertEngine() {
   const subscribedRef = useRef<Set<string>>(new Set());
   const prevPriceRef = useRef<Map<string, number>>(new Map());
   const observedRangeRef = useRef<Map<string, ObservedAlertRange>>(new Map());
+  const mountedAtRef = useRef<number>(Date.now());
   /** Alert IDs that have been evaluated at least once. New alerts skip cross
    *  detection on their first evaluation to prevent a stale `prev` price
    *  (recorded before the alert existed) from causing an immediate trigger. */
@@ -181,6 +182,7 @@ export function useAlertEngine() {
           observedRangeRef.current,
           alert,
           curr,
+          mountedAtRef.current,
         );
         const rearmBlocked =
           alert.recurring &&
@@ -218,16 +220,18 @@ function observedSinceArm(
   ranges: Map<string, ObservedAlertRange>,
   alert: Alert,
   snapshot: AlertPriceSnapshot,
+  mountedAt: number,
 ): AlertPriceSnapshot {
   const signature = alertSignature(alert);
   const existing = ranges.get(alert.id);
   if (!existing || existing.signature !== signature) {
-    const alertUpdatedAtMs = alert.updatedAt * 1000;
     const candleOpenMs =
       snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
+    const existedBeforeThisBrowserSession = alert.createdAt * 1000 < mountedAt;
     const includeFullCandle =
       candleOpenMs !== undefined &&
-      alertUpdatedAtMs <= candleOpenMs &&
+      (alert.updatedAt * 1000 <= candleOpenMs ||
+        existedBeforeThisBrowserSession) &&
       snapshot.candleHigh !== undefined &&
       snapshot.candleLow !== undefined;
     const high = includeFullCandle
