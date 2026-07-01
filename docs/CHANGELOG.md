@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Phase 6A Telegram/Discord alert channel plan (2026-07-01)
+- Added `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`, a detailed implementation plan for server-side
+  Telegram Bot API and Discord webhook alert delivery in both browser-open and closed-browser worker
+  paths.
+- Added `.env.example` placeholders for Telegram/Discord alert delivery and webhook hardening.
+- Updated Phase 6 status docs to treat Telegram/Discord as a Phase 6A external-channel extension,
+  separate from the already implemented Firebase push channel.
+
 ### Fixed - Alert line "jumps" when dragged near the current price (2026-07-01)
 - `AlertLines`' reconciliation effect was keyed on `symbolAlerts`, a freshly-allocated array on
   *every* render — including every price tick, since `useChartCtx()` changes reference on each

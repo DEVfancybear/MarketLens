@@ -5,6 +5,8 @@ _Created 2026-07-01. Scope: code plan for the next production milestone after Ph
 Implementation status:
 
 - **Phase 6A - Push notifications:** implemented. See `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Phase 6A extension - Telegram/Discord alert channels:** planned. See
+  `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 - **Phase 6B - MT5 bridge:** planned in detail. See `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ## 1. Objective
@@ -14,8 +16,9 @@ workstation while keeping the existing simulator and alert engine stable.
 
 The phase has two parallel workstreams:
 
-1. **Phase 6A - Push notifications:** add Firebase Cloud Messaging (FCM) as a fourth alert delivery
-   channel after toast, sound, and browser notifications.
+1. **Phase 6A - Push notifications and external alert channels:** add Firebase Cloud Messaging
+   (FCM) as a fourth alert delivery channel after toast, sound, and browser notifications, then
+   extend the same alert delivery pipeline to server-side Telegram and Discord messages.
 2. **Phase 6B - MT5 bridge:** add a bridge-client architecture for account sync and real order
    routing through an external MT5 Bridge Service.
 
@@ -191,6 +194,10 @@ Update `.env.example` with placeholders only.
 - Token unregister disables future push delivery for that browser.
 
 ## 6. Workstream 6B - MT5 Bridge Integration
+
+Before starting Phase 6B implementation, the optional Phase 6A Telegram/Discord extension can be
+implemented from `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md` if external messaging alerts are higher
+priority than live MT5 routing.
 
 ### 6.1 Target Behavior
 
