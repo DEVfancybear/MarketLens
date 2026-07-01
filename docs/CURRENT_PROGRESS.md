@@ -24,6 +24,13 @@ _Last updated: 2026-07-02 (False alert trigger — full-history rescan bug)_
 - Files: `src/hooks/useAlertEngine.ts`.
 - type-check ✅ · build ✅. Client-side fix — requires a page reload to pick up the new bundle
   (verified server restart serves the rebuilt client; user needs to reload the tab).
+- **Confirmed live with the user**: added temporary `console.debug` instrumentation
+  (`baf6d61`), had the user hard-refresh and paste real console output for the live
+  `BTCUSDT crossDown ~60038.39` alert — `low: 60152` since arm vs. an actual ~58393 dip that
+  happened *before* the alert was created (correctly excluded from the scan). Confirms the fix
+  bounds the rescan to since-armed, not full history. Debug logging removed in `e0d7d30`. Also
+  separately confirmed the crossUp counterpart legitimately triggered (real crossing) and the user
+  received the push notification for it.
 
 ### Closed-browser push still silent after the in-process worker fix
 - User re-tested after the in-process worker fix and still got no FCM push notification when a
