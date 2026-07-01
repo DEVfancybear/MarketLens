@@ -198,11 +198,6 @@ export function useAlertEngine() {
         const existedBeforeThisBrowserSession =
           alert.createdAt * 1000 < mountedAtRef.current;
         if (isFirstObservation && existedBeforeThisBrowserSession && !series?.length) {
-          console.debug("[alert-debug] skip: no series yet", {
-            id: alert.id,
-            symbol: alert.symbol,
-            seriesLen: series?.length,
-          });
           continue;
         }
         // First-time evaluation: ignore stale prev price (recorded before
@@ -220,19 +215,6 @@ export function useAlertEngine() {
           alert.triggeredAt !== undefined &&
           now - alert.triggeredAt * 1000 < RECURRING_REARM_MS;
         const triggered = isAlertTriggered(alert, prev, observed);
-        console.debug("[alert-debug] eval", {
-          id: alert.id,
-          symbol: alert.symbol,
-          condition: alert.condition,
-          target: alert.price,
-          prev,
-          current: observed.current,
-          high: observed.high,
-          low: observed.low,
-          seriesLen: series?.length,
-          rearmBlocked,
-          triggered,
-        });
         if (!rearmBlocked && triggered) {
           const fired = triggerAlert(alert.id, observed.current);
           if (fired) deliverAlert(fired, curr.current, settings);
