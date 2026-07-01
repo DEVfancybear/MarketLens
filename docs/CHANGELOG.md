@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Push alert sync flushes before tab close (2026-07-01)
+- Push-enabled alert snapshots now flush with `fetch(..., { keepalive: true })` on `pagehide` and
+  hidden visibility, so the closed-browser worker has the latest alerts even if the user closes the
+  tab immediately after creating or editing an alert.
+
 ### Fixed - Existing alerts sync when Push is enabled (2026-07-01)
 - Turning global Push on now enables Push for existing active alerts, so the closed-browser worker
   receives them instead of evaluating `alerts=0`.

@@ -26,12 +26,14 @@ export interface PushSendPayload {
 async function postJson(
   url: string,
   body: unknown,
+  init?: Pick<RequestInit, "keepalive">,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      keepalive: init?.keepalive,
     });
     if (!res.ok) {
       const payload = (await res.json().catch(() => null)) as
@@ -223,7 +225,7 @@ export async function syncServerPushAlerts({
   token: string;
   settingsPush: boolean;
   alerts: Alert[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}, init?: Pick<RequestInit, "keepalive">): Promise<{ ok: true } | { ok: false; error: string }> {
   const serverAlerts: ServerPushAlert[] = alerts.map((alert) => ({
     id: alert.id,
     symbol: alert.symbol,
@@ -233,11 +235,15 @@ export async function syncServerPushAlerts({
     recurring: alert.recurring,
     updatedAt: Math.round((alert.updatedAt ?? alert.createdAt) * 1000),
   }));
-  return postJson("/api/push/alerts/sync", {
-    token,
-    settingsPush,
-    alerts: serverAlerts,
-  });
+  return postJson(
+    "/api/push/alerts/sync",
+    {
+      token,
+      settingsPush,
+      alerts: serverAlerts,
+    },
+    init,
+  );
 }
 
 export async function sendAlertPush(

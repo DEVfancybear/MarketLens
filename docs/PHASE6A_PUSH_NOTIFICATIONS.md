@@ -128,6 +128,10 @@ Alert sync sends the alert's persisted `updatedAt` timestamp, not the time of th
 This prevents opening the app or re-syncing push alerts from resetting the server evaluation window
 and missing a touch that happened just before the cron run.
 
+The browser also flushes the latest push-alert snapshot with `fetch(..., { keepalive: true })` on
+`pagehide` / hidden visibility. This protects the closed-browser worker path when the user creates
+or edits an alert and then closes the tab before the normal sync debounce completes.
+
 ## Failure Modes
 
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.

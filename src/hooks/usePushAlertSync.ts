@@ -18,14 +18,35 @@ export function usePushAlertSync() {
         ? alerts.filter((alert) => alert.enabled && alert.push)
         : [];
 
+    const sync = (keepalive = false) =>
+      syncServerPushAlerts(
+        {
+          token: registration.token,
+          settingsPush: settings.push,
+          alerts: pushAlerts,
+        },
+        { keepalive },
+      );
+
     const handle = window.setTimeout(() => {
-      void syncServerPushAlerts({
-        token: registration.token,
-        settingsPush: settings.push,
-        alerts: pushAlerts,
-      });
+      void sync();
     }, 250);
 
-    return () => window.clearTimeout(handle);
+    const flush = () => {
+      window.clearTimeout(handle);
+      void sync(true);
+    };
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+
+    return () => {
+      window.clearTimeout(handle);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
   }, [alerts, registration?.permission, registration?.token, settings.push]);
 }
