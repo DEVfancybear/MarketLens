@@ -238,6 +238,17 @@ export async function syncPushAlerts(
   return { stored: device.alerts.length };
 }
 
+export async function getPushDevice(
+  token: string,
+): Promise<PushDeviceRecord | undefined> {
+  if (firestoreEnabled()) {
+    return getFirestoreDevice(token);
+  }
+
+  const db = await readDb();
+  return db.devices[token];
+}
+
 export async function listPushDevices(): Promise<PushDeviceRecord[]> {
   if (firestoreEnabled()) {
     const snap = await getFirebaseFirestore().collection(COLLECTION).get();

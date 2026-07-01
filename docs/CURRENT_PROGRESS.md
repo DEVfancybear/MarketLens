@@ -1,8 +1,39 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (False alert trigger — full-history rescan bug)_
+_Last updated: 2026-07-02 (Server→client trigger reconciliation)_
 
 ## Completed this session (2026-07-02)
+
+### Alert stayed "Active" client-side after a real server-confirmed trigger
+- After the false-trigger fix, the user hit a *different*, legitimate gap: a `BTCUSDT crossUp`
+  alert genuinely crossed and the server sent a real push (confirmed received), but the alert
+  stayed listed as "Active" in the client (line still on chart) after reopening the tab.
+- Root cause confirmed with live console data: the client's reopen-recovery scan is bounded by the
+  **currently selected chart timeframe** (15m in this case). The brief crossing happened ~10s after
+  the alert was armed, entirely within a 15-minute candle that had *started before* the alert
+  existed — so the candle-level `since` cutoff correctly excludes that candle's aggregate high/low
+  (to avoid pre-arm history), but that also throws away the legitimate post-arm portion inside the
+  same candle. The server (1-minute Binance klines) doesn't have this blind spot and correctly
+  caught + delivered the trigger; the client's own candle-bounded scan just can't see it.
+- Rather than trying to always fetch finer-than-chart-timeframe history client-side, added a
+  reconciliation path: the server now persists the actual `triggerPrice` per alert
+  (`PushDeviceRecord.alertState[id].triggerPrice`, in `pushAlertEvaluator.ts`), and a new endpoint
+  `POST /api/push/alerts/status` (`src/app/api/push/alerts/status/route.ts`) returns confirmed
+  triggers for a device token (guarded by matching `alertSignature` so an edited/stale alert is
+  never misapplied). A new hook `usePushTriggerReconcile.ts` (mounted in `GlobalRuntime`, alongside
+  `usePushAlertSync`) polls this on mount, on `visibilitychange`→visible, and every 60s, and applies
+  any newer-than-known trigger via the same `triggerAlertAtom` the live engine uses — without
+  re-delivering notifications (those already went out server-side).
+- Extracted the external (non-FCM) sync-token logic shared by `usePushAlertSync` and
+  `usePushTriggerReconcile` into `useExternalSyncToken.ts` to avoid duplicating it.
+- Files: `src/types/pushAlerts.ts`, `src/server/pushAlertStore.ts` (added `getPushDevice`),
+  `src/server/pushAlertEvaluator.ts` (exported `alertSignature`, persist `triggerPrice`),
+  `src/app/api/push/alerts/status/route.ts` (new), `src/services/notifications/push.ts` (added
+  `fetchPushTriggerStatus`), `src/hooks/useExternalSyncToken.ts` (new),
+  `src/hooks/usePushTriggerReconcile.ts` (new), `src/hooks/usePushAlertSync.ts` (refactored to
+  share the token hook), `src/components/layout/GlobalRuntime.tsx`.
+- type-check ✅ · lint ✅ · build ✅ · verified the new endpoint live against the real device/alert
+  that had already fired server-side — returns the confirmed trigger correctly.
 
 ### Alert falsely triggered (+ push sent) even though price never touched the level
 - User report: created a fresh `BTCUSDT crossDown ~60021` alert (price was ~60083 and never came

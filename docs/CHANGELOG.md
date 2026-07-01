@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Server→client push-trigger reconciliation (2026-07-02)
+- A real server-confirmed closed-browser trigger could stay invisible to the client (alert still
+  "Active", line still on chart) when the crossing happened inside a chart-timeframe candle that
+  started before the alert was armed — the client's own candle-bounded rescan has no way to see a
+  sub-candle post-arm crossing, unlike the server's 1-minute-resolution evaluation.
+- Server now persists the real `triggerPrice` per alert; new `POST /api/push/alerts/status` returns
+  confirmed triggers for a device token (signature-guarded against stale/edited alerts); new
+  `usePushTriggerReconcile` hook polls it (mount / tab-visible / 60s) and applies confirmed triggers
+  via the existing `triggerAlertAtom`, without re-sending notifications.
+- Extracted the shared external-sync-token logic into `useExternalSyncToken.ts`.
+
 ### Fixed - Alert falsely triggered from a full-history rescan (2026-07-02)
 - `observedSinceArm()` (`src/hooks/useAlertEngine.ts`) re-derived its rescan cutoff from the
   previous tick's candle time; if that was ever `undefined` (candle history not loaded yet, e.g.

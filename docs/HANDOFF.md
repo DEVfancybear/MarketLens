@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (False alert trigger — full-history rescan bug)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Server→client trigger reconciliation)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -185,6 +185,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   target read as a live crossing. Fixed by tracking the cutoff as its own persisted field, only
   ever advanced forward from a real candle time. Client-side fix — needs a page reload to take
   effect, not just a server restart.
+- **Server→client trigger reconciliation added (2026-07-02):** after the false-trigger fix, found a
+  *legitimate* remaining gap live with the user — a real server-confirmed trigger (push received)
+  stayed "Active" client-side because the client's reopen-recovery scan is bounded by the currently
+  selected chart timeframe (15m), and the crossing happened inside a candle that started before the
+  alert was armed, an inherent blind spot the server (1-minute resolution) doesn't have. Rather than
+  chasing finer client-side history, added a reconciliation path: server persists the real
+  `triggerPrice`; new `POST /api/push/alerts/status` returns confirmed per-alert triggers
+  (signature-guarded); new `usePushTriggerReconcile` hook (mounted in `GlobalRuntime`) polls it and
+  applies confirmed triggers via the existing `triggerAlertAtom`, without re-notifying. See
+  `CHANGELOG.md` for the full file list.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.

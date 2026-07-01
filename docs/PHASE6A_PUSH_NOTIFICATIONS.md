@@ -43,11 +43,14 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/services/notifications/push.ts` | Capability checks, token registration, token deletion, push send request. |
 | `src/hooks/usePushNotifications.ts` | React hook used by Alert Center to enable/disable push. |
 | `src/hooks/usePushAlertSync.ts` | Syncs push-enabled active alerts to the server store. |
+| `src/hooks/useExternalSyncToken.ts` | Shared stable per-browser token for Telegram/Discord-only sync (no FCM registration needed). |
+| `src/hooks/usePushTriggerReconcile.ts` | Pulls back server-confirmed triggers the client's own chart-timeframe-bound scan couldn't see. |
 | `src/services/notifications/notify.ts` | Adds the push delivery channel after existing channels. |
 | `src/app/api/push/send/route.ts` | Server-side FCM sender using `firebase-admin`. |
 | `src/app/api/push/register/route.ts` | Persists browser FCM tokens for closed-browser evaluation. |
 | `src/app/api/push/unregister/route.ts` | Removes a token from the server store. |
 | `src/app/api/push/alerts/sync/route.ts` | Stores the latest push-enabled alert snapshot per token. |
+| `src/app/api/push/alerts/status/route.ts` | Returns confirmed server-side triggers for a device token, for client reconciliation. |
 | `src/app/api/push/evaluate/route.ts` | Evaluates server-stored alerts and sends FCM. |
 | `src/app/firebase-messaging-sw.js/route.ts` | Dynamic service worker with public Firebase config injected from env. |
 | `src/server/pushAlertStore.ts` | Firestore-backed server store for tokens and alert snapshots, with local file fallback when Firebase Admin is not configured. |

@@ -1,7 +1,7 @@
 import { deleteToken, getToken } from "firebase/messaging";
 import type { Alert } from "@/store/alertStore";
 import type { PushPermission, PushRegistration } from "@/store/notificationStore";
-import type { ServerPushAlert } from "@/types/pushAlerts";
+import type { PushAlertTriggerStatus, ServerPushAlert } from "@/types/pushAlerts";
 import {
   getFirebaseConfigStatus,
   getFirebaseMessaging,
@@ -253,6 +253,23 @@ export async function syncServerPushAlerts({
     },
     init,
   );
+}
+
+export async function fetchPushTriggerStatus(
+  token: string,
+): Promise<PushAlertTriggerStatus[]> {
+  try {
+    const res = await fetch("/api/push/alerts/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { triggers?: PushAlertTriggerStatus[] };
+    return body.triggers ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function sendAlertPush(

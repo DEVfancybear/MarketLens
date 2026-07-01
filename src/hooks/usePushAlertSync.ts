@@ -1,34 +1,16 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAtomValue } from "jotai";
 import { alertsAtom, settingsAtom } from "@/store/alertStore";
 import { pushRegistrationAtom } from "@/store/notificationStore";
 import { syncServerPushAlerts } from "@/services/notifications/push";
-
-const EXTERNAL_SYNC_TOKEN_KEY = "externalAlertSyncToken";
-
-function createExternalSyncToken(): string {
-  const random =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `external:${random}`;
-}
+import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
 
 export function usePushAlertSync() {
   const alerts = useAtomValue(alertsAtom);
   const settings = useAtomValue(settingsAtom);
   const registration = useAtomValue(pushRegistrationAtom);
-  const [externalSyncToken, setExternalSyncToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    let token = window.localStorage.getItem(EXTERNAL_SYNC_TOKEN_KEY);
-    if (!token) {
-      token = createExternalSyncToken();
-      window.localStorage.setItem(EXTERNAL_SYNC_TOKEN_KEY, token);
-    }
-    setExternalSyncToken(token);
-  }, []);
+  const externalSyncToken = useExternalSyncToken();
 
   useEffect(() => {
     const syncToken = registration?.token ?? externalSyncToken;

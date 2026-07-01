@@ -54,7 +54,7 @@ interface PriceCandle {
   close: number;
 }
 
-function alertSignature(alert: ServerPushAlert): string {
+export function alertSignature(alert: ServerPushAlert): string {
   return `${alert.condition}:${alert.symbol}:${alert.price}:${alert.recurring}`;
 }
 
@@ -428,12 +428,14 @@ async function runEvaluation(
             lastTriggeredAt: now,
             lastEvaluatedAt: now,
             oneTimeFired: !alert.recurring,
+            triggerPrice,
           };
         } else {
           alertState[alert.id] = {
             signature,
             lastTriggeredAt: state?.lastTriggeredAt,
             lastEvaluatedAt: now,
+            triggerPrice: state?.triggerPrice,
             oneTimeFired: state?.oneTimeFired,
           };
         }
@@ -443,6 +445,7 @@ async function runEvaluation(
           lastTriggeredAt: state?.lastTriggeredAt,
           lastEvaluatedAt: now,
           oneTimeFired: state?.oneTimeFired,
+          triggerPrice: state?.triggerPrice,
         };
       }
 
