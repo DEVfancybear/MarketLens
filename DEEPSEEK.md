@@ -40,7 +40,8 @@ reproduces the exact code path and produces instrumentation logs proving:
 - `removeDrawing("")` mass-deletes all empty-id drawings
 - `addDrawing` accepts `id: ""` with zero validation
 
-`DrawingLayer.tsx:234-249` calls both `duplicateDrawing(d.id)` AND
+`
+.tsx:234-249` calls both `duplicateDrawing(d.id)` AND
 `execute(new DuplicateDrawingCommand({...d, id:""}))` — two copies created.
 The command-created copy has `id: ""`.
 
@@ -312,6 +313,7 @@ updateDrawing(id, { points: next })
     ↓
 Renderer (read-only)
 ```
+
 
 ## Files Modified
 
