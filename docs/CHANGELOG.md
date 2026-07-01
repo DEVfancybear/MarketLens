@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Existing alerts sync when Push is enabled (2026-07-01)
+- Turning global Push on now enables Push for existing active alerts, so the closed-browser worker
+  receives them instead of evaluating `alerts=0`.
+- If an FCM token already exists while global Push is off, pressing Push now re-enables push sync
+  instead of unregistering the token.
+
 ### Fixed - Alert touches trigger from live candle high/low (2026-07-01)
 - Browser-open alert evaluation now uses the latest kline OHLC together with ticker last price, so
   alert lines trigger when the live candle wick touches the level instead of only when the current

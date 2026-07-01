@@ -97,6 +97,7 @@ export function AlertCenter() {
   const history = useAlertStore((s) => s.history);
   const settings = useAlertStore((s) => s.settings);
   const createAlert = useAlertStore((s) => s.createAlert);
+  const updateAlert = useAlertStore((s) => s.updateAlert);
   const deleteAlert = useAlertStore((s) => s.deleteAlert);
   const resetAlert = useAlertStore((s) => s.resetAlert);
   const clearHistory = useAlertStore((s) => s.clearHistory);
@@ -153,16 +154,29 @@ export function AlertCenter() {
     }
   };
 
+  const enablePushForActiveAlerts = () => {
+    for (const alert of alerts) {
+      if (!alert.push) updateAlert(alert.id, { push: true });
+    }
+  };
+
   const togglePush = async () => {
-    if (settings.push || push.registration) {
+    if (settings.push) {
       await push.disable();
       setSettings({ push: false });
+      return;
+    }
+
+    if (push.registration) {
+      setSettings({ push: true });
+      enablePushForActiveAlerts();
       return;
     }
 
     try {
       await push.enable();
       setSettings({ push: true });
+      enablePushForActiveAlerts();
     } catch {
       setSettings({ push: false });
     }

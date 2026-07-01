@@ -22,7 +22,8 @@ Runtime modes:
 3. Browser asks for notification permission.
 4. The app registers `/firebase-messaging-sw.js` and gets an FCM token.
 5. New alerts inherit the global Push setting.
-6. Existing alerts can enable/disable Push from the alert edit dialog.
+6. Turning global Push on also enables Push for existing active alerts so they are synced to the
+   closed-browser worker. Existing alerts can still enable/disable Push from the alert edit dialog.
 7. When an alert triggers, `deliverAlert()` sends toast/sound/browser channels as before and sends
    FCM push when both global and per-alert push flags are enabled.
 
