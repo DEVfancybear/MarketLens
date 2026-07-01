@@ -118,11 +118,15 @@ Header: x-push-worker-secret: <PUSH_WORKER_SECRET>
 
 If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in production.
 
-For Binance crypto symbols, server-side evaluation reads the latest 10 one-minute candles and
+For Binance crypto symbols, server-side evaluation reads the latest 60 one-minute candles and
 aggregates high/low from the alert's last server evaluation time to now. This lets an external cron
 catch alerts whose price touched the level between runs even if current spot price has already moved
 back. Non-Binance symbols fall back to current-price polling unless a richer server-side quote
 source is added later.
+
+If an alert is armed in the middle of a one-minute candle, the worker does not use that candle's
+earlier high/low for the first evaluation window. This avoids false triggers from price movement
+that happened before the alert existed.
 
 Alert sync sends the alert's persisted `updatedAt` timestamp, not the time of the sync request.
 This prevents opening the app or re-syncing push alerts from resetting the server evaluation window

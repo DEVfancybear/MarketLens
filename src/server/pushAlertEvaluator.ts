@@ -5,6 +5,7 @@ import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
 import { listPushDevices, updatePushDevice } from "./pushAlertStore";
 
 const RECURRING_REARM_MS = 60_000;
+const BINANCE_LOOKBACK_1M_CANDLES = 60;
 
 interface EvaluationResult {
   devices: number;
@@ -68,14 +69,25 @@ function priceWindow(snapshot: PriceSnapshot, since: number): PriceSnapshot {
   if (!snapshot.candles?.length) return snapshot;
   const candles = snapshot.candles.filter((c) => c.closeTime >= since);
   const window = candles.length > 0 ? candles : [snapshot.candles[snapshot.candles.length - 1]];
-  const first = window[0];
-  const last = window[window.length - 1];
+  const exactWindow = window[0].openTime < since ? window.slice(1) : window;
+  if (exactWindow.length === 0) {
+    const last = window[window.length - 1];
+    return {
+      current: last.close,
+      open: snapshot.current,
+      high: snapshot.current,
+      low: snapshot.current,
+      candles: window,
+    };
+  }
+  const first = exactWindow[0];
+  const last = exactWindow[exactWindow.length - 1];
   return {
     current: last.close,
     open: first.open,
-    high: Math.max(...window.map((c) => c.high)),
-    low: Math.min(...window.map((c) => c.low)),
-    candles: window,
+    high: Math.max(...exactWindow.map((c) => c.high)),
+    low: Math.min(...exactWindow.map((c) => c.low)),
+    candles: exactWindow,
   };
 }
 
@@ -89,7 +101,7 @@ function formatAlert(alert: ServerPushAlert, triggerPrice: number) {
 
 async function fetchBinancePrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const res = await fetch(
-    `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=10`,
+    `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=${BINANCE_LOOKBACK_1M_CANDLES}`,
     { cache: "no-store" },
   );
   if (!res.ok) return undefined;

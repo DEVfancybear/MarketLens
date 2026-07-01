@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alerts no longer fire from old candle wicks (2026-07-01)
+- Browser-open alert evaluation no longer reuses the current candle's historical high/low, preventing
+  a newly created or moved alert from firing because of a wick that happened before the alert was
+  armed.
+- Closed-browser Binance evaluation now looks back 60 one-minute candles and ignores the partial
+  candle portion before the alert's server evaluation window.
+
 ### Fixed - Push alert sync flushes before tab close (2026-07-01)
 - Push-enabled alert snapshots now flush with `fetch(..., { keepalive: true })` on `pagehide` and
   hidden visibility, so the closed-browser worker has the latest alerts even if the user closes the

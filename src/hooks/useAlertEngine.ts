@@ -36,7 +36,9 @@ import {
 import { deliverAlert } from "@/services/notifications/notify";
 import { subscriptionKey } from "@/types";
 
-/** Latest price window for a symbol: ticker last plus the active candle's high/low. */
+/** Latest realtime price for a symbol. Do not reuse an in-progress candle's
+ * historical high/low here; if an alert is created mid-candle, that old wick
+ * would falsely trigger a newly armed line. */
 function latestPriceSnapshot(
   md: MarketDataStoreInterface,
   symbol: string,
@@ -53,9 +55,9 @@ function latestPriceSnapshot(
   if (current === undefined) return undefined;
   return {
     current,
-    open: last?.open,
-    high: last ? Math.max(last.high, current) : q?.high,
-    low: last ? Math.min(last.low, current) : q?.low,
+    open: current,
+    high: current,
+    low: current,
   };
 }
 
