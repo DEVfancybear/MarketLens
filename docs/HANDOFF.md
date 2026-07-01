@@ -19,7 +19,7 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
 notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
 cron calling `/api/push/evaluate`) runs next to the Next server. Continue with Phase 6B MT5 Bridge
-from `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
+from `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -115,7 +115,7 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
   hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
-  `docs/PHASE6_IMPLEMENTATION_PLAN.md`. Phase 6A push docs:
+  `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
@@ -220,7 +220,7 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 ## 7. Where to continue (Phase 6 — Push Notifications / MT5 Integration)
 1. **Phase 6B — MT5 Bridge Integration.** Phase 6A Firebase push notifications are implemented in
    `docs/PHASE6A_PUSH_NOTIFICATIONS.md`. Continue real broker order routing from
-   `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
+   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 2. Manual smoke test for Phase 2: open the toolbar **bell**, create `BTCUSDT crosses above <price>`
    and `BTCUSDT > <below-current>` — the latter fires immediately (level), the former on the next
    upward cross; confirm one toast + chime, the alert moves to Triggered, and a History row is added.

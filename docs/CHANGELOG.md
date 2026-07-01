@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Phase 6B MT5 bridge plan docs (2026-07-01)
+- Added `docs/PHASE6B_MT5_BRIDGE_PLAN.md`, a detailed MT5 bridge implementation
+  plan covering topology, protocol, frontend modules, store design, risk
+  controls, symbol mapping, milestones, test plan, rollback, and acceptance
+  criteria.
+
 ### Added - Closed-browser push alert worker (2026-07-01)
 - Added server-side token/alert sync plus `/api/push/evaluate`, allowing FCM
   alert notifications to be sent while the browser/app is closed when a Next

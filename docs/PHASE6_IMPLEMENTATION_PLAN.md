@@ -5,7 +5,7 @@ _Created 2026-07-01. Scope: code plan for the next production milestone after Ph
 Implementation status:
 
 - **Phase 6A - Push notifications:** implemented. See `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
-- **Phase 6B - MT5 bridge:** still planned.
+- **Phase 6B - MT5 bridge:** planned in detail. See `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ## 1. Objective
 
