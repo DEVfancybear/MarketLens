@@ -119,7 +119,8 @@ Header: x-push-worker-secret: <PUSH_WORKER_SECRET>
 If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in production.
 For troubleshooting, call `/api/push/evaluate?debug=1` with the same secret header. The response
 includes per-alert condition, target, previous price, current/open/high/low window, `met`, and
-blocked/skipped reason without exposing the full FCM token.
+blocked/skipped reason without exposing the full FCM token. When a push is accepted by FCM, the
+debug entry includes `messageId`.
 
 For Binance crypto symbols, server-side evaluation reads the latest 60 one-minute candles and
 aggregates high/low from the alert's last server evaluation time to now. This lets an external cron
@@ -141,6 +142,10 @@ and missing a touch that happened just before the cron run.
 The browser also flushes the latest push-alert snapshot with `fetch(..., { keepalive: true })` on
 `pagehide` / hidden visibility. This protects the closed-browser worker path when the user creates
 or edits an alert and then closes the tab before the normal sync debounce completes.
+
+Server push sends a data-first Web Push payload with `title` and `body` mirrored into `data`, an
+absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
+the background notification.
 
 ## Failure Modes
 

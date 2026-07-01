@@ -37,22 +37,37 @@ export function getFirebaseFirestore() {
   return getFirestore();
 }
 
+function appUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_APP_URL;
+  if (explicit) return explicit;
+  const vercelUrl = process.env.VERCEL_URL;
+  if (vercelUrl) return `https://${vercelUrl}`;
+  return "http://localhost:3000";
+}
+
 export async function sendFirebasePush(
   message: FirebasePushMessage,
 ): Promise<string> {
   ensureFirebaseAdmin();
+  const data = {
+    ...(message.data ?? {}),
+    title: message.title,
+    body: message.body,
+  };
   return getMessaging().send({
     token: message.token,
-    notification: {
-      title: message.title,
-      body: message.body,
-    },
-    data: message.data ?? {},
+    data,
     webpush: {
+      headers: {
+        TTL: "300",
+        Urgency: "high",
+      },
       fcmOptions: {
-        link: "/",
+        link: appUrl(),
       },
       notification: {
+        title: message.title,
+        body: message.body,
         icon: "/favicon.ico",
         tag: message.data?.alertId ?? "smc-alert",
         requireInteraction: false,

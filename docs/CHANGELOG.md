@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Background FCM payload is data-first (2026-07-01)
+- Server push now sends a data-first Web Push payload with `title` and `body` mirrored into `data`,
+  an absolute `fcmOptions.link`, TTL/urgency headers, and debug `messageId` reporting from
+  `/api/push/evaluate?debug=1`.
+
 ### Fixed - Reopened sessions catch existing alert range (2026-07-01)
 - Alerts that existed before the current browser session now use the current candle's full high/low
   on first evaluation, so reopening the app after closed-browser time can clear alerts that crossed

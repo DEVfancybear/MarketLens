@@ -32,6 +32,7 @@ interface AlertEvaluationDebug {
   met?: boolean;
   skipped?: string;
   blocked?: string;
+  messageId?: string;
 }
 
 interface PriceSnapshot {
@@ -307,7 +308,7 @@ export async function evaluatePushAlerts(
         priceWindowSinceLastEval,
       );
 
-      result.debug?.push({
+      const debugEntry: AlertEvaluationDebug = {
         token: device.token.slice(-8),
         alertId: alert.id,
         symbol: alert.symbol,
@@ -326,13 +327,14 @@ export async function evaluatePushAlerts(
           : rearmBlocked
             ? "recurring rearm"
             : undefined,
-      });
+      };
+      result.debug?.push(debugEntry);
 
       if (!oneTimeFired && !rearmBlocked && met) {
         const triggerPrice = priceWindowSinceLastEval.current;
         const message = formatAlert(alert, triggerPrice);
         try {
-          await sendFirebasePush({
+          const messageId = await sendFirebasePush({
             token: device.token,
             title: message.title,
             body: message.body,
@@ -345,6 +347,7 @@ export async function evaluatePushAlerts(
               source: "server-worker",
             },
           });
+          debugEntry.messageId = messageId;
           result.triggered += 1;
           alertState[alert.id] = {
             signature,
