@@ -4,6 +4,19 @@ _Last updated: 2026-07-01 (TradingView-style Position settings parity)_
 
 ## Completed this session (2026-07-01)
 
+### Alert line no longer "jumps" when dragged near the live price
+- Root cause (found via a scripted Playwright repro against a clean dev server, not guesswork):
+  `AlertLines`' reconciliation effect depended on `symbolAlerts`, a brand-new array every render —
+  including every price tick, since `useChartCtx()` gets a new reference each tick. That destroyed
+  and recreated the native price line dozens of times per second unconditionally, which is the
+  actual "nhảy view" the user saw, worse near the live price (more ticks land there).
+- Fixed by keying the effect on a stable string (`id:price` pairs) instead of the array reference.
+- Also added a `draggingAlertIds` guard (new export in `alertLineRegistry.ts`) so `AlertLines`
+  doesn't destroy+recreate a line mid-drag when `AlertOverlay` has imperatively moved it ahead of
+  the store commit — that was a second, smaller contributor to the same symptom.
+- Files: `AlertLines.tsx`, `AlertOverlay.tsx`, `alertLineRegistry.ts`.
+- type-check ✅ · lint ✅ · build ✅ · manually reproduced-then-fixed via Playwright.
+
 ### Alert line survives a visible mid-session crossing
 - `observedSinceArm`'s continuing (browser-still-open) branch only widened forward from the latest
   tick's single candle, so a websocket reconnect / backgrounded tab / kline gap could drop a candle

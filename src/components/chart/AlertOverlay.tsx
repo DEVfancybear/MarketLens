@@ -32,7 +32,7 @@ import {
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
-import { alertLineRegistry } from "./alertLineRegistry";
+import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
 
 const HIT_PX = 12; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
@@ -338,6 +338,8 @@ export function AlertOverlay() {
 
     if (a.locked) return; // locked alerts select but don't drag
 
+    draggingAlertIds.add(a.id);
+
     // Freeze chart pan/zoom for the duration of the drag so a fast vertical
     // move can't leak through and scroll the view. Also freeze the right price
     // scale's auto-scaling: otherwise every forming-bar tick re-fits the price
@@ -430,6 +432,10 @@ export function AlertOverlay() {
         const condition = sideCondition(a.condition, lastPrice, marketPrice);
         updateAlert(a.id, { price: lastPrice, condition });
       }
+      // Release the guard after the store commit above so AlertLines' next
+      // reconciliation (triggered by that same update) sees a native line
+      // price that already matches the committed alert price.
+      draggingAlertIds.delete(a.id);
       setDrag(null);
     };
 

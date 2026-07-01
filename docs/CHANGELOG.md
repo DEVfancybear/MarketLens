@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert line "jumps" when dragged near the current price (2026-07-01)
+- `AlertLines`' reconciliation effect was keyed on `symbolAlerts`, a freshly-allocated array on
+  *every* render — including every price tick, since `useChartCtx()` changes reference on each
+  tick. That tore down and recreated every alert's native price line dozens of times per second
+  regardless of whether anything actually changed, which is what produced the visible "jump"/flicker,
+  most noticeable when an alert sits close to the live price (more ticks touching that region).
+  Fixed by keying the effect on a stable primitive derived from `id:price` pairs instead of the
+  array reference.
+- Separately, `AlertLines` could also destroy and recreate an alert's native line *while it was
+  being dragged* in `AlertOverlay` (which moves the line imperatively, before the price is
+  committed to the store) if the effect happened to re-run for an unrelated alertStore change —
+  snapping the line back to its pre-drag position. Added a `draggingAlertIds` guard
+  (`alertLineRegistry.ts`) so the reconciliation skips alerts currently mid-drag.
+- Files: `src/components/chart/AlertLines.tsx`, `src/components/chart/AlertOverlay.tsx`,
+  `src/components/chart/alertLineRegistry.ts`.
+- Verified with a scripted Playwright repro (create alert → drag near live price → hold) against a
+  clean dev server; confirmed the native price line no longer flickers/reverts.
+
 ### Fixed - Alert line stays after price visibly crosses it mid-session (2026-07-01)
 - `observedSinceArm`'s "continuing" branch (the normal, browser-still-open path) only ever widened
   the observed high/low forward from the single most-recent tick's candle. Any candle that closed

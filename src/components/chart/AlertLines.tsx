@@ -7,7 +7,7 @@ import { symbolAtom } from "@/store/chartStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
-import { alertLineRegistry } from "./alertLineRegistry";
+import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
 
 /**
  * AlertLines — draws native lightweight-charts price lines for active alerts.
@@ -32,6 +32,12 @@ export function AlertLines() {
 
   const symbolAlerts = alerts.filter((a) => a.symbol === symbol && a.enabled);
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
+  // `symbolAlerts` is a fresh array every render (including on every chart tick,
+  // since `ctx` changes reference each tick and both `symbol`/`alerts` selectors
+  // re-run) — using it directly as an effect dependency would tear down and
+  // recreate every native price line dozens of times per second. Key on a
+  // primitive derived from the fields the effect actually cares about instead.
+  const symbolAlertsKey = symbolAlerts.map((a) => `${a.id}:${a.price}`).join("|");
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -41,9 +47,14 @@ export function AlertLines() {
     const existing = linesRef.current;
 
     // Remove lines for alerts that no longer exist OR whose price changed.
+    // Alerts currently being dragged are skipped: AlertOverlay moves the
+    // native line imperatively during a drag (before the price is committed
+    // to the store), and this effect can re-run for unrelated alertStore
+    // changes — without the guard it would see the "stale" price and
+    // destroy + recreate the line, snapping it back mid-drag.
     for (const [id, line] of existing) {
       const alert = symbolAlerts.find((a) => a.id === id);
-      if (!alert || alert.price !== line.options().price) {
+      if (!alert || (alert.price !== line.options().price && !draggingAlertIds.has(id))) {
         series.removePriceLine(line);
         alertLineRegistry.delete(id);
         existing.delete(id);
@@ -73,7 +84,8 @@ export function AlertLines() {
       }
       existing.clear();
     };
-  }, [symbolAlerts, prec]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolAlertsKey]);
 
   return null;
 }

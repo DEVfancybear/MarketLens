@@ -114,6 +114,15 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `drawingTemplates`). `CanvasRenderer.drawingsHash()` now folds in style fields so edits
   repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
   hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
+- **Alert line "jumps" near live price — fixed (2026-07-01):** `AlertLines.tsx`'s reconciliation
+  effect was keyed on `symbolAlerts`, a fresh array every render (including every price tick, since
+  `useChartCtx()` changes reference each tick) — this destroyed and recreated the native price line
+  dozens of times/sec unconditionally, the actual cause of the reported "nhảy view" when dragging an
+  alert near the current price. Fixed by keying on a stable `id:price` string instead. Also added
+  `draggingAlertIds` (`alertLineRegistry.ts`) so the reconciliation doesn't fight `AlertOverlay`'s
+  imperative mid-drag price update. Confirmed via a scripted Playwright repro against a clean `next
+  dev` instance (stale/leftover dev servers gave misleading results — always verify against a
+  freshly started server for this kind of chart-render bug).
 - **Alert line survives a visible mid-session crossing (2026-07-01):** `observedSinceArm`'s
   continuing (browser-still-open) branch previously only widened the observed high/low forward
   from the single most-recent tick's candle, so a websocket reconnect, backgrounded/throttled tab,
