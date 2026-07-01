@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Existing alerts recover range after reload (2026-07-01)
+- Browser-open alert evaluation now uses the current candle's full high/low on first evaluation when
+  the alert already existed before that candle opened. This prevents a reload/deploy from losing a
+  valid crossing that happened while the alert was armed.
+- Crossing checks are inclusive at the target line, so exact touches count.
+
 ### Fixed - Crossing alerts trigger from observed range (2026-07-01)
 - `crossUp` and `crossDown` now evaluate the observed price range, not only the previous tick.
   This fires alerts when candles move through a line and then close back away from it, for both

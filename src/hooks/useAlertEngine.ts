@@ -222,20 +222,35 @@ function observedSinceArm(
   const signature = alertSignature(alert);
   const existing = ranges.get(alert.id);
   if (!existing || existing.signature !== signature) {
+    const alertUpdatedAtMs = alert.updatedAt * 1000;
+    const candleOpenMs =
+      snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
+    const includeFullCandle =
+      candleOpenMs !== undefined &&
+      alertUpdatedAtMs <= candleOpenMs &&
+      snapshot.candleHigh !== undefined &&
+      snapshot.candleLow !== undefined;
+    const high = includeFullCandle
+      ? Math.max(snapshot.candleHigh ?? snapshot.current, snapshot.current)
+      : snapshot.current;
+    const low = includeFullCandle
+      ? Math.min(snapshot.candleLow ?? snapshot.current, snapshot.current)
+      : snapshot.current;
+
     ranges.set(alert.id, {
       signature,
       symbol: alert.symbol,
       candleTime: snapshot.candleTime,
       candleHigh: snapshot.candleHigh,
       candleLow: snapshot.candleLow,
-      high: snapshot.current,
-      low: snapshot.current,
+      high,
+      low,
     });
     return {
       ...snapshot,
       open: snapshot.current,
-      high: snapshot.current,
-      low: snapshot.current,
+      high,
+      low,
     };
   }
 

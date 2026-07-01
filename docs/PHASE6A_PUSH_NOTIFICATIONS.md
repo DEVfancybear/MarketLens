@@ -127,7 +127,7 @@ catch alerts whose price touched the level between runs even if current spot pri
 back. Non-Binance symbols fall back to current-price polling unless a richer server-side quote
 source is added later.
 Server-side `crossUp` / `crossDown` use the same range-crossing rule as browser-open alerts:
-`low < target && high >= target` for up crosses and `high > target && low <= target` for down
+`low <= target && high >= target` for up crosses and `high >= target && low <= target` for down
 crosses.
 
 If an alert is armed in the middle of a one-minute candle, the worker still includes that candle's
