@@ -4,6 +4,16 @@ _Last updated: 2026-07-01 (TradingView-style Position settings parity)_
 
 ## Completed this session (2026-07-01)
 
+### Closed-browser push: notifications weren't displaying at all
+- `sendFirebasePush` (`firebaseAdmin.ts`) still populated `webpush.notification.title/body`, which
+  makes FCM auto-display the notification via the browser's built-in handling and skip the custom
+  `onBackgroundMessage` handler already written in the service worker — so background delivery was
+  silent/inconsistent even though the alert correctly triggered server-side.
+- Fix: send a pure data-only FCM message (dropped `webpush.notification` entirely); the SW's
+  existing `onBackgroundMessage` → `showNotification()` path now always runs.
+- Files: `src/server/firebaseAdmin.ts`.
+- type-check ✅.
+
 ### Closed-browser push: fix Binance geo-block on server-side price fetch
 - Diagnosed cron-job.org-triggered `/api/push/evaluate` runs skipping every crypto alert with
   "price unavailable" and an empty `errors` array. Root cause: `fetchBinancePrice` called

@@ -65,13 +65,6 @@ export async function sendFirebasePush(
       fcmOptions: {
         link: appUrl(),
       },
-      notification: {
-        title: message.title,
-        body: message.body,
-        icon: "/favicon.ico",
-        tag: message.data?.alertId ?? "smc-alert",
-        requireInteraction: false,
-      },
     },
   });
 }

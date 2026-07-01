@@ -114,6 +114,14 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   `drawingTemplates`). `CanvasRenderer.drawingsHash()` now folds in style fields so edits
   repaint immediately. Plan §3 (Anchor) intentionally deferred — needs viewport dims in the
   hit-test pipeline. See `docs/DRAWING_TOOLBAR_PLAN.md`. (Plan §4 More was already shipped.)
+- **Closed-browser push — notifications weren't displaying (2026-07-01):** `sendFirebasePush`
+  (`firebaseAdmin.ts`) still set `webpush.notification.title/body` after the earlier "data-first"
+  attempt (ca600cc), which made FCM auto-display the notification and skip the SW's custom
+  `onBackgroundMessage` handler — background delivery stayed silent/inconsistent even when alerts
+  triggered correctly server-side (confirmed `triggered`/`messageId` in `/api/push/evaluate?debug=1`
+  but nothing appeared on device). Fixed by sending a pure data-only FCM message so the existing
+  `onBackgroundMessage` → `showNotification()` path in `firebase-messaging-sw.js/route.ts` runs
+  every time.
 - **Closed-browser push — Binance geo-block fix (2026-07-01):** cron-job.org-triggered
   `/api/push/evaluate` runs were skipping every crypto alert with "price unavailable" and no
   `errors` entry. Cause: `pushAlertEvaluator.ts`'s `fetchBinancePrice` called `api.binance.com`,

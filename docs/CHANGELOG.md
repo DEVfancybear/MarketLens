@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Closed-browser push notifications not displaying (2026-07-01)
+- `sendFirebasePush` still set `webpush.notification.title/body` even after the earlier "data-first"
+  fix (ca600cc). Any FCM message carrying a `notification` payload (top-level or nested under
+  `webpush`) is auto-displayed by the browser's built-in FCM handling, which bypasses the custom
+  `onBackgroundMessage` handler in `firebase-messaging-sw.js/route.ts` — leaving background delivery
+  inconsistent/silent depending on browser. `sendFirebasePush` now sends a pure data-only message
+  (no `notification` key anywhere), so the service worker's existing `onBackgroundMessage` handler
+  reliably calls `showNotification()` itself for closed-browser delivery.
+- File: `src/server/firebaseAdmin.ts`.
+
 ### Fixed - Closed-browser push crypto price fetch blocked in production (2026-07-01)
 - `fetchBinancePrice` in `pushAlertEvaluator.ts` now calls `data-api.binance.vision` instead of
   `api.binance.com`. The latter returns HTTP 451 for requests from US-hosted server IPs (e.g. Vercel
