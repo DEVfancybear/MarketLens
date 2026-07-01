@@ -1,6 +1,7 @@
 import { deleteToken, getToken } from "firebase/messaging";
 import type { Alert } from "@/store/alertStore";
 import type { PushPermission, PushRegistration } from "@/store/notificationStore";
+import type { ServerPushAlert } from "@/types/pushAlerts";
 import {
   getFirebaseConfigStatus,
   getFirebaseMessaging,
@@ -20,6 +21,31 @@ export interface PushSendPayload {
   body: string;
   alert: Alert;
   triggerPrice: number;
+}
+
+async function postJson(
+  url: string,
+  body: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      return { ok: false, error: payload?.error ?? `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Request failed.",
+    };
+  }
 }
 
 function notificationPermission(): PushPermission {
@@ -119,6 +145,11 @@ export async function registerPushToken(): Promise<PushRegistration> {
   }
 
   const now = Date.now();
+  const registered = await postJson("/api/push/register", { token });
+  if (!registered.ok) {
+    throw new Error(`Push token server registration failed: ${registered.error}`);
+  }
+
   return {
     token,
     permission,
@@ -129,46 +160,70 @@ export async function registerPushToken(): Promise<PushRegistration> {
 
 export async function unregisterPushToken(): Promise<void> {
   const messaging = await getFirebaseMessaging();
+  let token: string | undefined;
+  if (messaging) {
+    try {
+      token = await getToken(messaging, {
+        vapidKey: getFirebaseVapidKey(),
+      });
+    } catch {
+      token = undefined;
+    }
+  }
   if (!messaging) return;
   try {
     await deleteToken(messaging);
   } catch {
     /* Token may already be gone or unavailable. Local state is still cleared. */
   }
+  if (token) {
+    await postJson("/api/push/unregister", { token });
+  }
+}
+
+export async function unregisterServerPushToken(token: string): Promise<void> {
+  await postJson("/api/push/unregister", { token });
+}
+
+export async function syncServerPushAlerts({
+  token,
+  settingsPush,
+  alerts,
+}: {
+  token: string;
+  settingsPush: boolean;
+  alerts: Alert[];
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const serverAlerts: ServerPushAlert[] = alerts.map((alert) => ({
+    id: alert.id,
+    symbol: alert.symbol,
+    condition: alert.condition,
+    price: alert.price,
+    note: alert.note,
+    recurring: alert.recurring,
+    updatedAt: Date.now(),
+  }));
+  return postJson("/api/push/alerts/sync", {
+    token,
+    settingsPush,
+    alerts: serverAlerts,
+  });
 }
 
 export async function sendAlertPush(
   payload: PushSendPayload,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    const res = await fetch("/api/push/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: payload.token,
-        title: payload.title,
-        body: payload.body,
-        data: {
-          alertId: payload.alert.id,
-          symbol: payload.alert.symbol,
-          condition: payload.alert.condition,
-          targetPrice: String(payload.alert.price),
-          triggerPrice: String(payload.triggerPrice),
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
-    }
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Push send failed.",
-    };
-  }
+  return postJson("/api/push/send", {
+    token: payload.token,
+    title: payload.title,
+    body: payload.body,
+    data: {
+      alertId: payload.alert.id,
+      symbol: payload.alert.symbol,
+      condition: payload.alert.condition,
+      targetPrice: String(payload.alert.price),
+      triggerPrice: String(payload.triggerPrice),
+      source: "browser",
+    },
+  });
 }

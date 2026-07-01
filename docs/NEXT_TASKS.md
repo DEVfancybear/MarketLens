@@ -32,8 +32,9 @@
 
 Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 
-- **Phase 6A - Push Notifications:** Firebase Cloud Messaging as the next alert delivery channel.
-  Implemented in `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Phase 6A - Push Notifications:** Firebase Cloud Messaging as the next alert delivery channel,
+  including closed-browser delivery through `npm run push-worker`. Implemented in
+  `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **Phase 6B - MT5 Bridge Integration:** external bridge client, live execution mode, account and
   position sync, with simulator fallback.
 

@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Closed-browser push alert worker (2026-07-01)
+- Added server-side token/alert sync plus `/api/push/evaluate`, allowing FCM
+  alert notifications to be sent while the browser/app is closed when a Next
+  server and push worker/cron are running.
+- Added `npm run push-worker`, backed by `scripts/push-alert-worker.mjs`, which
+  polls `/api/push/evaluate`. Push alert snapshots are stored in
+  `.data/push-alerts.json`.
+- Server-side evaluator supports public Binance crypto prices and OANDA /
+  TwelveData server credentials for forex/metals/indices. See
+  `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+
 ### Added - Phase 6A Firebase push notifications (2026-07-01)
 - Added an optional FCM push notification channel for price alerts. Alert Center
   now supports Push enable/disable, token registration, permission/error states,

@@ -16,6 +16,7 @@ import {
 import {
   getPushCapability,
   registerPushToken,
+  unregisterServerPushToken,
   unregisterPushToken,
 } from "@/services/notifications/push";
 
@@ -66,9 +67,11 @@ export function usePushNotifications() {
   }, [setError, setRegistering, setRegistration]);
 
   const disable = useCallback(async () => {
+    const token = registration?.token;
     await unregisterPushToken();
+    if (token) await unregisterServerPushToken(token);
     clearRegistration();
-  }, [clearRegistration]);
+  }, [clearRegistration, registration?.token]);
 
   return {
     registration,

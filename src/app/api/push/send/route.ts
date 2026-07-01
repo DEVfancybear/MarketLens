@@ -1,6 +1,8 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getMessaging } from "firebase-admin/messaging";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  firebaseAdminConfigured,
+  sendFirebasePush,
+} from "@/server/firebaseAdmin";
 
 export const runtime = "nodejs";
 
@@ -9,29 +11,6 @@ interface PushRequestBody {
   title?: string;
   body?: string;
   data?: Record<string, string>;
-}
-
-function privateKey(): string {
-  return (process.env.FIREBASE_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
-}
-
-function firebaseAdminConfigured(): boolean {
-  return Boolean(
-    process.env.FIREBASE_PROJECT_ID &&
-      process.env.FIREBASE_CLIENT_EMAIL &&
-      privateKey(),
-  );
-}
-
-function ensureFirebaseAdmin() {
-  if (getApps().length > 0) return;
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: privateKey(),
-    }),
-  });
 }
 
 export async function POST(req: NextRequest) {
@@ -57,24 +36,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    ensureFirebaseAdmin();
-    const messageId = await getMessaging().send({
+    const messageId = await sendFirebasePush({
       token: body.token,
-      notification: {
-        title: body.title,
-        body: body.body,
-      },
+      title: body.title,
+      body: body.body,
       data: body.data ?? {},
-      webpush: {
-        fcmOptions: {
-          link: "/",
-        },
-        notification: {
-          icon: "/favicon.ico",
-          tag: "smc-alert",
-          requireInteraction: false,
-        },
-      },
     });
 
     return NextResponse.json({ ok: true, messageId });

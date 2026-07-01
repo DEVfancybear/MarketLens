@@ -17,8 +17,9 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 **Phase 4.4 (Fibonacci Suite) is COMPLETE** — fib retracement + fib extension drawing tools.
 **Phase 5 (Left Toolbar / Indicator Engine) is COMPLETE** — 9-group toolbar, indicator settings dialogs, hotkey system.
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
-notifications are implemented; continue with Phase 6B MT5 Bridge from
-`docs/PHASE6_IMPLEMENTATION_PLAN.md`.
+notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
+cron calling `/api/push/evaluate`) runs next to the Next server. Continue with Phase 6B MT5 Bridge
+from `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.

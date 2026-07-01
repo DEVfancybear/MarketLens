@@ -7,12 +7,13 @@ _Implemented 2026-07-01._
 Phase 6A adds Firebase Cloud Messaging (FCM) as an optional alert delivery channel. It does not
 change alert evaluation, alert persistence, market-data subscriptions, or simulator behavior.
 
-Important runtime boundary:
+Runtime modes:
 
-- Existing alert evaluation still runs in the browser through `useAlertEngine`.
-- FCM delivery is triggered by the running app when an alert fires.
-- Alerts cannot fire while the whole app/browser is closed until a future server-side alert worker
-  evaluates prices outside the browser.
+- **Browser-open mode:** existing `useAlertEngine` evaluates alerts in the browser and sends push
+  through `/api/push/send`.
+- **Closed-browser mode:** the browser syncs push-enabled alerts and the FCM token to the server;
+  `npm run push-worker` or an external cron calls `/api/push/evaluate` to evaluate those alerts and
+  send FCM while the app/browser is closed.
 
 ## User Behavior
 
@@ -36,9 +37,17 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/services/firebase/client.ts` | Initializes browser Firebase Messaging only when configured/supported. |
 | `src/services/notifications/push.ts` | Capability checks, token registration, token deletion, push send request. |
 | `src/hooks/usePushNotifications.ts` | React hook used by Alert Center to enable/disable push. |
+| `src/hooks/usePushAlertSync.ts` | Syncs push-enabled active alerts to the server store. |
 | `src/services/notifications/notify.ts` | Adds the push delivery channel after existing channels. |
 | `src/app/api/push/send/route.ts` | Server-side FCM sender using `firebase-admin`. |
+| `src/app/api/push/register/route.ts` | Persists browser FCM tokens for closed-browser evaluation. |
+| `src/app/api/push/unregister/route.ts` | Removes a token from the server store. |
+| `src/app/api/push/alerts/sync/route.ts` | Stores the latest push-enabled alert snapshot per token. |
+| `src/app/api/push/evaluate/route.ts` | Evaluates server-stored alerts and sends FCM. |
 | `src/app/firebase-messaging-sw.js/route.ts` | Dynamic service worker with public Firebase config injected from env. |
+| `src/server/pushAlertStore.ts` | File-backed server store for tokens and alert snapshots. |
+| `src/server/pushAlertEvaluator.ts` | Server-side price polling and alert trigger evaluation. |
+| `scripts/push-alert-worker.mjs` | Local worker loop for closed-browser push evaluation. |
 | `src/components/alerts/AlertCenter.tsx` | Push toggle/status/error UI. |
 | `src/components/alerts/AlertEditDialog.tsx` | Per-alert Push flag. |
 | `.env.example` | Documents public Firebase config and server-only admin credentials. |
@@ -66,13 +75,56 @@ FIREBASE_PRIVATE_KEY=
 
 `FIREBASE_PRIVATE_KEY` may be stored with escaped newlines (`\n`); the API route normalizes it.
 
+Closed-browser worker values:
+
+```env
+PUSH_WORKER_URL=http://localhost:3000
+PUSH_WORKER_INTERVAL_MS=15000
+PUSH_WORKER_SECRET=
+```
+
+Optional server-side market data values:
+
+```env
+OANDA_API_KEY=
+OANDA_ACCOUNT_ID=
+OANDA_PRACTICE=true
+TWELVEDATA_API_KEY=
+```
+
+Crypto symbols use public Binance REST prices and do not require a key. Forex/metals/indices use
+OANDA when configured and fall back to TwelveData when available.
+
+## Closed-Browser Worker
+
+Run the app server and the push worker as two processes:
+
+```bash
+npm run start
+npm run push-worker
+```
+
+For production, replace `npm run push-worker` with a process manager, scheduled job, or hosted cron
+that calls:
+
+```text
+POST /api/push/evaluate
+Header: x-push-worker-secret: <PUSH_WORKER_SECRET>
+```
+
+If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in production.
+
 ## Failure Modes
 
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.
 - Unsupported browser/service worker: Push toggle is disabled.
 - Permission denied: Push toggle is disabled until the user changes browser site settings.
-- Missing Firebase Admin env: token registration can succeed, but `/api/push/send` returns 503.
+- Missing Firebase Admin env: token registration can succeed, but `/api/push/send` and
+  `/api/push/evaluate` cannot send FCM.
 - FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
+- Worker not running: browser-open push still works, but closed-browser alert evaluation does not.
+- Missing server-side market data credentials: Binance crypto alerts still work; OANDA/TwelveData
+  symbols are skipped until server credentials are configured.
 
 ## Manual Test Checklist
 
@@ -94,15 +146,14 @@ FIREBASE_PRIVATE_KEY=
    - New alerts no longer inherit push enabled.
 5. Edit an existing alert.
    - Push flag can be toggled independently from Sound and Browser.
+6. Closed-browser mode.
+   - Enable Push, create a push-enabled alert, then close the browser tab.
+   - Run `npm run push-worker` while the Next server stays up.
+   - Move price through the alert condition.
+   - Confirm the OS/browser shows an FCM notification.
 
-## Future Server-Side Alert Worker
+## Persistence Note
 
-To support alerts while the browser is fully closed, add a server-side process that:
-
-1. Persists alert definitions and FCM tokens in a server database.
-2. Subscribes to market data independently from the browser.
-3. Reuses the same condition semantics from `src/services/alertEngine.ts`.
-4. Sends FCM using the same Firebase Admin message shape used by `/api/push/send`.
-
-That worker should be added as a separate milestone because it changes persistence, market-data
-ownership, and deployment topology.
+The first implementation uses a file-backed server store at `.data/push-alerts.json`. That is
+appropriate for local and single-server deployments. Multi-instance or serverless deployments
+should replace `pushAlertStore.ts` with Redis, Postgres, Firestore, or another shared durable store.

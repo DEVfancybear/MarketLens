@@ -5,6 +5,7 @@ import { useSmcEngine } from "@/hooks/useSmcEngine";
 import { useTradeRuntime } from "@/hooks/useTradeRuntime";
 import { useMarketDataBootstrap } from "@/hooks/useMarketDataBootstrap";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
+import { usePushAlertSync } from "@/hooks/usePushAlertSync";
 import { loadJournalAtom } from "@/store/journalStore";
 import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
@@ -22,6 +23,7 @@ export function GlobalRuntime() {
   useTradeRuntime();
   useMarketDataBootstrap(); // brings the realtime feed online + subscribes watchlist tickers
   useAlertEngine(); // evaluates price alerts off the same realtime feed (no polling/sockets)
+  usePushAlertSync(); // keeps server-side push worker state in sync for closed-browser alerts
 
   // Hydrate journal + alerts from persisted storage (IndexedDB / localStorage).
   const loadJournal = useSetAtom(loadJournalAtom);
