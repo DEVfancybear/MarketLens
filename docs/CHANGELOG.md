@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert-line drag still jumped the view near the current price (2026-07-01)
+- Follow-up: freezing `handleScroll`/`handleScale`/`autoScale` via
+  `chart.applyOptions` was not sufficient. Root cause matches the earlier
+  position-tool "view jump" fix: the alert canvas is `pointerEvents:"none"`, so
+  the *native* mousedown/mousemove/wheel/touch events the browser dispatches
+  alongside pointer events fall straight through to lightweight-charts' own
+  canvas underneath and still drive its internal pan/rescale, regardless of the
+  applyOptions flags. Added the same document-level capture-phase blocker used
+  by `DrawingInteractionManager` — swallows those events for the duration of
+  the alert drag so they never reach LWC.
+  File: AlertOverlay.tsx.
+
 ### Fixed - Chart view jumped while dragging an alert line near the price (2026-07-01)
 - Dragging an interactive alert line froze pan/zoom but not the right price
   scale's auto-scaling, so each forming-bar tick re-fit the price range and the

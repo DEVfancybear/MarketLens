@@ -349,6 +349,23 @@ export function AlertOverlay() {
     ctx.chart.applyOptions({ handleScroll: false, handleScale: false });
     priceScale.applyOptions({ autoScale: false });
 
+    // `chart.applyOptions` alone isn't enough: the hit strip's canvas sibling
+    // is `pointerEvents:"none"`, so the *native* mousedown/mousemove events the
+    // browser also dispatches alongside pointer events fall straight through
+    // to lightweight-charts' own canvas underneath and still drive its
+    // internal pan/rescale — this is the same root cause as the position-tool
+    // "view jump" fix (see DrawingInteractionManager). Swallow those events in
+    // the capture phase for the duration of the drag so they never reach LWC.
+    const blockChartEvent = (ev: Event) => {
+      ev.stopImmediatePropagation();
+      ev.stopPropagation();
+    };
+    document.addEventListener("mousedown", blockChartEvent, true);
+    document.addEventListener("mousemove", blockChartEvent, true);
+    document.addEventListener("wheel", blockChartEvent, true);
+    document.addEventListener("touchstart", blockChartEvent, true);
+    document.addEventListener("touchmove", blockChartEvent, true);
+
     const target = e.currentTarget as HTMLElement;
     target.setPointerCapture(e.pointerId);
     const startY = e.clientY;
@@ -400,6 +417,11 @@ export function AlertOverlay() {
         /* ignore */
       }
       clearLongPress();
+      document.removeEventListener("mousedown", blockChartEvent, true);
+      document.removeEventListener("mousemove", blockChartEvent, true);
+      document.removeEventListener("wheel", blockChartEvent, true);
+      document.removeEventListener("touchstart", blockChartEvent, true);
+      document.removeEventListener("touchmove", blockChartEvent, true);
       // Re-enable chart pan/zoom and restore the prior auto-scale mode now the
       // drag is over. Restoring to the same range doesn't move the view.
       ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
