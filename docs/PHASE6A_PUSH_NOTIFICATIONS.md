@@ -104,6 +104,9 @@ npm run start
 npm run push-worker
 ```
 
+`npm run push-worker` loads `.env.local` and `.env` before polling, so `PUSH_WORKER_SECRET` should
+match the value used by the running Next server.
+
 For production, replace `npm run push-worker` with a process manager, scheduled job, or hosted cron
 that calls:
 
