@@ -117,10 +117,11 @@ Header: x-push-worker-secret: <PUSH_WORKER_SECRET>
 
 If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in production.
 
-For Binance crypto symbols, server-side evaluation reads the current 1m candle open/high/low/close,
-so a cron run can catch alerts whose price was touched within that minute even if the current spot
-price has already moved back. Non-Binance symbols fall back to current-price polling unless a richer
-server-side quote source is added later.
+For Binance crypto symbols, server-side evaluation reads the latest 10 one-minute candles and
+aggregates high/low from the alert's last server evaluation time to now. This lets an external cron
+catch alerts whose price touched the level between runs even if current spot price has already moved
+back. Non-Binance symbols fall back to current-price polling unless a richer server-side quote
+source is added later.
 
 ## Failure Modes
 

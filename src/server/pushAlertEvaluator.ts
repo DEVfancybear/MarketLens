@@ -19,6 +19,16 @@ interface PriceSnapshot {
   open?: number;
   high?: number;
   low?: number;
+  candles?: PriceCandle[];
+}
+
+interface PriceCandle {
+  openTime: number;
+  closeTime: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
 }
 
 function alertSignature(alert: ServerPushAlert): string {
@@ -54,6 +64,21 @@ function conditionMet(
   }
 }
 
+function priceWindow(snapshot: PriceSnapshot, since: number): PriceSnapshot {
+  if (!snapshot.candles?.length) return snapshot;
+  const candles = snapshot.candles.filter((c) => c.closeTime >= since);
+  const window = candles.length > 0 ? candles : [snapshot.candles[snapshot.candles.length - 1]];
+  const first = window[0];
+  const last = window[window.length - 1];
+  return {
+    current: last.close,
+    open: first.open,
+    high: Math.max(...window.map((c) => c.high)),
+    low: Math.min(...window.map((c) => c.low)),
+    candles: window,
+  };
+}
+
 function formatAlert(alert: ServerPushAlert, triggerPrice: number) {
   const op = CONDITION_SYMBOL[alert.condition];
   return {
@@ -64,25 +89,39 @@ function formatAlert(alert: ServerPushAlert, triggerPrice: number) {
 
 async function fetchBinancePrice(symbol: string): Promise<PriceSnapshot | undefined> {
   const res = await fetch(
-    `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=1`,
+    `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=10`,
     { cache: "no-store" },
   );
   if (!res.ok) return undefined;
   const body = (await res.json()) as Array<
-    [number, string, string, string, string, string]
+    [number, string, string, string, string, string, number]
   >;
-  const k = body[0];
-  if (!k) return undefined;
-  const open = Number(k[1]);
-  const high = Number(k[2]);
-  const low = Number(k[3]);
-  const close = Number(k[4]);
-  if (!Number.isFinite(close)) return undefined;
+  const candles: PriceCandle[] = body
+    .map((k) => ({
+      openTime: Number(k[0]),
+      closeTime: Number(k[6]),
+      open: Number(k[1]),
+      high: Number(k[2]),
+      low: Number(k[3]),
+      close: Number(k[4]),
+    }))
+    .filter(
+      (k) =>
+        Number.isFinite(k.openTime) &&
+        Number.isFinite(k.closeTime) &&
+        Number.isFinite(k.open) &&
+        Number.isFinite(k.high) &&
+        Number.isFinite(k.low) &&
+        Number.isFinite(k.close),
+    );
+  const last = candles[candles.length - 1];
+  if (!last) return undefined;
   return {
-    current: close,
-    open: Number.isFinite(open) ? open : undefined,
-    high: Number.isFinite(high) ? high : close,
-    low: Number.isFinite(low) ? low : close,
+    current: last.close,
+    open: last.open,
+    high: last.high,
+    low: last.low,
+    candles,
   };
 }
 
@@ -208,6 +247,12 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
       }
 
       const { signature, state } = shouldEvaluate(device, alert);
+      const sameAlertState = state?.signature === signature;
+      const since =
+        sameAlertState && state?.lastEvaluatedAt !== undefined
+          ? state.lastEvaluatedAt
+          : alert.updatedAt;
+      const priceWindowSinceLastEval = priceWindow(price, since);
       const prev = lastPrices[alert.symbol];
       const oneTimeFired = state?.oneTimeFired && !alert.recurring;
       const rearmBlocked =
@@ -215,8 +260,8 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
         state?.lastTriggeredAt !== undefined &&
         now - state.lastTriggeredAt < RECURRING_REARM_MS;
 
-      if (!oneTimeFired && !rearmBlocked && conditionMet(alert.condition, alert.price, prev, price)) {
-        const triggerPrice = price.current;
+      if (!oneTimeFired && !rearmBlocked && conditionMet(alert.condition, alert.price, prev, priceWindowSinceLastEval)) {
+        const triggerPrice = priceWindowSinceLastEval.current;
         const message = formatAlert(alert, triggerPrice);
         try {
           await sendFirebasePush({
@@ -236,6 +281,7 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
           alertState[alert.id] = {
             signature,
             lastTriggeredAt: now,
+            lastEvaluatedAt: now,
             oneTimeFired: !alert.recurring,
           };
         } catch (error) {
@@ -247,6 +293,7 @@ export async function evaluatePushAlerts(): Promise<EvaluationResult> {
         alertState[alert.id] = {
           signature,
           lastTriggeredAt: state?.lastTriggeredAt,
+          lastEvaluatedAt: now,
           oneTimeFired: state?.oneTimeFired,
         };
       }

@@ -26,6 +26,7 @@ export interface PushDeviceRecord {
     {
       signature: string;
       lastTriggeredAt?: number;
+      lastEvaluatedAt?: number;
       oneTimeFired?: boolean;
     }
   >;
