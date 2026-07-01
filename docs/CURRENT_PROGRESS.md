@@ -1,8 +1,29 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (Push TTL + duplicate-trigger race fix)_
+_Last updated: 2026-07-02 (False alert trigger — full-history rescan bug)_
 
 ## Completed this session (2026-07-02)
+
+### Alert falsely triggered (+ push sent) even though price never touched the level
+- User report: created a fresh `BTCUSDT crossDown ~60021` alert (price was ~60083 and never came
+  back down to it), closed the tab — the alert line disappeared and both a notification and a push
+  notification fired anyway.
+- Root cause: `observedSinceArm()` in `src/hooks/useAlertEngine.ts` re-derived its rescan cutoff
+  (`sinceMs`) from the *previous* tick's `candleTime` on every continuing call:
+  `existing.candleTime !== undefined ? existing.candleTime * 1000 : 0`. If candle history for that
+  symbol/timeframe hadn't loaded yet on some earlier tick (very possible right after creating a
+  fresh alert — the ticker/kline subscription can lag a beat behind), `candleTime` was `undefined`
+  on that tick, `sinceMs` collapsed to **epoch 0**, and every following tick's cutoff check
+  (`c.time * 1000 < sinceMs`) never broke — the scan walked the *entire* loaded candle series (up
+  to 500 bars) and folded in whatever historical high/low it found, not just what happened since
+  the alert was armed. Any past dip below the target anywhere in that loaded history then read as
+  "crossed" even though the live session never touched it.
+- Fix: track the cutoff as its own field (`ObservedAlertRange.sinceMs`) instead of re-deriving it
+  from `candleTime`, and only ever advance it forward when a real candle time is known — a tick
+  with no candle history yet now keeps the previous trusted cutoff instead of falling back to 0.
+- Files: `src/hooks/useAlertEngine.ts`.
+- type-check ✅ · build ✅. Client-side fix — requires a page reload to pick up the new bundle
+  (verified server restart serves the rebuilt client; user needs to reload the tab).
 
 ### Closed-browser push still silent after the in-process worker fix
 - User re-tested after the in-process worker fix and still got no FCM push notification when a

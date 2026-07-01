@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert falsely triggered from a full-history rescan (2026-07-02)
+- `observedSinceArm()` (`src/hooks/useAlertEngine.ts`) re-derived its rescan cutoff from the
+  previous tick's candle time; if that was ever `undefined` (candle history not loaded yet, e.g.
+  right after creating a fresh alert), the cutoff collapsed to epoch 0 and every later tick rescanned
+  the *entire* loaded candle series instead of just what happened since the alert was armed — a past
+  dip anywhere in history read as a live crossing, firing a false trigger (+ a real push notification
+  for it).
+- Fixed by tracking the cutoff as its own field, only ever advanced forward from a real candle time,
+  so a tick with missing candle history no longer resets it to 0.
+
 ### Fixed - Push TTL too short + duplicate-trigger race (2026-07-02)
 - FCM webpush TTL was 300s; if the browser reconnected to the push service after that, the message
   was already dropped, so a closed browser could easily miss a push for good even though the

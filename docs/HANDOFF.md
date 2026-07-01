@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Push TTL + duplicate-trigger race fix)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (False alert trigger — full-history rescan bug)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -175,6 +175,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   browser push delivery inherently requires the browser's background process to stay alive even
   with all tabs closed — fully quitting the browser defeats any web push implementation, not just
   this one.
+- **Alert falsely triggered from a full-history rescan (2026-07-02):** while live-testing the
+  closed-browser push fixes with the user, a freshly created `BTCUSDT crossDown` alert fired
+  (line removed + toast + real push delivered) even though price never actually reached the target.
+  Root cause: `observedSinceArm()` in `useAlertEngine.ts` derived its rescan cutoff from the
+  previous tick's `candleTime`, defaulting to epoch 0 if that was ever `undefined` (candle history
+  not loaded yet — plausible right after creating a new alert), which made every later tick rescan
+  the *entire* loaded candle series instead of just since-armed — any historical dip below the
+  target read as a live crossing. Fixed by tracking the cutoff as its own persisted field, only
+  ever advanced forward from a real candle time. Client-side fix — needs a page reload to take
+  effect, not just a server restart.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.

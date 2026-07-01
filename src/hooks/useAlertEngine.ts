@@ -40,6 +40,11 @@ import { subscriptionKey, type MarketCandle } from "@/types";
 interface ObservedAlertRange {
   signature: string;
   symbol: string;
+  /** Cutoff to rescan from next time. Tracked explicitly (not re-derived from
+   *  `candleTime`) so a tick where candle history hadn't loaded yet can't
+   *  collapse this to epoch 0 and turn the next scan into a full-history
+   *  rescan (which would fold in a long-past dip as if it just happened). */
+  sinceMs: number;
   candleTime?: number;
   candleHigh?: number;
   candleLow?: number;
@@ -267,7 +272,7 @@ function observedSinceArm(
   } else {
     high = existing.high;
     low = existing.low;
-    sinceMs = existing.candleTime !== undefined ? existing.candleTime * 1000 : 0;
+    sinceMs = existing.sinceMs;
   }
 
   high = Math.max(high, snapshot.current);
@@ -298,9 +303,17 @@ function observedSinceArm(
     }
   }
 
+  // Only advance the cutoff when a real candle time is known; otherwise keep
+  // the previous trusted cutoff instead of losing it.
+  const nextSinceMs =
+    snapshot.candleTime !== undefined
+      ? Math.max(sinceMs, snapshot.candleTime * 1000)
+      : sinceMs;
+
   ranges.set(alert.id, {
     signature,
     symbol: alert.symbol,
+    sinceMs: nextSinceMs,
     candleTime: snapshot.candleTime,
     candleHigh: snapshot.candleHigh,
     candleLow: snapshot.candleLow,
