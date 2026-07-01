@@ -18,6 +18,14 @@ function workerSource(): string {
 importScripts("https://www.gstatic.com/firebasejs/${FIREBASE_CDN_VERSION}/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/${FIREBASE_CDN_VERSION}/firebase-messaging-compat.js");
 
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 const firebaseConfig = ${JSON.stringify(config)};
 const configured = Boolean(
   firebaseConfig.apiKey &&

@@ -63,6 +63,34 @@ const FIREBASE_ENV_LABEL: Record<string, string> = {
   messagingSenderId: "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
 };
 
+function waitForServiceWorkerActive(
+  registration: ServiceWorkerRegistration,
+): Promise<ServiceWorkerRegistration> {
+  if (registration.active) return Promise.resolve(registration);
+
+  const pendingWorker = registration.installing ?? registration.waiting;
+  if (!pendingWorker) {
+    return navigator.serviceWorker.ready.then(() => registration);
+  }
+
+  return new Promise((resolve, reject) => {
+    const worker = pendingWorker;
+    const timeout = window.setTimeout(() => {
+      worker.removeEventListener("statechange", onStateChange);
+      reject(new Error("Service worker did not become active in time."));
+    }, 10_000);
+
+    function onStateChange() {
+      if (worker.state !== "activated") return;
+      window.clearTimeout(timeout);
+      worker.removeEventListener("statechange", onStateChange);
+      resolve(registration);
+    }
+
+    worker.addEventListener("statechange", onStateChange);
+  });
+}
+
 export async function getPushCapability(): Promise<PushCapability> {
   if (
     typeof window === "undefined" ||
@@ -135,9 +163,11 @@ export async function registerPushToken(): Promise<PushRegistration> {
   const registration = await navigator.serviceWorker.register(
     "/firebase-messaging-sw.js",
   );
+  await registration.update().catch(() => undefined);
+  const activeRegistration = await waitForServiceWorkerActive(registration);
   const token = await getToken(messaging, {
     vapidKey: getFirebaseVapidKey(),
-    serviceWorkerRegistration: registration,
+    serviceWorkerRegistration: activeRegistration,
   });
 
   if (!token) {

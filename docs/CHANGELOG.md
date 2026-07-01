@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Push subscription waits for active service worker (2026-07-01)
+- Fixed Firebase push registration failing with
+  `Subscription failed - no active Service Worker` after deployment/service
+  worker refreshes. The client now waits for `/firebase-messaging-sw.js` to
+  activate before requesting an FCM token, and the service worker uses
+  `skipWaiting()` / `clients.claim()` during install/activate.
+
 ### Changed - Push alert sync uses Firestore in production (2026-07-01)
 - `pushAlertStore` now stores FCM tokens and push-enabled alert snapshots in
   Firestore collection `pushAlertDevices` whenever Firebase Admin env is

@@ -125,6 +125,9 @@ If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in produ
 - Missing Firebase Admin env: token registration falls back to local `.data/push-alerts.json`, but
   `/api/push/send` and `/api/push/evaluate` cannot send FCM.
 - FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
+- `Subscription failed - no active Service Worker`: unregister old service workers / clear site data
+  after redeploy. The app now waits for `/firebase-messaging-sw.js` to activate before requesting
+  an FCM token, and the worker calls `skipWaiting()`/`clients.claim()` on install/activate.
 - Worker not running: browser-open push still works, but closed-browser alert evaluation does not.
 - Missing server-side market data credentials: Binance crypto alerts still work; OANDA/TwelveData
   symbols are skipped until server credentials are configured.
