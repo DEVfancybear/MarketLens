@@ -13,28 +13,55 @@
  */
 import type { Alert, AlertCondition } from '@/store/alertStore';
 
+export interface AlertPriceSnapshot {
+  current: number;
+  open?: number;
+  high?: number;
+  low?: number;
+}
+
 export function conditionMet(
   condition: AlertCondition,
   target: number,
   prev: number | undefined,
-  curr: number,
+  price: number | AlertPriceSnapshot,
 ): boolean {
+  const snapshot =
+    typeof price === "number"
+      ? { current: price, high: price, low: price }
+      : price;
+  const current = snapshot.current;
+  const open = snapshot.open;
+  const high = snapshot.high ?? current;
+  const low = snapshot.low ?? current;
   switch (condition) {
     case 'above':
-      return curr >= target;
+      return high >= target;
     case 'below':
-      return curr <= target;
+      return low <= target;
     case 'crossUp':
-      return prev !== undefined && prev < target && curr >= target;
+      return (
+        (prev !== undefined
+          ? prev < target
+          : open !== undefined && open < target) && high >= target
+      );
     case 'crossDown':
-      return prev !== undefined && prev > target && curr <= target;
+      return (
+        (prev !== undefined
+          ? prev > target
+          : open !== undefined && open > target) && low <= target
+      );
     default:
       return false;
   }
 }
 
-export function isAlertTriggered(alert: Alert, prev: number | undefined, curr: number): boolean {
-  return conditionMet(alert.condition, alert.price, prev, curr);
+export function isAlertTriggered(
+  alert: Alert,
+  prev: number | undefined,
+  price: number | AlertPriceSnapshot,
+): boolean {
+  return conditionMet(alert.condition, alert.price, prev, price);
 }
 
 /**

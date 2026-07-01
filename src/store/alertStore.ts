@@ -26,6 +26,7 @@ export interface Alert {
   enabled: boolean;
   locked: boolean;
   createdAt: number;
+  updatedAt: number;
   triggeredAt?: number;
   triggerPrice?: number;
   note?: string;
@@ -133,6 +134,7 @@ export const createAlertAtom = atom(
       enabled: true,
       locked: false,
       createdAt: Date.now() / 1000,
+      updatedAt: Date.now() / 1000,
       note: input.note,
       recurring: input.recurring ?? false,
       sound: settings.sound,
@@ -150,12 +152,14 @@ export const updateAlertAtom = atom(
   (get, set, id: string, patch: Partial<Omit<Alert, "id">>) => {
     set(
       alertsAtom,
-      get(alertsAtom).map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      get(alertsAtom).map((a) =>
+        a.id === id ? { ...a, ...patch, updatedAt: Date.now() / 1000 } : a,
+      ),
     );
     set(
       triggeredAlertsAtom,
       get(triggeredAlertsAtom).map((a) =>
-        a.id === id ? { ...a, ...patch } : a,
+        a.id === id ? { ...a, ...patch, updatedAt: Date.now() / 1000 } : a,
       ),
     );
     persist();
@@ -188,6 +192,7 @@ export const duplicateAlertAtom = atom(
       id: uid("alert"),
       status: "active",
       createdAt: Date.now() / 1000,
+      updatedAt: Date.now() / 1000,
       triggeredAt: undefined,
       triggerPrice: undefined,
     };
@@ -304,6 +309,7 @@ export const hydrateAtom = atom(null, (_get, set) => {
     ...a,
     enabled: a.enabled ?? true,
     locked: a.locked ?? false,
+    updatedAt: a.updatedAt ?? a.createdAt ?? Date.now() / 1000,
     sound: a.sound ?? true,
     browser: a.browser ?? false,
     push: a.push ?? false,

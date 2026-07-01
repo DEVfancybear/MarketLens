@@ -231,7 +231,7 @@ export async function syncServerPushAlerts({
     price: alert.price,
     note: alert.note,
     recurring: alert.recurring,
-    updatedAt: Date.now(),
+    updatedAt: Math.round((alert.updatedAt ?? alert.createdAt) * 1000),
   }));
   return postJson("/api/push/alerts/sync", {
     token,

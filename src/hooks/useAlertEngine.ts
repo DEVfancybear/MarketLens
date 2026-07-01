@@ -16,10 +16,11 @@
  *     `crossUp`/`crossDown` edges are detected.
  */
 import { useEffect, useRef } from "react";
-import { getDefaultStore } from "jotai";
+import { getDefaultStore, useAtomValue } from "jotai";
 import {
   getMarketDataState,
   marketDataTickAtom,
+  selectedTimeframeAtom,
   type MarketDataStoreInterface,
 } from "@/store/marketDataStore";
 import {
@@ -28,20 +29,34 @@ import {
   RECURRING_REARM_MS,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import { isAlertTriggered } from "@/services/alertEngine";
+import {
+  isAlertTriggered,
+  type AlertPriceSnapshot,
+} from "@/services/alertEngine";
 import { deliverAlert } from "@/services/notifications/notify";
 import { subscriptionKey } from "@/types";
 
-/** Latest price for a symbol: prefer the ticker quote, fall back to candle close. */
-function latestPrice(
+/** Latest price window for a symbol: ticker last plus the active candle's high/low. */
+function latestPriceSnapshot(
   md: MarketDataStoreInterface,
   symbol: string,
-): number | undefined {
+): AlertPriceSnapshot | undefined {
   const q = md.quotes[symbol];
-  if (q && Number.isFinite(q.last)) return q.last;
   const series = md.candles[subscriptionKey(symbol, md.selectedTimeframe)];
   const last = series?.[series.length - 1];
-  return last ? last.close : undefined;
+  const current =
+    q && Number.isFinite(q.last)
+      ? q.last
+      : last && Number.isFinite(last.close)
+        ? last.close
+        : undefined;
+  if (current === undefined) return undefined;
+  return {
+    current,
+    open: last?.open,
+    high: last ? Math.max(last.high, current) : q?.high,
+    low: last ? Math.min(last.low, current) : q?.low,
+  };
 }
 
 export function useAlertEngine() {
@@ -51,6 +66,7 @@ export function useAlertEngine() {
     const set = new Set(s.alerts.map((a) => a.symbol));
     return [...set].sort().join(",");
   });
+  const selectedTimeframe = useAtomValue(selectedTimeframeAtom);
 
   const subscribedRef = useRef<Set<string>>(new Set());
   const prevPriceRef = useRef<Map<string, number>>(new Map());
@@ -61,28 +77,50 @@ export function useAlertEngine() {
 
   // ---- 1. keep alert-symbol tickers subscribed (refcounted) ----
   useEffect(() => {
-    const desired = new Set(alertSymbolsKey ? alertSymbolsKey.split(",") : []);
+    const symbols = alertSymbolsKey ? alertSymbolsKey.split(",") : [];
+    const desired = new Set(symbols.map((sym) => `${sym}:${selectedTimeframe}`));
     const subbed = subscribedRef.current;
 
-    for (const sym of desired) {
-      if (!subbed.has(sym) && getMarketSymbol(sym)) {
-        getMarketDataState().subscribe({ symbol: sym, channels: ["ticker"] });
-        subbed.add(sym);
+    for (const sym of symbols) {
+      const key = `${sym}:${selectedTimeframe}`;
+      if (!subbed.has(key) && getMarketSymbol(sym)) {
+        getMarketDataState().subscribe({
+          symbol: sym,
+          channels: ["ticker"],
+        });
+        getMarketDataState().subscribe({
+          symbol: sym,
+          channels: ["kline"],
+          timeframe: selectedTimeframe,
+        });
+        subbed.add(key);
       }
     }
-    for (const sym of [...subbed]) {
-      if (!desired.has(sym)) {
+    for (const key of [...subbed]) {
+      if (!desired.has(key)) {
+        const [sym, timeframe] = key.split(":");
         getMarketDataState().unsubscribe(sym);
-        subbed.delete(sym);
+        getMarketDataState().unsubscribe(
+          sym,
+          timeframe as typeof selectedTimeframe,
+        );
+        subbed.delete(key);
       }
     }
-  }, [alertSymbolsKey]);
+  }, [alertSymbolsKey, selectedTimeframe]);
 
   // Drop all alert subscriptions on unmount.
   useEffect(() => {
     const subbed = subscribedRef.current;
     return () => {
-      for (const sym of subbed) getMarketDataState().unsubscribe(sym);
+      for (const key of subbed) {
+        const [sym, timeframe] = key.split(":");
+        getMarketDataState().unsubscribe(sym);
+        getMarketDataState().unsubscribe(
+          sym,
+          timeframe as typeof selectedTimeframe,
+        );
+      }
       subbed.clear();
     };
   }, []);
@@ -96,10 +134,10 @@ export function useAlertEngine() {
       const now = Date.now();
 
       // One price lookup per distinct symbol.
-      const priceBySym = new Map<string, number>();
+      const priceBySym = new Map<string, AlertPriceSnapshot>();
       for (const a of alerts) {
         if (!priceBySym.has(a.symbol)) {
-          const p = latestPrice(md, a.symbol);
+          const p = latestPriceSnapshot(md, a.symbol);
           if (p !== undefined) priceBySym.set(a.symbol, p);
         }
       }
@@ -117,8 +155,8 @@ export function useAlertEngine() {
           alert.triggeredAt !== undefined &&
           now - alert.triggeredAt * 1000 < RECURRING_REARM_MS;
         if (!rearmBlocked && isAlertTriggered(alert, prev, curr)) {
-          const fired = triggerAlert(alert.id, curr);
-          if (fired) deliverAlert(fired, curr, settings);
+          const fired = triggerAlert(alert.id, curr.current);
+          if (fired) deliverAlert(fired, curr.current, settings);
         }
         seenAlertIds.current.add(alert.id);
       }
@@ -132,7 +170,7 @@ export function useAlertEngine() {
       }
 
       // Remember prices for next-tick cross detection.
-      for (const [sym, p] of priceBySym) prevPriceRef.current.set(sym, p);
+      for (const [sym, p] of priceBySym) prevPriceRef.current.set(sym, p.current);
     };
 
     evaluate(); // catch already-satisfied level alerts immediately

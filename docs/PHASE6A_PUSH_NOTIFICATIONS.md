@@ -123,6 +123,10 @@ catch alerts whose price touched the level between runs even if current spot pri
 back. Non-Binance symbols fall back to current-price polling unless a richer server-side quote
 source is added later.
 
+Alert sync sends the alert's persisted `updatedAt` timestamp, not the time of the sync request.
+This prevents opening the app or re-syncing push alerts from resetting the server evaluation window
+and missing a touch that happened just before the cron run.
+
 ## Failure Modes
 
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.

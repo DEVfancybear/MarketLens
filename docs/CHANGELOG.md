@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert touches trigger from live candle high/low (2026-07-01)
+- Browser-open alert evaluation now uses the latest kline OHLC together with ticker last price, so
+  alert lines trigger when the live candle wick touches the level instead of only when the current
+  last/close stays beyond it.
+- Alert push sync now preserves each alert's persisted `updatedAt` timestamp instead of stamping the
+  sync request time, preventing closed-browser worker windows from being reset by opening the app.
+
 ### Fixed - Closed-browser push can catch Binance touches between cron runs (2026-07-01)
 - Server-side push evaluation now fetches the latest 10 Binance one-minute
   candles for crypto symbols and aggregates high/low from each alert's last
