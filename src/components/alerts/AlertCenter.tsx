@@ -16,6 +16,7 @@ import {
   Volume2,
   Monitor,
   MessageSquare,
+  Smartphone,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { alertCenterOpenAtom, setAlertCenterAtom } from "@/store/uiStore";
@@ -36,6 +37,7 @@ import {
   requestBrowserPermission,
   type BrowserPermission,
 } from "@/services/notifications/browser";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { subscriptionKey } from "@/types";
 import { fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
@@ -57,18 +59,23 @@ function Toggle({
   onClick,
   icon,
   label,
+  disabled = false,
 }: {
   on: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         "flex items-center gap-1.5 rounded border px-2 py-1 text-2xs font-medium transition-colors",
-        on
+        disabled
+          ? "cursor-not-allowed border-terminal-border text-ink-faint opacity-60"
+          : on
           ? "border-brand/40 bg-brand/15 text-brand"
           : "border-terminal-border text-ink-muted hover:bg-terminal-hover hover:text-ink",
       )}
@@ -95,6 +102,8 @@ export function AlertCenter() {
   const clearHistory = useAlertStore((s) => s.clearHistory);
   const clearTriggered = useAlertStore((s) => s.clearTriggered);
   const setSettings = useAlertStore((s) => s.setSettings);
+  const push = usePushNotifications();
+  const { refresh: refreshPush } = push;
 
   // ---- create form ----
   const [symbol, setSymbol] = useState(chartSymbol);
@@ -121,6 +130,10 @@ export function AlertCenter() {
     if (open) setPerm(getBrowserPermission());
   }, [open]);
 
+  useEffect(() => {
+    if (open) void refreshPush();
+  }, [open, refreshPush]);
+
   const sortedSymbols = useMemo(() => MARKET_SYMBOLS.map((s) => s.id), []);
 
   const submit = () => {
@@ -139,6 +152,32 @@ export function AlertCenter() {
       setSettings({ browser: false });
     }
   };
+
+  const togglePush = async () => {
+    if (settings.push || push.registration) {
+      await push.disable();
+      setSettings({ push: false });
+      return;
+    }
+
+    try {
+      await push.enable();
+      setSettings({ push: true });
+    } catch {
+      setSettings({ push: false });
+    }
+  };
+
+  const pushLabel =
+    push.status === "registering"
+      ? "Push..."
+      : push.status === "unsupported"
+        ? "No push"
+        : push.status === "unconfigured"
+          ? "Push setup"
+          : push.status === "denied"
+            ? "Push denied"
+            : "Push";
 
   if (!open) return null;
 
@@ -196,6 +235,22 @@ export function AlertCenter() {
               icon={<Monitor size={12} />}
               label={perm === "unsupported" ? "No browser push" : "Browser"}
             />
+            <Toggle
+              on={settings.push && push.status === "enabled"}
+              onClick={togglePush}
+              disabled={
+                push.status === "registering" ||
+                push.status === "unsupported" ||
+                push.status === "denied"
+              }
+              icon={<Smartphone size={12} />}
+              label={pushLabel}
+            />
+            {push.error && (
+              <div className="basis-full text-[10px] leading-4 text-bear">
+                {push.error}
+              </div>
+            )}
           </div>
 
           {/* Create form */}

@@ -2,7 +2,7 @@
 /**
  * AlertEditDialog (Phase 2.1) — modal to edit an existing alert (opened from the
  * alert right-click menu "Edit Alert"). Edits condition / target price / message /
- * recurring / enabled / per-alert sound + browser flags via `updateAlert`.
+ * recurring / enabled / per-alert sound/browser/push flags via `updateAlert`.
  * Driven by `alertStore.editingAlertId`.
  */
 import { useEffect, useState } from 'react';
@@ -48,6 +48,7 @@ export function AlertEditDialog() {
   const [enabled, setEnabled] = useState(true);
   const [sound, setSound] = useState(true);
   const [browser, setBrowser] = useState(false);
+  const [push, setPush] = useState(false);
 
   // Load the alert into the form whenever the edit target changes.
   useEffect(() => {
@@ -59,6 +60,7 @@ export function AlertEditDialog() {
     setEnabled(alert.enabled);
     setSound(alert.sound);
     setBrowser(alert.browser);
+    setPush(alert.push);
   }, [alert?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -85,6 +87,7 @@ export function AlertEditDialog() {
       enabled,
       sound,
       browser,
+      push,
     });
     close();
   };
@@ -148,6 +151,7 @@ export function AlertEditDialog() {
             <Chk on={recurring} onClick={() => setRecurring((v) => !v)} label={recurring ? 'Every time' : 'Only once'} />
             <Chk on={sound} onClick={() => setSound((v) => !v)} label="Sound" />
             <Chk on={browser} onClick={() => setBrowser((v) => !v)} label="Browser" />
+            <Chk on={push} onClick={() => setPush((v) => !v)} label="Push" />
           </div>
         </div>
 

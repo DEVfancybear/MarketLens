@@ -16,8 +16,10 @@
 import { getDefaultStore } from "jotai";
 import { pushToastAtom } from "@/store/toastStore";
 import { logAtom } from "@/store/uiStore";
+import { pushRegistrationAtom } from "@/store/notificationStore";
 import { playAlertSound } from "./sound";
 import { showBrowserNotification } from "./browser";
+import { sendAlertPush } from "./push";
 import {
   CONDITION_SYMBOL,
   type Alert,
@@ -63,5 +65,25 @@ export function deliverAlert(
   }
   if (alert.browser && settings.browser) {
     showBrowserNotification(title, body);
+  }
+  if (alert.push && settings.push) {
+    const registration = getDefaultStore().get(pushRegistrationAtom);
+    if (!registration?.token) return;
+
+    void sendAlertPush({
+      token: registration.token,
+      title,
+      body,
+      alert,
+      triggerPrice,
+    }).then((result) => {
+      if (!result.ok) {
+        getDefaultStore().set(
+          logAtom,
+          "warn",
+          `Push notification failed: ${result.error}`,
+        );
+      }
+    });
   }
 }

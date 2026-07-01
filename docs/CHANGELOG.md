@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Phase 6A Firebase push notifications (2026-07-01)
+- Added an optional FCM push notification channel for price alerts. Alert Center
+  now supports Push enable/disable, token registration, permission/error states,
+  and per-alert Push flags in the edit dialog.
+- Added server-side `/api/push/send` FCM dispatch through `firebase-admin` and a
+  dynamic `/firebase-messaging-sw.js` route that injects public Firebase config
+  without hardcoding it into `public`.
+- Push delivery is failure-safe: alert history, toast, sound, and browser
+  notifications continue even when Firebase env, permission, token registration,
+  or send fails. Full setup/test docs: `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+  Files: alertStore.ts, notificationStore.ts, notify.ts, push.ts,
+  usePushNotifications.ts, AlertCenter.tsx, AlertEditDialog.tsx.
+
 ### Fixed - Alert-line drag still jumped the view near the current price (2026-07-01)
 - Follow-up: freezing `handleScroll`/`handleScale`/`autoScale` via
   `chart.applyOptions` was not sufficient. Root cause matches the earlier

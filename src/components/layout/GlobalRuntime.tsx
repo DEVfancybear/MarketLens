@@ -8,6 +8,7 @@ import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { loadJournalAtom } from "@/store/journalStore";
 import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
+import { hydratePushAtom } from "@/store/notificationStore";
 import { useEffect } from "react";
 
 /**
@@ -25,10 +26,12 @@ export function GlobalRuntime() {
   // Hydrate journal + alerts from persisted storage (IndexedDB / localStorage).
   const loadJournal = useSetAtom(loadJournalAtom);
   const hydrateAlerts = useSetAtom(hydrateAlertsAtom);
+  const hydratePush = useSetAtom(hydratePushAtom);
   useEffect(() => {
     void loadJournal();
     hydrateAlerts();
-  }, [loadJournal, hydrateAlerts]);
+    hydratePush();
+  }, [loadJournal, hydrateAlerts, hydratePush]);
 
   return null;
 }
