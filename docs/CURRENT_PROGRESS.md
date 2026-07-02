@@ -4,6 +4,15 @@ _Last updated: 2026-07-02 (Phase 6B MT5 protocol plan)_
 
 ## Completed this session (2026-07-02)
 
+### FTMO MT5 copy trading plan
+- Added `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md` for the requirement: place an order on the web
+  terminal and copy the same intent into the user's FTMO MT5 account.
+- Scope is intentionally bridge-side: FTMO login/master password/server stay outside the browser;
+  the bridge connects to MT5, validates account readiness, maps symbols/lots, applies FTMO-aware
+  loss/risk guards, writes an audit log, and only then submits orders to MT5.
+- The plan stages delivery through docs/rule config, real bridge skeleton, MT5 session snapshots,
+  dry-run order checks, demo execution, then explicit funded-mode hardening.
+
 ### Phase 6B MT5 bridge implementation scaffold
 - Implemented the first Phase 6B code pass while preserving simulator mode as the default:
   `src/types/mt5.ts`, `src/services/mt5/{protocol,symbolMapping,runtime,Mt5BridgeClient}.ts`,

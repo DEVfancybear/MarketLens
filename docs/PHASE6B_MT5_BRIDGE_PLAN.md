@@ -506,3 +506,15 @@ Real bridge demo checks:
 - Risk guards block missing symbol info, stale bridge, invalid lot size, and max volume violations.
 - All bridge failures are visible in UI/logs.
 - Protocol and manual test docs are complete before real-account testing.
+
+## 19. FTMO Copy Trading Extension
+
+For the specific requirement "place an order on the web terminal and copy it into the user's FTMO
+MT5 account", continue from:
+
+- `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`
+
+That plan adds bridge-only FTMO credentials, FTMO account readiness checks, broker-symbol and lot
+mapping, loss/risk guards, dry-run validation, audit logging, and a staged path from mock bridge to
+FTMO demo/evaluation execution. FTMO credentials must stay in the bridge process and must never be
+stored in browser code or `NEXT_PUBLIC_*` variables.

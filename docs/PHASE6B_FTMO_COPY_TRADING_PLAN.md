@@ -1,0 +1,517 @@
+# PHASE 6B FTMO COPY TRADING PLAN
+
+_Created 2026-07-02. Scope: copy orders from this web terminal to an FTMO MT5 account through the
+Phase 6B bridge._
+
+## 1. Goal
+
+When the user places a live order on the web terminal, the same intent should be executed on the
+configured FTMO MT5 account.
+
+This is not browser-to-MT5 direct trading. The browser sends a typed command to the local or
+server-side MT5 Bridge. The bridge owns FTMO credentials, connects to the FTMO MT5 terminal/session,
+translates the web order into broker-correct MT5 parameters, submits it, then streams the confirmed
+account/position/execution state back to the browser.
+
+```text
+Web Order Ticket
+  -> Phase 6B WebSocket protocol
+  -> FTMO MT5 Bridge Service
+  -> MT5 terminal/session logged into FTMO account
+  -> FTMO server
+```
+
+## 2. Compliance And Safety Baseline
+
+This plan is implementation guidance, not financial advice. Before using a funded or evaluation
+account, verify the current FTMO Client Area, account specification, and rules for the exact account
+type.
+
+Current FTMO source checks used while writing this plan:
+
+- FTMO states that trading style can be discretionary, algorithmic, or EA-based if legitimate,
+  aligned with risk management, consistent with real market conditions, and not a forbidden
+  practice.
+- FTMO notes platform limits around simultaneous orders, daily position count, and message/order
+  modification activity; the bridge must rate-limit and avoid hyperactive order updates.
+- FTMO MT5 login uses credentials from the Client Area/Account MetriX Credentials section. Trading
+  requires the master password; read-only password cannot place trades. Server must match the
+  Credentials section exactly.
+- FTMO describes its service as simulated trading and educational tools, and says it does not act
+  as a broker or accept deposits.
+
+Sources:
+
+- https://ftmo.com/en/faq/which-instruments-can-i-trade-and-what-strategies-am-i-allowed-to-use/
+- https://ftmo.com/en/faq/how-do-i-log-in-to-mt5/
+- https://ftmo.com/en/trading-objectives/
+
+## 3. Non-Goals
+
+- Do not store FTMO login, master password, or investor/read-only password in browser code,
+  `NEXT_PUBLIC_*`, localStorage, or committed files.
+- Do not bypass FTMO rules, account limits, or forbidden-practice checks.
+- Do not send automated live orders from alerts/drawings/replay without a separate explicit
+  approval workflow.
+- Do not assume chart symbols equal FTMO broker symbols.
+- Do not optimistically create live positions in the UI before MT5 confirms execution.
+- Do not support funded/live validation before FTMO demo/evaluation dry-run validation passes.
+
+## 4. Required Bridge Deployment Shape
+
+Recommended first implementation:
+
+```text
+Windows VPS or local Windows host
+  - MT5 desktop terminal installed
+  - FTMO account logged in with master password
+  - FTMO MT5 Bridge Service running next to terminal
+  - WebSocket endpoint exposed only to the web app/user network
+```
+
+Bridge process responsibilities:
+
+- Load FTMO credentials from local secret storage or environment variables.
+- Connect to the FTMO MT5 terminal/session.
+- Verify account login, server, account mode, trade permission, balance/equity, margin, and broker
+  symbol metadata before accepting live commands.
+- Execute `order.place`, `order.modify`, `order.close`, `order.closeAll`, and `order.cancel`.
+- Enforce FTMO-aware risk guards before sending orders to MT5.
+- Stream `account.snapshot`, `symbol.info`, `positions.snapshot`, `positions.update`,
+  `orders.snapshot`, `orders.update`, `order.ack`, `order.reject`, and `execution.report`.
+
+Browser responsibilities:
+
+- Let the user explicitly choose MT5 mode.
+- Require live confirmation by default.
+- Send only typed order intents to the bridge.
+- Display bridge-confirmed account, positions, pending commands, rejects, and execution reports.
+
+## 5. FTMO Bridge Environment Variables
+
+Browser-safe variables already exist:
+
+```env
+NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
+NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
+NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
+```
+
+Bridge-only variables must live outside the Next browser app:
+
+```env
+FTMO_MT5_ENABLED=false
+FTMO_MT5_LOGIN=
+FTMO_MT5_PASSWORD=
+FTMO_MT5_SERVER=
+FTMO_MT5_TERMINAL_PATH=
+FTMO_MT5_ACCOUNT_LABEL=FTMO
+FTMO_BRIDGE_BIND_HOST=127.0.0.1
+FTMO_BRIDGE_BIND_PORT=8787
+FTMO_BRIDGE_TOKEN=
+FTMO_BRIDGE_REQUIRE_DEMO_FIRST=true
+FTMO_BRIDGE_MAX_ORDER_VOLUME=1
+FTMO_BRIDGE_MAX_DAILY_ORDERS=100
+FTMO_BRIDGE_MAX_MESSAGES_PER_MINUTE=60
+FTMO_BRIDGE_CLOSE_ALL_ENABLED=true
+FTMO_BRIDGE_DRY_RUN=true
+```
+
+Rules:
+
+- `FTMO_MT5_PASSWORD` must be the master password only if the bridge is intended to trade.
+- Never use the read-only password for a trading bridge; it should fail readiness checks.
+- `FTMO_BRIDGE_DRY_RUN=true` is the default until all demo checks pass.
+- `FTMO_BRIDGE_TOKEN` should be required if the bridge is reachable beyond localhost.
+
+## 6. Order Copy Semantics
+
+The web order is the source of intent. MT5 is the source of truth.
+
+Order flow:
+
+1. User selects MT5 mode in the web Trade Panel.
+2. User clicks Buy/Sell or close command.
+3. Browser validates feature flag, connected bridge, account snapshot, symbol info, volume, and
+   confirmation.
+4. Browser sends `order.place` with `clientOrderId`.
+5. Bridge validates FTMO account readiness and risk gates.
+6. Bridge returns `order.ack` only after accepting the command for processing.
+7. Bridge submits the order to MT5.
+8. Bridge emits `execution.report` with broker outcome.
+9. Bridge emits position/order/account snapshots or updates.
+10. Browser updates UI only from bridge events.
+
+Important semantics:
+
+- `order.ack` is not a fill.
+- `execution.report.status=filled` is the first fill signal.
+- `positions.update` / `positions.snapshot` are the canonical position state.
+- Duplicate `clientOrderId` must be idempotent.
+- Reconnect must request fresh snapshots before accepting further live commands.
+
+## 7. Symbol Mapping
+
+The bridge must map chart symbols to FTMO/MT5 broker symbols.
+
+Initial mapping file shape:
+
+```json
+{
+  "EURUSD": { "brokerSymbol": "EURUSD", "digits": 5, "lotStep": 0.01, "minLot": 0.01 },
+  "GBPUSD": { "brokerSymbol": "GBPUSD", "digits": 5, "lotStep": 0.01, "minLot": 0.01 },
+  "XAUUSD": { "brokerSymbol": "XAUUSD", "digits": 2, "lotStep": 0.01, "minLot": 0.01 },
+  "BTCUSDT": { "brokerSymbol": "BTCUSD", "digits": 2, "lotStep": 0.01, "minLot": 0.01 }
+}
+```
+
+Bridge startup must verify each configured symbol against MT5 symbol metadata:
+
+- Symbol exists.
+- Trading is enabled.
+- Digits/point match MT5.
+- `volume_min`, `volume_max`, `volume_step` are loaded.
+- Contract size and tick value are available for risk calculation.
+
+If the symbol is missing or disabled, browser trading for that chart symbol must be blocked.
+
+## 8. Volume And Risk Model
+
+The current web ticket computes a generic position size from account equity and stop distance. That
+is not enough for FTMO execution because MT5 lot sizing depends on broker contract size, tick size,
+tick value, account currency, and symbol-specific lot steps.
+
+Required bridge-side risk calculation:
+
+```text
+risk_money = min(user_risk_money, remaining_daily_loss_buffer * safety_factor)
+stop_distance = abs(entry - stop_loss)
+money_per_lot_at_stop = stop_distance / tick_size * tick_value
+lots_raw = risk_money / money_per_lot_at_stop
+lots = floor_to_step(lots_raw, volume_step)
+```
+
+Risk gates:
+
+- Require SL for FTMO live mode unless `FTMO_ALLOW_NO_SL=true` is deliberately set.
+- Block if `lots < volume_min`.
+- Block if `lots > min(volume_max, FTMO_BRIDGE_MAX_ORDER_VOLUME)`.
+- Block if projected loss at SL exceeds configured per-trade risk.
+- Block if projected loss could breach the daily loss guard.
+- Block if free margin is insufficient.
+- Block if spread/slippage exceeds configured limit.
+- Block if symbol trading mode is disabled or close-only.
+
+The browser can send a requested volume, but the bridge must revalidate or replace it with
+FTMO-safe lots before placing the order.
+
+## 9. FTMO Loss Guard
+
+Add bridge-side account guards before any order reaches MT5.
+
+Inputs:
+
+- FTMO account size.
+- Account balance.
+- Current equity.
+- Start-of-day equity/balance baseline according to the bridge's configured FTMO rule model.
+- Open position floating P/L.
+- Existing pending orders and their worst-case stop exposure.
+- New order projected stop loss.
+
+Recommended bridge config:
+
+```env
+FTMO_ACCOUNT_SIZE=100000
+FTMO_MAX_DAILY_LOSS_PCT=5
+FTMO_MAX_TOTAL_LOSS_PCT=10
+FTMO_DAILY_LOSS_SAFETY_BUFFER_PCT=0.2
+FTMO_MAX_RISK_PER_TRADE_PCT=0.5
+FTMO_REQUIRE_STOP_LOSS=true
+```
+
+The bridge should expose:
+
+```ts
+interface FtmoRiskSnapshot {
+  accountSize: number;
+  dailyLossLimit: number;
+  maxLossLimit: number;
+  dailyLossUsed: number;
+  dailyLossRemaining: number;
+  maxLossRemaining: number;
+  openRiskAtStops: number;
+  canTrade: boolean;
+  reason?: string;
+  updatedAt: number;
+}
+```
+
+Add a protocol extension:
+
+| Type | Direction | Payload |
+|---|---|---|
+| `risk.snapshot` | bridge -> client | `FtmoRiskSnapshot` |
+| `risk.reject` | bridge -> client | `{ requestId, clientOrderId?, code, message, snapshot }` |
+
+Initial implementation can map `risk.reject` to existing `order.reject` until the UI has a
+dedicated FTMO risk panel.
+
+## 10. FTMO Trading Session Guard
+
+The bridge should block or warn on:
+
+- Trading outside configured user session.
+- News windows if the account type/rules require news restrictions.
+- Weekend holding if the account type/rules require closing before weekend.
+- Server maintenance or market closed.
+- High spread relative to configured threshold.
+- Excessive order modification rate.
+
+Do not hard-code these as universal FTMO constants in browser code. Keep them bridge-side config
+because account type and FTMO rules can differ.
+
+## 11. Bridge Implementation Options
+
+### Option A - Python `MetaTrader5` Package
+
+Best first bridge implementation if running on Windows with the MT5 terminal installed.
+
+Pros:
+
+- Direct account/positions/orders API.
+- Easier to implement with Python service.
+- Good for local/VPS bridge.
+
+Cons:
+
+- Windows + MT5 desktop dependency.
+- Needs careful lifecycle management around terminal startup/login.
+
+Core components:
+
+```text
+bridge/
+  app.py                  WebSocket server
+  ftmo_config.py          env + secret loading
+  mt5_session.py          initialize/login/shutdown/account readiness
+  symbol_map.py           symbol metadata loading
+  risk_guard.py           FTMO loss/session/rate guards
+  order_executor.py       order_send/order_check/order_modify/close
+  snapshots.py            account/positions/orders polling
+  audit_log.py            append-only JSONL/SQLite command log
+```
+
+### Option B - MT5 Expert Advisor Socket Bridge
+
+An EA runs inside MT5 and receives commands from a local bridge.
+
+Pros:
+
+- All trade execution happens inside MT5 runtime.
+- Can use MQL5 event model and broker-native context.
+
+Cons:
+
+- More moving parts.
+- Harder typed protocol and testing.
+- Requires EA install/config in FTMO terminal.
+
+Recommendation: start with Option A for demo validation; keep protocol generic enough to replace
+the adapter later.
+
+## 12. Bridge Readiness Checks
+
+Bridge must reject live mode until all pass:
+
+- MT5 terminal initialized.
+- Account logged in.
+- Account login equals configured `FTMO_MT5_LOGIN`.
+- Server equals configured `FTMO_MT5_SERVER`.
+- Trade mode allows trading.
+- Account is marked demo/evaluation unless funded mode is explicitly enabled.
+- Symbol metadata loaded.
+- Risk config loaded.
+- Dry-run mode status is visible to browser.
+- Clock skew below threshold.
+- Audit log writable.
+
+Expose readiness:
+
+```ts
+interface FtmoReadiness {
+  ready: boolean;
+  dryRun: boolean;
+  login?: string;
+  server?: string;
+  accountMode: 'demo' | 'live' | 'unknown';
+  checks: { name: string; ok: boolean; detail?: string }[];
+  updatedAt: number;
+}
+```
+
+Protocol extension:
+
+| Type | Direction | Payload |
+|---|---|---|
+| `ftmo.readiness` | bridge -> client | `FtmoReadiness` |
+
+## 13. Audit Logging
+
+Every live-intent event must be durable before execution:
+
+- Browser request id.
+- `clientOrderId`.
+- User action source (`ticket`, `contextMenu`, later `alert`, etc.).
+- Raw requested order.
+- Normalized MT5 order.
+- Risk snapshot at decision time.
+- MT5 `order_check` result.
+- MT5 `order_send` result.
+- Broker ticket/deal ids.
+- Reject reason if blocked.
+- Timestamps in UTC.
+
+Use append-only JSONL or SQLite. Never log plaintext FTMO password.
+
+## 14. Failure Handling
+
+| Failure | Required behavior |
+|---|---|
+| Bridge disconnected | Browser blocks live commands. |
+| MT5 terminal disconnected | Bridge sends `error`/readiness false; browser blocks commands. |
+| Read-only login | Bridge readiness false: `MASTER_PASSWORD_REQUIRED`. |
+| Symbol missing | Bridge sends no tradable `symbol.info`; browser blocks. |
+| Lot invalid | Bridge returns `order.reject INVALID_VOLUME`. |
+| Daily loss guard breach risk | Bridge returns `order.reject FTMO_DAILY_LOSS_GUARD`. |
+| MT5 reject | Bridge sends `order.reject` or `execution.report rejected` with broker code. |
+| Unknown command outcome | Bridge marks command `unknown`, refreshes snapshots, and requires manual review. |
+| Reconnect | Bridge sends fresh account/positions/orders/risk snapshots before accepting commands. |
+
+## 15. Implementation Milestones
+
+### Milestone F0 - FTMO Docs And Rule Config
+
+- Add this document.
+- Add bridge-only env template for FTMO secrets.
+- Define FTMO risk config shape and default disabled/dry-run behavior.
+
+Exit criteria:
+
+- No browser code stores FTMO credentials.
+- Risk config and references are documented.
+
+### Milestone F1 - Real Bridge Skeleton
+
+- Create bridge service folder or separate repo.
+- Add WebSocket server matching `docs/MT5_BRIDGE_PROTOCOL.md`.
+- Add `ftmo.readiness` and `risk.snapshot` extensions.
+- Add durable audit log.
+
+Exit criteria:
+
+- Browser can connect to bridge and see readiness/risk snapshots.
+- No MT5 order execution yet.
+
+### Milestone F2 - MT5 Session And Snapshots
+
+- Connect to local FTMO MT5 terminal.
+- Verify login/server/trade permission.
+- Stream account, positions, orders, and symbol metadata.
+- Keep dry-run enabled.
+
+Exit criteria:
+
+- Browser reflects the actual FTMO MT5 account state.
+- Wrong account/server/read-only login is rejected.
+
+### Milestone F3 - Dry-Run Order Check
+
+- Translate web orders to MT5 order requests.
+- Run MT5 `order_check` or equivalent validation.
+- Apply FTMO risk guards.
+- Return would-send execution reports without placing trades.
+
+Exit criteria:
+
+- User can place web orders in dry-run mode and see exact normalized FTMO lots, SL/TP, and reject
+  reasons.
+
+### Milestone F4 - Demo Execution
+
+- Allow execution only on demo/evaluation account with `FTMO_BRIDGE_DRY_RUN=false`.
+- Place tiny market orders.
+- Modify SL/TP.
+- Close single position.
+- Close all.
+- Validate reconnect/snapshot recovery.
+
+Exit criteria:
+
+- Demo workflow stable for at least one full test session.
+- All commands have audit records.
+- No duplicate orders on reconnect/retry.
+
+### Milestone F5 - Funded/Production Hardening
+
+- Require explicit funded-mode env flag.
+- Add hardware/VPS uptime checks.
+- Add bridge auth token rotation.
+- Add operator kill switch.
+- Add daily loss/session/news/weekend policy checks for the specific FTMO account.
+
+Exit criteria:
+
+- User has reviewed FTMO rules for that account.
+- Bridge blocks all commands unless readiness, risk, and policy checks pass.
+
+## 16. Manual QA Checklist
+
+Use this order:
+
+1. `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false`: simulator still works.
+2. `npm run mock-mt5`: web connects to mock, no FTMO involved.
+3. FTMO bridge dry-run: account snapshot and positions visible; no orders sent.
+4. Wrong password: readiness false.
+5. Read-only password: readiness false and trading blocked.
+6. Wrong server: readiness false.
+7. Missing symbol mapping: order blocked.
+8. Invalid lot step: order rejected.
+9. No SL with `FTMO_REQUIRE_STOP_LOSS=true`: order rejected.
+10. Projected daily loss breach: order rejected.
+11. Demo market order: fill report and position update received.
+12. Demo SL/TP modify: bridge event updates chart levels.
+13. Demo close: position removed only after bridge event.
+14. Bridge restart: browser reconnects and receives fresh snapshots.
+15. Duplicate `clientOrderId`: no duplicate MT5 order.
+
+## 17. Rollback
+
+Immediate rollback:
+
+```env
+NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
+FTMO_MT5_ENABLED=false
+FTMO_BRIDGE_DRY_RUN=true
+```
+
+Operational rollback:
+
+- Stop the bridge service.
+- Disable MT5 AutoTrading/Algo Trading if an EA adapter is used.
+- Confirm open positions directly in MT5.
+- Use the web terminal simulator mode only.
+
+## 18. Acceptance Criteria
+
+- Browser never stores or displays FTMO password.
+- Simulator path remains unchanged.
+- FTMO mode is opt-in and visibly live/demo/dry-run.
+- Bridge refuses wrong account/server/read-only login.
+- Bridge validates symbol metadata and lot sizing from MT5.
+- Bridge blocks orders that could violate configured FTMO loss/risk guards.
+- Every live command is confirmed, audited, idempotent, and traceable to MT5 ticket/deal ids.
+- UI updates live positions only from bridge/MT5 snapshots or execution events.
+- Real funded use remains blocked until demo validation and explicit funded-mode config are complete.

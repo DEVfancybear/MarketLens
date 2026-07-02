@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - FTMO MT5 copy trading plan (2026-07-02)
+- Added `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`, a bridge-side plan for copying live web terminal
+  orders into an FTMO MT5 account without exposing FTMO credentials to the browser.
+- The plan covers FTMO readiness checks, bridge-only secrets, symbol/lot mapping, dry-run and demo
+  validation, loss/risk guards, audit logging, failure handling, rollback, and acceptance criteria.
+
 ### Added - Phase 6B MT5 bridge implementation scaffold (2026-07-02)
 - Added feature-flagged MT5 bridge runtime behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false` by default:
   typed MT5 protocol models, WebSocket client, runtime hook, Jotai `mt5Store`, command logging,

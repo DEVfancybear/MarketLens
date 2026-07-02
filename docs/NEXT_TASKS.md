@@ -41,7 +41,8 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 - **Phase 6B - MT5 Bridge Integration:** feature-flagged scaffold implemented: MT5 protocol types,
   WebSocket client, store/runtime hook, mock bridge, execution-mode UI, order routing, MT5
   positions/logs, and simulator fallback. Continue with mock-bridge QA and real demo bridge
-  validation from `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
+  validation from `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. For copying web orders into an FTMO MT5
+  account, use `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`.
 
 ---
 
