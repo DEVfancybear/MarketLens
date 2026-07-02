@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Python FTMO MT5 service adapter (2026-07-02)
+- Added `bridge/ftmo_mt5/`, a standalone Python WebSocket bridge service for FTMO MT5 copy trading.
+  It uses the same Phase 6B protocol as the web app and the Node dry-run bridge, so the frontend can
+  connect to either service via `NEXT_PUBLIC_MT5_BRIDGE_URL`.
+- Added a real MT5 adapter path using the official `MetaTrader5` Python package:
+  terminal initialize/login, account/position/order/symbol snapshots, `order_check` before
+  `order_send`, SL/TP modify, single-position close, close-all, and pending cancel.
+- Live mode is gated by both `FTMO_BRIDGE_DRY_RUN=false` and `FTMO_BRIDGE_ALLOW_LIVE=true`; dry-run
+  remains the default. FTMO credentials stay bridge-only.
+- Added `bridge/ftmo_mt5/requirements.txt`, `bridge/ftmo_mt5/README.md`, and `npm run
+  ftmo-mt5-python`.
+
 ### Added - FTMO MT5 dry-run copy trading bridge (2026-07-02)
 - Added `scripts/ftmo-mt5-bridge.mjs`, a standalone FTMO-focused bridge process that speaks the
   Phase 6B MT5 WebSocket protocol and is started with `npm run ftmo-mt5-bridge`.

@@ -4,6 +4,20 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Python FTMO MT5 service adapter
+- Added `bridge/ftmo_mt5/`, a standalone Python service that speaks the same Phase 6B WebSocket
+  protocol as the browser and Node dry-run bridge.
+- Added MT5 adapter code for terminal initialize/login, account/positions/orders/symbol snapshots,
+  `order_check` before `order_send`, SL/TP modify, single-position close, close-all, and pending
+  cancel through the official `MetaTrader5` Python package.
+- Live mode requires both `FTMO_BRIDGE_DRY_RUN=false` and `FTMO_BRIDGE_ALLOW_LIVE=true`; dry-run
+  remains default and FTMO credentials remain bridge-only.
+- Added `bridge/ftmo_mt5/requirements.txt`, `bridge/ftmo_mt5/README.md`, and
+  `npm run ftmo-mt5-python`.
+- Local Python checks could not be run in this workspace because neither `python` nor `py` exists
+  in PATH. Next validation must run on Windows/VPS with Python, the `MetaTrader5` package, and MT5
+  terminal installed.
+
 ### FTMO MT5 dry-run copy trading bridge
 - Added `scripts/ftmo-mt5-bridge.mjs` and `npm run ftmo-mt5-bridge`, a standalone FTMO bridge
   process that speaks the existing Phase 6B WebSocket protocol without changing simulator trading.

@@ -40,11 +40,12 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 - **Phase 6B - MT5 Bridge Integration:** feature-flagged scaffold implemented: MT5 protocol types,
   WebSocket client, store/runtime hook, mock bridge, execution-mode UI, order routing, MT5
-  positions/logs, and simulator fallback. FTMO dry-run bridge is now implemented via
-  `npm run ftmo-mt5-bridge`; it validates/audits order intents and simulates bridge-confirmed fills
-  while live execution remains blocked until a real MT5 adapter is added. Next: connect the FTMO
-  bridge to MT5 terminal snapshots and MT5 `order_check`, then demo execution. For Exness,
-  IC Markets, and other MT5 brokers, use `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`.
+  positions/logs, and simulator fallback. FTMO dry-run bridge is implemented via
+  `npm run ftmo-mt5-bridge`; Python MT5 service adapter is implemented under `bridge/ftmo_mt5/` and
+  can be started with `npm run ftmo-mt5-python` after installing Python dependencies. Next: run it
+  on a Windows/VPS host with MT5 installed, validate login/snapshots/order_check, then tiny demo
+  execution. For Exness, IC Markets, and other MT5 brokers, use
+  `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`.
 
 ---
 

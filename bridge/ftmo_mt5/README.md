@@ -1,0 +1,45 @@
+# FTMO MT5 Python Service
+
+Standalone Python WebSocket bridge for copying web-terminal order intents to an FTMO MT5 terminal.
+
+## Status
+
+- Dry-run mode works without MT5 and is the default.
+- Live mode uses the official `MetaTrader5` Python package and requires Windows with the MT5
+  desktop terminal installed.
+- Live mode must be explicitly enabled with both `FTMO_BRIDGE_DRY_RUN=false` and
+  `FTMO_BRIDGE_ALLOW_LIVE=true`.
+
+## Install
+
+```powershell
+python -m venv .venv-ftmo
+.\.venv-ftmo\Scripts\Activate.ps1
+python -m pip install -r bridge\ftmo_mt5\requirements.txt
+```
+
+## Dry-Run
+
+```powershell
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="true"
+python -m bridge.ftmo_mt5.service
+```
+
+## Live Demo Validation
+
+Use only an FTMO demo/evaluation account first.
+
+```powershell
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="false"
+$env:FTMO_BRIDGE_ALLOW_LIVE="true"
+$env:FTMO_MT5_LOGIN="12345678"
+$env:FTMO_MT5_PASSWORD="master-password"
+$env:FTMO_MT5_SERVER="FTMO-Server"
+$env:FTMO_MT5_TERMINAL_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
+python -m bridge.ftmo_mt5.service
+```
+
+Never put FTMO credentials in `NEXT_PUBLIC_*`, browser localStorage, or committed files.
+

@@ -9,6 +9,7 @@
     "start": "next start",
     "mock-mt5": "node scripts/mock-mt5-bridge.mjs",
     "ftmo-mt5-bridge": "node scripts/ftmo-mt5-bridge.mjs",
+    "ftmo-mt5-python": "python -m bridge.ftmo_mt5.service",
     "push-worker": "node scripts/push-alert-worker.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

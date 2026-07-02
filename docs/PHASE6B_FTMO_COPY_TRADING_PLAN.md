@@ -27,21 +27,26 @@ Implemented in this repository:
 
 - `scripts/ftmo-mt5-bridge.mjs`: standalone FTMO bridge process that speaks the Phase 6B
   WebSocket protocol used by the web app.
+- `bridge/ftmo_mt5/`: standalone Python FTMO bridge service intended for real MT5 terminal
+  integration through the official `MetaTrader5` Python package.
 - `npm run ftmo-mt5-bridge`: starts the bridge.
+- `npm run ftmo-mt5-python`: starts the Python bridge service when Python is installed.
 - Dry-run execution only by default. The bridge accepts web order intents, validates FTMO-style
   readiness/risk rules, writes append-only audit JSONL, and emits `order.ack`, `execution.report`,
   `positions.update`, `account.snapshot`, `ftmo.readiness`, and `risk.snapshot` events back to the
   browser.
-- Live FTMO order execution is deliberately blocked with `LIVE_ADAPTER_NOT_CONFIGURED` until a real
-  MT5 adapter is added and validated against an FTMO demo/evaluation account.
+- The Node bridge still deliberately blocks live FTMO order execution with
+  `LIVE_ADAPTER_NOT_CONFIGURED`.
+- The Python bridge contains the real MT5 adapter path (`initialize`, `login`, `account_info`,
+  `positions_get`, `orders_get`, `symbol_info`, `symbol_info_tick`, `order_check`, `order_send`),
+  but live mode must be enabled explicitly and must be demo-validated before any funded use.
 - FTMO credentials stay bridge-only; no FTMO login, password, or terminal path is exposed through
   `NEXT_PUBLIC_*`.
 
 Not implemented yet:
 
-- Direct login to the MT5 desktop terminal.
-- Reading real FTMO account/position/order snapshots from MT5.
-- Calling MT5 `order_check`, `order_send`, modify, cancel, or close APIs.
+- Automated validation on this development machine, because Python/MT5 is not installed here.
+- Production hardening for long-running VPS operation.
 - Funded/live execution.
 
 ## 2. Compliance And Safety Baseline
@@ -131,6 +136,9 @@ FTMO_MT5_PASSWORD=
 FTMO_MT5_SERVER=
 FTMO_MT5_TERMINAL_PATH=
 FTMO_MT5_ACCOUNT_LABEL=FTMO
+FTMO_MT5_MAGIC=6602
+FTMO_MT5_DEVIATION_POINTS=20
+FTMO_MT5_COMMENT_PREFIX=smc-ftmo
 FTMO_BRIDGE_BIND_HOST=127.0.0.1
 FTMO_BRIDGE_BIND_PORT=8787
 FTMO_BRIDGE_TOKEN=
@@ -169,6 +177,15 @@ $env:FTMO_BRIDGE_AUDIT_PATH="$env:TEMP\ftmo-mt5-audit.jsonl"
 npm run ftmo-mt5-bridge
 ```
 
+The Python service has the same dry-run mode:
+
+```powershell
+python -m pip install -r bridge\ftmo_mt5\requirements.txt
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="true"
+python -m bridge.ftmo_mt5.service
+```
+
 In another terminal, run the web app with MT5 mode enabled:
 
 ```env
@@ -186,6 +203,38 @@ Expected result:
 4. Orders without SL, above configured max volume, above per-trade risk, or beyond loss guard are
    rejected before any execution path.
 5. Audit records are appended to `FTMO_BRIDGE_AUDIT_PATH`.
+
+## 5.2 Python MT5 Service Live Demo Setup
+
+Use this only on a Windows machine or VPS where the MT5 desktop terminal is installed and the FTMO
+demo/evaluation account is available.
+
+```powershell
+python -m venv .venv-ftmo
+.\.venv-ftmo\Scripts\Activate.ps1
+python -m pip install -r bridge\ftmo_mt5\requirements.txt
+```
+
+Then start the bridge in live-demo mode:
+
+```powershell
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="false"
+$env:FTMO_BRIDGE_ALLOW_LIVE="true"
+$env:FTMO_MT5_LOGIN="12345678"
+$env:FTMO_MT5_PASSWORD="master-password-from-client-area"
+$env:FTMO_MT5_SERVER="exact-ftmo-server-name"
+$env:FTMO_MT5_TERMINAL_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
+python -m bridge.ftmo_mt5.service
+```
+
+Hard gates:
+
+- Live mode will not connect unless `FTMO_BRIDGE_ALLOW_LIVE=true`.
+- `FTMO_MT5_PASSWORD` must be the master password, not investor/read-only password.
+- The service still applies bridge-side SL, volume, per-trade risk, daily/max loss, and audit
+  checks before `order_send`.
+- First demo validation must use tiny volume and direct MT5 monitoring.
 
 ## 6. Order Copy Semantics
 
@@ -354,15 +403,13 @@ Cons:
 Core components:
 
 ```text
-bridge/
-  app.py                  WebSocket server
-  ftmo_config.py          env + secret loading
-  mt5_session.py          initialize/login/shutdown/account readiness
-  symbol_map.py           symbol metadata loading
+bridge/ftmo_mt5/
+  service.py              WebSocket server
+  config.py               env + secret loading
+  mt5_adapter.py          initialize/login/account snapshots/order_check/order_send/modify/close
+  symbols.py              symbol metadata mapping
   risk_guard.py           FTMO loss/session/rate guards
-  order_executor.py       order_send/order_check/order_modify/close
-  snapshots.py            account/positions/orders polling
-  audit_log.py            append-only JSONL/SQLite command log
+  audit_log.py            append-only JSONL command log
 ```
 
 ### Option B - MT5 Expert Advisor Socket Bridge
@@ -478,15 +525,16 @@ Exit criteria:
 
 ### Milestone F2 - MT5 Session And Snapshots
 
-- Connect to local FTMO MT5 terminal.
-- Verify login/server/trade permission.
-- Stream account, positions, orders, and symbol metadata.
+- [x] Add Python MT5 adapter code path for local FTMO MT5 terminal.
+- [x] Verify login/server/trade permission through readiness checks.
+- [x] Stream account, positions, orders, and symbol metadata from adapter when live mode is enabled.
 - Keep dry-run enabled.
 
 Exit criteria:
 
 - Browser reflects the actual FTMO MT5 account state.
 - Wrong account/server/read-only login is rejected.
+- Pending: run on a Windows machine with Python, MetaTrader5 package, and MT5 terminal installed.
 
 ### Milestone F3 - Dry-Run Order Check
 
@@ -502,11 +550,13 @@ Exit criteria:
 
 ### Milestone F4 - Demo Execution
 
-- Allow execution only on demo/evaluation account with `FTMO_BRIDGE_DRY_RUN=false`.
-- Place tiny market orders.
-- Modify SL/TP.
-- Close single position.
-- Close all.
+- [x] Add explicit `FTMO_BRIDGE_DRY_RUN=false` + `FTMO_BRIDGE_ALLOW_LIVE=true` gate.
+- [x] Implement MT5 market/pending order request path with `order_check` before `order_send`.
+- [x] Implement SL/TP modify, single-position close, close-all loop, and pending cancel paths.
+- [ ] Place tiny demo market orders.
+- [ ] Modify SL/TP in demo.
+- [ ] Close single position in demo.
+- [ ] Close all in demo.
 - Validate reconnect/snapshot recovery.
 
 Exit criteria:
