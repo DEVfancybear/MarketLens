@@ -7,7 +7,6 @@ import {
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
-  type IPriceLine,
 } from "lightweight-charts";
 import type { Candle } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -23,6 +22,7 @@ import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
+import { fmtPrice } from "@/utils/format";
 import { ChartContextObj, type ChartCtx } from "./ChartContext";
 import { setMainChart } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
@@ -61,6 +61,8 @@ export function PriceChart({
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
+  const [priceMarker, setPriceMarker] =
+    useState<CurrentPriceMarkerState | null>(null);
   const countdown = useCountdown(timeframe);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
@@ -150,7 +152,7 @@ export function PriceChart({
       priceLineVisible: true,
       priceLineWidth: 1,
       priceLineStyle: 0, // solid (TradingView style)
-      lastValueVisible: true, // native price label on right axis
+      lastValueVisible: false, // rendered by CurrentPriceMarker below
     });
 
     const volumeSeries = chart.addHistogramSeries({
@@ -337,6 +339,11 @@ export function PriceChart({
 
     prevCandlesRef.current = candles;
     prevThemeRef.current = theme;
+    if (last) {
+      cs.applyOptions({
+        priceLineColor: last.close >= last.open ? c.bull : c.bear,
+      });
+    }
 
     // Fit the time scale once on the first non-empty load; afterwards leave the
     // user's pan/zoom intact so replay reveals candles at the right edge.
@@ -392,37 +399,40 @@ export function PriceChart({
     }
   }, [overlayIndicators, candles, ready]);
 
-  // ---- Countdown price line (TradingView: right-axis countdown label) ----
-  const countdownLineRef = useRef<IPriceLine | null>(null);
+  // ---- Current price marker (symbol + price + countdown) ----
   useEffect(() => {
+    const chart = chartRef.current;
     const series = candleSeriesRef.current;
-    if (!series || !ready) return;
+    const container = containerRef.current;
+    if (!chart || !series || !container || !ready) return;
     const price = lastQuote?.last ?? candles[candles.length - 1]?.close;
-    if (price == null) return;
-
-    // Remove old line; create new one at the current quote price.
-    if (countdownLineRef.current) {
-      series.removePriceLine(countdownLineRef.current);
-      countdownLineRef.current = null;
+    if (price == null) {
+      setPriceMarker(null);
+      return;
     }
 
-    countdownLineRef.current = series.createPriceLine({
+    const coordinate = series.priceToCoordinate(price);
+    if (coordinate == null) {
+      setPriceMarker(null);
+      return;
+    }
+    const last = candles[candles.length - 1];
+    const up =
+      lastQuote?.change != null
+        ? lastQuote.change >= 0
+        : last
+          ? last.close >= last.open
+          : true;
+    const colors = chartColors(theme);
+    const minY = 18;
+    const maxY = Math.max(minY, container.clientHeight - 18);
+    setPriceMarker({
+      y: Math.min(Math.max(coordinate, minY), maxY),
       price,
-      color: "transparent", // invisible line — the priceLine already draws it
-      lineWidth: 1,
-      lineStyle: 0,
-      axisLabelVisible: true,
-      title: countdown, // countdown text on the right axis
+      color: up ? colors.bull : colors.bear,
+      countdown,
     });
-
-    return () => {
-      if (countdownLineRef.current) {
-        series.removePriceLine(countdownLineRef.current);
-        countdownLineRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, countdown, lastQuote?.last]);
+  }, [candles, countdown, lastQuote?.change, lastQuote?.last, ready, theme, version]);
 
   const ctx: ChartCtx | null = useMemo(() => {
     if (!ready || !chartRef.current || !candleSeriesRef.current) return null;
@@ -472,7 +482,58 @@ export function PriceChart({
           {children}
         </ChartContextObj.Provider>
       )}
+      {priceMarker && (
+        <CurrentPriceMarker
+          marker={priceMarker}
+          precision={precision}
+          symbol={symbol}
+        />
+      )}
       {menu && <ChartContextMenu state={menu} onClose={() => setMenu(null)} />}
+    </div>
+  );
+}
+
+type CurrentPriceMarkerState = {
+  y: number;
+  price: number;
+  color: string;
+  countdown: string;
+};
+
+function CurrentPriceMarker({
+  marker,
+  precision,
+  symbol,
+}: {
+  marker: CurrentPriceMarkerState;
+  precision: number;
+  symbol: string;
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute right-0 z-20 flex -translate-y-1/2 items-start font-mono text-[11px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
+      style={{ top: marker.y }}
+    >
+      <div
+        className="mt-px flex h-[18px] items-center px-1.5"
+        style={{ backgroundColor: marker.color }}
+      >
+        {symbol}
+      </div>
+      <div
+        className="relative flex min-w-[66px] flex-col items-center justify-center px-1.5 py-0.5"
+        style={{ backgroundColor: marker.color }}
+      >
+        <span className="tabular-nums">{fmtPrice(marker.price, precision)}</span>
+        <span className="mt-0.5 tabular-nums text-[10px] font-medium">
+          {marker.countdown}
+        </span>
+        <span
+          className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
+          style={{ borderRightColor: marker.color }}
+        />
+      </div>
     </div>
   );
 }

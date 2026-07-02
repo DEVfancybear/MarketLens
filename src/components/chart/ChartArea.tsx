@@ -75,7 +75,7 @@ export function ChartArea() {
         )}
       </div>
 
-      {/* Price marker (countdown) is now a native createPriceLine inside PriceChart */}
+      {/* Current-price marker is rendered inside PriceChart so it can track the price scale. */}
 
       {loading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-terminal-bg/40">
