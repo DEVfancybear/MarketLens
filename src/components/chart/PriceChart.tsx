@@ -51,6 +51,8 @@ export function PriceChart({
   const prevCandlesRef = useRef<Candle[]>([]);
   const prevThemeRef = useRef<string>("");
   const bumpRafRef = useRef<number | null>(null);
+  const prevMarkerPriceRef = useRef<number | null>(null);
+  const markerUpRef = useRef(true);
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
@@ -66,6 +68,11 @@ export function PriceChart({
   const countdown = useCountdown(timeframe);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
+
+  useEffect(() => {
+    prevMarkerPriceRef.current = null;
+    markerUpRef.current = true;
+  }, [symbol, timeframe]);
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -417,22 +424,29 @@ export function PriceChart({
       return;
     }
     const last = candles[candles.length - 1];
-    const up =
-      lastQuote?.change != null
-        ? lastQuote.change >= 0
-        : last
-          ? last.close >= last.open
-          : true;
+    const previousPrice = prevMarkerPriceRef.current;
+    let up = markerUpRef.current;
+    if (previousPrice == null) {
+      up = last ? price >= last.open : true;
+    } else if (price > previousPrice) {
+      up = true;
+    } else if (price < previousPrice) {
+      up = false;
+    }
+    prevMarkerPriceRef.current = price;
+    markerUpRef.current = up;
     const colors = chartColors(theme);
+    const markerColor = up ? colors.bull : colors.bear;
+    series.applyOptions({ priceLineColor: markerColor });
     const minY = 18;
     const maxY = Math.max(minY, container.clientHeight - 18);
     setPriceMarker({
       y: Math.min(Math.max(coordinate, minY), maxY),
       price,
-      color: up ? colors.bull : colors.bear,
+      color: markerColor,
       countdown,
     });
-  }, [candles, countdown, lastQuote?.change, lastQuote?.last, ready, theme, version]);
+  }, [candles, countdown, lastQuote?.last, ready, theme, version]);
 
   const ctx: ChartCtx | null = useMemo(() => {
     if (!ready || !chartRef.current || !candleSeriesRef.current) return null;

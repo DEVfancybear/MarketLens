@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Current price marker uses tick direction (2026-07-02)
+- Reworked `PriceChart.tsx` current-price marker to render a TradingView-style DOM marker at
+  `candleSeries.priceToCoordinate(price)`.
+- Hid the native Lightweight Charts black current-price chip with `lastValueVisible: false`.
+- Marker now shows symbol + price + countdown in one bull/bear marker instead of relying on native
+  axis labels.
+- Marker color compares current price to previous marker price. It no longer uses
+  `lastQuote.change`, which is aggregate session/24h change and can show green during a falling
+  latest tick.
+
 ### Added - Python FTMO MT5 service adapter (2026-07-02)
 - Added `bridge/ftmo_mt5/`, a standalone Python WebSocket bridge service for FTMO MT5 copy trading.
   It uses the same Phase 6B protocol as the web app and the Node dry-run bridge, so the frontend can

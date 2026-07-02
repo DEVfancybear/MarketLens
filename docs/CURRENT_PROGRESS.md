@@ -4,6 +4,18 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Current-price marker TradingView parity update
+- Replaced the default black Lightweight Charts current-price chip with a custom
+  `CurrentPriceMarker` inside `PriceChart.tsx`.
+- The marker is positioned from `candleSeries.priceToCoordinate(price)`, so it follows the real
+  current-price line instead of sitting at a fixed `top: 50%`.
+- Marker layout mirrors the TradingView reference: symbol chip on the left, price + countdown
+  stacked on the right, and a small pointer toward the price line.
+- Marker color follows immediate tick direction by comparing the current marker price with the
+  previous marker price. It does not use `lastQuote.change`, which is session/24h change and can be
+  green while the latest tick is falling.
+- Native `lastValueVisible` stays disabled to avoid the black LWC price chip and duplicate labels.
+
 ### Python FTMO MT5 service adapter
 - Added `bridge/ftmo_mt5/`, a standalone Python service that speaks the same Phase 6B WebSocket
   protocol as the browser and Node dry-run bridge.

@@ -2,6 +2,42 @@
 
 _Date: 2026-06-25._
 
+## Current status - 2026-07-02
+
+The current implementation is a coordinate-driven DOM marker in
+`src/components/chart/PriceChart.tsx`.
+
+It deliberately does **not** use the native Lightweight Charts current-price axis label because the
+native label cannot reproduce the requested TradingView-style combined marker:
+
+- symbol chip on the left
+- price and countdown stacked on the right
+- one bull/bear background across the marker
+- small left pointer aligned to the horizontal price line
+
+The earlier root-cause analysis below is still useful history, but the final architecture is a
+hybrid:
+
+```text
+Lightweight Charts
+  - draws candles, price scale, and the horizontal current-price line
+  - exposes candleSeries.priceToCoordinate(price)
+
+PriceChart DOM overlay
+  - renders CurrentPriceMarker at the computed y-coordinate
+  - hides native lastValueVisible to avoid the default black price chip
+  - formats symbol, price, and countdown in a TradingView-style marker
+```
+
+Color rule:
+
+- Compare the current marker price with the previous marker price.
+- If the latest tick is higher, marker and price line are green.
+- If the latest tick is lower, marker and price line are red.
+- If price is unchanged, keep the previous marker color.
+- Never color the marker from `lastQuote.change`; that is aggregate session/24h change, not latest
+  tick direction.
+
 ## 1. How is the current price marker rendered?
 
 The current price marker is implemented as a **free-floating HTML DOM overlay** in `PriceMarkerLabel.tsx`. It uses:

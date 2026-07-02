@@ -2,6 +2,24 @@
 
 _Date: 2026-06-25 · Build: ✅ green_
 
+## Current implementation update - 2026-07-02
+
+`PriceChart.tsx` now owns the right-side current-price marker directly. The marker is no longer a
+fixed `top-1/2` overlay and no longer a native Lightweight Charts black axis label.
+
+Implementation details:
+
+- `lastValueVisible: false` hides the default LWC price chip.
+- `priceLineVisible: true` keeps the horizontal current-price line.
+- `CurrentPriceMarker` is rendered as a DOM overlay at `candleSeries.priceToCoordinate(price)`.
+- The marker shows `SYMBOL` on the left and `price + countdown` stacked on the right, matching the
+  TradingView reference screenshots more closely than the native LWC label.
+- Color follows immediate tick direction, not session/24h change:
+  - tick up -> green
+  - tick down -> red
+  - unchanged -> keep previous color
+- `prevMarkerPriceRef` is reset on symbol/timeframe switch to avoid cross-symbol color carryover.
+
 ## Parity estimates
 
 | Component | Before | After | Target |
@@ -87,6 +105,6 @@ _Date: 2026-06-25 · Build: ✅ green_
 
 | Difference | Priority |
 |---|---|
-| Right marker vertical position is fixed `50%` — should track the actual price line y-position dynamically | 🟡 Medium |
-| Right marker doesn't have a background box — TradingView shows a subtle dark background | ⚪ Low |
-| Header doesn't show "spread" between bid/ask | ⚪ Low |
+| Right marker vertical position tracks `priceToCoordinate(price)`; keep this invariant when editing `PriceChart.tsx` | Done |
+| Native LWC current-price chip remains hidden because it cannot render the combined symbol + price + countdown marker | Intentional |
+| Header does not show spread between bid/ask | Low |

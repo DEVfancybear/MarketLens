@@ -2,6 +2,34 @@
 
 _Date: 2026-06-25 · Build: ✅ green_
 
+## Current implementation update - 2026-07-02
+
+The active implementation is now a custom DOM marker rendered inside
+`src/components/chart/PriceChart.tsx`, not `PriceMarkerLabel.tsx` and not the native Lightweight
+Charts axis label.
+
+Reason for the change:
+
+- Native Lightweight Charts `lastValueVisible` / `createPriceLine` labels stay aligned, but their
+  styling and layout are too limited for the requested TradingView-style combined marker: symbol
+  chip on the left, price + countdown stacked on the right, one bull/bear background.
+- The old free-floating DOM marker was wrong because it used fixed `top: 50%`.
+- The current DOM marker uses `candleSeries.priceToCoordinate(price)` so it follows the real
+  current-price line.
+
+Current rules:
+
+- `lastValueVisible` is `false`; the default black LWC price chip is intentionally hidden.
+- `priceLineVisible` stays `true`; Lightweight Charts still draws the horizontal last-price line.
+- `CurrentPriceMarker` receives the computed y-coordinate and renders the right-side marker.
+- Marker color is based on immediate tick direction:
+  - current price > previous marker price -> TradingView bull green `#089981`
+  - current price < previous marker price -> TradingView bear red `#f23645`
+  - unchanged price -> keep the previous marker color
+- Do not use `lastQuote.change` for marker color. That field is session/24h change and can remain
+  green while the latest tick is falling.
+- Reset the previous marker price on symbol/timeframe change.
+
 ## Root cause
 
 The price marker was implemented as a **free-floating HTML DOM overlay** (`PriceMarkerLabel.tsx`) using `position: absolute; right: 0; top: 50%`. This cannot track the chart's price-line y-position because:
