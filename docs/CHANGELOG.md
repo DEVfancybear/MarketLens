@@ -18,6 +18,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   text and clamping it inside the viewport, following the same principle used for the Info Line
   panel overflow fix. Default retracement label placement is now `Left / Middle`, matching the
   TradingView settings reference.
+- Follow-up: Fib retracement, legacy fib, and trend-based fib extension now reserve and clip away
+  from the right price-scale/current-price label strip, so level lines/background bands cannot draw
+  underneath the price axis.
 - Reworked `FibExtensionTool` into a three-click trend-based extension: A-B is the impulse, C is
   the projection origin, and level price is `C + ratio * (B - A)`. Existing two-point extension
   drawings still render by treating B as C.

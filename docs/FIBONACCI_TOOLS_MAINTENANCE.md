@@ -66,6 +66,10 @@ Renderer contract:
 - Labels must be measured with `CanvasRenderingContext2D.measureText()` and clamped inside the
   chart viewport. Do not put labels at `right + padding`; that reintroduces the right-edge overlap
   bug fixed after the InfoLine panel overflow issue.
+- The renderer must reserve and clip away from the right price-scale/current-price label strip.
+  Keep `FIB_RIGHT_PRICE_SCALE_GUARD`, `usableFibRight()`, and the `g.rect(...); g.clip()` block in
+  `FibRetracementTool`, `FibTool`, and `FibExtensionTool`; otherwise lines/background bands draw
+  underneath the price axis.
 - Use `canvasFont()` from `plugins/shared.ts`; do not use `var(--font-*)` directly in canvas fonts.
 
 Interaction contract:
@@ -149,6 +153,7 @@ The guard verifies:
 - legacy `fib` still mirrors modern retracement enough for saved drawings;
 - fib canvas fonts do not regress to invalid CSS-variable font strings.
 - fib labels remain measured/clamped inside the chart viewport;
+- fib renderers reserve/clip away from the right price-scale strip;
 - `ObjectSettingsDialog` keeps the fib Style/Coordinates/Visibility setting surface;
 - double-click still opens settings for drawings.
 

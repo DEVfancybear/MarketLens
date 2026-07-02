@@ -23,6 +23,8 @@ import { applyStyle, canvasFont, line, handle } from "./shared";
 const LEVEL_OPACITY = 0.82;
 const FILL_OPACITY = 0.12;
 const LABEL_PAD = 6;
+const FIB_RIGHT_PRICE_SCALE_GUARD = 112;
+const FIB_EDGE_PAD = 4;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -73,13 +75,18 @@ function levelPrice(d: Drawing, level: number): number {
 }
 
 function xRange(d: Drawing, x1: number, x2: number, width: number) {
+  const usableRight = usableFibRight(width);
   const baseLeft = Math.min(x1, x2);
-  const baseRight = Math.max(x1, x2);
+  const baseRight = Math.min(Math.max(x1, x2), usableRight);
   const extend = d.extend ?? "none";
   return {
     left: extend === "left" || extend === "both" ? 0 : baseLeft,
-    right: extend === "right" || extend === "both" ? width : baseRight,
+    right: extend === "right" || extend === "both" ? usableRight : baseRight,
   };
+}
+
+function usableFibRight(width: number): number {
+  return Math.max(96, width - FIB_RIGHT_PRICE_SCALE_GUARD);
 }
 
 function labelXFor(
@@ -97,7 +104,7 @@ function labelXFor(
       : align === "right"
         ? right - textW - LABEL_PAD
         : left + LABEL_PAD;
-  return clamp(preferred, 4, Math.max(4, width - textW - 8));
+  return clamp(preferred, FIB_EDGE_PAD, Math.max(FIB_EDGE_PAD, width - textW - 8));
 }
 
 function labelBaseline(align: FibAlignV): CanvasTextBaseline {
@@ -150,10 +157,14 @@ const plugin: DrawingToolPlugin = {
     const y2 = proj.toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return;
 
+    const usableRight = usableFibRight(proj.width);
     const { left, right } = xRange(d, x1, x2, proj.width);
     const levels = projectedLevels(d, proj.toY);
 
     g.save();
+    g.beginPath();
+    g.rect(0, 0, usableRight, proj.height);
+    g.clip();
 
     // Background bands between adjacent Fibonacci levels.
     if (levels.length > 1 && d.fibBackground !== false && d.opacity !== 0) {
@@ -199,7 +210,7 @@ const plugin: DrawingToolPlugin = {
           label,
           left,
           right,
-          proj.width,
+          usableRight,
           d.fibLabelsHAlign ?? "left",
         ),
         y,

@@ -29,6 +29,8 @@ const LEVEL_OPACITY = 0.74;
 const FILL_OPACITY = 0.07;
 const LABEL_PAD = 6;
 const LABEL_CULL_PAD = 150;
+const FIB_RIGHT_PRICE_SCALE_GUARD = 112;
+const FIB_EDGE_PAD = 4;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -123,7 +125,11 @@ function labelXFor(
       : align === "right"
         ? right - textW - LABEL_PAD
         : left + LABEL_PAD;
-  return clamp(preferred, 4, Math.max(4, width - textW - 8));
+  return clamp(preferred, FIB_EDGE_PAD, Math.max(FIB_EDGE_PAD, width - textW - 8));
+}
+
+function usableFibRight(width: number): number {
+  return Math.max(96, width - FIB_RIGHT_PRICE_SCALE_GUARD);
 }
 
 function labelBaseline(align: FibAlignV): CanvasTextBaseline {
@@ -166,11 +172,15 @@ const plugin: DrawingToolPlugin = {
       return;
     }
 
-    const left = Math.max(0, Math.min(x3, proj.width));
-    const right = proj.width;
+    const usableRight = usableFibRight(proj.width);
+    const left = Math.max(0, Math.min(x3, usableRight));
+    const right = usableRight;
     const levels = projectedLevels(d, proj.toY);
 
     g.save();
+    g.beginPath();
+    g.rect(0, 0, usableRight, proj.height);
+    g.clip();
 
     if (levels.length > 1 && d.fibBackground !== false && d.opacity !== 0) {
       const sorted = [...levels].sort((m, n) => m.y - n.y);
@@ -210,7 +220,7 @@ const plugin: DrawingToolPlugin = {
       g.fillStyle = d.fibUseOneColor ? d.fibLevelLineColor || d.color : color;
       g.fillText(
         label,
-        labelXFor(g, label, left, right, proj.width, d.fibLabelsHAlign ?? "right"),
+        labelXFor(g, label, left, right, usableRight, d.fibLabelsHAlign ?? "right"),
         y,
       );
     }

@@ -21,6 +21,9 @@ _Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
 - Fix: Fib labels now measure their text width and clamp inside the chart viewport. Labels are no
   longer placed at `right + padding`, which caused left-to-right fib drawings to overlap the
   right edge/price-scale area. Default label placement is `Left / Middle`.
+- Fix: Fib renderers now reserve and clip away from the right price-scale/current-price label strip.
+  Level lines, background bands, and extension rays stop before the price axis instead of drawing
+  underneath it.
 - Fix: `FibExtensionTool` is now trend-based with three-click creation. A-B defines the impulse,
   C defines the projection origin, and levels are computed as `C + ratio * (B - A)`. Two-point
   saved extension drawings still render by treating B as C.

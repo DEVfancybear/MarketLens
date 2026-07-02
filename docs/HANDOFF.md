@@ -55,9 +55,11 @@ model with 24 per-level rows, renders source trend line/background bands/level+p
 hit-tests each level. Labels are measured and clamped inside the chart viewport; do not restore the
 old `right + padding` label placement because it overlaps the right edge/price scale. Fib settings
 live in `ObjectSettingsDialog` with Style/Coordinates/Visibility tabs and `#1/#2 (price, bar)`
-coordinates. Double-clicking any drawing opens settings. `FibExtensionTool.ts` is a three-click
-trend-based extension: A-B impulse, C projection origin, `C + ratio * (B - A)`, with explicit `p3`
-anchor mapping. Legacy `fib` mirrors retracement for saved drawings. Read
+coordinates. Fib renderers also reserve/clip away from the right price-scale/current-price label
+strip; keep `FIB_RIGHT_PRICE_SCALE_GUARD`, `usableFibRight()`, and `g.clip()` in the fib plugins.
+Double-clicking any drawing opens settings. `FibExtensionTool.ts` is a three-click trend-based
+extension: A-B impulse, C projection origin, `C + ratio * (B - A)`, with explicit `p3` anchor
+mapping. Legacy `fib` mirrors retracement for saved drawings. Read
 `docs/FIBONACCI_TOOLS_MAINTENANCE.md` and guard with `npm run check:fibonacci-tools`.
 
 ## Repo state

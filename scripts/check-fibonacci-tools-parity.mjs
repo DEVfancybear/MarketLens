@@ -49,9 +49,21 @@ const checks = [
     ok:
       retracement.includes("function labelXFor") &&
       retracement.includes("g.measureText(label).width") &&
-      retracement.includes("return clamp(preferred, 4, Math.max(4, width - textW - 8))") &&
-      legacy.includes("return clamp(preferred, 4, Math.max(4, width - textW - 8))") &&
-      extension.includes("return clamp(preferred, 4, Math.max(4, width - textW - 8))"),
+      retracement.includes("width - textW - 8") &&
+      legacy.includes("width - textW - 8") &&
+      extension.includes("width - textW - 8"),
+  },
+  {
+    name: "Fib drawings reserve and clip away from the right price scale",
+    ok:
+      retracement.includes("FIB_RIGHT_PRICE_SCALE_GUARD") &&
+      retracement.includes("usableFibRight") &&
+      retracement.includes("g.rect(0, 0, usableRight, proj.height)") &&
+      retracement.includes("g.clip()") &&
+      legacy.includes("FIB_RIGHT_PRICE_SCALE_GUARD") &&
+      legacy.includes("g.rect(0, 0, usableRight, proj.height)") &&
+      extension.includes("FIB_RIGHT_PRICE_SCALE_GUARD") &&
+      extension.includes("g.rect(0, 0, usableRight, proj.height)"),
   },
   {
     name: "Fib retracement hit-test covers each horizontal level and the trend line",
