@@ -353,6 +353,10 @@ Every command must include:
 `order.ack` means the bridge accepted the command for processing. It does not mean the broker filled
 the order. Broker outcomes arrive through `execution.report` and position/order snapshots.
 
+The browser may derive `volume` from risk-based sizing or from a manual MT5 Lot input. The bridge
+must treat `volume` as the requested lot and revalidate it against broker min/max/step and risk
+limits before execution.
+
 ### `order.place`
 
 Client to bridge.

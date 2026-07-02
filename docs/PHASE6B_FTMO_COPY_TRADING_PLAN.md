@@ -177,6 +177,9 @@ Rules:
 - The web ticket sizes MT5 lots from account equity, risk %, stop distance, and symbol
   `tickSize`/`tickValue` streamed by the bridge. `FTMO_BRIDGE_MAX_ORDER_VOLUME` remains a hard cap;
   set it above `0.01` if you expect risk-based BTC sizing to exceed `0.01` lots.
+- The MT5 order ticket also supports a manual `Lot` input. When `Lot` is empty, the ticket uses
+  risk-based auto sizing. When `Lot` is filled, the browser sends that requested lot directly and
+  still applies bridge symbol min/max/step validation plus bridge-side risk guards.
 - The bridge streams `brokerMaxLot`, `bridgeMaxLot`, and `maxLotReason` in `symbol.info`, and logs
   one symbol cap diagnostic per chart symbol at startup/auth. If the web ticket still shows `0.01`
   after setting `FTMO_BRIDGE_MAX_ORDER_VOLUME=1`, check the bridge console:

@@ -50,6 +50,7 @@ export function OrderTicket() {
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
   const [risk, setRisk] = useState("1");
+  const [mt5Lot, setMt5Lot] = useState("");
   const [pendingLive, setPendingLive] = useState<
     | { kind: "order"; order: Mt5OrderRequest }
     | { kind: "closeAll"; request: Mt5CloseAllRequest }
@@ -83,6 +84,7 @@ export function OrderTicket() {
       riskPct: num(risk) ?? 1,
       equity: mt5Account?.equity ?? equity,
       symbolInfo: activeSymbolInfo,
+      volumeOverride: num(mt5Lot),
     });
   }, [
     activeSymbolInfo,
@@ -94,13 +96,16 @@ export function OrderTicket() {
     risk,
     simulatorMetrics,
     sl,
+    mt5Lot,
     tp,
     type,
   ]);
 
   const buildMt5Order = (side: Side): Mt5OrderRequest => {
     const info = mt5SymbolInfo[symbol];
-    const volume = normalizeMt5Volume(metrics.positionSize, info);
+    const manualVolume = num(mt5Lot);
+    const volume =
+      manualVolume != null ? manualVolume : normalizeMt5Volume(metrics.positionSize, info);
     return {
       clientOrderId: makeClientOrderId(),
       chartSymbol: symbol,
@@ -166,6 +171,7 @@ export function OrderTicket() {
     entry,
     sl,
     tp,
+    mt5Lot,
     risk,
     price,
     executionMode,
@@ -251,6 +257,14 @@ export function OrderTicket() {
           <TradeInput label="Take profit" value={tp} onChange={setTp} />
         </div>
         <TradeInput label="Risk %" value={risk} onChange={setRisk} />
+        {executionMode === "mt5" && (
+          <TradeInput
+            label="Lot"
+            value={mt5Lot}
+            onChange={setMt5Lot}
+            placeholder="Auto"
+          />
+        )}
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-terminal-border bg-terminal-border text-2xs">
           <Metric
@@ -313,6 +327,7 @@ function computeMt5RiskMetrics({
   riskPct,
   equity,
   symbolInfo,
+  volumeOverride,
 }: {
   entry?: number;
   stopLoss?: number;
@@ -320,6 +335,7 @@ function computeMt5RiskMetrics({
   riskPct: number;
   equity: number;
   symbolInfo: Mt5SymbolInfo;
+  volumeOverride?: number;
 }) {
   const riskMoney = (equity * riskPct) / 100;
   const entryPrice = entry && Number.isFinite(entry) ? entry : 0;
@@ -328,7 +344,10 @@ function computeMt5RiskMetrics({
   const tickValue = symbolInfo.tickValue && symbolInfo.tickValue > 0 ? symbolInfo.tickValue : 1;
   const moneyPerLotAtStop = stopDistance > 0 ? (stopDistance / tickSize) * tickValue : 0;
   const rawLots = moneyPerLotAtStop > 0 ? riskMoney / moneyPerLotAtStop : symbolInfo.minLot;
-  const positionSize = normalizeMt5Volume(rawLots, symbolInfo);
+  const positionSize =
+    volumeOverride != null && Number.isFinite(volumeOverride) && volumeOverride > 0
+      ? volumeOverride
+      : normalizeMt5Volume(rawLots, symbolInfo);
   const actualRisk = moneyPerLotAtStop > 0 ? moneyPerLotAtStop * positionSize : riskMoney;
   const rewardDistance = takeProfit != null && entryPrice > 0 ? Math.abs(takeProfit - entryPrice) : 0;
   const rewardAmount = rewardDistance > 0 ? (rewardDistance / tickSize) * tickValue * positionSize : 0;

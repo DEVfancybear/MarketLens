@@ -324,6 +324,9 @@ MT5 mode:
 3. Validate symbol info exists and trade mode allows the side.
 4. Validate volume against bridge-provided `minLot`/`maxLot`/`lotStep`, and validate SL/TP direction
    against side before sending.
+   - In MT5 mode, an empty Lot field uses risk-based auto sizing.
+   - A filled Lot field sends the manual MT5 lot value and must still pass min/max/step and bridge
+     risk guards.
 5. Show `LiveOrderConfirmDialog`.
 6. Send `order.place` with `clientOrderId`.
 7. Show pending command in UI.
