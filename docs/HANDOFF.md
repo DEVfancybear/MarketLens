@@ -14,7 +14,7 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 **Phase 3 (TradingView UI Parity) is COMPLETE** — 95% visual parity.
 **Phase 4.3 (Shape Tools Suite) is COMPLETE** — 8 shapes + fill system + supply/demand zones.
 **Phase 4.2.2 (Tool Group System) is COMPLETE** — flyout menus fixed via `createPortal`.
-**Phase 4.4 (Fibonacci Suite) is COMPLETE** — fib retracement + fib extension drawing tools.
+**Phase 4.4 (Fibonacci Suite) is COMPLETE** — fib retracement + trend-based fib extension drawing tools.
 **Phase 5 (Left Toolbar / Indicator Engine) is COMPLETE** — 9-group toolbar, indicator settings dialogs, hotkey system.
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
 notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
@@ -49,6 +49,13 @@ SMC canvas while screenshot export still composites it. SMC render now caps ever
 prioritizes active/fresh zones. Read `docs/SMC_OVERLAY_MAINTENANCE.md` and guard with
 `npm run check:smc-overlay`.
 
+Recent Fibonacci parity note: `FibRetracementTool.ts` now uses a TradingView-style preset with
+internal levels plus external levels through `4.236`, renders source trend line/background bands/
+level+price labels, and hit-tests each level. `FibExtensionTool.ts` is a three-click trend-based
+extension: A-B impulse, C projection origin, `C + ratio * (B - A)`, with explicit `p3` anchor
+mapping. Legacy `fib` mirrors retracement for saved drawings. Read
+`docs/FIBONACCI_TOOLS_MAINTENANCE.md` and guard with `npm run check:fibonacci-tools`.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
@@ -70,11 +77,12 @@ prioritizes active/fresh zones. Read `docs/SMC_OVERLAY_MAINTENANCE.md` and guard
   long-press**; `AlertContextMenu` (Edit/Clone/Disable/Delete), `AlertEditDialog`. `Alert` gained
   `enabled`+`locked`; the engine skips disabled alerts. Selection is ephemeral; price/enabled/locked
   persist. See `docs/ALERT_ARCHITECTURE.md` §"Interactive chart alerts".
-- **Phase 4.4 (Fibonacci Suite):** `FibRetracementTool` (2-point, retracement levels 0–1,
-  dashed anchor trend line, % + price labels) + `FibExtensionTool` (2-point, extension levels
-  -0.272–2.618 projected from B via A→B impulse). Both registered in `adapters.ts`, exposed
-  in Shapes flyout. Legacy `fib` tool + `FibTool` plugin retained for backward compat.
-  `FIB_EXT_LEVELS` added to `types/drawing.ts`.
+- **Phase 4.4 (Fibonacci Suite):** `FibRetracementTool` (2-point, internal/external retracement
+  levels through `4.236`, dashed source trend line, background bands, level+price labels) +
+  `FibExtensionTool` (three-click trend-based extension: A-B impulse, C projection origin,
+  `C + ratio * (B - A)`, with `p3` as a real draggable anchor). Both registered in `adapters.ts`,
+  exposed in the Fibonacci flyout. Legacy `fib` tool + `FibTool` plugin retained for backward
+  compat and mirrors retracement. See `docs/FIBONACCI_TOOLS_MAINTENANCE.md`.
 - **Drawing engine stability fixes (2026-06-26):** Ctrl+D duplicate bug fixed (empty-id
   corruption eliminated), store now guards against empty IDs + deep-copies points, explicit
   pointer capture release added, adapter resolution during drag fixed, drag operations now
@@ -347,8 +355,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - ✅ **OANDA Integration: COMPLETE.** Forex/metals/indices stream live via OANDA v20 REST
   (pricing poll + historical candles). Fallback to TwelveData. Extension points for Fxcm and
   ICMarkets providers.
-- ✅ **Phase 4.4 — Fibonacci Suite: COMPLETE.** Fib retracement + fib extension drawing tools
-  with full plugin support. Legacy `fib` tool retained for backward compatibility.
+- ✅ **Phase 4.4 — Fibonacci Suite: COMPLETE.** Fib retracement + trend-based fib extension
+  drawing tools with full plugin support. Legacy `fib` tool retained for backward compatibility.
 - ✅ **Phase 5 — Left Toolbar / Indicator Engine: COMPLETE.** 9-group toolbar (25+ tools),
   indicator settings dialog (type/length/colour/pane/visibility), hotkey system (1–9 switch,
   Delete, Ctrl+D, Ctrl+A, Ctrl+I, Escape).

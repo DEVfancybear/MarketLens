@@ -185,7 +185,7 @@ const GROUPS: ToolGroup[] = [
       {
         tool: "fibExtension",
         icon: <ArrowBigUp size={14} />,
-        label: "Fib Extension",
+        label: "Trend-Based Fib Extension",
       },
       { tool: "fib", icon: <GitFork size={14} />, label: "Fib (legacy)" },
     ],

@@ -1,6 +1,29 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
+_Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
+
+## Completed this session (2026-07-03)
+
+### Fibonacci tools TradingView parity pass
+- User repro: current fib tools did not feel/function like TradingView. Retracement only rendered
+  the basic `0..1` levels, extension was a 2-point projection, and legacy `fib` still used the old
+  minimal renderer.
+- Reference checked: TradingView Help Center `Fibonacci retracement drawing tool`. Important
+  contract: retracement is anchored by two extremes; levels between `0` and `1` are internal,
+  levels greater than `1` are external retracements, and the style surface includes trend line,
+  level lines, extend left/right, background, prices, levels, labels, text, and font size.
+- Fix: `FIB_LEVELS` now includes common external levels through `4.236`; `FibRetracementTool`
+  renders a dashed source trend line, horizontal levels, subtle background bands, and level+price
+  labels with concrete canvas fonts.
+- Fix: `FibExtensionTool` is now trend-based with three-click creation. A-B defines the impulse,
+  C defines the projection origin, and levels are computed as `C + ratio * (B - A)`. Two-point
+  saved extension drawings still render by treating B as C.
+- Fix: `FibExtensionTool.getAnchors()` maps `p3` explicitly so the third point is draggable as a
+  real anchor instead of being resolved as body.
+- Fix: legacy `fib` mirrors the modern retracement preset/renderer enough for saved drawings and
+  old toolbar paths.
+- Docs: added `docs/FIBONACCI_TOOLS_MAINTENANCE.md`.
+- Guard: added `npm run check:fibonacci-tools`.
 
 ## Completed this session (2026-07-02)
 

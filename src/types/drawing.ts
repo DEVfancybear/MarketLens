@@ -242,12 +242,23 @@ export const TEMPLATE_STYLE_KEYS = [
   "middleLineStyle",
 ] as const;
 
-/** Standard Fibonacci retracement ratios. */
-export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+/**
+ * TradingView-style Fibonacci retracement ratios.
+ *
+ * 0..1 are internal retracement levels; values > 1 are external retracement
+ * levels. TradingView also supports negative/custom levels from settings. The
+ * clone exposes the common visible preset here until per-level fib settings are
+ * added.
+ */
+export const FIB_LEVELS = [
+  0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618,
+  4.236,
+] as const;
 
-/** Standard Fibonacci extension / expansion ratios (projected beyond B). */
+/** TradingView-style trend-based Fibonacci extension ratios. */
 export const FIB_EXT_LEVELS = [
-  -0.272, -0.618, 0, 0.618, 1, 1.272, 1.382, 1.618, 2, 2.618,
+  0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618,
+  4.236,
 ] as const;
 
 /** Tools whose icon should look "pressed" but that don't add a persistent object. */

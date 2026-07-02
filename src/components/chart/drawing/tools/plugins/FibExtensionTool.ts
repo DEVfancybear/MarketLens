@@ -1,25 +1,19 @@
 /**
- * FibExtensionTool — Fibonacci extension / expansion drawing tool.
+ * FibExtensionTool - TradingView-style trend-based Fibonacci extension.
  *
- * Two anchor points define the impulse move (A→B). Extension levels are
- * projected beyond B in the direction of A→B using the A→B distance as
- * the base unit.
+ * New drawings use three clicks:
+ *   A -> B defines the impulse length.
+ *   C defines the projection origin after the pullback.
+ * Level price = C + ratio * (B - A).
  *
- * Levels: -0.272, -0.618, 0, 0.618, 1, 1.272, 1.382, 1.618, 2, 2.618
- *
- *   p1 (A) — trend start / impulse origin
- *   p2 (B) — impulse end / projection origin
- *
- * Level price = B_price + ratio * (B_price - A_price)
- *
- * Negative levels project in the opposite direction (before A).
- * Positive levels project beyond B.
+ * Existing two-point objects are still rendered by treating B as C.
  */
 import type { Drawing } from "@/types";
 import { FIB_EXT_LEVELS } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
+  type Anchor,
   type DrawingToolPlugin,
   registerTool,
   defaultMovePoints,
@@ -27,14 +21,68 @@ import {
   TOL,
   pointDist,
   distToRect,
+  distToSegment,
 } from "../ToolRegistry";
-import { line, handle } from "./shared";
+import { canvasFont, line, handle } from "./shared";
 
-const LEVEL_OPACITY = 0.7;
+const LEVEL_OPACITY = 0.74;
+const FILL_OPACITY = 0.07;
+const LABEL_PAD = 6;
+const LABEL_CULL_PAD = 150;
+
+function priceDecimals(price: number): number {
+  const abs = Math.abs(price);
+  if (abs >= 1000) return 2;
+  if (abs >= 1) return 4;
+  return 6;
+}
+
+function formatPrice(price: number): string {
+  return price.toLocaleString("en-US", {
+    minimumFractionDigits: priceDecimals(price),
+    maximumFractionDigits: priceDecimals(price),
+  });
+}
+
+function formatLevel(level: number): string {
+  return Number.isInteger(level)
+    ? String(level)
+    : level.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function projectionOrigin(d: Drawing) {
+  return d.points[2] ?? d.points[1];
+}
+
+function levelPrice(d: Drawing, level: number): number {
+  const a = d.points[0];
+  const b = d.points[1];
+  const c = projectionOrigin(d);
+  return c.price + (b.price - a.price) * level;
+}
+
+function projectedLevels(
+  d: Drawing,
+  toY: HitTestProjector,
+): Array<{ level: number; price: number; y: number }> {
+  const levels: Array<{ level: number; price: number; y: number }> = [];
+  for (const level of FIB_EXT_LEVELS) {
+    const price = levelPrice(d, level);
+    const y = toY(price);
+    if (y != null) levels.push({ level, price, y });
+  }
+  return levels;
+}
+
+function labelXFor(g: CanvasRenderingContext2D, label: string, right: number, width: number) {
+  const textW = g.measureText(label).width;
+  return Math.max(4, Math.min(right + LABEL_PAD, width - textW - 4));
+}
 
 const plugin: DrawingToolPlugin = {
   tool: "fibExtension",
   minPoints: 2,
+  maxPoints: 3,
 
   render(
     g: CanvasRenderingContext2D,
@@ -42,55 +90,61 @@ const plugin: DrawingToolPlugin = {
     proj: Projector,
     selected: boolean,
   ) {
-    const pts = d.points;
-    const x1 = proj.toX(pts[0].time);
-    const y1 = proj.toY(pts[0].price);
-    const x2 = proj.toX(pts[1].time);
-    const y2 = proj.toY(pts[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
+    if (d.points.length < 2) return;
+    const a = d.points[0];
+    const b = d.points[1];
+    const c = projectionOrigin(d);
+    const x1 = proj.toX(a.time);
+    const y1 = proj.toY(a.price);
+    const x2 = proj.toX(b.time);
+    const y2 = proj.toY(b.price);
+    const x3 = proj.toX(c.time);
+    const y3 = proj.toY(c.price);
+    if (x1 == null || y1 == null || x2 == null || y2 == null || x3 == null || y3 == null) {
+      return;
+    }
 
-    // A→B impulse vector: B_price - A_price.
-    const aPrice = pts[0].price;
-    const bPrice = pts[1].price;
-    const impulse = bPrice - aPrice;
+    const left = Math.max(0, Math.min(x3, proj.width));
+    const right = proj.width;
+    const levels = projectedLevels(d, proj.toY);
 
-    // X-range: extend a bit past B so extension labels don't clip.
-    const left = Math.min(x1, x2);
-    const right = Math.max(x1, x2);
-    const extRight = right + 20; // extra padding for labels on rightmost side
-
-    // Draw the anchor trend line (A→B) as a dashed guide.
     g.save();
-    g.globalAlpha = 0.5;
-    g.setLineDash([4, 4]);
-    g.lineWidth = 1;
+
+    if (levels.length > 1 && d.opacity !== 0) {
+      const sorted = [...levels].sort((m, n) => m.y - n.y);
+      g.fillStyle = d.fillColor && d.fillColor !== "none" ? d.fillColor : d.color;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const top = sorted[i].y;
+        const bottom = sorted[i + 1].y;
+        g.globalAlpha = (d.opacity ?? 1) * FILL_OPACITY * (i % 2 === 0 ? 1 : 0.6);
+        g.fillRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+      }
+    }
+
+    // A-B impulse guide and B-C pullback/projection-origin guide.
+    g.globalAlpha = 0.58;
+    g.setLineDash([5, 4]);
+    g.lineWidth = Math.max(1, d.lineWidth || 1.5);
     line(g, x1, y1, x2, y2);
+    if (d.points[2]) line(g, x2, y2, x3, y3);
     g.setLineDash([]);
-    g.globalAlpha = 1;
 
-    // Draw extension levels.
-    g.font = "10px var(--font-mono)";
-    for (const lvl of FIB_EXT_LEVELS) {
-      // Project level from B: B + ratio * (B - A)
-      const price = bPrice + lvl * impulse;
-      const y = proj.toY(price);
-      if (y == null) continue;
-
+    g.font = canvasFont(11, { weight: 500 });
+    g.textBaseline = "middle";
+    for (const { level, price, y } of levels) {
       g.globalAlpha = LEVEL_OPACITY;
-      line(g, left, y, extRight, y);
+      line(g, left, y, right, y);
+      const label = `${formatLevel(level)}  ${formatPrice(price)}`;
       g.globalAlpha = 1;
-
-      // Label: ratio + price.
-      const pct = (lvl * 100).toFixed(1);
       g.fillStyle = d.color;
-      g.fillText(`${pct}%  ${price.toFixed(4)}`, extRight + 4, y + 3);
+      g.fillText(label, labelXFor(g, label, right, proj.width), y - 1);
     }
     g.restore();
 
-    // Selection handles.
     if (selected) {
       handle(g, x1, y1, d.color);
       handle(g, x2, y2, d.color);
+      if (d.points[2]) handle(g, x3, y3, d.color);
     }
   },
 
@@ -102,30 +156,55 @@ const plugin: DrawingToolPlugin = {
     toY: HitTestProjector,
   ): HitResult[] {
     const results: HitResult[] = [];
-    const x1 = toX(d.points[0].time);
-    const y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time);
-    const y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
+    if (d.points.length < 2) return results;
+    const projected = d.points.slice(0, 3).map((pt) => ({
+      x: toX(pt.time),
+      y: toY(pt.price),
+    }));
 
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS) {
-      results.push({
-        drawing: d,
-        target: "p1",
-        distance: pointDist(px, py, x1, y1),
-      });
-    }
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS) {
-      results.push({
-        drawing: d,
-        target: "p2",
-        distance: pointDist(px, py, x2, y2),
-      });
+    for (let i = 0; i < projected.length; i++) {
+      const p = projected[i];
+      if (p.x == null || p.y == null) continue;
+      const dist = pointDist(px, py, p.x, p.y);
+      if (dist <= HANDLE_RADIUS) {
+        results.push({
+          drawing: d,
+          target: i === 0 ? "p1" : i === 1 ? "p2" : "p3",
+          anchorIndex: i,
+          distance: dist,
+        });
+      }
     }
 
-    const bodyDist = distToRect(px, py, x1, y1, x2, y2);
-    if (bodyDist < TOL) {
-      results.push({ drawing: d, target: "body", distance: bodyDist });
+    const a = projected[0];
+    const b = projected[1];
+    const c = projected[2] ?? projected[1];
+    if (a.x == null || a.y == null || b.x == null || b.y == null || c.x == null || c.y == null) {
+      return results;
+    }
+
+    const impulseDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
+    if (impulseDist < TOL) {
+      results.push({ drawing: d, target: "body", distance: impulseDist });
+    }
+    if (d.points[2]) {
+      const originDist = distToSegment(px, py, b.x, b.y, c.x, c.y);
+      if (originDist < TOL) {
+        results.push({ drawing: d, target: "body", distance: originDist });
+      }
+    }
+
+    const left = c.x;
+    const right = Math.max(c.x, c.x + 9999);
+    const levels = projectedLevels(d, toY);
+    for (const { y } of levels) {
+      const dist = distToSegment(px, py, left, y, right, y);
+      if (dist < TOL) results.push({ drawing: d, target: "body", distance: dist });
+    }
+    if (levels.length > 0) {
+      const ys = levels.map((l) => l.y);
+      const bodyDist = distToRect(px, py, left, Math.min(...ys), right, Math.max(...ys));
+      if (bodyDist < TOL) results.push({ drawing: d, target: "body", distance: bodyDist + 0.5 });
     }
 
     return results;
@@ -134,23 +213,29 @@ const plugin: DrawingToolPlugin = {
   movePoints: defaultMovePoints,
 
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    const x1 = toX(d.points[0].time);
-    const y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time);
-    const y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
-    // Extend the bounding box vertically to cover extended levels.
-    const aPrice = d.points[0].price;
-    const bPrice = d.points[1].price;
-    const impulse = bPrice - aPrice;
-    const yMin = Math.min(y1, y2, toY(bPrice + Math.max(...FIB_EXT_LEVELS) * impulse) ?? Infinity);
-    const yMax = Math.max(y1, y2, toY(bPrice + Math.min(...FIB_EXT_LEVELS) * impulse) ?? -Infinity);
+    if (d.points.length < 2) return null;
+    const xs = d.points
+      .slice(0, 3)
+      .map((pt) => toX(pt.time))
+      .filter((v): v is number => v != null);
+    const ys = projectedLevels(d, toY).map((l) => l.y);
+    if (xs.length === 0 || ys.length === 0) return null;
+    const left = Math.min(...xs);
     return {
-      x: Math.min(x1, x2),
-      y: Math.min(y1, y2),
-      w: Math.abs(x2 - x1),
-      h: Math.abs(y2 - y1),
+      x: left,
+      y: Math.min(...ys),
+      w: 9999 + LABEL_CULL_PAD,
+      h: Math.max(...ys) - Math.min(...ys),
     };
+  },
+
+  getAnchors(d: Drawing, toX: HitTestProjector, toY: HitTestProjector): Anchor[] {
+    return d.points.slice(0, 3).map((pt, i) => ({
+      index: i,
+      x: toX(pt.time),
+      y: toY(pt.price),
+      target: i === 0 ? "p1" : i === 1 ? "p2" : "p3",
+    }));
   },
 };
 

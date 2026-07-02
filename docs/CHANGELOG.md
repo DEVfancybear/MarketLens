@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Fibonacci tools TradingView parity pass (2026-07-03)
+- Expanded the shared Fibonacci preset beyond `0..1` so retracement includes common external
+  levels (`1.272`, `1.414`, `1.618`, `2`, `2.618`, `3.618`, `4.236`).
+- Reworked `FibRetracementTool` to render the source trend line, horizontal level lines,
+  subtle background bands, level+price labels, and hit-test each level instead of only the broad
+  anchor box.
+- Reworked `FibExtensionTool` into a three-click trend-based extension: A-B is the impulse, C is
+  the projection origin, and level price is `C + ratio * (B - A)`. Existing two-point extension
+  drawings still render by treating B as C.
+- Updated legacy `fib` to mirror modern retracement rendering for saved drawings and old toolbar
+  paths.
+- Added `docs/FIBONACCI_TOOLS_MAINTENANCE.md` and `npm run check:fibonacci-tools`.
+
 ### Fixed - SMC overlay live visibility and chart readability (2026-07-02)
 - Fixed the SMC canvas stacking order so overlays that appear in screenshots are also visible on
   the live chart.

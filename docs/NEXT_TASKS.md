@@ -14,8 +14,9 @@
 - **✅ Phase 4.2.1 — Tool Activation: COMPLETE** (state machine, cursor system, live preview).
 - **✅ Phase 4.2.2 — Tool Group System: COMPLETE** (4 grouped icons + flyout portal fix).
 - **✅ Phase 4.3 — Shape Tools Suite: COMPLETE** (8 shapes + fill + supply/demand zones).
-- **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + fibExtension,
-  plugin architecture, 2-point creation, auto-levels with labels, full hitTest/movePoints/boundingBox).
+- **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + trend-based fibExtension,
+  plugin architecture, retracement 2-point creation, extension 3-click creation, auto-levels with
+  labels/background bands, full hitTest/movePoints/boundingBox).
 - **✅ Phase 5 — Left Toolbar / Indicator Engine: COMPLETE** (see below).
 - **✅ Jotai migration — COMPLETE** (all 11 stores converted to atoms, Zustand removed).
 

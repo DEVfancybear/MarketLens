@@ -1,0 +1,154 @@
+# Fibonacci Tools Maintenance
+
+Last updated: 2026-07-03.
+
+## TradingView Reference
+
+Primary reference checked:
+- TradingView Help Center: `Fibonacci retracement drawing tool`
+  `https://www.tradingview.com/support/solutions/43000518158-fibonacci-retracement-drawing-tool/`
+
+Key behavior from the reference:
+- Fib Retracement is anchored by two extreme points.
+- Horizontal levels are computed from the vertical distance between those two anchors.
+- Values between `0` and `1` are internal retracement levels.
+- Values greater than `1` are external retracement levels.
+- Values less than `0` are extension levels available from fib settings.
+- Style controls include trend line, level lines, extend left/right, background, reverse, prices,
+  level labels, custom text, and font size.
+- Coordinates are the two anchor prices and bars.
+
+The clone does not yet expose TradingView's full per-level settings dialog. Until that exists, the
+renderer uses a common visible preset that includes internal levels plus the most common external
+levels.
+
+## Current Implementation
+
+Files:
+- `src/types/drawing.ts`
+- `src/components/chart/drawing/tools/plugins/FibRetracementTool.ts`
+- `src/components/chart/drawing/tools/plugins/FibExtensionTool.ts`
+- `src/components/chart/drawing/tools/plugins/FibTool.ts`
+- `src/components/toolbar/DrawingToolbar.tsx`
+- `scripts/check-fibonacci-tools-parity.mjs`
+
+### Fib Retracement
+
+Tool id: `fibRetracement`.
+
+Creation:
+- Two clicks.
+- Point 1 and point 2 define the source trend line.
+
+Formula:
+
+```ts
+levelPrice = point1.price + (point2.price - point1.price) * level
+```
+
+Visible preset:
+- `0`
+- `0.236`
+- `0.382`
+- `0.5`
+- `0.618`
+- `0.786`
+- `1`
+- `1.272`
+- `1.414`
+- `1.618`
+- `2`
+- `2.618`
+- `3.618`
+- `4.236`
+
+Renderer contract:
+- Draw the dashed source trend line between the anchors.
+- Draw horizontal level lines using the level prices.
+- Draw subtle background bands between adjacent levels.
+- Draw right-side labels with both the level value and price.
+- Use `canvasFont()` from `plugins/shared.ts`; do not use `var(--font-*)` directly in canvas fonts.
+
+Interaction contract:
+- Anchor handles are `p1` and `p2`.
+- Body hit-test must include every horizontal level plus the source trend line.
+- Bounding box must include external levels, not only the original anchor price range.
+
+### Trend-Based Fib Extension
+
+Tool id: `fibExtension`.
+
+Creation:
+- Three clicks for new drawings.
+- `minPoints: 2` is intentionally kept so the user sees a live preview after the first anchor.
+- `maxPoints: 3` commits after the third click.
+
+Points:
+- A = point 1, impulse start.
+- B = point 2, impulse end.
+- C = point 3, projection origin after pullback.
+
+Formula:
+
+```ts
+levelPrice = C.price + (B.price - A.price) * level
+```
+
+Existing two-point extension drawings remain supported by treating B as C:
+
+```ts
+const c = points[2] ?? points[1]
+```
+
+Renderer contract:
+- Draw A-B as the impulse guide.
+- Draw B-C as the projection-origin guide when C exists.
+- Draw extension level rays from C toward the right side of the chart.
+- Draw subtle background bands and right-side level/price labels.
+
+Interaction contract:
+- The third point must be a real draggable anchor.
+- `getAnchors()` must map targets as `p1`, `p2`, `p3`; otherwise the hit-test engine cannot resolve
+  anchor index 2 and C will drag as body.
+
+### Legacy `fib`
+
+Tool id: `fib`.
+
+This tool remains in the toolbar and in saved drawings for backward compatibility. It mirrors the
+modern retracement renderer/hit-test behavior and uses the same `FIB_LEVELS` preset. Do not delete it
+unless a migration removes or remaps saved `tool: "fib"` drawings.
+
+## Regression Guard
+
+Run:
+
+```bash
+npm run check:fibonacci-tools
+```
+
+The guard verifies:
+- external fib levels are still present;
+- retracement still draws trend line, background bands, level lines, labels, and per-level hit-test;
+- extension remains a three-click trend-based tool;
+- extension projection still uses point C plus the A-B impulse;
+- p3 remains a real anchor;
+- legacy `fib` still mirrors modern retracement enough for saved drawings;
+- fib canvas fonts do not regress to invalid CSS-variable font strings.
+
+Run this together with the normal checks before commit:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
+```
+
+## Known Gaps
+
+- No TradingView-style fib settings dialog yet for enabling/disabling individual levels, negative
+  extension levels, reverse mode, custom labels/text per level, log-scale fib calculation, or
+  per-timeframe visibility.
+- `extend` can be read by retracement rendering, but there is no dedicated fib UI for toggling
+  extend-left/extend-right yet.
+- Alert conditions on fib levels are not implemented.
