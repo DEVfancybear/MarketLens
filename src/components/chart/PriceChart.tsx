@@ -27,6 +27,9 @@ import { ChartContextObj, type ChartCtx } from "./ChartContext";
 import { setMainChart } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 
+const RIGHT_OFFSET_BARS = 8;
+const MIN_BAR_SPACING = 1.5;
+
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
  * overlays non-pane indicators, reports the crosshair, and exposes an imperative
@@ -105,11 +108,15 @@ export function PriceChart({
         borderVisible: true,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 8,
+        rightOffset: RIGHT_OFFSET_BARS,
         barSpacing: BAR_SPACING[timeframe] ?? 8,
-        minBarSpacing: 1.5,
+        minBarSpacing: MIN_BAR_SPACING,
         fixLeftEdge: false,
+        fixRightEdge: false,
         lockVisibleTimeRangeOnResize: true,
+        rightBarStaysOnScroll: true,
+        shiftVisibleRangeOnNewBar: true,
+        allowShiftVisibleRangeOnWhitespaceReplacement: true,
         ticksVisible: false,
       },
       localization: {
@@ -142,6 +149,10 @@ export function PriceChart({
         pinch: true,
         axisPressedMouseMove: true,
         axisDoubleClickReset: true,
+      },
+      kineticScroll: {
+        mouse: true,
+        touch: true,
       },
     });
 
@@ -242,7 +253,12 @@ export function PriceChart({
       rightPriceScale: { borderColor: c.border },
       timeScale: {
         borderColor: c.border,
+        rightOffset: RIGHT_OFFSET_BARS,
         barSpacing: BAR_SPACING[timeframe] ?? 8,
+        minBarSpacing: MIN_BAR_SPACING,
+        rightBarStaysOnScroll: true,
+        shiftVisibleRangeOnNewBar: true,
+        allowShiftVisibleRangeOnWhitespaceReplacement: true,
       },
       localization: { timeFormatter: makeTimeFormatter(timeframe) },
       crosshair: {

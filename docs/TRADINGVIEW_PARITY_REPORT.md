@@ -25,6 +25,9 @@ _Date: 2026-06-25 · Build: green (type-check ✅, lint ✅, build ✅)_
 - ✅ Dynamic bar spacing: `1m: 4`, `5m: 6`, `15m: 8`, `1H: 10`, `4H: 12`, `1D: 14`, `1W: 16`
 - ✅ Solid last-price line (`priceLineStyle: 0` instead of dashed `2`)
 - ✅ Grid color (`#1e222d`) — already correct
+- ✅ Realtime motion/zoom polish: `rightBarStaysOnScroll`, `shiftVisibleRangeOnNewBar`, and
+  mouse/touch `kineticScroll` are enabled in `PriceChart.tsx`; forming/appended candle ticks keep
+  using the existing O(1) `series.update()` path.
 
 **Files:** `chartTheme.ts`, `PriceChart.tsx`
 

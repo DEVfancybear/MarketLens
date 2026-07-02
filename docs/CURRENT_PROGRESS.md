@@ -4,6 +4,18 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### TradingView-like chart motion and zoom update
+- Updated `PriceChart.tsx` chart interaction options to better match TradingView behavior:
+  mouse/touch kinetic panning is enabled, mouse-wheel zoom keeps the hovered bar stable, and new
+  realtime bars shift the visible range only when the chart is already at the live edge.
+- Added shared constants for right offset and minimum bar spacing so chart creation and theme/
+  timeframe re-application stay consistent.
+- Kept the existing O(1) `series.update()` realtime path for forming candles and appended candles;
+  this version of Lightweight Charts does not expose `LastPriceAnimationMode` for candlestick
+  series, so no unsupported series option is used.
+- Scope note: this change is isolated to chart rendering/interaction. MT5 bridge, order sizing,
+  risk validation, and trade execution paths are unchanged.
+
 ### Current-price marker TradingView parity update
 - Replaced the default black Lightweight Charts current-price chip with a custom
   `CurrentPriceMarker` inside `PriceChart.tsx`.

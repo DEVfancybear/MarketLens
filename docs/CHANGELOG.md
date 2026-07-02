@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart realtime motion and zoom parity (2026-07-02)
+- Tuned `PriceChart.tsx` interaction options toward TradingView behavior: enabled mouse/touch
+  kinetic panning, kept the hovered bar stable during wheel zoom/scroll, and preserved live-edge
+  shifting when a new realtime bar is appended.
+- Added explicit right-offset and minimum-bar-spacing constants so chart creation and theme/
+  timeframe option re-application use the same values.
+- Kept the existing O(1) `series.update()` realtime path for forming/appended candles; no
+  unsupported candlestick animation option is used.
+
 ### Fixed - Current price marker uses tick direction (2026-07-02)
 - Reworked `PriceChart.tsx` current-price marker to render a TradingView-style DOM marker at
   `candleSeries.priceToCoordinate(price)`.
