@@ -10,6 +10,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   pixel distance, and line angle.
 - Bar count is derived from the active chart timeframe, while pixel distance and angle are computed
   from the projected canvas geometry.
+- The panel now measures its row text, grows within the chart viewport, and ellipsizes only when the
+  viewport is too narrow, preventing right-to-left drags from overflowing the panel background.
 - Added `npm run check:infoline-panel` to prevent the old generic chip from returning.
 
 ### Fixed - Trendline text parity with TradingView (2026-07-02)

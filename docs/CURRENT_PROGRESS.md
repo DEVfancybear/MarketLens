@@ -10,6 +10,9 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 - Fix: `InfoLineTool.ts` now renders a three-row panel with price change / percent / tick span,
   bars + elapsed time + pixel distance, and angle. The panel is positioned near the measured segment
   and clamped inside the chart viewport.
+- Follow-up fix: panel width is now measured from its row text before render and clamped to the
+  viewport; if the viewport cannot fit the full row, the text is ellipsized instead of overflowing
+  beyond the grey panel when dragging the info line right-to-left.
 - Bar count comes from the active `timeframeAtom` and `TF_SECONDS`; distance/angle come from canvas
   geometry so the values update correctly while the chart is zoomed/panned.
 - Guard: added `npm run check:infoline-panel`.

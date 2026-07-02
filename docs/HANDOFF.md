@@ -32,7 +32,9 @@ existing name overwrites that template in the current style family via `saveTemp
 
 Recent drawing parity note: plain `trendline` now uses attached `+ Add text`; measurement values
 belong to `infoLine` / `trendAngle`. `InfoLineTool.ts` renders the TradingView-style dark
-measurement panel with price/%/ticks, bars/time/pixel distance, and angle.
+measurement panel with price/%/ticks, bars/time/pixel distance, and angle. The panel width is
+measured from row text and clamped/ellipsized inside the chart viewport so right-to-left info-line
+drags do not overflow the grey panel.
 
 ## Repo state
 - **Branch:** `master`

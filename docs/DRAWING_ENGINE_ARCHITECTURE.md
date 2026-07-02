@@ -324,12 +324,17 @@ text behavior.
 
 - **Rendering**: `InfoLineTool.ts` draws the segment plus a TradingView-style dark panel containing
   price change / percent / tick span, bar count + elapsed time + pixel distance, and angle.
+- **Panel sizing**: the panel measures its three row labels with the active canvas font, expands
+  from the TradingView-like minimum width as needed, clamps to the chart viewport, and ellipsizes
+  only if the viewport is too narrow. Do not return to a fixed-width-only panel; long
+  bars/time/distance rows overflow when the user draws from right to left.
 - **Data sources**: price values come from the drawing points; bars use the active `timeframeAtom`
   with `TF_SECONDS`; distance and angle come from projected canvas coordinates so they reflect the
   current chart zoom/pan.
 - **Culling**: the adapter `boundingBox()` includes the panel's approximate width/height so the
   spatial index does not cull an info line whose segment is visible but panel extends beyond it.
-- Regression guard: `npm run check:infoline-panel` rejects the old one-line generic chip path.
+- Regression guard: `npm run check:infoline-panel` rejects the old one-line generic chip path and
+  checks the measured-width / text-fit panel path stays in place.
 
 ## Fixed: every new/duplicated/pasted drawing was inserted twice — 2026-07-02
 

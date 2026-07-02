@@ -14,7 +14,7 @@ const checks = [
     name: "InfoLine renders a TradingView-style stats panel",
     ok:
       infoLine.includes("renderInfoPanel") &&
-      infoLine.includes("PANEL_W") &&
+      infoLine.includes("PANEL_MIN_W") &&
       infoLine.includes("PANEL_H") &&
       infoLine.includes("rgba(70, 70, 70, 0.92)"),
   },
@@ -34,9 +34,17 @@ const checks = [
       infoLine.includes("Math.round(elapsed / tfSeconds)"),
   },
   {
+    name: "InfoLine measures and clamps panel text so rows do not overflow",
+    ok:
+      infoLine.includes("measureText") &&
+      infoLine.includes("fitText") &&
+      infoLine.includes("availableTextWidth") &&
+      infoLine.includes("panelWidth"),
+  },
+  {
     name: "InfoLine keeps the panel in its spatial bounding box",
     ok:
-      infoLine.includes("PANEL_W + 36") &&
+      infoLine.includes("PANEL_CULL_W + 24") &&
       infoLine.includes("PANEL_H + 56"),
   },
 ];

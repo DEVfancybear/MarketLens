@@ -17,10 +17,13 @@ import {
 } from "../ToolRegistry";
 import { line, handle, angleDeg, canvasFont } from "./shared";
 
-const PANEL_W = 246;
+const PANEL_MIN_W = 246;
 const PANEL_H = 92;
 const PANEL_PAD = 12;
-const ROW_H = 28;
+const PANEL_ROW_H = 28;
+const PANEL_TEXT_X = 40;
+const PANEL_RIGHT_PAD = 14;
+const PANEL_CULL_W = 360;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -59,15 +62,39 @@ function panelPosition(
   x2: number,
   y2: number,
   proj: Projector,
+  panelWidth: number,
 ): { x: number; y: number } {
   const midX = (x1 + x2) / 2;
   const below = Math.max(y1, y2) + 16;
   const above = Math.min(y1, y2) - PANEL_H - 16;
   const preferredY = below + PANEL_H <= proj.height - 6 ? below : above;
   return {
-    x: clamp(midX + 12, 6, Math.max(6, proj.width - PANEL_W - 6)),
+    x: clamp(midX + 12, 6, Math.max(6, proj.width - panelWidth - 6)),
     y: clamp(preferredY, 6, Math.max(6, proj.height - PANEL_H - 6)),
   };
+}
+
+function fitText(
+  g: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
+  if (g.measureText(text).width <= maxWidth) return text;
+
+  const ellipsis = "...";
+  if (g.measureText(ellipsis).width > maxWidth) return "";
+
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (g.measureText(text.slice(0, mid) + ellipsis).width <= maxWidth) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return text.slice(0, lo) + ellipsis;
 }
 
 function drawRoundedRect(
@@ -156,18 +183,6 @@ function renderInfoPanel(
   const elapsed = Math.abs(d.points[1].time - d.points[0].time);
   const bars = Math.max(1, Math.round(elapsed / tfSeconds));
   const angle = Math.abs(angleDeg(x1, y1, x2, y2));
-  const pos = panelPosition(x1, y1, x2, y2, proj);
-
-  g.save();
-  drawRoundedRect(g, pos.x, pos.y, PANEL_W, PANEL_H, 3);
-  g.fillStyle = "rgba(70, 70, 70, 0.92)";
-  g.fill();
-
-  g.font = canvasFont(12, { weight: 600 });
-  g.fillStyle = "#f0f3fa";
-  g.textBaseline = "middle";
-  g.textAlign = "left";
-
   const rows = [
     {
       icon: "price" as const,
@@ -179,14 +194,45 @@ function renderInfoPanel(
     },
     {
       icon: "angle" as const,
-      text: `${angle.toFixed(2)}°`,
+      text: `${angle.toFixed(2)}\u00B0`,
     },
   ];
 
+  g.save();
+  g.font = canvasFont(12, { weight: 600 });
+  const measuredTextWidth = Math.max(
+    ...rows.map((row) => g.measureText(row.text).width),
+  );
+  const maxPanelWidth = Math.max(80, proj.width - 12);
+  const panelWidth = Math.min(
+    maxPanelWidth,
+    Math.max(
+      PANEL_MIN_W,
+      Math.ceil(measuredTextWidth + PANEL_TEXT_X + PANEL_RIGHT_PAD),
+    ),
+  );
+  const availableTextWidth = Math.max(
+    0,
+    panelWidth - PANEL_TEXT_X - PANEL_RIGHT_PAD,
+  );
+  const pos = panelPosition(x1, y1, x2, y2, proj, panelWidth);
+
+  drawRoundedRect(g, pos.x, pos.y, panelWidth, PANEL_H, 3);
+  g.fillStyle = "rgba(70, 70, 70, 0.92)";
+  g.fill();
+
+  g.fillStyle = "#f0f3fa";
+  g.textBaseline = "middle";
+  g.textAlign = "left";
+
   rows.forEach((row, index) => {
-    const rowY = pos.y + PANEL_PAD + index * ROW_H;
+    const rowY = pos.y + PANEL_PAD + index * PANEL_ROW_H;
     drawInfoIcon(g, row.icon, pos.x + 12, rowY - 2);
-    g.fillText(row.text, pos.x + 40, rowY + 10);
+    g.fillText(
+      fitText(g, row.text, availableTextWidth),
+      pos.x + PANEL_TEXT_X,
+      rowY + 10,
+    );
   });
   g.restore();
 }
@@ -252,7 +298,7 @@ const plugin: DrawingToolPlugin = {
     return {
       x: Math.min(x1, x2) - 12,
       y: Math.min(y1, y2) - PANEL_H - 28,
-      w: Math.abs(x2 - x1) + PANEL_W + 36,
+      w: Math.abs(x2 - x1) + PANEL_CULL_W + 24,
       h: Math.abs(y2 - y1) + PANEL_H + 56,
     };
   },
