@@ -4,6 +4,23 @@ _Last updated: 2026-07-02 (Phase 6B MT5 protocol plan)_
 
 ## Completed this session (2026-07-02)
 
+### Phase 6B MT5 bridge implementation scaffold
+- Implemented the first Phase 6B code pass while preserving simulator mode as the default:
+  `src/types/mt5.ts`, `src/services/mt5/{protocol,symbolMapping,runtime,Mt5BridgeClient}.ts`,
+  `src/store/mt5Store.ts`, and `src/hooks/useMt5Bridge.ts`.
+- Added `npm run mock-mt5` via `scripts/mock-mt5-bridge.mjs`. It uses Node core HTTP upgrade and
+  minimal WebSocket framing, so no new dependency is required. Verified handshake/auth/account
+  snapshot with a local Node WebSocket client.
+- Added MT5 Trade Panel UI: `ExecutionModeSwitch`, `Mt5ConnectionPanel`, `Mt5CommandLog`, and
+  `LiveOrderConfirmDialog`. `OrderTicket`, `PositionsTable`, and `TradeLevels` now switch between
+  simulator data and MT5 bridge data based on `executionModeAtom`.
+- Safety decisions: `tradeStore.ts` was not modified; MT5 is disabled by default; live commands
+  require explicit MT5 mode, connected bridge, account snapshot, bridge symbol info, lot-step and
+  max-volume validation, and confirmation by default. Chart context-menu quick trade pre-fills the
+  ticket in MT5 mode instead of sending a live order directly.
+- Checks: `npm run typecheck` ✅ · `npm run lint` ✅ · `npm run build` ✅ ·
+  `node --check scripts/mock-mt5-bridge.mjs` ✅.
+
 ### Phase 6B MT5 bridge protocol plan
 - Added `docs/MT5_BRIDGE_PROTOCOL.md`, the concrete browser-to-bridge WebSocket/JSON contract for
   Phase 6B: connection/auth/heartbeat flow, snapshot payloads, order command payloads,

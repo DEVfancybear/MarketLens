@@ -4,7 +4,7 @@ _Last updated 2026-07-02 after adding the Phase 6B MT5 bridge protocol contract.
 
 This file replaces the old Phase 1 mock-data audit. The app is now a live-data, Jotai-based
 TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and a
-planned MT5 bridge.
+feature-flagged MT5 bridge scaffold.
 
 Validation most recently run:
 
@@ -137,10 +137,27 @@ Implemented:
 - Closed simulator trades auto-journal into IndexedDB.
 - UI includes `OrderTicket`, `PositionsTable`, `RiskPanel`, `TradePanel`, and `TradeLevels`.
 
-MT5 live execution is not implemented yet. Phase 6B is planned in detail:
+MT5 live execution scaffold is implemented behind a disabled-by-default feature flag:
 
 - `docs/MT5_BRIDGE_PROTOCOL.md`
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
+
+Implemented:
+
+- `src/types/mt5.ts`
+- `src/services/mt5/protocol.ts`
+- `src/services/mt5/Mt5BridgeClient.ts`
+- `src/services/mt5/runtime.ts`
+- `src/services/mt5/symbolMapping.ts`
+- `src/store/mt5Store.ts`
+- `src/hooks/useMt5Bridge.ts`
+- `src/components/trade/ExecutionModeSwitch.tsx`
+- `src/components/trade/Mt5ConnectionPanel.tsx`
+- `src/components/trade/Mt5CommandLog.tsx`
+- `src/components/trade/LiveOrderConfirmDialog.tsx`
+- `scripts/mock-mt5-bridge.mjs`
+
+MT5 remains disabled unless `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true`; simulator mode remains default.
 
 ## 7. Phase Status
 
@@ -152,21 +169,22 @@ MT5 live execution is not implemented yet. Phase 6B is planned in detail:
 - Phase 5 left toolbar / indicator engine: complete.
 - Phase 6A Firebase push notifications: complete, including closed-browser worker mode.
 - Phase 6A Telegram/Discord alert channels: complete.
-- Phase 6B MT5 bridge: protocol documented and planned, not implemented.
+- Phase 6B MT5 bridge: feature-flagged scaffold implemented; real broker/demo validation still
+  pending.
 
 ## 8. Current Next Action
 
-Start Phase 6B implementation from:
+Continue Phase 6B implementation from:
 
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
 - `docs/PHASE6_IMPLEMENTATION_PLAN.md`
 
-The first recommended milestone is protocol plus mock bridge:
+The next recommended milestone is hardening and demo validation:
 
-1. Add `src/types/mt5.ts` from `docs/MT5_BRIDGE_PROTOCOL.md`.
-2. Add `scripts/mock-mt5-bridge.mjs`.
-3. Add MT5 env placeholders.
-4. Wire `Mt5BridgeClient` and `mt5Store` behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false`.
+1. Run `npm run mock-mt5` and enable `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true` locally.
+2. Exercise connect/auth/reconnect, order ack/reject, execution reports, close, and close-all.
+3. Add SL/TP modify UI if needed for live position management.
+4. Connect a real MT5 demo bridge and validate symbol mapping, lot step, precision, and rejects.
 
 ## 9. Known Operational Notes
 

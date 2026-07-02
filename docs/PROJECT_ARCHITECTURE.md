@@ -179,8 +179,8 @@ UI:
 - `TradePanel`
 - `TradeLevels`
 
-MT5 live execution is planned but not implemented. It must be added as a separate execution mode,
-not by replacing simulator internals.
+MT5 live execution scaffold is implemented as a separate feature-flagged execution mode, not by
+replacing simulator internals.
 
 Docs:
 
@@ -189,7 +189,7 @@ Docs:
 
 ## 7. Phase 6B Target Architecture
 
-Planned MT5 topology:
+MT5 topology:
 
 ```text
 Browser client
@@ -214,11 +214,12 @@ Bridge responsibilities:
 - Account and position snapshots.
 - Execution report mapping.
 
-The simulator must remain default and functional when MT5 is disabled.
+The simulator remains default and functional when MT5 is disabled.
 
 The browser-to-bridge protocol is documented in `docs/MT5_BRIDGE_PROTOCOL.md`. The first
-implementation pass should add typed protocol guards, a mock bridge, and a feature-flagged
-WebSocket client before changing order routing.
+implementation pass added typed protocol guards, a dependency-free mock bridge, a feature-flagged
+WebSocket client, MT5 store/runtime, execution-mode UI, order confirmation, MT5 positions table,
+command log, and MT5 chart levels.
 
 ## 8. Persistence
 

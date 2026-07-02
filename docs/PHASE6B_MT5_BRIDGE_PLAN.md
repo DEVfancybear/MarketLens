@@ -372,9 +372,9 @@ Required before any real account usage:
 ### Milestone 0 - Protocol And Mock Bridge
 
 - Create `docs/MT5_BRIDGE_PROTOCOL.md`. **Done 2026-07-02.**
-- Add `src/types/mt5.ts`.
-- Add `scripts/mock-mt5-bridge.mjs`.
-- Add env placeholders.
+- Add `src/types/mt5.ts`. **Done 2026-07-02.**
+- Add `scripts/mock-mt5-bridge.mjs`. **Done 2026-07-02.**
+- Add env placeholders. **Done 2026-07-02.**
 
 Exit criteria:
 
@@ -383,10 +383,10 @@ Exit criteria:
 
 ### Milestone 1 - Client And Store
 
-- Add `Mt5BridgeClient`.
-- Add `mt5Store.ts`.
-- Add `useMt5Bridge()`.
-- Mount runtime behind feature flag.
+- Add `Mt5BridgeClient`. **Done 2026-07-02.**
+- Add `mt5Store.ts`. **Done 2026-07-02.**
+- Add `useMt5Bridge()`. **Done 2026-07-02.**
+- Mount runtime behind feature flag. **Done 2026-07-02.**
 
 Exit criteria:
 
@@ -396,10 +396,10 @@ Exit criteria:
 
 ### Milestone 2 - Connection UI
 
-- Add `Mt5ConnectionPanel`.
-- Add `ExecutionModeSwitch`.
-- Add command/diagnostics log.
-- Add status and heartbeat display.
+- Add `Mt5ConnectionPanel`. **Done 2026-07-02.**
+- Add `ExecutionModeSwitch`. **Done 2026-07-02.**
+- Add command/diagnostics log. **Done 2026-07-02.**
+- Add status and heartbeat display. **Done 2026-07-02.**
 
 Exit criteria:
 
@@ -408,9 +408,9 @@ Exit criteria:
 
 ### Milestone 3 - Order Placement
 
-- Wire `OrderTicket` routing.
-- Add `LiveOrderConfirmDialog`.
-- Add `order.place` command with ack/reject handling.
+- Wire `OrderTicket` routing. **Done 2026-07-02.**
+- Add `LiveOrderConfirmDialog`. **Done 2026-07-02.**
+- Add `order.place` command with ack/reject handling. **Done 2026-07-02.**
 
 Exit criteria:
 
@@ -420,8 +420,9 @@ Exit criteria:
 
 ### Milestone 4 - Position Sync And Close
 
-- Render MT5 positions in `PositionsTable`.
-- Add `order.close`, `order.closeAll`, and optional partial close.
+- Render MT5 positions in `PositionsTable`. **Done 2026-07-02.**
+- Add `order.close`, `order.closeAll`, and optional partial close. **Partial 2026-07-02: full
+  close and close-all commands implemented; partial close UI remains deferred.**
 - Add close-all destructive confirmation.
 
 Exit criteria:
@@ -432,7 +433,7 @@ Exit criteria:
 ### Milestone 5 - Modify SL/TP And Chart Levels
 
 - Add `order.modify` for SL/TP.
-- Render MT5 live SL/TP levels.
+- Render MT5 live SL/TP levels. **Done 2026-07-02.**
 - Keep pending modify state visible until ack/report.
 
 Exit criteria:

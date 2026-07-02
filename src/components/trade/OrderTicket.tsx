@@ -6,14 +6,25 @@ import {
   placeOrderAtom,
   closeAllAtom,
 } from "@/store/tradeStore";
+import {
+  closeAllMt5Atom,
+  executionModeAtom,
+  mt5RequireConfirmationAtom,
+  mt5StatusAtom,
+  mt5SymbolInfoAtom,
+  placeMt5OrderAtom,
+} from "@/store/mt5Store";
 import { useAtomValue, useSetAtom } from "jotai";
 import { symbolAtom } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { computeRisk } from "@/services/tradeEngine";
+import { makeClientOrderId, normalizeMt5Side } from "@/services/mt5/protocol";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { on } from "@/utils/bus";
 import { cn } from "@/utils/cn";
 import type { OrderPrefill, OrderType, Side } from "@/types";
+import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
+import { LiveOrderConfirmDialog } from "./LiveOrderConfirmDialog";
 
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
 
@@ -24,6 +35,12 @@ export function OrderTicket() {
   const equity = useAtomValue(equityAtom);
   const place = useSetAtom(placeOrderAtom);
   const closeAll = useSetAtom(closeAllAtom);
+  const executionMode = useAtomValue(executionModeAtom);
+  const mt5Status = useAtomValue(mt5StatusAtom);
+  const mt5SymbolInfo = useAtomValue(mt5SymbolInfoAtom);
+  const requireMt5Confirmation = useAtomValue(mt5RequireConfirmationAtom);
+  const placeMt5 = useSetAtom(placeMt5OrderAtom);
+  const closeAllMt5 = useSetAtom(closeAllMt5Atom);
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const [type, setType] = useState<OrderType>("market");
@@ -31,6 +48,11 @@ export function OrderTicket() {
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
   const [risk, setRisk] = useState("1");
+  const [pendingLive, setPendingLive] = useState<
+    | { kind: "order"; order: Mt5OrderRequest }
+    | { kind: "closeAll"; request: Mt5CloseAllRequest }
+    | null
+  >(null);
 
   const num = (s: string) => (s.trim() === "" ? undefined : Number(s));
 
@@ -50,23 +72,89 @@ export function OrderTicket() {
     [type, entry, sl, tp, risk, price, equity],
   );
 
+  const buildMt5Order = (side: Side): Mt5OrderRequest => {
+    const info = mt5SymbolInfo[symbol];
+    const volume = normalizeLot(metrics.positionSize, info?.lotStep ?? 0.01);
+    return {
+      clientOrderId: makeClientOrderId(),
+      chartSymbol: symbol,
+      brokerSymbol: info?.brokerSymbol ?? symbol,
+      side: normalizeMt5Side(side),
+      type,
+      volume,
+      price: type === "market" ? undefined : num(entry),
+      sl: num(sl),
+      tp: num(tp),
+      comment: "SMC terminal",
+    };
+  };
+
   const submit = (side: Side) => {
     if (type !== "market" && !num(entry)) return;
+    if (executionMode === "mt5") {
+      const order = buildMt5Order(side);
+      if (mt5Status !== "connected" || !mt5SymbolInfo[symbol]) {
+        placeMt5(order);
+        return;
+      }
+      if (requireMt5Confirmation) setPendingLive({ kind: "order", order });
+      else placeMt5(order);
+      return;
+    }
     place(buildOrder(side));
+  };
+
+  const requestCloseAll = () => {
+    if (executionMode === "mt5") {
+      const info = mt5SymbolInfo[symbol];
+      const request: Mt5CloseAllRequest = {
+        clientOrderId: makeClientOrderId("mt5_close_all"),
+        chartSymbol: symbol,
+        brokerSymbol: info?.brokerSymbol ?? symbol,
+      };
+      if (mt5Status !== "connected") {
+        closeAllMt5(request);
+        return;
+      }
+      if (requireMt5Confirmation) setPendingLive({ kind: "closeAll", request });
+      else closeAllMt5(request);
+      return;
+    }
+    closeAll();
   };
 
   // Quick-trade hotkeys (B / S / X) use the current ticket settings.
   useEffect(() => {
     const offB = on("trade:buy", () => submit("long"));
     const offS = on("trade:sell", () => submit("short"));
-    const offX = on("trade:close", () => closeAll());
+    const offX = on("trade:close", () => requestCloseAll());
     return () => {
       offB();
       offS();
       offX();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, entry, sl, tp, risk, price]);
+  }, [
+    type,
+    entry,
+    sl,
+    tp,
+    risk,
+    price,
+    executionMode,
+    mt5Status,
+    mt5SymbolInfo,
+    requireMt5Confirmation,
+    metrics.positionSize,
+    symbol,
+  ]);
+
+  const confirmLive = () => {
+    if (!pendingLive) return;
+    if (pendingLive.kind === "order") placeMt5(pendingLive.order);
+    else closeAllMt5(pendingLive.request);
+    setPendingLive(null);
+  };
 
   // Pre-fill the ticket from the chart context menu ("Add Order at {price}").
   useEffect(() => {
@@ -107,9 +195,16 @@ export function OrderTicket() {
     <div className="flex w-[240px] shrink-0 flex-col gap-2 border-r border-terminal-border p-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-ink">{symbol}</span>
-        <span className="tabular text-xs text-ink-muted">
-          {fmtPrice(price, prec)}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {executionMode === "mt5" && (
+            <span className="rounded bg-bear/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-bear">
+              live
+            </span>
+          )}
+          <span className="tabular text-xs text-ink-muted">
+            {fmtPrice(price, prec)}
+          </span>
+        </div>
       </div>
 
       {/* Order type */}
@@ -180,13 +275,26 @@ export function OrderTicket() {
         </button>
       </div>
       <button
-        onClick={closeAll}
+        onClick={requestCloseAll}
         className="rounded border border-terminal-border py-1 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
       >
         Close All (X)
       </button>
+      <LiveOrderConfirmDialog
+        payload={pendingLive}
+        precision={prec}
+        onCancel={() => setPendingLive(null)}
+        onConfirm={confirmLive}
+      />
     </div>
   );
+}
+
+function normalizeLot(value: number, step: number) {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (!Number.isFinite(step) || step <= 0) return value;
+  const rounded = Math.floor(value / step) * step;
+  return Number(rounded.toFixed(8));
 }
 
 function Metric({

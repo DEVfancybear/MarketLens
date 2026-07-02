@@ -19,7 +19,8 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
 notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
 cron calling `/api/push/evaluate`) runs next to the Next server. Continue with Phase 6B MT5 Bridge
-from `docs/MT5_BRIDGE_PROTOCOL.md` and `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
+from `docs/MT5_BRIDGE_PROTOCOL.md` and `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. The first scaffold is
+implemented behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false` by default.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -220,11 +221,10 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   same-direction ticks restart the animation. Dark-theme `--bull`/`--bear` and `chartTheme.ts`
   candles updated to TradingView's current `#089981`/`#f23645` in **both** themes. Verified with
   Playwright screenshots (dark + light) against a fresh `next dev`.
-- **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
-  `docs/MT5_BRIDGE_PROTOCOL.md`, then implement the Milestone 0/1 pieces in
-  `docs/PHASE6B_MT5_BRIDGE_PLAN.md`: `src/types/mt5.ts`, `scripts/mock-mt5-bridge.mjs`, MT5 env
-  placeholders, `Mt5BridgeClient`, and `mt5Store`. Phase 6A push docs:
-  `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Recommended next action:** Continue **Phase 6B — MT5 Bridge Integration** by running
+  `npm run mock-mt5`, enabling `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true`, and exercising connect/auth,
+  order ack/reject, execution reports, close, and close-all from the Trade Panel. Then validate a
+  real MT5 demo bridge. Phase 6A push docs: `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
   the browser console to see why forex symbols show "--". See `docs/OANDA_DEBUG_REPORT.md`.

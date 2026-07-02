@@ -38,9 +38,10 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 - **Phase 6A extension - Telegram/Discord Alert Channels:** server-side external message delivery
   for browser-open and closed-browser alerts. Implemented in
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - MT5 Bridge Integration:** external bridge client, live execution mode, account and
-  position sync, with simulator fallback. Start from `docs/MT5_BRIDGE_PROTOCOL.md`, then implement
-  the detailed plan in `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
+- **Phase 6B - MT5 Bridge Integration:** feature-flagged scaffold implemented: MT5 protocol types,
+  WebSocket client, store/runtime hook, mock bridge, execution-mode UI, order routing, MT5
+  positions/logs, and simulator fallback. Continue with mock-bridge QA and real demo bridge
+  validation from `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ---
 

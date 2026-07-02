@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "mock-mt5": "node scripts/mock-mt5-bridge.mjs",
     "push-worker": "node scripts/push-alert-worker.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

@@ -28,6 +28,7 @@ import {
   clearIndicatorsAtom,
 } from "@/store/chartStore";
 import { placeOrderAtom } from "@/store/tradeStore";
+import { executionModeAtom } from "@/store/mt5Store";
 import { setBottomTabAtom, logAtom } from "@/store/uiStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
 import {
@@ -78,6 +79,7 @@ export function ChartContextMenu({
   onClose: () => void;
 }) {
   const symbol = useAtomValue(symbolAtom);
+  const executionMode = useAtomValue(executionModeAtom);
   const addDrawing = useSetAtom(addDrawingAtom);
   const drawColor = useAtomValue(drawColorAtom);
   const drawings = useAtomValue(drawingsAtom);
@@ -160,6 +162,22 @@ export function ChartContextMenu({
     onClose();
   };
 
+  const prefillOrSimOrder = (side: "long" | "short", type: "limit" | "stop") => {
+    if (executionMode === "mt5") {
+      emit("trade:prefill", { side, type, price: state.price });
+      setBottomTab("trade");
+      return;
+    }
+    place({
+      symbol,
+      side,
+      type,
+      price: state.price,
+      quantity: 1,
+    });
+    setBottomTab("trade");
+  };
+
   const items: MenuItem[] = [
     {
       icon: <Bell size={14} className="text-choch" />,
@@ -200,30 +218,12 @@ export function ChartContextMenu({
     {
       icon: <TrendingDown size={14} className="text-bear" />,
       label: `Sell 1 ${symbol} at ${priceStr}`,
-      onClick: act(() => {
-        place({
-          symbol,
-          side: "short",
-          type: "limit",
-          price: state.price,
-          quantity: 1,
-        });
-        setBottomTab("trade");
-      }),
+      onClick: act(() => prefillOrSimOrder("short", "limit")),
     },
     {
       icon: <TrendingUp size={14} className="text-bull" />,
       label: `Buy 1 ${symbol} above ${priceStr}`,
-      onClick: act(() => {
-        place({
-          symbol,
-          side: "long",
-          type: "stop",
-          price: state.price,
-          quantity: 1,
-        });
-        setBottomTab("trade");
-      }),
+      onClick: act(() => prefillOrSimOrder("long", "stop")),
     },
     {
       icon: <Plus size={14} className="text-ink-muted" />,

@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Phase 6B MT5 bridge implementation scaffold (2026-07-02)
+- Added feature-flagged MT5 bridge runtime behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false` by default:
+  typed MT5 protocol models, WebSocket client, runtime hook, Jotai `mt5Store`, command logging,
+  heartbeat/stale state, reconnect handling, and client-side order validation.
+- Added `npm run mock-mt5`, a dependency-free local mock WebSocket bridge for auth/account/symbol
+  snapshots, order ack/reject, execution reports, position updates, close, close-all, and reconnect
+  testing.
+- Added Trade Panel MT5 UI: Simulator/MT5 execution switch, connection/account status, compact
+  MT5 command log, live-order confirmation dialog, MT5 positions table, and MT5 chart entry/SL/TP
+  price levels. Simulator mode remains the default and still uses the existing `tradeStore`.
+- Order Ticket now routes orders through simulator or MT5 based on explicit execution mode. Chart
+  context menu quick orders remain simulator-only unless MT5 mode is active, where they prefill the
+  ticket instead of sending a live command automatically.
+
 ### Added - Phase 6B MT5 bridge protocol contract (2026-07-02)
 - Added `docs/MT5_BRIDGE_PROTOCOL.md`, the browser-to-bridge JSON/WebSocket contract for Phase 6B
   live execution: envelope, auth, heartbeat, snapshots, order commands, execution reports, error
