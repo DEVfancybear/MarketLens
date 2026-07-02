@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - FTMO MT5 dry-run copy trading bridge (2026-07-02)
+- Added `scripts/ftmo-mt5-bridge.mjs`, a standalone FTMO-focused bridge process that speaks the
+  Phase 6B MT5 WebSocket protocol and is started with `npm run ftmo-mt5-bridge`.
+- The bridge is disabled and dry-run by default. When enabled, it streams FTMO readiness/risk
+  snapshots, account/position/order/symbol snapshots, validates order volume, stop loss,
+  per-trade risk, daily/max loss guard, daily order count, and message rate limits, then emits
+  dry-run `order.ack`, `execution.report`, and position/account updates.
+- Added append-only audit JSONL support at `.data/ftmo-mt5-audit.jsonl` by default; `.data/` is
+  gitignored so runtime audit evidence and secrets-adjacent operational data are not committed.
+- Live FTMO execution is intentionally blocked with `LIVE_ADAPTER_NOT_CONFIGURED` until a real MT5
+  adapter is implemented and demo-validated.
+- Updated `.env.example` with bridge-only FTMO variables and expanded
+  `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md` with implementation status, dry-run quickstart, and
+  milestone checkboxes.
+
 ### Added - Multi-broker MT5 copy trading plan (2026-07-02)
 - Added `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`, a broker-agnostic plan for copying
   web terminal orders to MT5 accounts at brokers such as Exness, IC Markets, Pepperstone, or other

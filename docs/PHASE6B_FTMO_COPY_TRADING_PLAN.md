@@ -1,7 +1,7 @@
 # PHASE 6B FTMO COPY TRADING PLAN
 
-_Created 2026-07-02. Scope: copy orders from this web terminal to an FTMO MT5 account through the
-Phase 6B bridge._
+_Created 2026-07-02. Updated 2026-07-02 with the first FTMO dry-run bridge implementation. Scope:
+copy orders from this web terminal to an FTMO MT5 account through the Phase 6B bridge._
 
 ## 1. Goal
 
@@ -20,6 +20,29 @@ Web Order Ticket
   -> MT5 terminal/session logged into FTMO account
   -> FTMO server
 ```
+
+## 1.1 Current Implementation Status
+
+Implemented in this repository:
+
+- `scripts/ftmo-mt5-bridge.mjs`: standalone FTMO bridge process that speaks the Phase 6B
+  WebSocket protocol used by the web app.
+- `npm run ftmo-mt5-bridge`: starts the bridge.
+- Dry-run execution only by default. The bridge accepts web order intents, validates FTMO-style
+  readiness/risk rules, writes append-only audit JSONL, and emits `order.ack`, `execution.report`,
+  `positions.update`, `account.snapshot`, `ftmo.readiness`, and `risk.snapshot` events back to the
+  browser.
+- Live FTMO order execution is deliberately blocked with `LIVE_ADAPTER_NOT_CONFIGURED` until a real
+  MT5 adapter is added and validated against an FTMO demo/evaluation account.
+- FTMO credentials stay bridge-only; no FTMO login, password, or terminal path is exposed through
+  `NEXT_PUBLIC_*`.
+
+Not implemented yet:
+
+- Direct login to the MT5 desktop terminal.
+- Reading real FTMO account/position/order snapshots from MT5.
+- Calling MT5 `order_check`, `order_send`, modify, cancel, or close APIs.
+- Funded/live execution.
 
 ## 2. Compliance And Safety Baseline
 
@@ -117,6 +140,14 @@ FTMO_BRIDGE_MAX_DAILY_ORDERS=100
 FTMO_BRIDGE_MAX_MESSAGES_PER_MINUTE=60
 FTMO_BRIDGE_CLOSE_ALL_ENABLED=true
 FTMO_BRIDGE_DRY_RUN=true
+FTMO_BRIDGE_ALLOW_LIVE=false
+FTMO_BRIDGE_AUDIT_PATH=.data/ftmo-mt5-audit.jsonl
+FTMO_ACCOUNT_SIZE=100000
+FTMO_MAX_DAILY_LOSS_PCT=5
+FTMO_MAX_TOTAL_LOSS_PCT=10
+FTMO_DAILY_LOSS_SAFETY_BUFFER_PCT=0.2
+FTMO_MAX_RISK_PER_TRADE_PCT=0.5
+FTMO_REQUIRE_STOP_LOSS=true
 ```
 
 Rules:
@@ -125,6 +156,36 @@ Rules:
 - Never use the read-only password for a trading bridge; it should fail readiness checks.
 - `FTMO_BRIDGE_DRY_RUN=true` is the default until all demo checks pass.
 - `FTMO_BRIDGE_TOKEN` should be required if the bridge is reachable beyond localhost.
+- `.data/ftmo-mt5-audit.jsonl` is ignored by git and should remain local runtime evidence.
+
+## 5.1 Dry-Run Quickstart
+
+Use this for local validation without sending any order to FTMO:
+
+```powershell
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="true"
+$env:FTMO_BRIDGE_AUDIT_PATH="$env:TEMP\ftmo-mt5-audit.jsonl"
+npm run ftmo-mt5-bridge
+```
+
+In another terminal, run the web app with MT5 mode enabled:
+
+```env
+NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
+NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
+```
+
+Expected result:
+
+1. Web app connects to `ftmo-mt5-bridge`.
+2. Bridge sends `ftmo.readiness`, `risk.snapshot`, account, position, order, and symbol snapshots.
+3. A web order with SL is accepted in dry-run mode and emits a simulated fill/position update.
+4. Orders without SL, above configured max volume, above per-trade risk, or beyond loss guard are
+   rejected before any execution path.
+5. Audit records are appended to `FTMO_BRIDGE_AUDIT_PATH`.
 
 ## 6. Order Copy Semantics
 
@@ -405,10 +466,10 @@ Exit criteria:
 
 ### Milestone F1 - Real Bridge Skeleton
 
-- Create bridge service folder or separate repo.
-- Add WebSocket server matching `docs/MT5_BRIDGE_PROTOCOL.md`.
-- Add `ftmo.readiness` and `risk.snapshot` extensions.
-- Add durable audit log.
+- [x] Create bridge service in `scripts/ftmo-mt5-bridge.mjs`.
+- [x] Add WebSocket server matching `docs/MT5_BRIDGE_PROTOCOL.md`.
+- [x] Add `ftmo.readiness` and `risk.snapshot` extensions.
+- [x] Add durable append-only JSONL audit log.
 
 Exit criteria:
 
@@ -429,10 +490,10 @@ Exit criteria:
 
 ### Milestone F3 - Dry-Run Order Check
 
-- Translate web orders to MT5 order requests.
-- Run MT5 `order_check` or equivalent validation.
-- Apply FTMO risk guards.
-- Return would-send execution reports without placing trades.
+- [x] Translate web orders to normalized dry-run FTMO order requests.
+- [ ] Run real MT5 `order_check` or equivalent validation.
+- [x] Apply FTMO risk guards from configured account size/loss/risk limits.
+- [x] Return would-send execution reports without placing trades.
 
 Exit criteria:
 

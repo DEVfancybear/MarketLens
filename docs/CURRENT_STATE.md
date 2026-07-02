@@ -1,6 +1,6 @@
 # CURRENT STATE
 
-_Last updated 2026-07-02 after adding the Phase 6B MT5 bridge protocol contract._
+_Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 
 This file replaces the old Phase 1 mock-data audit. The app is now a live-data, Jotai-based
 TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and a
@@ -158,8 +158,12 @@ Implemented:
 - `src/components/trade/Mt5CommandLog.tsx`
 - `src/components/trade/LiveOrderConfirmDialog.tsx`
 - `scripts/mock-mt5-bridge.mjs`
+- `scripts/ftmo-mt5-bridge.mjs`
 
 MT5 remains disabled unless `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true`; simulator mode remains default.
+FTMO bridge execution is currently dry-run only. It validates and audits web order intents, then
+simulates bridge-confirmed fills back to the web app. Real FTMO execution is blocked until a real
+MT5 adapter is implemented and demo-validated.
 
 ## 7. Phase Status
 
@@ -171,8 +175,8 @@ MT5 remains disabled unless `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true`; simulator mod
 - Phase 5 left toolbar / indicator engine: complete.
 - Phase 6A Firebase push notifications: complete, including closed-browser worker mode.
 - Phase 6A Telegram/Discord alert channels: complete.
-- Phase 6B MT5 bridge: feature-flagged scaffold implemented; real broker/demo validation still
-  pending.
+- Phase 6B MT5 bridge: feature-flagged scaffold implemented; FTMO dry-run bridge implemented; real
+  MT5 adapter and broker/demo validation still pending.
 
 ## 8. Current Next Action
 
@@ -186,8 +190,8 @@ The next recommended milestone is hardening and demo validation:
 1. Run `npm run mock-mt5` and enable `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true` locally.
 2. Exercise connect/auth/reconnect, order ack/reject, execution reports, close, and close-all.
 3. Add SL/TP modify UI if needed for live position management.
-4. Implement `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md` for FTMO-specific bridge-side credentials,
-   risk guards, dry-run validation, and demo execution.
+4. Implement the real FTMO MT5 adapter behind `scripts/ftmo-mt5-bridge.mjs`: terminal login,
+   account snapshots, symbol metadata, MT5 `order_check`, then demo execution.
 5. Implement `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md` for Exness/IC Markets/other
    broker profiles, symbol discovery, lot sizing, dry-run validation, and demo execution.
 6. Connect a real MT5 demo bridge and validate symbol mapping, lot step, precision, and rejects.

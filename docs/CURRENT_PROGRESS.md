@@ -1,8 +1,23 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (Phase 6B MT5 protocol plan)_
+_Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
+
+### FTMO MT5 dry-run copy trading bridge
+- Added `scripts/ftmo-mt5-bridge.mjs` and `npm run ftmo-mt5-bridge`, a standalone FTMO bridge
+  process that speaks the existing Phase 6B WebSocket protocol without changing simulator trading.
+- Bridge is disabled/dry-run by default. With `FTMO_MT5_ENABLED=true` and
+  `FTMO_BRIDGE_DRY_RUN=true`, it emits `ftmo.readiness`, `risk.snapshot`, account/symbol/position
+  snapshots, validates web order intents, writes append-only audit JSONL, and simulates fills back
+  to the web app.
+- Implemented bridge-side guards: SL required by default, symbol mapping, lot min/max/step
+  normalization, max order volume, per-trade risk cap, daily/max loss guard, daily order count,
+  message rate limit, close-all kill switch, duplicate `clientOrderId` handling, and redacted audit
+  logging.
+- Live FTMO execution remains intentionally blocked with `LIVE_ADAPTER_NOT_CONFIGURED` until a real
+  MT5 adapter is added and demo-validated.
+- Updated `.env.example`, `.gitignore`, `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`, and status docs.
 
 ### Multi-broker MT5 copy trading plan
 - Added `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md` as a broker-agnostic reference for
