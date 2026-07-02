@@ -223,6 +223,7 @@ export interface Mt5OrderRequest {
   type: 'market' | 'limit' | 'stop';
   volume: number;
   price?: number;
+  marketPrice?: number;
   sl?: number;
   tp?: number;
   deviationPoints?: number;

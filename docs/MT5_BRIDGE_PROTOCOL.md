@@ -359,12 +359,18 @@ export interface Mt5OrderRequest {
   type: 'market' | 'limit' | 'stop';
   volume: number;
   price?: number;
+  marketPrice?: number;
   sl?: number;
   tp?: number;
   deviationPoints?: number;
   comment?: string;
 }
 ```
+
+For market orders, `price` is omitted because MT5 executes at broker bid/ask, but the browser must
+send `marketPrice` from the active chart so the bridge can estimate stop risk before execution. The
+bridge should reject market orders that have neither `price` nor `marketPrice` available for risk
+calculation.
 
 ### `order.modify`
 

@@ -129,7 +129,9 @@ class RiskGuard:
             return 0
         entry = _as_float(order.get("price"))
         if entry is None:
-            entry = _as_float(order.get("marketPrice")) or 0
+            entry = _as_float(order.get("marketPrice"))
+        if entry is None or entry <= 0:
+            return math.inf
         distance = abs(entry - sl)
         if distance <= 0:
             return math.inf

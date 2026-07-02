@@ -109,6 +109,7 @@ export function OrderTicket() {
       type,
       volume,
       price: type === "market" ? undefined : num(entry),
+      marketPrice: type === "market" ? price : undefined,
       sl: num(sl),
       tp: num(tp),
       comment: "SMC terminal",

@@ -264,12 +264,14 @@ Order flow:
 3. Browser validates feature flag, connected bridge, account snapshot, symbol info, volume, and
    confirmation.
 4. Browser sends `order.place` with `clientOrderId`.
-5. Bridge validates FTMO account readiness and risk gates.
-6. Bridge returns `order.ack` only after accepting the command for processing.
-7. Bridge submits the order to MT5.
-8. Bridge emits `execution.report` with broker outcome.
-9. Bridge emits position/order/account snapshots or updates.
-10. Browser updates UI only from bridge events.
+5. For market orders, browser includes `marketPrice` for pre-trade stop-risk estimation; MT5 still
+   executes with broker bid/ask.
+6. Bridge validates FTMO account readiness and risk gates.
+7. Bridge returns `order.ack` only after accepting the command for processing.
+8. Bridge submits the order to MT5.
+9. Bridge emits `execution.report` with broker outcome.
+10. Bridge emits position/order/account snapshots or updates.
+11. Browser updates UI only from bridge events.
 
 Important semantics:
 
