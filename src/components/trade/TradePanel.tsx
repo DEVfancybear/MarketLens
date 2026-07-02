@@ -39,10 +39,10 @@ export function TradePanel() {
   const activeOpenPnl = executionMode === "mt5" ? mt5OpenPnl : openPnl;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-terminal-panel">
       <OrderTicket />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-3 border-b border-terminal-border px-3 py-1 text-2xs">
+        <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-3 border-b border-terminal-border bg-terminal-panel px-3 py-1 text-2xs">
           <ExecutionModeSwitch />
           <Stat label="Equity" value={fmtMoney(activeEquity)} />
           <Stat
@@ -59,7 +59,7 @@ export function TradePanel() {
               />
               <button
                 onClick={reset}
-                className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+                className="ml-auto flex items-center gap-1 rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
               >
                 <RotateCcw size={12} /> Reset account
               </button>

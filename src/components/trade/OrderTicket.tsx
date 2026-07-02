@@ -166,38 +166,13 @@ export function OrderTicket() {
     return off;
   }, []);
 
-  const Field = ({
-    label,
-    value,
-    onChange,
-    placeholder,
-  }: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    placeholder?: string;
-  }) => (
-    <label className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-ink-faint">
-        {label}
-      </span>
-      <input
-        inputMode="decimal"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-ink outline-none focus:border-brand"
-      />
-    </label>
-  );
-
   return (
-    <div className="flex w-[240px] shrink-0 flex-col gap-2 border-r border-terminal-border p-3">
-      <div className="flex items-center justify-between">
+    <div className="flex w-[252px] shrink-0 flex-col border-r border-terminal-border bg-terminal-panel">
+      <div className="flex h-9 items-center justify-between border-b border-terminal-border px-3">
         <span className="text-xs font-semibold text-ink">{symbol}</span>
         <div className="flex items-center gap-1.5">
           {executionMode === "mt5" && (
-            <span className="rounded bg-bear/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-bear">
+            <span className="rounded-sm bg-bear/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-bear">
               live
             </span>
           )}
@@ -207,79 +182,78 @@ export function OrderTicket() {
         </div>
       </div>
 
-      {/* Order type */}
-      <div className="flex rounded border border-terminal-border p-0.5">
-        {ORDER_TYPES.map((t) => (
+      <div className="flex flex-col gap-2 p-3">
+        <div className="grid grid-cols-3 rounded-sm border border-terminal-border bg-terminal-bg p-0.5">
+          {ORDER_TYPES.map((t) => (
+            <button
+              key={t}
+              onClick={() => setType(t)}
+              className={cn(
+                "h-7 rounded-sm px-2 text-2xs font-semibold capitalize transition-colors",
+                type === t
+                  ? "bg-brand text-white"
+                  : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {type !== "market" && (
+          <TradeInput
+            label="Entry price"
+            value={entry}
+            onChange={setEntry}
+            placeholder={fmtPrice(price, prec)}
+          />
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <TradeInput label="Stop loss" value={sl} onChange={setSl} />
+          <TradeInput label="Take profit" value={tp} onChange={setTp} />
+        </div>
+        <TradeInput label="Risk %" value={risk} onChange={setRisk} />
+
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-terminal-border bg-terminal-border text-2xs">
+          <Metric label="Size" value={metrics.positionSize.toFixed(4)} />
+          <Metric
+            label="Risk"
+            value={fmtMoney(metrics.riskAmount)}
+            accent="var(--bear)"
+          />
+          <Metric
+            label="Reward"
+            value={fmtMoney(metrics.rewardAmount)}
+            accent="var(--bull)"
+          />
+          <Metric
+            label="R:R"
+            value={metrics.riskReward ? metrics.riskReward.toFixed(2) : "-"}
+            accent="var(--brand)"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
           <button
-            key={t}
-            onClick={() => setType(t)}
-            className={cn(
-              "flex-1 rounded px-2 py-1 text-2xs font-medium capitalize transition-colors",
-              type === t
-                ? "bg-brand/20 text-brand"
-                : "text-ink-muted hover:bg-terminal-hover",
-            )}
+            onClick={() => submit("long")}
+            className="h-10 rounded-sm bg-[#089981] text-xs font-semibold text-white hover:bg-[#0aa987]"
           >
-            {t}
+            Buy
           </button>
-        ))}
-      </div>
-
-      {type !== "market" && (
-        <Field
-          label="Entry price"
-          value={entry}
-          onChange={setEntry}
-          placeholder={fmtPrice(price, prec)}
-        />
-      )}
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Stop loss" value={sl} onChange={setSl} />
-        <Field label="Take profit" value={tp} onChange={setTp} />
-      </div>
-      <Field label="Risk %" value={risk} onChange={setRisk} />
-
-      {/* Live risk metrics */}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded bg-terminal-panel-2 p-2 text-2xs">
-        <Metric label="Size" value={metrics.positionSize.toFixed(4)} />
-        <Metric
-          label="Risk"
-          value={fmtMoney(metrics.riskAmount)}
-          accent="var(--bear)"
-        />
-        <Metric
-          label="Reward"
-          value={fmtMoney(metrics.rewardAmount)}
-          accent="var(--bull)"
-        />
-        <Metric
-          label="R:R"
-          value={metrics.riskReward ? `${metrics.riskReward.toFixed(2)}` : "—"}
-          accent="var(--accent)"
-        />
-      </div>
-
-      {/* Buy / Sell */}
-      <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => submit("short")}
+            className="h-10 rounded-sm bg-[#f23645] text-xs font-semibold text-white hover:bg-[#ff4d5b]"
+          >
+            Sell
+          </button>
+        </div>
         <button
-          onClick={() => submit("long")}
-          className="rounded bg-bull/90 py-1.5 text-xs font-semibold text-white hover:bg-bull"
+          onClick={requestCloseAll}
+          className="h-7 rounded-sm border border-terminal-border text-2xs font-medium text-ink-muted hover:bg-terminal-hover hover:text-ink"
         >
-          Buy (B)
-        </button>
-        <button
-          onClick={() => submit("short")}
-          className="rounded bg-bear/90 py-1.5 text-xs font-semibold text-white hover:bg-bear"
-        >
-          Sell (S)
+          Close All
         </button>
       </div>
-      <button
-        onClick={requestCloseAll}
-        className="rounded border border-terminal-border py-1 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
-      >
-        Close All (X)
-      </button>
       <LiveOrderConfirmDialog
         payload={pendingLive}
         precision={prec}
@@ -287,6 +261,33 @@ export function OrderTicket() {
         onConfirm={confirmLive}
       />
     </div>
+  );
+}
+
+function TradeInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-medium uppercase text-ink-faint">
+        {label}
+      </span>
+      <input
+        inputMode="decimal"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="h-8 w-full rounded-sm border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand"
+      />
+    </label>
   );
 }
 
@@ -315,7 +316,7 @@ function Metric({
   accent?: string;
 }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex min-h-7 items-center justify-between bg-terminal-panel-2 px-2">
       <span className="text-ink-faint">{label}</span>
       <span className="tabular font-semibold" style={{ color: accent }}>
         {value}

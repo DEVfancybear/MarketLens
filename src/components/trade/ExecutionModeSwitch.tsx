@@ -16,7 +16,7 @@ export function ExecutionModeSwitch() {
   const setMode = useSetAtom(setExecutionModeAtom);
 
   return (
-    <div className="flex items-center gap-1 rounded border border-terminal-border bg-terminal-bg p-0.5">
+    <div className="flex items-center gap-1 rounded-sm border border-terminal-border bg-terminal-bg p-0.5">
       {MODES.map((item) => {
         const active = mode === item.value;
         const disabled = item.value === "mt5" && !enabled;
@@ -26,7 +26,7 @@ export function ExecutionModeSwitch() {
             disabled={disabled}
             onClick={() => setMode(item.value)}
             className={cn(
-              "flex h-6 items-center gap-1 rounded px-2 text-[10px] font-semibold transition-colors",
+              "flex h-6 items-center gap-1 rounded-sm px-2 text-[10px] font-semibold transition-colors",
               active
                 ? item.value === "mt5"
                   ? "bg-bear/15 text-bear"
