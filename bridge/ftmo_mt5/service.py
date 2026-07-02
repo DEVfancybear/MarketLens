@@ -35,6 +35,7 @@ class FtmoMt5Service:
         self.clients: set[WebSocketServerProtocol] = set()
         self.seen_client_orders: dict[str, dict[str, Any]] = {}
         self.dry_run_positions: dict[str, dict[str, Any]] = {}
+        self.logged_symbol_caps: set[str] = set()
         self.ticket_sequence = 910000
 
     async def start(self) -> None:
@@ -52,7 +53,8 @@ class FtmoMt5Service:
             print(
                 f"[ftmo-mt5-python] riskBase={snapshot['accountSize']:.2f} "
                 f"source={snapshot.get('accountSizeSource', 'unknown')} "
-                f"maxRiskPerTrade={snapshot.get('maxRiskPerTrade', 0):.2f}",
+                f"maxRiskPerTrade={snapshot.get('maxRiskPerTrade', 0):.2f} "
+                f"maxOrderVolume={self.config.max_order_volume:.4f}",
             )
             try:
                 await asyncio.Future()
@@ -338,6 +340,22 @@ class FtmoMt5Service:
             return None
         return self.adapter.symbol_meta(chart_symbol)
 
+    def log_symbol_caps_once(self, meta: SymbolMeta) -> None:
+        key = f"{meta.chart_symbol}:{meta.broker_symbol}"
+        if key in self.logged_symbol_caps:
+            return
+        self.logged_symbol_caps.add(key)
+        public_max_lot = min(meta.max_lot, self.config.max_order_volume)
+        cap = "broker" if meta.max_lot <= self.config.max_order_volume else "bridge"
+        print(
+            "[ftmo-mt5-python] "
+            f"symbol {meta.chart_symbol}->{meta.broker_symbol} "
+            f"minLot={meta.min_lot:.4f} brokerMaxLot={meta.max_lot:.4f} "
+            f"bridgeMaxLot={self.config.max_order_volume:.4f} publicMaxLot={public_max_lot:.4f} "
+            f"lotStep={meta.lot_step:.4f} tickSize={meta.tick_size:g} tickValue={meta.tick_value:g} "
+            f"cap={cap}",
+        )
+
     def positions_snapshot(self) -> list[dict[str, Any]]:
         if self.config.dry_run:
             return list(self.dry_run_positions.values())
@@ -393,6 +411,7 @@ class FtmoMt5Service:
         for chart_symbol in self.config.symbols:
             meta = self.symbol_meta(chart_symbol)
             if meta is not None:
+                self.log_symbol_caps_once(meta)
                 await self.send(websocket, "symbol.info", public_symbol_info(meta, self.config.max_order_volume))
 
     async def broadcast_snapshots(self) -> None:

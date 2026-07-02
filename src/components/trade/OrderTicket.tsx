@@ -181,6 +181,17 @@ export function OrderTicket() {
     else closeAllMt5(pendingLive.request);
     setPendingLive(null);
   };
+  const sizeTitle =
+    executionMode === "mt5" && activeSymbolInfo
+      ? [
+          `MT5 max lot: ${activeSymbolInfo.maxLot}`,
+          activeSymbolInfo.maxLotReason ? `cap: ${activeSymbolInfo.maxLotReason}` : undefined,
+          activeSymbolInfo.brokerMaxLot != null ? `broker max: ${activeSymbolInfo.brokerMaxLot}` : undefined,
+          activeSymbolInfo.bridgeMaxLot != null ? `bridge max: ${activeSymbolInfo.bridgeMaxLot}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(" | ")
+      : undefined;
 
   // Pre-fill the ticket from the chart context menu ("Add Order at {price}").
   useEffect(() => {
@@ -241,7 +252,11 @@ export function OrderTicket() {
         <TradeInput label="Risk %" value={risk} onChange={setRisk} />
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-terminal-border bg-terminal-border text-2xs">
-          <Metric label="Size" value={metrics.positionSize.toFixed(4)} />
+          <Metric
+            label="Size"
+            value={metrics.positionSize.toFixed(4)}
+            title={sizeTitle}
+          />
           <Metric
             label="Risk"
             value={fmtMoney(metrics.riskAmount)}
@@ -371,13 +386,15 @@ function Metric({
   label,
   value,
   accent,
+  title,
 }: {
   label: string;
   value: string;
   accent?: string;
+  title?: string;
 }) {
   return (
-    <div className="flex min-h-7 items-center justify-between bg-terminal-panel-2 px-2">
+    <div className="flex min-h-7 items-center justify-between bg-terminal-panel-2 px-2" title={title}>
       <span className="text-ink-faint">{label}</span>
       <span className="tabular font-semibold" style={{ color: accent }}>
         {value}

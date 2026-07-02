@@ -177,6 +177,11 @@ Rules:
 - The web ticket sizes MT5 lots from account equity, risk %, stop distance, and symbol
   `tickSize`/`tickValue` streamed by the bridge. `FTMO_BRIDGE_MAX_ORDER_VOLUME` remains a hard cap;
   set it above `0.01` if you expect risk-based BTC sizing to exceed `0.01` lots.
+- The bridge streams `brokerMaxLot`, `bridgeMaxLot`, and `maxLotReason` in `symbol.info`, and logs
+  one symbol cap diagnostic per chart symbol at startup/auth. If the web ticket still shows `0.01`
+  after setting `FTMO_BRIDGE_MAX_ORDER_VOLUME=1`, check the bridge console:
+  `cap=bridge` means an env/process restart issue; `cap=broker` means MT5 reported a broker
+  `volume_max` of `0.01` for that Exness/FTMO symbol or account type.
 
 ## 5.1 Dry-Run Quickstart
 
@@ -295,6 +300,8 @@ Bridge startup must verify each configured symbol against MT5 symbol metadata:
 - Trading is enabled.
 - Digits/point match MT5.
 - `volume_min`, `volume_max`, `volume_step` are loaded.
+- Effective browser `maxLot` equals `min(volume_max, FTMO_BRIDGE_MAX_ORDER_VOLUME)` and exposes
+  whether the active cap came from MT5 broker metadata or bridge config.
 - Contract size and tick value are available for risk calculation.
 
 If the symbol is missing or disabled, browser trading for that chart symbol must be blocked.
@@ -313,6 +320,7 @@ stop_distance = abs(entry - stop_loss)
 money_per_lot_at_stop = stop_distance / tick_size * tick_value
 lots_raw = risk_money / money_per_lot_at_stop
 lots = floor_to_step(lots_raw, volume_step)
+lots = min(lots, volume_max, FTMO_BRIDGE_MAX_ORDER_VOLUME)
 ```
 
 Risk gates:

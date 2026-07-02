@@ -48,6 +48,8 @@ def meta_from_mt5_info(chart_symbol: str, broker_symbol: str, info: Any) -> Symb
 
 
 def public_symbol_info(meta: SymbolMeta, max_order_volume: float) -> dict[str, Any]:
+    public_max_lot = min(meta.max_lot, max_order_volume)
+    max_lot_reason = "broker" if meta.max_lot <= max_order_volume else "bridge"
     return {
         "chartSymbol": meta.chart_symbol,
         "brokerSymbol": meta.broker_symbol,
@@ -55,7 +57,10 @@ def public_symbol_info(meta: SymbolMeta, max_order_volume: float) -> dict[str, A
         "point": meta.point,
         "lotStep": meta.lot_step,
         "minLot": meta.min_lot,
-        "maxLot": min(meta.max_lot, max_order_volume),
+        "maxLot": public_max_lot,
+        "brokerMaxLot": meta.max_lot,
+        "bridgeMaxLot": max_order_volume,
+        "maxLotReason": max_lot_reason,
         "tickSize": meta.tick_size,
         "tickValue": meta.tick_value,
         "tradeMode": meta.trade_mode,

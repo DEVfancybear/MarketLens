@@ -317,6 +317,11 @@ export interface Mt5SymbolInfo {
   lotStep: number;
   minLot: number;
   maxLot: number;
+  brokerMaxLot?: number;
+  bridgeMaxLot?: number;
+  maxLotReason?: 'broker' | 'bridge';
+  tickSize?: number;
+  tickValue?: number;
   tradeMode: 'disabled' | 'longOnly' | 'shortOnly' | 'full';
   updatedAt: number;
 }
@@ -324,6 +329,11 @@ export interface Mt5SymbolInfo {
 
 The frontend must block MT5 order placement when symbol info is missing, stale, disabled, outside
 lot limits, or incompatible with the requested side.
+
+`maxLot` is the effective order cap the browser must obey. It is derived from
+`min(brokerMaxLot, bridgeMaxLot)`. If `maxLotReason` is `broker`, MT5 reported a broker/account
+symbol limit below the configured bridge cap. If it is `bridge`, `FTMO_BRIDGE_MAX_ORDER_VOLUME` is
+the active cap.
 
 ## 7. Command Messages
 
