@@ -5,6 +5,22 @@ import os
 from pathlib import Path
 
 
+def _load_env_files() -> None:
+    for name in (".env", ".env.local"):
+        path = Path(name)
+        if not path.exists():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
 def _bool_env(name: str, fallback: bool) -> bool:
     value = os.getenv(name)
     if value is None or value == "":
@@ -63,6 +79,7 @@ class BridgeConfig:
 
 
 def load_config() -> BridgeConfig:
+    _load_env_files()
     return BridgeConfig(
         enabled=_bool_env("FTMO_MT5_ENABLED", False),
         dry_run=_bool_env("FTMO_BRIDGE_DRY_RUN", True),
@@ -98,4 +115,3 @@ def load_config() -> BridgeConfig:
             "ETHUSDT": os.getenv("FTMO_SYMBOL_ETHUSDT", "ETHUSD"),
         },
     )
-

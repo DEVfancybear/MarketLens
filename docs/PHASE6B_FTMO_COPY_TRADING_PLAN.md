@@ -165,6 +165,9 @@ Rules:
 - `FTMO_BRIDGE_DRY_RUN=true` is the default until all demo checks pass.
 - `FTMO_BRIDGE_TOKEN` should be required if the bridge is reachable beyond localhost.
 - `.data/ftmo-mt5-audit.jsonl` is ignored by git and should remain local runtime evidence.
+- The Python bridge reads process env plus `.env` / `.env.local` from the repository root at
+  startup. Existing process env wins. Restart the Python bridge after changing account size,
+  symbols, login, or risk settings.
 
 ## 5.1 Dry-Run Quickstart
 

@@ -20,6 +20,10 @@ python -m pip install -r bridge\ftmo_mt5\requirements.txt
 
 ## Dry-Run
 
+The service reads bridge variables from the current process environment and, if present, `.env` /
+`.env.local` in the repository root. Existing process environment values take priority over file
+values. Restart the service after changing these values.
+
 ```powershell
 $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"
@@ -42,4 +46,3 @@ python -m bridge.ftmo_mt5.service
 ```
 
 Never put FTMO credentials in `NEXT_PUBLIC_*`, browser localStorage, or committed files.
-
