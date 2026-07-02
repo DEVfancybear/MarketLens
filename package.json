@@ -18,6 +18,7 @@
     "check:replay-toolbar-events": "node scripts/check-replay-toolbar-events.mjs",
     "check:trendline-text": "node scripts/check-trendline-text-parity.mjs",
     "check:infoline-panel": "node scripts/check-infoline-panel-parity.mjs",
+    "check:vertical-line": "node scripts/check-vertical-line-parity.mjs",
     "check:replay-logic": "node scripts/check-replay-logic.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

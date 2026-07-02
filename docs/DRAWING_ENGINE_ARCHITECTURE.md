@@ -302,6 +302,23 @@ opens the same inline `TextEditor` the standalone Text tool uses, and the typed 
   keeps the shape editor position derived from current shape bounds while the chart pointerdown is
   consumed before drag starts.
 
+## Vertical line date label - updated 2026-07-02
+
+`vertical` is a body-only one-anchor tool pinned to a chart time. Its selected-state visual should
+match TradingView's vertical line: a full-height blue line plus a blue date/time chip on the bottom
+time axis.
+
+- **Rendering**: `VerticalTool.ts` draws the vertical segment through the chart and, when selected,
+  draws a bottom-pinned date chip instead of the old white center handle.
+- **Date format**: the chip uses UTC chart time in the TradingView-like format
+  `Thu 02 Jul 26 19:30`.
+- **Viewport safety**: the chip is horizontally clamped so vertical lines near the left or right
+  edge do not clip the label outside the canvas.
+- **Interaction**: hit-testing remains body-only against the vertical line (`target: "body"`), so
+  dragging the line still uses the generic `defaultMovePoints` path.
+- Regression guard: `npm run check:vertical-line` rejects the old center handle path and verifies
+  the date-label/clamping contract.
+
 ## Trendline attached text — updated 2026-07-02
 
 Plain `trendline` follows TradingView's normal Trend Line behavior: no automatic measurement chip.

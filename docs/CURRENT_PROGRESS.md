@@ -4,6 +4,15 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Vertical line TradingView date label parity
+- User repro: selected `VerticalTool` showed a white circular handle in the middle of the chart,
+  while TradingView shows a vertical blue line with a blue date/time chip on the bottom time axis.
+- Fix: `VerticalTool.ts` now renders the selected state with a bottom-pinned date chip and no
+  center handle. The line body hit-test/drag path remains unchanged.
+- Date label format is `Thu 02 Jul 26 19:30` using UTC chart time, and the chip clamps inside the
+  chart viewport so edge placements do not clip the label.
+- Guard: added `npm run check:vertical-line`.
+
 ### Info Line measurement panel parity
 - User repro: `InfoLineTool` showed a single blue chip with only price/% while TradingView shows a
   dark measurement panel.

@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Vertical line TradingView date label parity (2026-07-02)
+- Replaced the selected vertical line's old center handle with a TradingView-style blue date/time
+  chip pinned to the bottom time axis.
+- The label format now matches the TradingView reference shape (`Thu 02 Jul 26 19:30`), uses UTC
+  chart time, and clamps inside the chart viewport near the left/right edges.
+- Added `npm run check:vertical-line` to guard against reintroducing the old center handle or
+  removing the date-label path.
+
 ### Changed - Info Line measurement panel matches TradingView (2026-07-02)
 - Replaced the old one-line blue `InfoLineTool` chip with a TradingView-style dark measurement panel.
 - The panel now shows three rows: price change / percent / tick span, bar count + elapsed time +

@@ -36,6 +36,10 @@ measurement panel with price/%/ticks, bars/time/pixel distance, and angle. The p
 measured from row text and clamped/ellipsized inside the chart viewport so right-to-left info-line
 drags do not overflow the grey panel.
 
+Recent vertical-line parity note: selected `VerticalTool.ts` now matches TradingView by showing a
+bottom time-axis chip such as `Thu 02 Jul 26 19:30` instead of the old white center handle. The
+chip clamps inside the chart viewport; body hit-test/drag remains unchanged.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
