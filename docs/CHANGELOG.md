@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Long/Short position settings dialog parity (2026-07-02)
+- Reworked the Long/Short position settings dialog shell to more closely match TradingView:
+  compact 380px dark panel, larger title, tab underline, scrollable content, and footer controls
+  with `Template`, `Cancel`, and `Ok`.
+- Removed the custom computed summary card from the Inputs tab so the dialog follows the
+  TradingView layout: account size, lot size, risk, entry, leverage, profit level, stop level, and
+  QTY precision.
+- Double-clicking an existing Long/Short position on the chart now opens the same settings dialog.
+  Single-click selection, body drag, handle resize, and the recent TP/SL hit-state drag fixes stay
+  on the existing interaction path.
+
 ### Fixed - Short/Long position body drag preserves visible width (2026-07-02)
 - Fixed a regression where dragging a hit-frozen Long/Short position body could make the box
   widen while moving right or left. TP/SL hit state now changes labels/fill only; it no longer

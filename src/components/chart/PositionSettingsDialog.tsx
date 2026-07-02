@@ -78,7 +78,7 @@ export function NumberField({
         if (Number.isFinite(v)) onCommit(v);
       }}
       className={cn(
-        "rounded-md border border-terminal-border bg-terminal-bg px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand",
+        "h-[34px] rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
         className,
       )}
     />
@@ -93,8 +93,10 @@ export function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 py-2">
-      <span className="w-[94px] shrink-0 text-[13px] text-ink">{label}</span>
+    <div className="flex items-center gap-3 py-[7px]">
+      <span className="w-[110px] shrink-0 text-[14px] font-medium text-[#d1d4dc]">
+        {label}
+      </span>
       <div className="flex flex-1 items-center gap-2">{children}</div>
     </div>
   );
@@ -102,7 +104,7 @@ export function Row({
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-1 mt-5 text-[10px] font-medium uppercase text-ink-faint">
+    <div className="mb-2 mt-6 text-[10px] font-medium uppercase tracking-normal text-[#8a8d93]">
       {children}
     </div>
   );
@@ -151,7 +153,7 @@ function Select<T extends string | number>({
         if (match) onChange(match.value);
       }}
       className={cn(
-        "h-[34px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-ink outline-none focus:border-[#6a6d75]",
+        "h-[34px] rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
         className,
       )}
     >
@@ -439,27 +441,14 @@ export function PositionSettingsDialog() {
   const riskUnit = drawing.riskUnit ?? "%";
   const lotSize = drawing.lotSize ?? 1;
   const leverage = drawing.leverage ?? 1;
-  const qtyPrecision = drawing.qtyPrecision ?? 2;
-
-  const riskAmount =
-    riskUnit === "%" ? accountSize * (riskValue / 100) : riskValue;
-  const priceRisk = Math.abs(entry - stop);
-  const qty = priceRisk > 0 ? (riskAmount / priceRisk) * lotSize : 0;
-  const profitAmount = qty * Math.abs(target - entry);
-  const rr = priceRisk > 0 ? Math.abs(target - entry) / priceRisk : 0;
-  const currencyLabel =
-    drawing.accountCurrency && drawing.accountCurrency !== "Default"
-      ? ` ${drawing.accountCurrency}`
-      : "";
-
   const tabBtn = (id: Tab, label: string) => (
     <button
       onClick={() => setTab(id)}
       className={cn(
-        "border-b-2 px-1 pb-2 text-sm transition-colors",
+        "border-b-[3px] px-0 pb-[9px] text-[16px] font-semibold transition-colors",
         tab === id
-          ? "border-brand text-ink"
-          : "border-transparent text-ink-muted hover:text-ink",
+          ? "border-[#f0f0f0] text-[#f0f0f0]"
+          : "border-transparent text-[#d1d4dc] hover:text-[#f0f0f0]",
       )}
     >
       {label}
@@ -468,17 +457,18 @@ export function PositionSettingsDialog() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 pt-16"
+      data-chart-ui
+      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/45 pt-10"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="max-h-[80vh] w-[420px] overflow-hidden rounded-xl border border-terminal-border bg-terminal-panel-2 shadow-2xl shadow-black/60">
+      <div className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-4">
+        <div className="flex items-center justify-between px-5 pb-2 pt-4">
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold text-ink">
+            <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
               {isLong ? "Long position" : "Short position"}
             </span>
             {drawing.tradeStatus === "tp_hit" && (
@@ -491,31 +481,31 @@ export function PositionSettingsDialog() {
                 SL Hit
               </span>
             )}
-            <Pencil size={14} className="text-ink-muted" />
+            <Pencil size={16} className="text-[#d1d4dc]" />
           </div>
           <button
             onClick={close}
-            className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+            className="rounded-sm p-1 text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
           >
-            <X size={18} />
+            <X size={24} strokeWidth={1.5} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-5 border-b border-terminal-border px-5 pt-3">
+        <div className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
           {tabBtn("inputs", "Inputs")}
           {tabBtn("style", "Style")}
           {tabBtn("visibility", "Visibility")}
         </div>
 
-        <div className="max-h-[640px] overflow-y-auto px-[18px] py-[18px]">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           {tab === "inputs" && (
             <>
               <Row label="Account size">
                 <NumberField
                   value={accountSize}
                   onCommit={(v) => patch({ accountSize: v })}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
                 <Select
                   value={drawing.accountCurrency ?? "Default"}
@@ -530,14 +520,14 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={lotSize}
                   onCommit={(v) => patch({ lotSize: v })}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
               <Row label="Risk">
                 <NumberField
                   value={riskValue}
                   onCommit={(v) => patch({ riskValue: v })}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
                 <Select
                   value={riskUnit}
@@ -553,14 +543,14 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={Number(entry.toFixed(6))}
                   onCommit={setEntryPrice}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
               <Row label="Leverage">
                 <NumberField
                   value={leverage}
                   onCommit={(v) => patch({ leverage: v })}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
 
@@ -571,14 +561,14 @@ export function PositionSettingsDialog() {
                   onCommit={(t) =>
                     setPointPrice(1, entry + profitDir * Math.abs(t) * tick)
                   }
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
               <Row label="Price">
                 <NumberField
                   value={Number(target.toFixed(6))}
                   onCommit={setProfitPrice}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
 
@@ -589,14 +579,14 @@ export function PositionSettingsDialog() {
                   onCommit={(t) =>
                     setPointPrice(2, entry + stopDir * Math.abs(t) * tick)
                   }
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
               <Row label="Price">
                 <NumberField
                   value={Number(stop.toFixed(6))}
                   onCommit={setStopPrice}
-                  className="h-[34px] w-[100px]"
+                  className="w-[100px]"
                 />
               </Row>
 
@@ -617,31 +607,6 @@ export function PositionSettingsDialog() {
                 />
               </Row>
 
-              {/* Computed summary */}
-              <div className="mt-3 rounded-md border border-terminal-border bg-terminal-bg/50 px-3 py-2 text-xs">
-                <div className="flex justify-between py-0.5">
-                  <span className="text-ink-muted">Quantity</span>
-                  <span className="text-ink">{qty.toFixed(qtyPrecision)}</span>
-                </div>
-                <div className="flex justify-between py-0.5">
-                  <span className="text-ink-muted">Risk</span>
-                  <span className="text-bear">
-                    -{riskAmount.toFixed(2)}
-                    {currencyLabel}
-                  </span>
-                </div>
-                <div className="flex justify-between py-0.5">
-                  <span className="text-ink-muted">Profit</span>
-                  <span className="text-bull">
-                    +{profitAmount.toFixed(2)}
-                    {currencyLabel}
-                  </span>
-                </div>
-                <div className="flex justify-between py-0.5">
-                  <span className="text-ink-muted">Risk/Reward</span>
-                  <span className="text-ink">{rr.toFixed(2)}</span>
-                </div>
-              </div>
             </>
           )}
 
@@ -746,6 +711,31 @@ export function PositionSettingsDialog() {
               </button>
             </Row>
           )}
+        </div>
+        <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-[#3a3a3a] px-5">
+          <button
+            type="button"
+            className="flex h-[34px] min-w-[104px] items-center justify-between rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] font-medium text-[#f0f0f0] hover:border-[#6a6d75]"
+          >
+            <span>Template</span>
+            <ChevronDown size={15} className="text-[#a0a3aa]" />
+          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={close}
+              className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] hover:bg-[#2a2a2a]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] hover:bg-white"
+            >
+              Ok
+            </button>
+          </div>
         </div>
       </div>
     </div>,

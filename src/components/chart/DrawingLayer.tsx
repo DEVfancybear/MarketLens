@@ -20,6 +20,7 @@ import {
   removeDrawingAtom,
   duplicateDrawingAtom,
   setActiveToolAtom,
+  setEditingDrawingAtom,
   selectAllAtom,
 } from "@/store/chartStore";
 import { SHAPE_TOOLS, type Drawing, type Point } from "@/types";
@@ -56,6 +57,7 @@ export function DrawingLayer() {
   const removeDrawing = useSetAtom(removeDrawingAtom);
   const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
+  const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
   const selectAll = useSetAtom(selectAllAtom);
 
   const [textEdit, setTextEdit] = useState<{
@@ -270,6 +272,12 @@ export function DrawingLayer() {
     redo,
     selectAll,
     duplicateDrawing,
+    openDrawingSettings: (id) => {
+      const drawing = stateRef.current.drawings.find((d) => d.id === id);
+      if (drawing?.tool === "long" || drawing?.tool === "short") {
+        setEditingDrawing(id);
+      }
+    },
     onTextPlace: handleTextPlace,
     freezeChart,
   });

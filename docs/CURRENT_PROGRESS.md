@@ -4,6 +4,18 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Long/Short position settings dialog parity + double-click edit
+- Updated `PositionSettingsDialog.tsx` toward the TradingView reference: compact 380px dark dialog,
+  larger title with pencil/close controls, TradingView-like tabs, scrollable content, and footer
+  actions (`Template`, `Cancel`, `Ok`).
+- Kept the existing live-apply settings behavior, but removed the extra custom computed summary
+  card from the Inputs tab so the field order matches TradingView more closely.
+- Added chart double-click support for existing long/short position drawings. The interaction
+  manager detects two close left-button pointerdowns on the same position within 350ms and opens
+  the settings dialog before starting drag.
+- Scope note: single-click selection, body drag, handle resize, TP/SL hit selection, and the
+  recent width-preservation/hit-resolution fixes remain on the existing code path.
+
 ### Long/Short position drag width regression fix
 - Fixed the short/long position body-drag regression where a TP/SL-hit drawing widened while being
   moved. `PositionTool` now treats TP/SL hit as visual state only; hit status may change labels,

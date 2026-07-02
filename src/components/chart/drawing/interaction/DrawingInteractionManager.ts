@@ -67,6 +67,7 @@ export interface DrawingInteractionManagerOpts {
   redo?: () => void;
   selectAll?: () => void;
   duplicateDrawing?: (id: string) => void;
+  openDrawingSettings?: (id: string) => void;
   /** Called when Text tool is used. If provided, replaces window.prompt. */
   onTextPlace?: (point: Point, color: string) => void;
   /**
@@ -112,11 +113,14 @@ export function useDrawingInteractionManager(
     undo,
     redo,
     selectAll,
+    openDrawingSettings,
     onTextPlace,
     freezeChart,
   } = opts;
   const freezeChartRef = useRef(freezeChart);
   freezeChartRef.current = freezeChart;
+  const openDrawingSettingsRef = useRef(openDrawingSettings);
+  openDrawingSettingsRef.current = openDrawingSettings;
 
   const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
@@ -144,6 +148,12 @@ export function useDrawingInteractionManager(
   // `PointerEvent.detail` is unreliable on `pointerdown` (0 in many browsers), so
   // we track the previous down's time + screen position instead.
   const lastDownRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const lastCursorDownRef = useRef<{
+    id: string | null;
+    x: number;
+    y: number;
+    t: number;
+  } | null>(null);
   const transition = useCallback((next: Partial<Machine>) => {
     setMachine((prev) => ({ ...prev, ...next }));
     scheduleRedrawRef.current();
@@ -343,6 +353,38 @@ export function useDrawingInteractionManager(
         return;
       }
       selectDrawing(hit?.drawing.id ?? null);
+
+      if (hit && e.button === 0) {
+        const prev = lastCursorDownRef.current;
+        const isDouble =
+          !!prev &&
+          prev.id === hit.drawing.id &&
+          e.timeStamp - prev.t < 350 &&
+          Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6;
+        lastCursorDownRef.current = {
+          id: hit.drawing.id,
+          x: e.clientX,
+          y: e.clientY,
+          t: e.timeStamp,
+        };
+        if (
+          isDouble &&
+          (hit.drawing.tool === "long" || hit.drawing.tool === "short") &&
+          openDrawingSettingsRef.current
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          openDrawingSettingsRef.current(hit.drawing.id);
+          return;
+        }
+      } else {
+        lastCursorDownRef.current = {
+          id: null,
+          x: e.clientX,
+          y: e.clientY,
+          t: e.timeStamp,
+        };
+      }
 
       if (hit && !cur.drawingsLocked && e.button === 0) {
         e.preventDefault();
