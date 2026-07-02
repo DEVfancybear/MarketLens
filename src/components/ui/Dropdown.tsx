@@ -33,10 +33,11 @@ export function Dropdown({
   }, [open]);
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" data-chart-ui ref={ref}>
       <div onClick={() => setOpen((o) => !o)}>{trigger(open)}</div>
       {open && (
         <div
+          data-chart-ui
           className={cn(
             "absolute top-full z-50 mt-1 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-xl shadow-black/40",
             align === "right" ? "right-0" : "left-0",

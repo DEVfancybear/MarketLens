@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay floating toolbar controls receive clicks (2026-07-02)
+- Marked the floating replay toolbar and shared dropdown as `data-chart-ui`, so capture-level chart
+  drawing/replay handlers no longer treat toolbar clicks as chart clicks before the button action
+  can run.
+- Removed `overflow-hidden` from the floating replay toolbar container; the compact `Select bar`
+  timing dropdown was opening below the toolbar but being clipped, making it look like the button did
+  nothing.
+- Added `npm run check:replay-toolbar-events` to guard the toolbar/dropdown event contract.
+
 ### Changed - Save drawing template uses TradingView-style dialog (2026-07-02)
 - Replaced the native browser `window.prompt("Save drawing template as:")` in both the floating
   drawing toolbar and object settings footer with an in-app dark modal matching TradingView's

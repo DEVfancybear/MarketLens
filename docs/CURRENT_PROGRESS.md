@@ -4,6 +4,16 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Replay floating toolbar click regression fixed
+- User repro: the floating Bar Replay toolbar was visible but clicking controls looked like it did
+  nothing.
+- Root cause: the toolbar/dropdown was not marked as chart UI, so document-capture drawing/replay
+  handlers could treat toolbar pointerdowns as chart clicks. The toolbar container also used
+  `overflow-hidden`, clipping the compact `Select bar` timing menu below the toolbar.
+- Fix: `ReplayFloatingToolbar` and the shared `Dropdown` now carry `data-chart-ui`, and the floating
+  toolbar no longer clips its dropdown.
+- Guard: added `npm run check:replay-toolbar-events`.
+
 ### Save drawing template modal parity
 - Replaced native browser prompts for saving drawing templates from both the floating drawing
   toolbar and `ObjectSettingsDialog`.

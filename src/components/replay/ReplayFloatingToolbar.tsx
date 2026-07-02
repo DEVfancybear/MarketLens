@@ -26,8 +26,14 @@ export function ReplayFloatingToolbar() {
   const selecting = r.selecting || r.reSelecting;
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2">
-      <div className="pointer-events-auto flex h-10 items-center overflow-hidden rounded-md border border-terminal-border bg-terminal-panel-2 shadow-2xl shadow-black/45">
+    <div
+      data-chart-ui
+      className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2"
+    >
+      <div
+        data-chart-ui
+        className="pointer-events-auto flex h-10 items-center rounded-md border border-terminal-border bg-terminal-panel-2 shadow-2xl shadow-black/45"
+      >
         <div className="flex h-full w-7 items-center justify-center border-r border-terminal-border text-ink-faint">
           <GripVertical size={15} />
         </div>
