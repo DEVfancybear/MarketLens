@@ -317,6 +317,20 @@ Price-change / percent / angle labels belong to `infoLine` and `trendAngle`.
 - Regression guard: `npm run check:trendline-text` ensures the plain trendline cannot reintroduce
   measurement chips and keeps the attached-text editor path wired.
 
+## Info Line measurement panel — updated 2026-07-02
+
+`infoLine` is the dedicated measurement tool. It should not share the plain trendline's attached
+text behavior.
+
+- **Rendering**: `InfoLineTool.ts` draws the segment plus a TradingView-style dark panel containing
+  price change / percent / tick span, bar count + elapsed time + pixel distance, and angle.
+- **Data sources**: price values come from the drawing points; bars use the active `timeframeAtom`
+  with `TF_SECONDS`; distance and angle come from projected canvas coordinates so they reflect the
+  current chart zoom/pan.
+- **Culling**: the adapter `boundingBox()` includes the panel's approximate width/height so the
+  spatial index does not cull an info line whose segment is visible but panel extends beyond it.
+- Regression guard: `npm run check:infoline-panel` rejects the old one-line generic chip path.
+
 ## Fixed: every new/duplicated/pasted drawing was inserted twice — 2026-07-02
 
 Found while verifying the above feature (a fresh test rectangle showed up twice in

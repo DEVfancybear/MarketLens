@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Info Line measurement panel matches TradingView (2026-07-02)
+- Replaced the old one-line blue `InfoLineTool` chip with a TradingView-style dark measurement panel.
+- The panel now shows three rows: price change / percent / tick span, bar count + elapsed time +
+  pixel distance, and line angle.
+- Bar count is derived from the active chart timeframe, while pixel distance and angle are computed
+  from the projected canvas geometry.
+- Added `npm run check:infoline-panel` to prevent the old generic chip from returning.
+
 ### Fixed - Trendline text parity with TradingView (2026-07-02)
 - Plain `trendline` no longer renders the measurement chip with price change, percent change, and
   angle. Those measurements belong to `infoLine` / `trendAngle`, not the normal Trend Line tool.

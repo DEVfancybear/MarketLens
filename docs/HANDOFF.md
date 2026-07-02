@@ -30,6 +30,10 @@ floating drawing toolbar and `ObjectSettingsDialog` open `SaveDrawingTemplateDia
 TradingView-style `New template name` input plus dropdown of existing template names. Choosing an
 existing name overwrites that template in the current style family via `saveTemplateAtom`.
 
+Recent drawing parity note: plain `trendline` now uses attached `+ Add text`; measurement values
+belong to `infoLine` / `trendAngle`. `InfoLineTool.ts` renders the TradingView-style dark
+measurement panel with price/%/ticks, bars/time/pixel distance, and angle.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`

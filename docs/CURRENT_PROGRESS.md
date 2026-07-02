@@ -4,6 +4,16 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Info Line measurement panel parity
+- User repro: `InfoLineTool` showed a single blue chip with only price/% while TradingView shows a
+  dark measurement panel.
+- Fix: `InfoLineTool.ts` now renders a three-row panel with price change / percent / tick span,
+  bars + elapsed time + pixel distance, and angle. The panel is positioned near the measured segment
+  and clamped inside the chart viewport.
+- Bar count comes from the active `timeframeAtom` and `TF_SECONDS`; distance/angle come from canvas
+  geometry so the values update correctly while the chart is zoomed/panned.
+- Guard: added `npm run check:infoline-panel`.
+
 ### Trendline text parity fixed
 - User repro: plain trendline displayed a blue measurement chip (`price change / % / angle`) while
   TradingView's normal Trend Line shows `+ Add text` on the selected line instead.
