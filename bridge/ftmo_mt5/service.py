@@ -42,6 +42,7 @@ class FtmoMt5Service:
         if not self.config.dry_run:
             self.adapter.connect()
         async with websockets.serve(self.handle_client, self.config.host, self.config.port):
+            snapshot_task = asyncio.create_task(self.snapshot_poller())
             print(f"[ftmo-mt5-python] listening on ws://{self.config.host}:{self.config.port}")
             print(
                 f"[ftmo-mt5-python] enabled={self.config.enabled} "
@@ -53,7 +54,10 @@ class FtmoMt5Service:
                 f"source={snapshot.get('accountSizeSource', 'unknown')} "
                 f"maxRiskPerTrade={snapshot.get('maxRiskPerTrade', 0):.2f}",
             )
-            await asyncio.Future()
+            try:
+                await asyncio.Future()
+            finally:
+                snapshot_task.cancel()
 
     async def handle_client(self, websocket: WebSocketServerProtocol) -> None:
         self.clients.add(websocket)
@@ -82,6 +86,14 @@ class FtmoMt5Service:
             await self.send(websocket, "heartbeat", {"ts": now_ms()})
             await self.send(websocket, "ftmo.readiness", self.readiness())
             await self.send(websocket, "risk.snapshot", self.risk_snapshot())
+
+    async def snapshot_poller(self) -> None:
+        interval = max(250, self.config.snapshot_interval_ms) / 1000
+        while True:
+            await asyncio.sleep(interval)
+            if not self.clients:
+                continue
+            await self.broadcast_snapshots()
 
     async def handle_message(self, websocket: WebSocketServerProtocol, raw: str) -> None:
         try:

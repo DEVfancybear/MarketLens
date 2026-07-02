@@ -70,6 +70,7 @@ class BridgeConfig:
     max_order_volume: float
     max_daily_orders: int
     max_messages_per_minute: int
+    snapshot_interval_ms: int
     close_all_enabled: bool
     require_stop_loss: bool
     audit_path: Path
@@ -103,6 +104,7 @@ def load_config() -> BridgeConfig:
         max_order_volume=_float_env("FTMO_BRIDGE_MAX_ORDER_VOLUME", 1),
         max_daily_orders=_int_env("FTMO_BRIDGE_MAX_DAILY_ORDERS", 100),
         max_messages_per_minute=_int_env("FTMO_BRIDGE_MAX_MESSAGES_PER_MINUTE", 60),
+        snapshot_interval_ms=_int_env("FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS", 1000),
         close_all_enabled=_bool_env("FTMO_BRIDGE_CLOSE_ALL_ENABLED", True),
         require_stop_loss=_bool_env("FTMO_REQUIRE_STOP_LOSS", True),
         audit_path=Path(os.getenv("FTMO_BRIDGE_AUDIT_PATH", ".data/ftmo-mt5-audit.jsonl")),

@@ -28,6 +28,9 @@ If `FTMO_ACCOUNT_SIZE` is not set, live mode uses the connected MT5 account equi
 base. If `FTMO_ACCOUNT_SIZE` is set, that fixed value is used for FTMO-style loss/risk limits.
 Startup logs print `riskBase`, `source`, and `maxRiskPerTrade`.
 
+Live account, position, order, and risk snapshots are pushed to connected web clients every
+`FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS` milliseconds. Default is `1000`.
+
 ```powershell
 $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"

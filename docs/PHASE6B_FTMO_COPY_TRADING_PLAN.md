@@ -146,6 +146,7 @@ FTMO_BRIDGE_REQUIRE_DEMO_FIRST=true
 FTMO_BRIDGE_MAX_ORDER_VOLUME=1
 FTMO_BRIDGE_MAX_DAILY_ORDERS=100
 FTMO_BRIDGE_MAX_MESSAGES_PER_MINUTE=60
+FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS=1000
 FTMO_BRIDGE_CLOSE_ALL_ENABLED=true
 FTMO_BRIDGE_DRY_RUN=true
 FTMO_BRIDGE_ALLOW_LIVE=false
@@ -171,6 +172,8 @@ Rules:
 - If `FTMO_ACCOUNT_SIZE` is unset, the Python bridge uses live MT5 equity as the risk base. If it
   is set, that fixed value is used. Startup logs print `riskBase`, `source`, and
   `maxRiskPerTrade` for verification.
+- `FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS` controls how often the Python bridge pushes live MT5
+  account/position/order snapshots to the web UI. Default is `1000`.
 
 ## 5.1 Dry-Run Quickstart
 
