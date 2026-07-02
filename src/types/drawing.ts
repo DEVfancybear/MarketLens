@@ -90,6 +90,17 @@ export const POSITION_STATS: { id: PositionStat; label: string }[] = [
   { id: "amount", label: "Risk/Reward amount" },
 ];
 
+export type FibTextMode = "values" | "percent";
+export type FibAlignH = "left" | "center" | "right";
+export type FibAlignV = "top" | "middle" | "bottom";
+
+export interface FibLevelConfig {
+  value: number;
+  enabled: boolean;
+  color: string;
+  text?: string;
+}
+
 export interface Point {
   /** UTC timestamp (seconds). */
   time: number;
@@ -140,6 +151,28 @@ export interface BaseDrawing {
   compactStats?: boolean;
   /** Position tool — keep stats visible even when the tool isn't selected. */
   alwaysShowStats?: boolean;
+  /** Fibonacci object settings (TradingView-style). */
+  fibTrendLine?: boolean;
+  fibTrendLineColor?: string;
+  fibTrendLineWidth?: number;
+  fibTrendLineStyle?: LineStyle;
+  fibLevelsLine?: boolean;
+  fibLevelLineColor?: string;
+  fibLevelLineWidth?: number;
+  fibLevelLineStyle?: LineStyle;
+  fibLevels?: FibLevelConfig[];
+  fibUseOneColor?: boolean;
+  fibBackground?: boolean;
+  fibReverse?: boolean;
+  fibShowPrices?: boolean;
+  fibShowLevels?: boolean;
+  fibLevelsFormat?: FibTextMode;
+  fibLabelsHAlign?: FibAlignH;
+  fibLabelsVAlign?: FibAlignV;
+  fibShowText?: boolean;
+  fibTextHAlign?: FibAlignH;
+  fibTextVAlign?: FibAlignV;
+  fibLogScale?: boolean;
   // --- TradingView object-settings parity (shapes & text) ---
   /** Bold / italic for text (text tool + text inside a shape). */
   bold?: boolean;
@@ -220,6 +253,27 @@ export interface DrawingTemplate {
   showMiddleLine?: boolean;
   middleLineColor?: string;
   middleLineStyle?: LineStyle;
+  fibTrendLine?: boolean;
+  fibTrendLineColor?: string;
+  fibTrendLineWidth?: number;
+  fibTrendLineStyle?: LineStyle;
+  fibLevelsLine?: boolean;
+  fibLevelLineColor?: string;
+  fibLevelLineWidth?: number;
+  fibLevelLineStyle?: LineStyle;
+  fibLevels?: FibLevelConfig[];
+  fibUseOneColor?: boolean;
+  fibBackground?: boolean;
+  fibReverse?: boolean;
+  fibShowPrices?: boolean;
+  fibShowLevels?: boolean;
+  fibLevelsFormat?: FibTextMode;
+  fibLabelsHAlign?: FibAlignH;
+  fibLabelsVAlign?: FibAlignV;
+  fibShowText?: boolean;
+  fibTextHAlign?: FibAlignH;
+  fibTextVAlign?: FibAlignV;
+  fibLogScale?: boolean;
 }
 
 /** The subset of `Drawing` fields a template applies. */
@@ -240,20 +294,60 @@ export const TEMPLATE_STYLE_KEYS = [
   "showMiddleLine",
   "middleLineColor",
   "middleLineStyle",
+  "fibTrendLine",
+  "fibTrendLineColor",
+  "fibTrendLineWidth",
+  "fibTrendLineStyle",
+  "fibLevelsLine",
+  "fibLevelLineColor",
+  "fibLevelLineWidth",
+  "fibLevelLineStyle",
+  "fibLevels",
+  "fibUseOneColor",
+  "fibBackground",
+  "fibReverse",
+  "fibShowPrices",
+  "fibShowLevels",
+  "fibLevelsFormat",
+  "fibLabelsHAlign",
+  "fibLabelsVAlign",
+  "fibShowText",
+  "fibTextHAlign",
+  "fibTextVAlign",
+  "fibLogScale",
 ] as const;
 
-/**
- * TradingView-style Fibonacci retracement ratios.
- *
- * 0..1 are internal retracement levels; values > 1 are external retracement
- * levels. TradingView also supports negative/custom levels from settings. The
- * clone exposes the common visible preset here until per-level fib settings are
- * added.
- */
-export const FIB_LEVELS = [
-  0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618,
-  4.236,
+export const DEFAULT_FIB_LEVELS: readonly FibLevelConfig[] = [
+  { value: 0, enabled: true, color: "#787b86" },
+  { value: 0.236, enabled: true, color: "#f23645" },
+  { value: 0.382, enabled: true, color: "#ff9800" },
+  { value: 0.5, enabled: true, color: "#4caf50" },
+  { value: 0.618, enabled: true, color: "#089981" },
+  { value: 0.786, enabled: true, color: "#00bcd4" },
+  { value: 1, enabled: true, color: "#787b86" },
+  { value: 1.618, enabled: true, color: "#2962ff" },
+  { value: 2.618, enabled: true, color: "#f23645" },
+  { value: 3.618, enabled: true, color: "#9c27b0" },
+  { value: 4.236, enabled: true, color: "#e91e63" },
+  { value: 1.272, enabled: false, color: "#9d6b16" },
+  { value: 1.414, enabled: false, color: "#a33a43" },
+  { value: 2.272, enabled: false, color: "#a66a16" },
+  { value: 2.414, enabled: false, color: "#3d7b45" },
+  { value: 2, enabled: false, color: "#176d62" },
+  { value: 3, enabled: false, color: "#278a96" },
+  { value: 3.272, enabled: false, color: "#666666" },
+  { value: 3.414, enabled: false, color: "#2f55a4" },
+  { value: 4, enabled: false, color: "#a33a43" },
+  { value: 4.272, enabled: false, color: "#6f2f84" },
+  { value: 4.414, enabled: false, color: "#9b2a56" },
+  { value: 4.618, enabled: false, color: "#a66a16" },
+  { value: 4.764, enabled: false, color: "#176d62" },
 ] as const;
+
+/** Enabled default ratios for legacy code paths. */
+export const FIB_LEVELS = DEFAULT_FIB_LEVELS.filter((level) => level.enabled).map(
+  (level) => level.value,
+);
 
 /** TradingView-style trend-based Fibonacci extension ratios. */
 export const FIB_EXT_LEVELS = [

@@ -18,9 +18,10 @@ Key behavior from the reference:
   level labels, custom text, and font size.
 - Coordinates are the two anchor prices and bars.
 
-The clone does not yet expose TradingView's full per-level settings dialog. Until that exists, the
-renderer uses a common visible preset that includes internal levels plus the most common external
-levels.
+The clone now exposes the main TradingView-style Fib Retracement settings surface in
+`ObjectSettingsDialog`: Style, Coordinates, and Visibility tabs, per-level enable/value/color rows,
+background/reverse/prices/levels/labels/text/font/log-scale controls, and price/bar coordinate
+inputs.
 
 ## Current Implementation
 
@@ -29,6 +30,8 @@ Files:
 - `src/components/chart/drawing/tools/plugins/FibRetracementTool.ts`
 - `src/components/chart/drawing/tools/plugins/FibExtensionTool.ts`
 - `src/components/chart/drawing/tools/plugins/FibTool.ts`
+- `src/components/chart/ObjectSettingsDialog.tsx`
+- `src/components/chart/drawing/renderer/CanvasRenderer.ts`
 - `src/components/toolbar/DrawingToolbar.tsx`
 - `scripts/check-fibonacci-tools-parity.mjs`
 
@@ -47,26 +50,22 @@ levelPrice = point1.price + (point2.price - point1.price) * level
 ```
 
 Visible preset:
-- `0`
-- `0.236`
-- `0.382`
-- `0.5`
-- `0.618`
-- `0.786`
-- `1`
-- `1.272`
-- `1.414`
-- `1.618`
-- `2`
-- `2.618`
-- `3.618`
-- `4.236`
+- 24 TradingView-style level rows live in `DEFAULT_FIB_LEVELS`.
+- Enabled by default: `0`, `0.236`, `0.382`, `0.5`, `0.618`, `0.786`, `1`,
+  `1.618`, `2.618`, `3.618`, `4.236`.
+- Disabled rows are still visible in settings and can be enabled or edited: `1.272`, `1.414`,
+  `2.272`, `2.414`, `2`, `3`, `3.272`, `3.414`, `4`, `4.272`, `4.414`, `4.618`, `4.764`.
 
 Renderer contract:
 - Draw the dashed source trend line between the anchors.
 - Draw horizontal level lines using the level prices.
-- Draw subtle background bands between adjacent levels.
-- Draw right-side labels with both the level value and price.
+- Draw subtle background bands between adjacent enabled levels when `fibBackground !== false`.
+- Draw labels with level, price, and optional custom text according to `fibShowLevels`,
+  `fibShowPrices`, `fibShowText`, and `fibLevelsFormat`.
+- Default label placement is `Left / Middle`, matching the TradingView settings reference.
+- Labels must be measured with `CanvasRenderingContext2D.measureText()` and clamped inside the
+  chart viewport. Do not put labels at `right + padding`; that reintroduces the right-edge overlap
+  bug fixed after the InfoLine panel overflow issue.
 - Use `canvasFont()` from `plugins/shared.ts`; do not use `var(--font-*)` directly in canvas fonts.
 
 Interaction contract:
@@ -116,8 +115,22 @@ Interaction contract:
 Tool id: `fib`.
 
 This tool remains in the toolbar and in saved drawings for backward compatibility. It mirrors the
-modern retracement renderer/hit-test behavior and uses the same `FIB_LEVELS` preset. Do not delete it
-unless a migration removes or remaps saved `tool: "fib"` drawings.
+modern retracement renderer/hit-test/settings behavior and uses `DEFAULT_FIB_LEVELS`. Do not delete
+it unless a migration removes or remaps saved `tool: "fib"` drawings.
+
+## Settings Dialog
+
+Fib tools use `ObjectSettingsDialog`:
+- Double-clicking any drawing opens settings; this includes fib objects.
+- Fib Retracement title: `Fib retracement`.
+- Tabs: `Style`, `Coordinates`, `Visibility`.
+- Style tab mirrors TradingView's layout: trend line, levels line, extend, 24 per-level rows, use
+  one color, background opacity, reverse, prices, levels value/percent mode, labels align, text
+  align, font size, and log-scale toggle.
+- Coordinates tab uses `#1 (price, bar)`, `#2 (price, bar)` rows. Bar is the nearest loaded candle
+  index and edits snap to the selected candle's time.
+- Fib setting fields are included in `CanvasRenderer.drawingsHash()` and `TEMPLATE_STYLE_KEYS`, so
+  live edits repaint immediately and templates preserve fib styling.
 
 ## Regression Guard
 
@@ -135,6 +148,9 @@ The guard verifies:
 - p3 remains a real anchor;
 - legacy `fib` still mirrors modern retracement enough for saved drawings;
 - fib canvas fonts do not regress to invalid CSS-variable font strings.
+- fib labels remain measured/clamped inside the chart viewport;
+- `ObjectSettingsDialog` keeps the fib Style/Coordinates/Visibility setting surface;
+- double-click still opens settings for drawings.
 
 Run this together with the normal checks before commit:
 
@@ -146,9 +162,7 @@ npm run build
 
 ## Known Gaps
 
-- No TradingView-style fib settings dialog yet for enabling/disabling individual levels, negative
-  extension levels, reverse mode, custom labels/text per level, log-scale fib calculation, or
-  per-timeframe visibility.
-- `extend` can be read by retracement rendering, but there is no dedicated fib UI for toggling
-  extend-left/extend-right yet.
+- Negative fib levels are not in the default settings list yet, though level values are editable.
+- Full TradingView per-timeframe visibility checkboxes are not implemented; Visibility currently
+  keeps the app-level shown/hidden control.
 - Alert conditions on fib levels are not implemented.

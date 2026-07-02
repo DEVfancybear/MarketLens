@@ -12,12 +12,20 @@ _Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
   contract: retracement is anchored by two extremes; levels between `0` and `1` are internal,
   levels greater than `1` are external retracements, and the style surface includes trend line,
   level lines, extend left/right, background, prices, levels, labels, text, and font size.
-- Fix: `FIB_LEVELS` now includes common external levels through `4.236`; `FibRetracementTool`
+- Fix: `DEFAULT_FIB_LEVELS` now includes 24 TradingView-style level rows; `FibRetracementTool`
   renders a dashed source trend line, horizontal levels, subtle background bands, and level+price
   labels with concrete canvas fonts.
+- Fix: `ObjectSettingsDialog` now has a fib-specific TradingView-style settings surface with
+  Style / Coordinates / Visibility tabs, 24 per-level rows, background/reverse/prices/levels/
+  labels/text/font/log-scale controls, and `#1/#2 (price, bar)` coordinate rows.
+- Fix: Fib labels now measure their text width and clamp inside the chart viewport. Labels are no
+  longer placed at `right + padding`, which caused left-to-right fib drawings to overlap the
+  right edge/price-scale area. Default label placement is `Left / Middle`.
 - Fix: `FibExtensionTool` is now trend-based with three-click creation. A-B defines the impulse,
   C defines the projection origin, and levels are computed as `C + ratio * (B - A)`. Two-point
   saved extension drawings still render by treating B as C.
+- Fix: double-clicking any drawing opens the settings dialog, so fib settings can be opened from
+  the chart, not only from the floating toolbar.
 - Fix: `FibExtensionTool.getAnchors()` maps `p3` explicitly so the third point is draggable as a
   real anchor instead of being resolved as body.
 - Fix: legacy `fib` mirrors the modern retracement preset/renderer enough for saved drawings and

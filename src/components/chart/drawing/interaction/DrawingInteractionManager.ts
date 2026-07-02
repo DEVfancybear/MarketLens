@@ -443,11 +443,7 @@ export function useDrawingInteractionManager(
           y: e.clientY,
           t: e.timeStamp,
         };
-        if (
-          isDouble &&
-          (hit.drawing.tool === "long" || hit.drawing.tool === "short") &&
-          openDrawingSettingsRef.current
-        ) {
+        if (isDouble && openDrawingSettingsRef.current) {
           e.preventDefault();
           e.stopPropagation();
           openDrawingSettingsRef.current(hit.drawing.id);

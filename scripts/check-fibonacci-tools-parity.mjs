@@ -14,6 +14,15 @@ const legacy = fs.readFileSync(
   "utf8",
 );
 const toolbar = fs.readFileSync("src/components/toolbar/DrawingToolbar.tsx", "utf8");
+const settings = fs.readFileSync("src/components/chart/ObjectSettingsDialog.tsx", "utf8");
+const renderer = fs.readFileSync(
+  "src/components/chart/drawing/renderer/CanvasRenderer.ts",
+  "utf8",
+);
+const interaction = fs.readFileSync(
+  "src/components/chart/drawing/interaction/DrawingInteractionManager.ts",
+  "utf8",
+);
 
 const checks = [
   {
@@ -32,8 +41,17 @@ const checks = [
       retracement.includes("fillRect") &&
       retracement.includes("levelPrice") &&
       retracement.includes("formatPrice") &&
-      retracement.includes("canvasFont(11") &&
+      retracement.includes("canvasFont(d.fontSize ?? 12") &&
       retracement.includes("distToSegment"),
+  },
+  {
+    name: "Fib labels are measured and clamped inside the chart viewport",
+    ok:
+      retracement.includes("function labelXFor") &&
+      retracement.includes("g.measureText(label).width") &&
+      retracement.includes("return clamp(preferred, 4, Math.max(4, width - textW - 8))") &&
+      legacy.includes("return clamp(preferred, 4, Math.max(4, width - textW - 8))") &&
+      extension.includes("return clamp(preferred, 4, Math.max(4, width - textW - 8))"),
   },
   {
     name: "Fib retracement hit-test covers each horizontal level and the trend line",
@@ -66,10 +84,28 @@ const checks = [
   {
     name: "Legacy fib mirrors modern retracement rendering enough for saved drawings",
     ok:
-      legacy.includes("FIB_LEVELS") &&
+      legacy.includes("DEFAULT_FIB_LEVELS") &&
       legacy.includes("FILL_OPACITY") &&
       legacy.includes("formatPrice") &&
       legacy.includes("distToSegment"),
+  },
+  {
+    name: "Object settings exposes TradingView-style Fib tabs and level grid",
+    ok:
+      settings.includes("Fib retracement") &&
+      settings.includes("normalizedFibLevels") &&
+      settings.includes("fibLevels.map") &&
+      settings.includes("#{i + 1} (price, bar)") &&
+      settings.includes("fibLevelsFormat") &&
+      settings.includes("fibLabelsHAlign") &&
+      settings.includes("Fib levels based on log scale"),
+  },
+  {
+    name: "Fib settings repaint immediately and open on double-click",
+    ok:
+      renderer.includes(":fib=") &&
+      renderer.includes("JSON.stringify(d.fibLevels ?? [])") &&
+      interaction.includes("if (isDouble && openDrawingSettingsRef.current)"),
   },
   {
     name: "Toolbar labels fib extension as trend-based",

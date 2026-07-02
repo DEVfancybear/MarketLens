@@ -8,8 +8,8 @@
  *
  * Existing two-point objects are still rendered by treating B as C.
  */
-import type { Drawing } from "@/types";
-import { FIB_EXT_LEVELS } from "@/types";
+import type { Drawing, FibAlignH, FibAlignV, FibLevelConfig } from "@/types";
+import { DEFAULT_FIB_LEVELS, FIB_EXT_LEVELS } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
@@ -23,12 +23,36 @@ import {
   distToRect,
   distToSegment,
 } from "../ToolRegistry";
-import { canvasFont, line, handle } from "./shared";
+import { applyStyle, canvasFont, line, handle } from "./shared";
 
 const LEVEL_OPACITY = 0.74;
 const FILL_OPACITY = 0.07;
 const LABEL_PAD = 6;
 const LABEL_CULL_PAD = 150;
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function fibLevels(d: Drawing): FibLevelConfig[] {
+  if (d.fibLevels?.length) {
+    return DEFAULT_FIB_LEVELS.map((base, i) => {
+      const custom = d.fibLevels?.[i];
+      return {
+        ...base,
+        ...(custom ?? {}),
+        value: Number.isFinite(custom?.value) ? custom!.value : base.value,
+        color: custom?.color || base.color,
+        enabled: custom?.enabled ?? base.enabled,
+      };
+    });
+  }
+  return FIB_EXT_LEVELS.map((value, i) => ({
+    value,
+    enabled: true,
+    color: DEFAULT_FIB_LEVELS[i]?.color ?? d.color,
+  }));
+}
 
 function priceDecimals(price: number): number {
   const abs = Math.abs(price);
@@ -44,7 +68,11 @@ function formatPrice(price: number): string {
   });
 }
 
-function formatLevel(level: number): string {
+function formatLevel(level: number, mode: Drawing["fibLevelsFormat"]): string {
+  if (mode === "percent") {
+    const pct = level * 100;
+    return `${Number.isInteger(pct) ? pct.toFixed(0) : pct.toFixed(1)}%`;
+  }
   return Number.isInteger(level)
     ? String(level)
     : level.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
@@ -64,19 +92,53 @@ function levelPrice(d: Drawing, level: number): number {
 function projectedLevels(
   d: Drawing,
   toY: HitTestProjector,
-): Array<{ level: number; price: number; y: number }> {
-  const levels: Array<{ level: number; price: number; y: number }> = [];
-  for (const level of FIB_EXT_LEVELS) {
-    const price = levelPrice(d, level);
+): Array<{ level: FibLevelConfig; price: number; y: number; color: string }> {
+  const levels: Array<{ level: FibLevelConfig; price: number; y: number; color: string }> = [];
+  for (const level of fibLevels(d)) {
+    if (!level.enabled) continue;
+    const price = levelPrice(d, level.value);
     const y = toY(price);
-    if (y != null) levels.push({ level, price, y });
+    if (y != null) {
+      const color = d.fibUseOneColor
+        ? d.fibLevelLineColor || d.color
+        : level.color || d.color;
+      levels.push({ level, price, y, color });
+    }
   }
   return levels;
 }
 
-function labelXFor(g: CanvasRenderingContext2D, label: string, right: number, width: number) {
+function labelXFor(
+  g: CanvasRenderingContext2D,
+  label: string,
+  left: number,
+  right: number,
+  width: number,
+  align: FibAlignH,
+) {
   const textW = g.measureText(label).width;
-  return Math.max(4, Math.min(right + LABEL_PAD, width - textW - 4));
+  const preferred =
+    align === "center"
+      ? (left + right) / 2 - textW / 2
+      : align === "right"
+        ? right - textW - LABEL_PAD
+        : left + LABEL_PAD;
+  return clamp(preferred, 4, Math.max(4, width - textW - 8));
+}
+
+function labelBaseline(align: FibAlignV): CanvasTextBaseline {
+  if (align === "top") return "top";
+  if (align === "bottom") return "bottom";
+  return "middle";
+}
+
+function labelText(d: Drawing, level: FibLevelConfig, price: number): string {
+  const parts: string[] = [];
+  if (d.fibShowLevels !== false)
+    parts.push(formatLevel(level.value, d.fibLevelsFormat ?? "values"));
+  if (d.fibShowPrices !== false) parts.push(formatPrice(price));
+  if (d.fibShowText !== false && level.text?.trim()) parts.push(level.text.trim());
+  return parts.join("  ");
 }
 
 const plugin: DrawingToolPlugin = {
@@ -110,34 +172,47 @@ const plugin: DrawingToolPlugin = {
 
     g.save();
 
-    if (levels.length > 1 && d.opacity !== 0) {
+    if (levels.length > 1 && d.fibBackground !== false && d.opacity !== 0) {
       const sorted = [...levels].sort((m, n) => m.y - n.y);
-      g.fillStyle = d.fillColor && d.fillColor !== "none" ? d.fillColor : d.color;
       for (let i = 0; i < sorted.length - 1; i++) {
         const top = sorted[i].y;
         const bottom = sorted[i + 1].y;
+        g.fillStyle = sorted[i].color;
         g.globalAlpha = (d.opacity ?? 1) * FILL_OPACITY * (i % 2 === 0 ? 1 : 0.6);
         g.fillRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
       }
     }
 
     // A-B impulse guide and B-C pullback/projection-origin guide.
-    g.globalAlpha = 0.58;
-    g.setLineDash([5, 4]);
-    g.lineWidth = Math.max(1, d.lineWidth || 1.5);
-    line(g, x1, y1, x2, y2);
-    if (d.points[2]) line(g, x2, y2, x3, y3);
-    g.setLineDash([]);
+    if (d.fibTrendLine !== false) {
+      g.globalAlpha = 0.58;
+      g.strokeStyle = d.fibTrendLineColor || d.color;
+      g.lineWidth = Math.max(1, d.fibTrendLineWidth ?? d.lineWidth ?? 1.5);
+      applyStyle(g, d.fibTrendLineStyle ?? "dashed");
+      line(g, x1, y1, x2, y2);
+      if (d.points[2]) line(g, x2, y2, x3, y3);
+      g.setLineDash([]);
+    }
 
-    g.font = canvasFont(11, { weight: 500 });
-    g.textBaseline = "middle";
-    for (const { level, price, y } of levels) {
-      g.globalAlpha = LEVEL_OPACITY;
-      line(g, left, y, right, y);
-      const label = `${formatLevel(level)}  ${formatPrice(price)}`;
+    g.font = canvasFont(d.fontSize ?? 12, { weight: 500 });
+    g.textBaseline = labelBaseline(d.fibLabelsVAlign ?? "middle");
+    for (const { level, price, y, color } of levels) {
+      g.strokeStyle = d.fibUseOneColor ? d.fibLevelLineColor || d.color : color;
+      g.lineWidth = Math.max(1, d.fibLevelLineWidth ?? d.lineWidth ?? 1.5);
+      applyStyle(g, d.fibLevelLineStyle ?? d.lineStyle ?? "solid");
+      if (d.fibLevelsLine !== false) {
+        g.globalAlpha = LEVEL_OPACITY;
+        line(g, left, y, right, y);
+      }
+      const label = labelText(d, level, price);
+      if (!label) continue;
       g.globalAlpha = 1;
-      g.fillStyle = d.color;
-      g.fillText(label, labelXFor(g, label, right, proj.width), y - 1);
+      g.fillStyle = d.fibUseOneColor ? d.fibLevelLineColor || d.color : color;
+      g.fillText(
+        label,
+        labelXFor(g, label, left, right, proj.width, d.fibLabelsHAlign ?? "right"),
+        y,
+      );
     }
     g.restore();
 

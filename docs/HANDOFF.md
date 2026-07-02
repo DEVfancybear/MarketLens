@@ -49,11 +49,14 @@ SMC canvas while screenshot export still composites it. SMC render now caps ever
 prioritizes active/fresh zones. Read `docs/SMC_OVERLAY_MAINTENANCE.md` and guard with
 `npm run check:smc-overlay`.
 
-Recent Fibonacci parity note: `FibRetracementTool.ts` now uses a TradingView-style preset with
-internal levels plus external levels through `4.236`, renders source trend line/background bands/
-level+price labels, and hit-tests each level. `FibExtensionTool.ts` is a three-click trend-based
-extension: A-B impulse, C projection origin, `C + ratio * (B - A)`, with explicit `p3` anchor
-mapping. Legacy `fib` mirrors retracement for saved drawings. Read
+Recent Fibonacci parity note: `FibRetracementTool.ts` now uses a TradingView-style preset/settings
+model with 24 per-level rows, renders source trend line/background bands/level+price labels, and
+hit-tests each level. Labels are measured and clamped inside the chart viewport; do not restore the
+old `right + padding` label placement because it overlaps the right edge/price scale. Fib settings
+live in `ObjectSettingsDialog` with Style/Coordinates/Visibility tabs and `#1/#2 (price, bar)`
+coordinates. Double-clicking any drawing opens settings. `FibExtensionTool.ts` is a three-click
+trend-based extension: A-B impulse, C projection origin, `C + ratio * (B - A)`, with explicit `p3`
+anchor mapping. Legacy `fib` mirrors retracement for saved drawings. Read
 `docs/FIBONACCI_TOOLS_MAINTENANCE.md` and guard with `npm run check:fibonacci-tools`.
 
 ## Repo state

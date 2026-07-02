@@ -121,6 +121,49 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         (d.textHAlign ?? "") +
         "," +
         (d.textVAlign ?? "");
+      h +=
+        ":fib=" +
+        (d.fibTrendLine === false ? "0" : "1") +
+        "," +
+        (d.fibTrendLineColor ?? "") +
+        "," +
+        (d.fibTrendLineWidth ?? "") +
+        "," +
+        (d.fibTrendLineStyle ?? "") +
+        "," +
+        (d.fibLevelsLine === false ? "0" : "1") +
+        "," +
+        (d.fibLevelLineColor ?? "") +
+        "," +
+        (d.fibLevelLineWidth ?? "") +
+        "," +
+        (d.fibLevelLineStyle ?? "") +
+        "," +
+        (d.fibUseOneColor ? "1" : "0") +
+        "," +
+        (d.fibBackground === false ? "0" : "1") +
+        "," +
+        (d.fibReverse ? "1" : "0") +
+        "," +
+        (d.fibShowPrices === false ? "0" : "1") +
+        "," +
+        (d.fibShowLevels === false ? "0" : "1") +
+        "," +
+        (d.fibLevelsFormat ?? "") +
+        "," +
+        (d.fibLabelsHAlign ?? "") +
+        "," +
+        (d.fibLabelsVAlign ?? "") +
+        "," +
+        (d.fibShowText === false ? "0" : "1") +
+        "," +
+        (d.fibTextHAlign ?? "") +
+        "," +
+        (d.fibTextVAlign ?? "") +
+        "," +
+        (d.fibLogScale ? "1" : "0") +
+        "," +
+        JSON.stringify(d.fibLevels ?? []);
     }
     return h;
   }

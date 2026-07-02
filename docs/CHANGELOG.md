@@ -7,14 +7,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 ### Changed - Fibonacci tools TradingView parity pass (2026-07-03)
 - Expanded the shared Fibonacci preset beyond `0..1` so retracement includes common external
   levels (`1.272`, `1.414`, `1.618`, `2`, `2.618`, `3.618`, `4.236`).
+- Added the TradingView-style Fib settings surface to `ObjectSettingsDialog`: Style,
+  Coordinates, and Visibility tabs; trend/level line controls; 24 per-level enable/value/color
+  rows; extend/background/reverse/prices/levels/labels/text/font/log-scale controls; and
+  `#1/#2 (price, bar)` coordinate rows.
 - Reworked `FibRetracementTool` to render the source trend line, horizontal level lines,
   subtle background bands, level+price labels, and hit-test each level instead of only the broad
   anchor box.
+- Fixed Fib labels overflowing into the chart's right edge/price-scale area by measuring label
+  text and clamping it inside the viewport, following the same principle used for the Info Line
+  panel overflow fix. Default retracement label placement is now `Left / Middle`, matching the
+  TradingView settings reference.
 - Reworked `FibExtensionTool` into a three-click trend-based extension: A-B is the impulse, C is
   the projection origin, and level price is `C + ratio * (B - A)`. Existing two-point extension
   drawings still render by treating B as C.
 - Updated legacy `fib` to mirror modern retracement rendering for saved drawings and old toolbar
   paths.
+- Double-clicking a drawing now opens its settings dialog, so fib objects can be edited from the
+  chart like TradingView.
 - Added `docs/FIBONACCI_TOOLS_MAINTENANCE.md` and `npm run check:fibonacci-tools`.
 
 ### Fixed - SMC overlay live visibility and chart readability (2026-07-02)
