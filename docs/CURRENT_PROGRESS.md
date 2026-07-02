@@ -232,6 +232,17 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
   entry; Ctrl+D → 2; Ctrl+D+Ctrl+V → 3; add-text button appears/click/type/Enter patches the shape
   and the button becomes an invisible re-edit hitbox; screenshot-confirmed text renders centered).
 
+### Shape add-text editor drag regression fixed
+- User repro: click `+ Add text` inside a rectangle, then drag the rectangle; the rectangle moved
+  but the inline input stayed at the old screen position.
+- Root cause: `TextEditor` only committed on native blur, and document-level drawing listeners run
+  in capture phase. Pointering into the chart could start a shape drag without reliably blurring the
+  focused input, leaving the editor as a stale floating overlay.
+- Fix: `TextEditor` is now `data-chart-ui`, commits/cancels on outside `pointerdown`, and guards
+  against duplicate completion from `pointerdown` plus `blur`. Shape and standalone text editors
+  remount per drawing id to avoid stale editor state when switching drawings.
+- Guard: added `npm run check:shape-text-editor`.
+
 ### Alert stayed "Active" client-side after a real server-confirmed trigger
 - After the false-trigger fix, the user hit a *different*, legitimate gap: a `BTCUSDT crossUp`
   alert genuinely crossed and the server sent a real push (confirmed received), but the alert

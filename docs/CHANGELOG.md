@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Shape add-text editor stays bound to drawing interaction (2026-07-02)
+- `TextEditor` is now marked as chart UI and commits/cancels on outside `pointerdown`, so clicking
+  `+ Add text` inside a Rectangle/Circle/etc. then dragging the shape no longer leaves the input
+  floating at the old location.
+- Added a completion guard so the outside `pointerdown` and native `blur` path cannot double-save
+  the same edit.
+- Added `npm run check:shape-text-editor` to lock the overlay/drawing-interaction contract.
+
 ### Fixed - Replay engine TradingView date/total semantics (2026-07-02)
 - `Select date...` and dashboard date jump now choose the candle closest to the requested timestamp,
   matching TradingView's Bar Replay behavior instead of always snapping to the bar at or before the

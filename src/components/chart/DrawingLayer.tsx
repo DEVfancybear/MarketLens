@@ -480,6 +480,7 @@ export function DrawingLayer() {
       )}
       {shapeTextEdit && (
         <TextEditor
+          key={shapeTextEdit.drawingId}
           initialText={shapeTextEdit.initialText}
           x={shapeTextEdit.x}
           y={shapeTextEdit.y}
@@ -496,6 +497,7 @@ export function DrawingLayer() {
       )}
       {textEdit && (
         <TextEditor
+          key={textEdit.drawingId}
           initialText=""
           x={textEdit.x}
           y={textEdit.y}

@@ -1,6 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { useChartCtx } from "@/components/chart/ChartContext";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface TextEditorProps {
   initialText: string;
@@ -21,8 +20,8 @@ export function TextEditor({
   onSaveAction,
   onCancelAction,
 }: TextEditorProps) {
-  const ctx = useChartCtx();
   const inputRef = useRef<HTMLInputElement>(null);
+  const doneRef = useRef(false);
   const [text, setText] = useState(initialText);
 
   useEffect(() => {
@@ -32,25 +31,56 @@ export function TextEditor({
     if (initialText) el.select();
   }, [initialText]);
 
-  const commit = () => {
+  useEffect(() => {
+    setText(initialText);
+    doneRef.current = false;
+  }, [initialText]);
+
+  const commit = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
     const trimmed = text.trim();
     if (trimmed) onSaveAction(trimmed);
     else onCancelAction();
-  };
+  }, [onCancelAction, onSaveAction, text]);
+
+  const cancel = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onCancelAction();
+  }, [onCancelAction]);
+
+  useEffect(() => {
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && inputRef.current?.contains(target)) return;
+      commit();
+    };
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        handleOutsidePointerDown,
+        true,
+      );
+    };
+  }, [commit]);
 
   return (
     <input
       ref={inputRef}
+      data-chart-ui
       type="text"
       value={text}
       onChange={(e) => setText(e.target.value)}
+      onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
           commit();
         } else if (e.key === "Escape") {
           e.preventDefault();
-          onCancelAction();
+          cancel();
         }
         e.stopPropagation();
       }}

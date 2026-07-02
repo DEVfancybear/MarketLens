@@ -210,7 +210,10 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   handlers from `useHotkeys.ts`; this also fixed single-selection Delete not being undoable (it was
   losing a race against the two listeners). See `DRAWING_ENGINE_ARCHITECTURE.md` for full detail,
   including a correction to the `DragTarget` doc (p0/p3 anchors do exist for 3+-anchor tools via a
-  separate index-based resolution path, contra what was documented earlier the same day).
+  separate index-based resolution path, contra what was documented earlier the same day). Follow-up:
+  the inline `TextEditor` is now `data-chart-ui` and commits/cancels on outside `pointerdown`, so a
+  user cannot click "+ Add text" then drag the rectangle away while the input remains at the old
+  location. Guarded by `npm run check:shape-text-editor`.
 - **Watchlist rebuilt as a 1:1 TradingView clone (2026-07-02):** `Watchlist.tsx` rewritten —
   TradingView panel header ("Watchlist ⌄", + / grid / ⋯), sortable `Symbol|Last|Chg|Chg%` columns
   (new `changeAbs` `SortKey`), 30px rows with circular symbol logos (new `SymbolLogo.tsx`;
