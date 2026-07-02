@@ -8,6 +8,7 @@ import {
   sendMt5Command,
 } from "@/services/mt5/runtime";
 import { isVolumeOnStep } from "@/services/mt5/symbolMapping";
+import { uid } from "@/utils/id";
 import type {
   ExecutionMode,
   Mt5AccountSnapshot,
@@ -117,11 +118,10 @@ export const addMt5LogAtom = atom(
     set,
     entry: Omit<Mt5CommandLogEntry, "id" | "time"> & { time?: number },
   ) => {
-    const id = `${Date.now()}_${get(mt5CommandLogAtom).length}`;
     set(mt5CommandLogAtom, (prev) =>
       [
         {
-          id,
+          id: uid("mt5log"),
           time: entry.time ?? Date.now(),
           level: entry.level,
           direction: entry.direction,
