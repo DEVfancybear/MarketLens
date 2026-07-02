@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Shape "+ Add text" + drawing double-insert bugs)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (TradingView 1:1 watchlist clone)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -210,6 +210,16 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   losing a race against the two listeners). See `DRAWING_ENGINE_ARCHITECTURE.md` for full detail,
   including a correction to the `DragTarget` doc (p0/p3 anchors do exist for 3+-anchor tools via a
   separate index-based resolution path, contra what was documented earlier the same day).
+- **Watchlist rebuilt as a 1:1 TradingView clone (2026-07-02):** `Watchlist.tsx` rewritten —
+  TradingView panel header ("Watchlist ⌄", + / grid / ⋯), sortable `Symbol|Last|Chg|Chg%` columns
+  (new `changeAbs` `SortKey`), 30px rows with circular symbol logos (new `SymbolLogo.tsx`;
+  overlapping FX flag pairs / metal / crypto / index icons from TradingView's public logo CDN,
+  lettered fallback on error), superscript fractional-pip last digit for FX/metals, true minus
+  sign + no leading "+", rounded-outline active row. Tick animation now flashes only the Last cell
+  (solid bull/bear + white text fading, `wl-flash-up/down`), keyed by tick sequence so consecutive
+  same-direction ticks restart the animation. Dark-theme `--bull`/`--bear` and `chartTheme.ts`
+  candles updated to TradingView's current `#089981`/`#f23645` in **both** themes. Verified with
+  Playwright screenshots (dark + light) against a fresh `next dev`.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.

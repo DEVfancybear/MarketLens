@@ -4,7 +4,7 @@ import { getDefaultStore } from "jotai";
 import { localStore } from "@/services/storage";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 
-export type SortKey = "symbol" | "price" | "change" | "volume";
+export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
 
 // Registry-backed defaults (canonical ids: crypto = Binance pairs, fx/metals/index = TwelveData).
 const DEFAULT = [

@@ -20,8 +20,8 @@
     --accent: #2962ff;
     --accent-hover: #1e53e5;
 
-    --bull: #26a69a;
-    --bear: #ef5350;
+    --bull: #089981;
+    --bear: #f23645;
 
     --bos: #2962ff;
     --choch: #ff9800;
@@ -132,28 +132,36 @@ body {
     }
 }
 
-/* Price flash (TradingView green/red pulse on tick) */
-@keyframes flashUp {
+/* Watchlist tick flash — TradingView style: the Last cell alone flashes a
+   solid bull/bear block with white text, then fades back to normal. */
+@keyframes wlFlashUp {
     from {
-        background: rgba(38, 166, 154, 0.2);
+        background-color: var(--bull);
+        color: #ffffff;
     }
     to {
-        background: transparent;
+        background-color: transparent;
     }
 }
-@keyframes flashDown {
+@keyframes wlFlashDown {
     from {
-        background: rgba(239, 83, 80, 0.2);
+        background-color: var(--bear);
+        color: #ffffff;
     }
     to {
-        background: transparent;
+        background-color: transparent;
     }
 }
-.animate-watch-flash-up {
-    animation: flashUp 350ms ease-out;
+.wl-flash-up {
+    animation: wlFlashUp 300ms ease-out;
 }
-.animate-watch-flash-down {
-    animation: flashDown 350ms ease-out;
+.wl-flash-down {
+    animation: wlFlashDown 300ms ease-out;
+}
+
+/* Tabular numerals in the UI sans font (TradingView numbers are not mono) */
+.tnum {
+    font-variant-numeric: tabular-nums;
 }
 
 /* Resizer handles */

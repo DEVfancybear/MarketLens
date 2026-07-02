@@ -19,11 +19,12 @@ export function chartColors(theme: Theme) {
     // Crosshair line + label box
     crosshair: dark ? "#758696" : "#9598a1",
     crosshairLabelBg: dark ? "#363a45" : "#2a2e39",
-    // Candles
-    bull: dark ? "#26a69a" : "#089981",
-    bear: dark ? "#ef5350" : "#f23645",
-    volumeBull: dark ? "rgba(38,166,154,0.5)" : "rgba(8,153,129,0.45)",
-    volumeBear: dark ? "rgba(239,83,80,0.5)" : "rgba(242,54,69,0.45)",
+    // Candles — TradingView's current palette uses the same bull/bear pair
+    // in both themes (#089981 / #f23645)
+    bull: "#089981",
+    bear: "#f23645",
+    volumeBull: dark ? "rgba(8,153,129,0.5)" : "rgba(8,153,129,0.45)",
+    volumeBear: dark ? "rgba(242,54,69,0.5)" : "rgba(242,54,69,0.45)",
   };
 }
 

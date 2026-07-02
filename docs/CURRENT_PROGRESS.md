@@ -1,8 +1,30 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (Shape "+ Add text" + drawing double-insert bugs)_
+_Last updated: 2026-07-02 (TradingView 1:1 watchlist clone)_
 
 ## Completed this session (2026-07-02)
+
+### Watchlist rebuilt as a 1:1 TradingView clone (dark + light)
+- User request (with reference screenshot): clone TradingView's watchlist UI 1:1, both themes,
+  including the tick animation which "didn't look like TradingView".
+- Rebuilt `Watchlist.tsx`: TradingView panel header ("Watchlist ⌄" + add / grid / ⋯ sort menu),
+  4 sortable columns `Symbol | Last | Chg | Chg%` (click header to sort, ▲/▼ indicator; new
+  `changeAbs` sort key), 30px rows with circular symbol logos (new `SymbolLogo.tsx` — overlapping
+  FX flag pairs, metal+flag, crypto coin, index logos from TradingView's public logo CDN with a
+  lettered fallback), superscript fractional-pip last digit for FX/metals, true minus sign, no "+"
+  on gains, rounded-outline active row, tabular-nums sans numbers (`.tnum`), exchange sub-line
+  removed.
+- Tick animation now matches TV: only the **Last cell** flashes a solid bull/bear block with white
+  text fading out (`wl-flash-up/down`, replacing the whole-row `animate-watch-flash-*`); keyed by a
+  tick sequence so consecutive same-direction ticks re-flash.
+- Dark-theme `--bull`/`--bear` updated to TradingView's current palette `#089981`/`#f23645`
+  (matches light), and `chartTheme.ts` candle/volume colours unified to the same pair so chart ==
+  watchlist.
+- Files: `src/components/watchlist/{Watchlist,SymbolLogo}.tsx`, `src/store/watchlistStore.ts`,
+  `src/app/globals.css`, `src/components/chart/chartTheme.ts`.
+- type-check ✅ · lint ✅ · build ✅ · Playwright screenshots verified in both themes against a
+  fresh `next dev` (crypto rows streamed live; FX rows showed "—" only because no OANDA key was
+  present in that environment — data availability, not UI).
 
 ### "+ Add text" for fillable shapes + 3 double-insert bugs found while verifying it
 - User request: TradingView shows a "+ Add text" placeholder centered inside a selected

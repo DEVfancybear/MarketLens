@@ -4,6 +4,36 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Watchlist rebuilt as a 1:1 TradingView clone (2026-07-02)
+- **Layout/1:1 parity:** panel header is now "Watchlist ⌄" (list menu stub) + `+` add-symbol /
+  grid (visual, disabled) / `⋯` sort menu, matching TradingView's panel header; column header row
+  is `Symbol | Last | Chg | Chg%` and every column is click-to-sort with an ▲/▼ indicator (new
+  `changeAbs` `SortKey` for the absolute-change column). Rows are 30px with circular symbol logos:
+  overlapping country-flag pairs for FX (base in front, quote behind), metal icon + quote flag for
+  XAU/XAG, coin logos for crypto, index logos for SPX500/NAS100 — served from TradingView's public
+  logo CDN (`s3-symbol-logo.tradingview.com`) with a lettered-circle fallback on load error (new
+  `SymbolLogo.tsx`). FX/metal prices render the last (fractional-pip) digit as a raised superscript
+  (`1.1379⁴`), negatives use a true minus sign (−), and Chg/Chg% drop the leading "+", all like
+  TradingView. The active chart symbol row gets TradingView's rounded outline instead of the old
+  blue left border. Numbers now use tabular-nums in the UI sans font (new `.tnum`) instead of the
+  mono font. The exchange sub-line was removed (TV shows the symbol only).
+- **Tick animation fixed to match TradingView:** the old animation flashed the whole row with a
+  translucent tint; TradingView flashes only the **Last cell** with a solid bull/bear block +
+  white text that fades out. New `wl-flash-up/down` keyframes (replacing `animate-watch-flash-*`),
+  and the flash now re-triggers correctly on consecutive same-direction ticks (the flashing span is
+  keyed by a tick sequence number so the CSS animation restarts; the old timeout-based approach
+  couldn't restart on same-direction ticks).
+- **Both themes:** everything is token-driven so dark/light work; dark-theme `--bull`/`--bear`
+  updated from the legacy `#26a69a`/`#ef5350` to TradingView's current `#089981`/`#f23645` (same
+  pair as light), and `chartTheme.ts` candles/volume now use that palette in both themes so the
+  chart matches the watchlist.
+- Files: `src/components/watchlist/Watchlist.tsx` (rewritten),
+  `src/components/watchlist/SymbolLogo.tsx` (new), `src/store/watchlistStore.ts` (`changeAbs`),
+  `src/app/globals.css` (tokens + flash keyframes + `.tnum`),
+  `src/components/chart/chartTheme.ts`.
+- Verified via Playwright screenshots against a fresh `next dev` in both themes; type-check ✅
+  lint ✅ build ✅.
+
 ### Added - "+ Add text" for fillable shapes (2026-07-02)
 - Selecting a Rectangle/RotatedRect/Circle/Ellipse/Triangle now shows a TradingView-style
   "+ Add text" affordance centered inside it; click opens the same inline editor the Text tool uses
