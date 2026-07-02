@@ -100,9 +100,10 @@ existing name overwrites that template in the current style family via `saveTemp
   `CHANGELOG.md` / `KNOWN_ISSUES.md`.
 - **Line suite parity (2026-06-28):** Added the **`trendAngle`** tool (`TrendAngleTool.ts`) —
   a 2-point line that always renders its screen angle in degrees (dashed baseline + sweep arc +
-  degree chip), matching TradingView's "Trend angle". The plain `trendline` now shows a stats
-  chip (price change / % / angle°) while drawing + when selected. New `angleDeg()`/`angleArc()`
-  helpers in `plugins/shared.ts`. The toolbar **LINES** group was consolidated to mirror
+  degree chip), matching TradingView's "Trend angle". The plain `trendline` must not show
+  measurement stats; it now shows TradingView-style `+ Add text` when selected and stores attached
+  text on the same drawing. Measurement labels belong to `infoLine` / `trendAngle`. New
+  `angleDeg()`/`angleArc()` helpers in `plugins/shared.ts`. The toolbar **LINES** group was consolidated to mirror
   TradingView's LINES menu (Trend line, Ray, Info line, Extended line, Trend angle, Horizontal
   line, Horizontal ray, Vertical line, Cross line, Channel) with inline hotkey labels, and
   Alt+T/H/J/V/C hotkeys were added. See `CHANGELOG.md`.

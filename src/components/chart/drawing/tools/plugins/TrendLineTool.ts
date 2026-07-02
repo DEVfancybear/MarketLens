@@ -13,7 +13,7 @@ import {
   pointDist,
   distToSegment,
 } from "../ToolRegistry";
-import { line, handle, chip, angleDeg } from "./shared";
+import { line, handle, renderLineText } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "trendline",
@@ -31,16 +31,7 @@ const plugin: DrawingToolPlugin = {
       y2 = proj.toY(pts[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return;
     line(g, x1, y1, x2, y2);
-    // TradingView-style stats chip: shown while drawing (pending) and when
-    // selected — price change, % change, and the visual angle.
-    if (selected || d.id === "__pending") {
-      const diff = pts[1].price - pts[0].price;
-      const pct = pts[0].price ? (diff / pts[0].price) * 100 : 0;
-      const deg = angleDeg(x1, y1, x2, y2);
-      const sign = diff >= 0 ? "+" : "";
-      const label = `${sign}${diff.toFixed(4)} (${sign}${pct.toFixed(2)}%) ${deg.toFixed(1)}°`;
-      chip(g, label, x2 + 8, y2 - 9, d.color);
-    }
+    renderLineText(g, d, x1, y1, x2, y2, selected);
     if (selected) {
       handle(g, x1, y1, d.color);
       handle(g, x2, y2, d.color);

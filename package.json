@@ -16,6 +16,7 @@
     "check:shape-text-editor": "node scripts/check-shape-text-editor.mjs",
     "check:template-save-dialog": "node scripts/check-template-save-dialog.mjs",
     "check:replay-toolbar-events": "node scripts/check-replay-toolbar-events.mjs",
+    "check:trendline-text": "node scripts/check-trendline-text-parity.mjs",
     "check:replay-logic": "node scripts/check-replay-logic.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

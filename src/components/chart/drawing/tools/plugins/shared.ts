@@ -122,6 +122,62 @@ export function renderShapeText(
   g.restore();
 }
 
+/**
+ * Draws a TradingView-style text label attached to a line segment. A selected
+ * empty trendline shows "+ Add text"; once saved, the drawing's own `text`
+ * is rendered on the line and moves/rotates with it.
+ */
+export function renderLineText(
+  g: CanvasRenderingContext2D,
+  d: {
+    text?: string;
+    fontSize?: number;
+    bold?: boolean;
+    italic?: boolean;
+    textColor?: string;
+    color: string;
+  },
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  selected: boolean,
+) {
+  const text = d.text?.trim() || (selected ? "+ Add text" : "");
+  if (!text) return;
+
+  const placeholder = !d.text?.trim();
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  let angle = Math.atan2(y2 - y1, x2 - x1);
+  if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(angle);
+  g.setLineDash([]);
+  const fs = d.fontSize ?? 12;
+  g.font = canvasFont(fs, {
+    bold: d.bold,
+    italic: d.italic || placeholder,
+  });
+  g.fillStyle = d.textColor || d.color;
+  g.globalAlpha = placeholder ? 0.72 : 1;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  const lines = text.split("\n");
+  const lineHeight = fs * 1.22;
+  const offsetY = -7;
+  for (const [i, lineText] of lines.entries()) {
+    g.fillText(
+      lineText,
+      0,
+      offsetY + (i - (lines.length - 1) / 2) * lineHeight,
+    );
+  }
+  g.restore();
+}
+
 export function handle(
   g: CanvasRenderingContext2D,
   x: number,

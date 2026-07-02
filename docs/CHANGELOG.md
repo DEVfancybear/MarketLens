@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Trendline text parity with TradingView (2026-07-02)
+- Plain `trendline` no longer renders the measurement chip with price change, percent change, and
+  angle. Those measurements belong to `infoLine` / `trendAngle`, not the normal Trend Line tool.
+- Selected empty trendlines now render a TradingView-style `+ Add text` placeholder along the line;
+  clicking it opens the inline text editor and saves text onto the same drawing so it moves and
+  rotates with the line.
+- Added `npm run check:trendline-text` to guard against reintroducing trendline measurement chips
+  or removing the attached-text editor path.
+
 ### Fixed - Replay floating toolbar controls receive clicks (2026-07-02)
 - Marked the floating replay toolbar and shared dropdown as `data-chart-ui`, so capture-level chart
   drawing/replay handlers no longer treat toolbar clicks as chart clicks before the button action

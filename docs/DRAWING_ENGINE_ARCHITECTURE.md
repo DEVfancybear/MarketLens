@@ -302,6 +302,21 @@ opens the same inline `TextEditor` the standalone Text tool uses, and the typed 
   keeps the shape editor position derived from current shape bounds while the chart pointerdown is
   consumed before drag starts.
 
+## Trendline attached text — updated 2026-07-02
+
+Plain `trendline` follows TradingView's normal Trend Line behavior: no automatic measurement chip.
+Price-change / percent / angle labels belong to `infoLine` and `trendAngle`.
+
+- **Rendering**: `TrendLineTool.ts` draws the line and handles, then calls `renderLineText()` from
+  `plugins/shared.ts`. Saved `d.text` is rendered at the segment midpoint, rotated with the line and
+  kept upright. When selected and empty, it renders the placeholder `+ Add text`.
+- **Editing**: `DrawingLayer.tsx` projects the selected trendline midpoint/angle via
+  `projectTrendLineTextTarget()`, renders an invisible `data-chart-ui` hitbox over the placeholder,
+  and opens the shared inline `TextEditor`. The saved text patches the existing trendline drawing,
+  so it moves and rotates with the trendline rather than becoming a standalone Text drawing.
+- Regression guard: `npm run check:trendline-text` ensures the plain trendline cannot reintroduce
+  measurement chips and keeps the attached-text editor path wired.
+
 ## Fixed: every new/duplicated/pasted drawing was inserted twice — 2026-07-02
 
 Found while verifying the above feature (a fresh test rectangle showed up twice in

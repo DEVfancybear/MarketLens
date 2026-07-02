@@ -76,6 +76,11 @@ export function DrawingLayer() {
     initialText: string;
     draftText: string;
   } | null>(null);
+  const [trendLineTextEdit, setTrendLineTextEdit] = useState<{
+    drawingId: string;
+    initialText: string;
+    draftText: string;
+  } | null>(null);
 
   const { commitMove, undo, redo, execute } = useCommandHistory(
     addDrawing,
@@ -204,6 +209,8 @@ export function DrawingLayer() {
   }, []);
   const shapeTextEditRef = useRef(shapeTextEdit);
   shapeTextEditRef.current = shapeTextEdit;
+  const trendLineTextEditRef = useRef(trendLineTextEdit);
+  trendLineTextEditRef.current = trendLineTextEdit;
   const commitShapeTextEdit = useCallback(() => {
     const edit = shapeTextEditRef.current;
     if (!edit) return false;
@@ -215,6 +222,17 @@ export function DrawingLayer() {
   }, [scheduleRedraw, updateDrawing]);
   const commitShapeTextEditRef = useRef(commitShapeTextEdit);
   commitShapeTextEditRef.current = commitShapeTextEdit;
+  const commitTrendLineTextEdit = useCallback(() => {
+    const edit = trendLineTextEditRef.current;
+    if (!edit) return false;
+    const text = edit.draftText.trim();
+    if (text) updateDrawing({ id: edit.drawingId, patch: { text } });
+    setTrendLineTextEdit(null);
+    scheduleRedraw();
+    return true;
+  }, [scheduleRedraw, updateDrawing]);
+  const commitTrendLineTextEditRef = useRef(commitTrendLineTextEdit);
+  commitTrendLineTextEditRef.current = commitTrendLineTextEdit;
 
   // Handle Text tool placement: create an empty drawing and show inline editor.
   const handleTextPlace = useCallback(
@@ -257,7 +275,7 @@ export function DrawingLayer() {
 
   useEffect(() => {
     const handleShapeEditorCanvasPointerDown = (event: PointerEvent) => {
-      if (!shapeTextEditRef.current) return;
+      if (!shapeTextEditRef.current && !trendLineTextEditRef.current) return;
       const target = event.target as Element | null;
       if (target?.closest?.("[data-inline-text-editor]")) return;
       if (target?.closest?.("[data-chart-ui],[data-drawing-toolbar]")) return;
@@ -272,10 +290,13 @@ export function DrawingLayer() {
         event.clientY <= rect.bottom;
       if (!insideCanvas) return;
 
-      // TradingView treats shape text editing as an edit state of the shape.
+      // TradingView treats attached text editing as an edit state of the drawing.
       // The first chart click/drag outside the input completes editing; it must
       // not also start a body drag that leaves the editor visually detached.
-      if (commitShapeTextEditRef.current()) {
+      if (
+        commitShapeTextEditRef.current() ||
+        commitTrendLineTextEditRef.current()
+      ) {
         event.preventDefault();
         event.stopImmediatePropagation();
         event.stopPropagation();
@@ -496,6 +517,27 @@ export function DrawingLayer() {
           y: editedShapeBox.y + editedShapeBox.h / 2,
         }
       : null;
+  const selectedTrendLine =
+    machine.state === "Idle"
+      ? (drawings.find(
+          (d) => d.id === selectedDrawingId && d.tool === "trendline",
+        ) ?? null)
+      : null;
+  const trendLineTextBox = selectedTrendLine
+    ? projectTrendLineTextTarget(selectedTrendLine, toX, toY)
+    : null;
+  const trendLineTextTarget =
+    selectedTrendLine && trendLineTextBox
+      ? { drawing: selectedTrendLine, ...trendLineTextBox }
+      : null;
+  const editedTrendLine = trendLineTextEdit
+    ? (drawings.find(
+        (d) => d.id === trendLineTextEdit.drawingId && d.tool === "trendline",
+      ) ?? null)
+    : null;
+  const trendLineTextEditorTarget = editedTrendLine
+    ? projectTrendLineTextTarget(editedTrendLine, toX, toY)
+    : null;
 
   return (
     <>
@@ -544,6 +586,39 @@ export function DrawingLayer() {
           )}
         </button>
       )}
+      {trendLineTextTarget && !trendLineTextEdit && (
+        <button
+          type="button"
+          data-chart-ui
+          aria-label={
+            trendLineTextTarget.drawing.text ? "Edit text" : "Add text"
+          }
+          title={trendLineTextTarget.drawing.text ? "Edit text" : "Add text"}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() =>
+            setTrendLineTextEdit({
+              drawingId: trendLineTextTarget.drawing.id,
+              initialText: trendLineTextTarget.drawing.text ?? "",
+              draftText: trendLineTextTarget.drawing.text ?? "",
+            })
+          }
+          className="absolute z-10 cursor-text"
+          style={{
+            left: trendLineTextTarget.x,
+            top: trendLineTextTarget.y,
+            width: trendLineTextTarget.drawing.text
+              ? Math.max(
+                  72,
+                  Math.min(trendLineTextTarget.drawing.text.length * 7 + 24, 220),
+                )
+              : 104,
+            height: 24,
+            transform: `translate(-50%, -50%) rotate(${trendLineTextTarget.angle}deg)`,
+            pointerEvents: "auto",
+            background: "transparent",
+          }}
+        />
+      )}
       {shapeTextEdit && shapeTextEditorTarget && (
         <TextEditor
           key={shapeTextEdit.drawingId}
@@ -564,6 +639,30 @@ export function DrawingLayer() {
           }}
           onCancelAction={() => {
             setShapeTextEdit(null);
+            scheduleRedraw();
+          }}
+        />
+      )}
+      {trendLineTextEdit && trendLineTextEditorTarget && (
+        <TextEditor
+          key={trendLineTextEdit.drawingId}
+          initialText={trendLineTextEdit.initialText}
+          x={trendLineTextEditorTarget.x}
+          y={trendLineTextEditorTarget.y}
+          onDraftChangeAction={(text) => {
+            setTrendLineTextEdit((current) =>
+              current?.drawingId === trendLineTextEdit.drawingId
+                ? { ...current, draftText: text }
+                : current,
+            );
+          }}
+          onSaveAction={(text) => {
+            updateDrawing({ id: trendLineTextEdit.drawingId, patch: { text } });
+            setTrendLineTextEdit(null);
+            scheduleRedraw();
+          }}
+          onCancelAction={() => {
+            setTrendLineTextEdit(null);
             scheduleRedraw();
           }}
         />
@@ -598,4 +697,27 @@ export function DrawingLayer() {
       )}
     </>
   );
+}
+
+function projectTrendLineTextTarget(
+  drawing: Drawing,
+  toX: (time: number) => number | null,
+  toY: (price: number) => number | null,
+): { x: number; y: number; angle: number; width: number } | null {
+  const p0 = drawing.points[0];
+  const p1 = drawing.points[1];
+  if (!p0 || !p1) return null;
+  const x1 = toX(p0.time);
+  const y1 = toY(p0.price);
+  const x2 = toX(p1.time);
+  const y2 = toY(p1.price);
+  if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
+  let angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+  if (angle > 90 || angle < -90) angle += 180;
+  return {
+    x: (x1 + x2) / 2,
+    y: (y1 + y2) / 2,
+    angle,
+    width: Math.hypot(x2 - x1, y2 - y1),
+  };
 }

@@ -4,6 +4,16 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Trendline text parity fixed
+- User repro: plain trendline displayed a blue measurement chip (`price change / % / angle`) while
+  TradingView's normal Trend Line shows `+ Add text` on the selected line instead.
+- Fix: `TrendLineTool.ts` no longer renders the measurement chip; `infoLine` and `trendAngle`
+  remain the dedicated measurement tools.
+- Added `renderLineText()` in `plugins/shared.ts` and a trendline text hitbox/editor path in
+  `DrawingLayer.tsx`, so selected empty trendlines show `+ Add text`, saved text is stored on the
+  trendline drawing, and the label moves/rotates with the line.
+- Guard: added `npm run check:trendline-text`.
+
 ### Replay floating toolbar click regression fixed
 - User repro: the floating Bar Replay toolbar was visible but clicking controls looked like it did
   nothing.
@@ -595,8 +605,9 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
    (TradingView "Trend angle"). Registered in `adapters.ts`; `trendAngle` added to the
    `DrawingTool` union + `DRAWING_TOOLS` in `types/drawing.ts`.
 
-2. **TrendLine stats chip**: the plain trend line now shows price change / % change /
-   angle° while drawing and when selected (`TrendLineTool.ts`).
+2. **TrendLine text parity update**: the plain trend line no longer shows price change /
+   % change / angle metrics. Those belong to `infoLine` and `trendAngle`; selected
+   trendlines show TradingView-style `+ Add text` instead.
 
 3. **Shared geometry helpers**: `angleDeg()` + `angleArc()` added to `plugins/shared.ts`.
 
