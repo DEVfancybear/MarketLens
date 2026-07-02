@@ -30,6 +30,7 @@ import {
 import { styleFamily, type Drawing, type LineStyle } from "@/types";
 import { cn } from "@/utils/cn";
 import { NumberField, Row, SectionTitle } from "./PositionSettingsDialog";
+import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
 
 // A TradingView-like colour palette (two rows of brand-ish swatches).
 const COLORS = [
@@ -332,10 +333,13 @@ export function ObjectSettingsDialog() {
   const [tab, setTab] = useState<Tab>("style");
   const [pop, setPop] = useState<string | null>(null);
   const [tplOpen, setTplOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   // Snapshot of the object as it was when the dialog opened (for Cancel).
   const snapshot = useRef<Drawing | null>(null);
   // Latest cancel handler, so the keydown effect can call it without TDZ.
   const cancelRef = useRef<() => void>(() => {});
+  const templateDialogOpenRef = useRef(false);
+  templateDialogOpenRef.current = templateDialogOpen;
 
   const drawing = drawings.find((d) => d.id === editingId) ?? null;
   const isPosition = drawing?.tool === "long" || drawing?.tool === "short";
@@ -349,12 +353,15 @@ export function ObjectSettingsDialog() {
     setTab("style");
     setPop(null);
     setTplOpen(false);
+    setTemplateDialogOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && editingId) cancelRef.current();
+      if (e.key === "Escape" && editingId && !templateDialogOpenRef.current) {
+        cancelRef.current();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -400,9 +407,9 @@ export function ObjectSettingsDialog() {
   };
 
   const onSaveTemplate = () => {
-    const name = window.prompt("Save drawing template as:");
-    if (name && name.trim()) saveTemplate({ id: drawing.id, name });
     setTplOpen(false);
+    setPop(null);
+    setTemplateDialogOpen(true);
   };
   const familyTemplates = templates.filter((t) => t.family === family);
 
@@ -432,7 +439,8 @@ export function ObjectSettingsDialog() {
   );
 
   return createPortal(
-    <div
+    <>
+      <div
       className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 pt-16"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
@@ -791,7 +799,14 @@ export function ObjectSettingsDialog() {
           </div>
         </div>
       </div>
-    </div>,
+      </div>
+      <SaveDrawingTemplateDialog
+        open={templateDialogOpen}
+        templates={familyTemplates}
+        onCloseAction={() => setTemplateDialogOpen(false)}
+        onSaveAction={(name) => saveTemplate({ id: drawing.id, name })}
+      />
+    </>,
     document.body,
   );
 }

@@ -4,6 +4,15 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Save drawing template modal parity
+- Replaced native browser prompts for saving drawing templates from both the floating drawing
+  toolbar and `ObjectSettingsDialog`.
+- Added `SaveDrawingTemplateDialog`: TradingView-style dark modal with `Save drawing template`,
+  `New template name`, focused input, Cancel/Save buttons, disabled Save on empty input, and a
+  dropdown of existing names for overwrite-by-name within the current style family.
+- Guard: added `npm run check:template-save-dialog` so `window.prompt("Save drawing template as:")`
+  cannot return unnoticed.
+
 ### Replay engine TradingView logic audit
 - Fixed `Select date...` and dashboard date jump to select the candle closest to the requested date,
   matching TradingView's Bar Replay wording. The previous logic always chose the candle at/before

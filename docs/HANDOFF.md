@@ -25,6 +25,11 @@ implemented behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false` by default.
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
 
+Recent drawing UI note: `Save drawing template` no longer uses native `window.prompt`; both the
+floating drawing toolbar and `ObjectSettingsDialog` open `SaveDrawingTemplateDialog`, with a
+TradingView-style `New template name` input plus dropdown of existing template names. Choosing an
+existing name overwrites that template in the current style family via `saveTemplateAtom`.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`

@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Save drawing template uses TradingView-style dialog (2026-07-02)
+- Replaced the native browser `window.prompt("Save drawing template as:")` in both the floating
+  drawing toolbar and object settings footer with an in-app dark modal matching TradingView's
+  `Save drawing template` flow.
+- The dialog has `New template name`, focused input, Cancel/Save actions, disabled Save for empty
+  names, and a dropdown of existing template names; selecting an existing name overwrites that
+  same name within the current style family through the existing `saveTemplateAtom` replace logic.
+- Added `npm run check:template-save-dialog` to prevent the native prompt from returning.
+
 ### Fixed - Shape add-text editor stays bound to drawing interaction (2026-07-02)
 - `TextEditor` is now marked as chart UI and commits/cancels on outside `pointerdown`, so clicking
   `+ Add text` inside a Rectangle/Circle/etc. then dragging the shape no longer leaves the input

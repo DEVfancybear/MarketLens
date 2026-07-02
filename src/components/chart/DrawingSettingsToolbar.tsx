@@ -32,6 +32,7 @@ import {
 } from "@/store/chartStore";
 import { useChartCtx } from "./ChartContext";
 import { useDrawingActions } from "./drawing/useDrawingActions";
+import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
 import { SHAPE_TOOLS, styleFamily, type Drawing, type LineStyle } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -90,6 +91,7 @@ export function DrawingSettingsToolbar() {
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [menu, setMenu] = useState<Menu>(null);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   // Once the user has dragged the toolbar we stop auto-positioning it and only
   // keep it clamped inside the chart — TradingView keeps it where you put it.
   const draggedRef = useRef(false);
@@ -131,6 +133,7 @@ export function DrawingSettingsToolbar() {
   // Close any open popover when the selection changes / clears.
   useEffect(() => {
     setMenu(null);
+    setTemplateDialogOpen(false);
   }, [selectedId]);
 
   // --- Drag the toolbar by its grip handle ---
@@ -191,15 +194,15 @@ export function DrawingSettingsToolbar() {
   const family = styleFamily(drawing.tool);
   const familyTemplates = templates.filter((t) => t.family === family);
   const onSaveTemplate = () => {
-    const name = window.prompt("Save drawing template as:");
-    if (name && name.trim()) saveTemplate({ id: drawing.id, name });
     setMenu(null);
+    setTemplateDialogOpen(true);
   };
 
   const Sep = () => <div className="mx-0.5 h-5 w-px bg-terminal-border" />;
 
   return (
-    <div
+    <>
+      <div
       ref={rootRef}
       data-drawing-toolbar
       className="absolute z-20 flex items-center gap-0.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-1.5 py-1 shadow-2xl shadow-black/50"
@@ -533,7 +536,14 @@ export function DrawingSettingsToolbar() {
           )}
         </Popover>
       )}
-    </div>
+      </div>
+      <SaveDrawingTemplateDialog
+        open={templateDialogOpen}
+        templates={familyTemplates}
+        onCloseAction={() => setTemplateDialogOpen(false)}
+        onSaveAction={(name) => saveTemplate({ id: drawing.id, name })}
+      />
+    </>
   );
 }
 

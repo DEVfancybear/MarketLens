@@ -14,6 +14,7 @@
     "check:position-drag": "node scripts/check-position-drag-width.mjs",
     "check:position-hit": "node scripts/check-position-hit-resolution.mjs",
     "check:shape-text-editor": "node scripts/check-shape-text-editor.mjs",
+    "check:template-save-dialog": "node scripts/check-template-save-dialog.mjs",
     "check:replay-logic": "node scripts/check-replay-logic.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

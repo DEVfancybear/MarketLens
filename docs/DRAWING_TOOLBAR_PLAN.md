@@ -81,7 +81,7 @@ saved template to the selected object (TV's template dropdown).
   `applyTemplateAtom({id, template})`, `deleteTemplateAtom(name)`.
   `apply` = `updateDrawingAtom` with the style subset only.
 - **UI:** `▦` button opens a `Popover` listing saved templates + "Save as
-  template…" (prompt for name) + "Apply default". Filter list by the selected
+  template…" (in-app modal with overwrite dropdown) + "Apply default". Filter list by the selected
   tool's family so a text template isn't offered for a trendline.
 - Icon: `LayoutTemplate` or `Shapes` (lucide).
 
