@@ -318,7 +318,7 @@ MT5 mode:
 1. Validate bridge status is `connected`.
 2. Resolve chart symbol to broker symbol.
 3. Validate symbol info exists and trade mode allows the side.
-4. Validate volume against min/max/lotStep and `NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME`.
+4. Validate volume against bridge-provided `minLot`/`maxLot`/`lotStep`.
 5. Show `LiveOrderConfirmDialog`.
 6. Send `order.place` with `clientOrderId`.
 7. Show pending command in UI.

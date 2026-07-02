@@ -356,7 +356,6 @@ export const placeMt5OrderAtom = atom(
       status: get(mt5StatusAtom),
       account: get(mt5AccountAtom),
       symbolInfo: get(mt5SymbolInfoAtom)[order.chartSymbol],
-      maxVolume: get(mt5MaxOrderVolumeAtom),
       order,
     });
     if (error) {
@@ -587,11 +586,9 @@ function validateMt5OrderState(input: {
   status: Mt5ConnectionStatus;
   account: Mt5AccountSnapshot | null;
   symbolInfo?: Mt5SymbolInfo;
-  maxVolume: number;
   order: Mt5OrderRequest;
 }): string | null {
-  const { enabled, executionMode, status, account, symbolInfo, maxVolume, order } =
-    input;
+  const { enabled, executionMode, status, account, symbolInfo, order } = input;
   if (!enabled) return "MT5 bridge is disabled.";
   if (executionMode !== "mt5") return "Execution mode is not MT5.";
   if (status !== "connected") return "MT5 bridge is not connected.";
@@ -612,9 +609,6 @@ function validateMt5OrderState(input: {
   }
   if (order.volume < symbolInfo.minLot || order.volume > symbolInfo.maxLot) {
     return `Volume must be between ${symbolInfo.minLot} and ${symbolInfo.maxLot}.`;
-  }
-  if (order.volume > maxVolume) {
-    return `Volume exceeds client max ${maxVolume}.`;
   }
   if (!isVolumeOnStep(order.volume, symbolInfo.lotStep)) {
     return `Volume must align to lot step ${symbolInfo.lotStep}.`;

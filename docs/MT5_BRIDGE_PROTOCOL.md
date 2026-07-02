@@ -500,7 +500,8 @@ The frontend must block live commands unless all are true:
 - Account is available and `tradeAllowed === true`.
 - Symbol info exists for the active chart symbol.
 - Symbol trade mode allows the requested side.
-- Volume is within `minLot`, `maxLot`, `lotStep`, and `NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME`.
+- Volume is within `minLot`, `maxLot`, and `lotStep`. The bridge-provided `maxLot` already
+  includes broker `volume_max` and bridge `FTMO_BRIDGE_MAX_ORDER_VOLUME`.
 - Confirmation is accepted when `NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION !== 'false'`.
 - `closeAll` confirmation is accepted separately.
 
