@@ -24,6 +24,9 @@ _Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
 - Fix: Fib renderers now reserve and clip away from the right price-scale/current-price label strip.
   Level lines, background bands, and extension rays stop before the price axis instead of drawing
   underneath it.
+- Fix: Fib labels now use the TradingView-style `level (price)` format and default left labels sit
+  outside the fib body instead of starting inside the colored bands. The source trend line defaults
+  to gray dashed when no custom trend-line color is set.
 - Fix: `FibExtensionTool` is now trend-based with three-click creation. A-B defines the impulse,
   C defines the projection origin, and levels are computed as `C + ratio * (B - A)`. Two-point
   saved extension drawings still render by treating B as C.

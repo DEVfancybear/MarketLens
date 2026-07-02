@@ -21,6 +21,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Follow-up: Fib retracement, legacy fib, and trend-based fib extension now reserve and clip away
   from the right price-scale/current-price label strip, so level lines/background bands cannot draw
   underneath the price axis.
+- Follow-up: Fib level labels now match TradingView's left-label layout more closely: default
+  labels render outside the left edge of the fib body, use `level (price)` formatting, and keep the
+  source trend line on the TradingView-style gray dashed default instead of the drawing accent blue.
 - Reworked `FibExtensionTool` into a three-click trend-based extension: A-B is the impulse, C is
   the projection origin, and level price is `C + ratio * (B - A)`. Existing two-point extension
   drawings still render by treating B as C.

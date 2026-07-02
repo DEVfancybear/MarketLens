@@ -57,15 +57,21 @@ Visible preset:
   `2.272`, `2.414`, `2`, `3`, `3.272`, `3.414`, `4`, `4.272`, `4.414`, `4.618`, `4.764`.
 
 Renderer contract:
-- Draw the dashed source trend line between the anchors.
+- Draw the dashed source trend line between the anchors. The default trend-line color is
+  TradingView-style gray (`#787b86`); only use a stronger color when the user sets one explicitly.
 - Draw horizontal level lines using the level prices.
 - Draw subtle background bands between adjacent enabled levels when `fibBackground !== false`.
 - Draw labels with level, price, and optional custom text according to `fibShowLevels`,
   `fibShowPrices`, `fibShowText`, and `fibLevelsFormat`.
-- Default label placement is `Left / Middle`, matching the TradingView settings reference.
-- Labels must be measured with `CanvasRenderingContext2D.measureText()` and clamped inside the
-  chart viewport. Do not put labels at `right + padding`; that reintroduces the right-edge overlap
-  bug fixed after the InfoLine panel overflow issue.
+- When both level and price are enabled, labels use TradingView-style `level (price)` text, for
+  example `0.618 (60,112.25)`.
+- Default label placement is `Left / Middle`, matching the TradingView settings reference: the text
+  is positioned outside the left edge of the fib body, not inside the colored bands. When the fib is
+  close to the chart's left boundary, left labels may clip at the viewport edge rather than moving
+  into the fib body.
+- Labels must be measured with `CanvasRenderingContext2D.measureText()` and capped before the
+  right price-scale/current-price label strip. Do not put labels at `right + padding`; that
+  reintroduces the right-edge overlap bug fixed after the InfoLine panel overflow issue.
 - The renderer must reserve and clip away from the right price-scale/current-price label strip.
   Keep `FIB_RIGHT_PRICE_SCALE_GUARD`, `usableFibRight()`, and the `g.rect(...); g.clip()` block in
   `FibRetracementTool`, `FibTool`, and `FibExtensionTool`; otherwise lines/background bands draw
@@ -147,6 +153,8 @@ npm run check:fibonacci-tools
 The guard verifies:
 - external fib levels are still present;
 - retracement still draws trend line, background bands, level lines, labels, and per-level hit-test;
+- left labels stay outside the fib body and use `level (price)` formatting;
+- the default fib source trend line remains TradingView-style gray/dashed;
 - extension remains a three-click trend-based tool;
 - extension projection still uses point C plus the A-B impulse;
 - p3 remains a real anchor;

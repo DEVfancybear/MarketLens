@@ -45,13 +45,29 @@ const checks = [
       retracement.includes("distToSegment"),
   },
   {
-    name: "Fib labels are measured and clamped inside the chart viewport",
+    name: "Fib labels are measured, formatted like TradingView, and kept off the price scale",
     ok:
       retracement.includes("function labelXFor") &&
       retracement.includes("g.measureText(label).width") &&
       retracement.includes("width - textW - 8") &&
+      retracement.includes("left - textW - LABEL_PAD") &&
+      retracement.includes("`${levelLabel} (${priceLabel})`") &&
       legacy.includes("width - textW - 8") &&
-      extension.includes("width - textW - 8"),
+      legacy.includes("left - textW - LABEL_PAD") &&
+      legacy.includes("`${levelLabel} (${priceLabel})`") &&
+      extension.includes("width - textW - 8") &&
+      extension.includes("left - textW - LABEL_PAD") &&
+      extension.includes("`${levelLabel} (${priceLabel})`"),
+  },
+  {
+    name: "Fib source trend line uses the TradingView-style gray dashed default",
+    ok:
+      retracement.includes('const DEFAULT_TREND_LINE_COLOR = "#787b86"') &&
+      retracement.includes("d.fibTrendLineColor || DEFAULT_TREND_LINE_COLOR") &&
+      legacy.includes('const DEFAULT_TREND_LINE_COLOR = "#787b86"') &&
+      legacy.includes("d.fibTrendLineColor || DEFAULT_TREND_LINE_COLOR") &&
+      extension.includes('const DEFAULT_TREND_LINE_COLOR = "#787b86"') &&
+      extension.includes("d.fibTrendLineColor || DEFAULT_TREND_LINE_COLOR"),
   },
   {
     name: "Fib drawings reserve and clip away from the right price scale",

@@ -52,8 +52,10 @@ prioritizes active/fresh zones. Read `docs/SMC_OVERLAY_MAINTENANCE.md` and guard
 
 Recent Fibonacci parity note: `FibRetracementTool.ts` now uses a TradingView-style preset/settings
 model with 24 per-level rows, renders source trend line/background bands/level+price labels, and
-hit-tests each level. Labels are measured and clamped inside the chart viewport; do not restore the
-old `right + padding` label placement because it overlaps the right edge/price scale. Fib settings
+hit-tests each level. Default left labels are measured and positioned outside the fib body with
+`level (price)` formatting; do not restore the old `left + padding` or `right + padding` placement
+because it puts labels into the colored bands or overlaps the right edge/price scale. The default
+fib source trend line is gray/dashed (`#787b86`) unless the user sets a custom color. Fib settings
 live in `ObjectSettingsDialog` with Style/Coordinates/Visibility tabs and `#1/#2 (price, bar)`
 coordinates. Fib renderers also reserve/clip away from the right price-scale/current-price label
 strip; keep `FIB_RIGHT_PRICE_SCALE_GUARD`, `usableFibRight()`, and `g.clip()` in the fib plugins.

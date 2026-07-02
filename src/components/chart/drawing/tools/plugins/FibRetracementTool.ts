@@ -25,6 +25,7 @@ const FILL_OPACITY = 0.12;
 const LABEL_PAD = 6;
 const FIB_RIGHT_PRICE_SCALE_GUARD = 112;
 const FIB_EDGE_PAD = 4;
+const DEFAULT_TREND_LINE_COLOR = "#787b86";
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -98,13 +99,17 @@ function labelXFor(
   align: FibAlignH,
 ) {
   const textW = g.measureText(label).width;
+  const maxX = Math.max(FIB_EDGE_PAD, width - textW - 8);
   const preferred =
     align === "center"
       ? (left + right) / 2 - textW / 2
       : align === "right"
         ? right - textW - LABEL_PAD
-        : left + LABEL_PAD;
-  return clamp(preferred, FIB_EDGE_PAD, Math.max(FIB_EDGE_PAD, width - textW - 8));
+        : left - textW - LABEL_PAD;
+  if (align === "left") {
+    return Math.min(preferred, maxX);
+  }
+  return clamp(preferred, FIB_EDGE_PAD, maxX);
 }
 
 function labelBaseline(align: FibAlignV): CanvasTextBaseline {
@@ -115,8 +120,12 @@ function labelBaseline(align: FibAlignV): CanvasTextBaseline {
 
 function labelText(d: Drawing, level: FibLevelConfig, price: number): string {
   const parts: string[] = [];
-  if (d.fibShowLevels !== false) parts.push(formatLevel(level.value, d.fibLevelsFormat ?? "values"));
-  if (d.fibShowPrices !== false) parts.push(formatPrice(price));
+  const levelLabel =
+    d.fibShowLevels !== false ? formatLevel(level.value, d.fibLevelsFormat ?? "values") : "";
+  const priceLabel = d.fibShowPrices !== false ? formatPrice(price) : "";
+  if (levelLabel && priceLabel) parts.push(`${levelLabel} (${priceLabel})`);
+  else if (levelLabel) parts.push(levelLabel);
+  else if (priceLabel) parts.push(priceLabel);
   if (d.fibShowText !== false && level.text?.trim()) parts.push(level.text.trim());
   return parts.join("  ");
 }
@@ -180,7 +189,7 @@ const plugin: DrawingToolPlugin = {
 
     if (d.fibTrendLine !== false) {
       g.globalAlpha = 0.68;
-      g.strokeStyle = d.fibTrendLineColor || d.color;
+      g.strokeStyle = d.fibTrendLineColor || DEFAULT_TREND_LINE_COLOR;
       g.lineWidth = Math.max(1, d.fibTrendLineWidth ?? d.lineWidth ?? 1.5);
       applyStyle(g, d.fibTrendLineStyle ?? "dashed");
       line(g, x1, y1, x2, y2);
