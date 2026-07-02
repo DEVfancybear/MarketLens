@@ -75,6 +75,8 @@ export interface Mt5SymbolInfo {
   lotStep: number;
   minLot: number;
   maxLot: number;
+  tickSize?: number;
+  tickValue?: number;
   tradeMode: "disabled" | "longOnly" | "shortOnly" | "full";
   updatedAt: number;
 }

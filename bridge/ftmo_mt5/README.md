@@ -31,6 +31,10 @@ Startup logs print `riskBase`, `source`, and `maxRiskPerTrade`.
 Live account, position, order, and risk snapshots are pushed to connected web clients every
 `FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS` milliseconds. Default is `1000`.
 
+The web order ticket sizes MT5 lots from `risk %`, account equity, stop distance, `tickSize`, and
+`tickValue` streamed by the bridge. `FTMO_BRIDGE_MAX_ORDER_VOLUME` is still a hard cap; if it is set
+to `0.01`, every web order will be capped at `0.01` lots even when risk % is higher.
+
 ```powershell
 $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"

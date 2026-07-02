@@ -174,6 +174,9 @@ Rules:
   `maxRiskPerTrade` for verification.
 - `FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS` controls how often the Python bridge pushes live MT5
   account/position/order snapshots to the web UI. Default is `1000`.
+- The web ticket sizes MT5 lots from account equity, risk %, stop distance, and symbol
+  `tickSize`/`tickValue` streamed by the bridge. `FTMO_BRIDGE_MAX_ORDER_VOLUME` remains a hard cap;
+  set it above `0.01` if you expect risk-based BTC sizing to exceed `0.01` lots.
 
 ## 5.1 Dry-Run Quickstart
 

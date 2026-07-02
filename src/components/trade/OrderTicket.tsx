@@ -9,6 +9,7 @@ import {
 import {
   closeAllMt5Atom,
   executionModeAtom,
+  mt5AccountAtom,
   mt5RequireConfirmationAtom,
   mt5StatusAtom,
   mt5SymbolInfoAtom,
@@ -23,7 +24,7 @@ import { fmtMoney, fmtPrice } from "@/utils/format";
 import { on } from "@/utils/bus";
 import { cn } from "@/utils/cn";
 import type { OrderPrefill, OrderType, Side } from "@/types";
-import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
+import type { Mt5CloseAllRequest, Mt5OrderRequest, Mt5SymbolInfo } from "@/types/mt5";
 import { LiveOrderConfirmDialog } from "./LiveOrderConfirmDialog";
 
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
@@ -38,6 +39,7 @@ export function OrderTicket() {
   const executionMode = useAtomValue(executionModeAtom);
   const mt5Status = useAtomValue(mt5StatusAtom);
   const mt5SymbolInfo = useAtomValue(mt5SymbolInfoAtom);
+  const mt5Account = useAtomValue(mt5AccountAtom);
   const requireMt5Confirmation = useAtomValue(mt5RequireConfirmationAtom);
   const placeMt5 = useSetAtom(placeMt5OrderAtom);
   const closeAllMt5 = useSetAtom(closeAllMt5Atom);
@@ -66,11 +68,35 @@ export function OrderTicket() {
     riskPct: num(risk) ?? 1,
   });
 
-  const metrics = useMemo(
+  const simulatorMetrics = useMemo(
     () => computeRisk(buildOrder("long"), price, equity),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [type, entry, sl, tp, risk, price, equity],
   );
+  const activeSymbolInfo = mt5SymbolInfo[symbol];
+  const metrics = useMemo(() => {
+    if (executionMode !== "mt5" || !activeSymbolInfo) return simulatorMetrics;
+    return computeMt5RiskMetrics({
+      entry: type === "market" ? price : num(entry),
+      stopLoss: num(sl),
+      takeProfit: num(tp),
+      riskPct: num(risk) ?? 1,
+      equity: mt5Account?.equity ?? equity,
+      symbolInfo: activeSymbolInfo,
+    });
+  }, [
+    activeSymbolInfo,
+    entry,
+    equity,
+    executionMode,
+    mt5Account?.equity,
+    price,
+    risk,
+    simulatorMetrics,
+    sl,
+    tp,
+    type,
+  ]);
 
   const buildMt5Order = (side: Side): Mt5OrderRequest => {
     const info = mt5SymbolInfo[symbol];
@@ -262,6 +288,41 @@ export function OrderTicket() {
       />
     </div>
   );
+}
+
+function computeMt5RiskMetrics({
+  entry,
+  stopLoss,
+  takeProfit,
+  riskPct,
+  equity,
+  symbolInfo,
+}: {
+  entry?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  riskPct: number;
+  equity: number;
+  symbolInfo: Mt5SymbolInfo;
+}) {
+  const riskMoney = (equity * riskPct) / 100;
+  const entryPrice = entry && Number.isFinite(entry) ? entry : 0;
+  const stopDistance = stopLoss != null && entryPrice > 0 ? Math.abs(entryPrice - stopLoss) : 0;
+  const tickSize = symbolInfo.tickSize && symbolInfo.tickSize > 0 ? symbolInfo.tickSize : symbolInfo.point;
+  const tickValue = symbolInfo.tickValue && symbolInfo.tickValue > 0 ? symbolInfo.tickValue : 1;
+  const moneyPerLotAtStop = stopDistance > 0 ? (stopDistance / tickSize) * tickValue : 0;
+  const rawLots = moneyPerLotAtStop > 0 ? riskMoney / moneyPerLotAtStop : symbolInfo.minLot;
+  const positionSize = normalizeMt5Volume(rawLots, symbolInfo);
+  const actualRisk = moneyPerLotAtStop > 0 ? moneyPerLotAtStop * positionSize : riskMoney;
+  const rewardDistance = takeProfit != null && entryPrice > 0 ? Math.abs(takeProfit - entryPrice) : 0;
+  const rewardAmount = rewardDistance > 0 ? (rewardDistance / tickSize) * tickValue * positionSize : 0;
+  return {
+    positionSize,
+    riskPct,
+    riskAmount: actualRisk,
+    rewardAmount,
+    riskReward: actualRisk > 0 ? rewardAmount / actualRisk : 0,
+  };
 }
 
 function TradeInput({

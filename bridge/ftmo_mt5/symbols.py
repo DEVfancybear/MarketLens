@@ -56,7 +56,8 @@ def public_symbol_info(meta: SymbolMeta, max_order_volume: float) -> dict[str, A
         "lotStep": meta.lot_step,
         "minLot": meta.min_lot,
         "maxLot": min(meta.max_lot, max_order_volume),
+        "tickSize": meta.tick_size,
+        "tickValue": meta.tick_value,
         "tradeMode": meta.trade_mode,
         "updatedAt": int(__import__("time").time() * 1000),
     }
-
