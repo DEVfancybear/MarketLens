@@ -73,9 +73,8 @@ export function DrawingLayer() {
   // a brand-new standalone Text drawing.
   const [shapeTextEdit, setShapeTextEdit] = useState<{
     drawingId: string;
-    x: number;
-    y: number;
     initialText: string;
+    draftText: string;
   } | null>(null);
 
   const { commitMove, undo, redo, execute } = useCommandHistory(
@@ -203,6 +202,19 @@ export function DrawingLayer() {
   const scheduleRedraw = useCallback(() => {
     markDirtyRef.current();
   }, []);
+  const shapeTextEditRef = useRef(shapeTextEdit);
+  shapeTextEditRef.current = shapeTextEdit;
+  const commitShapeTextEdit = useCallback(() => {
+    const edit = shapeTextEditRef.current;
+    if (!edit) return false;
+    const text = edit.draftText.trim();
+    if (text) updateDrawing({ id: edit.drawingId, patch: { text } });
+    setShapeTextEdit(null);
+    scheduleRedraw();
+    return true;
+  }, [scheduleRedraw, updateDrawing]);
+  const commitShapeTextEditRef = useRef(commitShapeTextEdit);
+  commitShapeTextEditRef.current = commitShapeTextEdit;
 
   // Handle Text tool placement: create an empty drawing and show inline editor.
   const handleTextPlace = useCallback(
@@ -242,6 +254,46 @@ export function DrawingLayer() {
     drawColor,
     activeTool,
   ]);
+
+  useEffect(() => {
+    const handleShapeEditorCanvasPointerDown = (event: PointerEvent) => {
+      if (!shapeTextEditRef.current) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-inline-text-editor]")) return;
+      if (target?.closest?.("[data-chart-ui],[data-drawing-toolbar]")) return;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const insideCanvas =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      if (!insideCanvas) return;
+
+      // TradingView treats shape text editing as an edit state of the shape.
+      // The first chart click/drag outside the input completes editing; it must
+      // not also start a body drag that leaves the editor visually detached.
+      if (commitShapeTextEditRef.current()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener(
+      "pointerdown",
+      handleShapeEditorCanvasPointerDown,
+      true,
+    );
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        handleShapeEditorCanvasPointerDown,
+        true,
+      );
+    };
+  }, []);
 
   const {
     machine,
@@ -429,6 +481,21 @@ export function DrawingLayer() {
           w: shapeLabelBox.w,
         }
       : null;
+  const editedShape = shapeTextEdit
+    ? (drawings.find(
+        (d) => d.id === shapeTextEdit.drawingId && SHAPE_TOOLS.includes(d.tool),
+      ) ?? null)
+    : null;
+  const editedShapeBox = editedShape
+    ? (getTool(editedShape.tool)?.boundingBox(editedShape, toX, toY) ?? null)
+    : null;
+  const shapeTextEditorTarget =
+    editedShape && editedShapeBox
+      ? {
+          x: editedShapeBox.x + editedShapeBox.w / 2,
+          y: editedShapeBox.y + editedShapeBox.h / 2,
+        }
+      : null;
 
   return (
     <>
@@ -451,9 +518,8 @@ export function DrawingLayer() {
           onClick={() =>
             setShapeTextEdit({
               drawingId: shapeLabelTarget.drawing.id,
-              x: shapeLabelTarget.cx,
-              y: shapeLabelTarget.cy,
               initialText: shapeLabelTarget.drawing.text ?? "",
+              draftText: shapeLabelTarget.drawing.text ?? "",
             })
           }
           className={
@@ -478,12 +544,19 @@ export function DrawingLayer() {
           )}
         </button>
       )}
-      {shapeTextEdit && (
+      {shapeTextEdit && shapeTextEditorTarget && (
         <TextEditor
           key={shapeTextEdit.drawingId}
           initialText={shapeTextEdit.initialText}
-          x={shapeTextEdit.x}
-          y={shapeTextEdit.y}
+          x={shapeTextEditorTarget.x}
+          y={shapeTextEditorTarget.y}
+          onDraftChangeAction={(text) => {
+            setShapeTextEdit((current) =>
+              current?.drawingId === shapeTextEdit.drawingId
+                ? { ...current, draftText: text }
+                : current,
+            );
+          }}
           onSaveAction={(text) => {
             updateDrawing({ id: shapeTextEdit.drawingId, patch: { text } });
             setShapeTextEdit(null);

@@ -8,6 +8,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - `TextEditor` is now marked as chart UI and commits/cancels on outside `pointerdown`, so clicking
   `+ Add text` inside a Rectangle/Circle/etc. then dragging the shape no longer leaves the input
   floating at the old location.
+- `DrawingLayer` now owns the shape-text edit lifecycle: the first chart `pointerdown` outside the
+  inline input commits the text and consumes that event before the drawing drag manager can move the
+  rectangle. The editor position is derived from the current shape bounding box instead of a stale
+  click-time `x/y` snapshot.
 - Added a completion guard so the outside `pointerdown` and native `blur` path cannot double-save
   the same edit.
 - Added `npm run check:shape-text-editor` to lock the overlay/drawing-interaction contract.

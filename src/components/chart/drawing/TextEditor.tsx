@@ -7,6 +7,7 @@ interface TextEditorProps {
   y: number;
   onSaveAction: (text: string) => void;
   onCancelAction: () => void;
+  onDraftChangeAction?: (text: string) => void;
 }
 
 /**
@@ -19,6 +20,7 @@ export function TextEditor({
   y,
   onSaveAction,
   onCancelAction,
+  onDraftChangeAction,
 }: TextEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const doneRef = useRef(false);
@@ -70,9 +72,14 @@ export function TextEditor({
     <input
       ref={inputRef}
       data-chart-ui
+      data-inline-text-editor
       type="text"
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        onDraftChangeAction?.(next);
+      }}
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

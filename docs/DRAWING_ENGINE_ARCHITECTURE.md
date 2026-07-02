@@ -284,10 +284,13 @@ opens the same inline `TextEditor` the standalone Text tool uses, and the typed 
   `machine.state !== "Idle"` (mid-drag/resize) since the live drag preview and this projection would
   otherwise disagree until the drag commits.
 - **Inline edit invariant**: once the inline `TextEditor` is open, any pointerdown outside the input
-  commits/cancels it before the next chart interaction continues. The input itself is also
-  `data-chart-ui`, so capture-level drawing listeners ignore clicks inside the editor. This matches
-  TradingView's shape-text behavior where text editing is a modal edit state of the selected shape,
-  not a draggable overlay that can remain behind while the rectangle moves.
+  inside the chart area commits/cancels it and consumes that same pointer event before the drawing
+  manager can start a body drag. The input itself is also `data-chart-ui` and
+  `data-inline-text-editor`, so capture-level drawing listeners ignore clicks inside the editor.
+  The editor is positioned from the shape's current `boundingBox()`, not from a stored click-time
+  coordinate. This matches TradingView's shape-text behavior where text editing is a modal edit
+  state of the selected shape, not a draggable overlay that can remain behind while the rectangle
+  moves.
 - Patches go straight through `updateDrawingAtom` (matching how `DrawingSettingsToolbar`'s style
   patches already work) — not undo-tracked, consistent with that existing gap (see
   `KNOWN_ISSUES.md`).
@@ -295,7 +298,9 @@ opens the same inline `TextEditor` the standalone Text tool uses, and the typed 
   patches the shape and the button becomes an invisible re-edit hitbox; screenshot-confirmed the
   text renders centered inside the shape.
 - Regression guard: `npm run check:shape-text-editor` asserts `TextEditor` stays marked as chart UI,
-  uses outside-pointer commit with a double-commit guard, and remounts per edited drawing id.
+  uses outside-pointer commit with a double-commit guard, reports draft text to `DrawingLayer`, and
+  keeps the shape editor position derived from current shape bounds while the chart pointerdown is
+  consumed before drag starts.
 
 ## Fixed: every new/duplicated/pasted drawing was inserted twice — 2026-07-02
 

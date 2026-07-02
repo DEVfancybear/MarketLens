@@ -15,6 +15,16 @@ const checks = [
     ok: textEditor.includes("data-chart-ui"),
   },
   {
+    name: "TextEditor exposes a dedicated inline-editor marker",
+    ok: textEditor.includes("data-inline-text-editor"),
+  },
+  {
+    name: "TextEditor reports draft changes to its owner",
+    ok:
+      textEditor.includes("onDraftChangeAction") &&
+      textEditor.includes("onDraftChangeAction?.(next)"),
+  },
+  {
     name: "TextEditor commits on outside pointerdown in capture phase",
     ok:
       textEditor.includes('document.addEventListener("pointerdown"') &&
@@ -32,6 +42,18 @@ const checks = [
   {
     name: "Shape text editor remounts per drawing id",
     ok: drawingLayer.includes("key={shapeTextEdit.drawingId}"),
+  },
+  {
+    name: "Shape text editor position is derived from current shape bounds",
+    ok:
+      drawingLayer.includes("shapeTextEditorTarget") &&
+      drawingLayer.includes("editedShapeBox.x + editedShapeBox.w / 2"),
+  },
+  {
+    name: "Shape editor canvas pointerdown is consumed before drag starts",
+    ok:
+      drawingLayer.includes("handleShapeEditorCanvasPointerDown") &&
+      drawingLayer.includes("event.stopImmediatePropagation()"),
   },
   {
     name: "Standalone text editor remounts per drawing id",

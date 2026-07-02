@@ -213,7 +213,9 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   separate index-based resolution path, contra what was documented earlier the same day). Follow-up:
   the inline `TextEditor` is now `data-chart-ui` and commits/cancels on outside `pointerdown`, so a
   user cannot click "+ Add text" then drag the rectangle away while the input remains at the old
-  location. Guarded by `npm run check:shape-text-editor`.
+  location. `DrawingLayer` also consumes the chart pointerdown before body-drag can start and derives
+  the editor position from the current shape bounds instead of the original click point. Guarded by
+  `npm run check:shape-text-editor`.
 - **Watchlist rebuilt as a 1:1 TradingView clone (2026-07-02):** `Watchlist.tsx` rewritten —
   TradingView panel header ("Watchlist ⌄", + / grid / ⋯), sortable `Symbol|Last|Chg|Chg%` columns
   (new `changeAbs` `SortKey`), 30px rows with circular symbol logos (new `SymbolLogo.tsx`;

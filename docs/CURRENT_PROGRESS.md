@@ -241,6 +241,10 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 - Fix: `TextEditor` is now `data-chart-ui`, commits/cancels on outside `pointerdown`, and guards
   against duplicate completion from `pointerdown` plus `blur`. Shape and standalone text editors
   remount per drawing id to avoid stale editor state when switching drawings.
+- Follow-up fix after user repro: `DrawingLayer` now intercepts chart-area pointerdown while a shape
+  text editor is open, commits the draft text, and consumes that pointer event before body-drag can
+  start. The shape editor coordinates are derived from the current shape `boundingBox()` instead of
+  the original `+ Add text` click position.
 - Guard: added `npm run check:shape-text-editor`.
 
 ### Alert stayed "Active" client-side after a real server-confirmed trigger
