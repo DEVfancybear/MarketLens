@@ -1,5 +1,5 @@
 "use client";
-import { Boxes } from "lucide-react";
+import { Boxes, Check } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
   smcSettingsAtom,
@@ -71,9 +71,7 @@ export function SmcMenu() {
                   background: settings[it.key] ? it.color : "transparent",
                 }}
               >
-                {settings[it.key] && (
-                  <span className="text-[9px] text-white">✓</span>
-                )}
+                {settings[it.key] && <Check size={10} className="text-white" />}
               </span>
               <span className="flex-1 text-ink">{it.label}</span>
             </button>

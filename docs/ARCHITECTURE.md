@@ -212,6 +212,9 @@ useVisibleCandles()  → replay-aware slice
 - `useHotkeys` — drawing shortcuts (1–9, Delete, Ctrl+D/Z/A/I, Escape) + replay transport
   (Space, Shift+Down, ArrowLeft/Right, Shift+Left, R) + trade (B/S/X).
 - `useSmcEngine` — posts visible candles to `smc.worker` (throttled ~90ms) → `setSmcSnapshotAtom`.
+  `SmcLayer` then renders a capped, TradingView-style subset of the snapshot on a custom canvas
+  above the chart canvas (`z-[2]`) and below drawings. See `SMC_OVERLAY_MAINTENANCE.md` before
+  changing the SMC feature list, render caps, or screenshot/live canvas layering.
 - `useTradeRuntime` — streams the latest visible candle into `setTradeMarketAtom`.
 - `useAlertEngine` — pushes `marketDataTickAtom` subscription, evaluates alerts on price ticks.
 - Journal hydrate from IndexedDB on mount.

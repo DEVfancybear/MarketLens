@@ -44,6 +44,11 @@ Recent brush parity note: `BrushTool.ts` now opts into the `continuous` adapter 
 pointerdown, records points on pointermove, and commits the stroke on pointerup; do not route brush
 through the normal two-click trendline path. Guard with `npm run check:brush-freehand`.
 
+Recent SMC overlay note: `SmcLayer.tsx` must keep `z-[2]`; otherwise the live chart can hide the
+SMC canvas while screenshot export still composites it. SMC render now caps every noisy family and
+prioritizes active/fresh zones. Read `docs/SMC_OVERLAY_MAINTENANCE.md` and guard with
+`npm run check:smc-overlay`.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`

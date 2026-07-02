@@ -4,6 +4,19 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### SMC overlay live visibility and readability
+- User repro: all SMC toggles were enabled, but the live chart showed no SMC overlay; exported
+  screenshots did show the overlay, and when visible it was far too dense.
+- Root cause: the SMC canvas had no explicit stacking order, while screenshot export composites
+  overlay canvases separately. This can make a hidden live overlay appear in the exported image.
+- Fix: `SmcLayer.tsx` now renders above the chart canvas with `z-[2]`, below drawings/replay.
+- Rendering now caps each noisy feature family: structures, swings, FVGs, order blocks, liquidity,
+  displacement, sessions, and kill zones. Active/fresh objects and nearby untaken liquidity are
+  prioritized; swept liquidity no longer spams right-axis price tags.
+- Cleaned SMC menu checkmarks and canvas labels to avoid mojibake/unsupported glyphs.
+- Docs: added `docs/SMC_OVERLAY_MAINTENANCE.md`.
+- Guard: added `npm run check:smc-overlay`.
+
 ### Brush tool continuous freehand parity
 - User repro: `brush` behaved like a straight two-click trendline instead of TradingView's
   freehand brush where the user drags to draw circles, curves, and arbitrary strokes.

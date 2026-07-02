@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - SMC overlay live visibility and chart readability (2026-07-02)
+- Fixed the SMC canvas stacking order so overlays that appear in screenshots are also visible on
+  the live chart.
+- Added UI-level caps for structure, swings, FVGs, order blocks, liquidity, displacement, sessions,
+  and kill zones so enabling every SMC toggle does not flood the chart with historical zones.
+- SMC render now prioritizes active/fresh objects, nearby untaken liquidity, and only a few recent
+  mitigated/swept objects.
+- Cleaned SMC menu checkmarks with a `lucide-react` `Check` icon and replaced fragile canvas glyph
+  markers with ASCII labels.
+- Added `docs/SMC_OVERLAY_MAINTENANCE.md` and `npm run check:smc-overlay`.
+
 ### Fixed - Brush tool continuous freehand drawing (2026-07-02)
 - `brush` now uses a TradingView-style pointer-drag flow: press, draw continuously, release to
   commit the full stroke. It no longer behaves like a two-click trendline.

@@ -12,6 +12,33 @@ import { fmtDate } from "@/utils/time";
 /** Set `window.__SMC_DEBUG__ = true` in the console to log coordinate mapping. */
 type SmcDebugWindow = Window & { __SMC_DEBUG__?: boolean };
 
+const LIMITS = {
+  structures: 24,
+  swings: 40,
+  fvgs: 12,
+  mitigatedFvgs: 3,
+  orderBlocks: 8,
+  mitigatedOrderBlocks: 3,
+  liquidity: 10,
+  sweptLiquidity: 3,
+  displacements: 24,
+  sessions: 6,
+  killZones: 8,
+};
+const SMC_SANS_10 = '10px "Inter", system-ui, sans-serif';
+const SMC_MONO_9 = '9px "Roboto Mono", Consolas, monospace';
+const SMC_MONO_10 = '10px "Roboto Mono", Consolas, monospace';
+
+function takeRecent<T>(items: T[], limit: number, timeOf: (item: T) => number): T[] {
+  return [...items]
+    .sort((a, b) => timeOf(a) - timeOf(b))
+    .slice(-limit);
+}
+
+function inWindow(time: number, from: number, to: number, pad: number): boolean {
+  return time >= from - pad && time <= to + pad;
+}
+
 /**
  * Read-only canvas overlay that paints the SMC snapshot in (time, price) space,
  * re-projecting every frame so structures stay pinned through pan & zoom.
@@ -47,6 +74,9 @@ export function SmcLayer() {
     if (!range) return;
     const fromT = range.from as number;
     const toT = range.to as number;
+    const visibleSpan = Math.max(1, toT - fromT);
+    const timePad = visibleSpan * 0.25;
+    const latestClose = ctx.candles[ctx.candles.length - 1]?.close ?? null;
     // Drawable width = the time-scale width, which EXCLUDES the right price axis.
     // Using rect.width (the whole canvas) would let zones and price tags spill
     // over the price scale and collide with its labels. Fall back to the canvas
@@ -80,10 +110,92 @@ export function SmcLayer() {
     const colBear = css("--bear") || "#ef5350";
     const colMuted = css("--text-muted") || "#868993";
 
-    g.font = "10px var(--font-mono)";
+    g.font = SMC_MONO_10;
     g.textBaseline = "middle";
 
     const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
+
+    const visibleStructures = takeRecent(
+      snapshot.structures.filter((m) =>
+        inWindow(m.confirmedAtTime, fromT, toT, timePad),
+      ),
+      LIMITS.structures,
+      (m) => m.confirmedAtTime,
+    );
+    const visibleSwings = takeRecent(
+      snapshot.swings.filter((s) => inWindow(s.time, fromT, toT, timePad)),
+      LIMITS.swings,
+      (s) => s.time,
+    );
+    const activeFvgs = takeRecent(
+      snapshot.fvgs.filter((f) => f.state === "active" && f.time <= toT),
+      LIMITS.fvgs,
+      (f) => f.time,
+    );
+    const mitigatedFvgs = takeRecent(
+      snapshot.fvgs.filter(
+        (f) => f.state === "mitigated" && inWindow(f.time, fromT, toT, timePad),
+      ),
+      LIMITS.mitigatedFvgs,
+      (f) => f.time,
+    );
+    const visibleFvgs = [...mitigatedFvgs, ...activeFvgs].sort(
+      (a, b) => a.time - b.time,
+    );
+    const activeOrderBlocks = takeRecent(
+      snapshot.orderBlocks.filter((o) => o.state === "fresh" && o.time <= toT),
+      LIMITS.orderBlocks,
+      (o) => o.time,
+    );
+    const mitigatedOrderBlocks = takeRecent(
+      snapshot.orderBlocks.filter(
+        (o) =>
+          o.state === "mitigated" && inWindow(o.time, fromT, toT, timePad),
+      ),
+      LIMITS.mitigatedOrderBlocks,
+      (o) => o.time,
+    );
+    const visibleOrderBlocks = [...mitigatedOrderBlocks, ...activeOrderBlocks].sort(
+      (a, b) => a.time - b.time,
+    );
+    const activeLiquidity = snapshot.liquidity.filter((l) => !l.swept && l.time <= toT);
+    const visibleActiveLiquidity = (
+      latestClose == null
+        ? takeRecent(activeLiquidity, LIMITS.liquidity, (l) => l.time)
+        : [...activeLiquidity]
+            .sort(
+              (a, b) =>
+                Math.abs(a.price - latestClose) - Math.abs(b.price - latestClose) ||
+                b.time - a.time,
+            )
+            .slice(0, LIMITS.liquidity)
+    ).sort((a, b) => a.time - b.time);
+    const visibleSweptLiquidity = takeRecent(
+      snapshot.liquidity.filter(
+        (l) => l.swept && inWindow(l.time, fromT, toT, timePad),
+      ),
+      LIMITS.sweptLiquidity,
+      (l) => l.time,
+    );
+    const visibleLiquidity = [
+      ...visibleSweptLiquidity,
+      ...visibleActiveLiquidity,
+    ].sort((a, b) => a.time - b.time);
+    const visibleDisplacements = takeRecent(
+      snapshot.displacements.filter((d) => inWindow(d.time, fromT, toT, 0)),
+      LIMITS.displacements,
+      (d) => d.time,
+    );
+    const visibleSessions = takeRecent(
+      snapshot.sessions.filter((s) => s.endTime >= fromT && s.startTime <= toT),
+      LIMITS.sessions,
+      (s) => s.endTime,
+    );
+    const visibleKillZones = takeRecent(
+      snapshot.killZones.filter((z) => z.endTime >= fromT && z.startTime <= toT),
+      LIMITS.killZones,
+      (z) => z.endTime,
+    );
 
     /** TradingView-style filled chip label. */
     const chip = (
@@ -93,8 +205,7 @@ export function SmcLayer() {
       color: string,
       align: "left" | "right" = "left",
     ) => {
-      // Canvas can't resolve var(--font-sans); use a concrete family.
-      g.font = '10px "Inter", system-ui, sans-serif';
+      g.font = SMC_SANS_10;
       const padX = 4;
       const w = g.measureText(text).width + padX * 2;
       const h = 14;
@@ -111,7 +222,7 @@ export function SmcLayer() {
     /** Right-edge price tag (like a horizontal-ray price label). */
     const priceTag = (price: number, y: number, color: string) => {
       const text = fmtPrice(price, prec);
-      g.font = "10px var(--font-mono)";
+      g.font = SMC_MONO_10;
       const w = g.measureText(text).width + 8;
       const h = 14;
       const bx = W - w - 1;
@@ -125,11 +236,11 @@ export function SmcLayer() {
     // --- Sessions (background tint + hi/lo/mid) ---
     if (settings.sessions) {
       const tint: Record<string, string> = {
-        asian: "rgba(120,130,160,0.05)",
-        london: "rgba(41,98,255,0.05)",
-        newyork: "rgba(38,166,154,0.05)",
+        asian: "rgba(120,130,160,0.025)",
+        london: "rgba(41,98,255,0.025)",
+        newyork: "rgba(38,166,154,0.025)",
       };
-      for (const s of snapshot.sessions) {
+      for (const s of visibleSessions) {
         if (s.endTime < fromT || s.startTime > toT) continue;
         const x1 = xAt(s.startTime);
         const x2 = xAt(s.endTime);
@@ -139,7 +250,7 @@ export function SmcLayer() {
         const yl = yAt(s.low);
         const ym = yAt(s.mid);
         g.strokeStyle = colMuted;
-        g.globalAlpha = 0.35;
+        g.globalAlpha = 0.22;
         g.setLineDash([2, 3]);
         [yh, yl, ym].forEach((y) => {
           if (y == null) return;
@@ -155,8 +266,8 @@ export function SmcLayer() {
 
     // --- Kill zones (subtle vertical bands) ---
     if (settings.killzones) {
-      g.fillStyle = "rgba(255,152,0,0.06)";
-      for (const z of snapshot.killZones) {
+      g.fillStyle = "rgba(255,152,0,0.035)";
+      for (const z of visibleKillZones) {
         if (z.endTime < fromT || z.startTime > toT) continue;
         const x1 = xAt(z.startTime);
         const x2 = xAt(z.endTime);
@@ -166,7 +277,7 @@ export function SmcLayer() {
 
     // --- FVG zones ---
     if (settings.fvg) {
-      for (const f of snapshot.fvgs) {
+      for (const f of visibleFvgs) {
         const yTop = yAt(f.top);
         const yBot = yAt(f.bottom);
         if (yTop == null || yBot == null) continue;
@@ -175,11 +286,11 @@ export function SmcLayer() {
         const base = f.direction === "bullish" ? colBull : colBear;
         const top = Math.min(yTop, yBot);
         const h = Math.abs(yBot - yTop);
-        g.globalAlpha = f.state === "active" ? 0.14 : 0.06;
+        g.globalAlpha = f.state === "active" ? 0.1 : 0.035;
         g.fillStyle = base;
         g.fillRect(x1, top, x2 - x1, h);
         // Thin upper/lower borders in the FVG accent colour (TradingView style).
-        g.globalAlpha = f.state === "active" ? 0.5 : 0.2;
+        g.globalAlpha = f.state === "active" ? 0.42 : 0.14;
         g.strokeStyle = colFvg;
         g.lineWidth = 1;
         g.beginPath();
@@ -194,33 +305,33 @@ export function SmcLayer() {
 
     // --- Order blocks ---
     if (settings.orderBlocks) {
-      for (const o of snapshot.orderBlocks) {
+      for (const o of visibleOrderBlocks) {
         if (o.state === "invalidated") continue;
         const yTop = yAt(o.top);
         const yBot = yAt(o.bottom);
         if (yTop == null || yBot == null) continue;
         const x1 = xAt(o.time);
-        g.globalAlpha = o.state === "fresh" ? 0.18 : 0.08;
+        g.globalAlpha = o.state === "fresh" ? 0.13 : 0.04;
         g.fillStyle = colOb;
         g.fillRect(x1, Math.min(yTop, yBot), W - x1, Math.abs(yBot - yTop));
         g.globalAlpha = 1;
         g.strokeStyle = colOb;
         g.lineWidth = 1;
         g.strokeRect(x1, Math.min(yTop, yBot), W - x1, Math.abs(yBot - yTop));
-        const label = `${o.direction === "bullish" ? "OB" : "OB"}-${timeframe}${o.hasDisplacement ? " ⚡" : ""}`;
+        const label = `OB-${timeframe}${o.hasDisplacement ? " !" : ""}`;
         chip(label, x1 + 2, Math.min(yTop, yBot) + 8, colOb);
       }
     }
 
     // --- Liquidity pools ---
     if (settings.liquidity) {
-      for (const l of snapshot.liquidity) {
+      for (const l of visibleLiquidity) {
         const y = yAt(l.price);
         if (y == null) continue;
         const x1 = xAt(l.time);
         g.strokeStyle = colLiq;
         g.lineWidth = 1.2;
-        g.globalAlpha = l.swept ? 0.4 : 1;
+        g.globalAlpha = l.swept ? 0.32 : 0.82;
         g.setLineDash(l.swept ? [3, 3] : []);
         g.beginPath();
         g.moveTo(x1, y);
@@ -228,14 +339,14 @@ export function SmcLayer() {
         g.stroke();
         g.setLineDash([]);
         g.globalAlpha = 1;
-        chip(`${l.kind}${l.swept ? " ✕" : ""}`, x1 + 2, y - 9, colLiq);
-        priceTag(l.price, y, colLiq);
+        chip(`${l.kind}${l.swept ? " x" : ""}`, x1 + 2, y - 9, colLiq);
+        if (!l.swept) priceTag(l.price, y, colLiq);
       }
     }
 
     // --- Displacement candles ---
     if (settings.displacement) {
-      for (const d of snapshot.displacements) {
+      for (const d of visibleDisplacements) {
         if (d.time < fromT || d.time > toT) continue;
         const x = xAt(d.time);
         const color = d.direction === "bullish" ? colBull : colBear;
@@ -268,7 +379,7 @@ export function SmcLayer() {
 
     // --- Structure events (BOS / CHOCH / MSS) ---
     if (settings.structure) {
-      for (const m of snapshot.structures) {
+      for (const m of visibleStructures) {
         const y = yAt(m.price);
         if (y == null) continue;
         const x1 = xAt(m.fromTime);
@@ -288,8 +399,8 @@ export function SmcLayer() {
 
     // --- Swing labels ---
     if (settings.swings) {
-      g.font = "9px var(--font-mono)";
-      for (const s of snapshot.swings) {
+      g.font = SMC_MONO_9;
+      for (const s of visibleSwings) {
         if (!s.label) continue;
         const y = yAt(s.price);
         if (y == null) continue;
@@ -363,7 +474,7 @@ export function SmcLayer() {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none absolute inset-0 h-full w-full"
+      className="pointer-events-none absolute inset-0 z-[2] h-full w-full"
     />
   );
 }
