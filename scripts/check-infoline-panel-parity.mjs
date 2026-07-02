@@ -42,6 +42,15 @@ const checks = [
       infoLine.includes("panelWidth"),
   },
   {
+    name: "InfoLine panel reserves and clips away from the right price scale",
+    ok:
+      infoLine.includes("RIGHT_PRICE_SCALE_GUARD") &&
+      infoLine.includes("usablePanelRight") &&
+      infoLine.includes("g.rect(0, 0, usableRight, proj.height)") &&
+      infoLine.includes("g.clip()") &&
+      infoLine.includes("rightOfLine + panelWidth <= usableRight"),
+  },
+  {
     name: "InfoLine keeps the panel in its spatial bounding box",
     ok:
       infoLine.includes("PANEL_CULL_W + 24") &&

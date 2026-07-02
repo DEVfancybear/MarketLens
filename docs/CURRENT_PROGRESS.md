@@ -76,6 +76,9 @@ _Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
 - Follow-up fix: panel width is now measured from its row text before render and clamped to the
   viewport; if the viewport cannot fit the full row, the text is ellipsized instead of overflowing
   beyond the grey panel when dragging the info line right-to-left.
+- Follow-up fix: panel placement now reserves a right price-scale/current-price label strip and
+  clips drawing to the plot-pane side of that boundary. Near the right edge, the panel opens to the
+  left of the measured segment instead of covering the price axis.
 - Bar count comes from the active `timeframeAtom` and `TF_SECONDS`; distance/angle come from canvas
   geometry so the values update correctly while the chart is zoomed/panned.
 - Guard: added `npm run check:infoline-panel`.

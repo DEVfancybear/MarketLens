@@ -34,7 +34,8 @@ Recent drawing parity note: plain `trendline` now uses attached `+ Add text`; me
 belong to `infoLine` / `trendAngle`. `InfoLineTool.ts` renders the TradingView-style dark
 measurement panel with price/%/ticks, bars/time/pixel distance, and angle. The panel width is
 measured from row text and clamped/ellipsized inside the chart viewport so right-to-left info-line
-drags do not overflow the grey panel.
+drags do not overflow the grey panel. It also reserves/clips away from the right price-scale and
+current-price label strip; keep `RIGHT_PRICE_SCALE_GUARD` and `g.clip()` in `InfoLineTool.ts`.
 
 Recent vertical-line parity note: selected `VerticalTool.ts` now matches TradingView by showing a
 bottom time-axis chip such as `Thu 02 Jul 26 19:30` instead of the old white center handle. The

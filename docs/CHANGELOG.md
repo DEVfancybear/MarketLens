@@ -63,6 +63,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   from the projected canvas geometry.
 - The panel now measures its row text, grows within the chart viewport, and ellipsizes only when the
   viewport is too narrow, preventing right-to-left drags from overflowing the panel background.
+- Follow-up: the panel now reserves and clips away from the right price-scale/current-price label
+  strip, and when the measured segment is near the right edge it prefers opening to the left of the
+  segment instead of covering the price axis.
 - Added `npm run check:infoline-panel` to prevent the old generic chip from returning.
 
 ### Fixed - Trendline text parity with TradingView (2026-07-02)

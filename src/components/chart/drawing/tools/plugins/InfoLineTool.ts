@@ -24,6 +24,11 @@ const PANEL_ROW_H = 28;
 const PANEL_TEXT_X = 40;
 const PANEL_RIGHT_PAD = 14;
 const PANEL_CULL_W = 360;
+// Reserve the right price scale / current-price label strip. The drawing canvas
+// spans the full chart container, so panels must be clipped before this zone.
+const RIGHT_PRICE_SCALE_GUARD = 112;
+const PANEL_EDGE_PAD = 6;
+const PANEL_ANCHOR_GAP = 16;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -64,14 +69,38 @@ function panelPosition(
   proj: Projector,
   panelWidth: number,
 ): { x: number; y: number } {
+  const usableRight = usablePanelRight(proj);
   const midX = (x1 + x2) / 2;
+  const lineLeft = Math.min(x1, x2);
+  const lineRight = Math.max(x1, x2);
+  const rightOfLine = lineRight + PANEL_ANCHOR_GAP;
+  const leftOfLine = lineLeft - panelWidth - PANEL_ANCHOR_GAP;
   const below = Math.max(y1, y2) + 16;
   const above = Math.min(y1, y2) - PANEL_H - 16;
   const preferredY = below + PANEL_H <= proj.height - 6 ? below : above;
+  const centered = midX - panelWidth / 2;
+  const preferredX =
+    rightOfLine + panelWidth <= usableRight - PANEL_EDGE_PAD
+      ? rightOfLine
+      : leftOfLine >= PANEL_EDGE_PAD
+        ? leftOfLine
+        : centered;
   return {
-    x: clamp(midX + 12, 6, Math.max(6, proj.width - panelWidth - 6)),
-    y: clamp(preferredY, 6, Math.max(6, proj.height - PANEL_H - 6)),
+    x: clamp(
+      preferredX,
+      PANEL_EDGE_PAD,
+      Math.max(PANEL_EDGE_PAD, usableRight - panelWidth - PANEL_EDGE_PAD),
+    ),
+    y: clamp(
+      preferredY,
+      PANEL_EDGE_PAD,
+      Math.max(PANEL_EDGE_PAD, proj.height - PANEL_H - PANEL_EDGE_PAD),
+    ),
   };
+}
+
+function usablePanelRight(proj: Projector): number {
+  return Math.max(96, proj.width - RIGHT_PRICE_SCALE_GUARD);
 }
 
 function fitText(
@@ -203,11 +232,12 @@ function renderInfoPanel(
   const measuredTextWidth = Math.max(
     ...rows.map((row) => g.measureText(row.text).width),
   );
-  const maxPanelWidth = Math.max(80, proj.width - 12);
+  const usableRight = usablePanelRight(proj);
+  const maxPanelWidth = Math.max(80, usableRight - PANEL_EDGE_PAD * 2);
   const panelWidth = Math.min(
     maxPanelWidth,
     Math.max(
-      PANEL_MIN_W,
+      Math.min(PANEL_MIN_W, maxPanelWidth),
       Math.ceil(measuredTextWidth + PANEL_TEXT_X + PANEL_RIGHT_PAD),
     ),
   );
@@ -216,6 +246,10 @@ function renderInfoPanel(
     panelWidth - PANEL_TEXT_X - PANEL_RIGHT_PAD,
   );
   const pos = panelPosition(x1, y1, x2, y2, proj, panelWidth);
+
+  g.beginPath();
+  g.rect(0, 0, usableRight, proj.height);
+  g.clip();
 
   drawRoundedRect(g, pos.x, pos.y, panelWidth, PANEL_H, 3);
   g.fillStyle = "rgba(70, 70, 70, 0.92)";
