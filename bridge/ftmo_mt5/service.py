@@ -47,6 +47,12 @@ class FtmoMt5Service:
                 f"[ftmo-mt5-python] enabled={self.config.enabled} "
                 f"dryRun={self.config.dry_run} audit={self.config.audit_path}",
             )
+            snapshot = self.risk_snapshot()
+            print(
+                f"[ftmo-mt5-python] riskBase={snapshot['accountSize']:.2f} "
+                f"source={snapshot.get('accountSizeSource', 'unknown')} "
+                f"maxRiskPerTrade={snapshot.get('maxRiskPerTrade', 0):.2f}",
+            )
             await asyncio.Future()
 
     async def handle_client(self, websocket: WebSocketServerProtocol) -> None:

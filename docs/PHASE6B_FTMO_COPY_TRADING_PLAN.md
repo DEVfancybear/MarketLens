@@ -168,6 +168,9 @@ Rules:
 - The Python bridge reads process env plus `.env` / `.env.local` from the repository root at
   startup. Existing process env wins. Restart the Python bridge after changing account size,
   symbols, login, or risk settings.
+- If `FTMO_ACCOUNT_SIZE` is unset, the Python bridge uses live MT5 equity as the risk base. If it
+  is set, that fixed value is used. Startup logs print `riskBase`, `source`, and
+  `maxRiskPerTrade` for verification.
 
 ## 5.1 Dry-Run Quickstart
 

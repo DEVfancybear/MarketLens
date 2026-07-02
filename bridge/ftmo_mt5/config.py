@@ -62,6 +62,7 @@ class BridgeConfig:
     terminal_path: str
     account_label: str
     account_size: float
+    account_size_configured: bool
     max_daily_loss_pct: float
     max_total_loss_pct: float
     daily_loss_safety_buffer_pct: float
@@ -80,6 +81,7 @@ class BridgeConfig:
 
 def load_config() -> BridgeConfig:
     _load_env_files()
+    account_size_configured = "FTMO_ACCOUNT_SIZE" in os.environ
     return BridgeConfig(
         enabled=_bool_env("FTMO_MT5_ENABLED", False),
         dry_run=_bool_env("FTMO_BRIDGE_DRY_RUN", True),
@@ -93,6 +95,7 @@ def load_config() -> BridgeConfig:
         terminal_path=os.getenv("FTMO_MT5_TERMINAL_PATH", ""),
         account_label=os.getenv("FTMO_MT5_ACCOUNT_LABEL", "FTMO"),
         account_size=_float_env("FTMO_ACCOUNT_SIZE", 100000),
+        account_size_configured=account_size_configured,
         max_daily_loss_pct=_float_env("FTMO_MAX_DAILY_LOSS_PCT", 5),
         max_total_loss_pct=_float_env("FTMO_MAX_TOTAL_LOSS_PCT", 10),
         daily_loss_safety_buffer_pct=_float_env("FTMO_DAILY_LOSS_SAFETY_BUFFER_PCT", 0.2),

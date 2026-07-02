@@ -38,11 +38,12 @@ class RiskGuard:
         readiness_ok: bool = True,
     ) -> dict[str, Any]:
         self.reset_if_needed()
-        daily_loss_limit = self.config.account_size * (self.config.max_daily_loss_pct / 100)
-        max_loss_limit = self.config.account_size * (self.config.max_total_loss_pct / 100)
-        safety_buffer = self.config.account_size * (self.config.daily_loss_safety_buffer_pct / 100)
-        daily_loss_used = max(0, self.config.account_size - equity)
-        max_loss_used = max(0, self.config.account_size - equity)
+        account_size = self.effective_account_size(equity)
+        daily_loss_limit = account_size * (self.config.max_daily_loss_pct / 100)
+        max_loss_limit = account_size * (self.config.max_total_loss_pct / 100)
+        safety_buffer = account_size * (self.config.daily_loss_safety_buffer_pct / 100)
+        daily_loss_used = max(0, account_size - equity)
+        max_loss_used = max(0, account_size - equity)
         daily_loss_remaining = max(
             0,
             daily_loss_limit - safety_buffer - daily_loss_used - open_risk_at_stops,
@@ -57,9 +58,11 @@ class RiskGuard:
             and extra_risk <= max_loss_remaining
         )
         return {
-            "accountSize": self.config.account_size,
+            "accountSize": account_size,
+            "accountSizeSource": "fixed" if self.config.account_size_configured else "equity",
             "dailyLossLimit": daily_loss_limit,
             "maxLossLimit": max_loss_limit,
+            "maxRiskPerTrade": account_size * (self.config.max_risk_per_trade_pct / 100),
             "dailyLossUsed": daily_loss_used,
             "dailyLossRemaining": daily_loss_remaining,
             "maxLossRemaining": max_loss_remaining,
@@ -105,7 +108,8 @@ class RiskGuard:
         projected_risk = self.estimate_order_risk(order, meta, normalized_volume)
         if not math.isfinite(projected_risk):
             return False, "INVALID_STOP_DISTANCE", "Stop loss must differ from entry price", None, normalized_volume
-        max_risk_per_trade = self.config.account_size * (self.config.max_risk_per_trade_pct / 100)
+        account_size = self.effective_account_size(equity)
+        max_risk_per_trade = account_size * (self.config.max_risk_per_trade_pct / 100)
         if projected_risk > max_risk_per_trade:
             return (
                 False,
@@ -130,6 +134,13 @@ class RiskGuard:
         if distance <= 0:
             return math.inf
         return distance / meta.tick_size * meta.tick_value * volume
+
+    def effective_account_size(self, equity: float) -> float:
+        if self.config.account_size_configured and self.config.account_size > 0:
+            return self.config.account_size
+        if math.isfinite(equity) and equity > 0:
+            return equity
+        return self.config.account_size
 
     def estimate_position_risk(self, position: dict[str, Any], meta: SymbolMeta | None) -> float:
         if meta is None:
@@ -175,4 +186,3 @@ def _as_float(value: Any) -> float | None:
         return number if math.isfinite(number) else None
     except (TypeError, ValueError):
         return None
-

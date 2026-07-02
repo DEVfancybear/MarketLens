@@ -24,6 +24,10 @@ The service reads bridge variables from the current process environment and, if 
 `.env.local` in the repository root. Existing process environment values take priority over file
 values. Restart the service after changing these values.
 
+If `FTMO_ACCOUNT_SIZE` is not set, live mode uses the connected MT5 account equity as the risk
+base. If `FTMO_ACCOUNT_SIZE` is set, that fixed value is used for FTMO-style loss/risk limits.
+Startup logs print `riskBase`, `source`, and `maxRiskPerTrade`.
+
 ```powershell
 $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"
