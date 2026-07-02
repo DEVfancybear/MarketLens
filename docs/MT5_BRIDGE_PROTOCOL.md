@@ -322,6 +322,9 @@ export interface Mt5SymbolInfo {
   maxLotReason?: 'broker' | 'bridge';
   tickSize?: number;
   tickValue?: number;
+  stopLevel?: number;
+  freezeLevel?: number;
+  minStopDistance?: number;
   tradeMode: 'disabled' | 'longOnly' | 'shortOnly' | 'full';
   updatedAt: number;
 }
@@ -334,6 +337,10 @@ lot limits, or incompatible with the requested side.
 `min(brokerMaxLot, bridgeMaxLot)`. If `maxLotReason` is `broker`, MT5 reported a broker/account
 symbol limit below the configured bridge cap. If it is `bridge`, `FTMO_BRIDGE_MAX_ORDER_VOLUME` is
 the active cap.
+
+`stopLevel` and `minStopDistance` come from MT5 symbol metadata. Clients should reject Buy orders
+unless SL is below entry and TP above entry, and reject Sell orders unless SL is above entry and TP
+below entry. The bridge revalidates the same rule against broker bid/ask before `order_check`.
 
 ## 7. Command Messages
 
@@ -371,6 +378,10 @@ For market orders, `price` is omitted because MT5 executes at broker bid/ask, bu
 send `marketPrice` from the active chart so the bridge can estimate stop risk before execution. The
 bridge should reject market orders that have neither `price` nor `marketPrice` available for risk
 calculation.
+
+For all order types, SL/TP direction must match the side: Buy uses SL below entry and TP above
+entry; Sell uses SL above entry and TP below entry. Broker stop-distance rules still apply and may
+be stricter than the chart-side estimate.
 
 ### `order.modify`
 

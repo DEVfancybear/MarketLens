@@ -38,7 +38,7 @@ to `0.01`, every web order will be capped at `0.01` lots even when risk % is hig
 The bridge also logs symbol lot limits once per connected chart symbol:
 
 ```text
-[ftmo-mt5-python] symbol BTCUSDT->BTCUSD minLot=0.0100 brokerMaxLot=0.0100 bridgeMaxLot=1.0000 publicMaxLot=0.0100 lotStep=0.0100 tickSize=0.01 tickValue=1 cap=broker
+[ftmo-mt5-python] symbol BTCUSDT->BTCUSD minLot=0.0100 brokerMaxLot=0.0100 bridgeMaxLot=1.0000 publicMaxLot=0.0100 lotStep=0.0100 tickSize=0.01 tickValue=1 stopLevel=0 minStopDistance=0 cap=broker
 ```
 
 Use `cap` to diagnose risk sizing:
@@ -47,6 +47,8 @@ Use `cap` to diagnose risk sizing:
   stale PowerShell process env that still overrides `.env.local`.
 - `cap=broker`: MT5 reported `volume_max` below the bridge cap for that broker symbol/account. Pick
   a symbol/account type with a higher broker max lot, or accept the broker limit.
+- `stopLevel`/`minStopDistance`: MT5's minimum SL/TP distance for that broker symbol. Buy orders
+  need SL below entry and TP above entry; Sell orders need SL above entry and TP below entry.
 
 ```powershell
 $env:FTMO_MT5_ENABLED="true"

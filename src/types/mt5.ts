@@ -80,6 +80,9 @@ export interface Mt5SymbolInfo {
   maxLotReason?: "broker" | "bridge";
   tickSize?: number;
   tickValue?: number;
+  stopLevel?: number;
+  freezeLevel?: number;
+  minStopDistance?: number;
   tradeMode: "disabled" | "longOnly" | "shortOnly" | "full";
   updatedAt: number;
 }

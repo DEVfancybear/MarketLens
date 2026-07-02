@@ -182,6 +182,9 @@ Rules:
   after setting `FTMO_BRIDGE_MAX_ORDER_VOLUME=1`, check the bridge console:
   `cap=bridge` means an env/process restart issue; `cap=broker` means MT5 reported a broker
   `volume_max` of `0.01` for that Exness/FTMO symbol or account type.
+- The bridge also streams `stopLevel`, `freezeLevel`, and `minStopDistance`. The frontend blocks
+  obvious invalid stops before send; the bridge rechecks against the broker tick before MT5
+  `order_check`.
 
 ## 5.1 Dry-Run Quickstart
 
@@ -304,6 +307,8 @@ Bridge startup must verify each configured symbol against MT5 symbol metadata:
 - `volume_min`, `volume_max`, `volume_step` are loaded.
 - Effective browser `maxLot` equals `min(volume_max, FTMO_BRIDGE_MAX_ORDER_VOLUME)` and exposes
   whether the active cap came from MT5 broker metadata or bridge config.
+- `trade_stops_level` and `trade_freeze_level` are loaded so Buy/Sell stop direction and minimum
+  broker stop distance can be validated before sending orders.
 - Contract size and tick value are available for risk calculation.
 
 If the symbol is missing or disabled, browser trading for that chart symbol must be blocked.

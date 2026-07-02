@@ -192,6 +192,9 @@ export interface Mt5SymbolInfo {
   maxLotReason?: 'broker' | 'bridge';
   tickSize?: number;
   tickValue?: number;
+  stopLevel?: number;
+  freezeLevel?: number;
+  minStopDistance?: number;
   tradeMode: 'disabled' | 'longOnly' | 'shortOnly' | 'full';
   updatedAt: number;
 }
@@ -319,7 +322,8 @@ MT5 mode:
 1. Validate bridge status is `connected`.
 2. Resolve chart symbol to broker symbol.
 3. Validate symbol info exists and trade mode allows the side.
-4. Validate volume against bridge-provided `minLot`/`maxLot`/`lotStep`.
+4. Validate volume against bridge-provided `minLot`/`maxLot`/`lotStep`, and validate SL/TP direction
+   against side before sending.
 5. Show `LiveOrderConfirmDialog`.
 6. Send `order.place` with `clientOrderId`.
 7. Show pending command in UI.

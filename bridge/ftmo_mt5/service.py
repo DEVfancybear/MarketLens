@@ -353,6 +353,7 @@ class FtmoMt5Service:
             f"minLot={meta.min_lot:.4f} brokerMaxLot={meta.max_lot:.4f} "
             f"bridgeMaxLot={self.config.max_order_volume:.4f} publicMaxLot={public_max_lot:.4f} "
             f"lotStep={meta.lot_step:.4f} tickSize={meta.tick_size:g} tickValue={meta.tick_value:g} "
+            f"stopLevel={meta.stop_level} minStopDistance={meta.stop_level * meta.point:g} "
             f"cap={cap}",
         )
 

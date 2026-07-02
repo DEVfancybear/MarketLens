@@ -15,15 +15,17 @@ class SymbolMeta:
     max_lot: float
     tick_size: float
     tick_value: float
+    stop_level: int
+    freeze_level: int
     trade_mode: str
 
 
 def fallback_symbol_meta(chart_symbol: str, broker_symbol: str) -> SymbolMeta:
     if "JPY" in chart_symbol:
-        return SymbolMeta(chart_symbol, broker_symbol, 3, 0.001, 0.01, 0.01, 100, 0.001, 1, "full")
+        return SymbolMeta(chart_symbol, broker_symbol, 3, 0.001, 0.01, 0.01, 100, 0.001, 1, 0, 0, "full")
     if chart_symbol in {"XAUUSD", "BTCUSDT", "ETHUSDT"}:
-        return SymbolMeta(chart_symbol, broker_symbol, 2, 0.01, 0.01, 0.01, 50, 0.01, 1, "full")
-    return SymbolMeta(chart_symbol, broker_symbol, 5, 0.00001, 0.01, 0.01, 100, 0.00001, 1, "full")
+        return SymbolMeta(chart_symbol, broker_symbol, 2, 0.01, 0.01, 0.01, 50, 0.01, 1, 0, 0, "full")
+    return SymbolMeta(chart_symbol, broker_symbol, 5, 0.00001, 0.01, 0.01, 100, 0.00001, 1, 0, 0, "full")
 
 
 def meta_from_mt5_info(chart_symbol: str, broker_symbol: str, info: Any) -> SymbolMeta:
@@ -43,6 +45,8 @@ def meta_from_mt5_info(chart_symbol: str, broker_symbol: str, info: Any) -> Symb
         max_lot=float(getattr(info, "volume_max", 100) or 100),
         tick_size=tick_size,
         tick_value=tick_value,
+        stop_level=int(getattr(info, "trade_stops_level", 0) or 0),
+        freeze_level=int(getattr(info, "trade_freeze_level", 0) or 0),
         trade_mode="full" if int(getattr(info, "trade_mode", 0) or 0) != 0 else "disabled",
     )
 
@@ -63,6 +67,9 @@ def public_symbol_info(meta: SymbolMeta, max_order_volume: float) -> dict[str, A
         "maxLotReason": max_lot_reason,
         "tickSize": meta.tick_size,
         "tickValue": meta.tick_value,
+        "stopLevel": meta.stop_level,
+        "freezeLevel": meta.freeze_level,
+        "minStopDistance": meta.stop_level * meta.point,
         "tradeMode": meta.trade_mode,
         "updatedAt": int(__import__("time").time() * 1000),
     }

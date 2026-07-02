@@ -394,7 +394,7 @@ class Mt5Adapter:
         else:
             mt5_type = self.mt5.ORDER_TYPE_BUY_STOP if is_buy else self.mt5.ORDER_TYPE_SELL_STOP
             action = self.mt5.TRADE_ACTION_PENDING
-        return {
+        request = {
             "action": action,
             "symbol": meta.broker_symbol,
             "volume": volume,
@@ -408,6 +408,34 @@ class Mt5Adapter:
             "type_time": self.mt5.ORDER_TIME_GTC,
             "type_filling": self.mt5.ORDER_FILLING_IOC,
         }
+        self._validate_request_stops(request, meta, is_buy)
+        return request
+
+    def _validate_request_stops(self, request: dict[str, Any], meta: SymbolMeta, is_buy: bool) -> None:
+        price = float(request.get("price") or 0)
+        sl = float(request.get("sl") or 0)
+        tp = float(request.get("tp") or 0)
+        min_distance = max(0.0, meta.stop_level * meta.point)
+        side = "BUY" if is_buy else "SELL"
+        if price <= 0:
+            raise RuntimeError(f"Invalid entry price for {side} {meta.broker_symbol}")
+
+        def too_close(distance: float) -> bool:
+            return min_distance > 0 and distance < min_distance
+
+        if is_buy:
+            sl_invalid = sl > 0 and (price - sl <= 0 or too_close(price - sl))
+            tp_invalid = tp > 0 and (tp - price <= 0 or too_close(tp - price))
+            rule = "SL must be below entry and TP above entry"
+        else:
+            sl_invalid = sl > 0 and (sl - price <= 0 or too_close(sl - price))
+            tp_invalid = tp > 0 and (price - tp <= 0 or too_close(price - tp))
+            rule = "SL must be above entry and TP below entry"
+        if sl_invalid or tp_invalid:
+            raise RuntimeError(
+                f"Invalid stops for {side} {meta.broker_symbol}: entry={price}, sl={sl or None}, "
+                f"tp={tp or None}, minDistance={min_distance}. {rule}.",
+            )
 
 
 def _optional_float(value: Any) -> float | None:

@@ -610,8 +610,43 @@ function validateMt5OrderState(input: {
   if (order.volume < symbolInfo.minLot || order.volume > symbolInfo.maxLot) {
     return `Volume must be between ${symbolInfo.minLot} and ${symbolInfo.maxLot}.`;
   }
+  const stopError = validateMt5Stops(order, symbolInfo);
+  if (stopError) return stopError;
   if (!isVolumeOnStep(order.volume, symbolInfo.lotStep)) {
     return `Volume must align to lot step ${symbolInfo.lotStep}.`;
+  }
+  return null;
+}
+
+function validateMt5Stops(
+  order: Mt5OrderRequest,
+  symbolInfo: Mt5SymbolInfo,
+): string | null {
+  if (order.sl == null && order.tp == null) return null;
+  const entry = order.price ?? order.marketPrice;
+  if (!Number.isFinite(entry) || !entry || entry <= 0) {
+    return "Entry price is required to validate MT5 stops.";
+  }
+  const minDistance = Math.max(
+    0,
+    symbolInfo.minStopDistance ?? (symbolInfo.stopLevel ?? 0) * symbolInfo.point,
+  );
+  const side = order.side.toUpperCase();
+  const hasMinDistance = minDistance > 0;
+  if (order.side === "buy") {
+    if (
+      (order.sl != null && (entry - order.sl <= 0 || (hasMinDistance && entry - order.sl < minDistance))) ||
+      (order.tp != null && (order.tp - entry <= 0 || (hasMinDistance && order.tp - entry < minDistance)))
+    ) {
+      return `${side} stops invalid: SL must be below entry and TP above entry.`;
+    }
+    return null;
+  }
+  if (
+    (order.sl != null && (order.sl - entry <= 0 || (hasMinDistance && order.sl - entry < minDistance))) ||
+    (order.tp != null && (entry - order.tp <= 0 || (hasMinDistance && entry - order.tp < minDistance)))
+  ) {
+    return `${side} stops invalid: SL must be above entry and TP below entry.`;
   }
   return null;
 }
