@@ -15,6 +15,18 @@ export function speedToIntervalMs(speed: ReplaySpeed): number {
   return Math.max(16, 1000 / speed);
 }
 
+export function replaySpeedLabel(speed: ReplaySpeed): string {
+  return `${speed}x`;
+}
+
+export function replaySpeedDescription(speed: ReplaySpeed): string {
+  if (speed < 1) {
+    const seconds = Math.round(1 / speed);
+    return `1 update per ${seconds} sec`;
+  }
+  return `${speed} update${speed === 1 ? "" : "s"} per sec`;
+}
+
 /** Largest index whose candle time is <= `time` (binary search). */
 export function indexAtOrBefore(candles: Candle[], time: number): number {
   let lo = 0;

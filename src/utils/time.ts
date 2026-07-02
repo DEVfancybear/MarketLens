@@ -47,6 +47,15 @@ export function floorToBar(timeSec: number, tf: Timeframe): number {
 
 /** Convert "YYYY-MM-DD" (+ optional "HH:mm") to UTC seconds. */
 export function parseDateInput(value: string): number | null {
-  const ms = Date.parse(value.includes('T') ? value + 'Z' : value + 'T00:00:00Z');
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.includes("T")
+    ? trimmed
+    : trimmed.includes(" ")
+      ? trimmed.replace(" ", "T")
+      : `${trimmed}T00:00:00`;
+  const ms = Date.parse(
+    normalized.endsWith("Z") ? normalized : `${normalized}Z`,
+  );
   return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
 }

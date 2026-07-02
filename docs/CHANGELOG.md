@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Replay mode TradingView timing controls (2026-07-02)
+- Added a TradingView-style floating Bar Replay toolbar over the chart with replay timing menu,
+  play/pause, forward-one-bar, speed slider, latest-bar jump, and exit controls.
+- Replaced the old `Quick start (70%)` path with a shared Replay timing menu supporting
+  `Select bar`, `Select date...`, `Random bar`, and first-available-day selection.
+- Aligned replay speeds to TradingView's visible timing scale: `0.1x`, `0.3x`, `0.5x`, `1x`,
+  `3x`, and `10x`; default speed is now `1x`.
+- Added TradingView hotkeys `Shift+Down` for play/pause and `Shift+Right` for forward one bar.
+  Existing Space and arrow controls remain available.
+- Fixed replay date parsing so both `YYYY-MM-DD HH:mm` and `YYYY-MM-DDTHH:mm` inputs work.
+
 ### Fixed - Reset chart view TradingView parity (2026-07-02)
 - Changed the toolbar `Reset chart view` action to use the same `resetChartView()` flow as the
   chart context menu instead of `timeScale().fitContent()`. Reset now returns to the realtime edge,

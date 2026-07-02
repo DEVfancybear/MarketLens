@@ -4,6 +4,19 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Replay mode TradingView timing controls
+- Added `ReplayFloatingToolbar` over the chart so Bar Replay controls live where TradingView places
+  them, instead of only inside the bottom Replay panel.
+- Added shared `ReplayTimingMenu` with `Select bar`, `Select date...`, `Random bar`, and first-day
+  selection. Both the floating toolbar and bottom replay panel use this same logic.
+- Removed the non-TradingView `Quick start (70%)` shortcut from replay controls.
+- Changed replay speed presets to TradingView-like timing values: `0.1x`, `0.3x`, `0.5x`, `1x`,
+  `3x`, `10x`; default speed is `1x`. Speed UI is now a slider with a live value label.
+- Added `Shift+Down` play/pause and `Shift+Right` forward-one-bar hotkeys while keeping Space and
+  arrow controls available.
+- Fixed `parseDateInput()` so `YYYY-MM-DD HH:mm`, `YYYY-MM-DDTHH:mm`, and date-only inputs all work
+  for replay date selection.
+
 ### Reset chart view TradingView parity
 - Fixed the toolbar `Reset chart view` action so it no longer calls `timeScale().fitContent()`,
   which fit the entire loaded history and felt different from TradingView.

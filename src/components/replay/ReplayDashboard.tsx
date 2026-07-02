@@ -68,8 +68,7 @@ export function ReplayDashboard() {
     const t = parseDateInput(dateInput);
     if (t == null || !candles.length) return;
     const idx = indexAtOrBefore(candles, t);
-    if (!r.active) r.arm(idx, candles.length);
-    else r.setCursor(idx);
+    r.arm(idx, candles.length);
   };
 
   if (!r.active) {

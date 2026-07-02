@@ -18,6 +18,7 @@ import { DrawingLayer } from "./DrawingLayer";
 import { AlertOverlay } from "./AlertOverlay";
 import { AlertLines } from "./AlertLines";
 import { ReplaySelectionLayer } from "@/components/replay/ReplaySelectionLayer";
+import { ReplayFloatingToolbar } from "@/components/replay/ReplayFloatingToolbar";
 import { SmcLayer } from "@/components/smc/SmcLayer";
 import { TradeLevels } from "@/components/trade/TradeLevels";
 import { RiskPanel } from "@/components/trade/RiskPanel";
@@ -92,6 +93,7 @@ export function ChartArea() {
           <DrawingLayer />
           <ReplaySelectionLayer />
         </PriceChart>
+        <ReplayFloatingToolbar />
         <RiskPanel />
       </div>
 

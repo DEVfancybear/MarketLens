@@ -231,20 +231,9 @@ export function ReplaySelectionLayer() {
         hoverIdxRef.current = idx;
         dirtyRef.current = true;
         scheduleDraw();
-        const data = reSelecting ? fullCandles : candles;
-        if (idx != null && data[idx]) {
-          console.debug(
-            reSelecting ? "Replay re-select hover:" : "Replay hover:",
-            {
-              x: Math.round(e.clientX),
-              index: idx,
-              time: fmtDateTime(data[idx].time),
-            },
-          );
-        }
       }
     },
-    [isActive, nearestIndex, scheduleDraw, reSelecting, candles, fullCandles],
+    [isActive, nearestIndex, scheduleDraw],
   );
 
   const onPointerDown = useCallback(
@@ -257,23 +246,10 @@ export function ReplaySelectionLayer() {
 
       if (reSelecting) {
         // Re-select mode: move anchor + cursor to the chosen bar.
-        const total = getDefaultStore().get(candlesAtom).length;
-        console.debug("Replay re-select confirmed:", {
-          index: idx,
-          time: fmtDateTime(data[idx].time),
-          timestamp: data[idx].time,
-          total,
-        });
         confirmReSelect(idx);
       } else {
         // Initial selection mode: arm replay at the chosen bar.
         const total = getDefaultStore().get(candlesAtom).length;
-        console.debug("Replay start selected:", {
-          index: idx,
-          time: fmtDateTime(data[idx].time),
-          timestamp: data[idx].time,
-          total,
-        });
         arm(idx, total);
         setBottomTab("replay");
       }

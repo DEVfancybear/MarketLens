@@ -2,15 +2,15 @@
 import { atom, useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
 
-export type ReplaySpeed = 1 | 2 | 5 | 10 | 25 | 50 | 100;
-export const REPLAY_SPEEDS: ReplaySpeed[] = [1, 2, 5, 10, 25, 50, 100];
+export type ReplaySpeed = 0.1 | 0.3 | 0.5 | 1 | 3 | 10;
+export const REPLAY_SPEEDS: ReplaySpeed[] = [0.1, 0.3, 0.5, 1, 3, 10];
 
 // ── State atoms ────────────────────────────────────────────────────────────
 export const activeAtom = atom(false);
 export const selectingAtom = atom(false);
 export const reSelectingAtom = atom(false);
 export const playingAtom = atom(false);
-export const speedAtom = atom<ReplaySpeed>(5);
+export const speedAtom = atom<ReplaySpeed>(1);
 export const cursorAtom = atom(0);
 export const anchorAtom = atom(0);
 export const totalAtom = atom(0);

@@ -157,11 +157,17 @@ export function useHotkeys() {
             r.playing ? r.pause() : r.play();
           }
           return;
+        case "ArrowDown":
+          if (r.active && e.shiftKey && !r.reSelecting) {
+            e.preventDefault();
+            r.playing ? r.pause() : r.play();
+          }
+          return;
         case "ArrowRight":
           if (r.active && !r.reSelecting) {
             e.preventDefault();
             r.pause();
-            r.step(e.shiftKey ? 10 : 1);
+            r.step(1);
           }
           return;
         case "ArrowLeft":

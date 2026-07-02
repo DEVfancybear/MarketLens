@@ -13,10 +13,15 @@ import {
   X,
 } from "lucide-react";
 import { useReplayStore, REPLAY_SPEEDS } from "@/store/replayStore";
+import {
+  replaySpeedDescription,
+  replaySpeedLabel,
+} from "@/services/replayEngine";
 import { useAtomValue } from "jotai";
 import { candlesAtom } from "@/store/chartStore";
 import { cn } from "@/utils/cn";
 import { IconButton } from "@/components/ui/IconButton";
+import { ReplayTimingMenu } from "./ReplayTimingMenu";
 
 export function ReplayControls() {
   const r = useReplayStore();
@@ -68,26 +73,18 @@ export function ReplayControls() {
     }
     return (
       <div className="flex items-center gap-3">
+        <ReplayTimingMenu />
         <button
           onClick={() => {
-            if (candles.length < 50) return;
+            if (candles.length < 2) return;
             r.beginSelect();
           }}
           className="flex items-center gap-2 rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover"
         >
           <Play size={13} /> Start Replay
         </button>
-        <button
-          onClick={() => {
-            if (candles.length < 50) return;
-            r.arm(Math.floor(candles.length * 0.7), candles.length);
-          }}
-          className="rounded border border-terminal-border px-2.5 py-1.5 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
-        >
-          Quick start (70%)
-        </button>
         <span className="text-2xs text-ink-faint">
-          Click a bar to set the start point, just like TradingView Bar Replay.
+          Use Replay timing for Select bar, Select date, or Random bar.
         </span>
       </div>
     );
@@ -160,22 +157,29 @@ export function ReplayControls() {
 
       <div className="mx-2 h-5 w-px bg-terminal-border" />
 
+      <ReplayTimingMenu compact />
+
+      <div className="mx-2 h-5 w-px bg-terminal-border" />
+
       {/* Speed */}
-      <div className="flex items-center gap-1">
-        {REPLAY_SPEEDS.map((s) => (
-          <button
-            key={s}
-            onClick={() => r.setSpeed(s)}
-            className={cn(
-              "h-6 rounded px-1.5 text-2xs font-semibold transition-colors",
-              r.speed === s
-                ? "bg-brand/20 text-brand"
-                : "text-ink-muted hover:bg-terminal-hover",
-            )}
-          >
-            {s}x
-          </button>
-        ))}
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-2xs font-medium text-ink-muted">Speed</span>
+        <input
+          type="range"
+          min={0}
+          max={REPLAY_SPEEDS.length - 1}
+          step={1}
+          value={Math.max(0, REPLAY_SPEEDS.indexOf(r.speed))}
+          onChange={(e) => {
+            const speed = REPLAY_SPEEDS[Number(e.target.value)] ?? r.speed;
+            r.setSpeed(speed);
+          }}
+          className="h-1 w-28 cursor-pointer appearance-none rounded bg-terminal-border accent-brand"
+          title={replaySpeedDescription(r.speed)}
+        />
+        <span className="w-8 text-right text-2xs font-semibold text-ink">
+          {replaySpeedLabel(r.speed)}
+        </span>
       </div>
 
       <div className="mx-2 h-5 w-px bg-terminal-border" />
