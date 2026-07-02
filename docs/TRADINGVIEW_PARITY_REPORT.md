@@ -28,8 +28,11 @@ _Date: 2026-06-25 · Build: green (type-check ✅, lint ✅, build ✅)_
 - ✅ Realtime motion/zoom polish: `rightBarStaysOnScroll`, `shiftVisibleRangeOnNewBar`, and
   mouse/touch `kineticScroll` are enabled in `PriceChart.tsx`; forming/appended candle ticks keep
   using the existing O(1) `series.update()` path.
+- ✅ Long/Short position polish: selected position drawings use TradingView-like blue square
+  handles, `Entry:`/`Target:`/`Stop:` labels, absolute target/stop distance percentages, and the
+  visible TP/SL-hit frozen extension remains selectable/draggable.
 
-**Files:** `chartTheme.ts`, `PriceChart.tsx`
+**Files:** `chartTheme.ts`, `PriceChart.tsx`, `PositionTool.ts`
 
 ### Phase 3.3 — Price Scale UX
 - ✅ Countdown timer to next bar close (e.g. "0:42") — new `useCountdown` hook

@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Long/Short position hit-state selection parity (2026-07-02)
+- Updated `PositionTool.ts` so the visible TP/SL-hit extension is also included in `hitTest()` and
+  `boundingBox()`. A short/long position that has frozen to an SL/TP hit candle can now be selected
+  and moved by clicking the visible extended box, instead of only the original right edge.
+- Position label chips are included in the body hit zone, so clicking `Stop:`, `Target:`, or
+  `Entry:` selects the drawing instead of falling through to the chart.
+- Position labels now use TradingView-style `Entry:`, `Target:`, and `Stop:` prefixes, and target/
+  stop percentages are rendered as absolute distances so short-position target stats do not show as
+  negative profit.
+- Selected long/short positions now render TradingView-like blue square handles around the position
+  box. Dragging still edits the existing three anchors: entry price, target/right edge, and
+  stop/right edge.
+
 ### Fixed - Chart realtime motion and zoom parity (2026-07-02)
 - Tuned `PriceChart.tsx` interaction options toward TradingView behavior: enabled mouse/touch
   kinetic panning, kept the hovered bar stable during wheel zoom/scroll, and preserved live-edge

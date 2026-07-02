@@ -4,6 +4,20 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Long/Short position TradingView parity + SL-hit selection fix
+- Fixed the post-hit selection bug in `PositionTool.ts`: when a position is frozen/extended to the
+  candle that hit SL or TP, `hitTest()` and `boundingBox()` now use the same visible right edge as
+  the renderer. Users can select and drag the visible extended box after an SL hit.
+- Included the position label chip band in the body hit zone, so clicking `Stop:`, `Target:`, or
+  `Entry:` also selects the object.
+- Edit handles remain tied to the original editable right edge, matching the existing anchor model
+  and avoiding a regression where dragging a hit-frozen box changes the stored width unexpectedly.
+- Updated the position labels to `Entry:`, `Target:`, and `Stop:` and changed target/stop percent
+  stats to absolute distances, which is closer to TradingView and fixes misleading negative target
+  percentages on short positions.
+- Selected position drawings now show blue square handles around the box, closer to TradingView's
+  selected-object controls than the previous circular generic drawing handles.
+
 ### TradingView-like chart motion and zoom update
 - Updated `PriceChart.tsx` chart interaction options to better match TradingView behavior:
   mouse/touch kinetic panning is enabled, mouse-wheel zoom keeps the hovered bar stable, and new

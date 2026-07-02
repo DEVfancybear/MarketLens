@@ -23,7 +23,7 @@ import {
   TOL,
   pointDist,
 } from "../ToolRegistry";
-import { line, handle, chip, canvasFont, applyStyle } from "./shared";
+import { line, chip, canvasFont, applyStyle } from "./shared";
 
 /**
  * TradingView Position Tool colour palette.
@@ -52,6 +52,9 @@ export const POSITION_COLORS = {
 /** PriceChart renders volume in the lower 15% overlay. Keep position drawings
  * inside the price pane so far-away SL labels/zones do not cover volume bars. */
 const PRICE_PANE_BOTTOM_RATIO = 0.85;
+const TV_SELECTION_BLUE = "#2962ff";
+const POSITION_HANDLE_SIZE = 7;
+const LABEL_HIT_PAD = 20;
 
 /** Latest traded price from the chart's master candle series, or null. */
 function currentPrice(): number | null {
@@ -73,6 +76,26 @@ function fmtCurrency(amount: number, currency: string): string {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+function positionHandle(g: CanvasRenderingContext2D, x: number, y: number) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  const half = Math.floor(POSITION_HANDLE_SIZE / 2);
+  const left = Math.round(x) - half;
+  const top = Math.round(y) - half;
+  g.save();
+  g.fillStyle = "#111722";
+  g.strokeStyle = TV_SELECTION_BLUE;
+  g.lineWidth = 1.5;
+  g.setLineDash([]);
+  g.fillRect(left, top, POSITION_HANDLE_SIZE, POSITION_HANDLE_SIZE);
+  g.strokeRect(
+    left + 0.5,
+    top + 0.5,
+    POSITION_HANDLE_SIZE - 1,
+    POSITION_HANDLE_SIZE - 1,
+  );
+  g.restore();
 }
 
 /** Minimum price increment inferred from magnitude (matches the settings dialog). */
@@ -109,6 +132,53 @@ function geometry(d: Drawing, proj: Projector): Geo | null {
   const yS = proj.toY(stop);
   if (yE == null || yT == null || yS == null) return null;
   return { xL, xR, yE, yT, yS, entry, target, stop };
+}
+
+type RenderHit = {
+  status: "tp_hit" | "sl_hit";
+  candleTime: number;
+  candlePrice: number;
+};
+
+function resolveHit(d: Drawing): RenderHit | null {
+  if (d._dragging) return null;
+  const candles = getDefaultStore().get(candlesAtom);
+  const fresh = detectPositionHit(d, candles);
+  if (fresh) {
+    return {
+      status: fresh.status,
+      candleTime: fresh.time - d.points[0].time,
+      candlePrice: fresh.price,
+    };
+  }
+  if (
+    candles.length === 0 &&
+    (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
+  ) {
+    return {
+      status: d.tradeStatus,
+      candleTime: d.hitTime ?? 0,
+      candlePrice: d.hitPrice ?? 0,
+    };
+  }
+  return null;
+}
+
+function withHitFreeze(
+  d: Drawing,
+  geo: Geo,
+  toX: HitTestProjector,
+): { xR: number; hit: RenderHit | null } {
+  const hit = resolveHit(d);
+  let xR = geo.xR;
+  if (hit) {
+    const frozenTime = d.points[0].time + hit.candleTime;
+    const frozenX = toX(frozenTime);
+    // Only extend the visible/interactable right edge to the hit candle. Never
+    // shrink the user's intended width.
+    if (frozenX != null && frozenX > xR) xR = frozenX;
+  }
+  return { xR, hit };
 }
 
 /** Minimal candle shape needed for hit detection. */
@@ -415,8 +485,8 @@ function render(
     const risk = Math.abs(entry - stop);
     const reward = Math.abs(target - entry);
     const rr = risk > 0 ? reward / risk : 0;
-    const tPct = entry ? ((target - entry) / entry) * 100 : 0;
-    const sPct = entry ? ((stop - entry) / entry) * 100 : 0;
+    const tPct = entry ? (reward / Math.abs(entry)) * 100 : 0;
+    const sPct = entry ? (risk / Math.abs(entry)) * 100 : 0;
     const tTicks = Math.round(reward / inferTick(entry));
     const sTicks = Math.round(risk / inferTick(entry));
     const stats = new Set(d.positionStats ?? ["percent"]);
@@ -450,11 +520,15 @@ function render(
     }
 
     // Build label strings first so we can measure their pixel width.
-    const targetParts = [compact ? `TP ${fmtPrice(target)}` : `Target ${fmtPrice(target)}`];
-    const stopParts = [compact ? `SL ${fmtPrice(stop)}` : `Stop ${fmtPrice(stop)}`];
+    const targetParts = [
+      compact ? `TP: ${fmtPrice(target)}` : `Target: ${fmtPrice(target)}`,
+    ];
+    const stopParts = [
+      compact ? `SL: ${fmtPrice(stop)}` : `Stop: ${fmtPrice(stop)}`,
+    ];
     if (showStats && stats.has("percent")) {
-      targetParts.push(`${tPct >= 0 ? "+" : ""}${tPct.toFixed(2)}%`);
-      stopParts.push(`${sPct >= 0 ? "+" : ""}${sPct.toFixed(2)}%`);
+      targetParts.push(`${tPct.toFixed(2)}%`);
+      stopParts.push(`${sPct.toFixed(2)}%`);
     }
     if (showStats && stats.has("ticks")) {
       targetParts.push(compact ? `${tTicks}t` : `${tTicks} ticks`);
@@ -465,10 +539,12 @@ function render(
     if (isTpHit) targetParts.push(compact ? "HIT" : "\u2713 HIT");
     if (isSlHit) stopParts.push(compact ? "HIT" : "\u2715 HIT");
 
-    const entryLabel = `${compact ? "E" : "Entry"} ${fmtPrice(entry)}${qtyTxt}`;
+    const entryLabel = `${compact ? "E:" : "Entry:"} ${fmtPrice(entry)}${qtyTxt}`;
     const targetLabel = targetParts.join(compact ? " " : "  ");
     const stopLabel = stopParts.join(compact ? " " : "  ");
-    const rrLabel = `${compact ? "RR" : "R/R"} ${rr.toFixed(2)}`;
+    const rrLabel = compact
+      ? `RR ${rr.toFixed(2)}`
+      : `Risk/Reward Ratio: ${rr.toFixed(2)}`;
 
     // Pre-measure for right-alignment (target, stop, RR at the right edge).
     // chip() horizontal padding = 6 px total (3 each side).
@@ -547,9 +623,10 @@ function render(
     const selTop = clampToPricePane(Math.min(yE, yT, yS));
     const selBot = clampToPricePane(Math.max(yE, yT, yS));
     g.save();
-    g.strokeStyle = "#9598a1";
+    g.strokeStyle = TV_SELECTION_BLUE;
     g.lineWidth = 1;
-    g.setLineDash([4, 3]);
+    g.globalAlpha = 0.9;
+    g.setLineDash([3, 3]);
     g.strokeRect(
       Math.round(left) - 4,
       Math.round(selTop) - 4,
@@ -558,12 +635,15 @@ function render(
     );
     g.restore();
 
-    if (yE >= clipTop && yE <= clipBottom)
-      handle(g, xL, yE, POSITION_COLORS.ENTRY_LINE);
-    if (yT >= clipTop && yT <= clipBottom)
-      handle(g, origXR, yT, POSITION_COLORS.LONG_LABEL);
-    if (yS >= clipTop && yS <= clipBottom)
-      handle(g, origXR, yS, POSITION_COLORS.SHORT_LABEL);
+    const drawHandle = (x: number, y: number) => {
+      if (y >= clipTop && y <= clipBottom) positionHandle(g, x, y);
+    };
+    drawHandle(xL, yT);
+    drawHandle(xL, yE);
+    drawHandle(xL, yS);
+    drawHandle(origXR, yT);
+    drawHandle(origXR, yE);
+    drawHandle(origXR, yS);
   }
 }
 
@@ -576,12 +656,15 @@ function hitTest(
 ): HitResult[] {
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return [];
-  const { xL, xR, yE, yT, yS } = geo;
+  const frozen = withHitFreeze(d, geo, toX);
+  const { xL, yE, yT, yS } = geo;
+  const xR = frozen.xR;
+  const handleXR = geo.xR;
   const results: HitResult[] = [];
 
   const dE = pointDist(px, py, xL, yE);
-  const dT = pointDist(px, py, xR, yT);
-  const dS = pointDist(px, py, xR, yS);
+  const dT = pointDist(px, py, handleXR, yT);
+  const dS = pointDist(px, py, handleXR, yS);
   if (dE <= HANDLE_RADIUS)
     results.push({ drawing: d, target: "p0", distance: dE });
   if (dT <= HANDLE_RADIUS)
@@ -594,7 +677,12 @@ function hitTest(
   const right = Math.max(xL, xR);
   const top = Math.min(yT, yS, yE);
   const bottom = Math.max(yT, yS, yE);
-  if (px >= left - TOL && px <= right + TOL && py >= top && py <= bottom) {
+  if (
+    px >= left - TOL &&
+    px <= right + TOL &&
+    py >= top - LABEL_HIT_PAD &&
+    py <= bottom + LABEL_HIT_PAD
+  ) {
     results.push({
       drawing: d,
       target: "body",
@@ -660,14 +748,16 @@ function move(origPoints: Point[], pointer: Point, dragStart: Point): Point[] {
 function boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return null;
-  const { xL, xR, yE, yT, yS } = geo;
+  const frozen = withHitFreeze(d, geo, toX);
+  const { xL, yE, yT, yS } = geo;
+  const xR = frozen.xR;
   const left = Math.min(xL, xR);
   const top = Math.min(yE, yT, yS);
   return {
     x: left,
-    y: top - 18,
+    y: top - LABEL_HIT_PAD,
     w: Math.abs(xR - xL),
-    h: Math.max(yE, yT, yS) - top + 36,
+    h: Math.max(yE, yT, yS) - top + LABEL_HIT_PAD * 2,
   };
 }
 

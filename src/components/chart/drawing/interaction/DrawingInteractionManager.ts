@@ -386,7 +386,11 @@ export function useDrawingInteractionManager(
         ) {
           updateDrawing({
             id: hit.drawing.id,
-            patch: { tradeStatus: undefined, hitTime: undefined },
+            patch: {
+              tradeStatus: undefined,
+              hitTime: undefined,
+              hitPrice: undefined,
+            },
           });
         }
         transition({
