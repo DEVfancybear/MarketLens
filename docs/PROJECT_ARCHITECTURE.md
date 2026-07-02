@@ -1,6 +1,6 @@
 # PROJECT ARCHITECTURE
 
-_Last updated 2026-07-01. Canonical high-level subsystem architecture._
+_Last updated 2026-07-02. Canonical high-level subsystem architecture._
 
 For lower-level render/data-flow details, see `docs/ARCHITECTURE.md`. For the current handoff and
 next action, see `docs/HANDOFF.md` and `docs/CURRENT_STATE.md`.
@@ -185,6 +185,7 @@ not by replacing simulator internals.
 Docs:
 
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
+- `docs/MT5_BRIDGE_PROTOCOL.md`
 
 ## 7. Phase 6B Target Architecture
 
@@ -214,6 +215,10 @@ Bridge responsibilities:
 - Execution report mapping.
 
 The simulator must remain default and functional when MT5 is disabled.
+
+The browser-to-bridge protocol is documented in `docs/MT5_BRIDGE_PROTOCOL.md`. The first
+implementation pass should add typed protocol guards, a mock bridge, and a feature-flagged
+WebSocket client before changing order routing.
 
 ## 8. Persistence
 

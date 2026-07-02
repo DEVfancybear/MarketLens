@@ -7,7 +7,8 @@ Implementation status:
 - **Phase 6A - Push notifications:** implemented. See `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **Phase 6A extension - Telegram/Discord alert channels:** implemented. See
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - MT5 bridge:** planned in detail. See `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
+- **Phase 6B - MT5 bridge:** planned in detail. Protocol contract added in
+  `docs/MT5_BRIDGE_PROTOCOL.md`; implementation plan remains in `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ## 1. Objective
 
@@ -227,7 +228,7 @@ process, but the browser contract must be explicit.
 
 ### 6.3 Protocol Contract
 
-Create `docs/MT5_BRIDGE_PROTOCOL.md` before or during implementation.
+`docs/MT5_BRIDGE_PROTOCOL.md` now defines the protocol contract for implementation.
 
 Core message envelope:
 
@@ -455,7 +456,7 @@ Initial version can be configured locally and later hydrated from `symbol.info` 
 ### Milestone 0 - Audit and Contracts
 
 - Confirm whether deployment supports Next API routes or needs an external push service.
-- Create `docs/MT5_BRIDGE_PROTOCOL.md`.
+- Create `docs/MT5_BRIDGE_PROTOCOL.md`. **Done 2026-07-02.**
 - Add `.env.example` placeholders for Firebase and MT5.
 - Decide whether execution mode lives in `tradeStore` or a new `executionStore`.
 

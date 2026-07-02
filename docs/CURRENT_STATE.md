@@ -1,7 +1,6 @@
 # CURRENT STATE
 
-_Last updated 2026-07-01 after Phase 6A closed-browser push worker, Telegram/Discord alert
-channels, and Phase 6B MT5 bridge plan._
+_Last updated 2026-07-02 after adding the Phase 6B MT5 bridge protocol contract._
 
 This file replaces the old Phase 1 mock-data audit. The app is now a live-data, Jotai-based
 TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and a
@@ -140,6 +139,7 @@ Implemented:
 
 MT5 live execution is not implemented yet. Phase 6B is planned in detail:
 
+- `docs/MT5_BRIDGE_PROTOCOL.md`
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
 
 ## 7. Phase Status
@@ -152,7 +152,7 @@ MT5 live execution is not implemented yet. Phase 6B is planned in detail:
 - Phase 5 left toolbar / indicator engine: complete.
 - Phase 6A Firebase push notifications: complete, including closed-browser worker mode.
 - Phase 6A Telegram/Discord alert channels: complete.
-- Phase 6B MT5 bridge: planned, not implemented.
+- Phase 6B MT5 bridge: protocol documented and planned, not implemented.
 
 ## 8. Current Next Action
 
@@ -163,10 +163,10 @@ Start Phase 6B implementation from:
 
 The first recommended milestone is protocol plus mock bridge:
 
-1. Create `docs/MT5_BRIDGE_PROTOCOL.md`.
-2. Add `src/types/mt5.ts`.
-3. Add `scripts/mock-mt5-bridge.mjs`.
-4. Add MT5 env placeholders.
+1. Add `src/types/mt5.ts` from `docs/MT5_BRIDGE_PROTOCOL.md`.
+2. Add `scripts/mock-mt5-bridge.mjs`.
+3. Add MT5 env placeholders.
+4. Wire `Mt5BridgeClient` and `mt5Store` behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false`.
 
 ## 9. Known Operational Notes
 

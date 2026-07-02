@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Phase 6B MT5 bridge protocol contract (2026-07-02)
+- Added `docs/MT5_BRIDGE_PROTOCOL.md`, the browser-to-bridge JSON/WebSocket contract for Phase 6B
+  live execution: envelope, auth, heartbeat, snapshots, order commands, execution reports, error
+  codes, client risk gates, mock bridge requirements, and rollback behavior.
+- Updated Phase 6B planning/status docs to point implementation at the protocol first, then the
+  MT5 bridge client/store/mock bridge milestones.
+
 ### Changed - Watchlist rebuilt as a 1:1 TradingView clone (2026-07-02)
 - **Layout/1:1 parity:** panel header is now "Watchlist ⌄" (list menu stub) + `+` add-symbol /
   grid (visual, disabled) / `⋯` sort menu, matching TradingView's panel header; column header row

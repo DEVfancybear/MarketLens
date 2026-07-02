@@ -1,8 +1,21 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (TradingView 1:1 watchlist clone)_
+_Last updated: 2026-07-02 (Phase 6B MT5 protocol plan)_
 
 ## Completed this session (2026-07-02)
+
+### Phase 6B MT5 bridge protocol plan
+- Added `docs/MT5_BRIDGE_PROTOCOL.md`, the concrete browser-to-bridge WebSocket/JSON contract for
+  Phase 6B: connection/auth/heartbeat flow, snapshot payloads, order command payloads,
+  `order.ack` vs. `execution.report` semantics, bridge error codes, frontend risk gates, mock
+  bridge requirements, and rollback behavior.
+- Updated Phase 6B status docs so the next implementation work starts from the protocol and then
+  proceeds through `src/types/mt5.ts`, `scripts/mock-mt5-bridge.mjs`, MT5 env placeholders,
+  `Mt5BridgeClient`, and `mt5Store`.
+- Files: `docs/MT5_BRIDGE_PROTOCOL.md`, `docs/PHASE6B_MT5_BRIDGE_PLAN.md`,
+  `docs/PHASE6_IMPLEMENTATION_PLAN.md`, `docs/NEXT_TASKS.md`, `docs/CURRENT_STATE.md`,
+  `docs/PROJECT_ARCHITECTURE.md`, `docs/HANDOFF.md`, `docs/CHANGELOG.md`.
+- Docs-only change; no runtime checks required.
 
 ### Watchlist rebuilt as a 1:1 TradingView clone (dark + light)
 - User request (with reference screenshot): clone TradingView's watchlist UI 1:1, both themes,

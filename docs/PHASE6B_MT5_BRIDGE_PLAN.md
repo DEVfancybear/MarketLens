@@ -1,6 +1,6 @@
 # PHASE 6B MT5 BRIDGE PLAN
 
-_Created 2026-07-01. Scope: detailed implementation plan for MT5 bridge integration._
+_Created 2026-07-01. Updated 2026-07-02. Scope: detailed implementation plan for MT5 bridge integration._
 
 ## 1. Goal
 
@@ -88,8 +88,8 @@ Production should prefer a short-lived session token issued by a server route, n
 
 ## 6. Protocol
 
-Create `docs/MT5_BRIDGE_PROTOCOL.md` as part of Milestone 0. Keep it versioned and stable before
-the UI starts sending live commands.
+`docs/MT5_BRIDGE_PROTOCOL.md` now defines the Phase 6B browser-to-bridge contract. Keep it versioned
+and stable before the UI starts sending live commands.
 
 ### 6.1 Message Envelope
 
@@ -371,7 +371,7 @@ Required before any real account usage:
 
 ### Milestone 0 - Protocol And Mock Bridge
 
-- Create `docs/MT5_BRIDGE_PROTOCOL.md`.
+- Create `docs/MT5_BRIDGE_PROTOCOL.md`. **Done 2026-07-02.**
 - Add `src/types/mt5.ts`.
 - Add `scripts/mock-mt5-bridge.mjs`.
 - Add env placeholders.

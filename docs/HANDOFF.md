@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (TradingView 1:1 watchlist clone)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Phase 6B MT5 protocol plan)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -19,7 +19,7 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
 notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
 cron calling `/api/push/evaluate`) runs next to the Next server. Continue with Phase 6B MT5 Bridge
-from `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
+from `docs/MT5_BRIDGE_PROTOCOL.md` and `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -221,7 +221,9 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   candles updated to TradingView's current `#089981`/`#f23645` in **both** themes. Verified with
   Playwright screenshots (dark + light) against a fresh `next dev`.
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
-  `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
+  `docs/MT5_BRIDGE_PROTOCOL.md`, then implement the Milestone 0/1 pieces in
+  `docs/PHASE6B_MT5_BRIDGE_PLAN.md`: `src/types/mt5.ts`, `scripts/mock-mt5-bridge.mjs`, MT5 env
+  placeholders, `Mt5BridgeClient`, and `mt5Store`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
@@ -325,7 +327,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 
 ## 7. Where to continue (Phase 6 — Push Notifications / MT5 Integration)
 1. **Phase 6B — MT5 Bridge Integration.** Phase 6A Firebase push notifications are implemented in
-   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`. Continue real broker order routing from
+   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`. Continue real broker order routing from the protocol in
+   `docs/MT5_BRIDGE_PROTOCOL.md` and the implementation plan in
    `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 2. Manual smoke test for Phase 2: open the toolbar **bell**, create `BTCUSDT crosses above <price>`
    and `BTCUSDT > <below-current>` — the latter fires immediately (level), the former on the next

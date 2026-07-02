@@ -39,8 +39,8 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
   for browser-open and closed-browser alerts. Implemented in
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
 - **Phase 6B - MT5 Bridge Integration:** external bridge client, live execution mode, account and
-  position sync, with simulator fallback. Detailed plan:
-  `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
+  position sync, with simulator fallback. Start from `docs/MT5_BRIDGE_PROTOCOL.md`, then implement
+  the detailed plan in `docs/PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ---
 
