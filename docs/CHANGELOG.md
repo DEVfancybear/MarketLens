@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Path/freeform drawing TradingView parity (2026-07-03)
+- Aligned the click-to-add `path` flow with TradingView-style multi-point drawing semantics:
+  double-click, right-click, and `Esc` finish an open drawing when enough points exist.
+- Fixed multi-point vertex dragging for `path`, `polyline`, and `curve` by carrying explicit
+  `anchorIndex` values through hit-testing. This prevents the last point of an N-point path from
+  resolving to the second point and lets middle vertices drag as real handles instead of moving the
+  whole body.
+- Added `npm run check:path-tool` to guard the open path/terminal arrowhead contract, freeform
+  `Esc` finish behavior, and explicit vertex-index hit-test flow.
+
 ### Changed - Fibonacci tools TradingView parity pass (2026-07-03)
 - Expanded the shared Fibonacci preset beyond `0..1` so retracement includes common external
   levels (`1.272`, `1.414`, `1.618`, `2`, `2.618`, `3.618`, `4.236`).

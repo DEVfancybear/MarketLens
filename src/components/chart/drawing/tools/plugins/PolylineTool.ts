@@ -25,6 +25,12 @@ function project(
   return x != null && y != null ? { x, y } : null;
 }
 
+function vertexTarget(index: number, lastIndex: number): HitResult["target"] {
+  if (index === 0) return "p1";
+  if (index === lastIndex) return "p2";
+  return "p0";
+}
+
 const plugin: DrawingToolPlugin = {
   tool: "polyline",
   minPoints: 2,
@@ -69,7 +75,8 @@ const plugin: DrawingToolPlugin = {
       if (dist <= HANDLE_RADIUS)
         results.push({
           drawing: d,
-          target: i === 0 ? "p1" : i === projected.length - 1 ? "p2" : "body",
+          target: vertexTarget(i, projected.length - 1),
+          anchorIndex: i,
           distance: dist,
         });
     }
@@ -82,6 +89,15 @@ const plugin: DrawingToolPlugin = {
         results.push({ drawing: d, target: "body", distance: segDist });
     }
     return results;
+  },
+  getAnchors(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
+    const lastIndex = d.points.length - 1;
+    return d.points.map((pt, i) => ({
+      index: i,
+      x: toX(pt.time),
+      y: toY(pt.price),
+      target: vertexTarget(i, lastIndex),
+    }));
   },
   movePoints: defaultMovePoints,
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {

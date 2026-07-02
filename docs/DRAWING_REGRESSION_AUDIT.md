@@ -41,7 +41,7 @@ DrawingRendererLoop.render()
 | 9 | triangle | ✅ full impl (polygon) | ✅ p1/p2/segment | defaultMovePoints | 3 | PASS |
 | 10 | polyline | ✅ full impl | ✅ p1/p2/segment | defaultMovePoints | 2 | PASS |
 | 11 | curve | ✅ full impl (bezier) | ✅ p1/p2/body | defaultMovePoints | 3 | PASS |
-| 12 | path | ✅ full impl (closed) | ✅ p1/p2/body | defaultMovePoints | 2 | PASS |
+| 12 | path | ✅ full impl (open + terminal arrowhead) | ✅ indexed vertices/body | defaultMovePoints | 2 | PASS |
 | 13 | brush | ✅ full impl (freehand) | ✅ segment | defaultMovePoints | 2 | PASS |
 | 14 | fib | ✅ full impl (levels) | ✅ p1/p2/body | defaultMovePoints | 2 | PASS |
 | 15 | horizontal | ✅ full impl | ✅ body | defaultMovePoints | 1 | PASS |

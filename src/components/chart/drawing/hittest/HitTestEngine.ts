@@ -78,17 +78,19 @@ export function hitTest(
     for (const c of candidates) {
       // Resolve anchor index from the adapter.
       const isAnchor = c.target !== "body";
-      let anchorIdx = -1;
+      let anchorIdx = c.anchorIndex ?? -1;
       if (isAnchor) {
-        const anchors = adapter.getAnchors(d, toX, toY);
-        const found = anchors.find((a) => a.target === c.target);
-        anchorIdx = found
-          ? found.index
-          : c.target === "p1"
-            ? 0
-            : c.target === "p2"
-              ? 1
-              : -1;
+        if (anchorIdx < 0) {
+          const anchors = adapter.getAnchors(d, toX, toY);
+          const found = anchors.find((a) => a.target === c.target);
+          anchorIdx = found
+            ? found.index
+            : c.target === "p1"
+              ? 0
+              : c.target === "p2"
+                ? 1
+                : -1;
+        }
       }
 
       allCandidates.push({

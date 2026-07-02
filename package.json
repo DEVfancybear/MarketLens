@@ -22,6 +22,7 @@
     "check:brush-freehand": "node scripts/check-brush-freehand.mjs",
     "check:smc-overlay": "node scripts/check-smc-overlay-parity.mjs",
     "check:fibonacci-tools": "node scripts/check-fibonacci-tools-parity.mjs",
+    "check:path-tool": "node scripts/check-path-tool-parity.mjs",
     "check:replay-logic": "node scripts/check-replay-logic.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

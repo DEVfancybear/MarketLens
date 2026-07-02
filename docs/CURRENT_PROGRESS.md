@@ -4,6 +4,19 @@ _Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
 
 ## Completed this session (2026-07-03)
 
+### Path/freeform drawing TradingView parity
+- Reference checked: TradingView Help Center `Polyline drawing tool` documents multi-point
+  straight-line drawing and says double-click, right-click, or `Esc` can finish the drawing while
+  keeping it open.
+- Fix: `DrawingInteractionManager` now commits an in-progress freeform drawing on `Esc` when the
+  committed points meet the tool's `minPoints`. This covers `path`, `polyline`, and `curve`; an
+  incomplete freeform draw still cancels.
+- Fix: `PathTool`, `PolylineTool`, and `CurveTool` now return explicit `anchorIndex` values for
+  every vertex hit and expose matching `getAnchors()` output. `HitTestEngine` preserves adapter
+  supplied `anchorIndex`, so dragging the last or middle vertex moves the actual vertex rather than
+  resolving through the reused `p1`/`p2` target labels.
+- Guard: added `npm run check:path-tool`.
+
 ### Fibonacci tools TradingView parity pass
 - User repro: current fib tools did not feel/function like TradingView. Retracement only rendered
   the basic `0..1` levels, extension was a 2-point projection, and legacy `fib` still used the old

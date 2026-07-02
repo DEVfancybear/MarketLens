@@ -45,6 +45,13 @@ Recent brush parity note: `BrushTool.ts` now opts into the `continuous` adapter 
 pointerdown, records points on pointermove, and commits the stroke on pointerup; do not route brush
 through the normal two-click trendline path. Guard with `npm run check:brush-freehand`.
 
+Recent path parity note: `PathTool.ts` is a TradingView-style open click-to-add path with one
+terminal arrowhead; do not restore the stale closed/fill behavior. Freeform `path`, `polyline`, and
+`curve` commit on double-click, right-click, or `Esc` when enough points exist. Their vertex hits
+must keep explicit `anchorIndex` values through `HitTestEngine`; otherwise middle handles become
+body drags and the last point of an N-point path can resolve to point index `1`. Guard with
+`npm run check:path-tool`.
+
 Recent SMC overlay note: `SmcLayer.tsx` must keep `z-[2]`; otherwise the live chart can hide the
 SMC canvas while screenshot export still composites it. SMC render now caps every noisy family and
 prioritizes active/fresh zones. Read `docs/SMC_OVERLAY_MAINTENANCE.md` and guard with

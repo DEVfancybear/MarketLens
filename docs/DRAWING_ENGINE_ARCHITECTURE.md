@@ -338,6 +338,23 @@ trendline flow.
 - Regression guard: `npm run check:brush-freehand` verifies the continuous adapter flag, pointermove
   point recording, pointerup commit, and endpoint handles remain wired.
 
+## Path / polyline freeform drawing - updated 2026-07-03
+
+`path`, `polyline`, and `curve` use the TradingView-style click-to-add freeform flow, separate from
+the `brush` pointer-drag flow.
+
+- **Creation**: left-click adds confirmed vertices and live pointer movement previews the next
+  segment. Double-click, right-click, or `Esc` finishes the drawing when the committed point count
+  meets the tool's `minPoints`; the drawing remains open.
+- **Path rendering**: `PathTool.ts` renders connected open segments, never `closePath()`/fill, and
+  draws one terminal arrowhead at the final point.
+- **Vertex interaction**: freeform plugins return explicit `anchorIndex` for every vertex hit and
+  expose matching `getAnchors()` entries. `HitTestEngine` must preserve an adapter-supplied
+  `anchorIndex` before falling back to target-label lookup; otherwise an N-point path's final
+  `p2` hit can resolve to point index `1`, and middle vertices become body drags.
+- Regression guard: `npm run check:path-tool` verifies the open path/arrowhead contract, `Esc`
+  finish behavior, and explicit vertex-index hit-test flow.
+
 ## Trendline attached text — updated 2026-07-02
 
 Plain `trendline` follows TradingView's normal Trend Line behavior: no automatic measurement chip.

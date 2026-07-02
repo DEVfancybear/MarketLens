@@ -62,9 +62,10 @@ _Date: 2026-06-25._
 
 | Test | Expected |
 |---|---|
-| Create (multiple clicks) | Closed path with fill |
-| Drag a vertex | Geometry updates |
-| Fill display | Filled area shown |
+| Create (multiple clicks) | Open connected path renders with a single terminal arrowhead |
+| Finish with double-click / right-click / Esc | Drawing commits and remains open |
+| Drag any vertex | Only that vertex moves |
+| Drag the body/segment | Whole path moves |
 | Persistence | Survives refresh |
 
 ## Cross-device verification

@@ -701,6 +701,22 @@ export function useDrawingInteractionManager(
         return;
       }
       if (e.key === "Escape") {
+        const m = machineRef.current;
+        if (m.state === "Drawing") {
+          const cur = getState();
+          const tool = m.drawingTool ?? cur.activeTool;
+          const adapter = getTool(tool);
+          const pts = committedRef.current;
+          if (adapter?.freeform && pts.length >= adapter.minPoints) {
+            addDrawing({
+              id: uid("dw"),
+              tool,
+              color: cur.drawColor,
+              lineWidth: 1.5,
+              points: pts.map((q) => ({ ...q })),
+            });
+          }
+        }
         reset();
         setActiveTool("cursor");
         return;

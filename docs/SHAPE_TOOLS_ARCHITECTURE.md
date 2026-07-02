@@ -13,7 +13,7 @@ _Date: 2026-06-25 · All 8 shape tools implemented._
 | 5 | Triangle | `triangle` | 3 | Three-click | ✅ |
 | 6 | Polyline | `polyline` | N | Multi-click (open) | — |
 | 7 | Curve | `curve` | N | Multi-click (bezier) | — |
-| 8 | Path | `path` | N | Multi-click (closed) | ✅ |
+| 8 | Path | `path` | N | Multi-click (open + terminal arrowhead) | — |
 
 ## Fill system
 
@@ -39,7 +39,7 @@ DrawingContextMenu.tsx   ← NO CHANGES
 DrawingToolbar.tsx       ← 8 new shape tools, 4th category (ANNOTATIONS)
 ```
 
-The `minPoints()` dispatcher in DrawingLayer already supports 2-point creation for the new tools (rectangle, circle, ellipse, rotatedRect) and the pending-preview system shows live previews. Triangle, polyline, curve, and path use the existing multi-point flow.
+The `minPoints()` dispatcher in DrawingLayer already supports 2-point creation for the new tools (rectangle, circle, ellipse, rotatedRect) and the pending-preview system shows live previews. Triangle, polyline, curve, and path use the existing multi-point flow. Path is intentionally open with one terminal arrowhead, not a closed filled polygon.
 
 ## Rectangle — supply/demand zone workflow
 
