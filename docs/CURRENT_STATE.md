@@ -142,6 +142,7 @@ MT5 live execution scaffold is implemented behind a disabled-by-default feature 
 - `docs/MT5_BRIDGE_PROTOCOL.md`
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
 - `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`
+- `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`
 
 Implemented:
 
@@ -187,7 +188,9 @@ The next recommended milestone is hardening and demo validation:
 3. Add SL/TP modify UI if needed for live position management.
 4. Implement `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md` for FTMO-specific bridge-side credentials,
    risk guards, dry-run validation, and demo execution.
-5. Connect a real MT5 demo bridge and validate symbol mapping, lot step, precision, and rejects.
+5. Implement `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md` for Exness/IC Markets/other
+   broker profiles, symbol discovery, lot sizing, dry-run validation, and demo execution.
+6. Connect a real MT5 demo bridge and validate symbol mapping, lot step, precision, and rejects.
 
 ## 9. Known Operational Notes
 

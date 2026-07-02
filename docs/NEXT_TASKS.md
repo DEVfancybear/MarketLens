@@ -42,7 +42,8 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
   WebSocket client, store/runtime hook, mock bridge, execution-mode UI, order routing, MT5
   positions/logs, and simulator fallback. Continue with mock-bridge QA and real demo bridge
   validation from `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. For copying web orders into an FTMO MT5
-  account, use `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`.
+  account, use `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`. For Exness, IC Markets, and other MT5
+  brokers, use `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`.
 
 ---
 

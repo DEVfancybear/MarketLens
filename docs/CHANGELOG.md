@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Multi-broker MT5 copy trading plan (2026-07-02)
+- Added `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`, a broker-agnostic plan for copying
+  web terminal orders to MT5 accounts at brokers such as Exness, IC Markets, Pepperstone, or other
+  MT5-compatible brokers.
+- The plan covers broker/account profiles, bridge-only secrets, account routing, symbol discovery,
+  broker-specific lot sizing, execution differences, dry-run validation, audit logging, QA matrix,
+  rollback, and live-mode hardening.
+
 ### Added - FTMO MT5 copy trading plan (2026-07-02)
 - Added `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md`, a bridge-side plan for copying live web terminal
   orders into an FTMO MT5 account without exposing FTMO credentials to the browser.

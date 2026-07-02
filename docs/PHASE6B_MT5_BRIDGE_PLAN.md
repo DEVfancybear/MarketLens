@@ -518,3 +518,15 @@ That plan adds bridge-only FTMO credentials, FTMO account readiness checks, brok
 mapping, loss/risk guards, dry-run validation, audit logging, and a staged path from mock bridge to
 FTMO demo/evaluation execution. FTMO credentials must stay in the bridge process and must never be
 stored in browser code or `NEXT_PUBLIC_*` variables.
+
+## 20. Multi-Broker MT5 Copy Trading Extension
+
+For copying web terminal orders to regular MT5 broker accounts such as Exness, IC Markets,
+Pepperstone, or other MT5-compatible brokers, continue from:
+
+- `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`
+
+That plan generalizes the FTMO bridge into broker/account profiles, symbol discovery, broker-specific
+lot sizing, execution policy, dry-run validation, account routing, audit logging, and staged demo
+then live hardening. Broker credentials must remain bridge-only and must never be exposed through
+browser code or `NEXT_PUBLIC_*` variables.

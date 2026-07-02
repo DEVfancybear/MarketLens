@@ -4,6 +4,14 @@ _Last updated: 2026-07-02 (Phase 6B MT5 protocol plan)_
 
 ## Completed this session (2026-07-02)
 
+### Multi-broker MT5 copy trading plan
+- Added `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md` as a broker-agnostic reference for
+  copying web terminal orders to MT5 broker accounts such as Exness, IC Markets, Pepperstone, or
+  any other MT5-compatible broker.
+- The plan keeps broker credentials bridge-only and defines broker/account profiles, symbol
+  discovery, broker-specific lot sizing, execution/fill differences, dry-run validation, audit
+  logging, account routing, QA matrix, and live-mode hardening.
+
 ### FTMO MT5 copy trading plan
 - Added `docs/PHASE6B_FTMO_COPY_TRADING_PLAN.md` for the requirement: place an order on the web
   terminal and copy the same intent into the user's FTMO MT5 account.
