@@ -8,7 +8,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle } from "@/types";
+import type { Candle, Timeframe } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
@@ -24,11 +24,13 @@ import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
 import { fmtPrice } from "@/utils/format";
 import { ChartContextObj, type ChartCtx } from "./ChartContext";
-import { setMainChart } from "./chartRegistry";
+import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 
 const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
+const getDefaultBarSpacing = (timeframe: Timeframe) =>
+  BAR_SPACING[timeframe] ?? 8;
 
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
@@ -82,6 +84,11 @@ export function PriceChart({
     if (!containerRef.current) return;
     const c = chartColors(theme);
     const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
+    setMainChartDefaultViewport({
+      rightOffset: RIGHT_OFFSET_BARS,
+      barSpacing: getDefaultBarSpacing(timeframe),
+      minBarSpacing: MIN_BAR_SPACING,
+    });
     const chart = createChart(containerRef.current, {
       autoSize: true,
       layout: {
@@ -109,7 +116,7 @@ export function PriceChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: RIGHT_OFFSET_BARS,
-        barSpacing: BAR_SPACING[timeframe] ?? 8,
+        barSpacing: getDefaultBarSpacing(timeframe),
         minBarSpacing: MIN_BAR_SPACING,
         fixLeftEdge: false,
         fixRightEdge: false,
@@ -241,6 +248,11 @@ export function PriceChart({
     if (!chart) return;
     const c = chartColors(theme);
     const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
+    setMainChartDefaultViewport({
+      rightOffset: RIGHT_OFFSET_BARS,
+      barSpacing: getDefaultBarSpacing(timeframe),
+      minBarSpacing: MIN_BAR_SPACING,
+    });
     chart.applyOptions({
       layout: {
         background: { type: ColorType.Solid, color: c.background },
@@ -254,7 +266,7 @@ export function PriceChart({
       timeScale: {
         borderColor: c.border,
         rightOffset: RIGHT_OFFSET_BARS,
-        barSpacing: BAR_SPACING[timeframe] ?? 8,
+        barSpacing: getDefaultBarSpacing(timeframe),
         minBarSpacing: MIN_BAR_SPACING,
         rightBarStaysOnScroll: true,
         shiftVisibleRangeOnNewBar: true,

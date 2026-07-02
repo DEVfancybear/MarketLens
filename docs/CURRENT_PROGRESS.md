@@ -4,6 +4,14 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Reset chart view TradingView parity
+- Fixed the toolbar `Reset chart view` action so it no longer calls `timeScale().fitContent()`,
+  which fit the entire loaded history and felt different from TradingView.
+- Both the chart context menu and toolbar now call `resetChartView()`: reset active timeframe bar
+  spacing/right offset, reset time scale, scroll to realtime, and re-enable right price autoscale.
+- `PriceChart.tsx` publishes the active timeframe viewport defaults into `chartRegistry`, so reset
+  view stays correct after switching timeframe.
+
 ### Long/Short position settings dialog parity + double-click edit
 - Updated `PositionSettingsDialog.tsx` toward the TradingView reference: compact 380px dark dialog,
   larger title with pencil/close controls, TradingView-like tabs, scrollable content, and footer

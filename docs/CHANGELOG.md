@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Reset chart view TradingView parity (2026-07-02)
+- Changed the toolbar `Reset chart view` action to use the same `resetChartView()` flow as the
+  chart context menu instead of `timeScale().fitContent()`. Reset now returns to the realtime edge,
+  restores the active timeframe's default bar spacing/right offset, and re-enables right price-scale
+  autoscale.
+- `PriceChart` now publishes the current timeframe viewport defaults to `chartRegistry`, so reset
+  view remains consistent after timeframe changes rather than using a stale zoom baseline.
+
 ### Changed - Long/Short position settings dialog parity (2026-07-02)
 - Reworked the Long/Short position settings dialog shell to more closely match TradingView:
   compact 380px dark panel, larger title, tab underline, scrollable content, and footer controls

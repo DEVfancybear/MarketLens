@@ -2,12 +2,25 @@ import type { IChartApi } from 'lightweight-charts';
 
 /**
  * Module-level handle to the main chart instance so toolbar actions
- * (screenshot, fit-content) can reach it without prop drilling.
+ * (screenshot, reset view) can reach it without prop drilling.
  */
 let mainChart: IChartApi | null = null;
+let defaultViewport = {
+  rightOffset: 8,
+  barSpacing: 8,
+  minBarSpacing: 1.5,
+};
 
 export function setMainChart(chart: IChartApi | null) {
   mainChart = chart;
+}
+
+export function setMainChartDefaultViewport(defaults: {
+  rightOffset: number;
+  barSpacing: number;
+  minBarSpacing: number;
+}) {
+  defaultViewport = defaults;
 }
 
 export function getMainChart(): IChartApi | null {
@@ -16,12 +29,14 @@ export function getMainChart(): IChartApi | null {
 
 /**
  * Reset the chart viewport to its default (TradingView "Reset chart view"):
- * restores default bar spacing + scroll position and re-enables price autoscale.
+ * restores the timeframe's default zoom/scroll and re-enables price autoscale.
  */
 export function resetChartView(): boolean {
   if (!mainChart) return false;
-  mainChart.timeScale().resetTimeScale();
-  mainChart.timeScale().scrollToRealTime();
+  const timeScale = mainChart.timeScale();
+  timeScale.applyOptions(defaultViewport);
+  timeScale.resetTimeScale();
+  timeScale.scrollToRealTime();
   mainChart.priceScale("right").applyOptions({ autoScale: true });
   return true;
 }

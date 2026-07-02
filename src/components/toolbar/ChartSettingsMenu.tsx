@@ -8,7 +8,7 @@ import {
   toggleGridAtom,
   toggleThemeAtom,
 } from "@/store/uiStore";
-import { getMainChart } from "@/components/chart/chartRegistry";
+import { resetChartView } from "@/components/chart/chartRegistry";
 import { cn } from "@/utils/cn";
 
 /** TradingView-style chart settings: grid, theme, reset view. */
@@ -17,8 +17,6 @@ export function ChartSettingsMenu() {
   const toggleGrid = useSetAtom(toggleGridAtom);
   const theme = useAtomValue(themeAtom);
   const toggleTheme = useSetAtom(toggleThemeAtom);
-
-  const resetView = () => getMainChart()?.timeScale().fitContent();
 
   return (
     <Dropdown
@@ -56,7 +54,7 @@ export function ChartSettingsMenu() {
             icon={<Maximize size={14} />}
             label="Reset chart view"
             onClick={() => {
-              resetView();
+              resetChartView();
               close();
             }}
           />
