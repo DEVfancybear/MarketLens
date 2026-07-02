@@ -12,14 +12,24 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
   rejects the old hit-freeze geometry pattern and simulates repeated body drags to both the right
   and the left, asserting the time-width never changes.
 
+### Position hit status hard-refresh fix
+- Fixed the F5/reload case where a Long position that had already hit SL could re-render as TP when
+  the initial reloaded candle window started after the entry/SL sequence and only contained later
+  candles that reached target.
+- Added `resolvePositionHit()` and `positionHitDataCoversEntry()` in `PositionTool.ts`. Candle data
+  is authoritative only when it covers the entry time; otherwise the persisted TP/SL status is kept.
+- `DrawingLayer.tsx` now uses the same resolver and only clears persisted TP/SL status when loaded
+  candles cover the entry time and no hit is found.
+- Added `scripts/check-position-hit-resolution.mjs` and `npm run check:position-hit` to simulate the
+  partial-history reload case and assert a persisted SL stays SL.
+
 ### Long/Short position TradingView parity + SL-hit selection fix
-- Fixed the post-hit selection bug in `PositionTool.ts`: when a position is frozen/extended to the
-  candle that hit SL or TP, `hitTest()` and `boundingBox()` now use the same visible right edge as
-  the renderer. Users can select and drag the visible extended box after an SL hit.
+- Fixed the post-hit selection bug in `PositionTool.ts` without extending the drawing to the hit
+  candle. `hitTest()` and `boundingBox()` use the user-defined box plus the label chip band.
 - Included the position label chip band in the body hit zone, so clicking `Stop:`, `Target:`, or
   `Entry:` also selects the object.
-- Edit handles remain tied to the original editable right edge, matching the existing anchor model
-  and avoiding a regression where dragging a hit-frozen box changes the stored width unexpectedly.
+- Edit handles remain tied to the editable right edge, matching the existing anchor model and
+  avoiding regressions where TP/SL hit state changes stored width unexpectedly.
 - Updated the position labels to `Entry:`, `Target:`, and `Stop:` and changed target/stop percent
   stats to absolute distances, which is closer to TradingView and fixes misleading negative target
   percentages on short positions.

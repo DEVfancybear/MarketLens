@@ -150,6 +150,43 @@ export interface PositionHit {
   price: number;
 }
 
+function persistedPositionHit(d: Drawing): PositionHit | null {
+  if (
+    !d.points[0] ||
+    (d.tradeStatus !== "tp_hit" && d.tradeStatus !== "sl_hit") ||
+    d.hitTime == null
+  ) {
+    return null;
+  }
+  const price =
+    d.hitPrice ??
+    (d.tradeStatus === "tp_hit"
+      ? (d.points[1]?.price ?? d.target ?? d.points[0].price)
+      : (d.points[2]?.price ?? d.stop ?? d.points[0].price));
+  return {
+    status: d.tradeStatus,
+    time: d.points[0].time + d.hitTime,
+    price,
+  };
+}
+
+export function positionHitDataCoversEntry(
+  d: Drawing,
+  candles: readonly HitCandle[],
+): boolean {
+  const entry = d.points[0];
+  return !!entry && candles.length > 0 && candles[0].time <= entry.time;
+}
+
+export function resolvePositionHit(
+  d: Drawing,
+  candles: readonly HitCandle[],
+): PositionHit | null {
+  const persisted = persistedPositionHit(d);
+  if (!positionHitDataCoversEntry(d, candles)) return persisted;
+  return detectPositionHit(d, candles);
+}
+
 /**
  * Determine a position's outcome from the candle series — the single source of
  * truth for TP/SL highlighting.
@@ -232,13 +269,10 @@ function render(
   const origXR = geo.xR;
 
   // Hit detection only; never mutate geometry from a TP/SL hit.
-  // The candle data is the source of truth: re-derive the TP/SL outcome every
-  // render via findHitCandle (which now resolves stop-before-target). Hit
-  // status is visual state only; it must not change the user-defined width. This
-  // OVERRIDES any persisted tradeStatus, so a stale hit saved by older logic
-  // (e.g. a tp_hit that should have been sl_hit) self-corrects on next paint.
-  // The persisted tradeStatus/hitTime is only trusted as a fallback when no
-  // candles are loaded yet.
+  // Candle data is authoritative only when the loaded history covers the entry
+  // time. After a hard refresh the chart can load a later window first; in that
+  // case preserve the persisted hit so an earlier SL cannot be overwritten by a
+  // later visible TP.
   let hit: {
     status: "tp_hit" | "sl_hit";
     candleTime: number;
@@ -248,7 +282,7 @@ function render(
   // so the preview cannot flicker or change hit labels mid-drag.
   if (!d._dragging) {
     const candles = getDefaultStore().get(candlesAtom);
-    const fresh = detectPositionHit(d, candles);
+    const fresh = resolvePositionHit(d, candles);
     if (fresh) {
       hit = {
         status: fresh.status,
@@ -259,7 +293,7 @@ function render(
       candles.length === 0 &&
       (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
     ) {
-      // No candles to verify against — trust the persisted freeze for now.
+      // Backward-compatible fallback for old persisted drawings without hitTime.
       hit = {
         status: d.tradeStatus,
         candleTime: d.hitTime ?? 0,

@@ -12,10 +12,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   patterns and simulates repeated body drags to the right and left while asserting width stays
   constant.
 
+### Fixed - Position hit status survives hard refresh with partial history (2026-07-02)
+- Added `resolvePositionHit()` so persisted TP/SL status is preserved when the candle window loaded
+  after F5 does not cover the drawing's entry time. This prevents an earlier SL from being
+  overwritten by a later visible TP when the chart initially reloads with incomplete history.
+- `DrawingLayer` now only clears a persisted hit when the loaded candle data covers the entry time
+  and the resolver confirms the position no longer hits anything.
+- Added `npm run check:position-hit` to simulate the F5 partial-history case and assert persisted
+  SL remains SL even when later visible candles touch TP.
+
 ### Fixed - Long/Short position hit-state selection parity (2026-07-02)
-- Updated `PositionTool.ts` so the visible TP/SL-hit extension is also included in `hitTest()` and
-  `boundingBox()`. A short/long position that has frozen to an SL/TP hit candle can now be selected
-  and moved by clicking the visible extended box, instead of only the original right edge.
+- Updated `PositionTool.ts` so selected position labels and the user-defined box are included in
+  `hitTest()` and `boundingBox()` without extending the drawing geometry to TP/SL hit candles.
 - Position label chips are included in the body hit zone, so clicking `Stop:`, `Target:`, or
   `Entry:` selects the drawing instead of falling through to the chart.
 - Position labels now use TradingView-style `Entry:`, `Target:`, and `Stop:` prefixes, and target/

@@ -33,7 +33,10 @@ import { useCommandHistory } from "./drawing/history/useCommandHistory";
 import { CreateDrawingCommand } from "./drawing/history/CommandManager";
 import { TextEditor } from "./drawing/TextEditor";
 import { getTool } from "./drawing/tools/ToolRegistry";
-import { detectPositionHit } from "./drawing/tools/plugins/PositionTool";
+import {
+  positionHitDataCoversEntry,
+  resolvePositionHit,
+} from "./drawing/tools/plugins/PositionTool";
 import { uid } from "@/utils/id";
 
 export function DrawingLayer() {
@@ -320,8 +323,9 @@ export function DrawingLayer() {
     // target / stop. Price changes don't touch any drawing-data signature, so
     // the render memo would skip the repaint — force one on each candle tick
     // (only when a long/short tool is present, to keep idle charts cheap).
-    // Also detect TP/SL hits and persist tradeStatus so the frozen width
-    // survives pan/zoom/re-render. This subscription is non-React.
+    // Also detect TP/SL hits and persist tradeStatus so hard refreshes keep the
+    // first resolved outcome even if the initial candle window is incomplete.
+    // This subscription is non-React.
     const store = getDefaultStore();
     const unsubPrice = store.sub(candlesAtom, () => {
       const ds = stateRef.current.drawings;
@@ -332,16 +336,15 @@ export function DrawingLayer() {
           // Skip while the user is dragging this drawing — its store points
           // are stale and hit detection would use the wrong geometry.
           if (drawingIdRef.current === d.id) continue;
-          // Re-derive from candles every tick — even for already-resolved
-          // drawings — so a stale persisted status (e.g. a tp_hit that should
-          // be sl_hit under the corrected fill/stop-first logic) self-corrects.
-          // Uses the SAME detector as the renderer so the two never diverge.
-          // The write below is guarded to fire only when the value changes.
+          // Use the SAME resolver as the renderer. It keeps persisted hits when
+          // a hard refresh initially loads candles that start after entry time,
+          // but still lets complete history correct older stale persisted data.
           if (d.points.length >= 3) {
             const entryTime = d.points[0].time;
-            const found = detectPositionHit(d, store.get(candlesAtom));
-            // hitTime is persisted as an OFFSET from entry so the freeze follows
-            // the position when it is dragged.
+            const candles = store.get(candlesAtom);
+            const found = resolvePositionHit(d, candles);
+            // hitTime is persisted as an OFFSET from entry so the hit label
+            // follows the position when it is dragged.
             const hit = found
               ? {
                   status: found.status,
@@ -368,8 +371,8 @@ export function DrawingLayer() {
                 });
               }
             } else if (
-              d.tradeStatus === "tp_hit" ||
-              d.tradeStatus === "sl_hit"
+              positionHitDataCoversEntry(d, candles) &&
+              (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
             ) {
               // Previously resolved but no longer hits anything (e.g. levels
               // edited, or still pending fill) — clear the stale status.
