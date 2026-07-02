@@ -11,7 +11,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { candlesAtom } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
 import { useReplayStore } from "@/store/replayStore";
-import { indexAtOrBefore } from "@/services/replayEngine";
+import { indexNearestByTime } from "@/services/replayEngine";
 import { parseDateInput } from "@/utils/time";
 import { cn } from "@/utils/cn";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -67,7 +67,7 @@ export function ReplayTimingMenu({
   const selectDate = () => {
     const t = parseDateInput(dateInput);
     if (t == null || !canReplay) return;
-    armAt(indexAtOrBefore(candles, t));
+    armAt(indexNearestByTime(candles, t));
   };
 
   return (

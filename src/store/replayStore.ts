@@ -110,7 +110,23 @@ export const setCursorAtom = atom(null, (get, set, i: number) => {
 
 // Guarded: only update when the value actually changes.
 export const setTotalAtom = atom(null, (get, set, total: number) => {
-  if (total !== get(totalAtom)) set(totalAtom, total);
+  const safeTotal = Math.max(0, total);
+  if (safeTotal !== get(totalAtom)) set(totalAtom, safeTotal);
+  if (safeTotal === 0) {
+    set(activeAtom, false);
+    set(selectingAtom, false);
+    set(reSelectingAtom, false);
+    set(playingAtom, false);
+    set(anchorAtom, 0);
+    set(cursorAtom, 0);
+    return;
+  }
+  const max = safeTotal - 1;
+  const anchor = Math.min(get(anchorAtom), max);
+  if (anchor !== get(anchorAtom)) set(anchorAtom, anchor);
+  const cursor = Math.max(anchor, Math.min(max, get(cursorAtom)));
+  if (cursor !== get(cursorAtom)) set(cursorAtom, cursor);
+  if (cursor >= max) set(playingAtom, false);
 });
 
 // ── Combined state + actions (for compatibility hook) ──────────────────────

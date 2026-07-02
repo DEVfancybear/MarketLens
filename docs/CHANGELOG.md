@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay engine TradingView date/total semantics (2026-07-02)
+- `Select date...` and dashboard date jump now choose the candle closest to the requested timestamp,
+  matching TradingView's Bar Replay behavior instead of always snapping to the bar at or before the
+  timestamp.
+- Replay chart-click selection now uses the same nearest-candle helper as date selection, while
+  multi-timeframe replay snapshots intentionally keep at-or-before semantics to avoid higher-TF
+  lookahead.
+- `setTotalAtom` now sanitizes total history length and clamps `anchor`/`cursor` when history
+  shrinks; empty history fully disarms replay and resets cursor state.
+- Added `npm run check:replay-logic` to guard closest-date selection, MTF no-lookahead behavior, and
+  replay total clamping.
+
 ### Changed - Replay mode TradingView timing controls (2026-07-02)
 - Added a TradingView-style floating Bar Replay toolbar over the chart with replay timing menu,
   play/pause, forward-one-bar, speed slider, latest-bar jump, and exit controls.

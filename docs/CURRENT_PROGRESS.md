@@ -4,6 +4,19 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Replay engine TradingView logic audit
+- Fixed `Select date...` and dashboard date jump to select the candle closest to the requested date,
+  matching TradingView's Bar Replay wording. The previous logic always chose the candle at/before
+  the timestamp.
+- Added `indexNearestByTime()` in `replayEngine.ts` and reused it from `ReplayTimingMenu`,
+  `ReplayDashboard`, and `ReplaySelectionLayer` so manual chart picks and date picks share one
+  snap rule.
+- Kept `mtfSnapshot()` on `indexAtOrBefore()` deliberately: higher-timeframe rows must never reveal
+  a bar that starts after the replay cursor.
+- Updated `setTotalAtom` to sanitize total history length, clamp `anchor`/`cursor` when history
+  shrinks, pause at the new end, and fully disarm/reset replay when history becomes empty.
+- Added `scripts/check-replay-logic.mjs` and `npm run check:replay-logic` to guard these invariants.
+
 ### Replay mode TradingView timing controls
 - Added `ReplayFloatingToolbar` over the chart so Bar Replay controls live where TradingView places
   them, instead of only inside the bottom Replay panel.

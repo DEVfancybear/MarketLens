@@ -29,6 +29,7 @@ export function replaySpeedDescription(speed: ReplaySpeed): string {
 
 /** Largest index whose candle time is <= `time` (binary search). */
 export function indexAtOrBefore(candles: Candle[], time: number): number {
+  if (candles.length === 0) return -1;
   let lo = 0;
   let hi = candles.length - 1;
   let ans = 0;
@@ -42,6 +43,17 @@ export function indexAtOrBefore(candles: Candle[], time: number): number {
     }
   }
   return ans;
+}
+
+/** Index of the candle whose open time is closest to `time`. */
+export function indexNearestByTime(candles: Candle[], time: number): number {
+  if (candles.length === 0) return -1;
+  const before = indexAtOrBefore(candles, time);
+  const after = Math.min(candles.length - 1, before + 1);
+  return Math.abs(candles[before].time - time) <=
+    Math.abs(candles[after].time - time)
+    ? before
+    : after;
 }
 
 /** Simple structural trend from a window of closes (replay-safe). */

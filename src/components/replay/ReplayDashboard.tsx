@@ -5,10 +5,14 @@ import { useAtomValue } from "jotai";
 import { symbolAtom, candlesAtom } from "@/store/chartStore";
 import { smcSnapshotAtom } from "@/store/smcStore";
 import { useVisibleCandles } from "@/hooks/useVisibleCandles";
-import { mtfSnapshot, quickTrend, sessionAt } from "@/services/replayEngine";
+import {
+  indexNearestByTime,
+  mtfSnapshot,
+  quickTrend,
+  sessionAt,
+} from "@/services/replayEngine";
 import { fmtDateTime, parseDateInput } from "@/utils/time";
 import { fmtPrice } from "@/utils/format";
-import { indexAtOrBefore } from "@/services/replayEngine";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { useMtfSnapshotSeries } from "@/hooks/useMtfSnapshotSeries";
 import { cn } from "@/utils/cn";
@@ -67,7 +71,7 @@ export function ReplayDashboard() {
   const jump = () => {
     const t = parseDateInput(dateInput);
     if (t == null || !candles.length) return;
-    const idx = indexAtOrBefore(candles, t);
+    const idx = indexNearestByTime(candles, t);
     r.arm(idx, candles.length);
   };
 

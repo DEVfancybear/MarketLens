@@ -58,6 +58,7 @@ PriceChart (lightweight-charts: candles + volume + overlay indicators)
        ├─ DrawingLayer          canvas overlay — user drawings        pointer-events:auto*
        └─ ReplaySelectionLayer  canvas overlay — bar-replay picker    z-30, auto when selecting
   + ChartContextMenu            right-click price actions (portal)
+  + ReplayFloatingToolbar       Bar Replay transport/timing controls
 ```
 Overlays convert **(time, price) → pixels** via `timeScale().timeToCoordinate()` /
 `series.priceToCoordinate()` and repaint when `ChartContext.version` bumps (pan/zoom via
@@ -82,7 +83,8 @@ src/
     toolbar/              TopToolbar, DrawingToolbar, SymbolSearch, IndicatorMenu,
                           IndicatorSettingsDialog, SmcMenu, ChartSettingsMenu
     watchlist/            Watchlist
-    replay/               ReplayPanel, ReplayControls, ReplayDashboard, ReplaySelectionLayer
+    replay/               ReplayPanel, ReplayControls, ReplayDashboard, ReplaySelectionLayer,
+                          ReplayFloatingToolbar, ReplayTimingMenu
     trade/                TradePanel, OrderTicket, PositionsTable, RiskPanel, TradeLevels
     journal/              JournalPanel
     analytics/            AnalyticsPanel, EquityChart
@@ -173,6 +175,9 @@ AlertCenter.tsx` + chart `AlertOverlay`. Full detail in **`docs/ALERT_ARCHITECTU
 computation reads from it — the structural no-look-ahead guarantee. During **re-select mode**
 (`reSelectingAtom`), visible candles remain unchanged (hover previews use the full list read
 directly from `candlesAtom` in the overlay canvas).
+Bar Replay date/chart selection uses `indexNearestByTime()` to choose the closest candle; MTF
+snapshots intentionally use `indexAtOrBefore()` so higher-timeframe rows cannot reveal a bar after
+the replay cursor.
 
 > Atoms init with deterministic SSR-safe defaults; persisted values load in
 > `useStoreHydration()` after mount via `getDefaultStore().set(hydrateAtom)`.
@@ -202,8 +207,10 @@ useVisibleCandles()  → replay-aware slice
 
 ## 6. Runtime loops (`GlobalRuntime`, headless)
 
-- `useReplayPlayback` — rAF clock advancing the replay cursor at 1×–100×.
-- `useHotkeys` — drawing shortcuts (1–9, Delete, Ctrl+D/Z/A/I, Escape) + replay transport (Space/←/→/R) + trade (B/S/X).
+- `useReplayPlayback` — rAF clock advancing the replay cursor at TradingView-style speeds
+  `0.1x`, `0.3x`, `0.5x`, `1x`, `3x`, `10x`.
+- `useHotkeys` — drawing shortcuts (1–9, Delete, Ctrl+D/Z/A/I, Escape) + replay transport
+  (Space, Shift+Down, ArrowLeft/Right, Shift+Left, R) + trade (B/S/X).
 - `useSmcEngine` — posts visible candles to `smc.worker` (throttled ~90ms) → `setSmcSnapshotAtom`.
 - `useTradeRuntime` — streams the latest visible candle into `setTradeMarketAtom`.
 - `useAlertEngine` — pushes `marketDataTickAtom` subscription, evaluates alerts on price ticks.

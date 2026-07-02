@@ -14,7 +14,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { getDefaultStore } from "jotai";
 import { candlesAtom } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
-import { indexAtOrBefore } from "@/services/replayEngine";
+import { indexNearestByTime } from "@/services/replayEngine";
 import { fmtDateTime } from "@/utils/time";
 
 /**
@@ -85,13 +85,7 @@ export function ReplaySelectionLayer() {
       const ts = ctx.chart.timeScale();
       const t = ts.coordinateToTime(x);
       if (t == null) return data.length - 1; // right whitespace → last bar
-      const time = t as number;
-      const before = indexAtOrBefore(data, time);
-      const after = Math.min(data.length - 1, before + 1);
-      return Math.abs(data[before].time - time) <=
-        Math.abs(data[after].time - time)
-        ? before
-        : after;
+      return indexNearestByTime(data, t as number);
     },
     [ctx, candles, fullCandles, reSelecting],
   );
