@@ -74,7 +74,7 @@ export function OrderTicket() {
 
   const buildMt5Order = (side: Side): Mt5OrderRequest => {
     const info = mt5SymbolInfo[symbol];
-    const volume = normalizeLot(metrics.positionSize, info?.lotStep ?? 0.01);
+    const volume = normalizeMt5Volume(metrics.positionSize, info);
     return {
       clientOrderId: makeClientOrderId(),
       chartSymbol: symbol,
@@ -290,11 +290,19 @@ export function OrderTicket() {
   );
 }
 
-function normalizeLot(value: number, step: number) {
+function normalizeMt5Volume(
+  value: number,
+  info: { minLot: number; maxLot: number; lotStep: number } | undefined,
+) {
+  const minLot = info?.minLot ?? 0.01;
+  const maxLot = info?.maxLot ?? 1;
+  const step = info?.lotStep ?? 0.01;
   if (!Number.isFinite(value) || value <= 0) return 0;
-  if (!Number.isFinite(step) || step <= 0) return value;
-  const rounded = Math.floor(value / step) * step;
-  return Number(rounded.toFixed(8));
+  const bounded = Math.min(Math.max(value, minLot), maxLot);
+  if (!Number.isFinite(step) || step <= 0) return Number(bounded.toFixed(8));
+  const decimals = String(step).includes(".") ? String(step).split(".")[1].length : 8;
+  const rounded = Math.floor((bounded + Number.EPSILON) / step) * step;
+  return Number(rounded.toFixed(Math.min(Math.max(decimals, 0), 8)));
 }
 
 function Metric({
