@@ -40,6 +40,10 @@ Recent vertical-line parity note: selected `VerticalTool.ts` now matches Trading
 bottom time-axis chip such as `Thu 02 Jul 26 19:30` instead of the old white center handle. The
 chip clamps inside the chart viewport; body hit-test/drag remains unchanged.
 
+Recent brush parity note: `BrushTool.ts` now opts into the `continuous` adapter path. It starts on
+pointerdown, records points on pointermove, and commits the stroke on pointerup; do not route brush
+through the normal two-click trendline path. Guard with `npm run check:brush-freehand`.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`

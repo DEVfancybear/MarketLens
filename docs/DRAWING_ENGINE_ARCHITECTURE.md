@@ -319,6 +319,25 @@ time axis.
 - Regression guard: `npm run check:vertical-line` rejects the old center handle path and verifies
   the date-label/clamping contract.
 
+## Brush continuous freehand drawing - updated 2026-07-02
+
+`brush` is the TradingView-style freehand drawing tool. It must not use the normal two-click
+trendline flow.
+
+- **Adapter contract**: `ToolRegistry.ts` exposes `continuous?: boolean` for pointer-drag tools.
+  This is separate from `freeform?: boolean`, which remains the click-to-add / double-click-finish
+  flow used by polyline/path-style tools.
+- **Creation**: `DrawingInteractionManager.ts` starts a continuous drawing on pointerdown, records
+  new points on pointermove when the screen-space delta is at least 2px, and commits the full stroke
+  on pointerup.
+- **Rendering**: `BrushTool.ts` renders the saved multi-point path as a smoothed quadratic stroke.
+  When selected it shows handles at the first and last point, matching TradingView's endpoint
+  selection affordance.
+- **Interaction**: brush hit-testing remains segment-based (`target: "body"`), so moving a brush
+  stroke still translates all recorded points through the default move path.
+- Regression guard: `npm run check:brush-freehand` verifies the continuous adapter flag, pointermove
+  point recording, pointerup commit, and endpoint handles remain wired.
+
 ## Trendline attached text — updated 2026-07-02
 
 Plain `trendline` follows TradingView's normal Trend Line behavior: no automatic measurement chip.

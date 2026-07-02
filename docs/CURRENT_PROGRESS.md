@@ -4,6 +4,16 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Brush tool continuous freehand parity
+- User repro: `brush` behaved like a straight two-click trendline instead of TradingView's
+  freehand brush where the user drags to draw circles, curves, and arbitrary strokes.
+- Root cause: `BrushTool.ts` could render multi-point paths, but it did not opt into a continuous
+  creation mode, so `DrawingInteractionManager.ts` treated it as a normal two-point tool.
+- Fix: added a generic `continuous` adapter flag, wired drawing mode to collect points on
+  `pointermove` and commit on `pointerup`, and enabled it for `brush`.
+- Brush selection now renders endpoint handles, while body hit-test/drag remains segment-based.
+- Guard: added `npm run check:brush-freehand`.
+
 ### Vertical line TradingView date label parity
 - User repro: selected `VerticalTool` showed a white circular handle in the middle of the chart,
   while TradingView shows a vertical blue line with a blue date/time chip on the bottom time axis.

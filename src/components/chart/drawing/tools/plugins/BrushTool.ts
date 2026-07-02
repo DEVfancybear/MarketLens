@@ -11,6 +11,7 @@ import {
   TOL,
   distToSegment,
 } from "../ToolRegistry";
+import { handle } from "./shared";
 
 function project(
   pt: Pt,
@@ -25,6 +26,7 @@ function project(
 const plugin: DrawingToolPlugin = {
   tool: "brush",
   minPoints: 2,
+  continuous: true,
   render(
     g: CanvasRenderingContext2D,
     d: Drawing,
@@ -46,6 +48,10 @@ const plugin: DrawingToolPlugin = {
     const last = project(pts[pts.length - 1], proj.toX, proj.toY);
     if (last) g.lineTo(last.x, last.y);
     g.stroke();
+    if (selected && last) {
+      handle(g, p0.x, p0.y, d.color);
+      handle(g, last.x, last.y, d.color);
+    }
   },
   hitTest(
     d: Drawing,
@@ -79,10 +85,10 @@ const plugin: DrawingToolPlugin = {
       .filter((v): v is number => v != null);
     if (xs.length === 0 || ys.length === 0) return null;
     return {
-      x: Math.min(...xs),
-      y: Math.min(...ys),
-      w: Math.max(...xs) - Math.min(...xs),
-      h: Math.max(...ys) - Math.min(...ys),
+      x: Math.min(...xs) - TOL,
+      y: Math.min(...ys) - TOL,
+      w: Math.max(...xs) - Math.min(...xs) + TOL * 2,
+      h: Math.max(...ys) - Math.min(...ys) + TOL * 2,
     };
   },
 };

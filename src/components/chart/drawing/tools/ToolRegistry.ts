@@ -54,6 +54,9 @@ export interface DrawingAdapter {
   /** Unbounded click-to-add tool (polyline/path/curve). Finishes on
    *  double-click or right-click. */
   readonly freeform?: boolean;
+  /** Pointer-drag freehand tool. Records points on pointermove and commits
+   *  on pointerup (TradingView Brush behavior). */
+  readonly continuous?: boolean;
 
   render(
     g: CanvasRenderingContext2D,
@@ -139,6 +142,7 @@ export interface SimpleTool {
   readonly minPoints: number;
   readonly maxPoints?: number;
   readonly freeform?: boolean;
+  readonly continuous?: boolean;
   render(
     g: CanvasRenderingContext2D,
     d: Drawing,

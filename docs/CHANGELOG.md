@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Brush tool continuous freehand drawing (2026-07-02)
+- `brush` now uses a TradingView-style pointer-drag flow: press, draw continuously, release to
+  commit the full stroke. It no longer behaves like a two-click trendline.
+- Added a generic `continuous` tool adapter flag so this behavior is opt-in and does not affect
+  trendline, polyline/path click-to-add tools, or single-click tools.
+- Selected brush strokes now show endpoint handles, and the brush bounding box includes hit padding
+  so thin freehand strokes are not culled too aggressively.
+- Added `npm run check:brush-freehand` to guard the continuous pointer-drag contract.
+
 ### Changed - Vertical line TradingView date label parity (2026-07-02)
 - Replaced the selected vertical line's old center handle with a TradingView-style blue date/time
   chip pinned to the bottom time axis.

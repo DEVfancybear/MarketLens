@@ -40,6 +40,21 @@ function minPoints(t: DrawingTool): number {
   return getTool(t)?.minPoints ?? 2;
 }
 
+function shouldRecordContinuousPoint(
+  prev: Point | undefined,
+  next: Point,
+  toX: (time: number) => number | null,
+  toY: (price: number) => number | null,
+): boolean {
+  if (!prev) return true;
+  const x0 = toX(prev.time);
+  const y0 = toY(prev.price);
+  const x1 = toX(next.time);
+  const y1 = toY(next.price);
+  if (x0 == null || y0 == null || x1 == null || y1 == null) return true;
+  return Math.hypot(x1 - x0, y1 - y0) >= 2;
+}
+
 export interface DrawingInteractionManagerOpts {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   fromEvent: (e: PointerEvent) => Point | null;
@@ -208,6 +223,7 @@ export function useDrawingInteractionManager(
       pointerClaimedRef.current = true;
       const cur = getState();
       const n = minPoints(cur.activeTool);
+      const adapter = getTool(cur.activeTool);
       if (cur.activeTool === "text") {
         if (onTextPlace) {
           onTextPlace(p, cur.drawColor);
@@ -233,6 +249,17 @@ export function useDrawingInteractionManager(
         }
         return;
       }
+      if (adapter?.continuous) {
+        committedRef.current = [p];
+        dragActiveRef.current = true;
+        freezeChartRef.current?.(true);
+        transition({
+          state: "Drawing",
+          anchors: [p],
+          drawingTool: cur.activeTool,
+        });
+        return;
+      }
       if (n === 1) {
         addDrawing({
           id: uid("dw"),
@@ -247,7 +274,6 @@ export function useDrawingInteractionManager(
       // ---- Multi-point tools (triangle, arc, double-curve, polyline, …) ----
       // Opt-in via the plugin's `freeform`/`maxPoints` flags; 1-/2-point tools
       // skip this entirely and keep their original path below.
-      const adapter = getTool(cur.activeTool);
       const maxPts = adapter?.maxPoints;
       const isMulti = !!adapter?.freeform || (maxPts ?? 0) > 2 || n > 2;
       if (isMulti) {
@@ -316,17 +342,67 @@ export function useDrawingInteractionManager(
       if (m.state !== "Drawing") return;
       const p = fromEvent(e);
       if (!p) return;
+      const tool = m.drawingTool ?? getState().activeTool;
+      const adapter = getTool(tool);
+      if (adapter?.continuous) {
+        e.preventDefault();
+        e.stopPropagation();
+        const committed = committedRef.current;
+        const last = committed[committed.length - 1];
+        if (shouldRecordContinuousPoint(last, p, toX, toY)) {
+          const next = [...committed, p];
+          committedRef.current = next;
+          transition({ anchors: next });
+        }
+        return;
+      }
       // Multi-point draw: preview the already-committed points plus the live
       // cursor as the next vertex. 2-point tools keep [start, cursor].
       const committed = committedRef.current;
       if (committed.length > 0) transition({ anchors: [...committed, p] });
       else transition({ anchors: [m.anchors[0], p] });
     };
+    const hU = (e: PointerEvent) => {
+      const m = machineRef.current;
+      if (m.state !== "Drawing") return;
+      const tool = m.drawingTool ?? getState().activeTool;
+      const adapter = getTool(tool);
+      if (!adapter?.continuous) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      let pts = committedRef.current;
+      const p = fromEvent(e);
+      const last = pts[pts.length - 1];
+      if (p && shouldRecordContinuousPoint(last, p, toX, toY)) {
+        pts = [...pts, p];
+      }
+      if (pts.length >= adapter.minPoints) {
+        addDrawing({
+          id: uid("dw"),
+          tool,
+          color: getState().drawColor,
+          lineWidth: 1.5,
+          points: pts.map((q) => ({ ...q })),
+        });
+      }
+      reset();
+    };
+    const hCancel = () => {
+      const m = machineRef.current;
+      const tool = m.drawingTool ?? getState().activeTool;
+      const adapter = getTool(tool);
+      if (m.state === "Drawing" && adapter?.continuous) reset();
+    };
     document.addEventListener("pointerdown", hD, true);
     document.addEventListener("pointermove", hM, true);
+    document.addEventListener("pointerup", hU, true);
+    document.addEventListener("pointercancel", hCancel, true);
     return () => {
       document.removeEventListener("pointerdown", hD, true);
       document.removeEventListener("pointermove", hM, true);
+      document.removeEventListener("pointerup", hU, true);
+      document.removeEventListener("pointercancel", hCancel, true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getState().activeTool]);
