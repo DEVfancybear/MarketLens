@@ -4,6 +4,14 @@ _Last updated: 2026-07-02 (FTMO MT5 dry-run bridge)_
 
 ## Completed this session (2026-07-02)
 
+### Long/Short position drag width regression fix
+- Fixed the short/long position body-drag regression where a TP/SL-hit drawing widened while being
+  moved. `PositionTool` now treats TP/SL hit as visual state only; hit status may change labels,
+  fill alpha, and diagonal hit guide, but it must not mutate `geo.xR` or any editable point width.
+- Added `scripts/check-position-drag-width.mjs` and `npm run check:position-drag`. The script
+  rejects the old hit-freeze geometry pattern and simulates repeated body drags to both the right
+  and the left, asserting the time-width never changes.
+
 ### Long/Short position TradingView parity + SL-hit selection fix
 - Fixed the post-hit selection bug in `PositionTool.ts`: when a position is frozen/extended to the
   candle that hit SL or TP, `hitTest()` and `boundingBox()` now use the same visible right edge as

@@ -11,6 +11,7 @@
     "ftmo-mt5-bridge": "node scripts/ftmo-mt5-bridge.mjs",
     "ftmo-mt5-python": "python -m bridge.ftmo_mt5.service",
     "push-worker": "node scripts/push-alert-worker.mjs",
+    "check:position-drag": "node scripts/check-position-drag-width.mjs",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "type-check": "tsc --noEmit"

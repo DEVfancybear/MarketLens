@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Short/Long position body drag preserves visible width (2026-07-02)
+- Fixed a regression where dragging a hit-frozen Long/Short position body could make the box
+  widen while moving right or left. TP/SL hit state now changes labels/fill only; it no longer
+  extends the drawing's right edge to the hit candle.
+- Added `npm run check:position-drag`, a focused regression check that rejects hit-freeze geometry
+  patterns and simulates repeated body drags to the right and left while asserting width stays
+  constant.
+
 ### Fixed - Long/Short position hit-state selection parity (2026-07-02)
 - Updated `PositionTool.ts` so the visible TP/SL-hit extension is also included in `hitTest()` and
   `boundingBox()`. A short/long position that has frozen to an SL/TP hit candle can now be selected

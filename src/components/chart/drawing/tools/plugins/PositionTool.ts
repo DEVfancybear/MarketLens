@@ -134,53 +134,6 @@ function geometry(d: Drawing, proj: Projector): Geo | null {
   return { xL, xR, yE, yT, yS, entry, target, stop };
 }
 
-type RenderHit = {
-  status: "tp_hit" | "sl_hit";
-  candleTime: number;
-  candlePrice: number;
-};
-
-function resolveHit(d: Drawing): RenderHit | null {
-  if (d._dragging) return null;
-  const candles = getDefaultStore().get(candlesAtom);
-  const fresh = detectPositionHit(d, candles);
-  if (fresh) {
-    return {
-      status: fresh.status,
-      candleTime: fresh.time - d.points[0].time,
-      candlePrice: fresh.price,
-    };
-  }
-  if (
-    candles.length === 0 &&
-    (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
-  ) {
-    return {
-      status: d.tradeStatus,
-      candleTime: d.hitTime ?? 0,
-      candlePrice: d.hitPrice ?? 0,
-    };
-  }
-  return null;
-}
-
-function withHitFreeze(
-  d: Drawing,
-  geo: Geo,
-  toX: HitTestProjector,
-): { xR: number; hit: RenderHit | null } {
-  const hit = resolveHit(d);
-  let xR = geo.xR;
-  if (hit) {
-    const frozenTime = d.points[0].time + hit.candleTime;
-    const frozenX = toX(frozenTime);
-    // Only extend the visible/interactable right edge to the hit candle. Never
-    // shrink the user's intended width.
-    if (frozenX != null && frozenX > xR) xR = frozenX;
-  }
-  return { xR, hit };
-}
-
 /** Minimal candle shape needed for hit detection. */
 interface HitCandle {
   time: number;
@@ -274,28 +227,25 @@ function render(
   const geo = geometry(d, proj);
   if (!geo) return;
 
-  // Save the original (unfrozen) right edge for handle rendering.
+  // Save the original editable right edge for handle rendering.
   // Handles must match getAnchors() positions which use geometry() independently.
   const origXR = geo.xR;
 
-  // ── Hit detection & frozen right edge ──
+  // Hit detection only; never mutate geometry from a TP/SL hit.
   // The candle data is the source of truth: re-derive the TP/SL outcome every
-  // render via findHitCandle (which now resolves stop-before-target). This
+  // render via findHitCandle (which now resolves stop-before-target). Hit
+  // status is visual state only; it must not change the user-defined width. This
   // OVERRIDES any persisted tradeStatus, so a stale hit saved by older logic
   // (e.g. a tp_hit that should have been sl_hit) self-corrects on next paint.
   // The persisted tradeStatus/hitTime is only trusted as a fallback when no
-  // candles are loaded yet (so the freeze survives a cold reload before data).
-  // hitTime is stored as an OFFSET from entry, so the freeze follows the
-  // position when the user drags the drawing.
+  // candles are loaded yet.
   let hit: {
     status: "tp_hit" | "sl_hit";
     candleTime: number;
     candlePrice: number;
   } | null = null;
-  // While the user is actively dragging this position, never apply the TP/SL
-  // hit-freeze: it extends the right edge to the hit candle, which makes the box
-  // appear to suddenly grow / get pinned at the SL bar mid-drag. The freeze is
-  // (re-)evaluated normally once the drag is committed and `_dragging` is gone.
+  // While the user is actively dragging this position, skip fresh TP/SL detection
+  // so the preview cannot flicker or change hit labels mid-drag.
   if (!d._dragging) {
     const candles = getDefaultStore().get(candlesAtom);
     const fresh = detectPositionHit(d, candles);
@@ -316,14 +266,11 @@ function render(
         candlePrice: d.hitPrice ?? 0,
       };
     }
-    if (hit) {
-      const frozenTime = d.points[0].time + hit.candleTime;
-      const frozenX = proj.toX(frozenTime);
-      // Only extend the right edge to the hit candle — never shrink.
-      // TradingView preserves the user's intended width; freeze is a cap.
-      if (frozenX != null && frozenX > geo.xR) geo.xR = frozenX;
-    }
   }
+
+  // TradingView keeps the Long/Short position width user-defined. TP/SL hit
+  // state may change label/fill state, but must never resize the drawing.
+  geo.xR = origXR;
 
   const { xL, xR, yE, yT, yS, entry, target, stop } = geo;
   const left = Math.min(xL, xR);
@@ -656,10 +603,8 @@ function hitTest(
 ): HitResult[] {
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return [];
-  const frozen = withHitFreeze(d, geo, toX);
-  const { xL, yE, yT, yS } = geo;
-  const xR = frozen.xR;
-  const handleXR = geo.xR;
+  const { xL, xR, yE, yT, yS } = geo;
+  const handleXR = xR;
   const results: HitResult[] = [];
 
   const dE = pointDist(px, py, xL, yE);
@@ -748,9 +693,7 @@ function move(origPoints: Point[], pointer: Point, dragStart: Point): Point[] {
 function boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return null;
-  const frozen = withHitFreeze(d, geo, toX);
-  const { xL, yE, yT, yS } = geo;
-  const xR = frozen.xR;
+  const { xL, xR, yE, yT, yS } = geo;
   const left = Math.min(xL, xR);
   const top = Math.min(yE, yT, yS);
   return {
