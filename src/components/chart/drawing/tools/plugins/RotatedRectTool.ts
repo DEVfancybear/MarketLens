@@ -20,7 +20,7 @@ import {
   pointDist,
   distToSegment,
 } from "../ToolRegistry";
-import { handle, applyStyle } from "./shared";
+import { handle, applyStyle, renderShapeText } from "./shared";
 
 type XY = { x: number; y: number };
 
@@ -109,6 +109,19 @@ const plugin: DrawingToolPlugin = {
     }
     g.stroke();
     g.restore();
+    // Axis-aligned bounding box of the (possibly rotated) quad — text stays
+    // upright rather than rotating with the rectangle, matching how the
+    // engine renders every other shape's inner label.
+    const cxs = [c.a.x, c.b.x, c.c.x, c.e.x];
+    const cys = [c.a.y, c.b.y, c.c.y, c.e.y];
+    renderShapeText(
+      g,
+      d,
+      Math.min(...cxs),
+      Math.min(...cys),
+      Math.max(...cxs) - Math.min(...cxs),
+      Math.max(...cys) - Math.min(...cys),
+    );
     if (selected) {
       handle(g, c.a.x, c.a.y, d.color);
       handle(g, c.b.x, c.b.y, d.color);

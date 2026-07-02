@@ -8,7 +8,7 @@ import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
   HANDLE_RADIUS, TOL, pointDist,
 } from "../ToolRegistry";
-import { handle } from "./shared";
+import { handle, renderShapeText } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "circle",
@@ -20,7 +20,16 @@ const plugin: DrawingToolPlugin = {
     const r = Math.hypot(x2 - x1, y2 - y1);
     g.beginPath();
     g.arc(x1, y1, r, 0, Math.PI * 2);
+    if (d.fillColor && d.fillColor !== "none") {
+      g.save();
+      g.fillStyle = d.fillColor;
+      g.globalAlpha = d.opacity ?? 0.3;
+      g.fill();
+      g.globalAlpha = 1;
+      g.restore();
+    }
     g.stroke();
+    renderShapeText(g, d, x1 - r, y1 - r, r * 2, r * 2);
     if (selected) { handle(g, x1, y1, d.color); handle(g, x2, y2, d.color); }
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {

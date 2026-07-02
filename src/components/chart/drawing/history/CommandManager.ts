@@ -136,6 +136,8 @@ export class DuplicateDrawingCommand implements Command {
     private addFn: (d: Drawing) => void,
     private removeFn: (id: string) => void,
     private sourceDrawing: Drawing,
+    /** Invoked with the created copy right after it's added — e.g. to select it. */
+    private onCreated?: (copy: Drawing) => void,
   ) {}
   execute() {
     // Always generate a fresh valid ID to prevent empty-id corruption.
@@ -146,6 +148,7 @@ export class DuplicateDrawingCommand implements Command {
       points: this.sourceDrawing.points.map((p) => ({ ...p })),
     };
     this.addFn(copy);
+    this.onCreated?.(copy);
   }
   undo() {
     if (this.copyId) this.removeFn(this.copyId);

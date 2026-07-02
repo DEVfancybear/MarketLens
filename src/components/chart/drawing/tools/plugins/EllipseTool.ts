@@ -8,7 +8,7 @@ import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
   HANDLE_RADIUS, TOL, pointDist, distToRect,
 } from "../ToolRegistry";
-import { handle } from "./shared";
+import { handle, renderShapeText } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "ellipse",
@@ -21,7 +21,16 @@ const plugin: DrawingToolPlugin = {
     const rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
     g.beginPath();
     g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    if (d.fillColor && d.fillColor !== "none") {
+      g.save();
+      g.fillStyle = d.fillColor;
+      g.globalAlpha = d.opacity ?? 0.3;
+      g.fill();
+      g.globalAlpha = 1;
+      g.restore();
+    }
     g.stroke();
+    renderShapeText(g, d, cx - rx, cy - ry, rx * 2, ry * 2);
     if (selected) { handle(g, x1, y1, d.color); handle(g, x2, y2, d.color); }
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {

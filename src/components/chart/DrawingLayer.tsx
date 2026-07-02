@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
+import { Plus } from "lucide-react";
 import { useChartCtx } from "./ChartContext";
 import { useAtomValue, useSetAtom, getDefaultStore } from "jotai";
 import {
@@ -21,7 +22,7 @@ import {
   setActiveToolAtom,
   selectAllAtom,
 } from "@/store/chartStore";
-import type { Drawing, Point } from "@/types";
+import { SHAPE_TOOLS, type Drawing, type Point } from "@/types";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
 import {
@@ -31,6 +32,7 @@ import {
 import { useCommandHistory } from "./drawing/history/useCommandHistory";
 import { CreateDrawingCommand } from "./drawing/history/CommandManager";
 import { TextEditor } from "./drawing/TextEditor";
+import { getTool } from "./drawing/tools/ToolRegistry";
 import { detectPositionHit } from "./drawing/tools/plugins/PositionTool";
 import { uid } from "@/utils/id";
 
@@ -59,6 +61,16 @@ export function DrawingLayer() {
     y: number;
     color: string;
     point: Point;
+  } | null>(null);
+  // "+ Add text" (TradingView-style inner label) for the selected fillable
+  // shape (rectangle/rotatedRect/circle/ellipse/triangle) — edits the
+  // existing drawing's `text` in place, unlike `textEdit` above which creates
+  // a brand-new standalone Text drawing.
+  const [shapeTextEdit, setShapeTextEdit] = useState<{
+    drawingId: string;
+    x: number;
+    y: number;
+    initialText: string;
   } | null>(null);
 
   const { commitMove, undo, redo, execute } = useCommandHistory(
@@ -174,7 +186,11 @@ export function DrawingLayer() {
   const markDirtyRef = useRef<() => void>(() => {});
   const addDrawingWithHistory = useCallback(
     (d: Drawing) => {
-      addDrawing(d);
+      // `execute()` runs the command immediately (CreateDrawingCommand.execute()
+      // calls addDrawing itself) and records it for undo — do NOT also call
+      // addDrawing(d) directly here, or every new drawing gets inserted twice
+      // under the same id (confirmed via a real repro: two identical entries
+      // with an identical id in the persisted drawings array).
       execute(new CreateDrawingCommand(addDrawing, removeDrawing, d));
     },
     [addDrawing, removeDrawing, execute],
@@ -380,6 +396,29 @@ export function DrawingLayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!ctx]);
 
+  // "+ Add text" affordance for the selected fillable shape (TradingView
+  // shows this centered inside Rectangle/Ellipse/etc. once selected). Hidden
+  // mid-drag/resize — the live preview position and this projection would
+  // otherwise disagree until the drag commits.
+  const selectedShape =
+    machine.state === "Idle"
+      ? (drawings.find(
+          (d) => d.id === selectedDrawingId && SHAPE_TOOLS.includes(d.tool),
+        ) ?? null)
+      : null;
+  const shapeLabelBox = selectedShape
+    ? (getTool(selectedShape.tool)?.boundingBox(selectedShape, toX, toY) ?? null)
+    : null;
+  const shapeLabelTarget =
+    selectedShape && shapeLabelBox
+      ? {
+          drawing: selectedShape,
+          cx: shapeLabelBox.x + shapeLabelBox.w / 2,
+          cy: shapeLabelBox.y + shapeLabelBox.h / 2,
+          w: shapeLabelBox.w,
+        }
+      : null;
+
   return (
     <>
       <canvas
@@ -390,6 +429,59 @@ export function DrawingLayer() {
       <DrawingSettingsToolbar />
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
+      )}
+      {shapeLabelTarget && !shapeTextEdit && (
+        <button
+          type="button"
+          data-chart-ui
+          aria-label={shapeLabelTarget.drawing.text ? "Edit text" : "Add text"}
+          title={shapeLabelTarget.drawing.text ? "Edit text" : "Add text"}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() =>
+            setShapeTextEdit({
+              drawingId: shapeLabelTarget.drawing.id,
+              x: shapeLabelTarget.cx,
+              y: shapeLabelTarget.cy,
+              initialText: shapeLabelTarget.drawing.text ?? "",
+            })
+          }
+          className={
+            shapeLabelTarget.drawing.text
+              ? "absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-text"
+              : "absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[12px] text-ink-muted hover:bg-terminal-hover/70 hover:text-ink"
+          }
+          style={{
+            left: shapeLabelTarget.cx,
+            top: shapeLabelTarget.cy,
+            width: shapeLabelTarget.drawing.text
+              ? Math.min(shapeLabelTarget.w, 160)
+              : undefined,
+            height: shapeLabelTarget.drawing.text ? 22 : undefined,
+            pointerEvents: "auto",
+          }}
+        >
+          {!shapeLabelTarget.drawing.text && (
+            <>
+              <Plus size={13} /> Add text
+            </>
+          )}
+        </button>
+      )}
+      {shapeTextEdit && (
+        <TextEditor
+          initialText={shapeTextEdit.initialText}
+          x={shapeTextEdit.x}
+          y={shapeTextEdit.y}
+          onSaveAction={(text) => {
+            updateDrawing({ id: shapeTextEdit.drawingId, patch: { text } });
+            setShapeTextEdit(null);
+            scheduleRedraw();
+          }}
+          onCancelAction={() => {
+            setShapeTextEdit(null);
+            scheduleRedraw();
+          }}
+        />
       )}
       {textEdit && (
         <TextEditor
@@ -407,7 +499,6 @@ export function DrawingLayer() {
               points: [textEdit.point],
               text,
             };
-            addDrawing(fresh);
             execute(new CreateDrawingCommand(addDrawing, removeDrawing, fresh));
             setTextEdit(null);
             scheduleRedraw();

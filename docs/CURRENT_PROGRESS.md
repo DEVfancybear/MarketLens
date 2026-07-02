@@ -1,8 +1,36 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-02 (Server→client trigger reconciliation)_
+_Last updated: 2026-07-02 (Shape "+ Add text" + drawing double-insert bugs)_
 
 ## Completed this session (2026-07-02)
+
+### "+ Add text" for fillable shapes + 3 double-insert bugs found while verifying it
+- User request: TradingView shows a "+ Add text" placeholder centered inside a selected
+  Rectangle/Circle/etc.; the app was missing this entirely (only `d.text` rendering existed, and
+  only for Rectangle).
+- Implemented: `renderShapeText()` shared helper (`plugins/shared.ts`) used by all 5 shape plugins
+  (Rectangle/RotatedRect/Circle/Ellipse/Triangle — `SHAPE_TOOLS`); also fixed `Circle`/`Ellipse`
+  silently not rendering `fillColor` despite it being settable. New floating "+ Add text" /
+  invisible re-edit hitbox in `DrawingLayer.tsx`, positioned via the same `adapter.boundingBox()`
+  used by the hitTest pre-filter, reusing the existing `TextEditor` inline-input component.
+- While verifying with a scripted Playwright repro, found and fixed **3 separate double-insert
+  bugs** (all confirmed live, not guessed): every created drawing was inserted twice under an
+  identical id (`addDrawingWithHistory` called `addDrawing()` directly *and* ran a
+  `CreateDrawingCommand`, which already calls `addDrawing()` itself); Ctrl+D/Ctrl+V created two
+  independent copies the same way one level up; and a *third*, separate cause — `useHotkeys.ts` and
+  `DrawingInteractionManager.ts` are two independent global keydown listeners that both handled
+  Delete/Ctrl+A/Ctrl+D, so Ctrl+D produced 3 copies even after fixing the first two bugs. Removing
+  the redundant (non-undo-tracked) handlers from `useHotkeys.ts` also fixed single-selection Delete
+  not being undoable (it was racing the two listeners and the non-undo-tracked one usually won).
+- Files: `src/components/chart/drawing/tools/plugins/{shared,RectangleTool,CircleTool,EllipseTool,
+  TriangleTool,RotatedRectTool}.ts`, `src/components/chart/DrawingLayer.tsx`,
+  `src/components/chart/DrawingSettingsToolbar.tsx` (reuse `SHAPE_TOOLS` instead of a local dupe
+  list), `src/components/chart/drawing/history/CommandManager.ts` (`DuplicateDrawingCommand`
+  `onCreated` callback), `src/components/chart/drawing/interaction/DrawingInteractionManager.ts`,
+  `src/hooks/useHotkeys.ts`.
+- type-check ✅ · lint ✅ · build ✅ · verified live via a scripted Playwright repro (create → 1
+  entry; Ctrl+D → 2; Ctrl+D+Ctrl+V → 3; add-text button appears/click/type/Enter patches the shape
+  and the button becomes an invisible re-edit hitbox; screenshot-confirmed text renders centered).
 
 ### Alert stayed "Active" client-side after a real server-confirmed trigger
 - After the false-trigger fix, the user hit a *different*, legitimate gap: a `BTCUSDT crossUp`

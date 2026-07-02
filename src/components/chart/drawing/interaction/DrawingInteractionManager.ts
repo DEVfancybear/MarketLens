@@ -112,7 +112,6 @@ export function useDrawingInteractionManager(
     undo,
     redo,
     selectAll,
-    duplicateDrawing,
     onTextPlace,
     freezeChart,
   } = opts;
@@ -573,16 +572,13 @@ export function useDrawingInteractionManager(
       if (e.key === "v" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
         e.preventDefault();
         const src = clipboardRef.current;
-        if (src) {
-          addDrawing({
-            ...src,
-            id: uid("dw"),
-            points: src.points.map((p: any) => ({ ...p })),
-          });
-          if (executeCommand)
-            executeCommand(
-              new DuplicateDrawingCommand(addDrawing, removeDrawing, src),
-            );
+        // executeCommand alone both creates the copy (with a fresh id) and
+        // records undo — do NOT also call addDrawing directly here, or paste
+        // creates two independent copies (confirmed via a real repro).
+        if (src && executeCommand) {
+          executeCommand(
+            new DuplicateDrawingCommand(addDrawing, removeDrawing, src),
+          );
         }
         return;
       }
@@ -613,12 +609,17 @@ export function useDrawingInteractionManager(
         const id = getState().selectedDrawingId;
         if (id) {
           const d = getState().drawings.find((x) => x.id === id);
-          if (d) {
-            duplicateDrawing?.(d.id);
-            if (executeCommand)
-              executeCommand(
-                new DuplicateDrawingCommand(addDrawing, removeDrawing, d),
-              );
+          // executeCommand alone both creates the copy and records undo — do
+          // NOT also call duplicateDrawing() here, or Ctrl+D creates two
+          // independent copies with two different ids (confirmed via a real
+          // repro). onCreated re-selects the new copy, matching what
+          // duplicateDrawing() used to do as a side effect.
+          if (d && executeCommand) {
+            executeCommand(
+              new DuplicateDrawingCommand(addDrawing, removeDrawing, d, (copy) =>
+                selectDrawing(copy.id),
+              ),
+            );
           }
         }
       }
@@ -634,7 +635,7 @@ export function useDrawingInteractionManager(
     addDrawing,
     removeDrawing,
     executeCommand,
-    duplicateDrawing,
+    selectDrawing,
     getState,
   ]);
 

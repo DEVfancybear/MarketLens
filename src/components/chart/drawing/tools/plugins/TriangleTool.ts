@@ -13,7 +13,7 @@ import {
   pointDist,
   distToSegment,
 } from "../ToolRegistry";
-import { handle } from "./shared";
+import { handle, renderShapeText } from "./shared";
 
 function project(
   pt: Pt,
@@ -51,6 +51,16 @@ const plugin: DrawingToolPlugin = {
       g.restore();
     }
     g.stroke();
+    const xs = projPts.map((p) => p!.x);
+    const ys = projPts.map((p) => p!.y);
+    renderShapeText(
+      g,
+      d,
+      Math.min(...xs),
+      Math.min(...ys),
+      Math.max(...xs) - Math.min(...xs),
+      Math.max(...ys) - Math.min(...ys),
+    );
     if (selected) projPts.forEach((p) => handle(g, p!.x, p!.y, d.color));
   },
   hitTest(

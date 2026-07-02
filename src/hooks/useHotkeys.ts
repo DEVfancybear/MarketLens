@@ -6,9 +6,6 @@ import { toggleAlertCenterAtom } from "@/store/uiStore";
 import {
   setActiveToolAtom,
   selectedDrawingIdAtom,
-  removeDrawingAtom,
-  selectAllAtom,
-  duplicateDrawingAtom,
   toggleIndicatorAtom,
   editingIndicatorIdAtom,
   activeToolAtom,
@@ -47,13 +44,15 @@ const ALT_TOOL_SLOTS: Record<string, DrawingTool> = {
  *   Shift+→/←    ±10 candles          X       close position
  *   1–9          switch drawing tools
  *   Alt+T/H/J/V/C trend / horizontal / horiz-ray / vertical / cross line
- *   Delete       remove selected drawing
- *   Ctrl/Cmd+D   duplicate selected drawing
- *   Ctrl/Cmd+A   select all drawings
  *   Ctrl/Cmd+Z   undo (prevents browser tab-close)
  *   Ctrl/I       toggle SMA indicator
  *   Escape       deselect / cancel tool
  *   Alt+A        toggle alert center
+ *
+ * Delete/Backspace, Ctrl/Cmd+D (duplicate), and Ctrl/Cmd+A (select all) are
+ * NOT handled here — see DrawingInteractionManager's own keyboard effect,
+ * which is multi-select aware and undo-tracked. Having both here and there
+ * caused double-duplication and lost-undo bugs (fixed 2026-07-02).
  *
  * Replay-transport keys are no-ops unless replay is armed. Keys are ignored
  * while typing in inputs.
@@ -127,32 +126,14 @@ export function useHotkeys() {
         return;
       }
 
-      // --- Delete selected drawing ---
-      if ((e.key === "Delete" || e.key === "Backspace") && !mod) {
-        const id = getDefaultStore().get(selectedDrawingIdAtom);
-        if (id) {
-          e.preventDefault();
-          getDefaultStore().set(removeDrawingAtom, id);
-        }
-        return;
-      }
-
-      // --- Select all drawings ---
-      if (mod && e.key === "a") {
-        e.preventDefault();
-        getDefaultStore().set(selectAllAtom);
-        return;
-      }
-
-      // --- Duplicate selected drawing ---
-      if (mod && e.key === "d") {
-        const id = getDefaultStore().get(selectedDrawingIdAtom);
-        if (id) {
-          e.preventDefault();
-          getDefaultStore().set(duplicateDrawingAtom, id);
-        }
-        return;
-      }
+      // Delete/Backspace, Ctrl+A (select all), and Ctrl+D (duplicate) are
+      // handled by DrawingInteractionManager's own keyboard effect — it's
+      // multi-select aware and undo-tracked, unlike the removed handlers that
+      // used to live here. Having both meant every Ctrl+D created two
+      // independent copies (confirmed via a real repro), and every Delete of
+      // a single selection raced DrawingInteractionManager's undo-tracked
+      // version and usually won, silently losing that delete from the undo
+      // stack. Do not re-add duplicate handling for these keys here.
 
       // --- Undo (prevent browser close-tab) ---
       if (mod && !e.shiftKey && e.key === "z") {

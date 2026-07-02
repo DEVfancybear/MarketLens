@@ -32,7 +32,7 @@ import {
 } from "@/store/chartStore";
 import { useChartCtx } from "./ChartContext";
 import { useDrawingActions } from "./drawing/useDrawingActions";
-import { styleFamily, type Drawing, type LineStyle } from "@/types";
+import { SHAPE_TOOLS, styleFamily, type Drawing, type LineStyle } from "@/types";
 import { cn } from "@/utils/cn";
 
 const COLORS = [
@@ -54,13 +54,7 @@ const STYLES: { value: LineStyle; label: string; dash: string }[] = [
 ];
 
 /** Tools that carry a fill (shapes). */
-const FILL_TOOLS = new Set<Drawing["tool"]>([
-  "rectangle",
-  "rotatedRect",
-  "circle",
-  "ellipse",
-  "triangle",
-]);
+const FILL_TOOLS = new Set<Drawing["tool"]>(SHAPE_TOOLS);
 /** Tools that have no stroke width / style controls. */
 const NO_LINE_TOOLS = new Set<Drawing["tool"]>(["text", "emoji"]);
 

@@ -232,30 +232,94 @@ interaction manager all go through it — no tool-specific branching anywhere el
 ## Canonical drag-target contract
 
 ```ts
+// HitResult.target (hittest/HitTestEngine.ts)
+type HitTarget = "body" | "p0" | "p1" | "p2" | "p3";
+// DrawingAdapter.movePoints()'s dragTarget (ToolRegistry.ts) — the *generic*
+// 2-anchor fallback path only, see below.
 type DragTarget = "body" | "p1" | "p2";
 ```
 
-No other drag targets are allowed — `"segment"` and `"label"` were deprecated and removed (all 25
-tools migrated 2026-06-26; `HitTestEngine`'s type + `TARGET_PRIORITY` no longer accept them, and
-`DrawingInteractionManager` maps `hit.target` through with no silent fallback remapping).
+No OTHER targets are allowed — `"segment"` and `"label"` were deprecated and removed (all 25 tools
+migrated 2026-06-26; `HitTestEngine`'s type + `TARGET_PRIORITY` no longer accept them). Two
+resolution paths exist depending on how many anchors a tool has:
 
-```
-hitTest → returns "p1" | "p2" | "body"  (no silent remapping)
-    ↓
-InteractionManager → dragTarget = "p1" | "p2" | "body"  (pass-through)
-    ↓
-defaultMovePoints(origPoints, pointer, dragTarget, dragStart)
-    "p1"   → next[0] = pointer (resize endpoint A)
-    "p2"   → next[1] = pointer (resize endpoint B)
-    "body" → both += delta (move entire drawing)
-    ↓
-updateDrawing(id, { points: next })
-```
+- **2-anchor tools** (most of them) resolve drags through the generic string-based
+  `movePoints(origPoints, pointer, dragTarget, dragStart)`, `dragTarget` restricted to
+  `"p1"|"p2"|"body"`, with no silent fallback remapping:
+  ```
+  hitTest → "p1" | "p2" | "body"  →  InteractionManager (pass-through)  →  defaultMovePoints(...)
+      "p1"   → next[0] = pointer (resize endpoint A)
+      "p2"   → next[1] = pointer (resize endpoint B)
+      "body" → both += delta (move entire drawing)
+  ```
+- **3+-anchor tools** (RotatedRect, Triangle, Position tools) instead resolve drags through the
+  **index-based** `moveAnchor(origPoints, anchorIndex: number, pointer)` — `HitTestEngine` resolves
+  `hit.target` (`"p0"`/`"p1"`/`"p2"`/`"p3"`) to a numeric `anchorIndex` via the adapter's
+  `getAnchors()`, and `DrawingInteractionManager` drags by index, not by the `dragTarget` string.
+  This is how `"p0"`/`"p3"` exist at all despite `movePoints`'s narrower type — they never flow
+  through that string-based path.
 
-All 25 registered tools return only canonical targets: TrendLine/Ray/ExtendedLine/InfoLine/
-Channel/Polyline/Triangle/Rectangle/RotatedRect/Circle/Ellipse/Fib(legacy+Retracement+Extension)/
-Curve/Path use `p1`/`p2`/`body`; Brush/Text/Emoji/Horizontal/HorizRay/Vertical/CrossLine/Long-
-Position/ShortPosition are `body`-only (no resizable endpoints).
+All 25 registered tools return only canonical `HitTarget` values: TrendLine/Ray/ExtendedLine/
+InfoLine/Channel/Polyline/Triangle/Rectangle/RotatedRect/Circle/Ellipse/Fib(legacy+Retracement+
+Extension)/Curve/Path have resizable anchors (`p0`-`p3` per tool, see each plugin's `getAnchors()`);
+Brush/Text/Emoji/Horizontal/HorizRay/Vertical/CrossLine/LongPosition/ShortPosition are `body`-only
+(no resizable endpoints).
+
+## Shape inner text ("+ Add text") — added 2026-07-02
+
+TradingView-style: selecting a fillable shape (Rectangle/RotatedRect/Circle/Ellipse/Triangle —
+`SHAPE_TOOLS` in `types/drawing.ts`) shows a "+ Add text" affordance centered inside it; clicking
+opens the same inline `TextEditor` the standalone Text tool uses, and the typed text patches the
+*existing* drawing's `text` field (unlike the Text tool, which creates a brand-new drawing).
+
+- **Rendering**: `plugins/shared.ts`'s `renderShapeText(g, d, ox, oy, w, h)` draws `d.text` honoring
+  alignment/bold/italic/color/font size — shared by all 5 shape plugins (previously only
+  `RectangleTool` rendered `d.text` at all, despite the settings dialog and `Drawing` type already
+  supporting it for every shape — `Circle`/`Ellipse` were also silently missing their `fillColor`
+  render entirely, fixed alongside this).
+- **Interactive overlay**: `DrawingLayer.tsx` computes the selected shape's screen-space bounding-box
+  center via `adapter.boundingBox(d, toX, toY)` (reusing the same per-tool method the hitTest
+  pre-filter uses) and renders a floating `data-chart-ui` button there — "+ Add text" when
+  `!d.text`, an invisible re-editable hitbox when text already exists. Hidden while
+  `machine.state !== "Idle"` (mid-drag/resize) since the live drag preview and this projection would
+  otherwise disagree until the drag commits.
+- Patches go straight through `updateDrawingAtom` (matching how `DrawingSettingsToolbar`'s style
+  patches already work) — not undo-tracked, consistent with that existing gap (see
+  `KNOWN_ISSUES.md`).
+- Verified via a scripted Playwright repro: button appears on selection, click → type → Enter
+  patches the shape and the button becomes an invisible re-edit hitbox; screenshot-confirmed the
+  text renders centered inside the shape.
+
+## Fixed: every new/duplicated/pasted drawing was inserted twice — 2026-07-02
+
+Found while verifying the above feature (a fresh test rectangle showed up twice in
+`localStorage`, same id). Root cause, in `DrawingLayer.tsx`'s `addDrawingWithHistory` and the
+standalone Text tool's save handler: both called `addDrawing(d)` **directly**, then *also* wrapped
+the same `d` in a `CreateDrawingCommand` and ran it via `execute()` — but `CommandManager.execute()`
+already calls `cmd.execute()`, which itself calls `addFn(d)`. Every created drawing was inserted
+twice under the identical id. Fixed by removing the redundant direct `addDrawing()` calls; `execute()`
+alone both inserts and records undo.
+
+A second instance of the same class of bug, worse: **Ctrl+D and Ctrl+V each created two independent
+copies** (different ids) because `DrawingInteractionManager.ts`'s keyboard handlers called *both*
+the `duplicateDrawing` store action directly *and* `executeCommand(new DuplicateDrawingCommand(...))`
+— each one on its own already creates a full copy. Fixed the same way (command-only), and extended
+`DuplicateDrawingCommand` with an optional `onCreated` callback so Ctrl+D can still re-select the new
+copy (previously a side effect of the now-removed direct `duplicateDrawing` call).
+
+A **third**, independent cause of the same Ctrl+D symptom: `useHotkeys.ts` (global) and
+`DrawingInteractionManager.ts` (mounted with `DrawingLayer`) are two *separate* `window.keydown`
+listeners that both used to handle Delete/Backspace, Ctrl+A, and Ctrl+D — so even after fixing the
+command double-execution above, Ctrl+D still produced 3 copies (1 original + 1 from each listener).
+Removed the redundant Delete/Ctrl+A/Ctrl+D handling from `useHotkeys.ts`; `DrawingInteractionManager`'s
+versions are multi-select aware and undo-tracked, which the removed ones were not. This also fixes a
+subtler bug: Delete-key removals of a single selection were racing the two listeners, and the
+non-undo-tracked one in `useHotkeys.ts` usually ran first — so `Ctrl+Z` after pressing Delete did not
+actually restore the drawing, because the undo-tracked deletion never got to run (its own `d` lookup
+came back empty since the other listener had already removed it).
+
+All three confirmed fixed via a scripted Playwright repro: create → exactly 1 entry; Ctrl+D →
+exactly 2; Ctrl+D then Ctrl+C/Ctrl+V → exactly 3.
 
 ## Perf notes
 

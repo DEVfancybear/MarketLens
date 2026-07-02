@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Server→client trigger reconciliation)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Shape "+ Add text" + drawing double-insert bugs)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -195,6 +195,21 @@ Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_S
   (signature-guarded); new `usePushTriggerReconcile` hook (mounted in `GlobalRuntime`) polls it and
   applies confirmed triggers via the existing `triggerAlertAtom`, without re-notifying. See
   `CHANGELOG.md` for the full file list.
+- **Shape "+ Add text" + 3 drawing double-insert bugs fixed (2026-07-02):** implemented
+  TradingView-style "+ Add text" for fillable shapes (Rectangle/RotatedRect/Circle/Ellipse/Triangle)
+  — new `renderShapeText()` shared helper, floating add/edit affordance in `DrawingLayer.tsx`
+  reusing `TextEditor`; also fixed `Circle`/`Ellipse` silently not rendering `fillColor`. While
+  verifying it, found and fixed **3 separate double-insert bugs**, all confirmed via a scripted
+  Playwright repro (create → 1 entry; Ctrl+D → 2; Ctrl+D+Ctrl+V → 3): (1) every created drawing was
+  inserted twice under the identical id (`addDrawingWithHistory` called `addDrawing()` directly
+  *and* ran a `CreateDrawingCommand`, which already calls `addDrawing()`); (2) Ctrl+D/Ctrl+V created
+  two independent copies the same way one level up; (3) a separate root cause of the same Ctrl+D
+  symptom — `useHotkeys.ts` and `DrawingInteractionManager.ts` are two independent global keydown
+  listeners that both handled Delete/Ctrl+A/Ctrl+D. Removed the redundant, non-undo-tracked
+  handlers from `useHotkeys.ts`; this also fixed single-selection Delete not being undoable (it was
+  losing a race against the two listeners). See `DRAWING_ENGINE_ARCHITECTURE.md` for full detail,
+  including a correction to the `DragTarget` doc (p0/p3 anchors do exist for 3+-anchor tools via a
+  separate index-based resolution path, contra what was documented earlier the same day).
 - **Recommended next action:** Start **Phase 6B — MT5 Bridge Integration** from
   `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. Phase 6A push docs:
   `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
@@ -332,7 +347,10 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   opens the drawing-specific context menu (Clone, Delete, Lock, Hide, Bring/Send).
 - **Context menu bypasses undo history:** `DrawingContextMenu.tsx` calls store actions directly
   (`removeDrawing`, `duplicateDrawing`, etc.) without creating Command history. Keyboard
-  equivalents (Delete, Ctrl+D) DO create history. Inconsistent undo behavior.
+  equivalents (Delete, Ctrl+D) DO create history (and, as of 2026-07-02, no longer double-create —
+  see the entry above). `DrawingSettingsToolbar`'s style patches (color/fill/width/style) and the
+  new "+ Add text" shape-label patches are in the same boat (direct `updateDrawing`, no Command) —
+  same known gap, not fixed here.
 - **Drawing tools fully wired:** All drawing tools (line, shape, fib) use the production
   `DrawingToolPlugin` architecture via `ToolRegistry`. `renderDrawing` + `HitTestEngine` delegate
   through adapters. No giant switch statements remain. The old note about "unwired refactor" in

@@ -87,6 +87,41 @@ export function arrowHead(
   g.restore();
 }
 
+/**
+ * Draws a filled shape's inner label (TradingView "+ Add text" content) inside
+ * the given screen-space box, honouring alignment/bold/italic/color/font size.
+ * No-op when the drawing has no text. Shared by every fillable shape tool
+ * (Rectangle/RotatedRect/Circle/Ellipse/Triangle) so they render identically.
+ */
+export function renderShapeText(
+  g: CanvasRenderingContext2D,
+  d: { text?: string; fontSize?: number; bold?: boolean; italic?: boolean; textColor?: string; color: string; textHAlign?: "left" | "center" | "right"; textVAlign?: "top" | "middle" | "bottom" },
+  ox: number,
+  oy: number,
+  w: number,
+  h: number,
+) {
+  if (!d.text) return;
+  g.save();
+  g.setLineDash([]);
+  const fs = d.fontSize ?? 14;
+  g.font = canvasFont(fs, { bold: d.bold, italic: d.italic });
+  g.fillStyle = d.textColor || d.color;
+  const pad = 6;
+  const hAlign = d.textHAlign ?? "center";
+  const vAlign = d.textVAlign ?? "middle";
+  g.textAlign = hAlign;
+  g.textBaseline =
+    vAlign === "middle" ? "middle" : vAlign === "top" ? "top" : "bottom";
+  const tx =
+    hAlign === "left" ? ox + pad : hAlign === "right" ? ox + w - pad : ox + w / 2;
+  const ty =
+    vAlign === "top" ? oy + pad : vAlign === "bottom" ? oy + h - pad : oy + h / 2;
+  for (const [i, ln] of d.text.split("\n").entries())
+    g.fillText(ln, tx, ty + i * fs * 1.25);
+  g.restore();
+}
+
 export function handle(
   g: CanvasRenderingContext2D,
   x: number,

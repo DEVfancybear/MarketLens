@@ -4,6 +4,27 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - "+ Add text" for fillable shapes (2026-07-02)
+- Selecting a Rectangle/RotatedRect/Circle/Ellipse/Triangle now shows a TradingView-style
+  "+ Add text" affordance centered inside it; click opens the same inline editor the Text tool uses
+  and patches the shape's `text` in place. `Circle`/`Ellipse` render `d.text` for the first time
+  (only `Rectangle` did before); `Circle`/`Ellipse` also now render their `fillColor` (silently
+  missing despite already being settable from the toolbar). New `renderShapeText()` shared helper
+  in `plugins/shared.ts`.
+
+### Fixed - every new/duplicated/pasted drawing was inserted twice (2026-07-02)
+- `addDrawingWithHistory` (and the Text tool's save handler) called `addDrawing(d)` directly *and*
+  ran a `CreateDrawingCommand` for the same `d` — `CommandManager.execute()` already calls
+  `addDrawing` internally, so every created drawing was inserted twice under the identical id.
+- Ctrl+D and Ctrl+V had the same bug one level up: calling both the `duplicateDrawing` store action
+  and `DuplicateDrawingCommand` created two independent copies with two different ids.
+- A third, separate cause of the same Ctrl+D symptom: `useHotkeys.ts` and
+  `DrawingInteractionManager.ts` are two independent `window.keydown` listeners that both handled
+  Delete/Ctrl+A/Ctrl+D — removed the redundant (and non-undo-tracked) versions from `useHotkeys.ts`.
+  This also fixes single-selection Delete not being undoable (the non-undo-tracked listener usually
+  won the race and removed the drawing before the undo-tracked one saw it).
+- Verified via a scripted Playwright repro: create → 1 entry; Ctrl+D → 2; Ctrl+D + Ctrl+V → 3.
+
 ### Fixed - hitTest() bounding-box pre-filter (2026-07-02)
 - `HitTestEngine.hitTest()` ran every drawing's full per-tool `hitTest()` on every cursor-mode
   pointerdown/hover, even ones nowhere near the click. Added a cheap `adapter.boundingBox()`

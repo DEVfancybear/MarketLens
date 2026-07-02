@@ -8,7 +8,7 @@ import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
   HANDLE_RADIUS, TOL, pointDist, distToRect,
 } from "../ToolRegistry";
-import { handle, applyStyle, line, canvasFont } from "./shared";
+import { handle, applyStyle, line, renderShapeText } from "./shared";
 
 const plugin: DrawingToolPlugin = {
   tool: "rectangle",
@@ -42,23 +42,7 @@ const plugin: DrawingToolPlugin = {
       g.restore();
     }
     // Inner text with alignment + bold/italic.
-    if (d.text) {
-      g.save();
-      g.setLineDash([]);
-      const fs = d.fontSize ?? 14;
-      g.font = canvasFont(fs, { bold: d.bold, italic: d.italic });
-      g.fillStyle = d.textColor || d.color;
-      const pad = 6;
-      const hAlign = d.textHAlign ?? "center";
-      const vAlign = d.textVAlign ?? "middle";
-      g.textAlign = hAlign;
-      g.textBaseline = vAlign === "middle" ? "middle" : vAlign === "top" ? "top" : "bottom";
-      const tx = hAlign === "left" ? ox + pad : hAlign === "right" ? ox + w - pad : ox + w / 2;
-      const ty = vAlign === "top" ? oy + pad : vAlign === "bottom" ? oy + h - pad : oy + h / 2;
-      for (const [i, ln] of d.text.split("\n").entries())
-        g.fillText(ln, tx, ty + i * fs * 1.25);
-      g.restore();
-    }
+    renderShapeText(g, d, ox, oy, w, h);
     if (selected) { handle(g, x1, y1, d.color); handle(g, x2, y2, d.color); }
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
