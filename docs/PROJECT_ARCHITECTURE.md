@@ -1,6 +1,6 @@
 # PROJECT ARCHITECTURE
 
-_Last updated 2026-07-02. Canonical high-level subsystem architecture._
+_Last updated 2026-07-03. Canonical high-level subsystem architecture._
 
 For lower-level render/data-flow details, see `docs/ARCHITECTURE.md`. For the current handoff and
 next action, see `docs/HANDOFF.md` and `docs/CURRENT_STATE.md`.
@@ -17,7 +17,7 @@ Top-level areas:
 
 ```text
 src/app          Next routes, layout, Firebase service worker route, push APIs
-src/components   chart, alerts, toolbar, trade, layout, notifications
+src/components   chart, alerts, toolbar, trade, layout, pine, notifications
 src/hooks        runtime loops and feature hooks
 src/services     market data, alert engine, notifications, trade engine
 src/server       server-only Firebase/push-alert worker helpers
@@ -97,6 +97,13 @@ Main chart overlays:
 - Alert overlay.
 - Replay selection layer.
 - Trade/position levels.
+
+Indicator rendering is split between built-in calculations and source-code indicators:
+
+- `services/indicators.ts` owns the shared `computeIndicator()` dispatch and built-ins.
+- `services/pineScript.ts` parses the safe Pine-like subset for `CUSTOM` indicators.
+- `components/pine/PineEditor.tsx` is mounted as a bottom-panel tab with embedded script storage.
+- `docs/INDICATOR_ARCHITECTURE.md` is the subsystem reference.
 
 The chart context exposes coordinate conversion and a render version so overlays repaint when the
 viewport changes.

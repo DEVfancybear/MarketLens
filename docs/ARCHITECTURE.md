@@ -3,7 +3,7 @@
 SMC Trading Terminal — a TradingView/FXReplay/TradeZella-style web terminal focused on
 Smart Money Concept backtesting via a no-look-ahead Replay engine.
 
-> Scope: the **current** architecture as built (updated 2026-06-28 for Jotai migration).
+> Scope: the **current** architecture as built (updated 2026-07-03 for Pine source-code indicators).
 > See `CURRENT_STATE.md` for the Phase-1 gap analysis and `NEXT_TASKS.md` for planned work.
 
 ---
@@ -88,11 +88,12 @@ src/
     trade/                TradePanel, OrderTicket, PositionsTable, RiskPanel, TradeLevels
     journal/              JournalPanel
     analytics/            AnalyticsPanel, EquityChart
+    pine/                 PineEditor
     ui/                   IconButton, Panel, Resizer, Dropdown
     notifications/        Toaster
   hooks/          useMarketData, useVisibleCandles, useReplayPlayback, useHotkeys,
                   useSmcEngine, useTradeRuntime, useStoreHydration, useResizable
-  services/       indicators.ts, replayEngine.ts, tradeEngine.ts, analyticsEngine.ts,
+  services/       indicators.ts, pineScript.ts, replayEngine.ts, tradeEngine.ts, analyticsEngine.ts,
                   alertEngine.ts, exporters.ts, storage.ts, exchange.ts,
                   market-data/{MarketDataService, HistoricalDataService, CandleEngine, symbols, providers/*},
                   notifications/{notify, sound, browser}, smc/{structure, fvg, orderBlock, liquidity, ...}
@@ -120,7 +121,7 @@ All state is managed through **Jotai atoms** — each store module exports:
 | Module | State atoms | Key atoms | Persistence |
 |---|---|---|---|
 | `uiStore` | theme, panels, bottomTab, rightOpen, bottomOpen, fullscreen, alertCenterOpen, gridVisible, logs | `logAtom`, `hydrateAtom`, `toggleThemeAtom` | localStorage `ui` |
-| `chartStore` | symbol, timeframe, candles, drawings, indicators, activeTool, drawColor, selectedDrawingId, selectedDrawingIds, drawingsLocked, drawingsHidden, editingIndicatorId, crosshair, loading | `addDrawingAtom`, `updateDrawingAtom`, `removeDrawingAtom`, `toggleIndicatorAtom`, ... (30 write atoms) | localStorage `drawings:<symbol>`, `indicators` |
+| `chartStore` | symbol, timeframe, candles, drawings, indicators, Pine scripts/editor state, activeTool, drawColor, selectedDrawingId, selectedDrawingIds, drawingsLocked, drawingsHidden, editingIndicatorId, crosshair, loading | `addDrawingAtom`, `updateDrawingAtom`, `removeDrawingAtom`, `toggleIndicatorAtom`, `savePineScriptAtom`, `addCustomIndicatorFromScriptAtom`, ... | localStorage `drawings:<symbol>`, `indicators`, `pineScripts` |
 | `replayStore` | active, selecting, reSelecting, playing, speed, cursor, anchor, total | `armAtom`, `disarmAtom`, `stepAtom`, `beginReSelectAtom`, `cancelReSelectAtom`, `confirmReSelectAtom` | — |
 | `smcStore` | snapshot, settings | `toggleSmcAtom`, `hydrateSmcAtom` | localStorage `smc-settings` |
 | `tradeStore` | equity, startingEquity, positions, price, time, tradeSymbol | `placeOrderAtom`, `closePositionAtom`, `closeAllAtom` | — |
@@ -198,7 +199,8 @@ chartStore.setCandlesAtom  → candlesAtom (master series)
         ▼
 useVisibleCandles()  → replay-aware slice
         ├─ PriceChart.setData()      candles + volume
-        ├─ indicators.ts             SMA/EMA/VWAP/RSI/MACD/ADR
+        ├─ indicators.ts + pineScript.ts
+        │  SMA/EMA/VWAP/RSI/MACD/ADR + CUSTOM Pine-like scripts
         ├─ useSmcEngine → smc.worker structure/FVG/OB/liquidity/...
         └─ useTradeRuntime           fills pending orders, SL/TP
 ```
@@ -223,7 +225,9 @@ useVisibleCandles()  → replay-aware slice
 
 ## 7. Domain engines (pure, replay-safe)
 
-- **Indicators** (`services/indicators.ts`): SMA, EMA, session-VWAP, RSI, MACD, ADR.
+- **Indicators** (`services/indicators.ts`, `services/pineScript.ts`): SMA, EMA, session-VWAP,
+  RSI, MACD, ADR, plus CUSTOM Pine-like source-code indicators. Full subsystem contract:
+  `docs/INDICATOR_ARCHITECTURE.md`.
 - **SMC** (`services/smc/*`): structure (HH/HL/LH/LL, BOS/CHOCH/MSS), FVG, Order Blocks,
   Liquidity (EQH/EQL + sweeps), Displacement, Sessions + kill zones — orchestrated by
   `smcEngine.ts`, run off-thread in `smc.worker.ts`.
@@ -237,7 +241,8 @@ All consume only the candle array passed in → inherently look-ahead-free.
 
 ## 8. Persistence
 
-- **localStorage:** `ui`, `drawings:<symbol>`, `indicators`, `watchlist`, `smc-settings`, `alerts`.
+- **localStorage:** `ui`, `drawings:<symbol>`, `indicators`, `pineScripts`, `watchlist`,
+  `smc-settings`, `alerts`.
 - **IndexedDB** (`services/storage.ts`, db `smc-terminal` v1): `journal` + `screenshots` via
   `idb`. SSR-guarded and lazy.
 

@@ -5,7 +5,13 @@ import { localStore } from "@/services/storage";
 export type Theme = "dark" | "light";
 
 /** Which bottom-panel tab is active. */
-export type BottomTab = "replay" | "trade" | "journal" | "analytics" | "logs";
+export type BottomTab =
+  | "replay"
+  | "trade"
+  | "journal"
+  | "analytics"
+  | "pine"
+  | "logs";
 
 interface PanelSizes {
   /** Right watchlist width (px). */
@@ -103,6 +109,12 @@ export const setPanelAtom = atom(
 export const setBottomTabAtom = atom(null, (_get, set, tab: BottomTab) => {
   set(bottomTabAtom, tab);
   set(bottomOpenAtom, true);
+  if (tab === "pine") {
+    set(panelsAtom, (prev) => ({
+      ...prev,
+      bottom: Math.max(prev.bottom, 320),
+    }));
+  }
 });
 
 export const toggleRightAtom = atom(null, (get, set) => {

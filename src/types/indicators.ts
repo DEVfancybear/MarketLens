@@ -1,6 +1,16 @@
 /** Technical indicator configuration. */
 
-export type IndicatorType = 'SMA' | 'EMA' | 'VWAP' | 'RSI' | 'MACD' | 'ADR';
+export type BuiltInIndicatorType = 'SMA' | 'EMA' | 'VWAP' | 'RSI' | 'MACD' | 'ADR';
+export type IndicatorType = BuiltInIndicatorType | 'CUSTOM';
+
+export interface CustomIndicatorScript {
+  id: string;
+  name: string;
+  sourceCode: string;
+  favorite: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
 
 export interface IndicatorConfig {
   id: string;
@@ -15,6 +25,12 @@ export interface IndicatorConfig {
   visible: boolean;
   /** Renders in a separate pane below price (RSI, MACD). */
   separatePane?: boolean;
+  /** Display name for source-code indicators. */
+  name?: string;
+  /** Saved script id for source-code indicators. */
+  scriptId?: string;
+  /** Pine-like source code for source-code indicators. */
+  sourceCode?: string;
 }
 
 /** A single computed indicator value keyed by time. */

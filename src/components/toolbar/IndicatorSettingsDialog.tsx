@@ -14,11 +14,11 @@ import {
   updateIndicatorAtom,
   removeIndicatorAtom,
 } from "@/store/chartStore";
-import type { IndicatorConfig, IndicatorType } from "@/types";
+import type { BuiltInIndicatorType, IndicatorConfig } from "@/types";
 import { defaultIndicator } from "@/services/indicators";
 import { cn } from "@/utils/cn";
 
-const INDICATOR_TYPES: { type: IndicatorType; label: string }[] = [
+const INDICATOR_TYPES: { type: BuiltInIndicatorType; label: string }[] = [
   { type: "SMA", label: "Simple Moving Average" },
   { type: "EMA", label: "Exponential Moving Average" },
   { type: "VWAP", label: "VWAP (session)" },
@@ -111,7 +111,7 @@ export function IndicatorSettingsDialog() {
   const indicator = indicators.find((i) => i.id === editingId);
   const isNew = indicator == null;
 
-  const [type, setType] = useState<IndicatorType>("SMA");
+  const [type, setType] = useState<BuiltInIndicatorType>("SMA");
   const [length, setLength] = useState(50);
   const [length2, setLength2] = useState(9);
   const [length3, setLength3] = useState(26);
@@ -121,7 +121,7 @@ export function IndicatorSettingsDialog() {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    if (indicator) {
+    if (indicator && indicator.type !== "CUSTOM") {
       setType(indicator.type);
       setLength(indicator.length);
       setLength2(indicator.length2 ?? 9);
@@ -132,6 +132,10 @@ export function IndicatorSettingsDialog() {
       setVisible(indicator.visible);
     }
   }, [editingId, indicator]);
+
+  useEffect(() => {
+    if (indicator?.type === "CUSTOM") setEditingIndicator(null);
+  }, [indicator, setEditingIndicator]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -166,7 +170,7 @@ export function IndicatorSettingsDialog() {
     close();
   };
 
-  const handleTypeChange = (t: IndicatorType) => {
+  const handleTypeChange = (t: BuiltInIndicatorType) => {
     setType(t);
     const def = defaultIndicator(t, editingId);
     setLength(def.length);

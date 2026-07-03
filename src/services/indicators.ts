@@ -3,8 +3,15 @@
  * order and produces values aligned by time, so they are inherently
  * replay-safe (no look-ahead): pass the visible slice and recompute.
  */
-import type { Candle, IndicatorConfig, IndicatorResult, LinePoint } from '@/types';
+import type {
+  BuiltInIndicatorType,
+  Candle,
+  IndicatorConfig,
+  IndicatorResult,
+  LinePoint,
+} from '@/types';
 import { dayKey } from '@/utils/time';
+import { computeCustomIndicator } from '@/services/pineScript';
 
 export function sma(candles: Candle[], length: number): LinePoint[] {
   const out: LinePoint[] = [];
@@ -181,13 +188,15 @@ export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): Indic
         ],
       };
     }
+    case 'CUSTOM':
+      return computeCustomIndicator(cfg, candles);
     default:
       return { id: cfg.id, series: [] };
   }
 }
 
 /** Sensible defaults when a user adds an indicator from the menu. */
-export function defaultIndicator(type: IndicatorConfig['type'], id: string): IndicatorConfig {
+export function defaultIndicator(type: BuiltInIndicatorType, id: string): IndicatorConfig {
   switch (type) {
     case 'SMA': return { id, type, length: 50, color: '#2962ff', visible: true };
     case 'EMA': return { id, type, length: 21, color: '#ff6d00', visible: true };

@@ -3,17 +3,19 @@ import { atom, getDefaultStore } from "jotai";
 import { useAtomValue } from "jotai";
 import type {
   Candle,
+  BuiltInIndicatorType,
+  CustomIndicatorScript,
   Drawing,
   DrawingTemplate,
   DrawingTool,
   IndicatorConfig,
-  IndicatorType,
   Timeframe,
 } from "@/types";
 import { TEMPLATE_STYLE_KEYS, styleFamily } from "@/types";
 import { localStore } from "@/services/storage";
 import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
+import { DEFAULT_PINE_SOURCE, extractPineScriptMeta } from "@/services/pineScript";
 
 // Default to a Binance crypto symbol so the chart streams live with no API key.
 const DEFAULT_SYMBOL = "BTCUSDT";
@@ -26,6 +28,7 @@ function drawingsKey(symbol: string) {
 // Style templates are GLOBAL (not per-symbol) — a trendline preset applies on
 // any chart, mirroring TradingView's template list.
 const TEMPLATES_KEY = "drawingTemplates";
+const PINE_SCRIPTS_KEY = "pineScripts";
 
 // ---------------------------------------------------------------------------
 // Primitive atoms (one per state field)
@@ -37,6 +40,10 @@ export const candlesAtom = atom<Candle[]>([]);
 export const loadingAtom = atom<boolean>(false);
 export const drawingsAtom = atom<Drawing[]>([]);
 export const indicatorsAtom = atom<IndicatorConfig[]>([]);
+export const pineScriptsAtom = atom<CustomIndicatorScript[]>([]);
+export const pineEditorScriptIdAtom = atom<string | null>(null);
+export const pineEditorTitleAtom = atom<string>("Untitled script");
+export const pineEditorSourceAtom = atom<string>(DEFAULT_PINE_SOURCE);
 export const activeToolAtom = atom<DrawingTool>("cursor");
 export const drawColorAtom = atom<string>("#2962ff");
 export const selectedDrawingIdAtom = atom<string | null>(null);
@@ -270,7 +277,7 @@ export const clearDrawingsAtom = atom(null, (_get, set) => {
   localStore.set(drawingsKey(_get(symbolAtom)), []);
 });
 
-export const addIndicatorAtom = atom(null, (_get, set, type: IndicatorType) => {
+export const addIndicatorAtom = atom(null, (_get, set, type: BuiltInIndicatorType) => {
   const cfg = defaultIndicator(type, uid("ind"));
   const indicators = [..._get(indicatorsAtom), cfg];
   set(indicatorsAtom, indicators);
@@ -279,7 +286,7 @@ export const addIndicatorAtom = atom(null, (_get, set, type: IndicatorType) => {
 
 export const toggleIndicatorAtom = atom(
   null,
-  (_get, set, type: IndicatorType) => {
+  (_get, set, type: BuiltInIndicatorType) => {
     const current = _get(indicatorsAtom);
     const has = current.some((i) => i.type === type);
     const indicators = has
@@ -311,6 +318,161 @@ export const removeIndicatorAtom = atom(null, (_get, set, id: string) => {
 export const clearIndicatorsAtom = atom(null, (_get, set) => {
   set(indicatorsAtom, []);
   localStore.set("indicators", []);
+});
+
+function customIndicatorConfig(
+  script: Pick<CustomIndicatorScript, "id" | "name" | "sourceCode">,
+  id = uid("ind"),
+): IndicatorConfig {
+  const meta = extractPineScriptMeta(script.sourceCode);
+  return {
+    id,
+    type: "CUSTOM",
+    length: 0,
+    color: "#2962ff",
+    visible: true,
+    separatePane: !meta.overlay,
+    name: script.name.trim() || meta.name,
+    scriptId: script.id,
+    sourceCode: script.sourceCode,
+  };
+}
+
+function persistIndicators(indicators: IndicatorConfig[]) {
+  localStore.set("indicators", indicators);
+}
+
+function persistPineScripts(scripts: CustomIndicatorScript[]) {
+  localStore.set(PINE_SCRIPTS_KEY, scripts);
+}
+
+export const newPineScriptAtom = atom(null, (_get, set) => {
+  set(pineEditorScriptIdAtom, null);
+  set(pineEditorTitleAtom, "Untitled script");
+  set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
+});
+
+export const loadPineScriptAtom = atom(null, (_get, set, id: string) => {
+  const script = _get(pineScriptsAtom).find((item) => item.id === id);
+  if (!script) return;
+  set(pineEditorScriptIdAtom, script.id);
+  set(pineEditorTitleAtom, script.name);
+  set(pineEditorSourceAtom, script.sourceCode);
+});
+
+export const savePineScriptAtom = atom(
+  null,
+  (
+    _get,
+    set,
+    arg: { id?: string | null; name: string; sourceCode: string },
+  ) => {
+    const meta = extractPineScriptMeta(arg.sourceCode);
+    const now = Date.now();
+    const existing = arg.id
+      ? _get(pineScriptsAtom).find((item) => item.id === arg.id)
+      : undefined;
+    const script: CustomIndicatorScript = {
+      id: existing?.id ?? uid("pine"),
+      name: arg.name.trim() || meta.name || "Untitled script",
+      sourceCode: arg.sourceCode,
+      favorite: existing?.favorite ?? false,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    const scripts = existing
+      ? _get(pineScriptsAtom).map((item) =>
+          item.id === script.id ? script : item,
+        )
+      : [script, ..._get(pineScriptsAtom)];
+    set(pineScriptsAtom, scripts);
+    persistPineScripts(scripts);
+
+    set(pineEditorScriptIdAtom, script.id);
+    set(pineEditorTitleAtom, script.name);
+    set(pineEditorSourceAtom, script.sourceCode);
+
+    const indicators = _get(indicatorsAtom).map((indicator) =>
+      indicator.type === "CUSTOM" && indicator.scriptId === script.id
+        ? {
+            ...indicator,
+            name: script.name,
+            sourceCode: script.sourceCode,
+            separatePane: !meta.overlay,
+          }
+        : indicator,
+    );
+    set(indicatorsAtom, indicators);
+    persistIndicators(indicators);
+
+    return script;
+  },
+);
+
+export const addCustomIndicatorFromScriptAtom = atom(
+  null,
+  (_get, set, script: CustomIndicatorScript) => {
+    const cfg = customIndicatorConfig(script);
+    const current = _get(indicatorsAtom);
+    const existing = current.find(
+      (item) => item.type === "CUSTOM" && item.scriptId === script.id,
+    );
+    const indicators = existing
+      ? current.map((item) =>
+          item.id === existing.id
+            ? { ...cfg, id: existing.id, visible: true }
+            : item,
+        )
+      : [...current, cfg];
+    set(indicatorsAtom, indicators);
+    persistIndicators(indicators);
+  },
+);
+
+export const addCustomIndicatorFromSourceAtom = atom(
+  null,
+  (
+    _get,
+    set,
+    arg: { name: string; sourceCode: string; scriptId?: string | null },
+  ) => {
+    const meta = extractPineScriptMeta(arg.sourceCode);
+    const cfg = customIndicatorConfig({
+      id: arg.scriptId ?? uid("pine-draft"),
+      name: arg.name.trim() || meta.name,
+      sourceCode: arg.sourceCode,
+    });
+    const current = _get(indicatorsAtom);
+    const existing = arg.scriptId
+      ? current.find(
+          (item) => item.type === "CUSTOM" && item.scriptId === arg.scriptId,
+        )
+      : undefined;
+    const indicators = existing
+      ? current.map((item) =>
+          item.id === existing.id ? { ...cfg, id: existing.id } : item,
+        )
+      : [...current, cfg];
+    set(indicatorsAtom, indicators);
+    persistIndicators(indicators);
+  },
+);
+
+export const deletePineScriptAtom = atom(null, (_get, set, id: string) => {
+  const scripts = _get(pineScriptsAtom).filter((item) => item.id !== id);
+  set(pineScriptsAtom, scripts);
+  persistPineScripts(scripts);
+  if (_get(pineEditorScriptIdAtom) === id) {
+    set(newPineScriptAtom);
+  }
+});
+
+export const togglePineFavoriteAtom = atom(null, (_get, set, id: string) => {
+  const scripts = _get(pineScriptsAtom).map((item) =>
+    item.id === id ? { ...item, favorite: !item.favorite } : item,
+  );
+  set(pineScriptsAtom, scripts);
+  persistPineScripts(scripts);
 });
 
 export const setCrosshairAtom = atom(
@@ -417,6 +579,10 @@ export const hydrateAtom = atom(null, (_get, set) => {
   );
   set(indicatorsAtom, localStore.get<IndicatorConfig[]>("indicators", []));
   set(
+    pineScriptsAtom,
+    localStore.get<CustomIndicatorScript[]>(PINE_SCRIPTS_KEY, []),
+  );
+  set(
     drawingTemplatesAtom,
     localStore.get<DrawingTemplate[]>(TEMPLATES_KEY, []),
   );
@@ -433,6 +599,10 @@ export const chartStateAtom = atom((get) => ({
   loading: get(loadingAtom),
   drawings: get(drawingsAtom),
   indicators: get(indicatorsAtom),
+  pineScripts: get(pineScriptsAtom),
+  pineEditorScriptId: get(pineEditorScriptIdAtom),
+  pineEditorTitle: get(pineEditorTitleAtom),
+  pineEditorSource: get(pineEditorSourceAtom),
   activeTool: get(activeToolAtom),
   drawColor: get(drawColorAtom),
   selectedDrawingId: get(selectedDrawingIdAtom),

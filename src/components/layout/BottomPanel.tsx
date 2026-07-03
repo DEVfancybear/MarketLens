@@ -12,12 +12,14 @@ import { ReplayPanel } from "@/components/replay/ReplayPanel";
 import { TradePanel } from "@/components/trade/TradePanel";
 import { JournalPanel } from "@/components/journal/JournalPanel";
 import { AnalyticsPanel } from "@/components/analytics/AnalyticsPanel";
+import { PineEditor } from "@/components/pine/PineEditor";
 
 const TABS: { key: BottomTab; label: string }[] = [
   { key: "replay", label: "Replay" },
   { key: "trade", label: "Trade" },
   { key: "journal", label: "Journal" },
   { key: "analytics", label: "Analytics" },
+  { key: "pine", label: "Pine Editor" },
   { key: "logs", label: "Logs" },
 ];
 
@@ -57,6 +59,7 @@ export function BottomPanel() {
         {bottomTab === "trade" && <TradePanel />}
         {bottomTab === "journal" && <JournalPanel />}
         {bottomTab === "analytics" && <AnalyticsPanel />}
+        {bottomTab === "pine" && <PineEditor />}
         {bottomTab === "logs" && <LogsView />}
       </div>
     </div>

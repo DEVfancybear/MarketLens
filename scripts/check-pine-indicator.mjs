@@ -1,0 +1,84 @@
+import fs from "node:fs";
+
+const files = {
+  bottomPanel: "src/components/layout/BottomPanel.tsx",
+  pineEditor: "src/components/pine/PineEditor.tsx",
+  chartStore: "src/store/chartStore.ts",
+  pineScript: "src/services/pineScript.ts",
+  indicators: "src/services/indicators.ts",
+  indicatorMenu: "src/components/toolbar/IndicatorMenu.tsx",
+  indicatorPane: "src/components/chart/IndicatorPane.tsx",
+  indicatorSettings: "src/components/toolbar/IndicatorSettingsDialog.tsx",
+};
+
+const source = Object.fromEntries(
+  Object.entries(files).map(([key, file]) => [key, fs.readFileSync(file, "utf8")]),
+);
+
+const checks = [
+  {
+    name: "Pine Editor is mounted as a bottom-panel tab",
+    ok:
+      source.bottomPanel.includes('key: "pine"') &&
+      source.bottomPanel.includes("<PineEditor />"),
+  },
+  {
+    name: "Pine script library is embedded in the editor, not rendered as a popup",
+    ok:
+      source.pineEditor.includes("My scripts") &&
+      source.pineEditor.includes("filteredScripts.map") &&
+      !source.pineEditor.includes("createPortal") &&
+      !source.pineEditor.includes("setPineLibraryOpen"),
+  },
+  {
+    name: "Saved scripts persist separately from active indicator instances",
+    ok:
+      source.chartStore.includes('const PINE_SCRIPTS_KEY = "pineScripts"') &&
+      source.chartStore.includes("pineScriptsAtom") &&
+      source.chartStore.includes("indicatorsAtom"),
+  },
+  {
+    name: "Saving a script updates active CUSTOM indicators with the same scriptId",
+    ok:
+      source.chartStore.includes('indicator.type === "CUSTOM"') &&
+      source.chartStore.includes("indicator.scriptId === script.id") &&
+      source.chartStore.includes("sourceCode: script.sourceCode"),
+  },
+  {
+    name: "CUSTOM indicators route through the Pine compiler",
+    ok:
+      source.indicators.includes("case 'CUSTOM'") &&
+      source.indicators.includes("computeCustomIndicator(cfg, candles)"),
+  },
+  {
+    name: "Pine compiler is whitelist-based and does not execute user JavaScript",
+    ok:
+      source.pineScript.includes("function evaluateCall") &&
+      source.pineScript.includes('case "ta.sma"') &&
+      source.pineScript.includes("compilePineScript") &&
+      !source.pineScript.includes("eval(") &&
+      !source.pineScript.includes("new Function"),
+  },
+  {
+    name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",
+    ok:
+      source.indicatorMenu.includes('ind.type === "CUSTOM"') &&
+      source.indicatorMenu.includes('setBottomTab("pine")') &&
+      source.indicatorPane.includes('cfg.type === "CUSTOM"') &&
+      source.indicatorPane.includes('setBottomTab("pine")') &&
+      source.indicatorSettings.includes('indicator?.type === "CUSTOM"'),
+  },
+];
+
+const failed = checks.filter((check) => !check.ok);
+
+if (failed.length > 0) {
+  for (const check of failed) {
+    console.error(`FAIL ${check.name}`);
+  }
+  process.exit(1);
+}
+
+for (const check of checks) {
+  console.log(`PASS ${check.name}`);
+}

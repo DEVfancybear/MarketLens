@@ -4,6 +4,46 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Pine Script editor + CUSTOM source-code indicators (2026-07-03)
+- New **Pine Editor** bottom-panel tab (`src/components/pine/PineEditor.tsx`): TradingView-style
+  layout with a "My scripts" sidebar (search, favorite star, Add/Edit/Delete per script), script
+  name field, line-numbered code editor, and New / Run ("Save and add to chart") / Save actions.
+  Opening the tab auto-expands the bottom panel to at least 320px.
+- New mini Pine interpreter `src/services/pineScript.ts`: parses `indicator()/study()` metadata
+  (title, `overlay=`), top-level variable assignments (`=`/`:=`), arithmetic expressions with
+  precedence/unary minus/parentheses, source series (`open/high/low/close/volume/hl2/hlc3/ohlc4`),
+  and functions `ta.sma/ema/rma/rsi/vwap/highest/lowest/change/atr`, `math.abs/max/min`, `nz`,
+  `input.*` passthrough. Each `plot()` becomes one line series with title + color
+  (`color.*` names, hex literals, `color.new()`). Compile errors are reported per line/plot and
+  block adding the script to the chart.
+- New indicator type `CUSTOM` (`IndicatorType = BuiltInIndicatorType | 'CUSTOM'`) carrying
+  `name`/`scriptId`/`sourceCode`; `computeIndicator()` routes it through
+  `computeCustomIndicator()`. `overlay=true` scripts render on the price chart, `overlay=false`
+  in a separate `IndicatorPane` — both reuse the existing multi-series render paths unchanged.
+- Scripts persist under the `pineScripts` localStorage key (`CustomIndicatorScript` type) with
+  new chartStore atoms: `pineScriptsAtom`, editor atoms, `savePineScriptAtom`,
+  `addCustomIndicatorFromScriptAtom`, `addCustomIndicatorFromSourceAtom`, `loadPineScriptAtom`,
+  `deletePineScriptAtom`, `togglePineFavoriteAtom`, `newPineScriptAtom`. Saving a script also
+  syncs name/source/pane into any chart indicators using it.
+- `IndicatorMenu` gained an "Open Pine Editor" entry; the settings gear on a CUSTOM indicator
+  (menu + pane header) opens the Pine Editor with that script loaded instead of the built-in
+  settings dialog. `IndicatorSettingsDialog`/`addIndicatorAtom`/`toggleIndicatorAtom` are now
+  typed to `BuiltInIndicatorType`.
+- Naming: the untouched default editor title ("Untitled script") is treated as a placeholder, so
+  a new script takes its name from the source's `indicator("…")` title until the user names it
+  explicitly.
+- Files: `src/components/pine/PineEditor.tsx` (new), `src/services/pineScript.ts` (new),
+  `src/components/layout/BottomPanel.tsx`, `src/components/toolbar/IndicatorMenu.tsx`,
+  `src/components/toolbar/IndicatorSettingsDialog.tsx`, `src/components/chart/IndicatorPane.tsx`,
+  `src/services/indicators.ts`, `src/store/chartStore.ts`, `src/store/uiStore.ts`,
+  `src/types/indicators.ts`, `scripts/check-pine-indicator.mjs`, and
+  `docs/INDICATOR_ARCHITECTURE.md`.
+- Guard: added `npm run check:pine-indicator` to lock the no-popup bottom-panel contract,
+  `pineScripts` persistence, CUSTOM compiler routing, whitelist safety, and settings gear routing
+  back to the Pine Editor.
+- type-check pass, lint pass, build pass, and `npm run check:pine-indicator` pass. End-to-end
+  browser verification remains a manual follow-up for this source-code indicator flow.
+
 ### Fixed - Path/freeform drawing TradingView parity (2026-07-03)
 - Aligned the click-to-add `path` flow with TradingView-style multi-point drawing semantics:
   double-click, right-click, and `Esc` finish an open drawing when enough points exist.

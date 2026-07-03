@@ -11,9 +11,11 @@ import type { Candle, IndicatorConfig } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import { themeAtom } from "@/store/uiStore";
 import {
+  loadPineScriptAtom,
   removeIndicatorAtom,
   setEditingIndicatorAtom,
 } from "@/store/chartStore";
+import { setBottomTabAtom } from "@/store/uiStore";
 import { chartColors } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
 import { IconButton } from "@/components/ui/IconButton";
@@ -37,6 +39,8 @@ export function IndicatorPane({
   const theme = useAtomValue(themeAtom);
   const removeIndicator = useSetAtom(removeIndicatorAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
+  const loadPineScript = useSetAtom(loadPineScriptAtom);
+  const setBottomTab = useSetAtom(setBottomTabAtom);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -155,10 +159,18 @@ export function IndicatorPane({
     <div className="relative h-[120px] w-full border-t border-terminal-border">
       <div className="absolute left-2 top-1 z-10 flex items-center gap-1 text-2xs text-ink-muted">
         <span className="font-semibold">
-          {cfg.type} {cfg.type !== "VWAP" ? cfg.length : ""}
+          {cfg.type === "CUSTOM" ? (cfg.name ?? "Custom script") : cfg.type}{" "}
+          {cfg.type !== "VWAP" && cfg.type !== "CUSTOM" ? cfg.length : ""}
         </span>
         <button
-          onClick={() => setEditingIndicator(cfg.id)}
+          onClick={() => {
+            if (cfg.type === "CUSTOM" && cfg.scriptId) {
+              loadPineScript(cfg.scriptId);
+              setBottomTab("pine");
+            } else {
+              setEditingIndicator(cfg.id);
+            }
+          }}
           className="rounded p-0.5 text-ink-muted hover:text-ink hover:bg-terminal-hover"
           title={`${cfg.type} settings`}
         >

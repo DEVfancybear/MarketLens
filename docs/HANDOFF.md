@@ -1,6 +1,6 @@
 # HANDOFF
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-02 (Phase 6B MT5 protocol plan)._
+_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-03 (Pine Editor + source-code indicators)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained
@@ -15,7 +15,8 @@ alerts** (Phase 2.1 — select / drag-to-reprice / delete / edit / right-click +
 **Phase 4.3 (Shape Tools Suite) is COMPLETE** — 8 shapes + fill system + supply/demand zones.
 **Phase 4.2.2 (Tool Group System) is COMPLETE** — flyout menus fixed via `createPortal`.
 **Phase 4.4 (Fibonacci Suite) is COMPLETE** — fib retracement + trend-based fib extension drawing tools.
-**Phase 5 (Left Toolbar / Indicator Engine) is COMPLETE** — 9-group toolbar, indicator settings dialogs, hotkey system.
+**Phase 5 (Left Toolbar / Indicator Engine) is COMPLETE** — 9-group toolbar, indicator settings
+dialogs, hotkey system, and bottom-panel Pine Editor for source-code indicators.
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
 notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
 cron calling `/api/push/evaluate`) runs next to the Next server. Continue with Phase 6B MT5 Bridge
@@ -71,6 +72,13 @@ extension: A-B impulse, C projection origin, `C + ratio * (B - A)`, with explici
 mapping. Legacy `fib` mirrors retracement for saved drawings. Read
 `docs/FIBONACCI_TOOLS_MAINTENANCE.md` and guard with `npm run check:fibonacci-tools`.
 
+Recent indicator note: Pine source-code indicators now live in the bottom `Pine Editor` tab, with
+an embedded `My scripts` sidebar rather than a popup. Saved scripts persist under `pineScripts`;
+active chart instances remain in `indicators` as type `CUSTOM`. Custom scripts are parsed by the
+whitelist compiler in `src/services/pineScript.ts`; do not introduce `eval`, `new Function`, or any
+general JavaScript execution path for user source. Read `docs/INDICATOR_ARCHITECTURE.md` and guard
+with `npm run check:pine-indicator`.
+
 ## Repo state
 - **Branch:** `master`
 - **Remote:** `origin → https://github.com/DEVfancybear/tradingview.git`
@@ -108,7 +116,9 @@ mapping. Legacy `fib` mirrors retracement for saved drawings. Read
   pane assignment, and visibility. `IndicatorMenu` shows active indicators with settings gear and
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
-  Escape deselect/cancel). Left rail width increased 40->52px. See `CURRENT_PROGRESS.md`.
+  Escape deselect/cancel). Source-code indicators are handled by the bottom `Pine Editor` tab
+  and `src/services/pineScript.ts`; see `docs/INDICATOR_ARCHITECTURE.md`. Left rail width
+  increased 40->52px. See `CURRENT_PROGRESS.md`.
 - **Position settings dialog (updated 2026-07-01):** `chart/PositionSettingsDialog.tsx` is a
   TradingView-style Inputs/Style/Visibility modal for the long/short tool, opened via the gear
   on the floating drawing toolbar (`editingDrawingIdAtom` / `setEditingDrawingAtom`, mounted in
@@ -373,8 +383,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - ✅ **Phase 4.4 — Fibonacci Suite: COMPLETE.** Fib retracement + trend-based fib extension
   drawing tools with full plugin support. Legacy `fib` tool retained for backward compatibility.
 - ✅ **Phase 5 — Left Toolbar / Indicator Engine: COMPLETE.** 9-group toolbar (25+ tools),
-  indicator settings dialog (type/length/colour/pane/visibility), hotkey system (1–9 switch,
-  Delete, Ctrl+D, Ctrl+A, Ctrl+I, Escape).
+  indicator settings dialog (type/length/colour/pane/visibility), bottom Pine Editor for
+  source-code indicators, and hotkey system (1–9 switch, Delete, Ctrl+D, Ctrl+A, Ctrl+I, Escape).
 - ❌ Real broker/MT5 order routing + Firebase mobile push (Phase 6 — alert dispatch seam ready in
   `services/notifications/notify.ts`).
 
@@ -447,7 +457,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
   `components/chart/drawing/tools/plugins/{FibRetracement,FibExtension}Tool.ts` (Phase 4.4).
 - Left toolbar + indicators (Phase 5): `components/toolbar/DrawingToolbar.tsx`,
   `components/toolbar/IndicatorMenu.tsx`, `components/toolbar/IndicatorSettingsDialog.tsx`,
-  `components/chart/IndicatorPane.tsx`, `hooks/useHotkeys.ts`.
+  `components/chart/IndicatorPane.tsx`, `components/pine/PineEditor.tsx`,
+  `services/pineScript.ts`, `hooks/useHotkeys.ts`. Architecture: `docs/INDICATOR_ARCHITECTURE.md`.
 - Visibility gate: `hooks/useVisibleCandles.ts`.
 - Watchlist: `components/watchlist/Watchlist.tsx`, `store/watchlistStore.ts`.
 - Runtime loops: `components/layout/GlobalRuntime.tsx`.

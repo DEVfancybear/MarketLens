@@ -1,5 +1,5 @@
 "use client";
-import { LineChart, Check, Settings } from "lucide-react";
+import { Code2, LineChart, Check, Settings } from "lucide-react";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { useAtomValue, useSetAtom } from "jotai";
 import { getDefaultStore } from "jotai";
@@ -9,11 +9,13 @@ import {
   removeIndicatorAtom,
   setEditingIndicatorAtom,
   clearIndicatorsAtom,
+  loadPineScriptAtom,
 } from "@/store/chartStore";
-import type { IndicatorType } from "@/types";
+import { setBottomTabAtom } from "@/store/uiStore";
+import type { BuiltInIndicatorType } from "@/types";
 import { cn } from "@/utils/cn";
 
-const OPTIONS: { type: IndicatorType; label: string }[] = [
+const OPTIONS: { type: BuiltInIndicatorType; label: string }[] = [
   { type: "SMA", label: "Simple Moving Average" },
   { type: "EMA", label: "Exponential Moving Average" },
   { type: "VWAP", label: "VWAP (session)" },
@@ -27,6 +29,8 @@ export function IndicatorMenu() {
   const toggleIndicator = useSetAtom(toggleIndicatorAtom);
   const removeIndicator = useSetAtom(removeIndicatorAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
+  const loadPineScript = useSetAtom(loadPineScriptAtom);
+  const setBottomTab = useSetAtom(setBottomTabAtom);
   // Derived from live store state every render — never stale.
   const active = new Set(indicators.map((i) => i.type));
 
@@ -42,6 +46,19 @@ export function IndicatorMenu() {
     >
       {(close) => (
         <div>
+          <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
+            Source scripts
+          </div>
+          <MenuItem
+            onClick={() => {
+              setBottomTab("pine");
+              close();
+            }}
+          >
+            <Code2 size={13} className="text-brand" />
+            <span className="flex-1">Open Pine Editor</span>
+          </MenuItem>
+          <div className="mx-3 my-1 border-t border-terminal-border" />
           <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
             Add indicator
           </div>
@@ -96,14 +113,21 @@ export function IndicatorMenu() {
                       style={{ background: ind.color }}
                     />
                     <span className="flex-1 truncate">
-                      {ind.type}
+                      {ind.type === "CUSTOM"
+                        ? (ind.name ?? "Custom script")
+                        : ind.type}
                       {ind.length > 0 && ` (${ind.length})`}
                     </span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         close();
-                        setEditingIndicator(ind.id);
+                        if (ind.type === "CUSTOM" && ind.scriptId) {
+                          loadPineScript(ind.scriptId);
+                          setBottomTab("pine");
+                        } else {
+                          setEditingIndicator(ind.id);
+                        }
                       }}
                       className="rounded p-0.5 text-ink-muted hover:text-ink hover:bg-terminal-hover/50"
                       title="Settings"

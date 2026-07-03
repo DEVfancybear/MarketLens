@@ -1,8 +1,26 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-03 (Fibonacci drawing tools parity)_
+_Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 
 ## Completed this session (2026-07-03)
+
+### Pine Editor + source-code indicators
+- Added a TradingView-style Pine Editor as a bottom-panel tab, with an embedded "My scripts"
+  sidebar for search, favorite, load/edit, add-to-chart, and delete. There is no separate popup
+  for script storage.
+- Added `CUSTOM` indicators backed by saved Pine-like source code. Scripts persist separately in
+  `pineScripts`, while active chart indicator instances remain in `indicators`.
+- Added a safe mini Pine compiler in `src/services/pineScript.ts`; it parses a whitelisted subset
+  (`indicator()/study()`, assignments, arithmetic, common `ta.*` functions, `math.*`, `nz`,
+  `input.*`, and `plot()` metadata) and never executes user source as JavaScript.
+- Wired custom indicators into the existing chart renderer: `overlay=true` scripts render on the
+  main price chart, while separate-pane scripts render through `IndicatorPane`.
+- CUSTOM indicator settings gears now load the saved script into the bottom Pine Editor instead of
+  opening the built-in indicator settings dialog.
+- Docs: added `docs/INDICATOR_ARCHITECTURE.md`.
+- Guard: added `npm run check:pine-indicator`.
+- Verification: `npm run check:pine-indicator`, `npm run typecheck`, `npm run lint`, and
+  `npm run build` pass. Manual browser end-to-end verification remains a follow-up.
 
 ### Path/freeform drawing TradingView parity
 - Reference checked: TradingView Help Center `Polyline drawing tool` documents multi-point
