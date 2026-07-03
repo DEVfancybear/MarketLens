@@ -206,6 +206,8 @@ Supported identifiers:
 - Derived sources: `hl2`, `hlc3`, `ohlc4`
 - Constants: `true`, `false`, `na`
 - Pine enum-like identifiers used in metadata: `input.*`, `plot.style_*`, `format.*`
+- Named call arguments in whitelisted calls, including Pine v4 `input(defval=...)`
+- Pine color constants used by source scripts, including the VSA palette colors
 
 Supported expression features:
 

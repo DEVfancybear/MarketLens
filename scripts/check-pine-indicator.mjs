@@ -62,6 +62,8 @@ const checks = [
   {
     name: "Pine compiler supports VSA-style columns, ternary palettes, comparisons, and history",
     ok:
+      source.pineScript.includes("interface PineCallArg") &&
+      source.pineScript.includes('namedCallArg(args, "defval")') &&
       source.pineScript.includes("parseTernary") &&
       source.pineScript.includes("compareValues") &&
       source.pineScript.includes("logicalValues") &&
@@ -69,6 +71,16 @@ const checks = [
       source.pineScript.includes("evaluateRecursiveAssignment") &&
       source.pineScript.includes("style_(columns|histogram)") &&
       source.pineScript.includes("colorSeries"),
+  },
+  {
+    name: "Pine color constants match TradingView-style VSA palette",
+    ok:
+      source.pineScript.includes('"color.purple": "#9c27b0"') &&
+      source.pineScript.includes('"color.red": "#f44336"') &&
+      source.pineScript.includes('"color.orange": "#ff9800"') &&
+      source.pineScript.includes('"color.green": "#4caf50"') &&
+      source.pineScript.includes('"color.blue": "#2196f3"') &&
+      source.pineScript.includes('"color.silver": "#b2b5be"'),
   },
   {
     name: "Indicator renderers support histogram series and per-bar colors",

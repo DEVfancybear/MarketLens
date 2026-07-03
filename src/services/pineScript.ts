@@ -17,11 +17,11 @@ const DEFAULT_COLORS = [
 ];
 
 const NAMED_COLORS: Record<string, string> = {
-  "color.blue": "#2962ff",
+  "color.blue": "#2196f3",
   "color.orange": "#ff9800",
-  "color.green": "#26a69a",
-  "color.red": "#ef5350",
-  "color.purple": "#ab47bc",
+  "color.green": "#4caf50",
+  "color.red": "#f44336",
+  "color.purple": "#9c27b0",
   "color.aqua": "#00bcd4",
   "color.yellow": "#fdd835",
   "color.white": "#ffffff",
@@ -29,11 +29,11 @@ const NAMED_COLORS: Record<string, string> = {
   "color.gray": "#787b86",
   "color.grey": "#787b86",
   "color.silver": "#b2b5be",
-  blue: "#2962ff",
+  blue: "#2196f3",
   orange: "#ff9800",
-  green: "#26a69a",
-  red: "#ef5350",
-  purple: "#ab47bc",
+  green: "#4caf50",
+  red: "#f44336",
+  purple: "#9c27b0",
   aqua: "#00bcd4",
   yellow: "#fdd835",
   white: "#ffffff",
@@ -64,6 +64,11 @@ type PineValue =
   | { kind: "colorSeries"; values: ColorSeriesData }
   | { kind: "string"; value: string }
   | { kind: "bool"; value: boolean };
+
+interface PineCallArg {
+  name?: string;
+  value: PineValue;
+}
 
 type Token =
   | { kind: "number"; value: number }
@@ -461,18 +466,19 @@ class ExpressionParser {
       const next = this.peek();
       if (next.kind === "paren" && next.value === "(") {
         this.next();
-        const args: PineValue[] = [];
+        const args: PineCallArg[] = [];
         const maybeClose = this.peek();
         if (!(maybeClose.kind === "paren" && maybeClose.value === ")")) {
           while (true) {
+            let argName: string | undefined;
             if (
               this.peek().kind === "identifier" &&
               this.tokens[this.index + 1]?.kind === "equals"
             ) {
-              this.next();
+              argName = (this.next() as Extract<Token, { kind: "identifier" }>).value;
               this.next();
             }
-            args.push(this.parseTernary());
+            args.push({ name: argName, value: this.parseTernary() });
             if (this.peek().kind === "comma") {
               this.next();
               continue;
@@ -767,40 +773,109 @@ function pairAverage(candles: Candle[], keys: (keyof Candle)[]): PineValue {
   };
 }
 
-function evaluateCall(name: string, args: PineValue[], context: EvalContext): PineValue {
+function callArg(args: PineCallArg[], index: number): PineValue | undefined {
+  return args[index]?.value;
+}
+
+function namedCallArg(args: PineCallArg[], name: string): PineValue | undefined {
+  return args.find((arg) => arg.name === name)?.value;
+}
+
+function callArgByNameOrIndex(
+  args: PineCallArg[],
+  name: string,
+  index: number,
+): PineValue | undefined {
+  return namedCallArg(args, name) ?? callArg(args, index);
+}
+
+function callArgOrNa(args: PineCallArg[], name: string, index: number): PineValue {
+  return callArgByNameOrIndex(args, name, index) ?? { kind: "number", value: Number.NaN };
+}
+
+function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): PineValue {
   switch (name) {
     case "input":
     case "input.int":
     case "input.float":
     case "input.source":
     case "input.bool":
-      return args[0] ?? { kind: "number", value: 0 };
+      return namedCallArg(args, "defval") ?? callArg(args, 0) ?? { kind: "number", value: 0 };
     case "nz":
-      return nz(args[0], args[1], context.candles.length);
+      return nz(callArg(args, 0), callArg(args, 1), context.candles.length);
     case "math.abs":
-      return mapValue(args[0], context.candles.length, Math.abs);
+      return mapValue(callArg(args, 0), context.candles.length, Math.abs);
     case "math.max":
-      return reduceMath(args, context.candles.length, Math.max);
+      return reduceMath(args.map((arg) => arg.value), context.candles.length, Math.max);
     case "math.min":
-      return reduceMath(args, context.candles.length, Math.min);
+      return reduceMath(args.map((arg) => arg.value), context.candles.length, Math.min);
     case "ta.sma":
-      return { kind: "series", values: rollingAverage(toSeries(args[0], context.candles.length), period(args[1])) };
+      return {
+        kind: "series",
+        values: rollingAverage(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+        ),
+      };
     case "ta.ema":
-      return { kind: "series", values: exponentialAverage(toSeries(args[0], context.candles.length), period(args[1])) };
+      return {
+        kind: "series",
+        values: exponentialAverage(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+        ),
+      };
     case "ta.rma":
-      return { kind: "series", values: runningMovingAverage(toSeries(args[0], context.candles.length), period(args[1])) };
+      return {
+        kind: "series",
+        values: runningMovingAverage(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+        ),
+      };
     case "ta.rsi":
-      return { kind: "series", values: rsiSeries(toSeries(args[0], context.candles.length), period(args[1])) };
+      return {
+        kind: "series",
+        values: rsiSeries(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+        ),
+      };
     case "ta.vwap":
       return { kind: "series", values: vwapSeries(context.candles) };
     case "ta.highest":
-      return { kind: "series", values: rollingExtreme(toSeries(args[0], context.candles.length), period(args[1]), "high") };
+      return {
+        kind: "series",
+        values: rollingExtreme(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+          "high",
+        ),
+      };
     case "ta.lowest":
-      return { kind: "series", values: rollingExtreme(toSeries(args[0], context.candles.length), period(args[1]), "low") };
-    case "ta.change":
-      return { kind: "series", values: changeSeries(toSeries(args[0], context.candles.length), args[1] ? period(args[1]) : 1) };
+      return {
+        kind: "series",
+        values: rollingExtreme(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+          "low",
+        ),
+      };
+    case "ta.change": {
+      const length = callArgByNameOrIndex(args, "length", 1);
+      return {
+        kind: "series",
+        values: changeSeries(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          length ? period(length) : 1,
+        ),
+      };
+    }
     case "ta.atr":
-      return { kind: "series", values: atrSeries(context.candles, period(args[0])) };
+      return {
+        kind: "series",
+        values: atrSeries(context.candles, period(callArgByNameOrIndex(args, "length", 0))),
+      };
     default:
       throw new Error(`Unsupported function "${name}()"`);
   }

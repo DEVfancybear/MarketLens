@@ -15,6 +15,9 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
   `PriceChart` render histogram data with each point's color.
 - Fix: `pineScript.ts` now supports the VSA subset, including the Wilder-style recursive volume MA
   pattern used by `volumeMA := nz(volumeMA[1]) + (volume - nz(volumeMA[1])) / lengthVolumeMA`.
+- Follow-up fix: function-call parsing now preserves named arguments, so Pine v4 inputs like
+  `input(defval=20, type=input.integer)` reliably feed the VSA ratio values. Pine color constants
+  for the VSA palette now use TradingView-style purple/red/orange/green/blue/silver values.
 - Guard: extended `npm run check:pine-indicator`.
 
 ### Pine Editor + source-code indicators
