@@ -172,6 +172,13 @@ shifted, so the guard would wrongly skip the repaint. `markDirty(true)` sets `fo
 which bypasses the guard for exactly one frame. This is what keeps drawings **pinned to
 candles** through pan/zoom (fixed 2026-06-27).
 
+**Viewport follow-window.** Wheel zoom and autoscale can settle across multiple browser frames.
+If the drawing canvas repaints only once, it can sample an intermediate mapping and appear one
+step behind the candles until another chart event happens. `CanvasRenderer` therefore keeps a
+short forced repaint window after viewport changes (`VIEWPORT_FOLLOW_MS`) and `DrawingLayer`
+nudges that path directly from chart-root `wheel` events. Keep this in the renderer layer, not in
+individual drawing tools, because all tools share the same `(time,price) -> pixel` projection.
+
 ### Coordinate projection & the frame-local cache
 
 Projection is `(time,price) → pixel` via `timeScale().timeToCoordinate()` /

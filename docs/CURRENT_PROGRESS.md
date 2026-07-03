@@ -4,6 +4,17 @@ _Last updated: 2026-07-03 (Replay jump + Pine source-code indicators)_
 
 ## Completed this session (2026-07-03)
 
+### Drawing viewport repaint fix
+- User repro: after zooming the chart out, drawings stayed visually offset and snapped into the
+  correct candle positions roughly a second later.
+- Root cause: drawing data did not change during zoom, so the renderer relied on viewport invalidation.
+  A single forced repaint could still sample an intermediate Lightweight Charts mapping while wheel
+  zoom/autoscale was settling.
+- Fix: `CanvasRenderer` now keeps a short viewport follow-window after zoom/pan/resize invalidation,
+  forcing a few rAF repaints that bypass the memo guard. `DrawingLayer` also nudges this path from
+  chart-root `wheel` events and unsubscribes the logical-range listener correctly.
+- Guard: added `npm run check:drawing-viewport`.
+
 ### Replay jump viewport fix
 - User repro: jumping Replay Mode to a day in the past could leave the chart visually blank.
 - Root cause: `useVisibleCandles()` correctly replaced the plotted slice with candles up to the

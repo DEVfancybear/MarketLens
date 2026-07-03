@@ -10,6 +10,8 @@ import { CoordinateCache } from "./CoordinateCache";
 import { SpatialIndex } from "./SpatialIndex";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 
+const VIEWPORT_FOLLOW_MS = 450;
+
 export interface RenderLoopDeps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   toX: (time: number) => number | null;
@@ -31,7 +33,7 @@ export interface RenderLoopDeps {
 }
 
 export interface RenderLoop {
-  markDirty: (force?: boolean) => void;
+  markDirty: (force?: boolean, followViewport?: boolean) => void;
   destroy: () => void;
 }
 
@@ -56,6 +58,11 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   // viewport changes (pan/zoom/resize) — the drawing data is unchanged but every
   // (time,price)→pixel mapping has shifted, so the canvas MUST be repainted.
   let forceNext = true;
+  // LWC can settle wheel zoom/autoscale across multiple frames. A single forced
+  // repaint can sample an intermediate mapping and leave drawings visibly
+  // detached until another event happens, so viewport changes keep forcing
+  // redraws for a short burst.
+  let viewportFollowUntil = 0;
   let rafId: number | null = null;
   let lastCanvasW = 0,
     lastCanvasH = 0;
@@ -318,21 +325,35 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
 
     const renderMs = performance.now() - t0;
     perf.recordFrame(renderMs, 0, drawn, all.length - drawn, all.length);
+
+    if (viewportFollowUntil > performance.now()) {
+      forceNext = true;
+      dirty = true;
+      schedule();
+    }
   }
 
   function schedule() {
     if (rafId !== null) return;
     rafId = requestAnimationFrame(() => render());
   }
-  function markDirty(force = false) {
+  function markDirty(force = false, followViewport = false) {
     if (force) forceNext = true;
+    if (followViewport) {
+      viewportFollowUntil = Math.max(
+        viewportFollowUntil,
+        performance.now() + VIEWPORT_FOLLOW_MS,
+      );
+    }
     dirty = true;
     schedule();
   }
   let unsubVersion: (() => void) | undefined;
   // Viewport changes (pan/zoom/resize) keep the drawing data identical but shift
   // every pixel mapping, so force a repaint that bypasses the data-only guard.
-  if (onVersionChange) unsubVersion = onVersionChange(() => markDirty(true));
+  if (onVersionChange) {
+    unsubVersion = onVersionChange(() => markDirty(true, true));
+  }
   schedule();
   return {
     markDirty,

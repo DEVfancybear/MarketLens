@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Drawing viewport repaint on chart zoom (2026-07-03)
+- Fixed drawings visually lagging behind candles during wheel zoom until a later repaint.
+- `CanvasRenderer` now keeps a short forced repaint window after viewport changes so drawing
+  projections follow Lightweight Charts while wheel zoom/autoscale settles across frames.
+- `DrawingLayer` now nudges the same viewport repaint path directly from chart-root wheel events
+  and properly unsubscribes its logical-range listener on teardown.
+- Added `npm run check:drawing-viewport` to guard the repaint contract.
+
 ### Fixed - Replay jump viewport reset (2026-07-03)
 - Fixed Bar Replay date/random/scrubber jumps leaving the chart pointed at empty future whitespace
   after the replay-visible candle slice was replaced.
