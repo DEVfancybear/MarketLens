@@ -57,7 +57,11 @@ export interface OrderPrefill {
   side?: Side;
   type?: OrderType;
   price?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  riskPct?: number;
   quantity?: number;
+  source?: 'context-menu' | 'position-drawing';
 }
 
 export interface RiskMetrics {

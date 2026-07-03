@@ -5,6 +5,7 @@ import {
   equityAtom,
   placeOrderAtom,
   closeAllAtom,
+  orderPrefillAtom,
 } from "@/store/tradeStore";
 import {
   closeAllMt5Atom,
@@ -34,6 +35,7 @@ export function OrderTicket() {
   const symbol = useAtomValue(symbolAtom);
   const price = useAtomValue(priceAtom);
   const equity = useAtomValue(equityAtom);
+  const orderPrefill = useAtomValue(orderPrefillAtom);
   const place = useSetAtom(placeOrderAtom);
   const closeAll = useSetAtom(closeAllAtom);
   const executionMode = useAtomValue(executionModeAtom);
@@ -50,6 +52,7 @@ export function OrderTicket() {
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
   const [risk, setRisk] = useState("1");
+  const [plannedSide, setPlannedSide] = useState<Side | null>(null);
   const [mt5Lot, setMt5Lot] = useState("");
   const [pendingLive, setPendingLive] = useState<
     | { kind: "order"; order: Mt5OrderRequest }
@@ -188,6 +191,21 @@ export function OrderTicket() {
     else closeAllMt5(pendingLive.request);
     setPendingLive(null);
   };
+  const formatTicketNumber = useMemo(
+    () => (value: number) => fmtPrice(value, prec),
+    [prec],
+  );
+  const formatPercent = (value: number) =>
+    Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+
+  const applyPrefill = (prefill: OrderPrefill) => {
+    setPlannedSide(prefill.side ?? null);
+    if (prefill.type) setType(prefill.type);
+    if (prefill.price != null) setEntry(formatTicketNumber(prefill.price));
+    if (prefill.stopLoss != null) setSl(formatTicketNumber(prefill.stopLoss));
+    if (prefill.takeProfit != null) setTp(formatTicketNumber(prefill.takeProfit));
+    if (prefill.riskPct != null) setRisk(formatPercent(prefill.riskPct));
+  };
   const sizeTitle =
     executionMode === "mt5" && activeSymbolInfo
       ? [
@@ -200,20 +218,41 @@ export function OrderTicket() {
           .join(" | ")
       : undefined;
 
-  // Pre-fill the ticket from the chart context menu ("Add Order at {price}").
+  // Pre-fill the ticket from persistent atoms. This path also works when the
+  // Trade tab was not mounted yet; the producer can switch to the Trade tab
+  // after setting the atom and the newly mounted ticket still receives data.
+  useEffect(() => {
+    if (orderPrefill) applyPrefill(orderPrefill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderPrefill?.version]);
+
+  // Backward-compatible event-bus prefill for older chart/menu callers.
   useEffect(() => {
     const off = on("trade:prefill", (detail) => {
-      const p = detail as OrderPrefill;
-      if (p.type) setType(p.type);
-      if (p.price != null) setEntry(String(p.price));
+      applyPrefill(detail as OrderPrefill);
     });
     return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="flex w-[252px] shrink-0 flex-col border-r border-terminal-border bg-terminal-panel">
       <div className="flex h-9 items-center justify-between border-b border-terminal-border px-3">
-        <span className="text-xs font-semibold text-ink">{symbol}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-ink">{symbol}</span>
+          {plannedSide && (
+            <span
+              className={cn(
+                "rounded-sm px-1.5 py-0.5 text-[9px] font-semibold uppercase",
+                plannedSide === "long"
+                  ? "bg-bull/15 text-bull"
+                  : "bg-bear/15 text-bear",
+              )}
+            >
+              {plannedSide}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
           {executionMode === "mt5" && (
             <span className="rounded-sm bg-bear/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-bear">
@@ -292,13 +331,19 @@ export function OrderTicket() {
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => submit("long")}
-            className="h-10 rounded-sm bg-[#089981] text-xs font-semibold text-white hover:bg-[#0aa987]"
+            className={cn(
+              "h-10 rounded-sm bg-[#089981] text-xs font-semibold text-white hover:bg-[#0aa987]",
+              plannedSide === "long" && "ring-2 ring-[#089981]/50 ring-offset-1 ring-offset-terminal-panel",
+            )}
           >
             Buy
           </button>
           <button
             onClick={() => submit("short")}
-            className="h-10 rounded-sm bg-[#f23645] text-xs font-semibold text-white hover:bg-[#ff4d5b]"
+            className={cn(
+              "h-10 rounded-sm bg-[#f23645] text-xs font-semibold text-white hover:bg-[#ff4d5b]",
+              plannedSide === "short" && "ring-2 ring-[#f23645]/50 ring-offset-1 ring-offset-terminal-panel",
+            )}
           >
             Sell
           </button>

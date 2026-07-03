@@ -20,6 +20,7 @@
     "tests/**/*.ts",
     "src/components/chart/drawing/tools/positionGeometry.ts",
     "src/components/chart/drawing/tools/positionInput.ts",
-    "src/components/chart/drawing/tools/positionMetrics.ts"
+    "src/components/chart/drawing/tools/positionMetrics.ts",
+    "src/components/chart/drawing/tools/positionTradePrefill.ts"
   ]
 }

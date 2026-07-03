@@ -39,6 +39,7 @@ Add tests here when changing:
 - Long/Short Position settings fields for `Ticks`, `Price`, or `Entry price`
 - Position labels that display tick count or price
 - Position handle movement, resize behavior, or body dragging
+- Position drawing to Trade ticket prefill behavior
 - Symbol metadata that changes tick size or price formatting
 
 Prefer testing the shared math helpers instead of duplicating component-level

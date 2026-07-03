@@ -16,6 +16,9 @@ import { localStore } from "@/services/storage";
 import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
 import { DEFAULT_PINE_SOURCE, extractPineScriptMeta } from "@/services/pineScript";
+import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing/tools/positionTradePrefill";
+import { setOrderPrefillAtom } from "./tradeStore";
+import { logAtom, setBottomTabAtom } from "./uiStore";
 
 // Default to a Binance crypto symbol so the chart streams live with no API key.
 const DEFAULT_SYMBOL = "BTCUSDT";
@@ -155,6 +158,17 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
       { time: tRight, price: target },
       { time: tRight, price: stop },
     ];
+    const marketPrice = candles[candles.length - 1]?.close ?? null;
+    const prefill = buildOrderPrefillFromPositionDrawing(drawing, marketPrice);
+    if (prefill) {
+      set(setOrderPrefillAtom, prefill);
+      set(setBottomTabAtom, "trade");
+      set(
+        logAtom,
+        "info",
+        `Trade ticket filled from ${isLong ? "Long" : "Short"} Position`,
+      );
+    }
   }
   const drawings = [..._get(drawingsAtom), drawing];
   set(drawingsAtom, drawings);

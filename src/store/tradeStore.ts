@@ -2,7 +2,7 @@
 import { atom, getDefaultStore } from "jotai";
 import { useAtomValue } from "jotai";
 import { useMemo } from "react";
-import type { Candle, OrderRequest, Position } from "@/types";
+import type { Candle, OrderPrefill, OrderRequest, Position } from "@/types";
 import {
   checkExit,
   checkPendingTrigger,
@@ -24,6 +24,9 @@ export const positionsAtom = atom<Position[]>([]);
 export const priceAtom = atom(0);
 export const timeAtom = atom(0);
 export const tradeSymbolAtom = atom("");
+const orderPrefillVersionAtom = atom(0);
+export type OrderPrefillState = OrderPrefill & { version: number };
+export const orderPrefillAtom = atom<OrderPrefillState | null>(null);
 
 // ── Write atoms (actions) ────────────────────────────────────────────────────
 
@@ -201,6 +204,15 @@ export const resetTradeAtom = atom(null, (get, set) => {
   set(priceAtom, 0);
   set(timeAtom, 0);
 });
+
+export const setOrderPrefillAtom = atom(
+  null,
+  (get, set, prefill: OrderPrefill) => {
+    const version = get(orderPrefillVersionAtom) + 1;
+    set(orderPrefillVersionAtom, version);
+    set(orderPrefillAtom, { ...prefill, version });
+  },
+);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

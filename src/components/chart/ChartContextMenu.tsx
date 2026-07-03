@@ -27,7 +27,7 @@ import {
   clearDrawingsAtom,
   clearIndicatorsAtom,
 } from "@/store/chartStore";
-import { placeOrderAtom } from "@/store/tradeStore";
+import { placeOrderAtom, setOrderPrefillAtom } from "@/store/tradeStore";
 import { executionModeAtom } from "@/store/mt5Store";
 import { setBottomTabAtom, logAtom } from "@/store/uiStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
@@ -40,7 +40,6 @@ import { inferCondition } from "@/services/alertEngine";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { uid } from "@/utils/id";
-import { emit } from "@/utils/bus";
 import { cn } from "@/utils/cn";
 
 /** Right-click chart context-menu state (per the spec). */
@@ -89,6 +88,7 @@ export function ChartContextMenu({
   const clearDrawings = useSetAtom(clearDrawingsAtom);
   const clearIndicators = useSetAtom(clearIndicatorsAtom);
   const place = useSetAtom(placeOrderAtom);
+  const setOrderPrefill = useSetAtom(setOrderPrefillAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const log = useSetAtom(logAtom);
   const createAlert = useAlertStore((s) => s.createAlert);
@@ -164,7 +164,7 @@ export function ChartContextMenu({
 
   const prefillOrSimOrder = (side: "long" | "short", type: "limit" | "stop") => {
     if (executionMode === "mt5") {
-      emit("trade:prefill", { side, type, price: state.price });
+      setOrderPrefill({ source: "context-menu", side, type, price: state.price });
       setBottomTab("trade");
       return;
     }
@@ -229,7 +229,11 @@ export function ChartContextMenu({
       icon: <Plus size={14} className="text-ink-muted" />,
       label: `Add Order at ${priceStr}`,
       onClick: act(() => {
-        emit("trade:prefill", { type: "limit", price: state.price });
+        setOrderPrefill({
+          source: "context-menu",
+          type: "limit",
+          price: state.price,
+        });
         setBottomTab("trade");
       }),
     },

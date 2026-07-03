@@ -51,6 +51,8 @@ handles, but they are virtual handles derived from this three-point model.
 - `positionInput.ts`: numeric draft parsing for settings inputs.
 - `positionGeometry.ts`: six virtual handles, body move, handle resize, side
   inference, tick snapping, and long/short level clamping.
+- `positionTradePrefill.ts`: converts a completed Long/Short drawing into a
+  Trade ticket prefill payload.
 
 `PositionTool.ts` should call these helpers. Avoid reimplementing position math
 inside render, hit-test, or settings code.
@@ -70,6 +72,34 @@ Left handles resize the left time edge; right handles resize the right time edge
 Target/entry/stop handles also update their corresponding level price.
 
 Body drag moves all three persisted points and preserves width.
+
+## Trade Ticket Prefill
+
+Placing a new Long/Short Position is still a visual planning action, not an
+immediate order. After the one-click drawing is expanded into entry, target, and
+stop points, `addDrawingAtom` also builds an `OrderPrefill` through
+`positionTradePrefill.ts` and writes it to `setOrderPrefillAtom`.
+
+The Trade tab reads `orderPrefillAtom`, so the ticket is filled even when the
+Trade panel was not mounted at placement time. Do not depend on a transient
+event bus message for this path; switching the bottom panel to `Trade` happens
+after the atom is written, and the newly mounted ticket consumes the latest
+versioned prefill.
+
+Prefill mapping:
+
+- `points[0].price` -> order entry price.
+- `points[1].price` -> take profit.
+- `points[2].price` -> stop loss.
+- `riskValue` -> risk percent when `riskUnit` is `%`.
+- Long/Short side sets the planned Buy/Sell side in the ticket.
+- Order type is inferred from entry versus current market price:
+  Long above market and Short below market become stop orders; the opposite
+  cases become limit orders.
+
+Keep this conversion in the shared helper. Future position templates, hotkeys,
+or copy-trading actions should reuse the same payload builder instead of
+duplicating side, target, stop, and order-type logic in UI components.
 
 ## Direction Rules
 
@@ -116,4 +146,5 @@ The TypeScript suite under `tests/position/` verifies:
 - long/short side inference,
 - six-handle movement,
 - body drag width preservation,
-- target/stop clamping to the correct side.
+- target/stop clamping to the correct side,
+- Trade ticket prefill payloads for Long and Short positions.

@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Position drawing to Trade ticket prefill (2026-07-04)
+- Placing a new Long/Short Position now opens the bottom `Trade` tab and fills
+  the order ticket with entry, stop loss, take profit, risk percent, planned
+  side, and inferred limit/stop order type.
+- Added `positionTradePrefill.ts` as the shared conversion contract between
+  position drawings and order-ticket payloads so future position workflows do
+  not duplicate side/target/stop logic in UI components.
+- Replaced transient chart-menu prefill events with a versioned
+  `orderPrefillAtom`, so prefill still works when the Trade panel was not
+  mounted before the action.
+- Expanded `npm run test:position` coverage for Long/Short prefill payloads.
+
 ### Changed - Long/Short position TradingView parity pass (2026-07-04)
 - Added `positionGeometry.ts` as the shared contract for Long/Short Position movement, six virtual
   handles, tick snapping, and long/short side clamping.

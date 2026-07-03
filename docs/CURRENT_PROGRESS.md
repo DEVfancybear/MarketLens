@@ -1,8 +1,19 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Long/Short position parity)_
+_Last updated: 2026-07-04 (Position to Trade ticket prefill)_
 
 ## Completed this session (2026-07-04)
+
+### Position drawing to Trade ticket prefill
+- New Long/Short Position drawings now switch the bottom panel to `Trade` and
+  fill the order ticket from the drawing: entry, stop loss, take profit, risk
+  percent, planned side, and inferred limit/stop type.
+- Added `positionTradePrefill.ts` so drawing-to-order mapping is a shared helper
+  instead of UI-specific logic.
+- Added versioned `orderPrefillAtom` / `setOrderPrefillAtom`; this makes prefill
+  persistent across panel mounting, unlike the previous transient event-bus path.
+- Context-menu order prefill now uses the same atom path.
+- Added typed coverage in `tests/position/positionTradePrefill.test.ts`.
 
 ### Long/Short position TradingView parity pass (2026-07-04)
 - Researched TradingView position projection behavior and similar walkthroughs: Long/Short is a
