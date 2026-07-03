@@ -13,6 +13,10 @@ const dashboard = readFileSync(
   resolve(root, "src/components/replay/ReplayDashboard.tsx"),
   "utf8",
 );
+const priceChart = readFileSync(
+  resolve(root, "src/components/chart/PriceChart.tsx"),
+  "utf8",
+);
 const selectionLayer = readFileSync(
   resolve(root, "src/components/replay/ReplaySelectionLayer.tsx"),
   "utf8",
@@ -26,7 +30,7 @@ function indexAtOrBefore(candles, time) {
   if (candles.length === 0) return -1;
   let lo = 0;
   let hi = candles.length - 1;
-  let ans = 0;
+  let ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     if (candles[mid].time <= time) {
@@ -42,7 +46,9 @@ function indexAtOrBefore(candles, time) {
 function indexNearestByTime(candles, time) {
   if (candles.length === 0) return -1;
   const before = indexAtOrBefore(candles, time);
-  const after = Math.min(candles.length - 1, before + 1);
+  if (before < 0) return 0;
+  if (before >= candles.length - 1) return candles.length - 1;
+  const after = before + 1;
   return Math.abs(candles[before].time - time) <=
     Math.abs(candles[after].time - time)
     ? before
@@ -51,9 +57,12 @@ function indexNearestByTime(candles, time) {
 
 function checkNearestDateSelection() {
   const candles = [{ time: 1000 }, { time: 1060 }, { time: 1120 }];
+  assert(indexAtOrBefore(candles, 900) === -1, "at-or-before must return -1 before first bar");
+  assert(indexNearestByTime(candles, 900) === 0, "nearest date before history should clamp to first bar");
   assert(indexNearestByTime(candles, 1055) === 1, "nearest date should choose the later closer bar");
   assert(indexNearestByTime(candles, 1025) === 0, "nearest date should choose the earlier closer bar");
   assert(indexNearestByTime(candles, 1030) === 0, "ties should keep the earlier bar");
+  assert(indexNearestByTime(candles, 1200) === 2, "nearest date after history should clamp to last bar");
   assert(indexNearestByTime([], 1000) === -1, "empty candle list should return -1");
 }
 
@@ -83,6 +92,18 @@ function checkStaticGuards() {
     "mtfSnapshot must keep at-or-before semantics to avoid higher-timeframe lookahead",
   );
   assert(
+    /let ans = -1;/.test(replayEngine) &&
+      /if \(before < 0\) return 0;/.test(replayEngine) &&
+      /if \(before >= candles\.length - 1\) return candles\.length - 1;/.test(replayEngine),
+    "date selection helpers must clamp outside-history jumps without fabricating a future bar",
+  );
+  assert(
+    /function keepLatestBarInView/.test(priceChart) &&
+      /const structuralDataWindowChange =/.test(priceChart) &&
+      /keepLatestBarInView\(chartRef\.current, dataLength\)/.test(priceChart),
+    "PriceChart must realign the viewport after replay jump/scrub data-window replacements",
+  );
+  assert(
     /const safeTotal = Math\.max\(0, total\);/.test(replayStore),
     "setTotalAtom must sanitize total history length",
   );
@@ -101,4 +122,4 @@ function checkStaticGuards() {
 checkNearestDateSelection();
 checkStaticGuards();
 
-console.log("[replay-logic] OK: date selection, MTF no-lookahead, and total clamping are guarded");
+console.log("[replay-logic] OK: date selection, viewport realignment, MTF no-lookahead, and total clamping are guarded");

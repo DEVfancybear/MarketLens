@@ -32,7 +32,7 @@ export function indexAtOrBefore(candles: Candle[], time: number): number {
   if (candles.length === 0) return -1;
   let lo = 0;
   let hi = candles.length - 1;
-  let ans = 0;
+  let ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     if (candles[mid].time <= time) {
@@ -49,7 +49,9 @@ export function indexAtOrBefore(candles: Candle[], time: number): number {
 export function indexNearestByTime(candles: Candle[], time: number): number {
   if (candles.length === 0) return -1;
   const before = indexAtOrBefore(candles, time);
-  const after = Math.min(candles.length - 1, before + 1);
+  if (before < 0) return 0;
+  if (before >= candles.length - 1) return candles.length - 1;
+  const after = before + 1;
   return Math.abs(candles[before].time - time) <=
     Math.abs(candles[after].time - time)
     ? before

@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay jump viewport reset (2026-07-03)
+- Fixed Bar Replay date/random/scrubber jumps leaving the chart pointed at empty future whitespace
+  after the replay-visible candle slice was replaced.
+- `PriceChart` now preserves the current zoom width but moves the logical right edge to the newest
+  candle of the replacement data window. One-by-one playback still uses the incremental append path
+  and keeps the user's pan/zoom intact.
+- Hardened `indexNearestByTime()` so dates before the loaded history clamp to the first candle and
+  dates after loaded history clamp to the last candle, while `indexAtOrBefore()` keeps `-1`
+  semantics for no-look-ahead MTF snapshots.
+- Extended `npm run check:replay-logic` to guard replay date clamping and viewport realignment.
+- Added `docs/REPLAY_ARCHITECTURE.md` with the replay state machine, visibility gate, viewport
+  contract, no-look-ahead rules, and maintenance checklist.
+
 ### Changed - Shared Pine input settings runtime (2026-07-03)
 - Replaced the built-in-only indicator settings modal with a shared TradingView-style
   `Inputs / Style / Visibility` dialog for every active indicator.

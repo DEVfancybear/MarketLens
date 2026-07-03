@@ -47,6 +47,32 @@ const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
 const getDefaultBarSpacing = (timeframe: Timeframe) =>
   BAR_SPACING[timeframe] ?? 8;
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function keepLatestBarInView(chart: IChartApi, dataLength: number) {
+  if (dataLength <= 0) return;
+  const timeScale = chart.timeScale();
+  const range = timeScale.getVisibleLogicalRange();
+  if (
+    range &&
+    isFiniteNumber(range.from) &&
+    isFiniteNumber(range.to) &&
+    range.to > range.from
+  ) {
+    // Replay jump/scrub replaces the plotted slice. Preserve the user's zoom
+    // width, but move the right edge to the newly revealed latest candle so the
+    // chart never keeps looking at now-empty future whitespace.
+    const span = range.to - range.from;
+    const to = dataLength - 1 + RIGHT_OFFSET_BARS;
+    timeScale.setVisibleLogicalRange({ from: to - span, to });
+    return;
+  }
+  timeScale.scrollToRealTime();
+}
+
 type IndicatorSeriesApi =
   | ISeriesApi<"Line">
   | ISeriesApi<"Histogram">
@@ -385,6 +411,12 @@ export function PriceChart({
       candles.length === prev.length + 1 &&
       !!prevLast &&
       candles[candles.length - 2]?.time === prevLast.time;
+    const structuralDataWindowChange =
+      sameTheme &&
+      prev.length > 0 &&
+      candles.length > 0 &&
+      !formingTick &&
+      !appended;
 
     if (sameTheme && (formingTick || appended)) {
       // On append, finalize the previously-forming (now penultimate) bar first.
@@ -443,10 +475,16 @@ export function PriceChart({
     }
 
     // Fit the time scale once on the first non-empty load; afterwards leave the
-    // user's pan/zoom intact so replay reveals candles at the right edge.
+    // user's pan/zoom intact for realtime ticks and one-by-one replay playback.
     if (!fittedRef.current && candles.length > 0) {
       chartRef.current?.timeScale().fitContent();
       fittedRef.current = true;
+    } else if (structuralDataWindowChange) {
+      const dataLength = candles.length;
+      requestAnimationFrame(() => {
+        if (!chartRef.current) return;
+        keepLatestBarInView(chartRef.current, dataLength);
+      });
     }
     setVersion((v) => v + 1);
   }, [candles, theme]);

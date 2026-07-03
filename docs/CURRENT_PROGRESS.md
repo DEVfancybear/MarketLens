@@ -1,8 +1,23 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
+_Last updated: 2026-07-03 (Replay jump + Pine source-code indicators)_
 
 ## Completed this session (2026-07-03)
+
+### Replay jump viewport fix
+- User repro: jumping Replay Mode to a day in the past could leave the chart visually blank.
+- Root cause: `useVisibleCandles()` correctly replaced the plotted slice with candles up to the
+  replay cursor, but `PriceChart` kept the old logical viewport looking at now-empty future
+  whitespace.
+- Fix: `PriceChart` now detects non-incremental candle-window replacements, preserves the current
+  zoom span, and moves the right edge to the replacement slice's latest candle. Normal realtime
+  ticks and one-candle replay playback still use the incremental update path.
+- Fix: replay date selection now clamps cleanly before/after loaded history. `indexAtOrBefore()`
+  returns `-1` before the first bar for no-look-ahead MTF logic, while `indexNearestByTime()` maps
+  out-of-range UI jumps to the closest real candle.
+- Guard: extended `npm run check:replay-logic`.
+- Docs: added `docs/REPLAY_ARCHITECTURE.md` covering replay state, transitions, visibility,
+  viewport behavior, MTF no-look-ahead rules, performance constraints, and manual smoke tests.
 
 ### Common Pine object runtime
 - User repro: saving and adding `ADR 50 SR Pro` reported success, but nothing rendered because the

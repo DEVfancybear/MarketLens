@@ -178,7 +178,13 @@ computation reads from it — the structural no-look-ahead guarantee. During **r
 directly from `candlesAtom` in the overlay canvas).
 Bar Replay date/chart selection uses `indexNearestByTime()` to choose the closest candle; MTF
 snapshots intentionally use `indexAtOrBefore()` so higher-timeframe rows cannot reveal a bar after
-the replay cursor.
+the replay cursor. When a replay action replaces the visible candle window by more than one bar
+(date jump, random bar, scrubber jump, restart, re-select), `PriceChart` preserves the current zoom
+span but realigns the logical right edge to the newest candle in that replacement window. This keeps
+the chart from looking at empty future whitespace while leaving one-by-one playback and realtime
+ticks on the incremental update path.
+
+Full replay maintenance details live in `docs/REPLAY_ARCHITECTURE.md`.
 
 > Atoms init with deterministic SSR-safe defaults; persisted values load in
 > `useStoreHydration()` after mount via `getDefaultStore().set(hydrateAtom)`.
