@@ -7,6 +7,21 @@ import type {
   LinePoint,
 } from "@/types";
 
+/**
+ * Pine runtime overview
+ *
+ * This file intentionally implements a whitelisted Pine subset instead of executing user code.
+ * The compiler is organized around TradingView's core execution model:
+ *
+ * 1. Normalize source and parse simple expressions into PineValue values.
+ * 2. Evaluate assignments over the whole candle history, where most values are time series.
+ * 3. Read visual declarations (`plot`, `hline`, `fill`) and object APIs (`line`, `box`, `label`,
+ *    `table`) from the same evaluated context.
+ * 4. Emit our internal IndicatorResult shape for Lightweight Charts and DOM overlays.
+ *
+ * When adding Pine support, prefer extending one of these shared phases. Avoid indicator-name
+ * special cases; they age poorly and make future scripts fail in different ways.
+ */
 export const DEFAULT_PINE_SOURCE = `// This Pine Script code is subject to the terms of the Mozilla Public License 2.0
 // By Custom
 
@@ -78,6 +93,16 @@ export interface PineCompilation {
 type SeriesData = (number | null)[];
 type ColorSeriesData = (string | null)[];
 
+/**
+ * Runtime value used by the expression evaluator.
+ *
+ * Pine's `series` values are arrays over bars: each candle has its own value, and `x[1]` points
+ * to the previous bar's value. Scalars stay compact until they are combined with a series, where
+ * helpers like `toSeries()` broadcast them across the candle history.
+ *
+ * `null` inside a series is our internal `na`. Scalar `na` is represented with `Number.NaN`,
+ * which keeps arithmetic, comparisons, and `nz()` behavior predictable.
+ */
 type PineValue =
   | { kind: "number"; value: number }
   | { kind: "series"; values: SeriesData }
@@ -105,6 +130,12 @@ type Token =
   | { kind: "colon"; value: ":" }
   | { kind: "eof" };
 
+/**
+ * Shared state for one compile.
+ *
+ * `variables` stores previously evaluated assignments. `functions` stores one-line helper
+ * functions (`foo(a, b) => expression`) and is intentionally not a general Pine function engine.
+ */
 interface EvalContext {
   candles: Candle[];
   variables: Map<string, PineValue>;
@@ -137,6 +168,14 @@ function isIdentChar(ch: string | undefined): boolean {
   return !!ch && /[A-Za-z0-9_.]/.test(ch);
 }
 
+/**
+ * Extracts the comma-separated body of calls such as `plot(...)` or `request.security(...)`.
+ *
+ * This is deliberately a balanced scanner rather than a regex. Pine calls often contain nested
+ * calls, ternaries, strings, and named arguments, so simple regex matching will split at the wrong
+ * parenthesis. The scanner only recognizes exact call names and ignores names embedded inside
+ * longer identifiers.
+ */
 function findCallBodies(source: string, name: string): string[] {
   const bodies: string[] = [];
   let index = 0;
@@ -178,6 +217,13 @@ function findCallBodies(source: string, name: string): string[] {
   return bodies;
 }
 
+/**
+ * Splits a call body at top-level commas only.
+ *
+ * Example:
+ * `request.security(s, "D", ta.sma(high - low, len)[1], lookahead=barmerge.lookahead_off)`
+ * must keep `ta.sma(high - low, len)[1]` as one argument even though it contains a comma.
+ */
 function splitTopLevel(input: string): string[] {
   const out: string[] = [];
   let depth = 0;
@@ -426,6 +472,13 @@ class ExpressionParser {
   private readonly tokens: Token[];
   private index = 0;
 
+  /**
+   * Small Pratt-style recursive descent parser for the Pine expression subset.
+   *
+   * It returns PineValue objects directly instead of building an AST. That keeps the compiler fast
+   * enough for live chart updates and prevents any path from executing user-provided JavaScript.
+   * Add operators here only when their semantics can be implemented with PineValue helpers below.
+   */
   constructor(
     input: string,
     private readonly context: EvalContext,
@@ -604,6 +657,7 @@ class ExpressionParser {
       if (close.kind !== "bracket" || close.value !== "]") {
         throw new Error("Unclosed history reference");
       }
+      // Pine history reference: `x[1]` means the value one bar ago, not JS array indexing.
       current = shiftValue(current, Math.max(0, Math.round(offset.value)), this.context.candles.length);
     }
     return current;
@@ -673,6 +727,12 @@ function valueVaries(value: PineValue): boolean {
   return value.kind === "series" || value.kind === "colorSeries";
 }
 
+/**
+ * Pine ternaries can choose different values per bar.
+ *
+ * If the condition is a series, the output must also be a series/colorSeries. This is why
+ * expression-level conditionals cannot be treated like JavaScript's single boolean ternary.
+ */
 function chooseValue(
   condition: PineValue,
   whenTrue: PineValue,
@@ -791,6 +851,7 @@ function shiftValue(value: PineValue, offset: number, length: number): PineValue
     };
   }
 
+  // History before the first available bar is `na`, represented by null in series arrays.
   const values = toSeries(value, length);
   return {
     kind: "series",
@@ -845,6 +906,13 @@ function sourceSeries(candles: Candle[], key: keyof Candle): PineValue {
   return { kind: "series", values: candles.map((c) => c[key] as number) };
 }
 
+/**
+ * Resolves Pine identifiers that are not function calls.
+ *
+ * Keep enum-like identifiers as strings (`plot.style_columns`, `barmerge.lookahead_off`, etc.).
+ * They are metadata for later readers and should not be forced into numeric values. OHLCV fields
+ * become series because they vary per bar.
+ */
 function resolveIdentifier(name: string, context: EvalContext): PineValue {
   const stored = context.variables.get(name);
   if (stored) return stored;
@@ -974,6 +1042,14 @@ function callArgOrNa(args: PineCallArg[], name: string, index: number): PineValu
   return callArgByNameOrIndex(args, name, index) ?? { kind: "number", value: Number.NaN };
 }
 
+/**
+ * Whitelisted Pine built-ins.
+ *
+ * This is the main extension point for expression-level functions. New entries should return a
+ * PineValue and must not use dynamic JavaScript execution or arbitrary user-provided code. For APIs
+ * whose arguments cannot be evaluated eagerly (`request.security`, `input.*` metadata arrays),
+ * handle the raw source in the assignment pass instead.
+ */
 function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): PineValue {
   const customFunction = context.functions.get(name);
   if (customFunction) {
@@ -1672,6 +1748,14 @@ interface DailyCandle {
   volume: number;
 }
 
+/**
+ * Groups chart candles into higher timeframe buckets.
+ *
+ * TradingView evaluates `request.security(..., "D", expr)` on daily bars and expands the result
+ * back onto the chart timeframe. We mimic that by aggregating the candles already loaded in the
+ * browser. This cannot fetch older hidden history, so indicators may have fewer warm-up bars than
+ * TradingView until the chart loads enough candles.
+ */
 function timeframeKey(time: number, timeframe: string): string {
   const normalized = timeframe.trim().toUpperCase();
   const date = new Date(time * 1000);
@@ -1747,6 +1831,7 @@ function aggregateTimeframeCandles(candles: Candle[], timeframe: string): DailyC
   return days;
 }
 
+/** Converts aggregated buckets back into Candle objects so the normal expression evaluator can run. */
 function dailyCandlesForEvaluation(days: DailyCandle[]): Candle[] {
   return days.map((day) => ({
     time: day.time,
@@ -1758,6 +1843,13 @@ function dailyCandlesForEvaluation(days: DailyCandle[]): Candle[] {
   }));
 }
 
+/**
+ * Expands a higher-timeframe result back to the original candle list.
+ *
+ * Each lower-timeframe bar inside the same bucket receives the same evaluated value, matching the
+ * common `barmerge.gaps_off` behavior used by most public scripts. Lookahead nuances are not fully
+ * modeled yet; keep that limitation explicit when adding more `request.security` support.
+ */
 function expandDailyValueToCandles(
   value: PineValue,
   days: DailyCandle[],
@@ -1788,6 +1880,14 @@ function evaluateAvailableHistoryDailySma(
   expression: string,
   dailyContext: EvalContext,
 ): PineValue | null {
+  /**
+   * Practical warm-up fallback for public scripts such as ADR.
+   *
+   * TradingView can evaluate `ta.sma(..., 10)[1]` with history that may not be loaded in our
+   * browser dataset. Instead of returning all `na` until 10 completed buckets exist, we average the
+   * available completed buckets. This keeps object indicators visible while preserving the rule that
+   * the current in-progress bucket is excluded by `[1]`.
+   */
   const match = expression.match(/^ta\.sma\s*\((.+),\s*(.+)\)\s*\[\s*1\s*\]$/);
   if (!match) return null;
   const source = toSeries(evaluateExpression(match[1], dailyContext), dailyContext.candles.length);
@@ -1802,6 +1902,13 @@ function evaluateAvailableHistoryDailySma(
   return { kind: "series", values };
 }
 
+/**
+ * Raw-source evaluator for `request.security`.
+ *
+ * It must run before normal expression parsing because the third argument is an expression that
+ * should be evaluated in the requested timeframe context, not the current chart context. The first
+ * two arguments are metadata (`symbol`, `timeframe`); only single-symbol aggregation is supported.
+ */
 function evaluateRequestSecurityExpression(
   expression: string,
   context: EvalContext,
@@ -1887,6 +1994,18 @@ interface PineObjectCall {
   condition: string | null;
 }
 
+/**
+ * Object runtime notes
+ *
+ * Pine drawing objects are mutable handles: scripts usually create one object on a trigger
+ * (`line.new(...)`) and then update it on later bars (`line.set_x2(...)`). Lightweight Charts does
+ * not have the same object model, so we compile those calls into immutable series/labels for each
+ * detected segment.
+ *
+ * The helpers below intentionally inspect raw source lines instead of adding object calls to
+ * evaluateCall(). Object constructors and setters carry metadata (`xloc`, `extend`, `style`) and
+ * are often guarded by `if` blocks; evaluating them like numeric functions would lose that shape.
+ */
 function objectAssignmentRegex(apiName: string): RegExp {
   const escaped = apiName.replace(".", "\\.");
   return new RegExp(
@@ -1955,6 +2074,8 @@ function objectSetterExpression(
   method: string,
   argIndex: number,
 ): string | undefined {
+  // We use the first matching setter expression in source order. For the supported object subset
+  // this mirrors scripts that create one persistent handle and update it once in the main block.
   const callName = `${apiName}.set_${method}`;
   for (const line of lines) {
     if (!line.text.startsWith(`${callName}(`)) continue;
@@ -2044,6 +2165,7 @@ function objectXTime(
 ): number | null {
   const value = numberExpressionAt(expression, evalIndex, context);
   if (!isUsableNumber(value)) return null;
+  // Pine can address objects by bar index or by timestamp. Lightweight Charts needs timestamps.
   if (xloc === "xloc.bar_time") {
     return value > 10_000_000_000 ? Math.floor(value / 1000) : value;
   }
@@ -2126,6 +2248,7 @@ function compilePineObjectRuntime(
   context: EvalContext,
   errors: string[],
 ): IndicatorResult | null {
+  // Fast exit for normal plot-only scripts. This keeps common indicators on the simpler path.
   if (!/(?:line|box|label|table)\.(?:new|set_|cell)\s*\(/.test(cleaned)) return null;
   const lines = sourceLines(cleaned);
   const series: IndicatorSeries[] = [];
@@ -2295,6 +2418,9 @@ function compilePineObjectRuntime(
         xloc,
       );
       const rightEdgeTime = segmentEndTime(candles, endIndex, extendRight);
+      // `label.style_label_left` means text sits to the right of its x coordinate. When we extend
+      // the active object to the chart's right whitespace, keep the label on that right endpoint so
+      // the line does not run through the label text.
       const time =
         labelStyle === "label.style_label_left" && extendRight
           ? rightEdgeTime ?? anchorTime
@@ -2605,6 +2731,15 @@ function evaluateSelfReferentialAssignment(
   expression: string,
   context: EvalContext,
 ): PineValue | null {
+  /**
+   * Handles patterns like:
+   *
+   *   cycler := condition ? 1 : nz(cycler[1])
+   *
+   * The value at each bar depends on values already computed for earlier bars. Re-evaluating the
+   * full series for every bar is expensive, so this routine evaluates a one-candle scalar context
+   * at a time and manually injects `name[offset]` placeholders from the partial output.
+   */
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const historyRefs = [...expression.matchAll(new RegExp(`\\b${escaped}\\s*\\[\\s*(\\d+)\\s*\\]`, "g"))];
   if (historyRefs.length === 0) {
@@ -2680,6 +2815,19 @@ function scalarContextAt(context: EvalContext, index: number): EvalContext {
   };
 }
 
+/**
+ * Assignment pass.
+ *
+ * Pine code is executed bar-by-bar, but many public indicators can be compiled by evaluating each
+ * assignment over the full candle history. This pass builds `context.variables` so later plot and
+ * object readers can reference calculated series.
+ *
+ * Keep the ordering below intentional:
+ * - raw `input.*` handling strips UI metadata such as `options=[...]` before expression parsing;
+ * - recursive/self-referential assignment handlers emulate common Pine history patterns;
+ * - raw `request.security` handling evaluates its third argument in a different timeframe context;
+ * - plain expressions are the final fallback.
+ */
 function readAssignments(cleaned: string, context: EvalContext, errors: string[]) {
   const lines = sourceLines(cleaned);
   for (let index = 0; index < lines.length; index++) {
@@ -2732,6 +2880,14 @@ export function compilePineScript(
   candles: Candle[],
   indicatorId = "custom",
 ): PineCompilation {
+  /**
+   * Main pipeline:
+   * 1. Normalize comments/newlines and read indicator metadata.
+   * 2. Evaluate assignments into a shared context.
+   * 3. Compile object overlays first, because object scripts may have no `plot()` calls.
+   * 4. Compile hlines/fills/plots.
+   * 5. Merge all visual outputs into IndicatorResult.
+   */
   const cleaned = normalizedSource(sourceCode);
   const meta = extractPineScriptMeta(cleaned);
   const errors: string[] = [];
