@@ -40,10 +40,24 @@ export interface LinePoint {
   color?: string;
 }
 
-export type IndicatorSeriesType = 'line' | 'histogram';
+export type IndicatorSeriesType = 'line' | 'histogram' | 'baselineFill';
+export type IndicatorLineWidth = 1 | 2 | 3 | 4;
+export type IndicatorLineStyle = 0 | 1 | 2 | 3 | 4;
+
+export interface IndicatorSeries {
+  key: string;
+  color: string;
+  data: LinePoint[];
+  type?: IndicatorSeriesType;
+  lineWidth?: IndicatorLineWidth;
+  lineStyle?: IndicatorLineStyle;
+  baseValue?: number;
+  lastValueVisible?: boolean;
+  lineVisible?: boolean;
+}
 
 export interface IndicatorResult {
   id: string;
   /** Multiple series for multi-line indicators (e.g. MACD). */
-  series: { key: string; color: string; data: LinePoint[]; type?: IndicatorSeriesType }[];
+  series: IndicatorSeries[];
 }

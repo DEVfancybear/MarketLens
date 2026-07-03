@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Pine Better RSI v3 rendering (2026-07-03)
+- Added Pine v3 compatibility needed by `Better RSI`: bare `integer`/`source` inputs, legacy
+  functions such as `rsi(...)` and `color(base, transp)`, `hline(...)`, `fill(...)`, and
+  indentation-based `if ... else` expressions with self-referential history like `cycler[1]`.
+- Custom indicator panes now render horizontal lines, dashed/solid line styles, background fill
+  bands, line widths, and per-bar line colors, so RSI, overbought/oversold segments, and the
+  cycler line display closer to TradingView.
+- Fixed Pine call-argument parsing so comparison operators such as `>=` and `<=` inside `plot()`
+  expressions are not mistaken for named arguments.
+
 ### Fixed - Pine VSA/Wyckoff volume histogram rendering (2026-07-03)
 - Fixed Pine source indicators such as `VSA Wyckoff Volume` rendering as a single blue line.
 - `IndicatorResult` now supports `type: "histogram"` and per-point `color`, and both

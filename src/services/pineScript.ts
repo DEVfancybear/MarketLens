@@ -1,4 +1,11 @@
-import type { Candle, IndicatorResult, LinePoint } from "@/types";
+import type {
+  Candle,
+  IndicatorLineStyle,
+  IndicatorLineWidth,
+  IndicatorResult,
+  IndicatorSeries,
+  LinePoint,
+} from "@/types";
 
 export const DEFAULT_PINE_SOURCE = `// This Pine Script code is subject to the terms of the Mozilla Public License 2.0
 // By Custom
@@ -23,6 +30,12 @@ const NAMED_COLORS: Record<string, string> = {
   "color.red": "#f44336",
   "color.purple": "#9c27b0",
   "color.aqua": "#00bcd4",
+  "color.lime": "#00e676",
+  "color.fuchsia": "#e040fb",
+  "color.maroon": "#880e4f",
+  "color.navy": "#311b92",
+  "color.olive": "#808000",
+  "color.teal": "#00897b",
   "color.yellow": "#fdd835",
   "color.white": "#ffffff",
   "color.black": "#000000",
@@ -35,6 +48,12 @@ const NAMED_COLORS: Record<string, string> = {
   red: "#f44336",
   purple: "#9c27b0",
   aqua: "#00bcd4",
+  lime: "#00e676",
+  fuchsia: "#e040fb",
+  maroon: "#880e4f",
+  navy: "#311b92",
+  olive: "#808000",
+  teal: "#00897b",
   yellow: "#fdd835",
   white: "#ffffff",
   black: "#000000",
@@ -192,7 +211,14 @@ function topLevelEquals(input: string): number {
     if (quote) continue;
     if (ch === "(") depth += 1;
     else if (ch === ")") depth -= 1;
-    else if (ch === "=" && depth === 0) return i;
+    else if (
+      ch === "=" &&
+      depth === 0 &&
+      !/[<>=!]/.test(input[i - 1] ?? "") &&
+      input[i + 1] !== "="
+    ) {
+      return i;
+    }
   }
   return -1;
 }
@@ -232,6 +258,55 @@ function parseBool(input: string | undefined): boolean | null {
   if (v === "true") return true;
   if (v === "false") return false;
   return null;
+}
+
+function clampTransparency(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function withTransparency(color: string, transparency: number): string {
+  const alpha = 1 - clampTransparency(transparency) / 100;
+  const hex = color.trim();
+  const match = hex.match(/^#([0-9a-f]{6})$/i);
+  if (!match) return color;
+  const raw = match[1];
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+}
+
+function parseNumberLiteral(input: string | undefined): number | null {
+  if (!input) return null;
+  const value = Number(input.trim());
+  return Number.isFinite(value) ? value : null;
+}
+
+function applyTransparencyToColors(
+  color: string,
+  colors: ColorSeriesData | undefined,
+  transparency: number | null,
+): { color: string; colors?: ColorSeriesData } {
+  if (transparency == null) return { color, colors };
+  return {
+    color: withTransparency(color, transparency),
+    colors: colors?.map((item) => item == null ? null : withTransparency(item, transparency)),
+  };
+}
+
+function lineStyle(expression: string | undefined): IndicatorLineStyle {
+  const key = expression?.trim().replace(/^plot\.style_/, "").toLowerCase();
+  if (key === "dotted") return 1;
+  if (key === "dashed") return 2;
+  if (key === "large_dashed") return 3;
+  if (key === "sparse_dotted") return 4;
+  return 0;
+}
+
+function lineWidth(expression: string | undefined, fallback: IndicatorLineWidth): IndicatorLineWidth {
+  const value = parseNumberLiteral(expression);
+  if (value == null) return fallback;
+  return Math.max(1, Math.min(4, Math.round(value))) as IndicatorLineWidth;
 }
 
 export function extractPineScriptMeta(source: string): PineScriptMeta {
@@ -737,6 +812,24 @@ function resolveIdentifier(name: string, context: EvalContext): PineValue {
   ) {
     return { kind: "string", value: name };
   }
+  if (
+    [
+      "integer",
+      "float",
+      "bool",
+      "source",
+      "string",
+      "line",
+      "linebr",
+      "columns",
+      "histogram",
+      "solid",
+      "dashed",
+      "dotted",
+    ].includes(name)
+  ) {
+    return { kind: "string", value: name };
+  }
 
   switch (name) {
     case "open":
@@ -801,15 +894,39 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
     case "input.source":
     case "input.bool":
       return namedCallArg(args, "defval") ?? callArg(args, 0) ?? { kind: "number", value: 0 };
+    case "color": {
+      const base = callArg(args, 0);
+      const transparency = callArgByNameOrIndex(args, "transp", 1);
+      if (!base || !isColorValue(base)) {
+        return { kind: "color", value: DEFAULT_COLORS[0] };
+      }
+      const transp = transparency ? numberValue(transparency) : null;
+      if (base.kind === "colorSeries") {
+        return {
+          kind: "colorSeries",
+          values: base.values.map((item) =>
+            item == null || transp == null ? item : withTransparency(item, transp),
+          ),
+        };
+      }
+      return {
+        kind: "color",
+        value: transp == null ? base.value : withTransparency(base.value, transp),
+      };
+    }
     case "nz":
       return nz(callArg(args, 0), callArg(args, 1), context.candles.length);
     case "math.abs":
+    case "abs":
       return mapValue(callArg(args, 0), context.candles.length, Math.abs);
     case "math.max":
+    case "max":
       return reduceMath(args.map((arg) => arg.value), context.candles.length, Math.max);
     case "math.min":
+    case "min":
       return reduceMath(args.map((arg) => arg.value), context.candles.length, Math.min);
     case "ta.sma":
+    case "sma":
       return {
         kind: "series",
         values: rollingAverage(
@@ -818,6 +935,7 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     case "ta.ema":
+    case "ema":
       return {
         kind: "series",
         values: exponentialAverage(
@@ -826,6 +944,7 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     case "ta.rma":
+    case "rma":
       return {
         kind: "series",
         values: runningMovingAverage(
@@ -834,6 +953,7 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     case "ta.rsi":
+    case "rsi":
       return {
         kind: "series",
         values: rsiSeries(
@@ -842,8 +962,10 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     case "ta.vwap":
+    case "vwap":
       return { kind: "series", values: vwapSeries(context.candles) };
     case "ta.highest":
+    case "highest":
       return {
         kind: "series",
         values: rollingExtreme(
@@ -853,6 +975,7 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     case "ta.lowest":
+    case "lowest":
       return {
         kind: "series",
         values: rollingExtreme(
@@ -871,7 +994,18 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     }
+    case "change": {
+      const length = callArgByNameOrIndex(args, "length", 1);
+      return {
+        kind: "series",
+        values: changeSeries(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          length ? period(length) : 1,
+        ),
+      };
+    }
     case "ta.atr":
+    case "atr":
       return {
         kind: "series",
         values: atrSeries(context.candles, period(callArgByNameOrIndex(args, "length", 0))),
@@ -1077,6 +1211,30 @@ function seriesToLinePoints(
   return data;
 }
 
+function seriesToLinePointSegments(
+  values: SeriesData,
+  candles: Candle[],
+  colors?: ColorSeriesData,
+): LinePoint[][] {
+  const segments: LinePoint[][] = [];
+  let current: LinePoint[] = [];
+
+  values.forEach((value, index) => {
+    if (isUsableNumber(value) && candles[index]) {
+      current.push({ time: candles[index].time, value, color: colors?.[index] ?? undefined });
+      return;
+    }
+
+    if (current.length > 0) {
+      segments.push(current);
+      current = [];
+    }
+  });
+
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
 function resolveColor(expression: string | undefined, fallback: string): string {
   if (!expression) return fallback;
   const trimmed = expression.trim();
@@ -1119,6 +1277,112 @@ function plotType(style: string | undefined): "line" | "histogram" {
     : "line";
 }
 
+function isLineBreakStyle(style: string | undefined): boolean {
+  return /(^|\.|_)linebr$/.test(style?.trim() ?? "");
+}
+
+interface HLineDef {
+  id: string;
+  title: string;
+  value: number;
+  color: string;
+  lineStyle: IndicatorLineStyle;
+  lineWidth: IndicatorLineWidth;
+}
+
+function flatLinePoints(value: number, candles: Candle[]): LinePoint[] {
+  return candles.map((candle) => ({ time: candle.time, value }));
+}
+
+function hlineVariableName(line: string): string | null {
+  return line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*hline\s*\(/)?.[1] ?? null;
+}
+
+function readHlines(
+  cleaned: string,
+  context: EvalContext,
+  errors: string[],
+): HLineDef[] {
+  const out: HLineDef[] = [];
+  for (const line of sourceLines(cleaned)) {
+    if (!line.text || !/(^|=\s*)hline\s*\(/.test(line.text)) continue;
+    const body = findCallBodies(line.text, "hline")[0];
+    if (!body) continue;
+    const args = parseCallArguments(body);
+    const valueExpression = args.positional[0];
+    if (!valueExpression) {
+      errors.push(`Line ${line.number}: hline() missing price`);
+      continue;
+    }
+
+    try {
+      const id = hlineVariableName(line.text) ?? `hline_${out.length + 1}`;
+      const value = numberValue(evaluateExpression(valueExpression, context));
+      const plotColor = resolvePlotColor(
+        args.named.color ?? args.positional[2],
+        context,
+        DEFAULT_COLORS[out.length % DEFAULT_COLORS.length],
+      );
+      out.push({
+        id,
+        title: unquote(args.named.title) ?? unquote(args.positional[1]) ?? id,
+        value,
+        color: plotColor.color,
+        lineStyle: lineStyle(args.named.linestyle ?? args.positional[3]),
+        lineWidth: lineWidth(args.named.linewidth ?? args.positional[4], 1),
+      });
+    } catch (error) {
+      errors.push(`Line ${line.number}: ${(error as Error).message}`);
+    }
+  }
+  return out;
+}
+
+function readFills(
+  cleaned: string,
+  context: EvalContext,
+  hlines: HLineDef[],
+  candles: Candle[],
+  errors: string[],
+): IndicatorSeries[] {
+  const byId = new Map(hlines.map((line) => [line.id, line]));
+  const out: IndicatorSeries[] = [];
+
+  for (const line of sourceLines(cleaned)) {
+    if (!/^fill\s*\(/.test(line.text)) continue;
+    const body = findCallBodies(line.text, "fill")[0];
+    if (!body) continue;
+    const args = parseCallArguments(body);
+    const first = byId.get(args.positional[0]?.trim());
+    const second = byId.get(args.positional[1]?.trim());
+    if (!first || !second) {
+      errors.push(`Line ${line.number}: fill() currently supports hline variables only`);
+      continue;
+    }
+
+    const low = Math.min(first.value, second.value);
+    const high = Math.max(first.value, second.value);
+    const transparency = parseNumberLiteral(args.named.transp ?? args.positional[3]);
+    const plotColor = resolvePlotColor(
+      args.named.color ?? args.positional[2],
+      context,
+      "#e040fb",
+    );
+    const fillColor = applyTransparencyToColors(plotColor.color, undefined, transparency).color;
+    out.push({
+      key: unquote(args.named.title) ?? unquote(args.positional[4]) ?? `fill_${out.length + 1}`,
+      color: fillColor,
+      type: "baselineFill",
+      baseValue: low,
+      lineVisible: false,
+      lastValueVisible: false,
+      data: flatLinePoints(high, candles),
+    });
+  }
+
+  return out;
+}
+
 function evaluateRecursiveAssignment(
   name: string,
   expression: string,
@@ -1146,24 +1410,161 @@ function evaluateRecursiveAssignment(
   return { kind: "series", values };
 }
 
+interface PineSourceLine {
+  number: number;
+  indent: number;
+  text: string;
+}
+
+function sourceLines(cleaned: string): PineSourceLine[] {
+  return cleaned.split("\n").map((raw, index) => ({
+    number: index + 1,
+    indent: raw.match(/^[ \t]*/)?.[0].replace(/\t/g, "    ").length ?? 0,
+    text: raw.trim().replace(/;$/, ""),
+  }));
+}
+
+function assignmentMatch(text: string): RegExpMatchArray | null {
+  return text.match(/^(?:(?:float|int|bool|color|string)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
+}
+
+function isDeclarationExpression(expression: string): boolean {
+  return /^(plot|hline|fill|alertcondition)\s*\(/.test(expression.trim());
+}
+
+function parsePineIfExpression(
+  lines: PineSourceLine[],
+  startIndex: number,
+  indent: number,
+  firstText: string,
+): { expression: string; endIndex: number } {
+  const condition = firstText.replace(/^if\b/, "").trim();
+  const whenTrue = parsePineIfBranch(lines, startIndex + 1, indent);
+  const elseLine = lines[whenTrue.endIndex];
+  if (!elseLine || elseLine.indent !== indent || elseLine.text !== "else") {
+    throw new Error("Pine if-expression missing else branch");
+  }
+  const whenFalse = parsePineIfBranch(lines, whenTrue.endIndex + 1, indent);
+  return {
+    expression: `(${condition}) ? (${whenTrue.expression}) : (${whenFalse.expression})`,
+    endIndex: whenFalse.endIndex,
+  };
+}
+
+function parsePineIfBranch(
+  lines: PineSourceLine[],
+  startIndex: number,
+  parentIndent: number,
+): { expression: string; endIndex: number } {
+  let index = startIndex;
+  while (index < lines.length && !lines[index].text) index += 1;
+  const first = lines[index];
+  if (!first || first.indent <= parentIndent) {
+    throw new Error("Pine if-expression branch is empty");
+  }
+
+  const branchIndent = first.indent;
+  const locals = new Map<string, string>();
+  let expression = "na";
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.text) {
+      index += 1;
+      continue;
+    }
+    if (line.indent < branchIndent) break;
+    if (line.indent === parentIndent && line.text === "else") break;
+    if (line.indent > branchIndent) {
+      index += 1;
+      continue;
+    }
+
+    const match = assignmentMatch(line.text);
+    if (match) {
+      let value = match[3].trim();
+      if (/^if\b/.test(value)) {
+        const parsed = parsePineIfExpression(lines, index, line.indent, value);
+        value = parsed.expression;
+        index = parsed.endIndex;
+      } else {
+        index += 1;
+      }
+      locals.set(match[1], value);
+      expression = value;
+      continue;
+    }
+
+    if (/^if\b/.test(line.text)) {
+      const parsed = parsePineIfExpression(lines, index, line.indent, line.text);
+      expression = parsed.expression;
+      index = parsed.endIndex;
+      continue;
+    }
+
+    expression = locals.get(line.text) ?? line.text;
+    index += 1;
+  }
+
+  return { expression, endIndex: index };
+}
+
+function evaluateSelfReferentialAssignment(
+  name: string,
+  expression: string,
+  context: EvalContext,
+): PineValue | null {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!new RegExp(`\\b${escaped}\\s*\\[\\s*\\d+\\s*\\]`).test(expression)) {
+    return null;
+  }
+
+  const values: SeriesData = [];
+  for (let index = 0; index < context.candles.length; index++) {
+    const recursiveContext: EvalContext = {
+      candles: context.candles,
+      variables: new Map(context.variables),
+    };
+    recursiveContext.variables.set(name, { kind: "series", values: [...values] });
+    const evaluated = evaluateExpression(expression, recursiveContext);
+    const point =
+      evaluated.kind === "number"
+        ? evaluated.value
+        : evaluated.kind === "bool"
+          ? evaluated.value ? 1 : 0
+          : getAt(evaluated, index, context.candles.length);
+    values.push(isUsableNumber(point) ? point : null);
+  }
+  return { kind: "series", values };
+}
+
 function readAssignments(cleaned: string, context: EvalContext, errors: string[]) {
-  const lines = cleaned.split("\n");
+  const lines = sourceLines(cleaned);
   for (let index = 0; index < lines.length; index++) {
-    const line = lines[index].trim().replace(/;$/, "");
+    const line = lines[index].text;
     if (!line) continue;
     if (/^\/\/?@version/.test(line)) continue;
-    if (/^(indicator|study|strategy|plot|hline|alertcondition)\s*\(/.test(line)) continue;
+    if (/^(indicator|study|strategy|plot|hline|fill|alertcondition)\s*\(/.test(line)) continue;
 
-    const match = line.match(/^(?:(?:float|int|bool|color|string)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
+    const match = assignmentMatch(line);
     if (!match) continue;
+    if (isDeclarationExpression(match[3])) continue;
+
+    let expression = match[3].trim();
     try {
+      if (/^if\b/.test(expression)) {
+        const parsed = parsePineIfExpression(lines, index, lines[index].indent, expression);
+        expression = parsed.expression;
+        index = parsed.endIndex - 1;
+      }
       context.variables.set(
         match[1],
-        evaluateRecursiveAssignment(match[1], match[3], context) ??
-          evaluateExpression(match[3], context),
+        evaluateRecursiveAssignment(match[1], expression, context) ??
+          evaluateSelfReferentialAssignment(match[1], expression, context) ??
+          evaluateExpression(expression, context),
       );
     } catch (error) {
-      errors.push(`Line ${index + 1}: ${(error as Error).message}`);
+      errors.push(`Line ${lines[index].number}: ${(error as Error).message}`);
     }
   }
 }
@@ -1180,12 +1581,23 @@ export function compilePineScript(
 
   readAssignments(cleaned, context, errors);
 
-  const series = findCallBodies(cleaned, "plot").map((body, index) => {
+  const hlines = readHlines(cleaned, context, errors);
+  const fillSeries = readFills(cleaned, context, hlines, candles, errors);
+  const hlineSeries: IndicatorSeries[] = hlines.map((line) => ({
+    key: line.title,
+    color: line.color,
+    data: flatLinePoints(line.value, candles),
+    type: "line",
+    lineWidth: line.lineWidth,
+    lineStyle: line.lineStyle,
+  }));
+
+  const plotSeries = findCallBodies(cleaned, "plot").flatMap<IndicatorSeries>((body, index) => {
     const args = parseCallArguments(body);
     const expression = args.positional[0];
     if (!expression) {
       errors.push(`plot() #${index + 1}: missing series expression`);
-      return null;
+      return [];
     }
 
     try {
@@ -1199,22 +1611,42 @@ export function compilePineScript(
         context,
         DEFAULT_COLORS[index % DEFAULT_COLORS.length],
       );
+      const transparentPlotColor = applyTransparencyToColors(
+        plotColor.color,
+        plotColor.colors,
+        parseNumberLiteral(args.named.transp),
+      );
       const type = plotType(args.named.style);
-      return {
+      const values = toSeries(value, candles.length);
+      const baseSeries = {
         key: title,
-        color: plotColor.color,
+        color: transparentPlotColor.color,
         type,
-        data: seriesToLinePoints(
-          toSeries(value, candles.length),
-          candles,
-          plotColor.colors,
-        ),
-      };
+        lineWidth: lineWidth(args.named.linewidth ?? args.positional[3], 2),
+        lineStyle: lineStyle(args.named.linestyle),
+      } satisfies Omit<IndicatorSeries, "data">;
+
+      if (type === "line" && isLineBreakStyle(args.named.style)) {
+        return seriesToLinePointSegments(values, candles, transparentPlotColor.colors).map(
+          (data, segmentIndex) => ({
+            ...baseSeries,
+            key: segmentIndex === 0 ? title : `${title}_${segmentIndex + 1}`,
+            data,
+          }),
+        );
+      }
+
+      return [{
+        ...baseSeries,
+        data: seriesToLinePoints(values, candles, transparentPlotColor.colors),
+      }];
     } catch (error) {
       errors.push(`plot() #${index + 1}: ${(error as Error).message}`);
-      return null;
+      return [];
     }
-  }).filter((item): item is { key: string; color: string; data: LinePoint[]; type: "line" | "histogram" } => item != null);
+  });
+
+  const series = [...fillSeries, ...hlineSeries, ...plotSeries];
 
   if (series.length === 0 && errors.length === 0) {
     errors.push("No plot() calls found");

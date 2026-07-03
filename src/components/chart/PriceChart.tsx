@@ -31,7 +31,10 @@ const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
 const getDefaultBarSpacing = (timeframe: Timeframe) =>
   BAR_SPACING[timeframe] ?? 8;
-type IndicatorSeriesApi = ISeriesApi<"Line"> | ISeriesApi<"Histogram">;
+type IndicatorSeriesApi =
+  | ISeriesApi<"Line">
+  | ISeriesApi<"Histogram">
+  | ISeriesApi<"Baseline">;
 
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
@@ -415,30 +418,53 @@ export function PriceChart({
       let series = store.get(cfg.id);
       if (!series || series.length !== result.series.length) {
         series?.forEach((s) => chart.removeSeries(s));
-        series = result.series.map((s) =>
-          s.type === "histogram"
+        series = result.series.map((s) => {
+          if (s.type === "baselineFill") {
+            return chart.addBaselineSeries({
+              baseValue: { type: "price", price: s.baseValue ?? 0 },
+              topFillColor1: s.color,
+              topFillColor2: s.color,
+              topLineColor: "rgba(0, 0, 0, 0)",
+              bottomFillColor1: "rgba(0, 0, 0, 0)",
+              bottomFillColor2: "rgba(0, 0, 0, 0)",
+              bottomLineColor: "rgba(0, 0, 0, 0)",
+              lineVisible: s.lineVisible ?? false,
+              priceLineVisible: false,
+              lastValueVisible: s.lastValueVisible ?? false,
+            });
+          }
+
+          return s.type === "histogram"
             ? chart.addHistogramSeries({
                 color: s.color,
                 priceLineVisible: false,
-                lastValueVisible: false,
+                lastValueVisible: s.lastValueVisible ?? false,
               })
             : chart.addLineSeries({
                 color: s.color,
-                lineWidth: 2,
+                lineWidth: s.lineWidth ?? 2,
+                lineStyle: s.lineStyle ?? 0,
                 priceLineVisible: false,
-                lastValueVisible: false,
+                lastValueVisible: s.lastValueVisible ?? false,
                 crosshairMarkerVisible: false,
-              }),
-        );
+              });
+        });
         store.set(cfg.id, series);
       }
       result.series.forEach((s, idx) => {
-        series![idx].applyOptions({ color: s.color });
+        if (s.type === "baselineFill") {
+          series![idx].applyOptions({
+            topFillColor1: s.color,
+            topFillColor2: s.color,
+          });
+        } else {
+          series![idx].applyOptions({ color: s.color });
+        }
         series![idx].setData(
           s.data.map((p) => ({
             time: p.time as UTCTimestamp,
             value: p.value,
-            ...(s.type === "histogram" && p.color ? { color: p.color } : {}),
+            ...(p.color ? { color: p.color } : {}),
           })),
         );
       });

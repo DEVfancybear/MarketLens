@@ -86,7 +86,7 @@ const checks = [
     name: "Indicator renderers support histogram series and per-bar colors",
     ok:
       source.indicatorPane.includes('s.type === "histogram"') &&
-      source.indicatorPane.includes("p.color ??") &&
+      source.indicatorPane.includes("p.color") &&
       source.indicatorPane.includes("p.value >= 0") &&
       fs.readFileSync("src/components/chart/PriceChart.tsx", "utf8").includes(
         's.type === "histogram"',
@@ -95,9 +95,24 @@ const checks = [
   {
     name: "Separate-pane histograms preserve Pine per-bar colors before fallback",
     ok:
-      source.indicatorPane.includes("p.color ??") &&
+      source.indicatorPane.includes("? { color: p.color }") &&
       source.indicatorPane.includes("(p.value >= 0") &&
-      !source.indicatorPane.includes("p.color ??\n                  p.value >= 0"),
+      !source.indicatorPane.includes("p.color ??"),
+  },
+  {
+    name: "Pine compiler supports Better RSI v3 hlines, fills, and block if expressions",
+    ok:
+      source.pineScript.includes('case "rsi"') &&
+      source.pineScript.includes('case "color"') &&
+      source.pineScript.includes("readHlines") &&
+      source.pineScript.includes("readFills") &&
+      source.pineScript.includes("parsePineIfExpression") &&
+      source.pineScript.includes("evaluateSelfReferentialAssignment") &&
+      source.pineScript.includes("isLineBreakStyle") &&
+      source.pineScript.includes("baselineFill") &&
+      source.pineScript.includes("topLevelEquals") &&
+      source.indicatorPane.includes("addBaselineSeries") &&
+      source.indicatorPane.includes("? { color: p.color }"),
   },
   {
     name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",

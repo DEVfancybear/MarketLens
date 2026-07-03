@@ -4,6 +4,18 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 
 ## Completed this session (2026-07-03)
 
+### Pine Better RSI v3 rendering fix
+- User repro: `Better RSI` compiled to a nearly flat single 50 line instead of TradingView's RSI
+  pane with hlines, purple background fill, white RSI, red overbought/oversold segments, and
+  cycler colors.
+- Fix: `pineScript.ts` now handles the script's Pine v3 subset: bare `integer`/`source` enums,
+  legacy `rsi(...)` and `color(base, transp)`, `hline`, `fill`, `linebr`, line widths/styles,
+  comparison operators inside plot expressions, and indentation-based `if ... else` expressions.
+- Fix: custom indicator renderers now support `baselineFill`, hline-style flat line series, and
+  per-bar colors on line series so the cycler can change between lime/red/white.
+- Verification: direct compile of `C:/Users/duong/Downloads/rsi.txt` returned `errors: []` and
+  produced fill, hline, RSI, oversold/overbought segment, and cycler series.
+
 ### Pine VSA/Wyckoff volume rendering fix
 - User repro: the same VSA Wyckoff Volume script renders as colored volume columns in TradingView,
   but rendered as a single blue line in this app.

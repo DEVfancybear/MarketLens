@@ -189,6 +189,8 @@ Custom indicators intentionally bypass `IndicatorSettingsDialog`; source is the 
 - Whitelisted identifiers and functions only.
 - Output is the same `IndicatorResult` shape as built-ins.
 - Histogram plots and per-bar colors are supported for volume-style scripts.
+- Horizontal lines, background fill bands, line widths/styles, and per-bar line colors are supported
+  for RSI-style scripts.
 
 Supported source structure:
 
@@ -208,6 +210,8 @@ Supported identifiers:
 - Pine enum-like identifiers used in metadata: `input.*`, `plot.style_*`, `format.*`
 - Named call arguments in whitelisted calls, including Pine v4 `input(defval=...)`
 - Pine color constants used by source scripts, including the VSA palette colors
+- Pine v3 bare enum aliases used by older public scripts: `integer`, `source`, `linebr`,
+  `solid`, `dashed`, `dotted`
 
 Supported expression features:
 
@@ -217,20 +221,23 @@ Supported expression features:
 - Ternary conditionals, including color palettes.
 - History references such as `series[1]`.
 - Typed declarations such as `float volumeMA = 0`.
+- Pine v3 indentation-based `if ... else` expressions for supported assignment patterns.
 - Wilder-style recursive assignments like `x := nz(x[1]) + (source - nz(x[1])) / length`.
 
 Supported functions:
 
 - Inputs: `input`, `input.int`, `input.float`, `input.source`, `input.bool`
 - Series: `ta.sma`, `ta.ema`, `ta.rma`, `ta.rsi`, `ta.vwap`, `ta.highest`, `ta.lowest`,
-  `ta.change`, `ta.atr`
-- Math/helpers: `math.abs`, `math.max`, `math.min`, `nz`
-- Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`
+  `ta.change`, `ta.atr`, plus Pine v3 aliases such as `sma`, `ema`, `rma`, `rsi`
+- Math/helpers: `math.abs`, `math.max`, `math.min`, `abs`, `max`, `min`, `nz`, `color(base, transp)`
+- Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`, `hline(...)`,
+  `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
 the wrong thing. Examples: strategies, orders, arrays, loops, `request.security`, sessions, alerts,
-tables, labels, fills, conditional blocks, and arbitrary custom functions.
+tables, labels, arbitrary custom functions, and general-purpose block statements outside the
+whitelisted assignment patterns.
 
 ## Render contract
 
@@ -243,7 +250,12 @@ interface IndicatorResult {
     key: string;
     color: string;
     data: { time: number; value: number; color?: string }[];
-    type?: "line" | "histogram";
+    type?: "line" | "histogram" | "baselineFill";
+    lineWidth?: 1 | 2 | 3 | 4;
+    lineStyle?: 0 | 1 | 2 | 3 | 4;
+    baseValue?: number;
+    lastValueVisible?: boolean;
+    lineVisible?: boolean;
   }[];
 }
 ```
@@ -251,8 +263,9 @@ interface IndicatorResult {
 Overlay indicators render in `PriceChart`:
 
 - `indicators.filter(i => i.visible && !i.separatePane)`
-- One Lightweight Charts line or histogram series per returned `series[]`.
-- Histogram points may carry per-bar colors, matching scripts such as VSA volume palettes.
+- One Lightweight Charts line, histogram, or baseline-fill series per returned `series[]`.
+- Histogram and line points may carry per-bar colors, matching scripts such as VSA volume palettes
+  and Better RSI cycler colors.
 - Series are keyed by indicator id and recreated only when series count changes.
 
 Separate-pane indicators render in `IndicatorPane`:
@@ -260,7 +273,7 @@ Separate-pane indicators render in `IndicatorPane`:
 - `indicators.filter(i => i.visible && i.separatePane)`
 - Each pane owns its own lightweight chart.
 - Time scale is synchronized to the main chart logical range.
-- Histogram points preserve per-bar `data[].color` before falling back to bullish/bearish colors.
+- Histogram and line points preserve per-bar `data[].color` before applying fallback colors.
 
 The source of `candles` must be `useVisibleCandles()` from `ChartArea`, not raw full history. This
 is the replay safety rule.

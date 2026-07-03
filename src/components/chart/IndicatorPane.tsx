@@ -96,22 +96,42 @@ export function IndicatorPane({
     const result = computeIndicator(cfg, candles);
     const created = result.series.map((s) => {
       const isHist = s.type === "histogram" || s.key === "hist";
-      const series = isHist
-        ? chart.addHistogramSeries({ color: s.color, priceLineVisible: false })
-        : chart.addLineSeries({
-            color: s.color,
-            lineWidth: 2,
-            priceLineVisible: false,
-            lastValueVisible: true,
-          });
+      const series =
+        s.type === "baselineFill"
+          ? chart.addBaselineSeries({
+              baseValue: { type: "price", price: s.baseValue ?? 0 },
+              topFillColor1: s.color,
+              topFillColor2: s.color,
+              topLineColor: "rgba(0, 0, 0, 0)",
+              bottomFillColor1: "rgba(0, 0, 0, 0)",
+              bottomFillColor2: "rgba(0, 0, 0, 0)",
+              bottomLineColor: "rgba(0, 0, 0, 0)",
+              lineVisible: s.lineVisible ?? false,
+              priceLineVisible: false,
+              lastValueVisible: s.lastValueVisible ?? false,
+            })
+          : isHist
+            ? chart.addHistogramSeries({
+                color: s.color,
+                priceLineVisible: false,
+                lastValueVisible: s.lastValueVisible ?? true,
+              })
+            : chart.addLineSeries({
+                color: s.color,
+                lineWidth: s.lineWidth ?? 2,
+                lineStyle: s.lineStyle ?? 0,
+                priceLineVisible: false,
+                lastValueVisible: s.lastValueVisible ?? true,
+              });
       series.setData(
         s.data.map((p) => ({
           time: p.time as UTCTimestamp,
           value: p.value,
-          ...(isHist
+          ...(p.color
+            ? { color: p.color }
+            : isHist
             ? {
                 color:
-                  p.color ??
                   (p.value >= 0
                     ? chartColors(theme).bull
                     : chartColors(theme).bear),
