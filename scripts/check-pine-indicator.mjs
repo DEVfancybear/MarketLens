@@ -145,6 +145,16 @@ const checks = [
       source.indicatorMenu.includes("My scripts") &&
       source.indicatorMenu.includes("grid-cols-[minmax(220px,1fr)_124px_88px]"),
   },
+  {
+    name: "My scripts indicator browser supports source and delete confirmation actions",
+    ok:
+      source.indicatorMenu.includes("deletePineScriptAtom") &&
+      source.indicatorMenu.includes("Braces") &&
+      source.indicatorMenu.includes("Trash2") &&
+      source.indicatorMenu.includes("Script name") &&
+      source.indicatorMenu.includes("Delete this script?") &&
+      source.indicatorMenu.includes("permanently delete your"),
+  },
 ];
 
 const failed = checks.filter((check) => !check.ok);

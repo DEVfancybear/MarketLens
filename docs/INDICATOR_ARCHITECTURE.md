@@ -188,7 +188,10 @@ It replaces the old compact dropdown while keeping the same indicator-store acti
 - Search filters saved scripts, built-ins, author labels, and source text.
 - Sidebar sections: Favorites, My scripts, and Built-ins.
 - Table columns: Name, Author, Boosts.
-- Saved scripts can be favorited, added to chart, or opened in the bottom Pine Editor.
+- `My scripts` uses a TradingView-style `SCRIPT NAME` list; each saved script has star,
+  source-code `{}` and trash actions.
+- Saved scripts can be favorited, added to chart, opened in the bottom Pine Editor, or deleted
+  after confirmation.
 - Built-ins still use `toggleIndicatorAtom`; active built-ins route to `IndicatorSettingsDialog`.
 
 ## Pine-like compiler contract

@@ -9,6 +9,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `Indicators, metrics, and strategies`, including search, Favorites, My scripts, built-ins,
   author/boost columns, favorite stars, active checkmarks, and settings routing.
 - Updated the toolbar trigger to use a chart-combined icon next to `Indicators`.
+- Aligned the `My scripts` tab with TradingView: a `SCRIPT NAME` list with favorite star,
+  source-code `{}` action, trash action, and a destructive delete confirmation dialog.
 
 ### Fixed - Pine Better RSI v3 rendering (2026-07-03)
 - Added Pine v3 compatibility needed by `Better RSI`: bare `integer`/`source` inputs, legacy

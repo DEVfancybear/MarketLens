@@ -9,6 +9,8 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
   `Indicators, metrics, and strategies` layout: search bar, Favorites/My scripts sidebar,
   built-in indicator section, author/boost columns, favorite stars, active checkmarks, and
   settings routing.
+- Refined `My scripts` to match TradingView's script list: `SCRIPT NAME` header, favorite star,
+  source-code `{}` action, trash icon, and confirm-before-delete modal.
 - Pine script storage remains in the bottom Pine Editor; the modal lists saved scripts and can add
   them to the chart without moving the editor back into a popup.
 
