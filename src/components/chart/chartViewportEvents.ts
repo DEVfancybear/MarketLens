@@ -1,0 +1,69 @@
+import type { IChartApi } from "lightweight-charts";
+
+const INPUT_EVENTS = [
+  "wheel",
+  "dblclick",
+  "touchstart",
+  "touchmove",
+  "touchend",
+  "touchcancel",
+] as const;
+
+const POINTER_EVENTS = [
+  "pointerdown",
+  "pointermove",
+  "pointerup",
+  "pointercancel",
+] as const;
+
+function eventRoot(chart: IChartApi): HTMLElement {
+  const chartElement = chart.chartElement();
+  return chartElement.parentElement ?? chartElement;
+}
+
+/**
+ * One viewport invalidation contract for every overlay.
+ *
+ * Lightweight Charts reports horizontal range changes, but price-scale drags,
+ * pinch gestures, axis double-click resets, and some wheel/autoscale settling
+ * also change (time, price) -> pixel projection. Overlays live outside LWC's
+ * internal renderer, so they need this extra input-level nudge to stay pinned
+ * to candles like TradingView drawings.
+ */
+export function subscribeChartViewportEvents(
+  chart: IChartApi,
+  onViewportChange: () => void,
+): () => void {
+  const timeScale = chart.timeScale();
+  const root = eventRoot(chart);
+  const options: AddEventListenerOptions = { capture: true, passive: true };
+
+  const handleViewportChange = () => onViewportChange();
+  const handlePointerEvent = (event: Event) => {
+    const pointer = event as PointerEvent;
+    if (event.type !== "pointermove" || pointer.buttons !== 0) {
+      onViewportChange();
+    }
+  };
+
+  timeScale.subscribeVisibleLogicalRangeChange(handleViewportChange);
+  timeScale.subscribeSizeChange(handleViewportChange);
+
+  for (const type of INPUT_EVENTS) {
+    root.addEventListener(type, handleViewportChange, options);
+  }
+  for (const type of POINTER_EVENTS) {
+    root.addEventListener(type, handlePointerEvent, options);
+  }
+
+  return () => {
+    timeScale.unsubscribeVisibleLogicalRangeChange(handleViewportChange);
+    timeScale.unsubscribeSizeChange(handleViewportChange);
+    for (const type of INPUT_EVENTS) {
+      root.removeEventListener(type, handleViewportChange, true);
+    }
+    for (const type of POINTER_EVENTS) {
+      root.removeEventListener(type, handlePointerEvent, true);
+    }
+  };
+}

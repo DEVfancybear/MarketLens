@@ -11,6 +11,14 @@ const drawingLayer = readFileSync(
   resolve(root, "src/components/chart/DrawingLayer.tsx"),
   "utf8",
 );
+const priceChart = readFileSync(
+  resolve(root, "src/components/chart/PriceChart.tsx"),
+  "utf8",
+);
+const viewportEvents = readFileSync(
+  resolve(root, "src/components/chart/chartViewportEvents.ts"),
+  "utf8",
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -30,16 +38,27 @@ assert(
   "Viewport follow-window frames must bypass the memo guard and schedule another rAF",
 );
 assert(
-  /addEventListener\("wheel", handleWheel/.test(drawingLayer),
-  "DrawingLayer must nudge viewport repaint directly from wheel zoom events",
+  /subscribeChartViewportEvents\(c, cb\)/.test(drawingLayer),
+  "DrawingLayer must use the shared chart viewport-event contract",
 );
 assert(
-  /unsubscribeVisibleLogicalRangeChange\(handleViewportChange\)/.test(drawingLayer),
-  "DrawingLayer must unsubscribe the time-scale viewport listener on teardown",
+  /subscribeChartViewportEvents\(chart, bump\)/.test(priceChart),
+  "PriceChart must use the shared viewport-event contract for ChartContext.version",
 );
 assert(
-  /removeEventListener\("wheel", handleWheel, true\)/.test(drawingLayer),
-  "DrawingLayer must remove the wheel repaint listener on teardown",
+  /subscribeVisibleLogicalRangeChange/.test(viewportEvents) &&
+    /unsubscribeVisibleLogicalRangeChange/.test(viewportEvents) &&
+    /subscribeSizeChange/.test(viewportEvents) &&
+    /unsubscribeSizeChange/.test(viewportEvents),
+  "Viewport events helper must subscribe and unsubscribe logical-range and size changes",
+);
+assert(
+  /"wheel"/.test(viewportEvents) &&
+    /"dblclick"/.test(viewportEvents) &&
+    /"touchmove"/.test(viewportEvents) &&
+    /"pointermove"/.test(viewportEvents) &&
+    /pointer\.buttons !== 0/.test(viewportEvents),
+  "Viewport events helper must cover wheel, double-click reset, touch/pinch, and active pointer scale/pan",
 );
 
 console.log(

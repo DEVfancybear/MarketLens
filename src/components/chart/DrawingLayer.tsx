@@ -38,6 +38,7 @@ import {
   positionHitDataCoversEntry,
   resolvePositionHit,
 } from "./drawing/tools/plugins/PositionTool";
+import { subscribeChartViewportEvents } from "./chartViewportEvents";
 import { uid } from "@/utils/id";
 
 export function DrawingLayer() {
@@ -390,25 +391,12 @@ export function DrawingLayer() {
       onVersionChange: (cb) => {
         const c = ctxRef.current?.chart;
         if (!c) return () => {};
-        const handleViewportChange = () => cb();
-        const handleWheel = () => cb();
-        const chartElement = c.chartElement();
-        const eventRoot = chartElement.parentElement ?? chartElement;
-        c.timeScale().subscribeVisibleLogicalRangeChange(handleViewportChange);
-        // Wheel zoom can update LWC's own canvas before the logical-range
-        // subscription catches up. Nudge the drawing renderer from the same
-        // input event so it follows the chart immediately instead of waiting
-        // for a later incidental repaint.
-        eventRoot.addEventListener("wheel", handleWheel, {
-          capture: true,
-          passive: true,
-        });
+        const unsubscribeViewportEvents = subscribeChartViewportEvents(c, cb);
         const ro = new ResizeObserver(() => cb());
         const el = canvasRef.current?.parentElement;
         if (el) ro.observe(el);
         return () => {
-          c.timeScale().unsubscribeVisibleLogicalRangeChange(handleViewportChange);
-          eventRoot.removeEventListener("wheel", handleWheel, true);
+          unsubscribeViewportEvents();
           ro.disconnect();
         };
       },

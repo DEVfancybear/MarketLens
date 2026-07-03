@@ -11,8 +11,14 @@ _Last updated: 2026-07-03 (Replay jump + Pine source-code indicators)_
   A single forced repaint could still sample an intermediate Lightweight Charts mapping while wheel
   zoom/autoscale was settling.
 - Fix: `CanvasRenderer` now keeps a short viewport follow-window after zoom/pan/resize invalidation,
-  forcing a few rAF repaints that bypass the memo guard. `DrawingLayer` also nudges this path from
-  chart-root `wheel` events and unsubscribes the logical-range listener correctly.
+  forcing a few rAF repaints that bypass the memo guard. `chartViewportEvents.ts` centralizes the
+  invalidation sources for TradingView-like interactions: visible logical range, time-scale size,
+  wheel zoom, pinch/touch, active pointer drags on chart axes/pane, and double-click scale reset.
+  `PriceChart` uses the same helper for `ChartContext.version`, so DOM/canvas overlays share one
+  viewport contract.
+- Docs: added `docs/ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md` for future maintenance of zoom/pan,
+  projection invalidation, drawing repaint, indicator pane sync, and replay data-window viewport
+  replacement.
 - Guard: added `npm run check:drawing-viewport`.
 
 ### Replay jump viewport fix

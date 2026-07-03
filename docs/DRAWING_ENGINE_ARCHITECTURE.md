@@ -22,6 +22,9 @@ still work, not just the one you were fixing.
 
 The Drawing Engine is a canvas-based overlay system that renders user drawings (trendlines, horizontal/vertical lines, rectangles, fib retracements, text, channels, brush, positions) on top of the Lightweight Charts price chart. All geometry is stored in `(time, price)` data space and projected to pixel coordinates each frame, so drawings remain pinned to data through zoom, pan, and resize.
 
+For the shared chart zoom/pan/viewport invalidation contract, see
+`docs/ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
+
 ## Architecture layers
 
 > The engine is **plugin/adapter based** — there is no giant `switch` and no
@@ -172,12 +175,15 @@ shifted, so the guard would wrongly skip the repaint. `markDirty(true)` sets `fo
 which bypasses the guard for exactly one frame. This is what keeps drawings **pinned to
 candles** through pan/zoom (fixed 2026-06-27).
 
-**Viewport follow-window.** Wheel zoom and autoscale can settle across multiple browser frames.
-If the drawing canvas repaints only once, it can sample an intermediate mapping and appear one
-step behind the candles until another chart event happens. `CanvasRenderer` therefore keeps a
-short forced repaint window after viewport changes (`VIEWPORT_FOLLOW_MS`) and `DrawingLayer`
-nudges that path directly from chart-root `wheel` events. Keep this in the renderer layer, not in
-individual drawing tools, because all tools share the same `(time,price) -> pixel` projection.
+**Viewport follow-window.** Wheel zoom, pinch, axis drag scaling, double-click reset, and autoscale
+can settle across multiple browser frames. If the drawing canvas repaints only once, it can sample
+an intermediate mapping and appear one step behind the candles until another chart event happens.
+`CanvasRenderer` therefore keeps a short forced repaint window after viewport changes
+(`VIEWPORT_FOLLOW_MS`). The invalidation source is shared in
+`components/chart/chartViewportEvents.ts`: it listens to LWC logical-range and time-scale size
+subscriptions, plus chart-root input events (`wheel`, touch/pinch, active pointer drags, and
+double-click reset). Keep this in the renderer/viewport layer, not in individual drawing tools,
+because all tools share the same `(time,price) -> pixel` projection.
 
 ### Coordinate projection & the frame-local cache
 

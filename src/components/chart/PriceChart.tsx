@@ -42,6 +42,7 @@ import { ChartContextObj, type ChartCtx } from "./ChartContext";
 import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 import { IndicatorLegend } from "./IndicatorLegend";
+import { subscribeChartViewportEvents } from "./chartViewportEvents";
 
 const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
@@ -293,7 +294,7 @@ export function PriceChart({
         setVersion((v) => v + 1);
       });
     };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(bump);
+    const unsubscribeViewportEvents = subscribeChartViewportEvents(chart, bump);
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
@@ -320,6 +321,7 @@ export function PriceChart({
     const indStore = indSeriesRef.current;
     return () => {
       ro.disconnect();
+      unsubscribeViewportEvents();
       setMainChart(null);
       chart.remove();
       chartRef.current = null;
