@@ -24,7 +24,9 @@ export const MARKET_SYMBOLS: MarketSymbol[] = [
     base: "BTC",
     quote: "USDT",
     pricePrecision: 2,
-    tickSize: 0.01,
+    // The app displays crypto as TradingView-style perpetual contracts.
+    // BTCUSDT perps use 0.1 price ticks in the Long/Short position tool.
+    tickSize: 0.1,
     providerSymbol: "BTCUSDT",
     streamable: true,
   },

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "lib": ["ES2020"],
+    "rootDir": ".",
+    "outDir": ".test-build",
+    "noEmit": false
+  },
+  "include": [
+    "tests/**/*.ts",
+    "src/components/chart/drawing/tools/positionMetrics.ts"
+  ]
+}

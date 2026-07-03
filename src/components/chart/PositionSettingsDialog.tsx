@@ -8,10 +8,12 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Pencil, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { getMarketSymbol } from "@/services/market-data/symbols";
 import {
   editingDrawingIdAtom,
   drawingsAtom,
   setEditingDrawingAtom,
+  symbolAtom,
   updateDrawingAtom,
 } from "@/store/chartStore";
 import {
@@ -21,6 +23,13 @@ import {
   type PositionStat,
 } from "@/types";
 import { cn } from "@/utils/cn";
+import {
+  formatPriceByTick,
+  levelFromTicks,
+  roundToTick,
+  safeTickSize,
+  ticksBetween,
+} from "./drawing/tools/positionMetrics";
 
 const COLORS = [
   "#ffffff",
@@ -43,14 +52,6 @@ const COLORS = [
   "#673ab7",
 ];
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32];
-
-/** Minimum price increment inferred from the price magnitude. */
-function inferTick(price: number): number {
-  const a = Math.abs(price);
-  if (a >= 1000) return 0.001;
-  if (a >= 1) return 0.0001;
-  return 0.00001;
-}
 
 type Tab = "inputs" | "style" | "visibility";
 
@@ -378,6 +379,7 @@ function StatsSelect({
 export function PositionSettingsDialog() {
   const editingId = useAtomValue(editingDrawingIdAtom);
   const drawings = useAtomValue(drawingsAtom);
+  const symbol = useAtomValue(symbolAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const [tab, setTab] = useState<Tab>("inputs");
@@ -401,40 +403,66 @@ export function PositionSettingsDialog() {
     updateDrawing({ id: drawing.id, patch: p });
 
   const isLong = drawing.tool === "long";
-  const entry = drawing.points[0]?.price ?? 0;
-  const target = drawing.points[1]?.price ?? entry;
-  const stop = drawing.points[2]?.price ?? entry;
-  const tick = inferTick(entry);
+  const marketSymbol = getMarketSymbol(symbol);
+  const tick = safeTickSize(marketSymbol?.tickSize);
+  const entry = roundToTick(drawing.points[0]?.price ?? 0, tick);
+  const target = roundToTick(drawing.points[1]?.price ?? entry, tick);
+  const stop = roundToTick(drawing.points[2]?.price ?? entry, tick);
+  const priceFieldValue = (price: number) =>
+    Number(formatPriceByTick(price, tick, marketSymbol?.pricePrecision ?? 2));
 
   // Patch a single point's price, keeping the others intact.
   const setPointPrice = (idx: number, price: number) => {
     const pts = drawing.points.map((p) => ({ ...p }));
     if (pts[idx]) {
-      pts[idx] = { ...pts[idx], price };
+      pts[idx] = { ...pts[idx], price: roundToTick(price, tick) };
       patch({ points: pts });
     }
   };
   // Profit/stop sit on the correct side of entry for the position direction.
   const profitDir = isLong ? 1 : -1;
   const stopDir = isLong ? -1 : 1;
-  const profitTicks = Math.round(Math.abs(target - entry) / tick);
-  const stopTicks = Math.round(Math.abs(stop - entry) / tick);
+  const profitTicks = ticksBetween(entry, target, tick);
+  const stopTicks = ticksBetween(entry, stop, tick);
   const priceOnSide = (price: number, dir: 1 | -1) =>
-    entry + dir * Math.abs(price - entry);
+    entry + dir * Math.abs(roundToTick(price, tick) - entry);
   const setEntryPrice = (price: number) => {
     const pts = drawing.points.map((p) => ({ ...p }));
     if (!pts[0]) return;
-    const profitDist = Math.abs(target - entry);
-    const stopDist = Math.abs(stop - entry);
-    pts[0] = { ...pts[0], price };
-    if (pts[1]) pts[1] = { ...pts[1], price: price + profitDir * profitDist };
-    if (pts[2]) pts[2] = { ...pts[2], price: price + stopDir * stopDist };
+    const nextEntry = roundToTick(price, tick);
+    pts[0] = { ...pts[0], price: nextEntry };
+    if (pts[1])
+      pts[1] = {
+        ...pts[1],
+        price: levelFromTicks(nextEntry, profitTicks, profitDir, tick),
+      };
+    if (pts[2])
+      pts[2] = {
+        ...pts[2],
+        price: levelFromTicks(nextEntry, stopTicks, stopDir, tick),
+      };
     patch({ points: pts });
   };
   const setProfitPrice = (price: number) =>
-    setPointPrice(1, priceOnSide(price, profitDir));
+    setPointPrice(
+      1,
+      levelFromTicks(
+        entry,
+        ticksBetween(entry, priceOnSide(price, profitDir), tick),
+        profitDir,
+        tick,
+      ),
+    );
   const setStopPrice = (price: number) =>
-    setPointPrice(2, priceOnSide(price, stopDir));
+    setPointPrice(
+      2,
+      levelFromTicks(
+        entry,
+        ticksBetween(entry, priceOnSide(price, stopDir), tick),
+        stopDir,
+        tick,
+      ),
+    );
 
   const accountSize = drawing.accountSize ?? 10000;
   const riskValue = drawing.riskValue ?? 1;
@@ -541,7 +569,7 @@ export function PositionSettingsDialog() {
               </Row>
               <Row label="Entry price">
                 <NumberField
-                  value={Number(entry.toFixed(6))}
+                  value={priceFieldValue(entry)}
                   onCommit={setEntryPrice}
                   className="w-[100px]"
                 />
@@ -559,14 +587,14 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={profitTicks}
                   onCommit={(t) =>
-                    setPointPrice(1, entry + profitDir * Math.abs(t) * tick)
+                    setPointPrice(1, levelFromTicks(entry, t, profitDir, tick))
                   }
                   className="w-[100px]"
                 />
               </Row>
               <Row label="Price">
                 <NumberField
-                  value={Number(target.toFixed(6))}
+                  value={priceFieldValue(target)}
                   onCommit={setProfitPrice}
                   className="w-[100px]"
                 />
@@ -577,14 +605,14 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={stopTicks}
                   onCommit={(t) =>
-                    setPointPrice(2, entry + stopDir * Math.abs(t) * tick)
+                    setPointPrice(2, levelFromTicks(entry, t, stopDir, tick))
                   }
                   className="w-[100px]"
                 />
               </Row>
               <Row label="Price">
                 <NumberField
-                  value={Number(stop.toFixed(6))}
+                  value={priceFieldValue(stop)}
                   onCommit={setStopPrice}
                   className="w-[100px]"
                 />

@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Long/Short position tick and price settings parity (2026-07-03)
+- Replaced Long/Short Position tick calculations with shared `positionMetrics.ts` helpers that use
+  the active symbol's `tickSize` instead of inferring ticks from price magnitude.
+- `PositionSettingsDialog` now keeps `Ticks`, `Price`, and `Entry price` synchronized with
+  TradingView-style tick snapping for both long and short positions.
+- `PositionTool` now uses the same helpers for label prices and tick-count stats.
+- BTCUSDT tick metadata now matches the app's displayed perpetual-contract behavior (`tickSize:
+  0.1`).
+- Added typed tests in `tests/position/` and `npm run test:position`.
+
 ### Fixed - Drawing viewport repaint on chart zoom (2026-07-03)
 - Fixed drawings visually lagging behind candles during wheel zoom until a later repaint.
 - `CanvasRenderer` now keeps a short forced repaint window after viewport changes so drawing

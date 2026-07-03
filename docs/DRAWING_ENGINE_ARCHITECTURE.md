@@ -402,6 +402,32 @@ text behavior.
 - Regression guard: `npm run check:infoline-panel` rejects the old one-line generic chip path and
   checks the measured-width / text-fit panel path stays in place.
 
+## Long / Short position tick-price contract - updated 2026-07-03
+
+The Long / Short Position tool must use symbol metadata for tick math. Do not infer a tick from the
+price magnitude.
+
+- **Source of truth**: `src/components/chart/drawing/tools/positionMetrics.ts` owns all shared
+  conversions between entry/target/stop prices and TradingView-style integer ticks.
+- **Formula**: `ticks = abs(levelPrice - entryPrice) / symbol.tickSize`; `levelPrice = entryPrice
+  +/- ticks * symbol.tickSize`.
+- **Long direction**: target is above entry, stop is below entry.
+- **Short direction**: target is below entry, stop is above entry.
+- **Dialog behavior**: `PositionSettingsDialog.tsx` uses the shared helpers so editing `Ticks`
+  updates `Price`, editing `Price` snaps to the symbol tick and updates `Ticks`, and editing
+  `Entry price` preserves current tick distances.
+- **Renderer behavior**: `PositionTool.ts` uses the same helpers for label price formatting and
+  tick-count stats. Canvas labels and the settings dialog must never drift.
+- **Symbol metadata**: crypto is displayed as a TradingView-style perpetual contract in this app.
+  BTCUSDT therefore uses `tickSize: 0.1`, matching the TradingView reference where
+  `62061.8 - 61915.1 = 146.7` price points equals `1467` ticks.
+- **Reference**: TradingView Advanced Charts symbology documents tick size as symbol price-format
+  metadata (`tick size = minmov / pricescale`), so position tools must read symbol metadata rather
+  than guess from the current price:
+  https://www.tradingview.com/charting-library-docs/latest/connecting_data/Symbology/
+- Regression guard: `npm run test:position` compiles the TypeScript tests under `tests/position/`
+  and verifies the tick/price round-trip contract.
+
 ## Fixed: every new/duplicated/pasted drawing was inserted twice — 2026-07-02
 
 Found while verifying the above feature (a fresh test rectangle showed up twice in

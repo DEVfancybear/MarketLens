@@ -2,6 +2,7 @@
 /.next
 /out
 /build
+/.test-build
 /.data
 *.tsbuildinfo
 __pycache__/

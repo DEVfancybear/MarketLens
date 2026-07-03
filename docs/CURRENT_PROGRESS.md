@@ -4,6 +4,19 @@ _Last updated: 2026-07-03 (Replay jump + Pine source-code indicators)_
 
 ## Completed this session (2026-07-03)
 
+### Long/Short position tick-price parity
+- Replaced the position tool's price-magnitude tick heuristic with shared
+  `positionMetrics.ts` helpers backed by symbol `tickSize` metadata.
+- `PositionSettingsDialog` now keeps `Ticks` and `Price` synchronized like TradingView: editing
+  ticks recalculates price, editing price snaps to the symbol tick and recalculates ticks, and
+  editing entry preserves the current tick distances.
+- `PositionTool` now uses the same helper for canvas price labels and tick-count stats, so labels
+  and settings cannot drift.
+- BTCUSDT is treated as the app's displayed TradingView-style perpetual contract with `tickSize:
+  0.1`, matching the reference where `61915.1 -> 62061.8` equals `1467` ticks.
+- Added typed tests under `tests/position/` plus `npm run test:position`.
+- Docs: updated `docs/DRAWING_ENGINE_ARCHITECTURE.md` and added `tests/position/README.md`.
+
 ### Drawing viewport repaint fix
 - User repro: after zooming the chart out, drawings stayed visually offset and snapped into the
   correct candle positions roughly a second later.

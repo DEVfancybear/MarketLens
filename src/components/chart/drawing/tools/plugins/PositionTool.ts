@@ -11,10 +11,11 @@
  * direction-agnostic, so the same renderer serves both Long and Short.
  */
 import { getDefaultStore } from "jotai";
+import { getMarketSymbol } from "@/services/market-data/symbols";
 import type { Drawing, DrawingTool, Point } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
-import { candlesAtom } from "@/store/chartStore";
+import { candlesAtom, symbolAtom } from "@/store/chartStore";
 import {
   type DrawingAdapter,
   type Anchor,
@@ -23,6 +24,11 @@ import {
   TOL,
   pointDist,
 } from "../ToolRegistry";
+import {
+  formatPriceByTick,
+  safeTickSize,
+  ticksBetween,
+} from "../positionMetrics";
 import { line, chip, canvasFont, applyStyle } from "./shared";
 
 /**
@@ -63,10 +69,22 @@ function currentPrice(): number | null {
   return last ? last.close : null;
 }
 
+function activeMarketMeta() {
+  const symbol = getDefaultStore().get(symbolAtom);
+  return getMarketSymbol(symbol);
+}
+
+function activeTickSize(): number {
+  return safeTickSize(activeMarketMeta()?.tickSize);
+}
+
 function fmtPrice(p: number): string {
-  const a = Math.abs(p);
-  const dec = a >= 1000 ? 2 : a >= 1 ? 3 : 6;
-  return p.toFixed(dec);
+  const meta = activeMarketMeta();
+  return formatPriceByTick(
+    p,
+    safeTickSize(meta?.tickSize),
+    meta?.pricePrecision ?? 2,
+  );
 }
 
 function fmtCurrency(amount: number, currency: string): string {
@@ -96,14 +114,6 @@ function positionHandle(g: CanvasRenderingContext2D, x: number, y: number) {
     POSITION_HANDLE_SIZE - 1,
   );
   g.restore();
-}
-
-/** Minimum price increment inferred from magnitude (matches the settings dialog). */
-function inferTick(price: number): number {
-  const a = Math.abs(price);
-  if (a >= 1000) return 0.001;
-  if (a >= 1) return 0.0001;
-  return 0.00001;
 }
 
 interface Geo {
@@ -468,8 +478,9 @@ function render(
     const rr = risk > 0 ? reward / risk : 0;
     const tPct = entry ? (reward / Math.abs(entry)) * 100 : 0;
     const sPct = entry ? (risk / Math.abs(entry)) * 100 : 0;
-    const tTicks = Math.round(reward / inferTick(entry));
-    const sTicks = Math.round(risk / inferTick(entry));
+    const tickSize = activeTickSize();
+    const tTicks = ticksBetween(entry, target, tickSize);
+    const sTicks = ticksBetween(entry, stop, tickSize);
     const stats = new Set(d.positionStats ?? ["percent"]);
     const showStats = selected || !!d.alwaysShowStats;
     const compact = !!d.compactStats;
