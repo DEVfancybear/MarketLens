@@ -6,6 +6,8 @@ const files = {
   chartStore: "src/store/chartStore.ts",
   pineScript: "src/services/pineScript.ts",
   indicators: "src/services/indicators.ts",
+  indicatorTypes: "src/types/indicators.ts",
+  priceChart: "src/components/chart/PriceChart.tsx",
   indicatorMenu: "src/components/toolbar/IndicatorMenu.tsx",
   indicatorPane: "src/components/chart/IndicatorPane.tsx",
   indicatorSettings: "src/components/toolbar/IndicatorSettingsDialog.tsx",
@@ -88,9 +90,7 @@ const checks = [
       source.indicatorPane.includes('s.type === "histogram"') &&
       source.indicatorPane.includes("p.color") &&
       source.indicatorPane.includes("p.value >= 0") &&
-      fs.readFileSync("src/components/chart/PriceChart.tsx", "utf8").includes(
-        's.type === "histogram"',
-      ),
+      source.priceChart.includes('s.type === "histogram"'),
   },
   {
     name: "Separate-pane histograms preserve Pine per-bar colors before fallback",
@@ -154,6 +154,20 @@ const checks = [
       source.indicatorMenu.includes("Script name") &&
       source.indicatorMenu.includes("Delete this script?") &&
       source.indicatorMenu.includes("permanently delete your"),
+  },
+  {
+    name: "Pine compiler supports ADR 50 object-style overlay rendering",
+    ok:
+      source.pineScript.includes("compileAdrObjectScript") &&
+      source.pineScript.includes("request.security") &&
+      source.pineScript.includes("line.new") &&
+      source.pineScript.includes("table.new") &&
+      source.pineScript.includes("aggregateDailyCandles") &&
+      source.pineScript.includes("ADR_RIGHT_EXTENSION_BARS") &&
+      source.priceChart.includes("IndicatorOverlay") &&
+      source.priceChart.includes("indicatorDashboards") &&
+      source.priceChart.includes("priceToCoordinate(label.price)") &&
+      source.indicatorTypes.includes("IndicatorDashboard"),
   },
 ];
 

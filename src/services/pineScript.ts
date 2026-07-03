@@ -23,6 +23,7 @@ const DEFAULT_COLORS = [
   "#ef5350",
 ];
 const FLAT_LINE_RIGHT_EXTENSION_BARS = 250;
+const ADR_RIGHT_EXTENSION_BARS = 12;
 
 const NAMED_COLORS: Record<string, string> = {
   "color.blue": "#2196f3",
@@ -1315,6 +1316,312 @@ function candleStepSeconds(candles: Candle[]): number {
   return 60;
 }
 
+interface DailyCandle {
+  key: string;
+  startIndex: number;
+  endIndex: number;
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+function dayKey(time: number): string {
+  return new Date(time * 1000).toISOString().slice(0, 10);
+}
+
+function aggregateDailyCandles(candles: Candle[]): DailyCandle[] {
+  const days: DailyCandle[] = [];
+  candles.forEach((candle, index) => {
+    const key = dayKey(candle.time);
+    const current = days[days.length - 1];
+    if (!current || current.key !== key) {
+      days.push({
+        key,
+        startIndex: index,
+        endIndex: index,
+        time: candle.time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+      });
+      return;
+    }
+    current.endIndex = index;
+    current.high = Math.max(current.high, candle.high);
+    current.low = Math.min(current.low, candle.low);
+    current.close = candle.close;
+    current.volume += candle.volume;
+  });
+  return days;
+}
+
+function segmentFlatLinePoints(
+  value: number,
+  candles: Candle[],
+  startIndex: number,
+  endIndex: number,
+  extendRight: boolean,
+): LinePoint[] {
+  const first = candles[startIndex];
+  const last = candles[endIndex];
+  if (!first || !last) return [];
+  const points: LinePoint[] = [{ time: first.time, value }];
+  if (last.time !== first.time) points.push({ time: last.time, value });
+  if (extendRight) {
+    const step = candleStepSeconds(candles);
+    for (let offset = 1; offset <= ADR_RIGHT_EXTENSION_BARS; offset++) {
+      points.push({ time: last.time + step * offset, value });
+    }
+  }
+  return points;
+}
+
+function pineInputNumber(
+  source: string,
+  name: string,
+  fallback: number,
+): number {
+  const match = source.match(
+    new RegExp(`\\b${name}\\s*=\\s*input\\.(?:int|float)\\(\\s*([-+]?\\d+(?:\\.\\d+)?)`),
+  );
+  const value = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function pineInputBool(source: string, name: string, fallback: boolean): boolean {
+  const match = source.match(
+    new RegExp(`\\b${name}\\s*=\\s*input\\.bool\\(\\s*(true|false)`, "i"),
+  );
+  if (!match) return fallback;
+  return match[1].toLowerCase() === "true";
+}
+
+function pineInputColor(
+  source: string,
+  name: string,
+  fallback: string,
+): string {
+  const match = source.match(
+    new RegExp(`\\b${name}\\s*=\\s*input\\.color\\(\\s*([^,\\)]+)`),
+  );
+  return resolveColor(match?.[1], fallback);
+}
+
+function inferPricePrecision(candles: Candle[]): number {
+  let precision = 0;
+  for (const candle of candles.slice(-100)) {
+    for (const value of [candle.open, candle.high, candle.low, candle.close]) {
+      const [, decimals = ""] = String(value).split(".");
+      precision = Math.max(precision, decimals.length);
+    }
+  }
+  return Math.max(0, Math.min(5, precision));
+}
+
+function inferMintick(candles: Candle[]): number {
+  return 1 / 10 ** inferPricePrecision(candles);
+}
+
+function formatUnits(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  return value.toFixed(1);
+}
+
+function compileAdrObjectScript(
+  cleaned: string,
+  candles: Candle[],
+  indicatorId: string,
+): IndicatorResult | null {
+  if (
+    !cleaned.includes("ADR 50 SR Pro") ||
+    !cleaned.includes("request.security") ||
+    !cleaned.includes("line.new") ||
+    !cleaned.includes("table.new")
+  ) {
+    return null;
+  }
+
+  const adrPeriod = Math.max(1, Math.round(pineInputNumber(cleaned, "adrPeriod", 10)));
+  const showLabels = pineInputBool(cleaned, "showLabels", true);
+  const showZones = pineInputBool(cleaned, "showZones", true);
+  const showDash = pineInputBool(cleaned, "showDash", true);
+  const showAdrDate = pineInputBool(cleaned, "showAdrDate", true);
+  const showDistance = pineInputBool(cleaned, "showDistance", true);
+  const zoneWidthPct = Math.max(0, pineInputNumber(cleaned, "zoneWidthPct", 2));
+  const lineWidthValue = lineWidth(String(pineInputNumber(cleaned, "lineWidth", 2)), 2);
+  const colHigh = pineInputColor(cleaned, "colHigh", NAMED_COLORS["color.red"]);
+  const colLow = pineInputColor(cleaned, "colLow", NAMED_COLORS["color.green"]);
+  const zoneTransp = Math.max(0, Math.min(100, pineInputNumber(cleaned, "zoneTransp", 85)));
+
+  const days = aggregateDailyCandles(candles);
+  const series: IndicatorSeries[] = [];
+  const labels: NonNullable<IndicatorResult["labels"]> = [];
+  const precision = inferPricePrecision(candles);
+  let dashboard: IndicatorResult["dashboard"];
+
+  days.forEach((day, dayIndex) => {
+    const previousDays = days.slice(Math.max(0, dayIndex - adrPeriod), dayIndex);
+    if (previousDays.length === 0) return;
+
+    const adr =
+      previousDays.reduce((sum, item) => sum + (item.high - item.low), 0) /
+      previousDays.length;
+    if (!Number.isFinite(adr) || adr <= 0) return;
+
+    const h50 = day.open + adr * 0.5;
+    const l50 = day.open - adr * 0.5;
+    const zoneHalf = adr * (zoneWidthPct / 100) / 2;
+    const isLastDay = dayIndex === days.length - 1;
+    const highData = segmentFlatLinePoints(
+      h50,
+      candles,
+      day.startIndex,
+      day.endIndex,
+      isLastDay,
+    );
+    const lowData = segmentFlatLinePoints(
+      l50,
+      candles,
+      day.startIndex,
+      day.endIndex,
+      isLastDay,
+    );
+
+    if (showZones && zoneHalf > 0) {
+      series.push(
+        {
+          key: `adr-high-zone-${day.key}`,
+          color: withTransparency(colHigh, zoneTransp),
+          type: "baselineFill",
+          baseValue: h50 - zoneHalf,
+          lineVisible: false,
+          lastValueVisible: false,
+          data: segmentFlatLinePoints(
+            h50 + zoneHalf,
+            candles,
+            day.startIndex,
+            day.endIndex,
+            isLastDay,
+          ),
+        },
+        {
+          key: `adr-low-zone-${day.key}`,
+          color: withTransparency(colLow, zoneTransp),
+          type: "baselineFill",
+          baseValue: l50 - zoneHalf,
+          lineVisible: false,
+          lastValueVisible: false,
+          data: segmentFlatLinePoints(
+            l50 + zoneHalf,
+            candles,
+            day.startIndex,
+            day.endIndex,
+            isLastDay,
+          ),
+        },
+      );
+    }
+
+    series.push(
+      {
+        key: `adr-h50-${day.key}`,
+        color: colHigh,
+        data: highData,
+        type: "line",
+        lineWidth: lineWidthValue,
+        lastValueVisible: false,
+      },
+      {
+        key: `adr-l50-${day.key}`,
+        color: colLow,
+        data: lowData,
+        type: "line",
+        lineWidth: lineWidthValue,
+        lastValueVisible: false,
+      },
+    );
+
+    if (showLabels) {
+      labels.push(
+        {
+          key: `adr-h50-label-${day.key}`,
+          price: h50,
+          text: `ADR H50  ${h50.toFixed(precision)}`,
+          color: colHigh,
+          time: highData[highData.length - 1]?.time,
+        },
+        {
+          key: `adr-l50-label-${day.key}`,
+          price: l50,
+          text: `ADR L50  ${l50.toFixed(precision)}`,
+          color: colLow,
+          time: lowData[lowData.length - 1]?.time,
+        },
+      );
+    }
+
+    if (isLastDay && showDash) {
+      const todayRange = day.high - day.low;
+      const mintick = Math.max(inferMintick(candles), Number.EPSILON);
+      const adrUnits = adr / mintick;
+      const rangeUnits = todayRange / mintick;
+      const lastClose = candles[candles.length - 1]?.close ?? day.close;
+      const distHigh = Math.abs((h50 - lastClose) / mintick);
+      const distLow = Math.abs((lastClose - l50) / mintick);
+      const adrCompletion = adr > 0 ? (todayRange / adr) * 100 : 0;
+      const completionCol =
+        adrCompletion > 100
+          ? NAMED_COLORS["color.red"]
+          : adrCompletion >= 50
+            ? NAMED_COLORS["color.yellow"]
+            : NAMED_COLORS["color.lime"];
+      const lastCompletedDay = previousDays[previousDays.length - 1];
+
+      dashboard = {
+        key: "adr-dashboard",
+        title: "ADR 50 SR Pro",
+        subtitle: "pts",
+        rows: [
+          { label: "ADR Period", value: String(adrPeriod) },
+          { label: "ADR Value", value: `${formatUnits(adrUnits)} pts` },
+          { label: "Today Range", value: `${formatUnits(rangeUnits)} pts` },
+          {
+            label: "ADR Completion",
+            value: `${adrCompletion.toFixed(0)}%`,
+            valueColor: completionCol,
+          },
+          {
+            label: "To H50",
+            value: showDistance ? `${formatUnits(distHigh)} pts` : "-",
+            valueColor: colHigh,
+          },
+          {
+            label: "To L50",
+            value: showDistance ? `${formatUnits(distLow)} pts` : "-",
+            valueColor: colLow,
+          },
+          {
+            label: showAdrDate ? "ADR Date" : "",
+            value: showAdrDate && lastCompletedDay ? lastCompletedDay.key : "",
+          },
+        ],
+      };
+    }
+  });
+
+  return {
+    id: indicatorId,
+    series,
+    labels,
+    dashboard,
+  };
+}
+
 function hlineVariableName(line: string): string | null {
   return line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*hline\s*\(/)?.[1] ?? null;
 }
@@ -1636,6 +1943,15 @@ export function compilePineScript(
   const meta = extractPineScriptMeta(cleaned);
   const errors: string[] = [];
   const context: EvalContext = { candles, variables: new Map() };
+  const adrObjectResult = compileAdrObjectScript(cleaned, candles, indicatorId);
+
+  if (adrObjectResult) {
+    return {
+      meta,
+      result: adrObjectResult,
+      errors,
+    };
+  }
 
   readAssignments(cleaned, context, errors);
 

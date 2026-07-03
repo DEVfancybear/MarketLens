@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Pine ADR object overlay rendering (2026-07-03)
+- Added compatibility rendering for the `ADR 50 SR Pro` Pine script, which uses
+  `request.security`, `line.new`, `box.new`, labels, and a table instead of `plot()`.
+- The compiler now recognizes this object-style ADR script and emits overlay H50/L50 lines,
+  translucent zones, right-side labels, and a TradingView-style dashboard.
+
 ### Changed - TradingView-style indicator browser (2026-07-03)
 - Replaced the compact toolbar indicator dropdown with a TradingView-style modal titled
   `Indicators, metrics, and strategies`, including search, Favorites, My scripts, built-ins,

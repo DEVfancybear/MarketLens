@@ -56,8 +56,31 @@ export interface IndicatorSeries {
   lineVisible?: boolean;
 }
 
+export interface IndicatorOverlayLabel {
+  key: string;
+  price: number;
+  text: string;
+  color: string;
+  time?: number;
+}
+
+export interface IndicatorDashboardRow {
+  label: string;
+  value: string;
+  valueColor?: string;
+}
+
+export interface IndicatorDashboard {
+  key: string;
+  title: string;
+  subtitle?: string;
+  rows: IndicatorDashboardRow[];
+}
+
 export interface IndicatorResult {
   id: string;
   /** Multiple series for multi-line indicators (e.g. MACD). */
   series: IndicatorSeries[];
+  labels?: IndicatorOverlayLabel[];
+  dashboard?: IndicatorDashboard;
 }

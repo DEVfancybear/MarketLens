@@ -8,7 +8,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle, Timeframe } from "@/types";
+import type { Candle, IndicatorDashboard, IndicatorResult, Timeframe } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
@@ -35,6 +35,13 @@ type IndicatorSeriesApi =
   | ISeriesApi<"Line">
   | ISeriesApi<"Histogram">
   | ISeriesApi<"Baseline">;
+type ProjectedIndicatorLabel = {
+  key: string;
+  text: string;
+  color: string;
+  x: number;
+  y: number;
+};
 
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
@@ -74,6 +81,12 @@ export function PriceChart({
   const [version, setVersion] = useState(0);
   const [priceMarker, setPriceMarker] =
     useState<CurrentPriceMarkerState | null>(null);
+  const [indicatorLabels, setIndicatorLabels] = useState<
+    ProjectedIndicatorLabel[]
+  >([]);
+  const [indicatorDashboards, setIndicatorDashboards] = useState<
+    IndicatorDashboard[]
+  >([]);
   const countdown = useCountdown(timeframe);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
@@ -398,12 +411,20 @@ export function PriceChart({
     () => indicators.filter((i) => i.visible && !i.separatePane),
     [indicators],
   );
+  const overlayResults = useMemo(
+    () =>
+      overlayIndicators.map((cfg) => ({
+        cfg,
+        result: computeIndicator(cfg, candles),
+      })),
+    [overlayIndicators, candles],
+  );
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !ready) return;
     const store = indSeriesRef.current;
-    const activeIds = new Set(overlayIndicators.map((i) => i.id));
+    const activeIds = new Set(overlayResults.map((item) => item.cfg.id));
 
     // Remove series for indicators no longer present.
     for (const [id, series] of store) {
@@ -413,8 +434,7 @@ export function PriceChart({
       }
     }
 
-    for (const cfg of overlayIndicators) {
-      const result = computeIndicator(cfg, candles);
+    for (const { cfg, result } of overlayResults) {
       let series = store.get(cfg.id);
       if (!series || series.length !== result.series.length) {
         series?.forEach((s) => chart.removeSeries(s));
@@ -454,11 +474,23 @@ export function PriceChart({
       result.series.forEach((s, idx) => {
         if (s.type === "baselineFill") {
           series![idx].applyOptions({
+            baseValue: { type: "price", price: s.baseValue ?? 0 },
             topFillColor1: s.color,
             topFillColor2: s.color,
+            lineVisible: s.lineVisible ?? false,
+            lastValueVisible: s.lastValueVisible ?? false,
           });
         } else {
-          series![idx].applyOptions({ color: s.color });
+          series![idx].applyOptions({
+            color: s.color,
+            ...(s.type === "histogram"
+              ? { lastValueVisible: s.lastValueVisible ?? false }
+              : {
+                  lineWidth: s.lineWidth ?? 2,
+                  lineStyle: s.lineStyle ?? 0,
+                  lastValueVisible: s.lastValueVisible ?? false,
+                }),
+          });
         }
         series![idx].setData(
           s.data.map((p) => ({
@@ -469,7 +501,52 @@ export function PriceChart({
         );
       });
     }
-  }, [overlayIndicators, candles, ready]);
+  }, [overlayResults, ready, theme]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    const container = containerRef.current;
+    if (!chart || !series || !container || !ready) {
+      setIndicatorLabels([]);
+      setIndicatorDashboards([]);
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const width = container.clientWidth;
+      const labels = overlayResults.flatMap(({ result }) =>
+        result.labels ?? [],
+      );
+      const dashboards = overlayResults.flatMap(({ result }) =>
+        result.dashboard ? [result.dashboard] : [],
+      );
+      const rightReserve = dashboards.length > 0 ? 238 : 96;
+      setIndicatorLabels(
+        labels.flatMap((label) => {
+          const y = series.priceToCoordinate(label.price);
+          if (y == null) return [];
+          const x =
+            label.time == null
+              ? width - 220
+              : chart.timeScale().timeToCoordinate(label.time as UTCTimestamp);
+          if (x == null) return [];
+          return [
+            {
+              key: label.key,
+              text: label.text,
+              color: label.color,
+              x: Math.max(4, Math.min(width - rightReserve, x + 8)),
+              y,
+            },
+          ];
+        }),
+      );
+      setIndicatorDashboards(dashboards);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [overlayResults, ready, version]);
 
   // ---- Current price marker (symbol + price + countdown) ----
   useEffect(() => {
@@ -561,6 +638,10 @@ export function PriceChart({
           {children}
         </ChartContextObj.Provider>
       )}
+      <IndicatorOverlay
+        labels={indicatorLabels}
+        dashboards={indicatorDashboards}
+      />
       {priceMarker && (
         <CurrentPriceMarker
           marker={priceMarker}
@@ -579,6 +660,61 @@ type CurrentPriceMarkerState = {
   color: string;
   countdown: string;
 };
+
+function IndicatorOverlay({
+  labels,
+  dashboards,
+}: {
+  labels: ProjectedIndicatorLabel[];
+  dashboards: IndicatorDashboard[];
+}) {
+  return (
+    <>
+      {labels.map((label) => (
+        <div
+          key={label.key}
+          className="pointer-events-none absolute z-20 whitespace-nowrap font-mono text-[12px] font-semibold leading-none"
+          style={{
+            color: label.color,
+            left: label.x,
+            top: label.y,
+            transform: "translateY(-50%)",
+          }}
+        >
+          {label.text}
+        </div>
+      ))}
+      {dashboards.map((dashboard, index) => (
+        <div
+          key={dashboard.key}
+          className="pointer-events-none absolute right-16 z-20 w-[150px] overflow-hidden border border-gray-500/70 bg-black/70 font-mono text-[10px] leading-[15px] text-white shadow-xl"
+          style={{ top: 12 + index * 136 }}
+        >
+          <div className="grid grid-cols-[1fr_auto] border-b border-gray-500/60">
+            <div className="truncate px-1 text-cyan-300">{dashboard.title}</div>
+            <div className="px-1 text-right text-gray-400">
+              {dashboard.subtitle}
+            </div>
+          </div>
+          {dashboard.rows.map((row, rowIndex) => (
+            <div
+              key={`${dashboard.key}:${row.label}:${rowIndex}`}
+              className="grid grid-cols-[1fr_auto] border-b border-gray-500/40 last:border-b-0"
+            >
+              <div className="truncate px-1 text-gray-300">{row.label}</div>
+              <div
+                className="truncate px-1 text-right font-semibold"
+                style={{ color: row.valueColor ?? "#ffffff" }}
+              >
+                {row.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
 
 function CurrentPriceMarker({
   marker,

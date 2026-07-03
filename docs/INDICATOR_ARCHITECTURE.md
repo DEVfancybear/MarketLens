@@ -250,11 +250,14 @@ Supported functions:
 - Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`, `hline(...)`,
   `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
+- Compatibility path: `ADR 50 SR Pro` object-style scripts using `request.security`, `line.new`,
+  `box.new`, labels, and `table.new` are recognized and rendered through a dedicated ADR overlay
+  compiler path. This is not a general-purpose Pine object engine.
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
-the wrong thing. Examples: strategies, orders, arrays, loops, `request.security`, sessions, alerts,
-tables, labels, arbitrary custom functions, and general-purpose block statements outside the
-whitelisted assignment patterns.
+the wrong thing. Examples: strategies, orders, arrays, loops, general `request.security`, sessions,
+alerts, arbitrary tables/labels/boxes/lines outside the ADR compatibility path, arbitrary custom
+functions, and general-purpose block statements outside the whitelisted assignment patterns.
 
 ## Render contract
 
@@ -274,6 +277,19 @@ interface IndicatorResult {
     lastValueVisible?: boolean;
     lineVisible?: boolean;
   }[];
+  labels?: {
+    key: string;
+    price: number;
+    text: string;
+    color: string;
+    time?: number;
+  }[];
+  dashboard?: {
+    key: string;
+    title: string;
+    subtitle?: string;
+    rows: { label: string; value: string; valueColor?: string }[];
+  };
 }
 ```
 
@@ -283,6 +299,8 @@ Overlay indicators render in `PriceChart`:
 - One Lightweight Charts line, histogram, or baseline-fill series per returned `series[]`.
 - Histogram and line points may carry per-bar colors, matching scripts such as VSA volume palettes
   and Better RSI cycler colors.
+- Optional `labels` and `dashboard` metadata render as DOM overlays projected from price/time
+  coordinates; this is used by the ADR object-script compatibility path.
 - Series are keyed by indicator id and recreated only when series count changes.
 
 Separate-pane indicators render in `IndicatorPane`:
