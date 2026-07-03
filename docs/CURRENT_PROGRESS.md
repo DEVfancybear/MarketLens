@@ -4,6 +4,12 @@ _Last updated: 2026-07-04 (Responsive architecture plan)_
 
 ## Completed this session (2026-07-04)
 
+### Fib settings viewport fix
+- Fixed `ObjectSettingsDialog` shell sizing so Fib retracement settings no
+  longer overflow the browser viewport: overlay uses balanced viewport padding,
+  dialog width is clamped to available viewport width, and the content body can
+  shrink/scroll while the footer remains visible.
+
 ### Responsive architecture plan
 - Added `docs/RESPONSIVE_ARCHITECTURE.md` after researching TradingView mobile,
   TradingView tablet/iPad references, Binance mobile chart settings, and the

@@ -510,14 +510,14 @@ export function ObjectSettingsDialog() {
       <>
         <div
           data-chart-ui
-          className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 pt-16"
+          className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) cancel();
           }}
           onContextMenu={(e) => e.preventDefault()}
         >
           <div
-            className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
+            className="flex max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),380px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
             onClick={() => {
               setPop(null);
               setTplOpen(false);
@@ -839,7 +839,7 @@ export function ObjectSettingsDialog() {
     <>
       <div
       data-chart-ui
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 pt-16"
+      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -848,8 +848,8 @@ export function ObjectSettingsDialog() {
       <div
         className={cn(
           isFib
-            ? "flex max-h-[calc(100vh-32px)] w-[456px] flex-col overflow-hidden border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
-            : "flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70",
+            ? "flex max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),456px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
+            : "flex max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),380px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70",
         )}
         onClick={() => {
           setPop(null);
@@ -886,7 +886,7 @@ export function ObjectSettingsDialog() {
         <div
           className={cn(
             isFib
-              ? "flex-1 overflow-y-auto px-5 py-4"
+              ? "min-h-0 flex-1 overflow-y-auto px-5 py-4"
               : "min-h-[180px] flex-1 overflow-y-auto px-5 py-5",
           )}
         >

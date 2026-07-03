@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Drawing settings viewport fit (2026-07-04)
+- Fixed Fib retracement settings overflowing the viewport by making object
+  settings dialogs use viewport-aware max height, responsive width, and a
+  shrinkable scroll body so the footer stays visible.
+
 ### Added - Responsive architecture research and plan (2026-07-04)
 - Added `docs/RESPONSIVE_ARCHITECTURE.md` with TradingView/Binance/tablet UI
   research notes, breakpoint policy, shared viewport state plan, component
