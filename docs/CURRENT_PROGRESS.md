@@ -11,6 +11,10 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 - Fix: `pineScript.ts` now runs this through a shared Pine object runtime instead of an
   ADR-specific branch. The runtime evaluates supported `request.security`, `time("D")`, inputs,
   one-line helper functions, labels, boxes, lines, and table cells into chart overlay metadata.
+- Research update: the runtime now follows more of Pine's common execution surface:
+  higher-timeframe aggregation for `request.security`/`timeframe.change`, `barstate.*`
+  identifiers, multi-argument one-line helper functions, compound assignment syntax, and
+  object drawing coordinates from `x1/y1/x2/y2` plus `xloc`/`extend`.
 - Fix: `PriceChart` renders custom indicator overlay labels/dashboard as DOM overlays projected
   from chart price/time coordinates, so the ADR script appears on the price chart.
 - Follow-up UI fix: ADR labels whose endpoint is off-screen to the left are clipped instead of

@@ -10,6 +10,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - The runtime now evaluates Pine inputs, one-line custom functions, `time("D")`, `str.*`,
   `color.new`, `ta.crossover/crossunder`, and daily `request.security` values before emitting
   overlay lines, zones, labels, and dashboards.
+- Expanded the runtime research pass to cover generic higher-timeframe aggregation for
+  `request.security`/`timeframe.change`, broader `barstate.*` identifiers, multi-argument
+  one-line helper functions, compound assignments, and object drawing coordinates using
+  `x1/y1/x2/y2`, `xloc`, and `extend`.
 - Fixed ADR labels from off-screen historical levels stacking at the left edge by clipping labels
   whose line endpoint is outside the visible chart area.
 

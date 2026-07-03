@@ -168,7 +168,12 @@ const checks = [
       source.pineScript.includes("label.new") &&
       source.pineScript.includes("table.new") &&
       source.pineScript.includes("table.cell") &&
-      source.pineScript.includes("aggregateDailyCandles") &&
+      source.pineScript.includes("aggregateTimeframeCandles") &&
+      source.pineScript.includes("timeframe.change") &&
+      source.pineScript.includes("objectLinePointsFromCoords") &&
+      source.pineScript.includes("objectXTime") &&
+      source.pineScript.includes("barstate.isfirst") &&
+      source.pineScript.includes("last_bar_index") &&
       source.pineScript.includes("OBJECT_RIGHT_EXTENSION_BARS") &&
       !source.pineScript.includes("compileAdrObjectScript") &&
       source.priceChart.includes("IndicatorOverlay") &&

@@ -229,7 +229,8 @@ Supported identifiers:
 - Pine v3 bare enum aliases used by older public scripts: `integer`, `source`, `linebr`,
   `solid`, `dashed`, `dotted`
 - Runtime identifiers needed by object scripts: `bar_index`, `barstate.islast`, `time`,
-  and the supported `syminfo.*` fields.
+  `barstate.isfirst`, `barstate.ishistory`, `barstate.isconfirmed`, `barstate.isrealtime`,
+  `last_bar_index`, `last_bar_time`, `timeframe.period`, and the supported `syminfo.*` fields.
 
 Supported expression features:
 
@@ -239,7 +240,9 @@ Supported expression features:
 - Ternary conditionals, including color palettes.
 - History references such as `series[1]`.
 - Typed declarations such as `float volumeMA = 0`.
-- One-argument helper functions in the form `toUnits(float value) => expression`.
+- Declaration qualifiers used by public scripts: `var`, `varip`, `const`, `series`, `simple`.
+- Compound assignments such as `x += 1`, parsed as reassignment syntax.
+- One-line helper functions in the form `helper(float value, int length) => expression`.
 - Pine v3 indentation-based `if ... else` expressions for supported assignment patterns.
 - Wilder-style recursive assignments like `x := nz(x[1]) + (source - nz(x[1])) / length`.
 - Self-referential assignments with history, such as `cycler[1]`, must evaluate point-by-point in
@@ -250,22 +253,26 @@ Supported functions:
 - Inputs: `input`, `input.int`, `input.float`, `input.source`, `input.bool`, `input.color`
 - Series: `ta.sma`, `ta.ema`, `ta.rma`, `ta.rsi`, `ta.vwap`, `ta.highest`, `ta.lowest`,
   `ta.change`, `ta.atr`, `ta.crossover`, `ta.crossunder`, plus Pine v3 aliases such as `sma`,
-  `ema`, `rma`, `rsi`
+  `ema`, `rma`, `rsi`; common helpers `ta.stdev`, `ta.barssince`, `ta.valuewhen`,
+  `ta.rising`, and `ta.falling`.
 - Math/helpers: `math.abs`, `math.max`, `math.min`, `abs`, `max`, `min`, `nz`, `na`,
   `color(base, transp)`, `color.new(base, transp)`, `str.tostring`, `str.format_time`
-- Timeframe bridge: daily `request.security(..., "D", expression, lookahead=barmerge.lookahead_off)`
-  over the candles available in the chart runtime, plus `time("D")`.
+- Timeframe bridge: `request.security(..., timeframe, expression, lookahead=barmerge.lookahead_off)`
+  over higher-timeframe candles aggregated from the chart runtime for common second/minute/day/week
+  and month strings, plus `time(timeframe)` and `timeframe.change(timeframe)`.
 - Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`, `hline(...)`,
   `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
 - Object runtime subset: `line.new` with `line.set_*`, `box.new` with `box.set_*`,
   `label.new` with `label.set_*`, and `table.new`/`table.cell` are converted into chart overlay
-  series, labels, and dashboard metadata. This is a shared subset, not an indicator-name adapter.
+  series, labels, and dashboard metadata. Object rendering honors common `x1/y1/x2/y2`, `xloc`,
+  and `extend` arguments where they map cleanly to Lightweight Charts data. This is a shared
+  subset, not an indicator-name adapter.
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
-the wrong thing. Examples: strategies, orders, arrays, loops, non-daily/multi-symbol
-`request.security`, sessions, alerts, multi-argument custom functions, and general-purpose block
-statements outside the whitelisted assignment/object patterns.
+the wrong thing. Examples: strategies, orders, arrays, loops, multi-symbol `request.security`,
+sessions, alerts, multi-line custom functions, tuple-return functions beyond the whitelisted
+surface, and general-purpose block statements outside the whitelisted assignment/object patterns.
 
 ## Render contract
 

@@ -108,7 +108,7 @@ type Token =
 interface EvalContext {
   candles: Candle[];
   variables: Map<string, PineValue>;
-  functions: Map<string, { param: string; expression: string }>;
+  functions: Map<string, { params: string[]; expression: string }>;
 }
 
 function stripLineComment(line: string): string {
@@ -858,7 +858,10 @@ function resolveIdentifier(name: string, context: EvalContext): PineValue {
     name.startsWith("position.") ||
     name.startsWith("size.") ||
     name.startsWith("text.align_") ||
-    name.startsWith("barmerge.")
+    name.startsWith("barmerge.") ||
+    name.startsWith("xloc.") ||
+    name.startsWith("yloc.") ||
+    name.startsWith("extend.")
   ) {
     return { kind: "string", value: name };
   }
@@ -896,6 +899,15 @@ function resolveIdentifier(name: string, context: EvalContext): PineValue {
       return sourceSeries(context.candles, "time");
     case "bar_index":
       return { kind: "series", values: context.candles.map((_, index) => index) };
+    case "last_bar_index":
+      return { kind: "number", value: Math.max(0, context.candles.length - 1) };
+    case "last_bar_time":
+      return { kind: "number", value: context.candles.at(-1)?.time ?? Number.NaN };
+    case "barstate.isfirst":
+      return {
+        kind: "series",
+        values: context.candles.map((_, index) => index === 0 ? 1 : 0),
+      };
     case "barstate.islast":
       return {
         kind: "series",
@@ -903,6 +915,13 @@ function resolveIdentifier(name: string, context: EvalContext): PineValue {
           index === context.candles.length - 1 ? 1 : 0,
         ),
       };
+    case "barstate.ishistory":
+    case "barstate.isconfirmed":
+      return { kind: "series", values: context.candles.map(() => 1) };
+    case "barstate.isrealtime":
+      return { kind: "series", values: context.candles.map(() => 0) };
+    case "timeframe.period":
+      return { kind: "string", value: inferTimeframePeriod(context.candles) };
     case "syminfo.tickerid":
       return { kind: "string", value: "" };
     case "syminfo.type":
@@ -963,10 +982,12 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
       variables: new Map(context.variables),
       functions: context.functions,
     };
-    functionContext.variables.set(
-      customFunction.param,
-      callArg(args, 0) ?? { kind: "number", value: Number.NaN },
-    );
+    customFunction.params.forEach((param, index) => {
+      functionContext.variables.set(
+        param,
+        callArg(args, index) ?? { kind: "number", value: Number.NaN },
+      );
+    });
     return evaluateExpression(customFunction.expression, functionContext);
   }
 
@@ -1005,10 +1026,17 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
       return nz(callArg(args, 0), callArg(args, 1), context.candles.length);
     case "time": {
       const timeframe = callArg(args, 0);
-      if (timeframe?.kind === "string" && timeframe.value === "D") {
-        return dailyTimeSeries(context.candles);
+      if (timeframe?.kind === "string") {
+        return timeframeOpenTimeSeries(context.candles, timeframe.value);
       }
       return sourceSeries(context.candles, "time");
+    }
+    case "timeframe.change": {
+      const timeframe = callArg(args, 0);
+      return timeframeChangeSeries(
+        context.candles,
+        timeframe?.kind === "string" ? timeframe.value : inferTimeframePeriod(context.candles),
+      );
     }
     case "str.tostring":
       return {
@@ -1085,6 +1113,40 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
           "high",
         ),
       };
+    case "ta.stdev":
+    case "stdev":
+      return {
+        kind: "series",
+        values: rollingStandardDeviation(
+          toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+          period(callArgByNameOrIndex(args, "length", 1)),
+        ),
+      };
+    case "ta.barssince":
+    case "barssince":
+      return barssinceSeries(callArgOrNa(args, "condition", 0), context.candles.length);
+    case "ta.valuewhen":
+    case "valuewhen":
+      return valuewhenSeries(
+        callArgOrNa(args, "condition", 0),
+        callArgOrNa(args, "source", 1),
+        occurrence(callArgByNameOrIndex(args, "occurrence", 2)),
+        context.candles.length,
+      );
+    case "ta.rising":
+    case "rising":
+      return trendSeries(
+        toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+        period(callArgByNameOrIndex(args, "length", 1)),
+        "rising",
+      );
+    case "ta.falling":
+    case "falling":
+      return trendSeries(
+        toSeries(callArgOrNa(args, "source", 0), context.candles.length),
+        period(callArgByNameOrIndex(args, "length", 1)),
+        "falling",
+      );
     case "ta.lowest":
     case "lowest":
       return {
@@ -1145,6 +1207,11 @@ function period(value: PineValue | undefined): number {
   return Math.max(1, Math.round(numberValue(value)));
 }
 
+function occurrence(value: PineValue | undefined): number {
+  if (!value) return 0;
+  return Math.max(0, Math.round(numberValue(value)));
+}
+
 function mapValue(value: PineValue | undefined, length: number, fn: (n: number) => number): PineValue {
   if (!value) return { kind: "number", value: Number.NaN };
   if (value.kind === "number") return { kind: "number", value: fn(value.value) };
@@ -1191,8 +1258,8 @@ function naValue(value: PineValue | undefined, length: number): PineValue {
   return { kind: "bool", value: false };
 }
 
-function dailyTimeSeries(candles: Candle[]): PineValue {
-  const days = aggregateDailyCandles(candles);
+function timeframeOpenTimeSeries(candles: Candle[], timeframe: string): PineValue {
+  const days = aggregateTimeframeCandles(candles, timeframe);
   const values: SeriesData = Array.from({ length: candles.length }, () => null);
   for (const day of days) {
     for (let index = day.startIndex; index <= day.endIndex; index++) {
@@ -1200,6 +1267,18 @@ function dailyTimeSeries(candles: Candle[]): PineValue {
     }
   }
   return { kind: "series", values };
+}
+
+function timeframeChangeSeries(candles: Candle[], timeframe: string): PineValue {
+  const openTimes = toSeries(timeframeOpenTimeSeries(candles, timeframe), candles.length);
+  return {
+    kind: "series",
+    values: openTimes.map((value, index) => {
+      if (index === 0) return isUsableNumber(value) ? 1 : 0;
+      const previous = openTimes[index - 1];
+      return isUsableNumber(value) && isUsableNumber(previous) && value !== previous ? 1 : 0;
+    }),
+  };
 }
 
 function formatPineTextValue(
@@ -1353,6 +1432,63 @@ function rollingExtreme(values: SeriesData, length: number, mode: "high" | "low"
     }
     return result;
   });
+}
+
+function rollingStandardDeviation(values: SeriesData, length: number): SeriesData {
+  return values.map((_, index) => {
+    if (index < length - 1) return null;
+    const window = values.slice(index - length + 1, index + 1);
+    if (!window.every(isUsableNumber)) return null;
+    const mean = window.reduce((sum, point) => sum + point, 0) / length;
+    const variance = window.reduce((sum, point) => sum + (point - mean) ** 2, 0) / length;
+    return Math.sqrt(variance);
+  });
+}
+
+function barssinceSeries(condition: PineValue, length: number): PineValue {
+  const values: SeriesData = [];
+  let lastTrue: number | null = null;
+  for (let index = 0; index < length; index++) {
+    if (truthyAt(condition, index, length)) {
+      lastTrue = index;
+      values.push(0);
+      continue;
+    }
+    values.push(lastTrue == null ? null : index - lastTrue);
+  }
+  return { kind: "series", values };
+}
+
+function valuewhenSeries(
+  condition: PineValue,
+  source: PineValue,
+  occurrenceIndex: number,
+  length: number,
+): PineValue {
+  const values: SeriesData = [];
+  const matches: number[] = [];
+  for (let index = 0; index < length; index++) {
+    if (truthyAt(condition, index, length)) matches.unshift(index);
+    const sourceIndex = matches[occurrenceIndex];
+    values.push(sourceIndex == null ? null : getAt(source, sourceIndex, length));
+  }
+  return { kind: "series", values };
+}
+
+function trendSeries(values: SeriesData, length: number, mode: "rising" | "falling"): PineValue {
+  return {
+    kind: "series",
+    values: values.map((value, index) => {
+      if (!isUsableNumber(value) || index < length) return 0;
+      const lookback = values.slice(index - length, index);
+      if (!lookback.every(isUsableNumber)) return 0;
+      const ok =
+        mode === "rising"
+          ? lookback.every((point) => value > point)
+          : lookback.every((point) => value < point);
+      return ok ? 1 : 0;
+    }),
+  };
 }
 
 function changeSeries(values: SeriesData, length: number): SeriesData {
@@ -1536,14 +1672,57 @@ interface DailyCandle {
   volume: number;
 }
 
-function dayKey(time: number): string {
-  return new Date(time * 1000).toISOString().slice(0, 10);
+function timeframeKey(time: number, timeframe: string): string {
+  const normalized = timeframe.trim().toUpperCase();
+  const date = new Date(time * 1000);
+  const match = normalized.match(/^(\d+)?([SMHDW])?$/);
+  if (normalized === "M" || /^\d+M$/.test(normalized)) {
+    const months = Math.max(1, Number(normalized.replace("M", "")) || 1);
+    const monthBucket = Math.floor(date.getUTCMonth() / months) * months;
+    return `${date.getUTCFullYear()}-${monthBucket}`;
+  }
+  if (normalized === "D" || normalized.endsWith("D")) {
+    const days = Math.max(1, Number(normalized.replace("D", "")) || 1);
+    const bucket = Math.floor(time / (days * 86_400)) * days * 86_400;
+    return `D-${bucket}`;
+  }
+  if (normalized === "W" || normalized.endsWith("W")) {
+    const weeks = Math.max(1, Number(normalized.replace("W", "")) || 1);
+    const bucket = Math.floor((time + 345_600) / (weeks * 604_800)) * weeks * 604_800;
+    return `W-${bucket}`;
+  }
+  const seconds = timeframeSeconds(normalized) ?? candleStepSeconds([{ time } as Candle]);
+  const bucket = Math.floor(time / seconds) * seconds;
+  return `${seconds}-${bucket}`;
 }
 
-function aggregateDailyCandles(candles: Candle[]): DailyCandle[] {
+function timeframeSeconds(timeframe: string): number | null {
+  const normalized = timeframe.trim().toUpperCase();
+  if (/^\d+$/.test(normalized)) return Number(normalized) * 60;
+  const match = normalized.match(/^(\d+)?([SMHDW])$/);
+  if (!match) return null;
+  const value = Math.max(1, Number(match[1]) || 1);
+  switch (match[2]) {
+    case "S": return value;
+    case "H": return value * 3_600;
+    case "D": return value * 86_400;
+    case "W": return value * 604_800;
+    default: return value * 60;
+  }
+}
+
+function inferTimeframePeriod(candles: Candle[]): string {
+  const step = candleStepSeconds(candles);
+  if (step % 86_400 === 0) return `${step / 86_400}D`;
+  if (step % 3_600 === 0) return String(step / 60);
+  if (step % 60 === 0) return String(step / 60);
+  return `${step}S`;
+}
+
+function aggregateTimeframeCandles(candles: Candle[], timeframe: string): DailyCandle[] {
   const days: DailyCandle[] = [];
   candles.forEach((candle, index) => {
-    const key = dayKey(candle.time);
+    const key = timeframeKey(candle.time, timeframe);
     const current = days[days.length - 1];
     if (!current || current.key !== key) {
       days.push({
@@ -1639,9 +1818,9 @@ function evaluateRequestSecurityExpression(
       ? stringValue(evaluateExpression(args.positional[1], context), context.candles.length - 1, context.candles.length)
       : null);
   const securityExpression = args.positional[2];
-  if (timeframe !== "D" || !securityExpression) return null;
+  if (!timeframe || !securityExpression) return null;
 
-  const days = aggregateDailyCandles(context.candles);
+  const days = aggregateTimeframeCandles(context.candles, timeframe);
   const dailyContext: EvalContext = {
     candles: dailyCandlesForEvaluation(days),
     variables: new Map(context.variables),
@@ -1711,7 +1890,7 @@ interface PineObjectCall {
 function objectAssignmentRegex(apiName: string): RegExp {
   const escaped = apiName.replace(".", "\\.");
   return new RegExp(
-    `^(?:(?:var\\s+)?(?:line|label|box|table)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?::=|=)\\s*${escaped}\\s*\\(`,
+    `^(?:(?:(?:var|varip|const|simple|series)\\s+)*(?:line|label|box|table)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?::=|=)\\s*${escaped}\\s*\\(`,
   );
 }
 
@@ -1842,29 +2021,92 @@ function objectLineWidth(
   return Math.max(1, Math.min(4, Math.round(value))) as IndicatorLineWidth;
 }
 
-function objectSegmentPoints(
-  expression: string,
-  candles: Candle[],
-  startIndex: number,
-  endIndex: number,
-  extendRight: boolean,
+function enumExpression(expression: string | undefined, fallback: string): string {
+  return unquote(expression) ?? expression?.trim() ?? fallback;
+}
+
+function barIndexToTime(index: number, candles: Candle[]): number | null {
+  const first = candles[0];
+  const last = candles.at(-1);
+  if (!first || !last) return null;
+  const rounded = Math.round(index);
+  if (candles[rounded]) return candles[rounded].time;
+  const step = candleStepSeconds(candles);
+  if (rounded < 0) return first.time + rounded * step;
+  return last.time + (rounded - (candles.length - 1)) * step;
+}
+
+function objectXTime(
+  expression: string | undefined,
+  evalIndex: number,
   context: EvalContext,
-  color?: string,
-): LinePoint[] {
-  const first = candles[startIndex];
-  const last = candles[endIndex];
-  if (!first || !last) return [];
-  const startValue = numberExpressionAt(expression, startIndex, context);
-  const endValue = numberExpressionAt(expression, endIndex, context);
-  if (!isUsableNumber(startValue) || !isUsableNumber(endValue)) return [];
-  const points: LinePoint[] = [{ time: first.time, value: startValue, color }];
-  if (last.time !== first.time || endValue !== startValue) {
-    points.push({ time: last.time, value: endValue, color });
+  xloc: string,
+): number | null {
+  const value = numberExpressionAt(expression, evalIndex, context);
+  if (!isUsableNumber(value)) return null;
+  if (xloc === "xloc.bar_time") {
+    return value > 10_000_000_000 ? Math.floor(value / 1000) : value;
   }
-  if (extendRight) {
-    const step = candleStepSeconds(candles);
+  return barIndexToTime(value, context.candles);
+}
+
+function objectLinePointsFromCoords(
+  args: {
+    x1Expression: string | undefined;
+    y1Expression: string | undefined;
+    x2Expression: string | undefined;
+    y2Expression: string | undefined;
+    x1Index: number;
+    y1Index: number;
+    x2Index: number;
+    y2Index: number;
+    extendRight: boolean;
+    xloc: string;
+    color?: string;
+  },
+  context: EvalContext,
+): LinePoint[] {
+  const x1 = objectXTime(args.x1Expression, args.x1Index, context, args.xloc);
+  const x2 = objectXTime(args.x2Expression, args.x2Index, context, args.xloc);
+  const y1 = numberExpressionAt(args.y1Expression, args.y1Index, context);
+  const y2 = numberExpressionAt(args.y2Expression, args.y2Index, context);
+  if (!isUsableNumber(x1) || !isUsableNumber(x2) || !isUsableNumber(y1) || !isUsableNumber(y2)) {
+    return [];
+  }
+  const points: LinePoint[] = [{ time: x1, value: y1, color: args.color }];
+  if (x2 !== x1 || y2 !== y1) points.push({ time: x2, value: y2, color: args.color });
+  if (args.extendRight) {
+    const step = candleStepSeconds(context.candles);
     for (let offset = 1; offset <= OBJECT_RIGHT_EXTENSION_BARS; offset++) {
-      points.push({ time: last.time + step * offset, value: endValue, color });
+      points.push({ time: x2 + step * offset, value: y2, color: args.color });
+    }
+  }
+  return points;
+}
+
+function objectBoxFillPointsFromCoords(
+  args: {
+    leftExpression: string | undefined;
+    topExpression: string | undefined;
+    rightExpression: string | undefined;
+    leftIndex: number;
+    topIndex: number;
+    rightIndex: number;
+    extendRight: boolean;
+    xloc: string;
+  },
+  context: EvalContext,
+): LinePoint[] {
+  const left = objectXTime(args.leftExpression, args.leftIndex, context, args.xloc);
+  const right = objectXTime(args.rightExpression, args.rightIndex, context, args.xloc);
+  const top = numberExpressionAt(args.topExpression, args.topIndex, context);
+  if (!isUsableNumber(left) || !isUsableNumber(right) || !isUsableNumber(top)) return [];
+  const points: LinePoint[] = [{ time: left, value: top }];
+  if (right !== left) points.push({ time: right, value: top });
+  if (args.extendRight) {
+    const step = candleStepSeconds(context.candles);
+    for (let offset = 1; offset <= OBJECT_RIGHT_EXTENSION_BARS; offset++) {
+      points.push({ time: right + step * offset, value: top });
     }
   }
   return points;
@@ -1892,6 +2134,12 @@ function compilePineObjectRuntime(
 
   for (const call of objectCreationCalls(lines, "box.new")) {
     const starts = conditionIndices(call.condition, context, errors, call.line.number);
+    const leftExpression =
+      objectSetterExpression(lines, "box", call.variable, "left", 1) ??
+      rawArg(call.args, "left", 0);
+    const rightExpression =
+      objectSetterExpression(lines, "box", call.variable, "right", 1) ??
+      rawArg(call.args, "right", 2);
     const topExpression =
       objectSetterExpression(lines, "box", call.variable, "top", 1) ??
       rawArg(call.args, "top", 1);
@@ -1900,21 +2148,39 @@ function compilePineObjectRuntime(
       rawArg(call.args, "bottom", 3);
     const colorExpression =
       objectSetterExpression(lines, "box", call.variable, "bgcolor", 1) ??
-      rawArg(call.args, "bgcolor", 5);
-    if (!topExpression || !bottomExpression) continue;
+      rawArg(call.args, "bgcolor", 9);
+    const xloc = enumExpression(rawArg(call.args, "xloc", 8), "xloc.bar_index");
+    const extendExpression =
+      objectSetterExpression(lines, "box", call.variable, "extend", 1) ??
+      rawArg(call.args, "extend", 7);
+    if (!leftExpression || !rightExpression || !topExpression || !bottomExpression) continue;
 
     starts.forEach((startIndex, segmentIndex) => {
       const endIndex = starts[segmentIndex + 1] ? starts[segmentIndex + 1] - 1 : candles.length - 1;
-      const extendRight = segmentIndex === starts.length - 1;
-      const baseValue = numberExpressionAt(bottomExpression, endIndex, context);
+      const extendRight =
+        segmentIndex === starts.length - 1 ||
+        enumExpression(extendExpression, "extend.none") === "extend.right";
+      const rightUsesSetter = !!objectSetterExpression(lines, "box", call.variable, "right", 1);
+      const topUsesSetter = !!objectSetterExpression(lines, "box", call.variable, "top", 1);
+      const bottomUsesSetter = !!objectSetterExpression(lines, "box", call.variable, "bottom", 1);
+      const baseValue = numberExpressionAt(
+        bottomExpression,
+        bottomUsesSetter ? endIndex : startIndex,
+        context,
+      );
       if (!isUsableNumber(baseValue)) return;
       const color = colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]);
-      const data = objectSegmentPoints(
-        topExpression,
-        candles,
-        startIndex,
-        endIndex,
-        extendRight,
+      const data = objectBoxFillPointsFromCoords(
+        {
+          leftExpression,
+          topExpression,
+          rightExpression,
+          leftIndex: startIndex,
+          topIndex: topUsesSetter ? endIndex : startIndex,
+          rightIndex: rightUsesSetter ? endIndex : startIndex,
+          extendRight,
+          xloc,
+        },
         context,
       );
       if (data.length === 0) return;
@@ -1932,28 +2198,44 @@ function compilePineObjectRuntime(
 
   for (const call of objectCreationCalls(lines, "line.new")) {
     const starts = conditionIndices(call.condition, context, errors, call.line.number);
-    const yExpression =
-      objectSetterExpression(lines, "line", call.variable, "y2", 1) ??
-      objectSetterExpression(lines, "line", call.variable, "y1", 1) ??
-      rawArg(call.args, "y2", 3) ??
-      rawArg(call.args, "y1", 1);
-    if (!yExpression) continue;
+    const x1Setter = objectSetterExpression(lines, "line", call.variable, "x1", 1);
+    const x2Setter = objectSetterExpression(lines, "line", call.variable, "x2", 1);
+    const y1Setter = objectSetterExpression(lines, "line", call.variable, "y1", 1);
+    const y2Setter = objectSetterExpression(lines, "line", call.variable, "y2", 1);
+    const x1Expression = x1Setter ?? rawArg(call.args, "x1", 0);
+    const x2Expression = x2Setter ?? rawArg(call.args, "x2", 2);
+    const y1Expression = y1Setter ?? rawArg(call.args, "y1", 1);
+    const y2Expression = y2Setter ?? rawArg(call.args, "y2", 3);
+    const xloc = enumExpression(rawArg(call.args, "xloc", 4), "xloc.bar_index");
+    const extendExpression =
+      objectSetterExpression(lines, "line", call.variable, "extend", 1) ??
+      rawArg(call.args, "extend", 5);
+    if (!x1Expression || !x2Expression || !y1Expression || !y2Expression) continue;
 
     starts.forEach((startIndex, segmentIndex) => {
       const endIndex = starts[segmentIndex + 1] ? starts[segmentIndex + 1] - 1 : candles.length - 1;
-      const extendRight = segmentIndex === starts.length - 1;
+      const extendRight =
+        segmentIndex === starts.length - 1 ||
+        enumExpression(extendExpression, "extend.none") === "extend.right";
       const colorExpression =
         objectSetterExpression(lines, "line", call.variable, "color", 1) ??
-        rawArg(call.args, "color", 4);
+        rawArg(call.args, "color", 6);
       const color = colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]);
-      const data = objectSegmentPoints(
-        yExpression,
-        candles,
-        startIndex,
-        endIndex,
-        extendRight,
+      const data = objectLinePointsFromCoords(
+        {
+          x1Expression,
+          y1Expression,
+          x2Expression,
+          y2Expression,
+          x1Index: x1Setter ? endIndex : startIndex,
+          y1Index: y1Setter ? endIndex : startIndex,
+          x2Index: x2Setter ? endIndex : startIndex,
+          y2Index: y2Setter ? endIndex : startIndex,
+          extendRight,
+          xloc,
+          color,
+        },
         context,
-        color,
       );
       if (data.length === 0) return;
       series.push({
@@ -1963,11 +2245,11 @@ function compilePineObjectRuntime(
         type: "line",
         lineWidth: objectLineWidth(
           objectSetterExpression(lines, "line", call.variable, "width", 1) ??
-            rawArg(call.args, "width", 5),
+            rawArg(call.args, "width", 8),
           endIndex,
           context,
         ),
-        lineStyle: lineStyle(rawArg(call.args, "style", 6)),
+        lineStyle: lineStyle(rawArg(call.args, "style", 7)),
         lastValueVisible: false,
       });
     });
@@ -1975,30 +2257,38 @@ function compilePineObjectRuntime(
 
   for (const call of objectCreationCalls(lines, "label.new")) {
     const starts = conditionIndices(call.condition, context, errors, call.line.number);
+    const xyXSetter = objectSetterExpression(lines, "label", call.variable, "xy", 1);
+    const xyYSetter = objectSetterExpression(lines, "label", call.variable, "xy", 2);
+    const xExpression = xyXSetter ?? rawArg(call.args, "x", 0);
     const yExpression =
-      objectSetterExpression(lines, "label", call.variable, "xy", 2) ??
+      xyYSetter ??
       rawArg(call.args, "y", 1);
     const textExpression =
       objectSetterExpression(lines, "label", call.variable, "text", 1) ??
       rawArg(call.args, "text", 2);
     const colorExpression =
       objectSetterExpression(lines, "label", call.variable, "textcolor", 1) ??
-      rawArg(call.args, "textcolor", 6);
+      rawArg(call.args, "textcolor", 7);
+    const xloc = enumExpression(rawArg(call.args, "xloc", 3), "xloc.bar_index");
     if (!yExpression) continue;
 
     starts.forEach((startIndex, segmentIndex) => {
       const endIndex = starts[segmentIndex + 1] ? starts[segmentIndex + 1] - 1 : candles.length - 1;
       const extendRight = segmentIndex === starts.length - 1;
-      const price = numberExpressionAt(yExpression, endIndex, context);
+      const labelIndex = xyYSetter ? endIndex : startIndex;
+      const price = numberExpressionAt(yExpression, labelIndex, context);
       if (!isUsableNumber(price)) return;
       const text = textExpressionAt(textExpression, endIndex, context);
       if (!text.trim()) return;
+      const time =
+        objectXTime(xExpression, xyXSetter ? endIndex : startIndex, context, xloc) ??
+        segmentEndTime(candles, endIndex, extendRight);
       labels.push({
         key: `${call.variable}_${segmentIndex + 1}`,
         price,
         text,
         color: colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[labels.length % DEFAULT_COLORS.length]),
-        time: segmentEndTime(candles, endIndex, extendRight),
+        time,
       });
     });
   }
@@ -2195,7 +2485,11 @@ function sourceLines(cleaned: string): PineSourceLine[] {
 }
 
 function assignmentMatch(text: string): RegExpMatchArray | null {
-  return text.match(/^(?:(?:var\s+)?(?:float|int|bool|color|string|line|label|box|table)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
+  return text.match(/^(?:(?:export\s+)?(?:(?:var|varip|const|simple|series)\s+)*(?:float|int|bool|color|string|line|label|box|table)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
+}
+
+function compoundAssignmentMatch(text: string): RegExpMatchArray | null {
+  return text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*([+\-*/])=\s*(.+)$/);
 }
 
 function isDeclarationExpression(expression: string): boolean {
@@ -2203,7 +2497,13 @@ function isDeclarationExpression(expression: string): boolean {
 }
 
 function functionDefinitionMatch(text: string): RegExpMatchArray | null {
-  return text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(?:(?:float|int|bool|color|string)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*=>\s*(.+)$/);
+  return text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*=>\s*(.+)$/);
+}
+
+function functionParameterNames(rawParams: string): string[] {
+  return splitTopLevel(rawParams)
+    .map((param) => param.trim().replace(/^(?:float|int|bool|color|string|series|simple)\s+/, ""))
+    .filter((param) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(param));
 }
 
 function parsePineIfExpression(
@@ -2374,17 +2674,22 @@ function readAssignments(cleaned: string, context: EvalContext, errors: string[]
     const functionMatch = functionDefinitionMatch(line);
     if (functionMatch) {
       context.functions.set(functionMatch[1], {
-        param: functionMatch[2],
+        params: functionParameterNames(functionMatch[2]),
         expression: functionMatch[3].trim(),
       });
       continue;
     }
 
-    const match = assignmentMatch(line);
+    const compoundMatch = compoundAssignmentMatch(line);
+    const match = compoundMatch ?? assignmentMatch(line);
     if (!match) continue;
-    if (isDeclarationExpression(match[3])) continue;
+    const name = match[1];
+    const expressionIndex = compoundMatch ? 3 : 3;
+    if (isDeclarationExpression(match[expressionIndex])) continue;
 
-    let expression = match[3].trim();
+    let expression = compoundMatch
+      ? `${name} ${compoundMatch[2]} (${compoundMatch[3].trim()})`
+      : match[3].trim();
     try {
       if (/^if\b/.test(expression)) {
         const parsed = parsePineIfExpression(lines, index, lines[index].indent, expression);
@@ -2392,10 +2697,10 @@ function readAssignments(cleaned: string, context: EvalContext, errors: string[]
         index = parsed.endIndex - 1;
       }
       context.variables.set(
-        match[1],
+        name,
         evaluateInputExpression(expression, context) ??
-        evaluateRecursiveAssignment(match[1], expression, context) ??
-          evaluateSelfReferentialAssignment(match[1], expression, context) ??
+        evaluateRecursiveAssignment(name, expression, context) ??
+          evaluateSelfReferentialAssignment(name, expression, context) ??
           evaluateRequestSecurityExpression(expression, context) ??
           evaluateExpression(expression, context),
       );
