@@ -127,7 +127,7 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
         : 3600;
     const tRight = tEntry + interval * 20; // ~20-bar default width
     const risk = 0.01; // 1% default risk
-    const rr = 2; // default 1 : 2 reward-to-risk
+    const rr = 1; // TradingView position projection defaults to a symmetric 1:1 box.
     const isLong = drawing.tool === "long";
     const target = entry * (1 + (isLong ? risk * rr : -risk * rr));
     const stop = entry * (1 + (isLong ? -risk : risk));
@@ -144,7 +144,12 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     drawing.stopColor = drawing.stopColor ?? "#f23645";
     drawing.textColor = drawing.textColor ?? "#ffffff";
     drawing.fontSize = drawing.fontSize ?? 12;
-    drawing.positionStats = drawing.positionStats ?? ["percent"];
+    drawing.positionStats = drawing.positionStats ?? [
+      "percent",
+      "ticks",
+      "amount",
+      "rr",
+    ];
     drawing.points = [
       { time: tEntry, price: entry },
       { time: tRight, price: target },

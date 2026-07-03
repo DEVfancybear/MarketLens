@@ -1,8 +1,23 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-03 (Replay jump + Pine source-code indicators)_
+_Last updated: 2026-07-04 (Long/Short position parity)_
 
-## Completed this session (2026-07-03)
+## Completed this session (2026-07-04)
+
+### Long/Short position TradingView parity pass (2026-07-04)
+- Researched TradingView position projection behavior and similar walkthroughs: Long/Short is a
+  visual planning tool with one-click entry placement, default target/stop, double-click settings,
+  risk/reward, quantity, projected amount, and opposite direction rules for Short.
+- Added `positionGeometry.ts` so the position tool has a shared interaction contract for six virtual
+  handles, left/right edge resize, target/entry/stop role updates, tick snapping, body drag, and
+  long/short level clamping.
+- Fixed the previous UI/function mismatch where six handles were drawn but only three were
+  interactive.
+- Updated labels toward TradingView's risk/reward style: target/stop show distance, percent, ticks,
+  and projected amount; entry shows Open P&L, Qty, and R/R.
+- New Long/Short drawings default to symmetric 1:1 risk/reward and full stats.
+- Added `docs/POSITION_TOOL_ARCHITECTURE.md` and expanded `npm run test:position` with movement
+  coverage.
 
 ### Long/Short position tick-price parity
 - Replaced the position tool's price-magnitude tick heuristic with shared

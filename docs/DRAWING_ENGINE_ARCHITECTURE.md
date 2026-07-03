@@ -404,6 +404,9 @@ text behavior.
 
 ## Long / Short position tick-price contract - updated 2026-07-03
 
+Full Long/Short rendering and movement details live in
+`docs/POSITION_TOOL_ARCHITECTURE.md`.
+
 The Long / Short Position tool must use symbol metadata for tick math. Do not infer a tick from the
 price magnitude.
 

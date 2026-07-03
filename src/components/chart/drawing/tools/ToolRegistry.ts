@@ -39,6 +39,8 @@ export { defaultMovePoints as defaultMovePoints } from "../geometry/helpers";
 // ---------------------------------------------------------------------------
 
 export interface Anchor {
+  /** Adapter-defined handle id. For most tools this is a point index; position
+   *  tools use virtual ids for their six TradingView-style handles. */
   index: number;
   x: number | null;
   y: number | null;

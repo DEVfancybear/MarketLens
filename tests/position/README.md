@@ -1,6 +1,8 @@
 # Position Tests
 
 This folder contains TypeScript tests for the Long / Short Position drawing tool.
+See `docs/POSITION_TOOL_ARCHITECTURE.md` for the full rendering and interaction
+contract.
 
 The current suite focuses on shared tick/price math because the settings dialog,
 canvas labels, and future position-template code must all agree on the same
@@ -32,9 +34,11 @@ in git.
 Add tests here when changing:
 
 - `src/components/chart/drawing/tools/positionMetrics.ts`
+- `src/components/chart/drawing/tools/positionGeometry.ts`
 - `src/components/chart/drawing/tools/positionInput.ts`
 - Long/Short Position settings fields for `Ticks`, `Price`, or `Entry price`
 - Position labels that display tick count or price
+- Position handle movement, resize behavior, or body dragging
 - Symbol metadata that changes tick size or price formatting
 
 Prefer testing the shared math helpers instead of duplicating component-level

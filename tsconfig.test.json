@@ -8,12 +8,17 @@
     "skipLibCheck": true,
     "types": ["node"],
     "lib": ["ES2020"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "rootDir": ".",
     "outDir": ".test-build",
     "noEmit": false
   },
   "include": [
     "tests/**/*.ts",
+    "src/components/chart/drawing/tools/positionGeometry.ts",
     "src/components/chart/drawing/tools/positionInput.ts",
     "src/components/chart/drawing/tools/positionMetrics.ts"
   ]

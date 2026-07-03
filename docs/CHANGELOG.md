@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Long/Short position TradingView parity pass (2026-07-04)
+- Added `positionGeometry.ts` as the shared contract for Long/Short Position movement, six virtual
+  handles, tick snapping, and long/short side clamping.
+- The selected position tool now exposes six interactive handles, matching the six handles it
+  renders: target/entry/stop on both left and right edges.
+- Body drag now uses the same shared geometry helper and preserves box width while snapping prices
+  to the active symbol tick.
+- Position labels now better match TradingView's risk/reward projection labels: target/stop show
+  distance, percent, ticks, and projected account amount; entry shows Open P&L, Qty, and R/R.
+- New positions now default to a symmetric 1:1 risk/reward box and enable percent, ticks, amount,
+  and risk/reward stats by default.
+- Added `docs/POSITION_TOOL_ARCHITECTURE.md` and expanded `npm run test:position` coverage for
+  six-handle movement and side clamping.
+
 ### Fixed - Long/Short position numeric input editing (2026-07-03)
 - Fixed `Ticks`, `Price`, and `Entry price` fields jumping while typing in the Long/Short Position
   settings dialog.

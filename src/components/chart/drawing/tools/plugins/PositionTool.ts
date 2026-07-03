@@ -29,6 +29,11 @@ import {
   safeTickSize,
   ticksBetween,
 } from "../positionMetrics";
+import {
+  movePosition,
+  movePositionAnchor,
+  POSITION_ANCHORS,
+} from "../positionGeometry";
 import { line, chip, canvasFont, applyStyle } from "./shared";
 
 /**
@@ -89,7 +94,8 @@ function fmtPrice(p: number): string {
 
 function fmtCurrency(amount: number, currency: string): string {
   const suffix = currency === "Default" ? "" : ` ${currency}`;
-  return `${amount.toFixed(2)}${suffix}`;
+  const formatted = amount.toFixed(2).replace(/\.?0+$/, "");
+  return `${formatted}${suffix}`;
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -142,6 +148,47 @@ function geometry(d: Drawing, proj: Projector): Geo | null {
   const yS = proj.toY(stop);
   if (yE == null || yT == null || yS == null) return null;
   return { xL, xR, yE, yT, yS, entry, target, stop };
+}
+
+function positionAnchorsFromGeo(geo: Geo): Anchor[] {
+  return [
+    {
+      index: POSITION_ANCHORS.TARGET_LEFT,
+      x: geo.xL,
+      y: geo.yT,
+      target: "p0",
+    },
+    {
+      index: POSITION_ANCHORS.ENTRY_LEFT,
+      x: geo.xL,
+      y: geo.yE,
+      target: "p1",
+    },
+    {
+      index: POSITION_ANCHORS.STOP_LEFT,
+      x: geo.xL,
+      y: geo.yS,
+      target: "p2",
+    },
+    {
+      index: POSITION_ANCHORS.TARGET_RIGHT,
+      x: geo.xR,
+      y: geo.yT,
+      target: "p3",
+    },
+    {
+      index: POSITION_ANCHORS.ENTRY_RIGHT,
+      x: geo.xR,
+      y: geo.yE,
+      target: "p4",
+    },
+    {
+      index: POSITION_ANCHORS.STOP_RIGHT,
+      x: geo.xR,
+      y: geo.yS,
+      target: "p5",
+    },
+  ];
 }
 
 /** Minimal candle shape needed for hit detection. */
@@ -348,8 +395,8 @@ function render(
   const entryCol = d.color || POSITION_COLORS.ENTRY_LINE;
   const tpLine = d.targetColor || POSITION_COLORS.TP_LINE;
   const slLine = d.stopColor || POSITION_COLORS.SL_LINE;
-  const tpFill = d.targetColor || POSITION_COLORS.PROFIT_FILL;
-  const slFill = d.stopColor || POSITION_COLORS.LOSS_FILL;
+  const tpFill = d.targetColor || POSITION_COLORS.TP_LINE;
+  const slFill = d.stopColor || POSITION_COLORS.SL_LINE;
 
   // Has price reached the target / stop? (direction-agnostic — works for both
   // Long and Short.) When it has, TradingView brightens that zone so the trader
@@ -359,8 +406,8 @@ function render(
     price != null && (target >= entry ? price >= target : price <= target);
   const reachedStop =
     price != null && (stop <= entry ? price <= stop : price >= stop);
-  const baseAlpha = d.opacity ?? 0.15;
-  const hitAlpha = Math.max(0.4, baseAlpha + 0.3);
+  const baseAlpha = d.opacity ?? 0.24;
+  const hitAlpha = Math.max(0.42, baseAlpha + 0.18);
   const loseAlpha = baseAlpha * 0.4; // dim losing zone ~40 % of normal
   const isTpHit = hit?.status === "tp_hit";
   const isSlHit = hit?.status === "sl_hit";
@@ -391,12 +438,12 @@ function render(
   g.restore();
 
   // ── Zone borders (1 px dashed, very subtle) ──
-  // TradingView draws a thin dashed border on both profit and loss
-  // rectangles.  Low alpha so it never dominates.
+  // TradingView reads the projection as solid TP/SL bands.  Keep the border
+  // subtle so it does not compete with candles.
   g.save();
-  g.globalAlpha = 0.18;
+  g.globalAlpha = 0.42;
   g.lineWidth = 1;
-  g.setLineDash([4, 4]);
+  g.setLineDash([]);
   g.strokeStyle = tpLine;
   if (profitH > 1)
     g.strokeRect(snapLeft + 0.5, profitTop + 0.5, snapW - 1, profitH - 1);
@@ -417,11 +464,10 @@ function render(
   applyStyle(g, d.lineStyle);
   const lineYE = Math.round(clampToPricePane(yE)) + crispOffset;
   line(g, snapLeft, lineYE, snapLeft + snapW, lineYE);
-  // TP / SL follow the user-selected line style. Defaults stay solid for the
-  // entry and dashed for the levels only when no explicit style is set.
+  // TP / SL follow the user-selected line style. Defaults stay solid like
+  // TradingView's position projection.
   g.lineWidth = lw;
-  if (d.lineStyle) applyStyle(g, d.lineStyle);
-  else g.setLineDash([4, 4]);
+  applyStyle(g, d.lineStyle);
   g.strokeStyle = tpLine;
   const lineYT = Math.round(clampToPricePane(yT)) + crispOffset;
   line(g, snapLeft, lineYT, snapLeft + snapW, lineYT);
@@ -447,25 +493,6 @@ function render(
     g.lineTo(Math.round(hitX), Math.round(hitY) + 0.5);
     g.stroke();
     g.restore();
-  } else {
-    // --- Diagonal guide lines (pre-hit, always visible) ---
-    // TradingView shows very faint dashed diagonals from the entry right
-    // edge to the TP and SL levels even before a hit, as visual guides.
-    g.save();
-    g.globalAlpha = 0.12;
-    g.lineWidth = 1;
-    g.setLineDash([4, 4]);
-    g.strokeStyle = tpLine;
-    g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(clampToPricePane(yE)) + 0.5);
-    g.lineTo(Math.round(xR), Math.round(clampToPricePane(yT)) + 0.5);
-    g.stroke();
-    g.strokeStyle = slLine;
-    g.beginPath();
-    g.moveTo(Math.round(xR), Math.round(clampToPricePane(yE)) + 0.5);
-    g.lineTo(Math.round(xR), Math.round(clampToPricePane(yS)) + 0.5);
-    g.stroke();
-    g.restore();
   }
 
   // --- Labels ---
@@ -481,73 +508,92 @@ function render(
     const tickSize = activeTickSize();
     const tTicks = ticksBetween(entry, target, tickSize);
     const sTicks = ticksBetween(entry, stop, tickSize);
-    const stats = new Set(d.positionStats ?? ["percent"]);
+    const stats = new Set(
+      d.positionStats?.length
+        ? d.positionStats
+        : (["percent", "ticks", "amount", "rr"] as const),
+    );
     const showStats = selected || !!d.alwaysShowStats;
     const compact = !!d.compactStats;
     const fontSize = d.fontSize ?? 11;
     const textColor = d.textColor ?? "#fff";
 
-    // Money amounts when account/risk are configured.
-    let qtyTxt = "";
-    let profitTxt = "";
-    let riskTxt = "";
+    // Money amounts when account/risk are configured. TradingView's position
+    // labels show projected account amount on TP/SL, plus open P&L and Qty on
+    // the entry line.
+    let qty = 0;
+    let targetAmountTxt = "";
+    let stopAmountTxt = "";
+    let entryStatsTxt = "";
     if (d.accountSize != null && d.riskValue != null) {
       const riskAmount =
         (d.riskUnit ?? "%") === "%"
           ? d.accountSize * (d.riskValue / 100)
           : d.riskValue;
-      const qty = risk > 0 ? (riskAmount / risk) * (d.lotSize ?? 1) : 0;
+      qty = risk > 0 ? (riskAmount / risk) * (d.lotSize ?? 1) : 0;
       const profitAmount = qty * reward;
       const cur = d.accountCurrency ?? "USD";
       const prec = d.qtyPrecision ?? 2;
-      qtyTxt = showStats && stats.has("amount") ? `  Qty ${qty.toFixed(prec)}` : "";
-      profitTxt =
-        showStats && stats.has("amount")
-          ? `  +${fmtCurrency(profitAmount, cur)}`
-          : "";
-      riskTxt =
-        showStats && stats.has("amount")
-          ? `  -${fmtCurrency(riskAmount, cur)}`
-          : "";
+      const openPnl =
+        price == null
+          ? 0
+          : (d.tool === "long" ? price - entry : entry - price) * qty;
+      if (showStats && stats.has("amount")) {
+        targetAmountTxt = `Amount: ${fmtCurrency(
+          d.accountSize + profitAmount,
+          cur,
+        )}`;
+        stopAmountTxt = `Amount: ${fmtCurrency(d.accountSize - riskAmount, cur)}`;
+        entryStatsTxt = compact
+          ? `P&L ${fmtCurrency(openPnl, cur)}  Qty ${qty.toFixed(prec)}`
+          : `Open P&L: ${fmtCurrency(openPnl, cur)}  Qty: ${qty.toFixed(prec)}`;
+      }
     }
 
     // Build label strings first so we can measure their pixel width.
+    const fmtDistance = (value: number) => formatPriceByTick(value, tickSize, 2);
     const targetParts = [
-      compact ? `TP: ${fmtPrice(target)}` : `Target: ${fmtPrice(target)}`,
+      compact
+        ? `TP: ${fmtDistance(reward)}`
+        : `Target: ${fmtDistance(reward)}`,
     ];
     const stopParts = [
-      compact ? `SL: ${fmtPrice(stop)}` : `Stop: ${fmtPrice(stop)}`,
+      compact ? `SL: ${fmtDistance(risk)}` : `Stop: ${fmtDistance(risk)}`,
     ];
     if (showStats && stats.has("percent")) {
-      targetParts.push(`${tPct.toFixed(2)}%`);
-      stopParts.push(`${sPct.toFixed(2)}%`);
+      targetParts.push(`(${tPct.toFixed(2)}%)`);
+      stopParts.push(`(${sPct.toFixed(2)}%)`);
     }
     if (showStats && stats.has("ticks")) {
-      targetParts.push(compact ? `${tTicks}t` : `${tTicks} ticks`);
-      stopParts.push(compact ? `${sTicks}t` : `${sTicks} ticks`);
+      targetParts.push(compact ? `${tTicks}t` : String(tTicks));
+      stopParts.push(compact ? `${sTicks}t` : String(sTicks));
     }
-    if (profitTxt) targetParts.push(profitTxt.trim());
-    if (riskTxt) stopParts.push(riskTxt.trim());
+    if (targetAmountTxt) targetParts.push(targetAmountTxt);
+    if (stopAmountTxt) stopParts.push(stopAmountTxt);
     if (isTpHit) targetParts.push(compact ? "HIT" : "\u2713 HIT");
     if (isSlHit) stopParts.push(compact ? "HIT" : "\u2715 HIT");
 
-    const entryLabel = `${compact ? "E:" : "Entry:"} ${fmtPrice(entry)}${qtyTxt}`;
+    const entryParts = [
+      entryStatsTxt || `${compact ? "E:" : "Entry:"} ${fmtPrice(entry)}`,
+    ];
+    if (showStats && stats.has("rr")) {
+      entryParts.push(
+        compact ? `RR ${rr.toFixed(2)}` : `Risk/Reward Ratio: ${rr.toFixed(2)}`,
+      );
+    }
+    const entryLabel = entryParts.join(compact ? " " : "  ");
     const targetLabel = targetParts.join(compact ? " " : "  ");
     const stopLabel = stopParts.join(compact ? " " : "  ");
-    const rrLabel = compact
-      ? `RR ${rr.toFixed(2)}`
-      : `Risk/Reward Ratio: ${rr.toFixed(2)}`;
 
-    // Pre-measure for right-alignment (target, stop, RR at the right edge).
+    // Pre-measure for label placement.
     // chip() horizontal padding = 6 px total (3 each side).
     g.save();
     g.font = canvasFont(fontSize, { weight: 500 });
     const targetW = g.measureText(targetLabel).width + 6;
     const stopW = g.measureText(stopLabel).width + 6;
-    const rrW = g.measureText(rrLabel).width + 6;
+    const entryW = g.measureText(entryLabel).width + 6;
     g.restore();
 
-    const rightEdge = snapLeft + snapW;
     const chipH = Math.max(15, fontSize + 4);
     const labelPad = 2;
     const labelY = (y: number) =>
@@ -559,20 +605,12 @@ function render(
     const labelX = (x: number, width: number) =>
       clamp(x, labelPad, Math.max(labelPad, proj.width - width - labelPad));
 
-    // Entry: left edge, sits ON the entry line (TradingView: touches line).
-    g.save();
-    g.font = canvasFont(fontSize, { weight: 500 });
-    const entryW = g.measureText(entryLabel).width + 6;
-    g.restore();
-    chip(g, entryLabel, labelX(xL, entryW), labelY(yE), entryCol, 0.92, 2, {
-      fontSize,
-      textColor,
-    });
-    // Target: right edge, sits ON the TP line.
+    // Target/Stop: left-aligned inside the box. Entry: centered on the entry
+    // line, matching TradingView's risk/reward chip placement.
     chip(
       g,
       targetLabel,
-      labelX(rightEdge - targetW, targetW),
+      labelX(snapLeft + 4, targetW),
       labelY(yT),
       tpLine,
       0.92,
@@ -583,26 +621,23 @@ function render(
     chip(
       g,
       stopLabel,
-      labelX(rightEdge - stopW, stopW),
+      labelX(snapLeft + 4, stopW),
       labelY(yS),
       slLine,
       0.92,
       2,
       { fontSize, textColor },
     );
-    // R/R: right edge, same vertical level as the entry line.
-    if (showStats && stats.has("rr")) {
-      chip(
-        g,
-        rrLabel,
-        labelX(rightEdge - rrW, rrW),
-        labelY(yE),
-        entryCol,
-        0.92,
-        2,
-        { fontSize, textColor },
-      );
-    }
+    chip(
+      g,
+      entryLabel,
+      labelX(snapLeft + snapW / 2 - entryW / 2, entryW),
+      labelY(yE),
+      entryCol,
+      0.92,
+      2,
+      { fontSize, textColor },
+    );
   }
 
   // --- Handles (selected state only) ---
@@ -610,32 +645,15 @@ function render(
   // xR is only for zones, lines, labels and the hit overlay.  Handles must
   // stay at the editable position so interaction remains independent.
   if (selected) {
-    // Selection outline: dashed rectangle around the entire position.
-    // TradingView shows this in addition to the anchor handles.
-    const selTop = clampToPricePane(Math.min(yE, yT, yS));
-    const selBot = clampToPricePane(Math.max(yE, yT, yS));
-    g.save();
-    g.strokeStyle = TV_SELECTION_BLUE;
-    g.lineWidth = 1;
-    g.globalAlpha = 0.9;
-    g.setLineDash([3, 3]);
-    g.strokeRect(
-      Math.round(left) - 4,
-      Math.round(selTop) - 4,
-      Math.round(w) + 8,
-      Math.round(selBot - selTop) + 8,
-    );
-    g.restore();
-
     const drawHandle = (x: number, y: number) => {
       if (y >= clipTop && y <= clipBottom) positionHandle(g, x, y);
     };
-    drawHandle(xL, yT);
-    drawHandle(xL, yE);
-    drawHandle(xL, yS);
-    drawHandle(origXR, yT);
-    drawHandle(origXR, yE);
-    drawHandle(origXR, yS);
+    for (const anchor of positionAnchorsFromGeo({
+      ...geo,
+      xR: origXR,
+    })) {
+      if (anchor.x != null && anchor.y != null) drawHandle(anchor.x, anchor.y);
+    }
   }
 }
 
@@ -649,18 +667,20 @@ function hitTest(
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return [];
   const { xL, xR, yE, yT, yS } = geo;
-  const handleXR = xR;
   const results: HitResult[] = [];
 
-  const dE = pointDist(px, py, xL, yE);
-  const dT = pointDist(px, py, handleXR, yT);
-  const dS = pointDist(px, py, handleXR, yS);
-  if (dE <= HANDLE_RADIUS)
-    results.push({ drawing: d, target: "p0", distance: dE });
-  if (dT <= HANDLE_RADIUS)
-    results.push({ drawing: d, target: "p1", distance: dT });
-  if (dS <= HANDLE_RADIUS)
-    results.push({ drawing: d, target: "p2", distance: dS });
+  for (const anchor of positionAnchorsFromGeo(geo)) {
+    if (anchor.x == null || anchor.y == null) continue;
+    const distance = pointDist(px, py, anchor.x, anchor.y);
+    if (distance <= HANDLE_RADIUS + 2) {
+      results.push({
+        drawing: d,
+        target: anchor.target,
+        anchorIndex: anchor.index,
+        distance,
+      });
+    }
+  }
 
   // Body: inside the box, or on the entry line.
   const left = Math.min(xL, xR);
@@ -689,50 +709,21 @@ function getAnchors(
 ): Anchor[] {
   const geo = geometry(d, { toX, toY, width: 0, height: 0 } as Projector);
   if (!geo) return [];
-  return [
-    { index: 0, x: geo.xL, y: geo.yE, target: "p0" },
-    { index: 1, x: geo.xR, y: geo.yT, target: "p1" },
-    { index: 2, x: geo.xR, y: geo.yS, target: "p2" },
-  ];
+  return positionAnchorsFromGeo(geo);
 }
 
-/** Drag a single handle. p1 = target, p2 = stop; both also set the right edge. */
+/** Drag one of the six virtual TradingView-style position handles. */
 function moveAnchor(
   origPoints: Point[],
   index: number,
   pointer: Point,
 ): Point[] {
-  const next = origPoints.map((pt) => ({ ...pt }));
-  // Clamp non-finite values that can appear during extreme drags.
-  const safeTime = Number.isFinite(pointer.time)
-    ? pointer.time
-    : (origPoints[0]?.time ?? 0);
-  const safePrice = Number.isFinite(pointer.price)
-    ? pointer.price
-    : (origPoints[0]?.price ?? 0);
-  if (index === 0) {
-    // Entry handle: adjust the entry price only; the left-edge time stays put
-    // so the box keeps its width (TradingView drags the entry line vertically).
-    next[0] = { ...next[0], price: safePrice };
-  } else if (index === 1) {
-    next[1] = { time: safeTime, price: safePrice };
-    if (next[2]) next[2] = { ...next[2], time: safeTime };
-  } else if (index === 2) {
-    next[2] = { time: safeTime, price: safePrice };
-    if (next[1]) next[1] = { ...next[1], time: safeTime };
-  } else if (next[index]) {
-    next[index] = { time: safeTime, price: safePrice };
-  }
-  return next;
+  return movePositionAnchor(origPoints, index, pointer, activeTickSize());
 }
 
 /** Move the whole box (translate all points). */
 function move(origPoints: Point[], pointer: Point, dragStart: Point): Point[] {
-  let dt = pointer.time - dragStart.time;
-  let dp = pointer.price - dragStart.price;
-  if (!Number.isFinite(dt)) dt = 0;
-  if (!Number.isFinite(dp)) dp = 0;
-  return origPoints.map((pt) => ({ time: pt.time + dt, price: pt.price + dp }));
+  return movePosition(origPoints, pointer, dragStart, activeTickSize());
 }
 
 function boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
