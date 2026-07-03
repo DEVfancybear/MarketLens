@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Responsive architecture research and plan (2026-07-04)
+- Added `docs/RESPONSIVE_ARCHITECTURE.md` with TradingView/Binance/tablet UI
+  research notes, breakpoint policy, shared viewport state plan, component
+  migration phases, and responsive test matrix.
+
 ### Changed - Settings popup color sync (2026-07-04)
 - Synced drawing, Long/Short position, and indicator settings popups to the Text
   settings palette: dark neutral background, neutral borders, white active tab

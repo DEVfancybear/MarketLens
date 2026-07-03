@@ -1,8 +1,16 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Settings popup color sync)_
+_Last updated: 2026-07-04 (Responsive architecture plan)_
 
 ## Completed this session (2026-07-04)
+
+### Responsive architecture plan
+- Added `docs/RESPONSIVE_ARCHITECTURE.md` after researching TradingView mobile,
+  TradingView tablet/iPad references, Binance mobile chart settings, and the
+  current desktop-first layout.
+- The plan defines phone/tablet/desktop breakpoints, a shared viewport policy,
+  responsive panel/dialog/tool surfaces, chart gesture requirements, and a
+  Playwright viewport test matrix for implementation.
 
 ### Settings popup color sync
 - Synced `ObjectSettingsDialog`, `PositionSettingsDialog`, and
