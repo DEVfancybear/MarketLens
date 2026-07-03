@@ -7,9 +7,9 @@ import {
   inferPositionOrderType,
 } from "../../src/components/chart/drawing/tools/positionTradePrefill";
 
-function position(tool: "long" | "short"): Drawing {
+function position(tool: "long" | "short", id = "dw-test"): Drawing {
   return {
-    id: "dw-test",
+    id,
     tool,
     color: "#089981",
     lineWidth: 1,
@@ -40,6 +40,7 @@ test("position order type follows side and entry relative to market", () => {
 test("long position drawing fills trade ticket with entry, stop, target and risk", () => {
   assert.deepEqual(buildOrderPrefillFromPositionDrawing(position("long"), 101), {
     source: "position-drawing",
+    drawingId: "dw-test",
     side: "long",
     type: "limit",
     price: 100,
@@ -52,6 +53,7 @@ test("long position drawing fills trade ticket with entry, stop, target and risk
 test("short position drawing fills reversed stop and target", () => {
   assert.deepEqual(buildOrderPrefillFromPositionDrawing(position("short"), 99), {
     source: "position-drawing",
+    drawingId: "dw-test",
     side: "short",
     type: "limit",
     price: 100,
@@ -59,4 +61,17 @@ test("short position drawing fills reversed stop and target", () => {
     takeProfit: 90,
     riskPct: 2.5,
   });
+});
+
+test("position prefill keeps the source drawing id for multi-position charts", () => {
+  assert.equal(
+    buildOrderPrefillFromPositionDrawing(position("long", "dw-long-a"), 101)
+      ?.drawingId,
+    "dw-long-a",
+  );
+  assert.equal(
+    buildOrderPrefillFromPositionDrawing(position("short", "dw-short-b"), 99)
+      ?.drawingId,
+    "dw-short-b",
+  );
 });

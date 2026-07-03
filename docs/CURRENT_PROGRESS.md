@@ -13,6 +13,9 @@ _Last updated: 2026-07-04 (Position to Trade ticket prefill)_
 - Added versioned `orderPrefillAtom` / `setOrderPrefillAtom`; this makes prefill
   persistent across panel mounting, unlike the previous transient event-bus path.
 - Context-menu order prefill now uses the same atom path.
+- Multiple Long/Short Positions are scoped by source `drawingId`: selecting a
+  position refreshes the ticket, and dragging/editing entry, TP, SL, or risk
+  refreshes only that active/source position.
 - Added typed coverage in `tests/position/positionTradePrefill.test.ts`.
 
 ### Long/Short position TradingView parity pass (2026-07-04)

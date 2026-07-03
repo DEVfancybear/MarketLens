@@ -86,12 +86,25 @@ event bus message for this path; switching the bottom panel to `Trade` happens
 after the atom is written, and the newly mounted ticket consumes the latest
 versioned prefill.
 
+The prefill payload includes the source `drawingId`. This matters when multiple
+Long/Short Positions are on the chart:
+
+- Creating a new position makes that new drawing the ticket source and opens the
+  `Trade` tab.
+- Selecting a different Long/Short Position refreshes the ticket from that
+  selected drawing without creating an order.
+- Dragging or editing entry, target, stop, or risk refreshes the ticket only for
+  the selected drawing or the drawing that is already the ticket source.
+- True multi-select does not pick an arbitrary source; the previous ticket
+  source remains active until a single position is selected or edited.
+
 Prefill mapping:
 
 - `points[0].price` -> order entry price.
 - `points[1].price` -> take profit.
 - `points[2].price` -> stop loss.
 - `riskValue` -> risk percent when `riskUnit` is `%`.
+- `drawing.id` -> ticket source `drawingId`.
 - Long/Short side sets the planned Buy/Sell side in the ticket.
 - Order type is inferred from entry versus current market price:
   Long above market and Short below market become stop orders; the opposite

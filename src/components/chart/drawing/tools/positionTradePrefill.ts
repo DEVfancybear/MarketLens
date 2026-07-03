@@ -23,6 +23,7 @@ export function buildOrderPrefillFromPositionDrawing(
   const side: Side = drawing.tool === "long" ? "long" : "short";
   const prefill: OrderPrefill = {
     source: "position-drawing",
+    drawingId: drawing.id,
     side,
     type: inferPositionOrderType(side, Number(entry), marketPrice),
     price: Number(entry),

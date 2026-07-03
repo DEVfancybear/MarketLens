@@ -61,6 +61,7 @@ export interface OrderPrefill {
   takeProfit?: number;
   riskPct?: number;
   quantity?: number;
+  drawingId?: string;
   source?: 'context-menu' | 'position-drawing';
 }
 

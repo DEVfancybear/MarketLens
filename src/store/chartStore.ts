@@ -17,7 +17,7 @@ import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
 import { DEFAULT_PINE_SOURCE, extractPineScriptMeta } from "@/services/pineScript";
 import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing/tools/positionTradePrefill";
-import { setOrderPrefillAtom } from "./tradeStore";
+import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { logAtom, setBottomTabAtom } from "./uiStore";
 
 // Default to a Binance crypto symbol so the chart streams live with no API key.
@@ -26,6 +26,22 @@ const DEFAULT_TF: Timeframe = "15m";
 
 function drawingsKey(symbol: string) {
   return `drawings:${symbol}`;
+}
+
+function isPositionDrawing(drawing: Drawing | null | undefined): drawing is Drawing {
+  return drawing?.tool === "long" || drawing?.tool === "short";
+}
+
+function touchesPositionTradePlan(patch: Partial<Drawing>) {
+  return (
+    patch.points !== undefined ||
+    patch.riskValue !== undefined ||
+    patch.riskUnit !== undefined
+  );
+}
+
+function latestMarketPrice(candles: Candle[]) {
+  return candles[candles.length - 1]?.close ?? null;
 }
 
 // Style templates are GLOBAL (not per-symbol) — a trendline preset applies on
@@ -158,7 +174,7 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
       { time: tRight, price: target },
       { time: tRight, price: stop },
     ];
-    const marketPrice = candles[candles.length - 1]?.close ?? null;
+    const marketPrice = latestMarketPrice(candles);
     const prefill = buildOrderPrefillFromPositionDrawing(drawing, marketPrice);
     if (prefill) {
       set(setOrderPrefillAtom, prefill);
@@ -184,11 +200,29 @@ export const updateDrawingAtom = atom(
   null,
   (_get, set, arg: { id: string; patch: Partial<Drawing> }) => {
     const { id, patch } = arg;
-    const drawings = _get(drawingsAtom).map((d) =>
-      d.id === id ? { ...d, ...patch } : d,
-    );
+    let updatedDrawing: Drawing | null = null;
+    const drawings = _get(drawingsAtom).map((d) => {
+      if (d.id !== id) return d;
+      updatedDrawing = { ...d, ...patch };
+      return updatedDrawing;
+    });
     set(drawingsAtom, drawings);
     localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+
+    if (isPositionDrawing(updatedDrawing) && touchesPositionTradePlan(patch)) {
+      const activePrefill = _get(orderPrefillAtom);
+      const isSelected = _get(selectedDrawingIdAtom) === id;
+      const isActiveTicketSource =
+        activePrefill?.source === "position-drawing" &&
+        activePrefill.drawingId === id;
+      if (isSelected || isActiveTicketSource) {
+        const prefill = buildOrderPrefillFromPositionDrawing(
+          updatedDrawing,
+          latestMarketPrice(_get(candlesAtom)),
+        );
+        if (prefill) set(setOrderPrefillAtom, prefill);
+      }
+    }
   },
 );
 
@@ -267,6 +301,16 @@ export const selectDrawingAtom = atom(
       selectedDrawingIdsAtom,
       selectedDrawingId ? new Set([selectedDrawingId]) : new Set(),
     );
+    const drawing = selectedDrawingId
+      ? _get(drawingsAtom).find((item) => item.id === selectedDrawingId)
+      : null;
+    if (isPositionDrawing(drawing)) {
+      const prefill = buildOrderPrefillFromPositionDrawing(
+        drawing,
+        latestMarketPrice(_get(candlesAtom)),
+      );
+      if (prefill) set(setOrderPrefillAtom, prefill);
+    }
   },
 );
 
@@ -276,7 +320,18 @@ export const toggleSelectDrawingAtom = atom(null, (_get, set, id: string) => {
   if (next.has(id)) next.delete(id);
   else next.add(id);
   set(selectedDrawingIdsAtom, next);
-  set(selectedDrawingIdAtom, next.size === 1 ? [...next][0] : null);
+  const onlySelectedId = next.size === 1 ? [...next][0] : null;
+  set(selectedDrawingIdAtom, onlySelectedId);
+  const drawing = onlySelectedId
+    ? _get(drawingsAtom).find((item) => item.id === onlySelectedId)
+    : null;
+  if (isPositionDrawing(drawing)) {
+    const prefill = buildOrderPrefillFromPositionDrawing(
+      drawing,
+      latestMarketPrice(_get(candlesAtom)),
+    );
+    if (prefill) set(setOrderPrefillAtom, prefill);
+  }
 });
 
 export const selectAllAtom = atom(null, (_get, set) => {

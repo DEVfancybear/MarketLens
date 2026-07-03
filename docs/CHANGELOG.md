@@ -14,6 +14,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Replaced transient chart-menu prefill events with a versioned
   `orderPrefillAtom`, so prefill still works when the Trade panel was not
   mounted before the action.
+- Prefill payloads are now scoped by source `drawingId`; selecting, dragging,
+  or editing one Long/Short Position updates the ticket for that position
+  without arbitrary overwrites from other Long/Short drawings on the chart.
 - Expanded `npm run test:position` coverage for Long/Short prefill payloads.
 
 ### Changed - Long/Short position TradingView parity pass (2026-07-04)
