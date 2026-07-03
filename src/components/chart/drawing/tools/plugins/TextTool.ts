@@ -1,5 +1,5 @@
 /**
- * TextTool — renders and hit-tests a text annotation.
+ * TextTool - renders and hit-tests a text annotation.
  */
 import type { Drawing } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
@@ -11,6 +11,39 @@ import {
 } from "../ToolRegistry";
 import { canvasFont } from "./shared";
 
+function textLines(d: Drawing) {
+  const text = d.text ?? "";
+  return text.length > 0 ? text.split("\n") : [""];
+}
+
+function approximateTextBox(d: Drawing, x: number, y: number) {
+  const fs = d.fontSize ?? 13;
+  const lineHeight = fs * 1.22;
+  const lines = textLines(d);
+  const width = Math.max(
+    20,
+    ...lines.map((line) => (line || " ").length * fs * 0.55),
+  );
+  const height = fs + Math.max(0, lines.length - 1) * lineHeight + fs * 0.25;
+  return { x, y: y - fs, w: width, h: height, fs, lineHeight, lines };
+}
+
+function measuredTextBox(
+  g: CanvasRenderingContext2D,
+  d: Drawing,
+  x: number,
+  y: number,
+) {
+  const box = approximateTextBox(d, x, y);
+  return {
+    ...box,
+    w: Math.max(
+      20,
+      ...box.lines.map((line) => g.measureText(line || " ").width),
+    ),
+  };
+}
+
 const plugin: DrawingToolPlugin = {
   tool: "text",
   minPoints: 1,
@@ -20,16 +53,24 @@ const plugin: DrawingToolPlugin = {
     proj: Projector,
     selected: boolean,
   ) {
-    const x = proj.toX(d.points[0].time),
-      y = proj.toY(d.points[0].price);
+    const x = proj.toX(d.points[0].time);
+    const y = proj.toY(d.points[0].price);
     if (x == null || y == null) return;
-    const txt = d.text || "";
+
     const fs = d.fontSize ?? 13;
     g.save();
     g.font = canvasFont(fs, { bold: d.bold, italic: d.italic });
     g.fillStyle = d.textColor || d.color;
-    g.fillText(txt, x, y);
-    // Don't show selection handle for text — user finds circle distracting.
+    const box = measuredTextBox(g, d, x, y);
+    for (const [index, line] of box.lines.entries()) {
+      g.fillText(line, x, y + index * box.lineHeight);
+    }
+    if (selected) {
+      g.strokeStyle = "#2962ff";
+      g.lineWidth = 1.5;
+      g.setLineDash([]);
+      g.strokeRect(box.x - 3, box.y - 3, box.w + 6, box.h + 6);
+    }
     g.restore();
   },
   hitTest(
@@ -39,20 +80,22 @@ const plugin: DrawingToolPlugin = {
     toX: HitTestProjector,
     toY: HitTestProjector,
   ): HitResult[] {
-    const x = toX(d.points[0].time),
-      y = toY(d.points[0].price);
+    const x = toX(d.points[0].time);
+    const y = toY(d.points[0].price);
     if (x == null || y == null) return [];
-    // Text is drawn left-anchored on an alphabetic baseline, so it spans
-    // [x, x+width] × [y-ascent, y+descent]. Approximate width/height from the
-    // font size so the hit box scales when the user changes the size.
-    const fs = d.fontSize ?? 13;
-    const w = Math.max(20, (d.text?.length ?? 0) * fs * 0.55);
-    if (px >= x - 4 && px <= x + w + 4 && py >= y - fs && py <= y + fs * 0.35) {
+
+    const box = approximateTextBox(d, x, y);
+    if (
+      px >= box.x - 4 &&
+      px <= box.x + box.w + 4 &&
+      py >= box.y - 4 &&
+      py <= box.y + box.h + 4
+    ) {
       return [
         {
           drawing: d,
           target: "body",
-          distance: Math.max(2, Math.abs(y - (y - fs / 2))),
+          distance: Math.max(2, Math.abs(y - (box.y + box.h / 2))),
         },
       ];
     }
@@ -60,12 +103,11 @@ const plugin: DrawingToolPlugin = {
   },
   movePoints: defaultMovePoints,
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    const x = toX(d.points[0].time),
-      y = toY(d.points[0].price);
+    const x = toX(d.points[0].time);
+    const y = toY(d.points[0].price);
     if (x == null || y == null) return null;
-    const fs = d.fontSize ?? 13;
-    const w = Math.max(20, (d.text?.length ?? 0) * fs * 0.55);
-    return { x: x - 4, y: y - fs, w: w + 8, h: fs * 1.35 };
+    const box = approximateTextBox(d, x, y);
+    return { x: box.x - 4, y: box.y - 4, w: box.w + 8, h: box.h + 8 };
   },
 };
 

@@ -1,8 +1,16 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Bottom panel collapse control)_
+_Last updated: 2026-07-04 (Text tool settings parity)_
 
 ## Completed this session (2026-07-04)
+
+### Text tool settings parity
+- Text drawing settings now use the TradingView-style `Style / Text /
+  Coordinates / Visibility` tab order.
+- The Text Style tab no longer mixes text editing controls into Style; it points
+  text/font edits to the Text tab, matching the TradingView reference.
+- Selected Text drawings now render a blue bounding box around the measured text
+  content so reselecting text has the same visible affordance as TradingView.
 
 ### Bottom panel collapse control
 - Added a divider-centered collapse button for the bottom Replay/Trade/Pine
@@ -761,6 +769,8 @@ _Last updated: 2026-07-04 (Bottom panel collapse control)_
   hexagon settings button for all drawings. New `ObjectSettingsDialog` (non-position
   tools) with family-based tabs — line/shape → Style · Coordinates · Visibility;
   text/emoji → Style · Visibility. Position tool keeps `PositionSettingsDialog`.
+  Update 2026-07-04: Text/emoji settings now use Style · Text · Coordinates ·
+  Visibility to match the current TradingView text-object dialog.
 - **▦ Templates:** save the selected object's style as a named, global, family-scoped
   preset; apply/delete from the toolbar popover. Style-only (never points/id). New
   `DrawingTemplate` type + template atoms, persisted under `drawingTemplates`.

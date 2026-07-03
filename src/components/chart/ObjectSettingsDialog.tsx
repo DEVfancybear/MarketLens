@@ -419,6 +419,7 @@ export function ObjectSettingsDialog() {
   const family = styleFamily(drawing.tool);
   const isFib = isFibTool(drawing.tool);
   const isText = family === "text";
+  const isPlainText = drawing.tool === "text";
   const isShape = family === "shape";
   // Extend / Middle line / inner text are wired only for the plain rectangle.
   const isRect = drawing.tool === "rectangle";
@@ -488,12 +489,14 @@ export function ObjectSettingsDialog() {
 
   const tabs: Tab[] = isFib
     ? ["style", "coordinates", "visibility"]
-    : [
-        "style",
-        ...(hasTextTab ? (["text"] as Tab[]) : []),
-        "coordinates",
-        "visibility",
-      ];
+    : isPlainText
+      ? ["style", "text", "coordinates", "visibility"]
+      : [
+          "style",
+          ...(hasTextTab ? (["text"] as Tab[]) : []),
+          "coordinates",
+          "visibility",
+        ];
 
   const tabBtn = (id: Tab) => (
     <button

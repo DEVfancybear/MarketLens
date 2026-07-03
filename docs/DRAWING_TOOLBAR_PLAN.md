@@ -46,8 +46,9 @@ tabs depend on the tool.
 - Pick the dialog body by tool family:
   - **Line/shape tools** → tabs: _Style_ (line color, width, style, fill +
     opacity) and _Coordinates_ (price/time of each point) and _Visibility_.
-  - **Text/emoji** → _Style_ (text color, font size, future: bold/italic/align)
-    + _Visibility_.
+  - **Text/emoji** -> _Style_, _Text_, _Coordinates_, and _Visibility_. Style
+    points users to Text for content/font edits; Text owns color, font size,
+    bold/italic, and the textarea.
   - **long/short** → existing Inputs/Style/Visibility (unchanged).
 - Reuse the existing `NumberField`, `Row`, `SectionTitle`, `Tab` helpers.
 - Toolbar: replace `hasSettings` gate with "always show", icon = `Hexagon`
