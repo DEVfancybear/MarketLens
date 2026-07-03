@@ -14,6 +14,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `request.security`/`timeframe.change`, broader `barstate.*` identifiers, multi-argument
   one-line helper functions, compound assignments, and object drawing coordinates using
   `x1/y1/x2/y2`, `xloc`, and `extend`.
+- Fixed object overlay label placement so `label.style_label_left` labels on the active segment
+  follow the right edge of the emitted object line and use a readable fallback background when the
+  Pine label background is fully transparent.
 - Fixed ADR labels from off-screen historical levels stacking at the left edge by clipping labels
   whose line endpoint is outside the visible chart area.
 

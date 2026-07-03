@@ -61,6 +61,7 @@ export interface IndicatorOverlayLabel {
   price: number;
   text: string;
   color: string;
+  backgroundColor?: string;
   time?: number;
 }
 

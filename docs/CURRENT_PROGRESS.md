@@ -15,6 +15,9 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
   higher-timeframe aggregation for `request.security`/`timeframe.change`, `barstate.*`
   identifiers, multi-argument one-line helper functions, compound assignment syntax, and
   object drawing coordinates from `x1/y1/x2/y2` plus `xloc`/`extend`.
+- UI fix: object labels now project from shared label metadata with a fallback background and
+  `label.style_label_left` labels on the active segment move to the right edge of the emitted
+  object line, preventing the line from cutting through label text.
 - Fix: `PriceChart` renders custom indicator overlay labels/dashboard as DOM overlays projected
   from chart price/time coordinates, so the ADR script appears on the price chart.
 - Follow-up UI fix: ADR labels whose endpoint is off-screen to the left are clipped instead of

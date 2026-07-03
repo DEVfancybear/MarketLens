@@ -172,6 +172,9 @@ const checks = [
       source.pineScript.includes("timeframe.change") &&
       source.pineScript.includes("objectLinePointsFromCoords") &&
       source.pineScript.includes("objectXTime") &&
+      source.pineScript.includes("label.style_label_left") &&
+      source.indicatorTypes.includes("backgroundColor?: string") &&
+      source.priceChart.includes("function labelBackground") &&
       source.pineScript.includes("barstate.isfirst") &&
       source.pineScript.includes("last_bar_index") &&
       source.pineScript.includes("OBJECT_RIGHT_EXTENSION_BARS") &&

@@ -2266,10 +2266,18 @@ function compilePineObjectRuntime(
     const textExpression =
       objectSetterExpression(lines, "label", call.variable, "text", 1) ??
       rawArg(call.args, "text", 2);
+    const backgroundExpression =
+      objectSetterExpression(lines, "label", call.variable, "color", 1) ??
+      rawArg(call.args, "color", 5);
     const colorExpression =
       objectSetterExpression(lines, "label", call.variable, "textcolor", 1) ??
       rawArg(call.args, "textcolor", 7);
     const xloc = enumExpression(rawArg(call.args, "xloc", 3), "xloc.bar_index");
+    const labelStyle = enumExpression(
+      objectSetterExpression(lines, "label", call.variable, "style", 1) ??
+        rawArg(call.args, "style", 6),
+      "label.style_label_left",
+    );
     if (!yExpression) continue;
 
     starts.forEach((startIndex, segmentIndex) => {
@@ -2280,15 +2288,24 @@ function compilePineObjectRuntime(
       if (!isUsableNumber(price)) return;
       const text = textExpressionAt(textExpression, endIndex, context);
       if (!text.trim()) return;
+      const anchorTime = objectXTime(
+        xExpression,
+        xyXSetter ? endIndex : startIndex,
+        context,
+        xloc,
+      );
+      const rightEdgeTime = segmentEndTime(candles, endIndex, extendRight);
       const time =
-        objectXTime(xExpression, xyXSetter ? endIndex : startIndex, context, xloc) ??
-        segmentEndTime(candles, endIndex, extendRight);
+        labelStyle === "label.style_label_left" && extendRight
+          ? rightEdgeTime ?? anchorTime
+          : anchorTime ?? rightEdgeTime;
       labels.push({
         key: `${call.variable}_${segmentIndex + 1}`,
         price,
         text,
         color: colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[labels.length % DEFAULT_COLORS.length]),
-        time,
+        backgroundColor: colorExpressionAt(backgroundExpression, endIndex, context, "rgba(8, 12, 18, 0.72)"),
+        time: time ?? undefined,
       });
     });
   }

@@ -39,9 +39,19 @@ type ProjectedIndicatorLabel = {
   key: string;
   text: string;
   color: string;
+  backgroundColor?: string;
   x: number;
   y: number;
 };
+
+function labelBackground(color: string | undefined): string {
+  if (!color) return "rgba(8, 12, 18, 0.72)";
+  const transparentRgba = color.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\s*\)/i);
+  if (transparentRgba && Number(transparentRgba[1]) < 0.08) {
+    return "rgba(8, 12, 18, 0.72)";
+  }
+  return color;
+}
 
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
@@ -538,6 +548,7 @@ export function PriceChart({
               key: label.key,
               text: label.text,
               color: label.color,
+              backgroundColor: label.backgroundColor,
               x: Math.min(width - rightReserve, Math.max(4, x + 8)),
               y,
             },
@@ -678,9 +689,14 @@ function IndicatorOverlay({
           className="pointer-events-none absolute z-20 whitespace-nowrap font-mono text-[12px] font-semibold leading-none"
           style={{
             color: label.color,
+            backgroundColor: labelBackground(label.backgroundColor),
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            borderRadius: 2,
             left: label.x,
+            padding: "2px 4px",
             top: label.y,
             transform: "translateY(-50%)",
+            textShadow: "0 1px 2px rgba(0, 0, 0, 0.9)",
           }}
         >
           {label.text}

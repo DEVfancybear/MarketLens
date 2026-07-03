@@ -266,8 +266,10 @@ Supported functions:
 - Object runtime subset: `line.new` with `line.set_*`, `box.new` with `box.set_*`,
   `label.new` with `label.set_*`, and `table.new`/`table.cell` are converted into chart overlay
   series, labels, and dashboard metadata. Object rendering honors common `x1/y1/x2/y2`, `xloc`,
-  and `extend` arguments where they map cleanly to Lightweight Charts data. This is a shared
-  subset, not an indicator-name adapter.
+  and `extend` arguments where they map cleanly to Lightweight Charts data. Labels carry text,
+  text color, optional background color, and projected time/price; active `label.style_label_left`
+  labels are moved to the emitted object's right edge to avoid line/text collisions. This is a
+  shared subset, not an indicator-name adapter.
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
 the wrong thing. Examples: strategies, orders, arrays, loops, multi-symbol `request.security`,
@@ -297,6 +299,7 @@ interface IndicatorResult {
     price: number;
     text: string;
     color: string;
+    backgroundColor?: string;
     time?: number;
   }[];
   dashboard?: {
