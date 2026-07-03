@@ -399,6 +399,7 @@ export const savePineScriptAtom = atom(
             name: script.name,
             sourceCode: script.sourceCode,
             separatePane: !meta.overlay,
+            styleValues: indicator.styleValues,
           }
         : indicator,
     );
@@ -425,6 +426,7 @@ export const addCustomIndicatorFromScriptAtom = atom(
                 id: existing.id,
                 visible: true,
                 inputValues: existing.inputValues,
+                styleValues: existing.styleValues,
               }
             : item,
         )
@@ -456,7 +458,12 @@ export const addCustomIndicatorFromSourceAtom = atom(
     const indicators = existing
       ? current.map((item) =>
           item.id === existing.id
-            ? { ...cfg, id: existing.id, inputValues: existing.inputValues }
+            ? {
+                ...cfg,
+                id: existing.id,
+                inputValues: existing.inputValues,
+                styleValues: existing.styleValues,
+              }
             : item,
         )
       : [...current, cfg];

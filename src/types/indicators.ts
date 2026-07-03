@@ -14,6 +14,8 @@ export interface CustomIndicatorScript {
 
 export type IndicatorInputValue = string | number | boolean;
 export type IndicatorInputValues = Record<string, IndicatorInputValue>;
+export type IndicatorStyleValue = string | number | boolean;
+export type IndicatorStyleValues = Record<string, IndicatorStyleValue>;
 
 export interface IndicatorConfig {
   id: string;
@@ -36,6 +38,8 @@ export interface IndicatorConfig {
   sourceCode?: string;
   /** Per-instance values for Pine `input.*()` controls, keyed by the assigned variable name. */
   inputValues?: IndicatorInputValues;
+  /** Per-instance visual overrides for plots, hlines, fills, and supported Pine objects. */
+  styleValues?: IndicatorStyleValues;
 }
 
 /** A single computed indicator value keyed by time. */
@@ -59,6 +63,8 @@ export interface IndicatorSeries {
   baseValue?: number;
   lastValueVisible?: boolean;
   lineVisible?: boolean;
+  /** Optional output precision from the common indicator Style tab. */
+  precision?: number;
 }
 
 export interface IndicatorOverlayLabel {

@@ -1,6 +1,10 @@
 import { Braces, Eye, EyeOff, Settings, Trash2 } from "lucide-react";
 import type { IndicatorConfig } from "@/types";
 import { extractPineInputDefinitions } from "@/services/pineScript";
+import {
+  inputsInStatusLine,
+  valuesInStatusLine,
+} from "@/services/indicatorStyle";
 
 function pineLegendInputs(indicator: IndicatorConfig): string {
   const sourceCode = indicator.sourceCode;
@@ -13,18 +17,27 @@ function pineLegendInputs(indicator: IndicatorConfig): string {
     .join(" ");
 }
 
-export function indicatorLegendTitle(indicator: IndicatorConfig): string {
+export function indicatorLegendTitle(
+  indicator: IndicatorConfig,
+  valueText?: string,
+): string {
   const base =
     indicator.type === "CUSTOM"
       ? indicator.name ?? "Custom script"
       : indicator.type;
   const params =
-    indicator.type === "CUSTOM"
-      ? pineLegendInputs(indicator)
-      : indicator.type !== "VWAP" && indicator.length
-        ? String(indicator.length)
-        : "";
-  return params ? `${base} ${params}` : base;
+    inputsInStatusLine(indicator.styleValues)
+      ? indicator.type === "CUSTOM"
+        ? pineLegendInputs(indicator)
+        : indicator.type !== "VWAP" && indicator.length
+          ? String(indicator.length)
+          : ""
+      : "";
+  const values =
+    valuesInStatusLine(indicator.styleValues) && valueText
+      ? valueText
+      : "";
+  return [base, params, values].filter(Boolean).join(" ");
 }
 
 export function IndicatorLegend({
@@ -34,6 +47,7 @@ export function IndicatorLegend({
   onSettings,
   onSource,
   onRemove,
+  valueTextById,
 }: {
   className?: string;
   indicators: IndicatorConfig[];
@@ -41,6 +55,7 @@ export function IndicatorLegend({
   onSettings: (indicator: IndicatorConfig) => void;
   onSource: (indicator: IndicatorConfig) => void;
   onRemove: (id: string) => void;
+  valueTextById?: Record<string, string>;
 }) {
   if (indicators.length === 0) return null;
 
@@ -49,6 +64,7 @@ export function IndicatorLegend({
       {indicators.map((indicator) => {
         const visible = indicator.visible !== false;
         const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
+        const title = indicatorLegendTitle(indicator, valueTextById?.[indicator.id]);
         return (
           <div
             key={indicator.id}
@@ -59,9 +75,9 @@ export function IndicatorLegend({
                 "min-w-0 truncate font-semibold",
                 visible ? "text-white" : "text-white/45",
               ].join(" ")}
-              title={indicatorLegendTitle(indicator)}
+              title={title}
             >
-              {indicatorLegendTitle(indicator)}
+              {title}
             </span>
             <LegendButton
               title={visible ? "Hide indicator" : "Show indicator"}

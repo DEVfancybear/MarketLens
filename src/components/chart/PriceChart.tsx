@@ -13,6 +13,7 @@ import type {
   IndicatorConfig,
   IndicatorDashboard,
   IndicatorResult,
+  IndicatorSeries,
   Timeframe,
 } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -31,6 +32,7 @@ import {
 } from "@/store/chartStore";
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
 import { useCountdown } from "@/hooks/useCountdown";
@@ -57,6 +59,17 @@ type ProjectedIndicatorLabel = {
   x: number;
   y: number;
 };
+
+function seriesPriceFormatOptions(series: IndicatorSeries) {
+  if (series.precision == null) return {};
+  return {
+    priceFormat: {
+      type: "price" as const,
+      precision: series.precision,
+      minMove: 1 / 10 ** series.precision,
+    },
+  };
+}
 
 function labelBackground(color: string | undefined): string {
   if (!color) return "rgba(8, 12, 18, 0.72)";
@@ -455,6 +468,16 @@ export function PriceChart({
       })),
     [overlayIndicators, candles],
   );
+  const overlayLegendValueText = useMemo(
+    () =>
+      Object.fromEntries(
+        overlayResults.map(({ cfg, result }) => [
+          cfg.id,
+          indicatorResultValueText(result),
+        ]),
+      ),
+    [overlayResults],
+  );
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -487,6 +510,7 @@ export function PriceChart({
               lineVisible: s.lineVisible ?? false,
               priceLineVisible: false,
               lastValueVisible: s.lastValueVisible ?? false,
+              ...seriesPriceFormatOptions(s),
             });
           }
 
@@ -495,6 +519,7 @@ export function PriceChart({
                 color: s.color,
                 priceLineVisible: false,
                 lastValueVisible: s.lastValueVisible ?? false,
+                ...seriesPriceFormatOptions(s),
               })
             : chart.addLineSeries({
                 color: s.color,
@@ -503,6 +528,7 @@ export function PriceChart({
                 priceLineVisible: false,
                 lastValueVisible: s.lastValueVisible ?? false,
                 crosshairMarkerVisible: false,
+                ...seriesPriceFormatOptions(s),
               });
         });
         store.set(cfg.id, series);
@@ -515,16 +541,21 @@ export function PriceChart({
             topFillColor2: s.color,
             lineVisible: s.lineVisible ?? false,
             lastValueVisible: s.lastValueVisible ?? false,
+            ...seriesPriceFormatOptions(s),
           });
         } else {
           series![idx].applyOptions({
             color: s.color,
             ...(s.type === "histogram"
-              ? { lastValueVisible: s.lastValueVisible ?? false }
+              ? {
+                  lastValueVisible: s.lastValueVisible ?? false,
+                  ...seriesPriceFormatOptions(s),
+                }
               : {
                   lineWidth: s.lineWidth ?? 2,
                   lineStyle: s.lineStyle ?? 0,
                   lastValueVisible: s.lastValueVisible ?? false,
+                  ...seriesPriceFormatOptions(s),
                 }),
           });
         }
@@ -711,6 +742,7 @@ export function PriceChart({
         onSettings={openIndicatorSettings}
         onSource={openIndicatorSource}
         onRemove={(id) => removeIndicator(id)}
+        valueTextById={overlayLegendValueText}
       />
       {priceMarker && (
         <CurrentPriceMarker

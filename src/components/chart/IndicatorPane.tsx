@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -23,6 +23,7 @@ import {
 import { setBottomTabAtom } from "@/store/uiStore";
 import { chartColors } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
+import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { IndicatorLegend } from "./IndicatorLegend";
 
 type PaneSeriesApi =
@@ -41,9 +42,21 @@ function seriesSignature(series: IndicatorSeries[]) {
         s.baseValue ?? "",
         s.lineVisible ?? "",
         s.lastValueVisible ?? "",
+        s.precision ?? "",
       ].join(":"),
     )
     .join("|");
+}
+
+function seriesPriceFormatOptions(series: IndicatorSeries) {
+  if (series.precision == null) return {};
+  return {
+    priceFormat: {
+      type: "price" as const,
+      precision: series.precision,
+      minMove: 1 / 10 ** series.precision,
+    },
+  };
 }
 
 /**
@@ -72,6 +85,7 @@ export function IndicatorPane({
   const setPineEditorTitle = useSetAtom(pineEditorTitleAtom);
   const setPineEditorSource = useSetAtom(pineEditorSourceAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
+  const [legendValueText, setLegendValueText] = useState("");
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -129,9 +143,11 @@ export function IndicatorPane({
       for (const series of seriesRef.current) chart.removeSeries(series);
       seriesRef.current = [];
       seriesSignatureRef.current = "";
+      setLegendValueText("");
       return;
     }
     const result = computeIndicator(cfg, candles);
+    setLegendValueText(indicatorResultValueText(result));
     const signature = seriesSignature(result.series);
 
     if (seriesSignatureRef.current !== signature) {
@@ -156,6 +172,7 @@ export function IndicatorPane({
             lineVisible: s.lineVisible ?? false,
             priceLineVisible: false,
             lastValueVisible: s.lastValueVisible ?? false,
+            ...seriesPriceFormatOptions(s),
           });
         }
         return isHist
@@ -163,6 +180,7 @@ export function IndicatorPane({
               color: s.color,
               priceLineVisible: false,
               lastValueVisible: s.lastValueVisible ?? true,
+              ...seriesPriceFormatOptions(s),
             })
           : chart.addLineSeries({
               color: s.color,
@@ -170,6 +188,7 @@ export function IndicatorPane({
               lineStyle: s.lineStyle ?? 0,
               priceLineVisible: false,
               lastValueVisible: s.lastValueVisible ?? true,
+              ...seriesPriceFormatOptions(s),
             });
       });
       seriesSignatureRef.current = signature;
@@ -202,16 +221,21 @@ export function IndicatorPane({
         series.applyOptions({
           topFillColor1: s.color,
           topFillColor2: s.color,
+          ...seriesPriceFormatOptions(s),
         });
       } else {
         series.applyOptions({
           color: s.color,
           ...(isHist
-            ? { lastValueVisible: s.lastValueVisible ?? true }
+            ? {
+                lastValueVisible: s.lastValueVisible ?? true,
+                ...seriesPriceFormatOptions(s),
+              }
             : {
                 lineWidth: s.lineWidth ?? 2,
                 lineStyle: s.lineStyle ?? 0,
                 lastValueVisible: s.lastValueVisible ?? true,
+                ...seriesPriceFormatOptions(s),
               }),
         });
       }
@@ -263,6 +287,7 @@ export function IndicatorPane({
         onSettings={openSettings}
         onSource={openSource}
         onRemove={(id) => removeIndicator(id)}
+        valueTextById={{ [cfg.id]: legendValueText }}
       />
       <div ref={containerRef} className="h-full w-full" />
     </div>

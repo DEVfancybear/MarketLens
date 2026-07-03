@@ -12,6 +12,7 @@ const files = {
   indicatorMenu: "src/components/toolbar/IndicatorMenu.tsx",
   indicatorPane: "src/components/chart/IndicatorPane.tsx",
   indicatorSettings: "src/components/toolbar/IndicatorSettingsDialog.tsx",
+  indicatorStyle: "src/services/indicatorStyle.ts",
   settingsArchitecture: "docs/SETTTING_ARCHITECTURE.md",
 };
 
@@ -133,18 +134,42 @@ const checks = [
     name: "CUSTOM indicator settings use the shared Pine input schema dialog",
     ok:
       source.indicatorTypes.includes("inputValues?: IndicatorInputValues") &&
+      source.indicatorTypes.includes("styleValues?: IndicatorStyleValues") &&
       source.pineScript.includes("export function extractPineInputDefinitions") &&
+      source.pineScript.includes("export function extractPineStyleDefinitions") &&
       source.pineScript.includes("inputOverrides") &&
+      source.pineScript.includes("styleValues: IndicatorStyleValues") &&
       source.indicatorSettings.includes("extractPineInputDefinitions") &&
+      source.indicatorSettings.includes("extractPineStyleDefinitions") &&
       source.indicatorSettings.includes("defaultInputValues") &&
+      source.indicatorSettings.includes("defaultStyleValues") &&
+      source.indicatorSettings.includes("StyleGroups") &&
+      source.indicatorSettings.includes("CommonStyleOptions") &&
+      source.indicatorSettings.includes("Labels on price scale") &&
+      source.indicatorSettings.includes("Values in status line") &&
+      source.indicatorSettings.includes("Inputs in status line") &&
+      source.indicatorStyle.includes("STYLE_OUTPUT_PRECISION_KEY") &&
+      source.indicatorStyle.includes("STYLE_LABELS_ON_PRICE_SCALE_KEY") &&
+      source.indicatorStyle.includes("STYLE_VALUES_IN_STATUS_LINE_KEY") &&
+      source.indicatorStyle.includes("STYLE_INPUTS_IN_STATUS_LINE_KEY") &&
+      source.indicatorStyle.includes("applyCommonSeriesStyle") &&
+      source.indicatorStyle.includes("indicatorResultValueText") &&
       source.indicatorLegend.includes("extractPineInputDefinitions") &&
+      source.indicatorLegend.includes("inputsInStatusLine") &&
+      source.indicatorLegend.includes("valuesInStatusLine") &&
       source.priceChart.includes("setEditingIndicator(indicator.id)") &&
+      source.priceChart.includes("seriesPriceFormatOptions") &&
       source.indicatorPane.includes("setEditingIndicator(cfg.id)") &&
+      source.indicatorPane.includes("seriesPriceFormatOptions") &&
       source.indicatorPane.includes("onSource={openSource}") &&
       source.indicatorPane.includes('setBottomTab("pine")') &&
       !source.indicatorSettings.includes('if (indicator?.type === "CUSTOM") setEditingIndicator(null)') &&
       source.settingsArchitecture.includes("Do not build one settings dialog per indicator") &&
       source.settingsArchitecture.includes("IndicatorConfig.inputValues") &&
+      source.settingsArchitecture.includes("IndicatorConfig.styleValues") &&
+      source.settingsArchitecture.includes("extractPineStyleDefinitions") &&
+      source.settingsArchitecture.includes("__output.labelsOnPriceScale") &&
+      source.settingsArchitecture.includes("__input.inputsInStatusLine") &&
       source.settingsArchitecture.includes("EvalContext.inputOverrides"),
   },
   {

@@ -7,11 +7,80 @@ import type {
   BuiltInIndicatorType,
   Candle,
   IndicatorConfig,
+  IndicatorLineStyle,
+  IndicatorLineWidth,
   IndicatorResult,
+  IndicatorSeries,
+  IndicatorStyleValues,
   LinePoint,
 } from '@/types';
 import { dayKey } from '@/utils/time';
 import { computeCustomIndicator } from '@/services/pineScript';
+import { applyCommonSeriesStyle } from '@/services/indicatorStyle';
+
+function styleFieldKey(
+  key: string,
+  field: 'visible' | 'color' | 'lineWidth' | 'lineStyle',
+) {
+  return `${key}.${field}`;
+}
+
+function styleVisible(values: IndicatorStyleValues | undefined, key: string) {
+  const value = values?.[styleFieldKey(key, 'visible')];
+  return value === undefined ? true : value === true || value === 'true';
+}
+
+function styleColor(
+  values: IndicatorStyleValues | undefined,
+  key: string,
+  fallback: string,
+) {
+  const value = values?.[styleFieldKey(key, 'color')];
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function styleLineWidth(
+  values: IndicatorStyleValues | undefined,
+  key: string,
+  fallback: IndicatorLineWidth,
+): IndicatorLineWidth {
+  const value = Number(values?.[styleFieldKey(key, 'lineWidth')]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(4, Math.round(value))) as IndicatorLineWidth;
+}
+
+function styleLineStyle(
+  values: IndicatorStyleValues | undefined,
+  key: string,
+  fallback: IndicatorLineStyle,
+): IndicatorLineStyle {
+  const value = Number(values?.[styleFieldKey(key, 'lineStyle')]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(4, Math.round(value))) as IndicatorLineStyle;
+}
+
+function styledBuiltInSeries(
+  series: IndicatorSeries,
+  values: IndicatorStyleValues | undefined,
+  key: 'builtin:primary' | 'builtin:secondary',
+): IndicatorSeries | null {
+  if (!styleVisible(values, key)) return null;
+  return {
+    ...series,
+    color: styleColor(values, key, series.color),
+    lineWidth: styleLineWidth(values, key, series.lineWidth ?? 2),
+    lineStyle: styleLineStyle(values, key, series.lineStyle ?? 0),
+  };
+}
+
+function compactSeries(
+  series: (IndicatorSeries | null)[],
+  values: IndicatorStyleValues | undefined,
+): IndicatorSeries[] {
+  return series
+    .filter((item): item is IndicatorSeries => item != null)
+    .map((item) => applyCommonSeriesStyle(item, values));
+}
 
 export function sma(candles: Candle[], length: number): LinePoint[] {
   const out: LinePoint[] = [];
@@ -142,13 +211,49 @@ export function adrLevels(candles: Candle[], length: number) {
 export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): IndicatorResult {
   switch (cfg.type) {
     case 'SMA':
-      return { id: cfg.id, series: [{ key: 'sma', color: cfg.color, data: sma(candles, cfg.length) }] };
+      return {
+        id: cfg.id,
+        series: compactSeries([
+          styledBuiltInSeries(
+            { key: 'sma', color: cfg.color, data: sma(candles, cfg.length) },
+            cfg.styleValues,
+            'builtin:primary',
+          ),
+        ], cfg.styleValues),
+      };
     case 'EMA':
-      return { id: cfg.id, series: [{ key: 'ema', color: cfg.color, data: ema(candles, cfg.length) }] };
+      return {
+        id: cfg.id,
+        series: compactSeries([
+          styledBuiltInSeries(
+            { key: 'ema', color: cfg.color, data: ema(candles, cfg.length) },
+            cfg.styleValues,
+            'builtin:primary',
+          ),
+        ], cfg.styleValues),
+      };
     case 'VWAP':
-      return { id: cfg.id, series: [{ key: 'vwap', color: cfg.color, data: vwap(candles) }] };
+      return {
+        id: cfg.id,
+        series: compactSeries([
+          styledBuiltInSeries(
+            { key: 'vwap', color: cfg.color, data: vwap(candles) },
+            cfg.styleValues,
+            'builtin:primary',
+          ),
+        ], cfg.styleValues),
+      };
     case 'RSI':
-      return { id: cfg.id, series: [{ key: 'rsi', color: cfg.color, data: rsi(candles, cfg.length) }] };
+      return {
+        id: cfg.id,
+        series: compactSeries([
+          styledBuiltInSeries(
+            { key: 'rsi', color: cfg.color, data: rsi(candles, cfg.length) },
+            cfg.styleValues,
+            'builtin:primary',
+          ),
+        ], cfg.styleValues),
+      };
     case 'MACD': {
       const { macdLine, signalLine, hist } = macd(
         candles,
@@ -159,9 +264,22 @@ export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): Indic
       return {
         id: cfg.id,
         series: [
-          { key: 'macd', color: cfg.color, data: macdLine },
-          { key: 'signal', color: cfg.color2 ?? '#ff9800', data: signalLine },
-          { key: 'hist', color: '#787b86', data: hist, type: 'histogram' },
+          ...compactSeries([
+            styledBuiltInSeries(
+              { key: 'macd', color: cfg.color, data: macdLine },
+              cfg.styleValues,
+              'builtin:primary',
+            ),
+            styledBuiltInSeries(
+              { key: 'signal', color: cfg.color2 ?? '#ff9800', data: signalLine },
+              cfg.styleValues,
+              'builtin:secondary',
+            ),
+          ], cfg.styleValues),
+          applyCommonSeriesStyle(
+            { key: 'hist', color: '#787b86', data: hist, type: 'histogram' },
+            cfg.styleValues,
+          ),
         ],
       };
     }
@@ -182,10 +300,18 @@ export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): Indic
       ];
       return {
         id: cfg.id,
-        series: [
-          { key: 'adr-high', color: cfg.color, data: flat(high) },
-          { key: 'adr-low', color: cfg.color2 ?? cfg.color, data: flat(low) },
-        ],
+        series: compactSeries([
+          styledBuiltInSeries(
+            { key: 'adr-high', color: cfg.color, data: flat(high) },
+            cfg.styleValues,
+            'builtin:primary',
+          ),
+          styledBuiltInSeries(
+            { key: 'adr-low', color: cfg.color2 ?? cfg.color, data: flat(low) },
+            cfg.styleValues,
+            'builtin:secondary',
+          ),
+        ], cfg.styleValues),
       };
     }
     case 'CUSTOM':

@@ -83,6 +83,7 @@ interface IndicatorConfig {
   scriptId?: string;
   sourceCode?: string;
   inputValues?: Record<string, string | number | boolean>;
+  styleValues?: Record<string, string | number | boolean>;
 }
 ```
 
@@ -108,6 +109,8 @@ The split matters:
   deterministic from `indicators[]`.
 - An active custom indicator stores `inputValues` as per-instance Pine input overrides. This allows
   multiple instances of the same saved script to use different settings.
+- An active custom indicator stores `styleValues` as per-instance visual overrides for plots,
+  hlines, fills, and supported Pine objects. See `docs/SETTTING_ARCHITECTURE.md`.
 
 ## State and persistence
 

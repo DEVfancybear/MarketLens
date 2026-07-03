@@ -24,13 +24,26 @@ import type {
   IndicatorConfig,
   IndicatorInputValue,
   IndicatorInputValues,
+  IndicatorLineStyle,
+  IndicatorLineWidth,
+  IndicatorStyleValue,
+  IndicatorStyleValues,
 } from "@/types";
 import { defaultIndicator } from "@/services/indicators";
 import {
   extractPineInputDefinitions,
   extractPineScriptMeta,
+  extractPineStyleDefinitions,
   type PineInputDefinition,
+  type PineStyleDefinition,
 } from "@/services/pineScript";
+import {
+  commonStyleDefaults,
+  STYLE_INPUTS_IN_STATUS_LINE_KEY,
+  STYLE_LABELS_ON_PRICE_SCALE_KEY,
+  STYLE_OUTPUT_PRECISION_KEY,
+  STYLE_VALUES_IN_STATUS_LINE_KEY,
+} from "@/services/indicatorStyle";
 import { cn } from "@/utils/cn";
 
 type SettingsTab = "inputs" | "style" | "visibility";
@@ -45,6 +58,7 @@ interface SettingsDraft {
   visible: boolean;
   separatePane: boolean;
   inputValues: IndicatorInputValues;
+  styleValues: IndicatorStyleValues;
 }
 
 const TABS: { id: SettingsTab; label: string }[] = [
@@ -77,6 +91,35 @@ const SOURCE_LABELS: Record<string, string> = {
   volume: "Volume",
 };
 
+const LINE_STYLE_OPTIONS: { value: IndicatorLineStyle; label: string }[] = [
+  { value: 0, label: "Solid" },
+  { value: 1, label: "Dotted" },
+  { value: 2, label: "Dashed" },
+  { value: 3, label: "Large dashed" },
+  { value: 4, label: "Sparse dotted" },
+];
+
+const LINE_WIDTH_OPTIONS: IndicatorLineWidth[] = [1, 2, 3, 4];
+const PRECISION_OPTIONS = [
+  { value: "default", label: "Default" },
+  { value: "0", label: "0" },
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3" },
+  { value: "4", label: "4" },
+  { value: "5", label: "5" },
+  { value: "6", label: "6" },
+  { value: "7", label: "7" },
+  { value: "8", label: "8" },
+];
+
+function styleFieldKey(
+  key: string,
+  field: "visible" | "color" | "lineWidth" | "lineStyle",
+): string {
+  return `${key}.${field}`;
+}
+
 function hexColor(value: IndicatorInputValue | undefined, fallback: string) {
   const color = String(value ?? fallback);
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
@@ -100,6 +143,40 @@ function coerceFieldValue(
 
 function defaultInputValues(fields: PineInputDefinition[]): IndicatorInputValues {
   return Object.fromEntries(fields.map((field) => [field.key, field.defaultValue]));
+}
+
+function defaultStyleValues(fields: PineStyleDefinition[]): IndicatorStyleValues {
+  const entries: [string, IndicatorStyleValue][] = [];
+  for (const field of fields) {
+    entries.push([styleFieldKey(field.key, "visible"), field.defaultVisible]);
+    if (field.supportsColor) {
+      entries.push([styleFieldKey(field.key, "color"), field.defaultColor]);
+    }
+    if (field.supportsLineWidth && field.defaultLineWidth != null) {
+      entries.push([styleFieldKey(field.key, "lineWidth"), field.defaultLineWidth]);
+    }
+    if (field.supportsLineStyle && field.defaultLineStyle != null) {
+      entries.push([styleFieldKey(field.key, "lineStyle"), field.defaultLineStyle]);
+    }
+  }
+  return {
+    ...commonStyleDefaults(),
+    ...Object.fromEntries(entries),
+  };
+}
+
+function compactStyleValues(
+  fields: PineStyleDefinition[],
+  values: IndicatorStyleValues,
+): IndicatorStyleValues {
+  const defaults = defaultStyleValues(fields);
+  return Object.fromEntries(
+    Object.entries(values).filter(([key, value]) => {
+      const fallback = defaults[key];
+      if (fallback === undefined) return true;
+      return String(value) !== String(fallback);
+    }),
+  );
 }
 
 function currentFieldValue(
@@ -135,23 +212,54 @@ function builtInInputFields(type: BuiltInIndicatorType): PineInputDefinition[] {
   }
 }
 
-function builtInStyleFields(type: BuiltInIndicatorType): PineInputDefinition[] {
+function builtInStyleDefinitions(type: BuiltInIndicatorType): PineStyleDefinition[] {
   const primary = {
-    key: "color",
-    title: type === "ADR" ? "High line color" : "Color",
-    kind: "color" as const,
-    defaultValue: defaultIndicator(type, "__default").color,
+    key: "builtin:primary",
+    title: type === "ADR" ? "High line" : type,
+    target: "plot" as const,
+    group: "Plots",
+    defaultVisible: true,
+    defaultColor: defaultIndicator(type, "__default").color,
+    defaultLineWidth: 2 as IndicatorLineWidth,
+    defaultLineStyle: 0 as IndicatorLineStyle,
+    supportsColor: true,
+    supportsLineWidth: true,
+    supportsLineStyle: true,
   };
   if (type === "MACD") {
     return [
       primary,
-      { key: "color2", title: "Signal color", kind: "color", defaultValue: "#ff9800" },
+      {
+        key: "builtin:secondary",
+        title: "Signal",
+        target: "plot",
+        group: "Plots",
+        defaultVisible: true,
+        defaultColor: "#ff9800",
+        defaultLineWidth: 2,
+        defaultLineStyle: 0,
+        supportsColor: true,
+        supportsLineWidth: true,
+        supportsLineStyle: true,
+      },
     ];
   }
   if (type === "ADR") {
     return [
       primary,
-      { key: "color2", title: "Low line color", kind: "color", defaultValue: "#ef5350" },
+      {
+        key: "builtin:secondary",
+        title: "Low line",
+        target: "plot",
+        group: "Plots",
+        defaultVisible: true,
+        defaultColor: "#ef5350",
+        defaultLineWidth: 2,
+        defaultLineStyle: 0,
+        supportsColor: true,
+        supportsLineWidth: true,
+        supportsLineStyle: true,
+      },
     ];
   }
   return [primary];
@@ -172,6 +280,7 @@ function initialDraft(indicator: IndicatorConfig): SettingsDraft {
     visible: indicator.visible !== false,
     separatePane: indicator.separatePane ?? fallback.separatePane ?? false,
     inputValues: indicator.inputValues ?? {},
+    styleValues: indicator.styleValues ?? {},
   };
 }
 
@@ -179,6 +288,20 @@ function groupFields(fields: PineInputDefinition[]) {
   const groups: { name: string | null; fields: PineInputDefinition[] }[] = [];
   for (const field of fields) {
     const name = field.group ?? null;
+    const current = groups[groups.length - 1];
+    if (!current || current.name !== name) {
+      groups.push({ name, fields: [field] });
+    } else {
+      current.fields.push(field);
+    }
+  }
+  return groups;
+}
+
+function groupStyleDefinitions(fields: PineStyleDefinition[]) {
+  const groups: { name: string; fields: PineStyleDefinition[] }[] = [];
+  for (const field of fields) {
+    const name = field.group;
     const current = groups[groups.length - 1];
     if (!current || current.name !== name) {
       groups.push({ name, fields: [field] });
@@ -200,6 +323,13 @@ export function IndicatorSettingsDialog() {
     () =>
       indicator?.type === "CUSTOM"
         ? extractPineInputDefinitions(indicator.sourceCode ?? "")
+        : [],
+    [indicator],
+  );
+  const pineStyles = useMemo(
+    () =>
+      indicator?.type === "CUSTOM"
+        ? extractPineStyleDefinitions(indicator.sourceCode ?? "")
         : [],
     [indicator],
   );
@@ -225,18 +355,27 @@ export function IndicatorSettingsDialog() {
           : {}),
         ...(indicator.inputValues ?? {}),
       };
+      next.styleValues = {
+        ...defaultStyleValues(pineStyles),
+        ...(indicator.styleValues ?? {}),
+      };
     } else {
+      const builtInStyles = builtInStyleDefinitions(next.type);
       next.inputValues = {
         length: next.length,
         length2: next.length2,
         length3: next.length3,
-        color: next.color,
-        color2: next.color2,
+      };
+      next.styleValues = {
+        ...defaultStyleValues(builtInStyles),
+        [styleFieldKey("builtin:primary", "color")]: next.color,
+        [styleFieldKey("builtin:secondary", "color")]: next.color2,
+        ...(indicator.styleValues ?? {}),
       };
     }
     setDraft(next);
     setActiveTab("inputs");
-  }, [indicator, pineInputs, pineMeta]);
+  }, [indicator, pineInputs, pineMeta, pineStyles]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -253,7 +392,7 @@ export function IndicatorSettingsDialog() {
   const isCustom = indicator.type === "CUSTOM";
   const title = isCustom ? indicator.name ?? pineMeta?.name ?? "Custom script" : indicator.type;
   const inputFields = isCustom ? pineInputs : builtInInputFields(draft.type);
-  const styleFields = isCustom ? [] : builtInStyleFields(draft.type);
+  const styleFields = isCustom ? pineStyles : builtInStyleDefinitions(draft.type);
 
   const close = () => setEditingIndicator(null);
 
@@ -268,9 +407,14 @@ export function IndicatorSettingsDialog() {
     );
   };
 
-  const updateDraftField = (key: keyof SettingsDraft, value: IndicatorInputValue) => {
+  const updateStyleValue = (key: string, value: IndicatorStyleValue) => {
     setDraft((current) =>
-      current ? { ...current, [key]: value, inputValues: { ...current.inputValues, [key]: value } } : current,
+      current
+        ? {
+            ...current,
+            styleValues: { ...current.styleValues, [key]: value },
+          }
+        : current,
     );
   };
 
@@ -284,6 +428,7 @@ export function IndicatorSettingsDialog() {
                 ...defaultInputValues(pineInputs),
                 ...(pineMeta?.timeframe !== undefined ? { __timeframe: pineMeta.timeframe ?? "" } : {}),
               },
+              styleValues: defaultStyleValues(pineStyles),
             }
           : current,
       );
@@ -304,9 +449,8 @@ export function IndicatorSettingsDialog() {
         length: defaults.length,
         length2: defaults.length2 ?? 9,
         length3: defaults.length3 ?? 26,
-        color: defaults.color,
-        color2: defaults.color2 ?? "#ff9800",
       },
+      styleValues: defaultStyleValues(builtInStyleDefinitions(draft.type)),
     });
   };
 
@@ -326,6 +470,7 @@ export function IndicatorSettingsDialog() {
         id: editingId,
         patch: {
           inputValues,
+          styleValues: compactStyleValues(pineStyles, draft.styleValues),
           visible: draft.visible,
         },
       });
@@ -339,11 +484,18 @@ export function IndicatorSettingsDialog() {
         length: Number(draft.inputValues.length ?? draft.length),
         length2: draft.type === "MACD" ? Number(draft.inputValues.length2 ?? draft.length2) : undefined,
         length3: draft.type === "MACD" ? Number(draft.inputValues.length3 ?? draft.length3) : undefined,
-        color: String(draft.inputValues.color ?? draft.color),
+        color: String(
+          draft.styleValues[styleFieldKey("builtin:primary", "color")] ??
+            draft.color,
+        ),
         color2:
           draft.type === "MACD" || draft.type === "ADR"
-            ? String(draft.inputValues.color2 ?? draft.color2)
+            ? String(
+                draft.styleValues[styleFieldKey("builtin:secondary", "color")] ??
+                  draft.color2,
+              )
             : undefined,
+        styleValues: compactStyleValues(styleFields, draft.styleValues),
         separatePane:
           draft.type === "RSI" || draft.type === "MACD"
             ? draft.separatePane
@@ -425,14 +577,17 @@ export function IndicatorSettingsDialog() {
           )}
 
           {activeTab === "style" && (
-            <InputGroups
-              fields={styleFields}
-              values={draft.inputValues}
-              onChange={(key, value) => {
-                updateInputValue(key, value);
-                if (key === "color" || key === "color2") updateDraftField(key, value);
-              }}
-            />
+            <div className="space-y-5">
+              <StyleGroups
+                fields={styleFields}
+                values={draft.styleValues}
+                onChange={updateStyleValue}
+              />
+              <CommonStyleOptions
+                values={draft.styleValues}
+                onChange={updateStyleValue}
+              />
+            </div>
           )}
 
           {activeTab === "visibility" && (
@@ -519,6 +674,181 @@ function InputGroups({
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+function StyleGroups({
+  fields,
+  values,
+  onChange,
+}: {
+  fields: PineStyleDefinition[];
+  values: IndicatorStyleValues;
+  onChange: (key: string, value: IndicatorStyleValue) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {groupStyleDefinitions(fields).map((group) => (
+        <div key={group.name} className="space-y-3">
+          <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+            {group.name}
+          </div>
+          {group.fields.map((field) => (
+            <StyleRow
+              key={field.key}
+              field={field}
+              values={values}
+              onChange={onChange}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function styleBoolValue(
+  values: IndicatorStyleValues,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const value = values[key];
+  if (value === undefined) return fallback;
+  return value === true || value === "true";
+}
+
+function CommonStyleOptions({
+  values,
+  onChange,
+}: {
+  values: IndicatorStyleValues;
+  onChange: (key: string, value: IndicatorStyleValue) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-3">
+        <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+          Output Values
+        </div>
+        <FieldRow label="Precision">
+          <SelectControl
+            value={String(values[STYLE_OUTPUT_PRECISION_KEY] ?? "default")}
+            options={PRECISION_OPTIONS}
+            onChange={(value) => onChange(STYLE_OUTPUT_PRECISION_KEY, value)}
+          />
+        </FieldRow>
+        <CheckboxRow
+          label="Labels on price scale"
+          checked={styleBoolValue(values, STYLE_LABELS_ON_PRICE_SCALE_KEY, true)}
+          onChange={(checked) => onChange(STYLE_LABELS_ON_PRICE_SCALE_KEY, checked)}
+        />
+        <CheckboxRow
+          label="Values in status line"
+          checked={styleBoolValue(values, STYLE_VALUES_IN_STATUS_LINE_KEY, true)}
+          onChange={(checked) => onChange(STYLE_VALUES_IN_STATUS_LINE_KEY, checked)}
+        />
+      </div>
+
+      <div className="space-y-3">
+        <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+          Input Values
+        </div>
+        <CheckboxRow
+          label="Inputs in status line"
+          checked={styleBoolValue(values, STYLE_INPUTS_IN_STATUS_LINE_KEY, true)}
+          onChange={(checked) => onChange(STYLE_INPUTS_IN_STATUS_LINE_KEY, checked)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function styleValue<T extends IndicatorStyleValue>(
+  values: IndicatorStyleValues,
+  key: string,
+  fallback: T,
+): T {
+  const value = values[key];
+  return (value === undefined ? fallback : value) as T;
+}
+
+function StyleRow({
+  field,
+  values,
+  onChange,
+}: {
+  field: PineStyleDefinition;
+  values: IndicatorStyleValues;
+  onChange: (key: string, value: IndicatorStyleValue) => void;
+}) {
+  const visibleKey = styleFieldKey(field.key, "visible");
+  const colorKey = styleFieldKey(field.key, "color");
+  const widthKey = styleFieldKey(field.key, "lineWidth");
+  const lineStyleKey = styleFieldKey(field.key, "lineStyle");
+  const visible = styleValue(values, visibleKey, field.defaultVisible);
+  const color = hexColor(
+    styleValue(values, colorKey, field.defaultColor),
+    field.defaultColor,
+  );
+  const width = Number(styleValue(values, widthKey, field.defaultLineWidth ?? 2));
+  const lineStyleValue = Number(
+    styleValue(values, lineStyleKey, field.defaultLineStyle ?? 0),
+  );
+
+  return (
+    <div className="grid min-h-[36px] grid-cols-[1fr_auto] items-center gap-3">
+      <label className="flex min-w-0 cursor-pointer items-center gap-2 text-[14px] font-medium text-ink">
+        <input
+          type="checkbox"
+          checked={visible === true}
+          onChange={(event) => onChange(visibleKey, event.target.checked)}
+          className="h-[18px] w-[18px] rounded border-[#d1d4dc] accent-[#f0f3fa]"
+        />
+        <span className="min-w-0 truncate">{field.title}</span>
+      </label>
+
+      <div className="flex items-center gap-2">
+        {field.supportsColor && (
+          <label className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-md border border-[#4b4b4b] bg-[#252525]">
+            <input
+              type="color"
+              value={color}
+              onChange={(event) => onChange(colorKey, event.target.value)}
+              className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+              aria-label={`${field.title} color`}
+            />
+          </label>
+        )}
+        {field.supportsLineWidth && (
+          <select
+            value={Number.isFinite(width) ? String(width) : String(field.defaultLineWidth ?? 2)}
+            onChange={(event) => onChange(widthKey, Number(event.target.value))}
+            className="h-[30px] w-[54px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-2 text-[13px] text-ink outline-none focus:border-[#868686]"
+            aria-label={`${field.title} line width`}
+          >
+            {LINE_WIDTH_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        )}
+        {field.supportsLineStyle && (
+          <select
+            value={Number.isFinite(lineStyleValue) ? String(lineStyleValue) : String(field.defaultLineStyle ?? 0)}
+            onChange={(event) => onChange(lineStyleKey, Number(event.target.value))}
+            className="h-[30px] w-[104px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-2 text-[13px] text-ink outline-none focus:border-[#868686]"
+            aria-label={`${field.title} line style`}
+          >
+            {LINE_STYLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
     </div>
   );
 }

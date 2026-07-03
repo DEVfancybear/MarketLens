@@ -21,6 +21,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   of a regex over raw source.
 - Added `docs/SETTTING_ARCHITECTURE.md` as the source-of-truth guide for maintaining common
   settings without per-indicator hardcoding.
+- Added common Style-tab schema/runtime support. CUSTOM scripts now extract style rows from
+  `plot`, `hline`, `fill`, `line.new`, `box.new`, and `label.new`, persist per-instance
+  `styleValues`, and apply visibility/color/line-width/line-style overrides during Pine compile.
+- Built-ins now consume the same `styleValues` model through `builtin:primary` and
+  `builtin:secondary` keys, so exposed built-in style controls are backed by render logic.
+- Added TradingView-style common Style sections for `Output Values` and `Input Values`: precision,
+  labels on price scale, values in status line, and inputs in status line.
 
 ### Changed - Common Pine object runtime (2026-07-03)
 - Added a shared TradingView-style indicator legend for chart overlays and indicator panes with

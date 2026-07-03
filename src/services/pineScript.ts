@@ -6,8 +6,11 @@ import type {
   IndicatorLineWidth,
   IndicatorResult,
   IndicatorSeries,
+  IndicatorStyleValue,
+  IndicatorStyleValues,
   LinePoint,
 } from "@/types";
+import { applyCommonSeriesStyle } from "@/services/indicatorStyle";
 
 /**
  * Pine runtime overview
@@ -115,6 +118,22 @@ export interface PineInputDefinition {
   min?: number;
   max?: number;
   step?: number;
+}
+
+export type PineStyleTarget = "plot" | "hline" | "fill" | "line" | "box" | "label";
+
+export interface PineStyleDefinition {
+  key: string;
+  title: string;
+  target: PineStyleTarget;
+  group: string;
+  defaultVisible: boolean;
+  defaultColor: string;
+  defaultLineWidth?: IndicatorLineWidth;
+  defaultLineStyle?: IndicatorLineStyle;
+  supportsColor: boolean;
+  supportsLineWidth: boolean;
+  supportsLineStyle: boolean;
 }
 
 type SeriesData = (number | null)[];
@@ -527,6 +546,171 @@ export function extractPineInputDefinitions(source: string): PineInputDefinition
     if (!definition || seen.has(definition.key)) continue;
     seen.add(definition.key);
     definitions.push(definition);
+  }
+
+  return definitions;
+}
+
+function styleKey(target: PineStyleTarget, id: string | number): string {
+  return `${target}:${id}`;
+}
+
+function styleFieldKey(key: string, field: "visible" | "color" | "lineWidth" | "lineStyle"): string {
+  return `${key}.${field}`;
+}
+
+function styleVisible(styleValues: IndicatorStyleValues, key: string): boolean {
+  const value = styleValues[styleFieldKey(key, "visible")];
+  return value === undefined ? true : value === true || value === "true";
+}
+
+function styleColor(
+  styleValues: IndicatorStyleValues,
+  key: string,
+  fallback: string,
+): string {
+  const value = styleValues[styleFieldKey(key, "color")];
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function styleLineWidthValue(
+  styleValues: IndicatorStyleValues,
+  key: string,
+  fallback: IndicatorLineWidth,
+): IndicatorLineWidth {
+  const value = Number(styleValues[styleFieldKey(key, "lineWidth")]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(4, Math.round(value))) as IndicatorLineWidth;
+}
+
+function styleLineStyleValue(
+  styleValues: IndicatorStyleValues,
+  key: string,
+  fallback: IndicatorLineStyle,
+): IndicatorLineStyle {
+  const value = Number(styleValues[styleFieldKey(key, "lineStyle")]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(4, Math.round(value))) as IndicatorLineStyle;
+}
+
+function parseStyleDefinitionColor(
+  expression: string | undefined,
+  fallback: string,
+): string {
+  return resolveColor(expression, fallback);
+}
+
+export function extractPineStyleDefinitions(source: string): PineStyleDefinition[] {
+  const cleaned = normalizedSource(source);
+  const definitions: PineStyleDefinition[] = [];
+
+  findCallBodies(cleaned, "plot").forEach((body, index) => {
+    const args = parseCallArguments(body);
+    const title =
+      unquote(args.named.title) ??
+      unquote(args.positional[1]) ??
+      `Plot ${index + 1}`;
+    const key = styleKey("plot", index + 1);
+    definitions.push({
+      key,
+      title,
+      target: "plot",
+      group: "Plots",
+      defaultVisible: true,
+      defaultColor: parseStyleDefinitionColor(
+        args.named.color ?? args.positional[2],
+        DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+      ),
+      defaultLineWidth: lineWidth(args.named.linewidth ?? args.positional[3], 2),
+      defaultLineStyle: lineStyle(args.named.linestyle),
+      supportsColor: true,
+      supportsLineWidth: plotType(args.named.style) !== "histogram",
+      supportsLineStyle: plotType(args.named.style) !== "histogram",
+    });
+  });
+
+  let hlineIndex = 0;
+  for (const line of sourceLines(cleaned)) {
+    if (!line.text || !/(^|=\s*)hline\s*\(/.test(line.text)) continue;
+    const body = findCallBodies(line.text, "hline")[0];
+    if (!body) continue;
+    hlineIndex += 1;
+    const args = parseCallArguments(body);
+    const id = hlineVariableName(line.text) ?? String(hlineIndex);
+    definitions.push({
+      key: styleKey("hline", id),
+      title:
+        unquote(args.named.title) ??
+        unquote(args.positional[1]) ??
+        `HLine ${hlineIndex}`,
+      target: "hline",
+      group: "Horizontal Lines",
+      defaultVisible: true,
+      defaultColor: parseStyleDefinitionColor(
+        args.named.color ?? args.positional[2],
+        DEFAULT_COLORS[(definitions.length + hlineIndex) % DEFAULT_COLORS.length],
+      ),
+      defaultLineWidth: lineWidth(args.named.linewidth ?? args.positional[4], 1),
+      defaultLineStyle: lineStyle(args.named.linestyle ?? args.positional[3]),
+      supportsColor: true,
+      supportsLineWidth: true,
+      supportsLineStyle: true,
+    });
+  }
+
+  findCallBodies(cleaned, "fill").forEach((body, index) => {
+    const args = parseCallArguments(body);
+    definitions.push({
+      key: styleKey("fill", index + 1),
+      title:
+        unquote(args.named.title) ??
+        unquote(args.positional[4]) ??
+        `Fill ${index + 1}`,
+      target: "fill",
+      group: "Fills",
+      defaultVisible: true,
+      defaultColor: parseStyleDefinitionColor(args.named.color ?? args.positional[2], "#e040fb"),
+      supportsColor: true,
+      supportsLineWidth: false,
+      supportsLineStyle: false,
+    });
+  });
+
+  for (const line of sourceLines(cleaned)) {
+    for (const target of ["line", "box", "label"] as const) {
+      const callName = `${target}.new`;
+      const match = objectAssignmentRegex(callName).exec(line.text);
+      if (!match) continue;
+      const body = findCallBodies(line.text, callName)[0];
+      const args = body ? parseCallArguments(body) : { named: {}, positional: [] };
+      const variable = match[1];
+      const colorExpression =
+        target === "line"
+          ? args.named.color ?? args.positional[6]
+          : target === "box"
+            ? args.named.bgcolor ?? args.positional[9]
+            : args.named.textcolor ?? args.positional[7];
+      definitions.push({
+        key: styleKey(target, variable),
+        title: variable,
+        target,
+        group: "Objects",
+        defaultVisible: true,
+        defaultColor: parseStyleDefinitionColor(
+          colorExpression,
+          DEFAULT_COLORS[definitions.length % DEFAULT_COLORS.length],
+        ),
+        defaultLineWidth: target === "line"
+          ? lineWidth(args.named.width ?? args.positional[8], 2)
+          : undefined,
+        defaultLineStyle: target === "line"
+          ? lineStyle(args.named.style ?? args.positional[7])
+          : undefined,
+        supportsColor: true,
+        supportsLineWidth: target === "line",
+        supportsLineStyle: target === "line",
+      });
+    }
   }
 
   return definitions;
@@ -1873,6 +2057,7 @@ interface HLineDef {
   title: string;
   value: number;
   color: string;
+  visible: boolean;
   lineStyle: IndicatorLineStyle;
   lineWidth: IndicatorLineWidth;
 }
@@ -2455,6 +2640,7 @@ function compilePineObjectRuntime(
   indicatorId: string,
   context: EvalContext,
   errors: string[],
+  styleValues: IndicatorStyleValues,
 ): IndicatorResult | null {
   // Fast exit for normal plot-only scripts. This keeps common indicators on the simpler path.
   if (!/(?:line|box|label|table)\.(?:new|set_|cell)\s*\(/.test(cleaned)) return null;
@@ -2500,7 +2686,13 @@ function compilePineObjectRuntime(
         context,
       );
       if (!isUsableNumber(baseValue)) return;
-      const color = colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]);
+      const key = styleKey("box", call.variable);
+      if (!styleVisible(styleValues, key)) return;
+      const color = styleColor(
+        styleValues,
+        key,
+        colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]),
+      );
       const data = objectBoxFillPointsFromCoords(
         {
           leftExpression,
@@ -2551,7 +2743,13 @@ function compilePineObjectRuntime(
       const colorExpression =
         objectSetterExpression(lines, "line", call.variable, "color", 1) ??
         rawArg(call.args, "color", 6);
-      const color = colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]);
+      const key = styleKey("line", call.variable);
+      if (!styleVisible(styleValues, key)) return;
+      const color = styleColor(
+        styleValues,
+        key,
+        colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]),
+      );
       const data = objectLinePointsFromCoords(
         {
           x1Expression,
@@ -2574,13 +2772,21 @@ function compilePineObjectRuntime(
         color,
         data,
         type: "line",
-        lineWidth: objectLineWidth(
-          objectSetterExpression(lines, "line", call.variable, "width", 1) ??
-            rawArg(call.args, "width", 8),
-          endIndex,
-          context,
+        lineWidth: styleLineWidthValue(
+          styleValues,
+          key,
+          objectLineWidth(
+            objectSetterExpression(lines, "line", call.variable, "width", 1) ??
+              rawArg(call.args, "width", 8),
+            endIndex,
+            context,
+          ),
         ),
-        lineStyle: lineStyle(rawArg(call.args, "style", 7)),
+        lineStyle: styleLineStyleValue(
+          styleValues,
+          key,
+          lineStyle(rawArg(call.args, "style", 7)),
+        ),
         lastValueVisible: false,
       });
     });
@@ -2617,6 +2823,8 @@ function compilePineObjectRuntime(
       const labelIndex = xyYSetter ? endIndex : startIndex;
       const price = numberExpressionAt(yExpression, labelIndex, context);
       if (!isUsableNumber(price)) return;
+      const key = styleKey("label", call.variable);
+      if (!styleVisible(styleValues, key)) return;
       const text = textExpressionAt(textExpression, endIndex, context);
       if (!text.trim()) return;
       const anchorTime = objectXTime(
@@ -2637,7 +2845,11 @@ function compilePineObjectRuntime(
         key: `${call.variable}_${segmentIndex + 1}`,
         price,
         text,
-        color: colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[labels.length % DEFAULT_COLORS.length]),
+        color: styleColor(
+          styleValues,
+          key,
+          colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[labels.length % DEFAULT_COLORS.length]),
+        ),
         backgroundColor: colorExpressionAt(backgroundExpression, endIndex, context, "rgba(8, 12, 18, 0.72)"),
         time: time ?? undefined,
       });
@@ -2713,12 +2925,15 @@ function readHlines(
   cleaned: string,
   context: EvalContext,
   errors: string[],
+  styleValues: IndicatorStyleValues,
 ): HLineDef[] {
   const out: HLineDef[] = [];
+  let hlineIndex = 0;
   for (const line of sourceLines(cleaned)) {
     if (!line.text || !/(^|=\s*)hline\s*\(/.test(line.text)) continue;
     const body = findCallBodies(line.text, "hline")[0];
     if (!body) continue;
+    hlineIndex += 1;
     const args = parseCallArguments(body);
     const valueExpression = args.positional[0];
     if (!valueExpression) {
@@ -2728,6 +2943,7 @@ function readHlines(
 
     try {
       const id = hlineVariableName(line.text) ?? `hline_${out.length + 1}`;
+      const key = styleKey("hline", hlineVariableName(line.text) ?? String(hlineIndex));
       const value = numberValue(evaluateExpression(valueExpression, context));
       const plotColor = resolvePlotColor(
         args.named.color ?? args.positional[2],
@@ -2738,9 +2954,18 @@ function readHlines(
         id,
         title: unquote(args.named.title) ?? unquote(args.positional[1]) ?? id,
         value,
-        color: plotColor.color,
-        lineStyle: lineStyle(args.named.linestyle ?? args.positional[3]),
-        lineWidth: lineWidth(args.named.linewidth ?? args.positional[4], 1),
+        visible: styleVisible(styleValues, key),
+        color: styleColor(styleValues, key, plotColor.color),
+        lineStyle: styleLineStyleValue(
+          styleValues,
+          key,
+          lineStyle(args.named.linestyle ?? args.positional[3]),
+        ),
+        lineWidth: styleLineWidthValue(
+          styleValues,
+          key,
+          lineWidth(args.named.linewidth ?? args.positional[4], 1),
+        ),
       });
     } catch (error) {
       errors.push(`Line ${line.number}: ${(error as Error).message}`);
@@ -2755,14 +2980,17 @@ function readFills(
   hlines: HLineDef[],
   candles: Candle[],
   errors: string[],
+  styleValues: IndicatorStyleValues,
 ): IndicatorSeries[] {
   const byId = new Map(hlines.map((line) => [line.id, line]));
   const out: IndicatorSeries[] = [];
 
+  let fillIndex = 0;
   for (const line of sourceLines(cleaned)) {
     if (!/^fill\s*\(/.test(line.text)) continue;
     const body = findCallBodies(line.text, "fill")[0];
     if (!body) continue;
+    fillIndex += 1;
     const args = parseCallArguments(body);
     const first = byId.get(args.positional[0]?.trim());
     const second = byId.get(args.positional[1]?.trim());
@@ -2779,7 +3007,13 @@ function readFills(
       context,
       "#e040fb",
     );
-    const fillColor = applyTransparencyToColors(plotColor.color, undefined, transparency).color;
+    const key = styleKey("fill", fillIndex);
+    if (!styleVisible(styleValues, key)) continue;
+    const fillColor = styleColor(
+      styleValues,
+      key,
+      applyTransparencyToColors(plotColor.color, undefined, transparency).color,
+    );
     out.push({
       key: unquote(args.named.title) ?? unquote(args.positional[4]) ?? `fill_${out.length + 1}`,
       color: fillColor,
@@ -3090,6 +3324,7 @@ export function compilePineScript(
   candles: Candle[],
   indicatorId = "custom",
   inputValues: IndicatorInputValues = {},
+  styleValues: IndicatorStyleValues = {},
 ): PineCompilation {
   /**
    * Main pipeline:
@@ -3110,18 +3345,29 @@ export function compilePineScript(
   };
 
   readAssignments(cleaned, context, errors);
-  const objectResult = compilePineObjectRuntime(cleaned, candles, indicatorId, context, errors);
+  const objectResult = compilePineObjectRuntime(
+    cleaned,
+    candles,
+    indicatorId,
+    context,
+    errors,
+    styleValues,
+  );
 
-  const hlines = readHlines(cleaned, context, errors);
-  const fillSeries = readFills(cleaned, context, hlines, candles, errors);
-  const hlineSeries: IndicatorSeries[] = hlines.map((line) => ({
-    key: line.title,
-    color: line.color,
-    data: flatLinePoints(line.value, candles),
-    type: "line",
-    lineWidth: line.lineWidth,
-    lineStyle: line.lineStyle,
-  }));
+  const hlines = readHlines(cleaned, context, errors, styleValues);
+  const fillSeries = readFills(cleaned, context, hlines, candles, errors, styleValues);
+  const hlineSeries: IndicatorSeries[] = hlines.flatMap((line) =>
+    line.visible
+      ? [{
+          key: line.title,
+          color: line.color,
+          data: flatLinePoints(line.value, candles),
+          type: "line" as const,
+          lineWidth: line.lineWidth,
+          lineStyle: line.lineStyle,
+        }]
+      : [],
+  );
 
   const plotSeries = findCallBodies(cleaned, "plot").flatMap<IndicatorSeries>((body, index) => {
     const args = parseCallArguments(body);
@@ -3149,16 +3395,31 @@ export function compilePineScript(
       );
       const type = plotType(args.named.style);
       const values = toSeries(value, candles.length);
+      const styleKeyForPlot = styleKey("plot", index + 1);
+      if (!styleVisible(styleValues, styleKeyForPlot)) return [];
+      const color = styleColor(styleValues, styleKeyForPlot, transparentPlotColor.color);
+      const colors =
+        color !== transparentPlotColor.color
+          ? Array.from({ length: candles.length }, () => color)
+          : transparentPlotColor.colors;
       const baseSeries = {
         key: title,
-        color: transparentPlotColor.color,
+        color,
         type,
-        lineWidth: lineWidth(args.named.linewidth ?? args.positional[3], 2),
-        lineStyle: lineStyle(args.named.linestyle),
+        lineWidth: styleLineWidthValue(
+          styleValues,
+          styleKeyForPlot,
+          lineWidth(args.named.linewidth ?? args.positional[3], 2),
+        ),
+        lineStyle: styleLineStyleValue(
+          styleValues,
+          styleKeyForPlot,
+          lineStyle(args.named.linestyle),
+        ),
       } satisfies Omit<IndicatorSeries, "data">;
 
       if (type === "line" && isLineBreakStyle(args.named.style)) {
-        return seriesToLinePointSegments(values, candles, transparentPlotColor.colors).map(
+        return seriesToLinePointSegments(values, candles, colors).map(
           (data, segmentIndex) => ({
             ...baseSeries,
             key: segmentIndex === 0 ? title : `${title}_${segmentIndex + 1}`,
@@ -3169,7 +3430,7 @@ export function compilePineScript(
 
       return [{
         ...baseSeries,
-        data: seriesToLinePoints(values, candles, transparentPlotColor.colors),
+        data: seriesToLinePoints(values, candles, colors),
       }];
     } catch (error) {
       errors.push(`plot() #${index + 1}: ${(error as Error).message}`);
@@ -3182,7 +3443,7 @@ export function compilePineScript(
     ...fillSeries,
     ...hlineSeries,
     ...plotSeries,
-  ];
+  ].map((seriesItem) => applyCommonSeriesStyle(seriesItem, styleValues));
 
   if (
     series.length === 0 &&
@@ -3206,9 +3467,20 @@ export function compilePineScript(
 }
 
 export function computeCustomIndicator(
-  cfg: { id: string; sourceCode?: string; inputValues?: IndicatorInputValues },
+  cfg: {
+    id: string;
+    sourceCode?: string;
+    inputValues?: IndicatorInputValues;
+    styleValues?: IndicatorStyleValues;
+  },
   candles: Candle[],
 ): IndicatorResult {
   if (!cfg.sourceCode?.trim()) return { id: cfg.id, series: [] };
-  return compilePineScript(cfg.sourceCode, candles, cfg.id, cfg.inputValues).result;
+  return compilePineScript(
+    cfg.sourceCode,
+    candles,
+    cfg.id,
+    cfg.inputValues,
+    cfg.styleValues,
+  ).result;
 }
