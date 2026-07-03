@@ -129,11 +129,21 @@ const checks = [
   {
     name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",
     ok:
-      source.indicatorMenu.includes('ind.type === "CUSTOM"') &&
+      source.indicatorMenu.includes('indicator.type === "CUSTOM"') &&
       source.indicatorMenu.includes('setBottomTab("pine")') &&
       source.indicatorPane.includes('cfg.type === "CUSTOM"') &&
       source.indicatorPane.includes('setBottomTab("pine")') &&
       source.indicatorSettings.includes('indicator?.type === "CUSTOM"'),
+  },
+  {
+    name: "Indicator menu uses a TradingView-style browser modal",
+    ok:
+      source.indicatorMenu.includes("createPortal") &&
+      source.indicatorMenu.includes("ChartNoAxesCombined") &&
+      source.indicatorMenu.includes("Indicators, metrics, and strategies") &&
+      source.indicatorMenu.includes("Favorites") &&
+      source.indicatorMenu.includes("My scripts") &&
+      source.indicatorMenu.includes("grid-cols-[minmax(220px,1fr)_124px_88px]"),
   },
 ];
 

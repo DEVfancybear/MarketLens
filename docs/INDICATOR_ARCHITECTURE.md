@@ -179,6 +179,18 @@ Indicator menu / pane settings button
 
 Custom indicators intentionally bypass `IndicatorSettingsDialog`; source is the settings surface.
 
+## Indicator browser
+
+`components/toolbar/IndicatorMenu.tsx` is a TradingView-style modal opened from the top toolbar.
+It replaces the old compact dropdown while keeping the same indicator-store actions:
+
+- Header: `Indicators, metrics, and strategies`.
+- Search filters saved scripts, built-ins, author labels, and source text.
+- Sidebar sections: Favorites, My scripts, and Built-ins.
+- Table columns: Name, Author, Boosts.
+- Saved scripts can be favorited, added to chart, or opened in the bottom Pine Editor.
+- Built-ins still use `toggleIndicatorAtom`; active built-ins route to `IndicatorSettingsDialog`.
+
 ## Pine-like compiler contract
 
 `services/pineScript.ts` implements a safe subset compiler:

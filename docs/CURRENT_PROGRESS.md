@@ -4,6 +4,14 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 
 ## Completed this session (2026-07-03)
 
+### TradingView-style indicator browser
+- Replaced the small `IndicatorMenu` dropdown with a modal browser matching TradingView's
+  `Indicators, metrics, and strategies` layout: search bar, Favorites/My scripts sidebar,
+  built-in indicator section, author/boost columns, favorite stars, active checkmarks, and
+  settings routing.
+- Pine script storage remains in the bottom Pine Editor; the modal lists saved scripts and can add
+  them to the chart without moving the editor back into a popup.
+
 ### Pine Better RSI v3 rendering fix
 - User repro: `Better RSI` compiled to a nearly flat single 50 line instead of TradingView's RSI
   pane with hlines, purple background fill, white RSI, red overbought/oversold segments, and

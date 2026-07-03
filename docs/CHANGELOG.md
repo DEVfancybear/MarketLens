@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - TradingView-style indicator browser (2026-07-03)
+- Replaced the compact toolbar indicator dropdown with a TradingView-style modal titled
+  `Indicators, metrics, and strategies`, including search, Favorites, My scripts, built-ins,
+  author/boost columns, favorite stars, active checkmarks, and settings routing.
+- Updated the toolbar trigger to use a chart-combined icon next to `Indicators`.
+
 ### Fixed - Pine Better RSI v3 rendering (2026-07-03)
 - Added Pine v3 compatibility needed by `Better RSI`: bare `integer`/`source` inputs, legacy
   functions such as `rsi(...)` and `color(base, transp)`, `hline(...)`, `fill(...)`, and
