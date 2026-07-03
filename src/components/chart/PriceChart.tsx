@@ -595,7 +595,7 @@ export function PriceChart({
   };
 
   const openIndicatorSettings = (indicator: IndicatorConfig) => {
-    if (indicator.type !== "CUSTOM") setEditingIndicator(indicator.id);
+    setEditingIndicator(indicator.id);
   };
 
   const openIndicatorSource = (indicator: IndicatorConfig) => {

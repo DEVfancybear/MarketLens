@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Shared Pine input settings runtime (2026-07-03)
+- Replaced the built-in-only indicator settings modal with a shared TradingView-style
+  `Inputs / Style / Visibility` dialog for every active indicator.
+- CUSTOM indicator settings are now generated from the script's `input.*()` declarations via
+  `extractPineInputDefinitions()`. The settings key is the assigned Pine variable name, so each
+  active indicator instance can keep its own values without hardcoding VSA, ADR, RSI, or future
+  scripts.
+- `IndicatorConfig.inputValues` stores per-instance Pine input overrides. `compilePineScript()`
+  passes those values through `EvalContext.inputOverrides`, including nested contexts such as
+  `request.security`, helper functions, and self-referential series evaluation, then re-executes the
+  script with the updated values.
+- The indicator legend settings gear now opens the shared settings dialog for CUSTOM indicators.
+  The `{}` legend action remains the source-code route into the bottom Pine Editor.
+- Pine legend title parameters now come from the parsed input schema plus current overrides instead
+  of a regex over raw source.
+- Added `docs/SETTTING_ARCHITECTURE.md` as the source-of-truth guide for maintaining common
+  settings without per-indicator hardcoding.
+
 ### Changed - Common Pine object runtime (2026-07-03)
 - Added a shared TradingView-style indicator legend for chart overlays and indicator panes with
   show/hide, settings, source-code, and remove controls. Remove deletes the indicator instance
@@ -85,10 +103,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `addCustomIndicatorFromScriptAtom`, `addCustomIndicatorFromSourceAtom`, `loadPineScriptAtom`,
   `deletePineScriptAtom`, `togglePineFavoriteAtom`, `newPineScriptAtom`. Saving a script also
   syncs name/source/pane into any chart indicators using it.
-- `IndicatorMenu` gained an "Open Pine Editor" entry; the settings gear on a CUSTOM indicator
-  (menu + pane header) opens the Pine Editor with that script loaded instead of the built-in
-  settings dialog. `IndicatorSettingsDialog`/`addIndicatorAtom`/`toggleIndicatorAtom` are now
-  typed to `BuiltInIndicatorType`.
+- `IndicatorMenu` gained an "Open Pine Editor" entry. CUSTOM indicator source opens through the
+  `{}` action, while the settings gear is reserved for the shared input settings dialog.
+  `addIndicatorAtom`/`toggleIndicatorAtom` are typed to `BuiltInIndicatorType`.
 - Naming: the untouched default editor title ("Untitled script") is treated as a placeholder, so
   a new script takes its name from the source's `indicator("…")` title until the user names it
   explicitly.
@@ -99,7 +116,7 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `src/types/indicators.ts`, `scripts/check-pine-indicator.mjs`, and
   `docs/INDICATOR_ARCHITECTURE.md`.
 - Guard: added `npm run check:pine-indicator` to lock the no-popup bottom-panel contract,
-  `pineScripts` persistence, CUSTOM compiler routing, whitelist safety, and settings gear routing
+  `pineScripts` persistence, CUSTOM compiler routing, whitelist safety, and source-code routing
   back to the Pine Editor.
 - type-check pass, lint pass, build pass, and `npm run check:pine-indicator` pass. End-to-end
   browser verification remains a manual follow-up for this source-code indicator flow.

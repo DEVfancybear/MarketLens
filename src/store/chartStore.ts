@@ -420,7 +420,12 @@ export const addCustomIndicatorFromScriptAtom = atom(
     const indicators = existing
       ? current.map((item) =>
           item.id === existing.id
-            ? { ...cfg, id: existing.id, visible: true }
+            ? {
+                ...cfg,
+                id: existing.id,
+                visible: true,
+                inputValues: existing.inputValues,
+              }
             : item,
         )
       : [...current, cfg];
@@ -450,7 +455,9 @@ export const addCustomIndicatorFromSourceAtom = atom(
       : undefined;
     const indicators = existing
       ? current.map((item) =>
-          item.id === existing.id ? { ...cfg, id: existing.id } : item,
+          item.id === existing.id
+            ? { ...cfg, id: existing.id, inputValues: existing.inputValues }
+            : item,
         )
       : [...current, cfg];
     set(indicatorsAtom, indicators);

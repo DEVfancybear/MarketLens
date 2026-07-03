@@ -1,5 +1,7 @@
 import type {
   Candle,
+  IndicatorInputValue,
+  IndicatorInputValues,
   IndicatorLineStyle,
   IndicatorLineWidth,
   IndicatorResult,
@@ -82,12 +84,37 @@ const NAMED_COLORS: Record<string, string> = {
 export interface PineScriptMeta {
   name: string;
   overlay: boolean;
+  timeframe?: string;
 }
 
 export interface PineCompilation {
   meta: PineScriptMeta;
   result: IndicatorResult;
   errors: string[];
+}
+
+export type PineInputKind =
+  | "int"
+  | "float"
+  | "bool"
+  | "color"
+  | "source"
+  | "string"
+  | "timeframe";
+
+export interface PineInputDefinition {
+  /** Assigned Pine variable name. This is the stable per-instance settings key. */
+  key: string;
+  title: string;
+  kind: PineInputKind;
+  defaultValue: IndicatorInputValue;
+  group?: string;
+  inline?: string;
+  tooltip?: string;
+  options?: IndicatorInputValue[];
+  min?: number;
+  max?: number;
+  step?: number;
 }
 
 type SeriesData = (number | null)[];
@@ -140,6 +167,7 @@ interface EvalContext {
   candles: Candle[];
   variables: Map<string, PineValue>;
   functions: Map<string, { params: string[]; expression: string }>;
+  inputOverrides: Map<string, IndicatorInputValue>;
 }
 
 function stripLineComment(line: string): string {
@@ -370,7 +398,138 @@ export function extractPineScriptMeta(source: string): PineScriptMeta {
     unquote(args.positional[0]) ??
     "Untitled script";
   const overlay = parseBool(args.named.overlay) ?? false;
-  return { name, overlay };
+  const timeframe =
+    unquote(args.named.timeframe) ??
+    unquote(args.named.resolution) ??
+    undefined;
+  return { name, overlay, timeframe };
+}
+
+function inputCallName(expression: string): string | null {
+  const match = expression.trim().match(/^(input(?:\.[A-Za-z_]+)?)\s*\(/);
+  return match?.[1] ?? null;
+}
+
+function parseListLiteral(raw: string | undefined): IndicatorInputValue[] | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return undefined;
+  const values = splitTopLevel(trimmed.slice(1, -1)).flatMap<IndicatorInputValue>((part) => {
+    const literal = unquote(part);
+    if (literal != null) return [literal];
+    const bool = parseBool(part);
+    if (bool != null) return [bool];
+    const numeric = parseNumberLiteral(part);
+    if (numeric != null) return [numeric];
+    const enumName = part.trim();
+    return enumName ? [enumName] : [];
+  });
+  return values.length > 0 ? values : undefined;
+}
+
+function inferInputKind(
+  callName: string,
+  args: ReturnType<typeof parseCallArguments>,
+  defaultExpression: string | undefined,
+): PineInputKind {
+  const suffix = callName.includes(".") ? callName.split(".").at(-1) : "";
+  if (suffix === "int") return "int";
+  if (suffix === "float") return "float";
+  if (suffix === "bool") return "bool";
+  if (suffix === "color") return "color";
+  if (suffix === "source") return "source";
+  if (suffix === "string" || suffix === "symbol" || suffix === "session" || suffix === "text_area") {
+    return "string";
+  }
+  if (suffix === "timeframe") return "timeframe";
+
+  const typeName = (args.named.type ?? "").trim();
+  if (/(?:^|\.)(?:integer|int)$/.test(typeName)) return "int";
+  if (/(?:^|\.)float$/.test(typeName)) return "float";
+  if (/(?:^|\.)bool$/.test(typeName)) return "bool";
+  if (/(?:^|\.)color$/.test(typeName)) return "color";
+  if (/(?:^|\.)source$/.test(typeName)) return "source";
+  if (/(?:^|\.)string$/.test(typeName)) return "string";
+
+  const def = defaultExpression?.trim() ?? "";
+  if (parseBool(def) != null) return "bool";
+  if (/^(?:color\.|#[0-9a-f]{6})/i.test(def)) return "color";
+  if (unquote(def) != null) return "string";
+  if (/^(open|high|low|close|hl2|hlc3|ohlc4|volume)$/i.test(def)) return "source";
+  const numeric = parseNumberLiteral(def);
+  if (numeric != null) return Number.isInteger(numeric) ? "int" : "float";
+  return "string";
+}
+
+function inputDefaultValue(
+  expression: string | undefined,
+  kind: PineInputKind,
+): IndicatorInputValue {
+  const raw = expression?.trim() ?? "";
+  if (kind === "bool") return parseBool(raw) ?? false;
+  if (kind === "int") return Math.round(parseNumberLiteral(raw) ?? 0);
+  if (kind === "float") return parseNumberLiteral(raw) ?? 0;
+  if (kind === "color") return resolveColor(raw, "#2962ff");
+  if (kind === "source") return unquote(raw) ?? (raw || "close");
+  return unquote(raw) ?? raw;
+}
+
+function sourceInputOptions(defaultValue: IndicatorInputValue): IndicatorInputValue[] {
+  const defaults = ["open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "volume"];
+  const value = String(defaultValue);
+  return defaults.includes(value) ? defaults : [value, ...defaults];
+}
+
+function parseInputDefinition(
+  key: string,
+  expression: string,
+): PineInputDefinition | null {
+  const callName = inputCallName(expression);
+  if (!callName) return null;
+  const body = findCallBodies(expression.trim(), callName)[0];
+  if (!body || expression.trim() !== `${callName}(${body})`) return null;
+
+  const args = parseCallArguments(body);
+  const defaultExpression = args.named.defval ?? args.positional[0];
+  const kind = inferInputKind(callName, args, defaultExpression);
+  const defaultValue = inputDefaultValue(defaultExpression, kind);
+  const options =
+    parseListLiteral(args.named.options) ??
+    (kind === "source" ? sourceInputOptions(defaultValue) : undefined);
+
+  return {
+    key,
+    title:
+      unquote(args.named.title) ??
+      unquote(args.positional[1]) ??
+      key,
+    kind,
+    defaultValue,
+    group: unquote(args.named.group) ?? undefined,
+    inline: unquote(args.named.inline) ?? undefined,
+    tooltip: unquote(args.named.tooltip) ?? undefined,
+    options,
+    min: parseNumberLiteral(args.named.minval) ?? undefined,
+    max: parseNumberLiteral(args.named.maxval) ?? undefined,
+    step: parseNumberLiteral(args.named.step) ?? undefined,
+  };
+}
+
+export function extractPineInputDefinitions(source: string): PineInputDefinition[] {
+  const cleaned = normalizedSource(source);
+  const definitions: PineInputDefinition[] = [];
+  const seen = new Set<string>();
+
+  for (const line of sourceLines(cleaned)) {
+    const match = assignmentMatch(line.text);
+    if (!match) continue;
+    const definition = parseInputDefinition(match[1], match[3].trim());
+    if (!definition || seen.has(definition.key)) continue;
+    seen.add(definition.key);
+    definitions.push(definition);
+  }
+
+  return definitions;
 }
 
 function tokenize(input: string): Token[] {
@@ -1057,6 +1216,7 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
       candles: context.candles,
       variables: new Map(context.variables),
       functions: context.functions,
+      inputOverrides: context.inputOverrides,
     };
     customFunction.params.forEach((param, index) => {
       functionContext.variables.set(
@@ -1074,6 +1234,11 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
     case "input.source":
     case "input.bool":
     case "input.color":
+    case "input.string":
+    case "input.text_area":
+    case "input.timeframe":
+    case "input.symbol":
+    case "input.session":
       return namedCallArg(args, "defval") ?? callArg(args, 0) ?? { kind: "number", value: 0 };
     case "color":
     case "color.new": {
@@ -1932,6 +2097,7 @@ function evaluateRequestSecurityExpression(
     candles: dailyCandlesForEvaluation(days),
     variables: new Map(context.variables),
     functions: context.functions,
+    inputOverrides: context.inputOverrides,
   };
   const dailyValue =
     evaluateAvailableHistoryDailySma(securityExpression, dailyContext) ??
@@ -1939,14 +2105,56 @@ function evaluateRequestSecurityExpression(
   return expandDailyValueToCandles(dailyValue, days, context.candles.length);
 }
 
-function evaluateInputExpression(expression: string, context: EvalContext): PineValue | null {
+function inputOverrideValue(
+  rawValue: IndicatorInputValue,
+  definition: PineInputDefinition,
+  context: EvalContext,
+  defaultExpression: string | undefined,
+): PineValue {
+  switch (definition.kind) {
+    case "bool":
+      return { kind: "bool", value: rawValue === true || rawValue === "true" };
+    case "int":
+      return { kind: "number", value: Math.round(Number(rawValue)) };
+    case "float":
+      return { kind: "number", value: Number(rawValue) };
+    case "color":
+      return { kind: "color", value: String(rawValue) };
+    case "source": {
+      const sourceName = String(rawValue || definition.defaultValue || "close");
+      try {
+        return evaluateExpression(sourceName, context);
+      } catch {
+        return defaultExpression
+          ? evaluateExpression(defaultExpression, context)
+          : sourceSeries(context.candles, "close");
+      }
+    }
+    case "timeframe":
+    case "string":
+      return { kind: "string", value: String(rawValue) };
+  }
+}
+
+function evaluateInputExpression(
+  expression: string,
+  context: EvalContext,
+  variableName?: string,
+): PineValue | null {
   const trimmed = expression.trim();
-  const match = trimmed.match(/^(input(?:\.[A-Za-z_]+)?)\s*\(/);
-  if (!match) return null;
-  const body = findCallBodies(trimmed, match[1])[0];
-  if (!body || trimmed !== `${match[1]}(${body})`) return null;
+  const callName = inputCallName(trimmed);
+  if (!callName) return null;
+  const body = findCallBodies(trimmed, callName)[0];
+  if (!body || trimmed !== `${callName}(${body})`) return null;
   const args = parseCallArguments(body);
   const defaultExpression = args.named.defval ?? args.positional[0];
+  if (variableName) {
+    const definition = parseInputDefinition(variableName, trimmed);
+    const override = context.inputOverrides.get(variableName);
+    if (definition && override !== undefined) {
+      return inputOverrideValue(override, definition, context, defaultExpression);
+    }
+  }
   if (!defaultExpression) return { kind: "number", value: 0 };
   return evaluateExpression(defaultExpression, context);
 }
@@ -2771,6 +2979,7 @@ function evaluateSelfReferentialAssignment(
         ]),
       ),
       functions: context.functions,
+      inputOverrides: context.inputOverrides,
     };
     recursiveContext.variables.set(name, scalarValueAt({ kind: "series", values }, index, context.candles.length));
     for (const offset of offsets) {
@@ -2812,6 +3021,7 @@ function scalarContextAt(context: EvalContext, index: number): EvalContext {
       ]),
     ),
     functions: context.functions,
+    inputOverrides: context.inputOverrides,
   };
 }
 
@@ -2863,7 +3073,7 @@ function readAssignments(cleaned: string, context: EvalContext, errors: string[]
       }
       context.variables.set(
         name,
-        evaluateInputExpression(expression, context) ??
+        evaluateInputExpression(expression, context, name) ??
         evaluateRecursiveAssignment(name, expression, context) ??
           evaluateSelfReferentialAssignment(name, expression, context) ??
           evaluateRequestSecurityExpression(expression, context) ??
@@ -2879,6 +3089,7 @@ export function compilePineScript(
   sourceCode: string,
   candles: Candle[],
   indicatorId = "custom",
+  inputValues: IndicatorInputValues = {},
 ): PineCompilation {
   /**
    * Main pipeline:
@@ -2891,7 +3102,12 @@ export function compilePineScript(
   const cleaned = normalizedSource(sourceCode);
   const meta = extractPineScriptMeta(cleaned);
   const errors: string[] = [];
-  const context: EvalContext = { candles, variables: new Map(), functions: new Map() };
+  const context: EvalContext = {
+    candles,
+    variables: new Map(),
+    functions: new Map(),
+    inputOverrides: new Map(Object.entries(inputValues)),
+  };
 
   readAssignments(cleaned, context, errors);
   const objectResult = compilePineObjectRuntime(cleaned, candles, indicatorId, context, errors);
@@ -2990,9 +3206,9 @@ export function compilePineScript(
 }
 
 export function computeCustomIndicator(
-  cfg: { id: string; sourceCode?: string },
+  cfg: { id: string; sourceCode?: string; inputValues?: IndicatorInputValues },
   candles: Candle[],
 ): IndicatorResult {
   if (!cfg.sourceCode?.trim()) return { id: cfg.id, series: [] };
-  return compilePineScript(cfg.sourceCode, candles, cfg.id).result;
+  return compilePineScript(cfg.sourceCode, candles, cfg.id, cfg.inputValues).result;
 }

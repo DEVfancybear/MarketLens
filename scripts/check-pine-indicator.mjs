@@ -12,6 +12,7 @@ const files = {
   indicatorMenu: "src/components/toolbar/IndicatorMenu.tsx",
   indicatorPane: "src/components/chart/IndicatorPane.tsx",
   indicatorSettings: "src/components/toolbar/IndicatorSettingsDialog.tsx",
+  settingsArchitecture: "docs/SETTTING_ARCHITECTURE.md",
 };
 
 const source = Object.fromEntries(
@@ -51,7 +52,8 @@ const checks = [
     name: "CUSTOM indicators route through the Pine compiler",
     ok:
       source.indicators.includes("case 'CUSTOM'") &&
-      source.indicators.includes("computeCustomIndicator(cfg, candles)"),
+      source.indicators.includes("computeCustomIndicator(cfg, candles)") &&
+      source.pineScript.includes("cfg.inputValues"),
   },
   {
     name: "Pine compiler is whitelist-based and does not execute user JavaScript",
@@ -128,14 +130,22 @@ const checks = [
       source.indicatorPane.includes("color: p.color"),
   },
   {
-    name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",
+    name: "CUSTOM indicator settings use the shared Pine input schema dialog",
     ok:
-      source.indicatorMenu.includes('indicator.type === "CUSTOM"') &&
-      source.indicatorMenu.includes('setBottomTab("pine")') &&
-      source.indicatorPane.includes('cfg.type !== "CUSTOM"') &&
+      source.indicatorTypes.includes("inputValues?: IndicatorInputValues") &&
+      source.pineScript.includes("export function extractPineInputDefinitions") &&
+      source.pineScript.includes("inputOverrides") &&
+      source.indicatorSettings.includes("extractPineInputDefinitions") &&
+      source.indicatorSettings.includes("defaultInputValues") &&
+      source.indicatorLegend.includes("extractPineInputDefinitions") &&
+      source.priceChart.includes("setEditingIndicator(indicator.id)") &&
+      source.indicatorPane.includes("setEditingIndicator(cfg.id)") &&
       source.indicatorPane.includes("onSource={openSource}") &&
       source.indicatorPane.includes('setBottomTab("pine")') &&
-      source.indicatorSettings.includes('indicator?.type === "CUSTOM"'),
+      !source.indicatorSettings.includes('if (indicator?.type === "CUSTOM") setEditingIndicator(null)') &&
+      source.settingsArchitecture.includes("Do not build one settings dialog per indicator") &&
+      source.settingsArchitecture.includes("IndicatorConfig.inputValues") &&
+      source.settingsArchitecture.includes("EvalContext.inputOverrides"),
   },
   {
     name: "Indicator menu uses a TradingView-style browser modal",

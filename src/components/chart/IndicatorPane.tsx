@@ -239,7 +239,7 @@ export function IndicatorPane({
   };
 
   const openSettings = () => {
-    if (cfg.type !== "CUSTOM") setEditingIndicator(cfg.id);
+    setEditingIndicator(cfg.id);
   };
 
   const openSource = () => {

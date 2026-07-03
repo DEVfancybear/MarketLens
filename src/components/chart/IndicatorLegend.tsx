@@ -1,25 +1,16 @@
 import { Braces, Eye, EyeOff, Settings, Trash2 } from "lucide-react";
 import type { IndicatorConfig } from "@/types";
+import { extractPineInputDefinitions } from "@/services/pineScript";
 
-function pineLegendInputs(sourceCode: string | undefined): string {
+function pineLegendInputs(indicator: IndicatorConfig): string {
+  const sourceCode = indicator.sourceCode;
   if (!sourceCode) return "";
-  const values: string[] = [];
-  const inputPattern = /\binput(?:\.(int|float|string|bool|color|source))?\s*\(\s*(?:defval\s*=\s*)?([^,\)\n]+)/g;
-  for (const match of sourceCode.matchAll(inputPattern)) {
-    const kind = match[1];
-    if (kind === "bool" || kind === "color") continue;
-    const raw = match[2].trim();
-    if (/^(true|false|color\.|na\b)/i.test(raw)) continue;
-    const cleaned = raw.replace(/^["']|["']$/g, "");
-    const numeric = Number(cleaned);
-    values.push(
-      Number.isFinite(numeric) && /^[-+]?\d+(?:\.\d+)?$/.test(cleaned)
-        ? String(numeric)
-        : cleaned,
-    );
-    if (values.length >= 6) break;
-  }
-  return values.join(" ");
+  return extractPineInputDefinitions(sourceCode)
+    .filter((input) => input.kind !== "bool" && input.kind !== "color")
+    .slice(0, 6)
+    .map((input) => indicator.inputValues?.[input.key] ?? input.defaultValue)
+    .map((value) => String(value))
+    .join(" ");
 }
 
 export function indicatorLegendTitle(indicator: IndicatorConfig): string {
@@ -29,7 +20,7 @@ export function indicatorLegendTitle(indicator: IndicatorConfig): string {
       : indicator.type;
   const params =
     indicator.type === "CUSTOM"
-      ? pineLegendInputs(indicator.sourceCode)
+      ? pineLegendInputs(indicator)
       : indicator.type !== "VWAP" && indicator.length
         ? String(indicator.length)
         : "";
@@ -58,7 +49,6 @@ export function IndicatorLegend({
       {indicators.map((indicator) => {
         const visible = indicator.visible !== false;
         const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
-        const settingsEnabled = indicator.type !== "CUSTOM";
         return (
           <div
             key={indicator.id}
@@ -80,8 +70,7 @@ export function IndicatorLegend({
               {visible ? <Eye size={14} /> : <EyeOff size={14} />}
             </LegendButton>
             <LegendButton
-              title={settingsEnabled ? "Indicator settings" : "Settings"}
-              disabled={!settingsEnabled}
+              title="Indicator settings"
               onClick={() => onSettings(indicator)}
             >
               <Settings size={14} />

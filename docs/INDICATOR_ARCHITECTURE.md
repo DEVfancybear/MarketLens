@@ -55,7 +55,8 @@ IndicatorResult { id, series[] }
 | Pine-like parser/compiler | `src/services/pineScript.ts` |
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
 | Indicator dropdown entry points | `src/components/toolbar/IndicatorMenu.tsx` |
-| Built-in settings dialog | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
+| Shared settings dialog | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
+| Settings architecture guide | `docs/SETTTING_ARCHITECTURE.md` |
 | Overlay rendering on price chart | `src/components/chart/PriceChart.tsx` |
 | Separate pane rendering | `src/components/chart/IndicatorPane.tsx` |
 | Bottom tab mounting | `src/components/layout/BottomPanel.tsx` |
@@ -81,6 +82,7 @@ interface IndicatorConfig {
   name?: string;
   scriptId?: string;
   sourceCode?: string;
+  inputValues?: Record<string, string | number | boolean>;
 }
 ```
 
@@ -104,6 +106,8 @@ The split matters:
 - A saved script can be loaded/edited without being active on the chart.
 - An active custom indicator stores `scriptId` and a copy of `sourceCode` so chart rendering is
   deterministic from `indicators[]`.
+- An active custom indicator stores `inputValues` as per-instance Pine input overrides. This allows
+  multiple instances of the same saved script to use different settings.
 
 ## State and persistence
 
@@ -166,18 +170,28 @@ PineEditor Play or My scripts Add
   -> PriceChart / IndicatorPane renders through computeIndicator()
 ```
 
-Edit existing custom indicator:
+Edit existing custom indicator source:
 
 ```
-Indicator menu / pane settings button
+Indicator legend source-code `{}` button
   -> if config.type === "CUSTOM" and scriptId exists:
        loadPineScriptAtom(scriptId)
        setBottomTabAtom("pine")
-  -> else:
-       setEditingIndicatorAtom(id)
 ```
 
-Custom indicators intentionally bypass `IndicatorSettingsDialog`; source is the settings surface.
+Edit existing custom indicator settings:
+
+```
+Indicator legend settings gear
+  -> setEditingIndicatorAtom(id)
+  -> IndicatorSettingsDialog
+  -> extractPineInputDefinitions(sourceCode)
+  -> update IndicatorConfig.inputValues
+  -> compilePineScript(sourceCode, candles, id, inputValues)
+```
+
+Custom indicators do not bypass `IndicatorSettingsDialog`. The gear edits input values; the `{}`
+button edits source code. See `docs/SETTTING_ARCHITECTURE.md`.
 
 ## Indicator browser
 
@@ -192,7 +206,8 @@ It replaces the old compact dropdown while keeping the same indicator-store acti
   source-code `{}` and trash actions.
 - Saved scripts can be favorited, added to chart, opened in the bottom Pine Editor, or deleted
   after confirmation.
-- Built-ins still use `toggleIndicatorAtom`; active built-ins route to `IndicatorSettingsDialog`.
+- Built-ins still use `toggleIndicatorAtom`; active built-ins route to the shared
+  `IndicatorSettingsDialog`.
 
 ## Pine-like compiler contract
 
@@ -373,7 +388,8 @@ To add a new built-in indicator:
 3. Add a `case` in `computeIndicator`.
 4. Add defaults in `defaultIndicator`.
 5. Add a menu option in `IndicatorMenu`.
-6. Add settings controls in `IndicatorSettingsDialog` if needed.
+6. Add settings schema through the shared settings architecture if needed. See
+   `docs/SETTTING_ARCHITECTURE.md`; do not create an indicator-specific settings modal.
 
 To add a new Pine subset function:
 

@@ -12,6 +12,9 @@ export interface CustomIndicatorScript {
   updatedAt: number;
 }
 
+export type IndicatorInputValue = string | number | boolean;
+export type IndicatorInputValues = Record<string, IndicatorInputValue>;
+
 export interface IndicatorConfig {
   id: string;
   type: IndicatorType;
@@ -31,6 +34,8 @@ export interface IndicatorConfig {
   scriptId?: string;
   /** Pine-like source code for source-code indicators. */
   sourceCode?: string;
+  /** Per-instance values for Pine `input.*()` controls, keyed by the assigned variable name. */
+  inputValues?: IndicatorInputValues;
 }
 
 /** A single computed indicator value keyed by time. */

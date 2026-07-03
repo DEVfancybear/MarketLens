@@ -85,8 +85,11 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
   `input.*`, and `plot()` metadata) and never executes user source as JavaScript.
 - Wired custom indicators into the existing chart renderer: `overlay=true` scripts render on the
   main price chart, while separate-pane scripts render through `IndicatorPane`.
-- CUSTOM indicator settings gears now load the saved script into the bottom Pine Editor instead of
-  opening the built-in indicator settings dialog.
+- CUSTOM indicator settings gears now open the shared TradingView-style settings dialog generated
+  from Pine `input.*()` declarations. The `{}` control opens the saved script in the bottom Pine
+  Editor.
+- Docs: added `docs/SETTTING_ARCHITECTURE.md` as the maintenance guide for common indicator
+  settings, `IndicatorConfig.inputValues`, Pine input schema extraction, and runtime overrides.
 - Docs: added `docs/INDICATOR_ARCHITECTURE.md`.
 - Guard: added `npm run check:pine-indicator`.
 - Verification: `npm run check:pine-indicator`, `npm run typecheck`, `npm run lint`, and
