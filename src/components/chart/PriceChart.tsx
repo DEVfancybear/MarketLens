@@ -31,6 +31,7 @@ const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
 const getDefaultBarSpacing = (timeframe: Timeframe) =>
   BAR_SPACING[timeframe] ?? 8;
+type IndicatorSeriesApi = ISeriesApi<"Line"> | ISeriesApi<"Histogram">;
 
 /**
  * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
@@ -51,7 +52,7 @@ export function PriceChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const indSeriesRef = useRef<Map<string, ISeriesApi<"Line">[]>>(new Map());
+  const indSeriesRef = useRef<Map<string, IndicatorSeriesApi[]>>(new Map());
   const fittedRef = useRef(false);
   const prevCandlesRef = useRef<Candle[]>([]);
   const prevThemeRef = useRef<string>("");
@@ -415,20 +416,30 @@ export function PriceChart({
       if (!series || series.length !== result.series.length) {
         series?.forEach((s) => chart.removeSeries(s));
         series = result.series.map((s) =>
-          chart.addLineSeries({
-            color: s.color,
-            lineWidth: 2,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          }),
+          s.type === "histogram"
+            ? chart.addHistogramSeries({
+                color: s.color,
+                priceLineVisible: false,
+                lastValueVisible: false,
+              })
+            : chart.addLineSeries({
+                color: s.color,
+                lineWidth: 2,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+              }),
         );
         store.set(cfg.id, series);
       }
       result.series.forEach((s, idx) => {
         series![idx].applyOptions({ color: s.color });
         series![idx].setData(
-          s.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+          s.data.map((p) => ({
+            time: p.time as UTCTimestamp,
+            value: p.value,
+            ...(s.type === "histogram" && p.color ? { color: p.color } : {}),
+          })),
         );
       });
     }

@@ -28,6 +28,7 @@ const NAMED_COLORS: Record<string, string> = {
   "color.black": "#000000",
   "color.gray": "#787b86",
   "color.grey": "#787b86",
+  "color.silver": "#b2b5be",
   blue: "#2962ff",
   orange: "#ff9800",
   green: "#26a69a",
@@ -39,6 +40,7 @@ const NAMED_COLORS: Record<string, string> = {
   black: "#000000",
   gray: "#787b86",
   grey: "#787b86",
+  silver: "#b2b5be",
 };
 
 export interface PineScriptMeta {
@@ -53,10 +55,13 @@ export interface PineCompilation {
 }
 
 type SeriesData = (number | null)[];
+type ColorSeriesData = (string | null)[];
 
 type PineValue =
   | { kind: "number"; value: number }
   | { kind: "series"; values: SeriesData }
+  | { kind: "color"; value: string }
+  | { kind: "colorSeries"; values: ColorSeriesData }
   | { kind: "string"; value: string }
   | { kind: "bool"; value: boolean };
 
@@ -66,8 +71,12 @@ type Token =
   | { kind: "string"; value: string }
   | { kind: "operator"; value: "+" | "-" | "*" | "/" }
   | { kind: "paren"; value: "(" | ")" }
+  | { kind: "bracket"; value: "[" | "]" }
   | { kind: "comma"; value: "," }
   | { kind: "equals"; value: "=" }
+  | { kind: "comparison"; value: ">" | ">=" | "<" | "<=" | "==" | "!=" }
+  | { kind: "question"; value: "?" }
+  | { kind: "colon"; value: ":" }
   | { kind: "eof" };
 
 interface EvalContext {
@@ -277,8 +286,29 @@ function tokenize(input: string): Token[] {
       i += 1;
       continue;
     }
+    if (
+      (ch === ">" || ch === "<" || ch === "=" || ch === "!") &&
+      input[i + 1] === "="
+    ) {
+      tokens.push({
+        kind: "comparison",
+        value: `${ch}=` as Extract<Token, { kind: "comparison" }>["value"],
+      });
+      i += 2;
+      continue;
+    }
+    if (ch === ">" || ch === "<") {
+      tokens.push({ kind: "comparison", value: ch });
+      i += 1;
+      continue;
+    }
     if (ch === "(" || ch === ")") {
       tokens.push({ kind: "paren", value: ch });
+      i += 1;
+      continue;
+    }
+    if (ch === "[" || ch === "]") {
+      tokens.push({ kind: "bracket", value: ch });
       i += 1;
       continue;
     }
@@ -289,6 +319,16 @@ function tokenize(input: string): Token[] {
     }
     if (ch === "=") {
       tokens.push({ kind: "equals", value: "=" });
+      i += 1;
+      continue;
+    }
+    if (ch === "?") {
+      tokens.push({ kind: "question", value: "?" });
+      i += 1;
+      continue;
+    }
+    if (ch === ":") {
+      tokens.push({ kind: "colon", value: ":" });
       i += 1;
       continue;
     }
@@ -311,7 +351,7 @@ class ExpressionParser {
   }
 
   parse(): PineValue {
-    const value = this.parseAdditive();
+    const value = this.parseTernary();
     if (this.peek().kind !== "eof") {
       throw new Error("Unexpected expression tail");
     }
@@ -326,6 +366,48 @@ class ExpressionParser {
     const token = this.tokens[this.index];
     this.index += 1;
     return token;
+  }
+
+  private parseTernary(): PineValue {
+    const condition = this.parseLogical();
+    if (this.peek().kind !== "question") return condition;
+    this.next();
+    const whenTrue = this.parseTernary();
+    const colon = this.next();
+    if (colon.kind !== "colon") {
+      throw new Error("Expected ':' in conditional expression");
+    }
+    const whenFalse = this.parseTernary();
+    return chooseValue(
+      condition,
+      whenTrue,
+      whenFalse,
+      this.context.candles.length,
+    );
+  }
+
+  private parseLogical(): PineValue {
+    let left = this.parseComparison();
+    while (
+      this.peek().kind === "identifier" &&
+      ((this.peek() as Extract<Token, { kind: "identifier" }>).value.toLowerCase() === "and" ||
+        (this.peek() as Extract<Token, { kind: "identifier" }>).value.toLowerCase() === "or")
+    ) {
+      const op = (this.next() as Extract<Token, { kind: "identifier" }>).value.toLowerCase() as "and" | "or";
+      const right = this.parseComparison();
+      left = logicalValues(left, right, op, this.context.candles.length);
+    }
+    return left;
+  }
+
+  private parseComparison(): PineValue {
+    let left = this.parseAdditive();
+    while (this.peek().kind === "comparison") {
+      const op = this.next() as Extract<Token, { kind: "comparison" }>;
+      const right = this.parseAdditive();
+      left = compareValues(left, right, op.value, this.context.candles.length);
+    }
+    return left;
   }
 
   private parseAdditive(): PineValue {
@@ -390,7 +472,7 @@ class ExpressionParser {
               this.next();
               this.next();
             }
-            args.push(this.parseAdditive());
+            args.push(this.parseTernary());
             if (this.peek().kind === "comma") {
               this.next();
               continue;
@@ -404,10 +486,10 @@ class ExpressionParser {
         }
         return evaluateCall(token.value, args, this.context);
       }
-      return resolveIdentifier(token.value, this.context);
+      return this.parsePostfix(resolveIdentifier(token.value, this.context));
     }
     if (token.kind === "paren" && token.value === "(") {
-      const value = this.parseAdditive();
+      const value = this.parseTernary();
       const close = this.next();
       if (close.kind !== "paren" || close.value !== ")") {
         throw new Error("Unclosed parenthesized expression");
@@ -416,10 +498,33 @@ class ExpressionParser {
     }
     throw new Error("Expected expression");
   }
+
+  private parsePostfix(value: PineValue): PineValue {
+    let current = value;
+    while (true) {
+      const token = this.peek();
+      if (token.kind !== "bracket" || token.value !== "[") break;
+      this.next();
+      const offset = this.next();
+      if (offset.kind !== "number") {
+        throw new Error("History reference expects a numeric offset");
+      }
+      const close = this.next();
+      if (close.kind !== "bracket" || close.value !== "]") {
+        throw new Error("Unclosed history reference");
+      }
+      current = shiftValue(current, Math.max(0, Math.round(offset.value)), this.context.candles.length);
+    }
+    return current;
+  }
 }
 
 function isUsableNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function isColorValue(value: PineValue): value is Extract<PineValue, { kind: "color" | "colorSeries" }> {
+  return value.kind === "color" || value.kind === "colorSeries";
 }
 
 function numberValue(value: PineValue): number {
@@ -436,11 +541,143 @@ function getAt(value: PineValue, index: number, length: number): number | null {
   return index < length ? null : null;
 }
 
+function colorAt(value: PineValue, index: number): string | null {
+  if (value.kind === "color") return value.value;
+  if (value.kind === "colorSeries") return value.values[index] ?? null;
+  return null;
+}
+
 function toSeries(value: PineValue, length: number): SeriesData {
   if (value.kind === "series") return value.values;
   if (value.kind === "number") return Array.from({ length }, () => value.value);
   if (value.kind === "bool") return Array.from({ length }, () => (value.value ? 1 : 0));
   return Array.from({ length }, () => null);
+}
+
+function toColorSeries(value: PineValue, length: number): ColorSeriesData {
+  if (value.kind === "colorSeries") return value.values;
+  if (value.kind === "color") return Array.from({ length }, () => value.value);
+  return Array.from({ length }, () => null);
+}
+
+function truthyAt(value: PineValue, index: number, length: number): boolean {
+  if (value.kind === "bool") return value.value;
+  if (value.kind === "number") return Number.isFinite(value.value) && value.value !== 0;
+  if (value.kind === "series") {
+    const point = value.values[index];
+    return isUsableNumber(point) && point !== 0;
+  }
+  return colorAt(value, index) != null && index < length;
+}
+
+function valueVaries(value: PineValue): boolean {
+  return value.kind === "series" || value.kind === "colorSeries";
+}
+
+function chooseValue(
+  condition: PineValue,
+  whenTrue: PineValue,
+  whenFalse: PineValue,
+  length: number,
+): PineValue {
+  if (!valueVaries(condition)) {
+    return truthyAt(condition, 0, length) ? whenTrue : whenFalse;
+  }
+
+  if (isColorValue(whenTrue) || isColorValue(whenFalse)) {
+    return {
+      kind: "colorSeries",
+      values: Array.from({ length }, (_, index) =>
+        truthyAt(condition, index, length)
+          ? colorAt(whenTrue, index)
+          : colorAt(whenFalse, index),
+      ),
+    };
+  }
+
+  return {
+    kind: "series",
+    values: Array.from({ length }, (_, index) =>
+      truthyAt(condition, index, length)
+        ? getAt(whenTrue, index, length)
+        : getAt(whenFalse, index, length),
+    ),
+  };
+}
+
+function compareValues(
+  left: PineValue,
+  right: PineValue,
+  op: Extract<Token, { kind: "comparison" }>["value"],
+  length: number,
+): PineValue {
+  const compare = (a: number, b: number) => {
+    switch (op) {
+      case ">": return a > b;
+      case ">=": return a >= b;
+      case "<": return a < b;
+      case "<=": return a <= b;
+      case "==": return a === b;
+      case "!=": return a !== b;
+    }
+  };
+
+  if (left.kind === "number" && right.kind === "number") {
+    return { kind: "bool", value: compare(left.value, right.value) };
+  }
+
+  return {
+    kind: "series",
+    values: Array.from({ length }, (_, index) => {
+      const a = getAt(left, index, length);
+      const b = getAt(right, index, length);
+      return isUsableNumber(a) && isUsableNumber(b) && compare(a, b) ? 1 : 0;
+    }),
+  };
+}
+
+function logicalValues(
+  left: PineValue,
+  right: PineValue,
+  op: "and" | "or",
+  length: number,
+): PineValue {
+  if (!valueVaries(left) && !valueVaries(right)) {
+    return {
+      kind: "bool",
+      value:
+        op === "and"
+          ? truthyAt(left, 0, length) && truthyAt(right, 0, length)
+          : truthyAt(left, 0, length) || truthyAt(right, 0, length),
+    };
+  }
+
+  return {
+    kind: "series",
+    values: Array.from({ length }, (_, index) => {
+      const ok =
+        op === "and"
+          ? truthyAt(left, index, length) && truthyAt(right, index, length)
+          : truthyAt(left, index, length) || truthyAt(right, index, length);
+      return ok ? 1 : 0;
+    }),
+  };
+}
+
+function shiftValue(value: PineValue, offset: number, length: number): PineValue {
+  if (isColorValue(value)) {
+    const colors = toColorSeries(value, length);
+    return {
+      kind: "colorSeries",
+      values: colors.map((_, index) => colors[index - offset] ?? null),
+    };
+  }
+
+  const values = toSeries(value, length);
+  return {
+    kind: "series",
+    values: values.map((_, index) => values[index - offset] ?? null),
+  };
 }
 
 function combineValues(
@@ -486,6 +723,14 @@ function sourceSeries(candles: Candle[], key: keyof Candle): PineValue {
 function resolveIdentifier(name: string, context: EvalContext): PineValue {
   const stored = context.variables.get(name);
   if (stored) return stored;
+  if (NAMED_COLORS[name]) return { kind: "color", value: NAMED_COLORS[name] };
+  if (
+    name.startsWith("input.") ||
+    name.startsWith("plot.style_") ||
+    name.startsWith("format.")
+  ) {
+    return { kind: "string", value: name };
+  }
 
   switch (name) {
     case "open":
@@ -743,11 +988,15 @@ function evaluateExpression(expression: string, context: EvalContext): PineValue
   return new ExpressionParser(expression.trim(), context).parse();
 }
 
-function seriesToLinePoints(values: SeriesData, candles: Candle[]): LinePoint[] {
+function seriesToLinePoints(
+  values: SeriesData,
+  candles: Candle[],
+  colors?: ColorSeriesData,
+): LinePoint[] {
   const data: LinePoint[] = [];
   values.forEach((value, index) => {
     if (isUsableNumber(value) && candles[index]) {
-      data.push({ time: candles[index].time, value });
+      data.push({ time: candles[index].time, value, color: colors?.[index] ?? undefined });
     }
   });
   return data;
@@ -770,6 +1019,58 @@ function resolveColor(expression: string | undefined, fallback: string): string 
   return fallback;
 }
 
+function resolvePlotColor(
+  expression: string | undefined,
+  context: EvalContext,
+  fallback: string,
+): { color: string; colors?: ColorSeriesData } {
+  if (!expression) return { color: fallback };
+  try {
+    const value = evaluateExpression(expression, context);
+    if (value.kind === "color") return { color: value.value };
+    if (value.kind === "colorSeries") {
+      return { color: fallback, colors: value.values };
+    }
+  } catch {
+    /* Fall back to literal color parsing below. */
+  }
+  return { color: resolveColor(expression, fallback) };
+}
+
+function plotType(style: string | undefined): "line" | "histogram" {
+  if (!style) return "line";
+  return /plot\.style_(columns|histogram)|style_(columns|histogram)/.test(style)
+    ? "histogram"
+    : "line";
+}
+
+function evaluateRecursiveAssignment(
+  name: string,
+  expression: string,
+  context: EvalContext,
+): PineValue | null {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const prev = `nz\\(\\s*${escaped}\\[1\\]\\s*\\)`;
+  const rmaMatch = expression.match(
+    new RegExp(`^${prev}\\s*\\+\\s*\\((.+?)\\s*-\\s*${prev}\\)\\s*/\\s*(.+)$`),
+  );
+  if (!rmaMatch) return null;
+
+  const source = toSeries(evaluateExpression(rmaMatch[1], context), context.candles.length);
+  const length = Math.max(1, numberValue(evaluateExpression(rmaMatch[2], context)));
+  const values: SeriesData = [];
+  let previous = 0;
+  for (const value of source) {
+    if (!isUsableNumber(value)) {
+      values.push(null);
+      continue;
+    }
+    previous = previous + (value - previous) / length;
+    values.push(previous);
+  }
+  return { kind: "series", values };
+}
+
 function readAssignments(cleaned: string, context: EvalContext, errors: string[]) {
   const lines = cleaned.split("\n");
   for (let index = 0; index < lines.length; index++) {
@@ -778,10 +1079,14 @@ function readAssignments(cleaned: string, context: EvalContext, errors: string[]
     if (/^\/\/?@version/.test(line)) continue;
     if (/^(indicator|study|strategy|plot|hline|alertcondition)\s*\(/.test(line)) continue;
 
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:?=\s*(.+)$/);
+    const match = line.match(/^(?:(?:float|int|bool|color|string)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
     if (!match) continue;
     try {
-      context.variables.set(match[1], evaluateExpression(match[2], context));
+      context.variables.set(
+        match[1],
+        evaluateRecursiveAssignment(match[1], match[3], context) ??
+          evaluateExpression(match[3], context),
+      );
     } catch (error) {
       errors.push(`Line ${index + 1}: ${(error as Error).message}`);
     }
@@ -814,17 +1119,27 @@ export function compilePineScript(
         unquote(args.named.title) ??
         unquote(args.positional[1]) ??
         `plot_${index + 1}`;
-      const color = resolveColor(args.named.color ?? args.positional[2], DEFAULT_COLORS[index % DEFAULT_COLORS.length]);
+      const plotColor = resolvePlotColor(
+        args.named.color ?? args.positional[2],
+        context,
+        DEFAULT_COLORS[index % DEFAULT_COLORS.length],
+      );
+      const type = plotType(args.named.style);
       return {
         key: title,
-        color,
-        data: seriesToLinePoints(toSeries(value, candles.length), candles),
+        color: plotColor.color,
+        type,
+        data: seriesToLinePoints(
+          toSeries(value, candles.length),
+          candles,
+          plotColor.colors,
+        ),
       };
     } catch (error) {
       errors.push(`plot() #${index + 1}: ${(error as Error).message}`);
       return null;
     }
-  }).filter((item): item is { key: string; color: string; data: LinePoint[] } => item != null);
+  }).filter((item): item is { key: string; color: string; data: LinePoint[]; type: "line" | "histogram" } => item != null);
 
   if (series.length === 0 && errors.length === 0) {
     errors.push("No plot() calls found");

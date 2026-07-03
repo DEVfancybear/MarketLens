@@ -95,7 +95,7 @@ export function IndicatorPane({
     // Clear previous series by removing & recreating is heavy; instead track here.
     const result = computeIndicator(cfg, candles);
     const created = result.series.map((s) => {
-      const isHist = s.key === "hist";
+      const isHist = s.type === "histogram" || s.key === "hist";
       const series = isHist
         ? chart.addHistogramSeries({ color: s.color, priceLineVisible: false })
         : chart.addLineSeries({
@@ -111,6 +111,7 @@ export function IndicatorPane({
           ...(isHist
             ? {
                 color:
+                  p.color ??
                   p.value >= 0
                     ? chartColors(theme).bull
                     : chartColors(theme).bear,

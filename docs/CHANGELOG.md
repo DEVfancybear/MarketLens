@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Pine VSA/Wyckoff volume histogram rendering (2026-07-03)
+- Fixed Pine source indicators such as `VSA Wyckoff Volume` rendering as a single blue line.
+- `IndicatorResult` now supports `type: "histogram"` and per-point `color`, and both
+  `IndicatorPane` and `PriceChart` render histogram series with per-bar colors.
+- The Pine compiler now supports the subset needed by the VSA script: typed declarations
+  (`float volumeMA = 0`), recursive Wilder-style assignments using `[1]`, comparisons,
+  logical `and`/`or`, ternary palettes, Pine enum identifiers such as `input.integer`, and
+  `plot(..., style=plot.style_columns)`.
+- Guard: extended `npm run check:pine-indicator` to cover VSA-style columns, ternary palettes,
+  comparisons/history, and histogram render support.
+
 ### Added - Pine Script editor + CUSTOM source-code indicators (2026-07-03)
 - New **Pine Editor** bottom-panel tab (`src/components/pine/PineEditor.tsx`): TradingView-style
   layout with a "My scripts" sidebar (search, favorite star, Add/Edit/Delete per script), script

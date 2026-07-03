@@ -60,6 +60,26 @@ const checks = [
       !source.pineScript.includes("new Function"),
   },
   {
+    name: "Pine compiler supports VSA-style columns, ternary palettes, comparisons, and history",
+    ok:
+      source.pineScript.includes("parseTernary") &&
+      source.pineScript.includes("compareValues") &&
+      source.pineScript.includes("logicalValues") &&
+      source.pineScript.includes("shiftValue") &&
+      source.pineScript.includes("evaluateRecursiveAssignment") &&
+      source.pineScript.includes("style_(columns|histogram)") &&
+      source.pineScript.includes("colorSeries"),
+  },
+  {
+    name: "Indicator renderers support histogram series and per-bar colors",
+    ok:
+      source.indicatorPane.includes('s.type === "histogram"') &&
+      source.indicatorPane.includes("p.color ??") &&
+      fs.readFileSync("src/components/chart/PriceChart.tsx", "utf8").includes(
+        's.type === "histogram"',
+      ),
+  },
+  {
     name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",
     ok:
       source.indicatorMenu.includes('ind.type === "CUSTOM"') &&

@@ -188,6 +188,7 @@ Custom indicators intentionally bypass `IndicatorSettingsDialog`; source is the 
 - Tokenizer + recursive-descent expression parser.
 - Whitelisted identifiers and functions only.
 - Output is the same `IndicatorResult` shape as built-ins.
+- Histogram plots and per-bar colors are supported for volume-style scripts.
 
 Supported source structure:
 
@@ -204,6 +205,17 @@ Supported identifiers:
 - OHLCV: `open`, `high`, `low`, `close`, `volume`
 - Derived sources: `hl2`, `hlc3`, `ohlc4`
 - Constants: `true`, `false`, `na`
+- Pine enum-like identifiers used in metadata: `input.*`, `plot.style_*`, `format.*`
+
+Supported expression features:
+
+- Arithmetic with precedence and unary minus.
+- Comparisons: `>`, `>=`, `<`, `<=`, `==`, `!=`.
+- Logical `and` / `or`.
+- Ternary conditionals, including color palettes.
+- History references such as `series[1]`.
+- Typed declarations such as `float volumeMA = 0`.
+- Wilder-style recursive assignments like `x := nz(x[1]) + (source - nz(x[1])) / length`.
 
 Supported functions:
 
@@ -211,7 +223,7 @@ Supported functions:
 - Series: `ta.sma`, `ta.ema`, `ta.rma`, `ta.rsi`, `ta.vwap`, `ta.highest`, `ta.lowest`,
   `ta.change`, `ta.atr`
 - Math/helpers: `math.abs`, `math.max`, `math.min`, `nz`
-- Plot metadata: `plot(..., title=..., color=...)`
+- Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
@@ -225,14 +237,20 @@ tables, labels, fills, conditional blocks, and arbitrary custom functions.
 ```ts
 interface IndicatorResult {
   id: string;
-  series: { key: string; color: string; data: LinePoint[] }[];
+  series: {
+    key: string;
+    color: string;
+    data: { time: number; value: number; color?: string }[];
+    type?: "line" | "histogram";
+  }[];
 }
 ```
 
 Overlay indicators render in `PriceChart`:
 
 - `indicators.filter(i => i.visible && !i.separatePane)`
-- One Lightweight Charts line series per returned `series[]`.
+- One Lightweight Charts line or histogram series per returned `series[]`.
+- Histogram points may carry per-bar colors, matching scripts such as VSA volume palettes.
 - Series are keyed by indicator id and recreated only when series count changes.
 
 Separate-pane indicators render in `IndicatorPane`:
@@ -303,4 +321,3 @@ Before considering indicator work complete:
 - Editing a saved script updates any active custom indicator using the same script id
 - Invalid source shows an editor error and does not crash the chart
 - Replay mode uses only visible candles for built-in and custom indicators
-

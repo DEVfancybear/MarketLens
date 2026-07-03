@@ -4,6 +4,19 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 
 ## Completed this session (2026-07-03)
 
+### Pine VSA/Wyckoff volume rendering fix
+- User repro: the same VSA Wyckoff Volume script renders as colored volume columns in TradingView,
+  but rendered as a single blue line in this app.
+- Root cause: custom Pine plots only produced line series with a static fallback color. The compiler
+  did not yet understand `plot.style_columns`, ternary color palettes, comparisons/logical ops,
+  history references such as `volumeMA[1]`, typed declarations, or Pine enum identifiers such as
+  `input.integer`.
+- Fix: `IndicatorResult` supports histogram series and per-bar colors; `IndicatorPane` and
+  `PriceChart` render histogram data with each point's color.
+- Fix: `pineScript.ts` now supports the VSA subset, including the Wilder-style recursive volume MA
+  pattern used by `volumeMA := nz(volumeMA[1]) + (volume - nz(volumeMA[1])) / lengthVolumeMA`.
+- Guard: extended `npm run check:pine-indicator`.
+
 ### Pine Editor + source-code indicators
 - Added a TradingView-style Pine Editor as a bottom-panel tab, with an embedded "My scripts"
   sidebar for search, favorite, load/edit, add-to-chart, and delete. There is no separate popup

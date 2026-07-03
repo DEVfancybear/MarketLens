@@ -161,7 +161,7 @@ export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): Indic
         series: [
           { key: 'macd', color: cfg.color, data: macdLine },
           { key: 'signal', color: cfg.color2 ?? '#ff9800', data: signalLine },
-          { key: 'hist', color: '#787b86', data: hist },
+          { key: 'hist', color: '#787b86', data: hist, type: 'histogram' },
         ],
       };
     }

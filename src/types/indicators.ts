@@ -37,10 +37,13 @@ export interface IndicatorConfig {
 export interface LinePoint {
   time: number;
   value: number;
+  color?: string;
 }
+
+export type IndicatorSeriesType = 'line' | 'histogram';
 
 export interface IndicatorResult {
   id: string;
   /** Multiple series for multi-line indicators (e.g. MACD). */
-  series: { key: string; color: string; data: LinePoint[] }[];
+  series: { key: string; color: string; data: LinePoint[]; type?: IndicatorSeriesType }[];
 }
