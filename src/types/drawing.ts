@@ -183,6 +183,14 @@ export interface BaseDrawing {
   textVAlign?: "top" | "middle" | "bottom";
   /** Color of a shape's inner text (falls back to `color`). */
   textColor?: string;
+  /** Standalone Text tool background box controls. */
+  textBackground?: boolean;
+  textBackgroundColor?: string;
+  /** Standalone Text tool border box controls. */
+  textBorder?: boolean;
+  textBorderColor?: string;
+  /** Wrap standalone Text tool content inside the visual text box. */
+  textWrap?: boolean;
   /** Shape extension across the chart (rectangle): none/left/right/both. */
   extend?: "none" | "left" | "right" | "both";
   /** Draw a horizontal middle line through a rectangle. */
@@ -247,6 +255,11 @@ export interface DrawingTemplate {
   bold?: boolean;
   italic?: boolean;
   textColor?: string;
+  textBackground?: boolean;
+  textBackgroundColor?: string;
+  textBorder?: boolean;
+  textBorderColor?: string;
+  textWrap?: boolean;
   textHAlign?: "left" | "center" | "right";
   textVAlign?: "top" | "middle" | "bottom";
   extend?: "none" | "left" | "right" | "both";
@@ -288,6 +301,11 @@ export const TEMPLATE_STYLE_KEYS = [
   "bold",
   "italic",
   "textColor",
+  "textBackground",
+  "textBackgroundColor",
+  "textBorder",
+  "textBorderColor",
+  "textWrap",
   "textHAlign",
   "textVAlign",
   "extend",

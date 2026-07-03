@@ -397,7 +397,7 @@ export function ObjectSettingsDialog() {
       snapshot.current = JSON.parse(JSON.stringify(drawing));
     }
     if (!editingId) snapshot.current = null;
-    setTab("style");
+    setTab(drawing?.tool === "text" ? "text" : "style");
     setPop(null);
     setTplOpen(false);
     setTemplateDialogOpen(false);
@@ -487,16 +487,329 @@ export function ObjectSettingsDialog() {
   };
   const familyTemplates = templates.filter((t) => t.family === family);
 
+  if (isPlainText) {
+    const textTabBtn = (id: "text" | "visibility") => (
+      <button
+        key={id}
+        onClick={() => {
+          setTab(id);
+          setPop(null);
+        }}
+        className={cn(
+          "border-b-[3px] px-0 pb-[9px] text-[16px] font-semibold capitalize transition-colors",
+          tab === id
+            ? "border-[#f0f0f0] text-[#f0f0f0]"
+            : "border-transparent text-[#d1d4dc] hover:text-[#f0f0f0]",
+        )}
+      >
+        {id}
+      </button>
+    );
+
+    return createPortal(
+      <>
+        <div
+          data-chart-ui
+          className="fixed inset-0 z-[110] flex items-start justify-center bg-black/50 pt-16"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancel();
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div
+            className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
+            onClick={() => {
+              setPop(null);
+              setTplOpen(false);
+            }}
+          >
+            <div className="flex items-center justify-between px-5 pb-2 pt-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
+                  Text
+                </span>
+                <Pencil size={16} className="text-[#d1d4dc]" />
+              </div>
+              <button
+                onClick={cancel}
+                className="rounded-sm p-1 text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
+              >
+                <X size={24} strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <div className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
+              {(["text", "visibility"] as const).map(textTabBtn)}
+            </div>
+
+            <div className="min-h-[420px] flex-1 overflow-y-auto px-5 py-5">
+              {tab !== "visibility" && (
+                <>
+                  <div className="mb-4 flex items-center gap-2">
+                    <div className="relative">
+                      <Swatch
+                        color={drawing.textColor ?? drawing.color}
+                        onClick={() =>
+                          setPop(pop === "text-c" ? null : "text-c")
+                        }
+                      />
+                      {pop === "text-c" && (
+                        <ColorPopover
+                          value={drawing.textColor ?? drawing.color}
+                          onPick={(c) =>
+                            c && patch({ textColor: c, color: c })
+                          }
+                          onClose={() => setPop(null)}
+                        />
+                      )}
+                    </div>
+                    <Select
+                      value={drawing.fontSize ?? 16}
+                      options={FONT_SIZES.map((s) => ({
+                        value: s,
+                        label: String(s),
+                      }))}
+                      onChange={(v) => patch({ fontSize: v })}
+                    />
+                    <button
+                      onClick={() => patch({ bold: !drawing.bold })}
+                      className={cn(
+                        "flex h-[34px] w-[34px] items-center justify-center rounded-md border text-[15px] font-semibold transition-colors",
+                        drawing.bold
+                          ? "border-[#f0f0f0] bg-[#2a2a2a] text-[#f0f0f0]"
+                          : "border-[#50535a] text-[#f0f0f0] hover:border-[#6a6d75]",
+                      )}
+                    >
+                      B
+                    </button>
+                    <button
+                      onClick={() => patch({ italic: !drawing.italic })}
+                      className={cn(
+                        "flex h-[34px] w-[34px] items-center justify-center rounded-md border font-serif text-[16px] italic transition-colors",
+                        drawing.italic
+                          ? "border-[#f0f0f0] bg-[#2a2a2a] text-[#f0f0f0]"
+                          : "border-[#50535a] text-[#f0f0f0] hover:border-[#6a6d75]",
+                      )}
+                    >
+                      I
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={drawing.text ?? ""}
+                    onChange={(e) => patch({ text: e.target.value })}
+                    rows={8}
+                    className="mb-4 h-[176px] w-full resize-none rounded-md border border-[#2962ff] bg-[#1f1f1f] px-2.5 py-2 text-[13px] text-[#f0f0f0] outline-none placeholder:text-[#5d606b]"
+                  />
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <CheckBox
+                        checked={!!drawing.textBackground}
+                        onChange={(v) => patch({ textBackground: v })}
+                      />
+                      <span className="min-w-[82px] text-[14px] font-medium text-[#d1d4dc]">
+                        Background
+                      </span>
+                      <div
+                        className={cn(
+                          "relative",
+                          !drawing.textBackground && "opacity-45",
+                        )}
+                      >
+                        <Swatch
+                          color={
+                            drawing.textBackgroundColor ??
+                            "rgba(54,58,69,0.85)"
+                          }
+                          onClick={() =>
+                            setPop(pop === "text-bg" ? null : "text-bg")
+                          }
+                        />
+                        {pop === "text-bg" && (
+                          <ColorPopover
+                            value={
+                              drawing.textBackgroundColor ?? "#363a45"
+                            }
+                            onPick={(c) =>
+                              c &&
+                              patch({
+                                textBackground: true,
+                                textBackgroundColor: c,
+                              })
+                            }
+                            onClose={() => setPop(null)}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <CheckBox
+                        checked={!!drawing.textBorder}
+                        onChange={(v) => patch({ textBorder: v })}
+                      />
+                      <span className="min-w-[82px] text-[14px] font-medium text-[#d1d4dc]">
+                        Border
+                      </span>
+                      <div
+                        className={cn(
+                          "relative",
+                          !drawing.textBorder && "opacity-45",
+                        )}
+                      >
+                        <Swatch
+                          color={drawing.textBorderColor ?? "#a64650"}
+                          onClick={() =>
+                            setPop(pop === "text-border" ? null : "text-border")
+                          }
+                        />
+                        {pop === "text-border" && (
+                          <ColorPopover
+                            value={drawing.textBorderColor ?? "#a64650"}
+                            onPick={(c) =>
+                              c &&
+                              patch({
+                                textBorder: true,
+                                textBorderColor: c,
+                              })
+                            }
+                            onClose={() => setPop(null)}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <CheckBox
+                        checked={!!drawing.textWrap}
+                        onChange={(v) => patch({ textWrap: v })}
+                      />
+                      <span className="text-[14px] font-medium text-[#d1d4dc]">
+                        Text wrap
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {tab === "visibility" && (
+                <Row label="On chart">
+                  <button
+                    onClick={() =>
+                      patch({ visible: drawing.visible === false })
+                    }
+                    className={cn(
+                      "rounded border px-2.5 py-1 text-xs transition-colors",
+                      drawing.visible !== false
+                        ? "border-brand/40 bg-brand/15 text-brand"
+                        : "border-terminal-border text-ink-muted hover:bg-terminal-hover",
+                    )}
+                  >
+                    {drawing.visible !== false ? "Shown" : "Hidden"}
+                  </button>
+                </Row>
+              )}
+            </div>
+
+            <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-[#3a3a3a] px-5">
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTplOpen((o) => !o);
+                    setPop(null);
+                  }}
+                  className="flex h-[34px] min-w-[104px] items-center justify-between rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] font-medium text-[#f0f0f0] hover:border-[#6a6d75]"
+                >
+                  Template
+                  <ChevronDown size={15} className="text-[#a0a3aa]" />
+                </button>
+                {tplOpen && (
+                  <div
+                    className="absolute bottom-full left-0 z-30 mb-1 w-[180px] rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={onSaveTemplate}
+                      className="w-full rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                    >
+                      Save as template...
+                    </button>
+                    {familyTemplates.length > 0 && (
+                      <div className="my-1 h-px bg-terminal-border" />
+                    )}
+                    {familyTemplates.map((t) => (
+                      <div
+                        key={t.name}
+                        className="group flex items-center gap-2 rounded px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
+                      >
+                        <button
+                          onClick={() => {
+                            applyTemplate({ id: drawing.id, template: t });
+                            setTplOpen(false);
+                          }}
+                          className="flex flex-1 items-center gap-2 text-left"
+                        >
+                          <span
+                            className="h-3 w-3 shrink-0 rounded-full border border-terminal-border"
+                            style={{ background: t.color }}
+                          />
+                          <span className="truncate">{t.name}</span>
+                        </button>
+                        <button
+                          title="Delete template"
+                          onClick={() =>
+                            deleteTemplate({
+                              name: t.name,
+                              family: t.family,
+                            })
+                          }
+                          className="rounded px-1 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
+                        >
+                          x
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={cancel}
+                  className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] hover:bg-[#2a2a2a]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={ok}
+                  className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] hover:bg-white"
+                >
+                  Ok
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <SaveDrawingTemplateDialog
+          open={templateDialogOpen}
+          templates={familyTemplates}
+          onCloseAction={() => setTemplateDialogOpen(false)}
+          onSaveAction={(name) => saveTemplate({ id: drawing.id, name })}
+        />
+      </>,
+      document.body,
+    );
+  }
+
   const tabs: Tab[] = isFib
     ? ["style", "coordinates", "visibility"]
-    : isPlainText
-      ? ["style", "text", "coordinates", "visibility"]
-      : [
-          "style",
-          ...(hasTextTab ? (["text"] as Tab[]) : []),
-          "coordinates",
-          "visibility",
-        ];
+    : [
+        "style",
+        ...(hasTextTab ? (["text"] as Tab[]) : []),
+        "coordinates",
+        "visibility",
+      ];
 
   const tabBtn = (id: Tab) => (
     <button

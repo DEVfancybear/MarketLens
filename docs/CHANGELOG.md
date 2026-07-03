@@ -5,10 +5,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 ## [Unreleased]
 
 ### Changed - Text tool settings and selection parity (2026-07-04)
-- Text drawing settings now force the TradingView-style tab order:
-  `Style`, `Text`, `Coordinates`, and `Visibility`.
-- The Text tool Style tab keeps visual styling out of the wrong place and points
-  text/font edits to the `Text` tab, matching the TradingView reference.
+- Standalone Text drawing settings now use the TradingView-style `Text` and
+  `Visibility` tabs with the same header/footer shell as the other drawing
+  settings popups.
+- The Text tab now owns color, font size, bold, italic, text content,
+  background, border, and text-wrap controls.
 - Selected Text drawings now render a blue bounding box around the text content
   instead of only selecting the invisible anchor point.
 
@@ -980,8 +981,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   gear). New `ObjectSettingsDialog` opens for non-position tools with tabs picked
   by family — line/shape → _Style · Coordinates · Visibility_, text/emoji → _Style ·
   Visibility_. Style tab: colour, line width, line style, and (shapes) fill + opacity;
-  update 2026-07-04: text/emoji now use _Style · Text · Coordinates · Visibility_
-  to match the current TradingView text-object settings dialog.
+  update 2026-07-04: standalone Text now uses _Text · Visibility_ to match the
+  current TradingView text-object settings dialog.
   Coordinates tab: editable price + date/time per point; Visibility: show/hide on
   chart. The long/short `PositionSettingsDialog` is untouched (still wins for
   positions, so the two dialogs never collide). Plan §1.

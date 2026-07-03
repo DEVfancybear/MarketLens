@@ -125,6 +125,16 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         "," +
         (d.textColor ?? "") +
         "," +
+        (d.textBackground ? "1" : "0") +
+        "," +
+        (d.textBackgroundColor ?? "") +
+        "," +
+        (d.textBorder ? "1" : "0") +
+        "," +
+        (d.textBorderColor ?? "") +
+        "," +
+        (d.textWrap ? "1" : "0") +
+        "," +
         (d.textHAlign ?? "") +
         "," +
         (d.textVAlign ?? "");

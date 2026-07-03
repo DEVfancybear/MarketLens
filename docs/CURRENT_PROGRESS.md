@@ -5,10 +5,11 @@ _Last updated: 2026-07-04 (Text tool settings parity)_
 ## Completed this session (2026-07-04)
 
 ### Text tool settings parity
-- Text drawing settings now use the TradingView-style `Style / Text /
-  Coordinates / Visibility` tab order.
-- The Text Style tab no longer mixes text editing controls into Style; it points
-  text/font edits to the Text tab, matching the TradingView reference.
+- Standalone Text drawing settings now use the TradingView-style `Text /
+  Visibility` tab order with the same header/footer shell as other drawing
+  settings popups.
+- The Text tab owns color, font size, bold, italic, text content, background,
+  border, and text-wrap controls.
 - Selected Text drawings now render a blue bounding box around the measured text
   content so reselecting text has the same visible affordance as TradingView.
 
@@ -769,8 +770,8 @@ _Last updated: 2026-07-04 (Text tool settings parity)_
   hexagon settings button for all drawings. New `ObjectSettingsDialog` (non-position
   tools) with family-based tabs — line/shape → Style · Coordinates · Visibility;
   text/emoji → Style · Visibility. Position tool keeps `PositionSettingsDialog`.
-  Update 2026-07-04: Text/emoji settings now use Style · Text · Coordinates ·
-  Visibility to match the current TradingView text-object dialog.
+  Update 2026-07-04: standalone Text settings now use Text · Visibility to
+  match the current TradingView text-object dialog.
 - **▦ Templates:** save the selected object's style as a named, global, family-scoped
   preset; apply/delete from the toolbar popover. Style-only (never points/id). New
   `DrawingTemplate` type + template atoms, persisted under `drawingTemplates`.

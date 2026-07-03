@@ -11,15 +11,43 @@ import {
 } from "../ToolRegistry";
 import { canvasFont } from "./shared";
 
+const WRAP_WIDTH = 220;
+const TEXT_PAD_X = 4;
+const TEXT_PAD_Y = 3;
+
 function textLines(d: Drawing) {
   const text = d.text ?? "";
   return text.length > 0 ? text.split("\n") : [""];
 }
 
+function wrapLineByApproxWidth(line: string, fs: number) {
+  if (!line || line.length * fs * 0.55 <= WRAP_WIDTH) return [line];
+  const words = line.split(/(\s+)/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current + word;
+    if (current && next.length * fs * 0.55 > WRAP_WIDTH) {
+      lines.push(current.trimEnd());
+      current = word.trimStart();
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current.trimEnd());
+  return lines.length > 0 ? lines : [line];
+}
+
+function visualTextLines(d: Drawing, fs: number) {
+  const lines = textLines(d);
+  if (!d.textWrap) return lines;
+  return lines.flatMap((line) => wrapLineByApproxWidth(line, fs));
+}
+
 function approximateTextBox(d: Drawing, x: number, y: number) {
   const fs = d.fontSize ?? 13;
   const lineHeight = fs * 1.22;
-  const lines = textLines(d);
+  const lines = visualTextLines(d, fs);
   const width = Math.max(
     20,
     ...lines.map((line) => (line || " ").length * fs * 0.55),
@@ -60,8 +88,24 @@ const plugin: DrawingToolPlugin = {
     const fs = d.fontSize ?? 13;
     g.save();
     g.font = canvasFont(fs, { bold: d.bold, italic: d.italic });
-    g.fillStyle = d.textColor || d.color;
     const box = measuredTextBox(g, d, x, y);
+    if (d.textBackground || d.textBorder) {
+      const bx = box.x - TEXT_PAD_X;
+      const by = box.y - TEXT_PAD_Y;
+      const bw = box.w + TEXT_PAD_X * 2;
+      const bh = box.h + TEXT_PAD_Y * 2;
+      if (d.textBackground) {
+        g.fillStyle = d.textBackgroundColor || "rgba(54,58,69,0.85)";
+        g.fillRect(bx, by, bw, bh);
+      }
+      if (d.textBorder) {
+        g.strokeStyle = d.textBorderColor || d.color;
+        g.lineWidth = 1;
+        g.setLineDash([]);
+        g.strokeRect(bx, by, bw, bh);
+      }
+    }
+    g.fillStyle = d.textColor || d.color;
     for (const [index, line] of box.lines.entries()) {
       g.fillText(line, x, y + index * box.lineHeight);
     }
