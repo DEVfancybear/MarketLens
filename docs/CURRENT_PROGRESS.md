@@ -13,6 +13,9 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
   comparison operators inside plot expressions, and indentation-based `if ... else` expressions.
 - Fix: custom indicator renderers now support `baselineFill`, hline-style flat line series, and
   per-bar colors on line series so the cycler can change between lime/red/white.
+- Performance fix: `IndicatorPane` now reuses existing Lightweight Charts series between candle
+  updates, and Pine hlines/fills emit only first/last points instead of full-history arrays. This
+  prevents Better RSI from freezing the browser during live candle updates.
 - Verification: direct compile of `C:/Users/duong/Downloads/rsi.txt` returned `errors: []` and
   produced fill, hline, RSI, oversold/overbought segment, and cycler series.
 

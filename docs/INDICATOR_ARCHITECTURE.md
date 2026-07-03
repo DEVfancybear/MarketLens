@@ -274,6 +274,9 @@ Separate-pane indicators render in `IndicatorPane`:
 - Each pane owns its own lightweight chart.
 - Time scale is synchronized to the main chart logical range.
 - Histogram and line points preserve per-bar `data[].color` before applying fallback colors.
+- Series APIs are retained in refs and reused between candle updates. Recreate only when the
+  returned series signature changes; otherwise call `setData()` on existing series.
+- Pine hlines and fill bands should emit first/last points only, not one point per candle.
 
 The source of `candles` must be `useVisibleCandles()` from `ChartArea`, not raw full history. This
 is the replay safety rule.

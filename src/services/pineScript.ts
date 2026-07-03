@@ -1291,7 +1291,14 @@ interface HLineDef {
 }
 
 function flatLinePoints(value: number, candles: Candle[]): LinePoint[] {
-  return candles.map((candle) => ({ time: candle.time, value }));
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  if (!first) return [];
+  if (!last || last.time === first.time) return [{ time: first.time, value }];
+  return [
+    { time: first.time, value },
+    { time: last.time, value },
+  ];
 }
 
 function hlineVariableName(line: string): string | null {

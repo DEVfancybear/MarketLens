@@ -11,6 +11,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Custom indicator panes now render horizontal lines, dashed/solid line styles, background fill
   bands, line widths, and per-bar line colors, so RSI, overbought/oversold segments, and the
   cycler line display closer to TradingView.
+- Fixed a separate-pane performance regression by reusing Lightweight Charts series between candle
+  updates and emitting hline/fill bands as two-point series instead of full-history data.
 - Fixed Pine call-argument parsing so comparison operators such as `>=` and `<=` inside `plot()`
   expressions are not mistaken for named arguments.
 

@@ -95,9 +95,17 @@ const checks = [
   {
     name: "Separate-pane histograms preserve Pine per-bar colors before fallback",
     ok:
-      source.indicatorPane.includes("? { color: p.color }") &&
-      source.indicatorPane.includes("(p.value >= 0") &&
+      source.indicatorPane.includes("color: p.color") &&
+      source.indicatorPane.includes("p.value >= 0") &&
       !source.indicatorPane.includes("p.color ??"),
+  },
+  {
+    name: "Separate-pane indicators reuse series instead of recreating on every candle",
+    ok:
+      source.indicatorPane.includes("seriesRef") &&
+      source.indicatorPane.includes("seriesSignature") &&
+      source.indicatorPane.includes("chart.removeSeries(series)") &&
+      source.indicatorPane.includes("series.setData("),
   },
   {
     name: "Pine compiler supports Better RSI v3 hlines, fills, and block if expressions",
@@ -110,9 +118,10 @@ const checks = [
       source.pineScript.includes("evaluateSelfReferentialAssignment") &&
       source.pineScript.includes("isLineBreakStyle") &&
       source.pineScript.includes("baselineFill") &&
+      source.pineScript.includes("flatLinePoints") &&
       source.pineScript.includes("topLevelEquals") &&
       source.indicatorPane.includes("addBaselineSeries") &&
-      source.indicatorPane.includes("? { color: p.color }"),
+      source.indicatorPane.includes("color: p.color"),
   },
   {
     name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",
