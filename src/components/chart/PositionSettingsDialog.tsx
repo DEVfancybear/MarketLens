@@ -168,7 +168,7 @@ function CheckBox({
         "flex h-[18px] w-[18px] items-center justify-center rounded-[3px] border transition-colors",
         checked
           ? "border-white bg-white text-[#1e1e1e]"
-          : "border-[#8a8d93] bg-transparent hover:border-ink",
+          : "border-[#8a8d93] bg-transparent hover:border-[#f0f0f0]",
       )}
     >
       {checked && <Check size={13} strokeWidth={3} />}
@@ -255,7 +255,7 @@ function ColorButton({
               </button>
             ))}
           </div>
-          <label className="mt-2 flex items-center gap-2 border-t border-[#50535a] pt-2 text-[11px] text-ink-muted">
+          <label className="mt-2 flex items-center gap-2 border-t border-[#50535a] pt-2 text-[11px] text-[#a0a3aa]">
             <input
               type="color"
               value={/^#[0-9a-f]{6}$/i.test(color) ? color : "#089981"}
@@ -298,7 +298,7 @@ function LineButton({
         className="flex h-[34px] items-center gap-2 rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 hover:border-[#6a6d75]"
       >
         <span className="h-6 w-6 rounded bg-[#8f9297]" />
-        <svg width="31" height="14" className="text-ink" style={{ color }}>
+        <svg width="31" height="14" className="text-[#f0f0f0]" style={{ color }}>
           <line
             x1="1"
             y1="7"
@@ -317,7 +317,7 @@ function LineButton({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-[11px] text-ink-muted">Width</span>
+            <span className="text-[11px] text-[#a0a3aa]">Width</span>
             <input
               type="range"
               min={1}
@@ -326,15 +326,15 @@ function LineButton({
               onChange={(e) => onWidth(Number(e.target.value))}
               className="flex-1 accent-brand"
             />
-            <span className="w-6 text-right text-[11px] text-ink">{width}</span>
+            <span className="w-6 text-right text-[11px] text-[#d1d4dc]">{width}</span>
           </div>
           {(["solid", "dashed", "dotted"] as LineStyle[]).map((s) => (
             <button
               key={s}
               onClick={() => onStyle(s)}
-              className="flex w-full items-center justify-between rounded px-2 py-1.5 hover:bg-terminal-hover"
+              className="flex w-full items-center justify-between rounded px-2 py-1.5 hover:bg-[#2a2a2a]"
             >
-              <svg width="82" height="12" className="text-ink">
+              <svg width="82" height="12" className="text-[#f0f0f0]">
                 <line
                   x1="1"
                   y1="6"
@@ -347,7 +347,7 @@ function LineButton({
                   strokeWidth="2"
                 />
               </svg>
-              {style === s && <Check size={13} className="text-brand" />}
+              {style === s && <Check size={13} className="text-[#2962ff]" />}
             </button>
           ))}
         </div>
@@ -382,10 +382,10 @@ function StatsSelect({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="flex h-[34px] w-[180px] items-center justify-between rounded-md border border-[#50535a] bg-[#1f1f1f] px-2.5 text-left text-[13px] text-ink"
+        className="flex h-[34px] w-[180px] items-center justify-between rounded-md border border-[#50535a] bg-[#1f1f1f] px-2.5 text-left text-[13px] text-[#d1d4dc] hover:border-[#6a6d75]"
       >
         <span className="truncate">{label}</span>
-        <ChevronDown size={14} className="text-ink-muted" />
+        <ChevronDown size={14} className="text-[#a0a3aa]" />
       </button>
       {open && (
         <div
@@ -396,7 +396,7 @@ function StatsSelect({
             <button
               key={s.id}
               onClick={() => toggle(s.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-ink hover:bg-terminal-hover"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-[#f0f0f0] hover:bg-[#2a2a2a]"
             >
               <span
                 className={cn(
@@ -533,7 +533,7 @@ export function PositionSettingsDialog() {
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70">
+      <div className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70">
         {/* Header */}
         <div className="flex items-center justify-between px-5 pb-2 pt-4">
           <div className="flex items-center gap-2">
@@ -777,8 +777,8 @@ export function PositionSettingsDialog() {
                 className={cn(
                   "rounded border px-2.5 py-1 text-xs transition-colors",
                   drawing.showLabels !== false
-                    ? "border-brand/40 bg-brand/15 text-brand"
-                    : "border-terminal-border text-ink-muted hover:bg-terminal-hover",
+                    ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
+                    : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
                 )}
               >
                 {drawing.showLabels !== false ? "Shown" : "Hidden"}

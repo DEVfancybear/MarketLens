@@ -1,8 +1,17 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Text tool settings parity)_
+_Last updated: 2026-07-04 (Settings popup color sync)_
 
 ## Completed this session (2026-07-04)
+
+### Settings popup color sync
+- Synced `ObjectSettingsDialog`, `PositionSettingsDialog`, and
+  `IndicatorSettingsDialog` to the Text settings reference palette: `#1f1f1f`
+  surface, `#3a3a3a` shell border, `#50535a` control borders, white active tab
+  underline, white `Ok`, and outlined `Cancel`.
+- Rectangle, line, shape, fib, position, indicator, and text settings now use
+  one neutral TradingView-style color system instead of mixing terminal-blue and
+  Text-popup themes.
 
 ### Text tool settings parity
 - Standalone Text drawing settings now use the TradingView-style `Text /

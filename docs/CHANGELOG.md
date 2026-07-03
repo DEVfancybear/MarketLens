@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Settings popup color sync (2026-07-04)
+- Synced drawing, Long/Short position, and indicator settings popups to the Text
+  settings palette: dark neutral background, neutral borders, white active tab
+  underline, and white `Ok`/outlined `Cancel` footer buttons.
+- Rectangle, line, shape, fib, position, indicator, and text setting surfaces now
+  share one visual color system instead of mixing terminal-blue and Text-popup
+  themes.
+
 ### Changed - Text tool settings and selection parity (2026-07-04)
 - Standalone Text drawing settings now use the TradingView-style `Text` and
   `Visibility` tabs with the same header/footer shell as the other drawing

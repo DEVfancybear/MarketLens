@@ -518,7 +518,7 @@ export function IndicatorSettingsDialog() {
         role="dialog"
         aria-modal="true"
         aria-label={`${title} settings`}
-        className="flex max-h-[min(760px,calc(100vh-32px))] w-[380px] flex-col overflow-hidden rounded-md border border-[#242424] bg-[#1f1f1f] text-ink shadow-2xl shadow-black/70"
+        className="flex max-h-[min(760px,calc(100vh-32px))] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] text-[#f0f0f0] shadow-2xl shadow-black/70"
       >
         <header className="flex h-16 shrink-0 items-center justify-between px-5">
           <h2 className="min-w-0 truncate text-[20px] font-semibold leading-none">
@@ -527,7 +527,7 @@ export function IndicatorSettingsDialog() {
           <button
             type="button"
             onClick={close}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-[#d1d4dc] transition-colors hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
             aria-label="Close"
             title="Close"
           >
@@ -536,20 +536,20 @@ export function IndicatorSettingsDialog() {
         </header>
 
         <div className="shrink-0 px-5">
-          <div className="flex border-b-[3px] border-[#5b5b5b]">
+          <div className="flex border-b-[3px] border-[#5a5a5a]">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "relative mr-6 h-9 text-[15px] font-semibold text-ink-muted transition-colors hover:text-ink",
-                  activeTab === tab.id && "text-ink",
+                  "relative mr-6 h-9 text-[15px] font-semibold text-[#d1d4dc] transition-colors hover:text-[#f0f0f0]",
+                  activeTab === tab.id && "text-[#f0f0f0]",
                 )}
               >
                 {tab.label}
                 {activeTab === tab.id && (
-                  <span className="absolute -bottom-[3px] left-0 h-[3px] w-full rounded-full bg-ink" />
+                  <span className="absolute -bottom-[3px] left-0 h-[3px] w-full rounded-full bg-[#f0f0f0]" />
                 )}
               </button>
             ))}
@@ -618,7 +618,7 @@ export function IndicatorSettingsDialog() {
           <button
             type="button"
             onClick={resetDefaults}
-            className="flex h-9 items-center gap-2 rounded-md border border-[#4b4b4b] px-3 text-[14px] font-medium text-ink transition-colors hover:bg-terminal-hover"
+            className="flex h-[34px] min-w-[104px] items-center gap-2 rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[13px] font-medium text-[#f0f0f0] transition-colors hover:border-[#6a6d75] hover:bg-[#1f1f1f]"
           >
             Defaults
             <ChevronDown size={15} />
@@ -627,14 +627,14 @@ export function IndicatorSettingsDialog() {
             <button
               type="button"
               onClick={close}
-              className="h-9 rounded-md border border-[#d1d4dc] px-4 text-[15px] font-medium text-ink transition-colors hover:bg-terminal-hover"
+              className="h-[34px] rounded-md border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] transition-colors hover:bg-[#2a2a2a]"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={save}
-              className="h-9 rounded-md bg-[#f0f3fa] px-4 text-[15px] font-medium text-[#131722] transition-colors hover:bg-white"
+              className="h-[34px] rounded-md border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] transition-colors hover:bg-white"
             >
               Ok
             </button>
@@ -660,7 +660,7 @@ function InputGroups({
       {groupFields(fields).map((group, index) => (
         <div key={`${group.name ?? "default"}:${index}`} className="space-y-3">
           {group.name && (
-            <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+            <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8d93]">
               {group.name}
             </div>
           )}
@@ -691,7 +691,7 @@ function StyleGroups({
     <div className="space-y-5">
       {groupStyleDefinitions(fields).map((group) => (
         <div key={group.name} className="space-y-3">
-          <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+          <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8d93]">
             {group.name}
           </div>
           {group.fields.map((field) => (
@@ -728,7 +728,7 @@ function CommonStyleOptions({
   return (
     <div className="space-y-5">
       <div className="space-y-3">
-        <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+        <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8d93]">
           Output Values
         </div>
         <FieldRow label="Precision">
@@ -751,7 +751,7 @@ function CommonStyleOptions({
       </div>
 
       <div className="space-y-3">
-        <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+        <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8d93]">
           Input Values
         </div>
         <CheckboxRow
@@ -798,7 +798,7 @@ function StyleRow({
 
   return (
     <div className="grid min-h-[36px] grid-cols-[1fr_auto] items-center gap-3">
-      <label className="flex min-w-0 cursor-pointer items-center gap-2 text-[14px] font-medium text-ink">
+      <label className="flex min-w-0 cursor-pointer items-center gap-2 text-[14px] font-medium text-[#d1d4dc]">
         <input
           type="checkbox"
           checked={visible === true}
@@ -810,7 +810,7 @@ function StyleRow({
 
       <div className="flex items-center gap-2">
         {field.supportsColor && (
-          <label className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-md border border-[#4b4b4b] bg-[#252525]">
+          <label className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-md border border-[#50535a] bg-[#242424]">
             <input
               type="color"
               value={color}
@@ -824,7 +824,7 @@ function StyleRow({
           <select
             value={Number.isFinite(width) ? String(width) : String(field.defaultLineWidth ?? 2)}
             onChange={(event) => onChange(widthKey, Number(event.target.value))}
-            className="h-[30px] w-[54px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-2 text-[13px] text-ink outline-none focus:border-[#868686]"
+            className="h-[30px] w-[54px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
             aria-label={`${field.title} line width`}
           >
             {LINE_WIDTH_OPTIONS.map((option) => (
@@ -838,7 +838,7 @@ function StyleRow({
           <select
             value={Number.isFinite(lineStyleValue) ? String(lineStyleValue) : String(field.defaultLineStyle ?? 0)}
             onChange={(event) => onChange(lineStyleKey, Number(event.target.value))}
-            className="h-[30px] w-[104px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-2 text-[13px] text-ink outline-none focus:border-[#868686]"
+            className="h-[30px] w-[104px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
             aria-label={`${field.title} line style`}
           >
             {LINE_STYLE_OPTIONS.map((option) => (
@@ -875,7 +875,7 @@ function InputField({
   if (field.kind === "color") {
     return (
       <FieldRow label={field.title}>
-        <label className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-[#4b4b4b] bg-[#252525]">
+        <label className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-[#50535a] bg-[#242424]">
           <input
             type="color"
             value={hexColor(value, hexColor(field.defaultValue, "#2962ff"))}
@@ -916,7 +916,7 @@ function InputField({
           value={String(value)}
           onChange={(event) => onChange(event.target.value)}
           onBlur={(event) => onChange(coerceFieldValue(field, event.target.value))}
-          className="h-[34px] w-[100px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-3 text-[14px] text-ink outline-none transition-colors focus:border-[#868686]"
+          className="h-[34px] w-[100px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
         />
       </FieldRow>
     );
@@ -927,7 +927,7 @@ function InputField({
       <input
         value={String(value)}
         onChange={(event) => onChange(event.target.value)}
-        className="h-[34px] w-[160px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-3 text-[14px] text-ink outline-none transition-colors focus:border-[#868686]"
+        className="h-[34px] w-[160px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
       />
     </FieldRow>
   );
@@ -942,7 +942,7 @@ function FieldRow({
 }) {
   return (
     <div className="grid min-h-[36px] grid-cols-[1fr_auto] items-center gap-4">
-      <div className="min-w-0 text-[14px] font-medium leading-5 text-ink">
+      <div className="min-w-0 text-[14px] font-medium leading-5 text-[#d1d4dc]">
         {label}
       </div>
       {children}
@@ -960,7 +960,7 @@ function CheckboxRow({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex min-h-[32px] cursor-pointer items-center gap-2 text-[14px] font-medium text-ink">
+    <label className="flex min-h-[32px] cursor-pointer items-center gap-2 text-[14px] font-medium text-[#d1d4dc]">
       <input
         type="checkbox"
         checked={checked}
@@ -985,7 +985,7 @@ function SelectControl({
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-[34px] min-w-[100px] rounded-md border border-[#4b4b4b] bg-[#1f1f1f] px-2 text-[14px] text-ink outline-none transition-colors focus:border-[#868686]"
+      className="h-[34px] min-w-[100px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>
