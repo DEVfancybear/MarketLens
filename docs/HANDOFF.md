@@ -130,7 +130,8 @@ with `npm run check:pine-indicator`.
   `positionStats`, `compactStats`, and `alwaysShowStats`; `PositionTool` applies line style,
   colors, text style, and selected stats on-canvas. Tick/price math now lives in
   `drawing/tools/positionMetrics.ts`; both the dialog and canvas labels must use symbol `tickSize`
-  rather than price-magnitude inference. See `CHANGELOG.md`.
+  rather than price-magnitude inference. Position Entry/Ticks/Price fields commit on blur/Enter so
+  replacement drafts do not snap or mirror while typing. See `CHANGELOG.md`.
 - **Long/Short position tool (2026-06-28):** Rebuilt TradingView-style in `PositionTool.ts`
   (replaces the old `LongPositionTool`/`ShortPositionTool`). Points-based geometry
   (`[0]=entry, [1]={rightEdge,target}, [2]={rightEdge,stop}`) so the drag engine moves it.

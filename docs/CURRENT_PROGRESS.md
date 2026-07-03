@@ -10,11 +10,15 @@ _Last updated: 2026-07-03 (Replay jump + Pine source-code indicators)_
 - `PositionSettingsDialog` now keeps `Ticks` and `Price` synchronized like TradingView: editing
   ticks recalculates price, editing price snaps to the symbol tick and recalculates ticks, and
   editing entry preserves the current tick distances.
+- Fixed the follow-up editing bug where these fields committed each keystroke. Entry/Ticks/Price
+  now commit on blur or Enter, allowing the user to replace a number without intermediate drafts
+  being mirrored around entry or snapped as final prices.
 - `PositionTool` now uses the same helper for canvas price labels and tick-count stats, so labels
   and settings cannot drift.
 - BTCUSDT is treated as the app's displayed TradingView-style perpetual contract with `tickSize:
   0.1`, matching the reference where `61915.1 -> 62061.8` equals `1467` ticks.
-- Added typed tests under `tests/position/` plus `npm run test:position`.
+- Added typed tests under `tests/position/` plus `npm run test:position`, including parser coverage
+  for incomplete numeric drafts.
 - Docs: updated `docs/DRAWING_ENGINE_ARCHITECTURE.md` and added `tests/position/README.md`.
 
 ### Drawing viewport repaint fix

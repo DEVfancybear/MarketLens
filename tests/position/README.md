@@ -11,6 +11,8 @@ TradingView-style contract:
 - Editing a price should snap to the symbol tick size and round-trip back to the
   same tick count.
 - Long and Short use the same math, with opposite profit/stop directions.
+- Numeric inputs must allow temporary drafts like empty text, `-`, or `.`
+  without committing them as zero.
 
 ## Run
 
@@ -30,6 +32,7 @@ in git.
 Add tests here when changing:
 
 - `src/components/chart/drawing/tools/positionMetrics.ts`
+- `src/components/chart/drawing/tools/positionInput.ts`
 - Long/Short Position settings fields for `Ticks`, `Price`, or `Entry price`
 - Position labels that display tick count or price
 - Symbol metadata that changes tick size or price formatting

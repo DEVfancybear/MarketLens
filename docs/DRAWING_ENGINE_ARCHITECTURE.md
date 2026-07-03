@@ -416,6 +416,10 @@ price magnitude.
 - **Dialog behavior**: `PositionSettingsDialog.tsx` uses the shared helpers so editing `Ticks`
   updates `Price`, editing `Price` snaps to the symbol tick and updates `Ticks`, and editing
   `Entry price` preserves current tick distances.
+- **Input behavior**: position `Entry price`, `Ticks`, and `Price` fields must not commit on every
+  keystroke. They use `NumberField commitMode="blur"` plus `positionInput.ts`, so drafts like empty
+  text, `-`, or a partial replacement are not committed as zero or mirrored around entry before the
+  user finishes typing.
 - **Renderer behavior**: `PositionTool.ts` uses the same helpers for label price formatting and
   tick-count stats. Canvas labels and the settings dialog must never drift.
 - **Symbol metadata**: crypto is displayed as a TradingView-style perpetual contract in this app.

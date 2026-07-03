@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Long/Short position numeric input editing (2026-07-03)
+- Fixed `Ticks`, `Price`, and `Entry price` fields jumping while typing in the Long/Short Position
+  settings dialog.
+- Position level fields now allow draft text and commit on blur/Enter, so partial values are not
+  mirrored around entry or snapped to tick before the user finishes typing.
+- Added `positionInput.ts` and typed tests to ensure empty/incomplete numeric drafts are not
+  committed as zero.
+
 ### Fixed - Long/Short position tick and price settings parity (2026-07-03)
 - Replaced Long/Short Position tick calculations with shared `positionMetrics.ts` helpers that use
   the active symbol's `tickSize` instead of inferring ticks from price magnitude.

@@ -30,6 +30,7 @@ import {
   safeTickSize,
   ticksBetween,
 } from "./drawing/tools/positionMetrics";
+import { parseNumberDraft } from "./drawing/tools/positionInput";
 
 const COLORS = [
   "#ffffff",
@@ -55,28 +56,68 @@ const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32];
 
 type Tab = "inputs" | "style" | "visibility";
 
-/** A number input that keeps its own text so the user can type freely; it
- *  commits the parsed value on every valid keystroke. */
+/** A number input that keeps its own text so the user can type freely.
+ *
+ * Most drawing settings can preview live on every valid keystroke.  Position
+ * price/tick fields are different: while the user is replacing a value, partial
+ * drafts like `6` or `620` are temporarily on the wrong side of entry and would
+ * be mirrored/snap-rounded immediately.  `commitMode="blur"` lets those fields
+ * behave like TradingView inputs: type the complete number, then commit on blur
+ * or Enter.
+ */
 export function NumberField({
   value,
   onCommit,
   className,
+  commitMode = "change",
 }: {
   value: number;
   onCommit: (v: number) => void;
   className?: string;
+  commitMode?: "change" | "blur";
 }) {
   const [text, setText] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  const valueText = String(value);
   useEffect(() => {
-    setText(String(value));
-  }, [value]);
+    if (!editing) setText(valueText);
+  }, [editing, valueText]);
+
+  const commitText = () => {
+    const parsed = parseNumberDraft(text);
+    if (parsed == null) {
+      setText(valueText);
+      return;
+    }
+    onCommit(parsed);
+    setText(String(parsed));
+  };
+
   return (
     <input
       value={text}
+      inputMode="decimal"
+      onFocus={() => setEditing(true)}
       onChange={(e) => {
-        setText(e.target.value);
-        const v = Number(e.target.value);
-        if (Number.isFinite(v)) onCommit(v);
+        const next = e.target.value;
+        setText(next);
+        if (commitMode === "change") {
+          const parsed = parseNumberDraft(next);
+          if (parsed != null) onCommit(parsed);
+        }
+      }}
+      onBlur={() => {
+        if (commitMode === "blur") commitText();
+        else if (parseNumberDraft(text) == null) setText(valueText);
+        setEditing(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          setText(valueText);
+          e.currentTarget.blur();
+        }
       }}
       className={cn(
         "h-[34px] rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
@@ -571,6 +612,7 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={priceFieldValue(entry)}
                   onCommit={setEntryPrice}
+                  commitMode="blur"
                   className="w-[100px]"
                 />
               </Row>
@@ -589,6 +631,7 @@ export function PositionSettingsDialog() {
                   onCommit={(t) =>
                     setPointPrice(1, levelFromTicks(entry, t, profitDir, tick))
                   }
+                  commitMode="blur"
                   className="w-[100px]"
                 />
               </Row>
@@ -596,6 +639,7 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={priceFieldValue(target)}
                   onCommit={setProfitPrice}
+                  commitMode="blur"
                   className="w-[100px]"
                 />
               </Row>
@@ -607,6 +651,7 @@ export function PositionSettingsDialog() {
                   onCommit={(t) =>
                     setPointPrice(2, levelFromTicks(entry, t, stopDir, tick))
                   }
+                  commitMode="blur"
                   className="w-[100px]"
                 />
               </Row>
@@ -614,6 +659,7 @@ export function PositionSettingsDialog() {
                 <NumberField
                   value={priceFieldValue(stop)}
                   onCommit={setStopPrice}
+                  commitMode="blur"
                   className="w-[100px]"
                 />
               </Row>
