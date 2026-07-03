@@ -87,9 +87,17 @@ const checks = [
     ok:
       source.indicatorPane.includes('s.type === "histogram"') &&
       source.indicatorPane.includes("p.color ??") &&
+      source.indicatorPane.includes("p.value >= 0") &&
       fs.readFileSync("src/components/chart/PriceChart.tsx", "utf8").includes(
         's.type === "histogram"',
       ),
+  },
+  {
+    name: "Separate-pane histograms preserve Pine per-bar colors before fallback",
+    ok:
+      source.indicatorPane.includes("p.color ??") &&
+      source.indicatorPane.includes("(p.value >= 0") &&
+      !source.indicatorPane.includes("p.color ??\n                  p.value >= 0"),
   },
   {
     name: "CUSTOM indicator settings open the Pine Editor instead of built-in settings dialog",

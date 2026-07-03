@@ -112,9 +112,9 @@ export function IndicatorPane({
             ? {
                 color:
                   p.color ??
-                  p.value >= 0
+                  (p.value >= 0
                     ? chartColors(theme).bull
-                    : chartColors(theme).bear,
+                    : chartColors(theme).bear),
               }
             : {}),
         })),

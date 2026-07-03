@@ -18,6 +18,8 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 - Follow-up fix: function-call parsing now preserves named arguments, so Pine v4 inputs like
   `input(defval=20, type=input.integer)` reliably feed the VSA ratio values. Pine color constants
   for the VSA palette now use TradingView-style purple/red/orange/green/blue/silver values.
+- Follow-up fix: separate-pane histogram rendering now preserves `p.color` before applying the
+  bullish/bearish fallback; this fixes VSA bars displaying as one teal color in the lower pane.
 - Guard: extended `npm run check:pine-indicator`.
 
 ### Pine Editor + source-code indicators

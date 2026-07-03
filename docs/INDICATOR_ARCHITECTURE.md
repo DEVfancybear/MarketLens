@@ -260,6 +260,7 @@ Separate-pane indicators render in `IndicatorPane`:
 - `indicators.filter(i => i.visible && i.separatePane)`
 - Each pane owns its own lightweight chart.
 - Time scale is synchronized to the main chart logical range.
+- Histogram points preserve per-bar `data[].color` before falling back to bullish/bearish colors.
 
 The source of `candles` must be `useVisibleCandles()` from `ChartArea`, not raw full history. This
 is the replay safety rule.

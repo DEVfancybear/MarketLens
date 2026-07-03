@@ -8,6 +8,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Fixed Pine source indicators such as `VSA Wyckoff Volume` rendering as a single blue line.
 - `IndicatorResult` now supports `type: "histogram"` and per-point `color`, and both
   `IndicatorPane` and `PriceChart` render histogram series with per-bar colors.
+- Fixed separate-pane histogram color fallback precedence so Pine per-bar colors are preserved
+  instead of being coerced to the pane's bullish fallback color.
 - Fixed Pine v4 named call argument handling so `input(defval=20, type=input.integer)` uses the
   `defval` value instead of depending on positional parsing.
 - Aligned Pine color constants used by VSA palettes (`color.purple`, `color.red`, `color.orange`,
