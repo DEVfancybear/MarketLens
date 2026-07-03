@@ -116,6 +116,7 @@ const checks = [
       source.pineScript.includes("readFills") &&
       source.pineScript.includes("parsePineIfExpression") &&
       source.pineScript.includes("evaluateSelfReferentialAssignment") &&
+      source.pineScript.includes("scalarValueAt") &&
       source.pineScript.includes("isLineBreakStyle") &&
       source.pineScript.includes("baselineFill") &&
       source.pineScript.includes("flatLinePoints") &&

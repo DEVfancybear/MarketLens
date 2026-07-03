@@ -223,6 +223,8 @@ Supported expression features:
 - Typed declarations such as `float volumeMA = 0`.
 - Pine v3 indentation-based `if ... else` expressions for supported assignment patterns.
 - Wilder-style recursive assignments like `x := nz(x[1]) + (source - nz(x[1])) / length`.
+- Self-referential assignments with history, such as `cycler[1]`, must evaluate point-by-point in
+  scalar context. Do not rebuild full series inside each bar loop.
 
 Supported functions:
 

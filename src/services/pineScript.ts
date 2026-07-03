@@ -1522,27 +1522,64 @@ function evaluateSelfReferentialAssignment(
   context: EvalContext,
 ): PineValue | null {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!new RegExp(`\\b${escaped}\\s*\\[\\s*\\d+\\s*\\]`).test(expression)) {
+  const historyRefs = [...expression.matchAll(new RegExp(`\\b${escaped}\\s*\\[\\s*(\\d+)\\s*\\]`, "g"))];
+  if (historyRefs.length === 0) {
     return null;
+  }
+
+  const offsets = [...new Set(historyRefs.map((match) => Math.max(0, Number(match[1]))))];
+  let scalarExpression = expression;
+  for (const offset of offsets) {
+    scalarExpression = scalarExpression.replace(
+      new RegExp(`\\b${escaped}\\s*\\[\\s*${offset}\\s*\\]`, "g"),
+      `__${name}_${offset}`,
+    );
   }
 
   const values: SeriesData = [];
   for (let index = 0; index < context.candles.length; index++) {
+    const candle = context.candles[index];
+    if (!candle) {
+      values.push(null);
+      continue;
+    }
     const recursiveContext: EvalContext = {
-      candles: context.candles,
-      variables: new Map(context.variables),
+      candles: [candle],
+      variables: new Map(
+        [...context.variables.entries()].map(([key, value]) => [
+          key,
+          scalarValueAt(value, index, context.candles.length),
+        ]),
+      ),
     };
-    recursiveContext.variables.set(name, { kind: "series", values: [...values] });
-    const evaluated = evaluateExpression(expression, recursiveContext);
+    recursiveContext.variables.set(name, scalarValueAt({ kind: "series", values }, index, context.candles.length));
+    for (const offset of offsets) {
+      recursiveContext.variables.set(
+        `__${name}_${offset}`,
+        { kind: "number", value: values[index - offset] ?? Number.NaN },
+      );
+    }
+    const evaluated = evaluateExpression(scalarExpression, recursiveContext);
     const point =
       evaluated.kind === "number"
         ? evaluated.value
         : evaluated.kind === "bool"
           ? evaluated.value ? 1 : 0
-          : getAt(evaluated, index, context.candles.length);
+          : getAt(evaluated, 0, 1);
     values.push(isUsableNumber(point) ? point : null);
   }
   return { kind: "series", values };
+}
+
+function scalarValueAt(value: PineValue, index: number, length: number): PineValue {
+  if (value.kind === "series") {
+    return { kind: "number", value: getAt(value, index, length) ?? Number.NaN };
+  }
+  if (value.kind === "colorSeries") {
+    const color = colorAt(value, index);
+    return color ? { kind: "color", value: color } : { kind: "number", value: Number.NaN };
+  }
+  return value;
 }
 
 function readAssignments(cleaned: string, context: EvalContext, errors: string[]) {
