@@ -8,6 +8,9 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 - User repro: saving and adding `ADR 50 SR Pro` reported success, but nothing rendered because the
   script uses object APIs (`request.security`, `line.new`, `box.new`, labels, `table.new`) and has
   no `plot()` calls.
+- UI parity: indicators now use a shared TradingView-style legend component for chart overlays and
+  separate panes, with show/hide, settings placeholder, Pine source opener, and direct remove
+  controls.
 - Fix: `pineScript.ts` now runs this through a shared Pine object runtime instead of an
   ADR-specific branch. The runtime evaluates supported `request.security`, `time("D")`, inputs,
   one-line helper functions, labels, boxes, lines, and table cells into chart overlay metadata.

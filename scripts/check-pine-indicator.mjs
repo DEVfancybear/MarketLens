@@ -8,6 +8,7 @@ const files = {
   indicators: "src/services/indicators.ts",
   indicatorTypes: "src/types/indicators.ts",
   priceChart: "src/components/chart/PriceChart.tsx",
+  indicatorLegend: "src/components/chart/IndicatorLegend.tsx",
   indicatorMenu: "src/components/toolbar/IndicatorMenu.tsx",
   indicatorPane: "src/components/chart/IndicatorPane.tsx",
   indicatorSettings: "src/components/toolbar/IndicatorSettingsDialog.tsx",
@@ -131,7 +132,8 @@ const checks = [
     ok:
       source.indicatorMenu.includes('indicator.type === "CUSTOM"') &&
       source.indicatorMenu.includes('setBottomTab("pine")') &&
-      source.indicatorPane.includes('cfg.type === "CUSTOM"') &&
+      source.indicatorPane.includes('cfg.type !== "CUSTOM"') &&
+      source.indicatorPane.includes("onSource={openSource}") &&
       source.indicatorPane.includes('setBottomTab("pine")') &&
       source.indicatorSettings.includes('indicator?.type === "CUSTOM"'),
   },
@@ -185,6 +187,22 @@ const checks = [
       source.priceChart.includes("leftClip") &&
       source.priceChart.includes("if (x < leftClip) return []") &&
       source.indicatorTypes.includes("IndicatorDashboard"),
+  },
+  {
+    name: "Price chart renders TradingView-style overlay indicator controls",
+    ok:
+      source.indicatorLegend.includes("export function IndicatorLegend") &&
+      source.indicatorLegend.includes("EyeOff") &&
+      source.indicatorLegend.includes("Braces") &&
+      source.indicatorLegend.includes("Trash2") &&
+      source.indicatorLegend.includes("indicatorLegendTitle") &&
+      source.priceChart.includes("updateIndicatorAtom") &&
+      source.priceChart.includes("removeIndicatorAtom") &&
+      source.priceChart.includes("loadPineScriptAtom") &&
+      source.priceChart.includes("<IndicatorLegend") &&
+      source.indicatorPane.includes("<IndicatorLegend") &&
+      source.indicatorLegend.includes("onToggleVisibility") &&
+      source.indicatorLegend.includes("onRemove(indicator.id)"),
   },
 ];
 

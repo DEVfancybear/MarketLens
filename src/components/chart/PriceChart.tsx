@@ -8,15 +8,28 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle, IndicatorDashboard, IndicatorResult, Timeframe } from "@/types";
+import type {
+  Candle,
+  IndicatorConfig,
+  IndicatorDashboard,
+  IndicatorResult,
+  Timeframe,
+} from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
   timeframeAtom,
   indicatorsAtom,
   setCrosshairAtom,
+  updateIndicatorAtom,
+  removeIndicatorAtom,
+  setEditingIndicatorAtom,
+  loadPineScriptAtom,
+  pineEditorScriptIdAtom,
+  pineEditorSourceAtom,
+  pineEditorTitleAtom,
 } from "@/store/chartStore";
-import { themeAtom, gridVisibleAtom } from "@/store/uiStore";
+import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
@@ -26,6 +39,7 @@ import { fmtPrice } from "@/utils/format";
 import { ChartContextObj, type ChartCtx } from "./ChartContext";
 import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
+import { IndicatorLegend } from "./IndicatorLegend";
 
 const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
@@ -86,6 +100,14 @@ export function PriceChart({
   const timeframe = useAtomValue(timeframeAtom);
   const indicators = useAtomValue(indicatorsAtom);
   const setCrosshair = useSetAtom(setCrosshairAtom);
+  const updateIndicator = useSetAtom(updateIndicatorAtom);
+  const removeIndicator = useSetAtom(removeIndicatorAtom);
+  const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
+  const loadPineScript = useSetAtom(loadPineScriptAtom);
+  const setPineEditorScriptId = useSetAtom(pineEditorScriptIdAtom);
+  const setPineEditorTitle = useSetAtom(pineEditorTitleAtom);
+  const setPineEditorSource = useSetAtom(pineEditorSourceAtom);
+  const setBottomTab = useSetAtom(setBottomTabAtom);
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
@@ -418,7 +440,11 @@ export function PriceChart({
 
   // ---- Overlay indicators (SMA/EMA/VWAP/ADR) ----
   const overlayIndicators = useMemo(
-    () => indicators.filter((i) => i.visible && !i.separatePane),
+    () => indicators.filter((i) => i.visible !== false && !i.separatePane),
+    [indicators],
+  );
+  const overlayLegendIndicators = useMemo(
+    () => indicators.filter((i) => !i.separatePane),
     [indicators],
   );
   const overlayResults = useMemo(
@@ -561,6 +587,29 @@ export function PriceChart({
     return () => cancelAnimationFrame(frame);
   }, [overlayResults, ready, version]);
 
+  const toggleIndicatorVisibility = (indicator: IndicatorConfig) => {
+    updateIndicator({
+      id: indicator.id,
+      patch: { visible: indicator.visible === false },
+    });
+  };
+
+  const openIndicatorSettings = (indicator: IndicatorConfig) => {
+    if (indicator.type !== "CUSTOM") setEditingIndicator(indicator.id);
+  };
+
+  const openIndicatorSource = (indicator: IndicatorConfig) => {
+    if (indicator.type !== "CUSTOM" || !indicator.sourceCode) return;
+    if (indicator.scriptId) {
+      loadPineScript(indicator.scriptId);
+    } else {
+      setPineEditorScriptId(null);
+      setPineEditorTitle(indicator.name ?? "Custom script");
+      setPineEditorSource(indicator.sourceCode);
+    }
+    setBottomTab("pine");
+  };
+
   // ---- Current price marker (symbol + price + countdown) ----
   useEffect(() => {
     const chart = chartRef.current;
@@ -654,6 +703,14 @@ export function PriceChart({
       <IndicatorOverlay
         labels={indicatorLabels}
         dashboards={indicatorDashboards}
+      />
+      <IndicatorLegend
+        className="absolute left-1 top-1 z-30 max-w-[calc(100%-96px)]"
+        indicators={overlayLegendIndicators}
+        onToggleVisibility={toggleIndicatorVisibility}
+        onSettings={openIndicatorSettings}
+        onSource={openIndicatorSource}
+        onRemove={(id) => removeIndicator(id)}
       />
       {priceMarker && (
         <CurrentPriceMarker

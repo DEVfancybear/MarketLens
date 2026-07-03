@@ -5,6 +5,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 ## [Unreleased]
 
 ### Changed - Common Pine object runtime (2026-07-03)
+- Added a shared TradingView-style indicator legend for chart overlays and indicator panes with
+  show/hide, settings, source-code, and remove controls. Remove deletes the indicator instance
+  from the chart without a confirmation dialog.
 - Replaced the ADR-specific object adapter with a shared Pine runtime subset for object-style
   scripts using `request.security`, `line.new`, `box.new`, `label.new`, and `table.cell`.
 - The runtime now evaluates Pine inputs, one-line custom functions, `time("D")`, `str.*`,

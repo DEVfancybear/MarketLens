@@ -40,7 +40,7 @@ export function ChartArea() {
   const precision = meta?.pricePrecision ?? 2;
   const exchange = meta?.exchange ?? "";
   const paneIndicators = useMemo(
-    () => indicators.filter((i) => i.visible && i.separatePane),
+    () => indicators.filter((i) => i.separatePane),
     [indicators],
   );
 

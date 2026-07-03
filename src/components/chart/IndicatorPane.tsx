@@ -13,14 +13,17 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { themeAtom } from "@/store/uiStore";
 import {
   loadPineScriptAtom,
+  pineEditorScriptIdAtom,
+  pineEditorSourceAtom,
+  pineEditorTitleAtom,
   removeIndicatorAtom,
   setEditingIndicatorAtom,
+  updateIndicatorAtom,
 } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
 import { chartColors } from "./chartTheme";
 import { computeIndicator } from "@/services/indicators";
-import { IconButton } from "@/components/ui/IconButton";
-import { X, Settings } from "lucide-react";
+import { IndicatorLegend } from "./IndicatorLegend";
 
 type PaneSeriesApi =
   | ISeriesApi<"Line">
@@ -61,9 +64,13 @@ export function IndicatorPane({
   const seriesRef = useRef<PaneSeriesApi[]>([]);
   const seriesSignatureRef = useRef("");
   const theme = useAtomValue(themeAtom);
+  const updateIndicator = useSetAtom(updateIndicatorAtom);
   const removeIndicator = useSetAtom(removeIndicatorAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const loadPineScript = useSetAtom(loadPineScriptAtom);
+  const setPineEditorScriptId = useSetAtom(pineEditorScriptIdAtom);
+  const setPineEditorTitle = useSetAtom(pineEditorTitleAtom);
+  const setPineEditorSource = useSetAtom(pineEditorSourceAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
 
   useEffect(() => {
@@ -118,6 +125,12 @@ export function IndicatorPane({
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    if (cfg.visible === false) {
+      for (const series of seriesRef.current) chart.removeSeries(series);
+      seriesRef.current = [];
+      seriesSignatureRef.current = "";
+      return;
+    }
     const result = computeIndicator(cfg, candles);
     const signature = seriesSignature(result.series);
 
@@ -221,37 +234,36 @@ export function IndicatorPane({
     });
   }, [cfg, candles, theme]);
 
+  const toggleVisibility = () => {
+    updateIndicator({ id: cfg.id, patch: { visible: cfg.visible === false } });
+  };
+
+  const openSettings = () => {
+    if (cfg.type !== "CUSTOM") setEditingIndicator(cfg.id);
+  };
+
+  const openSource = () => {
+    if (cfg.type !== "CUSTOM" || !cfg.sourceCode) return;
+    if (cfg.scriptId) {
+      loadPineScript(cfg.scriptId);
+    } else {
+      setPineEditorScriptId(null);
+      setPineEditorTitle(cfg.name ?? "Custom script");
+      setPineEditorSource(cfg.sourceCode);
+    }
+    setBottomTab("pine");
+  };
+
   return (
     <div className="relative h-[120px] w-full border-t border-terminal-border">
-      <div className="absolute left-2 top-1 z-10 flex items-center gap-1 text-2xs text-ink-muted">
-        <span className="font-semibold">
-          {cfg.type === "CUSTOM" ? (cfg.name ?? "Custom script") : cfg.type}{" "}
-          {cfg.type !== "VWAP" && cfg.type !== "CUSTOM" ? cfg.length : ""}
-        </span>
-        <button
-          onClick={() => {
-            if (cfg.type === "CUSTOM" && cfg.scriptId) {
-              loadPineScript(cfg.scriptId);
-              setBottomTab("pine");
-            } else {
-              setEditingIndicator(cfg.id);
-            }
-          }}
-          className="rounded p-0.5 text-ink-muted hover:text-ink hover:bg-terminal-hover"
-          title={`${cfg.type} settings`}
-        >
-          <Settings size={10} />
-        </button>
-      </div>
-      <div className="absolute right-1 top-0.5 z-10">
-        <IconButton
-          size="sm"
-          label="Remove"
-          onClick={() => removeIndicator(cfg.id)}
-        >
-          <X size={12} />
-        </IconButton>
-      </div>
+      <IndicatorLegend
+        className="absolute left-1 top-1 z-10 max-w-[calc(100%-96px)]"
+        indicators={[cfg]}
+        onToggleVisibility={toggleVisibility}
+        onSettings={openSettings}
+        onSource={openSource}
+        onRemove={(id) => removeIndicator(id)}
+      />
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );
