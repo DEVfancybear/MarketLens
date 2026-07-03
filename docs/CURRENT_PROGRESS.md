@@ -16,6 +16,8 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 - Performance fix: `IndicatorPane` now reuses existing Lightweight Charts series between candle
   updates, and Pine hlines/fills emit only first/last points instead of full-history arrays. This
   prevents Better RSI from freezing the browser during live candle updates.
+- UI parity fix: Pine hline/fill series add a small right-side flat extension so Better RSI levels
+  and the purple fill cover the chart whitespace after the last candle, matching TradingView.
 - Compiler performance fix: self-referential assignments such as `cycler[1]` now evaluate
   point-by-point with scalar context. Benchmark for `rsi.txt` on 1000 candles dropped from roughly
   1139ms to roughly 28ms.

@@ -13,6 +13,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   cycler line display closer to TradingView.
 - Fixed a separate-pane performance regression by reusing Lightweight Charts series between candle
   updates and emitting hline/fill bands as two-point series instead of full-history data.
+- Extended Pine hline/fill bands into the chart's right-offset whitespace so Better RSI horizontal
+  levels and purple fill continue across the pane like TradingView.
 - Fixed a compiler performance regression for self-referential Pine assignments such as
   `cycler[1]` by evaluating them point-by-point instead of rebuilding full series for each bar.
 - Fixed Pine call-argument parsing so comparison operators such as `>=` and `<=` inside `plot()`

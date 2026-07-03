@@ -120,6 +120,8 @@ const checks = [
       source.pineScript.includes("isLineBreakStyle") &&
       source.pineScript.includes("baselineFill") &&
       source.pineScript.includes("flatLinePoints") &&
+      source.pineScript.includes("FLAT_LINE_RIGHT_EXTENSION_BARS") &&
+      source.pineScript.includes("candleStepSeconds") &&
       source.pineScript.includes("topLevelEquals") &&
       source.indicatorPane.includes("addBaselineSeries") &&
       source.indicatorPane.includes("color: p.color"),

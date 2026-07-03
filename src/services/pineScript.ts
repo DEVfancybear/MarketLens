@@ -22,6 +22,7 @@ const DEFAULT_COLORS = [
   "#00bcd4",
   "#ef5350",
 ];
+const FLAT_LINE_RIGHT_EXTENSION_BARS = 250;
 
 const NAMED_COLORS: Record<string, string> = {
   "color.blue": "#2196f3",
@@ -1295,10 +1296,23 @@ function flatLinePoints(value: number, candles: Candle[]): LinePoint[] {
   const last = candles[candles.length - 1];
   if (!first) return [];
   if (!last || last.time === first.time) return [{ time: first.time, value }];
-  return [
+  const points: LinePoint[] = [
     { time: first.time, value },
     { time: last.time, value },
   ];
+  const step = candleStepSeconds(candles);
+  for (let offset = 1; offset <= FLAT_LINE_RIGHT_EXTENSION_BARS; offset++) {
+    points.push({ time: last.time + step * offset, value });
+  }
+  return points;
+}
+
+function candleStepSeconds(candles: Candle[]): number {
+  for (let index = candles.length - 1; index > 0; index--) {
+    const step = candles[index].time - candles[index - 1].time;
+    if (Number.isFinite(step) && step > 0) return step;
+  }
+  return 60;
 }
 
 function hlineVariableName(line: string): string | null {
