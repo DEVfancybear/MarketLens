@@ -531,12 +531,14 @@ export function PriceChart({
               ? width - 220
               : chart.timeScale().timeToCoordinate(label.time as UTCTimestamp);
           if (x == null) return [];
+          const leftClip = -80;
+          if (x < leftClip) return [];
           return [
             {
               key: label.key,
               text: label.text,
               color: label.color,
-              x: Math.max(4, Math.min(width - rightReserve, x + 8)),
+              x: Math.min(width - rightReserve, Math.max(4, x + 8)),
               y,
             },
           ];

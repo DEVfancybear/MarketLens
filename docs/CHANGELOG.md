@@ -9,6 +9,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `request.security`, `line.new`, `box.new`, labels, and a table instead of `plot()`.
 - The compiler now recognizes this object-style ADR script and emits overlay H50/L50 lines,
   translucent zones, right-side labels, and a TradingView-style dashboard.
+- Fixed ADR labels from off-screen historical levels stacking at the left edge by clipping labels
+  whose line endpoint is outside the visible chart area.
 
 ### Changed - TradingView-style indicator browser (2026-07-03)
 - Replaced the compact toolbar indicator dropdown with a TradingView-style modal titled

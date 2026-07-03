@@ -12,6 +12,8 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
   translucent ADR zones, right-side labels, and dashboard metadata.
 - Fix: `PriceChart` renders custom indicator overlay labels/dashboard as DOM overlays projected
   from chart price/time coordinates, so the ADR script appears on the price chart.
+- Follow-up UI fix: ADR labels whose endpoint is off-screen to the left are clipped instead of
+  being clamped to the left edge, preventing historical labels from stacking over the chart.
 
 ### TradingView-style indicator browser
 - Replaced the small `IndicatorMenu` dropdown with a modal browser matching TradingView's

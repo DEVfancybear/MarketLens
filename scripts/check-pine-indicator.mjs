@@ -167,6 +167,8 @@ const checks = [
       source.priceChart.includes("IndicatorOverlay") &&
       source.priceChart.includes("indicatorDashboards") &&
       source.priceChart.includes("priceToCoordinate(label.price)") &&
+      source.priceChart.includes("leftClip") &&
+      source.priceChart.includes("if (x < leftClip) return []") &&
       source.indicatorTypes.includes("IndicatorDashboard"),
   },
 ];

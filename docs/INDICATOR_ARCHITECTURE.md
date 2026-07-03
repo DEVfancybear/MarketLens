@@ -301,6 +301,8 @@ Overlay indicators render in `PriceChart`:
   and Better RSI cycler colors.
 - Optional `labels` and `dashboard` metadata render as DOM overlays projected from price/time
   coordinates; this is used by the ADR object-script compatibility path.
+- Overlay labels are clipped when their projected anchor is off-screen to the left. Do not clamp
+  historical off-screen labels to the left edge, or ADR labels will stack over the chart.
 - Series are keyed by indicator id and recreated only when series count changes.
 
 Separate-pane indicators render in `IndicatorPane`:
