@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Bottom panel collapse control (2026-07-04)
+- Added a TradingView-style collapse button on the bottom-panel divider and a
+  small restore button when the panel is hidden, so the chart can reclaim the
+  full workspace height.
+- Double-clicking the bottom-panel divider also collapses the panel.
+
 ### Added - Position drawing to Trade ticket prefill (2026-07-04)
 - Placing a new Long/Short Position now opens the bottom `Trade` tab and fills
   the order ticket with entry, stop loss, take profit, risk percent, planned

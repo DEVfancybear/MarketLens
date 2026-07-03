@@ -125,6 +125,10 @@ export const toggleBottomAtom = atom(null, (get, set) => {
   set(bottomOpenAtom, (prev) => !prev);
 });
 
+export const setBottomOpenAtom = atom(null, (_get, set, open: boolean) => {
+  set(bottomOpenAtom, open);
+});
+
 export const setFullscreenAtom = atom(null, (_get, set, v: boolean) => {
   set(fullscreenAtom, v);
 });

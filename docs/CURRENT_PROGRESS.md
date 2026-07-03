@@ -1,8 +1,15 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Position to Trade ticket prefill)_
+_Last updated: 2026-07-04 (Bottom panel collapse control)_
 
 ## Completed this session (2026-07-04)
+
+### Bottom panel collapse control
+- Added a divider-centered collapse button for the bottom Replay/Trade/Pine
+  panel and a small chart-overlay restore button when the panel is hidden.
+- Double-clicking the bottom divider also collapses the panel.
+- The collapsed state reuses existing `bottomOpenAtom` / `setBottomOpenAtom`,
+  so tab switching can still reopen the panel through `setBottomTabAtom`.
 
 ### Position drawing to Trade ticket prefill
 - New Long/Short Position drawings now switch the bottom panel to `Trade` and
