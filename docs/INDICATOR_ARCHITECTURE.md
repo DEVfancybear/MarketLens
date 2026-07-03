@@ -222,20 +222,24 @@ Supported identifiers:
 - OHLCV: `open`, `high`, `low`, `close`, `volume`
 - Derived sources: `hl2`, `hlc3`, `ohlc4`
 - Constants: `true`, `false`, `na`
-- Pine enum-like identifiers used in metadata: `input.*`, `plot.style_*`, `format.*`
+- Pine enum-like identifiers used in metadata: `input.*`, `plot.style_*`, `format.*`,
+  `line.style_*`, `label.style_*`, `position.*`, `size.*`, `text.align_*`, `barmerge.*`
 - Named call arguments in whitelisted calls, including Pine v4 `input(defval=...)`
 - Pine color constants used by source scripts, including the VSA palette colors
 - Pine v3 bare enum aliases used by older public scripts: `integer`, `source`, `linebr`,
   `solid`, `dashed`, `dotted`
+- Runtime identifiers needed by object scripts: `bar_index`, `barstate.islast`, `time`,
+  and the supported `syminfo.*` fields.
 
 Supported expression features:
 
 - Arithmetic with precedence and unary minus.
 - Comparisons: `>`, `>=`, `<`, `<=`, `==`, `!=`.
-- Logical `and` / `or`.
+- Logical `and` / `or` / `not`.
 - Ternary conditionals, including color palettes.
 - History references such as `series[1]`.
 - Typed declarations such as `float volumeMA = 0`.
+- One-argument helper functions in the form `toUnits(float value) => expression`.
 - Pine v3 indentation-based `if ... else` expressions for supported assignment patterns.
 - Wilder-style recursive assignments like `x := nz(x[1]) + (source - nz(x[1])) / length`.
 - Self-referential assignments with history, such as `cycler[1]`, must evaluate point-by-point in
@@ -243,21 +247,25 @@ Supported expression features:
 
 Supported functions:
 
-- Inputs: `input`, `input.int`, `input.float`, `input.source`, `input.bool`
+- Inputs: `input`, `input.int`, `input.float`, `input.source`, `input.bool`, `input.color`
 - Series: `ta.sma`, `ta.ema`, `ta.rma`, `ta.rsi`, `ta.vwap`, `ta.highest`, `ta.lowest`,
-  `ta.change`, `ta.atr`, plus Pine v3 aliases such as `sma`, `ema`, `rma`, `rsi`
-- Math/helpers: `math.abs`, `math.max`, `math.min`, `abs`, `max`, `min`, `nz`, `color(base, transp)`
+  `ta.change`, `ta.atr`, `ta.crossover`, `ta.crossunder`, plus Pine v3 aliases such as `sma`,
+  `ema`, `rma`, `rsi`
+- Math/helpers: `math.abs`, `math.max`, `math.min`, `abs`, `max`, `min`, `nz`, `na`,
+  `color(base, transp)`, `color.new(base, transp)`, `str.tostring`, `str.format_time`
+- Timeframe bridge: daily `request.security(..., "D", expression, lookahead=barmerge.lookahead_off)`
+  over the candles available in the chart runtime, plus `time("D")`.
 - Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`, `hline(...)`,
   `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
-- Compatibility path: `ADR 50 SR Pro` object-style scripts using `request.security`, `line.new`,
-  `box.new`, labels, and `table.new` are recognized and rendered through a dedicated ADR overlay
-  compiler path. This is not a general-purpose Pine object engine.
+- Object runtime subset: `line.new` with `line.set_*`, `box.new` with `box.set_*`,
+  `label.new` with `label.set_*`, and `table.new`/`table.cell` are converted into chart overlay
+  series, labels, and dashboard metadata. This is a shared subset, not an indicator-name adapter.
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
-the wrong thing. Examples: strategies, orders, arrays, loops, general `request.security`, sessions,
-alerts, arbitrary tables/labels/boxes/lines outside the ADR compatibility path, arbitrary custom
-functions, and general-purpose block statements outside the whitelisted assignment patterns.
+the wrong thing. Examples: strategies, orders, arrays, loops, non-daily/multi-symbol
+`request.security`, sessions, alerts, multi-argument custom functions, and general-purpose block
+statements outside the whitelisted assignment/object patterns.
 
 ## Render contract
 

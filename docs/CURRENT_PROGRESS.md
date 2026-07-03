@@ -4,12 +4,13 @@ _Last updated: 2026-07-03 (Pine Editor + source-code indicators)_
 
 ## Completed this session (2026-07-03)
 
-### Pine ADR 50 SR Pro rendering fix
+### Common Pine object runtime
 - User repro: saving and adding `ADR 50 SR Pro` reported success, but nothing rendered because the
   script uses object APIs (`request.security`, `line.new`, `box.new`, labels, `table.new`) and has
   no `plot()` calls.
-- Fix: `pineScript.ts` now recognizes this ADR object-script and emits overlay ADR H50/L50 lines,
-  translucent ADR zones, right-side labels, and dashboard metadata.
+- Fix: `pineScript.ts` now runs this through a shared Pine object runtime instead of an
+  ADR-specific branch. The runtime evaluates supported `request.security`, `time("D")`, inputs,
+  one-line helper functions, labels, boxes, lines, and table cells into chart overlay metadata.
 - Fix: `PriceChart` renders custom indicator overlay labels/dashboard as DOM overlays projected
   from chart price/time coordinates, so the ADR script appears on the price chart.
 - Follow-up UI fix: ADR labels whose endpoint is off-screen to the left are clipped instead of

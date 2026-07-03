@@ -23,7 +23,7 @@ const DEFAULT_COLORS = [
   "#ef5350",
 ];
 const FLAT_LINE_RIGHT_EXTENSION_BARS = 250;
-const ADR_RIGHT_EXTENSION_BARS = 12;
+const OBJECT_RIGHT_EXTENSION_BARS = 12;
 
 const NAMED_COLORS: Record<string, string> = {
   "color.blue": "#2196f3",
@@ -108,6 +108,7 @@ type Token =
 interface EvalContext {
   candles: Candle[];
   variables: Map<string, PineValue>;
+  functions: Map<string, { param: string; expression: string }>;
 }
 
 function stripLineComment(line: string): string {
@@ -528,6 +529,13 @@ class ExpressionParser {
 
   private parseUnary(): PineValue {
     const token = this.peek();
+    if (
+      token.kind === "identifier" &&
+      token.value.toLowerCase() === "not"
+    ) {
+      this.next();
+      return logicalNotValue(this.parseUnary(), this.context.candles.length);
+    }
     if (token.kind === "operator" && token.value === "-") {
       this.next();
       return negateValue(this.parseUnary(), this.context.candles.length);
@@ -630,6 +638,14 @@ function colorAt(value: PineValue, index: number): string | null {
   return null;
 }
 
+function stringValue(value: PineValue, index: number, length: number): string {
+  if (value.kind === "string") return value.value;
+  if (value.kind === "color") return value.value;
+  if (value.kind === "bool") return value.value ? "true" : "false";
+  const numeric = getAt(value, index, length);
+  return isUsableNumber(numeric) ? String(numeric) : "";
+}
+
 function toSeries(value: PineValue, length: number): SeriesData {
   if (value.kind === "series") return value.values;
   if (value.kind === "number") return Array.from({ length }, () => value.value);
@@ -694,6 +710,14 @@ function compareValues(
   op: Extract<Token, { kind: "comparison" }>["value"],
   length: number,
 ): PineValue {
+  if (
+    (left.kind === "string" || right.kind === "string") &&
+    (op === "==" || op === "!=")
+  ) {
+    const equal = stringValue(left, length - 1, length) === stringValue(right, length - 1, length);
+    return { kind: "bool", value: op === "==" ? equal : !equal };
+  }
+
   const compare = (a: number, b: number) => {
     switch (op) {
       case ">": return a > b;
@@ -747,6 +771,17 @@ function logicalValues(
   };
 }
 
+function logicalNotValue(value: PineValue, length: number): PineValue {
+  if (!valueVaries(value)) {
+    return { kind: "bool", value: !truthyAt(value, 0, length) };
+  }
+
+  return {
+    kind: "series",
+    values: Array.from({ length }, (_, index) => truthyAt(value, index, length) ? 0 : 1),
+  };
+}
+
 function shiftValue(value: PineValue, offset: number, length: number): PineValue {
   if (isColorValue(value)) {
     const colors = toColorSeries(value, length);
@@ -769,6 +804,13 @@ function combineValues(
   op: "+" | "-" | "*" | "/",
   length: number,
 ): PineValue {
+  if (op === "+" && (left.kind === "string" || right.kind === "string")) {
+    return {
+      kind: "string",
+      value: `${stringValue(left, length - 1, length)}${stringValue(right, length - 1, length)}`,
+    };
+  }
+
   if (left.kind === "number" && right.kind === "number") {
     return { kind: "number", value: applyOperator(left.value, right.value, op) };
   }
@@ -810,7 +852,13 @@ function resolveIdentifier(name: string, context: EvalContext): PineValue {
   if (
     name.startsWith("input.") ||
     name.startsWith("plot.style_") ||
-    name.startsWith("format.")
+    name.startsWith("format.") ||
+    name.startsWith("line.style_") ||
+    name.startsWith("label.style_") ||
+    name.startsWith("position.") ||
+    name.startsWith("size.") ||
+    name.startsWith("text.align_") ||
+    name.startsWith("barmerge.")
   ) {
     return { kind: "string", value: name };
   }
@@ -844,6 +892,25 @@ function resolveIdentifier(name: string, context: EvalContext): PineValue {
       return sourceSeries(context.candles, "close");
     case "volume":
       return sourceSeries(context.candles, "volume");
+    case "time":
+      return sourceSeries(context.candles, "time");
+    case "bar_index":
+      return { kind: "series", values: context.candles.map((_, index) => index) };
+    case "barstate.islast":
+      return {
+        kind: "series",
+        values: context.candles.map((_, index) =>
+          index === context.candles.length - 1 ? 1 : 0,
+        ),
+      };
+    case "syminfo.tickerid":
+      return { kind: "string", value: "" };
+    case "syminfo.type":
+      return { kind: "string", value: "crypto" };
+    case "syminfo.mintick":
+      return { kind: "number", value: inferMintick(context.candles) };
+    case "syminfo.timezone":
+      return { kind: "string", value: "UTC" };
     case "hl2":
       return pairAverage(context.candles, ["high", "low"]);
     case "hlc3":
@@ -889,14 +956,30 @@ function callArgOrNa(args: PineCallArg[], name: string, index: number): PineValu
 }
 
 function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): PineValue {
+  const customFunction = context.functions.get(name);
+  if (customFunction) {
+    const functionContext: EvalContext = {
+      candles: context.candles,
+      variables: new Map(context.variables),
+      functions: context.functions,
+    };
+    functionContext.variables.set(
+      customFunction.param,
+      callArg(args, 0) ?? { kind: "number", value: Number.NaN },
+    );
+    return evaluateExpression(customFunction.expression, functionContext);
+  }
+
   switch (name) {
     case "input":
     case "input.int":
     case "input.float":
     case "input.source":
     case "input.bool":
+    case "input.color":
       return namedCallArg(args, "defval") ?? callArg(args, 0) ?? { kind: "number", value: 0 };
-    case "color": {
+    case "color":
+    case "color.new": {
       const base = callArg(args, 0);
       const transparency = callArgByNameOrIndex(args, "transp", 1);
       if (!base || !isColorValue(base)) {
@@ -916,8 +999,34 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         value: transp == null ? base.value : withTransparency(base.value, transp),
       };
     }
+    case "na":
+      return naValue(callArg(args, 0), context.candles.length);
     case "nz":
       return nz(callArg(args, 0), callArg(args, 1), context.candles.length);
+    case "time": {
+      const timeframe = callArg(args, 0);
+      if (timeframe?.kind === "string" && timeframe.value === "D") {
+        return dailyTimeSeries(context.candles);
+      }
+      return sourceSeries(context.candles, "time");
+    }
+    case "str.tostring":
+      return {
+        kind: "string",
+        value: formatPineTextValue(
+          callArg(args, 0),
+          callArg(args, 1),
+          context.candles.length - 1,
+          context,
+        ),
+      };
+    case "str.format_time":
+      return {
+        kind: "string",
+        value: formatPineDate(
+          getAt(callArg(args, 0) ?? { kind: "number", value: Number.NaN }, context.candles.length - 1, context.candles.length),
+        ),
+      };
     case "math.abs":
     case "abs":
       return mapValue(callArg(args, 0), context.candles.length, Math.abs);
@@ -1006,6 +1115,20 @@ function evaluateCall(name: string, args: PineCallArg[], context: EvalContext): 
         ),
       };
     }
+    case "ta.crossover":
+    case "crossover":
+      return crossSeries(
+        toSeries(callArgOrNa(args, "source1", 0), context.candles.length),
+        toSeries(callArgOrNa(args, "source2", 1), context.candles.length),
+        "over",
+      );
+    case "ta.crossunder":
+    case "crossunder":
+      return crossSeries(
+        toSeries(callArgOrNa(args, "source1", 0), context.candles.length),
+        toSeries(callArgOrNa(args, "source2", 1), context.candles.length),
+        "under",
+      );
     case "ta.atr":
     case "atr":
       return {
@@ -1046,6 +1169,63 @@ function reduceMath(
       return point.every(isUsableNumber) ? fn(...point) : null;
     }),
   };
+}
+
+function naValue(value: PineValue | undefined, length: number): PineValue {
+  if (!value) return { kind: "bool", value: true };
+  if (value.kind === "number") {
+    return { kind: "bool", value: !Number.isFinite(value.value) };
+  }
+  if (value.kind === "series") {
+    return {
+      kind: "series",
+      values: value.values.map((point) => isUsableNumber(point) ? 0 : 1),
+    };
+  }
+  if (value.kind === "colorSeries") {
+    return {
+      kind: "series",
+      values: value.values.map((point) => point == null ? 1 : 0),
+    };
+  }
+  return { kind: "bool", value: false };
+}
+
+function dailyTimeSeries(candles: Candle[]): PineValue {
+  const days = aggregateDailyCandles(candles);
+  const values: SeriesData = Array.from({ length: candles.length }, () => null);
+  for (const day of days) {
+    for (let index = day.startIndex; index <= day.endIndex; index++) {
+      values[index] = day.time;
+    }
+  }
+  return { kind: "series", values };
+}
+
+function formatPineTextValue(
+  value: PineValue | undefined,
+  format: PineValue | undefined,
+  index: number,
+  context: EvalContext,
+): string {
+  if (!value) return "";
+  if (value.kind === "string") return value.value;
+  if (value.kind === "bool") return value.value ? "true" : "false";
+  if (value.kind === "color") return value.value;
+  const point = getAt(value, index, context.candles.length);
+  if (!isUsableNumber(point)) return "-";
+  const formatName = format?.kind === "string" ? format.value : "";
+  if (formatName === "format.mintick") {
+    return point.toFixed(inferPricePrecision(context.candles));
+  }
+  if (formatName === "#") return point.toFixed(0);
+  if (formatName === "#.#") return point.toFixed(1);
+  return Number.isInteger(point) ? String(point) : point.toFixed(2);
+}
+
+function formatPineDate(time: number | null): string {
+  if (!isUsableNumber(time)) return "";
+  return new Date(time * 1000).toISOString().slice(0, 10);
 }
 
 function nz(value: PineValue | undefined, replacement: PineValue | undefined, length: number): PineValue {
@@ -1180,6 +1360,34 @@ function changeSeries(values: SeriesData, length: number): SeriesData {
     const previous = values[index - length];
     return isUsableNumber(value) && isUsableNumber(previous) ? value - previous : null;
   });
+}
+
+function crossSeries(
+  left: SeriesData,
+  right: SeriesData,
+  mode: "over" | "under",
+): PineValue {
+  return {
+    kind: "series",
+    values: left.map((value, index) => {
+      const previousLeft = left[index - 1];
+      const previousRight = right[index - 1];
+      const currentRight = right[index];
+      if (
+        !isUsableNumber(value) ||
+        !isUsableNumber(currentRight) ||
+        !isUsableNumber(previousLeft) ||
+        !isUsableNumber(previousRight)
+      ) {
+        return 0;
+      }
+      const crossed =
+        mode === "over"
+          ? previousLeft <= previousRight && value > currentRight
+          : previousLeft >= previousRight && value < currentRight;
+      return crossed ? 1 : 0;
+    }),
+  };
 }
 
 function atrSeries(candles: Candle[], length: number): SeriesData {
@@ -1360,6 +1568,103 @@ function aggregateDailyCandles(candles: Candle[]): DailyCandle[] {
   return days;
 }
 
+function dailyCandlesForEvaluation(days: DailyCandle[]): Candle[] {
+  return days.map((day) => ({
+    time: day.time,
+    open: day.open,
+    high: day.high,
+    low: day.low,
+    close: day.close,
+    volume: day.volume,
+  }));
+}
+
+function expandDailyValueToCandles(
+  value: PineValue,
+  days: DailyCandle[],
+  length: number,
+): PineValue {
+  if (!valueVaries(value)) return value;
+  if (value.kind === "colorSeries") {
+    const values: ColorSeriesData = Array.from({ length }, () => null);
+    days.forEach((day, dayIndex) => {
+      for (let index = day.startIndex; index <= day.endIndex; index++) {
+        values[index] = value.values[dayIndex] ?? null;
+      }
+    });
+    return { kind: "colorSeries", values };
+  }
+
+  const values: SeriesData = Array.from({ length }, () => null);
+  const series = toSeries(value, days.length);
+  days.forEach((day, dayIndex) => {
+    for (let index = day.startIndex; index <= day.endIndex; index++) {
+      values[index] = series[dayIndex] ?? null;
+    }
+  });
+  return { kind: "series", values };
+}
+
+function evaluateAvailableHistoryDailySma(
+  expression: string,
+  dailyContext: EvalContext,
+): PineValue | null {
+  const match = expression.match(/^ta\.sma\s*\((.+),\s*(.+)\)\s*\[\s*1\s*\]$/);
+  if (!match) return null;
+  const source = toSeries(evaluateExpression(match[1], dailyContext), dailyContext.candles.length);
+  const length = period(evaluateExpression(match[2], dailyContext));
+  const values: SeriesData = source.map((_, index) => {
+    const window = source
+      .slice(Math.max(0, index - length), index)
+      .filter(isUsableNumber);
+    if (window.length === 0) return null;
+    return window.reduce((sum, point) => sum + point, 0) / window.length;
+  });
+  return { kind: "series", values };
+}
+
+function evaluateRequestSecurityExpression(
+  expression: string,
+  context: EvalContext,
+): PineValue | null {
+  const trimmed = expression.trim();
+  if (!/^request\.security\s*\(/.test(trimmed)) return null;
+  const body = findCallBodies(trimmed, "request.security")[0];
+  if (!body || trimmed !== `request.security(${body})`) return null;
+
+  const args = parseCallArguments(body);
+  const timeframe =
+    unquote(args.positional[1]) ??
+    (args.positional[1]
+      ? stringValue(evaluateExpression(args.positional[1], context), context.candles.length - 1, context.candles.length)
+      : null);
+  const securityExpression = args.positional[2];
+  if (timeframe !== "D" || !securityExpression) return null;
+
+  const days = aggregateDailyCandles(context.candles);
+  const dailyContext: EvalContext = {
+    candles: dailyCandlesForEvaluation(days),
+    variables: new Map(context.variables),
+    functions: context.functions,
+  };
+  const dailyValue =
+    evaluateAvailableHistoryDailySma(securityExpression, dailyContext) ??
+    evaluateExpression(securityExpression, dailyContext);
+  return expandDailyValueToCandles(dailyValue, days, context.candles.length);
+}
+
+function evaluateInputExpression(expression: string, context: EvalContext): PineValue | null {
+  const trimmed = expression.trim();
+  const match = trimmed.match(/^(input(?:\.[A-Za-z_]+)?)\s*\(/);
+  if (!match) return null;
+  const body = findCallBodies(trimmed, match[1])[0];
+  if (!body || trimmed !== `${match[1]}(${body})`) return null;
+  const args = parseCallArguments(body);
+  const defaultExpression = args.named.defval ?? args.positional[0];
+  if (!defaultExpression) return { kind: "number", value: 0 };
+  return evaluateExpression(defaultExpression, context);
+}
+
 function segmentFlatLinePoints(
   value: number,
   candles: Candle[],
@@ -1374,42 +1679,11 @@ function segmentFlatLinePoints(
   if (last.time !== first.time) points.push({ time: last.time, value });
   if (extendRight) {
     const step = candleStepSeconds(candles);
-    for (let offset = 1; offset <= ADR_RIGHT_EXTENSION_BARS; offset++) {
+    for (let offset = 1; offset <= OBJECT_RIGHT_EXTENSION_BARS; offset++) {
       points.push({ time: last.time + step * offset, value });
     }
   }
   return points;
-}
-
-function pineInputNumber(
-  source: string,
-  name: string,
-  fallback: number,
-): number {
-  const match = source.match(
-    new RegExp(`\\b${name}\\s*=\\s*input\\.(?:int|float)\\(\\s*([-+]?\\d+(?:\\.\\d+)?)`),
-  );
-  const value = match ? Number(match[1]) : Number.NaN;
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function pineInputBool(source: string, name: string, fallback: boolean): boolean {
-  const match = source.match(
-    new RegExp(`\\b${name}\\s*=\\s*input\\.bool\\(\\s*(true|false)`, "i"),
-  );
-  if (!match) return fallback;
-  return match[1].toLowerCase() === "true";
-}
-
-function pineInputColor(
-  source: string,
-  name: string,
-  fallback: string,
-): string {
-  const match = source.match(
-    new RegExp(`\\b${name}\\s*=\\s*input\\.color\\(\\s*([^,\\)]+)`),
-  );
-  return resolveColor(match?.[1], fallback);
 }
 
 function inferPricePrecision(candles: Candle[]): number {
@@ -1427,192 +1701,360 @@ function inferMintick(candles: Candle[]): number {
   return 1 / 10 ** inferPricePrecision(candles);
 }
 
-function formatUnits(value: number): string {
-  if (!Number.isFinite(value)) return "-";
-  return value.toFixed(1);
+interface PineObjectCall {
+  line: PineSourceLine;
+  variable: string;
+  args: ReturnType<typeof parseCallArguments>;
+  condition: string | null;
 }
 
-function compileAdrObjectScript(
+function objectAssignmentRegex(apiName: string): RegExp {
+  const escaped = apiName.replace(".", "\\.");
+  return new RegExp(
+    `^(?:(?:var\\s+)?(?:line|label|box|table)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?::=|=)\\s*${escaped}\\s*\\(`,
+  );
+}
+
+function objectCreationCalls(lines: PineSourceLine[], apiName: string): PineObjectCall[] {
+  const regex = objectAssignmentRegex(apiName);
+  return lines.flatMap((line, index) => {
+    const match = line.text.match(regex);
+    const body = findCallBodies(line.text, apiName)[0];
+    if (!match || !body) return [];
+    return [{
+      line,
+      variable: match[1],
+      args: parseCallArguments(body),
+      condition: enclosingIfCondition(lines, index),
+    }];
+  });
+}
+
+function enclosingIfCondition(lines: PineSourceLine[], index: number): string | null {
+  const current = lines[index];
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    const candidate = lines[cursor];
+    if (!candidate.text || candidate.indent >= current.indent) continue;
+    if (/^if\b/.test(candidate.text)) {
+      return candidate.text.replace(/^if\b/, "").trim();
+    }
+    if (candidate.indent === 0) break;
+  }
+  return null;
+}
+
+function conditionIndices(
+  condition: string | null,
+  context: EvalContext,
+  errors: string[],
+  lineNumber: number,
+): number[] {
+  if (!condition) return [0];
+  try {
+    const value = evaluateExpression(condition, context);
+    return context.candles.flatMap((_, index) =>
+      truthyAt(value, index, context.candles.length) ? [index] : [],
+    );
+  } catch (error) {
+    errors.push(`Line ${lineNumber}: ${(error as Error).message}`);
+    return [];
+  }
+}
+
+function rawArg(
+  args: ReturnType<typeof parseCallArguments>,
+  name: string,
+  index: number,
+): string | undefined {
+  return args.named[name] ?? args.positional[index];
+}
+
+function objectSetterExpression(
+  lines: PineSourceLine[],
+  apiName: string,
+  variable: string,
+  method: string,
+  argIndex: number,
+): string | undefined {
+  const callName = `${apiName}.set_${method}`;
+  for (const line of lines) {
+    if (!line.text.startsWith(`${callName}(`)) continue;
+    const body = findCallBodies(line.text, callName)[0];
+    if (!body) continue;
+    const args = parseCallArguments(body);
+    if (args.positional[0]?.trim() === variable) {
+      return args.positional[argIndex];
+    }
+  }
+  return undefined;
+}
+
+function numberExpressionAt(
+  expression: string | undefined,
+  index: number,
+  context: EvalContext,
+): number | null {
+  if (!expression) return null;
+  try {
+    const value = evaluateExpression(expression, context);
+    return getAt(value, index, context.candles.length);
+  } catch {
+    return null;
+  }
+}
+
+function colorExpressionAt(
+  expression: string | undefined,
+  index: number,
+  context: EvalContext,
+  fallback: string,
+): string {
+  if (!expression) return fallback;
+  try {
+    const value = evaluateExpression(expression, context);
+    return colorAt(value, index) ?? fallback;
+  } catch {
+    return resolveColor(expression, fallback);
+  }
+}
+
+function textExpressionAt(
+  expression: string | undefined,
+  index: number,
+  context: EvalContext,
+): string {
+  if (!expression) return "";
+  try {
+    const scalarContext = scalarContextAt(context, index);
+    return stringValue(evaluateExpression(expression, scalarContext), 0, 1);
+  } catch {
+    return unquote(expression) ?? "";
+  }
+}
+
+function objectLineWidth(
+  expression: string | undefined,
+  index: number,
+  context: EvalContext,
+): IndicatorLineWidth {
+  const value = numberExpressionAt(expression, index, context);
+  if (!isUsableNumber(value)) return 2;
+  return Math.max(1, Math.min(4, Math.round(value))) as IndicatorLineWidth;
+}
+
+function objectSegmentPoints(
+  expression: string,
+  candles: Candle[],
+  startIndex: number,
+  endIndex: number,
+  extendRight: boolean,
+  context: EvalContext,
+  color?: string,
+): LinePoint[] {
+  const first = candles[startIndex];
+  const last = candles[endIndex];
+  if (!first || !last) return [];
+  const startValue = numberExpressionAt(expression, startIndex, context);
+  const endValue = numberExpressionAt(expression, endIndex, context);
+  if (!isUsableNumber(startValue) || !isUsableNumber(endValue)) return [];
+  const points: LinePoint[] = [{ time: first.time, value: startValue, color }];
+  if (last.time !== first.time || endValue !== startValue) {
+    points.push({ time: last.time, value: endValue, color });
+  }
+  if (extendRight) {
+    const step = candleStepSeconds(candles);
+    for (let offset = 1; offset <= OBJECT_RIGHT_EXTENSION_BARS; offset++) {
+      points.push({ time: last.time + step * offset, value: endValue, color });
+    }
+  }
+  return points;
+}
+
+function segmentEndTime(candles: Candle[], endIndex: number, extendRight: boolean): number | undefined {
+  const last = candles[endIndex];
+  if (!last) return undefined;
+  if (!extendRight) return last.time;
+  return last.time + candleStepSeconds(candles) * OBJECT_RIGHT_EXTENSION_BARS;
+}
+
+function compilePineObjectRuntime(
   cleaned: string,
   candles: Candle[],
   indicatorId: string,
+  context: EvalContext,
+  errors: string[],
 ): IndicatorResult | null {
-  if (
-    !cleaned.includes("ADR 50 SR Pro") ||
-    !cleaned.includes("request.security") ||
-    !cleaned.includes("line.new") ||
-    !cleaned.includes("table.new")
-  ) {
-    return null;
-  }
-
-  const adrPeriod = Math.max(1, Math.round(pineInputNumber(cleaned, "adrPeriod", 10)));
-  const showLabels = pineInputBool(cleaned, "showLabels", true);
-  const showZones = pineInputBool(cleaned, "showZones", true);
-  const showDash = pineInputBool(cleaned, "showDash", true);
-  const showAdrDate = pineInputBool(cleaned, "showAdrDate", true);
-  const showDistance = pineInputBool(cleaned, "showDistance", true);
-  const zoneWidthPct = Math.max(0, pineInputNumber(cleaned, "zoneWidthPct", 2));
-  const lineWidthValue = lineWidth(String(pineInputNumber(cleaned, "lineWidth", 2)), 2);
-  const colHigh = pineInputColor(cleaned, "colHigh", NAMED_COLORS["color.red"]);
-  const colLow = pineInputColor(cleaned, "colLow", NAMED_COLORS["color.green"]);
-  const zoneTransp = Math.max(0, Math.min(100, pineInputNumber(cleaned, "zoneTransp", 85)));
-
-  const days = aggregateDailyCandles(candles);
+  if (!/(?:line|box|label|table)\.(?:new|set_|cell)\s*\(/.test(cleaned)) return null;
+  const lines = sourceLines(cleaned);
   const series: IndicatorSeries[] = [];
   const labels: NonNullable<IndicatorResult["labels"]> = [];
-  const precision = inferPricePrecision(candles);
   let dashboard: IndicatorResult["dashboard"];
 
-  days.forEach((day, dayIndex) => {
-    const previousDays = days.slice(Math.max(0, dayIndex - adrPeriod), dayIndex);
-    if (previousDays.length === 0) return;
+  for (const call of objectCreationCalls(lines, "box.new")) {
+    const starts = conditionIndices(call.condition, context, errors, call.line.number);
+    const topExpression =
+      objectSetterExpression(lines, "box", call.variable, "top", 1) ??
+      rawArg(call.args, "top", 1);
+    const bottomExpression =
+      objectSetterExpression(lines, "box", call.variable, "bottom", 1) ??
+      rawArg(call.args, "bottom", 3);
+    const colorExpression =
+      objectSetterExpression(lines, "box", call.variable, "bgcolor", 1) ??
+      rawArg(call.args, "bgcolor", 5);
+    if (!topExpression || !bottomExpression) continue;
 
-    const adr =
-      previousDays.reduce((sum, item) => sum + (item.high - item.low), 0) /
-      previousDays.length;
-    if (!Number.isFinite(adr) || adr <= 0) return;
-
-    const h50 = day.open + adr * 0.5;
-    const l50 = day.open - adr * 0.5;
-    const zoneHalf = adr * (zoneWidthPct / 100) / 2;
-    const isLastDay = dayIndex === days.length - 1;
-    const highData = segmentFlatLinePoints(
-      h50,
-      candles,
-      day.startIndex,
-      day.endIndex,
-      isLastDay,
-    );
-    const lowData = segmentFlatLinePoints(
-      l50,
-      candles,
-      day.startIndex,
-      day.endIndex,
-      isLastDay,
-    );
-
-    if (showZones && zoneHalf > 0) {
-      series.push(
-        {
-          key: `adr-high-zone-${day.key}`,
-          color: withTransparency(colHigh, zoneTransp),
-          type: "baselineFill",
-          baseValue: h50 - zoneHalf,
-          lineVisible: false,
-          lastValueVisible: false,
-          data: segmentFlatLinePoints(
-            h50 + zoneHalf,
-            candles,
-            day.startIndex,
-            day.endIndex,
-            isLastDay,
-          ),
-        },
-        {
-          key: `adr-low-zone-${day.key}`,
-          color: withTransparency(colLow, zoneTransp),
-          type: "baselineFill",
-          baseValue: l50 - zoneHalf,
-          lineVisible: false,
-          lastValueVisible: false,
-          data: segmentFlatLinePoints(
-            l50 + zoneHalf,
-            candles,
-            day.startIndex,
-            day.endIndex,
-            isLastDay,
-          ),
-        },
+    starts.forEach((startIndex, segmentIndex) => {
+      const endIndex = starts[segmentIndex + 1] ? starts[segmentIndex + 1] - 1 : candles.length - 1;
+      const extendRight = segmentIndex === starts.length - 1;
+      const baseValue = numberExpressionAt(bottomExpression, endIndex, context);
+      if (!isUsableNumber(baseValue)) return;
+      const color = colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]);
+      const data = objectSegmentPoints(
+        topExpression,
+        candles,
+        startIndex,
+        endIndex,
+        extendRight,
+        context,
       );
-    }
-
-    series.push(
-      {
-        key: `adr-h50-${day.key}`,
-        color: colHigh,
-        data: highData,
-        type: "line",
-        lineWidth: lineWidthValue,
+      if (data.length === 0) return;
+      series.push({
+        key: `${call.variable}_${segmentIndex + 1}`,
+        color,
+        type: "baselineFill",
+        baseValue,
+        lineVisible: false,
         lastValueVisible: false,
-      },
-      {
-        key: `adr-l50-${day.key}`,
-        color: colLow,
-        data: lowData,
-        type: "line",
-        lineWidth: lineWidthValue,
-        lastValueVisible: false,
-      },
-    );
+        data,
+      });
+    });
+  }
 
-    if (showLabels) {
-      labels.push(
-        {
-          key: `adr-h50-label-${day.key}`,
-          price: h50,
-          text: `ADR H50  ${h50.toFixed(precision)}`,
-          color: colHigh,
-          time: highData[highData.length - 1]?.time,
-        },
-        {
-          key: `adr-l50-label-${day.key}`,
-          price: l50,
-          text: `ADR L50  ${l50.toFixed(precision)}`,
-          color: colLow,
-          time: lowData[lowData.length - 1]?.time,
-        },
+  for (const call of objectCreationCalls(lines, "line.new")) {
+    const starts = conditionIndices(call.condition, context, errors, call.line.number);
+    const yExpression =
+      objectSetterExpression(lines, "line", call.variable, "y2", 1) ??
+      objectSetterExpression(lines, "line", call.variable, "y1", 1) ??
+      rawArg(call.args, "y2", 3) ??
+      rawArg(call.args, "y1", 1);
+    if (!yExpression) continue;
+
+    starts.forEach((startIndex, segmentIndex) => {
+      const endIndex = starts[segmentIndex + 1] ? starts[segmentIndex + 1] - 1 : candles.length - 1;
+      const extendRight = segmentIndex === starts.length - 1;
+      const colorExpression =
+        objectSetterExpression(lines, "line", call.variable, "color", 1) ??
+        rawArg(call.args, "color", 4);
+      const color = colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[series.length % DEFAULT_COLORS.length]);
+      const data = objectSegmentPoints(
+        yExpression,
+        candles,
+        startIndex,
+        endIndex,
+        extendRight,
+        context,
+        color,
       );
+      if (data.length === 0) return;
+      series.push({
+        key: `${call.variable}_${segmentIndex + 1}`,
+        color,
+        data,
+        type: "line",
+        lineWidth: objectLineWidth(
+          objectSetterExpression(lines, "line", call.variable, "width", 1) ??
+            rawArg(call.args, "width", 5),
+          endIndex,
+          context,
+        ),
+        lineStyle: lineStyle(rawArg(call.args, "style", 6)),
+        lastValueVisible: false,
+      });
+    });
+  }
+
+  for (const call of objectCreationCalls(lines, "label.new")) {
+    const starts = conditionIndices(call.condition, context, errors, call.line.number);
+    const yExpression =
+      objectSetterExpression(lines, "label", call.variable, "xy", 2) ??
+      rawArg(call.args, "y", 1);
+    const textExpression =
+      objectSetterExpression(lines, "label", call.variable, "text", 1) ??
+      rawArg(call.args, "text", 2);
+    const colorExpression =
+      objectSetterExpression(lines, "label", call.variable, "textcolor", 1) ??
+      rawArg(call.args, "textcolor", 6);
+    if (!yExpression) continue;
+
+    starts.forEach((startIndex, segmentIndex) => {
+      const endIndex = starts[segmentIndex + 1] ? starts[segmentIndex + 1] - 1 : candles.length - 1;
+      const extendRight = segmentIndex === starts.length - 1;
+      const price = numberExpressionAt(yExpression, endIndex, context);
+      if (!isUsableNumber(price)) return;
+      const text = textExpressionAt(textExpression, endIndex, context);
+      if (!text.trim()) return;
+      labels.push({
+        key: `${call.variable}_${segmentIndex + 1}`,
+        price,
+        text,
+        color: colorExpressionAt(colorExpression, endIndex, context, DEFAULT_COLORS[labels.length % DEFAULT_COLORS.length]),
+        time: segmentEndTime(candles, endIndex, extendRight),
+      });
+    });
+  }
+
+  const tableCall = objectCreationCalls(lines, "table.new")[0];
+  if (tableCall) {
+    const lastIndex = candles.length - 1;
+    const cells = new Map<number, Map<number, { text: string; color?: string }>>();
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      if (!line.text.startsWith("table.cell(")) continue;
+      const condition = enclosingIfCondition(lines, lineIndex);
+      if (condition) {
+        try {
+          if (!truthyAt(evaluateExpression(condition, context), lastIndex, context.candles.length)) {
+            continue;
+          }
+        } catch (error) {
+          errors.push(`Line ${line.number}: ${(error as Error).message}`);
+          continue;
+        }
+      }
+      const body = findCallBodies(line.text, "table.cell")[0];
+      if (!body) continue;
+      const args = parseCallArguments(body);
+      if (args.positional[0]?.trim() !== tableCall.variable) continue;
+      const col = numberExpressionAt(args.positional[1], lastIndex, context);
+      const row = numberExpressionAt(args.positional[2], lastIndex, context);
+      if (!isUsableNumber(col) || !isUsableNumber(row)) continue;
+      const text = textExpressionAt(args.positional[3], lastIndex, context);
+      const color = colorExpressionAt(args.named.text_color, lastIndex, context, "#ffffff");
+      const rowMap = cells.get(row) ?? new Map<number, { text: string; color?: string }>();
+      rowMap.set(col, { text, color });
+      cells.set(row, rowMap);
     }
-
-    if (isLastDay && showDash) {
-      const todayRange = day.high - day.low;
-      const mintick = Math.max(inferMintick(candles), Number.EPSILON);
-      const adrUnits = adr / mintick;
-      const rangeUnits = todayRange / mintick;
-      const lastClose = candles[candles.length - 1]?.close ?? day.close;
-      const distHigh = Math.abs((h50 - lastClose) / mintick);
-      const distLow = Math.abs((lastClose - l50) / mintick);
-      const adrCompletion = adr > 0 ? (todayRange / adr) * 100 : 0;
-      const completionCol =
-        adrCompletion > 100
-          ? NAMED_COLORS["color.red"]
-          : adrCompletion >= 50
-            ? NAMED_COLORS["color.yellow"]
-            : NAMED_COLORS["color.lime"];
-      const lastCompletedDay = previousDays[previousDays.length - 1];
-
+    const title = cells.get(0)?.get(0)?.text ?? "";
+    const rows = [...cells.entries()]
+      .filter(([row]) => row > 0)
+      .sort(([a], [b]) => a - b)
+      .flatMap(([_, row]) => {
+        const label = row.get(0)?.text ?? "";
+        const value = row.get(1)?.text ?? "";
+        if (!label && !value) return [];
+        return [{ label, value, valueColor: row.get(1)?.color }];
+      });
+    if (title || rows.length > 0) {
       dashboard = {
-        key: "adr-dashboard",
-        title: "ADR 50 SR Pro",
-        subtitle: "pts",
-        rows: [
-          { label: "ADR Period", value: String(adrPeriod) },
-          { label: "ADR Value", value: `${formatUnits(adrUnits)} pts` },
-          { label: "Today Range", value: `${formatUnits(rangeUnits)} pts` },
-          {
-            label: "ADR Completion",
-            value: `${adrCompletion.toFixed(0)}%`,
-            valueColor: completionCol,
-          },
-          {
-            label: "To H50",
-            value: showDistance ? `${formatUnits(distHigh)} pts` : "-",
-            valueColor: colHigh,
-          },
-          {
-            label: "To L50",
-            value: showDistance ? `${formatUnits(distLow)} pts` : "-",
-            valueColor: colLow,
-          },
-          {
-            label: showAdrDate ? "ADR Date" : "",
-            value: showAdrDate && lastCompletedDay ? lastCompletedDay.key : "",
-          },
-        ],
+        key: `${tableCall.variable}_dashboard`,
+        title,
+        subtitle: cells.get(0)?.get(1)?.text,
+        rows,
       };
     }
-  });
+  }
+
+  if (series.length === 0 && labels.length === 0 && !dashboard) return null;
 
   return {
     id: indicatorId,
@@ -1753,11 +2195,15 @@ function sourceLines(cleaned: string): PineSourceLine[] {
 }
 
 function assignmentMatch(text: string): RegExpMatchArray | null {
-  return text.match(/^(?:(?:float|int|bool|color|string)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
+  return text.match(/^(?:(?:var\s+)?(?:float|int|bool|color|string|line|label|box|table)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$/);
 }
 
 function isDeclarationExpression(expression: string): boolean {
-  return /^(plot|hline|fill|alertcondition)\s*\(/.test(expression.trim());
+  return /^(plot|hline|fill|alertcondition|line\.new|box\.new|label\.new|table\.new|line\.set_|box\.set_|label\.set_|table\.cell)\s*\(/.test(expression.trim());
+}
+
+function functionDefinitionMatch(text: string): RegExpMatchArray | null {
+  return text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(?:(?:float|int|bool|color|string)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*=>\s*(.+)$/);
 }
 
 function parsePineIfExpression(
@@ -1872,6 +2318,7 @@ function evaluateSelfReferentialAssignment(
           scalarValueAt(value, index, context.candles.length),
         ]),
       ),
+      functions: context.functions,
     };
     recursiveContext.variables.set(name, scalarValueAt({ kind: "series", values }, index, context.candles.length));
     for (const offset of offsets) {
@@ -1903,6 +2350,19 @@ function scalarValueAt(value: PineValue, index: number, length: number): PineVal
   return value;
 }
 
+function scalarContextAt(context: EvalContext, index: number): EvalContext {
+  return {
+    candles: context.candles[index] ? [context.candles[index]] : [],
+    variables: new Map(
+      [...context.variables.entries()].map(([key, value]) => [
+        key,
+        scalarValueAt(value, index, context.candles.length),
+      ]),
+    ),
+    functions: context.functions,
+  };
+}
+
 function readAssignments(cleaned: string, context: EvalContext, errors: string[]) {
   const lines = sourceLines(cleaned);
   for (let index = 0; index < lines.length; index++) {
@@ -1910,6 +2370,15 @@ function readAssignments(cleaned: string, context: EvalContext, errors: string[]
     if (!line) continue;
     if (/^\/\/?@version/.test(line)) continue;
     if (/^(indicator|study|strategy|plot|hline|fill|alertcondition)\s*\(/.test(line)) continue;
+
+    const functionMatch = functionDefinitionMatch(line);
+    if (functionMatch) {
+      context.functions.set(functionMatch[1], {
+        param: functionMatch[2],
+        expression: functionMatch[3].trim(),
+      });
+      continue;
+    }
 
     const match = assignmentMatch(line);
     if (!match) continue;
@@ -1924,8 +2393,10 @@ function readAssignments(cleaned: string, context: EvalContext, errors: string[]
       }
       context.variables.set(
         match[1],
+        evaluateInputExpression(expression, context) ??
         evaluateRecursiveAssignment(match[1], expression, context) ??
           evaluateSelfReferentialAssignment(match[1], expression, context) ??
+          evaluateRequestSecurityExpression(expression, context) ??
           evaluateExpression(expression, context),
       );
     } catch (error) {
@@ -1942,18 +2413,10 @@ export function compilePineScript(
   const cleaned = normalizedSource(sourceCode);
   const meta = extractPineScriptMeta(cleaned);
   const errors: string[] = [];
-  const context: EvalContext = { candles, variables: new Map() };
-  const adrObjectResult = compileAdrObjectScript(cleaned, candles, indicatorId);
-
-  if (adrObjectResult) {
-    return {
-      meta,
-      result: adrObjectResult,
-      errors,
-    };
-  }
+  const context: EvalContext = { candles, variables: new Map(), functions: new Map() };
 
   readAssignments(cleaned, context, errors);
+  const objectResult = compilePineObjectRuntime(cleaned, candles, indicatorId, context, errors);
 
   const hlines = readHlines(cleaned, context, errors);
   const fillSeries = readFills(cleaned, context, hlines, candles, errors);
@@ -2020,15 +2483,30 @@ export function compilePineScript(
     }
   });
 
-  const series = [...fillSeries, ...hlineSeries, ...plotSeries];
+  const series = [
+    ...(objectResult?.series ?? []),
+    ...fillSeries,
+    ...hlineSeries,
+    ...plotSeries,
+  ];
 
-  if (series.length === 0 && errors.length === 0) {
+  if (
+    series.length === 0 &&
+    !(objectResult?.labels?.length) &&
+    !objectResult?.dashboard &&
+    errors.length === 0
+  ) {
     errors.push("No plot() calls found");
   }
 
   return {
     meta,
-    result: { id: indicatorId, series },
+    result: {
+      id: indicatorId,
+      series,
+      labels: objectResult?.labels,
+      dashboard: objectResult?.dashboard,
+    },
     errors,
   };
 }

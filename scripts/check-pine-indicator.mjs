@@ -156,14 +156,21 @@ const checks = [
       source.indicatorMenu.includes("permanently delete your"),
   },
   {
-    name: "Pine compiler supports ADR 50 object-style overlay rendering",
+    name: "Pine compiler supports generic Pine object-style overlay rendering",
     ok:
-      source.pineScript.includes("compileAdrObjectScript") &&
+      source.pineScript.includes("compilePineObjectRuntime") &&
+      source.pineScript.includes("evaluateRequestSecurityExpression") &&
+      source.pineScript.includes("evaluateInputExpression") &&
+      source.pineScript.includes("objectCreationCalls") &&
       source.pineScript.includes("request.security") &&
       source.pineScript.includes("line.new") &&
+      source.pineScript.includes("box.new") &&
+      source.pineScript.includes("label.new") &&
       source.pineScript.includes("table.new") &&
+      source.pineScript.includes("table.cell") &&
       source.pineScript.includes("aggregateDailyCandles") &&
-      source.pineScript.includes("ADR_RIGHT_EXTENSION_BARS") &&
+      source.pineScript.includes("OBJECT_RIGHT_EXTENSION_BARS") &&
+      !source.pineScript.includes("compileAdrObjectScript") &&
       source.priceChart.includes("IndicatorOverlay") &&
       source.priceChart.includes("indicatorDashboards") &&
       source.priceChart.includes("priceToCoordinate(label.price)") &&
