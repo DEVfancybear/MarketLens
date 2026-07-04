@@ -1,8 +1,21 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Chart time navigation toolbar)_
+_Last updated: 2026-07-04 (Shared draggable dialogs)_
 
 ## Completed this session (2026-07-04)
+
+### Shared draggable dialogs
+- Added `useDraggableDialog` as the common drag/viewport-clamp helper for
+  TradingView-style movable modal dialogs.
+- Applied header/title/tab-strip dragging to indicator settings, drawing object
+  settings, Long/Short Position settings, indicator library, delete-script
+  confirm, chart `Go to`, save drawing template, alert edit, and live-order
+  confirm dialogs.
+- The helper ignores pointer starts inside buttons, inputs, textareas, selects,
+  links, role-button controls, and `[data-dialog-no-drag]` zones, so form
+  controls remain usable while the dialog shell is movable.
+- Added `docs/DRAGGABLE_DIALOG_ARCHITECTURE.md`, `tests/ui/`, and
+  `npm run test:ui` coverage for viewport clamping behavior.
 
 ### Chart time navigation toolbar
 - Researched TradingView's lower time strip reference from the user screenshots

@@ -16,6 +16,7 @@ import {
   symbolAtom,
   updateDrawingAtom,
 } from "@/store/chartStore";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import {
   POSITION_STATS,
   type Drawing,
@@ -425,6 +426,8 @@ export function PositionSettingsDialog() {
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const [tab, setTab] = useState<Tab>("inputs");
   const [pop, setPop] = useState<string | null>(null);
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog();
 
   const drawing = drawings.find((d) => d.id === editingId) ?? null;
   const isPosition = drawing?.tool === "long" || drawing?.tool === "short";
@@ -523,7 +526,6 @@ export function PositionSettingsDialog() {
       {label}
     </button>
   );
-
   return createPortal(
     <div
       data-chart-ui
@@ -533,9 +535,19 @@ export function PositionSettingsDialog() {
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70">
+      <div
+        ref={dialogRef}
+        style={dialogStyle}
+        className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pb-2 pt-4">
+        <div
+          {...dragHandleProps}
+          className={cn(
+            "flex items-center justify-between px-5 pb-2 pt-4",
+            dragHandleClassName,
+          )}
+        >
           <div className="flex items-center gap-2">
             <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
               {isLong ? "Long position" : "Short position"}

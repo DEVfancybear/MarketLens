@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, X } from "lucide-react";
 import type { DrawingTemplate } from "@/types";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 
 interface SaveDrawingTemplateDialogProps {
@@ -21,6 +22,8 @@ export function SaveDrawingTemplateDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog();
 
   const templateNames = useMemo(
     () =>
@@ -74,6 +77,8 @@ export function SaveDrawingTemplateDialog({
       onContextMenu={(event) => event.preventDefault()}
     >
       <div
+        ref={dialogRef}
+        style={dialogStyle}
         className="relative w-[480px] max-w-[calc(100vw-32px)] rounded-md bg-[#1f1f1f] px-10 pb-9 pt-10 text-ink shadow-2xl shadow-black/60"
         onPointerDown={(event) => event.stopPropagation()}
       >
@@ -87,7 +92,13 @@ export function SaveDrawingTemplateDialog({
           <X size={22} strokeWidth={1.7} />
         </button>
 
-        <h2 className="mb-5 text-xl font-semibold text-[#f0f3fa]">
+        <h2
+          {...dragHandleProps}
+          className={cn(
+            "mb-5 text-xl font-semibold text-[#f0f3fa]",
+            dragHandleClassName,
+          )}
+        >
           Save drawing template
         </h2>
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
 import { useSetAtom } from "jotai";
 import type { Candle } from "@/types";
 import { setCrosshairAtom } from "@/store/chartStore";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import {
   TIME_RANGE_SHORTCUTS,
@@ -235,23 +236,38 @@ function GoToDialog({
     setMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
   };
 
+  const initialPosition = useCallback(
+    () =>
+      goToDialogPosition(
+        anchor ?? {
+          left: 16,
+          top: window.innerHeight - 40,
+          right: 48,
+          bottom: window.innerHeight - 12,
+        },
+        { width: window.innerWidth, height: window.innerHeight },
+        GO_TO_DIALOG_SIZE,
+      ),
+    [anchor],
+  );
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog({ initialPosition });
+
   const dialog = (
     <div data-chart-ui className="fixed inset-0 z-[90]" onMouseDown={onClose}>
       <div
+        ref={dialogRef}
         className="fixed w-[274px] rounded-md border border-[#2f333d] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
-        style={goToDialogPosition(
-          anchor ?? {
-            left: 16,
-            top: window.innerHeight - 40,
-            right: 48,
-            bottom: window.innerHeight - 12,
-          },
-          { width: window.innerWidth, height: window.innerHeight },
-          GO_TO_DIALOG_SIZE,
-        )}
+        style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex h-12 items-center justify-between px-5">
+        <div
+          {...dragHandleProps}
+          className={cn(
+            "flex h-12 items-center justify-between px-5",
+            dragHandleClassName,
+          )}
+        >
           <div className="text-[20px] font-semibold text-[#d1d4dc]">Go to</div>
           <button
             type="button"

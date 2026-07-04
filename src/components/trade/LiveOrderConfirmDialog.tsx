@@ -1,5 +1,6 @@
 "use client";
 import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { fmtPrice } from "@/utils/format";
 import { X } from "lucide-react";
 
@@ -18,6 +19,9 @@ export function LiveOrderConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog();
+
   if (!payload) return null;
 
   const isOrder = payload.kind === "order";
@@ -25,8 +29,15 @@ export function LiveOrderConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/55">
-      <div className="w-[360px] max-w-[calc(100vw-24px)] rounded-md border border-terminal-border bg-terminal-panel shadow-2xl">
-        <div className="flex h-10 items-center justify-between border-b border-terminal-border px-3">
+      <div
+        ref={dialogRef}
+        style={dialogStyle}
+        className="w-[360px] max-w-[calc(100vw-24px)] rounded-md border border-terminal-border bg-terminal-panel shadow-2xl"
+      >
+        <div
+          {...dragHandleProps}
+          className={`flex h-10 items-center justify-between border-b border-terminal-border px-3 ${dragHandleClassName}`}
+        >
           <div className="text-sm font-semibold text-ink">{title}</div>
           <button
             onClick={onCancel}

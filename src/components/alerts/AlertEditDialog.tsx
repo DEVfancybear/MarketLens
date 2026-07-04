@@ -15,6 +15,7 @@ import {
   type AlertCondition,
 } from '@/store/alertStore';
 import { getMarketSymbol } from '@/services/market-data/symbols';
+import { useDraggableDialog } from '@/hooks/useDraggableDialog';
 import { cn } from '@/utils/cn';
 
 const CONDITIONS: AlertCondition[] = ['above', 'below', 'crossUp', 'crossDown'];
@@ -51,6 +52,8 @@ export function AlertEditDialog() {
   const [push, setPush] = useState(false);
   const [telegram, setTelegram] = useState(false);
   const [discord, setDiscord] = useState(false);
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog();
 
   // Load the alert into the form whenever the edit target changes.
   useEffect(() => {
@@ -101,12 +104,20 @@ export function AlertEditDialog() {
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4" onClick={close}>
       <div
+        ref={dialogRef}
+        style={dialogStyle}
         className="w-full max-w-[360px] rounded-lg border border-terminal-border bg-terminal-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Edit alert"
       >
-        <div className="flex h-10 items-center justify-between border-b border-terminal-border px-3">
+        <div
+          {...dragHandleProps}
+          className={cn(
+            "flex h-10 items-center justify-between border-b border-terminal-border px-3",
+            dragHandleClassName,
+          )}
+        >
           <span className="text-sm font-semibold text-ink">Edit alert · {alert.symbol}</span>
           <button onClick={close} className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink" aria-label="Close">
             <X size={16} />

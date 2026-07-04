@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Shared draggable dialog behavior (2026-07-04)
+- Added `useDraggableDialog` as the common TradingView-style drag contract for
+  modal/settings dialogs. Dialogs can now be moved by dragging their
+  header/title/tab strip while form controls remain editable.
+- Applied the shared behavior to indicator settings, drawing object settings,
+  Long/Short Position settings, indicator library, delete-script confirmation,
+  chart `Go to`, save-template, alert edit, and live-order confirmation dialogs.
+- Added viewport clamping so moved dialogs remain reachable after drag or
+  browser resize.
+- Added `docs/DRAGGABLE_DIALOG_ARCHITECTURE.md` and `npm run test:ui` coverage
+  for draggable dialog positioning math.
+
 ### Fixed - Go to time navigation placement (2026-07-04)
 - Anchored the chart `Go to` dialog to the bottom toolbar calendar button
   instead of the viewport's right edge, preventing it from opening over the

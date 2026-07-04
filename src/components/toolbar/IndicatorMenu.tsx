@@ -27,6 +27,7 @@ import {
 } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
 import type { BuiltInIndicatorType, CustomIndicatorScript } from "@/types";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 
 const BUILT_INS: { type: BuiltInIndicatorType; name: string }[] = [
@@ -111,6 +112,8 @@ export function IndicatorMenu() {
   const [deleteTarget, setDeleteTarget] =
     useState<CustomIndicatorScript | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const indicatorDialogDrag = useDraggableDialog();
+  const deleteDialogDrag = useDraggableDialog();
 
   const indicators = useAtomValue(indicatorsAtom);
   const scripts = useAtomValue(pineScriptsAtom);
@@ -274,12 +277,20 @@ export function IndicatorMenu() {
             onContextMenu={(event) => event.preventDefault()}
           >
             <div
+              ref={indicatorDialogDrag.dialogRef}
+              style={indicatorDialogDrag.dialogStyle}
               role="dialog"
               aria-modal="true"
               aria-label="Indicators, metrics, and strategies"
               className="mx-auto flex h-[360px] w-[min(calc(100vw-24px),840px)] flex-col overflow-hidden rounded-lg border border-terminal-border bg-[#1f1f1f] shadow-2xl shadow-black/60"
             >
-              <header className="flex h-14 shrink-0 items-center justify-between px-5">
+              <header
+                {...indicatorDialogDrag.dragHandleProps}
+                className={cn(
+                  "flex h-14 shrink-0 items-center justify-between px-5",
+                  indicatorDialogDrag.dragHandleClassName,
+                )}
+              >
                 <h2 className="text-[21px] font-semibold leading-none text-ink">
                   Indicators, metrics, and strategies
                 </h2>
@@ -540,12 +551,20 @@ export function IndicatorMenu() {
                 }}
               >
                 <div
+                  ref={deleteDialogDrag.dialogRef}
+                  style={deleteDialogDrag.dialogStyle}
                   role="alertdialog"
                   aria-modal="true"
                   aria-label="Delete this script?"
                   className="w-[440px] rounded-md border border-[#242424] bg-[#171717] px-8 pb-6 pt-5 shadow-2xl shadow-black/70"
                 >
-                  <div className="flex items-start justify-between gap-4">
+                  <div
+                    {...deleteDialogDrag.dragHandleProps}
+                    className={cn(
+                      "flex items-start justify-between gap-4",
+                      deleteDialogDrag.dragHandleClassName,
+                    )}
+                  >
                     <h3 className="pt-6 text-[20px] font-semibold leading-none text-ink">
                       Delete this script?
                     </h3>

@@ -29,6 +29,7 @@
     "test:position": "tsc -p tsconfig.test.json && node --test .test-build/tests/position/*.test.js",
     "test:drawing": "tsc -p tsconfig.test.json && node --test .test-build/tests/drawing/*.test.js",
     "test:chart": "tsc -p tsconfig.test.json && node --test .test-build/tests/chart/*.test.js",
+    "test:ui": "tsc -p tsconfig.test.json && node --test .test-build/tests/ui/*.test.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "type-check": "tsc --noEmit"

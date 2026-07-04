@@ -38,6 +38,7 @@ import {
   type FibTextMode,
   type LineStyle,
 } from "@/types";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import { NumberField, Row, SectionTitle } from "./PositionSettingsDialog";
 import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
@@ -387,6 +388,8 @@ export function ObjectSettingsDialog() {
   const cancelRef = useRef<() => void>(() => {});
   const templateDialogOpenRef = useRef(false);
   templateDialogOpenRef.current = templateDialogOpen;
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog();
 
   const drawing = drawings.find((d) => d.id === editingId) ?? null;
   const isPosition = drawing?.tool === "long" || drawing?.tool === "short";
@@ -517,13 +520,21 @@ export function ObjectSettingsDialog() {
           onContextMenu={(e) => e.preventDefault()}
         >
           <div
+            ref={dialogRef}
+            style={dialogStyle}
             className="flex max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),380px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
             onClick={() => {
               setPop(null);
               setTplOpen(false);
             }}
           >
-            <div className="flex items-center justify-between px-5 pb-2 pt-4">
+            <div
+              {...dragHandleProps}
+              className={cn(
+                "flex items-center justify-between px-5 pb-2 pt-4",
+                dragHandleClassName,
+              )}
+            >
               <div className="flex items-center gap-2">
                 <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
                   Text
@@ -846,6 +857,8 @@ export function ObjectSettingsDialog() {
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
+        ref={dialogRef}
+        style={dialogStyle}
         className={cn(
           isFib
             ? "flex max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),456px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
@@ -857,7 +870,13 @@ export function ObjectSettingsDialog() {
         }}
       >
         {isFib && (
-          <div className="flex items-center justify-between px-5 pb-2 pt-4">
+          <div
+            {...dragHandleProps}
+            className={cn(
+              "flex items-center justify-between px-5 pb-2 pt-4",
+              dragHandleClassName,
+            )}
+          >
             <div className="flex items-center gap-2">
               <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
                 {fibTitle(drawing.tool)}
@@ -874,10 +893,12 @@ export function ObjectSettingsDialog() {
         )}
         {/* Tabs */}
         <div
+          {...(!isFib ? dragHandleProps : {})}
           className={cn(
             isFib
               ? "mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3"
               : "mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3",
+            !isFib && dragHandleClassName,
           )}
         >
           {tabs.map(tabBtn)}

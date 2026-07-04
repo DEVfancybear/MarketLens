@@ -44,6 +44,7 @@ import {
   STYLE_OUTPUT_PRECISION_KEY,
   STYLE_VALUES_IN_STATUS_LINE_KEY,
 } from "@/services/indicatorStyle";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 
 type SettingsTab = "inputs" | "style" | "visibility";
@@ -317,6 +318,8 @@ export function IndicatorSettingsDialog() {
   const indicators = useAtomValue(indicatorsAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const updateIndicator = useSetAtom(updateIndicatorAtom);
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog();
 
   const indicator = indicators.find((item) => item.id === editingId);
   const pineInputs = useMemo(
@@ -505,7 +508,6 @@ export function IndicatorSettingsDialog() {
     });
     close();
   };
-
   return createPortal(
     <div
       className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/35"
@@ -515,12 +517,20 @@ export function IndicatorSettingsDialog() {
       onContextMenu={(event) => event.preventDefault()}
     >
       <div
+        ref={dialogRef}
+        style={dialogStyle}
         role="dialog"
         aria-modal="true"
         aria-label={`${title} settings`}
         className="flex max-h-[min(760px,calc(100vh-32px))] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] text-[#f0f0f0] shadow-2xl shadow-black/70"
       >
-        <header className="flex h-16 shrink-0 items-center justify-between px-5">
+        <header
+          {...dragHandleProps}
+          className={cn(
+            "flex h-16 shrink-0 items-center justify-between px-5",
+            dragHandleClassName,
+          )}
+        >
           <h2 className="min-w-0 truncate text-[20px] font-semibold leading-none">
             {title}
           </h2>
