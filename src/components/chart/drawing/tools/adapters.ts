@@ -44,5 +44,6 @@ import "./plugins/PositionTool";
 
 // Milestone 4 Phase 4 — freehand + annotations
 import "./plugins/BrushTool";
+import "./plugins/ArrowTools";
 import "./plugins/TextTool";
 import "./plugins/EmojiTool";

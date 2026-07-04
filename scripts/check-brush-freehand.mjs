@@ -23,9 +23,17 @@ const checks = [
   {
     name: "Brush opts into continuous pointer-drag creation",
     ok:
-      brushTool.includes('tool: "brush"') &&
+      brushTool.includes('registerTool(makeBrushTool("brush"))') &&
       brushTool.includes("continuous: true") &&
       brushTool.includes("quadraticCurveTo"),
+  },
+  {
+    name: "Highlighter shares Brush continuous workflow with translucent stroke",
+    ok:
+      brushTool.includes('registerTool(makeBrushTool("highlighter"))') &&
+      brushTool.includes('tool === "highlighter"') &&
+      brushTool.includes("g.globalAlpha = d.opacity ?? 0.35") &&
+      brushTool.includes("Math.max(d.lineWidth || 8, 8)"),
   },
   {
     name: "Brush selected state renders endpoint handles",

@@ -38,7 +38,15 @@ export type DrawingTool =
   | "long"
   | "short"
   // freehand
-  | "brush";
+  | "brush"
+  | "highlighter"
+  // arrows / markers
+  | "arrowMarker"
+  | "arrow"
+  | "arrowMarkUp"
+  | "arrowMarkDown"
+  | "arrowMarkLeft"
+  | "arrowMarkRight";
 
 /** Tools that actually persist a drawing object (vs. interaction modes). */
 export const DRAWING_TOOLS: DrawingTool[] = [
@@ -70,6 +78,13 @@ export const DRAWING_TOOLS: DrawingTool[] = [
   "long",
   "short",
   "brush",
+  "highlighter",
+  "arrowMarker",
+  "arrow",
+  "arrowMarkUp",
+  "arrowMarkDown",
+  "arrowMarkLeft",
+  "arrowMarkRight",
 ];
 
 export type LineStyle = "solid" | "dashed" | "dotted";

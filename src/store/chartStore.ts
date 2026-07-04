@@ -186,6 +186,10 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
       );
     }
   }
+  if (drawing.tool === "highlighter") {
+    drawing.lineWidth = drawing.lineWidth || 8;
+    drawing.opacity = drawing.opacity ?? 0.35;
+  }
   const drawings = [..._get(drawingsAtom), drawing];
   set(drawingsAtom, drawings);
   // TradingView behaviour: after a drawing is placed, return to the cursor so

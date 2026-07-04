@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Brush and arrow drawing tools (2026-07-04)
+- Added TradingView-style Brush flyout coverage for `Highlighter`, `Arrow
+  marker`, `Arrow`, and Arrow Mark Up/Down/Left/Right.
+- Added shared arrow drawing plugins so the new toolbar entries render, hit-test,
+  move, select, and persist through the common drawing engine.
+
 ### Fixed - Drawing settings viewport fit (2026-07-04)
 - Fixed Fib retracement settings overflowing the viewport by making object
   settings dialogs use viewport-aware max height, responsive width, and a

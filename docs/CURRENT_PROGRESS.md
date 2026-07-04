@@ -1,8 +1,21 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Responsive architecture plan)_
+_Last updated: 2026-07-04 (Brush and arrow drawing tools)_
 
 ## Completed this session (2026-07-04)
+
+### Brush and arrow drawing tools
+- Researched TradingView's Highlighter and Arrow Marker behavior plus similar
+  chart tool menus: Highlighter follows the Brush drag workflow with
+  transparency, while Arrow Marker is a two-point pointer whose second point
+  determines direction.
+- Added `highlighter`, `arrowMarker`, `arrow`, `arrowMarkUp`,
+  `arrowMarkDown`, `arrowMarkLeft`, and `arrowMarkRight` as first-class
+  `DrawingTool` values.
+- Registered common drawing plugins for the new tools so they render, hit-test,
+  select, move, and persist through the existing adapter-based drawing engine.
+- Updated the Brushes flyout to include a TradingView-style `BRUSHES` section
+  and `ARROWS` section.
 
 ### Fib settings viewport fix
 - Fixed `ObjectSettingsDialog` shell sizing so Fib retracement settings no
