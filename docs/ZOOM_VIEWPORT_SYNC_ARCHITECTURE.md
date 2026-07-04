@@ -124,6 +124,19 @@ repaint or recompute when `version` changes.
 Do not add one-off wheel/pointer subscriptions inside individual overlays if
 the interaction changes chart projection. Add it to `chartViewportEvents.ts`.
 
+Desktop pan behavior:
+
+- `handleScroll.pressedMouseMove` must stay enabled so users can drag the chart
+  horizontally with the mouse.
+- `kineticScroll.mouse` must stay disabled. TradingView-style desktop pan stops
+  when the mouse is released; mouse inertia makes the chart coast too far and
+  feels like the chart is "trôi tuột".
+- `kineticScroll.touch` can stay enabled for mobile/tablet gestures, where
+  kinetic scrolling is expected.
+- Do not re-apply default `barSpacing` / `rightOffset` during theme/grid-only
+  option updates. Apply those defaults on chart creation and timeframe changes,
+  otherwise the viewport can shift while the user is interacting.
+
 ## 7. Drawing Render Loop
 
 Drawings are painted by `createRenderLoop()` in `CanvasRenderer.ts`.
@@ -294,4 +307,3 @@ npm run check:replay-logic
   size subscriptions, coordinate conversion, and cleanup methods.
 - Lightweight Charts 4.2 `TimeScaleOptions`: right offset, bar spacing,
   min bar spacing, edge behavior, right-bar behavior, and new-bar shifting.
-

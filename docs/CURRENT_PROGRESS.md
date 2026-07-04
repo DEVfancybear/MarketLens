@@ -1,8 +1,19 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Line tools parity)_
+_Last updated: 2026-07-04 (Chart drag inertia fix)_
 
 ## Completed this session (2026-07-04)
+
+### Chart drag inertia fix
+- Referenced official Lightweight Charts interaction docs: desktop pan is
+  controlled by `handleScroll.pressedMouseMove`, while kinetic scrolling is a
+  separate option.
+- Disabled `kineticScroll.mouse` for the main chart so dragging with a mouse no
+  longer coasts after release. `kineticScroll.touch` remains enabled for
+  touch/mobile behavior.
+- Split default viewport application so `barSpacing` and `rightOffset` are not
+  re-applied during theme/grid updates; they are only refreshed when timeframe
+  changes.
 
 ### Line tools parity
 - Updated the Lines flyout to match the TradingView reference screenshot:

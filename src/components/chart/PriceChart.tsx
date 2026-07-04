@@ -48,6 +48,11 @@ const RIGHT_OFFSET_BARS = 8;
 const MIN_BAR_SPACING = 1.5;
 const getDefaultBarSpacing = (timeframe: Timeframe) =>
   BAR_SPACING[timeframe] ?? 8;
+const timeScaleDefaults = (timeframe: Timeframe) => ({
+  rightOffset: RIGHT_OFFSET_BARS,
+  barSpacing: getDefaultBarSpacing(timeframe),
+  minBarSpacing: MIN_BAR_SPACING,
+});
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -130,6 +135,7 @@ export function PriceChart({
   const fittedRef = useRef(false);
   const prevCandlesRef = useRef<Candle[]>([]);
   const prevThemeRef = useRef<string>("");
+  const appliedTimeframeRef = useRef<Timeframe | null>(null);
   const bumpRafRef = useRef<number | null>(null);
   const prevMarkerPriceRef = useRef<number | null>(null);
   const markerUpRef = useRef(true);
@@ -173,11 +179,9 @@ export function PriceChart({
     if (!containerRef.current) return;
     const c = chartColors(theme);
     const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
-    setMainChartDefaultViewport({
-      rightOffset: RIGHT_OFFSET_BARS,
-      barSpacing: getDefaultBarSpacing(timeframe),
-      minBarSpacing: MIN_BAR_SPACING,
-    });
+    const defaultViewport = timeScaleDefaults(timeframe);
+    setMainChartDefaultViewport(defaultViewport);
+    appliedTimeframeRef.current = timeframe;
     const chart = createChart(containerRef.current, {
       autoSize: true,
       layout: {
@@ -204,9 +208,7 @@ export function PriceChart({
         borderVisible: true,
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: RIGHT_OFFSET_BARS,
-        barSpacing: getDefaultBarSpacing(timeframe),
-        minBarSpacing: MIN_BAR_SPACING,
+        ...defaultViewport,
         fixLeftEdge: false,
         fixRightEdge: false,
         lockVisibleTimeRangeOnResize: true,
@@ -247,7 +249,9 @@ export function PriceChart({
         axisDoubleClickReset: true,
       },
       kineticScroll: {
-        mouse: true,
+        // TradingView desktop pan stops when the mouse is released. Keep touch
+        // inertia for mobile, but do not let a mouse drag coast across candles.
+        mouse: false,
         touch: true,
       },
     });
@@ -338,11 +342,12 @@ export function PriceChart({
     if (!chart) return;
     const c = chartColors(theme);
     const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
-    setMainChartDefaultViewport({
-      rightOffset: RIGHT_OFFSET_BARS,
-      barSpacing: getDefaultBarSpacing(timeframe),
-      minBarSpacing: MIN_BAR_SPACING,
-    });
+    const timeframeChanged = appliedTimeframeRef.current !== timeframe;
+    const defaultViewport = timeScaleDefaults(timeframe);
+    if (timeframeChanged) {
+      setMainChartDefaultViewport(defaultViewport);
+      appliedTimeframeRef.current = timeframe;
+    }
     chart.applyOptions({
       layout: {
         background: { type: ColorType.Solid, color: c.background },
@@ -355,9 +360,7 @@ export function PriceChart({
       rightPriceScale: { borderColor: c.border },
       timeScale: {
         borderColor: c.border,
-        rightOffset: RIGHT_OFFSET_BARS,
-        barSpacing: getDefaultBarSpacing(timeframe),
-        minBarSpacing: MIN_BAR_SPACING,
+        ...(timeframeChanged ? defaultViewport : {}),
         rightBarStaysOnScroll: true,
         shiftVisibleRangeOnNewBar: true,
         allowShiftVisibleRangeOnWhitespaceReplacement: true,

@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart drag coasting too far (2026-07-04)
+- Disabled mouse kinetic scrolling in the main chart so desktop drag-to-pan
+  stops when the mouse is released, matching TradingView-style chart behavior.
+  Touch kinetic scrolling remains enabled for mobile/tablet gestures.
+- Stopped re-applying default `barSpacing` / `rightOffset` on theme/grid option
+  updates; those viewport defaults are now re-applied only when timeframe
+  changes.
+
 ### Changed - Line tools TradingView parity (2026-07-04)
 - Updated the Lines flyout to the 9-tool TradingView reference set:
   Trendline, Ray, Info line, Extended line, Trend angle, Horizontal line,
