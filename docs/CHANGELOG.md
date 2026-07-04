@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Shape tool behavior parity (2026-07-04)
+- Added shared `shapeGeometry` helpers for shape plugins and aligned hit-testing
+  across Path, Polyline, Triangle, Ellipse, Curve, Arc, and Double Curve.
+- Fixed Ellipse selection using the rectangular bounding box, Triangle missing
+  closed-edge/interior hits, Curve body selection, and curve-tool viewport
+  bounds for Arc/Double Curve.
+- Added `tests/drawing` plus `npm run test:drawing` coverage for the shared
+  shape-geometry contract.
+
+### Changed - TradingView-style combined shapes flyout (2026-07-04)
+- Merged Brush, Highlighter, Arrows, and Shapes into one geometry flyout with
+  `BRUSHES`, `ARROWS`, and `SHAPES` sections, matching TradingView's drawing
+  toolbar structure.
+- Added viewport-aware scrolling for long drawing-tool flyouts.
+
 ### Added - Brush and arrow drawing tools (2026-07-04)
 - Added TradingView-style Brush flyout coverage for `Highlighter`, `Arrow
   marker`, `Arrow`, and Arrow Mark Up/Down/Left/Right.

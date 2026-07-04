@@ -1,14 +1,15 @@
 /**
- * EllipseTool — bounding-box ellipse.
+ * EllipseTool - bounding-box ellipse.
  */
 import type { Drawing } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
-  HANDLE_RADIUS, TOL, pointDist, distToRect,
+  HANDLE_RADIUS, pointDist,
 } from "../ToolRegistry";
 import { handle, renderShapeText } from "./shared";
+import { ellipseBodyHit } from "./shapeGeometry";
 
 const plugin: DrawingToolPlugin = {
   tool: "ellipse",
@@ -40,8 +41,9 @@ const plugin: DrawingToolPlugin = {
     if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
     if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p1", distance: pointDist(px, py, x1, y1) });
     if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p2", distance: pointDist(px, py, x2, y2) });
-    const bodyDist = distToRect(px, py, x1, y1, x2, y2);
-    if (bodyDist < TOL) results.push({ drawing: d, target: "body", distance: bodyDist });
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
+    results.push(...ellipseBodyHit(d, px, py, cx, cy, rx, ry));
     return results;
   },
   movePoints: defaultMovePoints,

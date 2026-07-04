@@ -12,6 +12,10 @@ const curveTool = fs.readFileSync(
   "src/components/chart/drawing/tools/plugins/CurveTool.ts",
   "utf8",
 );
+const shapeGeometry = fs.readFileSync(
+  "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",
+  "utf8",
+);
 const hitTestEngine = fs.readFileSync(
   "src/components/chart/drawing/hittest/HitTestEngine.ts",
   "utf8",
@@ -34,18 +38,19 @@ const checks = [
   {
     name: "Path vertices resolve by explicit anchor index",
     ok:
-      pathTool.includes("function vertexTarget") &&
-      pathTool.includes("anchorIndex: i") &&
-      pathTool.includes("getAnchors") &&
+      pathTool.includes("anchorHits(") &&
+      pathTool.includes("anchorsFromProjected(") &&
+      shapeGeometry.includes("export function anchorHits") &&
+      shapeGeometry.includes("anchorIndex: i") &&
       hitTestEngine.includes("let anchorIdx = c.anchorIndex ?? -1"),
   },
   {
     name: "Sibling freeform tools use the same vertex-index contract",
     ok:
-      polylineTool.includes("anchorIndex: i") &&
-      polylineTool.includes("getAnchors") &&
-      curveTool.includes("anchorIndex: i") &&
-      curveTool.includes("getAnchors"),
+      polylineTool.includes("anchorHits(") &&
+      polylineTool.includes("anchorsFromProjected(") &&
+      curveTool.includes("anchorHits(") &&
+      curveTool.includes("anchorsFromProjected("),
   },
   {
     name: "Escape finishes a freeform drawing instead of always cancelling it",

@@ -1,8 +1,30 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Brush and arrow drawing tools)_
+_Last updated: 2026-07-04 (Shape tool behavior parity)_
 
 ## Completed this session (2026-07-04)
+
+### Shape tool behavior parity
+- Added `shapeGeometry.ts` as common geometry infrastructure for shape plugins:
+  projection, anchor hits, segment/body hits, polygon interiors, ellipse body
+  hits, curve sampling, and sampled bounds.
+- Updated Path, Polyline, Triangle, Ellipse, Curve, Arc, and Double Curve to use
+  shared geometry behavior instead of duplicated per-plugin math.
+- Fixed practical TradingView-parity gaps: Ellipse no longer selects from the
+  rectangular bounding box, Triangle includes its closed edge/interior, Curve can
+  be grabbed from the curve body, and Arc/Double Curve use sampled bounds for
+  viewport culling.
+- Added `tests/drawing/shapeGeometry.test.ts` and `npm run test:drawing` to
+  lock the common shape hit-test contract in a cloneable TypeScript test suite.
+
+### Combined geometry flyout parity
+- Updated `DrawingToolbar` so Brush, Highlighter, Arrow tools, and Shapes live
+  in one TradingView-style geometry flyout with `BRUSHES`, `ARROWS`, and
+  `SHAPES` sections.
+- Removed the separate Brushes group presentation. The underlying tools and
+  plugins remain first-class drawing engine adapters.
+- Added viewport-aware max height/scrolling for long drawing flyouts so the
+  combined menu does not overflow the screen.
 
 ### Brush and arrow drawing tools
 - Researched TradingView's Highlighter and Arrow Marker behavior plus similar

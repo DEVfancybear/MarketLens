@@ -131,41 +131,12 @@ const GROUPS: ToolGroup[] = [
       { tool: "channel", icon: <GitBranch size={14} />, label: "Channel" },
     ],
   },
-  // --- Shapes (matches TradingView "SHAPES" menu) ---
+  // --- Brushes / arrows / shapes (matches TradingView's combined geometry menu) ---
   {
     id: "shapes",
     icon: <Square size={18} />,
     label: "Rectangle",
     defaultTool: "rectangle",
-    tools: [
-      {
-        tool: "rectangle",
-        icon: <Square size={14} />,
-        label: "Rectangle",
-        hotkey: "Alt+Shift+R",
-        section: "SHAPES",
-      },
-      {
-        tool: "rotatedRect",
-        icon: <Square size={14} className="rotate-12" />,
-        label: "Rotated rectangle",
-      },
-      { tool: "path", icon: <Waypoints size={14} />, label: "Path" },
-      { tool: "circle", icon: <Circle size={14} />, label: "Circle" },
-      { tool: "ellipse", icon: <Circle size={14} />, label: "Ellipse" },
-      { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
-      { tool: "triangle", icon: <Triangle size={14} />, label: "Triangle" },
-      { tool: "arc", icon: <Spline size={14} />, label: "Arc" },
-      { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
-      { tool: "doubleCurve", icon: <PenLine size={14} />, label: "Double curve" },
-    ],
-  },
-  // --- Brushes ---
-  {
-    id: "brushes",
-    icon: <Paintbrush size={18} />,
-    label: "Brush",
-    defaultTool: "brush",
     tools: [
       {
         tool: "brush",
@@ -209,6 +180,26 @@ const GROUPS: ToolGroup[] = [
         icon: <ArrowRight size={14} />,
         label: "Arrow mark right",
       },
+      {
+        tool: "rectangle",
+        icon: <Square size={14} />,
+        label: "Rectangle",
+        hotkey: "Alt+Shift+R",
+        section: "SHAPES",
+      },
+      {
+        tool: "rotatedRect",
+        icon: <Square size={14} className="rotate-12" />,
+        label: "Rotated rectangle",
+      },
+      { tool: "path", icon: <Waypoints size={14} />, label: "Path" },
+      { tool: "circle", icon: <Circle size={14} />, label: "Circle" },
+      { tool: "ellipse", icon: <Circle size={14} />, label: "Ellipse" },
+      { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
+      { tool: "triangle", icon: <Triangle size={14} />, label: "Triangle" },
+      { tool: "arc", icon: <Spline size={14} />, label: "Arc" },
+      { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
+      { tool: "doubleCurve", icon: <PenLine size={14} />, label: "Double curve" },
     ],
   },
   // --- Fibonacci ---
@@ -283,7 +274,7 @@ function useLastUsed(): Record<string, DrawingTool> {
   const [lastUsed, setLastUsed] = useState<Record<string, DrawingTool>>({});
 
   // When activeTool changes, update the last-used record for its group.
-  // useEffect runs after render — no render-loop or cross-component warning.
+  // useEffect runs after render, avoiding render-loop or cross-component warnings.
   useEffect(() => {
     for (const g of GROUPS) {
       const inGroup =
@@ -294,7 +285,7 @@ function useLastUsed(): Record<string, DrawingTool> {
         break;
       }
     }
-    // We intentionally only depend on activeTool — the group lookup is
+    // We intentionally only depend on activeTool. The group lookup is
     // stable and lastUsed is a stale-closure-safe functional updater.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
@@ -304,7 +295,7 @@ function useLastUsed(): Record<string, DrawingTool> {
 
 const FAV_KEY = "tv:favTools";
 
-/** Favorite tools (persisted) — star toggle in the flyout, TradingView-style. */
+/** Favorite tools (persisted). Star toggle in the flyout, TradingView-style. */
 function useFavorites(): [Set<string>, (tool: string) => void] {
   const [fav, setFav] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -357,7 +348,7 @@ export function DrawingToolbar() {
 
   return (
     <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
-      {/* Favorites quick-access bar — starred tools, TradingView-style */}
+      {/* Favorites quick-access bar: starred tools, TradingView-style */}
       {favList.length > 0 && (
         <>
           {favList.map((tool) => {
@@ -366,7 +357,7 @@ export function DrawingToolbar() {
             return (
               <IconButton
                 key={`fav-${tool}`}
-                label={`${meta.label} (favorite — right-click to remove)`}
+                label={`${meta.label} (favorite - right-click to remove)`}
                 active={activeTool === tool}
                 onClick={() => {
                   setActiveTool(tool);
@@ -421,7 +412,7 @@ export function DrawingToolbar() {
               </IconButton>
             </div>
 
-            {/* Flyout menu — portal to body to escape overflow:hidden */}
+            {/* Flyout menu: portal to body to escape overflow:hidden */}
             {hasFlyout &&
               isOpen &&
               typeof document !== "undefined" &&
@@ -429,6 +420,11 @@ export function DrawingToolbar() {
                 const btn = btnRefs.current[group.id];
                 if (!btn) return null;
                 const rect = btn.getBoundingClientRect();
+                const top = Math.max(
+                  8,
+                  Math.min(rect.top, window.innerHeight - 248),
+                );
+                const maxHeight = Math.max(240, window.innerHeight - top - 8);
                 return createPortal(
                   <>
                     <div
@@ -442,8 +438,8 @@ export function DrawingToolbar() {
                     />
                     <div
                       data-chart-ui
-                      className="fixed z-50 w-44 rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
-                      style={{ left: rect.right + 4, top: rect.top }}
+                      className="fixed z-50 w-44 overflow-y-auto rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
+                      style={{ left: rect.right + 4, top, maxHeight }}
                     >
                       {group.tools.map((t, ti) => {
                         const showHeader =

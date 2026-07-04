@@ -1,29 +1,35 @@
 /**
- * CurveTool — renders and hit-tests a multi-point quadratic curve.
+ * CurveTool - renders and hit-tests a multi-point quadratic curve.
  */
-import type { Drawing, Point as Pt } from "@/types";
+import type { Drawing } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
-  HANDLE_RADIUS, TOL, pointDist,
 } from "../ToolRegistry";
 import { handle } from "./shared";
+import {
+  anchorHits,
+  anchorsFromProjected,
+  boundsFromPoints,
+  curveBodyHits,
+  projectPoints,
+  sampleQuadratic,
+  visiblePoints,
+  type XY,
+} from "./shapeGeometry";
 
-function project(
-  pt: Pt,
-  toX: (t: number) => number | null,
-  toY: (v: number) => number | null,
-) {
-  const x = toX(pt.time);
-  const y = toY(pt.price);
-  return x != null && y != null ? { x, y } : null;
-}
-
-function vertexTarget(index: number, lastIndex: number): HitResult["target"] {
-  if (index === 0) return "p1";
-  if (index === lastIndex) return "p2";
-  return "p0";
+function curveSamples(points: XY[]): XY[] {
+  if (points.length < 3) return points;
+  const out: XY[] = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const end = {
+      x: (points[i].x + points[i + 1].x) / 2,
+      y: (points[i].y + points[i + 1].y) / 2,
+    };
+    out.push(...sampleQuadratic(out[out.length - 1], points[i], end, 12).slice(1));
+  }
+  return out;
 }
 
 const plugin: DrawingToolPlugin = {
@@ -33,9 +39,7 @@ const plugin: DrawingToolPlugin = {
   render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
     const pts = d.points;
     if (pts.length < 3) return;
-    const projPts = pts
-      .map((p) => project(p, proj.toX, proj.toY))
-      .filter((p): p is { x: number; y: number } => p != null);
+    const projPts = visiblePoints(projectPoints(pts, proj.toX, proj.toY));
     if (projPts.length < 3) return;
     g.beginPath();
     g.moveTo(projPts[0].x, projPts[0].y);
@@ -48,49 +52,19 @@ const plugin: DrawingToolPlugin = {
     if (selected) projPts.forEach((p) => handle(g, p.x, p.y, d.color));
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
-    const results: HitResult[] = [];
-    const projected = d.points.map((pt) => ({
-      x: toX(pt.time),
-      y: toY(pt.price),
-    }));
-    for (let i = 0; i < projected.length; i++) {
-      const pt = projected[i];
-      if (pt.x == null || pt.y == null) continue;
-      const dist = pointDist(px, py, pt.x, pt.y);
-      if (dist <= HANDLE_RADIUS)
-        results.push({
-          drawing: d,
-          target: vertexTarget(i, projected.length - 1),
-          anchorIndex: i,
-          distance: dist,
-        });
-    }
-    return results;
+    const projected = projectPoints(d.points, toX, toY);
+    const samples = curveSamples(visiblePoints(projected));
+    return [
+      ...anchorHits(d, projected, px, py),
+      ...curveBodyHits(d, samples, px, py),
+    ];
   },
   getAnchors(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    const lastIndex = d.points.length - 1;
-    return d.points.map((pt, i) => ({
-      index: i,
-      x: toX(pt.time),
-      y: toY(pt.price),
-      target: vertexTarget(i, lastIndex),
-    }));
+    return anchorsFromProjected(projectPoints(d.points, toX, toY));
   },
   movePoints: defaultMovePoints,
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    const xs = d.points
-      .map((pt) => toX(pt.time))
-      .filter((v): v is number => v != null);
-    const ys = d.points
-      .map((pt) => toY(pt.price))
-      .filter((v): v is number => v != null);
-    if (xs.length === 0 || ys.length === 0) return null;
-    return {
-      x: Math.min(...xs),
-      y: Math.min(...ys),
-      w: Math.max(...xs) - Math.min(...xs),
-      h: Math.max(...ys) - Math.min(...ys),
-    };
+    return boundsFromPoints(curveSamples(visiblePoints(projectPoints(d.points, toX, toY))));
   },
 };
 

@@ -28,21 +28,26 @@ Sidebar:           Flyout (on click):
 |---|---|---|
 | Cursor | cursor | (no flyout — direct) |
 | Lines | trendline | trendline, ray, extendedLine, horizontal, horizRay, vertical, crossLine, infoLine |
-| Shapes | rectangle | rectangle, rotatedRect, circle, ellipse, triangle, polyline, curve, path, fib |
-| Brushes | brush | brush, highlighter, arrowMarker, arrow, arrowMarkUp, arrowMarkDown, arrowMarkLeft, arrowMarkRight |
+| Geometry | rectangle | brush, highlighter, arrowMarker, arrow, arrowMarkUp, arrowMarkDown, arrowMarkLeft, arrowMarkRight, rectangle, rotatedRect, path, circle, ellipse, polyline, triangle, arc, curve, doubleCurve |
 | Text | text | text |
 
-## Brush / arrow parity update
+## Geometry flyout parity update
 
 Updated 2026-07-04 after checking TradingView's Highlighter and Arrow Marker
 references plus comparable TradingView-like chart tool menus:
 
+- TradingView presents this as one combined geometry flyout, not as separate
+  Brush and Shapes flyouts. The UI section order is `BRUSHES`, `ARROWS`, then
+  `SHAPES`.
 - `Brush` and `Highlighter` share the same pointer-drag freehand interaction.
   Highlighter renders with a wider semi-transparent stroke by default.
 - `Arrow marker` and `Arrow` are two-point tools. The first click sets the tail;
   the second click sets the arrow tip and direction.
 - `Arrow mark up/down/left/right` are one-point marker tools anchored to a
   single `(time, price)` location with fixed screen-space size.
+- `SHAPES` follows the observed TradingView order: Rectangle, Rotated
+  rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double
+  curve.
 - Toolbar entries are not enough. Each persistent tool must also exist in
   `DrawingTool`, `DRAWING_TOOLS`, and a self-registering plugin under
   `src/components/chart/drawing/tools/plugins/`.
