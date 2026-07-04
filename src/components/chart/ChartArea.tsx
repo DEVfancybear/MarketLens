@@ -13,6 +13,7 @@ import {
 } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { PriceChart } from "./PriceChart";
+import { ChartTimeToolbar } from "./ChartTimeToolbar";
 import { IndicatorPane } from "./IndicatorPane";
 import { DrawingLayer } from "./DrawingLayer";
 import { AlertOverlay } from "./AlertOverlay";
@@ -105,6 +106,8 @@ export function ChartArea() {
           mainChart={mainChart}
         />
       ))}
+
+      <ChartTimeToolbar chart={mainChart} candles={candles} />
     </div>
   );
 }

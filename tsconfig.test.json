@@ -18,6 +18,7 @@
   },
   "include": [
     "tests/**/*.ts",
+    "src/components/chart/chartTimeNavigation.ts",
     "src/components/chart/drawing/tools/plugins/lineGeometry.ts",
     "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",
     "src/components/chart/drawing/tools/positionGeometry.ts",

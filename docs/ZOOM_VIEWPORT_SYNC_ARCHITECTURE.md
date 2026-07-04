@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-04_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -50,6 +50,7 @@ candles/grid move first and drawings/labels follow later.
 | Drawing renderer | `src/components/chart/drawing/renderer/CanvasRenderer.ts` | Dirty-driven rAF loop, viewport follow-window, memo guard |
 | Coordinate cache | `src/components/chart/drawing/renderer/CoordinateCache.ts` | Frame-local `(time,price) -> pixel` cache |
 | Chart context | `src/components/chart/ChartContext.tsx` | Exposes `chart`, `candleSeries`, visible candles, and `version` |
+| Time navigation | `src/components/chart/ChartTimeToolbar.tsx`, `src/components/chart/chartTimeNavigation.ts` | Applies shortcut/date/range navigation through the chart time scale |
 | SMC overlay | `src/components/smc/SmcLayer.tsx` | Repaints from `ChartContext.version` |
 | Indicator panes | `src/components/chart/IndicatorPane.tsx` | Mirrors main chart logical range |
 | Replay viewport | `src/services/replayEngine.ts`, `src/components/chart/PriceChart.tsx` | Handles cursor/date jumps and data-window replacement |
@@ -123,6 +124,16 @@ repaint or recompute when `version` changes.
 
 Do not add one-off wheel/pointer subscriptions inside individual overlays if
 the interaction changes chart projection. Add it to `chartViewportEvents.ts`.
+
+Time navigation behavior:
+
+- Shortcut ranges and custom date ranges must call
+  `chart.timeScale().setVisibleRange`.
+- `All` must call `chart.timeScale().fitContent`.
+- Single-date `Go to` must call `setVisibleLogicalRange` after centering the
+  nearest loaded candle, so the user's current zoom span is preserved.
+- Keep all range/date math in `chartTimeNavigation.ts`; the toolbar is only an
+  adapter from UI events to the public time-scale API.
 
 Desktop pan behavior:
 

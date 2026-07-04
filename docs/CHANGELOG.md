@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Chart time navigation toolbar (2026-07-04)
+- Added a TradingView-style bottom time toolbar with `1D`, `5D`, `1M`, `3M`,
+  `6M`, `YTD`, `1Y`, `5Y`, and `All` range shortcuts plus a local clock with
+  UTC offset.
+- Added a `Go to` date/range dialog with `Date` and `Custom range` modes. Date
+  mode pans to the nearest loaded candle while preserving zoom; Custom range
+  applies the requested visible time window.
+- Added `chartTimeNavigation.ts` as the pure helper contract and
+  `tests/chart/chartTimeNavigation.test.ts` under `npm run test:chart`.
+- Added `docs/CHART_TIME_NAVIGATION_ARCHITECTURE.md` as the maintainer guide for
+  shortcut ranges, date jumps, replay clamping, and viewport ownership.
+
 ### Fixed - Chart drag coasting too far (2026-07-04)
 - Disabled mouse kinetic scrolling in the main chart so desktop drag-to-pan
   stops when the mouse is released, matching TradingView-style chart behavior.

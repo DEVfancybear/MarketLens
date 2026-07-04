@@ -1,8 +1,24 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Chart drag inertia fix)_
+_Last updated: 2026-07-04 (Chart time navigation toolbar)_
 
 ## Completed this session (2026-07-04)
+
+### Chart time navigation toolbar
+- Researched TradingView's lower time strip reference from the user screenshots
+  plus Lightweight Charts time-scale APIs and Highcharts Stock range selector
+  behavior.
+- Added `ChartTimeToolbar` below the chart panes with TradingView-style range
+  shortcuts: `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `5Y`, and `All`.
+- Added a right-side local clock with UTC offset.
+- Added a `Go to` dialog with `Date` and `Custom range` tabs. Date mode centers
+  the nearest loaded candle without changing the current zoom span; Custom range
+  applies an explicit start/end time window.
+- Added `chartTimeNavigation.ts` as the common pure helper layer for shortcut
+  math, local date/time parsing, nearest-candle lookup, logical centering, UTC
+  offset formatting, and fixed Monday-first calendar cells.
+- Added `tests/chart/chartTimeNavigation.test.ts` and `npm run test:chart`.
+- Added `docs/CHART_TIME_NAVIGATION_ARCHITECTURE.md` for future maintenance.
 
 ### Chart drag inertia fix
 - Referenced official Lightweight Charts interaction docs: desktop pan is
