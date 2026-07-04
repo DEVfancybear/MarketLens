@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
+import { useSetAtom } from "jotai";
 import type { Candle } from "@/types";
+import { setCrosshairAtom } from "@/store/chartStore";
 import { cn } from "@/utils/cn";
 import {
   TIME_RANGE_SHORTCUTS,
@@ -13,15 +15,18 @@ import {
   formatDateInput,
   formatTimeInput,
   formatUtcOffset,
+  goToDialogPosition,
   nearestCandleIndex,
   parseLocalDateTime,
   shortcutRange,
+  type ElementAnchor,
 } from "./chartTimeNavigation";
 
 type GoToTab = "date" | "range";
 type RangeField = "from" | "to";
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const GO_TO_DIALOG_SIZE = { width: 274, height: 460 };
 
 function formatClock(date: Date): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -62,6 +67,21 @@ function inputShell(className?: string) {
   );
 }
 
+function elementAnchorFromRect(rect: DOMRect): ElementAnchor {
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+  };
+}
+
+function clearChartCrosshair(chart: IChartApi, clearStoreCrosshair: () => void) {
+  clearStoreCrosshair();
+  chart.clearCrosshairPosition();
+  window.requestAnimationFrame(() => chart.clearCrosshairPosition());
+}
+
 export function ChartTimeToolbar({
   chart,
   candles,
@@ -71,6 +91,8 @@ export function ChartTimeToolbar({
 }) {
   const [now, setNow] = useState(() => new Date());
   const [goToOpen, setGoToOpen] = useState(false);
+  const [goToAnchor, setGoToAnchor] = useState<ElementAnchor | null>(null);
+  const setCrosshair = useSetAtom(setCrosshairAtom);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
@@ -84,12 +106,19 @@ export function ChartTimeToolbar({
     const timeScale = chart.timeScale();
     if (range === "all") {
       timeScale.fitContent();
+      clearChartCrosshair(chart, () => setCrosshair(null));
       return;
     }
     timeScale.setVisibleRange({
       from: range.from as UTCTimestamp,
       to: range.to as UTCTimestamp,
     });
+    clearChartCrosshair(chart, () => setCrosshair(null));
+  };
+
+  const openGoTo = (event: MouseEvent<HTMLButtonElement>) => {
+    setGoToAnchor(elementAnchorFromRect(event.currentTarget.getBoundingClientRect()));
+    setGoToOpen(true);
   };
 
   return (
@@ -113,7 +142,7 @@ export function ChartTimeToolbar({
             disabled={!chart || candles.length === 0}
             aria-label="Go to"
             title="Go to"
-            onClick={() => setGoToOpen(true)}
+            onClick={openGoTo}
             className="flex h-7 w-8 shrink-0 items-center justify-center rounded-sm text-[#f0f3fa] transition-colors hover:bg-[#2a2a2a] disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent"
           >
             <CalendarDays size={16} />
@@ -127,6 +156,8 @@ export function ChartTimeToolbar({
         <GoToDialog
           chart={chart}
           candles={candles}
+          anchor={goToAnchor}
+          onNavigationApplied={() => clearChartCrosshair(chart, () => setCrosshair(null))}
           onClose={() => setGoToOpen(false)}
         />
       )}
@@ -137,10 +168,14 @@ export function ChartTimeToolbar({
 function GoToDialog({
   chart,
   candles,
+  anchor,
+  onNavigationApplied,
   onClose,
 }: {
   chart: IChartApi;
   candles: Candle[];
+  anchor: ElementAnchor | null;
+  onNavigationApplied: () => void;
   onClose: () => void;
 }) {
   const defaults = useMemo(() => defaultRange(candles), [candles]);
@@ -180,6 +215,7 @@ function GoToDialog({
         Math.min(Math.max(candles.length, 40), 180),
       );
       chart.timeScale().setVisibleLogicalRange(range);
+      onNavigationApplied();
       onClose();
       return;
     }
@@ -191,6 +227,7 @@ function GoToDialog({
       from: Math.min(from, to) as UTCTimestamp,
       to: Math.max(from, to) as UTCTimestamp,
     });
+    onNavigationApplied();
     onClose();
   };
 
@@ -201,7 +238,17 @@ function GoToDialog({
   const dialog = (
     <div data-chart-ui className="fixed inset-0 z-[90]" onMouseDown={onClose}>
       <div
-        className="absolute bottom-10 left-4 w-[274px] rounded-md border border-[#2f333d] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60 sm:left-auto sm:right-6"
+        className="fixed w-[274px] rounded-md border border-[#2f333d] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
+        style={goToDialogPosition(
+          anchor ?? {
+            left: 16,
+            top: window.innerHeight - 40,
+            right: 48,
+            bottom: window.innerHeight - 12,
+          },
+          { width: window.innerWidth, height: window.innerHeight },
+          GO_TO_DIALOG_SIZE,
+        )}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex h-12 items-center justify-between px-5">

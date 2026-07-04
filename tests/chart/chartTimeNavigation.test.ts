@@ -5,6 +5,7 @@ import type { Candle } from "../../src/types/market";
 import {
   calendarCells,
   centeredLogicalRange,
+  goToDialogPosition,
   nearestCandleIndex,
   parseLocalDateTime,
   shortcutRange,
@@ -71,4 +72,24 @@ test("calendar grid always returns six weeks", () => {
 
   assert.equal(cells.length, 42);
   assert.equal(cells.some((cell) => cell.date === "2026-07-04"), true);
+});
+
+test("go-to dialog opens near its toolbar button and clamps to the viewport", () => {
+  assert.deepEqual(
+    goToDialogPosition(
+      { left: 260, top: 520, right: 292, bottom: 548 },
+      { width: 1280, height: 720 },
+      { width: 274, height: 460 },
+    ),
+    { left: 252, top: 52 },
+  );
+
+  assert.deepEqual(
+    goToDialogPosition(
+      { left: 1240, top: 690, right: 1272, bottom: 718 },
+      { width: 1280, height: 720 },
+      { width: 274, height: 460 },
+    ),
+    { left: 998, top: 222 },
+  );
 });

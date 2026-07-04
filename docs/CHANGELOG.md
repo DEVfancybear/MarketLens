@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Go to time navigation placement (2026-07-04)
+- Anchored the chart `Go to` dialog to the bottom toolbar calendar button
+  instead of the viewport's right edge, preventing it from opening over the
+  watchlist/right panel.
+- Cleared the Lightweight Charts crosshair after shortcut/date/range navigation
+  so the old floating time label does not remain on the chart after a jump.
+- Added `goToDialogPosition` coverage to `npm run test:chart`.
+
 ### Added - Chart time navigation toolbar (2026-07-04)
 - Added a TradingView-style bottom time toolbar with `1D`, `5D`, `1M`, `3M`,
   `6M`, `YTD`, `1Y`, `5Y`, and `All` range shortcuts plus a local clock with

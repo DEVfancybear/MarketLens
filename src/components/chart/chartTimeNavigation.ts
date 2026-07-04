@@ -24,6 +24,15 @@ export const TIME_RANGE_SHORTCUTS: TimeRangeShortcut[] = [
 ];
 
 export type TimeRange = { from: number; to: number };
+export type ViewportRect = { width: number; height: number };
+export type ElementAnchor = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+export type FloatingDialogSize = { width: number; height: number };
+export type FloatingDialogPosition = { left: number; top: number };
 
 function lastCandleTime(candles: Candle[]): number | null {
   const last = candles[candles.length - 1];
@@ -176,4 +185,27 @@ export function calendarCells(year: number, monthIndex: number): CalendarCell[] 
     });
   }
   return cells;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+export function goToDialogPosition(
+  anchor: ElementAnchor,
+  viewport: ViewportRect,
+  dialog: FloatingDialogSize,
+  gap = 8,
+): FloatingDialogPosition {
+  const maxLeft = viewport.width - dialog.width - gap;
+  const left = clamp(anchor.left - gap, gap, maxLeft);
+  const aboveTop = anchor.top - dialog.height - gap;
+  const belowTop = anchor.bottom + gap;
+  const maxTop = viewport.height - dialog.height - gap;
+
+  return {
+    left,
+    top: aboveTop >= gap ? aboveTop : clamp(belowTop, gap, maxTop),
+  };
 }

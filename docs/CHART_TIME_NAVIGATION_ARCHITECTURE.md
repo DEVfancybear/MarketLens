@@ -36,7 +36,7 @@ as a range selector with preconfigured buttons plus min/max date inputs.
 | Area | File | Responsibility |
 |---|---|---|
 | Toolbar UI | `src/components/chart/ChartTimeToolbar.tsx` | Renders shortcut strip, current clock, and `Go to` dialog |
-| Pure navigation logic | `src/components/chart/chartTimeNavigation.ts` | Calculates shortcut ranges, date parsing, calendar grid, nearest candle, and logical centering |
+| Pure navigation logic | `src/components/chart/chartTimeNavigation.ts` | Calculates shortcut ranges, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
 | Chart placement | `src/components/chart/ChartArea.tsx` | Mounts the toolbar below all chart panes and above the bottom dock |
 | Tests | `tests/chart/chartTimeNavigation.test.ts` | Locks range shortcuts, nearest-candle jump, parser, and calendar behavior |
 | Test script | `package.json` | `npm run test:chart` |
@@ -60,6 +60,11 @@ timeScale.fitContent();
 
 This keeps drawing overlays, replay state, indicator panes, and price markers on
 the same projection path documented in `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
+
+After any toolbar navigation, clear both the native Lightweight Charts crosshair
+and the app crosshair state. Lightweight Charts keeps the last crosshair pixel
+until it is cleared; if the chart is panned by `Go to`, that old pixel can show
+a stale floating time label over the newly visible candles.
 
 ## 5. Shortcut Contract
 
@@ -110,7 +115,21 @@ The calendar grid is generated in `calendarCells`:
 
 The fixed 42-cell grid prevents footer/layout jumps when switching months.
 
-## 9. Replay And Data Replacement
+## 9. Dialog Placement Contract
+
+The `Go to` popup must be anchored to the toolbar calendar button, not to a
+global right edge. Desktop layouts can include a right watchlist/details panel;
+anchoring to `right: 0` opens the popup over that panel instead of over the
+chart time strip.
+
+`goToDialogPosition` is the pure placement helper:
+
+- prefer opening above the toolbar button,
+- align the left edge close to the button,
+- clamp left/top to the viewport,
+- fall back below the button only when there is not enough room above.
+
+## 10. Replay And Data Replacement
 
 Replay can replace the visible candle slice. Time navigation must tolerate that:
 
@@ -121,17 +140,18 @@ Replay can replace the visible candle slice. Time navigation must tolerate that:
 Do not jump to hidden future candles during replay. If a future date is typed,
 `nearestCandleIndex` resolves to the last currently loaded candle.
 
-## 10. Maintenance Rules
+## 11. Maintenance Rules
 
 - Keep date/range math in `chartTimeNavigation.ts`; the React component should
   remain a thin adapter around chart APIs.
-- Add TypeScript tests for every new shortcut or parser behavior.
+- Add TypeScript tests for every new shortcut, parser behavior, or popup
+  placement rule.
 - Do not add drawing-overlay invalidation here. Viewport repaint remains owned
   by `chartViewportEvents.ts` and the drawing renderer.
 - If the app later adds timezone selection, add it to the pure parser/formatter
   helpers first, then update the dialog.
 
-## 11. Verification
+## 12. Verification
 
 Run:
 
