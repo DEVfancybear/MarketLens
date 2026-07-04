@@ -27,7 +27,7 @@ Sidebar:           Flyout (on click):
 | Group | Default Tool | Tools |
 |---|---|---|
 | Cursor | cursor | (no flyout — direct) |
-| Lines | trendline | trendline, ray, extendedLine, horizontal, horizRay, vertical, crossLine, infoLine |
+| Lines | trendline | trendline, ray, infoLine, extendedLine, trendAngle, horizontal, horizRay, vertical, crossLine |
 | Geometry | rectangle | brush, highlighter, arrowMarker, arrow, arrowMarkUp, arrowMarkDown, arrowMarkLeft, arrowMarkRight, rectangle, rotatedRect, path, circle, ellipse, polyline, triangle, arc, curve, doubleCurve |
 | Text | text | text |
 
@@ -51,6 +51,22 @@ references plus comparable TradingView-like chart tool menus:
 - Toolbar entries are not enough. Each persistent tool must also exist in
   `DrawingTool`, `DRAWING_TOOLS`, and a self-registering plugin under
   `src/components/chart/drawing/tools/plugins/`.
+
+## Lines flyout parity update
+
+Updated 2026-07-04 after checking the TradingView Lines flyout screenshot and
+TradingView Advanced Charts line-tool override names:
+
+- The parity flyout contains 9 tools in this order: `Trendline`, `Ray`,
+  `Info line`, `Extended line`, `Trend angle`, `Horizontal line`,
+  `Horizontal ray`, `Vertical line`, `Crossline`.
+- `Channel` remains a registered plugin for existing saved drawings but is not
+  exposed in this flyout because it is not present in the TradingView reference
+  screenshot.
+- Line plugin behavior is centralized in `lineGeometry.ts`. Ray and Extended
+  Line hit-tests follow their rendered extensions, Horizontal Ray only selects
+  to the right of its start anchor, and Horizontal/Vertical Line movement is
+  axis-constrained.
 
 ## Last-used tool per group
 

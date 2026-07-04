@@ -13,6 +13,9 @@ shape-like TradingView tools:
   their interior.
 - Sampled quadratic/cubic curves must provide stable body hit-testing and
   bounding boxes for viewport culling.
+- Ray and Extended Line body hit-tests must match their one-way / two-way
+  extension behavior, and axis-aligned line tools must drag on the expected
+  axis only.
 
 ## Run
 
@@ -32,6 +35,8 @@ in git.
 Add tests here when changing:
 
 - `src/components/chart/drawing/tools/plugins/shapeGeometry.ts`
+- `src/components/chart/drawing/tools/plugins/lineGeometry.ts`
 - Shape plugin hit-testing or anchor behavior
+- Line plugin hit-testing, extension behavior, or axis-constrained movement
 - Shape plugin viewport bounds or curve sampling
 - Multi-point shape drag/resize behavior that relies on `anchorIndex`

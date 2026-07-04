@@ -1,3 +1,56 @@
-import type { Drawing } from "@/types";import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";import type { Projector } from "../../drawingRenderer";import { type DrawingToolPlugin, registerTool, defaultMovePoints, TOL } from "../ToolRegistry";import { line, handle } from "./shared";
-const plugin: DrawingToolPlugin = { tool: "crossLine", minPoints: 1, render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) { const x = proj.toX(d.points[0].time); const y = proj.toY(d.points[0].price); if (x == null || y == null) return; line(g, x, 0, x, proj.height); line(g, 0, y, proj.width, y); if (selected) handle(g, x, y, d.color); }, hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] { const results: HitResult[] = []; const x = toX(d.points[0].time); const y = toY(d.points[0].price); if (x != null && Math.abs(x - px) < TOL) results.push({ drawing: d, target: "body", distance: Math.abs(x - px) }); if (y != null && Math.abs(y - py) < TOL) results.push({ drawing: d, target: "body", distance: Math.abs(y - py) }); return results; }, movePoints: defaultMovePoints, boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) { const x = toX(d.points[0].time); const y = toY(d.points[0].price); if (x == null || y == null) return null; return { x: x - TOL, y: y - TOL, w: TOL * 2, h: TOL * 2 }; } };
+/**
+ * CrossLineTool - one anchor that draws vertical and horizontal guide lines.
+ */
+import type { Drawing } from "@/types";
+import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
+import type { Projector } from "../../drawingRenderer";
+import {
+  type DrawingToolPlugin,
+  registerTool,
+  defaultMovePoints,
+} from "../ToolRegistry";
+import { line, handle } from "./shared";
+import {
+  fullViewportBounds,
+  horizontalLineBodyHits,
+  onePointAnchorHits,
+  onePointAnchors,
+  projectOnePoint,
+  verticalLineBodyHits,
+} from "./lineGeometry";
+
+const plugin: DrawingToolPlugin = {
+  tool: "crossLine",
+  minPoints: 1,
+  render(
+    g: CanvasRenderingContext2D,
+    d: Drawing,
+    proj: Projector,
+    selected: boolean,
+  ) {
+    const anchor = projectOnePoint(d, proj.toX, proj.toY);
+    if (!anchor) return;
+    line(g, anchor.x, 0, anchor.x, proj.height);
+    line(g, 0, anchor.y, proj.width, anchor.y);
+    if (selected) handle(g, anchor.x, anchor.y, d.color);
+  },
+  hitTest(
+    d: Drawing,
+    px: number,
+    py: number,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): HitResult[] {
+    const anchor = projectOnePoint(d, toX, toY);
+    return [
+      ...onePointAnchorHits(d, anchor, px, py),
+      ...verticalLineBodyHits(d, anchor?.x ?? null, px),
+      ...horizontalLineBodyHits(d, anchor?.y ?? null, py),
+    ];
+  },
+  getAnchors: onePointAnchors,
+  movePoints: defaultMovePoints,
+  boundingBox: fullViewportBounds,
+};
+
 registerTool(plugin);

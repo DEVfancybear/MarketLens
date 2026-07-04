@@ -1,8 +1,22 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Shape tool behavior parity)_
+_Last updated: 2026-07-04 (Line tools parity)_
 
 ## Completed this session (2026-07-04)
+
+### Line tools parity
+- Updated the Lines flyout to match the TradingView reference screenshot:
+  Trendline, Ray, Info line, Extended line, Trend angle, Horizontal line,
+  Horizontal ray, Vertical line, and Crossline. `Channel` remains registered for
+  saved drawings but is no longer exposed in that flyout.
+- Added `lineGeometry.ts` as common infrastructure for line plugins: projection,
+  endpoint anchors, finite segment hits, Ray/Extended Line extension hits,
+  Horizontal Ray right-side-only hits, large bounds for infinite tools, and
+  axis-constrained Horizontal/Vertical movement.
+- Refactored Trendline, Ray, Extended line, Trend angle, Info line, Horizontal
+  line, Horizontal ray, Vertical line, and Crossline to use the shared contract.
+- Added `tests/drawing/lineGeometry.test.ts`; `npm run test:drawing` now covers
+  both line and shape shared geometry.
 
 ### Shape tool behavior parity
 - Added `shapeGeometry.ts` as common geometry infrastructure for shape plugins:

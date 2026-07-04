@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Line tools TradingView parity (2026-07-04)
+- Updated the Lines flyout to the 9-tool TradingView reference set:
+  Trendline, Ray, Info line, Extended line, Trend angle, Horizontal line,
+  Horizontal ray, Vertical line, and Crossline. `Channel` remains registered for
+  saved drawings but is no longer shown in that flyout.
+- Added shared `lineGeometry` helpers for endpoint hit-testing, Ray/Extended
+  Line extension hit-testing, Horizontal Ray start-gated hit-testing, full
+  viewport bounds, and axis-constrained Horizontal/Vertical Line dragging.
+- Added `tests/drawing/lineGeometry.test.ts` coverage under `npm run
+  test:drawing`.
+
 ### Fixed - Shape tool behavior parity (2026-07-04)
 - Added shared `shapeGeometry` helpers for shape plugins and aligned hit-testing
   across Path, Polyline, Triangle, Ellipse, Curve, Arc, and Double Curve.

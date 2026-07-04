@@ -1,3 +1,56 @@
-import type { Drawing } from "@/types";import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";import type { Projector } from "../../drawingRenderer";import { type DrawingToolPlugin, registerTool, defaultMovePoints, TOL } from "../ToolRegistry";import { line, chip, handle } from "./shared";
-const plugin: DrawingToolPlugin = { tool: "horizRay", minPoints: 1, render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) { const y = proj.toY(d.points[0].price); const xS = proj.toX(d.points[0].time) ?? 0; if (y == null) return; line(g, xS, y, proj.width, y); chip(g, d.points[0].price.toFixed(4), 2, y - 9, d.color); if (selected) handle(g, xS, y, d.color); }, hitTest(d: Drawing, px: number, py: number, _toX: HitTestProjector, toY: HitTestProjector): HitResult[] { const y = toY(d.points[0].price); if (y != null && Math.abs(y - py) < TOL) return [{ drawing: d, target: "body", distance: Math.abs(y - py) }]; return []; }, movePoints: defaultMovePoints, boundingBox(d: Drawing, _toX: HitTestProjector, toY: HitTestProjector) { const y = toY(d.points[0].price); if (y == null) return null; return { x: 0, y: y - TOL, w: 9999, h: TOL * 2 }; } };
+/**
+ * HorizontalRayTool - horizontal ray starting at one anchor and extending right.
+ */
+import type { Drawing } from "@/types";
+import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
+import type { Projector } from "../../drawingRenderer";
+import {
+  type DrawingToolPlugin,
+  registerTool,
+  defaultMovePoints,
+} from "../ToolRegistry";
+import { line, chip, handle } from "./shared";
+import {
+  horizontalRayBodyHits,
+  horizontalRayBounds,
+  onePointAnchorHits,
+  onePointAnchors,
+  projectOnePoint,
+} from "./lineGeometry";
+
+const plugin: DrawingToolPlugin = {
+  tool: "horizRay",
+  minPoints: 1,
+  render(
+    g: CanvasRenderingContext2D,
+    d: Drawing,
+    proj: Projector,
+    selected: boolean,
+  ) {
+    const anchor = projectOnePoint(d, proj.toX, proj.toY);
+    if (!anchor) return;
+    line(g, anchor.x, anchor.y, proj.width, anchor.y);
+    chip(g, d.points[0].price.toFixed(4), 2, anchor.y - 9, d.color);
+    if (selected) handle(g, anchor.x, anchor.y, d.color);
+  },
+  hitTest(
+    d: Drawing,
+    px: number,
+    py: number,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ): HitResult[] {
+    const anchor = projectOnePoint(d, toX, toY);
+    return [
+      ...onePointAnchorHits(d, anchor, px, py),
+      ...horizontalRayBodyHits(d, anchor, px, py),
+    ];
+  },
+  getAnchors: onePointAnchors,
+  movePoints: defaultMovePoints,
+  boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
+    return horizontalRayBounds(projectOnePoint(d, toX, toY));
+  },
+};
+
 registerTool(plugin);

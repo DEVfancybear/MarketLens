@@ -100,4 +100,5 @@ npm run test:drawing
 ```
 
 This covers the common `shapeGeometry.ts` contract used by Path, Polyline,
-Triangle, Ellipse, Arc, Curve, and Double Curve.
+Triangle, Ellipse, Arc, Curve, and Double Curve, plus the `lineGeometry.ts`
+contract used by the TradingView-style Lines flyout tools.

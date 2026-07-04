@@ -8,9 +8,13 @@ import {
   type DrawingToolPlugin,
   registerTool,
   defaultMovePoints,
-  TOL,
 } from "../ToolRegistry";
 import { canvasFont, line } from "./shared";
+import {
+  moveVerticalLine,
+  verticalBounds,
+  verticalLineBodyHits,
+} from "./lineGeometry";
 
 const DATE_LABEL_H = 20;
 const DATE_LABEL_PAD_X = 8;
@@ -119,16 +123,13 @@ const plugin: DrawingToolPlugin = {
     _toY: HitTestProjector,
   ): HitResult[] {
     const x = toX(d.points[0].time);
-    if (x != null && Math.abs(x - px) < TOL) {
-      return [{ drawing: d, target: "body", distance: Math.abs(x - px) }];
-    }
-    return [];
+    return verticalLineBodyHits(d, x, px);
   },
+  move: (orig, pointer) => moveVerticalLine(orig, pointer),
+  moveAnchor: (orig, _index, pointer) => moveVerticalLine(orig, pointer),
   movePoints: defaultMovePoints,
   boundingBox(d: Drawing, toX: HitTestProjector, _toY: HitTestProjector) {
-    const x = toX(d.points[0].time);
-    if (x == null) return null;
-    return { x: x - TOL, y: 0, w: TOL * 2, h: 9999 };
+    return verticalBounds(toX(d.points[0].time));
   },
 };
 
