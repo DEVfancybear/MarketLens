@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Top interval selector popup (2026-07-05)
+- Replaced the always-visible top timeframe strip with a TradingView-style
+  interval selector: only favorited intervals show on the toolbar, while the
+  full grouped list opens in a scrollable popup.
+- Added persisted interval favorites under `tv:favoriteTimeframes`; default
+  favorites are `1m`, `5m`, and `15m`.
+- The active interval remains visible even when it is not favorited, matching
+  TradingView's current-resolution affordance.
+- Added UI model tests for favorite normalization, toggle order, and active
+  interval visibility.
+
 ### Fixed - Chart range shortcut viewport and active state (2026-07-05)
 - Bottom range shortcuts (`1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `5Y`,
   `All`) now update the chart viewport and keep the clicked button highlighted.

@@ -1,8 +1,20 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Chart range shortcut timeframe policy)_
+_Last updated: 2026-07-05 (Top interval selector popup)_
 
 ## Completed this session (2026-07-05)
+
+### Top interval selector popup
+- Replaced the top toolbar's direct `TIMEFRAMES.map(...)` rendering with
+  `TimeframeSelector`, so the bar only shows favorited intervals plus the
+  currently active interval.
+- Added a TradingView-style scrollable interval popup with grouped sections for
+  ticks, seconds, minutes, hours, and days.
+- Added star toggles that persist favorite intervals under
+  `tv:favoriteTimeframes`; default favorites are `1m`, `5m`, and `15m`.
+- Added `timeframeSelectorModel.ts` and `tests/ui/timeframeSelectorModel.test.ts`
+  so favorite normalization, toggle ordering, and active interval visibility
+  are covered without rendering React.
 
 ### Chart range shortcut viewport
 - Researched the official Lightweight Charts time-scale API: `setVisibleRange`

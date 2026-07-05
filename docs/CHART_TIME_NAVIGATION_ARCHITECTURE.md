@@ -46,10 +46,12 @@ as a range selector with preconfigured buttons plus min/max date inputs.
 | Area | File | Responsibility |
 |---|---|---|
 | Toolbar UI | `src/components/chart/ChartTimeToolbar.tsx` | Renders shortcut strip, current clock, and `Go to` dialog |
+| Top interval UI | `src/components/toolbar/TimeframeSelector.tsx` | Renders favorite intervals on the top bar and the scrollable interval popup |
+| Interval selector model | `src/components/toolbar/timeframeSelectorModel.ts` | Pure catalog/favorite normalization logic for the top interval popup |
 | Pure navigation logic | `src/components/chart/chartTimeNavigation.ts` | Calculates shortcut ranges, timezone conversion, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
 | Chart placement | `src/components/chart/ChartArea.tsx` | Mounts the toolbar below all chart panes and above the bottom dock |
-| Tests | `tests/chart/chartTimeNavigation.test.ts` | Locks range shortcuts, nearest-candle jump, parser, and calendar behavior |
-| Test script | `package.json` | `npm run test:chart` |
+| Tests | `tests/chart/chartTimeNavigation.test.ts`, `tests/ui/timeframeSelectorModel.test.ts` | Locks range shortcuts, nearest-candle jump, parser, calendar behavior, and top interval favorite behavior |
+| Test script | `package.json` | `npm run test:chart`, `npm run test:ui` |
 
 ## 4. Source Of Truth
 
@@ -137,7 +139,32 @@ notes that `setVisibleRange()` is clamped to existing time data, while
 `setVisibleLogicalRange()` is the correct primitive when the app can approximate
 indexes directly.
 
-## 6. Go To Date Contract
+## 6. Top Interval Selector Contract
+
+The top toolbar must not render every supported `TIMEFRAMES` value directly.
+TradingView keeps only favorited intervals on the bar and exposes the full list
+through a scrollable interval popup.
+
+Implementation rules:
+
+- `TimeframeSelector` renders visible top buttons from
+  `visibleToolbarTimeframes(favorites, activeTimeframe)`.
+- Default favorites are `1m`, `5m`, and `15m`.
+- Favorite state is persisted under `tv:favoriteTimeframes`.
+- If the active timeframe is not favorited, it is appended to the visible top
+  buttons so the current chart resolution is always visible.
+- The popup groups intervals into `TICKS`, `SECONDS`, `MINUTES`, `HOURS`, and
+  `DAYS`, matching the TradingView menu structure.
+- Unsupported catalog rows are visible but disabled. Do not wire them to
+  `setTimeframeAtom` until the market-data providers and aggregation pipeline
+  support that resolution.
+- Star clicks toggle only top-toolbar visibility. Row clicks change the active
+  timeframe and close the popup.
+
+Keep the catalog and favorite normalization in `timeframeSelectorModel.ts` so
+future interval additions can be tested without rendering React.
+
+## 7. Go To Date Contract
 
 Date mode should behave like a TradingView `Go to` jump: land on the requested
 bar and show a readable local candle window.
@@ -166,7 +193,7 @@ chart wrapper in capture phase rather than only to the Lightweight Charts
 element, because drawing canvases and app overlays can sit above the native
 chart element while still being part of the chart interaction surface.
 
-## 7. Custom Range Contract
+## 8. Custom Range Contract
 
 Custom range mode is an explicit visible time window.
 
@@ -177,7 +204,7 @@ Custom range mode is an explicit visible time window.
 Do not preserve the previous zoom in this mode; the user has supplied the target
 window directly.
 
-## 8. Calendar Contract
+## 9. Calendar Contract
 
 The calendar grid is generated in `calendarCells`:
 
@@ -188,7 +215,7 @@ The calendar grid is generated in `calendarCells`:
 
 The fixed 42-cell grid prevents footer/layout jumps when switching months.
 
-## 9. Dialog Placement Contract
+## 10. Dialog Placement Contract
 
 The `Go to` popup must be anchored to the toolbar calendar button, not to a
 global right edge. Desktop layouts can include a right watchlist/details panel;
@@ -202,7 +229,7 @@ chart time strip.
 - clamp left/top to the viewport,
 - fall back below the button only when there is not enough room above.
 
-## 10. Replay And Data Replacement
+## 11. Replay And Data Replacement
 
 Replay can replace the visible candle slice. Time navigation must tolerate that:
 
@@ -213,7 +240,7 @@ Replay can replace the visible candle slice. Time navigation must tolerate that:
 Do not jump to hidden future candles during replay. If a future date is typed,
 `nearestCandleIndex` resolves to the last currently loaded candle.
 
-## 11. Timezone Selector Contract
+## 12. Timezone Selector Contract
 
 The bottom-right clock opens a TradingView-style timezone menu. The selector is
 persisted in `localStorage` under `chartTimeZone`.
@@ -234,7 +261,7 @@ That would also move drawings, replay boundaries, indicators, and trade levels.
 Timezone selection is a presentation/input contract until a future dedicated
 time-axis transformation layer is added.
 
-## 12. Maintenance Rules
+## 13. Maintenance Rules
 
 - Keep date/range math in `chartTimeNavigation.ts`; the React component should
   remain a thin adapter around chart APIs.
@@ -246,7 +273,7 @@ time-axis transformation layer is added.
   `Exchange` resolver first, then the toolbar. Do not add per-component
   timezone conversion.
 
-## 13. Verification
+## 14. Verification
 
 Run:
 

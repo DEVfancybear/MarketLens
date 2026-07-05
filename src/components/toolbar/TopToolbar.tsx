@@ -17,6 +17,7 @@ import { IndicatorMenu } from "./IndicatorMenu";
 import { SmcMenu } from "./SmcMenu";
 import { ChartSettingsMenu } from "./ChartSettingsMenu";
 import { ConnectionBadge } from "./ConnectionBadge";
+import { TimeframeSelector } from "./TimeframeSelector";
 import { IconButton } from "@/components/ui/IconButton";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { useAtomValue, useSetAtom, getDefaultStore } from "jotai";
@@ -38,7 +39,6 @@ import {
   logAtom,
   toggleAlertCenterAtom,
 } from "@/store/uiStore";
-import { TIMEFRAMES, type Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
 import { captureChart } from "@/components/chart/chartRegistry";
 
@@ -121,22 +121,7 @@ export function TopToolbar() {
       <div className="mx-1 h-5 w-px bg-terminal-border" />
 
       {/* Timeframes — TradingView segmented control */}
-      <div className="flex items-center gap-0.5">
-        {TIMEFRAMES.map((tf: Timeframe) => (
-          <button
-            key={tf}
-            onClick={() => setTimeframe(tf)}
-            className={cn(
-              "h-7 min-w-[28px] rounded px-1.5 text-[11px] font-medium transition-colors",
-              tf === timeframe
-                ? "bg-terminal-hover font-semibold text-ink"
-                : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
-            )}
-          >
-            {tf}
-          </button>
-        ))}
-      </div>
+      <TimeframeSelector timeframe={timeframe} onChange={setTimeframe} />
 
       <div className="mx-1 h-5 w-px bg-terminal-border" />
 
