@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, Plus, Star, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { localStore } from "@/services/storage";
 import type { Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
@@ -220,6 +221,14 @@ function CustomIntervalDialog({
   const [interval, setInterval] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const resolved = customIntervalToTimeframe(type, interval);
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog({
+      initialPosition: () => ({
+        left: Math.min(48, window.innerWidth * 0.04),
+        top: Math.min(96, window.innerHeight * 0.12),
+      }),
+      boundsMargin: 8,
+    });
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -245,10 +254,18 @@ function CustomIntervalDialog({
       onMouseDown={onClose}
     >
       <div
-        className="fixed left-[min(48px,4vw)] top-[min(96px,12vh)] w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-md border border-[#2f2f2f] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
+        ref={dialogRef}
+        className="fixed w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-md border border-[#2f2f2f] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
+        style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex h-[68px] items-center justify-between border-b border-[#343434] px-5">
+        <div
+          {...dragHandleProps}
+          className={cn(
+            "flex h-[68px] items-center justify-between border-b border-[#343434] px-5",
+            dragHandleClassName,
+          )}
+        >
           <div className="text-[22px] font-semibold text-[#d1d4dc]">
             Add custom interval
           </div>
