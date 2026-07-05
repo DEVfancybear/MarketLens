@@ -16,17 +16,32 @@ export function computeRisk(
   entryPrice: number,
   equity: number,
 ): RiskMetrics {
-  const entry = order.price ?? entryPrice;
-  const riskPct = order.riskPct ?? 1;
-  const riskAmount = (equity * riskPct) / 100;
-  const stopDist = order.stopLoss != null ? Math.abs(entry - order.stopLoss) : 0;
+  const entry = Number.isFinite(order.price)
+    ? Number(order.price)
+    : Number.isFinite(entryPrice)
+      ? Number(entryPrice)
+      : 0;
+  const riskPct = Number.isFinite(order.riskPct) ? Number(order.riskPct) : 1;
+  const accountEquity = Number.isFinite(equity) ? Number(equity) : 0;
+  const riskAmount = (accountEquity * riskPct) / 100;
+  const stopLoss = Number.isFinite(order.stopLoss)
+    ? Number(order.stopLoss)
+    : undefined;
+  const takeProfit = Number.isFinite(order.takeProfit)
+    ? Number(order.takeProfit)
+    : undefined;
+  const stopDist =
+    stopLoss != null && entry > 0 ? Math.abs(entry - stopLoss) : 0;
 
   let positionSize: number;
-  if (order.quantity != null) positionSize = order.quantity;
+  if (Number.isFinite(order.quantity)) positionSize = Number(order.quantity);
   else if (stopDist > 0) positionSize = riskAmount / stopDist;
-  else positionSize = riskAmount / Math.max(entry * 0.01, 1e-9); // 1% fallback stop
+  else if (entry > 0)
+    positionSize = riskAmount / Math.max(entry * 0.01, 1e-9); // 1% fallback stop
+  else positionSize = 0;
 
-  const rewardDist = order.takeProfit != null ? Math.abs(order.takeProfit - entry) : 0;
+  const rewardDist =
+    takeProfit != null && entry > 0 ? Math.abs(takeProfit - entry) : 0;
   const rewardAmount = rewardDist * positionSize;
   const realRisk = stopDist > 0 ? stopDist * positionSize : riskAmount;
   const riskReward = realRisk > 0 ? rewardAmount / realRisk : 0;

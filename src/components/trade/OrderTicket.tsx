@@ -26,6 +26,11 @@ import {
   formatPositionVolume,
   normalizePositionVolume,
 } from "@/services/positionLotSizing";
+import {
+  formatTicketRatio,
+  formatTicketSize,
+  parseTicketNumber,
+} from "./tradeTicketMath";
 import { makeClientOrderId, normalizeMt5Side } from "@/services/mt5/protocol";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { on } from "@/utils/bus";
@@ -66,16 +71,14 @@ export function OrderTicket() {
     | null
   >(null);
 
-  const num = (s: string) => (s.trim() === "" ? undefined : Number(s));
-
   const buildOrder = (side: Side) => ({
     symbol,
     side,
     type,
-    price: type === "market" ? undefined : num(entry),
-    stopLoss: num(sl),
-    takeProfit: num(tp),
-    riskPct: num(risk) ?? 1,
+    price: type === "market" ? undefined : parseTicketNumber(entry),
+    stopLoss: parseTicketNumber(sl),
+    takeProfit: parseTicketNumber(tp),
+    riskPct: parseTicketNumber(risk) ?? 1,
   });
 
   const simulatorMetrics = useMemo(
@@ -96,13 +99,13 @@ export function OrderTicket() {
   const metrics = useMemo(() => {
     if (executionMode !== "mt5") return simulatorMetrics;
     return computeMt5PositionRiskMetrics({
-      entryPrice: type === "market" ? price : num(entry),
-      stopPrice: num(sl),
-      targetPrice: num(tp),
-      riskPct: num(risk) ?? 1,
+      entryPrice: type === "market" ? price : parseTicketNumber(entry),
+      stopPrice: parseTicketNumber(sl),
+      targetPrice: parseTicketNumber(tp),
+      riskPct: parseTicketNumber(risk) ?? 1,
       equity: mt5Account?.equity ?? equity,
       symbolInfo: sizingSymbolInfo,
-      volumeOverride: num(mt5Lot),
+      volumeOverride: parseTicketNumber(mt5Lot),
     });
   }, [
     entry,
@@ -121,7 +124,7 @@ export function OrderTicket() {
 
   const buildMt5Order = (side: Side): Mt5OrderRequest => {
     const info = mt5SymbolInfo[symbol] ?? sizingSymbolInfo;
-    const manualVolume = num(mt5Lot);
+    const manualVolume = parseTicketNumber(mt5Lot);
     const volume =
       manualVolume != null
         ? manualVolume
@@ -133,16 +136,16 @@ export function OrderTicket() {
       side: normalizeMt5Side(side),
       type,
       volume,
-      price: type === "market" ? undefined : num(entry),
+      price: type === "market" ? undefined : parseTicketNumber(entry),
       marketPrice: type === "market" ? price : undefined,
-      sl: num(sl),
-      tp: num(tp),
+      sl: parseTicketNumber(sl),
+      tp: parseTicketNumber(tp),
       comment: "SMC terminal",
     };
   };
 
   const submit = (side: Side) => {
-    if (type !== "market" && !num(entry)) return;
+    if (type !== "market" && !parseTicketNumber(entry)) return;
     if (executionMode === "mt5") {
       const order = buildMt5Order(side);
       if (mt5Status !== "connected" || !mt5SymbolInfo[symbol]) {
@@ -330,7 +333,7 @@ export function OrderTicket() {
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-terminal-border bg-terminal-border text-2xs">
           <Metric
             label="Size"
-            value={metrics.positionSize.toFixed(4)}
+            value={formatTicketSize(metrics.positionSize)}
             title={sizeTitle}
           />
           <Metric
@@ -345,7 +348,7 @@ export function OrderTicket() {
           />
           <Metric
             label="R:R"
-            value={metrics.riskReward ? metrics.riskReward.toFixed(2) : "-"}
+            value={formatTicketRatio(metrics.riskReward)}
             accent="var(--brand)"
           />
         </div>

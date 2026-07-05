@@ -27,6 +27,7 @@
     "check:path-tool": "node scripts/check-path-tool-parity.mjs",
     "check:replay-logic": "node scripts/check-replay-logic.mjs",
     "test:position": "tsc -p tsconfig.test.json && node --test .test-build/tests/position/*.test.js",
+    "test:trade": "tsc -p tsconfig.test.json && node --test .test-build/tests/trade/*.test.js",
     "test:drawing": "tsc -p tsconfig.test.json && node --test .test-build/tests/drawing/*.test.js",
     "test:chart": "tsc -p tsconfig.test.json && node --test .test-build/tests/chart/*.test.js",
     "test:ui": "tsc -p tsconfig.test.json && node --test .test-build/tests/ui/*.test.js",

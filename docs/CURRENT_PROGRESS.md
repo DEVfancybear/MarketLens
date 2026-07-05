@@ -1,8 +1,20 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Dialog close icon reliability)_
+_Last updated: 2026-07-05 (Trade ticket formatted price metrics)_
 
 ## Completed this session (2026-07-05)
+
+### Trade ticket formatted price metrics
+- Fixed Trade ticket numeric parsing so prefilled values like `62,751.61` are
+  accepted by Limit/Stop Entry, Stop loss, Take profit, Risk, and Lot math.
+- Limit/Stop tabs no longer render `Size: NaN` when populated from a
+  Long/Short Position drawing.
+- Reward and R:R now calculate from the same parsed Entry/SL/TP values used for
+  Size, matching the Long/Short risk/reward workflow.
+- Hardened simulator risk math so invalid numeric drafts return finite fallback
+  metrics instead of propagating `NaN` into the UI.
+- Added `tests/trade/` and `npm run test:trade` for formatted-price ticket
+  parsing and finite risk metric coverage.
 
 ### Dialog close icon reliability
 - Fixed the shared draggable-dialog no-drag detector so it recognizes nested

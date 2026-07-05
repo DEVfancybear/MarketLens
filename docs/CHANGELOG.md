@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Trade ticket formatted price metrics (2026-07-05)
+- Trade ticket inputs now parse prefilled prices with thousands separators such
+  as `62,751.61`, so Limit/Stop tabs no longer show `Size: NaN` after a
+  Long/Short Position fills the ticket.
+- Simulator risk math now ignores invalid numeric drafts instead of propagating
+  `NaN`, keeping Size, Reward, and R:R stable while the user edits the ticket.
+- Added `npm run test:trade` with coverage for formatted price parsing and
+  finite Limit-ticket metrics.
+
 ### Fixed - Dialog close icon click reliability (2026-07-05)
 - Updated the shared draggable dialog hook so nested SVG/icon targets inside
   buttons are treated as no-drag controls. Close buttons and other icon buttons
