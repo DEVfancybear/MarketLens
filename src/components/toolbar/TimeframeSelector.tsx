@@ -2,7 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, Plus, Star, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { localStore } from "@/services/storage";
@@ -221,12 +221,16 @@ function CustomIntervalDialog({
   const [interval, setInterval] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const resolved = customIntervalToTimeframe(type, interval);
+  const initialPosition = useCallback(
+    () => ({
+      left: Math.min(48, window.innerWidth * 0.04),
+      top: Math.min(96, window.innerHeight * 0.12),
+    }),
+    [],
+  );
   const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
     useDraggableDialog({
-      initialPosition: () => ({
-        left: Math.min(48, window.innerWidth * 0.04),
-        top: Math.min(96, window.innerHeight * 0.12),
-      }),
+      initialPosition,
       boundsMargin: 8,
     });
 
