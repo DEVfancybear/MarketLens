@@ -122,6 +122,45 @@ function positionHandle(g: CanvasRenderingContext2D, x: number, y: number) {
   g.restore();
 }
 
+function positionPriceScaleLabel(
+  g: CanvasRenderingContext2D,
+  text: string,
+  y: number,
+  color: string,
+  paneWidth: number,
+  clipTop: number,
+  clipBottom: number,
+) {
+  const fs = 11;
+  const h = 18;
+  g.save();
+  g.setLineDash([]);
+  g.font = canvasFont(fs, { weight: 700 });
+  const w = Math.ceil(g.measureText(text).width) + 10;
+  const x = Math.max(2, paneWidth - w - 2);
+  const cy = clamp(y, clipTop + h / 2 + 1, clipBottom - h / 2 - 1);
+  const top = Math.round(cy - h / 2);
+  const notch = 5;
+
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(x, top);
+  g.lineTo(x + w, top);
+  g.lineTo(x + w, top + h);
+  g.lineTo(x, top + h);
+  g.lineTo(x, top + h / 2 + notch);
+  g.lineTo(x - notch, top + h / 2);
+  g.lineTo(x, top + h / 2 - notch);
+  g.closePath();
+  g.fill();
+
+  g.fillStyle = "#ffffff";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(text, x + w / 2, top + h / 2 + 0.5);
+  g.restore();
+}
+
 interface Geo {
   xL: number;
   xR: number;
@@ -476,6 +515,36 @@ function render(
   line(g, snapLeft, lineYS, snapLeft + snapW, lineYS);
   g.restore();
 
+  if (d.showLabels !== false) {
+    positionPriceScaleLabel(
+      g,
+      fmtPrice(target),
+      clampToPricePane(yT),
+      tpLine,
+      proj.width,
+      clipTop,
+      clipBottom,
+    );
+    positionPriceScaleLabel(
+      g,
+      fmtPrice(entry),
+      clampToPricePane(yE),
+      "#8a8d93",
+      proj.width,
+      clipTop,
+      clipBottom,
+    );
+    positionPriceScaleLabel(
+      g,
+      fmtPrice(stop),
+      clampToPricePane(yS),
+      slLine,
+      proj.width,
+      clipTop,
+      clipBottom,
+    );
+  }
+
   // --- Hit overlay / diagonal guide ---
   // TradingView draws this BEFORE labels so it appears behind them.
   if (hit) {
@@ -496,8 +565,8 @@ function render(
   }
 
   // --- Labels ---
-  // TradingView layout: Entry label left-aligned, TP/SL labels right-aligned
-  // at the right edge of the box, R/R label at the right near entry.
+  // Absolute TP/Entry/SL prices are drawn as right-edge price badges. The
+  // in-box Target/Stop chips stay focused on distance, percent, ticks, amount.
   // We pre-measure every label so x-offsets are exact — no magic constants.
   if (d.showLabels !== false) {
     const risk = Math.abs(entry - stop);
@@ -553,26 +622,20 @@ function render(
     // Build label strings first so we can measure their pixel width.
     const fmtDistance = (value: number) => formatPriceByTick(value, tickSize, 2);
     const targetParts = [
-      compact ? `TP: ${fmtPrice(target)}` : `Target: ${fmtPrice(target)}`,
+      compact
+        ? `TP: ${fmtDistance(reward)}`
+        : `Target: ${fmtDistance(reward)}`,
     ];
     const stopParts = [
-      compact ? `SL: ${fmtPrice(stop)}` : `Stop: ${fmtPrice(stop)}`,
+      compact ? `SL: ${fmtDistance(risk)}` : `Stop: ${fmtDistance(risk)}`,
     ];
     if (showStats && stats.has("percent")) {
       targetParts.push(`(${tPct.toFixed(2)}%)`);
       stopParts.push(`(${sPct.toFixed(2)}%)`);
     }
     if (showStats && stats.has("ticks")) {
-      targetParts.push(
-        compact
-          ? `${fmtDistance(reward)} ${tTicks}t`
-          : `${fmtDistance(reward)} ${tTicks}`,
-      );
-      stopParts.push(
-        compact
-          ? `${fmtDistance(risk)} ${sTicks}t`
-          : `${fmtDistance(risk)} ${sTicks}`,
-      );
+      targetParts.push(compact ? `${tTicks}t` : String(tTicks));
+      stopParts.push(compact ? `${sTicks}t` : String(sTicks));
     }
     if (targetAmountTxt) targetParts.push(targetAmountTxt);
     if (stopAmountTxt) stopParts.push(stopAmountTxt);

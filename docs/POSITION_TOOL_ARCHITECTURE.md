@@ -146,9 +146,9 @@ Long or vice versa.
 
 Default labels follow the TradingView risk/reward visual model:
 
-- Target/Stop labels display the absolute TP/SL price first. Percentage,
-  distance/tick count, and projected account amount are appended when stats are
-  enabled.
+- Right-edge price badges display the absolute target, entry, and stop prices.
+- Target/Stop in-box chips display distance first. Percentage, tick count, and
+  projected account amount are appended when stats are enabled.
 - Entry label displays open P&L, quantity, and Risk/Reward Ratio when account
   and risk settings are available.
 - Target/Stop labels sit inside the box near the left edge.

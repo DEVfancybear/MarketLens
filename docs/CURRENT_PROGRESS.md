@@ -1,8 +1,17 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Chart timezone selector)_
+_Last updated: 2026-07-05 (Long/Short price label parity)_
 
 ## Completed this session (2026-07-05)
+
+### Long/Short price label parity
+- Rechecked the user-provided TradingView Long/Short screenshots: absolute
+  TP/Entry/SL prices are shown on the right price scale, while the in-box
+  Target/Stop chips show metrics.
+- Added canvas-rendered right-edge price badges for target, entry, and stop
+  prices so the drawing exposes the actual SL/TP levels on chart.
+- Restored Target/Stop chips to TradingView-style metrics: distance, percent,
+  ticks, amount, and hit status.
 
 ### Chart timezone selector
 - Researched TradingView timezone behavior from the user screenshot plus
@@ -15,13 +24,6 @@ _Last updated: 2026-07-05 (Chart timezone selector)_
   all use the selected timezone.
 - Added `npm run test:chart` coverage for UTC/New York parsing, formatting,
   offset labels, and marker chips.
-
-### Long/Short TP/SL price labels
-- Updated Long/Short Position chart labels so TP and SL chips show the absolute
-  level price first (`Target: price`, `Stop: price`) instead of showing only
-  the distance from entry.
-- Kept existing optional stats after the price: percent, distance/ticks, amount,
-  hit status, and entry R/R.
 
 ### Long/Short lot sizing prefill
 - Added `src/services/positionLotSizing.ts` so risk-to-lot math is shared by

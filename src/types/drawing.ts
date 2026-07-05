@@ -91,9 +91,10 @@ export type LineStyle = "solid" | "dashed" | "dotted";
 
 /**
  * Optional metrics the Long/Short position tool can append to its on-chart
- * labels (TradingView's "Stats" multi-select). TP/SL price levels are always
- * shown; `percent` = price offset %, `ticks` = distance plus offset in ticks,
- * `rr` = risk/reward, `amount` = money P/L (needs account + risk configured).
+ * labels (TradingView's "Stats" multi-select). Absolute TP/SL price levels are
+ * drawn separately as right-edge price badges; `percent` = price offset %,
+ * `ticks` = offset in ticks, `rr` = risk/reward, `amount` = money P/L (needs
+ * account + risk configured).
  */
 export type PositionStat = "percent" | "ticks" | "rr" | "amount";
 

@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Long/Short price label parity (2026-07-05)
+- Long/Short Position now renders absolute target, entry, and stop prices as
+  right-edge price badges, matching TradingView's price-scale treatment.
+- Target/Stop in-box chips are back to TradingView-style metrics: distance,
+  percent, ticks, amount, and hit status instead of duplicating the absolute
+  level price.
+
 ### Added - Chart timezone selector (2026-07-05)
 - Added a TradingView-style timezone selector to the bottom-right chart clock.
   The menu includes `UTC`, `Exchange`, and common city/IANA zones with live UTC
@@ -12,11 +19,6 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   clock formatting, `Go to` dialog defaults, Date/Custom Range parsing, and the
   temporary Go-to marker chip.
 - Added timezone parser/formatter coverage to `npm run test:chart`.
-
-### Changed - Long/Short chart labels show TP/SL prices (2026-07-05)
-- Long/Short Position chart labels now show the absolute take-profit and
-  stop-loss prices first, while keeping percent, distance/ticks, and amount as
-  optional stats.
 
 ### Added - Long/Short position lot sizing prefill (2026-07-05)
 - Added `positionLotSizing.ts` as the shared contract for converting
