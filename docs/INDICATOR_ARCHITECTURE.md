@@ -199,18 +199,27 @@ button edits source code. See `docs/SETTTING_ARCHITECTURE.md`.
 ## Indicator browser
 
 `components/toolbar/IndicatorMenu.tsx` is a TradingView-style modal opened from the top toolbar.
-It replaces the old compact dropdown while keeping the same indicator-store actions:
+It replaces the old compact dropdown and separates local Pine scripts from
+TradingView catalog data:
+
+Research source:
+
+- TradingView public scripts directory: https://www.tradingview.com/scripts/
 
 - Header: `Indicators, metrics, and strategies`.
-- Search filters saved scripts, built-ins, author labels, and source text.
-- Sidebar sections: Favorites, My scripts, and Built-ins.
+- Search filters saved scripts, TradingView catalog rows, author labels, and source text.
+- Sidebar sections: Favorites, My scripts, Purchased, Built-in, and Community.
 - Table columns: Name, Author, Boosts.
 - `My scripts` uses a TradingView-style `SCRIPT NAME` list; each saved script has star,
   source-code `{}` and trash actions.
 - Saved scripts can be favorited, added to chart, opened in the bottom Pine Editor, or deleted
   after confirmation.
-- Built-ins still use `toggleIndicatorAtom`; active built-ins route to the shared
-  `IndicatorSettingsDialog`.
+- TradingView catalog rows are loaded through `GET /api/indicators/tradingview?category=...`.
+  The route scrapes TradingView public script pages and normalizes rows in
+  `services/tradingViewIndicatorCatalog.ts`.
+- Do not add local fallback indicator lists. If TradingView has no public data
+  for a category or parsing fails, the API returns `source: "pending"` and an
+  empty row list. The UI must show that pending state instead of inventing data.
 
 ## Pine-like compiler contract
 

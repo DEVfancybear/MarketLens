@@ -1,8 +1,23 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Replay past-jump blank viewport)_
+_Last updated: 2026-07-05 (Indicator browser API-only catalog)_
 
 ## Completed this session (2026-07-05)
+
+### Indicator browser API-only catalog
+- Reworked the TradingView-style indicator modal sidebar to include Personal,
+  Built-in, and Community sections while removing the Store tab.
+- Added `GET /api/indicators/tradingview?category=...` so the browser pulls
+  rows from TradingView public script pages through the app backend instead of
+  direct client cross-origin calls.
+- Added `services/tradingViewIndicatorCatalog.ts` to parse TradingView script
+  cards into normalized `{ name, author, boosts, type, url }` rows.
+- Removed the local technical/fundamental/community fallback catalogs. If
+  TradingView data cannot be fetched or parsed, the API returns
+  `source: "pending"` with no rows and the UI displays that pending state.
+- Added `tests/indicatorCatalog/tradingViewIndicatorCatalog.test.ts` and
+  `npm run test:indicator-catalog` to guard parser behavior and no-fallback
+  semantics.
 
 ### Replay past-jump blank viewport
 - Researched the official TradingView Lightweight Charts time-scale API:

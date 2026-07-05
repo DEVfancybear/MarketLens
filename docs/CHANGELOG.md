@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Indicator browser API-only catalog (2026-07-05)
+- Refactored the `Indicators, metrics, and strategies` popup toward the
+  TradingView sidebar layout: Personal, Built-in, and Community sections, with
+  the Store tab removed.
+- Added `GET /api/indicators/tradingview` plus
+  `services/tradingViewIndicatorCatalog.ts` to load and normalize rows from
+  TradingView public script pages.
+- Removed local hardcoded technical/fundamental/community fallback datasets.
+  When TradingView data is unavailable or unparseable, the route now returns
+  `source: "pending"` with an empty list so the task remains explicit instead
+  of showing fabricated rows.
+- Added `npm run test:indicator-catalog` to guard parser behavior and ensure
+  unparseable upstream HTML stays empty rather than falling back to local data.
+
 ### Fixed - Replay past-jump blank viewport (2026-07-05)
 - Added shared replay viewport helpers that detect when the visible logical
   range no longer intersects the replay-visible candle slice.
