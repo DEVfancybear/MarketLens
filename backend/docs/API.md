@@ -97,16 +97,17 @@ One call that returns the user's whole workspace for hydrating local stores on s
 **Response** `200 OK`
 ```json
 {
-  "settings":   { "ui": {…}, "smc": {…}, "chart": {…} },
-  "watchlists": [ … ],
-  "drawings":   [ … ],
-  "indicators": [ … ],
-  "pineScripts":[ … ],
-  "alerts":     [ … ],
-  "layouts":    [ … ]
+  "settings":         { "ui": {…}, "smc": {…}, "chart": {…}, "notifications": {…} },
+  "watchlists":       [ … ],
+  "drawingTemplates": [ … ],
+  "indicators":       [ … ],
+  "pineScripts":      [ … ],
+  "alerts":           [ … ],
+  "layouts":          [ … ]
 }
 ```
-Journal, screenshots, and sim-trading are fetched lazily by their own endpoints (larger payloads).
+Loaded lazily by their own endpoints (larger / scoped payloads), **not** in bootstrap: per-symbol
+`drawings`, `journal`, `screenshots`, and sim-trading.
 
 ---
 
@@ -150,6 +151,17 @@ Backed by `drawings`. Payload mirrors the frontend `DRAWING_OBJECT_MODEL`.
 | DELETE | `/api/v1/drawings/:id`          | Delete one                                     |
 | POST   | `/api/v1/drawings/batch`        | Bulk upsert (sync flush; dedupes on `clientId`)|
 
+## Drawing templates  🔒
+
+Global (not per-symbol) style presets — backed by `drawing_templates`.
+
+| Method | Path                              | Purpose                                     |
+| ------ | --------------------------------- | ------------------------------------------- |
+| GET    | `/api/v1/drawing-templates`       | List style presets                          |
+| POST   | `/api/v1/drawing-templates`       | Create `{ name, family, style }`            |
+| PUT    | `/api/v1/drawing-templates/:id`   | Update                                      |
+| DELETE | `/api/v1/drawing-templates/:id`   | Delete                                      |
+
 ---
 
 ## Indicators  🔒
@@ -181,23 +193,41 @@ Backed by `pine_scripts`.
 
 ## Alerts  🔒
 
-Backed by `alerts` + `alert_events`.
+Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery channels; the
+**global** notification defaults (`AlertSettings`) are read/written via `/api/v1/settings`
+(`notifications` section), not here.
 
 | Method | Path                          | Purpose                                   |
 | ------ | ----------------------------- | ----------------------------------------- |
 | GET    | `/api/v1/alerts`              | List (filter `?status=active`)            |
-| POST   | `/api/v1/alerts`              | Create `{ symbol, condition, price, message, recurring }` |
-| PATCH  | `/api/v1/alerts/:id`          | Update / pause / resume                   |
+| POST   | `/api/v1/alerts`              | Create (see body below)                   |
+| PATCH  | `/api/v1/alerts/:id`          | Update / pause (`enabled:false`) / resume |
 | DELETE | `/api/v1/alerts/:id`          | Delete                                    |
-| GET    | `/api/v1/alerts/:id/events`   | Trigger history                           |
-| GET    | `/api/v1/alerts/history`      | All trigger events for the user           |
+| GET    | `/api/v1/alerts/:id/events`   | Trigger history for one alert             |
+| GET    | `/api/v1/alerts/history`      | All trigger events (newest-first, ~200 cap)|
+
+**Create/update body**
+```json
+{
+  "symbol": "BTCUSDT",
+  "condition": "crossUp",           // above | below | crossUp | crossDown
+  "price": 65000,
+  "note": "breakout",
+  "recurring": false,
+  "enabled": true,
+  "locked": false,
+  "channels": { "sound": true, "browser": false, "push": true, "telegram": false, "discord": false }
+}
+```
+
+**Event** (`AlertHistoryEntry`): `{ id, alertId, symbol, condition, targetPrice, triggerPrice, triggeredAt }`.
 
 ### Push tokens (FCM)
 
-| Method | Path                       | Purpose                                 |
-| ------ | -------------------------- | --------------------------------------- |
-| POST   | `/api/v1/push/tokens`      | Register/refresh `{ fcmToken, platform }` |
-| DELETE | `/api/v1/push/tokens/:tok` | Unregister a device token               |
+| Method | Path                       | Purpose                                            |
+| ------ | -------------------------- | -------------------------------------------------- |
+| POST   | `/api/v1/push/tokens`      | Register/refresh `{ fcmToken, platform, permission }` |
+| DELETE | `/api/v1/push/tokens/:tok` | Unregister a device token                          |
 
 ---
 
@@ -207,11 +237,25 @@ Backed by `journal_entries` + `screenshots`.
 
 | Method | Path                                   | Purpose                                   |
 | ------ | -------------------------------------- | ----------------------------------------- |
-| GET    | `/api/v1/journal?symbol=&tag=&limit=`  | List (paginated, filterable)              |
-| POST   | `/api/v1/journal`                      | Create `{ symbol, title, notes, tags, rating, positionId? }` |
+| GET    | `/api/v1/journal?symbol=&tag=&limit=`  | List (paginated by `entryTime`, filterable) |
+| POST   | `/api/v1/journal`                      | Create (trade-centric body below)         |
 | GET    | `/api/v1/journal/:id`                  | Get one with its screenshots              |
 | PUT    | `/api/v1/journal/:id`                  | Update                                    |
 | DELETE | `/api/v1/journal/:id`                  | Delete (cascades screenshots)             |
+
+**Create/update body** (matches frontend `JournalEntry`)
+```json
+{
+  "symbol": "BTCUSDT",
+  "side": "long",                    // long | short
+  "entryTime": "2026-07-06T10:00:00Z",
+  "exitTime":  "2026-07-06T12:30:00Z",
+  "entryPrice": 64000, "exitPrice": 65500,
+  "quantity": 0.5, "pnl": 750, "rr": 2.1, "riskAmount": 350,
+  "notes": "clean BOS entry", "tags": ["breakout","london"],
+  "positionId": null
+}
+```
 
 ### Screenshots
 
@@ -220,7 +264,7 @@ Two-step upload so bytes go straight to object storage, not through the API.
 | Method | Path                                    | Purpose                                        |
 | ------ | --------------------------------------- | ---------------------------------------------- |
 | POST   | `/api/v1/screenshots/upload-url`        | Get a pre-signed PUT URL + `storageKey`        |
-| POST   | `/api/v1/screenshots`                   | Register metadata `{ storageKey, journalEntryId?, width, height }` |
+| POST   | `/api/v1/screenshots`                   | Register `{ storageKey, journalEntryId?, phase, width, height }` (`phase`: before \| after-entry \| after-exit) |
 | GET    | `/api/v1/screenshots/:id`               | Get a (short-lived signed) view URL            |
 | DELETE | `/api/v1/screenshots/:id`               | Delete metadata + schedule blob removal        |
 
@@ -241,15 +285,16 @@ Backed by `layouts`.
 
 ## Simulated trading  🔒
 
-Backed by `sim_accounts` + `orders` + `positions`. Optional / later phase — the replay simulator can
-stay client-side until durable backtests are needed.
+Backed by `sim_accounts` + `sim_positions` (one self-contained table; a pending order is a position
+with `status=pending`, fills embedded). Optional / later phase — the replay simulator can stay
+client-side until durable backtests are needed.
 
 | Method | Path                                    | Purpose                                |
 | ------ | --------------------------------------- | -------------------------------------- |
 | GET    | `/api/v1/sim/accounts`                  | List accounts                          |
 | POST   | `/api/v1/sim/accounts`                  | Create `{ name, startingEquity }`      |
 | GET    | `/api/v1/sim/accounts/:id/positions`    | Positions (filter `?status=open`)      |
-| POST   | `/api/v1/sim/accounts/:id/orders`       | Place `{ symbol, side, type, qty, price?, sl?, tp? }` |
+| POST   | `/api/v1/sim/accounts/:id/orders`       | Place `{ symbol, side, type, qty, price?, sl?, tp? }` (`side`: long \| short) → creates a `sim_positions` row |
 | POST   | `/api/v1/sim/positions/:id/close`       | Close a position                       |
 | GET    | `/api/v1/sim/accounts/:id/analytics`    | Win rate, PF, expectancy, DD, R-dist   |
 

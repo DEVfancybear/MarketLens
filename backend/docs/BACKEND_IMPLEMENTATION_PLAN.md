@@ -163,9 +163,11 @@ for clients beyond the framework swap.
 **Goal:** Prove the authed-resource pattern with the smallest resource, then expose bootstrap.
 
 **Steps**
-1. Migration `0003_settings.sql` — `user_settings`, `layouts` (`DATABASE.md` §6).
+1. Migration `0003_settings.sql` — `user_settings` (sections `ui`/`smc`/`chart`/`notifications`) +
+   `layouts` (`DATABASE.md` §6). Note `ui` persists only `{ theme, panels }`; `notifications` holds
+   the global `AlertSettings` (used later by Phase 10).
 2. `internal/settings`: repo + Fiber handler for `GET/PUT/PATCH /api/v1/settings` (auto-create the
-   row on first read).
+   row on first read). `PATCH` does a jsonb section merge (e.g. just `ui.theme`).
 3. `GET /api/v1/sync/bootstrap` returning the workspace envelope (`API.md` §Sync). For now it returns
    settings + empty arrays; each later phase fills in its slice.
 
@@ -196,10 +198,14 @@ the first user's rows (cross-user access returns `404`, never `403` — don't le
 resource shows up in `sync/bootstrap` where applicable; the matching frontend store switches from
 localStorage-only to write-through (local first, then API) without regressing offline use.
 
-> **Migration ordering:** `0003`–`0007` may be authored up front (Phase 1 style) or lazily per phase.
-> The one hard rule: create `positions` (`0006_trading`) **before** `journal_entries` (`0007_journal`)
-> because of the `journal_entries.position_id → positions` FK (`DATABASE.md` §10). Migrations 6/7/8/9
-> all reference `0004_charting`, so that file lands whenever the first of those phases starts.
+> **Migration ordering (two hard rules, `DATABASE.md` §12):**
+> 1. Within `0004_charting`, create `pine_scripts` **before** `indicator_presets`
+>    (`indicator_presets.script_id → pine_scripts` FK).
+> 2. Create `sim_positions` (`0006_trading`) **before** `journal_entries` (`0007_journal`)
+>    (`journal_entries.position_id → sim_positions` FK).
+> Migrations 6/7/8/9 all reference `0004_charting`, so that file lands whenever the first of those
+> phases starts. `0003`–`0007` may be authored up front or lazily per phase, as long as those two
+> rules hold.
 
 ---
 
@@ -246,13 +252,17 @@ the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). *
    instead of duplicating.
 4. Handler: `GET /api/v1/drawings?symbol=…`, `POST /api/v1/drawings`, `PUT/PATCH/DELETE
    /api/v1/drawings/:id`, `POST /api/v1/drawings/batch` (sync flush).
-5. Bootstrap: **omit** the full drawing set from bootstrap (can be large) — load lazily per symbol on
-   first chart open; only counts/recent symbols belong in bootstrap if anything.
+5. **Also in this phase — `drawing_templates`** (`DATABASE.md` §7.3): the frontend `drawingTemplates`
+   key is **global** style presets (not per-symbol). Add CRUD `GET/POST /api/v1/drawing-templates`,
+   `PUT/DELETE /api/v1/drawing-templates/:id`; `UNIQUE (user_id, name, family)`.
+6. Bootstrap: **omit** the full drawing set (can be large) — load lazily per symbol on first chart
+   open. **Include** `drawingTemplates` in bootstrap (small, global, needed everywhere).
 
 **Acceptance**
 - Draw → reload → drawing reappears pinned to the same `(time, price)`.
-- Flushing the same batch twice (retry) yields no duplicates.
+- Flushing the same batch twice (retry) yields no duplicates (`client_id` dedupe).
 - `PATCH { locked: true }` / `{ hidden: true }` round-trips.
+- Save a style template, apply it on another chart after reload.
 - Fetching another user's drawing id → `404`.
 
 **Complexity:** Medium (batch + dedupe is the real work).
@@ -263,13 +273,15 @@ the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). *
 
 **Goal:** Persist indicator presets (built-in EMA/RSI/MACD/… settings + enabled + order).
 
-**Table:** `indicator_presets` (`DATABASE.md` §7.3). **Frontend store:** `chartStore.indicators`
-(persisted as `indicators`). *Pine-authored* indicators are Phase 9.
+**Table:** `indicator_presets` (`DATABASE.md` §7.5 — full `IndicatorConfig` in `config jsonb`,
+`indicator_type`/`visible`/`position` promoted to columns, `script_id` FK for `CUSTOM`). **Frontend
+store:** `chartStore.indicators` (persisted as `indicators`). Pine *scripts* are Phase 9.
 
 **Steps**
-1. Migration `0004_charting` (indicator_presets portion).
-2. Queries: list ordered by `position`; create; update `settings`/`enabled`/`position`; delete.
-3. Repo: keep `settings jsonb` opaque (mirror the frontend indicator options shape).
+1. Migration `0004_charting` (indicator_presets portion — **after** pine_scripts, for the FK).
+2. Queries: list ordered by `position`; create; update `config`/`visible`/`position`; delete.
+3. Repo: keep `config jsonb` opaque (the full `IndicatorConfig`: length(s), colors, `inputValues`,
+   `styleValues`); resolve `script_id` for `CUSTOM` indicators to the user's `pine_scripts` row.
 4. Handler: `GET/POST /api/v1/indicators`, `PUT/DELETE /api/v1/indicators/:id`.
 5. Bootstrap: `indicators` array.
 
@@ -284,22 +296,25 @@ the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). *
 
 **Goal:** Persist user-authored Pine-like source indicators.
 
-**Table:** `pine_scripts` (`DATABASE.md` §7.4). **Frontend store:** `chartStore` Pine state
-(persisted as `pineScripts`).
+**Table:** `pine_scripts` (`DATABASE.md` §7.4 — matches `CustomIndicatorScript`: `source_code`,
+`favorite`, `client_id`). **Frontend store:** `chartStore` Pine state (persisted as `pineScripts`).
+**Create before `indicator_presets`** in `0004` (FK target).
 
 **Steps**
-1. Migration `0004_charting` (pine_scripts portion).
-2. Queries: list **metadata only** (id, name, updated_at — not `source`, keep the list light); get one
-   with full `source`; create; update `name`/`source`/`meta`; delete.
-3. Repo: cap `source` length (e.g. reject > 64 KB) to bound payloads; store last compile status in
+1. Migration `0004_charting` (pine_scripts portion, first among the FK pair).
+2. Queries: list **metadata only** (id, name, favorite, updated_at — **not** `source_code`, keep the
+   list light); get one with full `source_code`; create; update `name`/`source_code`/`favorite`/
+   `meta`; delete. Dedupe on `client_id`.
+3. Repo: cap `source_code` length (e.g. reject > 64 KB); store parsed inputs / last compile status in
    `meta jsonb`.
 4. Handler: `GET /api/v1/pine-scripts`, `GET /api/v1/pine-scripts/:id`, `POST /api/v1/pine-scripts`,
    `PUT/DELETE /api/v1/pine-scripts/:id`.
 5. Bootstrap: `pineScripts` array (metadata only; fetch source on open).
 
 **Acceptance**
-- Save a script, edit its source, reload → latest source loads; list stays lightweight (no source).
+- Save a script, edit its source, toggle favorite, reload → latest state loads; list stays light.
 - Oversized source is rejected with `400 bad_request`.
+- A `CUSTOM` indicator's `script_id` resolves to the right script (cross-check with Phase 8).
 
 **Complexity:** Low–Medium.
 
@@ -310,27 +325,34 @@ the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). *
 **Goal:** Persist price alerts, their trigger history, and per-device FCM tokens. Unlocks
 closed-browser push targeting every device.
 
-**Tables:** `alerts`, `alert_events`, `push_tokens` (`DATABASE.md` §8, §5.4). **Frontend stores:**
-`alertStore` (persisted as `alerts`), plus the existing push seam (`usePushAlertSync`,
-`notificationStore`).
+**Tables:** `alerts`, `alert_events`, `push_tokens` (`DATABASE.md` §8, §5.4). The **global**
+`AlertSettings` lives in `user_settings.notifications` (Phase 5), not in `alerts`. **Frontend stores:**
+`alertStore` (persisted as the composite `{ alerts, triggeredAlerts, history, settings }` under key
+`alerts`), plus the push seam (`usePushAlertSync`, `notificationStore`).
 
 **Steps**
-1. Migration `0005_alerts` (alerts + alert_events) — `push_tokens` ships in `0002_auth`, so it already
-   exists by now.
-2. Queries: alerts CRUD + status transitions (`active`↔`paused`, → `triggered`/`expired`); record an
-   `alert_events` row on trigger; list events per alert and per user; upsert push token on
-   `UNIQUE (fcm_token)`; delete token.
-3. Repo: keep condition/price validation server-side (`above|below|crossUp|crossDown`, `price > 0`).
+1. Migration `0005_alerts` (alerts + alert_events) — `push_tokens` shipped in `0002_auth`.
+2. Queries: alerts CRUD including the **per-alert channel flags** (`sound`/`browser`/`push`/
+   `telegram`/`discord`) and `enabled`/`locked`/`note`/`recurring`; pause == `enabled=false`; on
+   trigger set `status='triggered'`, `trigger_price`, `triggered_at` **and** insert an `alert_events`
+   row (shape = `AlertHistoryEntry`: symbol, condition, target_price, trigger_price, triggered_at);
+   list events per alert and per user; upsert push token on `UNIQUE (fcm_token)` (update
+   `permission`, `last_seen_at`); delete token.
+3. Repo: validate server-side (`above|below|crossUp|crossDown`, `price > 0`); prune `alert_events` to
+   the newest ~200 per user (matches the frontend cap).
 4. Handler: `GET/POST /api/v1/alerts`, `PATCH/DELETE /api/v1/alerts/:id`,
    `GET /api/v1/alerts/:id/events`, `GET /api/v1/alerts/history`,
-   `POST /api/v1/push/tokens`, `DELETE /api/v1/push/tokens/:tok`.
-5. Bootstrap: `alerts` array. Integrate token registration with the existing frontend push flow (send
-   the FCM token to `/push/tokens` instead of / in addition to the current Next API route).
+   `POST /api/v1/push/tokens`, `DELETE /api/v1/push/tokens/:tok`. Global notification prefs are read/
+   written via `/api/v1/settings` (`notifications` section), not here.
+5. Bootstrap: `alerts` array + `triggeredAlerts` + recent `history`. Integrate token registration with
+   the existing frontend push flow (send the FCM token + `permission` to `/push/tokens`).
 
 **Acceptance**
-- Create an alert, pause and resume it, delete it — all persist and sync.
-- A trigger writes an `alert_events` row; `/alerts/history` returns it newest-first.
-- Registering the same FCM token twice updates `last_seen_at`, no dup row.
+- Create an alert with specific channels (e.g. push+telegram), pause/resume, delete — all persist.
+- A trigger writes an `alert_events` row with target vs trigger price; `/alerts/history` returns it
+  newest-first, capped at ~200.
+- Registering the same FCM token twice updates `permission` + `last_seen_at`, no dup row.
+- Toggling a global channel via `/settings` persists in `user_settings.notifications`.
 
 **Complexity:** Medium.
 
@@ -341,30 +363,33 @@ closed-browser push targeting every device.
 **Goal:** Persist trade journal entries and their screenshots. The heaviest phase — introduces
 **object storage** (image bytes never touch the DB or the API body).
 
-**Tables:** `journal_entries`, `screenshots` (`DATABASE.md` §9). **Frontend store:** `journalStore`
-(IndexedDB today) + screenshot blobs (IndexedDB today).
+**Tables:** `journal_entries`, `screenshots` (`DATABASE.md` §10). The journal is **trade-centric**
+(`side`, `entry_time`/`exit_time`, `entry_price`/`exit_price`, `quantity`, `pnl`, `rr`,
+`risk_amount`, `tags`) — **not** a title/rating note. Screenshots carry a `phase`
+(`before`/`after-entry`/`after-exit`). **Frontend store:** `journalStore` (IndexedDB `JournalEntry[]`)
++ screenshot blobs (IndexedDB `{ id, blob }`).
 
 **Steps**
-1. Migration `0007_journal` — requires `positions` (`0006_trading`) to exist first for the
-   `position_id` FK. If Phase 13 hasn't run, ship the FK as a follow-up `ALTER TABLE` or make the
-   column nullable-without-FK initially.
+1. Migration `0007_journal` — requires `sim_positions` (`0006_trading`) first for the `position_id`
+   FK. If Phase 13 hasn't run, make `position_id` nullable-without-FK and add the FK later.
 2. Add an object-storage client (`internal/storage`, S3/R2 via `aws-sdk-go-v2` or MinIO). Config:
    bucket, region, credentials, public/base URL.
-3. Queries: journal CRUD with filters (`symbol`, `tag` via the `gin(tags)` index, pagination); insert/
-   list/delete screenshot metadata by entry.
+3. Queries: journal CRUD with the trade fields above + filters (`symbol`, `tag` via the `gin(tags)`
+   index, pagination by `entry_time`); insert/list/delete screenshot metadata by entry + `phase`.
 4. Handler:
-   - Journal: `GET /api/v1/journal?symbol=&tag=&limit=`, `POST`, `GET/PUT/DELETE /api/v1/journal/:id`.
+   - Journal: `GET /api/v1/journal?symbol=&tag=&limit=`, `POST` (body = trade fields), `GET/PUT/DELETE
+     /api/v1/journal/:id`.
    - Screenshots (two-step upload — bytes go straight to storage): `POST
      /api/v1/screenshots/upload-url` (returns a pre-signed PUT URL + `storageKey`), `POST
-     /api/v1/screenshots` (register metadata), `GET /api/v1/screenshots/:id` (short-lived signed view
-     URL), `DELETE /api/v1/screenshots/:id`.
+     /api/v1/screenshots` (register metadata: `journalEntryId`, `phase`, dims), `GET
+     /api/v1/screenshots/:id` (short-lived signed view URL), `DELETE /api/v1/screenshots/:id`.
 5. Bootstrap: **omit** journal/screenshots (large) — fetch lazily when the Journal panel opens.
 6. Blob cleanup: on screenshot/entry delete, enqueue the `storage_key` for out-of-band blob removal
    (`DATABASE.md` §13); log the key before the cascade.
 
 **Acceptance**
-- Create an entry with tags, filter by tag and by symbol, paginate — correct results.
-- Upload a screenshot via the pre-signed URL, attach it to an entry, fetch its view URL, render it.
+- Create a trade entry (side/entry/exit/pnl/rr) with tags, filter by tag and by symbol, paginate.
+- Upload a `before` screenshot via the pre-signed URL, attach it to an entry, fetch its view URL.
 - Deleting the entry removes its screenshot rows and schedules blob deletion.
 
 **Complexity:** High (object storage + pre-signed URLs + cleanup).
@@ -402,22 +427,27 @@ survive reloads. **Optional / last** — the fill + SL/TP engine stays in the fr
 (`services/tradeEngine.ts`); the backend is the durable store + analytics aggregator, not a matching
 engine.
 
-**Tables:** `sim_accounts`, `orders`, `positions` (`DATABASE.md` §10). **Frontend store:** `tradeStore`
-(runtime-only today).
+**Tables:** `sim_accounts`, `sim_positions` (`DATABASE.md` §9). Reconciled with the frontend
+`Position`: **one self-contained table** (no separate `orders`) — a pending order is a `sim_positions`
+row with `status='pending'`; fills are an embedded `fills jsonb` array (`Fill[]`); side is
+`long`/`short`; PnL is split `realized_pnl`/`unrealized_pnl`. **Frontend store:** `tradeStore`
+(runtime-only today). The fill/SL/TP engine stays client-side (`services/tradeEngine.ts`).
 
 **Steps**
-1. Migration `0006_trading` (before `0007_journal`).
-2. Queries: accounts CRUD; insert order; update order status on fill; open position; close position
-   (set `status`, `pnl`, `r_multiple`, `closed_at`); list positions by status; analytics aggregate.
+1. Migration `0006_trading` (before `0007_journal`; enums `trade_side`/`order_type`/`position_status`).
+2. Queries: accounts CRUD; upsert position (dedupe on `client_id`) covering the full lifecycle
+   `pending → open → closed/cancelled`; update `entry`/`remaining`/`realized_pnl`/`unrealized_pnl`/
+   `fills`/`close_time`; list positions by status; analytics aggregate.
 3. Repo: analytics computed in SQL where cheap (win rate, profit factor, expectancy, max drawdown,
-   R-distribution) — mirrors `services/analyticsEngine.ts` so the numbers match the client.
+   R-distribution) — mirror `services/analyticsEngine.ts` so the numbers match the client.
 4. Handler: `GET/POST /api/v1/sim/accounts`, `GET /api/v1/sim/accounts/:id/positions`,
-   `POST /api/v1/sim/accounts/:id/orders`, `POST /api/v1/sim/positions/:id/close`,
-   `GET /api/v1/sim/accounts/:id/analytics`.
+   `POST /api/v1/sim/accounts/:id/orders` (creates a `sim_positions` row),
+   `POST /api/v1/sim/positions/:id/close`, `GET /api/v1/sim/accounts/:id/analytics`.
 5. Bootstrap: **omit** (per-account, fetched when the Trade/Analytics panel opens).
 
 **Acceptance**
-- Create an account, record an order → position → close it; equity/PnL persist across reload.
+- Create an account, place an order → position (with fills) → close it; equity/PnL persist across
+  reload; a re-synced position (same `client_id`) doesn't duplicate.
 - `/analytics` returns win rate / PF / expectancy / max DD matching the frontend engine on the same
   trade set.
 

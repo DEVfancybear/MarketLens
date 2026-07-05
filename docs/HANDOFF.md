@@ -59,6 +59,12 @@ framework-agnostic. Confirm this choice before starting Phase 0.
   Go, not Firebase-only). Rationale in `AUTH.md` §1.
 - **PostgreSQL** as the durable source of truth; browser stores demoted to write-through cache.
 - **Google only** for now; `auth_identities` is provider-agnostic for future providers.
+- **Backend = Fiber** (confirmed by user).
+- **DB schema audited against the real frontend** (2026-07-06): `DATABASE.md` §1 maps every exact
+  localStorage/IndexedDB key → table. Notable: `drawing_templates` is a real table; journal is
+  trade-centric; sim trading is one `sim_positions` table (no `orders`); alerts carry per-channel
+  flags; `user_settings` has ui/smc/chart/notifications sections. Coders should trust these docs —
+  the jsonb columns mirror `frontend/src/types/*` so the client model round-trips untouched.
 
 ## Important files
 

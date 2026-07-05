@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 2026-07-06 — Backend docs reconciled with the real frontend data model
+
+**Feature:** Audited the frontend's actual persistence (localStorage keys, IndexedDB, `types/*`) and
+rewrote the backend schema/plan/API to match exactly — so implementation needs no reverse-engineering.
+
+**Key reconciliations:**
+- **New table** `drawing_templates` (global `drawingTemplates` style presets — was missing).
+- `user_settings` gains a `notifications` section (global `AlertSettings`) + `chart` (timeframe
+  favorites); documented that `ui` only persists `{ theme, panels }`.
+- `alerts` gains per-channel flags (sound/browser/push/telegram/discord) + `enabled`/`locked`/`note`/
+  `trigger_price`; `alert_events` matches `AlertHistoryEntry`.
+- `journal_entries` is now **trade-centric** (side/entry+exit price+time/pnl/rr/riskAmount), not
+  title/rating; `screenshots` gains `phase`.
+- Simulated trading collapsed to a single `sim_positions` table (embedded `fills jsonb`, `long/short`,
+  `pending/open/closed/cancelled`) — dropped the separate `orders` table.
+- `pine_scripts` → `source_code` + `favorite`; `indicator_presets` → `config` jsonb + `script_id` FK;
+  added `client_id` sync-dedupe columns; documented two FK migration-ordering rules.
+
+**Files:** `backend/docs/DATABASE.md` (rewritten, audited), `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`
+(Phases 5/7/8/9/10/11/13 updated), `backend/docs/API.md` (bootstrap, drawing-templates, alerts,
+journal, screenshots, sim bodies).
+
 ## 2026-07-06 — Detailed backend plan for Phases 6–13 (planning)
 
 **Feature:** Expanded the per-feature persistence phases (6–13) from a summary table into full specs
