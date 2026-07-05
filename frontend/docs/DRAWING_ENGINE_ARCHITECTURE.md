@@ -23,7 +23,7 @@ still work, not just the one you were fixing.
 The Drawing Engine is a canvas-based overlay system that renders user drawings (trendlines, horizontal/vertical lines, rectangles, fib retracements, text, channels, brush, positions) on top of the Lightweight Charts price chart. All geometry is stored in `(time, price)` data space and projected to pixel coordinates each frame, so drawings remain pinned to data through zoom, pan, and resize.
 
 For the shared chart zoom/pan/viewport invalidation contract, see
-`docs/ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
+`ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
 
 ## Architecture layers
 
@@ -405,7 +405,7 @@ text behavior.
 ## Long / Short position tick-price contract - updated 2026-07-03
 
 Full Long/Short rendering and movement details live in
-`docs/POSITION_TOOL_ARCHITECTURE.md`.
+`POSITION_TOOL_ARCHITECTURE.md`.
 
 The Long / Short Position tool must use symbol metadata for tick math. Do not infer a tick from the
 price magnitude.

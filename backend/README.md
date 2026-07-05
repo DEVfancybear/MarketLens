@@ -2,13 +2,16 @@
 
 The backend consists of two parts:
 
-1. **Go Fiber API** - the primary HTTP API server.
+1. **Go API** - the primary HTTP API server. Fiber is the selected framework target.
 2. **Python MT5 Bridge** - a sidecar WebSocket service for FTMO broker integration.
 
 The Python bridge runs as a separate process alongside the Go API. It is not part of the Go Fiber
 request path.
 
 Backend framework decision: **Fiber**.
+
+Current implementation note: the scaffold still uses Go stdlib `net/http`. Fiber is introduced in
+Phase 0 of `docs/BACKEND_IMPLEMENTATION_PLAN.md`.
 
 ## Quick Start
 
@@ -56,12 +59,12 @@ backend/
   cmd/api/main.go              # Go API entry point
   internal/
     config/config.go           # Environment config
-    httpserver/server.go       # Fiber app and server setup
+    httpserver/server.go       # HTTP app and server setup
     health/handler.go          # Health-check endpoint
-    middleware/                # Shared Fiber-compatible middleware
+    middleware/                # Shared HTTP middleware
   bridge/                      # Python MT5 WebSocket bridge (sidecar)
     ftmo_mt5/                  # FTMO broker integration
   docs/                        # Backend architecture and API docs
 ```
 
-New backend code should use Fiber handlers, route groups, and middleware.
+New backend code should use Fiber handlers, route groups, and middleware after Phase 0 migration.

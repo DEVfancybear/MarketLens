@@ -2,6 +2,9 @@
 
 Documentation for the SMC Trading Terminal Go API server.
 
+Backend framework decision: Fiber. Current code is still a small `net/http` scaffold until Phase 0
+of `BACKEND_IMPLEMENTATION_PLAN.md`.
+
 ## Index
 
 | File               | Purpose                                            |

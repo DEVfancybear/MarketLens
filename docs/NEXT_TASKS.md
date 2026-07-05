@@ -1,36 +1,72 @@
 # NEXT TASKS
 
-> Backend build order is fully specified in `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`
-> (Phases 0–13). The summary below tracks the auth slice; follow the plan doc for step detail.
+_Post-monorepo update 2026-07-06._
 
-## Immediate (auth slice — priority order, maps to plan phases)
+The historical roadmap below is preserved. The current top priority after the monorepo split is:
 
-0. **Foundation (Phase 0)** — adopt Fiber (current code is stdlib `net/http`), extend config with DB
-   + auth + Firebase + CORS vars, add `.env.example`, error-response helper. — *Low–Medium*
-1. **DB layer (Phase 1)** — `pgxpool` + `DATABASE_URL`; `golang-migrate`; migrations
-   `0001_extensions`, `0002_auth`; `sqlc` for user/identity/session. — *Medium*
-2. **Firebase verify (Phase 2)** — `internal/auth/verify.go` using `firebase.google.com/go/v4`
-   (reuse `FIREBASE_*` service-account env). — *Medium*
-3. **Sessions + JWT (Phase 3)** — `internal/auth/{jwt,session,cookies}.go`: access JWT, rotating
-   refresh with reuse detection, httpOnly cookies (`AUTH.md` §3). — *Medium*
-4. **Auth endpoints (Phase 4)** — `POST /api/v1/auth/google`, `/refresh`, `/logout`, `GET /me`,
-   `DELETE /sessions` + `RequireAuth` + CORS; register `/api/v1` group. — *Medium*
-5. **Frontend auth** — ✅ **DONE** (Firebase Google popup, `authStore`, `useAuthSession`,
-   `SignInButton` + `UserMenu` in `TopToolbar`). Verified via typecheck + lint + build.
-   Remaining: after backend Phase 4, set `NEXT_PUBLIC_API_BASE_URL` to activate the session exchange.
+1. Migrate the Go backend scaffold from stdlib `net/http` to Fiber.
+2. Implement backend PostgreSQL persistence and Firebase Google auth according to
+   `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
+3. Add backend sync feature-by-feature for settings, watchlists, drawings, indicators, alerts,
+   journal, layouts, and simulated trading.
+4. Keep frontend feature docs under `frontend/docs/`; use `frontend/docs/archive/` for historical
+   audit/parity reports.
 
-## Upcoming (persistence migration — after auth works)
+For frontend changes, continue using the validation baseline from `docs/HANDOFF.md`.
 
-- `GET /api/v1/sync/bootstrap` + client hydration/merge (`DATABASE.md` §11).
-- Migrate stores one at a time: settings → watchlists → drawings → indicators → pine scripts →
-  alerts → journal/screenshots → layouts → sim-trading (migrations `0003`–`0007`).
-- Move FCM push-token registration into `push_tokens` (`DATABASE.md` §5.4).
+## Current status
 
-## Blocked
+- **✅ Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).**
+- **✅ Phase 2 — Alert Engine: COMPLETE** (engine + notifications + Alert Center + audit + Phase 2.1
+  interactive chart alerts).
+- **✅ OANDA Integration: COMPLETE** (forex/metals/indices via OANDA v20 REST; fallback to
+  TwelveData; extension points for FxcmProvider + ICMarketsProvider).
+- **✅ Phase 3 — TradingView UI Parity: COMPLETE** (90% visual, 85% interaction).
+  16 files modified, 2 created. See `docs/TRADINGVIEW_PARITY_REPORT.md`.
+- **✅ Phase 4.1 — Drawing Engine Foundation: COMPLETE.**
+- **✅ Phase 4.2 — Trend Line Suite: COMPLETE** (8 line tools + DrawingContextMenu + styles).
+- **✅ Phase 4.2.1 — Tool Activation: COMPLETE** (state machine, cursor system, live preview).
+- **✅ Phase 4.2.2 — Tool Group System: COMPLETE** (4 grouped icons + flyout portal fix).
+- **✅ Phase 4.3 — Shape Tools Suite: COMPLETE** (8 shapes + fill + supply/demand zones).
+- **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + trend-based fibExtension,
+  plugin architecture, retracement 2-point creation, extension 3-click creation, auto-levels with
+  labels/background bands, full hitTest/movePoints/boundingBox).
+- **✅ Phase 5 — Left Toolbar / Indicator Engine: COMPLETE** (see below).
+- **✅ Jotai migration — COMPLETE** (all 11 stores converted to atoms, Zustand removed).
 
-- Nothing blocked. Requires a provisioned Postgres instance and Firebase console: enable Google
-  provider + add authorized domains (`AUTH.md` §8).
+## Completed — Phase 5 (Left Toolbar / Indicator Engine)
 
-## Priority order
+1. Full 17+ tool TradingView left toolbar with 9 visual groups and separators.
+2. Indicator settings dialogs with parameter customization (SMA/EMA length, RSI period, etc.).
+3. Indicator style customization (colors, line width, overlay vs. pane).
+4. Hotkey system for drawing tools and indicators (1–9 switch tools, Delete, Ctrl+D, Ctrl+A, Ctrl+I, etc.).
 
-Auth backend (1–4) → Auth frontend (5) → sync bootstrap → per-feature migration.
+---
+
+## Next milestone - Phase 6
+
+Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
+
+- **Phase 6A - Push Notifications:** Firebase Cloud Messaging as the next alert delivery channel,
+  including closed-browser delivery through `npm run push-worker`. Implemented in
+  `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Phase 6A extension - Telegram/Discord Alert Channels:** server-side external message delivery
+  for browser-open and closed-browser alerts. Implemented in
+  `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
+- **Phase 6B - MT5 Bridge Integration:** feature-flagged scaffold implemented: MT5 protocol types,
+  WebSocket client, store/runtime hook, mock bridge, execution-mode UI, order routing, MT5
+  positions/logs, and simulator fallback. FTMO dry-run bridge is implemented via
+  `npm run ftmo-mt5-bridge`; Python MT5 service adapter is implemented under `bridge/ftmo_mt5/` and
+  can be started with `npm run ftmo-mt5-python` after installing Python dependencies. Next: run it
+  on a Windows/VPS host with MT5 installed, validate login/snapshots/order_check, then tiny demo
+  execution. For Exness, IC Markets, and other MT5 brokers, use
+  `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`.
+
+---
+
+## Later phases (from PHASE3_11_PLAN.md)
+
+- **Phase 6 - Push Notifications + MT5 Integration:** see `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
+- **Phase 8 — Trading Panel:** TradingView-style order panel.
+- **Phase 9 — Position Visualization:** interactive entry/SL/TP lines.
+- **Phase 10 — Polish & Optimization:** performance, memory, mobile, accessibility.

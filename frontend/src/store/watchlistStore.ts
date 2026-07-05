@@ -3,11 +3,32 @@ import { atom, useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
 import { localStore } from "@/services/storage";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { uid } from "@/utils/id";
 
 export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
 
-// Registry-backed defaults (canonical ids: crypto = Binance pairs, fx/metals/index = TwelveData).
-const DEFAULT = [
+export interface WatchlistSection {
+  id: string;
+  title: string;
+  /**
+   * Symbol insertion index. This keeps sections stable without changing the
+   * public `watchlistSymbolsAtom` contract used by market-data subscriptions.
+   */
+  index: number;
+}
+
+export interface WatchlistList {
+  id: string;
+  name: string;
+  symbols: string[];
+  sections: WatchlistSection[];
+  shared: boolean;
+}
+
+type SymbolUpdate = string[] | ((prev: string[]) => string[]);
+type AddSectionPayload = string | { title: string; index?: number };
+
+const DEFAULT_SYMBOLS = [
   "BTCUSDT",
   "ETHUSDT",
   "SOLUSDT",
@@ -18,23 +39,156 @@ const DEFAULT = [
   "SPX500",
 ];
 
-// ── State atoms ────────────────────────────────────────────────────────────
-export const watchlistSymbolsAtom = atom<string[]>(DEFAULT);
+const DEFAULT_LIST_ID = "default";
+const STORAGE_LISTS = "watchlist:lists";
+const STORAGE_ACTIVE = "watchlist:activeId";
+const STORAGE_LEGACY_SYMBOLS = "watchlist";
+
+const DEFAULT_LIST: WatchlistList = {
+  id: DEFAULT_LIST_ID,
+  name: "Watchlist",
+  symbols: DEFAULT_SYMBOLS,
+  sections: [],
+  shared: false,
+};
+
+function cleanSymbols(input: unknown): string[] {
+  if (!Array.isArray(input)) return DEFAULT_SYMBOLS;
+  const seen = new Set<string>();
+  const symbols: string[] = [];
+  for (const value of input) {
+    if (typeof value !== "string") continue;
+    const symbol = value.trim().toUpperCase();
+    if (!symbol || seen.has(symbol) || !getMarketSymbol(symbol)) continue;
+    seen.add(symbol);
+    symbols.push(symbol);
+  }
+  return symbols;
+}
+
+function cleanSections(input: unknown, symbolCount: number): WatchlistSection[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((section): WatchlistSection | null => {
+      if (!section || typeof section !== "object") return null;
+      const raw = section as Partial<WatchlistSection>;
+      const title =
+        typeof raw.title === "string" && raw.title.trim()
+          ? raw.title.trim().slice(0, 40)
+          : "Section";
+      const index =
+        typeof raw.index === "number" && Number.isFinite(raw.index)
+          ? Math.max(0, Math.min(symbolCount, Math.round(raw.index)))
+          : symbolCount;
+      return {
+        id: typeof raw.id === "string" && raw.id ? raw.id : uid("wl_section"),
+        title,
+        index,
+      };
+    })
+    .filter((section): section is WatchlistSection => !!section)
+    .sort((a, b) => a.index - b.index);
+}
+
+function normalizeList(input: unknown, fallback = DEFAULT_LIST): WatchlistList {
+  if (!input || typeof input !== "object") return fallback;
+  const raw = input as Partial<WatchlistList>;
+  const symbols = cleanSymbols(raw.symbols);
+  return {
+    id: typeof raw.id === "string" && raw.id ? raw.id : uid("wl"),
+    name:
+      typeof raw.name === "string" && raw.name.trim()
+        ? raw.name.trim().slice(0, 40)
+        : fallback.name,
+    symbols,
+    sections: cleanSections(raw.sections, symbols.length),
+    shared: raw.shared === true,
+  };
+}
+
+function activeList(lists: WatchlistList[], activeId: string): WatchlistList {
+  return lists.find((list) => list.id === activeId) ?? lists[0] ?? DEFAULT_LIST;
+}
+
+function persist(lists: WatchlistList[], activeId: string): void {
+  const active = activeList(lists, activeId);
+  localStore.set(STORAGE_LISTS, lists);
+  localStore.set(STORAGE_ACTIVE, active.id);
+  // Keep the old key in sync so older code/users can migrate without data loss.
+  localStore.set(STORAGE_LEGACY_SYMBOLS, active.symbols);
+}
+
+function updateActive(
+  lists: WatchlistList[],
+  activeId: string,
+  updater: (list: WatchlistList) => WatchlistList,
+): WatchlistList[] {
+  const current = activeList(lists, activeId);
+  return lists.map((list) => (list.id === current.id ? updater(list) : list));
+}
+
+export const watchlistListsAtom = atom<WatchlistList[]>([DEFAULT_LIST]);
+export const activeWatchlistIdAtom = atom<string>(DEFAULT_LIST_ID);
 export const watchlistSortKeyAtom = atom<SortKey>("symbol");
 export const watchlistSortDirAtom = atom<"asc" | "desc">("asc");
 
-// ── Write atoms (actions) ──────────────────────────────────────────────────
+export const activeWatchlistAtom = atom((get) =>
+  activeList(get(watchlistListsAtom), get(activeWatchlistIdAtom)),
+);
+
+export const watchlistSymbolsAtom = atom(
+  (get) => get(activeWatchlistAtom).symbols,
+  (get, set, update: SymbolUpdate) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const current = get(activeWatchlistAtom);
+    const nextSymbols = cleanSymbols(
+      typeof update === "function" ? update(current.symbols) : update,
+    );
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+      ...list,
+      symbols: nextSymbols,
+      sections: list.sections.filter((section) => section.index <= nextSymbols.length),
+    }));
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
+export const watchlistSectionsAtom = atom(
+  (get) => get(activeWatchlistAtom).sections,
+);
+
 export const hydrateWatchlistAtom = atom(null, (_get, set) => {
-  const persisted = localStore.get<string[]>("watchlist", DEFAULT);
-  const valid = persisted.filter((s) => getMarketSymbol(s));
-  set(watchlistSymbolsAtom, valid.length ? valid : DEFAULT);
+  const storedLists = localStore.get<unknown>(STORAGE_LISTS, null);
+  const legacySymbols = localStore.get<string[]>(STORAGE_LEGACY_SYMBOLS, DEFAULT_SYMBOLS);
+
+  const lists =
+    Array.isArray(storedLists) && storedLists.length
+      ? storedLists.map((list) => normalizeList(list)).filter(Boolean)
+      : [
+          {
+            ...DEFAULT_LIST,
+            symbols: cleanSymbols(legacySymbols),
+          },
+        ];
+
+  const normalized = lists.length ? lists : [DEFAULT_LIST];
+  const storedActive = localStore.get<string>(STORAGE_ACTIVE, normalized[0].id);
+  const activeId = normalized.some((list) => list.id === storedActive)
+    ? storedActive
+    : normalized[0].id;
+
+  set(watchlistListsAtom, normalized);
+  set(activeWatchlistIdAtom, activeId);
+  persist(normalized, activeId);
 });
 
 export const addWatchlistSymbolAtom = atom(null, (get, set, ticker: string) => {
-  if (get(watchlistSymbolsAtom).includes(ticker)) return;
-  const symbols = [...get(watchlistSymbolsAtom), ticker];
-  set(watchlistSymbolsAtom, symbols);
-  localStore.set("watchlist", symbols);
+  const symbol = ticker.trim().toUpperCase();
+  if (!getMarketSymbol(symbol)) return;
+  const symbols = get(watchlistSymbolsAtom);
+  if (symbols.includes(symbol)) return;
+  set(watchlistSymbolsAtom, [...symbols, symbol]);
 });
 
 export const removeWatchlistSymbolAtom = atom(
@@ -42,7 +196,104 @@ export const removeWatchlistSymbolAtom = atom(
   (get, set, ticker: string) => {
     const symbols = get(watchlistSymbolsAtom).filter((s) => s !== ticker);
     set(watchlistSymbolsAtom, symbols);
-    localStore.set("watchlist", symbols);
+  },
+);
+
+export const renameWatchlistAtom = atom(null, (get, set, name: string) => {
+  const nextName = name.trim().slice(0, 40);
+  if (!nextName) return;
+  const activeId = get(activeWatchlistIdAtom);
+  const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+    ...list,
+    name: nextName,
+  }));
+  set(watchlistListsAtom, lists);
+  persist(lists, activeId);
+});
+
+export const setWatchlistSharedAtom = atom(
+  null,
+  (get, set, shared?: boolean) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+      ...list,
+      shared: shared ?? !list.shared,
+    }));
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
+export const copyWatchlistAtom = atom(null, (get, set) => {
+  const current = get(activeWatchlistAtom);
+  const copy: WatchlistList = {
+    ...current,
+    id: uid("wl"),
+    name: `${current.name} copy`.slice(0, 40),
+    shared: false,
+    sections: current.sections.map((section) => ({
+      ...section,
+      id: uid("wl_section"),
+    })),
+  };
+  const lists = [...get(watchlistListsAtom), copy];
+  set(watchlistListsAtom, lists);
+  set(activeWatchlistIdAtom, copy.id);
+  persist(lists, copy.id);
+});
+
+export const createWatchlistAtom = atom(null, (get, set, name?: string) => {
+  const list: WatchlistList = {
+    id: uid("wl"),
+    name: (name?.trim() || "Untitled list").slice(0, 40),
+    symbols: [],
+    sections: [],
+    shared: false,
+  };
+  const lists = [...get(watchlistListsAtom), list];
+  set(watchlistListsAtom, lists);
+  set(activeWatchlistIdAtom, list.id);
+  persist(lists, list.id);
+});
+
+export const clearWatchlistAtom = atom(null, (get, set) => {
+  const activeId = get(activeWatchlistIdAtom);
+  const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+    ...list,
+    symbols: [],
+    sections: [],
+  }));
+  set(watchlistListsAtom, lists);
+  persist(lists, activeId);
+});
+
+export const addWatchlistSectionAtom = atom(
+  null,
+  (get, set, payload: AddSectionPayload) => {
+    const title = typeof payload === "string" ? payload : payload.title;
+    const label = title.trim().slice(0, 40);
+    if (!label) return;
+    const activeId = get(activeWatchlistIdAtom);
+    const current = get(activeWatchlistAtom);
+    const requestedIndex =
+      typeof payload === "string" ? undefined : payload.index;
+    const index =
+      typeof requestedIndex === "number" && Number.isFinite(requestedIndex)
+        ? Math.max(0, Math.min(current.symbols.length, Math.round(requestedIndex)))
+        : current.symbols.length;
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+      ...list,
+      sections: [
+        ...list.sections,
+        {
+          id: uid("wl_section"),
+          title: label,
+          index,
+        },
+      ],
+    }));
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
   },
 );
 
@@ -56,9 +307,11 @@ export const setWatchlistSortAtom = atom(null, (get, set, key: SortKey) => {
   );
 });
 
-// ── Combined state + actions (for compatibility hook) ──────────────────────
 interface WatchlistState {
+  lists: WatchlistList[];
+  activeList: WatchlistList;
   symbols: string[];
+  sections: WatchlistSection[];
   sortKey: SortKey;
   sortDir: "asc" | "desc";
 }
@@ -66,6 +319,12 @@ interface WatchlistState {
 export interface WatchlistActions {
   add: (ticker: string) => void;
   remove: (ticker: string) => void;
+  rename: (name: string) => void;
+  setShared: (shared?: boolean) => void;
+  copy: () => void;
+  create: (name?: string) => void;
+  clear: () => void;
+  addSection: (title: string, index?: number) => void;
   setSort: (key: SortKey) => void;
   hydrate: () => void;
 }
@@ -73,7 +332,10 @@ export interface WatchlistActions {
 type WatchlistStoreInterface = WatchlistState & WatchlistActions;
 
 const watchlistStateAtom = atom<WatchlistState>((get) => ({
+  lists: get(watchlistListsAtom),
+  activeList: get(activeWatchlistAtom),
   symbols: get(watchlistSymbolsAtom),
+  sections: get(watchlistSectionsAtom),
   sortKey: get(watchlistSortKeyAtom),
   sortDir: get(watchlistSortDirAtom),
 }));
@@ -83,14 +345,20 @@ const watchlistCombinedAtom = atom<WatchlistStoreInterface>((get) => {
   const store = getDefaultStore();
   return {
     ...state,
-    add: (t) => store.set(addWatchlistSymbolAtom, t),
-    remove: (t) => store.set(removeWatchlistSymbolAtom, t),
-    setSort: (k) => store.set(setWatchlistSortAtom, k),
+    add: (ticker) => store.set(addWatchlistSymbolAtom, ticker),
+    remove: (ticker) => store.set(removeWatchlistSymbolAtom, ticker),
+    rename: (name) => store.set(renameWatchlistAtom, name),
+    setShared: (shared) => store.set(setWatchlistSharedAtom, shared),
+    copy: () => store.set(copyWatchlistAtom),
+    create: (name) => store.set(createWatchlistAtom, name),
+    clear: () => store.set(clearWatchlistAtom),
+    addSection: (title, index) =>
+      store.set(addWatchlistSectionAtom, { title, index }),
+    setSort: (key) => store.set(setWatchlistSortAtom, key),
     hydrate: () => store.set(hydrateWatchlistAtom),
   };
 });
 
-// ── Compatibility hook ─────────────────────────────────────────────────────
 export function useWatchlistStore(): WatchlistStoreInterface;
 export function useWatchlistStore<T>(
   selector: (state: WatchlistStoreInterface) => T,
@@ -103,7 +371,6 @@ export function useWatchlistStore<T>(
   return selector(combined);
 }
 
-// Static getState() for non-React code.
 export function getWatchlistState(): WatchlistStoreInterface {
   return getDefaultStore().get(watchlistCombinedAtom);
 }

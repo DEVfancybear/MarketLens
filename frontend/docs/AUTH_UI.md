@@ -2,7 +2,7 @@
 
 > Status: **implemented** (frontend). Login/register with a Google account. Register and login are the
 > same action — the first Google sign-in auto-creates the account. Backend contract:
-> `../../backend/docs/AUTH.md` / `API.md`.
+> `../../backend/AUTH.md` / `API.md`.
 
 ## How it works
 

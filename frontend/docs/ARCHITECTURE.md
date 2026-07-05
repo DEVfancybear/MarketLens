@@ -169,7 +169,7 @@ Key optimisations:
 no polling/sockets; refcounted alert-symbol tickers) → pure `services/alertEngine.ts` (above/below/
 crossUp/crossDown) → `alertStore.triggerAlert` (once-only/recurring) → `services/notifications/
 notify.ts` → toast / sound / browser (Firebase push seam for Phase 6). UI: `components/alerts/
-AlertCenter.tsx` + chart `AlertOverlay`. Full detail in **`docs/ALERT_ARCHITECTURE.md`**.
+AlertCenter.tsx` + chart `AlertOverlay`. Full detail in **`ALERT_ARCHITECTURE.md`**.
 
 **Single source of truth for visibility:** `useVisibleCandles()` returns `candlesAtom` value
 (full) or, while replay is armed, `candles[0..replayCursor]`. Every chart/indicator/SMC/trade
@@ -184,7 +184,7 @@ span but realigns the logical right edge to the newest candle in that replacemen
 the chart from looking at empty future whitespace while leaving one-by-one playback and realtime
 ticks on the incremental update path.
 
-Full replay maintenance details live in `docs/REPLAY_ARCHITECTURE.md`.
+Full replay maintenance details live in `REPLAY_ARCHITECTURE.md`.
 
 > Atoms init with deterministic SSR-safe defaults; persisted values load in
 > `useStoreHydration()` after mount via `getDefaultStore().set(hydrateAtom)`.
@@ -233,7 +233,7 @@ useVisibleCandles()  → replay-aware slice
 
 - **Indicators** (`services/indicators.ts`, `services/pineScript.ts`): SMA, EMA, session-VWAP,
   RSI, MACD, ADR, plus CUSTOM Pine-like source-code indicators. Full subsystem contract:
-  `docs/INDICATOR_ARCHITECTURE.md`.
+  `INDICATOR_ARCHITECTURE.md`.
 - **SMC** (`services/smc/*`): structure (HH/HL/LH/LL, BOS/CHOCH/MSS), FVG, Order Blocks,
   Liquidity (EQH/EQL + sweeps), Displacement, Sessions + kill zones — orchestrated by
   `smcEngine.ts`, run off-thread in `smc.worker.ts`.

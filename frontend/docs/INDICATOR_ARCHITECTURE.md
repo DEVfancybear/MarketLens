@@ -56,7 +56,7 @@ IndicatorResult { id, series[] }
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
 | Indicator dropdown entry points | `src/components/toolbar/IndicatorMenu.tsx` |
 | Shared settings dialog | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
-| Settings architecture guide | `docs/SETTTING_ARCHITECTURE.md` |
+| Settings architecture guide | `SETTTING_ARCHITECTURE.md` |
 | Overlay rendering on price chart | `src/components/chart/PriceChart.tsx` |
 | Separate pane rendering | `src/components/chart/IndicatorPane.tsx` |
 | Bottom tab mounting | `src/components/layout/BottomPanel.tsx` |
@@ -110,7 +110,7 @@ The split matters:
 - An active custom indicator stores `inputValues` as per-instance Pine input overrides. This allows
   multiple instances of the same saved script to use different settings.
 - An active custom indicator stores `styleValues` as per-instance visual overrides for plots,
-  hlines, fills, and supported Pine objects. See `docs/SETTTING_ARCHITECTURE.md`.
+  hlines, fills, and supported Pine objects. See `SETTTING_ARCHITECTURE.md`.
 
 ## State and persistence
 
@@ -194,7 +194,7 @@ Indicator legend settings gear
 ```
 
 Custom indicators do not bypass `IndicatorSettingsDialog`. The gear edits input values; the `{}`
-button edits source code. See `docs/SETTTING_ARCHITECTURE.md`.
+button edits source code. See `SETTTING_ARCHITECTURE.md`.
 
 ## Indicator browser
 
@@ -401,7 +401,7 @@ To add a new built-in indicator:
 4. Add defaults in `defaultIndicator`.
 5. Add a menu option in `IndicatorMenu`.
 6. Add settings schema through the shared settings architecture if needed. See
-   `docs/SETTTING_ARCHITECTURE.md`; do not create an indicator-specific settings modal.
+   `SETTTING_ARCHITECTURE.md`; do not create an indicator-specific settings modal.
 
 To add a new Pine subset function:
 

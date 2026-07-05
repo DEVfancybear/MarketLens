@@ -1,36 +1,50 @@
-# CURRENT PROGRESS
+# Current Progress
 
-**Last updated:** 2026-07-06
-**Current milestone:** Backend persistence + authentication
-**Current phase:** Frontend auth UI **implemented**; backend auth not started
+Last updated: 2026-07-06
 
-## Completed features
+## Current Milestone
 
-- Frontend trading terminal (charting, 25 drawing tools, SMC engine, replay, alerts, journal,
-  analytics, Pine-like indicators) — data persisted client-side only.
-- Backend Go Fiber skeleton with `GET /health` and structured logging.
-- Python MT5 bridge sidecar (FTMO).
-- Firebase already configured for push notifications (client + admin).
+Backend persistence and Google authentication.
 
-## Completed this session
+## Status
 
-- **Auth + database design docs** — `backend/docs/{DATABASE,AUTH,API,BACKEND_IMPLEMENTATION_PLAN}.md`.
-- **Frontend Google auth UI (implemented + verified)** — Firebase Google sign-in/sign-up, auth store,
-  session hook, sign-in button + user menu in `TopToolbar`. Typecheck + lint + `next build` all pass.
-  Framework decision confirmed: backend will use **Fiber**.
+- Frontend trading terminal: implemented and actively evolving.
+- Frontend Google auth UI: implemented and verified.
+- Backend API: minimal scaffold only; `GET /health` exists.
+- Backend auth/database: designed in docs, not implemented.
+- Backend framework: Fiber is the target; current code is still stdlib `net/http` until Phase 0.
 
-## Recently modified files
+## Completed Since Commit `9691bd1`
 
-- Frontend: `src/services/firebase/client.ts`, `src/services/auth/{firebaseAuth,authClient}.ts`,
-  `src/store/authStore.ts`, `src/hooks/useAuthSession.ts`,
-  `src/components/auth/{AuthControl,SignInButton,UserMenu,GoogleIcon}.tsx`,
-  `src/components/toolbar/TopToolbar.tsx`, `src/components/layout/GlobalRuntime.tsx`,
-  `frontend/docs/AUTH_UI.md`.
-- Docs: `backend/docs/*`, `docs/*` (project memory).
+- Restored root project memory docs after the monorepo split.
+- Moved restored frontend-specific docs into `frontend/docs/` and archive reports into
+  `frontend/docs/archive/`.
+- Updated root docs for frontend/backend package ownership.
+- Moved the Python FTMO/MT5 bridge into `backend/bridge/` as a backend sidecar.
+- Added backend Google auth, PostgreSQL, API, and phased implementation plan docs.
+- Added frontend Google sign-in/sign-up UI using Firebase Auth.
+- Reconciled backend schema/API plan against the real frontend data model.
+- Updated Watchlist UI/store toward TradingView parity:
+  - header dropdown actions: share, copy, rename, add section, clear, create list
+  - no upload/open-list or add-alert-on-list actions
+  - rename mode with selected input in the header
+  - blue section rows with chevron
+  - list metadata persisted alongside the legacy symbol array for compatibility
 
-## Not started
+## Recently Changed Files
 
-- Backend: Fiber migration + Postgres wiring + migrations + `internal/auth` + `internal/users`
-  (see `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` Phases 0–4). Blocked only on a Postgres instance
-  + Firebase Google provider enabled.
-- Store-by-store migration to the backend API.
+- Root docs: `docs/{README,CURRENT_STATE,CURRENT_PROGRESS,HANDOFF,NEXT_TASKS,KNOWN_ISSUES,CHANGELOG}.md`
+- Backend docs: `backend/docs/{AUTH,DATABASE,API,BACKEND_IMPLEMENTATION_PLAN}.md`
+- Frontend auth docs: `frontend/docs/AUTH_UI.md`
+- Watchlist docs: `frontend/docs/WATCHLIST_ARCHITECTURE.md`
+- Watchlist code: `frontend/src/components/watchlist/Watchlist.tsx`,
+  `frontend/src/store/watchlistStore.ts`
+
+## Verification Recently Run
+
+- `cd frontend && npm run typecheck`
+- `cd frontend && npm run lint`
+- `cd frontend && npm run build`
+
+Backend Go toolchain is available locally (`go version` works). Backend code was not changed in the
+Watchlist/docs work.
