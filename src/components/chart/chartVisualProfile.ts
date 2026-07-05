@@ -14,8 +14,7 @@ import { BAR_SPACING, chartColors } from "./chartTheme";
 export const RIGHT_OFFSET_BARS = 8;
 export const MIN_BAR_SPACING = 1.5;
 export const PRICE_SCALE_MIN_WIDTH = 74;
-export const MAIN_PRICE_SCALE_MARGINS = { top: 0.08, bottom: 0.16 } as const;
-export const VOLUME_PRICE_SCALE_MARGINS = { top: 0.87, bottom: 0 } as const;
+export const MAIN_PRICE_SCALE_MARGINS = { top: 0.08, bottom: 0.08 } as const;
 export const INDICATOR_PANE_HEIGHT = 124;
 
 export function getDefaultBarSpacing(timeframe: Timeframe): number {

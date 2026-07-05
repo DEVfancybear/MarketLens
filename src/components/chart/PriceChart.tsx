@@ -34,7 +34,6 @@ import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { chartColors, makeTimeFormatter } from "./chartTheme";
 import {
   RIGHT_OFFSET_BARS,
-  VOLUME_PRICE_SCALE_MARGINS,
   candlestickOptions,
   crosshairOptions,
   gridOptions,
@@ -112,8 +111,8 @@ function labelBackground(color: string | undefined): string {
 }
 
 /**
- * Main candlestick + volume chart. Plots the supplied (replay-aware) candles,
- * overlays non-pane indicators, reports the crosshair, and exposes an imperative
+ * Main candlestick chart. Plots the supplied (replay-aware) candles, overlays
+ * non-pane indicators, reports the crosshair, and exposes an imperative
  * ChartContext so overlay layers (drawings, SMC) can convert price/time to
  * pixel coordinates and repaint in lock-step with pan/zoom.
  */
@@ -129,10 +128,10 @@ export function PriceChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const indSeriesRef = useRef<Map<string, IndicatorSeriesApi[]>>(new Map());
   const fittedRef = useRef(false);
   const prevCandlesRef = useRef<Candle[]>([]);
+  const candleByTimeRef = useRef<Map<number, Candle>>(new Map());
   const prevThemeRef = useRef<string>("");
   const appliedTimeframeRef = useRef<Timeframe | null>(null);
   const bumpRafRef = useRef<number | null>(null);
@@ -176,7 +175,6 @@ export function PriceChart({
   // ---- Create chart once ----
   useEffect(() => {
     if (!containerRef.current) return;
-    const c = chartColors(theme);
     const defaultViewport = timeScaleDefaults(timeframe);
     setMainChartDefaultViewport(defaultViewport);
     appliedTimeframeRef.current = timeframe;
@@ -216,20 +214,8 @@ export function PriceChart({
       candlestickOptions(theme, precision),
     );
 
-    const volumeSeries = chart.addHistogramSeries({
-      priceFormat: { type: "volume" },
-      priceScaleId: "vol",
-      color: c.volumeBull,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    chart
-      .priceScale("vol")
-      .applyOptions({ scaleMargins: VOLUME_PRICE_SCALE_MARGINS });
-
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
-    volumeSeriesRef.current = volumeSeries;
     setReady(true);
     setMainChart(chart);
     onReady?.(chart);
@@ -249,14 +235,14 @@ export function PriceChart({
         return;
       }
       const data = param.seriesData.get(candleSeries) as Candle | undefined;
+      const sourceCandle = candleByTimeRef.current.get(Number(param.time));
       setCrosshair({
         time: param.time as number,
         candle: data
           ? {
+              ...(sourceCandle ?? data),
               ...data,
-              volume:
-                (param.seriesData.get(volumeSeries) as { value: number })
-                  ?.value ?? 0,
+              volume: sourceCandle?.volume ?? 0,
             }
           : null,
       });
@@ -309,16 +295,16 @@ export function PriceChart({
     candleSeriesRef.current?.applyOptions(candlestickOptions(theme, precision));
   }, [theme, gridVisible, timeframe, precision]);
 
-  // ---- Push candle + volume data ----
+  // ---- Push candle data ----
   useEffect(() => {
     const cs = candleSeriesRef.current;
-    const vs = volumeSeriesRef.current;
-    if (!cs || !vs) return;
+    if (!cs) return;
+    candleByTimeRef.current = new Map(
+      candles.map((candle) => [candle.time, candle]),
+    );
     // Empty series => symbol/timeframe just changed; re-fit on next load.
     if (candles.length === 0) fittedRef.current = false;
     const c = chartColors(theme);
-    const volColor = (k: Candle) =>
-      k.close >= k.open ? c.volumeBull : c.volumeBear;
 
     const prev = prevCandlesRef.current;
     const prevLast = prev[prev.length - 1];
@@ -356,11 +342,6 @@ export function PriceChart({
           low: penult.low,
           close: penult.close,
         });
-        vs.update({
-          time: penult.time as UTCTimestamp,
-          value: penult.volume,
-          color: volColor(penult),
-        });
       }
       cs.update({
         time: last!.time as UTCTimestamp,
@@ -368,11 +349,6 @@ export function PriceChart({
         high: last!.high,
         low: last!.low,
         close: last!.close,
-      });
-      vs.update({
-        time: last!.time as UTCTimestamp,
-        value: last!.volume,
-        color: volColor(last!),
       });
     } else {
       cs.setData(
@@ -382,13 +358,6 @@ export function PriceChart({
           high: k.high,
           low: k.low,
           close: k.close,
-        })),
-      );
-      vs.setData(
-        candles.map((k) => ({
-          time: k.time as UTCTimestamp,
-          value: k.volume,
-          color: volColor(k),
         })),
       );
     }

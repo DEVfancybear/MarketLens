@@ -66,9 +66,9 @@ export const POSITION_COLORS = {
   SHORT_LABEL: "#F23645",
 } as const;
 
-/** PriceChart renders volume in the lower 15% overlay. Keep position drawings
- * inside the price pane so far-away SL labels/zones do not cover volume bars. */
-const PRICE_PANE_BOTTOM_RATIO = 0.85;
+/** Clip position drawings to the visible chart pane.
+ * Volume is an explicit indicator now, not part of the default candle chart. */
+const PRICE_PANE_BOTTOM_RATIO = 1;
 const TV_SELECTION_BLUE = "#2962ff";
 const POSITION_HANDLE_SIZE = 7;
 const LABEL_HIT_PAD = 20;

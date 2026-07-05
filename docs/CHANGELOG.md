@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Default chart volume visibility (2026-07-05)
+- Removed the default volume histogram from `PriceChart`, matching the
+  TradingView-style expectation that volume is an explicit study/indicator
+  rather than part of a clean default candle chart.
+- Main chart price-scale margins no longer reserve a bottom volume band, so the
+  candle area uses the chart height more naturally.
+- Crosshair candle data still preserves OHLCV volume internally for indicators
+  and data consumers.
+
 ### Changed - Drawing favorites floating toolbar (2026-07-05)
 - Drawing tool favorites now render in a separate floating chart toolbar instead
   of being inserted above the main left drawing toolbar.

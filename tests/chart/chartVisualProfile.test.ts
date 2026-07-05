@@ -5,7 +5,6 @@ import {
   MAIN_PRICE_SCALE_MARGINS,
   PRICE_SCALE_MIN_WIDTH,
   RIGHT_OFFSET_BARS,
-  VOLUME_PRICE_SCALE_MARGINS,
   timeScaleDefaults,
 } from "../../src/components/chart/chartVisualProfile";
 
@@ -17,8 +16,7 @@ test("main chart keeps TradingView-like right offset and price scale width", () 
   assert.equal(PRICE_SCALE_MIN_WIDTH >= 70, true);
 });
 
-test("volume stays in a shallow bottom overlay", () => {
-  assert.equal(MAIN_PRICE_SCALE_MARGINS.bottom < 0.2, true);
-  assert.equal(VOLUME_PRICE_SCALE_MARGINS.top >= 0.85, true);
-  assert.equal(VOLUME_PRICE_SCALE_MARGINS.bottom, 0);
+test("main chart does not reserve a default volume overlay band", () => {
+  assert.equal(MAIN_PRICE_SCALE_MARGINS.bottom <= 0.1, true);
+  assert.equal(MAIN_PRICE_SCALE_MARGINS.top <= 0.1, true);
 });

@@ -72,7 +72,7 @@ colors, spacing, interactions). Not data/engine features._
 | C11 | **Symbol+TF header** | Top-left overlay in ChartArea: `text-sm font-semibold` for symbol | TradingView: symbol is `14px bold`, timeframe is `12px` regular, on one line | 🟡 Med | 5 min |
 | C12 | **OHLC labels** | `text-2xs flex gap-2` with color by direction | TradingView: same pattern, but uses `11px` font and shows O/H/L/C as abbreviated labels | ⚪ Low | 10 min |
 | C13 | **Price scale number format** | LWC auto-formats, precision from registry | TradingView: right price scale shows `1.12345` format, volume scale is hidden or mini | 🟢 OK | 0 min |
-| C14 | **Volume histogram** | `priceScaleId: 'vol'` with `scaleMargins: { top: 0.85, bottom: 0 }` | TradingView volume is slightly more compressed at the bottom (`top: 0.8`) | ⚪ Low | 1 min |
+| C14 | **Volume histogram** | No default volume histogram in the base candle chart | TradingView treats volume as an explicit study/indicator rather than a required default candle overlay | 🟢 OK | 0 min |
 | C15 | **Chart border** | `borderVisible: true` on both price scale and time scale | TradingView has visible borders on price scale + time scale — matches | 🟢 OK | 0 min |
 
 ---
@@ -175,7 +175,6 @@ colors, spacing, interactions). Not data/engine features._
 | C4 | Wick thickness (already matches) | 0 min |
 | C7 | Date separators on time scale | 5 min |
 | C12 | OHLC label size | 10 min |
-| C14 | Volume scale margins | 1 min |
 | Y1 | Font family tweak | 5 min |
 | Y2 | Base font size 13→12px | 5 min |
 | M1 | Context menu width | 1 min |

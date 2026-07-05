@@ -1,8 +1,21 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Drawing favorites floating toolbar)_
+_Last updated: 2026-07-05 (Default chart volume visibility)_
 
 ## Completed this session (2026-07-05)
+
+### Default chart volume visibility
+- Researched TradingView/Lightweight Charts behavior: the official
+  Lightweight Charts example describes volume as a separate histogram study
+  added explicitly, not as a built-in part of candlesticks.
+- Removed the default `PriceChart` volume histogram so a clean chart no longer
+  shows volume bars by default.
+- Tightened main price-scale bottom margin because the chart no longer reserves
+  a lower volume overlay band.
+- Crosshair candle payloads still include volume by reading the current candle
+  data, so indicators and data consumers keep OHLCV context.
+- Updated `docs/CHART_VISUAL_PROFILE.md` and chart visual profile tests to lock
+  the no-default-volume baseline.
 
 ### Drawing favorites floating toolbar
 - Rechecked the user screenshot and TradingView chart behavior: starring a

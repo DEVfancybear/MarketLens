@@ -4,7 +4,7 @@ _Last updated: 2026-07-05_
 
 This document is the maintenance guide for the TradingView-like chart visual
 baseline. Read this before changing chart colors, grid density, price scale
-width, volume overlay height, current price marker, or indicator pane styling.
+width, current price marker, indicator pane styling, or optional volume studies.
 
 ## 1. Goal
 
@@ -15,7 +15,6 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 - faint grid lines,
 - compact right price scale,
 - compact current price marker,
-- shallow bottom volume overlay,
 - lightweight indicator legend,
 - matching style between the main chart and separate indicator panes.
 
@@ -30,16 +29,19 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 - TradingView Lightweight Charts `PriceScaleOptions`: price scale margins,
   border, text color, `minimumWidth`, and `entireTextOnly` control the right
   axis and visible candle area.
-- TradingView Lightweight Charts `HistogramStyleOptions`: volume is a histogram
-  series and should use its own overlay price scale margins.
+- TradingView Lightweight Charts `Price and volume on a single chart`
+  (https://tradingview.github.io/lightweight-charts/tutorials/how_to/price-and-volume):
+  volume is a study added as a separate histogram series. It is not part of the
+  candlestick series itself, so this app should not render volume by default on
+  every chart.
 
 ## 3. Key Files
 
 | Area | File | Responsibility |
 |---|---|---|
-| Shared visual profile | `src/components/chart/chartVisualProfile.ts` | Common constants and option builders for chart, scales, grid, crosshair, candles, and volume |
+| Shared visual profile | `src/components/chart/chartVisualProfile.ts` | Common constants and option builders for chart, scales, grid, crosshair, and candles |
 | Palette and time formatting | `src/components/chart/chartTheme.ts` | Theme colors, bar spacing by timeframe, crosshair time formatter |
-| Main chart | `src/components/chart/PriceChart.tsx` | Creates candlestick + volume chart and applies the shared profile |
+| Main chart | `src/components/chart/PriceChart.tsx` | Creates the candlestick chart and applies the shared profile |
 | Indicator panes | `src/components/chart/IndicatorPane.tsx` | Uses the same profile for pane grid/axis/crosshair styling |
 | Indicator legend | `src/components/chart/IndicatorLegend.tsx` | Lightweight TradingView-style status-line controls |
 | Guard tests | `tests/chart/chartVisualProfile.test.ts` | Locks critical margin/right-offset defaults |
@@ -54,7 +56,6 @@ Do not duplicate these in `PriceChart` or `IndicatorPane`:
 - `MIN_BAR_SPACING`,
 - `PRICE_SCALE_MIN_WIDTH`,
 - `MAIN_PRICE_SCALE_MARGINS`,
-- `VOLUME_PRICE_SCALE_MARGINS`,
 - `INDICATOR_PANE_HEIGHT`,
 - `timeScaleDefaults`,
 - `mainPriceScaleOptions`,
@@ -78,8 +79,9 @@ profile first.
   changes.
 - Use `candlestickOptions(theme, precision)` for candle colors, wick style, and
   current price-line behavior.
-- Keep volume on price scale id `vol`, with
-  `VOLUME_PRICE_SCALE_MARGINS`. Do not let volume consume the main price scale.
+- Do not create a default volume histogram in `PriceChart`. Volume is an
+  explicit study/indicator. Scripts such as VSA Volume should render through the
+  indicator pipeline, not through the chart baseline.
 
 ## 6. Current Price Marker
 
@@ -118,7 +120,8 @@ Manual checks:
 - chart background reads neutral black, not blue terminal,
 - grid is visible but low contrast,
 - right price axis is stable and wide enough for BTC/forex labels,
-- volume stays shallow at the bottom,
+- no volume bars are visible on a clean default chart,
+- adding a Volume/VSA indicator still renders volume through the indicator path,
 - current price marker is one compact line,
 - indicator legend does not obscure the symbol/OHLC header,
 - separate RSI/MACD panes visually match the main chart baseline.
