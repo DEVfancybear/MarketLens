@@ -13,9 +13,10 @@ Standalone Python WebSocket bridge for copying web-terminal order intents to an 
 ## Install
 
 ```powershell
+cd backend
 python -m venv .venv-ftmo
 .\.venv-ftmo\Scripts\Activate.ps1
-python -m pip install -r backend\bridge\ftmo_mt5\requirements.txt
+python -m pip install -r bridge\ftmo_mt5\requirements.txt
 ```
 
 ## Dry-Run

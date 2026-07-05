@@ -28,7 +28,7 @@ class Mt5Adapter:
             import MetaTrader5 as mt5  # type: ignore[import-not-found]
         except ImportError as exc:
             raise Mt5ImportError(
-                "Install backend/bridge/ftmo_mt5/requirements.txt on Windows with MT5 installed"
+                "Install bridge/ftmo_mt5/requirements.txt from the backend directory on Windows with MT5 installed"
             ) from exc
 
         kwargs: dict[str, Any] = {}

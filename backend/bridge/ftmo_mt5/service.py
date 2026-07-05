@@ -10,7 +10,7 @@ try:
     import websockets
 except ImportError as exc:  # pragma: no cover - runtime setup guard
     raise SystemExit(
-        "Missing dependency: install with `python -m pip install -r backend/bridge/ftmo_mt5/requirements.txt`",
+        "Missing dependency: install from backend/ with `python -m pip install -r bridge/ftmo_mt5/requirements.txt`",
     ) from exc
 
 WebSocketServerProtocol = Any

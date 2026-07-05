@@ -2,8 +2,8 @@
 
 The backend consists of two parts:
 
-1. **Go Fiber API** — the primary HTTP API server
-2. **Python MT5 Bridge** — a sidecar WebSocket service for FTMO broker integration
+1. **Go Fiber API** - the primary HTTP API server.
+2. **Python MT5 Bridge** - a sidecar WebSocket service for FTMO broker integration.
 
 The Python bridge runs as a separate process alongside the Go API. It is not part of the Go Fiber
 request path.
@@ -25,6 +25,8 @@ go run ./cmd/api
 Default server: `http://localhost:8080`
 
 ### Python MT5 Bridge
+
+Run these commands from `backend/`:
 
 ```bash
 # Install dependencies
