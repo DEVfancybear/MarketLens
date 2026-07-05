@@ -14,7 +14,8 @@ The desktop reference is TradingView's lower chart time strip:
 - a small `Go to` calendar button next to the shortcuts,
 - a current local clock with UTC offset on the right,
 - a `Go to` dialog with `Date` and `Custom range` tabs,
-- Date mode jumps to the requested date/time without changing the user's zoom,
+- Date mode jumps to the requested date/time and zooms into a readable
+  TradingView-like candle window,
 - Custom range mode applies an explicit start/end visible range.
 
 Similar charting products use the same split: quick range buttons for common
@@ -81,19 +82,20 @@ to available data when the requested dates extend beyond loaded history.
 
 ## 6. Go To Date Contract
 
-Date mode should behave like a chart pan, not a zoom reset.
+Date mode should behave like a TradingView `Go to` jump: land on the requested
+bar and show a readable local candle window.
 
 1. Parse the local `yyyy-mm-dd` and `hh:mm` draft.
 2. Find the first loaded candle whose time is at or after the requested local
    timestamp with `firstCandleIndexAtOrAfter`.
 3. Read the current logical range from `getVisibleLogicalRange`.
-4. Center a logical range around that candle with the same span.
+4. Build a bounded logical range with `goToDateLogicalRange`.
 5. Apply it through `setVisibleLogicalRange`.
 6. Show a temporary vertical marker and date chip at the resolved candle time.
 
-Using logical range here matters. If the user is zoomed into 60 bars and jumps
-to another date, the chart should still show about 60 bars, centered on the
-target candle.
+Using logical range here matters. If the chart is zoomed very far out, Date mode
+must zoom into `GO_TO_DATE_MAX_SPAN_BARS` around the target. If the user is
+already zoomed closer than that, keep that tighter span instead of zooming out.
 
 Do not use nearest-candle search for Date mode. TradingView-style `Go to` date
 navigation should land on the first bar of the requested date/time window. For
@@ -172,7 +174,8 @@ npm run build
 Manual checks:
 
 - click each shortcut and confirm the chart range changes,
-- open `Go to`, pick a single date, and confirm zoom span is preserved,
+- open `Go to`, pick a single date, and confirm the chart zooms into a readable
+  candle window around the target,
 - enter a date such as `2026-07-01` / `00:00` and confirm the chart centers the
   first loaded candle at or after that timestamp,
 - confirm the temporary vertical marker and two-line date chip appear after the

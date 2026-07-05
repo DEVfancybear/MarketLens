@@ -12,12 +12,12 @@ import { cn } from "@/utils/cn";
 import {
   TIME_RANGE_SHORTCUTS,
   calendarCells,
-  centeredLogicalRange,
   firstCandleIndexAtOrAfter,
   formatDateInput,
   formatGoToMarkerLabel,
   formatTimeInput,
   formatUtcOffset,
+  goToDateLogicalRange,
   goToDialogPosition,
   parseLocalDateTime,
   shortcutRange,
@@ -241,10 +241,9 @@ function GoToDialog({
       if (targetTime == null) return;
       const index = firstCandleIndexAtOrAfter(candles, targetTime);
       if (index == null) return;
-      const range = centeredLogicalRange(
+      const range = goToDateLogicalRange(
         index,
         chart.timeScale().getVisibleLogicalRange(),
-        Math.min(Math.max(candles.length, 40), 180),
       );
       chart.timeScale().setVisibleLogicalRange(range);
       onJump(candles[index].time);
@@ -508,6 +507,7 @@ function GoToJumpMarker({
     x: number;
     top: number;
     bottom: number;
+    chipTop: number;
   } | null>(null);
 
   useEffect(() => {
@@ -522,10 +522,12 @@ function GoToJumpMarker({
       const x = chart.timeScale().timeToCoordinate(marker.time as UTCTimestamp);
       if (chartElement && x != null) {
         const rect = chartElement.getBoundingClientRect();
+        const height = Math.max(0, rect.bottom - rect.top);
         setPosition({
           x: rect.left + x,
           top: rect.top,
           bottom: rect.bottom,
+          chipTop: Math.min(Math.max(96, height * 0.14), 128),
         });
       }
       if (performance.now() - start < 700) {
@@ -556,7 +558,10 @@ function GoToJumpMarker({
       }}
     >
       <div className="h-full border-l border-dashed border-[#8a8d93]/80" />
-      <div className="absolute left-0 top-[72px] -translate-x-1/2 whitespace-pre rounded-sm bg-[#5c5c5c] px-2.5 py-1.5 text-center text-[12px] font-semibold leading-[16px] text-white shadow-lg shadow-black/40">
+      <div
+        className="absolute left-0 -translate-x-1/2 whitespace-pre rounded-sm bg-[#5c5c5c] px-2.5 py-1.5 text-center text-[12px] font-semibold leading-[16px] text-white shadow-lg shadow-black/40"
+        style={{ top: position.chipTop }}
+      >
         {marker.label}
         <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[5px] border-x-transparent border-t-[#5c5c5c]" />
       </div>

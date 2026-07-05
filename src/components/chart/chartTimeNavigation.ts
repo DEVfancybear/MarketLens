@@ -34,6 +34,10 @@ export type ElementAnchor = {
 export type FloatingDialogSize = { width: number; height: number };
 export type FloatingDialogPosition = { left: number; top: number };
 
+export const GO_TO_DATE_MAX_SPAN_BARS = 34;
+export const GO_TO_DATE_MIN_SPAN_BARS = 10;
+export const GO_TO_DATE_TARGET_RATIO = 0.42;
+
 function lastCandleTime(candles: Candle[]): number | null {
   const last = candles[candles.length - 1];
   return last ? last.time : null;
@@ -141,6 +145,29 @@ export function centeredLogicalRange(
   return {
     from: targetIndex - span / 2,
     to: targetIndex + span / 2,
+  };
+}
+
+export function goToDateLogicalRange(
+  targetIndex: number,
+  currentRange: { from: number; to: number } | null,
+  preferredSpan = GO_TO_DATE_MAX_SPAN_BARS,
+): { from: number; to: number } {
+  const currentSpan =
+    currentRange &&
+    Number.isFinite(currentRange.from) &&
+    Number.isFinite(currentRange.to) &&
+    currentRange.to > currentRange.from
+      ? currentRange.to - currentRange.from
+      : preferredSpan;
+  const span = Math.max(
+    GO_TO_DATE_MIN_SPAN_BARS,
+    Math.min(currentSpan, preferredSpan),
+  );
+  const leftBars = span * GO_TO_DATE_TARGET_RATIO;
+  return {
+    from: targetIndex - leftBars,
+    to: targetIndex + (span - leftBars),
   };
 }
 

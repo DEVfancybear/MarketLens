@@ -10,9 +10,12 @@ _Last updated: 2026-07-05 (Chart visual profile parity)_
 - Replaced nearest-candle Date mode with first-candle-at-or-after lookup so
   `2026-07-01 00:00` lands on the first loaded candle from July 1, 2026 instead
   of an arbitrary nearest candle.
+- Added bounded Date-mode zoom so a Go-to jump from a wide chart opens a
+  readable TradingView-like candle window instead of keeping the chart zoomed
+  too far out.
 - Added a temporary vertical marker and date chip after Date mode jumps.
 - Expanded `npm run test:chart` coverage for date lookup, marker label
-  formatting, and updated dialog placement.
+  formatting, bounded zoom, and updated dialog placement.
 
 ### Chart visual profile parity
 - Researched the user-provided TradingView comparison screenshots plus

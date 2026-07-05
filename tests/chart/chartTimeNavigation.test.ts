@@ -7,6 +7,7 @@ import {
   centeredLogicalRange,
   firstCandleIndexAtOrAfter,
   formatGoToMarkerLabel,
+  goToDateLogicalRange,
   goToDialogPosition,
   nearestCandleIndex,
   parseLocalDateTime,
@@ -70,6 +71,20 @@ test("go-to logical range preserves current zoom span", () => {
   assert.deepEqual(centeredLogicalRange(5, null, 20), {
     from: -5,
     to: 15,
+  });
+});
+
+test("go-to date zooms in when the current chart is too wide", () => {
+  assert.deepEqual(goToDateLogicalRange(50, { from: 0, to: 180 }), {
+    from: 35.72,
+    to: 69.72,
+  });
+});
+
+test("go-to date keeps an already close zoom span", () => {
+  assert.deepEqual(goToDateLogicalRange(50, { from: 44, to: 64 }), {
+    from: 41.6,
+    to: 61.6,
   });
 });
 
