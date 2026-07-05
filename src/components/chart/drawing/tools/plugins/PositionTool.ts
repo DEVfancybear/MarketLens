@@ -12,7 +12,12 @@
  */
 import { getDefaultStore } from "jotai";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import type { Drawing, DrawingTool, Point } from "@/types";
+import {
+  DEFAULT_POSITION_STATS,
+  type Drawing,
+  type DrawingTool,
+  type Point,
+} from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import { candlesAtom, symbolAtom } from "@/store/chartStore";
@@ -34,6 +39,7 @@ import {
   movePositionAnchor,
   POSITION_ANCHORS,
 } from "../positionGeometry";
+import { PRICE_SCALE_MIN_WIDTH } from "@/components/chart/chartVisualProfile";
 import { line, chip, canvasFont, applyStyle } from "./shared";
 
 /**
@@ -66,6 +72,8 @@ const PRICE_PANE_BOTTOM_RATIO = 0.85;
 const TV_SELECTION_BLUE = "#2962ff";
 const POSITION_HANDLE_SIZE = 7;
 const LABEL_HIT_PAD = 20;
+const DEFAULT_ACCOUNT_SIZE = 1000;
+const DEFAULT_RISK_VALUE = 25;
 
 /** Latest traded price from the chart's master candle series, or null. */
 function currentPrice(): number | null {
@@ -158,6 +166,24 @@ function positionPriceScaleLabel(
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.fillText(text, x + w / 2, top + h / 2 + 0.5);
+  g.restore();
+}
+
+function positionPriceScalePanelBand(
+  g: CanvasRenderingContext2D,
+  top: number,
+  height: number,
+  color: string,
+  alpha: number,
+  paneWidth: number,
+) {
+  if (height <= 0) return;
+  const x = Math.max(0, paneWidth - PRICE_SCALE_MIN_WIDTH);
+  g.save();
+  g.setLineDash([]);
+  g.globalAlpha = alpha;
+  g.fillStyle = color;
+  g.fillRect(x, Math.round(top), PRICE_SCALE_MIN_WIDTH, Math.round(height));
   g.restore();
 }
 
@@ -476,6 +502,29 @@ function render(
   if (lossH > 0) g.fillRect(snapLeft, lossTop, snapW, lossH);
   g.restore();
 
+  if (d.showLabels !== false) {
+    positionPriceScalePanelBand(
+      g,
+      profitTop,
+      profitH,
+      tpFill,
+      isTpHit || reachedTarget
+        ? Math.max(0.3, hitAlpha * 0.72)
+        : Math.max(0.2, baseAlpha * 0.78),
+      proj.width,
+    );
+    positionPriceScalePanelBand(
+      g,
+      lossTop,
+      lossH,
+      slFill,
+      isSlHit || reachedStop
+        ? Math.max(0.3, hitAlpha * 0.72)
+        : Math.max(0.18, baseAlpha * 0.72),
+      proj.width,
+    );
+  }
+
   // ── Zone borders (1 px dashed, very subtle) ──
   // TradingView reads the projection as solid TP/SL bands.  Keep the border
   // subtle so it does not compete with candles.
@@ -580,9 +629,9 @@ function render(
     const stats = new Set(
       d.positionStats?.length
         ? d.positionStats
-        : (["percent", "ticks", "amount", "rr"] as const),
+        : DEFAULT_POSITION_STATS,
     );
-    const showStats = selected || !!d.alwaysShowStats;
+    const showStats = selected || d.alwaysShowStats !== false;
     const compact = !!d.compactStats;
     const fontSize = d.fontSize ?? 11;
     const textColor = d.textColor ?? "#fff";
@@ -594,11 +643,13 @@ function render(
     let targetAmountTxt = "";
     let stopAmountTxt = "";
     let entryStatsTxt = "";
-    if (d.accountSize != null && d.riskValue != null) {
+    {
+      const accountSize = d.accountSize ?? DEFAULT_ACCOUNT_SIZE;
+      const riskValue = d.riskValue ?? DEFAULT_RISK_VALUE;
       const riskAmount =
         (d.riskUnit ?? "%") === "%"
-          ? d.accountSize * (d.riskValue / 100)
-          : d.riskValue;
+          ? accountSize * (riskValue / 100)
+          : riskValue;
       qty = risk > 0 ? (riskAmount / risk) * (d.lotSize ?? 1) : 0;
       const profitAmount = qty * reward;
       const cur = d.accountCurrency ?? "USD";
@@ -609,13 +660,19 @@ function render(
           : (d.tool === "long" ? price - entry : entry - price) * qty;
       if (showStats && stats.has("amount")) {
         targetAmountTxt = `Amount: ${fmtCurrency(
-          d.accountSize + profitAmount,
+          accountSize + profitAmount,
           cur,
         )}`;
-        stopAmountTxt = `Amount: ${fmtCurrency(d.accountSize - riskAmount, cur)}`;
+        stopAmountTxt = `Amount: ${fmtCurrency(accountSize - riskAmount, cur)}`;
+        const resolvedPnl = isTpHit
+          ? profitAmount
+          : isSlHit
+            ? -riskAmount
+            : openPnl;
+        const pnlLabel = isTpHit || isSlHit ? "Closed PnL" : "Open P&L";
         entryStatsTxt = compact
-          ? `P&L ${fmtCurrency(openPnl, cur)}  Qty ${qty.toFixed(prec)}`
-          : `Open P&L: ${fmtCurrency(openPnl, cur)}  Qty: ${qty.toFixed(prec)}`;
+          ? `P&L ${fmtCurrency(resolvedPnl, cur)}  Qty ${qty.toFixed(prec)}`
+          : `${pnlLabel}: ${fmtCurrency(resolvedPnl, cur)}, Qty: ${qty.toFixed(prec)}`;
       }
     }
 

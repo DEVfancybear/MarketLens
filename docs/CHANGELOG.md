@@ -4,12 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
-### Changed - Long/Short price label parity (2026-07-05)
+### Changed - Long/Short price label and scale-panel parity (2026-07-05)
 - Long/Short Position now renders absolute target, entry, and stop prices as
   right-edge price badges, matching TradingView's price-scale treatment.
+- The right price-scale strip is now tinted across the take-profit and
+  stop-loss zones, so the TP/SL color context continues through the price
+  panel instead of stopping at the chart body.
 - Target/Stop in-box chips are back to TradingView-style metrics: distance,
   percent, ticks, amount, and hit status instead of duplicating the absolute
   level price.
+- Legacy Long/Short drawings without explicit stats or account/risk values now
+  use the same default stats/account/risk fallback as newly created positions,
+  keeping labels consistent after reloads.
 
 ### Added - Chart timezone selector (2026-07-05)
 - Added a TradingView-style timezone selector to the bottom-right chart clock.

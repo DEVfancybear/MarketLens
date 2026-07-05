@@ -11,7 +11,11 @@ import type {
   IndicatorConfig,
   Timeframe,
 } from "@/types";
-import { TEMPLATE_STYLE_KEYS, styleFamily } from "@/types";
+import {
+  DEFAULT_POSITION_STATS,
+  TEMPLATE_STYLE_KEYS,
+  styleFamily,
+} from "@/types";
 import type { Mt5SymbolInfo } from "@/types/mt5";
 import { localStore } from "@/services/storage";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
@@ -177,12 +181,8 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     drawing.stopColor = drawing.stopColor ?? "#f23645";
     drawing.textColor = drawing.textColor ?? "#ffffff";
     drawing.fontSize = drawing.fontSize ?? 12;
-    drawing.positionStats = drawing.positionStats ?? [
-      "percent",
-      "ticks",
-      "amount",
-      "rr",
-    ];
+    drawing.positionStats = drawing.positionStats ?? [...DEFAULT_POSITION_STATS];
+    drawing.alwaysShowStats = drawing.alwaysShowStats ?? true;
     drawing.points = [
       { time: tEntry, price: entry },
       { time: tRight, price: target },

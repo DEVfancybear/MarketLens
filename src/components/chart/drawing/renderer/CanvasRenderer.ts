@@ -181,6 +181,35 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         (d.fibLogScale ? "1" : "0") +
         "," +
         JSON.stringify(d.fibLevels ?? []);
+      // Long/Short position labels and price-scale bands depend on account
+      // sizing, stats visibility, hit handling, and TP/SL colours. These fields
+      // can change without moving any point, so they must be part of the memo
+      // signature or the canvas will not repaint until a later viewport event.
+      h +=
+        ":pos=" +
+        (d.targetColor ?? "") +
+        "," +
+        (d.stopColor ?? "") +
+        "," +
+        (d.accountSize ?? "") +
+        "," +
+        (d.accountCurrency ?? "") +
+        "," +
+        (d.lotSize ?? "") +
+        "," +
+        (d.riskValue ?? "") +
+        "," +
+        (d.riskUnit ?? "") +
+        "," +
+        (d.leverage ?? "") +
+        "," +
+        (d.qtyPrecision ?? "") +
+        "," +
+        (d.compactStats ? "1" : "0") +
+        "," +
+        (d.alwaysShowStats === false ? "0" : "1") +
+        "," +
+        JSON.stringify(d.positionStats ?? []);
     }
     return h;
   }

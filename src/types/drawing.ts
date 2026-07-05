@@ -98,6 +98,13 @@ export type LineStyle = "solid" | "dashed" | "dotted";
  */
 export type PositionStat = "percent" | "ticks" | "rr" | "amount";
 
+export const DEFAULT_POSITION_STATS: PositionStat[] = [
+  "percent",
+  "ticks",
+  "amount",
+  "rr",
+];
+
 /** All position stats in display order, with human labels for the dropdown. */
 export const POSITION_STATS: { id: PositionStat; label: string }[] = [
   { id: "percent", label: "TP/SL price offset, %" },

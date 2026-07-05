@@ -18,6 +18,7 @@ import {
 } from "@/store/chartStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import {
+  DEFAULT_POSITION_STATS,
   POSITION_STATS,
   type Drawing,
   type LineStyle,
@@ -508,8 +509,8 @@ export function PositionSettingsDialog() {
       ),
     );
 
-  const accountSize = drawing.accountSize ?? 10000;
-  const riskValue = drawing.riskValue ?? 1;
+  const accountSize = drawing.accountSize ?? 1000;
+  const riskValue = drawing.riskValue ?? 25;
   const riskUnit = drawing.riskUnit ?? "%";
   const lotSize = drawing.lotSize ?? 1;
   const leverage = drawing.leverage ?? 1;
@@ -761,7 +762,7 @@ export function PositionSettingsDialog() {
               <SectionTitle>Info</SectionTitle>
               <Row label="Stats">
                 <StatsSelect
-                  value={drawing.positionStats ?? ["percent"]}
+                  value={drawing.positionStats ?? DEFAULT_POSITION_STATS}
                   onChange={(v) => patch({ positionStats: v })}
                 />
               </Row>
@@ -773,7 +774,7 @@ export function PositionSettingsDialog() {
               </Row>
               <Row label="Always show stats">
                 <CheckBox
-                  checked={!!drawing.alwaysShowStats}
+                  checked={drawing.alwaysShowStats !== false}
                   onChange={(v) => patch({ alwaysShowStats: v })}
                 />
               </Row>

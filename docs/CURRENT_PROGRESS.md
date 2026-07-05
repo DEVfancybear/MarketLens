@@ -1,17 +1,26 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Long/Short price label parity)_
+_Last updated: 2026-07-05 (Long/Short price label and scale-panel parity)_
 
 ## Completed this session (2026-07-05)
 
-### Long/Short price label parity
+### Long/Short price label and scale-panel parity
 - Rechecked the user-provided TradingView Long/Short screenshots: absolute
   TP/Entry/SL prices are shown on the right price scale, while the in-box
-  Target/Stop chips show metrics.
+  Target/Stop chips show metrics and the right price-scale strip keeps the
+  TP/SL color context.
 - Added canvas-rendered right-edge price badges for target, entry, and stop
   prices so the drawing exposes the actual SL/TP levels on chart.
+- Added right price-scale strip tinting for the profit and risk bands using the
+  shared chart price-scale width, so the colored TP/SL panel follows the same
+  renderer path as the on-chart long/short zones.
 - Restored Target/Stop chips to TradingView-style metrics: distance, percent,
   ticks, amount, and hit status.
+- Long/Short labels now fall back to the shared full stats set and the
+  TradingView-style `1000` account / `25%` risk defaults when loading older
+  drawings that do not have those fields persisted.
+- Expanded the drawing canvas memo signature for Long/Short account, risk,
+  color, and stats fields so settings changes repaint immediately.
 
 ### Chart timezone selector
 - Researched TradingView timezone behavior from the user screenshot plus

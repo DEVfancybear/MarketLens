@@ -147,15 +147,28 @@ Long or vice versa.
 Default labels follow the TradingView risk/reward visual model:
 
 - Right-edge price badges display the absolute target, entry, and stop prices.
+- The right price-scale strip is tinted across the TP and SL vertical bands,
+  using the shared main-chart price-scale width. This is part of the position
+  renderer contract: do not implement it as a DOM overlay or per-symbol hack.
 - Target/Stop in-box chips display distance first. Percentage, tick count, and
   projected account amount are appended when stats are enabled.
 - Entry label displays open P&L, quantity, and Risk/Reward Ratio when account
   and risk settings are available.
 - Target/Stop labels sit inside the box near the left edge.
 - Entry label is centered on the entry line.
+- If an older saved drawing does not have position stats or account/risk fields,
+  render with the shared defaults: percent, ticks, amount, RR, account size
+  `1000`, and risk `25%`. This keeps legacy drawings visually consistent with
+  newly placed TradingView-style positions.
 
 The Style tab still controls visibility, text color/size, compact mode, stats,
 and always-show behavior.
+
+Renderer invalidation must include position-specific fields such as TP/SL
+colors, account size, risk value/unit, quantity precision, stats, and
+always-show state. These fields affect labels and scale-panel bands without
+changing geometry, so missing them from the canvas memo signature causes stale
+labels until the next viewport repaint.
 
 ## Tests
 
