@@ -1,5 +1,5 @@
 import type { Theme } from "@/store/uiStore";
-import { TF_SECONDS, type Timeframe } from "@/types";
+import { TF_SECONDS, type Timeframe } from "../../types";
 
 /**
  * TradingView-style colour palette resolved from the active app theme.
@@ -9,22 +9,23 @@ import { TF_SECONDS, type Timeframe } from "@/types";
 export function chartColors(theme: Theme) {
   const dark = theme === "dark";
   return {
-    background: dark ? "#0b0e11" : "#ffffff",
+    background: dark ? "#0f0f0f" : "#ffffff",
     // Axis label text
-    text: dark ? "#b2b5be" : "#131722",
+    text: dark ? "#d1d4dc" : "#131722",
+    axisText: dark ? "#9ea4ad" : "#4b5563",
     // Grid lines — deliberately faint so they never dominate
-    grid: dark ? "#1e222d" : "#eceff3",
+    grid: dark ? "rgba(255,255,255,0.065)" : "#eceff3",
     // Price/time scale border
-    border: dark ? "#2a2e39" : "#e0e3eb",
+    border: dark ? "rgba(255,255,255,0.10)" : "#e0e3eb",
     // Crosshair line + label box
-    crosshair: dark ? "#758696" : "#9598a1",
-    crosshairLabelBg: dark ? "#363a45" : "#2a2e39",
+    crosshair: dark ? "rgba(117,134,150,0.86)" : "#9598a1",
+    crosshairLabelBg: dark ? "#4a4a4a" : "#2a2e39",
     // Candles — TradingView's current palette uses the same bull/bear pair
     // in both themes (#089981 / #f23645)
     bull: "#089981",
     bear: "#f23645",
-    volumeBull: dark ? "rgba(8,153,129,0.5)" : "rgba(8,153,129,0.45)",
-    volumeBear: dark ? "rgba(242,54,69,0.5)" : "rgba(242,54,69,0.45)",
+    volumeBull: dark ? "rgba(8,153,129,0.42)" : "rgba(8,153,129,0.38)",
+    volumeBear: dark ? "rgba(242,54,69,0.42)" : "rgba(242,54,69,0.38)",
   };
 }
 

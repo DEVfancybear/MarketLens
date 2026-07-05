@@ -2,8 +2,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
-  ColorType,
-  CrosshairMode,
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
@@ -33,7 +31,18 @@ import {
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
-import { chartColors, makeTimeFormatter, BAR_SPACING } from "./chartTheme";
+import { chartColors, makeTimeFormatter } from "./chartTheme";
+import {
+  RIGHT_OFFSET_BARS,
+  VOLUME_PRICE_SCALE_MARGINS,
+  candlestickOptions,
+  crosshairOptions,
+  gridOptions,
+  layoutOptions,
+  mainPriceScaleOptions,
+  timeScaleDefaults,
+  timeScaleOptions,
+} from "./chartVisualProfile";
 import { computeIndicator } from "@/services/indicators";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
@@ -43,16 +52,6 @@ import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
-
-const RIGHT_OFFSET_BARS = 8;
-const MIN_BAR_SPACING = 1.5;
-const getDefaultBarSpacing = (timeframe: Timeframe) =>
-  BAR_SPACING[timeframe] ?? 8;
-const timeScaleDefaults = (timeframe: Timeframe) => ({
-  rightOffset: RIGHT_OFFSET_BARS,
-  barSpacing: getDefaultBarSpacing(timeframe),
-  minBarSpacing: MIN_BAR_SPACING,
-});
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -178,64 +177,21 @@ export function PriceChart({
   useEffect(() => {
     if (!containerRef.current) return;
     const c = chartColors(theme);
-    const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
     const defaultViewport = timeScaleDefaults(timeframe);
     setMainChartDefaultViewport(defaultViewport);
     appliedTimeframeRef.current = timeframe;
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: c.background },
-        textColor: c.text,
-        fontFamily: "var(--font-sans)",
-        fontSize: 12,
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: gridColor, style: 0 },
-        horzLines: { color: gridColor, style: 0 },
-      },
-      rightPriceScale: {
-        borderColor: c.border,
-        borderVisible: true,
-        scaleMargins: { top: 0.1, bottom: 0.24 },
-        entireTextOnly: true,
-        ticksVisible: false,
-      },
+      layout: layoutOptions(theme),
+      grid: gridOptions(theme, gridVisible),
+      rightPriceScale: mainPriceScaleOptions(theme),
       leftPriceScale: { visible: false },
-      timeScale: {
-        borderColor: c.border,
-        borderVisible: true,
-        timeVisible: true,
-        secondsVisible: false,
-        ...defaultViewport,
-        fixLeftEdge: false,
-        fixRightEdge: false,
-        lockVisibleTimeRangeOnResize: true,
-        rightBarStaysOnScroll: true,
-        shiftVisibleRangeOnNewBar: true,
-        allowShiftVisibleRangeOnWhitespaceReplacement: true,
-        ticksVisible: false,
-      },
+      timeScale: timeScaleOptions(theme, timeframe),
       localization: {
         // Floating crosshair time tooltip — HH:mm intraday, date for daily.
         timeFormatter: makeTimeFormatter(timeframe),
       },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          color: c.crosshair,
-          width: 1,
-          style: 2,
-          labelBackgroundColor: c.crosshairLabelBg,
-        },
-        horzLine: {
-          color: c.crosshair,
-          width: 1,
-          style: 2,
-          labelBackgroundColor: c.crosshairLabelBg,
-        },
-      },
+      crosshair: crosshairOptions(theme),
       handleScroll: {
         mouseWheel: true,
         pressedMouseMove: true,
@@ -256,22 +212,9 @@ export function PriceChart({
       },
     });
 
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: c.bull,
-      downColor: c.bear,
-      borderUpColor: c.bull,
-      borderDownColor: c.bear,
-      wickUpColor: c.bull,
-      wickDownColor: c.bear,
-      borderVisible: false,
-      wickVisible: true,
-      priceFormat: { type: "price", precision, minMove: 1 / 10 ** precision },
-      // Current-price line + colored axis label (red/green by last candle).
-      priceLineVisible: true,
-      priceLineWidth: 1,
-      priceLineStyle: 0, // solid (TradingView style)
-      lastValueVisible: false, // rendered by CurrentPriceMarker below
-    });
+    const candleSeries = chart.addCandlestickSeries(
+      candlestickOptions(theme, precision),
+    );
 
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
@@ -282,7 +225,7 @@ export function PriceChart({
     });
     chart
       .priceScale("vol")
-      .applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+      .applyOptions({ scaleMargins: VOLUME_PRICE_SCALE_MARGINS });
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
@@ -341,7 +284,6 @@ export function PriceChart({
     const chart = chartRef.current;
     if (!chart) return;
     const c = chartColors(theme);
-    const gridColor = gridVisible ? c.grid : "rgba(0,0,0,0)";
     const timeframeChanged = appliedTimeframeRef.current !== timeframe;
     const defaultViewport = timeScaleDefaults(timeframe);
     if (timeframeChanged) {
@@ -349,43 +291,23 @@ export function PriceChart({
       appliedTimeframeRef.current = timeframe;
     }
     chart.applyOptions({
-      layout: {
-        background: { type: ColorType.Solid, color: c.background },
-        textColor: c.text,
-      },
-      grid: {
-        vertLines: { color: gridColor },
-        horzLines: { color: gridColor },
-      },
-      rightPriceScale: { borderColor: c.border },
+      layout: layoutOptions(theme),
+      grid: gridOptions(theme, gridVisible),
+      rightPriceScale: mainPriceScaleOptions(theme),
       timeScale: {
-        borderColor: c.border,
+        ...(timeframeChanged
+          ? timeScaleOptions(theme, timeframe)
+          : { borderColor: c.border }),
         ...(timeframeChanged ? defaultViewport : {}),
         rightBarStaysOnScroll: true,
         shiftVisibleRangeOnNewBar: true,
         allowShiftVisibleRangeOnWhitespaceReplacement: true,
       },
       localization: { timeFormatter: makeTimeFormatter(timeframe) },
-      crosshair: {
-        vertLine: {
-          color: c.crosshair,
-          labelBackgroundColor: c.crosshairLabelBg,
-        },
-        horzLine: {
-          color: c.crosshair,
-          labelBackgroundColor: c.crosshairLabelBg,
-        },
-      },
+      crosshair: crosshairOptions(theme),
     });
-    candleSeriesRef.current?.applyOptions({
-      upColor: c.bull,
-      downColor: c.bear,
-      borderUpColor: c.bull,
-      borderDownColor: c.bear,
-      wickUpColor: c.bull,
-      wickDownColor: c.bear,
-    });
-  }, [theme, gridVisible, timeframe]);
+    candleSeriesRef.current?.applyOptions(candlestickOptions(theme, precision));
+  }, [theme, gridVisible, timeframe, precision]);
 
   // ---- Push candle + volume data ----
   useEffect(() => {
@@ -716,8 +638,8 @@ export function PriceChart({
     const colors = chartColors(theme);
     const markerColor = up ? colors.bull : colors.bear;
     series.applyOptions({ priceLineColor: markerColor });
-    const minY = 18;
-    const maxY = Math.max(minY, container.clientHeight - 18);
+    const minY = 12;
+    const maxY = Math.max(minY, container.clientHeight - 12);
     setPriceMarker({
       y: Math.min(Math.max(coordinate, minY), maxY),
       price,
@@ -779,7 +701,7 @@ export function PriceChart({
         dashboards={indicatorDashboards}
       />
       <IndicatorLegend
-        className="absolute left-1 top-1 z-30 max-w-[calc(100%-96px)]"
+        className="absolute left-2 top-8 z-30 max-w-[calc(100%-116px)]"
         indicators={overlayLegendIndicators}
         onToggleVisibility={toggleIndicatorVisibility}
         onSettings={openIndicatorSettings}
@@ -877,23 +799,16 @@ function CurrentPriceMarker({
 }) {
   return (
     <div
-      className="pointer-events-none absolute right-0 z-20 flex -translate-y-1/2 items-start font-mono text-[11px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
+      className="pointer-events-none absolute right-0 z-30 flex -translate-y-1/2 items-center font-mono text-[11px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
       style={{ top: marker.y }}
+      title={`Next bar: ${marker.countdown}`}
     >
       <div
-        className="mt-px flex h-[18px] items-center px-1.5"
+        className="relative flex h-[19px] items-center gap-1 rounded-l-[2px] px-1.5"
         style={{ backgroundColor: marker.color }}
       >
-        {symbol}
-      </div>
-      <div
-        className="relative flex min-w-[66px] flex-col items-center justify-center px-1.5 py-0.5"
-        style={{ backgroundColor: marker.color }}
-      >
+        <span>{symbol}</span>
         <span className="tabular-nums">{fmtPrice(marker.price, precision)}</span>
-        <span className="mt-0.5 tabular-nums text-[10px] font-medium">
-          {marker.countdown}
-        </span>
         <span
           className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
           style={{ borderRightColor: marker.color }}

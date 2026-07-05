@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - TradingView-like chart visual profile (2026-07-05)
+- Added `chartVisualProfile.ts` as the shared visual contract for main chart and
+  indicator pane layout, grid, crosshair, price scale, time scale, candlestick,
+  right-offset, and volume overlay options.
+- Tuned the chart baseline toward the TradingView reference: neutral dark
+  background, fainter grid, stable right price scale width, shallower volume
+  overlay, dotted current price line, compact one-line price marker, and
+  lightweight indicator legend controls.
+- Updated `IndicatorPane` to use the same visual profile as the main chart and
+  added re-theme support.
+- Added `docs/CHART_VISUAL_PROFILE.md` and
+  `tests/chart/chartVisualProfile.test.ts`.
+
 ### Added - Shared draggable dialog behavior (2026-07-04)
 - Added `useDraggableDialog` as the common TradingView-style drag contract for
   modal/settings dialogs. Dialogs can now be moved by dragging their

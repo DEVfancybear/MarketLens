@@ -1,8 +1,26 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-04 (Shared draggable dialogs)_
+_Last updated: 2026-07-05 (Chart visual profile parity)_
 
-## Completed this session (2026-07-04)
+## Completed this session (2026-07-05)
+
+### Chart visual profile parity
+- Researched the user-provided TradingView comparison screenshots plus
+  Lightweight Charts chart, candlestick, price scale, and histogram option
+  docs.
+- Added `chartVisualProfile.ts` so the TradingView-like chart baseline lives in
+  one shared profile instead of being duplicated inside `PriceChart` and
+  `IndicatorPane`.
+- Tuned the main chart toward the TradingView reference: neutral dark
+  background, subtler grid, stable right axis width, smaller volume overlay,
+  dotted current-price line, compact one-line price marker, and a lighter
+  indicator legend.
+- Updated separate indicator panes to use the same layout/grid/price-scale and
+  crosshair profile as the main chart, with theme re-application.
+- Added `docs/CHART_VISUAL_PROFILE.md` and
+  `tests/chart/chartVisualProfile.test.ts`.
+
+## Completed previous session (2026-07-04)
 
 ### Shared draggable dialogs
 - Added `useDraggableDialog` as the common drag/viewport-clamp helper for

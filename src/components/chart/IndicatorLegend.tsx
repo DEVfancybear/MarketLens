@@ -60,7 +60,7 @@ export function IndicatorLegend({
   if (indicators.length === 0) return null;
 
   return (
-    <div className={["flex max-w-full flex-col items-start gap-1 text-[12px] leading-none text-white", className].join(" ")}>
+    <div className={["flex max-w-full flex-col items-start gap-0.5 text-[12px] leading-none text-[#d1d4dc]", className].join(" ")}>
       {indicators.map((indicator) => {
         const visible = indicator.visible !== false;
         const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
@@ -68,12 +68,12 @@ export function IndicatorLegend({
         return (
           <div
             key={indicator.id}
-            className="group flex h-7 max-w-full items-center gap-1 rounded border border-white/15 bg-black/80 px-2 shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
+            className="group flex h-6 max-w-full items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-black/70 focus-within:bg-black/70"
           >
             <span
               className={[
                 "min-w-0 truncate font-semibold",
-                visible ? "text-white" : "text-white/45",
+                visible ? "text-[#d1d4dc]" : "text-[#d1d4dc]/45",
               ].join(" ")}
               title={title}
             >
@@ -136,7 +136,7 @@ function LegendButton({
         if (!disabled) onClick();
       }}
       className={[
-        "flex h-5 w-5 items-center justify-center rounded text-white/75 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:text-white/25 disabled:hover:bg-transparent",
+        "flex h-5 w-5 items-center justify-center rounded text-[#d1d4dc]/75 opacity-0 transition hover:bg-white/10 hover:text-white focus:opacity-100 disabled:cursor-not-allowed disabled:text-[#d1d4dc]/25 disabled:hover:bg-transparent group-hover:opacity-100",
         danger ? "hover:text-red-300" : "",
       ].join(" ")}
     >

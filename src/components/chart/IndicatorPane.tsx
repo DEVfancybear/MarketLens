@@ -2,8 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   createChart,
-  ColorType,
-  CrosshairMode,
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
@@ -22,6 +20,13 @@ import {
 } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
 import { chartColors } from "./chartTheme";
+import {
+  INDICATOR_PANE_HEIGHT,
+  crosshairOptions,
+  gridOptions,
+  panePriceScaleOptions,
+  transparentLayoutOptions,
+} from "./chartVisualProfile";
 import { computeIndicator } from "@/services/indicators";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { IndicatorLegend } from "./IndicatorLegend";
@@ -92,21 +97,16 @@ export function IndicatorPane({
     const c = chartColors(theme);
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: c.text,
-        fontFamily: "var(--font-sans)",
-        fontSize: 10,
-      },
-      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-      rightPriceScale: { borderColor: c.border },
+      layout: transparentLayoutOptions(theme),
+      grid: gridOptions(theme, true),
+      rightPriceScale: panePriceScaleOptions(theme),
       timeScale: {
         borderColor: c.border,
         timeVisible: true,
         secondsVisible: false,
         visible: false,
       },
-      crosshair: { mode: CrosshairMode.Normal },
+      crosshair: crosshairOptions(theme),
       handleScroll: false,
       handleScale: false,
     });
@@ -120,6 +120,19 @@ export function IndicatorPane({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const c = chartColors(theme);
+    chart.applyOptions({
+      layout: transparentLayoutOptions(theme),
+      grid: gridOptions(theme, true),
+      rightPriceScale: panePriceScaleOptions(theme),
+      timeScale: { borderColor: c.border },
+      crosshair: crosshairOptions(theme),
+    });
+  }, [theme]);
 
   // Sync time scale to the main chart.
   useEffect(() => {
@@ -279,7 +292,10 @@ export function IndicatorPane({
   };
 
   return (
-    <div className="relative h-[120px] w-full border-t border-terminal-border">
+    <div
+      className="relative w-full border-t border-terminal-border"
+      style={{ height: INDICATOR_PANE_HEIGHT }}
+    >
       <IndicatorLegend
         className="absolute left-1 top-1 z-10 max-w-[calc(100%-96px)]"
         indicators={[cfg]}

@@ -12,6 +12,7 @@ npm run test:chart
 Current coverage:
 
 - bottom time-toolbar range shortcut math,
+- TradingView-like chart visual profile margins and right-offset defaults,
 - `All` shortcut dispatch sentinel,
 - nearest loaded candle lookup for `Go to`,
 - logical range centering that preserves the current zoom span,
