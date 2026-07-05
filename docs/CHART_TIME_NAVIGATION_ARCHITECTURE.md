@@ -84,14 +84,21 @@ to available data when the requested dates extend beyond loaded history.
 Date mode should behave like a chart pan, not a zoom reset.
 
 1. Parse the local `yyyy-mm-dd` and `hh:mm` draft.
-2. Find the nearest loaded candle with `nearestCandleIndex`.
+2. Find the first loaded candle whose time is at or after the requested local
+   timestamp with `firstCandleIndexAtOrAfter`.
 3. Read the current logical range from `getVisibleLogicalRange`.
 4. Center a logical range around that candle with the same span.
 5. Apply it through `setVisibleLogicalRange`.
+6. Show a temporary vertical marker and date chip at the resolved candle time.
 
 Using logical range here matters. If the user is zoomed into 60 bars and jumps
 to another date, the chart should still show about 60 bars, centered on the
 target candle.
+
+Do not use nearest-candle search for Date mode. TradingView-style `Go to` date
+navigation should land on the first bar of the requested date/time window. For
+example, `2026-07-01 00:00` should resolve to the first loaded candle on or
+after local midnight on July 1, 2026.
 
 ## 7. Custom Range Contract
 
@@ -166,6 +173,10 @@ Manual checks:
 
 - click each shortcut and confirm the chart range changes,
 - open `Go to`, pick a single date, and confirm zoom span is preserved,
+- enter a date such as `2026-07-01` / `00:00` and confirm the chart centers the
+  first loaded candle at or after that timestamp,
+- confirm the temporary vertical marker and two-line date chip appear after the
+  jump,
 - switch to `Custom range`, enter start/end values, and confirm range applies,
 - verify current clock displays the local time and UTC offset,
 - test with Replay loaded so date jumps clamp to replay-visible candles.

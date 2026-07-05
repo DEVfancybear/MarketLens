@@ -5,6 +5,8 @@ import type { Candle } from "../../src/types/market";
 import {
   calendarCells,
   centeredLogicalRange,
+  firstCandleIndexAtOrAfter,
+  formatGoToMarkerLabel,
   goToDialogPosition,
   nearestCandleIndex,
   parseLocalDateTime,
@@ -50,6 +52,16 @@ test("nearest candle search clamps and chooses the closest candle", () => {
   assert.equal(nearestCandleIndex(data, 9999), 3);
 });
 
+test("go-to date selects the first candle at or after the requested time", () => {
+  const data = candles(4, 1000, 60);
+
+  assert.equal(firstCandleIndexAtOrAfter(data, 1000), 0);
+  assert.equal(firstCandleIndexAtOrAfter(data, 1001), 1);
+  assert.equal(firstCandleIndexAtOrAfter(data, 1120), 2);
+  assert.equal(firstCandleIndexAtOrAfter(data, 9999), 3);
+  assert.equal(firstCandleIndexAtOrAfter([], 1000), null);
+});
+
 test("go-to logical range preserves current zoom span", () => {
   assert.deepEqual(centeredLogicalRange(50, { from: 10, to: 30 }, 100), {
     from: 40,
@@ -74,22 +86,28 @@ test("calendar grid always returns six weeks", () => {
   assert.equal(cells.some((cell) => cell.date === "2026-07-04"), true);
 });
 
+test("go-to marker label matches TradingView-style date chip", () => {
+  const time = new Date(2026, 6, 1, 0, 0, 0, 0).getTime() / 1000;
+
+  assert.equal(formatGoToMarkerLabel(time), "Wed 01 Jul '26\n00:00");
+});
+
 test("go-to dialog opens near its toolbar button and clamps to the viewport", () => {
   assert.deepEqual(
     goToDialogPosition(
       { left: 260, top: 520, right: 292, bottom: 548 },
       { width: 1280, height: 720 },
-      { width: 274, height: 460 },
+      { width: 302, height: 478 },
     ),
-    { left: 252, top: 52 },
+    { left: 252, top: 34 },
   );
 
   assert.deepEqual(
     goToDialogPosition(
       { left: 1240, top: 690, right: 1272, bottom: 718 },
       { width: 1280, height: 720 },
-      { width: 274, height: 460 },
+      { width: 302, height: 478 },
     ),
-    { left: 998, top: 222 },
+    { left: 970, top: 204 },
   );
 });

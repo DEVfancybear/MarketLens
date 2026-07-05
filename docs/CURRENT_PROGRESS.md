@@ -4,6 +4,16 @@ _Last updated: 2026-07-05 (Chart visual profile parity)_
 
 ## Completed this session (2026-07-05)
 
+### Go to date parity fix
+- Tuned the `Go to` popup width, input grid, weekday strip, selected/today
+  styling, and footer spacing closer to the TradingView reference.
+- Replaced nearest-candle Date mode with first-candle-at-or-after lookup so
+  `2026-07-01 00:00` lands on the first loaded candle from July 1, 2026 instead
+  of an arbitrary nearest candle.
+- Added a temporary vertical marker and date chip after Date mode jumps.
+- Expanded `npm run test:chart` coverage for date lookup, marker label
+  formatting, and updated dialog placement.
+
 ### Chart visual profile parity
 - Researched the user-provided TradingView comparison screenshots plus
   Lightweight Charts chart, candlestick, price scale, and histogram option

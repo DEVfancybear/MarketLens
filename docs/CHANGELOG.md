@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Go to date jump parity (2026-07-05)
+- Widened and tuned the `Go to` dialog to better match TradingView's Date /
+  Custom range popup and prevent the date/time input row from overflowing.
+- Date mode now jumps to the first loaded candle at or after the selected local
+  date/time, matching the expected `2026-07-01 00:00 -> first candle of that
+  day` behavior instead of choosing whichever candle is merely nearest.
+- Added a temporary TradingView-style vertical marker and date chip after a
+  successful date jump.
+- Added chart tests for first-candle date lookup, marker label formatting, and
+  the updated dialog placement size.
+
 ### Changed - TradingView-like chart visual profile (2026-07-05)
 - Added `chartVisualProfile.ts` as the shared visual contract for main chart and
   indicator pane layout, grid, crosshair, price scale, time scale, candlestick,

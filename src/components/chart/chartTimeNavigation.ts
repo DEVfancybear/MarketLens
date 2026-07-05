@@ -105,6 +105,26 @@ export function nearestCandleIndex(candles: Candle[], timeSec: number): number |
     : lo;
 }
 
+export function firstCandleIndexAtOrAfter(
+  candles: Candle[],
+  timeSec: number,
+): number | null {
+  if (candles.length === 0) return null;
+  let lo = 0;
+  let hi = candles.length - 1;
+  let result = candles.length - 1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (candles[mid].time >= timeSec) {
+      result = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return result;
+}
+
 export function centeredLogicalRange(
   targetIndex: number,
   currentRange: { from: number; to: number } | null,
@@ -145,6 +165,15 @@ export function formatTimeInput(timeMs: number): string {
   const h = String(date.getHours()).padStart(2, "0");
   const m = String(date.getMinutes()).padStart(2, "0");
   return `${h}:${m}`;
+}
+
+export function formatGoToMarkerLabel(timeSec: number): string {
+  const date = new Date(timeSec * 1000);
+  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
+  const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(date);
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = String(date.getFullYear()).slice(-2);
+  return `${weekday} ${day} ${month} '${year}\n${formatTimeInput(date.getTime())}`;
 }
 
 export function formatUtcOffset(date = new Date()): string {
