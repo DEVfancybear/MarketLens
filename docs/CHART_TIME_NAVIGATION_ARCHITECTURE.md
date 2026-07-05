@@ -1,6 +1,6 @@
 # Chart Time Navigation Architecture
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-07-05_
 
 This document explains the TradingView-style bottom time toolbar and the `Go to`
 date/range dialog. Read this before changing chart range shortcut behavior,
@@ -102,6 +102,13 @@ navigation should land on the first bar of the requested date/time window. For
 example, `2026-07-01 00:00` should resolve to the first loaded candle on or
 after local midnight on July 1, 2026.
 
+The jump marker is only a short-lived navigation affordance. It should clear on
+its timeout, on `Escape`, or as soon as the user interacts with the chart again
+through pointer, wheel, or touch input. Attach that dismissal listener to the
+chart wrapper in capture phase rather than only to the Lightweight Charts
+element, because drawing canvases and app overlays can sit above the native
+chart element while still being part of the chart interaction surface.
+
 ## 7. Custom Range Contract
 
 Custom range mode is an explicit visible time window.
@@ -180,6 +187,8 @@ Manual checks:
   first loaded candle at or after that timestamp,
 - confirm the temporary vertical marker and two-line date chip appear after the
   jump,
+- click, drag, wheel, or touch the chart and confirm the temporary marker/chip
+  disappears immediately,
 - switch to `Custom range`, enter start/end values, and confirm range applies,
 - verify current clock displays the local time and UTC offset,
 - test with Replay loaded so date jumps clamp to replay-visible candles.

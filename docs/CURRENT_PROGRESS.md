@@ -1,6 +1,6 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Chart visual profile parity)_
+_Last updated: 2026-07-05 (Go to marker dismissal parity)_
 
 ## Completed this session (2026-07-05)
 
@@ -14,6 +14,9 @@ _Last updated: 2026-07-05 (Chart visual profile parity)_
   readable TradingView-like candle window instead of keeping the chart zoomed
   too far out.
 - Added a temporary vertical marker and date chip after Date mode jumps.
+- Matched TradingView marker dismissal: the temporary `Go to` chip now clears
+  immediately when the user clicks, drags, wheels, touches the chart, or presses
+  `Escape`, instead of waiting only for the timeout.
 - Expanded `npm run test:chart` coverage for date lookup, marker label
   formatting, bounded zoom, and updated dialog placement.
 

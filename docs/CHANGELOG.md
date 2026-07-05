@@ -14,6 +14,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   resolved candle when the current chart is too far zoomed out.
 - Added a temporary TradingView-style vertical marker and date chip after a
   successful date jump.
+- The temporary marker/chip now dismisses immediately when the user clicks,
+  drags, wheels, touches the chart, or presses `Escape`, matching the
+  TradingView-style "return to chart interaction" behavior.
 - Added chart tests for first-candle date lookup, marker label formatting, and
   bounded Go-to zoom behavior.
 

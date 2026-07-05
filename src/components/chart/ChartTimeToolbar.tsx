@@ -515,10 +515,19 @@ function GoToJumpMarker({
     let disposed = false;
     const start = performance.now();
     const timeout = window.setTimeout(onDone, 3600);
+    const chartElement = chart.chartElement();
+    const chartScope = chartElement.parentElement ?? chartElement;
+
+    const dismissOnChartInteraction = () => {
+      if (!disposed) onDone();
+    };
+
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismissOnChartInteraction();
+    };
 
     const project = () => {
       if (disposed) return;
-      const chartElement = chart.chartElement();
       const x = chart.timeScale().timeToCoordinate(marker.time as UTCTimestamp);
       if (chartElement && x != null) {
         const rect = chartElement.getBoundingClientRect();
@@ -537,11 +546,37 @@ function GoToJumpMarker({
 
     frame = window.requestAnimationFrame(project);
     window.addEventListener("resize", project);
+    // Listen on the chart wrapper, not only the Lightweight Charts element.
+    // Drawing canvases and app overlays can sit as siblings above the chart; a
+    // capture listener on the shared wrapper makes any chart interaction clear
+    // the temporary Go-to chip just like TradingView.
+    chartScope.addEventListener("pointerdown", dismissOnChartInteraction, true);
+    chartScope.addEventListener("wheel", dismissOnChartInteraction, {
+      capture: true,
+      passive: true,
+    });
+    chartScope.addEventListener("touchstart", dismissOnChartInteraction, {
+      capture: true,
+      passive: true,
+    });
+    window.addEventListener("keydown", dismissOnEscape, true);
     return () => {
       disposed = true;
       window.clearTimeout(timeout);
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", project);
+      chartScope.removeEventListener(
+        "pointerdown",
+        dismissOnChartInteraction,
+        true,
+      );
+      chartScope.removeEventListener("wheel", dismissOnChartInteraction, true);
+      chartScope.removeEventListener(
+        "touchstart",
+        dismissOnChartInteraction,
+        true,
+      );
+      window.removeEventListener("keydown", dismissOnEscape, true);
     };
   }, [chart, marker.time, onDone]);
 
