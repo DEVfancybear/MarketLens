@@ -1,8 +1,24 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Indicator browser API-only catalog)_
+_Last updated: 2026-07-05 (Chart range shortcut viewport)_
 
 ## Completed this session (2026-07-05)
+
+### Chart range shortcut viewport
+- Researched the official Lightweight Charts time-scale API: `setVisibleRange`
+  clamps to existing time data, while `setVisibleLogicalRange` should be used
+  when the app owns/can compute bar indexes.
+- Added `shortcutLogicalRange()` so `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`,
+  `1Y`, and `5Y` resolve to logical candle indexes anchored to the latest
+  loaded candle.
+- Updated `ChartTimeToolbar` so shortcut clicks call
+  `setVisibleLogicalRange()` with the normal chart right offset, and `All`
+  still calls `fitContent()`.
+- Added active shortcut state so the clicked button highlights like
+  TradingView. Manual Go-to Date/Custom Range navigation clears that shortcut
+  highlight.
+- Extended `tests/chart/chartTimeNavigation.test.ts` for shortcut logical
+  ranges.
 
 ### Indicator browser API-only catalog
 - Reworked the TradingView-style indicator modal sidebar to include Personal,

@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart range shortcut viewport and active state (2026-07-05)
+- Bottom range shortcuts (`1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `5Y`,
+  `All`) now update the chart viewport and keep the clicked button highlighted.
+- Non-`All` shortcuts now use `shortcutLogicalRange()` and
+  `setVisibleLogicalRange()` anchored to the latest loaded candle, matching the
+  TradingView-style behavior shown in the bottom toolbar.
+- `All` still calls `fitContent()`, while Go-to Date/Custom Range clear the
+  active shortcut because they are manual navigation modes.
+- Added chart tests for shortcut logical-range conversion.
+
 ### Changed - Indicator browser API-only catalog (2026-07-05)
 - Refactored the `Indicators, metrics, and strategies` popup toward the
   TradingView sidebar layout: Personal, Built-in, and Community sections, with

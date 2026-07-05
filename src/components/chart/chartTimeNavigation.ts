@@ -137,6 +137,24 @@ export function shortcutRange(
   return { from: Math.min(from, to), to };
 }
 
+export function shortcutLogicalRange(
+  shortcut: TimeRangeShortcut,
+  candles: Candle[],
+  rightOffsetBars: number,
+): { from: number; to: number } | "all" | null {
+  const range = shortcutRange(shortcut, candles);
+  if (!range) return null;
+  if (range === "all") return "all";
+
+  const fromIndex = firstCandleIndexAtOrAfter(candles, range.from);
+  if (fromIndex == null) return null;
+  const lastIndex = candles.length - 1;
+  return {
+    from: Math.max(0, fromIndex),
+    to: lastIndex + Math.max(0, rightOffsetBars),
+  };
+}
+
 export function nearestCandleIndex(candles: Candle[], timeSec: number): number | null {
   if (candles.length === 0) return null;
   let lo = 0;

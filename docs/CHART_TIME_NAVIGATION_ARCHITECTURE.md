@@ -74,16 +74,26 @@ a stale floating time label over the newly visible candles.
 
 ## 5. Shortcut Contract
 
-`shortcutRange(shortcut, candles)` is intentionally pure and tested.
+`shortcutRange(shortcut, candles)` and
+`shortcutLogicalRange(shortcut, candles, rightOffsetBars)` are intentionally
+pure and tested.
 
 - The anchor is the latest available candle, not wall-clock time.
 - `1D` and `5D` subtract exact day durations.
 - `1M`, `3M`, `6M`, `1Y`, and `5Y` use local calendar month/year arithmetic.
 - `YTD` starts at local January 1 of the latest candle's year.
 - `All` returns the sentinel `"all"` and the UI calls `fitContent()`.
+- Non-`All` shortcuts resolve the requested start time to the first loaded
+  candle at or after that time, then apply `{ from: startIndex, to:
+  lastIndex + RIGHT_OFFSET_BARS }` via `setVisibleLogicalRange`.
+- `ChartTimeToolbar` stores the active shortcut locally so `All`, `5Y`, `1Y`,
+  etc. visibly highlight like TradingView after the user clicks them.
 
-For explicit ranges, use `setVisibleRange`. Lightweight Charts clamps the range
-to available data when the requested dates extend beyond loaded history.
+Using logical range for shortcuts avoids timestamp-clamping edge cases and keeps
+the normal right-side whitespace stable. The official Lightweight Charts API
+notes that `setVisibleRange()` is clamped to existing time data, while
+`setVisibleLogicalRange()` is the correct primitive when the app can approximate
+indexes directly.
 
 ## 6. Go To Date Contract
 

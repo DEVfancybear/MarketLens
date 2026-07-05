@@ -14,6 +14,7 @@ import {
   goToDialogPosition,
   nearestCandleIndex,
   parseLocalDateTime,
+  shortcutLogicalRange,
   shortcutRange,
 } from "../../src/components/chart/chartTimeNavigation";
 
@@ -45,6 +46,20 @@ test("range shortcuts anchor to the latest candle", () => {
 
 test("all shortcut requests fitContent behavior", () => {
   assert.equal(shortcutRange("All", candles(3)), "all");
+  assert.equal(shortcutLogicalRange("All", candles(3), 8), "all");
+});
+
+test("range shortcuts convert to logical ranges anchored to latest candle", () => {
+  const data = candles(8, 1_000_000, 24 * 60 * 60);
+
+  assert.deepEqual(shortcutLogicalRange("5D", data, 8), {
+    from: 2,
+    to: 15,
+  });
+  assert.deepEqual(shortcutLogicalRange("1Y", data, 8), {
+    from: 0,
+    to: 15,
+  });
 });
 
 test("nearest candle search clamps and chooses the closest candle", () => {

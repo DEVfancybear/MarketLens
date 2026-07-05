@@ -24,11 +24,13 @@ import {
   goToDialogPosition,
   isSupportedChartTimeZone,
   parseLocalDateTime,
-  shortcutRange,
+  shortcutLogicalRange,
+  type TimeRangeShortcut,
   type ChartTimeZoneId,
   type ChartTimeZoneOption,
   type ElementAnchor,
 } from "./chartTimeNavigation";
+import { RIGHT_OFFSET_BARS } from "./chartVisualProfile";
 
 type GoToTab = "date" | "range";
 type RangeField = "from" | "to";
@@ -213,6 +215,8 @@ export function ChartTimeToolbar({
   const [timeZoneAnchor, setTimeZoneAnchor] = useState<ElementAnchor | null>(null);
   const [timeZoneId, setTimeZoneId] = useState<ChartTimeZoneId>(readInitialTimeZone);
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
+  const [activeShortcut, setActiveShortcut] =
+    useState<TimeRangeShortcut | null>(null);
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const activeTimeZone = chartTimeZoneToIntlTimeZone(timeZoneId);
 
@@ -225,20 +229,19 @@ export function ChartTimeToolbar({
     window.localStorage.setItem(TIME_ZONE_STORAGE_KEY, timeZoneId);
   }, [timeZoneId]);
 
-  const jumpShortcut = (shortcut: (typeof TIME_RANGE_SHORTCUTS)[number]) => {
+  const jumpShortcut = (shortcut: TimeRangeShortcut) => {
     if (!chart) return;
-    const range = shortcutRange(shortcut, candles);
+    const range = shortcutLogicalRange(shortcut, candles, RIGHT_OFFSET_BARS);
     if (!range) return;
     const timeScale = chart.timeScale();
     if (range === "all") {
       timeScale.fitContent();
+      setActiveShortcut(shortcut);
       clearChartCrosshair(chart, () => setCrosshair(null));
       return;
     }
-    timeScale.setVisibleRange({
-      from: range.from as UTCTimestamp,
-      to: range.to as UTCTimestamp,
-    });
+    timeScale.setVisibleLogicalRange(range);
+    setActiveShortcut(shortcut);
     clearChartCrosshair(chart, () => setCrosshair(null));
   };
 
@@ -262,7 +265,12 @@ export function ChartTimeToolbar({
               type="button"
               disabled={!chart || candles.length === 0}
               onClick={() => jumpShortcut(shortcut)}
-              className="h-7 shrink-0 rounded-sm px-1.5 font-semibold text-[#f0f3fa] transition-colors hover:bg-[#2a2a2a] disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent"
+              className={cn(
+                "h-7 shrink-0 rounded-sm px-1.5 font-semibold transition-colors disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent",
+                activeShortcut === shortcut
+                  ? "bg-[#4a4a4a] text-[#f0f3fa]"
+                  : "text-[#f0f3fa] hover:bg-[#2a2a2a]",
+              )}
             >
               {shortcut}
             </button>
@@ -314,7 +322,10 @@ export function ChartTimeToolbar({
               label: formatGoToMarkerLabel(time, activeTimeZone),
             })
           }
-          onNavigationApplied={() => clearChartCrosshair(chart, () => setCrosshair(null))}
+          onNavigationApplied={() =>
+            clearChartCrosshair(chart, () => setCrosshair(null))
+          }
+          onManualNavigation={() => setActiveShortcut(null)}
           onClose={() => setGoToOpen(false)}
         />
       )}
@@ -337,6 +348,7 @@ function GoToDialog({
   anchor,
   onJump,
   onNavigationApplied,
+  onManualNavigation,
   onClose,
 }: {
   chart: IChartApi;
@@ -345,6 +357,7 @@ function GoToDialog({
   anchor: ElementAnchor | null;
   onJump: (time: number) => void;
   onNavigationApplied: () => void;
+  onManualNavigation: () => void;
   onClose: () => void;
 }) {
   const defaults = useMemo(() => defaultRange(candles, timeZone), [
@@ -395,6 +408,7 @@ function GoToDialog({
       chart.timeScale().setVisibleLogicalRange(range);
       onJump(candles[index].time);
       onNavigationApplied();
+      onManualNavigation();
       onClose();
       return;
     }
@@ -407,6 +421,7 @@ function GoToDialog({
       to: Math.max(from, to) as UTCTimestamp,
     });
     onNavigationApplied();
+    onManualNavigation();
     onClose();
   };
 
