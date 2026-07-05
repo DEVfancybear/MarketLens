@@ -9,6 +9,10 @@ runtime, and implementation details inside the owning package docs.
 | --- | --- |
 | `PROJECT_STRUCTURE.md` | Monorepo layout, ownership boundaries, and package rules |
 | `OPERATIONS.md` | Running, testing, deploying, and troubleshooting the monorepo |
+| `HANDOFF.md` | Cross-session handoff state (most important continuation file) |
+| `CURRENT_PROGRESS.md` | Milestone, phase, completed/in-progress work |
+| `NEXT_TASKS.md` | Prioritized immediate and upcoming tasks |
+| `CHANGELOG.md` | Dated log of major changes |
 
 ## Package Docs
 
