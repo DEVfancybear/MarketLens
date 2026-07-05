@@ -1,6 +1,6 @@
 # Operations
 
-Day-to-day commands for developing and running the SMC Trading Terminal.
+Day-to-day commands for developing, testing, and deploying the monorepo.
 
 ## Frontend
 
@@ -10,7 +10,7 @@ cd frontend
 # Install dependencies
 npm install
 
-# Development server (http://localhost:3000)
+# Development server
 npm run dev
 
 # Type checking
@@ -22,8 +22,15 @@ npm run lint
 # Production build
 npm run build
 npm run start
+```
 
-# Run tests
+Frontend dev server: `http://localhost:3000`
+
+## Frontend Tests
+
+```bash
+cd frontend
+
 npm run test:position
 npm run test:trade
 npm run test:drawing
@@ -40,7 +47,7 @@ cd backend
 # Install Go dependencies
 go mod tidy
 
-# Run the API server (http://localhost:8080)
+# Run API server
 go run ./cmd/api
 
 # Run tests
@@ -50,24 +57,62 @@ go test ./...
 go build -o bin/api ./cmd/api
 ```
 
-## Useful scripts (frontend)
+Backend dev server: `http://localhost:8080`
 
-| Command                  | Purpose                              |
-| ------------------------ | ------------------------------------ |
-| `npm run mock-mt5`       | Start mock MT5 bridge                |
-| `npm run ftmo-mt5-bridge`| Start FTMO MT5 bridge (Node)         |
-| `npm run push-worker`    | Start push alert worker              |
-| `npm run check:...`      | Various parity/integrity check tools |
+Backend framework decision: **Go Fiber**. Backend docs and future backend routes should follow
+Fiber conventions.
 
-## Environment variables
+## Environment Variables
 
 ### Frontend
 
-Copy `.env.example` to `.env.local` and configure as needed.
+Copy `.env.example` to `frontend/.env.local` when the variable is frontend-only. Keep shared
+examples in the root `.env.example`.
 
 ### Backend
 
-| Variable  | Default       | Description      |
-| --------- | ------------- | ---------------- |
-| `PORT`    | `8080`        | HTTP listen port |
-| `APP_ENV`  | `development` | Runtime env      |
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PORT` | `8080` | HTTP listen port |
+| `APP_ENV` | `development` | Runtime environment |
+
+## Deployment
+
+### Frontend on Vercel
+
+Use these Vercel settings:
+
+| Setting | Value |
+| --- | --- |
+| Root Directory | `frontend` |
+| Production Branch | `master` |
+| Install Command | default or `npm install` |
+| Build Command | default or `npm run build` |
+
+If Vercel reports `The specified Root Directory "frontend" does not exist`, the deployment is using
+an old commit from before the monorepo split. Redeploy the latest `master` commit where the
+`frontend/` folder exists.
+
+### Backend
+
+Deploy the Go backend as a separate service from `backend/`. Do not include it in the Vercel
+frontend build.
+
+## Validation Before Push
+
+For frontend changes:
+
+```bash
+cd frontend
+npm run typecheck
+npm run lint
+npm run build
+```
+
+For backend changes:
+
+```bash
+cd backend
+go test ./...
+go build -o bin/api ./cmd/api
+```

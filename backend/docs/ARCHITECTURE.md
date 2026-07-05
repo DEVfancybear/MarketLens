@@ -2,42 +2,46 @@
 
 ## Overview
 
-The Go backend follows a standard layered architecture:
+The backend is a Go API service. The selected web framework is **Fiber**.
 
-```
-cmd/api/main.go          → Entry point, wires dependencies, starts the server
+Fiber is the common HTTP layer for routing, middleware, request parsing, response writing, and
+future API modules. Keep business logic outside handlers so modules remain testable without an HTTP
+server.
+
+## Package Layout
+
+```text
+cmd/api/main.go          # Entrypoint, wires config and starts the server
 internal/
-  config/                → Environment-based configuration
-  httpserver/            → HTTP server setup, routing, middleware chain
-  health/                → Health-check endpoint
-  middleware/             → Shared HTTP middleware (logging, etc.)
+  config/                # Environment-based configuration
+  httpserver/            # Fiber app setup, routing, middleware, lifecycle
+  health/                # Health-check endpoint
+  middleware/            # Shared Fiber-compatible middleware
 ```
 
-## Request flow
+## Request Flow
 
-```
+```text
 Client
-  │
-  ▼
-┌─────────────────────┐
-│  middleware.Logging  │  ← Logs method, path, status, latency
-├─────────────────────┤
-│  http.ServeMux       │  ← Stdlib routing (Go 1.22+ patterns)
-├─────────────────────┤
-│  Handler             │  ← Domain handler (health, etc.)
-└─────────────────────┘
+  -> Fiber app
+  -> Shared middleware
+  -> Route group
+  -> Handler
+  -> Service/domain code
+  -> JSON response
 ```
 
-## Design decisions
+## Design Decisions
 
-- **Stdlib `net/http`** — no framework dependency; Go 1.22+ routing patterns provide
-  method-aware routing (`GET /health`) without third-party routers.
-- **`zerolog`** — structured, zero-allocation JSON logging suitable for production.
-- **Graceful shutdown** — `signal.NotifyContext` listens for SIGINT/SIGTERM and drains
-  in-flight requests before exiting.
+- **Fiber**: primary Go web framework for API routing and middleware.
+- **zerolog**: structured JSON logging suitable for production.
+- **Graceful shutdown**: the API process should drain in-flight requests before exiting.
+- **Internal packages**: backend code under `internal/` is private to this service.
 
-## Adding a new endpoint
+## Adding A New Endpoint
 
-1. Create a handler package under `internal/` (e.g. `internal/marketdata/`)
-2. Export a `RegisterRoutes(mux *http.ServeMux)` function
-3. Call it from `internal/httpserver/server.go`
+1. Create a package under `internal/` for the domain area, for example `internal/marketdata/`.
+2. Keep request/response DTOs near the handler.
+3. Expose a route registration function that accepts a Fiber router or route group.
+4. Register the route from `internal/httpserver/server.go`.
+5. Add tests for domain logic separately from handler plumbing when possible.
