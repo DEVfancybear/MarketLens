@@ -1,16 +1,44 @@
-/node_modules
-/.next
-/out
-/build
-/.test-build
-/.data
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Test build output
+.test-build/
 *.tsbuildinfo
+
+# Data directory
+.data/
+
+# Python cache
 __pycache__/
 *.pyc
+
+# Next.js env declaration (auto-generated)
 next-env.d.ts
+
+# Environment files
 .env
 .env*.local
 !.env.example
+
+# IDE / editor
 .claude/settings.local.json
 .DS_Store
+
+# Debug logs
 npm-debug.log*
+
+# Go
+backend/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
