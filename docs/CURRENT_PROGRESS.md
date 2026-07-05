@@ -15,6 +15,9 @@ _Last updated: 2026-07-05 (Drawing favorites floating toolbar)_
   removes a favorite with right-click.
 - Marked the floating toolbar as `data-chart-ui` / `data-drawing-toolbar` so
   chart drawing/drag listeners ignore its clicks.
+- Fixed the first-favorite crash: the popup's `initialPosition` callback is now
+  stable, preventing `useDraggableDialog` from remeasuring and setting state on
+  every render after `tv:favTools` becomes non-empty.
 
 ### Trade ticket formatted price metrics
 - Fixed Trade ticket numeric parsing so prefilled values like `62,751.61` are

@@ -10,6 +10,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - The favorite star in every drawing flyout still writes to the shared
   `tv:favTools` set; the floating toolbar reads the same set, supports
   drag-to-move, one-click tool activation, and right-click removal.
+- Fixed the floating toolbar's initial-position callback so adding the first
+  favorite no longer triggers a render/effect loop and breaks page loading.
 
 ### Fixed - Trade ticket formatted price metrics (2026-07-05)
 - Trade ticket inputs now parse prefilled prices with thousands separators such

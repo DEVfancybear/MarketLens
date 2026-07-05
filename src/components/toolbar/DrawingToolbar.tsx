@@ -526,9 +526,13 @@ function FavoriteToolsPopup({
   onSelect: (tool: DrawingTool) => void;
   onRemove: (tool: DrawingTool) => void;
 }) {
+  // Keep this callback stable. `useDraggableDialog` remeasures when
+  // `initialPosition` changes; an inline function here causes a render/effect
+  // loop as soon as the first favorite makes the portal mount.
+  const initialPosition = useCallback(() => ({ left: 64, top: 76 }), []);
   const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
     useDraggableDialog({
-      initialPosition: () => ({ left: 64, top: 76 }),
+      initialPosition,
       boundsMargin: 8,
     });
 
