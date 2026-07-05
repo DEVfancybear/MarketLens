@@ -165,11 +165,16 @@ export interface HistoryRequest {
 /** Timeframes supported in Phase 1 (subset of the app-wide `Timeframe` union). */
 export const SUPPORTED_TIMEFRAMES = [
   "1m",
+  "3m",
   "5m",
   "15m",
+  "30m",
   "1H",
+  "2H",
   "4H",
   "1D",
+  "1W",
+  "1M",
 ] as const satisfies readonly Timeframe[];
 
 /** Reconnect backoff schedule in ms; providers walk this then hold at the last. */

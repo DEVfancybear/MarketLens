@@ -44,9 +44,11 @@ const TF_TO_OANDA: Record<Timeframe, string> = {
   "15m": "M15",
   "30m": "M30",
   "1H": "H1",
+  "2H": "H2",
   "4H": "H4",
   "1D": "D",
   "1W": "W",
+  "1M": "M",
 };
 
 type StatusValue = Extract<MarketDataEvent, { type: "status" }>["status"];

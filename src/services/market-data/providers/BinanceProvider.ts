@@ -41,7 +41,8 @@ const WATCHDOG_INTERVAL_MS = 15_000;
 /** Unified Timeframe → Binance kline interval. */
 const TF_TO_INTERVAL: Record<Timeframe, string> = {
   '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
-  '1H': '1h', '4H': '4h', '1D': '1d', '1W': '1w',
+  '1H': '1h', '2H': '2h', '4H': '4h', '1D': '1d', '1W': '1w',
+  '1M': '1M',
 };
 /** Binance kline interval → unified Timeframe (reverse). */
 const INTERVAL_TO_TF: Record<string, Timeframe> = Object.fromEntries(

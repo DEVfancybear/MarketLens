@@ -30,10 +30,9 @@ as a range selector with preconfigured buttons plus min/max date inputs.
   `setVisibleRange`, `setVisibleLogicalRange`, `fitContent`,
   `getVisibleLogicalRange`, `timeToCoordinate`, and related time-scale methods.
 - TradingView Advanced Charts `time_frames` option: bottom toolbar items are
-  configured with both visible text and a target `resolution` (for example
-  `3y -> 1W`, `8m -> 1D`, and `All -> 1W` in the official example). This is the
-  key reference for why our shortcut buttons must change resolution before
-  applying long-range viewports.
+  configured with both visible text and a target `resolution`. The user-supplied
+  TradingView screenshots for this app's parity target show the exact tooltip
+  policy listed below.
 - TradingView Lightweight Charts time-scale guide for time-axis behavior.
 - TradingView Lightweight Charts time-zone docs: Lightweight Charts processes
   time values in UTC and leaves timezone conversion to the app.
@@ -91,12 +90,28 @@ a stale floating time label over the newly visible candles.
 
   | Shortcut | Target timeframe |
   |---|---|
-  | `1D` | `5m` |
-  | `5D` | `15m` |
-  | `1M` | `1H` |
-  | `3M` | `4H` |
-  | `6M`, `YTD`, `1Y` | `1D` |
-  | `5Y`, `All` | `1W` |
+  | `1D` | `1m` |
+  | `5D` | `5m` |
+  | `1M` | `30m` |
+  | `3M` | `1H` |
+  | `6M` | `2H` |
+  | `YTD`, `1Y` | `1D` |
+  | `5Y` | `1W` |
+  | `All` | `1M` |
+
+- Tooltip policy:
+
+  | Shortcut | Tooltip |
+  |---|---|
+  | `1D` | `1 day in 1 minute intervals` |
+  | `5D` | `5 days in 5 minutes intervals` |
+  | `1M` | `1 month in 30 minutes intervals` |
+  | `3M` | `3 months in 1 hour intervals` |
+  | `6M` | `6 months in 2 hours intervals` |
+  | `YTD` | `Year to day in 1 day intervals` |
+  | `1Y` | `1 year in 1 day intervals` |
+  | `5Y` | `5 years in 1 week intervals` |
+  | `All` | `All data in 1 month intervals` |
 
 - `1D` and `5D` subtract exact day durations.
 - `1M`, `3M`, `6M`, `1Y`, and `5Y` use local calendar month/year arithmetic.
@@ -112,6 +127,9 @@ a stale floating time label over the newly visible candles.
   for the target candles to load, and then applies the viewport on the next
   animation frame. Do not apply `5Y` or `All` against a still-loaded `15m`
   dataset; that is the root cause of the chart showing only a few days.
+- `useMarketData()` must load enough history for these target intervals. In
+  particular, `3M` on `1H` and `6M` on `2H` need more than the old fixed 1500
+  bars; keep `historyBarsForTimeframe()` in sync if shortcut intervals change.
 
 Using logical range for shortcuts avoids timestamp-clamping edge cases and keeps
 the normal right-side whitespace stable. The official Lightweight Charts API

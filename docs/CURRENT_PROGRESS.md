@@ -10,10 +10,14 @@ _Last updated: 2026-07-05 (Chart range shortcut timeframe policy)_
   when the app owns/can compute bar indexes.
 - Researched the official TradingView Advanced Charts `time_frames` model:
   bottom toolbar buttons define both a range label and a target resolution.
-- Added `shortcutTargetTimeframe()` so `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`,
-  `1Y`, `5Y`, and `All` switch to an appropriate resolution before applying
-  the viewport. This fixes the previous `5Y` / `All` behavior that only zoomed
-  the currently loaded `15m` window.
+- Added `shortcutTargetTimeframe()` and `shortcutTooltip()` so `1D`, `5D`,
+  `1M`, `3M`, `6M`, `YTD`, `1Y`, `5Y`, and `All` switch to the same
+  TradingView-style resolutions shown in the reference screenshots:
+  `1m/5m/30m/1H/2H/1D/1W/1M`, with matching hover tooltip text.
+- Added `2H` and monthly `1M` timeframe support in the shared market types and
+  provider mappings so `6M` and `All` can use their real target intervals.
+- Increased history loading for `1H`/`2H` views so `3M` and `6M` shortcuts
+  have enough candles before the viewport is applied.
 - Added `shortcutLogicalRange()` so `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`,
   `1Y`, and `5Y` resolve to logical candle indexes anchored to the latest
   loaded candle.

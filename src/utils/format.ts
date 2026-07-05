@@ -49,9 +49,11 @@ const TF_LABEL: Record<Timeframe, string> = {
   '15m': '15 min',
   '30m': '30 min',
   '1H': '1 hour',
+  '2H': '2 hour',
   '4H': '4 hour',
   '1D': '1 day',
   '1W': '1 week',
+  '1M': '1 month',
 };
 
 export function tfLabel(tf: Timeframe): string {

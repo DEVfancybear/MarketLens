@@ -30,9 +30,14 @@ import { getMarketDataState } from "@/store/marketDataStore";
 import { useCandles } from "@/hooks/useCandles";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
-import type { Candle } from "@/types";
+import type { Candle, Timeframe } from "@/types";
 
-const HISTORY_BARS = 1500;
+const DEFAULT_HISTORY_BARS = 1500;
+
+function historyBarsForTimeframe(timeframe: Timeframe): number {
+  if (timeframe === "1H" || timeframe === "2H") return 3000;
+  return DEFAULT_HISTORY_BARS;
+}
 
 export function useMarketData() {
   const symbol = useAtomValue(symbolAtom);
@@ -54,7 +59,11 @@ export function useMarketData() {
     setLoading(true);
 
     getHistoricalDataService()
-      .loadHistory({ symbol, timeframe, limit: HISTORY_BARS })
+      .loadHistory({
+        symbol,
+        timeframe,
+        limit: historyBarsForTimeframe(timeframe),
+      })
       .then((hist) => {
         if (cancelled) return;
         // Seed the store; realtime klines then merge onto this via updateCandle.

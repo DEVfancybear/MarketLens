@@ -34,9 +34,11 @@ const TF_TO_BINANCE: Record<Timeframe, string> = {
   "15m": "15m",
   "30m": "30m",
   "1H": "1h",
+  "2H": "2h",
   "4H": "4h",
   "1D": "1d",
   "1W": "1w",
+  "1M": "1M",
 };
 
 /** Unified Timeframe → TwelveData interval. */
@@ -47,9 +49,11 @@ const TF_TO_TD: Record<Timeframe, string> = {
   "15m": "15min",
   "30m": "30min",
   "1H": "1h",
+  "2H": "2h",
   "4H": "4h",
   "1D": "1day",
   "1W": "1week",
+  "1M": "1month",
 };
 
 /** Unified Timeframe → OANDA granularity. */
@@ -60,9 +64,11 @@ const TF_TO_OANDA: Record<Timeframe, string> = {
   "15m": "M15",
   "30m": "M30",
   "1H": "H1",
+  "2H": "H2",
   "4H": "H4",
   "1D": "D",
   "1W": "W",
+  "1M": "M",
 };
 
 export interface HistoricalDataServiceOptions {

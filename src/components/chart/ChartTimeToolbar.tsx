@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -38,6 +39,7 @@ import {
   parseLocalDateTime,
   shortcutLogicalRange,
   shortcutTargetTimeframe,
+  shortcutTooltip,
   type TimeRangeShortcut,
   type ChartTimeZoneId,
   type ChartTimeZoneOption,
@@ -56,6 +58,11 @@ type PendingShortcutState = {
   shortcut: TimeRangeShortcut;
   timeframe: Timeframe;
   requestId: number;
+};
+type ShortcutTooltipState = {
+  text: string;
+  left: number;
+  top: number;
 };
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -237,6 +244,8 @@ export function ChartTimeToolbar({
     useState<TimeRangeShortcut | null>(null);
   const [pendingShortcut, setPendingShortcut] =
     useState<PendingShortcutState | null>(null);
+  const [tooltipState, setTooltipState] =
+    useState<ShortcutTooltipState | null>(null);
   const pendingShortcutId = useRef(0);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
@@ -327,6 +336,20 @@ export function ChartTimeToolbar({
     applyShortcutViewport(shortcut);
   };
 
+  const showShortcutTooltip = (
+    event:
+      | MouseEvent<HTMLButtonElement>
+      | FocusEvent<HTMLButtonElement>,
+    shortcut: TimeRangeShortcut,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltipState({
+      text: shortcutTooltip(shortcut),
+      left: rect.left + rect.width / 2,
+      top: rect.top - 8,
+    });
+  };
+
   const openGoTo = (event: MouseEvent<HTMLButtonElement>) => {
     setGoToAnchor(elementAnchorFromRect(event.currentTarget.getBoundingClientRect()));
     setGoToOpen(true);
@@ -347,6 +370,10 @@ export function ChartTimeToolbar({
               type="button"
               disabled={!chart || loading || candles.length === 0}
               onClick={() => jumpShortcut(shortcut)}
+              onMouseEnter={(event) => showShortcutTooltip(event, shortcut)}
+              onMouseLeave={() => setTooltipState(null)}
+              onFocus={(event) => showShortcutTooltip(event, shortcut)}
+              onBlur={() => setTooltipState(null)}
               className={cn(
                 "h-7 shrink-0 rounded-sm px-1.5 font-semibold transition-colors disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent",
                 activeShortcut === shortcut
@@ -419,6 +446,17 @@ export function ChartTimeToolbar({
           onDone={() => setGoToMarker(null)}
         />
       )}
+      {tooltipState &&
+        createPortal(
+          <div
+            data-chart-ui
+            className="pointer-events-none fixed z-[95] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-sm bg-[#4a4a4a] px-2 py-1 text-[12px] font-semibold text-[#f0f3fa] shadow-lg shadow-black/50"
+            style={{ left: tooltipState.left, top: tooltipState.top }}
+          >
+            {tooltipState.text}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

@@ -33,21 +33,37 @@ export const TIME_RANGE_SHORTCUT_TIMEFRAMES: Record<
   TimeRangeShortcut,
   Timeframe
 > = {
-  "1D": "5m",
-  "5D": "15m",
-  "1M": "1H",
-  "3M": "4H",
-  "6M": "1D",
+  "1D": "1m",
+  "5D": "5m",
+  "1M": "30m",
+  "3M": "1H",
+  "6M": "2H",
   YTD: "1D",
   "1Y": "1D",
   "5Y": "1W",
-  All: "1W",
+  All: "1M",
 };
 
 export function shortcutTargetTimeframe(
   shortcut: TimeRangeShortcut,
 ): Timeframe {
   return TIME_RANGE_SHORTCUT_TIMEFRAMES[shortcut];
+}
+
+export const TIME_RANGE_SHORTCUT_TOOLTIPS: Record<TimeRangeShortcut, string> = {
+  "1D": "1 day in 1 minute intervals",
+  "5D": "5 days in 5 minutes intervals",
+  "1M": "1 month in 30 minutes intervals",
+  "3M": "3 months in 1 hour intervals",
+  "6M": "6 months in 2 hours intervals",
+  YTD: "Year to day in 1 day intervals",
+  "1Y": "1 year in 1 day intervals",
+  "5Y": "5 years in 1 week intervals",
+  All: "All data in 1 month intervals",
+};
+
+export function shortcutTooltip(shortcut: TimeRangeShortcut): string {
+  return TIME_RANGE_SHORTCUT_TOOLTIPS[shortcut];
 }
 
 export type TimeRange = { from: number; to: number };

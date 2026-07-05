@@ -39,9 +39,11 @@ export const BAR_SPACING: Record<Timeframe, number> = {
   "15m": 8,
   "30m": 10,
   "1H": 10,
+  "2H": 11,
   "4H": 12,
   "1D": 14,
   "1W": 16,
+  "1M": 18,
 };
 
 /**
