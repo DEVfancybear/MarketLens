@@ -1,8 +1,15 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Long/Short lot sizing prefill)_
+_Last updated: 2026-07-05 (Long/Short TP/SL price labels)_
 
 ## Completed this session (2026-07-05)
+
+### Long/Short TP/SL price labels
+- Updated Long/Short Position chart labels so TP and SL chips show the absolute
+  level price first (`Target: price`, `Stop: price`) instead of showing only
+  the distance from entry.
+- Kept existing optional stats after the price: percent, distance/ticks, amount,
+  hit status, and entry R/R.
 
 ### Long/Short lot sizing prefill
 - Added `src/services/positionLotSizing.ts` so risk-to-lot math is shared by

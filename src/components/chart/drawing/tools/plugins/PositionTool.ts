@@ -553,20 +553,26 @@ function render(
     // Build label strings first so we can measure their pixel width.
     const fmtDistance = (value: number) => formatPriceByTick(value, tickSize, 2);
     const targetParts = [
-      compact
-        ? `TP: ${fmtDistance(reward)}`
-        : `Target: ${fmtDistance(reward)}`,
+      compact ? `TP: ${fmtPrice(target)}` : `Target: ${fmtPrice(target)}`,
     ];
     const stopParts = [
-      compact ? `SL: ${fmtDistance(risk)}` : `Stop: ${fmtDistance(risk)}`,
+      compact ? `SL: ${fmtPrice(stop)}` : `Stop: ${fmtPrice(stop)}`,
     ];
     if (showStats && stats.has("percent")) {
       targetParts.push(`(${tPct.toFixed(2)}%)`);
       stopParts.push(`(${sPct.toFixed(2)}%)`);
     }
     if (showStats && stats.has("ticks")) {
-      targetParts.push(compact ? `${tTicks}t` : String(tTicks));
-      stopParts.push(compact ? `${sTicks}t` : String(sTicks));
+      targetParts.push(
+        compact
+          ? `${fmtDistance(reward)} ${tTicks}t`
+          : `${fmtDistance(reward)} ${tTicks}`,
+      );
+      stopParts.push(
+        compact
+          ? `${fmtDistance(risk)} ${sTicks}t`
+          : `${fmtDistance(risk)} ${sTicks}`,
+      );
     }
     if (targetAmountTxt) targetParts.push(targetAmountTxt);
     if (stopAmountTxt) stopParts.push(stopAmountTxt);

@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Long/Short chart labels show TP/SL prices (2026-07-05)
+- Long/Short Position chart labels now show the absolute take-profit and
+  stop-loss prices first, while keeping percent, distance/ticks, and amount as
+  optional stats.
+
 ### Added - Long/Short position lot sizing prefill (2026-07-05)
 - Added `positionLotSizing.ts` as the shared contract for converting
   Long/Short `SL-entry` distance, account risk, symbol tick value, and lot
