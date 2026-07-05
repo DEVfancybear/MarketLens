@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay past-jump blank viewport (2026-07-05)
+- Added shared replay viewport helpers that detect when the visible logical
+  range no longer intersects the replay-visible candle slice.
+- `PriceChart` now realigns to the latest replay candle whenever replay is
+  active and the viewport is stuck in future/past whitespace, covering Select
+  date, Random bar, scrubber jumps, restart/re-select, and backward stepping.
+- Replaced the old `scrollToRealTime()` fallback with deterministic
+  `setVisibleLogicalRange()` realignment, preserving zoom width while avoiding
+  blank chart states after data-window replacement.
+- Added chart tests for replay viewport intersection and fallback range math.
+
 ### Changed - Default chart volume visibility (2026-07-05)
 - Removed the default volume histogram from `PriceChart`, matching the
   TradingView-style expectation that volume is an explicit study/indicator

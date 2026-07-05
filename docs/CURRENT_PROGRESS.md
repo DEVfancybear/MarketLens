@@ -1,8 +1,23 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Default chart volume visibility)_
+_Last updated: 2026-07-05 (Replay past-jump blank viewport)_
 
 ## Completed this session (2026-07-05)
+
+### Replay past-jump blank viewport
+- Researched the official TradingView Lightweight Charts time-scale API:
+  visible time ranges are clamped to existing data, while logical ranges are
+  the correct primitive when the app owns bar indexes during replay.
+- Added `src/components/chart/replayViewport.ts` as the common replay viewport
+  guard for blank future/past whitespace.
+- `PriceChart` now realigns replay viewports when the current logical range no
+  longer intersects the replay-visible slice, not only when the update looks
+  like a structural data-window replacement.
+- The realignment uses deterministic `setVisibleLogicalRange()` instead of
+  animated `scrollToRealTime()`, preserving the user's zoom width and keeping
+  the latest replay candle in view.
+- Added `tests/chart/replayViewport.test.ts` and updated
+  `scripts/check-replay-logic.mjs` plus `docs/REPLAY_ARCHITECTURE.md`.
 
 ### Default chart volume visibility
 - Researched TradingView/Lightweight Charts behavior: the official

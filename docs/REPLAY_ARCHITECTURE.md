@@ -19,6 +19,14 @@ The application enforces this by making `useVisibleCandles()` the only candle
 source for chart rendering, indicators, SMC, and trade simulation. Replay does
 not mutate the master candle array. It only moves a cursor over that array.
 
+Research source:
+
+- TradingView Lightweight Charts `ITimeScaleApi`: `setVisibleRange()` is
+  clamped to currently existing data, while `setVisibleLogicalRange()` accepts
+  caller-owned logical indexes. Replay owns bar indexes, so replay viewport
+  recovery should use logical ranges.
+  https://tradingview.github.io/lightweight-charts/docs/api/interfaces/ITimeScaleApi
+
 ## 2. Key Files
 
 | Area | File | Responsibility |
@@ -27,6 +35,7 @@ not mutate the master candle array. It only moves a cursor over that array.
 | Visibility gate | `src/hooks/useVisibleCandles.ts` | Returns full candles or `candles[0..cursor]` |
 | Playback clock | `src/hooks/useReplayPlayback.ts` | Global rAF loop that advances the cursor |
 | Replay helpers | `src/services/replayEngine.ts` | Speeds, date index helpers, sessions, MTF snapshot |
+| Replay viewport helpers | `src/components/chart/replayViewport.ts` | Pure logical-range guards for blank future-whitespace replay views |
 | Main chart | `src/components/chart/PriceChart.tsx` | Renders visible slice and realigns viewport after replay jumps |
 | Chart area | `src/components/chart/ChartArea.tsx` | Passes visible candles to chart and panes |
 | Bottom controls | `src/components/replay/ReplayControls.tsx` | Full replay controls in bottom panel |
@@ -166,6 +175,19 @@ When the visible candle window is replaced non-incrementally,
 
 This prevents the blank-chart bug where the old viewport still looks at future
 whitespace after the replay cursor jumps into the past.
+
+`PriceChart` also runs the same protection when replay is active and the
+current logical range no longer intersects the visible candle data. This covers
+edge cases that are not a clean structural replace, such as stepping backward,
+scrubber jumps, browser restore state, or a stale future-whitespace viewport.
+The pure rules live in `replayViewport.ts`:
+
+- `replayRangeIntersectsData(range, dataLength)` checks whether the viewport
+  overlaps `[0..lastVisibleReplayBar]`,
+- `shouldRealignReplayViewport(range, dataLength)` returns true for blank
+  future/past whitespace,
+- `latestReplayLogicalRange(dataLength, currentRange)` preserves zoom width and
+  moves the right edge to the latest replay candle plus the normal right offset.
 
 Do not fix replay jump handlers by calling `fitContent()` directly. Viewport
 realignment belongs in `PriceChart`, because every replay entry point ultimately
@@ -340,4 +362,3 @@ changes because the old cursor is invalid for the new master candle array.
 - Replay MTF dashboard loads `MTF_BARS = 500` per higher timeframe.
 - The app does not yet paginate older history on demand when a replay jump is
   outside loaded candles; it clamps to the closest loaded candle.
-

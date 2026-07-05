@@ -17,6 +17,10 @@ const priceChart = readFileSync(
   resolve(root, "src/components/chart/PriceChart.tsx"),
   "utf8",
 );
+const replayViewport = readFileSync(
+  resolve(root, "src/components/chart/replayViewport.ts"),
+  "utf8",
+);
 const selectionLayer = readFileSync(
   resolve(root, "src/components/replay/ReplaySelectionLayer.tsx"),
   "utf8",
@@ -100,8 +104,15 @@ function checkStaticGuards() {
   assert(
     /function keepLatestBarInView/.test(priceChart) &&
       /const structuralDataWindowChange =/.test(priceChart) &&
-      /keepLatestBarInView\(chartRef\.current, dataLength\)/.test(priceChart),
+      /shouldRealignReplayViewport/.test(priceChart) &&
+      /keepLatestBarInView\(chart, dataLength\)/.test(priceChart),
     "PriceChart must realign the viewport after replay jump/scrub data-window replacements",
+  );
+  assert(
+    /export function replayRangeIntersectsData/.test(replayViewport) &&
+      /export function shouldRealignReplayViewport/.test(replayViewport) &&
+      /export function latestReplayLogicalRange/.test(replayViewport),
+    "Replay viewport helpers must guard future-whitespace blank chart cases",
   );
   assert(
     /const safeTotal = Math\.max\(0, total\);/.test(replayStore),

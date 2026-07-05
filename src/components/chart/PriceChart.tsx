@@ -29,6 +29,7 @@ import {
   pineEditorTitleAtom,
 } from "@/store/chartStore";
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
+import { activeAtom as replayActiveAtom } from "@/store/replayStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { chartColors, makeTimeFormatter } from "./chartTheme";
@@ -51,30 +52,19 @@ import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
+import {
+  latestReplayLogicalRange,
+  shouldRealignReplayViewport,
+} from "./replayViewport";
 
 function keepLatestBarInView(chart: IChartApi, dataLength: number) {
-  if (dataLength <= 0) return;
   const timeScale = chart.timeScale();
-  const range = timeScale.getVisibleLogicalRange();
-  if (
-    range &&
-    isFiniteNumber(range.from) &&
-    isFiniteNumber(range.to) &&
-    range.to > range.from
-  ) {
-    // Replay jump/scrub replaces the plotted slice. Preserve the user's zoom
-    // width, but move the right edge to the newly revealed latest candle so the
-    // chart never keeps looking at now-empty future whitespace.
-    const span = range.to - range.from;
-    const to = dataLength - 1 + RIGHT_OFFSET_BARS;
-    timeScale.setVisibleLogicalRange({ from: to - span, to });
-    return;
-  }
-  timeScale.scrollToRealTime();
+  const next = latestReplayLogicalRange(
+    dataLength,
+    timeScale.getVisibleLogicalRange(),
+    RIGHT_OFFSET_BARS,
+  );
+  if (next) timeScale.setVisibleLogicalRange(next);
 }
 
 type IndicatorSeriesApi =
@@ -140,6 +130,7 @@ export function PriceChart({
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
+  const replayActive = useAtomValue(replayActiveAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const indicators = useAtomValue(indicatorsAtom);
@@ -375,15 +366,32 @@ export function PriceChart({
     if (!fittedRef.current && candles.length > 0) {
       chartRef.current?.timeScale().fitContent();
       fittedRef.current = true;
-    } else if (structuralDataWindowChange) {
+    } else if (
+      structuralDataWindowChange ||
+      (replayActive &&
+        shouldRealignReplayViewport(
+          chartRef.current?.timeScale().getVisibleLogicalRange(),
+          candles.length,
+        ))
+    ) {
       const dataLength = candles.length;
       requestAnimationFrame(() => {
-        if (!chartRef.current) return;
-        keepLatestBarInView(chartRef.current, dataLength);
+        const chart = chartRef.current;
+        if (!chart) return;
+        if (
+          structuralDataWindowChange ||
+          (replayActive &&
+            shouldRealignReplayViewport(
+              chart.timeScale().getVisibleLogicalRange(),
+              dataLength,
+            ))
+        ) {
+          keepLatestBarInView(chart, dataLength);
+        }
       });
     }
     setVersion((v) => v + 1);
-  }, [candles, theme]);
+  }, [candles, theme, replayActive]);
 
   // ---- Overlay indicators (SMA/EMA/VWAP/ADR) ----
   const overlayIndicators = useMemo(
