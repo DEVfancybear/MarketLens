@@ -1,8 +1,15 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Long/Short price label and scale-panel parity)_
+_Last updated: 2026-07-05 (Dialog close icon reliability)_
 
 ## Completed this session (2026-07-05)
+
+### Dialog close icon reliability
+- Fixed the shared draggable-dialog no-drag detector so it recognizes nested
+  SVG/icon targets inside buttons, not only HTML elements.
+- This prevents close/settings/icon buttons from being interpreted as drag
+  starts and swallowing the final click.
+- Added `npm run test:ui` coverage for SVG icon targets inside dialog buttons.
 
 ### Long/Short price label and scale-panel parity
 - Rechecked the user-provided TradingView Long/Short screenshots: absolute

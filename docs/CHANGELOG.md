@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Dialog close icon click reliability (2026-07-05)
+- Updated the shared draggable dialog hook so nested SVG/icon targets inside
+  buttons are treated as no-drag controls. Close buttons and other icon buttons
+  no longer have their click swallowed by the drag handler.
+- Added UI coverage for SVG icon targets in draggable dialog controls.
+
 ### Changed - Long/Short price label and scale-panel parity (2026-07-05)
 - Long/Short Position now renders absolute target, entry, and stop prices as
   right-edge price badges, matching TradingView's price-scale treatment.

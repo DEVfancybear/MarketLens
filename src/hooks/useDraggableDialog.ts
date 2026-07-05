@@ -49,8 +49,12 @@ function elementSize(element: HTMLElement): Size {
   return { width: rect.width, height: rect.height };
 }
 
-function eventTargetIsInteractive(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && !!target.closest(INTERACTIVE_SELECTOR);
+export function isDialogInteractiveTarget(target: EventTarget | null): boolean {
+  const maybeElement = target as { closest?: (selector: string) => unknown } | null;
+  return (
+    typeof maybeElement?.closest === "function" &&
+    !!maybeElement.closest(INTERACTIVE_SELECTOR)
+  );
 }
 
 export function useDraggableDialog(options: DraggableDialogOptions = {}) {
@@ -105,7 +109,7 @@ export function useDraggableDialog(options: DraggableDialogOptions = {}) {
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
-      if (event.button !== 0 || eventTargetIsInteractive(event.target)) return;
+      if (event.button !== 0 || isDialogInteractiveTarget(event.target)) return;
       const element = dialogRef.current;
       if (!element) return;
 

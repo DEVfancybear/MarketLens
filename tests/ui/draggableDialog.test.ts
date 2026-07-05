@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { clampDialogPosition } from "../../src/hooks/useDraggableDialog";
+import {
+  clampDialogPosition,
+  isDialogInteractiveTarget,
+} from "../../src/hooks/useDraggableDialog";
 
 test("dialog positions stay inside the viewport margin", () => {
   assert.deepEqual(
@@ -35,4 +38,19 @@ test("large dialogs remain reachable when they are wider than the viewport", () 
     ),
     { left: 12, top: 12 },
   );
+});
+
+test("svg icons inside buttons are treated as no-drag controls", () => {
+  const svgPathTarget = {
+    closest(selector: string) {
+      return selector.includes("button") ? { tagName: "BUTTON" } : null;
+    },
+  } as unknown as EventTarget;
+
+  assert.equal(isDialogInteractiveTarget(svgPathTarget), true);
+});
+
+test("non-element dialog targets can still start dragging", () => {
+  assert.equal(isDialogInteractiveTarget({} as EventTarget), false);
+  assert.equal(isDialogInteractiveTarget(null), false);
 });

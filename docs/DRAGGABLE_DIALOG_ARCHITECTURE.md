@@ -1,6 +1,6 @@
 # Draggable Dialog Architecture
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-07-05_
 
 This document explains the shared TradingView-style draggable dialog behavior.
 Read this before changing settings popups, modal dialogs, indicator dialogs, or
@@ -71,6 +71,11 @@ button,input,textarea,select,a,[role='button'],[data-dialog-no-drag]
 
 Use `data-dialog-no-drag` for any future custom control that is not covered by
 the selector.
+
+The hook checks `closest()` on any DOM `Element`, not only `HTMLElement`.
+Keep that behavior: icon buttons often receive pointer events on nested
+`svg/path` targets, and treating those as draggable can swallow the click on
+close buttons.
 
 ## 5. Current Coverage
 
