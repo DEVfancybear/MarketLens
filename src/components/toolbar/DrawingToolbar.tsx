@@ -35,8 +35,10 @@ import {
   Star,
   Waypoints,
   PenLine,
+  GripVertical,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
+import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   activeToolAtom,
@@ -254,7 +256,7 @@ const GROUPS: ToolGroup[] = [
   },
 ];
 
-/** Flat tool lookup (first occurrence wins) for the favorites quick-bar. */
+/** Flat tool lookup (first occurrence wins) for the floating favorites toolbar. */
 const TOOL_BY_ID = new Map<DrawingTool, ToolItem>();
 for (const g of GROUPS)
   for (const t of g.tools) if (!TOOL_BY_ID.has(t.tool)) TOOL_BY_ID.set(t.tool, t);
@@ -333,7 +335,8 @@ export function DrawingToolbar() {
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Favorited tools (in the order they were starred) for the quick-access bar.
+  // Favorited tools (in the order they were starred) for the floating chart
+  // toolbar. TradingView does not insert favorited tools into the left rail.
   const favList = [...favorites].filter((t) =>
     TOOL_BY_ID.has(t as DrawingTool),
   ) as DrawingTool[];
@@ -348,35 +351,15 @@ export function DrawingToolbar() {
 
   return (
     <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
-      {/* Favorites quick-access bar: starred tools, TradingView-style */}
-      {favList.length > 0 && (
-        <>
-          {favList.map((tool) => {
-            const meta = TOOL_BY_ID.get(tool);
-            if (!meta) return null;
-            return (
-              <IconButton
-                key={`fav-${tool}`}
-                label={`${meta.label} (favorite - right-click to remove)`}
-                active={activeTool === tool}
-                onClick={() => {
-                  setActiveTool(tool);
-                  setOpenGroup(null);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  toggleFavorite(tool);
-                }}
-              >
-                <span className="[&_svg]:h-[18px] [&_svg]:w-[18px]">
-                  {meta.icon}
-                </span>
-              </IconButton>
-            );
-          })}
-          <div className="my-1 h-0.5 w-6 rounded-full bg-brand/40" />
-        </>
-      )}
+      <FavoriteToolsPopup
+        tools={favList.map((tool) => TOOL_BY_ID.get(tool)!)}
+        activeTool={activeTool}
+        onSelect={(tool) => {
+          setActiveTool(tool);
+          setOpenGroup(null);
+        }}
+        onRemove={toggleFavorite}
+      />
       {GROUPS.map((group, gi) => {
         const visibleTool = lastUsed[group.id] ?? group.defaultTool;
         const visibleIcon =
@@ -529,5 +512,72 @@ export function DrawingToolbar() {
         <Trash2 size={18} />
       </IconButton>
     </div>
+  );
+}
+
+function FavoriteToolsPopup({
+  tools,
+  activeTool,
+  onSelect,
+  onRemove,
+}: {
+  tools: ToolItem[];
+  activeTool: DrawingTool;
+  onSelect: (tool: DrawingTool) => void;
+  onRemove: (tool: DrawingTool) => void;
+}) {
+  const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
+    useDraggableDialog({
+      initialPosition: () => ({ left: 64, top: 76 }),
+      boundsMargin: 8,
+    });
+
+  if (tools.length === 0 || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={dialogRef}
+      data-chart-ui
+      data-drawing-toolbar
+      style={{ left: 64, top: 76, ...dialogStyle }}
+      className="fixed z-[45] flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 px-1.5 py-1 shadow-2xl shadow-black/50"
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <div
+        {...dragHandleProps}
+        className={cn(
+          "flex h-7 w-4 shrink-0 items-center justify-center rounded-sm text-ink-faint hover:bg-terminal-hover hover:text-ink",
+          dragHandleClassName,
+        )}
+        title="Move favorites toolbar"
+        aria-label="Move favorites toolbar"
+      >
+        <GripVertical size={14} />
+      </div>
+      <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
+        {tools.map((tool) => (
+          <button
+            key={`floating-fav-${tool.tool}`}
+            type="button"
+            title={`${tool.label} (right-click to remove from favorites)`}
+            aria-label={tool.label}
+            onClick={() => onSelect(tool.tool)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onRemove(tool.tool);
+            }}
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+              activeTool === tool.tool && "bg-brand/15 text-brand",
+            )}
+          >
+            <span className="[&_svg]:h-[17px] [&_svg]:w-[17px]">
+              {tool.icon}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>,
+    document.body,
   );
 }

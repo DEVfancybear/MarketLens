@@ -1,8 +1,20 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Trade ticket formatted price metrics)_
+_Last updated: 2026-07-05 (Drawing favorites floating toolbar)_
 
 ## Completed this session (2026-07-05)
+
+### Drawing favorites floating toolbar
+- Rechecked the user screenshot and TradingView chart behavior: starring a
+  drawing tool should not inject that tool into the left rail as another main
+  toolbar button.
+- Replaced the old left-toolbar favorite quick-access bar with a separate
+  floating Favorites toolbar on the chart.
+- The popup reads the same persisted `tv:favTools` set as the flyout star
+  controls, supports drag-to-move, activates a favorite with one click, and
+  removes a favorite with right-click.
+- Marked the floating toolbar as `data-chart-ui` / `data-drawing-toolbar` so
+  chart drawing/drag listeners ignore its clicks.
 
 ### Trade ticket formatted price metrics
 - Fixed Trade ticket numeric parsing so prefilled values like `62,751.61` are

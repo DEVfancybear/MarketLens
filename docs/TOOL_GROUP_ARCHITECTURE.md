@@ -82,6 +82,21 @@ Implemented via `useLastUsed()` hook that tracks `lastUsed[groupId]` state.
 - Click anywhere outside (backdrop) → close flyout
 - Only ONE flyout open at a time
 
+## Favorites floating toolbar
+
+Updated 2026-07-05 after rechecking the user-provided TradingView reference and
+TradingView chart behavior:
+
+- Favorites render as a separate floating toolbar on top of the chart, not as a
+  quick-access strip inserted into the main left drawing toolbar.
+- The floating toolbar reads the same persisted `tv:favTools` set as the flyout
+  star controls.
+- One click activates a favorite tool. Right-click removes it from favorites.
+- The toolbar has a grip handle and uses the shared draggable-dialog hook so it
+  can be moved without duplicating drag/clamp math.
+- It must keep `data-chart-ui` and `data-drawing-toolbar`; otherwise clicks on
+  favorite buttons can start chart drawing or clear selection.
+
 ## Backdrop
 
 A `fixed inset-0 z-40` transparent div closes the flyout on outside click. Placed between the flyout (z-50) and the canvas (z-5), ensuring clicks outside the flyout don't reach the chart during flyout interaction.

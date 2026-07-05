@@ -94,12 +94,14 @@ use the new branch, so the change is additive (low blast radius).
   to be added next using the same flyout-section + favorites infrastructure.
 - Per-group "last used becomes the icon" already exists and is unchanged.
 
-## Update — Favorites quick-access bar (2026-06-29)
+## Update — Favorites floating toolbar (2026-07-05)
 
-Starred tools now appear as a **quick-access bar** at the top of the
-`DrawingToolbar` (above the groups, separated by a brand-coloured divider). Each
-favorite is a direct one-click tool button; **right-click removes it** from
-favorites. The bar is driven by the same persisted `tv:favTools` set, so starring
-a tool in any flyout adds it here immediately. A module-level `TOOL_BY_ID` lookup
-(built from `GROUPS`) resolves each favorite's icon/label; flyout icons (14px) are
-upscaled to 18px to match the sidebar.
+The 2026-06-29 quick-access bar has been replaced. Starred tools now appear in a
+separate floating toolbar on top of the chart, matching the TradingView
+favorite-drawing-tools workflow more closely. The left `DrawingToolbar` must not
+grow extra buttons when a tool is starred.
+
+The floating toolbar is still driven by the same persisted `tv:favTools` set.
+Each favorite is a direct one-click tool button, and right-click removes it from
+favorites. A module-level `TOOL_BY_ID` lookup (built from `GROUPS`) resolves each
+favorite's icon/label.
