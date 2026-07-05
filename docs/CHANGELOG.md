@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-07-06 — Backend implementation plan (planning)
+
+**Feature:** Phased, step-by-step build order for the Go backend, from Google auth to per-feature
+persistence. Planning only — no runtime code changed.
+
+**Files:**
+- `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` (new) — Phases 0–13 with goals, files, steps,
+  acceptance criteria, testing strategy, package layout; flags the Fiber-vs-stdlib discrepancy
+  (current code is stdlib `net/http`, not Fiber) and resolves it in Phase 0.
+- `backend/docs/README.md` — indexed the plan.
+- `docs/HANDOFF.md`, `docs/NEXT_TASKS.md` — mapped tasks to the plan phases; documented the
+  Fiber gotcha.
+
 ## 2026-07-06 — Auth + database design (planning)
 
 **Feature:** Designed Google-account login/register and the backend persistence layer for all

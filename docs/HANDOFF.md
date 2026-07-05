@@ -32,13 +32,23 @@ design**. This session delivered the **design/planning docs** (no code yet):
 
 ## Pending work (implementation, not started)
 
-1. Backend: add Postgres (pgx + sqlc + golang-migrate), write migrations `0001`–`0008`
-   (see `DATABASE.md` §12).
-2. Backend: `internal/auth` (verify Firebase token, JWT, cookies, `RequireAuth` middleware) +
-   `internal/users`. Wire `POST /api/v1/auth/google`, `/refresh`, `/logout`, `GET /me`.
-3. Frontend: `src/services/auth/*`, `src/store/authStore.ts`, `SignInButton` + `UserMenu` in
-   `TopToolbar`.
-4. Then migrate stores feature-by-feature behind `/api/v1/sync/bootstrap`.
+Full phased build order: **`backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`** (Phases 0–13).
+
+1. Backend Phase 0: **adopt Fiber** (see gotcha below), extend config, `.env.example`, helpers.
+2. Backend Phase 1: Postgres (pgxpool + sqlc + golang-migrate), migrations `0001`–`0002`.
+3. Backend Phases 2–4: `internal/auth` (verify Firebase token, JWT, rotating session, cookies,
+   `RequireAuth`) + `internal/users`. Ship `POST /api/v1/auth/google`, `/refresh`, `/logout`,
+   `GET /me`, `DELETE /sessions`. **← this closes the Google login/register request.**
+4. Backend Phase 5+: settings + `sync/bootstrap`, then migrate each store feature-by-feature.
+5. Frontend: `src/services/auth/*`, `src/store/authStore.ts`, `SignInButton` + `UserMenu`.
+
+## ⚠ Gotcha — Fiber vs stdlib
+
+The docs (`ARCHITECTURE.md`, `PROJECT_STRUCTURE.md`) say the backend uses **Fiber**, but the actual
+code at commit `64a33b0` uses the **Go 1.22 stdlib** (`net/http` + `http.ServeMux`); `go.mod` has no
+Fiber. The implementation plan resolves this by adopting Fiber in Phase 0 (documented decision, ~60
+lines to migrate). If the team prefers stdlib, only Phase 0 differs — everything else is
+framework-agnostic. Confirm this choice before starting Phase 0.
 
 ## Known decisions
 

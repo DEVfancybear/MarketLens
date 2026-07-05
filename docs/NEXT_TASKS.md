@@ -1,18 +1,22 @@
 # NEXT TASKS
 
-## Immediate (auth slice — priority order)
+> Backend build order is fully specified in `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`
+> (Phases 0–13). The summary below tracks the auth slice; follow the plan doc for step detail.
 
-1. **DB wiring** — add `pgx` pool + `DATABASE_URL` config; add `golang-migrate`; write migrations
-   `0001_extensions.sql`, `0002_auth.sql` (`DATABASE.md` §5, §12). — *Medium*
-2. **Firebase token verification** — `internal/auth/verify.go` using `firebase.google.com/go/v4`
+## Immediate (auth slice — priority order, maps to plan phases)
+
+0. **Foundation (Phase 0)** — adopt Fiber (current code is stdlib `net/http`), extend config with DB
+   + auth + Firebase + CORS vars, add `.env.example`, error-response helper. — *Low–Medium*
+1. **DB layer (Phase 1)** — `pgxpool` + `DATABASE_URL`; `golang-migrate`; migrations
+   `0001_extensions`, `0002_auth`; `sqlc` for user/identity/session. — *Medium*
+2. **Firebase verify (Phase 2)** — `internal/auth/verify.go` using `firebase.google.com/go/v4`
    (reuse `FIREBASE_*` service-account env). — *Medium*
-3. **Session + JWT** — `internal/auth/{jwt,cookies,service}.go`: mint access JWT, create/rotate
-   refresh session, httpOnly cookies (`AUTH.md` §3). — *Medium*
-4. **Auth endpoints** — `POST /api/v1/auth/google`, `/refresh`, `/logout`, `GET /me` + `RequireAuth`
-   middleware; register in `httpserver/server.go`. — *Medium*
+3. **Sessions + JWT (Phase 3)** — `internal/auth/{jwt,session,cookies}.go`: access JWT, rotating
+   refresh with reuse detection, httpOnly cookies (`AUTH.md` §3). — *Medium*
+4. **Auth endpoints (Phase 4)** — `POST /api/v1/auth/google`, `/refresh`, `/logout`, `GET /me`,
+   `DELETE /sessions` + `RequireAuth` + CORS; register `/api/v1` group. — *Medium*
 5. **Frontend auth** — `src/services/auth/firebaseAuth.ts` (GoogleAuthProvider popup),
    `authClient.ts`, `authStore.ts`, `SignInButton` + `UserMenu` in `TopToolbar`. — *Medium*
-6. **CORS + cookies** — allow-list origin, `credentials: true`, Secure toggle by `APP_ENV`. — *Low*
 
 ## Upcoming (persistence migration — after auth works)
 
