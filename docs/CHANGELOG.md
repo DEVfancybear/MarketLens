@@ -7,6 +7,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 ### Fixed - Chart range shortcut viewport and active state (2026-07-05)
 - Bottom range shortcuts (`1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `5Y`,
   `All`) now update the chart viewport and keep the clicked button highlighted.
+- Shortcuts now follow TradingView's `time_frames` model by switching to a
+  target resolution before applying the range (`5Y`/`All` use `1W`, yearly
+  ranges use `1D`, shorter ranges use intraday resolutions), so long-range
+  buttons are no longer constrained to the currently loaded `15m` data.
 - Non-`All` shortcuts now use `shortcutLogicalRange()` and
   `setVisibleLogicalRange()` anchored to the latest loaded candle, matching the
   TradingView-style behavior shown in the bottom toolbar.

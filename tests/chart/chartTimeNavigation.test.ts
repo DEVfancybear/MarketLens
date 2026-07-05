@@ -16,6 +16,7 @@ import {
   parseLocalDateTime,
   shortcutLogicalRange,
   shortcutRange,
+  shortcutTargetTimeframe,
 } from "../../src/components/chart/chartTimeNavigation";
 
 function candles(count: number, start = 1000, step = 60): Candle[] {
@@ -47,6 +48,18 @@ test("range shortcuts anchor to the latest candle", () => {
 test("all shortcut requests fitContent behavior", () => {
   assert.equal(shortcutRange("All", candles(3)), "all");
   assert.equal(shortcutLogicalRange("All", candles(3), 8), "all");
+});
+
+test("range shortcuts choose TradingView-style target timeframes", () => {
+  assert.equal(shortcutTargetTimeframe("1D"), "5m");
+  assert.equal(shortcutTargetTimeframe("5D"), "15m");
+  assert.equal(shortcutTargetTimeframe("1M"), "1H");
+  assert.equal(shortcutTargetTimeframe("3M"), "4H");
+  assert.equal(shortcutTargetTimeframe("6M"), "1D");
+  assert.equal(shortcutTargetTimeframe("YTD"), "1D");
+  assert.equal(shortcutTargetTimeframe("1Y"), "1D");
+  assert.equal(shortcutTargetTimeframe("5Y"), "1W");
+  assert.equal(shortcutTargetTimeframe("All"), "1W");
 });
 
 test("range shortcuts convert to logical ranges anchored to latest candle", () => {

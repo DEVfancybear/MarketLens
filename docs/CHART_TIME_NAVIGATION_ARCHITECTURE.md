@@ -29,6 +29,11 @@ as a range selector with preconfigured buttons plus min/max date inputs.
 - TradingView Lightweight Charts `ITimeScaleApi` docs:
   `setVisibleRange`, `setVisibleLogicalRange`, `fitContent`,
   `getVisibleLogicalRange`, `timeToCoordinate`, and related time-scale methods.
+- TradingView Advanced Charts `time_frames` option: bottom toolbar items are
+  configured with both visible text and a target `resolution` (for example
+  `3y -> 1W`, `8m -> 1D`, and `All -> 1W` in the official example). This is the
+  key reference for why our shortcut buttons must change resolution before
+  applying long-range viewports.
 - TradingView Lightweight Charts time-scale guide for time-axis behavior.
 - TradingView Lightweight Charts time-zone docs: Lightweight Charts processes
   time values in UTC and leaves timezone conversion to the app.
@@ -74,11 +79,25 @@ a stale floating time label over the newly visible candles.
 
 ## 5. Shortcut Contract
 
-`shortcutRange(shortcut, candles)` and
-`shortcutLogicalRange(shortcut, candles, rightOffsetBars)` are intentionally
-pure and tested.
+`shortcutRange(shortcut, candles)`,
+`shortcutLogicalRange(shortcut, candles, rightOffsetBars)`, and
+`shortcutTargetTimeframe(shortcut)` are intentionally pure and tested.
 
 - The anchor is the latest available candle, not wall-clock time.
+- Every shortcut owns a target chart timeframe, matching TradingView's
+  `time_frames` model where a toolbar item includes both range text and
+  resolution.
+- Target timeframe policy:
+
+  | Shortcut | Target timeframe |
+  |---|---|
+  | `1D` | `5m` |
+  | `5D` | `15m` |
+  | `1M` | `1H` |
+  | `3M` | `4H` |
+  | `6M`, `YTD`, `1Y` | `1D` |
+  | `5Y`, `All` | `1W` |
+
 - `1D` and `5D` subtract exact day durations.
 - `1M`, `3M`, `6M`, `1Y`, and `5Y` use local calendar month/year arithmetic.
 - `YTD` starts at local January 1 of the latest candle's year.
@@ -88,6 +107,11 @@ pure and tested.
   lastIndex + RIGHT_OFFSET_BARS }` via `setVisibleLogicalRange`.
 - `ChartTimeToolbar` stores the active shortcut locally so `All`, `5Y`, `1Y`,
   etc. visibly highlight like TradingView after the user clicks them.
+- If the shortcut's target timeframe differs from the current chart timeframe,
+  `ChartTimeToolbar` sets a pending shortcut, calls `setTimeframeAtom`, waits
+  for the target candles to load, and then applies the viewport on the next
+  animation frame. Do not apply `5Y` or `All` against a still-loaded `15m`
+  dataset; that is the root cause of the chart showing only a few days.
 
 Using logical range for shortcuts avoids timestamp-clamping edge cases and keeps
 the normal right-side whitespace stable. The official Lightweight Charts API

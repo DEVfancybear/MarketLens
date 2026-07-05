@@ -1,6 +1,6 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Chart range shortcut viewport)_
+_Last updated: 2026-07-05 (Chart range shortcut timeframe policy)_
 
 ## Completed this session (2026-07-05)
 
@@ -8,6 +8,12 @@ _Last updated: 2026-07-05 (Chart range shortcut viewport)_
 - Researched the official Lightweight Charts time-scale API: `setVisibleRange`
   clamps to existing time data, while `setVisibleLogicalRange` should be used
   when the app owns/can compute bar indexes.
+- Researched the official TradingView Advanced Charts `time_frames` model:
+  bottom toolbar buttons define both a range label and a target resolution.
+- Added `shortcutTargetTimeframe()` so `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`,
+  `1Y`, `5Y`, and `All` switch to an appropriate resolution before applying
+  the viewport. This fixes the previous `5Y` / `All` behavior that only zoomed
+  the currently loaded `15m` window.
 - Added `shortcutLogicalRange()` so `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`,
   `1Y`, and `5Y` resolve to logical candle indexes anchored to the latest
   loaded candle.

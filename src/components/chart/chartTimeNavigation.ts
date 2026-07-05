@@ -1,4 +1,4 @@
-import type { Candle } from "@/types";
+import type { Candle, Timeframe } from "@/types";
 
 export type TimeRangeShortcut =
   | "1D"
@@ -22,6 +22,33 @@ export const TIME_RANGE_SHORTCUTS: TimeRangeShortcut[] = [
   "5Y",
   "All",
 ];
+
+/**
+ * TradingView's bottom time-frame toolbar is not a pure viewport zoom. Each
+ * button can also choose a chart resolution (for example a multi-year range
+ * on weekly candles). Keeping that policy here makes the behavior common for
+ * the toolbar UI, tests, and future chart shells instead of burying it in React.
+ */
+export const TIME_RANGE_SHORTCUT_TIMEFRAMES: Record<
+  TimeRangeShortcut,
+  Timeframe
+> = {
+  "1D": "5m",
+  "5D": "15m",
+  "1M": "1H",
+  "3M": "4H",
+  "6M": "1D",
+  YTD: "1D",
+  "1Y": "1D",
+  "5Y": "1W",
+  All: "1W",
+};
+
+export function shortcutTargetTimeframe(
+  shortcut: TimeRangeShortcut,
+): Timeframe {
+  return TIME_RANGE_SHORTCUT_TIMEFRAMES[shortcut];
+}
 
 export type TimeRange = { from: number; to: number };
 export type ViewportRect = { width: number; height: number };

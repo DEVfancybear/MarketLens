@@ -1,12 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
-import { useSetAtom } from "jotai";
-import type { Candle } from "@/types";
-import { setCrosshairAtom } from "@/store/chartStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import type { Candle, Timeframe } from "@/types";
+import {
+  loadingAtom,
+  setCrosshairAtom,
+  setTimeframeAtom,
+  timeframeAtom,
+} from "@/store/chartStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import {
@@ -25,6 +37,7 @@ import {
   isSupportedChartTimeZone,
   parseLocalDateTime,
   shortcutLogicalRange,
+  shortcutTargetTimeframe,
   type TimeRangeShortcut,
   type ChartTimeZoneId,
   type ChartTimeZoneOption,
@@ -38,6 +51,11 @@ type GoToMarkerState = {
   id: number;
   time: number;
   label: string;
+};
+type PendingShortcutState = {
+  shortcut: TimeRangeShortcut;
+  timeframe: Timeframe;
+  requestId: number;
 };
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -217,7 +235,13 @@ export function ChartTimeToolbar({
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
   const [activeShortcut, setActiveShortcut] =
     useState<TimeRangeShortcut | null>(null);
+  const [pendingShortcut, setPendingShortcut] =
+    useState<PendingShortcutState | null>(null);
+  const pendingShortcutId = useRef(0);
+  const timeframe = useAtomValue(timeframeAtom);
+  const loading = useAtomValue(loadingAtom);
   const setCrosshair = useSetAtom(setCrosshairAtom);
+  const setTimeframe = useSetAtom(setTimeframeAtom);
   const activeTimeZone = chartTimeZoneToIntlTimeZone(timeZoneId);
 
   useEffect(() => {
@@ -229,20 +253,78 @@ export function ChartTimeToolbar({
     window.localStorage.setItem(TIME_ZONE_STORAGE_KEY, timeZoneId);
   }, [timeZoneId]);
 
-  const jumpShortcut = (shortcut: TimeRangeShortcut) => {
-    if (!chart) return;
-    const range = shortcutLogicalRange(shortcut, candles, RIGHT_OFFSET_BARS);
-    if (!range) return;
-    const timeScale = chart.timeScale();
-    if (range === "all") {
-      timeScale.fitContent();
+  const applyShortcutViewport = useCallback(
+    (shortcut: TimeRangeShortcut) => {
+      if (!chart) return false;
+      const range = shortcutLogicalRange(shortcut, candles, RIGHT_OFFSET_BARS);
+      if (!range) return false;
+      const timeScale = chart.timeScale();
+      if (range === "all") {
+        timeScale.fitContent();
+        setActiveShortcut(shortcut);
+        clearChartCrosshair(chart, () => setCrosshair(null));
+        return true;
+      }
+      timeScale.setVisibleLogicalRange(range);
       setActiveShortcut(shortcut);
       clearChartCrosshair(chart, () => setCrosshair(null));
+      return true;
+    },
+    [candles, chart, setCrosshair],
+  );
+
+  useEffect(() => {
+    if (
+      !pendingShortcut ||
+      !chart ||
+      pendingShortcut.timeframe !== timeframe ||
+      loading ||
+      candles.length === 0
+    ) {
       return;
     }
-    timeScale.setVisibleLogicalRange(range);
+
+    // Timeframe switches are asynchronous: the chart atom clears candles first,
+    // then `useMarketData` seeds the target resolution. Apply the requested
+    // range on the next frame so Lightweight Charts has the new series data.
+    const request = pendingShortcut;
+    const frame = window.requestAnimationFrame(() => {
+      const applied = applyShortcutViewport(request.shortcut);
+      if (!applied) return;
+      setPendingShortcut((current) =>
+        current?.requestId === request.requestId ? null : current,
+      );
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    applyShortcutViewport,
+    candles.length,
+    chart,
+    loading,
+    pendingShortcut,
+    timeframe,
+  ]);
+
+  const jumpShortcut = (shortcut: TimeRangeShortcut) => {
+    if (!chart) return;
+
+    const targetTimeframe = shortcutTargetTimeframe(shortcut);
     setActiveShortcut(shortcut);
-    clearChartCrosshair(chart, () => setCrosshair(null));
+
+    if (targetTimeframe !== timeframe) {
+      pendingShortcutId.current += 1;
+      setPendingShortcut({
+        shortcut,
+        timeframe: targetTimeframe,
+        requestId: pendingShortcutId.current,
+      });
+      setTimeframe(targetTimeframe);
+      return;
+    }
+
+    setPendingShortcut(null);
+    applyShortcutViewport(shortcut);
   };
 
   const openGoTo = (event: MouseEvent<HTMLButtonElement>) => {
@@ -263,7 +345,7 @@ export function ChartTimeToolbar({
             <button
               key={shortcut}
               type="button"
-              disabled={!chart || candles.length === 0}
+              disabled={!chart || loading || candles.length === 0}
               onClick={() => jumpShortcut(shortcut)}
               className={cn(
                 "h-7 shrink-0 rounded-sm px-1.5 font-semibold transition-colors disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent",
@@ -278,7 +360,7 @@ export function ChartTimeToolbar({
           <div className="mx-1 h-5 w-px shrink-0 bg-[#2a2e39]" />
           <button
             type="button"
-            disabled={!chart || candles.length === 0}
+            disabled={!chart || loading || candles.length === 0}
             aria-label="Go to"
             title="Go to"
             onClick={openGoTo}
