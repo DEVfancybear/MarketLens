@@ -23,12 +23,14 @@ design**. This session delivered the **design/planning docs** (no code yet):
   login are the same flow.
 - `backend/docs/API.md` — expanded from health-only into the full `/api/v1` per-feature contract.
 
-## Completed work (this session)
+## Completed work
 
-- Read frontend + backend architecture docs.
-- Confirmed Firebase is already wired for messaging/push (`src/services/firebase/client.ts`,
-  `src/server/firebaseAdmin.ts`) — auth reuses the same project + service account.
-- Authored the three design docs above; indexed them in `backend/docs/README.md`.
+- Design docs: `backend/docs/{DATABASE,AUTH,API,BACKEND_IMPLEMENTATION_PLAN}.md`.
+- **Frontend Google auth UI — implemented & verified** (typecheck + lint + `next build` pass):
+  Firebase Google sign-in/sign-up, `authStore` (Jotai), `useAuthSession` bridge in `GlobalRuntime`,
+  `SignInButton` + `UserMenu` (`AuthControl`) in `TopToolbar`. Backend token exchange is best-effort
+  (`authClient.ts`) and no-ops until the Go API exists. See `frontend/docs/AUTH_UI.md`.
+- Framework decision confirmed by user: backend = **Fiber**.
 
 ## Pending work (implementation, not started)
 
@@ -40,7 +42,8 @@ Full phased build order: **`backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`** (Phas
    `RequireAuth`) + `internal/users`. Ship `POST /api/v1/auth/google`, `/refresh`, `/logout`,
    `GET /me`, `DELETE /sessions`. **← this closes the Google login/register request.**
 4. Backend Phase 5+: settings + `sync/bootstrap`, then migrate each store feature-by-feature.
-5. Frontend: `src/services/auth/*`, `src/store/authStore.ts`, `SignInButton` + `UserMenu`.
+5. Frontend auth UI — ✅ **done** (`frontend/docs/AUTH_UI.md`). Once the backend ships, set
+   `NEXT_PUBLIC_API_BASE_URL` and the existing `authClient` exchange lights up `backendSession`.
 
 ## ⚠ Gotcha — Fiber vs stdlib
 
@@ -70,5 +73,10 @@ framework-agnostic. Confirm this choice before starting Phase 0.
 
 ## Recommended next action
 
-Implement the backend auth slice first: Postgres wiring + migrations `0001`–`0002` + `internal/auth`
-`POST /api/v1/auth/google`. Everything else can follow feature-by-feature.
+Frontend auth is done. Next: implement the backend auth slice (needs Go toolchain — not installed in
+this environment). Follow `BACKEND_IMPLEMENTATION_PLAN.md` Phases 0–4: Fiber migration → Postgres +
+migrations `0001`–`0002` → `internal/auth` `POST /api/v1/auth/google`. Then set
+`NEXT_PUBLIC_API_BASE_URL` so the frontend's `authClient` exchange activates.
+
+> Env note: **Go is not on PATH** in this dev machine — backend build/test could not be run here.
+> The frontend installed its deps under `frontend/node_modules` (was empty before this session).

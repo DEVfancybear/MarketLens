@@ -14,6 +14,7 @@ Architecture and design documentation for the SMC Trading Terminal frontend.
 | `RESPONSIVE_ARCHITECTURE.md`             | Responsive layout system               |
 | `SETTTING_ARCHITECTURE.md`               | Settings / preferences system          |
 | `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`     | Zoom / viewport synchronization        |
+| `AUTH_UI.md`                             | Google sign-in / sign-up UI            |
 
 ## Drawing Engine
 

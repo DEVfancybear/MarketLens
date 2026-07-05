@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-07-06
 **Current milestone:** Backend persistence + authentication
-**Current phase:** Design / planning (auth + database)
+**Current phase:** Frontend auth UI **implemented**; backend auth not started
 
 ## Completed features
 
@@ -12,24 +12,25 @@
 - Python MT5 bridge sidecar (FTMO).
 - Firebase already configured for push notifications (client + admin).
 
-## In progress
+## Completed this session
 
-- **Auth + database design** (this session) — design docs authored, implementation not started:
-  - `backend/docs/DATABASE.md` — PostgreSQL schema for all user data.
-  - `backend/docs/AUTH.md` — Google sign-in/sign-up via Firebase → backend session.
-  - `backend/docs/API.md` — per-feature `/api/v1` contract.
+- **Auth + database design docs** — `backend/docs/{DATABASE,AUTH,API,BACKEND_IMPLEMENTATION_PLAN}.md`.
+- **Frontend Google auth UI (implemented + verified)** — Firebase Google sign-in/sign-up, auth store,
+  session hook, sign-in button + user menu in `TopToolbar`. Typecheck + lint + `next build` all pass.
+  Framework decision confirmed: backend will use **Fiber**.
 
 ## Recently modified files
 
-- `backend/docs/DATABASE.md` (new)
-- `backend/docs/AUTH.md` (new)
-- `backend/docs/API.md` (expanded)
-- `backend/docs/README.md` (index updated)
-- `docs/HANDOFF.md`, `docs/CURRENT_PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/CHANGELOG.md` (project
-  memory)
+- Frontend: `src/services/firebase/client.ts`, `src/services/auth/{firebaseAuth,authClient}.ts`,
+  `src/store/authStore.ts`, `src/hooks/useAuthSession.ts`,
+  `src/components/auth/{AuthControl,SignInButton,UserMenu,GoogleIcon}.tsx`,
+  `src/components/toolbar/TopToolbar.tsx`, `src/components/layout/GlobalRuntime.tsx`,
+  `frontend/docs/AUTH_UI.md`.
+- Docs: `backend/docs/*`, `docs/*` (project memory).
 
 ## Not started
 
-- Backend Postgres wiring, migrations, `internal/auth` + `internal/users`.
-- Frontend auth UI (Google sign-in button, user menu) and auth store.
+- Backend: Fiber migration + Postgres wiring + migrations + `internal/auth` + `internal/users`
+  (see `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` Phases 0–4). Blocked only on a Postgres instance
+  + Firebase Google provider enabled.
 - Store-by-store migration to the backend API.

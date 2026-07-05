@@ -15,8 +15,9 @@
    refresh with reuse detection, httpOnly cookies (`AUTH.md` §3). — *Medium*
 4. **Auth endpoints (Phase 4)** — `POST /api/v1/auth/google`, `/refresh`, `/logout`, `GET /me`,
    `DELETE /sessions` + `RequireAuth` + CORS; register `/api/v1` group. — *Medium*
-5. **Frontend auth** — `src/services/auth/firebaseAuth.ts` (GoogleAuthProvider popup),
-   `authClient.ts`, `authStore.ts`, `SignInButton` + `UserMenu` in `TopToolbar`. — *Medium*
+5. **Frontend auth** — ✅ **DONE** (Firebase Google popup, `authStore`, `useAuthSession`,
+   `SignInButton` + `UserMenu` in `TopToolbar`). Verified via typecheck + lint + build.
+   Remaining: after backend Phase 4, set `NEXT_PUBLIC_API_BASE_URL` to activate the session exchange.
 
 ## Upcoming (persistence migration — after auth works)
 

@@ -25,6 +25,14 @@ const REQUIRED_CONFIG: Array<keyof typeof FIREBASE_CONFIG> = [
   "messagingSenderId",
 ];
 
+// Auth (Google sign-in) needs the OAuth `authDomain`; messaging does not.
+const REQUIRED_AUTH_CONFIG: Array<keyof typeof FIREBASE_CONFIG> = [
+  "apiKey",
+  "authDomain",
+  "projectId",
+  "appId",
+];
+
 let messagingPromise: Promise<Messaging | null> | null = null;
 
 export function getFirebaseConfigStatus(): FirebaseClientConfigStatus {
@@ -32,11 +40,16 @@ export function getFirebaseConfigStatus(): FirebaseClientConfigStatus {
   return { configured: missing.length === 0, missing };
 }
 
+export function getFirebaseAuthConfigStatus(): FirebaseClientConfigStatus {
+  const missing = REQUIRED_AUTH_CONFIG.filter((key) => !FIREBASE_CONFIG[key]);
+  return { configured: missing.length === 0, missing };
+}
+
 export function getFirebaseVapidKey(): string {
   return process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ?? "";
 }
 
-function getFirebaseApp(): FirebaseApp {
+export function getFirebaseApp(): FirebaseApp {
   if (getApps().length > 0) return getApp();
   return initializeApp(FIREBASE_CONFIG);
 }

@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-07-06 — Frontend Google auth UI (implemented)
+
+**Feature:** Login/register with a Google account on the frontend. Firebase Auth runs the Google
+popup + account creation (works today, standalone); the Go backend session exchange is wired
+best-effort (no-op until the backend ships). Verified: typecheck + lint + `next build` all pass.
+
+**Files:**
+- `frontend/src/services/firebase/client.ts` — export `getFirebaseApp()` + auth config status.
+- `frontend/src/services/auth/firebaseAuth.ts` (new) — Google popup, sign-out, auth subscription.
+- `frontend/src/services/auth/authClient.ts` (new) — best-effort backend `/auth/*` calls.
+- `frontend/src/store/authStore.ts` (new) — Jotai auth atoms + compat hook.
+- `frontend/src/hooks/useAuthSession.ts` (new) — Firebase → store bridge; mounted in `GlobalRuntime`.
+- `frontend/src/components/auth/{AuthControl,SignInButton,UserMenu,GoogleIcon}.tsx` (new).
+- `frontend/src/components/toolbar/TopToolbar.tsx`, `.../layout/GlobalRuntime.tsx` — wiring.
+- `frontend/docs/AUTH_UI.md` (new) + `frontend/docs/README.md` index.
+
 ## 2026-07-06 — Backend implementation plan (planning)
 
 **Feature:** Phased, step-by-step build order for the Go backend, from Google auth to per-feature

@@ -18,6 +18,7 @@ import { SmcMenu } from "./SmcMenu";
 import { ChartSettingsMenu } from "./ChartSettingsMenu";
 import { ConnectionBadge } from "./ConnectionBadge";
 import { TimeframeSelector } from "./TimeframeSelector";
+import { AuthControl } from "@/components/auth/AuthControl";
 import { IconButton } from "@/components/ui/IconButton";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { useAtomValue, useSetAtom, getDefaultStore } from "jotai";
@@ -203,6 +204,8 @@ export function TopToolbar() {
         <IconButton label="Fullscreen" onClick={toggleFullscreen}>
           {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </IconButton>
+        <div className="mx-1 h-5 w-px bg-terminal-border" />
+        <AuthControl />
       </div>
     </div>
   );
