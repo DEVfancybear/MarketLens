@@ -33,10 +33,58 @@ export type ElementAnchor = {
 };
 export type FloatingDialogSize = { width: number; height: number };
 export type FloatingDialogPosition = { left: number; top: number };
+export type ChartTimeZoneId = "exchange" | string;
+export type ChartTimeZoneOption = {
+  id: ChartTimeZoneId;
+  label: string;
+  timeZone?: string;
+};
 
 export const GO_TO_DATE_MAX_SPAN_BARS = 34;
 export const GO_TO_DATE_MIN_SPAN_BARS = 10;
 export const GO_TO_DATE_TARGET_RATIO = 0.42;
+export const EXCHANGE_TIME_ZONE_ID = "exchange";
+export const CHART_TIME_ZONE_OPTIONS: ChartTimeZoneOption[] = [
+  { id: "UTC", label: "UTC", timeZone: "UTC" },
+  { id: EXCHANGE_TIME_ZONE_ID, label: "Exchange" },
+  { id: "Pacific/Honolulu", label: "Honolulu", timeZone: "Pacific/Honolulu" },
+  { id: "America/Anchorage", label: "Anchorage", timeZone: "America/Anchorage" },
+  { id: "America/Juneau", label: "Juneau", timeZone: "America/Juneau" },
+  { id: "America/Los_Angeles", label: "Los Angeles", timeZone: "America/Los_Angeles" },
+  { id: "America/Phoenix", label: "Phoenix", timeZone: "America/Phoenix" },
+  { id: "America/Vancouver", label: "Vancouver", timeZone: "America/Vancouver" },
+  { id: "America/Denver", label: "Denver", timeZone: "America/Denver" },
+  { id: "America/Mexico_City", label: "Mexico City", timeZone: "America/Mexico_City" },
+  { id: "America/El_Salvador", label: "San Salvador", timeZone: "America/El_Salvador" },
+  { id: "America/Bogota", label: "Bogota", timeZone: "America/Bogota" },
+  { id: "America/Chicago", label: "Chicago", timeZone: "America/Chicago" },
+  { id: "America/Lima", label: "Lima", timeZone: "America/Lima" },
+  { id: "America/Caracas", label: "Caracas", timeZone: "America/Caracas" },
+  { id: "America/New_York", label: "New York", timeZone: "America/New_York" },
+  { id: "America/Santiago", label: "Santiago", timeZone: "America/Santiago" },
+  { id: "America/Toronto", label: "Toronto", timeZone: "America/Toronto" },
+  { id: "America/Argentina/Buenos_Aires", label: "Buenos Aires", timeZone: "America/Argentina/Buenos_Aires" },
+  { id: "America/Halifax", label: "Halifax", timeZone: "America/Halifax" },
+  { id: "America/Sao_Paulo", label: "Sao Paulo", timeZone: "America/Sao_Paulo" },
+  { id: "Atlantic/Azores", label: "Azores", timeZone: "Atlantic/Azores" },
+  { id: "Atlantic/Reykjavik", label: "Reykjavik", timeZone: "Atlantic/Reykjavik" },
+  { id: "Africa/Casablanca", label: "Casablanca", timeZone: "Africa/Casablanca" },
+  { id: "Europe/London", label: "London", timeZone: "Europe/London" },
+  { id: "Europe/Paris", label: "Paris", timeZone: "Europe/Paris" },
+  { id: "Europe/Berlin", label: "Berlin", timeZone: "Europe/Berlin" },
+  { id: "Europe/Athens", label: "Athens", timeZone: "Europe/Athens" },
+  { id: "Asia/Dubai", label: "Dubai", timeZone: "Asia/Dubai" },
+  { id: "Asia/Kolkata", label: "Mumbai", timeZone: "Asia/Kolkata" },
+  { id: "Asia/Bangkok", label: "Bangkok", timeZone: "Asia/Bangkok" },
+  { id: "Asia/Ho_Chi_Minh", label: "Ho Chi Minh", timeZone: "Asia/Ho_Chi_Minh" },
+  { id: "Asia/Singapore", label: "Singapore", timeZone: "Asia/Singapore" },
+  { id: "Asia/Hong_Kong", label: "Hong Kong", timeZone: "Asia/Hong_Kong" },
+  { id: "Asia/Shanghai", label: "Shanghai", timeZone: "Asia/Shanghai" },
+  { id: "Asia/Tokyo", label: "Tokyo", timeZone: "Asia/Tokyo" },
+  { id: "Asia/Seoul", label: "Seoul", timeZone: "Asia/Seoul" },
+  { id: "Australia/Sydney", label: "Sydney", timeZone: "Australia/Sydney" },
+  { id: "Pacific/Auckland", label: "Auckland", timeZone: "Pacific/Auckland" },
+];
 
 function lastCandleTime(candles: Candle[]): number | null {
   const last = candles[candles.length - 1];
@@ -171,40 +219,161 @@ export function goToDateLogicalRange(
   };
 }
 
-export function parseLocalDateTime(date: string, time: string): number | null {
+type DateTimeParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+function parseDateDraft(date: string, time: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   if (!/^\d{2}:\d{2}$/.test(time)) return null;
-  const parsed = new Date(`${date}T${time}:00`);
-  const value = parsed.getTime();
-  return Number.isFinite(value) ? Math.floor(value / 1000) : null;
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!dateMatch || !timeMatch) return null;
+  const parts = {
+    year: Number(dateMatch[1]),
+    month: Number(dateMatch[2]),
+    day: Number(dateMatch[3]),
+    hour: Number(timeMatch[1]),
+    minute: Number(timeMatch[2]),
+  };
+  if (parts.month < 1 || parts.month > 12) return null;
+  if (parts.day < 1 || parts.day > 31) return null;
+  if (parts.hour > 23 || parts.minute > 59) return null;
+  return parts;
 }
 
-export function formatDateInput(timeMs: number): string {
-  const date = new Date(timeMs);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function zonedParts(date: Date, timeZone?: string): DateTimeParts {
+  const options: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  };
+  if (timeZone) options.timeZone = timeZone;
+  const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
 }
 
-export function formatTimeInput(timeMs: number): string {
-  const date = new Date(timeMs);
-  const h = String(date.getHours()).padStart(2, "0");
-  const m = String(date.getMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
+export function chartTimeZoneToIntlTimeZone(
+  timeZoneId: ChartTimeZoneId = EXCHANGE_TIME_ZONE_ID,
+): string | undefined {
+  return timeZoneId === EXCHANGE_TIME_ZONE_ID ? undefined : timeZoneId;
 }
 
-export function formatGoToMarkerLabel(timeSec: number): string {
+export function isSupportedChartTimeZone(value: string): boolean {
+  if (value === EXCHANGE_TIME_ZONE_ID) return true;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function timeZoneOffsetMinutes(date: Date, timeZone?: string): number {
+  if (!timeZone) return -date.getTimezoneOffset();
+  const parts = zonedParts(date, timeZone);
+  const asUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  return Math.round((asUtc - date.getTime()) / 60000);
+}
+
+export function parseLocalDateTime(
+  date: string,
+  time: string,
+  timeZone?: string,
+): number | null {
+  const parts = parseDateDraft(date, time);
+  if (!parts) return null;
+  if (!timeZone) {
+    const parsed = new Date(`${date}T${time}:00`);
+    const value = parsed.getTime();
+    return Number.isFinite(value) ? Math.floor(value / 1000) : null;
+  }
+
+  const wallTimeAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    0,
+    0,
+  );
+  let utcMs = wallTimeAsUtc;
+  for (let i = 0; i < 4; i++) {
+    const offset = timeZoneOffsetMinutes(new Date(utcMs), timeZone);
+    const nextUtcMs = wallTimeAsUtc - offset * 60 * 1000;
+    if (Math.abs(nextUtcMs - utcMs) < 1000) {
+      utcMs = nextUtcMs;
+      break;
+    }
+    utcMs = nextUtcMs;
+  }
+  return Number.isFinite(utcMs) ? Math.floor(utcMs / 1000) : null;
+}
+
+export function formatDateInput(timeMs: number, timeZone?: string): string {
+  const parts = zonedParts(new Date(timeMs), timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(
+    parts.day,
+  ).padStart(2, "0")}`;
+}
+
+export function formatTimeInput(timeMs: number, timeZone?: string): string {
+  const parts = zonedParts(new Date(timeMs), timeZone);
+  return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(
+    2,
+    "0",
+  )}`;
+}
+
+export function formatGoToMarkerLabel(timeSec: number, timeZone?: string): string {
   const date = new Date(timeSec * 1000);
-  const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
-  const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(date);
-  const day = String(date.getDate()).padStart(2, "0");
-  const year = String(date.getFullYear()).slice(-2);
-  return `${weekday} ${day} ${month} '${year}\n${formatTimeInput(date.getTime())}`;
+  const options = timeZone ? { timeZone } : undefined;
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    ...options,
+  }).format(date);
+  const month = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    ...options,
+  }).format(date);
+  const parts = zonedParts(date, timeZone);
+  const day = String(parts.day).padStart(2, "0");
+  const year = String(parts.year).slice(-2);
+  return `${weekday} ${day} ${month} '${year}\n${formatTimeInput(
+    date.getTime(),
+    timeZone,
+  )}`;
 }
 
-export function formatUtcOffset(date = new Date()): string {
-  const offsetMinutes = -date.getTimezoneOffset();
+export function formatUtcOffset(date = new Date(), timeZone?: string): string {
+  const offsetMinutes = timeZoneOffsetMinutes(date, timeZone);
+  if (offsetMinutes === 0) return "UTC";
   const sign = offsetMinutes >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMinutes);
   const hours = Math.floor(abs / 60);

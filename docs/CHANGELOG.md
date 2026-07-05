@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Chart timezone selector (2026-07-05)
+- Added a TradingView-style timezone selector to the bottom-right chart clock.
+  The menu includes `UTC`, `Exchange`, and common city/IANA zones with live UTC
+  offsets.
+- The selected timezone is persisted in `localStorage` and now drives toolbar
+  clock formatting, `Go to` dialog defaults, Date/Custom Range parsing, and the
+  temporary Go-to marker chip.
+- Added timezone parser/formatter coverage to `npm run test:chart`.
+
 ### Changed - Long/Short chart labels show TP/SL prices (2026-07-05)
 - Long/Short Position chart labels now show the absolute take-profit and
   stop-loss prices first, while keeping percent, distance/ticks, and amount as

@@ -12,7 +12,8 @@ The desktop reference is TradingView's lower chart time strip:
 
 - range shortcuts: `1D`, `5D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `5Y`, `All`,
 - a small `Go to` calendar button next to the shortcuts,
-- a current local clock with UTC offset on the right,
+- a current clock with UTC offset on the right; clicking it opens a
+  TradingView-style timezone selector,
 - a `Go to` dialog with `Date` and `Custom range` tabs,
 - Date mode jumps to the requested date/time and zooms into a readable
   TradingView-like candle window,
@@ -29,15 +30,19 @@ as a range selector with preconfigured buttons plus min/max date inputs.
   `setVisibleRange`, `setVisibleLogicalRange`, `fitContent`,
   `getVisibleLogicalRange`, `timeToCoordinate`, and related time-scale methods.
 - TradingView Lightweight Charts time-scale guide for time-axis behavior.
+- TradingView Lightweight Charts time-zone docs: Lightweight Charts processes
+  time values in UTC and leaves timezone conversion to the app.
 - Highcharts Stock `rangeSelector` docs for the common market-chart pattern:
   preconfigured buttons plus editable min/max date inputs.
+- Highcharts `time.timezone` docs for the comparable charting-product pattern:
+  named browser-supported timezones affect time display and tick placement.
 
 ## 3. Key Files
 
 | Area | File | Responsibility |
 |---|---|---|
 | Toolbar UI | `src/components/chart/ChartTimeToolbar.tsx` | Renders shortcut strip, current clock, and `Go to` dialog |
-| Pure navigation logic | `src/components/chart/chartTimeNavigation.ts` | Calculates shortcut ranges, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
+| Pure navigation logic | `src/components/chart/chartTimeNavigation.ts` | Calculates shortcut ranges, timezone conversion, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
 | Chart placement | `src/components/chart/ChartArea.tsx` | Mounts the toolbar below all chart panes and above the bottom dock |
 | Tests | `tests/chart/chartTimeNavigation.test.ts` | Locks range shortcuts, nearest-candle jump, parser, and calendar behavior |
 | Test script | `package.json` | `npm run test:chart` |
@@ -156,7 +161,28 @@ Replay can replace the visible candle slice. Time navigation must tolerate that:
 Do not jump to hidden future candles during replay. If a future date is typed,
 `nearestCandleIndex` resolves to the last currently loaded candle.
 
-## 11. Maintenance Rules
+## 11. Timezone Selector Contract
+
+The bottom-right clock opens a TradingView-style timezone menu. The selector is
+persisted in `localStorage` under `chartTimeZone`.
+
+Supported behavior:
+
+- `Exchange` means the browser/default chart timezone. This preserves the
+  existing local-time behavior until symbol-level exchange timezones are added.
+- `UTC` and named IANA zones such as `America/New_York` use browser `Intl`.
+- The toolbar clock, UTC offset text, `Go to` dialog defaults, Date/Custom Range
+  parsing, and temporary Go-to marker label all use the selected timezone.
+- Candle timestamps remain unchanged. Lightweight Charts itself receives UTC
+  timestamps; the app converts user-entered wall time to UTC seconds before
+  calling `setVisibleRange` / `setVisibleLogicalRange`.
+
+Do not shift or rewrite the candle dataset for timezone selection in this app.
+That would also move drawings, replay boundaries, indicators, and trade levels.
+Timezone selection is a presentation/input contract until a future dedicated
+time-axis transformation layer is added.
+
+## 12. Maintenance Rules
 
 - Keep date/range math in `chartTimeNavigation.ts`; the React component should
   remain a thin adapter around chart APIs.
@@ -164,10 +190,11 @@ Do not jump to hidden future candles during replay. If a future date is typed,
   placement rule.
 - Do not add drawing-overlay invalidation here. Viewport repaint remains owned
   by `chartViewportEvents.ts` and the drawing renderer.
-- If the app later adds timezone selection, add it to the pure parser/formatter
-  helpers first, then update the dialog.
+- If the app later adds symbol-level exchange timezones, update the
+  `Exchange` resolver first, then the toolbar. Do not add per-component
+  timezone conversion.
 
-## 12. Verification
+## 13. Verification
 
 Run:
 
@@ -191,4 +218,6 @@ Manual checks:
   disappears immediately,
 - switch to `Custom range`, enter start/end values, and confirm range applies,
 - verify current clock displays the local time and UTC offset,
+- click the clock, choose `UTC` and `America/New_York`, then confirm the clock,
+  offset, Go-to defaults, and marker chip follow the selected timezone,
 - test with Replay loaded so date jumps clamp to replay-visible candles.

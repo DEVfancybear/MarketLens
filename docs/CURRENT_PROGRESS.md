@@ -1,8 +1,20 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Long/Short TP/SL price labels)_
+_Last updated: 2026-07-05 (Chart timezone selector)_
 
 ## Completed this session (2026-07-05)
+
+### Chart timezone selector
+- Researched TradingView timezone behavior from the user screenshot plus
+  official Lightweight Charts and Highcharts timezone docs.
+- Added a bottom-right clock timezone selector with `UTC`, `Exchange`, and
+  common city/IANA zones. The option labels show the current UTC offset.
+- Persisted the selected timezone in `localStorage` as `chartTimeZone`.
+- Routed timezone through the common chart time-navigation helpers so the clock,
+  `Go to` dialog defaults, Date/Custom Range parsing, and temporary marker chip
+  all use the selected timezone.
+- Added `npm run test:chart` coverage for UTC/New York parsing, formatting,
+  offset labels, and marker chips.
 
 ### Long/Short TP/SL price labels
 - Updated Long/Short Position chart labels so TP and SL chips show the absolute

@@ -6,7 +6,10 @@ import {
   calendarCells,
   centeredLogicalRange,
   firstCandleIndexAtOrAfter,
+  formatDateInput,
   formatGoToMarkerLabel,
+  formatTimeInput,
+  formatUtcOffset,
   goToDateLogicalRange,
   goToDialogPosition,
   nearestCandleIndex,
@@ -94,6 +97,26 @@ test("local date time parser rejects incomplete drafts", () => {
   assert.equal(parseLocalDateTime("2026-07-04", "8:30"), null);
 });
 
+test("date time parser supports selected chart time zones", () => {
+  assert.equal(
+    parseLocalDateTime("2026-07-01", "00:00", "UTC"),
+    Date.UTC(2026, 6, 1, 0, 0, 0, 0) / 1000,
+  );
+  assert.equal(
+    parseLocalDateTime("2026-07-01", "00:00", "America/New_York"),
+    Date.UTC(2026, 6, 1, 4, 0, 0, 0) / 1000,
+  );
+});
+
+test("date time formatting follows the selected chart time zone", () => {
+  const timeMs = Date.UTC(2026, 6, 1, 4, 0, 0, 0);
+
+  assert.equal(formatDateInput(timeMs, "America/New_York"), "2026-07-01");
+  assert.equal(formatTimeInput(timeMs, "America/New_York"), "00:00");
+  assert.equal(formatUtcOffset(new Date(timeMs), "America/New_York"), "UTC-4");
+  assert.equal(formatUtcOffset(new Date(timeMs), "UTC"), "UTC");
+});
+
 test("calendar grid always returns six weeks", () => {
   const cells = calendarCells(2026, 6);
 
@@ -105,6 +128,15 @@ test("go-to marker label matches TradingView-style date chip", () => {
   const time = new Date(2026, 6, 1, 0, 0, 0, 0).getTime() / 1000;
 
   assert.equal(formatGoToMarkerLabel(time), "Wed 01 Jul '26\n00:00");
+});
+
+test("go-to marker label can render in selected time zone", () => {
+  const time = Date.UTC(2026, 6, 1, 4, 0, 0, 0) / 1000;
+
+  assert.equal(
+    formatGoToMarkerLabel(time, "America/New_York"),
+    "Wed 01 Jul '26\n00:00",
+  );
 });
 
 test("go-to dialog opens near its toolbar button and clamps to the viewport", () => {

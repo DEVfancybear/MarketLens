@@ -10,8 +10,11 @@ import { setCrosshairAtom } from "@/store/chartStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import {
+  CHART_TIME_ZONE_OPTIONS,
+  EXCHANGE_TIME_ZONE_ID,
   TIME_RANGE_SHORTCUTS,
   calendarCells,
+  chartTimeZoneToIntlTimeZone,
   firstCandleIndexAtOrAfter,
   formatDateInput,
   formatGoToMarkerLabel,
@@ -19,8 +22,11 @@ import {
   formatUtcOffset,
   goToDateLogicalRange,
   goToDialogPosition,
+  isSupportedChartTimeZone,
   parseLocalDateTime,
   shortcutRange,
+  type ChartTimeZoneId,
+  type ChartTimeZoneOption,
   type ElementAnchor,
 } from "./chartTimeNavigation";
 
@@ -34,14 +40,18 @@ type GoToMarkerState = {
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const GO_TO_DIALOG_SIZE = { width: 302, height: 478 };
+const TIME_ZONE_MENU_SIZE = { width: 232, height: 520 };
+const TIME_ZONE_STORAGE_KEY = "chartTimeZone";
 
-function formatClock(date: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
+function formatClock(date: Date, timeZone?: string): string {
+  const options: Intl.DateTimeFormatOptions = {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-  }).format(date);
+  };
+  if (timeZone) options.timeZone = timeZone;
+  return new Intl.DateTimeFormat(undefined, options).format(date);
 }
 
 function monthTitle(date: Date): string {
@@ -51,18 +61,26 @@ function monthTitle(date: Date): string {
   }).format(date);
 }
 
-function defaultRange(candles: Candle[]) {
+function monthFromDateInput(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(value);
+  return match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, 1)
+    : new Date();
+}
+
+function defaultRange(candles: Candle[], timeZone?: string) {
   const fallback = Date.now();
   const endMs = (candles[candles.length - 1]?.time ?? Math.floor(fallback / 1000)) * 1000;
   const startMs = endMs - 24 * 60 * 60 * 1000;
+  const singleDate = formatDateInput(endMs, timeZone);
   return {
-    singleDate: formatDateInput(endMs),
+    singleDate,
     singleTime: "00:00",
-    fromDate: formatDateInput(startMs),
-    fromTime: formatTimeInput(startMs),
-    toDate: formatDateInput(endMs),
-    toTime: formatTimeInput(endMs),
-    month: new Date(endMs),
+    fromDate: formatDateInput(startMs, timeZone),
+    fromTime: formatTimeInput(startMs, timeZone),
+    toDate: formatDateInput(endMs, timeZone),
+    toTime: formatTimeInput(endMs, timeZone),
+    month: monthFromDateInput(singleDate),
   };
 }
 
@@ -83,10 +101,102 @@ function elementAnchorFromRect(rect: DOMRect): ElementAnchor {
   };
 }
 
+function floatingMenuPosition(anchor: ElementAnchor, size: typeof TIME_ZONE_MENU_SIZE) {
+  const gap = 8;
+  const maxLeft = window.innerWidth - size.width - gap;
+  const maxTop = window.innerHeight - size.height - gap;
+  return {
+    left: Math.min(Math.max(anchor.right - size.width, gap), Math.max(gap, maxLeft)),
+    top: Math.min(
+      Math.max(anchor.top - size.height - gap, gap),
+      Math.max(gap, maxTop),
+    ),
+  };
+}
+
+function readInitialTimeZone(): ChartTimeZoneId {
+  if (typeof window === "undefined") return EXCHANGE_TIME_ZONE_ID;
+  const saved = window.localStorage.getItem(TIME_ZONE_STORAGE_KEY);
+  return saved && isSupportedChartTimeZone(saved) ? saved : EXCHANGE_TIME_ZONE_ID;
+}
+
+function timeZoneOptionText(option: ChartTimeZoneOption, date: Date): string {
+  if (!option.timeZone) return option.label;
+  if (option.id === "UTC") return option.label;
+  return `(${formatUtcOffset(date, option.timeZone)}) ${option.label}`;
+}
+
 function clearChartCrosshair(chart: IChartApi, clearStoreCrosshair: () => void) {
   clearStoreCrosshair();
   chart.clearCrosshairPosition();
   window.requestAnimationFrame(() => chart.clearCrosshairPosition());
+}
+
+function TimeZoneMenu({
+  anchor,
+  now,
+  selected,
+  onSelect,
+  onClose,
+}: {
+  anchor: ElementAnchor | null;
+  now: Date;
+  selected: ChartTimeZoneId;
+  onSelect: (timeZone: ChartTimeZoneId) => void;
+  onClose: () => void;
+}) {
+  const position = useMemo(
+    () =>
+      floatingMenuPosition(
+        anchor ?? {
+          left: window.innerWidth - 96,
+          right: window.innerWidth - 8,
+          top: window.innerHeight - 32,
+          bottom: window.innerHeight,
+        },
+        TIME_ZONE_MENU_SIZE,
+      ),
+    [anchor],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return createPortal(
+    <div data-chart-ui className="fixed inset-0 z-[85]" onMouseDown={onClose}>
+      <div
+        className="fixed max-h-[min(520px,calc(100vh-48px))] w-[232px] overflow-y-auto rounded-sm border border-[#2b2b2b] bg-[#1f1f1f] py-1 text-[13px] font-semibold text-[#d1d4dc] shadow-2xl shadow-black/60"
+        style={{ left: position.left, top: position.top }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        {CHART_TIME_ZONE_OPTIONS.map((option, index) => {
+          const active = option.id === selected;
+          const afterPinned = index === 1;
+          return (
+            <div key={option.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(option.id)}
+                className={cn(
+                  "flex h-8 w-full items-center justify-between px-10 text-left transition-colors hover:bg-[#2a2a2a]",
+                  active ? "bg-[#2f2f2f] text-[#f0f3fa]" : "text-[#d1d4dc]",
+                )}
+              >
+                <span className="truncate">{timeZoneOptionText(option, now)}</span>
+              </button>
+              {afterPinned && <div className="my-1 h-px bg-[#2b2b2b]" />}
+            </div>
+          );
+        })}
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 export function ChartTimeToolbar({
@@ -99,13 +209,21 @@ export function ChartTimeToolbar({
   const [now, setNow] = useState(() => new Date());
   const [goToOpen, setGoToOpen] = useState(false);
   const [goToAnchor, setGoToAnchor] = useState<ElementAnchor | null>(null);
+  const [timeZoneOpen, setTimeZoneOpen] = useState(false);
+  const [timeZoneAnchor, setTimeZoneAnchor] = useState<ElementAnchor | null>(null);
+  const [timeZoneId, setTimeZoneId] = useState<ChartTimeZoneId>(readInitialTimeZone);
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
   const setCrosshair = useSetAtom(setCrosshairAtom);
+  const activeTimeZone = chartTimeZoneToIntlTimeZone(timeZoneId);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(TIME_ZONE_STORAGE_KEY, timeZoneId);
+  }, [timeZoneId]);
 
   const jumpShortcut = (shortcut: (typeof TIME_RANGE_SHORTCUTS)[number]) => {
     if (!chart) return;
@@ -127,6 +245,11 @@ export function ChartTimeToolbar({
   const openGoTo = (event: MouseEvent<HTMLButtonElement>) => {
     setGoToAnchor(elementAnchorFromRect(event.currentTarget.getBoundingClientRect()));
     setGoToOpen(true);
+  };
+
+  const openTimeZoneMenu = (event: MouseEvent<HTMLButtonElement>) => {
+    setTimeZoneAnchor(elementAnchorFromRect(event.currentTarget.getBoundingClientRect()));
+    setTimeZoneOpen(true);
   };
 
   return (
@@ -156,20 +279,39 @@ export function ChartTimeToolbar({
             <CalendarDays size={16} />
           </button>
         </div>
-        <div className="ml-auto hidden shrink-0 px-2 font-semibold text-[#f0f3fa] sm:block">
-          {formatClock(now)} {formatUtcOffset(now)}
-        </div>
+        <button
+          type="button"
+          aria-label="Select time zone"
+          title="Time zone"
+          onClick={openTimeZoneMenu}
+          className="ml-auto hidden h-7 shrink-0 rounded-sm px-2 font-semibold text-[#f0f3fa] transition-colors hover:bg-[#2a2a2a] sm:block"
+        >
+          {formatClock(now, activeTimeZone)} {formatUtcOffset(now, activeTimeZone)}
+        </button>
       </div>
+      {timeZoneOpen && (
+        <TimeZoneMenu
+          anchor={timeZoneAnchor}
+          now={now}
+          selected={timeZoneId}
+          onSelect={(next) => {
+            setTimeZoneId(next);
+            setTimeZoneOpen(false);
+          }}
+          onClose={() => setTimeZoneOpen(false)}
+        />
+      )}
       {goToOpen && chart && (
         <GoToDialog
           chart={chart}
           candles={candles}
+          timeZone={activeTimeZone}
           anchor={goToAnchor}
           onJump={(time) =>
             setGoToMarker({
               id: Date.now(),
               time,
-              label: formatGoToMarkerLabel(time),
+              label: formatGoToMarkerLabel(time, activeTimeZone),
             })
           }
           onNavigationApplied={() => clearChartCrosshair(chart, () => setCrosshair(null))}
@@ -191,6 +333,7 @@ export function ChartTimeToolbar({
 function GoToDialog({
   chart,
   candles,
+  timeZone,
   anchor,
   onJump,
   onNavigationApplied,
@@ -198,12 +341,16 @@ function GoToDialog({
 }: {
   chart: IChartApi;
   candles: Candle[];
+  timeZone?: string;
   anchor: ElementAnchor | null;
   onJump: (time: number) => void;
   onNavigationApplied: () => void;
   onClose: () => void;
 }) {
-  const defaults = useMemo(() => defaultRange(candles), [candles]);
+  const defaults = useMemo(() => defaultRange(candles, timeZone), [
+    candles,
+    timeZone,
+  ]);
   const [tab, setTab] = useState<GoToTab>("date");
   const [singleDate, setSingleDate] = useState(defaults.singleDate);
   const [singleTime, setSingleTime] = useState(defaults.singleTime);
@@ -217,7 +364,7 @@ function GoToDialog({
   const cells = calendarCells(month.getFullYear(), month.getMonth());
   const selectedDate =
     tab === "date" ? singleDate : activeRangeField === "from" ? fromDate : toDate;
-  const todayDate = formatDateInput(Date.now());
+  const todayDate = formatDateInput(Date.now(), timeZone);
 
   const setMonthFromDateDraft = (value: string) => {
     const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(value);
@@ -237,7 +384,7 @@ function GoToDialog({
 
   const apply = () => {
     if (tab === "date") {
-      const targetTime = parseLocalDateTime(singleDate, singleTime);
+      const targetTime = parseLocalDateTime(singleDate, singleTime, timeZone);
       if (targetTime == null) return;
       const index = firstCandleIndexAtOrAfter(candles, targetTime);
       if (index == null) return;
@@ -252,8 +399,8 @@ function GoToDialog({
       return;
     }
 
-    const from = parseLocalDateTime(fromDate, fromTime);
-    const to = parseLocalDateTime(toDate, toTime);
+    const from = parseLocalDateTime(fromDate, fromTime, timeZone);
+    const to = parseLocalDateTime(toDate, toTime, timeZone);
     if (from == null || to == null) return;
     chart.timeScale().setVisibleRange({
       from: Math.min(from, to) as UTCTimestamp,
