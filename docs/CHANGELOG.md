@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Long/Short position lot sizing prefill (2026-07-05)
+- Added `positionLotSizing.ts` as the shared contract for converting
+  Long/Short `SL-entry` distance, account risk, symbol tick value, and lot
+  step/min/max into a normalized lot quantity.
+- Long/Short Position prefill now includes `quantity` when symbol lot metadata
+  is available, so the bottom `Trade` panel can fill the `Lot` field directly
+  from the drawing.
+- The `Trade` ticket now uses the same lot-sizing helper for MT5 risk metrics
+  instead of keeping a separate local formula.
+- Added `npm run test:position` coverage for risk-to-lot sizing and
+  Long/Short prefill quantity.
+
 ### Fixed - Go to date jump parity (2026-07-05)
 - Widened and tuned the `Go to` dialog to better match TradingView's Date /
   Custom range popup and prevent the date/time input row from overflowing.

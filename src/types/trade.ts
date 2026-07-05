@@ -60,6 +60,7 @@ export interface OrderPrefill {
   stopLoss?: number;
   takeProfit?: number;
   riskPct?: number;
+  /** Explicit ticket size/lot, e.g. calculated from a Long/Short drawing. */
   quantity?: number;
   drawingId?: string;
   source?: 'context-menu' | 'position-drawing';

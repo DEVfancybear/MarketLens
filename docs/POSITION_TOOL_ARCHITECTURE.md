@@ -1,6 +1,6 @@
 # Long / Short Position Tool Architecture
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 
 This document defines the shared contract for the TradingView-style Long and
 Short Position drawing tools.
@@ -53,6 +53,14 @@ handles, but they are virtual handles derived from this three-point model.
   inference, tick snapping, and long/short level clamping.
 - `positionTradePrefill.ts`: converts a completed Long/Short drawing into a
   Trade ticket prefill payload.
+- `src/services/positionLotSizing.ts`: shared risk-to-lot sizing from
+  `abs(SL - entry)` ticks, symbol tick value, account size, risk value, and
+  broker lot step/min/max.
+
+When MT5 bridge symbol info exists, lot sizing uses the broker-provided
+`tickSize`, `tickValue`, and lot constraints. Before the bridge provides symbol
+info, the fallback uses the app market registry's `tickSize` so the calculated
+lot follows the same pip/tick distance shown by the Long/Short tool.
 
 `PositionTool.ts` should call these helpers. Avoid reimplementing position math
 inside render, hit-test, or settings code.
@@ -104,6 +112,10 @@ Prefill mapping:
 - `points[1].price` -> take profit.
 - `points[2].price` -> stop loss.
 - `riskValue` -> risk percent when `riskUnit` is `%`.
+- `accountSize`, `riskValue`, `riskUnit`, `entry`, and `stop` -> `quantity`
+  when symbol lot metadata is available. The formula is:
+  `risk money / (abs(stop - entry) / tickSize * tickValue)`, normalized to the
+  symbol lot step and clamped to min/max lot.
 - `drawing.id` -> ticket source `drawingId`.
 - Long/Short side sets the planned Buy/Sell side in the ticket.
 - Order type is inferred from entry versus current market price:
@@ -160,4 +172,5 @@ The TypeScript suite under `tests/position/` verifies:
 - six-handle movement,
 - body drag width preservation,
 - target/stop clamping to the correct side,
-- Trade ticket prefill payloads for Long and Short positions.
+- Trade ticket prefill payloads for Long and Short positions,
+- lot sizing from SL-entry distance, risk money, tick value, and lot step.

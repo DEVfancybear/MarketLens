@@ -1,4 +1,9 @@
 import type { Drawing, OrderPrefill, OrderType, Side } from "@/types";
+import {
+  calculatePositionVolumeFromRisk,
+  positionRiskAmount,
+  type PositionLotSymbolInfo,
+} from "../../../../services/positionLotSizing";
 
 export function inferPositionOrderType(
   side: Side,
@@ -13,6 +18,7 @@ export function inferPositionOrderType(
 export function buildOrderPrefillFromPositionDrawing(
   drawing: Drawing,
   marketPrice: number | null | undefined,
+  context: { symbolInfo?: PositionLotSymbolInfo } = {},
 ): OrderPrefill | null {
   if (drawing.tool !== "long" && drawing.tool !== "short") return null;
   const entry = drawing.points[0]?.price;
@@ -33,6 +39,22 @@ export function buildOrderPrefillFromPositionDrawing(
   if (Number.isFinite(target)) prefill.takeProfit = Number(target);
   if (drawing.riskUnit === "%" && Number.isFinite(drawing.riskValue)) {
     prefill.riskPct = Number(drawing.riskValue);
+  }
+  if (context.symbolInfo && Number.isFinite(stop)) {
+    const riskAmount = positionRiskAmount(
+      drawing.accountSize,
+      drawing.riskValue,
+      drawing.riskUnit,
+    );
+    if (riskAmount != null) {
+      const volume = calculatePositionVolumeFromRisk({
+        entryPrice: Number(entry),
+        stopPrice: Number(stop),
+        riskAmount,
+        symbolInfo: context.symbolInfo,
+      });
+      if (volume != null) prefill.quantity = volume;
+    }
   }
   return prefill;
 }

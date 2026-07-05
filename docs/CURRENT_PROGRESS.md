@@ -1,8 +1,20 @@
 # CURRENT PROGRESS
 
-_Last updated: 2026-07-05 (Go to marker dismissal parity)_
+_Last updated: 2026-07-05 (Long/Short lot sizing prefill)_
 
 ## Completed this session (2026-07-05)
+
+### Long/Short lot sizing prefill
+- Added `src/services/positionLotSizing.ts` so risk-to-lot math is shared by
+  Long/Short drawing prefill and the Trade ticket instead of being duplicated
+  in UI code.
+- Long/Short Position prefill now computes `quantity` from the drawing's
+  account size, risk value/unit, `abs(SL - entry)` tick distance, symbol tick
+  value, and broker lot step/min/max.
+- `OrderTicket` now fills the `Lot` input from position-drawing `quantity` and
+  uses the same shared helper for MT5 risk/reward metrics.
+- Added `tests/position/positionLotSizing.test.ts` plus prefill quantity
+  coverage in `positionTradePrefill.test.ts`.
 
 ### Go to date parity fix
 - Tuned the `Go to` popup width, input grid, weekday strip, selected/today

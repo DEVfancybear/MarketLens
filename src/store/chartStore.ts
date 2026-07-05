@@ -12,12 +12,16 @@ import type {
   Timeframe,
 } from "@/types";
 import { TEMPLATE_STYLE_KEYS, styleFamily } from "@/types";
+import type { Mt5SymbolInfo } from "@/types/mt5";
 import { localStore } from "@/services/storage";
+import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
+import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
 import { DEFAULT_PINE_SOURCE, extractPineScriptMeta } from "@/services/pineScript";
 import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing/tools/positionTradePrefill";
 import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
+import { mt5SymbolInfoAtom } from "./mt5Store";
 import { logAtom, setBottomTabAtom } from "./uiStore";
 
 // Default to a Binance crypto symbol so the chart streams live with no API key.
@@ -42,6 +46,16 @@ function touchesPositionTradePlan(patch: Partial<Drawing>) {
 
 function latestMarketPrice(candles: Candle[]) {
   return candles[candles.length - 1]?.close ?? null;
+}
+
+function positionLotSymbolInfo(
+  symbol: string,
+  bridgeInfo: Mt5SymbolInfo | undefined,
+): Mt5SymbolInfo {
+  if (bridgeInfo) return bridgeInfo;
+  const fallback = getDefaultMt5SymbolInfo(symbol);
+  const marketTickSize = getMarketSymbol(symbol)?.tickSize;
+  return marketTickSize ? { ...fallback, tickSize: marketTickSize } : fallback;
 }
 
 // Style templates are GLOBAL (not per-symbol) — a trendline preset applies on
@@ -175,7 +189,10 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
       { time: tRight, price: stop },
     ];
     const marketPrice = latestMarketPrice(candles);
-    const prefill = buildOrderPrefillFromPositionDrawing(drawing, marketPrice);
+    const symbol = _get(symbolAtom);
+    const prefill = buildOrderPrefillFromPositionDrawing(drawing, marketPrice, {
+      symbolInfo: positionLotSymbolInfo(symbol, _get(mt5SymbolInfoAtom)[symbol]),
+    });
     if (prefill) {
       set(setOrderPrefillAtom, prefill);
       set(setBottomTabAtom, "trade");
@@ -223,6 +240,12 @@ export const updateDrawingAtom = atom(
         const prefill = buildOrderPrefillFromPositionDrawing(
           updatedDrawing,
           latestMarketPrice(_get(candlesAtom)),
+          {
+            symbolInfo: positionLotSymbolInfo(
+              _get(symbolAtom),
+              _get(mt5SymbolInfoAtom)[_get(symbolAtom)],
+            ),
+          },
         );
         if (prefill) set(setOrderPrefillAtom, prefill);
       }
@@ -312,6 +335,12 @@ export const selectDrawingAtom = atom(
       const prefill = buildOrderPrefillFromPositionDrawing(
         drawing,
         latestMarketPrice(_get(candlesAtom)),
+        {
+          symbolInfo: positionLotSymbolInfo(
+            _get(symbolAtom),
+            _get(mt5SymbolInfoAtom)[_get(symbolAtom)],
+          ),
+        },
       );
       if (prefill) set(setOrderPrefillAtom, prefill);
     }
@@ -333,6 +362,12 @@ export const toggleSelectDrawingAtom = atom(null, (_get, set, id: string) => {
     const prefill = buildOrderPrefillFromPositionDrawing(
       drawing,
       latestMarketPrice(_get(candlesAtom)),
+      {
+        symbolInfo: positionLotSymbolInfo(
+          _get(symbolAtom),
+          _get(mt5SymbolInfoAtom)[_get(symbolAtom)],
+        ),
+      },
     );
     if (prefill) set(setOrderPrefillAtom, prefill);
   }

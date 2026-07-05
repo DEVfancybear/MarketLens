@@ -20,12 +20,18 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { symbolAtom } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { computeRisk } from "@/services/tradeEngine";
+import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
+import {
+  computeMt5PositionRiskMetrics,
+  formatPositionVolume,
+  normalizePositionVolume,
+} from "@/services/positionLotSizing";
 import { makeClientOrderId, normalizeMt5Side } from "@/services/mt5/protocol";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { on } from "@/utils/bus";
 import { cn } from "@/utils/cn";
 import type { OrderPrefill, OrderType, Side } from "@/types";
-import type { Mt5CloseAllRequest, Mt5OrderRequest, Mt5SymbolInfo } from "@/types/mt5";
+import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
 import { LiveOrderConfirmDialog } from "./LiveOrderConfirmDialog";
 
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
@@ -78,19 +84,27 @@ export function OrderTicket() {
     [type, entry, sl, tp, risk, price, equity],
   );
   const activeSymbolInfo = mt5SymbolInfo[symbol];
+  const sizingSymbolInfo = useMemo(
+    () => {
+      if (activeSymbolInfo) return activeSymbolInfo;
+      const fallback = getDefaultMt5SymbolInfo(symbol);
+      const marketTickSize = getMarketSymbol(symbol)?.tickSize;
+      return marketTickSize ? { ...fallback, tickSize: marketTickSize } : fallback;
+    },
+    [activeSymbolInfo, symbol],
+  );
   const metrics = useMemo(() => {
-    if (executionMode !== "mt5" || !activeSymbolInfo) return simulatorMetrics;
-    return computeMt5RiskMetrics({
-      entry: type === "market" ? price : num(entry),
-      stopLoss: num(sl),
-      takeProfit: num(tp),
+    if (executionMode !== "mt5") return simulatorMetrics;
+    return computeMt5PositionRiskMetrics({
+      entryPrice: type === "market" ? price : num(entry),
+      stopPrice: num(sl),
+      targetPrice: num(tp),
       riskPct: num(risk) ?? 1,
       equity: mt5Account?.equity ?? equity,
-      symbolInfo: activeSymbolInfo,
+      symbolInfo: sizingSymbolInfo,
       volumeOverride: num(mt5Lot),
     });
   }, [
-    activeSymbolInfo,
     entry,
     equity,
     executionMode,
@@ -99,16 +113,19 @@ export function OrderTicket() {
     risk,
     simulatorMetrics,
     sl,
+    sizingSymbolInfo,
     mt5Lot,
     tp,
     type,
   ]);
 
   const buildMt5Order = (side: Side): Mt5OrderRequest => {
-    const info = mt5SymbolInfo[symbol];
+    const info = mt5SymbolInfo[symbol] ?? sizingSymbolInfo;
     const manualVolume = num(mt5Lot);
     const volume =
-      manualVolume != null ? manualVolume : normalizeMt5Volume(metrics.positionSize, info);
+      manualVolume != null
+        ? manualVolume
+        : normalizePositionVolume(metrics.positionSize, info);
     return {
       clientOrderId: makeClientOrderId(),
       chartSymbol: symbol,
@@ -205,14 +222,19 @@ export function OrderTicket() {
     if (prefill.stopLoss != null) setSl(formatTicketNumber(prefill.stopLoss));
     if (prefill.takeProfit != null) setTp(formatTicketNumber(prefill.takeProfit));
     if (prefill.riskPct != null) setRisk(formatPercent(prefill.riskPct));
+    if (prefill.quantity != null && Number.isFinite(prefill.quantity)) {
+      setMt5Lot(formatPositionVolume(prefill.quantity, sizingSymbolInfo));
+    } else if (prefill.source === "position-drawing") {
+      setMt5Lot("");
+    }
   };
   const sizeTitle =
-    executionMode === "mt5" && activeSymbolInfo
+    executionMode === "mt5"
       ? [
-          `MT5 max lot: ${activeSymbolInfo.maxLot}`,
-          activeSymbolInfo.maxLotReason ? `cap: ${activeSymbolInfo.maxLotReason}` : undefined,
-          activeSymbolInfo.brokerMaxLot != null ? `broker max: ${activeSymbolInfo.brokerMaxLot}` : undefined,
-          activeSymbolInfo.bridgeMaxLot != null ? `bridge max: ${activeSymbolInfo.bridgeMaxLot}` : undefined,
+          `MT5 max lot: ${sizingSymbolInfo.maxLot}`,
+          sizingSymbolInfo.maxLotReason ? `cap: ${sizingSymbolInfo.maxLotReason}` : undefined,
+          sizingSymbolInfo.brokerMaxLot != null ? `broker max: ${sizingSymbolInfo.brokerMaxLot}` : undefined,
+          sizingSymbolInfo.bridgeMaxLot != null ? `bridge max: ${sizingSymbolInfo.bridgeMaxLot}` : undefined,
         ]
           .filter(Boolean)
           .join(" | ")
@@ -365,46 +387,6 @@ export function OrderTicket() {
   );
 }
 
-function computeMt5RiskMetrics({
-  entry,
-  stopLoss,
-  takeProfit,
-  riskPct,
-  equity,
-  symbolInfo,
-  volumeOverride,
-}: {
-  entry?: number;
-  stopLoss?: number;
-  takeProfit?: number;
-  riskPct: number;
-  equity: number;
-  symbolInfo: Mt5SymbolInfo;
-  volumeOverride?: number;
-}) {
-  const riskMoney = (equity * riskPct) / 100;
-  const entryPrice = entry && Number.isFinite(entry) ? entry : 0;
-  const stopDistance = stopLoss != null && entryPrice > 0 ? Math.abs(entryPrice - stopLoss) : 0;
-  const tickSize = symbolInfo.tickSize && symbolInfo.tickSize > 0 ? symbolInfo.tickSize : symbolInfo.point;
-  const tickValue = symbolInfo.tickValue && symbolInfo.tickValue > 0 ? symbolInfo.tickValue : 1;
-  const moneyPerLotAtStop = stopDistance > 0 ? (stopDistance / tickSize) * tickValue : 0;
-  const rawLots = moneyPerLotAtStop > 0 ? riskMoney / moneyPerLotAtStop : symbolInfo.minLot;
-  const positionSize =
-    volumeOverride != null && Number.isFinite(volumeOverride) && volumeOverride > 0
-      ? volumeOverride
-      : normalizeMt5Volume(rawLots, symbolInfo);
-  const actualRisk = moneyPerLotAtStop > 0 ? moneyPerLotAtStop * positionSize : riskMoney;
-  const rewardDistance = takeProfit != null && entryPrice > 0 ? Math.abs(takeProfit - entryPrice) : 0;
-  const rewardAmount = rewardDistance > 0 ? (rewardDistance / tickSize) * tickValue * positionSize : 0;
-  return {
-    positionSize,
-    riskPct,
-    riskAmount: actualRisk,
-    rewardAmount,
-    riskReward: actualRisk > 0 ? rewardAmount / actualRisk : 0,
-  };
-}
-
 function TradeInput({
   label,
   value,
@@ -430,21 +412,6 @@ function TradeInput({
       />
     </label>
   );
-}
-
-function normalizeMt5Volume(
-  value: number,
-  info: { minLot: number; maxLot: number; lotStep: number } | undefined,
-) {
-  const minLot = info?.minLot ?? 0.01;
-  const maxLot = info?.maxLot ?? 1;
-  const step = info?.lotStep ?? 0.01;
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  const bounded = Math.min(Math.max(value, minLot), maxLot);
-  if (!Number.isFinite(step) || step <= 0) return Number(bounded.toFixed(8));
-  const decimals = String(step).includes(".") ? String(step).split(".")[1].length : 8;
-  const rounded = Math.floor((bounded + Number.EPSILON) / step) * step;
-  return Number(rounded.toFixed(Math.min(Math.max(decimals, 0), 8)));
 }
 
 function Metric({

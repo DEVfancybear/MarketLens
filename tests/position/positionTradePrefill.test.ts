@@ -6,6 +6,21 @@ import {
   buildOrderPrefillFromPositionDrawing,
   inferPositionOrderType,
 } from "../../src/components/chart/drawing/tools/positionTradePrefill";
+import type { Mt5SymbolInfo } from "../../src/types/mt5";
+
+const symbolInfo: Mt5SymbolInfo = {
+  chartSymbol: "TEST",
+  brokerSymbol: "TEST",
+  digits: 2,
+  point: 0.01,
+  tickSize: 1,
+  tickValue: 1,
+  minLot: 0.01,
+  maxLot: 100,
+  lotStep: 0.01,
+  tradeMode: "full",
+  updatedAt: 0,
+};
 
 function position(tool: "long" | "short", id = "dw-test"): Drawing {
   return {
@@ -13,6 +28,7 @@ function position(tool: "long" | "short", id = "dw-test"): Drawing {
     tool,
     color: "#089981",
     lineWidth: 1,
+    accountSize: 1000,
     riskUnit: "%",
     riskValue: 2.5,
     points:
@@ -73,5 +89,22 @@ test("position prefill keeps the source drawing id for multi-position charts", (
     buildOrderPrefillFromPositionDrawing(position("short", "dw-short-b"), 99)
       ?.drawingId,
     "dw-short-b",
+  );
+});
+
+test("position prefill includes lot quantity from account risk and SL distance", () => {
+  assert.deepEqual(
+    buildOrderPrefillFromPositionDrawing(position("long"), 101, { symbolInfo }),
+    {
+      source: "position-drawing",
+      drawingId: "dw-test",
+      side: "long",
+      type: "limit",
+      price: 100,
+      stopLoss: 90,
+      takeProfit: 110,
+      riskPct: 2.5,
+      quantity: 2.5,
+    },
   );
 });

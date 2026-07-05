@@ -13,6 +13,8 @@ TradingView-style contract:
 - Editing a price should snap to the symbol tick size and round-trip back to the
   same tick count.
 - Long and Short use the same math, with opposite profit/stop directions.
+- Lot sizing is derived from Long/Short `SL-entry` distance, account risk,
+  symbol tick value, and broker lot step/min/max.
 - Numeric inputs must allow temporary drafts like empty text, `-`, or `.`
   without committing them as zero.
 
@@ -36,11 +38,14 @@ Add tests here when changing:
 - `src/components/chart/drawing/tools/positionMetrics.ts`
 - `src/components/chart/drawing/tools/positionGeometry.ts`
 - `src/components/chart/drawing/tools/positionInput.ts`
+- `src/services/positionLotSizing.ts`
 - Long/Short Position settings fields for `Ticks`, `Price`, or `Entry price`
 - Position labels that display tick count or price
 - Position handle movement, resize behavior, or body dragging
 - Position drawing to Trade ticket prefill behavior
+- Position drawing to Trade ticket lot/quantity prefill behavior
 - Symbol metadata that changes tick size or price formatting
 
 Prefer testing the shared math helpers instead of duplicating component-level
-logic.  The UI should consume the helpers, not reinvent tick/price conversion.
+logic.  The UI should consume the helpers, not reinvent tick/price or lot
+sizing conversion.
