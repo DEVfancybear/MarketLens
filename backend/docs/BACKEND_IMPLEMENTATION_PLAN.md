@@ -177,28 +177,260 @@ for clients beyond the framework swap.
 
 ---
 
-## Phase 6+ — Remaining resources (one mini-phase each)
+## Phases 6–13 — Remaining resources (one mini-phase each)
 
-Each follows the identical template: **migration → sqlc queries → repo → Fiber handler behind
-`RequireAuth` → add its slice to `sync/bootstrap` → tests**. Recommended order (value + independence):
+Every phase below follows the **same six-step template**:
 
-| Phase | Resource            | Migration        | Endpoints (see `API.md`)                    |
-| ----- | ------------------- | ---------------- | ------------------------------------------- |
-| 6     | Watchlists          | `0004_charting`  | `/watchlists`, `/watchlists/:id/symbols`    |
-| 7     | Drawings            | `0004_charting`  | `/drawings` (+ `/drawings/batch` for sync)  |
-| 8     | Indicators          | `0004_charting`  | `/indicators`                               |
-| 9     | Pine scripts        | `0004_charting`  | `/pine-scripts`                             |
-| 10    | Alerts + push tokens| `0005_alerts`    | `/alerts`, `/alerts/history`, `/push/tokens`|
-| 11    | Journal + screenshots | `0007_journal` | `/journal`, `/screenshots` (+ object storage) |
-| 12    | Layouts             | `0003_settings`  | `/layouts`                                  |
-| 13    | Simulated trading   | `0006_trading`   | `/sim/*`                                     |
+1. **Migration** — add/confirm the tables from `DATABASE.md` (the migration file may be shared by
+   several phases; apply it once).
+2. **Queries** — write `internal/db/queries/<domain>.sql`; run `sqlc generate`.
+3. **Repo** — `internal/<domain>/repo.go`, all queries scoped by `user_id` (ownership enforced in SQL,
+   never trusted from the client).
+4. **Handler** — `internal/<domain>/handler.go`, Fiber routes mounted behind `auth.RequireAuth`;
+   register from `httpserver/server.go`.
+5. **Bootstrap slice** — fill this resource's array in `GET /api/v1/sync/bootstrap` (Phase 5 seam).
+6. **Tests** — repo unit tests + handler integration tests via `app.Test`.
 
-> Migrations `0004`–`0007` can be authored up front (Phase 1-style) or lazily per phase — either
-> works as long as the `journal_entries.position_id → positions` FK ordering from `DATABASE.md` §10
-> is respected.
+**Shared acceptance for every phase:** CRUD works for the owner; a second user cannot see or mutate
+the first user's rows (cross-user access returns `404`, never `403` — don't leak existence); the
+resource shows up in `sync/bootstrap` where applicable; the matching frontend store switches from
+localStorage-only to write-through (local first, then API) without regressing offline use.
 
-**Per-resource acceptance:** CRUD works for the owner, cross-user access returns `404`, and the
-resource appears in `sync/bootstrap` (where applicable).
+> **Migration ordering:** `0003`–`0007` may be authored up front (Phase 1 style) or lazily per phase.
+> The one hard rule: create `positions` (`0006_trading`) **before** `journal_entries` (`0007_journal`)
+> because of the `journal_entries.position_id → positions` FK (`DATABASE.md` §10). Migrations 6/7/8/9
+> all reference `0004_charting`, so that file lands whenever the first of those phases starts.
+
+---
+
+### Phase 6 — Watchlists
+
+**Goal:** Durable, multi-list watchlists. The current single localStorage array (`watchlist`) becomes
+the user's **"Default"** list; the schema already supports several named lists.
+
+**Tables:** `watchlists`, `watchlist_symbols` (`DATABASE.md` §7.1). **Frontend store:** `watchlistStore`.
+
+**Steps**
+1. Migration `0004_charting` (watchlists portion).
+2. Queries: list watchlists + their symbols (one round trip, ordered by `position`); create/rename/
+   reorder list; add/remove symbol. Rely on `UNIQUE (watchlist_id, symbol)` for idempotent adds.
+3. Repo: on first bootstrap for a user with no lists, seed a "Default" list from the request payload
+   (one-time upload of the local array).
+4. Handler: `GET/POST /api/v1/watchlists`, `PATCH/DELETE /api/v1/watchlists/:id`,
+   `POST /api/v1/watchlists/:id/symbols`, `DELETE /api/v1/watchlists/:id/symbols/:symbol`.
+5. Bootstrap: `watchlists` array (each with nested `symbols`).
+
+**Acceptance**
+- Add/remove a symbol, rename a list, reorder — all survive reload and appear on a second device.
+- Adding a duplicate symbol is a no-op (no 500, no dup row).
+
+**Complexity:** Low–Medium.
+
+---
+
+### Phase 7 — Drawings
+
+**Goal:** Persist chart drawings per symbol. Highest write-volume resource → needs a batch path and
+idempotent sync, not one HTTP call per drag.
+
+**Table:** `drawings` (`DATABASE.md` §7.2; geometry/style live untouched in `payload jsonb`, matching
+the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). **Frontend store:**
+`chartStore.drawings` (persisted today as `drawings:<symbol>`).
+
+**Steps**
+1. Migration `0004_charting` (drawings portion) — note the `UNIQUE (user_id, client_id)` partial index
+   used for sync dedupe.
+2. Queries: list by `(user_id, symbol)`; insert; update payload/flags; delete; **bulk upsert** keyed on
+   `client_id` (`INSERT … ON CONFLICT (user_id, client_id) DO UPDATE`).
+3. Repo: `client_id` is the client-generated drawing id → retries and multi-device edits converge
+   instead of duplicating.
+4. Handler: `GET /api/v1/drawings?symbol=…`, `POST /api/v1/drawings`, `PUT/PATCH/DELETE
+   /api/v1/drawings/:id`, `POST /api/v1/drawings/batch` (sync flush).
+5. Bootstrap: **omit** the full drawing set from bootstrap (can be large) — load lazily per symbol on
+   first chart open; only counts/recent symbols belong in bootstrap if anything.
+
+**Acceptance**
+- Draw → reload → drawing reappears pinned to the same `(time, price)`.
+- Flushing the same batch twice (retry) yields no duplicates.
+- `PATCH { locked: true }` / `{ hidden: true }` round-trips.
+- Fetching another user's drawing id → `404`.
+
+**Complexity:** Medium (batch + dedupe is the real work).
+
+---
+
+### Phase 8 — Indicators
+
+**Goal:** Persist indicator presets (built-in EMA/RSI/MACD/… settings + enabled + order).
+
+**Table:** `indicator_presets` (`DATABASE.md` §7.3). **Frontend store:** `chartStore.indicators`
+(persisted as `indicators`). *Pine-authored* indicators are Phase 9.
+
+**Steps**
+1. Migration `0004_charting` (indicator_presets portion).
+2. Queries: list ordered by `position`; create; update `settings`/`enabled`/`position`; delete.
+3. Repo: keep `settings jsonb` opaque (mirror the frontend indicator options shape).
+4. Handler: `GET/POST /api/v1/indicators`, `PUT/DELETE /api/v1/indicators/:id`.
+5. Bootstrap: `indicators` array.
+
+**Acceptance**
+- Add EMA(50), toggle it off, reorder against another indicator, reload — state preserved and ordered.
+
+**Complexity:** Low.
+
+---
+
+### Phase 9 — Pine scripts
+
+**Goal:** Persist user-authored Pine-like source indicators.
+
+**Table:** `pine_scripts` (`DATABASE.md` §7.4). **Frontend store:** `chartStore` Pine state
+(persisted as `pineScripts`).
+
+**Steps**
+1. Migration `0004_charting` (pine_scripts portion).
+2. Queries: list **metadata only** (id, name, updated_at — not `source`, keep the list light); get one
+   with full `source`; create; update `name`/`source`/`meta`; delete.
+3. Repo: cap `source` length (e.g. reject > 64 KB) to bound payloads; store last compile status in
+   `meta jsonb`.
+4. Handler: `GET /api/v1/pine-scripts`, `GET /api/v1/pine-scripts/:id`, `POST /api/v1/pine-scripts`,
+   `PUT/DELETE /api/v1/pine-scripts/:id`.
+5. Bootstrap: `pineScripts` array (metadata only; fetch source on open).
+
+**Acceptance**
+- Save a script, edit its source, reload → latest source loads; list stays lightweight (no source).
+- Oversized source is rejected with `400 bad_request`.
+
+**Complexity:** Low–Medium.
+
+---
+
+### Phase 10 — Alerts + push tokens
+
+**Goal:** Persist price alerts, their trigger history, and per-device FCM tokens. Unlocks
+closed-browser push targeting every device.
+
+**Tables:** `alerts`, `alert_events`, `push_tokens` (`DATABASE.md` §8, §5.4). **Frontend stores:**
+`alertStore` (persisted as `alerts`), plus the existing push seam (`usePushAlertSync`,
+`notificationStore`).
+
+**Steps**
+1. Migration `0005_alerts` (alerts + alert_events) — `push_tokens` ships in `0002_auth`, so it already
+   exists by now.
+2. Queries: alerts CRUD + status transitions (`active`↔`paused`, → `triggered`/`expired`); record an
+   `alert_events` row on trigger; list events per alert and per user; upsert push token on
+   `UNIQUE (fcm_token)`; delete token.
+3. Repo: keep condition/price validation server-side (`above|below|crossUp|crossDown`, `price > 0`).
+4. Handler: `GET/POST /api/v1/alerts`, `PATCH/DELETE /api/v1/alerts/:id`,
+   `GET /api/v1/alerts/:id/events`, `GET /api/v1/alerts/history`,
+   `POST /api/v1/push/tokens`, `DELETE /api/v1/push/tokens/:tok`.
+5. Bootstrap: `alerts` array. Integrate token registration with the existing frontend push flow (send
+   the FCM token to `/push/tokens` instead of / in addition to the current Next API route).
+
+**Acceptance**
+- Create an alert, pause and resume it, delete it — all persist and sync.
+- A trigger writes an `alert_events` row; `/alerts/history` returns it newest-first.
+- Registering the same FCM token twice updates `last_seen_at`, no dup row.
+
+**Complexity:** Medium.
+
+---
+
+### Phase 11 — Journal + screenshots
+
+**Goal:** Persist trade journal entries and their screenshots. The heaviest phase — introduces
+**object storage** (image bytes never touch the DB or the API body).
+
+**Tables:** `journal_entries`, `screenshots` (`DATABASE.md` §9). **Frontend store:** `journalStore`
+(IndexedDB today) + screenshot blobs (IndexedDB today).
+
+**Steps**
+1. Migration `0007_journal` — requires `positions` (`0006_trading`) to exist first for the
+   `position_id` FK. If Phase 13 hasn't run, ship the FK as a follow-up `ALTER TABLE` or make the
+   column nullable-without-FK initially.
+2. Add an object-storage client (`internal/storage`, S3/R2 via `aws-sdk-go-v2` or MinIO). Config:
+   bucket, region, credentials, public/base URL.
+3. Queries: journal CRUD with filters (`symbol`, `tag` via the `gin(tags)` index, pagination); insert/
+   list/delete screenshot metadata by entry.
+4. Handler:
+   - Journal: `GET /api/v1/journal?symbol=&tag=&limit=`, `POST`, `GET/PUT/DELETE /api/v1/journal/:id`.
+   - Screenshots (two-step upload — bytes go straight to storage): `POST
+     /api/v1/screenshots/upload-url` (returns a pre-signed PUT URL + `storageKey`), `POST
+     /api/v1/screenshots` (register metadata), `GET /api/v1/screenshots/:id` (short-lived signed view
+     URL), `DELETE /api/v1/screenshots/:id`.
+5. Bootstrap: **omit** journal/screenshots (large) — fetch lazily when the Journal panel opens.
+6. Blob cleanup: on screenshot/entry delete, enqueue the `storage_key` for out-of-band blob removal
+   (`DATABASE.md` §13); log the key before the cascade.
+
+**Acceptance**
+- Create an entry with tags, filter by tag and by symbol, paginate — correct results.
+- Upload a screenshot via the pre-signed URL, attach it to an entry, fetch its view URL, render it.
+- Deleting the entry removes its screenshot rows and schedules blob deletion.
+
+**Complexity:** High (object storage + pre-signed URLs + cleanup).
+
+---
+
+### Phase 12 — Layouts
+
+**Goal:** Persist saved chart layouts / templates (indicators + drawings + panel snapshot per named
+layout), TradingView-style.
+
+**Table:** `layouts` (`DATABASE.md` §6.2 — already created in `0003_settings`, Phase 5). **Frontend:**
+the `Layout` menu in `TopToolbar` (currently visual presets only — this makes them persistent).
+
+**Steps**
+1. No new migration (reuse `0003_settings`).
+2. Queries: list; create; update; delete; enforce **single default** (`is_default`) — setting one
+   clears the others in the same statement/transaction.
+3. Repo: `state jsonb` bundles the snapshot; keep it opaque.
+4. Handler: `GET/POST /api/v1/layouts`, `PUT/DELETE /api/v1/layouts/:id`.
+5. Bootstrap: `layouts` array.
+
+**Acceptance**
+- Save a layout, mark it default, save another and mark *it* default → exactly one default remains.
+- Load a saved layout → indicators/drawings/panels restore from `state`.
+
+**Complexity:** Low–Medium.
+
+---
+
+### Phase 13 — Simulated trading
+
+**Goal:** Persist backtest/replay simulator accounts, orders, and positions so sessions and analytics
+survive reloads. **Optional / last** — the fill + SL/TP engine stays in the frontend
+(`services/tradeEngine.ts`); the backend is the durable store + analytics aggregator, not a matching
+engine.
+
+**Tables:** `sim_accounts`, `orders`, `positions` (`DATABASE.md` §10). **Frontend store:** `tradeStore`
+(runtime-only today).
+
+**Steps**
+1. Migration `0006_trading` (before `0007_journal`).
+2. Queries: accounts CRUD; insert order; update order status on fill; open position; close position
+   (set `status`, `pnl`, `r_multiple`, `closed_at`); list positions by status; analytics aggregate.
+3. Repo: analytics computed in SQL where cheap (win rate, profit factor, expectancy, max drawdown,
+   R-distribution) — mirrors `services/analyticsEngine.ts` so the numbers match the client.
+4. Handler: `GET/POST /api/v1/sim/accounts`, `GET /api/v1/sim/accounts/:id/positions`,
+   `POST /api/v1/sim/accounts/:id/orders`, `POST /api/v1/sim/positions/:id/close`,
+   `GET /api/v1/sim/accounts/:id/analytics`.
+5. Bootstrap: **omit** (per-account, fetched when the Trade/Analytics panel opens).
+
+**Acceptance**
+- Create an account, record an order → position → close it; equity/PnL persist across reload.
+- `/analytics` returns win rate / PF / expectancy / max DD matching the frontend engine on the same
+  trade set.
+
+**Complexity:** Medium–High (analytics parity with the client is the tricky part).
+
+---
+
+### Phase order rationale
+
+6–9 are pure CRUD over `0004_charting` and unblock the most-used cross-device features (watchlist,
+drawings, indicators, Pine) with the least risk. 10 adds status transitions + push. 11 is gated on
+object storage (heaviest infra). 12 is trivial once `0003` exists. 13 is last because it depends on
+`0006` and needs analytics parity — and the simulator is usable client-side until then.
 
 ---
 

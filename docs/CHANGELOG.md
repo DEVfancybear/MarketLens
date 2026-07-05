@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-07-06 — Detailed backend plan for Phases 6–13 (planning)
+
+**Feature:** Expanded the per-feature persistence phases (6–13) from a summary table into full specs
+matching the Phase 0–5 format (goal, tables, steps, endpoints, acceptance, complexity), plus a shared
+six-step template and phase-order rationale.
+
+**Files:**
+- `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` — Phases 6 (watchlists), 7 (drawings), 8 (indicators),
+  9 (pine scripts), 10 (alerts + push tokens), 11 (journal + screenshots / object storage),
+  12 (layouts), 13 (simulated trading) written out in detail.
+
 ## 2026-07-06 — Frontend Google auth UI (implemented)
 
 **Feature:** Login/register with a Google account on the frontend. Firebase Auth runs the Google
