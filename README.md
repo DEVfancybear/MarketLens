@@ -11,9 +11,8 @@ This repository is a monorepo with separate frontend and backend packages.
 | Path | Purpose |
 | --- | --- |
 | `frontend/` | Next.js / React / TypeScript trading terminal UI |
-| `backend/` | Go API server using Fiber |
+| `backend/` | Go Fiber API + Python MT5 bridge sidecar |
 | `docs/` | Root-level monorepo documentation |
-| `bridge/` | Local bridge tooling and integration experiments |
 
 ## Quick Start
 

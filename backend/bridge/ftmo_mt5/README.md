@@ -15,7 +15,7 @@ Standalone Python WebSocket bridge for copying web-terminal order intents to an 
 ```powershell
 python -m venv .venv-ftmo
 .\.venv-ftmo\Scripts\Activate.ps1
-python -m pip install -r bridge\ftmo_mt5\requirements.txt
+python -m pip install -r backend\bridge\ftmo_mt5\requirements.txt
 ```
 
 ## Dry-Run
@@ -51,6 +51,7 @@ Use `cap` to diagnose risk sizing:
   need SL below entry and TP above entry; Sell orders need SL above entry and TP below entry.
 
 ```powershell
+cd backend
 $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"
 python -m bridge.ftmo_mt5.service
@@ -69,6 +70,7 @@ $env:FTMO_MT5_LOGIN="12345678"
 $env:FTMO_MT5_PASSWORD="master-password"
 $env:FTMO_MT5_SERVER="FTMO-Server"
 $env:FTMO_MT5_TERMINAL_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
+cd backend
 python -m bridge.ftmo_mt5.service
 ```
 

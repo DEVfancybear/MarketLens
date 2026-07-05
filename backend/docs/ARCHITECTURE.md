@@ -2,7 +2,14 @@
 
 ## Overview
 
-The backend is a Go API service. The selected web framework is **Fiber**.
+The backend has two components:
+
+1. **Go Fiber API** — the primary HTTP server handling web requests.
+2. **Python MT5 Bridge** — an isolated sidecar service that manages FTMO broker connectivity
+   over WebSockets.
+
+The Python bridge runs as a separate process. It is not part of the Go Fiber request path and
+does not share memory or state with the Go server.
 
 Fiber is the common HTTP layer for routing, middleware, request parsing, response writing, and
 future API modules. Keep business logic outside handlers so modules remain testable without an HTTP
@@ -17,7 +24,21 @@ internal/
   httpserver/            # Fiber app setup, routing, middleware, lifecycle
   health/                # Health-check endpoint
   middleware/            # Shared Fiber-compatible middleware
+bridge/                  # Python MT5 WebSocket bridge (sidecar)
+  ftmo_mt5/              # FTMO broker integration
 ```
+
+## Python MT5 Bridge (Sidecar)
+
+The `bridge/` directory contains a standalone Python WebSocket service for FTMO MT5 broker
+integration. It is an **isolated sidecar** — it does not share memory, state, or request paths
+with the Go Fiber API.
+
+Key characteristics:
+- Runs as a separate OS process (`python -m bridge.ftmo_mt5.service`).
+- Communicates with the frontend directly over WebSockets (port 8787 by default).
+- Handles broker credentials, order execution, risk guards, symbol metadata, and audit logging.
+- Does not depend on the Go server and can be started/stopped independently.
 
 ## Request Flow
 

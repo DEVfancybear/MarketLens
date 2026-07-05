@@ -10,7 +10,7 @@ try:
     import websockets
 except ImportError as exc:  # pragma: no cover - runtime setup guard
     raise SystemExit(
-        "Missing dependency: install with `python -m pip install -r bridge/ftmo_mt5/requirements.txt`",
+        "Missing dependency: install with `python -m pip install -r backend/bridge/ftmo_mt5/requirements.txt`",
     ) from exc
 
 WebSocketServerProtocol = Any
@@ -21,7 +21,6 @@ from .mt5_adapter import Mt5Adapter
 from .protocol import PROTOCOL_VERSION, envelope, now_ms, validate_envelope
 from .risk_guard import RiskGuard
 from .symbols import SymbolMeta, public_symbol_info
-
 
 BRIDGE_VERSION = "0.1.0"
 
@@ -42,9 +41,13 @@ class FtmoMt5Service:
         self.audit.open()
         if not self.config.dry_run:
             self.adapter.connect()
-        async with websockets.serve(self.handle_client, self.config.host, self.config.port):
+        async with websockets.serve(
+            self.handle_client, self.config.host, self.config.port
+        ):
             snapshot_task = asyncio.create_task(self.snapshot_poller())
-            print(f"[ftmo-mt5-python] listening on ws://{self.config.host}:{self.config.port}")
+            print(
+                f"[ftmo-mt5-python] listening on ws://{self.config.host}:{self.config.port}"
+            )
             print(
                 f"[ftmo-mt5-python] enabled={self.config.enabled} "
                 f"dryRun={self.config.dry_run} audit={self.config.audit_path}",
@@ -97,18 +100,28 @@ class FtmoMt5Service:
                 continue
             await self.broadcast_snapshots()
 
-    async def handle_message(self, websocket: WebSocketServerProtocol, raw: str) -> None:
+    async def handle_message(
+        self, websocket: WebSocketServerProtocol, raw: str
+    ) -> None:
         try:
             message = json.loads(raw)
         except json.JSONDecodeError:
-            await self.send(websocket, "error", {"code": "INVALID_MESSAGE", "message": "Invalid JSON"})
+            await self.send(
+                websocket,
+                "error",
+                {"code": "INVALID_MESSAGE", "message": "Invalid JSON"},
+            )
             return
         ok, reason = validate_envelope(message)
         if not ok:
             await self.send(
                 websocket,
                 "error",
-                {"code": "UNSUPPORTED_VERSION", "message": reason or "Invalid message", "requestId": message.get("id")},
+                {
+                    "code": "UNSUPPORTED_VERSION",
+                    "message": reason or "Invalid message",
+                    "requestId": message.get("id"),
+                },
                 message.get("id"),
             )
             return
@@ -131,36 +144,64 @@ class FtmoMt5Service:
             await self.send(
                 websocket,
                 "error",
-                {"code": "UNKNOWN_TYPE", "message": message_type, "requestId": message.get("id")},
+                {
+                    "code": "UNKNOWN_TYPE",
+                    "message": message_type,
+                    "requestId": message.get("id"),
+                },
                 message.get("id"),
             )
 
-    async def handle_auth(self, websocket: WebSocketServerProtocol, message: dict[str, Any]) -> None:
+    async def handle_auth(
+        self, websocket: WebSocketServerProtocol, message: dict[str, Any]
+    ) -> None:
         token = (message.get("payload") or {}).get("token") or ""
         if self.config.token and token != self.config.token:
-            await self.send(websocket, "auth.reject", {"reason": "invalid_token"}, message.get("id"))
+            await self.send(
+                websocket, "auth.reject", {"reason": "invalid_token"}, message.get("id")
+            )
             self.audit.append("auth_reject", {"requestId": message.get("id")})
             return
         session_id = f"ftmo_py_{uuid.uuid4().hex[:12]}"
-        await self.send(websocket, "auth.ok", {"sessionId": session_id, "expiresAt": now_ms() + 3600000}, message.get("id"))
-        self.audit.append("auth_ok", {"requestId": message.get("id"), "sessionId": session_id})
+        await self.send(
+            websocket,
+            "auth.ok",
+            {"sessionId": session_id, "expiresAt": now_ms() + 3600000},
+            message.get("id"),
+        )
+        self.audit.append(
+            "auth_ok", {"requestId": message.get("id"), "sessionId": session_id}
+        )
         await self.send_snapshots(websocket)
 
-    async def handle_order_place(self, websocket: WebSocketServerProtocol, message: dict[str, Any]) -> None:
+    async def handle_order_place(
+        self, websocket: WebSocketServerProtocol, message: dict[str, Any]
+    ) -> None:
         order = message.get("payload") or {}
         client_order_id = order.get("clientOrderId")
-        self.audit.append("order_request", {"requestId": message.get("id"), "order": order})
+        self.audit.append(
+            "order_request", {"requestId": message.get("id"), "order": order}
+        )
         duplicate = self.seen_client_orders.get(client_order_id)
         if duplicate:
-            await self.send(websocket, duplicate["type"], {**duplicate["payload"], "requestId": message.get("id")}, message.get("id"))
+            await self.send(
+                websocket,
+                duplicate["type"],
+                {**duplicate["payload"], "requestId": message.get("id")},
+                message.get("id"),
+            )
             return
 
         meta = self.symbol_meta(order.get("chartSymbol", ""))
         equity = self.account_equity()
         open_risk = self.open_risk_at_stops()
-        valid, code, detail, snapshot, volume = self.risk.validate_order(order, meta, equity, open_risk, self.readiness()["ready"])
+        valid, code, detail, snapshot, volume = self.risk.validate_order(
+            order, meta, equity, open_risk, self.readiness()["ready"]
+        )
         if not valid:
-            await self.reject_order(websocket, message, code, detail, client_order_id, snapshot)
+            await self.reject_order(
+                websocket, message, code, detail, client_order_id, snapshot
+            )
             return
 
         ack = {
@@ -179,7 +220,13 @@ class FtmoMt5Service:
             execution = self.simulate_fill(order, meta, volume, message.get("id"))
             self.seen_client_orders[client_order_id]["execution"] = execution
             await self.broadcast("execution.report", execution)
-            await self.broadcast("positions.update", {"action": "upsert", "position": self.dry_run_positions[execution["ticket"]]})
+            await self.broadcast(
+                "positions.update",
+                {
+                    "action": "upsert",
+                    "position": self.dry_run_positions[execution["ticket"]],
+                },
+            )
             await self.broadcast("account.snapshot", self.account_snapshot())
             await self.broadcast("risk.snapshot", self.risk_snapshot())
             self.audit.append("execution_report", {"execution": execution})
@@ -187,7 +234,14 @@ class FtmoMt5Service:
 
         success, result = self.adapter.place_order(order, volume)
         if not success:
-            await self.reject_order(websocket, message, result.get("code", "MT5_REJECT"), result.get("message", "MT5 rejected order"), client_order_id, snapshot)
+            await self.reject_order(
+                websocket,
+                message,
+                result.get("code", "MT5_REJECT"),
+                result.get("message", "MT5 rejected order"),
+                client_order_id,
+                snapshot,
+            )
             return
         self.risk.mark_order()
         execution = {
@@ -208,74 +262,113 @@ class FtmoMt5Service:
         await self.broadcast_snapshots()
         self.audit.append("execution_report", {"execution": execution, "mt5": result})
 
-    async def handle_order_close(self, websocket: WebSocketServerProtocol, message: dict[str, Any]) -> None:
+    async def handle_order_close(
+        self, websocket: WebSocketServerProtocol, message: dict[str, Any]
+    ) -> None:
         req = message.get("payload") or {}
         await self.ack(websocket, message, req.get("clientOrderId"))
         if self.config.dry_run:
             position = self.dry_run_positions.pop(str(req.get("ticket")), None)
             if position:
-                await self.broadcast("execution.report", {
-                    "requestId": message.get("id"),
-                    "clientOrderId": req.get("clientOrderId"),
-                    "ticket": req.get("ticket"),
-                    "symbol": position["symbol"],
-                    "brokerSymbol": position["brokerSymbol"],
-                    "status": "closed",
-                    "volume": req.get("volume") or position["volume"],
-                    "price": position["currentPrice"],
-                    "dryRun": True,
-                    "executedAt": now_ms(),
-                })
-                await self.broadcast("positions.update", {"action": "remove", "position": position})
+                await self.broadcast(
+                    "execution.report",
+                    {
+                        "requestId": message.get("id"),
+                        "clientOrderId": req.get("clientOrderId"),
+                        "ticket": req.get("ticket"),
+                        "symbol": position["symbol"],
+                        "brokerSymbol": position["brokerSymbol"],
+                        "status": "closed",
+                        "volume": req.get("volume") or position["volume"],
+                        "price": position["currentPrice"],
+                        "dryRun": True,
+                        "executedAt": now_ms(),
+                    },
+                )
+                await self.broadcast(
+                    "positions.update", {"action": "remove", "position": position}
+                )
                 await self.broadcast("account.snapshot", self.account_snapshot())
             return
-        success, result = self.adapter.close_position(str(req.get("ticket")), req.get("volume"), req.get("deviationPoints"))
+        success, result = self.adapter.close_position(
+            str(req.get("ticket")), req.get("volume"), req.get("deviationPoints")
+        )
         if not success:
-            await self.reject_order(websocket, message, result.get("code", "MT5_REJECT"), result.get("message", "MT5 rejected close"), req.get("clientOrderId"))
+            await self.reject_order(
+                websocket,
+                message,
+                result.get("code", "MT5_REJECT"),
+                result.get("message", "MT5 rejected close"),
+                req.get("clientOrderId"),
+            )
             return
-        await self.broadcast("execution.report", {
-            "requestId": message.get("id"),
-            "clientOrderId": req.get("clientOrderId"),
-            "ticket": req.get("ticket"),
-            "symbol": "UNKNOWN",
-            "brokerSymbol": "UNKNOWN",
-            "status": "closed",
-            "price": result.get("price"),
-            "executedAt": now_ms(),
-        })
+        await self.broadcast(
+            "execution.report",
+            {
+                "requestId": message.get("id"),
+                "clientOrderId": req.get("clientOrderId"),
+                "ticket": req.get("ticket"),
+                "symbol": "UNKNOWN",
+                "brokerSymbol": "UNKNOWN",
+                "status": "closed",
+                "price": result.get("price"),
+                "executedAt": now_ms(),
+            },
+        )
         await self.broadcast_snapshots()
 
-    async def handle_order_close_all(self, websocket: WebSocketServerProtocol, message: dict[str, Any]) -> None:
+    async def handle_order_close_all(
+        self, websocket: WebSocketServerProtocol, message: dict[str, Any]
+    ) -> None:
         req = message.get("payload") or {}
         if not self.config.close_all_enabled:
-            await self.reject_order(websocket, message, "CLOSE_ALL_DISABLED", "FTMO close-all is disabled", req.get("clientOrderId"))
+            await self.reject_order(
+                websocket,
+                message,
+                "CLOSE_ALL_DISABLED",
+                "FTMO close-all is disabled",
+                req.get("clientOrderId"),
+            )
             return
         await self.ack(websocket, message, req.get("clientOrderId"))
-        positions = list(self.dry_run_positions.values()) if self.config.dry_run else self.adapter.positions()
+        positions = (
+            list(self.dry_run_positions.values())
+            if self.config.dry_run
+            else self.adapter.positions()
+        )
         closed = 0
         for position in positions:
             if req.get("chartSymbol") and position["symbol"] != req.get("chartSymbol"):
                 continue
             if self.config.dry_run:
                 self.dry_run_positions.pop(position["ticket"], None)
-                await self.broadcast("positions.update", {"action": "remove", "position": position})
+                await self.broadcast(
+                    "positions.update", {"action": "remove", "position": position}
+                )
                 closed += 1
             else:
-                success, _ = self.adapter.close_position(position["ticket"], None, req.get("deviationPoints"))
+                success, _ = self.adapter.close_position(
+                    position["ticket"], None, req.get("deviationPoints")
+                )
                 closed += 1 if success else 0
-        await self.broadcast("execution.report", {
-            "requestId": message.get("id"),
-            "clientOrderId": req.get("clientOrderId"),
-            "symbol": req.get("chartSymbol") or "ALL",
-            "brokerSymbol": req.get("brokerSymbol") or "ALL",
-            "status": "closed",
-            "volume": closed,
-            "dryRun": self.config.dry_run,
-            "executedAt": now_ms(),
-        })
+        await self.broadcast(
+            "execution.report",
+            {
+                "requestId": message.get("id"),
+                "clientOrderId": req.get("clientOrderId"),
+                "symbol": req.get("chartSymbol") or "ALL",
+                "brokerSymbol": req.get("brokerSymbol") or "ALL",
+                "status": "closed",
+                "volume": closed,
+                "dryRun": self.config.dry_run,
+                "executedAt": now_ms(),
+            },
+        )
         await self.broadcast_snapshots()
 
-    async def handle_order_modify(self, websocket: WebSocketServerProtocol, message: dict[str, Any]) -> None:
+    async def handle_order_modify(
+        self, websocket: WebSocketServerProtocol, message: dict[str, Any]
+    ) -> None:
         req = message.get("payload") or {}
         await self.ack(websocket, message, req.get("clientOrderId"))
         if self.config.dry_run:
@@ -284,21 +377,39 @@ class FtmoMt5Service:
                 position["sl"] = req.get("sl")
                 position["tp"] = req.get("tp")
                 position["updatedAt"] = now_ms()
-                await self.broadcast("positions.update", {"action": "upsert", "position": position})
+                await self.broadcast(
+                    "positions.update", {"action": "upsert", "position": position}
+                )
             return
-        success, result = self.adapter.modify_position(str(req.get("ticket")), req.get("sl"), req.get("tp"))
+        success, result = self.adapter.modify_position(
+            str(req.get("ticket")), req.get("sl"), req.get("tp")
+        )
         if not success:
-            await self.reject_order(websocket, message, result.get("code", "MT5_REJECT"), result.get("message", "MT5 rejected modify"), req.get("clientOrderId"))
+            await self.reject_order(
+                websocket,
+                message,
+                result.get("code", "MT5_REJECT"),
+                result.get("message", "MT5 rejected modify"),
+                req.get("clientOrderId"),
+            )
             return
         await self.broadcast_snapshots()
 
-    async def handle_order_cancel(self, websocket: WebSocketServerProtocol, message: dict[str, Any]) -> None:
+    async def handle_order_cancel(
+        self, websocket: WebSocketServerProtocol, message: dict[str, Any]
+    ) -> None:
         req = message.get("payload") or {}
         await self.ack(websocket, message, req.get("clientOrderId"))
         if not self.config.dry_run:
             success, result = self.adapter.cancel_order(str(req.get("ticket")))
             if not success:
-                await self.reject_order(websocket, message, result.get("code", "MT5_REJECT"), result.get("message", "MT5 rejected cancel"), req.get("clientOrderId"))
+                await self.reject_order(
+                    websocket,
+                    message,
+                    result.get("code", "MT5_REJECT"),
+                    result.get("message", "MT5 rejected cancel"),
+                    req.get("clientOrderId"),
+                )
                 return
         await self.broadcast_snapshots()
 
@@ -317,22 +428,35 @@ class FtmoMt5Service:
     def account_snapshot(self) -> dict[str, Any]:
         account = self.adapter.account_snapshot()
         if self.config.dry_run:
-            floating = sum(float(position.get("profit", 0) or 0) for position in self.dry_run_positions.values())
+            floating = sum(
+                float(position.get("profit", 0) or 0)
+                for position in self.dry_run_positions.values()
+            )
             account["equity"] = float(account["balance"]) + floating
             account["freeMargin"] = account["equity"]
         account["tradeAllowed"] = self.readiness()["ready"]
         return account
 
     def risk_snapshot(self) -> dict[str, Any]:
-        return self.risk.snapshot(self.account_equity(), self.open_risk_at_stops(), 0, self.readiness()["ready"])
+        return self.risk.snapshot(
+            self.account_equity(),
+            self.open_risk_at_stops(),
+            0,
+            self.readiness()["ready"],
+        )
 
     def account_equity(self) -> float:
-        return float(self.account_snapshot().get("equity", self.config.account_size) or self.config.account_size)
+        return float(
+            self.account_snapshot().get("equity", self.config.account_size)
+            or self.config.account_size
+        )
 
     def open_risk_at_stops(self) -> float:
         total = 0.0
         for position in self.positions_snapshot():
-            total += self.risk.estimate_position_risk(position, self.symbol_meta(position["symbol"]))
+            total += self.risk.estimate_position_risk(
+                position, self.symbol_meta(position["symbol"])
+            )
         return total
 
     def symbol_meta(self, chart_symbol: str) -> SymbolMeta | None:
@@ -367,7 +491,13 @@ class FtmoMt5Service:
             return []
         return self.adapter.orders()
 
-    def simulate_fill(self, order: dict[str, Any], meta: SymbolMeta | None, volume: float, request_id: str | None) -> dict[str, Any]:
+    def simulate_fill(
+        self,
+        order: dict[str, Any],
+        meta: SymbolMeta | None,
+        volume: float,
+        request_id: str | None,
+    ) -> dict[str, Any]:
         self.ticket_sequence += 1
         ticket = str(self.ticket_sequence)
         price = float(order.get("price") or 0)
@@ -407,21 +537,36 @@ class FtmoMt5Service:
         await self.send(websocket, "ftmo.readiness", self.readiness())
         await self.send(websocket, "risk.snapshot", self.risk_snapshot())
         await self.send(websocket, "account.snapshot", self.account_snapshot())
-        await self.send(websocket, "positions.snapshot", {"positions": self.positions_snapshot()})
-        await self.send(websocket, "orders.snapshot", {"orders": self.orders_snapshot()})
+        await self.send(
+            websocket, "positions.snapshot", {"positions": self.positions_snapshot()}
+        )
+        await self.send(
+            websocket, "orders.snapshot", {"orders": self.orders_snapshot()}
+        )
         for chart_symbol in self.config.symbols:
             meta = self.symbol_meta(chart_symbol)
             if meta is not None:
                 self.log_symbol_caps_once(meta)
-                await self.send(websocket, "symbol.info", public_symbol_info(meta, self.config.max_order_volume))
+                await self.send(
+                    websocket,
+                    "symbol.info",
+                    public_symbol_info(meta, self.config.max_order_volume),
+                )
 
     async def broadcast_snapshots(self) -> None:
         await self.broadcast("account.snapshot", self.account_snapshot())
-        await self.broadcast("positions.snapshot", {"positions": self.positions_snapshot()})
+        await self.broadcast(
+            "positions.snapshot", {"positions": self.positions_snapshot()}
+        )
         await self.broadcast("orders.snapshot", {"orders": self.orders_snapshot()})
         await self.broadcast("risk.snapshot", self.risk_snapshot())
 
-    async def ack(self, websocket: WebSocketServerProtocol, message: dict[str, Any], client_order_id: str | None) -> None:
+    async def ack(
+        self,
+        websocket: WebSocketServerProtocol,
+        message: dict[str, Any],
+        client_order_id: str | None,
+    ) -> None:
         await self.send(
             websocket,
             "order.ack",
@@ -451,7 +596,10 @@ class FtmoMt5Service:
             "snapshot": snapshot or self.risk_snapshot(),
         }
         if client_order_id:
-            self.seen_client_orders[client_order_id] = {"type": "order.reject", "payload": payload}
+            self.seen_client_orders[client_order_id] = {
+                "type": "order.reject",
+                "payload": payload,
+            }
         self.audit.append("order_reject", payload)
         await self.send(websocket, "order.reject", payload, message.get("id"))
 
@@ -462,13 +610,20 @@ class FtmoMt5Service:
         payload: dict[str, Any],
         request_id: str | None = None,
     ) -> None:
-        await websocket.send(json.dumps(envelope(message_type, payload, request_id), separators=(",", ":")))
+        await websocket.send(
+            json.dumps(
+                envelope(message_type, payload, request_id), separators=(",", ":")
+            )
+        )
 
     async def broadcast(self, message_type: str, payload: dict[str, Any]) -> None:
         if not self.clients:
             return
         message = json.dumps(envelope(message_type, payload), separators=(",", ":"))
-        await asyncio.gather(*(client.send(message) for client in list(self.clients)), return_exceptions=True)
+        await asyncio.gather(
+            *(client.send(message) for client in list(self.clients)),
+            return_exceptions=True,
+        )
 
 
 async def main() -> None:

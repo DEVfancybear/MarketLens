@@ -62,6 +62,38 @@ Backend dev server: `http://localhost:8080`
 Backend framework decision: **Go Fiber**. Backend docs and future backend routes should follow
 Fiber conventions.
 
+## Python MT5 Bridge (Backend Sidecar)
+
+Install dependencies:
+
+```bash
+cd backend
+python -m pip install -r bridge/ftmo_mt5/requirements.txt
+```
+
+Dry-run (no MT5 required):
+
+```bash
+cd backend
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="true"
+python -m bridge.ftmo_mt5.service
+```
+
+Live mode:
+
+```bash
+cd backend
+$env:FTMO_MT5_ENABLED="true"
+$env:FTMO_BRIDGE_DRY_RUN="false"
+$env:FTMO_BRIDGE_ALLOW_LIVE="true"
+$env:FTMO_MT5_LOGIN="12345678"
+$env:FTMO_MT5_PASSWORD="master-password"
+$env:FTMO_MT5_SERVER="FTMO-Server"
+$env:FTMO_MT5_TERMINAL_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
+python -m bridge.ftmo_mt5.service
+```
+
 ## Environment Variables
 
 ### Frontend
@@ -69,12 +101,27 @@ Fiber conventions.
 Copy `.env.example` to `frontend/.env.local` when the variable is frontend-only. Keep shared
 examples in the root `.env.example`.
 
-### Backend
+### Backend (Go)
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP listen port |
 | `APP_ENV` | `development` | Runtime environment |
+
+### Backend (Python MT5 Bridge)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `FTMO_MT5_ENABLED` | `false` | Enable the bridge |
+| `FTMO_BRIDGE_DRY_RUN` | `true` | Simulate without MT5 |
+| `FTMO_BRIDGE_ALLOW_LIVE` | `false` | Allow live MT5 connection |
+| `FTMO_BRIDGE_BIND_HOST` | `127.0.0.1` | WebSocket listen host |
+| `FTMO_BRIDGE_BIND_PORT` | `8787` | WebSocket listen port |
+| `FTMO_BRIDGE_TOKEN` | (empty) | Optional auth token |
+| `FTMO_MT5_LOGIN` | (empty) | MT5 account login |
+| `FTMO_MT5_PASSWORD` | (empty) | MT5 account password |
+| `FTMO_MT5_SERVER` | (empty) | MT5 broker server |
+| `FTMO_MT5_TERMINAL_PATH` | (empty) | Path to terminal64.exe |
 
 ## Deployment
 
