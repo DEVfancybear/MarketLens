@@ -12,6 +12,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   favorites are `1m`, `5m`, and `15m`.
 - The active interval remains visible even when it is not favorited, matching
   TradingView's current-resolution affordance.
+- Added the `Add custom interval` modal with Type/Interval fields and a
+  disabled Add button until the entry maps to a supported chart timeframe.
 - Added UI model tests for favorite normalization, toggle order, and active
   interval visibility.
 

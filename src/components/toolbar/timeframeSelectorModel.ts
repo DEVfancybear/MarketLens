@@ -10,8 +10,24 @@ export type TimeframeMenuGroup = {
   items: TimeframeMenuItem[];
 };
 
+export type CustomIntervalType =
+  | "minutes"
+  | "hours"
+  | "days"
+  | "weeks"
+  | "months"
+  | "range";
+
 export const TIMEFRAME_FAVORITES_KEY = "tv:favoriteTimeframes";
 export const DEFAULT_FAVORITE_TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m"];
+export const CUSTOM_INTERVAL_TYPES: CustomIntervalType[] = [
+  "minutes",
+  "hours",
+  "days",
+  "weeks",
+  "months",
+  "range",
+];
 
 export const TIMEFRAME_MENU_GROUPS: TimeframeMenuGroup[] = [
   {
@@ -86,6 +102,30 @@ export function timeframeShortLabel(timeframe: Timeframe): string {
   return timeframe;
 }
 
+export function customIntervalToTimeframe(
+  type: CustomIntervalType,
+  interval: string,
+): Timeframe | null {
+  const value = Number(interval.trim());
+  if (!Number.isInteger(value) || value <= 0) return null;
+
+  const key = `${type}:${value}`;
+  const map: Record<string, Timeframe> = {
+    "minutes:1": "1m",
+    "minutes:3": "3m",
+    "minutes:5": "5m",
+    "minutes:15": "15m",
+    "minutes:30": "30m",
+    "hours:1": "1H",
+    "hours:2": "2H",
+    "hours:4": "4H",
+    "days:1": "1D",
+    "weeks:1": "1W",
+    "months:1": "1M",
+  };
+  return map[key] ?? null;
+}
+
 function byTimeframeOrder(a: Timeframe, b: Timeframe): number {
   return (TIMEFRAME_ORDER.get(a) ?? 0) - (TIMEFRAME_ORDER.get(b) ?? 0);
 }
@@ -108,6 +148,15 @@ export function toggleFavoriteTimeframe(
   if (next.has(timeframe)) next.delete(timeframe);
   else next.add(timeframe);
   return [...next].sort(byTimeframeOrder);
+}
+
+export function addFavoriteTimeframe(
+  values: readonly string[],
+  timeframe: Timeframe,
+): Timeframe[] {
+  return [...new Set([...normalizeFavoriteTimeframes(values), timeframe])].sort(
+    byTimeframeOrder,
+  );
 }
 
 export function visibleToolbarTimeframes(

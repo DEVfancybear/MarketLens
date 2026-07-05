@@ -12,6 +12,9 @@ _Last updated: 2026-07-05 (Top interval selector popup)_
   ticks, seconds, minutes, hours, and days.
 - Added star toggles that persist favorite intervals under
   `tv:favoriteTimeframes`; default favorites are `1m`, `5m`, and `15m`.
+- Added the `Add custom interval` modal from the interval popup. It supports
+  Type/Interval entry, validates through `customIntervalToTimeframe()`, adds
+  supported intervals to favorites, and selects the new timeframe.
 - Added `timeframeSelectorModel.ts` and `tests/ui/timeframeSelectorModel.test.ts`
   so favorite normalization, toggle ordering, and active interval visibility
   are covered without rendering React.

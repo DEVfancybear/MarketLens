@@ -1,15 +1,20 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Plus, Star } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, ChevronUp, Plus, Star, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { localStore } from "@/services/storage";
 import type { Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
 import {
+  CUSTOM_INTERVAL_TYPES,
+  type CustomIntervalType,
   DEFAULT_FAVORITE_TIMEFRAMES,
   TIMEFRAME_FAVORITES_KEY,
   TIMEFRAME_MENU_GROUPS,
+  addFavoriteTimeframe,
+  customIntervalToTimeframe,
   normalizeFavoriteTimeframes,
   timeframeShortLabel,
   toggleFavoriteTimeframe,
@@ -26,6 +31,7 @@ export function TimeframeSelector({
   const [favorites, setFavorites] = useState<Timeframe[]>(
     DEFAULT_FAVORITE_TIMEFRAMES,
   );
+  const [customOpen, setCustomOpen] = useState(false);
 
   useEffect(() => {
     const saved = localStore.get<string[]>(
@@ -88,6 +94,10 @@ export function TimeframeSelector({
           <div className="max-h-[min(640px,calc(100vh-56px))] overflow-y-auto bg-[#1f1f1f] py-1 text-[13px] font-semibold text-[#d1d4dc]">
             <button
               type="button"
+              onClick={() => {
+                close();
+                setCustomOpen(true);
+              }}
               className="flex h-10 w-full items-center gap-2 border-b border-[#343434] px-3 text-left text-[#d1d4dc] transition-colors hover:bg-[#2a2a2a] hover:text-[#f0f3fa]"
             >
               <Plus size={18} className="text-[#b2b5be]" />
@@ -183,6 +193,163 @@ export function TimeframeSelector({
           </div>
         )}
       </Dropdown>
+
+      {customOpen && (
+        <CustomIntervalDialog
+          onClose={() => setCustomOpen(false)}
+          onAdd={(nextTimeframe) => {
+            persistFavorites(addFavoriteTimeframe(favorites, nextTimeframe));
+            onChange(nextTimeframe);
+            setCustomOpen(false);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function CustomIntervalDialog({
+  onClose,
+  onAdd,
+}: {
+  onClose: () => void;
+  onAdd: (timeframe: Timeframe) => void;
+}) {
+  const [type, setType] = useState<CustomIntervalType>("minutes");
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [interval, setInterval] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const resolved = customIntervalToTimeframe(type, interval);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const add = () => {
+    if (!resolved) return;
+    onAdd(resolved);
+  };
+
+  return createPortal(
+    <div
+      data-chart-ui
+      className="fixed inset-0 z-[90] bg-black/10"
+      onMouseDown={onClose}
+    >
+      <div
+        className="fixed left-[min(48px,4vw)] top-[min(96px,12vh)] w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-md border border-[#2f2f2f] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex h-[68px] items-center justify-between border-b border-[#343434] px-5">
+          <div className="text-[22px] font-semibold text-[#d1d4dc]">
+            Add custom interval
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded text-[#d1d4dc] hover:bg-[#2a2a2a]"
+          >
+            <X size={22} />
+          </button>
+        </div>
+
+        <div className="space-y-3 px-5 py-5">
+          <div className="grid grid-cols-[96px_minmax(0,180px)] items-center gap-3">
+            <label className="text-[14px] font-semibold text-[#d1d4dc]">
+              Type
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setTypeOpen((open) => !open)}
+                className={cn(
+                  "flex h-[36px] w-full items-center justify-between rounded-md border border-[#5d606b] bg-[#202020] px-2 text-left text-[14px] font-semibold text-[#f0f3fa]",
+                  typeOpen && "border-[#2962ff]",
+                )}
+              >
+                <span>{type}</span>
+                <ChevronDown
+                  size={16}
+                  className={cn("transition-transform", typeOpen && "rotate-180")}
+                />
+              </button>
+              {typeOpen && (
+                <div className="absolute left-0 top-[38px] z-[95] w-[76px] overflow-hidden rounded-sm border border-[#252525] bg-[#111] py-1 shadow-2xl shadow-black/60">
+                  {CUSTOM_INTERVAL_TYPES.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => {
+                        setType(item);
+                        setTypeOpen(false);
+                      }}
+                      className={cn(
+                        "h-8 w-full px-3 text-left text-[14px] font-semibold transition-colors hover:bg-[#2a2a2a]",
+                        item === type
+                          ? "bg-[#f0f3fa] text-[#131722]"
+                          : "text-[#d1d4dc]",
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[96px_minmax(0,180px)] items-center gap-3">
+            <label
+              htmlFor="custom-interval-value"
+              className="text-[14px] font-semibold text-[#d1d4dc]"
+            >
+              Interval
+            </label>
+            <input
+              ref={inputRef}
+              id="custom-interval-value"
+              value={interval}
+              inputMode="numeric"
+              onChange={(event) => {
+                const next = event.target.value.replace(/[^\d]/g, "");
+                setInterval(next);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") add();
+              }}
+              className="h-[36px] rounded-md border border-[#5d606b] bg-[#202020] px-2 text-[14px] font-semibold text-[#f0f3fa] outline-none focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+            />
+          </div>
+        </div>
+
+        <div className="flex h-[66px] items-center justify-end gap-3 border-t border-[#343434] px-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded-md border border-[#f0f3fa] px-4 text-[14px] font-semibold text-[#f0f3fa] hover:bg-[#2a2a2a]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!resolved}
+            onClick={add}
+            className="h-9 rounded-md bg-[#f0f3fa] px-4 text-[14px] font-semibold text-[#131722] hover:bg-white disabled:cursor-default disabled:bg-[#4a4a4a] disabled:text-[#666a73] disabled:hover:bg-[#4a4a4a]"
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

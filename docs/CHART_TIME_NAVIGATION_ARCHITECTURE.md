@@ -160,6 +160,10 @@ Implementation rules:
   support that resolution.
 - Star clicks toggle only top-toolbar visibility. Row clicks change the active
   timeframe and close the popup.
+- `Add custom interval...` opens a modal with `Type` and `Interval` inputs. The
+  Add button resolves through `customIntervalToTimeframe()` and is enabled only
+  for supported provider-backed intervals; it must add the interval to
+  favorites without toggling an existing favorite off.
 
 Keep the catalog and favorite normalization in `timeframeSelectorModel.ts` so
 future interval additions can be tested without rendering React.
