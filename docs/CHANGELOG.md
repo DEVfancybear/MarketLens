@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Realtime candle continuity gaps (2026-07-06)
+- Fixed a chart gap where candles could disappear until a hard refresh after WebSocket reconnects,
+  tab sleep, or out-of-order realtime delivery. `marketDataStore.updateCandleAtom` now upserts
+  realtime candles by timestamp instead of dropping every candle older than the latest bar.
+- Added `upsertMarketCandleIntoSeries()` and `findRecentCandleGap()` in
+  `frontend/src/services/market-data/candleSeries.ts` so candle ordering, delayed corrections, and
+  short-gap detection are covered by pure tests.
+- `useMarketData()` now triggers a bounded REST history backfill for short gaps in the active
+  symbol/timeframe, matching the "reload fills the missing candles" behavior without requiring F5.
+- Added chart tests for delayed candle insert, delayed correction replacement, max-window trimming,
+  and short-gap backfill detection.
+
 ### Added - Backend Phase 4: Auth endpoints & middleware (2026-07-06)
 - **Google login/register works end-to-end** (pending a live Postgres to exercise it).
 - `internal/users/repo.go`: `Repo.UpsertFromIdentity` (transactional) — finds `auth_identities` by

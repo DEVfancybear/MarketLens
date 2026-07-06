@@ -24,6 +24,7 @@ import {
   mergeHistoryWithLiveCandles,
   normalizeMarketCandle,
   normalizeMarketCandleSeries,
+  upsertMarketCandleIntoSeries,
 } from "@/services/market-data/candleSeries";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
@@ -160,17 +161,12 @@ export const updateCandleAtom = atom(
     const key = subscriptionKey(symbol, timeframe);
     const all = get(candlesAtom);
     const series = all[key] ?? [];
-    const last = series[series.length - 1];
-    let next: MarketCandle[];
-    if (!last || normalized.time > last.time) {
-      next =
-        series.length >= MAX_CANDLES
-          ? [...series.slice(series.length - MAX_CANDLES + 1), normalized]
-          : [...series, normalized];
-    } else if (normalized.time === last.time) {
-      next = [...series.slice(0, -1), normalized];
-    } else {
-      return; // stale tick — no change
+    const next = upsertMarketCandleIntoSeries(series, normalized, MAX_CANDLES);
+    if (
+      next.length === series.length &&
+      next.every((item, index) => item === series[index])
+    ) {
+      return;
     }
     set(candlesAtom, { ...all, [key]: next });
     set(lastUpdateAtom, Date.now());

@@ -15,7 +15,7 @@
  *
  * No sockets are created here; the MarketDataService/providers own connections.
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
@@ -30,9 +30,11 @@ import { getMarketDataState } from "@/store/marketDataStore";
 import { useCandles } from "@/hooks/useCandles";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
-import type { Candle, Timeframe } from "@/types";
+import { TF_SECONDS, type Candle, type Timeframe } from "@/types";
+import { findRecentCandleGap } from "@/services/market-data/candleSeries";
 
 const DEFAULT_HISTORY_BARS = 1500;
+const MAX_BACKFILL_MISSING_BARS = 50;
 
 function historyBarsForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "1H" || timeframe === "2H") return 3000;
@@ -46,6 +48,7 @@ export function useMarketData() {
   const setLoading = useSetAtom(setLoadingAtom);
   const disarm = useSetAtom(disarmAtom);
   const setTotal = useSetAtom(setTotalAtom);
+  const backfilledGapsRef = useRef<Set<string>>(new Set());
 
   // Realtime candle series from the store for the active symbol+timeframe.
   const liveCandles = useCandles(symbol, timeframe);
@@ -91,4 +94,38 @@ export function useMarketData() {
     setCandles(liveCandles as Candle[]);
     setTotal(liveCandles.length);
   }, [liveCandles, setCandles, setTotal]);
+
+  // ---- Repair short realtime gaps without a full page refresh ----
+  useEffect(() => {
+    const step = TF_SECONDS[timeframe];
+    const gap = findRecentCandleGap(
+      liveCandles,
+      step,
+      MAX_BACKFILL_MISSING_BARS,
+    );
+    if (!gap) return;
+
+    const gapKey = `${symbol}:${timeframe}:${gap.afterTime}:${gap.beforeTime}`;
+    if (backfilledGapsRef.current.has(gapKey)) return;
+    backfilledGapsRef.current.add(gapKey);
+
+    const limit = Math.min(Math.max(gap.missingBars + 4, 20), 200);
+    getHistoricalDataService()
+      .loadHistory({
+        symbol,
+        timeframe,
+        limit,
+        before: gap.beforeTime,
+      })
+      .then((hist) => {
+        getMarketDataState().setCandles(symbol, timeframe, hist);
+      })
+      .catch((err) => {
+        getDefaultStore().set(
+          logAtom,
+          "error",
+          `Gap backfill failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
+        );
+      });
+  }, [liveCandles, symbol, timeframe]);
 }

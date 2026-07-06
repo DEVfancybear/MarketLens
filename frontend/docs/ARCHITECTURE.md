@@ -161,12 +161,22 @@ Realtime candles and REST history meet in `marketDataStore`, not inside chart co
 - normalize candle time/order and enforce `high >= open/close` and `low <= open/close`,
 - merge a delayed REST history snapshot with already-received live candles instead of overwriting
   the live forming bar,
+- upsert realtime candles by timestamp so delayed bars or provider corrections repair the series
+  instead of being dropped as stale,
+- detect short gaps in the active series so `useMarketData()` can perform a bounded REST backfill
+  without forcing a full page refresh,
 - classify chart updates as `update-latest`, `append`, or `replace`.
 
 This avoids the common reload-only bug where WebSocket candles arrive first, the REST history
 request resolves later, and `setCandles()` replaces the full series with an older snapshot. In that
 case the chart can look like it is missing candles until a hard refresh. The store now merges by
 time and preserves live forming bars at or after the history edge.
+
+It also avoids the reconnect/tab-sleep bug where the WebSocket resumes at the latest bar and never
+replays one or two missed bars. `findRecentCandleGap()` detects bounded recent gaps, and
+`useMarketData()` fetches a small history window ending at the first bar after the gap. That history
+then flows back through `marketDataStore.setCandles()`, which merges it with live candles by time.
+Large gaps are ignored by this repair path so closed-market sessions do not loop backfill.
 
 `PriceChart` may call Lightweight Charts `series.update()` only when the candle array prefix is the
 same object references and only the latest bar changed or one new bar appended. Any history reload,

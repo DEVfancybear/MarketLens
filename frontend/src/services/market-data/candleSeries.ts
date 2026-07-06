@@ -2,6 +2,12 @@ import type { MarketCandle } from "@/types";
 
 export type RealtimeSeriesUpdatePlan = "replace" | "update-latest" | "append";
 
+export interface CandleGap {
+  afterTime: number;
+  beforeTime: number;
+  missingBars: number;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -47,6 +53,87 @@ export function normalizeMarketCandleSeries(
   return maxCandles && sorted.length > maxCandles
     ? sorted.slice(sorted.length - maxCandles)
     : sorted;
+}
+
+function candlesEqual(a: MarketCandle, b: MarketCandle): boolean {
+  return (
+    a.time === b.time &&
+    a.open === b.open &&
+    a.high === b.high &&
+    a.low === b.low &&
+    a.close === b.close &&
+    a.volume === b.volume &&
+    a.closed === b.closed
+  );
+}
+
+/**
+ * Upsert one realtime candle into an already-sorted series.
+ *
+ * Realtime providers are not guaranteed to deliver bars strictly in order after
+ * reconnects, tab sleep, or REST/history races. Dropping every candle older
+ * than the current last bar leaves visible holes on the chart. This helper
+ * inserts/replaces by timestamp while preserving object references for the
+ * unchanged prefix/suffix, so PriceChart can still choose the O(1) append/update
+ * path for normal in-order ticks and fall back to setData() only for structural
+ * repairs.
+ */
+export function upsertMarketCandleIntoSeries(
+  series: readonly MarketCandle[],
+  candle: MarketCandle,
+  maxCandles?: number,
+): MarketCandle[] {
+  const normalized = normalizeMarketCandle(candle);
+  if (!normalized) return [...series];
+
+  let low = 0;
+  let high = series.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (series[mid].time < normalized.time) low = mid + 1;
+    else high = mid;
+  }
+
+  let next: MarketCandle[];
+  if (low < series.length && series[low].time === normalized.time) {
+    if (candlesEqual(series[low], normalized)) return [...series];
+    next = [...series.slice(0, low), normalized, ...series.slice(low + 1)];
+  } else {
+    next = [...series.slice(0, low), normalized, ...series.slice(low)];
+  }
+
+  return maxCandles && next.length > maxCandles
+    ? next.slice(next.length - maxCandles)
+    : next;
+}
+
+export function findRecentCandleGap(
+  series: readonly { time: number }[],
+  expectedStepSeconds: number,
+  maxMissingBars = 50,
+): CandleGap | null {
+  if (!Number.isFinite(expectedStepSeconds) || expectedStepSeconds <= 0) {
+    return null;
+  }
+
+  for (let index = series.length - 1; index > 0; index -= 1) {
+    const before = series[index];
+    const after = series[index - 1];
+    const delta = before.time - after.time;
+    if (delta <= expectedStepSeconds) continue;
+
+    const missingBars = Math.round(delta / expectedStepSeconds) - 1;
+    if (missingBars <= 0) continue;
+    if (missingBars > maxMissingBars) return null;
+
+    return {
+      afterTime: after.time,
+      beforeTime: before.time,
+      missingBars,
+    };
+  }
+
+  return null;
 }
 
 export function mergeHistoryWithLiveCandles(

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  findRecentCandleGap,
   mergeHistoryWithLiveCandles,
   normalizeMarketCandleSeries,
   resolveRealtimeSeriesUpdatePlan,
+  upsertMarketCandleIntoSeries,
 } from "../../src/services/market-data/candleSeries";
 import type { MarketCandle } from "../../src/types";
 
@@ -54,6 +56,77 @@ test("history load keeps newer live candles instead of overwriting them", () => 
       [240, 244, false],
     ],
   );
+});
+
+test("realtime upsert repairs delayed candles inside the visible window", () => {
+  const a = candle(60, 60);
+  const c = candle(180, 180);
+  const delayed = candle(120, 120);
+
+  const result = upsertMarketCandleIntoSeries([a, c], delayed);
+
+  assert.deepEqual(
+    result.map((item) => item.time),
+    [60, 120, 180],
+  );
+  assert.equal(result[0], a);
+  assert.equal(result[2], c);
+});
+
+test("realtime upsert replaces delayed corrections by timestamp", () => {
+  const a = candle(60, 60);
+  const stale = candle(120, 120);
+  const c = candle(180, 180);
+  const correction = { ...candle(120, 125), closed: true };
+
+  const result = upsertMarketCandleIntoSeries([a, stale, c], correction);
+
+  assert.deepEqual(
+    result.map((item) => [item.time, item.close]),
+    [
+      [60, 60],
+      [120, 125],
+      [180, 180],
+    ],
+  );
+  assert.equal(result[0], a);
+  assert.equal(result[2], c);
+});
+
+test("realtime upsert keeps the max candle window bounded", () => {
+  const result = upsertMarketCandleIntoSeries(
+    [candle(60), candle(180)],
+    candle(120),
+    2,
+  );
+
+  assert.deepEqual(
+    result.map((item) => item.time),
+    [120, 180],
+  );
+});
+
+test("detects recent short candle gaps for REST backfill", () => {
+  const result = findRecentCandleGap(
+    [candle(60), candle(120), candle(300)],
+    60,
+  );
+
+  assert.deepEqual(result, {
+    afterTime: 120,
+    beforeTime: 300,
+    missingBars: 2,
+  });
+});
+
+test("ignores large session gaps so markets with closures do not loop backfill", () => {
+  const result = findRecentCandleGap(
+    [candle(60), candle(120), candle(60 * 60 * 48)],
+    60,
+    50,
+  );
+
+  assert.equal(result, null);
 });
 
 test("series update plan uses realtime update only when the prefix is unchanged", () => {

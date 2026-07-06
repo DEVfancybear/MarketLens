@@ -42,6 +42,9 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 | Shared visual profile | `src/components/chart/chartVisualProfile.ts` | Common constants and option builders for chart, scales, grid, crosshair, and candles |
 | Palette and time formatting | `src/components/chart/chartTheme.ts` | Theme colors, bar spacing by timeframe, crosshair time formatter |
 | Main chart | `src/components/chart/PriceChart.tsx` | Creates the candlestick chart and applies the shared profile |
+| Candle continuity | `src/services/market-data/candleSeries.ts` | Normalizes, merges, upserts, and detects short gaps in candle data before it reaches the chart |
+| Active feed bridge | `src/hooks/useMarketData.ts` | Mirrors active market candles into `chartStore` and backfills short realtime gaps |
+| Market data store | `src/store/marketDataStore.ts` | Runtime source of truth for quote/candle ingress |
 | Indicator panes | `src/components/chart/IndicatorPane.tsx` | Uses the same profile for pane grid/axis/crosshair styling |
 | Indicator legend | `src/components/chart/IndicatorLegend.tsx` | Lightweight TradingView-style status-line controls |
 | Guard tests | `tests/chart/chartVisualProfile.test.ts` | Locks critical margin/right-offset defaults |
@@ -125,3 +128,10 @@ Manual checks:
 - current price marker is one compact line,
 - indicator legend does not obscure the symbol/OHLC header,
 - separate RSI/MACD panes visually match the main chart baseline.
+
+Data-continuity checks:
+
+- after WebSocket reconnect or tab sleep, short missing-candle gaps should self-repair without F5,
+- delayed realtime candles should insert by timestamp instead of being dropped,
+- a history backfill should not overwrite a newer live forming bar,
+- large closed-market gaps should not trigger repeated backfills.
