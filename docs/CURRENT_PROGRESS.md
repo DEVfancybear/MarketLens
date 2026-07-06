@@ -10,15 +10,16 @@ Backend persistence and Google authentication.
 
 - Frontend trading terminal: implemented and actively evolving.
 - Frontend Google auth UI: implemented and verified.
-- Backend API: Fiber scaffold; `GET /health` (liveness) + `GET /health/ready` (DB readiness) exist.
-- Backend database: **Phase 1 complete** — pgxpool, golang-migrate runner, `0001_extensions` +
-  `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Not yet applied to a
-  live Postgres (none available locally).
+- Backend API: Fiber scaffold; `GET /health`, `GET /health/ready`, and `/api/v1/auth/*` exist.
+- Backend database: **Phase 1 complete** - pgxpool, golang-migrate runner, `0001_extensions` +
+  `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Live Neon smoke has
+  verified auth-table migration and login/register flow.
 - Backend auth: **Phases 2, 3 & 4 complete** — Firebase verification + session/token services +
   **Google login/register endpoints** (`POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`,
   `DELETE /auth/sessions`), `RequireAuth` middleware, CORS. 17 auth tests (incl. full flow via
-  `app.Test`). **Live login needs a Postgres `DATABASE_URL`** (Firebase creds verified working).
-  Phase 5 next: sync bootstrap + settings resource.
+  `app.Test`). Live Neon + Firebase smoke passed: first login creates the user, second login reuses
+  it, `/auth/me`, `/auth/refresh`, and `/auth/logout` all pass. Current backend task: **Phase 5 -
+  sync bootstrap + settings resource**.
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
@@ -29,7 +30,7 @@ Backend persistence and Google authentication.
   `middleware.go` (`RequireAuth`), `handler.go` (5 Fiber auth routes returning the standard
   envelope), CORS + `/api/v1` group in `httpserver`, and optional auth assembly in `cmd/api`
   (mounted only when DB + Firebase are both configured). Integration-tested via `app.Test`; Firebase
-  creds confirmed to initialize the Admin SDK. Live login pending a Postgres DB.
+  creds confirmed to initialize the Admin SDK; live Neon/Firebase login smoke passed.
 - **Backend Phase 3 (Sessions & tokens):** `internal/auth/jwt.go` (`TokenService` MintAccess/
   ParseAccess, HS256, none-alg guard), `session.go` (`SessionService` Create/Rotate/Revoke/RevokeAll
   over a pgx-free `SessionStore`, reuse detection revokes the family), `session_pgstore.go`
@@ -43,7 +44,8 @@ Backend persistence and Google authentication.
   (`cmd/migrate`, embedded iofs source), migrations `0001_extensions` + `0002_auth` (auth tables +
   enums + `set_updated_at()` trigger), sqlc config + typed queries for users/identities/sessions
   (`internal/db/gen`), and `GET /health/ready` DB readiness probe (liveness stays DB-free). Verified
-  build/vet/`sqlc generate` + live health probes; live-DB migrate up/down still pending a Postgres.
+  build/vet/`sqlc generate`, live health probes, and live Neon auth flow. Keep migrate up/down smoke
+  in the checklist for any new schema phase.
 - **Backend Phase 0 (Foundation & framework):** migrated the Go backend from stdlib `net/http` to
   Fiber, extended config with DB/auth/Firebase/CORS vars + fail-fast validation, added the standard
   error-envelope helper (`WriteError` + Fiber `ErrorHandler`), and added `backend/.env.example`.

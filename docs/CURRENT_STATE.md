@@ -8,16 +8,16 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
 - Frontend feature docs referenced below as `docs/*.md` have been restored under `frontend/docs/`
   unless they are cross-project memory docs.
 - Historical/audit frontend reports are under `frontend/docs/archive/`.
-- Backend code is under `backend/`; Fiber is the target framework, but the current scaffold still
-  uses stdlib `net/http` until backend Phase 0.
+- Backend code is under `backend/`; Fiber is the current framework. Backend Phases 0-4 are complete:
+  Fiber, database/auth foundations, Firebase verification, sessions, and `/api/v1/auth/*` routes.
 - The Python FTMO/MT5 bridge now lives under `backend/bridge/ftmo_mt5/`.
 - Backend auth, database, API, and phased implementation docs live under `backend/docs/`.
-- Frontend Google auth UI exists and uses Firebase Auth; backend session exchange is best-effort
-  until the backend auth endpoints are implemented.
+- Frontend Google auth UI exists and uses Firebase Auth; backend session exchange can target the
+  implemented `/api/v1/auth/*` routes when `NEXT_PUBLIC_API_BASE_URL` points at a configured Go API.
 - Frontend remote workspace sync is planned in
-  `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Until those API endpoints are implemented,
-  authenticated backend persistence should remain feature-flagged and local/anonymous behavior
-  should not be removed.
+  `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Until backend Phase 5+ workspace endpoints are
+  implemented, authenticated workspace persistence should remain feature-flagged and
+  local/anonymous behavior should not be removed.
 - Watchlist UI/store received a TradingView-style menu, rename mode, and section rows; see
   `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 

@@ -4,18 +4,17 @@
 
 The backend has two components:
 
-1. **Go API** - the primary HTTP server handling web requests. Fiber is the selected framework
-   target.
+1. **Go API** - the primary Fiber HTTP server handling web requests.
 2. **Python MT5 Bridge** - an isolated sidecar service that manages FTMO broker connectivity over
    WebSockets.
 
 The Python bridge runs as a separate process. It is not part of the Go HTTP request path and does
 not share memory or state with the Go server.
 
-Current implementation note: the scaffold still uses Go stdlib `net/http`. Phase 0 of
-`BACKEND_IMPLEMENTATION_PLAN.md` migrates the scaffold to Fiber. After that migration, Fiber is the
-common HTTP layer for routing, middleware, request parsing, response writing, and future API modules.
-Keep business logic outside handlers so modules remain testable without an HTTP server.
+Current implementation note: Phase 0 migrated the backend to Fiber, and Phase 4 added the
+`/api/v1/auth/*` routes plus auth middleware and CORS. The current task is Phase 5:
+`user_settings`, `/api/v1/settings`, and `/api/v1/sync/bootstrap`. Keep business logic outside
+handlers so modules remain testable without an HTTP server.
 
 ## Package Layout
 
@@ -25,7 +24,8 @@ internal/
   config/                # Environment-based configuration
   httpserver/            # HTTP app setup, routing, middleware, lifecycle
   health/                # Health-check endpoint
-  middleware/            # Shared HTTP middleware; Fiber-compatible after Phase 0
+  auth/                  # Firebase verification, sessions, cookies, auth routes/middleware
+  middleware/            # Shared Fiber middleware
 bridge/                  # Python MT5 WebSocket bridge (sidecar)
   ftmo_mt5/              # FTMO broker integration
 ```
@@ -57,7 +57,7 @@ Client
 
 ## Design Decisions
 
-- **Fiber**: selected Go web framework for API routing and middleware after Phase 0 migration.
+- **Fiber**: Go web framework for API routing and middleware.
 - **zerolog**: structured JSON logging suitable for production.
 - **Graceful shutdown**: the API process should drain in-flight requests before exiting.
 - **Internal packages**: backend code under `internal/` is private to this service.

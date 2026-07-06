@@ -4,18 +4,16 @@ _Post-monorepo update 2026-07-06._
 
 The historical roadmap below is preserved. The current top priority after the monorepo split is:
 
-1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ ✅ **Done (backend Phase 0).**
-   ~~Phase 1 — Database layer.~~ ✅ **Done** (pending a live Postgres to run `migrate up`/`down`).
-   ~~Phase 2 — Firebase ID-token verification (`internal/auth/firebase.go` + `verify.go`).~~ ✅ **Done.**
-   ~~Phase 3 — Sessions & tokens (`jwt.go`, `session.go` rotation/reuse, `cookies.go`).~~ ✅ **Done.**
-   ~~Phase 4 — Auth endpoints & middleware (`/api/v1/auth/*`, `RequireAuth`, CORS,
-   `users.UpsertFromIdentity`).~~ ✅ **Done** (code + `app.Test`; Firebase creds verified).
-   **Remaining before it's live: provision Postgres, set `DATABASE_URL`, `make migrate-up`, then curl
-   `POST /auth/google` with a real Firebase ID token.** Next backend step is **Phase 5 — Sync
-   bootstrap + settings** (`0003_settings` migration, `internal/settings` GET/PUT/PATCH,
-   `GET /api/v1/sync/bootstrap`), then Phases 6–13 per-resource.
-2. Implement the remaining backend Firebase Google auth + per-resource persistence according to
-   `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
+1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ Done (backend Phase 0).
+   ~~Phase 1 - Database layer.~~ Done (auth migrations and sqlc are in place; live Neon smoke has verified auth tables).
+   ~~Phase 2 - Firebase ID-token verification (`internal/auth/firebase.go` + `verify.go`).~~ Done.
+   ~~Phase 3 - Sessions & tokens (`jwt.go`, `session.go` rotation/reuse, `cookies.go`).~~ Done.
+   ~~Phase 4 - Auth endpoints & middleware (`/api/v1/auth/*`, `RequireAuth`, CORS,
+   `users.UpsertFromIdentity`).~~ Done (code + `app.Test`; live Neon/Firebase login, refresh, me, and logout smoke passed).
+   Current backend step is **Phase 5 - Sync bootstrap + settings** (`0003_settings` migration,
+   `internal/settings` GET/PUT/PATCH, `GET /api/v1/sync/bootstrap`), then Phases 6-13 per-resource.
+2. Implement remaining backend per-resource persistence according to
+   `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`, starting with Phase 5 settings + sync bootstrap.
 3. Add frontend remote workspace sync according to
    `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`: shared `ky` API client, typed adapters,
    `sync/bootstrap` apply path, and feature-by-feature mutations for settings, watchlists,

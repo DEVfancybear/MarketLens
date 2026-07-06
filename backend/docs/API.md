@@ -3,8 +3,9 @@
 Base URL (dev): `http://localhost:8080`
 API prefix: `/api/v1` (except `/health`).
 
-> Status: `/health` is **implemented**. Everything under `/api/v1` is **planned** — this is the
-> contract the Go Fiber handlers will implement. See `AUTH.md` for the auth flow and `DATABASE.md`
+> Status: `/health`, `/health/ready`, and `/api/v1/auth/*` are **implemented**. The remaining
+> `/api/v1` resources are planned contracts that the Go Fiber handlers will implement in Phase 5+
+> according to `BACKEND_IMPLEMENTATION_PLAN.md`. See `AUTH.md` for the auth flow and `DATABASE.md`
 > for the tables behind each resource.
 
 ## Conventions

@@ -28,8 +28,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   cookie assertions; `/me` without cookie → 401; bad/missing idToken → 401/400; refresh w/o cookie →
   401. 17 auth tests total.
 - Verified: `go build/vet/test` pass; real Firebase creds (`tradingview-b36a5`) initialize the Admin
-  SDK; server boot with Firebase-but-no-DB disables auth routes as designed. **Live login smoke test
-  still needs a Postgres `DATABASE_URL`** (run `make migrate-up` first).
+  SDK; server boot with Firebase-but-no-DB disables auth routes as designed. **Verified live
+  end-to-end against a Neon Postgres** (2026-07-06): minted a real Firebase ID token and ran
+  `/auth/google` (first call `isNewUser:true` → user row created; second call `isNewUser:false`),
+  `/auth/me`, `/auth/refresh`, `/auth/me` again, `/auth/logout` — all pass. (Required enabling
+  Firebase Authentication in the console first; before that the Identity Toolkit returned
+  `CONFIGURATION_NOT_FOUND`.) Test user cleaned up afterward.
 
 ### Added - Backend Phase 3: Sessions & tokens (2026-07-06)
 - `internal/auth/jwt.go`: `TokenService` — `MintAccess(userID, sessionID)` HS256 JWT

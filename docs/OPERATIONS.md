@@ -59,9 +59,9 @@ go build -o bin/api ./cmd/api
 
 Backend dev server: `http://localhost:8080`
 
-Backend framework decision: **Go Fiber**. The current scaffold still uses stdlib `net/http`; Phase 0
-of the backend implementation plan migrates it to Fiber. Backend docs and future backend routes
-should follow Fiber conventions.
+Backend framework decision: **Go Fiber**. Phase 0 migrated the backend to Fiber, and Phase 4 added
+the `/api/v1/auth/*` routes. Current backend work should continue with Phase 5 settings +
+`sync/bootstrap` and follow Fiber handler/route-group conventions.
 
 ## Python MT5 Bridge (Backend Sidecar)
 

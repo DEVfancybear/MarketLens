@@ -4,9 +4,10 @@ _Post-monorepo update 2026-07-06._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
-- Fiber is selected for the backend, but the current Go scaffold still uses stdlib `net/http`.
-- Backend persistence/auth endpoints are planned, not implemented; frontend persistence is still
-  mostly localStorage/IndexedDB.
+- Backend Phases 0-4 are complete. Current backend task is Phase 5: settings persistence and
+  `/api/v1/sync/bootstrap`.
+- Backend workspace persistence endpoints beyond auth are still planned; frontend persistence is
+  still mostly localStorage/IndexedDB until the Phase 5+ resources ship.
 - Watchlist list metadata and sections are browser-local until backend sync lands.
 - Indicator catalog data must come from an API/provider; do not reintroduce hardcoded catalog
   fallbacks.

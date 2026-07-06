@@ -50,10 +50,10 @@ backend/
 `-- README.md
 ```
 
-Backend framework decision: **Fiber**. The current scaffold still uses Go stdlib `net/http`; Phase 0
-of `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` is responsible for adding Fiber and migrating the
-existing health/logging surface. New backend endpoints and middleware should be designed around
-Fiber handlers, route groups, and middleware.
+Backend framework decision: **Fiber**. The current backend is already on Fiber, with health,
+readiness, CORS, and Phase 4 auth routes mounted under `/api/v1/auth/*`. New backend endpoints and
+middleware should continue using Fiber handlers, route groups, and middleware. The active backend
+task is Phase 5: settings persistence and `GET /api/v1/sync/bootstrap`.
 
 The Python MT5 bridge is a **sidecar service** - it runs as a separate process alongside the Go API
 and communicates over WebSockets. It is not part of the Go HTTP request path.
