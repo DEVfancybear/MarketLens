@@ -200,6 +200,62 @@ export const hydrateWatchlistAtom = atom(null, (_get, set) => {
   persist(normalized, activeId);
 });
 
+interface RemoteWatchlist {
+  id: string;
+  name: string;
+  position?: number;
+  symbols?: string[];
+}
+
+function remoteWatchlistToLocal(input: RemoteWatchlist): WatchlistList {
+  const fallback: WatchlistList = {
+    ...DEFAULT_LIST,
+    id: input.id || uid("wl"),
+    name: input.name || DEFAULT_LIST.name,
+  };
+  return normalizeList(
+    {
+      id: input.id,
+      name: input.name,
+      symbols: input.symbols ?? [],
+      sections: [],
+      shared: false,
+    },
+    fallback,
+  );
+}
+
+const EMPTY_REMOTE_LIST: WatchlistList = {
+  ...DEFAULT_LIST,
+  symbols: [],
+  sections: [],
+};
+
+export const applyRemoteWatchlistsAtom = atom(
+  null,
+  (_get, set, payload: unknown) => {
+    if (!Array.isArray(payload)) return;
+
+    const remoteLists = payload
+      .filter((item): item is RemoteWatchlist => {
+        return (
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as RemoteWatchlist).id === "string" &&
+          typeof (item as RemoteWatchlist).name === "string"
+        );
+      })
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+      .map(remoteWatchlistToLocal);
+
+    const lists = remoteLists.length ? remoteLists : [EMPTY_REMOTE_LIST];
+    const activeId = lists[0].id;
+    set(watchlistListsAtom, lists);
+    set(activeWatchlistIdAtom, activeId);
+    persist(lists, activeId);
+  },
+);
+
 export const addWatchlistSymbolAtom = atom(null, (get, set, ticker: string) => {
   const symbol = ticker.trim().toUpperCase();
   if (!getMarketSymbol(symbol)) return;

@@ -9,6 +9,7 @@ import { usePushAlertSync } from "@/hooks/usePushAlertSync";
 import { usePushTriggerReconcile } from "@/hooks/usePushTriggerReconcile";
 import { useMt5Bridge } from "@/hooks/useMt5Bridge";
 import { useAuthSession } from "@/hooks/useAuthSession";
+import { useWorkspaceBootstrap } from "@/hooks/useWorkspaceBootstrap";
 import { loadJournalAtom } from "@/store/journalStore";
 import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
@@ -30,6 +31,7 @@ export function GlobalRuntime() {
   usePushTriggerReconcile(); // pulls back server-confirmed closed-browser triggers the client's own scan missed
   useMt5Bridge(); // feature-flagged MT5 bridge runtime; disabled by default
   useAuthSession(); // bridges Firebase Google auth -> authStore (+ best-effort backend session)
+  useWorkspaceBootstrap(); // applies backend settings/watchlists after backend auth
 
   // Hydrate journal + alerts from persisted storage (IndexedDB / localStorage).
   const loadJournal = useSetAtom(loadJournalAtom);

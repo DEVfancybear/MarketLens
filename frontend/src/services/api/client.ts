@@ -63,3 +63,27 @@ export async function postJson<T>(
     return normalizeApiError(error);
   }
 }
+
+export async function putJson<T>(
+  path: string,
+  json?: unknown,
+  options?: Options,
+): Promise<T> {
+  try {
+    return await apiClient.put(path, { ...options, json }).json<T>();
+  } catch (error) {
+    return normalizeApiError(error);
+  }
+}
+
+export async function patchJson<T>(
+  path: string,
+  json?: unknown,
+  options?: Options,
+): Promise<T> {
+  try {
+    return await apiClient.patch(path, { ...options, json }).json<T>();
+  } catch (error) {
+    return normalizeApiError(error);
+  }
+}

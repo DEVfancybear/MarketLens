@@ -22,7 +22,9 @@ The historical roadmap below is preserved. The current top priority after the mo
 3. Add frontend remote workspace sync according to
    `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`: shared `ky` API client, typed adapters,
    `sync/bootstrap` apply path, and feature-by-feature mutations for settings, watchlists,
-   drawings, indicators, alerts, journal, layouts, and simulated trading.
+   drawings, indicators, alerts, journal, layouts, and simulated trading. Bootstrap read/apply is
+   now wired for UI settings, SMC settings, notification defaults, and watchlists; write-back
+   mutations are still pending.
 4. Keep frontend feature docs under `frontend/docs/`; use `frontend/docs/archive/` for historical
    audit/parity reports.
 

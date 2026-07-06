@@ -20,6 +20,9 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Backend settings/bootstrap now exist; remaining
   workspace slices are Phase 6+ and authenticated persistence should stay feature-flagged until each
   resource endpoint ships.
+- Frontend now consumes `GET /api/v1/sync/bootstrap` after backend auth and applies server UI
+  settings, SMC settings, notification defaults, and watchlists into Jotai atoms. Mutation write-back
+  for these slices is still the next sync step.
 - Watchlist UI/store received a TradingView-style menu, rename mode, and section rows; see
   `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 

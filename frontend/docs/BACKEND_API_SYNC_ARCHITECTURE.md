@@ -75,6 +75,9 @@ frontend/src/services/api/
   errors.ts               # ApiError, typed error helpers
   resources/
     authApi.ts            # implemented: /auth/me, /auth/refresh, /auth/google, /auth/logout
+    settingsApi.ts        # implemented: GET/PUT/PATCH /settings
+    syncApi.ts            # implemented: GET /sync/bootstrap
+    watchlistsApi.ts      # implemented: GET /watchlists read contract
 ```
 
 Target structure as more backend phases land:
@@ -236,6 +239,11 @@ Recommended frontend startup order:
 All atom updates from bootstrap should happen in one orchestration action so the UI does not render
 half-local, half-remote state.
 
+Authenticated watchlist bootstrap treats backend data as authoritative. If the backend returns an
+empty watchlist array, the frontend keeps a stable empty "Watchlist" shell instead of falling back to
+the browser-local default symbols. This prevents accidental display of local seed data as server
+state.
+
 Suggested module:
 
 ```text
@@ -340,10 +348,12 @@ Frontend remote mode should not be enabled globally until each required slice ex
 - `POST /api/v1/auth/logout` - implemented and wired in frontend
 - `GET /api/v1/auth/me` - implemented and wired in frontend
 - `POST /api/v1/auth/refresh` - implemented and wired in frontend
-- `GET /api/v1/sync/bootstrap` - backend implemented; frontend apply path pending
-- `GET/PATCH /api/v1/settings` - backend implemented; frontend resource adapter pending
-- `GET/POST/PATCH/DELETE /api/v1/watchlists`
-- `POST/DELETE /api/v1/watchlists/:id/symbols`
+- `GET /api/v1/sync/bootstrap` - backend implemented; frontend read/apply path implemented
+- `GET/PATCH /api/v1/settings` - backend implemented; frontend resource module implemented;
+  write-sync from UI mutations pending
+- `GET/POST/PATCH/DELETE /api/v1/watchlists` - backend implemented; frontend bootstrap read path
+  implemented; mutation wiring pending
+- `POST/DELETE /api/v1/watchlists/:id/symbols` - backend implemented; frontend mutation wiring pending
 - `GET /api/v1/drawings?symbol=...`
 - `POST /api/v1/drawings/batch`
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts`
@@ -361,17 +371,21 @@ Everything else can remain lazy or phased:
 
 ### Phase FE-0: API Foundation
 
-- Add shared API client and typed DTOs. **Auth client foundation is implemented.**
+- Add shared API client and typed DTOs. **Auth/settings/sync/watchlist read foundation is
+  implemented.**
 - Replace `authClient.ts` internal fetch helper with shared client. **Done for auth.**
 - Add MSW or test fixtures for planned backend JSON.
-- Remaining foundation work: add DTO/adapters for settings, sync bootstrap, and watchlists.
+- Remaining foundation work: add DTO/adapters for drawings, indicators, Pine scripts, alerts,
+  journal, layouts, and sim-trading as backend phases land.
 
 ### Phase FE-1: Remote Bootstrap Read Path
 
-- Add `workspaceSyncStore`.
-- Call `sync/bootstrap` after backend auth.
-- Apply backend JSON into atoms.
-- Keep anonymous local mode unchanged.
+- Call `sync/bootstrap` after backend auth. **Implemented via `useWorkspaceBootstrap()`.**
+- Apply backend JSON into atoms. **Implemented for UI settings, SMC settings, notification
+  settings, and watchlists.**
+- Keep anonymous local mode unchanged. **Implemented.**
+- Remaining read-path work: chart preferences are still component-local, and future backend slices
+  need resource-specific adapters.
 - Add a feature flag:
 
 ```env

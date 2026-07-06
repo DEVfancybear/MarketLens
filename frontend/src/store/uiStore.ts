@@ -164,6 +164,48 @@ export const hydrateAtom = atom(null, (get, set) => {
   }
 });
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sanitizePanels(value: unknown, fallback: PanelSizes): PanelSizes {
+  if (!isObject(value)) return fallback;
+  return {
+    right:
+      typeof value.right === "number" && Number.isFinite(value.right)
+        ? value.right
+        : fallback.right,
+    bottom:
+      typeof value.bottom === "number" && Number.isFinite(value.bottom)
+        ? value.bottom
+        : fallback.bottom,
+    left:
+      typeof value.left === "number" && Number.isFinite(value.left)
+        ? value.left
+        : fallback.left,
+  };
+}
+
+export const applyRemoteUISettingsAtom = atom(
+  null,
+  (get, set, payload: unknown) => {
+    if (!isObject(payload)) return;
+
+    const theme =
+      payload.theme === "dark" || payload.theme === "light"
+        ? payload.theme
+        : get(themeAtom);
+    const panels = sanitizePanels(payload.panels, get(panelsAtom));
+
+    set(themeAtom, theme);
+    set(panelsAtom, panels);
+    localStore.set("ui", { theme, panels });
+    if (typeof document !== "undefined") {
+      document.documentElement.className = `theme-${theme}`;
+    }
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Non-React accessor — mirrors `useUIStore.getState()` for non-React code.
 // ---------------------------------------------------------------------------

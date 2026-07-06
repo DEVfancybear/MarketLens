@@ -63,6 +63,26 @@ export const hydrateSmcAtom = atom(null, (_get, set) => {
   set(smcSettingsAtom, localStore.get("smc-settings", DEFAULT_SETTINGS));
 });
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export const applyRemoteSmcSettingsAtom = atom(
+  null,
+  (get, set, payload: unknown) => {
+    if (!isObject(payload)) return;
+
+    const current = get(smcSettingsAtom);
+    const settings: SmcSettings = { ...current };
+    for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof SmcSettings>) {
+      if (typeof payload[key] === "boolean") settings[key] = payload[key];
+    }
+
+    set(smcSettingsAtom, settings);
+    localStore.set("smc-settings", settings);
+  },
+);
+
 // ── Combined state + actions (for compatibility hook) ──────────────────────
 interface SmcState {
   snapshot: SmcSnapshot;

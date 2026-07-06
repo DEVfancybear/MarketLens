@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Frontend backend bootstrap read path (2026-07-07)
+- Added typed `ky` resource modules for `/api/v1/settings`, `/api/v1/watchlists`, and
+  `/api/v1/sync/bootstrap`.
+- Added `useWorkspaceBootstrap()` in `GlobalRuntime`; after backend auth succeeds, the frontend now
+  loads server settings/watchlists and applies them into Jotai atoms.
+- Remote bootstrap currently hydrates UI theme/panels, SMC overlay settings, alert notification
+  defaults, and watchlist lists/symbols. Anonymous/local mode remains unchanged.
+- Added shared `putJson`/`patchJson` helpers to the backend API client for the next write-sync phase.
+
 ### Added - Backend Phase 6: Watchlists (2026-07-06)
 - Migration `0004_watchlists` — `watchlists` + `watchlist_symbols` (DATABASE.md §7.1) with the
   shared `set_updated_at()` trigger and `UNIQUE (watchlist_id, symbol)`.

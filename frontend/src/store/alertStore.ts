@@ -330,6 +330,24 @@ export const hydrateAtom = atom(null, (_get, set) => {
   set(settingsAtom, { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) });
 });
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export const applyRemoteNotificationSettingsAtom = atom(
+  null,
+  (get, set, payload: unknown) => {
+    if (!isObject(payload)) return;
+
+    const settings: AlertSettings = { ...get(settingsAtom) };
+    for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof AlertSettings>) {
+      if (typeof payload[key] === "boolean") settings[key] = payload[key];
+    }
+    set(settingsAtom, settings);
+    persist();
+  },
+);
+
 // ── Write atoms: backward-compat (chart context menu) ────────────────────────
 
 export const addAlertAtom = atom(

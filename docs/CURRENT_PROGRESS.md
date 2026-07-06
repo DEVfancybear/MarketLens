@@ -1,6 +1,6 @@
 # Current Progress
 
-Last updated: 2026-07-06
+Last updated: 2026-07-07
 
 ## Current Milestone
 
@@ -10,6 +10,9 @@ Backend persistence and Google authentication.
 
 - Frontend trading terminal: implemented and actively evolving.
 - Frontend Google auth UI: implemented and verified.
+- Frontend backend sync: auth/session is wired; `GET /api/v1/sync/bootstrap` is now consumed after
+  backend auth and applies server UI settings, SMC settings, notification defaults, and watchlists.
+  UI mutation writes back to backend are the next frontend sync step.
 - Backend API: Fiber scaffold; `GET /health`, `GET /health/ready`, `/api/v1/auth/*`,
   `/api/v1/settings`, `/api/v1/watchlists*`, and `/api/v1/sync/bootstrap` exist.
 - Backend database: **Phase 1 complete** - pgxpool, golang-migrate runner, `0001_extensions` +
