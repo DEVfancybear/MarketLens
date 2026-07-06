@@ -15,6 +15,7 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
+| `MT5_STREAM_API_ENABLED` | boolean | `true` | Start the Go API background client for `/api/v1/mt5/symbols` |
 | `MT5_SYMBOLS` | string | empty | Comma-separated symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
 | `MT5_STREAM_ALL_VISIBLE` | boolean | `false` | Stream every MT5 symbol currently marked visible when `MT5_SYMBOLS` is empty |
 | `MT5_STREAM_HOST` | string | `localhost` | Python WebSocket listen host |
@@ -28,6 +29,8 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_BRIDGE_WS_URL` | string | `ws://localhost:8765` | Go consumer bridge URL |
 | `MT5_BRIDGE_DIAL_TIMEOUT_SECONDS` | integer | `10` | Go consumer WebSocket dial timeout |
 | `MT5_BRIDGE_READ_LIMIT_BYTES` | integer | `8388608` | Go consumer max WebSocket message size; large enough for MT5 symbol catalogs |
+| `MT5_BRIDGE_RECONNECT_MIN` | duration | `1s` | Go API/client minimum reconnect backoff |
+| `MT5_BRIDGE_RECONNECT_MAX` | duration | `30s` | Go API/client maximum reconnect backoff |
 
 ## Setting variables
 

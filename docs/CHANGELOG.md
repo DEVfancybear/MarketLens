@@ -11,6 +11,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   symbols.
 - Added `backend/cmd/mt5-stream`, a Go consumer using `github.com/gorilla/websocket` with typed
   `Mt5Tick` decoding, formatted terminal logs, reconnect backoff, and graceful shutdown.
+- Added a Go API MT5 catalog cache service and `GET /api/v1/mt5/symbols` so the frontend can read
+  the MT5 symbol list from the backend instead of connecting directly to the Python sidecar.
+- Added frontend typed API resource `getMt5Symbols()` for that endpoint.
 - Added MT5 stream requirements and README under `backend/bridge/mt5_stream/`.
 - Updated backend Phase 6 docs so Phase 6 now includes both watchlists and MT5 tick streaming.
 

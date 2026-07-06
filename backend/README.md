@@ -51,6 +51,9 @@ python -m bridge.mt5_stream.mt5_server
 
 # In a second terminal, consume the stream from Go
 go run ./cmd/mt5-stream
+
+# Or run the API and let FE call GET /api/v1/mt5/symbols
+go run ./cmd/api
 ```
 
 ## Configuration

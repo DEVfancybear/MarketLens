@@ -78,6 +78,7 @@ frontend/src/services/api/
     settingsApi.ts        # implemented: GET/PUT/PATCH /settings
     syncApi.ts            # implemented: GET /sync/bootstrap
     watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
+    mt5Api.ts             # implemented: GET /mt5/symbols symbol catalog from backend cache
 ```
 
 Target structure as more backend phases land:
@@ -450,6 +451,8 @@ frontend/tests/fixtures/backend-bootstrap.json
 
 - Keep market candles out of this sync layer. Market data is live provider/runtime data, not user
   workspace persistence.
+- MT5 symbol discovery should go through the Go API (`getMt5Symbols()` -> `GET /api/v1/mt5/symbols`).
+  The frontend must not connect directly to the localhost Python sidecar.
 - Keep chart rendering fast by separating "remote commit" from "canvas interaction". Draw locally
   during drag, commit on pointerup.
 - Never call settings/watchlist/drawing APIs from render paths.

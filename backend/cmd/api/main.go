@@ -14,6 +14,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/db/gen"
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
+	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/users"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
@@ -28,6 +29,17 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	mt5Service := mt5stream.NewService(mt5stream.Config{
+		Enabled:        cfg.MT5StreamAPIEnabled,
+		BridgeURL:      cfg.MT5BridgeWSURL,
+		DialTimeout:    cfg.MT5BridgeDialTimeout,
+		ReadLimitBytes: cfg.MT5BridgeReadLimitBytes,
+		ReconnectMin:   cfg.MT5BridgeReconnectMin,
+		ReconnectMax:   cfg.MT5BridgeReconnectMax,
+	})
+	mt5Service.Start(ctx)
+	mt5Handler := mt5stream.NewHandler(mt5Service)
 
 	// Connect to Postgres when a URL is configured. In local dev without a DB,
 	// the server still boots and /health/ready reports the DB as unconfigured.
@@ -74,7 +86,15 @@ func main() {
 		log.Info().Msg("protected api routes enabled")
 	}
 
-	srv := httpserver.New(cfg, pool, authHandler, settingsHandler, watchlistsHandler, workspaceHandler)
+	srv := httpserver.New(
+		cfg,
+		pool,
+		authHandler,
+		settingsHandler,
+		watchlistsHandler,
+		workspaceHandler,
+		mt5Handler,
+	)
 
 	if err := srv.Start(ctx); err != nil {
 		stdlog.Fatalf("server error: %v", err)

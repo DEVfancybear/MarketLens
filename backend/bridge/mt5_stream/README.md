@@ -68,6 +68,15 @@ In another terminal, start the Go consumer:
 go run ./cmd/mt5-stream
 ```
 
+To expose the symbol catalog to the frontend through the Go API, start the normal backend API:
+
+```bash
+go run ./cmd/api
+```
+
+The frontend should call `GET /api/v1/mt5/symbols`. The Go API keeps an in-memory catalog cache from
+the Python bridge and returns connection status plus the latest symbol metadata.
+
 The Go process logs ticks like:
 
 ```text

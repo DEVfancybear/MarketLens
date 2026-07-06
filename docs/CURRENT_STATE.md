@@ -30,7 +30,8 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 - Backend MT5 streaming is local-only: run `python -m bridge.mt5_stream.mt5_server` from
-  `backend/`, then `go run ./cmd/mt5-stream` to consume `ws://localhost:8765`.
+  `backend/`, then `go run ./cmd/mt5-stream` to consume `ws://localhost:8765`. The Go API also
+  connects to that bridge and exposes the cached catalog at `GET /api/v1/mt5/symbols`.
 
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 

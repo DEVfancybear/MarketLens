@@ -264,7 +264,10 @@ MetaTrader 5 terminal
    by `time_msc` and broadcasts compact JSON tick messages.
 5. Go command `cmd/mt5-stream` connects with `github.com/gorilla/websocket`, decodes the symbol
    catalog plus strong typed `Mt5Tick` values, logs them, and reconnects with exponential backoff.
-6. Both processes handle graceful shutdown locally; the stream is market-data only and does not
+6. The Go API process also starts a lightweight catalog cache client and exposes
+   `GET /api/v1/mt5/symbols` for the frontend. The frontend calls the Go API, never the Python
+   bridge directly.
+7. Both processes handle graceful shutdown locally; the stream is market-data only and does not
    execute orders.
 
 **Acceptance**
@@ -272,6 +275,8 @@ MetaTrader 5 terminal
   `ws://localhost:8765`.
 - `go run ./cmd/mt5-stream` logs ticks in the form
   `[EURUSD] Bid: X.XXXXX | Ask: X.XXXXX | Time: HH:mm:ss`.
+- `GET /api/v1/mt5/symbols` returns the latest catalog from the Python bridge with connection
+  status, stream symbols, and symbol metadata.
 - Restarting the Python bridge does not require restarting the Go consumer; it reconnects.
 
 **Complexity:** Low–Medium.

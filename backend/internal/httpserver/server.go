@@ -16,6 +16,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/health"
 	"github.com/smc-trading-terminal/backend/internal/middleware"
+	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
@@ -37,6 +38,7 @@ func New(
 	settingsHandler *settings.Handler,
 	watchlistsHandler *watchlists.Handler,
 	workspaceHandler *workspace.Handler,
+	mt5Handler *mt5stream.Handler,
 ) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:               "smc-trading-backend",
@@ -79,6 +81,9 @@ func New(
 	}
 	if workspaceHandler != nil {
 		workspaceHandler.Register(api)
+	}
+	if mt5Handler != nil {
+		mt5Handler.Register(api)
 	}
 
 	return &Server{cfg: cfg, app: app}
