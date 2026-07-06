@@ -59,6 +59,7 @@ import {
   WatchlistContextMenu,
   type WatchlistMenuState,
 } from "./WatchlistContextMenu";
+import { resolveSectionDropMode } from "@/store/watchlistLayout";
 import type { MarketQuote } from "@/types";
 
 const NO_QUOTES: Record<string, MarketQuote> = {};
@@ -326,6 +327,49 @@ export function Watchlist() {
     [draggedTicker, moveSymbol, resolveDrop],
   );
 
+  const resolveSectionDrop = useCallback(
+    (e: React.DragEvent<HTMLElement>, index: number) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      return {
+        index,
+        mode: resolveSectionDropMode(e.clientY, rect.top, rect.height),
+      };
+    },
+    [],
+  );
+
+  const onSectionDragOver = useCallback(
+    (
+      e: React.DragEvent<HTMLElement>,
+      key: string,
+      section: WatchlistSection,
+    ) => {
+      if (!draggedTicker) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const target = resolveSectionDrop(e, section.index);
+      setDropTarget({ key, ...target });
+    },
+    [draggedTicker, resolveSectionDrop],
+  );
+
+  const onSectionDrop = useCallback(
+    (e: React.DragEvent<HTMLElement>, section: WatchlistSection) => {
+      if (!draggedTicker) return;
+      e.preventDefault();
+      const target = resolveSectionDrop(e, section.index);
+      moveSymbol({
+        ticker: draggedTicker,
+        index: target.index,
+        mode: target.mode,
+        targetSectionId: section.id,
+      });
+      setDraggedTicker(null);
+      setDropTarget(null);
+    },
+    [draggedTicker, moveSymbol, resolveSectionDrop],
+  );
+
   const [menu, setMenu] = useState<WatchlistMenuState | null>(null);
   const onRowContext = useCallback((e: React.MouseEvent, ticker: string) => {
     e.preventDefault();
@@ -373,36 +417,13 @@ export function Watchlist() {
             }}
             onRemove={() => removeSection(row.section.id)}
             onDragOver={(e) =>
-              onDragOverTarget(
+              onSectionDragOver(
                 e,
                 `section-${row.section.id}`,
-                row.section.index,
-                row.section.index,
-                "before-section",
-                "inside-section",
+                row.section,
               )
             }
-            onDrop={(e) =>
-              {
-                if (!draggedTicker) return;
-                e.preventDefault();
-                const target = resolveDrop(
-                  e,
-                  row.section.index,
-                  row.section.index,
-                  "before-section",
-                  "inside-section",
-                );
-                moveSymbol({
-                  ticker: draggedTicker,
-                  index: target.index,
-                  mode: target.mode,
-                  targetSectionId: row.section.id,
-                });
-                setDraggedTicker(null);
-                setDropTarget(null);
-              }
-            }
+            onDrop={(e) => onSectionDrop(e, row.section)}
           />
         );
       }

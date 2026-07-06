@@ -6,6 +6,7 @@ import {
   removeSectionFromList,
   removeSymbolFromList,
   renameSectionInList,
+  resolveSectionDropMode,
 } from "../../src/store/watchlistLayout";
 import type { WatchlistList } from "../../src/store/watchlistStore";
 
@@ -28,6 +29,19 @@ function twoSectionList(): WatchlistList {
     sections: [
       { id: "section_1", title: "SECTION 1", index: 1 },
       { id: "section_2", title: "SECTION 2", index: 1 },
+    ],
+  };
+}
+
+function trailingEmptySectionList(): WatchlistList {
+  return {
+    id: "wl_3",
+    name: "Watchlist",
+    shared: false,
+    symbols: ["DOGEUSDT", "ETHUSDT"],
+    sections: [
+      { id: "section_1", title: "SECTION 1", index: 0 },
+      { id: "section_2", title: "SECTION 2", index: 2 },
     ],
   };
 }
@@ -101,4 +115,28 @@ test("drops a symbol into the second of multiple sections sharing an index", () 
       ["section_2", 0],
     ],
   );
+});
+
+test("drops a symbol into a trailing empty section", () => {
+  const result = moveSymbolToSectionInList(
+    trailingEmptySectionList(),
+    "ETHUSDT",
+    "section_2",
+    "inside-section",
+  );
+
+  assert.deepEqual(result.symbols, ["DOGEUSDT", "ETHUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 0],
+      ["section_2", 1],
+    ],
+  );
+});
+
+test("section rows treat most of the row as an inside-section drop", () => {
+  assert.equal(resolveSectionDropMode(101, 100, 20), "before-section");
+  assert.equal(resolveSectionDropMode(106, 100, 20), "inside-section");
+  assert.equal(resolveSectionDropMode(119, 100, 20), "inside-section");
 });

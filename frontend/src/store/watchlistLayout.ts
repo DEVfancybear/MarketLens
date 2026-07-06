@@ -18,6 +18,16 @@ export function clampSectionIndex(index: number, symbolCount: number): number {
   return Math.max(0, Math.min(symbolCount, Math.round(index)));
 }
 
+export function resolveSectionDropMode(
+  pointerY: number,
+  rowTop: number,
+  rowHeight: number,
+): SectionInsertMode {
+  if (!Number.isFinite(rowHeight) || rowHeight <= 0) return "inside-section";
+  const ratio = (pointerY - rowTop) / rowHeight;
+  return ratio <= 0.2 ? "before-section" : "inside-section";
+}
+
 export function createWatchlistSection(
   title: string,
   index: number,
