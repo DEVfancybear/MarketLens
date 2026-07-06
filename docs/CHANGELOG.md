@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 6: Watchlists (2026-07-06)
+- Migration `0004_watchlists` — `watchlists` + `watchlist_symbols` (DATABASE.md §7.1) with the
+  shared `set_updated_at()` trigger and `UNIQUE (watchlist_id, symbol)`.
+- `internal/watchlists`: `model.go` (`Watchlist{id,name,position,symbols}` + `ErrNotFound`/
+  `ErrBadRequest`), `repo.go` (hand-written pgx `Store`, all queries scoped by `user_id`, ownership
+  enforced in SQL, cross-user → `ErrNotFound`; single symbol-load query avoids N+1; idempotent add
+  via `ON CONFLICT DO NOTHING`), `handler.go` (Fiber CRUD behind `RequireAuth`).
+- Endpoints: `GET/POST /api/v1/watchlists`, `PATCH/DELETE /api/v1/watchlists/:id`,
+  `POST /api/v1/watchlists/:id/symbols`, `DELETE /api/v1/watchlists/:id/symbols/:symbol`.
+- `sync/bootstrap` now fills the `watchlists` slice (via a narrow `WatchlistLister`); wired in
+  `httpserver`/`cmd/api`.
+- Tests: `handler_test.go` (CRUD flow, cross-user 404, empty-name 400) via `app.Test` + a fake store.
+- Verified live against Neon: migrate up to version 4, then login → create → add/dup symbol
+  (idempotent) → list → rename → remove symbol → bootstrap (populated) → unknown id 404 → delete.
+  Test data cleaned up afterward.
+
 ### Changed - Refresh frontend docs for current architecture (2026-07-06)
 - Rewrote `frontend/README.md` to match the current Next 16/Jotai/live-market-data frontend instead
   of the old Zustand/mock-data structure.

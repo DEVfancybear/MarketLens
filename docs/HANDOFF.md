@@ -9,13 +9,24 @@ older references:
 - Frontend docs referenced below as `docs/*.md` now generally live in `frontend/docs/`.
 - Older frontend milestone/audit/parity reports live in `frontend/docs/archive/`.
 - Run backend commands from `backend/`.
-- Backend framework is now **Fiber**. Backend Phases 0-5 are done: framework, database layer,
-  Firebase verification, sessions/tokens, auth endpoints, settings persistence, and
-  `/api/v1/sync/bootstrap`. Next is Phase 6 watchlists. **Protected routes only mount when both a DB
-  and Firebase are configured**.
+- Backend framework is now **Fiber**. Backend Phases 0-6 are done: framework, database layer,
+  Firebase verification, sessions/tokens, auth endpoints, settings persistence,
+  `/api/v1/sync/bootstrap`, and watchlists CRUD. Next is Phase 7 drawings. **Protected routes only
+  mount when both a DB and Firebase are configured**. Neon is migrated to version 4.
 - The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
 
 Recent post-split work:
+
+- **Backend Phase 6 complete (watchlists):** `0004_watchlists` (`watchlists` + `watchlist_symbols`,
+  `UNIQUE (watchlist_id, symbol)`); `internal/watchlists` = `model.go`/`repo.go`/`handler.go`
+  following the Phase 5 pattern (hand-written pgx `Store`, all queries scoped by `user_id`, ownership
+  in SQL → cross-user `ErrNotFound` = 404, idempotent symbol add via `ON CONFLICT DO NOTHING`,
+  one symbol-load query to avoid N+1). Routes `GET/POST /api/v1/watchlists`, `PATCH/DELETE /:id`,
+  `POST /:id/symbols`, `DELETE /:id/symbols/:symbol` behind `RequireAuth`; `sync/bootstrap` fills the
+  `watchlists` slice via a narrow `WatchlistLister`. `httpserver.New` + `cmd/api` gained the
+  watchlists handler. `app.Test` unit tests + a live Neon E2E (create/add/dup/list/rename/remove/
+  bootstrap/404/delete) passed. **Next: Phase 7 drawings** (batch upsert on `client_id`) +
+  `drawing_templates`.
 
 - **Backend Phase 5 complete (settings & bootstrap):** `0003_settings` creates `user_settings` and
   `layouts`; `internal/settings` provides repo + Fiber handlers for `GET/PUT/PATCH

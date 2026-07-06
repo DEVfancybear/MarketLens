@@ -17,6 +17,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/health"
 	"github.com/smc-trading-terminal/backend/internal/middleware"
 	"github.com/smc-trading-terminal/backend/internal/settings"
+	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
 
@@ -34,6 +35,7 @@ func New(
 	pool *db.Pool,
 	authHandler *auth.Handler,
 	settingsHandler *settings.Handler,
+	watchlistsHandler *watchlists.Handler,
 	workspaceHandler *workspace.Handler,
 ) *Server {
 	app := fiber.New(fiber.Config{
@@ -71,6 +73,9 @@ func New(
 	}
 	if settingsHandler != nil {
 		settingsHandler.Register(api)
+	}
+	if watchlistsHandler != nil {
+		watchlistsHandler.Register(api)
 	}
 	if workspaceHandler != nil {
 		workspaceHandler.Register(api)

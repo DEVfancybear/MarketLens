@@ -16,6 +16,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/users"
+	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
 
@@ -47,6 +48,7 @@ func main() {
 	// and stay unmounted when auth cannot be assembled.
 	var authHandler *auth.Handler
 	var settingsHandler *settings.Handler
+	var watchlistsHandler *watchlists.Handler
 	var workspaceHandler *workspace.Handler
 	switch {
 	case pool == nil:
@@ -66,11 +68,13 @@ func main() {
 		requireAuth := auth.RequireAuth(tokens)
 		settingsStore := settings.NewRepo(pool.Pool)
 		settingsHandler = settings.NewHandler(settingsStore, requireAuth)
-		workspaceHandler = workspace.NewHandler(settingsStore, requireAuth)
+		watchlistsStore := watchlists.NewRepo(pool.Pool)
+		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)
+		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, requireAuth)
 		log.Info().Msg("protected api routes enabled")
 	}
 
-	srv := httpserver.New(cfg, pool, authHandler, settingsHandler, workspaceHandler)
+	srv := httpserver.New(cfg, pool, authHandler, settingsHandler, watchlistsHandler, workspaceHandler)
 
 	if err := srv.Start(ctx); err != nil {
 		stdlog.Fatalf("server error: %v", err)

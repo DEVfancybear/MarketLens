@@ -11,6 +11,7 @@ import (
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/settings"
+	"github.com/smc-trading-terminal/backend/internal/watchlists"
 )
 
 type fakeSettingsReader struct {
@@ -23,6 +24,12 @@ func (f *fakeSettingsReader) Get(_ context.Context, userID string) (settings.Doc
 	return f.doc, nil
 }
 
+type fakeWatchlistLister struct{}
+
+func (f *fakeWatchlistLister) List(_ context.Context, _ string) ([]watchlists.Watchlist, error) {
+	return []watchlists.Watchlist{}, nil
+}
+
 func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	reader := &fakeSettingsReader{doc: settings.Document{
 		UI:            json.RawMessage(`{"theme":"dark"}`),
@@ -32,7 +39,7 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	}}
 
 	app := fiber.New()
-	NewHandler(reader, fakeRequireAuth).Register(app.Group("/api/v1"))
+	NewHandler(reader, &fakeWatchlistLister{}, fakeRequireAuth).Register(app.Group("/api/v1"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/bootstrap", nil)
 	resp, err := app.Test(req)

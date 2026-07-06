@@ -7,6 +7,7 @@ import (
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/settings"
+	"github.com/smc-trading-terminal/backend/internal/watchlists"
 )
 
 // SettingsReader is the narrow settings dependency bootstrap needs. Keeping it
@@ -16,13 +17,19 @@ type SettingsReader interface {
 	Get(ctx context.Context, userID string) (settings.Document, error)
 }
 
+// WatchlistLister is the narrow watchlists dependency bootstrap needs.
+type WatchlistLister interface {
+	List(ctx context.Context, userID string) ([]watchlists.Watchlist, error)
+}
+
 type Handler struct {
 	settings    SettingsReader
+	watchlists  WatchlistLister
 	requireAuth fiber.Handler
 }
 
-func NewHandler(settings SettingsReader, requireAuth fiber.Handler) *Handler {
-	return &Handler{settings: settings, requireAuth: requireAuth}
+func NewHandler(settings SettingsReader, watchlists WatchlistLister, requireAuth fiber.Handler) *Handler {
+	return &Handler{settings: settings, watchlists: watchlists, requireAuth: requireAuth}
 }
 
 func (h *Handler) Register(router fiber.Router) {
@@ -30,26 +37,35 @@ func (h *Handler) Register(router fiber.Router) {
 }
 
 type bootstrapResponse struct {
-	Settings         settings.Document `json:"settings"`
-	Watchlists       []any             `json:"watchlists"`
-	DrawingTemplates []any             `json:"drawingTemplates"`
-	Indicators       []any             `json:"indicators"`
-	PineScripts      []any             `json:"pineScripts"`
-	Alerts           []any             `json:"alerts"`
-	Layouts          []any             `json:"layouts"`
+	Settings         settings.Document      `json:"settings"`
+	Watchlists       []watchlists.Watchlist `json:"watchlists"`
+	DrawingTemplates []any                  `json:"drawingTemplates"`
+	Indicators       []any                  `json:"indicators"`
+	PineScripts      []any                  `json:"pineScripts"`
+	Alerts           []any                  `json:"alerts"`
+	Layouts          []any                  `json:"layouts"`
 }
 
 func (h *Handler) bootstrap(c *fiber.Ctx) error {
 	userID, _ := c.Locals(auth.LocalUserID).(string)
+
 	doc, err := h.settings.Get(c.Context(), userID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
 	}
 
+	lists := []watchlists.Watchlist{}
+	if h.watchlists != nil {
+		lists, err = h.watchlists.List(c.Context(), userID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+		}
+	}
+
 	empty := []any{}
 	return c.JSON(bootstrapResponse{
 		Settings:         doc,
-		Watchlists:       empty,
+		Watchlists:       lists,
 		DrawingTemplates: empty,
 		Indicators:       empty,
 		PineScripts:      empty,
