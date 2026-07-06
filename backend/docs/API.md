@@ -142,6 +142,61 @@ Backed by `watchlists` + `watchlist_symbols`.
 
 ---
 
+## MT5 Tick Stream
+
+MT5 tick streaming is a localhost sidecar stream, not a public Fiber HTTP endpoint.
+
+| Component | Path / Address | Purpose |
+| --- | --- | --- |
+| Python bridge | `backend/bridge/mt5_stream/mt5_server.py` | Reads MT5 symbol catalog/ticks via `MetaTrader5` and broadcasts JSON |
+| WebSocket | `ws://localhost:8765` | Local tick stream (`MT5_STREAM_HOST`/`MT5_STREAM_PORT`) |
+| Go consumer | `backend/cmd/mt5-stream` | Consumes the stream with `github.com/gorilla/websocket` |
+
+Symbol catalog payload, sent when a Go client connects:
+
+```json
+{
+  "type": "symbols",
+  "source": "mt5",
+  "count": 1200,
+  "stream_symbols": ["EURUSD", "GBPUSD"],
+  "symbols": [
+    {
+      "name": "EURUSD",
+      "path": "Forex\\Majors",
+      "description": "Euro vs US Dollar",
+      "visible": true,
+      "digits": 5,
+      "spread": 10,
+      "trade_mode": 4,
+      "currency_base": "EUR",
+      "currency_profit": "USD",
+      "currency_margin": "EUR"
+    }
+  ]
+}
+```
+
+Tick payload:
+
+```json
+{
+  "type": "tick",
+  "source": "mt5",
+  "symbol": "EURUSD",
+  "bid": 1.08425,
+  "ask": 1.08437,
+  "timestamp": 1760000000,
+  "time_msc": 1760000000123
+}
+```
+
+The stream is local-only by default and must not be exposed directly to the internet.
+Use `MT5_SYMBOLS=EURUSD,GBPUSD` to stream a subset or `MT5_STREAM_ALL_VISIBLE=true` to stream the
+visible Market Watch symbols. Leaving both unset publishes only the catalog.
+
+---
+
 ## Drawings  🔒
 
 Backed by `drawings`. Payload mirrors the frontend `DRAWING_OBJECT_MODEL`.

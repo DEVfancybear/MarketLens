@@ -213,10 +213,14 @@ localStorage-only to write-through (local first, then API) without regressing of
 
 ---
 
-### Phase 6 — Watchlists
+### Phase 6 — Watchlists + MT5 Tick Streaming
 
-**Goal:** Durable, multi-list watchlists. The current single localStorage array (`watchlist`) becomes
-the user's **"Default"** list; the schema already supports several named lists.
+**Goal:** Durable, multi-list watchlists plus a localhost MT5 market-data stream path. The current
+single localStorage array (`watchlist`) becomes the user's **"Default"** list; the schema already
+supports several named lists. MT5 streaming is intentionally implemented as a sidecar so the Go API
+does not link against Python/C++ MT5 libraries.
+
+#### Phase 6A — Watchlists
 
 **Tables:** `watchlists`, `watchlist_symbols` (`DATABASE.md` §7.1). **Frontend store:** `watchlistStore`.
 
@@ -233,6 +237,42 @@ the user's **"Default"** list; the schema already supports several named lists.
 **Acceptance**
 - Add/remove a symbol, rename a list, reorder — all survive reload and appear on a second device.
 - Adding a duplicate symbol is a no-op (no 500, no dup row).
+
+#### Phase 6B — MT5 Tick Streaming
+
+**Goal:** Stream live MT5 tick data from a locally installed MetaTrader 5 terminal into Go without
+putting MT5/Python dependencies in the Fiber API process.
+
+**Runtime path**
+
+```text
+MetaTrader 5 terminal
+  -> backend/bridge/mt5_stream/mt5_server.py
+  -> ws://localhost:8765
+  -> backend/cmd/mt5-stream
+```
+
+**Steps**
+1. Python sidecar initializes MT5 through the `MetaTrader5` package. It supports either an already
+   logged-in terminal or explicit `MT5_LOGIN`/`MT5_PASSWORD`/`MT5_SERVER` demo-account env vars.
+2. Python sidecar runs a local `websockets` server on `MT5_STREAM_HOST:MT5_STREAM_PORT`
+   (`localhost:8765` by default).
+3. Python sidecar loads the full MT5 symbol catalog with `symbols_get()` and sends it to each Go
+   client on connect.
+4. Python sidecar streams ticks for `MT5_SYMBOLS` (comma-separated) or, if explicitly enabled,
+   every currently visible MT5 symbol through `MT5_STREAM_ALL_VISIBLE=true`. It de-dupes each symbol
+   by `time_msc` and broadcasts compact JSON tick messages.
+5. Go command `cmd/mt5-stream` connects with `github.com/gorilla/websocket`, decodes the symbol
+   catalog plus strong typed `Mt5Tick` values, logs them, and reconnects with exponential backoff.
+6. Both processes handle graceful shutdown locally; the stream is market-data only and does not
+   execute orders.
+
+**Acceptance**
+- With MT5 installed and logged in, `python -m bridge.mt5_stream.mt5_server` starts
+  `ws://localhost:8765`.
+- `go run ./cmd/mt5-stream` logs ticks in the form
+  `[EURUSD] Bid: X.XXXXX | Ask: X.XXXXX | Time: HH:mm:ss`.
+- Restarting the Python bridge does not require restarting the Go consumer; it reconnects.
 
 **Complexity:** Low–Medium.
 

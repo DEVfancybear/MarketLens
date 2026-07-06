@@ -13,7 +13,8 @@ The historical roadmap below is preserved. The current top priority after the mo
    ~~Phase 5 - Sync bootstrap + settings (`0003_settings`, `internal/settings` GET/PUT/PATCH,
    `GET /api/v1/sync/bootstrap`).~~ Done.
    ~~Phase 6 - Watchlists (`0004_watchlists`, `internal/watchlists` CRUD + symbols, bootstrap
-   slice).~~ Done (verified live on Neon).
+   slice) + local MT5 tick streaming (`bridge/mt5_stream`, `cmd/mt5-stream`).~~ Done (watchlists
+   verified live on Neon; MT5 stream code is ready for a Windows host with MT5 installed).
    Current backend step is **Phase 7 - Drawings** (`0005`-ish charting migration: `drawings` +
    `drawing_templates`; batch upsert deduped on `client_id`; `GET /drawings?symbol=`, bulk
    `/drawings/batch`, `drawing-templates` CRUD), then Phases 8-13 per-resource.

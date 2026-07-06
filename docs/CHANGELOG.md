@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 6 MT5 tick streaming (2026-07-07)
+- Added `backend/bridge/mt5_stream/mt5_server.py`, a localhost Python WebSocket sidecar that
+  initializes MetaTrader 5 through the `MetaTrader5` package, sends the MT5 symbol catalog on
+  connect, and streams de-duplicated ticks for configured `MT5_SYMBOLS` or visible Market Watch
+  symbols.
+- Added `backend/cmd/mt5-stream`, a Go consumer using `github.com/gorilla/websocket` with typed
+  `Mt5Tick` decoding, formatted terminal logs, reconnect backoff, and graceful shutdown.
+- Added MT5 stream requirements and README under `backend/bridge/mt5_stream/`.
+- Updated backend Phase 6 docs so Phase 6 now includes both watchlists and MT5 tick streaming.
+
 ### Added - Frontend Phase 6 watchlist API write-through (2026-07-07)
 - Expanded the frontend `ky` API client with a shared `deleteJson` helper.
 - Added typed Phase 6 watchlist resource calls for create/update/delete lists and add/remove

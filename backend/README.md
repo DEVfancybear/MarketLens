@@ -1,17 +1,16 @@
 # SMC Trading Terminal Backend
 
-The backend consists of two parts:
+The backend consists of three runtime surfaces:
 
 1. **Go API** - the primary HTTP API server. Fiber is the selected framework target.
-2. **Python MT5 Bridge** - a sidecar WebSocket service for FTMO broker integration.
+2. **Python FTMO/MT5 Bridge** - a sidecar WebSocket service for broker/order integration.
+3. **MT5 Tick Stream** - a local Python WebSocket bridge plus Go consumer for realtime MT5 market
+   ticks.
 
-The Python bridge runs as a separate process alongside the Go API. It is not part of the Go Fiber
+Python bridges run as separate processes alongside the Go API. They are not part of the Go Fiber
 request path.
 
-Backend framework decision: **Fiber**.
-
-Current implementation note: the scaffold still uses Go stdlib `net/http`. Fiber is introduced in
-Phase 0 of `docs/BACKEND_IMPLEMENTATION_PLAN.md`.
+Backend framework decision: **Fiber**. The active Go API uses Fiber handlers and route groups.
 
 ## Quick Start
 
@@ -39,6 +38,21 @@ python -m pip install -r bridge/ftmo_mt5/requirements.txt
 python -m bridge.ftmo_mt5.service
 ```
 
+### MT5 Tick Stream
+
+Run these commands from `backend/` on a Windows host with MT5 installed:
+
+```bash
+# Install stream bridge dependencies
+python -m pip install -r bridge/mt5_stream/requirements.txt
+
+# Start local MT5 tick WebSocket bridge on ws://localhost:8765
+python -m bridge.mt5_stream.mt5_server
+
+# In a second terminal, consume the stream from Go
+go run ./cmd/mt5-stream
+```
+
 ## Configuration
 
 ### Go API
@@ -52,6 +66,10 @@ python -m bridge.ftmo_mt5.service
 
 See `bridge/ftmo_mt5/README.md` for full configuration reference.
 
+### MT5 Tick Stream
+
+See `bridge/mt5_stream/README.md` for full configuration reference.
+
 ## Project Structure
 
 ```text
@@ -64,6 +82,8 @@ backend/
     middleware/                # Shared HTTP middleware
   bridge/                      # Python MT5 WebSocket bridge (sidecar)
     ftmo_mt5/                  # FTMO broker integration
+    mt5_stream/                # Local MT5 tick streaming bridge
+  cmd/mt5-stream/main.go       # Go MT5 tick stream consumer
   docs/                        # Backend architecture and API docs
 ```
 

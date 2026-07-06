@@ -10,8 +10,11 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
 - Historical/audit frontend reports are under `frontend/docs/archive/`.
 - Backend code is under `backend/`; Fiber is the current framework. Backend Phases 0-6 are complete:
   Fiber, database/auth foundations, Firebase verification, sessions, `/api/v1/auth/*` routes,
-  `/api/v1/settings`, `/api/v1/sync/bootstrap`, and watchlist persistence.
-- The Python FTMO/MT5 bridge now lives under `backend/bridge/ftmo_mt5/`.
+  `/api/v1/settings`, `/api/v1/sync/bootstrap`, watchlist persistence, and local MT5 tick
+  streaming.
+- The Python FTMO/MT5 bridge now lives under `backend/bridge/ftmo_mt5/`. The market-data-only MT5
+  tick stream sidecar lives under `backend/bridge/mt5_stream/`, with a Go consumer at
+  `backend/cmd/mt5-stream`.
 - Backend auth, database, API, and phased implementation docs live under `backend/docs/`.
 - Frontend Google auth UI exists and uses Firebase Auth; backend session exchange targets the
   implemented `/api/v1/auth/*` routes. In local development the frontend API client defaults to
@@ -26,6 +29,8 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   future workspace resources are still pending.
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
+- Backend MT5 streaming is local-only: run `python -m bridge.mt5_stream.mt5_server` from
+  `backend/`, then `go run ./cmd/mt5-stream` to consume `ws://localhost:8765`.
 
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 
