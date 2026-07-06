@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Watchlist section drag/drop parity (2026-07-07)
+- Made watchlist section rows draggable divider tokens, matching TradingView's section behavior.
+- Added shared `moveSectionInList()` token-layout logic so section movement changes group
+  boundaries without manually mutating symbol order in the UI.
+- Added watchlist tests for moving section dividers before symbols, to the unsectioned top boundary,
+  and around other sections that share the same symbol index.
+- Updated `frontend/docs/WATCHLIST_ARCHITECTURE.md` with the section-divider drag/drop rules.
+
 ### Added - Frontend backend bootstrap read path (2026-07-07)
 - Added typed `ky` resource modules for `/api/v1/settings`, `/api/v1/watchlists`, and
   `/api/v1/sync/bootstrap`.

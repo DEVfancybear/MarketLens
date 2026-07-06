@@ -7,6 +7,7 @@ import { uid } from "@/utils/id";
 import {
   clampSectionIndex,
   createWatchlistSection,
+  moveSectionInList,
   moveSymbolInList,
   moveSymbolToSectionInList,
   moveSymbolToUnsectionedStartInList,
@@ -15,6 +16,7 @@ import {
   removeSymbolFromList,
   renameSectionInList,
   type SectionInsertMode,
+  type WatchlistSectionMoveTarget,
 } from "./watchlistLayout";
 
 export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
@@ -45,6 +47,10 @@ type MoveSymbolPayload = {
   mode?: SectionInsertMode;
   targetSectionId?: string;
   unsectionedStart?: boolean;
+};
+type MoveSectionPayload = {
+  sectionId: string;
+  target: WatchlistSectionMoveTarget;
 };
 
 const DEFAULT_SYMBOLS = [
@@ -415,6 +421,18 @@ export const moveWatchlistSymbolAtom = atom(
   },
 );
 
+export const moveWatchlistSectionAtom = atom(
+  null,
+  (get, set, payload: MoveSectionPayload) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
+      moveSectionInList(list, payload.sectionId, payload.target),
+    );
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
 export const setWatchlistSortAtom = atom(null, (get, set, key: SortKey) => {
   const curKey = get(watchlistSortKeyAtom);
   const curDir = get(watchlistSortDirAtom);
@@ -445,6 +463,7 @@ export interface WatchlistActions {
   addSection: (title: string, index?: number) => void;
   renameSection: (sectionId: string, title: string) => void;
   removeSection: (sectionId: string) => void;
+  moveSection: (sectionId: string, target: WatchlistSectionMoveTarget) => void;
   moveSymbol: (
     ticker: string,
     index: number,
@@ -484,6 +503,8 @@ const watchlistCombinedAtom = atom<WatchlistStoreInterface>((get) => {
     renameSection: (sectionId, title) =>
       store.set(renameWatchlistSectionAtom, sectionId, title),
     removeSection: (sectionId) => store.set(removeWatchlistSectionAtom, sectionId),
+    moveSection: (sectionId, target) =>
+      store.set(moveWatchlistSectionAtom, { sectionId, target }),
     moveSymbol: (ticker, index, mode, targetSectionId, unsectionedStart) =>
       store.set(moveWatchlistSymbolAtom, {
         ticker,

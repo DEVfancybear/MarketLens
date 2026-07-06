@@ -1,11 +1,13 @@
 # Watchlist Architecture
 
-Last updated: 2026-07-06
+Last updated: 2026-07-07
 
 ## Goal
 
 The Watchlist should behave like TradingView while staying compatible with the existing frontend
-data flow. It currently remains browser-local until backend persistence is implemented.
+data flow. Authenticated bootstrap can hydrate flat watchlist lists/symbols from the backend; section
+metadata and local edits still use the existing frontend store until write-back and section
+persistence are added.
 
 ## Source Files
 
@@ -49,6 +51,7 @@ Write atoms:
 - `renameWatchlistSectionAtom`
 - `removeWatchlistSectionAtom`
 - `moveWatchlistSymbolAtom`
+- `moveWatchlistSectionAtom`
 
 Pure section/order rules live in `watchlistLayout.ts`:
 
@@ -56,6 +59,7 @@ Pure section/order rules live in `watchlistLayout.ts`:
 - section delete without deleting symbols
 - symbol removal with section-index repair
 - symbol drag/drop before a section or inside a section
+- section divider drag/drop before/after symbols or other section dividers
 - token-based section targeting when multiple sections share the same symbol index
 
 The token model is important for this TradingView case:
@@ -71,6 +75,9 @@ ETH
 must target that section token, not only the numeric symbol index. `moveSymbolToSectionInList()`
 rebuilds the row order from section/symbol tokens, inserts the dragged symbol before or after the
 target section token, then derives section indexes back from the resulting token stream.
+`moveSectionInList()` uses the same token stream for section-header dragging, so moving a section
+row changes the divider boundary exactly like TradingView: symbols below the moved divider become
+part of that section without mutating the symbol order itself.
 
 Section header rows are treated as "drop inside section" targets. The UI also infers the active
 section from the pointer Y position inside the scroll body, so an empty trailing section remains
@@ -120,15 +127,22 @@ Enter/blur, and cancels on Escape.
 Section rows are rendered as full-width blue rows with a chevron and uppercase title. Adding a
 section inserts it above the selected symbol when possible, otherwise at the end of the active list.
 Double-clicking a section title opens inline rename mode. Section delete removes only the header and
-leaves symbols in place. Symbols are draggable; dropping on a section header or the section's empty
-body moves the symbol inside that section, while the dedicated top drop strip moves it back outside
-all sections.
+leaves symbols in place. Section rows are draggable divider tokens; dropping a section before/after
+a symbol or another section repositions the group boundary. Symbols are draggable; dropping on a
+section header or the section's empty body moves the symbol inside that section, while the dedicated
+top drop strip moves it back outside all sections.
 
-## Future Backend Sync
+## Backend Sync
 
-When backend watchlist persistence lands:
+Current backend watchlist persistence stores list metadata and flat symbols. Frontend bootstrap
+hydrates those lists after auth through `/api/v1/sync/bootstrap`, but UI mutations and section
+metadata are not written back yet.
+
+Next sync steps:
 
 1. Keep `watchlistSymbolsAtom` as the UI compatibility contract.
-2. Hydrate active-list metadata from the backend after auth bootstrap.
-3. Continue writing the legacy `watchlist` key until all older consumers are removed.
-4. Add conflict handling for multiple browser tabs/devices.
+2. Add write-through mutations for create/rename/delete list and add/remove/reorder symbols.
+3. Extend the backend contract before syncing section rows, because current Phase 6 only persists
+   flat symbols.
+4. Continue writing the legacy `watchlist` key until all older consumers are removed.
+5. Add conflict handling for multiple browser tabs/devices.

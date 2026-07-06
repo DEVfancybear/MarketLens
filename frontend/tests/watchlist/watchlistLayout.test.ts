@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  moveSectionInList,
   moveSymbolInList,
   moveSymbolToSectionInList,
   moveSymbolToUnsectionedStartInList,
@@ -199,6 +200,56 @@ test("moves a symbol from a section to the unsectioned top area", () => {
     [
       ["section_1", 1],
       ["section_2", 2],
+    ],
+  );
+});
+
+test("moves a trailing section divider before a symbol", () => {
+  const result = moveSectionInList(
+    trailingEmptySectionList(),
+    "section_2",
+    { kind: "symbol-boundary", index: 1 },
+  );
+
+  assert.deepEqual(result.symbols, ["DOGEUSDT", "ETHUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 0],
+      ["section_2", 1],
+    ],
+  );
+});
+
+test("moves a section divider to the unsectioned top boundary", () => {
+  const result = moveSectionInList(
+    trailingEmptySectionList(),
+    "section_2",
+    { kind: "start" },
+  );
+
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_2", 0],
+      ["section_1", 0],
+    ],
+  );
+});
+
+test("reorders section dividers that share one symbol boundary", () => {
+  const result = moveSectionInList(twoSectionList(), "section_2", {
+    kind: "section",
+    sectionId: "section_1",
+    edge: "before",
+  });
+
+  assert.deepEqual(result.symbols, ["DOGEUSDT", "ETHUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_2", 1],
+      ["section_1", 1],
     ],
   );
 });

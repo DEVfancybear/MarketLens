@@ -1,6 +1,6 @@
 # CURRENT STATE
 
-_Post-monorepo update 2026-07-06._
+_Post-monorepo update 2026-07-07._
 
 This file intentionally preserves the pre-`9691bd1` project state below. Since the monorepo split:
 
@@ -8,23 +8,23 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
 - Frontend feature docs referenced below as `docs/*.md` have been restored under `frontend/docs/`
   unless they are cross-project memory docs.
 - Historical/audit frontend reports are under `frontend/docs/archive/`.
-- Backend code is under `backend/`; Fiber is the current framework. Backend Phases 0-5 are complete:
+- Backend code is under `backend/`; Fiber is the current framework. Backend Phases 0-6 are complete:
   Fiber, database/auth foundations, Firebase verification, sessions, `/api/v1/auth/*` routes,
-  `/api/v1/settings`, and `/api/v1/sync/bootstrap`.
+  `/api/v1/settings`, `/api/v1/sync/bootstrap`, and watchlist persistence.
 - The Python FTMO/MT5 bridge now lives under `backend/bridge/ftmo_mt5/`.
 - Backend auth, database, API, and phased implementation docs live under `backend/docs/`.
 - Frontend Google auth UI exists and uses Firebase Auth; backend session exchange targets the
   implemented `/api/v1/auth/*` routes. In local development the frontend API client defaults to
   `http://localhost:8080`; production should set `NEXT_PUBLIC_API_BASE_URL`.
 - Frontend remote workspace sync is planned in
-  `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Backend settings/bootstrap now exist; remaining
-  workspace slices are Phase 6+ and authenticated persistence should stay feature-flagged until each
-  resource endpoint ships.
+  `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Backend settings/bootstrap/watchlists now exist;
+  remaining workspace slices are Phase 7+ and authenticated persistence should stay feature-flagged
+  until each resource endpoint ships.
 - Frontend now consumes `GET /api/v1/sync/bootstrap` after backend auth and applies server UI
   settings, SMC settings, notification defaults, and watchlists into Jotai atoms. Mutation write-back
   for these slices is still the next sync step.
-- Watchlist UI/store received a TradingView-style menu, rename mode, and section rows; see
-  `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
+- Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
+  drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 

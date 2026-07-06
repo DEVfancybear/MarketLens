@@ -4,6 +4,10 @@ import { uid } from "../utils/id";
 import type { WatchlistList, WatchlistSection } from "./watchlistStore";
 
 export type SectionInsertMode = "before-section" | "inside-section";
+export type WatchlistSectionMoveTarget =
+  | { kind: "start" }
+  | { kind: "symbol-boundary"; index: number }
+  | { kind: "section"; sectionId: string; edge: "before" | "after" };
 
 type WatchlistLayoutToken =
   | { kind: "section"; section: WatchlistSection }
@@ -137,6 +141,65 @@ function fromLayoutTokens(
   }
 
   return { ...list, symbols, sections };
+}
+
+function tokenIndexForSymbolBoundary(
+  tokens: WatchlistLayoutToken[],
+  boundaryIndex: number,
+): number {
+  let symbolsSeen = 0;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.kind !== "symbol") continue;
+    if (symbolsSeen === boundaryIndex) return index;
+    symbolsSeen += 1;
+  }
+
+  return tokens.length;
+}
+
+export function moveSectionInList(
+  list: WatchlistList,
+  sectionId: string,
+  target: WatchlistSectionMoveTarget,
+): WatchlistList {
+  const tokens = toLayoutTokens(list);
+  const movingToken = tokens.find(
+    (token) => token.kind === "section" && token.section.id === sectionId,
+  );
+  if (!movingToken) return list;
+
+  if (target.kind === "section" && target.sectionId === sectionId) {
+    return list;
+  }
+
+  const tokensWithoutSection = tokens.filter(
+    (token) => token.kind !== "section" || token.section.id !== sectionId,
+  );
+
+  let insertIndex = 0;
+  if (target.kind === "symbol-boundary") {
+    insertIndex = tokenIndexForSymbolBoundary(
+      tokensWithoutSection,
+      clampSectionIndex(target.index, list.symbols.length),
+    );
+  } else if (target.kind === "section") {
+    const targetIndex = tokensWithoutSection.findIndex(
+      (token) =>
+        token.kind === "section" && token.section.id === target.sectionId,
+    );
+    if (targetIndex < 0) return list;
+    insertIndex = target.edge === "before" ? targetIndex : targetIndex + 1;
+  }
+
+  const nextTokens = [
+    ...tokensWithoutSection.slice(0, insertIndex),
+    movingToken,
+    ...tokensWithoutSection.slice(insertIndex),
+  ];
+
+  return fromLayoutTokens(list, nextTokens);
 }
 
 export function moveSymbolToSectionInList(
