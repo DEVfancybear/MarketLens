@@ -20,17 +20,17 @@ Read these backend docs first:
 
 Current backend code has:
 
-- Fiber server scaffold in `backend/internal/httpserver/server.go`.
+- Fiber server in `backend/internal/httpserver/server.go`.
 - `/health` and `/health/ready`.
-- Database/auth/session primitives.
+- Google auth/session API: `/api/v1/auth/google`, `/api/v1/auth/me`, `/api/v1/auth/refresh`,
+  `/api/v1/auth/logout`, `/api/v1/auth/sessions`.
+- Settings API: `GET/PUT/PATCH /api/v1/settings`.
+- Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
-Current backend API status from `backend/docs/API.md`:
-
-- `/health` is implemented.
-- `/api/v1/*` endpoints are planned contracts, not fully wired yet.
-
-Frontend work should therefore be staged behind a backend availability check and typed adapters.
-Do not remove working local behavior for anonymous users until the backend endpoints exist.
+Current backend API status from `backend/docs/API.md`: auth, settings, and bootstrap are live;
+watchlists/drawings/indicators/Pine/alerts/journal/layouts/sim trading are still phase-by-phase
+work. Frontend work should remain staged behind `backendSession` and typed adapters. Do not remove
+working local behavior for anonymous users until each resource endpoint exists.
 
 ## Source Of Truth Rules
 
@@ -63,17 +63,25 @@ type WorkspaceDataMode = "anonymous-local" | "remote" | "offline-queue";
 
 Authenticated users must resolve to `remote` after `GET /api/v1/auth/me` succeeds.
 
-## Frontend Modules To Add
+## Frontend API Modules
 
-Create a dedicated API layer under `frontend/src/services/api/`.
+Use the dedicated API layer under `frontend/src/services/api/`.
 
-Recommended structure:
+Current structure:
 
 ```text
 frontend/src/services/api/
-  client.ts               # ky instance, credentials, JSON/error handling
-  errors.ts               # ApiError, typed error codes
-  dto.ts                  # backend DTO types
+  client.ts               # ky instance, credentials, JSON/error normalization
+  errors.ts               # ApiError, typed error helpers
+  resources/
+    authApi.ts            # implemented: /auth/me, /auth/refresh, /auth/google, /auth/logout
+```
+
+Target structure as more backend phases land:
+
+```text
+frontend/src/services/api/
+  dto.ts
   adapters/
     settingsAdapter.ts
     watchlistAdapter.ts
@@ -84,7 +92,6 @@ frontend/src/services/api/
     journalAdapter.ts
     simAdapter.ts
   resources/
-    authApi.ts
     syncApi.ts
     settingsApi.ts
     watchlistsApi.ts
@@ -99,8 +106,8 @@ frontend/src/services/api/
     simApi.ts
 ```
 
-`frontend/src/services/auth/authClient.ts` already contains a small best-effort fetch wrapper for
-auth. Replace that wrapper with the shared `ky` API client so every endpoint uses the same rules.
+`frontend/src/services/auth/authClient.ts` is now a compatibility re-export over
+`services/api/resources/authApi.ts`, so auth uses the same shared `ky` client as future resources.
 
 The frontend standard HTTP client is
 [`ky`](https://github.com/sindresorhus/ky). Do not add new raw `fetch()` calls for backend API
@@ -210,16 +217,17 @@ Recommended frontend startup order:
 
 1. Firebase client auth resolves.
 2. `backendMe()` checks backend session.
-3. If no backend session but Firebase token exists, exchange token through `POST /api/v1/auth/google`.
-4. Call `GET /api/v1/sync/bootstrap`.
-5. Apply settings first.
-6. Apply watchlists.
-7. Apply Pine scripts before custom indicators.
-8. Apply indicators.
-9. Apply drawing templates.
-10. Apply alerts and notification settings.
-11. Apply layouts metadata.
-12. Lazy-load current symbol drawings.
+3. If access expired, `POST /api/v1/auth/refresh` rotates backend cookies.
+4. If no backend session but Firebase token exists, exchange token through `POST /api/v1/auth/google`.
+5. Call `GET /api/v1/sync/bootstrap`.
+6. Apply settings first.
+7. Apply watchlists.
+8. Apply Pine scripts before custom indicators.
+9. Apply indicators.
+10. Apply drawing templates.
+11. Apply alerts and notification settings.
+12. Apply layouts metadata.
+13. Lazy-load current symbol drawings.
 
 All atom updates from bootstrap should happen in one orchestration action so the UI does not render
 half-local, half-remote state.
@@ -322,13 +330,14 @@ login.
 
 ## Endpoint Readiness Checklist
 
-Frontend remote mode should not be enabled globally until these exist:
+Frontend remote mode should not be enabled globally until each required slice exists:
 
-- `POST /api/v1/auth/google`
-- `POST /api/v1/auth/logout`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/sync/bootstrap`
-- `GET/PATCH /api/v1/settings`
+- `POST /api/v1/auth/google` - implemented and wired in frontend
+- `POST /api/v1/auth/logout` - implemented and wired in frontend
+- `GET /api/v1/auth/me` - implemented and wired in frontend
+- `POST /api/v1/auth/refresh` - implemented and wired in frontend
+- `GET /api/v1/sync/bootstrap` - backend implemented; frontend apply path pending
+- `GET/PATCH /api/v1/settings` - backend implemented; frontend resource adapter pending
 - `GET/POST/PATCH/DELETE /api/v1/watchlists`
 - `POST/DELETE /api/v1/watchlists/:id/symbols`
 - `GET /api/v1/drawings?symbol=...`
@@ -348,10 +357,10 @@ Everything else can remain lazy or phased:
 
 ### Phase FE-0: API Foundation
 
-- Add shared API client and typed DTOs.
-- Replace `authClient.ts` internal fetch helper with shared client.
+- Add shared API client and typed DTOs. **Auth client foundation is implemented.**
+- Replace `authClient.ts` internal fetch helper with shared client. **Done for auth.**
 - Add MSW or test fixtures for planned backend JSON.
-- No store behavior change yet.
+- Remaining foundation work: add DTO/adapters for settings, sync bootstrap, and watchlists.
 
 ### Phase FE-1: Remote Bootstrap Read Path
 

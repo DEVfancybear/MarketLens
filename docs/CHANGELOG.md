@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Frontend auth uses Go backend session API (2026-07-06)
+- Added a shared `ky` backend API client and auth resource module for `/api/v1/auth/me`,
+  `/auth/refresh`, `/auth/google`, and `/auth/logout` with httpOnly-cookie credentials.
+- Updated the Firebase auth bridge so Google sign-in reuses an existing backend session, refreshes
+  cookies when possible, and falls back to exchanging the Firebase ID token through the Go backend
+  login/register endpoint.
+- Updated frontend auth/sync docs to mark backend auth as implemented and wired.
+
 ### Fixed - Chart gap backfill preserving full series (2026-07-06)
 - Fixed a remaining chart gap case where a targeted REST backfill could replace the store with only
   the fetched window plus newer bars, dropping older live candles around the visible area. History

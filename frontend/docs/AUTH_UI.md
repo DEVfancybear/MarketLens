@@ -1,70 +1,81 @@
 # Auth UI (Google sign-in / sign-up)
 
-> Status: **implemented** (frontend). Login/register with a Google account. Register and login are the
-> same action — the first Google sign-in auto-creates the account. Backend contract:
-> `../../backend/AUTH.md` / `API.md`.
+> Status: **implemented**. The frontend signs in with Firebase Google Auth, then exchanges the
+> Firebase ID token with the Go backend auth API for httpOnly session cookies.
 
-## How it works
+## How It Works
 
-Firebase Auth is the client-side source of truth for the signed-in identity (it runs the Google
-consent popup and creates the account). The Go backend session exchange is **best-effort**: the app
-is fully usable whether or not the backend is running.
+Firebase Auth is the client-side identity provider. The Go backend owns the durable session used by
+authenticated API calls.
 
+```text
+SignInButton
+  -> signInWithGoogle()
+  -> Firebase Google popup
+  -> onAuthStateChanged
+  -> useAuthSession()
+  -> GET  /api/v1/auth/me        (reuse existing backend cookie when valid)
+  -> POST /api/v1/auth/refresh   (rotate cookies if access expired)
+  -> POST /api/v1/auth/google    (login/register with Firebase ID token)
+  -> authStore.backendSession = true
 ```
-SignInButton ─click─► signInWithGoogle() ─► Firebase Google popup
-                                               │ onAuthStateChanged
-                                               ▼
-                          useAuthSession() ─► authStore (user, status)
-                                               │  best-effort
-                                               ▼
-                          exchangeGoogleToken(idToken) ─► POST /api/v1/auth/google
-                                               │  (no-op until backend + NEXT_PUBLIC_API_BASE_URL exist)
-                                               ▼
-                                        backendSession = true
-```
+
+The `/auth/google` call receives `{ idToken }`, sets backend `access_token` and `refresh_token`
+httpOnly cookies, and returns `{ user, isNewUser }`.
+
+Anonymous mode still works when `NEXT_PUBLIC_API_BASE_URL` is not set, but authenticated remote
+workspace sync must require `backendSession === true`.
 
 ## Files
 
-| File                                        | Role                                                        |
-| ------------------------------------------- | ----------------------------------------------------------- |
-| `src/services/firebase/client.ts`           | exports `getFirebaseApp()` + `getFirebaseAuthConfigStatus()`|
-| `src/services/auth/firebaseAuth.ts`          | Google popup, sign-out, `subscribeAuth`, `currentIdToken`   |
-| `src/services/auth/authClient.ts`            | best-effort backend calls (`/auth/google`, `/logout`, `/me`)|
-| `src/store/authStore.ts`                     | Jotai atoms: `authUserAtom`, `authStatusAtom`, `authErrorAtom`, `backendSessionAtom` |
-| `src/hooks/useAuthSession.ts`                | binds Firebase → store; mounted in `GlobalRuntime`          |
-| `src/components/auth/AuthControl.tsx`        | switches SignInButton ↔ UserMenu                            |
-| `src/components/auth/SignInButton.tsx`       | "Sign in with Google" button                                |
-| `src/components/auth/UserMenu.tsx`           | avatar dropdown + Sign out                                  |
-| `src/components/auth/GoogleIcon.tsx`         | Google "G" mark                                             |
+| File | Role |
+| --- | --- |
+| `src/services/firebase/client.ts` | Firebase app/config bootstrap |
+| `src/services/auth/firebaseAuth.ts` | Google popup, Firebase sign-out, Firebase auth subscription |
+| `src/services/api/client.ts` | Shared `ky` backend client with `credentials: "include"` |
+| `src/services/api/errors.ts` | `ApiError` and backend error-envelope helpers |
+| `src/services/api/resources/authApi.ts` | Auth resource calls: `/auth/me`, `/auth/refresh`, `/auth/google`, `/auth/logout` |
+| `src/services/auth/authClient.ts` | Compatibility re-export for auth resource calls |
+| `src/store/authStore.ts` | Jotai atoms: user/status/error/backendSession |
+| `src/hooks/useAuthSession.ts` | Firebase-to-backend session bridge mounted in `GlobalRuntime` |
+| `src/components/auth/AuthControl.tsx` | Switches SignInButton/UserMenu |
+| `src/components/auth/SignInButton.tsx` | "Sign in with Google" action |
+| `src/components/auth/UserMenu.tsx` | Avatar dropdown + sign out |
 
-Wiring: `AuthControl` sits in the right cluster of `TopToolbar`; `useAuthSession()` runs in
-`GlobalRuntime`.
+## State Machine
 
-## Auth status state machine
+`loading -> anonymous | authed`. Clicking sign-in moves to `authenticating` until Firebase resolves.
+Backend session exchange happens after Firebase emits a user:
 
-`loading` → (Firebase reports) → `anonymous` | `authed`. Clicking sign-in → `authenticating` →
-`authed` (popup success) or back to `anonymous` (popup closed/failed). `AuthControl` renders nothing
-during `loading` (avoids a sign-in-button flash for already-signed-in users).
+- backend configured and exchange succeeds: `backendSession = true`
+- backend configured and exchange fails: `backendSession = false`, `authError` is set, UI identity
+  remains Firebase-authed
+- backend not configured: `backendSession = false`, anonymous/local persistence remains available
 
 ## Configuration
 
-Requires the Firebase web config (client.ts reads these). Google sign-in additionally needs
-`authDomain`:
+Frontend:
 
-```
+```env
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<project>.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080   # optional — enables backend session exchange
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 ```
 
-In the Firebase console: **Authentication → Sign-in method → enable Google**, and add the app's
-domains (localhost + prod) under **Authorized domains**. If the config is missing, the button stays
-visible but clicking it logs a clear error instead of throwing.
+Backend:
 
-## Not yet done
+- `DATABASE_URL` must point to a migrated Postgres database.
+- Firebase Admin service-account env vars must be configured.
+- CORS must include the frontend origin and allow credentials.
 
-- Backend `/api/v1/auth/google` (see `BACKEND_IMPLEMENTATION_PLAN.md` Phases 0–4) — until it exists,
-  `backendSession` stays `false` and the app runs on Firebase-only client auth.
-- Gating cross-device sync on `backendSession` (future, `DATABASE.md` §11).
+Firebase console:
+
+- Enable Authentication -> Sign-in method -> Google.
+- Add localhost and production domains under Authorized domains.
+
+## Logout
+
+`UserMenu` attempts `POST /api/v1/auth/logout` first, then always signs out Firebase. Backend logout
+is best-effort so an expired backend cookie cannot trap the user in the signed-in UI.

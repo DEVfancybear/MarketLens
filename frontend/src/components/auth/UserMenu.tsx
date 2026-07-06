@@ -21,7 +21,11 @@ export function UserMenu({ user }: { user: AuthUser }) {
 
   const handleSignOut = async () => {
     try {
-      await backendLogout(); // best-effort backend session revoke
+      try {
+        await backendLogout(); // best-effort backend session revoke
+      } catch (err) {
+        doLog("error", `Backend sign-out failed: ${(err as Error)?.message ?? ""}`);
+      }
       await signOutUser(); // Firebase sign-out (useAuthSession clears state)
     } catch (err) {
       doLog("error", `Sign-out failed: ${(err as Error)?.message ?? ""}`);
