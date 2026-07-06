@@ -1,299 +1,175 @@
-# ARCHITECTURE
+# Frontend Architecture
 
-SMC Trading Terminal — a TradingView/FXReplay/TradeZella-style web terminal focused on
-Smart Money Concept backtesting via a no-look-ahead Replay engine.
+This is the active architecture note for the Next.js frontend after the monorepo split. Historical
+milestones, audits, and old implementation reports are kept under `archive/`; do not treat archived
+phase notes as the current source of truth.
 
-> Scope: the **current** architecture as built (updated 2026-07-03 for Pine source-code indicators).
-> See `CURRENT_STATE.md` for the Phase-1 gap analysis and `NEXT_TASKS.md` for planned work.
+## Runtime Stack
 
----
+| Concern | Current choice |
+| --- | --- |
+| Framework | Next.js 16 App Router |
+| UI | React 19 |
+| Language | TypeScript strict mode |
+| State | Jotai atoms |
+| Backend HTTP | `ky` shared API client |
+| Auth | Firebase Google Auth plus Go Fiber session exchange |
+| Charts | TradingView Lightweight Charts 4.2.3 |
+| Styling | TailwindCSS and CSS variables |
+| Workers | Native Web Worker for SMC compute |
+| Persistence | localStorage for anonymous/lightweight state, IndexedDB for journal/screenshots |
 
-## 1. Tech stack
+The frontend is a browser-only terminal mounted from `src/components/Terminal.tsx`. App-wide runtime
+loops mount once from `src/components/layout/GlobalRuntime.tsx`.
 
-| Concern | Choice | Version |
-|---|---|---|
-| Framework | Next.js (App Router) | 16.2.9 |
-| Language | TypeScript (strict) | 5.7 |
-| UI | React | 19 |
-| Charts | TradingView **Lightweight Charts** | 4.2.3 |
-| State | **Jotai** (atoms) | 2.x |
-| Async/data | **@tanstack/react-query** | 5 |
-| Styling | TailwindCSS + CSS variables | 3.4 |
-| Icons | lucide-react | — |
-| Persistence | IndexedDB (`idb`) + localStorage | — |
-| Workers | Native Web Worker (SMC compute) | — |
+## Directory Map
 
-> **2026-06-28**: Upgraded to Next.js 16.2.9 (Turbopack). `next lint` removed in v16 —
-> linting now runs via `eslint` directly with flat config (`eslint.config.mjs`).
-> All 11 Zustand stores migrated to Jotai atoms — see below.
->
-> `framer-motion` is in `package.json` but its installed build is broken (`motion-dom` export
-> mismatch). It is **not imported anywhere**; animations use CSS. See `HANDOFF.md` → Known Issues.
-
----
-
-## 2. Runtime model & rendering pipeline
-
-Browser-only app. The whole UI loads via
-`dynamic(() => import('@/components/Terminal'), { ssr: false })` (`src/app/page.tsx`), so no
-chart/canvas/localStorage code is server-rendered (removes a hydration-mismatch bug class).
-
-```
-src/app/layout.tsx          server shell (<html class="theme-dark">, fonts, metadata)
-  └─ providers.tsx          React Query client + theme sync          [client]
-       └─ page.tsx          dynamic ssr:false → <Splash/> fallback   [client]
-            └─ Terminal.tsx  gated on useStoreHydration()            [client]
-                 ├─ GlobalRuntime   headless runtime loops (see §6)
-                 └─ TerminalLayout  resizable docks (top/left/center/right/bottom)
-```
-
-### Chart layer stack (z-order, all inside `PriceChart`)
-```
-PriceChart (lightweight-charts: candles + volume + overlay indicators)
-  └─ ChartContext.Provider { chart, candleSeries, candles, version }
-       ├─ SmcLayer              canvas overlay — SMC objects          pointer-events:none
-       ├─ TradeLevels           price lines for open positions
-       ├─ AlertLines            price lines for alerts
-       ├─ AlertOverlay          interactive chart alerts
-       ├─ DrawingLayer          canvas overlay — user drawings        pointer-events:auto*
-       └─ ReplaySelectionLayer  canvas overlay — bar-replay picker    z-30, auto when selecting
-  + ChartContextMenu            right-click price actions (portal)
-  + ReplayFloatingToolbar       Bar Replay transport/timing controls
-```
-Overlays convert **(time, price) → pixels** via `timeScale().timeToCoordinate()` /
-`series.priceToCoordinate()` and repaint when `ChartContext.version` bumps (pan/zoom via
-`subscribeVisibleLogicalRangeChange`, resize via `ResizeObserver`). Overlays never store
-pixels — this is the sync contract that keeps drawings pinned through zoom/pan/resize/timeframe.
-
----
-
-## 3. Directory map
-
-```
+```text
 src/
-  app/            layout.tsx, page.tsx (dynamic), providers.tsx, globals.css
+  app/                 Next shell, providers, route handlers, service-worker route
   components/
-    Terminal.tsx          client root (hydration gate)
-    layout/               TerminalLayout, BottomPanel, GlobalRuntime, Splash
-    chart/                PriceChart, ChartArea, ChartContext, IndicatorPane,
-                          DrawingLayer, ChartContextMenu, AlertLines, AlertOverlay,
-                          chartTheme, chartRegistry
-    alerts/               AlertCenter, AlertEditDialog
-    smc/                  SmcLayer
-    toolbar/              TopToolbar, DrawingToolbar, SymbolSearch, IndicatorMenu,
-                          IndicatorSettingsDialog, SmcMenu, ChartSettingsMenu
-    watchlist/            Watchlist
-    replay/               ReplayPanel, ReplayControls, ReplayDashboard, ReplaySelectionLayer,
-                          ReplayFloatingToolbar, ReplayTimingMenu
-    trade/                TradePanel, OrderTicket, PositionsTable, RiskPanel, TradeLevels
-    journal/              JournalPanel
-    analytics/            AnalyticsPanel, EquityChart
-    pine/                 PineEditor
-    ui/                   IconButton, Panel, Resizer, Dropdown
-    notifications/        Toaster
-  hooks/          useMarketData, useVisibleCandles, useReplayPlayback, useHotkeys,
-                  useSmcEngine, useTradeRuntime, useStoreHydration, useResizable
-  services/       indicators.ts, pineScript.ts, replayEngine.ts, tradeEngine.ts, analyticsEngine.ts,
-                  alertEngine.ts, exporters.ts, storage.ts, exchange.ts,
-                  market-data/{MarketDataService, HistoricalDataService, CandleEngine, symbols, providers/*},
-                  notifications/{notify, sound, browser}, smc/{structure, fvg, orderBlock, liquidity, ...}
-  store/          **Jotai atom modules**: uiStore, chartStore, replayStore, smcStore, tradeStore,
-                  journalStore, analyticsStore, watchlistStore, marketDataStore, alertStore, toastStore
-                  (each exports individual `atom()` + write atoms + `useXStore()` compat hook)
-  types/          market, marketData, drawing, indicators, smc, trade, analytics, index
-  utils/          format, time, math, cn, id, bus
-  workers/        smc.worker.ts
+    layout/            terminal shell, panes, bottom panel, global runtime
+    chart/             price chart, indicator panes, drawing layer, time toolbar
+    toolbar/           top toolbar, interval selector, indicators, drawing menus
+    watchlist/         TradingView-style watchlist, sections, drag/drop
+    replay/            bar replay controls, overlays, dashboards
+    trade/             order ticket, positions, risk panel
+    journal/           journal and screenshot workflows
+    analytics/         analytics views
+    pine/              Pine editor
+    ui/                shared UI primitives
+  hooks/               runtime hooks and chart/replay integrations
+  services/
+    api/               ky client, error normalization, backend resource modules
+    auth/              Firebase auth wrapper and auth API compatibility exports
+    firebase/          Firebase app and messaging bootstrap
+    market-data/       market data service, candle repair, providers
+    notifications/     toast, sound, browser, push, external dispatch
+    smc/               SMC engines
+  store/               Jotai atom modules
+  types/               shared domain types
+  utils/               formatting, ids, math, event helpers
+  workers/             SMC worker
+tests/                 focused TypeScript tests
 ```
 
----
+## State Model
 
-## 4. State management (Jotai atoms)
+Each store module exports state atoms, write atoms, and, where needed, a compatibility hook for old
+selector-style callers. Prefer `useAtomValue()` for reads and `useSetAtom()` for actions in new code.
 
-All state is managed through **Jotai atoms** — each store module exports:
+Important atom modules:
 
-1. **Individual state atoms** — `atom<Type>(defaultValue)` for each piece of state
-2. **Write atoms** — `atom(null, (get, set, ...args) => { ... })` for action methods
-3. **Compatibility hook** — `useXStore(selector?)` for backward-compatible selector-based access
-4. **Non-React accessor** — `getXState()` using `getDefaultStore()` for services/hooks
+| Module | Owns |
+| --- | --- |
+| `authStore` | Firebase identity, auth status/error, backend session flag |
+| `uiStore` | theme, panels, bottom tab, bottom/right pane visibility, logs |
+| `chartStore` | symbol/timeframe mirror, drawings, indicators, Pine scripts, editor state, selection |
+| `marketDataStore` | live quotes/candles, selected market, provider subscriptions, connection status |
+| `watchlistStore` | watchlist lists, active list, sections, symbol order, sorting |
+| `alertStore` | alerts, triggered alerts, history, alert settings, selected/editing alert |
+| `notificationStore` | Firebase push registration and permission state |
+| `replayStore` | bar replay cursor, selection, playback, speed, anchor |
+| `tradeStore` | simulator positions, order prefill, equity, latest trade market |
+| `mt5Store` | MT5 bridge config, status, account snapshot, orders, symbol info, command log |
+| `smcStore` | SMC settings and current computed snapshot |
+| `journalStore` | journal entries and screenshot attachments |
+| `toastStore` | transient in-app notifications |
 
-### Atom modules
+## Market Data And Chart Flow
 
-| Module | State atoms | Key atoms | Persistence |
-|---|---|---|---|
-| `uiStore` | theme, panels, bottomTab, rightOpen, bottomOpen, fullscreen, alertCenterOpen, gridVisible, logs | `logAtom`, `hydrateAtom`, `toggleThemeAtom` | localStorage `ui` |
-| `chartStore` | symbol, timeframe, candles, drawings, indicators, Pine scripts/editor state, activeTool, drawColor, selectedDrawingId, selectedDrawingIds, drawingsLocked, drawingsHidden, editingIndicatorId, crosshair, loading | `addDrawingAtom`, `updateDrawingAtom`, `removeDrawingAtom`, `toggleIndicatorAtom`, `savePineScriptAtom`, `addCustomIndicatorFromScriptAtom`, ... | localStorage `drawings:<symbol>`, `indicators`, `pineScripts` |
-| `replayStore` | active, selecting, reSelecting, playing, speed, cursor, anchor, total | `armAtom`, `disarmAtom`, `stepAtom`, `beginReSelectAtom`, `cancelReSelectAtom`, `confirmReSelectAtom` | — |
-| `smcStore` | snapshot, settings | `toggleSmcAtom`, `hydrateSmcAtom` | localStorage `smc-settings` |
-| `tradeStore` | equity, startingEquity, positions, price, time, tradeSymbol | `placeOrderAtom`, `closePositionAtom`, `closeAllAtom` | — |
-| `journalStore` | entries, loaded | `addJournalEntryAtom`, `removeJournalEntryAtom` (async) | **IndexedDB** `smc-terminal/journal` |
-| `analyticsStore` | startingEquity, symbolFilter | `setStartingEquityAtom`, `setSymbolFilterAtom` | — |
-| `watchlistStore` | symbols, sortKey, sortDir | `addWatchlistSymbolAtom`, `removeWatchlistSymbolAtom` | localStorage `watchlist` |
-| `marketDataStore` | quotes, candles, selectedSymbol, selectedTimeframe, connectionStatus, subscriptions, subRefs, lastUpdate | `updateCandleAtom`, `selectMarketAtom`, `subscribeAtom` | runtime only |
-| `alertStore` | alerts, triggeredAlerts, history, settings, selectedAlertId, editingAlertId | `createAlertAtom`, `triggerAlertAtom`, `deleteAlertAtom` | localStorage `alerts` |
-| `toastStore` | toasts | `pushToastAtom`, `dismissToastAtom` | runtime only |
+Market data is live-provider based, not the old seeded mock service.
 
-### Render optimisation by example
-
-Before (Zustand — component re-renders on *any* store change):
-```tsx
-const symbol = useChartStore((s) => s.symbol);   // re-renders when candles tick
+```text
+MarketDataService
+  -> provider modules (Binance, OANDA, FXCM, IC Markets, TwelveData)
+  -> marketDataStore
+  -> useMarketData()
+  -> chartStore.candlesAtom
+  -> useVisibleCandles()
+  -> PriceChart / indicators / SMC / replay / trade runtime
 ```
 
-After (Jotai — component only re-renders when *that atom* changes):
-```tsx
-const symbol = useAtomValue(symbolAtom);          // only re-renders on symbol change
+`services/market-data/candleSeries.ts` owns candle normalization, merge, realtime upsert, and short
+gap detection. This is the common path that prevents WebSocket/history races from dropping candles
+until a hard refresh.
+
+`PriceChart` uses incremental Lightweight Charts updates only for true latest-bar updates/appends.
+History reloads, replay window replacements, symbol/timeframe changes, and non-incremental data
+changes must use full `setData()`.
+
+## Replay Safety
+
+`useVisibleCandles()` is the only candle source chart renderers, indicators, SMC, and trade runtime
+should consume. When replay is active it returns `candles[0..cursor]`; future bars do not exist to
+downstream engines. See `REPLAY_ARCHITECTURE.md` for replay viewport and jump behavior.
+
+## Backend And Auth Flow
+
+```text
+SignInButton
+  -> Firebase Google popup
+  -> useAuthSession()
+  -> ky client
+  -> Go Fiber /api/v1/auth/*
+  -> backendSessionAtom
 ```
 
-Key optimisations:
-- `TopToolbar` no longer re-renders on every candle tick
-- `DrawingToolbar` subscribes to 5 atoms instead of full 30-field chartStore
-- `ChartArea` subscribes to 5 atoms instead of full chartStore
-- `AlertOverlay` subscribes only to `alertsAtom` + `selectedAlertIdAtom`
-- `PriceChart` indicator overlay only re-renders when `indicatorsAtom` changes
-- `PriceChart` batches chart-context version bumps through `requestAnimationFrame()` so multiple
-  candle/viewport updates in one frame do not trigger duplicate overlay renders
+Backend API calls must go through `src/services/api/client.ts` and resource modules under
+`src/services/api/resources/`. Do not add raw `fetch()` calls for backend resources.
 
-### Candle ingestion and render contract
+Local development defaults the API base to `http://localhost:8080`; production must set
+`NEXT_PUBLIC_API_BASE_URL`. The frontend reads env from `frontend/.env.local` and also fills missing
+values from root `.env.local` / `.env` for local monorepo convenience.
 
-Realtime candles and REST history meet in `marketDataStore`, not inside chart components.
-`services/market-data/candleSeries.ts` owns the pure rules:
+Remote workspace sync is staged. Auth, settings, and sync bootstrap exist on the backend; remaining
+workspace slices should move behind typed DTO adapters one at a time. See
+`BACKEND_API_SYNC_ARCHITECTURE.md`.
 
-- normalize candle time/order and enforce `high >= open/close` and `low <= open/close`,
-- merge a delayed REST history snapshot with already-received live candles instead of overwriting
-  the live forming bar,
-- upsert realtime candles by timestamp so delayed bars or provider corrections repair the series
-  instead of being dropped as stale,
-- detect short gaps in the active series so `useMarketData()` can perform a bounded REST backfill
-  without forcing a full page refresh,
-- classify chart updates as `update-latest`, `append`, or `replace`.
+## Persistence
 
-This avoids the common reload-only bug where WebSocket candles arrive first, the REST history
-request resolves later, and `setCandles()` replaces the full series with an older snapshot. In that
-case the chart can look like it is missing candles until a hard refresh. The store now merges by
-time and preserves live forming bars at or after the history edge.
+Current local persistence is still used for anonymous mode and not-yet-migrated workspace slices:
 
-It also avoids the reconnect/tab-sleep bug where the WebSocket resumes at the latest bar and never
-replays one or two missed bars. `findRecentCandleGap()` detects bounded recent gaps, and
-`useMarketData()` fetches a small history window ending at the first bar after the gap. That history
-then flows back through `marketDataStore.setCandles()`, which merges it with live candles by time.
-Large gaps are ignored by this repair path so closed-market sessions do not loop backfill.
+- localStorage: `ui`, `drawings:<symbol>`, `indicators`, `pineScripts`, `drawingTemplates`,
+  `watchlist:lists`, `watchlist:activeId`, legacy `watchlist`, `smc-settings`, `alerts`,
+  `pushNotifications`, chart/timezone preferences, interval favorites, drawing tool favorites.
+- IndexedDB: journal entries and screenshots through `services/storage.ts`.
+- Backend: auth/session, settings, and sync bootstrap are live; full authenticated workspace
+  persistence is pending per resource.
 
-`PriceChart` may call Lightweight Charts `series.update()` only when the candle array prefix is the
-same object references and only the latest bar changed or one new bar appended. Any history reload,
-replay window replacement, symbol/timeframe change, theme context change, or non-incremental data
-shape change must call full `setData()`.
+## Rendering And Overlays
 
-### Access patterns
+The chart renders candles and native price lines through Lightweight Charts. Drawing, SMC, alert,
+position, replay, and Pine/dashboard overlays project domain coordinates into pixels from the active
+chart context. Store time/price/domain coordinates, never persisted pixels.
 
-| Context | Pattern |
-|---|---|
-| React state read | `useAtomValue(symbolAtom)` |
-| React action call | `useSetAtom(addDrawingAtom)` → `addDrawing(drawing)` |
-| React compat (legacy) | `useChartStore((s) => s.symbol)` |
-| Non-React read | `getDefaultStore().get(candlesAtom)` |
-| Non-React write | `getDefaultStore().set(logAtom, { level, msg })` |
+Viewport invalidation is shared through the chart context/version and helper utilities documented in
+`ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
 
-> **⚠ Gotcha:** `useXStore(selector)` returns unstable references (new state object per render).
-> Never destructure action functions from it into `useEffect` deps — use `useSetAtom(writeAtom)`
-> instead. Example: `useAlertStore((s) => s.hydrate)` → `useSetAtom(hydrateAtom)`.
+## Runtime Loops
 
-**Alert architecture (Phase 2):** `marketDataStore` (SSOT) → `useAlertEngine` (push subscription,
-no polling/sockets; refcounted alert-symbol tickers) → pure `services/alertEngine.ts` (above/below/
-crossUp/crossDown) → `alertStore.triggerAlert` (once-only/recurring) → `services/notifications/
-notify.ts` → toast / sound / browser (Firebase push seam for Phase 6). UI: `components/alerts/
-AlertCenter.tsx` + chart `AlertOverlay`. Full detail in **`ALERT_ARCHITECTURE.md`**.
+Mounted from `GlobalRuntime`:
 
-**Single source of truth for visibility:** `useVisibleCandles()` returns `candlesAtom` value
-(full) or, while replay is armed, `candles[0..replayCursor]`. Every chart/indicator/SMC/trade
-computation reads from it — the structural no-look-ahead guarantee. During **re-select mode**
-(`reSelectingAtom`), visible candles remain unchanged (hover previews use the full list read
-directly from `candlesAtom` in the overlay canvas).
-Bar Replay date/chart selection uses `indexNearestByTime()` to choose the closest candle; MTF
-snapshots intentionally use `indexAtOrBefore()` so higher-timeframe rows cannot reveal a bar after
-the replay cursor. When a replay action replaces the visible candle window by more than one bar
-(date jump, random bar, scrubber jump, restart, re-select), `PriceChart` preserves the current zoom
-span but realigns the logical right edge to the newest candle in that replacement window. This keeps
-the chart from looking at empty future whitespace while leaving one-by-one playback and realtime
-ticks on the incremental update path.
+- market-data bootstrap and active symbol subscriptions
+- replay playback clock
+- hotkeys
+- SMC worker bridge
+- trade runtime
+- alert engine
+- Firebase/backend auth session bridge
+- push notification registration reconciliation
+- MT5 bridge runtime when enabled
+- local store hydration
 
-Full replay maintenance details live in `REPLAY_ARCHITECTURE.md`.
+## Focused Docs
 
-> Atoms init with deterministic SSR-safe defaults; persisted values load in
-> `useStoreHydration()` after mount via `getDefaultStore().set(hydrateAtom)`.
-
----
-
-## 5. Data flow
-
-```
-MarketDataService (Binance WS / OANDA REST / TwelveData)
-        │  realtime kline + ticker
-        ▼
-marketDataStore (quotesAtom / candlesAtom / updateCandleAtom)
-        ▼
-useMarketData (selectMarket → history → mirror into chartStore)
-        ▼
-chartStore.setCandlesAtom  → candlesAtom (master series)
-        ▼
-useVisibleCandles()  → replay-aware slice
-        ├─ PriceChart.setData()      candles + volume
-        ├─ indicators.ts + pineScript.ts
-        │  SMA/EMA/VWAP/RSI/MACD/ADR + CUSTOM Pine-like scripts
-        ├─ useSmcEngine → smc.worker structure/FVG/OB/liquidity/...
-        └─ useTradeRuntime           fills pending orders, SL/TP
-```
-
----
-
-## 6. Runtime loops (`GlobalRuntime`, headless)
-
-- `useReplayPlayback` — rAF clock advancing the replay cursor at TradingView-style speeds
-  `0.1x`, `0.3x`, `0.5x`, `1x`, `3x`, `10x`.
-- `useHotkeys` — drawing shortcuts (1–9, Delete, Ctrl+D/Z/A/I, Escape) + replay transport
-  (Space, Shift+Down, ArrowLeft/Right, Shift+Left, R) + trade (B/S/X).
-- `useSmcEngine` — posts visible candles to `smc.worker` (throttled ~90ms) → `setSmcSnapshotAtom`.
-  `SmcLayer` then renders a capped, TradingView-style subset of the snapshot on a custom canvas
-  above the chart canvas (`z-[2]`) and below drawings. See `SMC_OVERLAY_MAINTENANCE.md` before
-  changing the SMC feature list, render caps, or screenshot/live canvas layering.
-- `useTradeRuntime` — streams the latest visible candle into `setTradeMarketAtom`.
-- `useAlertEngine` — pushes `marketDataTickAtom` subscription, evaluates alerts on price ticks.
-- Journal hydrate from IndexedDB on mount.
-
----
-
-## 7. Domain engines (pure, replay-safe)
-
-- **Indicators** (`services/indicators.ts`, `services/pineScript.ts`): SMA, EMA, session-VWAP,
-  RSI, MACD, ADR, plus CUSTOM Pine-like source-code indicators. Full subsystem contract:
-  `INDICATOR_ARCHITECTURE.md`.
-- **SMC** (`services/smc/*`): structure (HH/HL/LH/LL, BOS/CHOCH/MSS), FVG, Order Blocks,
-  Liquidity (EQH/EQL + sweeps), Displacement, Sessions + kill zones — orchestrated by
-  `smcEngine.ts`, run off-thread in `smc.worker.ts`.
-- **Trade** (`services/tradeEngine.ts`): risk sizing, market/limit/stop triggering, SL/TP, R.
-- **Analytics** (`services/analyticsEngine.ts`): win rate, profit factor, expectancy, max DD,
-  equity/drawdown curve, monthly, R-distribution.
-
-All consume only the candle array passed in → inherently look-ahead-free.
-
----
-
-## 8. Persistence
-
-- **localStorage:** `ui`, `drawings:<symbol>`, `indicators`, `pineScripts`, `watchlist`,
-  `smc-settings`, `alerts`.
-- **IndexedDB** (`services/storage.ts`, db `smc-terminal` v1): `journal` + `screenshots` via
-  `idb`. SSR-guarded and lazy.
-
----
-
-## 9. Drawing subsystem
-
-The drawing engine uses a document-level pointer-event architecture:
-- `DrawingLayer` canvas is `pointerEvents:"none"` — purely a rendering surface
-- All pointer/keyboard events handled via document capture-phase listeners in `DrawingInteractionManager`
-- 25 drawing tools registered via `ToolRegistry` plugin architecture
-- Hit testing via `HitTestEngine` (canonical targets: `"p1" | "p2" | "body"`)
-- Command history via `CommandManager` + `useCommandHistory` for undo/redo
-- All tools' hitTest vocabulary standardised (2026-06-26 audit)
-
-Full architecture audit in `DEEPSEEK.md` §"Full Interaction Pipeline Audit".
+- `AUTH_UI.md`
+- `BACKEND_API_SYNC_ARCHITECTURE.md`
+- `CHART_VISUAL_PROFILE.md`
+- `CHART_TIME_NAVIGATION_ARCHITECTURE.md`
+- `DRAWING_ENGINE_ARCHITECTURE.md`
+- `INDICATOR_ARCHITECTURE.md`
+- `REPLAY_ARCHITECTURE.md`
+- `SETTTING_ARCHITECTURE.md`
+- `WATCHLIST_ARCHITECTURE.md`
+- `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`

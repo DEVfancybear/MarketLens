@@ -68,7 +68,7 @@ DrawingRendererLoop.render()
 | Visibility | ✅ PASS | DrawingContextMenu → chartStore.hideDrawing / toggleHideAll |
 | Chart zoom | ✅ PASS | Canvas pointerEvents:none; container listeners don't block wheel |
 | Chart pan | ✅ PASS | Container listeners only capture on drawing hit; chart gets events otherwise |
-| Drag smoothness | ✅ PASS | rAF loop + livePointsRef (no Zustand per move) |
+| Drag smoothness | PASS | rAF loop + livePointsRef (no Jotai/store write per move) |
 
 ### ⚠️ Known limitation: Rotated Rectangle
 

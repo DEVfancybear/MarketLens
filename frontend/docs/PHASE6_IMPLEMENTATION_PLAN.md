@@ -7,8 +7,10 @@ Implementation status:
 - **Phase 6A - Push notifications:** implemented. See `PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **Phase 6A extension - Telegram/Discord alert channels:** implemented. See
   `PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - MT5 bridge:** planned in detail. Protocol contract added in
-  `MT5_BRIDGE_PROTOCOL.md`; implementation plan remains in `PHASE6B_MT5_BRIDGE_PLAN.md`.
+- **Phase 6B - MT5 bridge:** partially implemented. The frontend MT5 store/client path and Node
+  dry-run bridge exist; the Python bridge service lives under `backend/bridge/ftmo_mt5/`. Protocol
+  contract remains in `MT5_BRIDGE_PROTOCOL.md`; detailed plan remains in
+  `PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ## 1. Objective
 
@@ -547,7 +549,8 @@ Exit criteria:
 - Add manual QA scripts for push and MT5.
 - Add bridge protocol examples.
 - Add troubleshooting docs.
-- Update `HANDOFF.md`, `NEXT_TASKS.md`, `PROJECT_ARCHITECTURE.md`, and `CHANGELOG.md`.
+- Update `docs/HANDOFF.md`, `docs/NEXT_TASKS.md`, `docs/PROJECT_STRUCTURE.md`, and
+  `docs/CHANGELOG.md`.
 
 Exit criteria:
 

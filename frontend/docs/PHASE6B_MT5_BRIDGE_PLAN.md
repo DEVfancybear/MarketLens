@@ -1,6 +1,8 @@
 # PHASE 6B MT5 BRIDGE PLAN
 
-_Created 2026-07-01. Updated 2026-07-02. Scope: detailed implementation plan for MT5 bridge integration._
+_Created 2026-07-01. Updated 2026-07-06. Scope: detailed implementation plan for MT5 bridge
+integration. The frontend MT5 store/client path and Node dry-run bridge exist; the Python bridge
+service now lives under `backend/bridge/ftmo_mt5/`._
 
 ## 1. Goal
 
@@ -247,7 +249,7 @@ export interface Mt5OrderRequest {
 | `src/components/trade/Mt5ConnectionPanel.tsx` | Connect/disconnect, status, account summary, heartbeat/error. |
 | `src/components/trade/LiveOrderConfirmDialog.tsx` | Required confirmation before live place/close/closeAll. |
 | `src/components/trade/Mt5CommandLog.tsx` | Compact diagnostics for sent/ack/reject/execution messages. |
-| `scripts/mock-mt5-bridge.mjs` | Local WebSocket mock bridge for deterministic frontend testing. |
+| `frontend/scripts/mock-mt5-bridge.mjs` | Local WebSocket mock bridge for deterministic frontend testing. |
 
 ## 9. Existing Modules To Modify
 
@@ -260,8 +262,8 @@ export interface Mt5OrderRequest {
 | `src/components/trade/TradeLevels.tsx` | Render MT5 live positions when mode is MT5. |
 | `src/store/tradeStore.ts` | No behavior change required; keep simulator isolated. |
 | `.env.example` | Add bridge URL, enable flag, max volume, confirmation flag. |
-| `HANDOFF.md` | Update next action and runtime notes after implementation. |
-| `CHANGELOG.md` | Record each milestone. |
+| `docs/HANDOFF.md` | Update next action and runtime notes after implementation. |
+| `docs/CHANGELOG.md` | Record each milestone. |
 
 ## 10. Store Design
 

@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Refresh frontend docs for current architecture (2026-07-06)
+- Rewrote `frontend/README.md` to match the current Next 16/Jotai/live-market-data frontend instead
+  of the old Zustand/mock-data structure.
+- Replaced stale `frontend/docs/ARCHITECTURE.md` content with the current monorepo, auth, backend
+  API, market-data, persistence, and runtime-loop architecture.
+- Updated `frontend/docs/ALERT_ARCHITECTURE.md` to reflect implemented push and external alert
+  dispatch channels.
+- Corrected active drawing docs that still referred to Zustand selectors/state after the Jotai
+  migration.
+
 ### Fixed - Google login action after frontend split (2026-07-06)
 - Added a monorepo env fallback in `frontend/next.config.mjs` so local frontend builds can read
   missing Firebase/API values from the repository root `.env.local` after the source moved under

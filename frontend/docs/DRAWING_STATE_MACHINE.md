@@ -40,9 +40,9 @@ Cancelled ──→ Idle
 
 | Concern | File | Mechanism |
 |---|---|---|
-| Active tool state | `chartStore.activeTool` | Zustand state, set by toolbar `setActiveTool()` |
+| Active tool state | `activeToolAtom` in `chartStore` | Jotai atom state, set by toolbar through `setActiveToolAtom` |
 | Pending points | `DrawingLayer.pending` | `useState<Point[] | null>`, set to `[p1]` on first click, `null` on completion/cancel |
 | Preview rendering | `DrawingLayer.draw()` | Virtual `Drawing` with `id: '__pending'` prepended to render list |
 | Commit | `DrawingLayer.onPointerDown()` | Calls `addDrawing()` in the store |
 | Cancel | `DrawingLayer` keyboard/context handler | `setPending(null)` + optionally `setActiveTool('cursor')` |
-| Stay active | `chartStore.addDrawing()` | Single-click tools skip the `activeTool: 'cursor'` setter |
+| Stay active | `chartStore.addDrawingAtom` | Single-click tools skip resetting `activeToolAtom` to `cursor` |

@@ -1,8 +1,6 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25 · Phase 4.1 wired. Updated 2026-06-27 with the render loop & repaint contract.
-Updated 2026-07-02: merged in the standing architecture rule, the canonical drag-target contract,
-and the outstanding perf notes from the DeepSeek investigation log (`DEEPSEEK.md`)._
+_Date: 2026-06-25. Updated 2026-07-06 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, and viewport invalidation rules._
 
 ## Architecture rule (read before touching drawing/chart interaction)
 
@@ -485,3 +483,5 @@ exactly 2; Ctrl+D then Ctrl+C/Ctrl+V → exactly 3.
   tearing down/reattaching listeners on tool change risks stranding an in-progress drag if the tool
   changes mid-drag (a real regression for a fix with no measurable benefit). Left as-is per the
   architecture rule above: don't patch around pointer events for a cost that isn't real.
+
+

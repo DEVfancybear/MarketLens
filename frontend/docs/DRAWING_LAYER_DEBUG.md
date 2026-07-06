@@ -27,7 +27,7 @@ Expected console output when user clicks Trend Line then clicks chart:
 | If this is missing | Problem |
 |---|---|
 | `#1` missing | Toolbar not calling store → DrawingToolbar broken |
-| `#2` missing | DrawingLayer not subscribing → Zustand selector broken or component not mounted |
+| `#2` missing | DrawingLayer not subscribing to the active-tool atom, or component not mounted |
 | `#3` missing | Chart not loaded → data fetch failed, no candles |
 | `#4` shows `w:0 h:0` | Canvas collapsed → parent container has no size → pointer events can't fire |
 | `#5` missing (but #1-4 present) | Canvas not receiving events → another element blocking (unlikely) or browser issue |

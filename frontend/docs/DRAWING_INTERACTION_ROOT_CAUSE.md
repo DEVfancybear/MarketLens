@@ -10,7 +10,7 @@ _Date: 2026-06-25._
 DrawingToolbar.onClick
   → chartStore.setActiveTool('trendline')        ← line 117, DrawingToolbar.tsx
     → set({ activeTool: 'trendline' })            ← line 120, chartStore.ts
-      → Zustand notifies all subscribers
+      → Jotai notifies active-tool subscribers
         → DrawingToolbar re-renders                ← activeTool selector, line 98
           → IconButton `active={true}`             ← line 116
         → DrawingLayer re-renders                  ← activeTool selector, line 45
@@ -40,7 +40,8 @@ User clicks chart (with crosshair cursor)
 
 ## Trace #3: Drawing mode
 
-`activeTool` is `'trendline'` directly from `useChartStore`. There are no intermediate observers, no transformation layers. The value is read atomically from Zustand.
+`activeTool` is `'trendline'` directly from the chart store compatibility hook / Jotai atom. There
+are no intermediate observers or transformation layers.
 
 ## Trace #4: Preview rendering
 

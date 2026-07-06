@@ -25,9 +25,9 @@ Web Order Ticket
 
 Implemented in this repository:
 
-- `scripts/ftmo-mt5-bridge.mjs`: standalone FTMO bridge process that speaks the Phase 6B
+- `frontend/scripts/ftmo-mt5-bridge.mjs`: standalone Node dry-run FTMO bridge process that speaks the Phase 6B
   WebSocket protocol used by the web app.
-- `bridge/ftmo_mt5/`: standalone Python FTMO bridge service intended for real MT5 terminal
+- `backend/bridge/ftmo_mt5/`: standalone Python FTMO bridge service intended for real MT5 terminal
   integration through the official `MetaTrader5` Python package.
 - `npm run ftmo-mt5-bridge`: starts the bridge.
 - `npm run ftmo-mt5-python`: starts the Python bridge service when Python is installed.
@@ -433,7 +433,7 @@ Cons:
 Core components:
 
 ```text
-bridge/ftmo_mt5/
+backend/bridge/ftmo_mt5/
   service.py              WebSocket server
   config.py               env + secret loading
   mt5_adapter.py          initialize/login/account snapshots/order_check/order_send/modify/close
@@ -543,7 +543,7 @@ Exit criteria:
 
 ### Milestone F1 - Real Bridge Skeleton
 
-- [x] Create bridge service in `scripts/ftmo-mt5-bridge.mjs`.
+- [x] Create bridge service in `frontend/scripts/ftmo-mt5-bridge.mjs`.
 - [x] Add WebSocket server matching `MT5_BRIDGE_PROTOCOL.md`.
 - [x] Add `ftmo.readiness` and `risk.snapshot` extensions.
 - [x] Add durable append-only JSONL audit log.

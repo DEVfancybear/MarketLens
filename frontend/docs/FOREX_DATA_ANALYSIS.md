@@ -136,7 +136,7 @@ Indices (SPX500, NAS100): OANDA provides `US_SPX500` and `US_NAS100` as CFDs.
 | 6 | `services/market-data/providers/FxcmProvider.ts` | Extension point (stub/interface only) |
 | 7 | `services/market-data/providers/ICMarketsProvider.ts` | Extension point (stub/interface only) |
 | 8 | `OANDA_INTEGRATION.md` | Documentation |
-| 9 | `CURRENT_PROGRESS.md`, `NEXT_TASKS.md`, `HANDOFF.md` | Update docs |
+| 9 | `docs/CURRENT_PROGRESS.md`, `docs/NEXT_TASKS.md`, `docs/HANDOFF.md` | Update root handoff/progress docs |
 
 ## 7. Risks
 

@@ -2,6 +2,12 @@
 
 _Date: 2026-06-25. Architectural plan for TradingView-style drawing engine._
 
+> Status: **historical roadmap, superseded by the current drawing engine**. Use
+> `DRAWING_ENGINE_ARCHITECTURE.md`, `TOOL_REGISTRY.md`, `TOOL_GROUP_ARCHITECTURE.md`,
+> `SHAPE_TOOLS_ARCHITECTURE.md`, `LINE_TOOLS_ARCHITECTURE.md`, and
+> `POSITION_TOOL_ARCHITECTURE.md` for active maintenance. The audit tables below describe the
+> pre-plugin state and are preserved only as implementation history.
+
 ## 1. Current state audit
 
 ### What already exists (✅ SHIPPED)
@@ -10,7 +16,7 @@ _Date: 2026-06-25. Architectural plan for TradingView-style drawing engine._
 |---|---|---|
 | **Drawing types** | `types/drawing.ts` | ✅ 17 tools defined, `Drawing` interface with `zIndex/locked/visible/stop/target` |
 | **Store** | `store/chartStore.ts` | ✅ Full CRUD + `duplicate/lock/hide/bringToFront/sendToBack/toggleLockAll/toggleHideAll` |
-| **Renderer (canonical)** | `components/chart/drawing/drawingRenderer.ts` | ✅ Pure canvas renderer for ALL 17 tools. **DEAD CODE — not imported anywhere.** |
+| **Renderer (canonical)** | `components/chart/drawing/drawingRenderer.ts` | Historical pre-plugin renderer note; this roadmap is superseded by the current tool plugin architecture. |
 | **Renderer (inline)** | `components/chart/DrawingLayer.tsx` | ✅ Active code. Handles 7 tools (trendline, horizontal, vertical, rectangle, text, fib, cursor). Has its own inline `renderDrawing()`, `hitTest()`, drag support. |
 | **Toolbar** | `components/toolbar/DrawingToolbar.tsx` | ✅ 7 tools with icons, color picker, clear-all button |
 | **Persistence** | `store/chartStore.ts` → `localStorage` | ✅ Drawings persisted per symbol via `drawings:<symbol>` key |
