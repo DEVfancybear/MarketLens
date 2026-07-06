@@ -111,6 +111,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `SECTION 1` is distinct from dropping it into `SECTION 2`.
 - Fixed dragging symbols into an empty trailing section by treating most of the section header as
   an inside-section target instead of a before-section target.
+- Added an unsectioned top drop target so symbols can be dragged out of a section and back into the
+  ungrouped Watchlist area.
 - Expanded the local watchlist store to preserve list metadata while keeping the legacy `watchlist`
   localStorage symbol array synchronized for existing code paths.
 - Added `npm run test:watchlist` coverage for section rename/delete, symbol removal index repair,

@@ -23,9 +23,10 @@ export function resolveSectionDropMode(
   rowTop: number,
   rowHeight: number,
 ): SectionInsertMode {
-  if (!Number.isFinite(rowHeight) || rowHeight <= 0) return "inside-section";
-  const ratio = (pointerY - rowTop) / rowHeight;
-  return ratio <= 0.2 ? "before-section" : "inside-section";
+  void pointerY;
+  void rowTop;
+  void rowHeight;
+  return "inside-section";
 }
 
 export function createWatchlistSection(
@@ -156,6 +157,28 @@ export function moveSymbolToSectionInList(
 
   const insertIndex =
     mode === "before-section" ? sectionTokenIndex : sectionTokenIndex + 1;
+  const tokens = [
+    ...tokensWithoutSymbol.slice(0, insertIndex),
+    { kind: "symbol" as const, ticker },
+    ...tokensWithoutSymbol.slice(insertIndex),
+  ];
+
+  return fromLayoutTokens(list, tokens);
+}
+
+export function moveSymbolToUnsectionedStartInList(
+  list: WatchlistList,
+  ticker: string,
+): WatchlistList {
+  if (!list.symbols.includes(ticker)) return list;
+
+  const tokensWithoutSymbol = toLayoutTokens(list).filter(
+    (token) => token.kind !== "symbol" || token.ticker !== ticker,
+  );
+  const firstSectionIndex = tokensWithoutSymbol.findIndex(
+    (token) => token.kind === "section",
+  );
+  const insertIndex = firstSectionIndex >= 0 ? firstSectionIndex : 0;
   const tokens = [
     ...tokensWithoutSymbol.slice(0, insertIndex),
     { kind: "symbol" as const, ticker },

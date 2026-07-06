@@ -370,6 +370,32 @@ export function Watchlist() {
     [draggedTicker, moveSymbol, resolveSectionDrop],
   );
 
+  const onUnsectionedDragOver = useCallback(
+    (e: React.DragEvent<HTMLElement>, key = "unsectioned-start") => {
+      if (!draggedTicker) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDropTarget({ key, index: 0, mode: "before-section" });
+    },
+    [draggedTicker],
+  );
+
+  const onUnsectionedDrop = useCallback(
+    (e: React.DragEvent<HTMLElement>) => {
+      if (!draggedTicker) return;
+      e.preventDefault();
+      moveSymbol({
+        ticker: draggedTicker,
+        index: 0,
+        mode: "before-section",
+        unsectionedStart: true,
+      });
+      setDraggedTicker(null);
+      setDropTarget(null);
+    },
+    [draggedTicker, moveSymbol],
+  );
+
   const [menu, setMenu] = useState<WatchlistMenuState | null>(null);
   const onRowContext = useCallback((e: React.MouseEvent, ticker: string) => {
     e.preventDefault();
@@ -528,7 +554,10 @@ export function Watchlist() {
         className={cn(
           GRID,
           "h-7 shrink-0 border-b border-terminal-border px-2",
+          draggedTicker && "bg-terminal-panel/95",
         )}
+        onDragOver={(e) => onUnsectionedDragOver(e, "header-unsectioned")}
+        onDrop={onUnsectionedDrop}
       >
         <HeaderCell
           label="Symbol"
@@ -564,6 +593,19 @@ export function Watchlist() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5">
+        {draggedTicker && sections.length > 0 && (
+          <div
+            onDragOver={(e) => onUnsectionedDragOver(e)}
+            onDrop={onUnsectionedDrop}
+            className={cn(
+              "mx-2 mb-0.5 h-3 rounded-sm border border-dashed border-transparent",
+              dropTarget?.key === "unsectioned-start"
+                ? "border-[#668cff] bg-[#1e2f66]"
+                : "bg-transparent",
+            )}
+            aria-label="Drop outside sections"
+          />
+        )}
         {renderRows()}
       </div>
 

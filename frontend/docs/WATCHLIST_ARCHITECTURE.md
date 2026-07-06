@@ -72,9 +72,10 @@ must target that section token, not only the numeric symbol index. `moveSymbolTo
 rebuilds the row order from section/symbol tokens, inserts the dragged symbol before or after the
 target section token, then derives section indexes back from the resulting token stream.
 
-For section rows, only the top 20% is treated as "drop before section"; the rest is "drop inside
-section". This keeps empty trailing sections easy to target, matching the TradingView interaction
-where dropping on the body of a section header should place the symbol inside that section.
+Section header rows are treated as "drop inside section" targets. Moving a symbol outside all
+sections is handled by the unsectioned drop target at the top of the Watchlist/header area. This
+keeps empty trailing sections easy to target while still allowing symbols to be pulled out of a
+section into the ungrouped top area.
 
 ## UI Behavior
 

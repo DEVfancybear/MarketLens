@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   moveSymbolInList,
   moveSymbolToSectionInList,
+  moveSymbolToUnsectionedStartInList,
   removeSectionFromList,
   removeSymbolFromList,
   renameSectionInList,
@@ -136,7 +137,23 @@ test("drops a symbol into a trailing empty section", () => {
 });
 
 test("section rows treat most of the row as an inside-section drop", () => {
-  assert.equal(resolveSectionDropMode(101, 100, 20), "before-section");
+  assert.equal(resolveSectionDropMode(101, 100, 20), "inside-section");
   assert.equal(resolveSectionDropMode(106, 100, 20), "inside-section");
   assert.equal(resolveSectionDropMode(119, 100, 20), "inside-section");
+});
+
+test("moves a symbol from a section to the unsectioned top area", () => {
+  const result = moveSymbolToUnsectionedStartInList(
+    trailingEmptySectionList(),
+    "ETHUSDT",
+  );
+
+  assert.deepEqual(result.symbols, ["ETHUSDT", "DOGEUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 1],
+      ["section_2", 2],
+    ],
+  );
 });

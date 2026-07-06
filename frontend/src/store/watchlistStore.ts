@@ -9,6 +9,7 @@ import {
   createWatchlistSection,
   moveSymbolInList,
   moveSymbolToSectionInList,
+  moveSymbolToUnsectionedStartInList,
   normalizeSectionTitle,
   removeSectionFromList,
   removeSymbolFromList,
@@ -43,6 +44,7 @@ type MoveSymbolPayload = {
   index: number;
   mode?: SectionInsertMode;
   targetSectionId?: string;
+  unsectionedStart?: boolean;
 };
 
 const DEFAULT_SYMBOLS = [
@@ -341,7 +343,9 @@ export const moveWatchlistSymbolAtom = atom(
   (get, set, payload: MoveSymbolPayload) => {
     const activeId = get(activeWatchlistIdAtom);
     const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
-      payload.targetSectionId
+      payload.unsectionedStart
+        ? moveSymbolToUnsectionedStartInList(list, payload.ticker)
+        : payload.targetSectionId
         ? moveSymbolToSectionInList(
             list,
             payload.ticker,
@@ -390,6 +394,7 @@ export interface WatchlistActions {
     index: number,
     mode?: SectionInsertMode,
     targetSectionId?: string,
+    unsectionedStart?: boolean,
   ) => void;
   setSort: (key: SortKey) => void;
   hydrate: () => void;
@@ -423,8 +428,14 @@ const watchlistCombinedAtom = atom<WatchlistStoreInterface>((get) => {
     renameSection: (sectionId, title) =>
       store.set(renameWatchlistSectionAtom, sectionId, title),
     removeSection: (sectionId) => store.set(removeWatchlistSectionAtom, sectionId),
-    moveSymbol: (ticker, index, mode, targetSectionId) =>
-      store.set(moveWatchlistSymbolAtom, { ticker, index, mode, targetSectionId }),
+    moveSymbol: (ticker, index, mode, targetSectionId, unsectionedStart) =>
+      store.set(moveWatchlistSymbolAtom, {
+        ticker,
+        index,
+        mode,
+        targetSectionId,
+        unsectionedStart,
+      }),
     setSort: (key) => store.set(setWatchlistSortAtom, key),
     hydrate: () => store.set(hydrateWatchlistAtom),
   };
