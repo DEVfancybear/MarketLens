@@ -118,7 +118,8 @@ timeouts, retry policy, JSON request bodies, and error hooks.
 
 The shared client must:
 
-- Read base URL from `NEXT_PUBLIC_API_BASE_URL`.
+- Read base URL from `NEXT_PUBLIC_API_BASE_URL`; in local development only, fall back to
+  `http://localhost:8080` to match the Go Fiber default.
 - Use `ky.create()` as the only backend HTTP entry point.
 - Send `credentials: "include"` for httpOnly session cookies.
 - Send JSON bodies through `json: ...` and parse response bodies through `.json<T>()`.
@@ -139,7 +140,10 @@ Example shape:
 ```ts
 import ky from "ky";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
+const API_BASE =
+  configuredApiBase ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "");
 
 export const apiClient = ky.create({
   prefixUrl: API_BASE || undefined,

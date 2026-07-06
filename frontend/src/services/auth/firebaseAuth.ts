@@ -16,8 +16,12 @@ import type { AuthUser } from "@/store/authStore";
 
 /** Firebase Auth wrapper — Google sign-in / sign-up (register == first sign-in). */
 
+export function authConfigStatus() {
+  return getFirebaseAuthConfigStatus();
+}
+
 export function authConfigured(): boolean {
-  return getFirebaseAuthConfigStatus().configured;
+  return authConfigStatus().configured;
 }
 
 function authInstance(): Auth {

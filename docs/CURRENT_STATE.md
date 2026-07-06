@@ -13,8 +13,9 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   `/api/v1/settings`, and `/api/v1/sync/bootstrap`.
 - The Python FTMO/MT5 bridge now lives under `backend/bridge/ftmo_mt5/`.
 - Backend auth, database, API, and phased implementation docs live under `backend/docs/`.
-- Frontend Google auth UI exists and uses Firebase Auth; backend session exchange can target the
-  implemented `/api/v1/auth/*` routes when `NEXT_PUBLIC_API_BASE_URL` points at a configured Go API.
+- Frontend Google auth UI exists and uses Firebase Auth; backend session exchange targets the
+  implemented `/api/v1/auth/*` routes. In local development the frontend API client defaults to
+  `http://localhost:8080`; production should set `NEXT_PUBLIC_API_BASE_URL`.
 - Frontend remote workspace sync is planned in
   `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Backend settings/bootstrap now exist; remaining
   workspace slices are Phase 6+ and authenticated persistence should stay feature-flagged until each

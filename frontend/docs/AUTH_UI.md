@@ -23,7 +23,9 @@ SignInButton
 The `/auth/google` call receives `{ idToken }`, sets backend `access_token` and `refresh_token`
 httpOnly cookies, and returns `{ user, isNewUser }`.
 
-Anonymous mode still works when `NEXT_PUBLIC_API_BASE_URL` is not set, but authenticated remote
+In local development the backend API defaults to `http://localhost:8080` when
+`NEXT_PUBLIC_API_BASE_URL` is not set. Production deployments must set `NEXT_PUBLIC_API_BASE_URL`
+explicitly. Anonymous mode still works when the backend is unavailable, but authenticated remote
 workspace sync must require `backendSession === true`.
 
 ## Files
@@ -63,6 +65,11 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 ```
+
+Because the app is now in `frontend/`, Next normally reads env files from `frontend/.env*`. The
+frontend config also loads missing values from the repository root `.env.local` / `.env` as a
+monorepo fallback, so existing root Firebase keys still work locally. Vercel/project env vars and
+`frontend/.env.local` keep priority.
 
 Backend:
 

@@ -1,10 +1,14 @@
 import ky, { HTTPError, type Options } from "ky";
 import { ApiError, type BackendErrorEnvelope } from "./errors";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(
-  /\/+$/,
-  "",
-);
+const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
+
+// Local development defaults to the Go Fiber backend port. Production must set
+// NEXT_PUBLIC_API_BASE_URL explicitly so the browser never guesses an API host.
+const API_BASE = (
+  configuredApiBase ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "")
+).replace(/\/+$/, "");
 
 export function isBackendApiConfigured(): boolean {
   return API_BASE.length > 0;

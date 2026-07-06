@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Google login action after frontend split (2026-07-06)
+- Added a monorepo env fallback in `frontend/next.config.mjs` so local frontend builds can read
+  missing Firebase/API values from the repository root `.env.local` after the source moved under
+  `frontend/`.
+- The shared `ky` backend client now defaults to `http://localhost:8080` in local development while
+  keeping production explicit via `NEXT_PUBLIC_API_BASE_URL`.
+- The Google sign-in button now surfaces missing Firebase config in the toolbar state instead of
+  only writing an internal log entry, making failed clicks visible.
+
 ### Changed - Frontend auth uses Go backend session API (2026-07-06)
 - Added a shared `ky` backend API client and auth resource module for `/api/v1/auth/me`,
   `/auth/refresh`, `/auth/google`, and `/auth/logout` with httpOnly-cookie credentials.

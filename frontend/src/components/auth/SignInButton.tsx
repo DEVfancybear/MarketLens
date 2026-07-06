@@ -1,27 +1,41 @@
 "use client";
 import { Loader2 } from "lucide-react";
 import { useSetAtom } from "jotai";
-import { signInWithGoogle, authConfigured } from "@/services/auth/firebaseAuth";
-import { setAuthStatusAtom, setAuthErrorAtom } from "@/store/authStore";
+import { authConfigStatus, signInWithGoogle } from "@/services/auth/firebaseAuth";
+import { setAuthErrorAtom, setAuthStatusAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
 import { GoogleIcon } from "./GoogleIcon";
 
 /** "Sign in with Google" button. First sign-in also registers the account. */
-export function SignInButton({ busy = false }: { busy?: boolean }) {
+export function SignInButton({
+  busy = false,
+  error = null,
+}: {
+  busy?: boolean;
+  error?: string | null;
+}) {
   const setStatus = useSetAtom(setAuthStatusAtom);
   const setError = useSetAtom(setAuthErrorAtom);
   const doLog = useSetAtom(logAtom);
 
   const onClick = async () => {
     if (busy) return;
-    if (!authConfigured()) {
-      setError("Firebase auth not configured");
+
+    const config = authConfigStatus();
+    if (!config.configured) {
+      const missing = config.missing.join(", ");
+      const message = missing
+        ? `Firebase auth config missing: ${missing}`
+        : "Firebase auth not configured";
+      setError(message);
+      setStatus("anonymous");
       doLog(
         "error",
-        "Google sign-in unavailable — set NEXT_PUBLIC_FIREBASE_* env vars",
+        `${message}. Set NEXT_PUBLIC_FIREBASE_* in frontend/.env.local or repo root .env.local.`,
       );
       return;
     }
+
     setError(null);
     setStatus("authenticating");
     try {
@@ -37,6 +51,7 @@ export function SignInButton({ busy = false }: { busy?: boolean }) {
         setStatus("anonymous");
         return;
       }
+
       const msg = (err as Error)?.message ?? "Sign-in failed";
       setStatus("anonymous");
       setError(msg);
@@ -44,19 +59,23 @@ export function SignInButton({ busy = false }: { busy?: boolean }) {
     }
   };
 
+  const label = busy ? "Signing in..." : error ? "Auth error" : "Sign in";
+
   return (
     <button
       onClick={onClick}
       disabled={busy}
-      className="flex h-7 items-center gap-2 rounded px-2.5 text-[11px] font-medium text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink disabled:opacity-60"
-      title="Sign in with Google"
+      className={`flex h-7 items-center gap-2 rounded px-2.5 text-[11px] font-medium transition-colors hover:bg-terminal-hover disabled:opacity-60 ${
+        error ? "text-bear hover:text-bear" : "text-ink-muted hover:text-ink"
+      }`}
+      title={error ?? "Sign in with Google"}
     >
       {busy ? (
         <Loader2 size={14} className="animate-spin" />
       ) : (
         <GoogleIcon size={14} />
       )}
-      <span>{busy ? "Signing in…" : "Sign in"}</span>
+      <span>{label}</span>
     </button>
   );
 }

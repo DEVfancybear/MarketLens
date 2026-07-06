@@ -100,7 +100,12 @@ python -m bridge.ftmo_mt5.service
 ### Frontend
 
 Copy `.env.example` to `frontend/.env.local` when the variable is frontend-only. Keep shared
-examples in the root `.env.example`.
+examples in the root `.env.example`. The frontend also loads missing values from the repository root
+`.env.local` / `.env` as a monorepo convenience, but `frontend/.env.local` and hosted project env
+vars should be treated as the primary source for deployment.
+
+For local auth, the frontend needs the `NEXT_PUBLIC_FIREBASE_*` values. The backend API base defaults
+to `http://localhost:8080` in development; set `NEXT_PUBLIC_API_BASE_URL` explicitly in production.
 
 ### Backend (Go)
 
