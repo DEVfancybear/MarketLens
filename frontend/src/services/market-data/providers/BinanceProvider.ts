@@ -26,7 +26,10 @@ import {
 } from '@/types';
 import type { MarketDataServiceBinding } from '@/store/marketDataStore';
 
-const BINANCE_WS_URL = 'wss://stream.binance.com:9443/ws';
+// Use the standard WSS/443 endpoint by default. The old `:9443` endpoint is
+// valid, but local networks and corporate firewalls often block non-standard
+// TLS ports, which leaves the chart without realtime candles in development.
+const BINANCE_WS_URL = 'wss://stream.binance.com/ws';
 
 /**
  * Dead-socket watchdog. A liquid Binance kline/ticker stream pushes data at

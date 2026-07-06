@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart one-candle viewport race on local WebSocket failures (2026-07-07)
+- Added a chart auto-fit policy so a single realtime/forming candle can be shown temporarily without
+  permanently locking the viewport before REST history finishes loading.
+- `PriceChart` now refits when REST history expands a partial realtime window, preventing the chart
+  from staying zoomed into one giant candle after local WebSocket failures/reconnect races.
+- Switched the default Binance WebSocket endpoint from `:9443` to standard WSS port 443
+  (`wss://stream.binance.com/ws`) to reduce blocked-socket failures in local/dev networks.
+- Added chart tests for the partial-realtime-to-history auto-fit path.
+
 ### Fixed - Watchlist section drag/drop parity (2026-07-07)
 - Made watchlist section rows draggable divider tokens, matching TradingView's section behavior.
 - Added shared `moveSectionInList()` token-layout logic so section movement changes group

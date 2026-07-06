@@ -20,6 +20,7 @@
     "tests/**/*.ts",
     "src/hooks/useDraggableDialog.ts",
     "src/components/chart/chartVisualProfile.ts",
+    "src/components/chart/chartAutoFitPolicy.ts",
     "src/components/chart/chartTimeNavigation.ts",
     "src/components/chart/drawing/tools/plugins/lineGeometry.ts",
     "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",

@@ -57,6 +57,7 @@ import {
   latestReplayLogicalRange,
   shouldRealignReplayViewport,
 } from "./replayViewport";
+import { decideAutoFitCandleWindow } from "./chartAutoFitPolicy";
 
 function keepLatestBarInView(chart: IChartApi, dataLength: number) {
   const timeScale = chart.timeScale();
@@ -121,6 +122,7 @@ export function PriceChart({
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const indSeriesRef = useRef<Map<string, IndicatorSeriesApi[]>>(new Map());
   const fittedRef = useRef(false);
+  const lastAutoFitLengthRef = useRef(0);
   const prevCandlesRef = useRef<Candle[]>([]);
   const candleByTimeRef = useRef<Map<number, Candle>>(new Map());
   const prevThemeRef = useRef<string>("");
@@ -303,7 +305,10 @@ export function PriceChart({
       candles.map((candle) => [candle.time, candle]),
     );
     // Empty series => symbol/timeframe just changed; re-fit on next load.
-    if (candles.length === 0) fittedRef.current = false;
+    if (candles.length === 0) {
+      fittedRef.current = false;
+      lastAutoFitLengthRef.current = 0;
+    }
     const c = chartColors(theme);
 
     const prev = prevCandlesRef.current;
@@ -362,9 +367,19 @@ export function PriceChart({
 
     // Fit the time scale once on the first non-empty load; afterwards leave the
     // user's pan/zoom intact for realtime ticks and one-by-one replay playback.
-    if (!fittedRef.current && candles.length > 0) {
+    const autoFit = decideAutoFitCandleWindow({
+      previousLength: prev.length,
+      nextLength: candles.length,
+      alreadyFitted: fittedRef.current,
+      lastAutoFitLength: lastAutoFitLengthRef.current,
+      structuralDataWindowChange,
+      replayActive,
+    });
+
+    if (autoFit.fitContent) {
       chartRef.current?.timeScale().fitContent();
-      fittedRef.current = true;
+      lastAutoFitLengthRef.current = candles.length;
+      fittedRef.current = autoFit.markComplete;
     } else if (
       structuralDataWindowChange ||
       (replayActive &&

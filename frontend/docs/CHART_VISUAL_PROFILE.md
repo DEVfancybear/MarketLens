@@ -1,6 +1,6 @@
 # Chart Visual Profile
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-07_
 
 This document is the maintenance guide for the TradingView-like chart visual
 baseline. Read this before changing chart colors, grid density, price scale
@@ -40,6 +40,7 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 | Area | File | Responsibility |
 |---|---|---|
 | Shared visual profile | `src/components/chart/chartVisualProfile.ts` | Common constants and option builders for chart, scales, grid, crosshair, and candles |
+| Auto-fit policy | `src/components/chart/chartAutoFitPolicy.ts` | Guards the initial viewport against realtime/history races |
 | Palette and time formatting | `src/components/chart/chartTheme.ts` | Theme colors, bar spacing by timeframe, crosshair time formatter |
 | Main chart | `src/components/chart/PriceChart.tsx` | Creates the candlestick chart and applies the shared profile |
 | Candle continuity | `src/services/market-data/candleSeries.ts` | Normalizes, merges, upserts, and detects short gaps in candle data before it reaches the chart |
@@ -85,6 +86,11 @@ profile first.
 - Do not create a default volume histogram in `PriceChart`. Volume is an
   explicit study/indicator. Scripts such as VSA Volume should render through the
   indicator pipeline, not through the chart baseline.
+- Do not mark the initial viewport fit as complete from a tiny realtime-only
+  series. `chartAutoFitPolicy.ts` allows temporary fitting for one or a few
+  forming candles, then forces a second `fitContent()` when REST history expands
+  the data window. This prevents the chart from staying zoomed into one giant
+  candle if WebSocket data arrives before history or if the socket later fails.
 
 ## 6. Current Price Marker
 
@@ -134,4 +140,5 @@ Data-continuity checks:
 - after WebSocket reconnect or tab sleep, short missing-candle gaps should self-repair without F5,
 - delayed realtime candles should insert by timestamp instead of being dropped,
 - a history backfill should not overwrite a newer live forming bar,
+- a one-candle realtime window followed by REST history should refit to the full history window,
 - large closed-market gaps should not trigger repeated backfills.
