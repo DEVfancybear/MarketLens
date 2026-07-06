@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart gap backfill preserving full series (2026-07-06)
+- Fixed a remaining chart gap case where a targeted REST backfill could replace the store with only
+  the fetched window plus newer bars, dropping older live candles around the visible area. History
+  merges now preserve live candles outside the fetched history window while letting closed history
+  repair the gap inside that window.
+- Added chart regression coverage for preserving live candles before and after a backfill window.
+
 ### Added - Backend Phase 5: Settings & sync bootstrap (2026-07-06)
 - Added `0003_settings` migration for `user_settings` and `layouts`.
 - Added `internal/settings` repo/handler for protected `GET/PUT/PATCH /api/v1/settings`.

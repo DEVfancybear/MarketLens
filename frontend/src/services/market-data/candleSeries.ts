@@ -146,7 +146,11 @@ export function mergeHistoryWithLiveCandles(
   if (normalizedLive.length === 0) {
     return normalizeMarketCandleSeries(normalizedHistory, maxCandles);
   }
+  if (normalizedHistory.length === 0) {
+    return normalizeMarketCandleSeries(normalizedLive, maxCandles);
+  }
 
+  const historyFirstTime = normalizedHistory[0].time;
   const historyLastTime = normalizedHistory.at(-1)?.time ?? -Infinity;
   const byTime = new Map<number, MarketCandle>(
     normalizedHistory.map((candle) => [candle.time, candle]),
@@ -154,7 +158,12 @@ export function mergeHistoryWithLiveCandles(
 
   for (const candle of normalizedLive) {
     const liveFormingBar = candle.closed === false;
-    if (candle.time > historyLastTime || (liveFormingBar && candle.time >= historyLastTime)) {
+    const outsideHistoryWindow =
+      candle.time < historyFirstTime || candle.time > historyLastTime;
+    if (
+      outsideHistoryWindow ||
+      (liveFormingBar && candle.time >= historyLastTime)
+    ) {
       byTime.set(candle.time, candle);
     }
   }

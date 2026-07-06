@@ -58,6 +58,30 @@ test("history load keeps newer live candles instead of overwriting them", () => 
   );
 });
 
+test("history backfill preserves live candles outside the fetched window", () => {
+  const live = [
+    candle(60),
+    candle(120),
+    candle(300),
+    { ...candle(360, 366), closed: false },
+  ];
+  const backfill = [candle(180), candle(240), candle(300, 301)];
+
+  const result = mergeHistoryWithLiveCandles(backfill, live);
+
+  assert.deepEqual(
+    result.map((item) => [item.time, item.close, item.closed]),
+    [
+      [60, 60, true],
+      [120, 120, true],
+      [180, 180, true],
+      [240, 240, true],
+      [300, 301, true],
+      [360, 366, false],
+    ],
+  );
+});
+
 test("realtime upsert repairs delayed candles inside the visible window", () => {
   const a = candle(60, 60);
   const c = candle(180, 180);
