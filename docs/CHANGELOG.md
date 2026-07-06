@@ -119,6 +119,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   ungrouped Watchlist area.
 - Replaced native HTML row dragging with pointer-based Watchlist drag/drop to avoid the browser
   ghost dragging a whole visual cluster and to make section targets deterministic.
+- Smoothed Watchlist dragging by moving the ticker ghost with `requestAnimationFrame()` +
+  `transform` instead of re-rendering the list on every pointermove.
+- Added TradingView-style horizontal insertion lines for unsectioned, section, and symbol drop
+  targets so the exact drop position is visible while dragging.
 - Expanded the local watchlist store to preserve list metadata while keeping the legacy `watchlist`
   localStorage symbol array synchronized for existing code paths.
 - Added `npm run test:watchlist` coverage for section rename/delete, symbol removal index repair,

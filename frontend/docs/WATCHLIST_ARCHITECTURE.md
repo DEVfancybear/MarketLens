@@ -82,10 +82,20 @@ the ungrouped top area.
 Watchlist symbol drag/drop is pointer-based, not native HTML `draggable`. Native drag produced a
 browser screenshot ghost of the row/list and inconsistent drop events in dense section layouts. The
 component now tracks pointer movement, resolves the hovered row token with `elementsFromPoint()`,
-and renders a small ticker ghost with `pointer-events: none`. `pointerup` performs one final
-hit-test at the release coordinates instead of trusting React state from the last `pointermove`;
-that avoids stale drop targets when a release happens immediately after the cursor crosses into a
-new section.
+and renders a small ticker ghost with `pointer-events: none`. The ghost is moved imperatively with
+`requestAnimationFrame()` and CSS `transform`, so pointer movement does not re-render every row in
+the list on every pixel. `pointerup` performs one final hit-test at the release coordinates instead
+of trusting React state from the last `pointermove`; that avoids stale drop targets when a release
+happens immediately after the cursor crosses into a new section.
+
+The drop affordance is a horizontal insertion line:
+
+- dropping outside sections shows the line in the top unsectioned strip,
+- dropping on a section shows the line under the section header,
+- dropping on a symbol shows the line above or below that symbol based on pointer position.
+
+Rows still fade while dragged, but the list itself does not animate as a grouped screenshot. This
+matches the TradingView feel more closely and keeps dense watchlists readable while reordering.
 
 ## UI Behavior
 

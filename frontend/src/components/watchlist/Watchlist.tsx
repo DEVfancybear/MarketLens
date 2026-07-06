@@ -71,10 +71,11 @@ type DisplayRow =
   | { kind: "symbol"; ticker: string; index: number };
 
 type DropMode = "before-section" | "inside-section";
+type SymbolDropEdge = "before" | "after";
 type WatchlistDropTarget =
   | { kind: "unsectioned"; key: string }
   | { kind: "section"; key: string; sectionId: string }
-  | { kind: "symbol"; key: string; index: number };
+  | { kind: "symbol"; key: string; index: number; edge: SymbolDropEdge };
 type WatchlistDragState = {
   ticker: string;
   startX: number;
@@ -150,6 +151,9 @@ export function Watchlist() {
   const [dragState, setDragState] = useState<WatchlistDragState | null>(null);
   const [dropTarget, setDropTarget] = useState<WatchlistDropTarget | null>(null);
   const watchlistBodyRef = useRef<HTMLDivElement>(null);
+  const dragGhostRef = useRef<HTMLDivElement>(null);
+  const dragFrameRef = useRef<number | null>(null);
+  const dragGhostPointRef = useRef<{ x: number; y: number } | null>(null);
   const dragStateRef = useRef<WatchlistDragState | null>(null);
   const dropTargetRef = useRef<WatchlistDropTarget | null>(null);
   const suppressNextClickRef = useRef(false);
@@ -324,6 +328,7 @@ export function Watchlist() {
           kind: "symbol",
           key: `symbol-${symbol.dataset.watchlistSymbol ?? rowIndex}-${after ? "after" : "before"}`,
           index: rowIndex + (after ? 1 : 0),
+          edge: after ? "after" : "before",
         };
       }
 
@@ -388,9 +393,31 @@ export function Watchlist() {
   );
 
   const updateDropTarget = useCallback((target: WatchlistDropTarget | null) => {
+    if (dropTargetRef.current?.key === target?.key) return;
     dropTargetRef.current = target;
     setDropTarget(target);
   }, []);
+
+  const moveDragGhost = useCallback((x: number, y: number) => {
+    dragGhostPointRef.current = { x, y };
+    if (dragFrameRef.current !== null) return;
+
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      const point = dragGhostPointRef.current;
+      const ghost = dragGhostRef.current;
+      if (!point || !ghost) return;
+      ghost.style.transform = `translate3d(${point.x + 12}px, ${point.y + 12}px, 0)`;
+    });
+  }, []);
+
+  const cancelDragGhostFrame = useCallback(() => {
+    if (dragFrameRef.current === null) return;
+    window.cancelAnimationFrame(dragFrameRef.current);
+    dragFrameRef.current = null;
+  }, []);
+
+  useEffect(() => cancelDragGhostFrame, [cancelDragGhostFrame]);
 
   useEffect(() => {
     if (!dragState) return;
@@ -405,10 +432,13 @@ export function Watchlist() {
       const next = { ...prev, x: event.clientX, y: event.clientY, active };
 
       dragStateRef.current = next;
-      setDragState(next);
+      if (active !== prev.active) {
+        setDragState(next);
+      }
 
       if (active) {
         event.preventDefault();
+        moveDragGhost(event.clientX, event.clientY);
         updateDropTarget(resolvePointerDropTarget(event.clientX, event.clientY));
       }
     };
@@ -426,6 +456,8 @@ export function Watchlist() {
         }, 0);
       }
       dragStateRef.current = null;
+      cancelDragGhostFrame();
+      dragGhostPointRef.current = null;
       setDragState(null);
       updateDropTarget(null);
     };
@@ -438,7 +470,14 @@ export function Watchlist() {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [applyPointerDrop, dragState, resolvePointerDropTarget, updateDropTarget]);
+  }, [
+    applyPointerDrop,
+    cancelDragGhostFrame,
+    dragState,
+    moveDragGhost,
+    resolvePointerDropTarget,
+    updateDropTarget,
+  ]);
 
   const startSymbolDrag = useCallback(
     (e: React.PointerEvent<HTMLElement>, ticker: string) => {
@@ -524,7 +563,12 @@ export function Watchlist() {
           onRemove={onRemove}
           onContextMenu={onRowContext}
           dragging={dragState?.active === true && dragState.ticker === row.ticker}
-          dropActive={dropTarget?.key.startsWith(`symbol-${row.ticker}-`) ?? false}
+          dropEdge={
+            dropTarget?.kind === "symbol" &&
+            dropTarget.key.startsWith(`symbol-${row.ticker}-`)
+              ? dropTarget.edge
+              : null
+          }
           index={row.index}
           onPointerDown={(e) => startSymbolDrag(e, row.ticker)}
         />
@@ -642,24 +686,33 @@ export function Watchlist() {
         {dragState?.active && sections.length > 0 && (
           <div
             className={cn(
-              "mx-2 mb-0.5 h-3 rounded-sm border border-dashed border-transparent",
+              "relative mx-2 mb-0.5 h-3",
               dropTarget?.key === "unsectioned-start"
-                ? "border-[#668cff] bg-[#1e2f66]"
+                ? "opacity-100"
                 : "bg-transparent",
             )}
             data-watchlist-drop="unsectioned"
             aria-label="Drop outside sections"
-          />
+          >
+            <span
+              className={cn(
+                "pointer-events-none absolute left-0 right-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-[#6d8cff] shadow-[0_0_0_1px_rgba(109,140,255,0.24),0_0_8px_rgba(109,140,255,0.35)] transition-opacity duration-75",
+                dropTarget?.key === "unsectioned-start"
+                  ? "opacity-100"
+                  : "opacity-0",
+              )}
+            />
+          </div>
         )}
         {renderRows()}
       </div>
 
       {dragState?.active && (
         <div
-          className="pointer-events-none fixed z-[9999] rounded bg-[#2a2e39] px-2 py-1 text-[11px] font-semibold text-white shadow-lg"
+          ref={dragGhostRef}
+          className="pointer-events-none fixed left-0 top-0 z-[9999] rounded bg-[#2a2e39]/95 px-2 py-1 text-[11px] font-semibold text-white shadow-lg ring-1 ring-white/10 will-change-transform"
           style={{
-            left: dragState.x + 12,
-            top: dragState.y + 12,
+            transform: `translate3d(${dragState.x + 12}px, ${dragState.y + 12}px, 0)`,
           }}
         >
           {dragState.ticker}
@@ -899,11 +952,17 @@ function SectionRow({
   return (
     <div
       className={cn(
-        "group flex h-[26px] w-full items-center gap-1 border-y border-[#32467e] bg-[#22356d] px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-[#96a0bd] hover:bg-[#27407f]",
-        dropActive && "shadow-[inset_0_0_0_1px_#668cff]",
+        "group relative flex h-[26px] w-full items-center gap-1 border-y border-[#32467e] bg-[#22356d] px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-[#96a0bd] transition-colors duration-100 hover:bg-[#27407f]",
+        dropActive && "bg-[#29417f]",
       )}
       data-watchlist-section-id={section.id}
     >
+      <span
+        className={cn(
+          "pointer-events-none absolute bottom-[-1px] left-3 right-3 z-20 h-[2px] rounded-full bg-[#7a98ff] shadow-[0_0_0_1px_rgba(122,152,255,0.24),0_0_8px_rgba(122,152,255,0.38)] transition-opacity duration-75",
+          dropActive ? "opacity-100" : "opacity-0",
+        )}
+      />
       <button
         type="button"
         onClick={onToggle}
@@ -972,7 +1031,7 @@ interface RowProps {
   onRemove: (t: string) => void;
   onContextMenu: (e: React.MouseEvent, ticker: string) => void;
   dragging: boolean;
-  dropActive: boolean;
+  dropEdge: SymbolDropEdge | null;
   index: number;
   onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
 }
@@ -984,7 +1043,7 @@ const WatchRow = memo(function WatchRow({
   onRemove,
   onContextMenu,
   dragging,
-  dropActive,
+  dropEdge,
   index,
   onPointerDown,
 }: RowProps) {
@@ -1021,14 +1080,21 @@ const WatchRow = memo(function WatchRow({
       onPointerDown={onPointerDown}
       className={cn(
         GRID,
-        "group relative h-[30px] cursor-pointer select-none px-2 hover:bg-terminal-hover",
+        "group relative h-[30px] cursor-pointer select-none px-2 transition-[background-color,box-shadow,opacity] duration-100 hover:bg-terminal-hover",
         active && "rounded-md shadow-[inset_0_0_0_1px_var(--text-faint)]",
         dragging && "opacity-45",
-        dropActive && "shadow-[inset_0_1px_0_#668cff,inset_0_-1px_0_#668cff]",
       )}
       data-watchlist-symbol={ticker}
       data-watchlist-symbol-index={index}
     >
+      <span
+        className={cn(
+          "pointer-events-none absolute left-2 right-2 z-20 h-[2px] rounded-full bg-[#7a98ff] shadow-[0_0_0_1px_rgba(122,152,255,0.24),0_0_8px_rgba(122,152,255,0.38)] transition-opacity duration-75",
+          dropEdge === "before" && "top-0 -translate-y-1/2 opacity-100",
+          dropEdge === "after" && "bottom-0 translate-y-1/2 opacity-100",
+          !dropEdge && "top-0 opacity-0",
+        )}
+      />
       <div className="flex min-w-0 items-center gap-1.5">
         <SymbolLogo id={ticker} />
         <span className="truncate text-[13px] font-semibold leading-none text-ink">
