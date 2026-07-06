@@ -71,7 +71,7 @@ Recommended structure:
 
 ```text
 frontend/src/services/api/
-  client.ts               # fetch wrapper, credentials, JSON/error handling
+  client.ts               # ky instance, credentials, JSON/error handling
   errors.ts               # ApiError, typed error codes
   dto.ts                  # backend DTO types
   adapters/
@@ -100,15 +100,21 @@ frontend/src/services/api/
 ```
 
 `frontend/src/services/auth/authClient.ts` already contains a small best-effort fetch wrapper for
-auth. Replace that wrapper with the shared API client so every endpoint uses the same rules.
+auth. Replace that wrapper with the shared `ky` API client so every endpoint uses the same rules.
+
+The frontend standard HTTP client is
+[`ky`](https://github.com/sindresorhus/ky). Do not add new raw `fetch()` calls for backend API
+resources. `ky` is used because it gives the project one place for prefix URL, credentials,
+timeouts, retry policy, JSON request bodies, and error hooks.
 
 ## API Client Contract
 
 The shared client must:
 
 - Read base URL from `NEXT_PUBLIC_API_BASE_URL`.
+- Use `ky.create()` as the only backend HTTP entry point.
 - Send `credentials: "include"` for httpOnly session cookies.
-- Send and parse `application/json`.
+- Send JSON bodies through `json: ...` and parse response bodies through `.json<T>()`.
 - Normalize backend error shape:
 
 ```json
@@ -118,21 +124,51 @@ The shared client must:
 - Return typed data, not raw `Response`, from resource modules.
 - Treat `401` as "remote session invalid"; do not silently fall back to stale local authenticated
   data.
-- Keep retries conservative. Retry idempotent reads only; mutations should rely on `clientId` or
-  explicit queueing.
+- Keep retries conservative. Configure `ky` to retry idempotent reads only; mutations should rely on
+  `clientId` or explicit queueing.
 
 Example shape:
 
 ```ts
-export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
+import ky from "ky";
 
-  if (!res.ok) throw await ApiError.fromResponse(res);
-  return (await res.json()) as T;
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+
+export const apiClient = ky.create({
+  prefixUrl: API_BASE || undefined,
+  credentials: "include",
+  timeout: 15_000,
+  retry: {
+    limit: 2,
+    methods: ["get"],
+    statusCodes: [408, 429, 500, 502, 503, 504],
+  },
+  hooks: {
+    beforeError: [
+      async (error) => {
+        const { response } = error;
+        try {
+          const body = await response.clone().json() as {
+            error?: { code?: string; message?: string };
+          };
+          if (body.error?.message) {
+            return new ApiError(response.status, body.error.code ?? "unknown", body.error.message);
+          }
+        } catch {
+          // Keep ky's original HTTPError when the backend did not return JSON.
+        }
+        return error;
+      },
+    ],
+  },
+});
+
+export async function apiJson<T>(path: string): Promise<T> {
+  return apiClient.get(path).json<T>();
+}
+
+export async function apiPost<TResponse, TBody>(path: string, body: TBody): Promise<TResponse> {
+  return apiClient.post(path, { json: body }).json<TResponse>();
 }
 ```
 
@@ -385,4 +421,3 @@ frontend/tests/fixtures/backend-bootstrap.json
 - Do not let a failed backend write block chart interaction; mark unsynced state and retry or show
   a toast.
 - Do not mix old local data into remote state without a deliberate migration step.
-
