@@ -8,6 +8,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | --- | --- |
 | `ARCHITECTURE.md` | Overall frontend architecture |
 | `AUTH_UI.md` | Google sign-in / sign-up UI |
+| `BACKEND_API_SYNC_ARCHITECTURE.md` | Plan for consuming backend JSON/API instead of local saved data |
 | `CHART_TIME_NAVIGATION_ARCHITECTURE.md` | Chart time navigation and range shortcuts |
 | `CHART_VISUAL_PROFILE.md` | Chart visual profile / rendering |
 | `INDICATOR_ARCHITECTURE.md` | Pine indicator runtime and renderer |

@@ -15,8 +15,10 @@ The historical roadmap below is preserved. The current top priority after the mo
    login/register request. (Needs a live Postgres + Firebase project for the manual smoke test.)
 2. Implement the remaining backend Firebase Google auth + per-resource persistence according to
    `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
-3. Add backend sync feature-by-feature for settings, watchlists, drawings, indicators, alerts,
-   journal, layouts, and simulated trading.
+3. Add frontend remote workspace sync according to
+   `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`: shared API client, typed adapters,
+   `sync/bootstrap` apply path, and feature-by-feature mutations for settings, watchlists,
+   drawings, indicators, alerts, journal, layouts, and simulated trading.
 4. Keep frontend feature docs under `frontend/docs/`; use `frontend/docs/archive/` for historical
    audit/parity reports.
 

@@ -14,6 +14,10 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
 - Backend auth, database, API, and phased implementation docs live under `backend/docs/`.
 - Frontend Google auth UI exists and uses Firebase Auth; backend session exchange is best-effort
   until the backend auth endpoints are implemented.
+- Frontend remote workspace sync is planned in
+  `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Until those API endpoints are implemented,
+  authenticated backend persistence should remain feature-flagged and local/anonymous behavior
+  should not be removed.
 - Watchlist UI/store received a TradingView-style menu, rename mode, and section rows; see
   `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 

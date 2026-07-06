@@ -23,6 +23,12 @@ owning package docs.
 | Frontend | [`../frontend/docs/README.md`](../frontend/docs/README.md) |
 | Backend | [`../backend/docs/README.md`](../backend/docs/README.md) |
 
+## Cross-Package Plans
+
+| File | Purpose |
+| --- | --- |
+| [`../frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`](../frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md) | Frontend plan for applying backend JSON/API as the authenticated workspace source of truth |
+
 ## Documentation Rules
 
 - Put frontend chart, Pine, drawing, replay, indicator, UI, and test docs under `frontend/docs/`.
