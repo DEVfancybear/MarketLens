@@ -17,7 +17,7 @@ import {
   type MarketCandle,
   type Timeframe,
 } from "@/types";
-import { getMarketSymbol } from "./symbols";
+import { getMarketSymbol, twelveDataSymbol } from "./symbols";
 
 const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
 const TWELVEDATA_TS = "https://api.twelvedata.com/time_series";
@@ -99,10 +99,18 @@ export class HistoricalDataService {
     const provider = meta?.provider;
 
     if (provider === "oanda") {
+      if (!this.oandaKey && this.tdKey) {
+        return this.loadTwelveData(
+          twelveDataSymbol(symbol),
+          timeframe,
+          capped,
+          before,
+        );
+      }
       return this.loadOanda(providerSymbol, timeframe, capped, before);
     }
     if (provider === "twelvedata") {
-      return this.loadTwelveData(providerSymbol, timeframe, capped, before);
+      return this.loadTwelveData(twelveDataSymbol(symbol), timeframe, capped, before);
     }
     return this.loadBinance(providerSymbol, timeframe, capped, before);
   }

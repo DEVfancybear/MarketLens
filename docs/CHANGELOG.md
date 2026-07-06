@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - TwelveData fallback for OANDA-primary symbols (2026-07-07)
+- Fixed OANDA-primary forex/metals/indices fallback so `NEXT_PUBLIC_TWELVEDATA_API_KEY` works even
+  when no OANDA key is configured.
+- Added common TwelveData symbol mapping (`EURUSD -> EUR/USD`, `XAUUSD -> XAU/USD`, `SPX500 -> SPX`)
+  instead of reusing OANDA underscore instruments such as `EUR_USD`.
+- Historical REST loading now falls back from OANDA to TwelveData when only the TwelveData key is
+  configured, matching the realtime provider routing.
+- Added tests for TwelveData fallback symbol mapping.
+
 ### Fixed - Chart one-candle viewport race on local WebSocket failures (2026-07-07)
 - Added a chart auto-fit policy so a single realtime/forming candle can be shown temporarily without
   permanently locking the viewport before REST history finishes loading.

@@ -37,6 +37,9 @@ Get a practice account at: https://www.oanda.com/demo-account/
 - If OANDA key is absent BUT `NEXT_PUBLIC_TWELVEDATA_API_KEY` is set → TwelveData is used as fallback.
 - If neither is set → forex/metals/indices show "--" (but crypto via Binance still works).
 
+Restart the frontend dev server after adding `NEXT_PUBLIC_TWELVEDATA_API_KEY`; Next.js public env
+values are bundled at server start.
+
 ## 3. Connection flow
 
 ```
@@ -87,7 +90,16 @@ SPX500     → US_SPX500
 NAS100     → US_NAS100
 ```
 
-TwelveData symbols are kept in the registry for fallback routing (when OANDA key is absent).
+TwelveData fallback symbols are centralized in `twelveDataSymbol()` / `twelveDataSymbolMap()`.
+Do not reuse OANDA underscore instruments for TwelveData. Examples:
+
+```
+EURUSD -> EUR/USD
+GBPUSD -> GBP/USD
+XAUUSD -> XAU/USD
+SPX500 -> SPX
+NAS100 -> IXIC
+```
 
 ## 6. Realtime pricing
 
@@ -115,7 +127,9 @@ ask = raw ask price
 - **Volume:** OANDA may include volume; mapped to `MarketCandle.volume` when present
 - **Max bars:** 5000 per request (OANDA limit)
 
-The `HistoricalDataService` was extended with a `loadOanda()` method. History routing now checks `meta.provider === 'oanda'` first (before `twelvedata`), then falls back to Binance.
+The `HistoricalDataService` was extended with a `loadOanda()` method. History routing checks
+`meta.provider === 'oanda'` first; if no OANDA key is configured but `NEXT_PUBLIC_TWELVEDATA_API_KEY`
+exists, it falls back to TwelveData using `twelveDataSymbol()`.
 
 ## 8. MarketDataService routing
 

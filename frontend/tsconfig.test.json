@@ -28,6 +28,7 @@
     "src/components/chart/drawing/tools/positionInput.ts",
     "src/components/chart/drawing/tools/positionMetrics.ts",
     "src/components/chart/drawing/tools/positionTradePrefill.ts",
+    "src/services/market-data/symbols.ts",
     "src/store/watchlistLayout.ts",
     "src/services/tradingViewIndicatorCatalog.ts"
   ]

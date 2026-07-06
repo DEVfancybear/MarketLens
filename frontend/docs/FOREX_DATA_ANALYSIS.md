@@ -1,6 +1,11 @@
 # FOREX DATA ANALYSIS
 
-_Analysis date: 2026-06-25. Why forex/metals/indices show "--" and the path forward._
+_Analysis date: 2026-06-25. Updated 2026-07-07 for OANDA-primary routing and TwelveData fallback._
+
+Current routing note: forex/metals/indices are now OANDA-primary. If no OANDA key is configured but
+`NEXT_PUBLIC_TWELVEDATA_API_KEY` is present, realtime and historical data fall back to TwelveData.
+That fallback must use TwelveData symbols such as `EUR/USD`, `XAU/USD`, and `SPX`, not OANDA
+underscore instruments such as `EUR_USD`.
 
 ## 1. Root cause
 

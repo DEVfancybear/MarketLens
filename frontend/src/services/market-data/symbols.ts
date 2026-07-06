@@ -248,6 +248,26 @@ export function getMarketSymbol(id: string): MarketSymbol | undefined {
   return byId.get(id);
 }
 
+const TWELVEDATA_FALLBACK_SYMBOLS: Record<string, string> = {
+  EURUSD: "EUR/USD",
+  GBPUSD: "GBP/USD",
+  USDJPY: "USD/JPY",
+  AUDUSD: "AUD/USD",
+  USDCAD: "USD/CAD",
+  USDCHF: "USD/CHF",
+  XAUUSD: "XAU/USD",
+  XAGUSD: "XAG/USD",
+  SPX500: "SPX",
+  NAS100: "IXIC",
+};
+
+export function twelveDataSymbol(symbol: string): string {
+  const meta = getMarketSymbol(symbol);
+  if (!meta) return symbol;
+  if (meta.provider === "twelvedata") return meta.providerSymbol ?? symbol;
+  return TWELVEDATA_FALLBACK_SYMBOLS[meta.id] ?? meta.providerSymbol ?? symbol;
+}
+
 /**
  * Canonical → TwelveData providerSymbol map (for TwelveDataProvider.symbolMap).
  * Only symbols that still route via TwelveData (OANDA replacement means this
@@ -256,10 +276,7 @@ export function getMarketSymbol(id: string): MarketSymbol | undefined {
  */
 export function twelveDataSymbolMap(): Record<string, string> {
   return Object.fromEntries(
-    MARKET_SYMBOLS.filter((s) => s.provider === "twelvedata").map((s) => [
-      s.id,
-      s.providerSymbol,
-    ]),
+    MARKET_SYMBOLS.map((s) => [s.id, twelveDataSymbol(s.id)]),
   );
 }
 
