@@ -10,11 +10,20 @@ older references:
 - Older frontend milestone/audit/parity reports live in `frontend/docs/archive/`.
 - Run backend commands from `backend/`.
 - Backend framework is now **Fiber** — backend Phase 0 migrated the Go code off `net/http`
-  (`internal/httpserver` builds a `*fiber.App`). Backend Phase 1 (database layer) is done; next is
-  Phase 2 (Firebase ID-token verification).
+  (`internal/httpserver` builds a `*fiber.App`). Backend Phases 1 (database layer) and 2 (Firebase
+  ID-token verification) are done; next is Phase 3 (sessions & JWT), then Phase 4 (auth endpoints).
 - The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
 
 Recent post-split work:
+
+- **Backend Phase 2 complete (Firebase ID-token verification):** `internal/auth/firebase.go`
+  (`NewVerifier` builds the Admin SDK from `FIREBASE_*` via a service-account JSON) + `verify.go`
+  (`VerifyGoogleToken(ctx, idToken) → Identity{UID, ProviderUID, Email, EmailVerified, Name,
+  PhotoURL}`; `ProviderUID` = Google `sub`, uid fallback; all failures return `ErrUnauthorized`
+  wrapping the cause, never a partial identity). The Firebase client is abstracted behind an
+  `idTokenVerifier` interface so `verify_test.go` covers empty/error/mapping/fallback with a fake —
+  no network or real creds. Not wired into HTTP yet (Phase 4). Continue with Phase 3 (jwt/session/
+  cookies) in `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
 
 - **Backend Phase 1 complete (database layer):** `internal/db/pool.go` (pgxpool + Ping + Close);
   migrations `backend/migrations/0001_extensions` + `0002_auth` (users/auth_identities/sessions/

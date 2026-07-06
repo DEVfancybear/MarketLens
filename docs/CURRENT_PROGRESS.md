@@ -13,11 +13,18 @@ Backend persistence and Google authentication.
 - Backend API: Fiber scaffold; `GET /health` (liveness) + `GET /health/ready` (DB readiness) exist.
 - Backend database: **Phase 1 complete** — pgxpool, golang-migrate runner, `0001_extensions` +
   `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Not yet applied to a
-  live Postgres (none available locally). Phase 2 next: Firebase ID-token verification.
+  live Postgres (none available locally).
+- Backend auth: **Phase 2 complete** — Firebase ID-token verification (`internal/auth`,
+  `VerifyGoogleToken → Identity`, errors as `ErrUnauthorized`), unit-tested. Phase 3 next:
+  sessions & JWT services.
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
+- **Backend Phase 2 (Firebase ID-token verification):** `internal/auth/firebase.go` (Admin SDK init
+  from `FIREBASE_*`) + `verify.go` (`VerifyGoogleToken` → `Identity{UID, ProviderUID, Email,
+  EmailVerified, Name, PhotoURL}`, all failures as `ErrUnauthorized`, never a partial identity) +
+  unit tests via a fake verifier. Real-token check deferred to Phase 4 wiring.
 - **Backend Phase 1 (Database layer):** pgxpool (`internal/db/pool.go`), golang-migrate runner
   (`cmd/migrate`, embedded iofs source), migrations `0001_extensions` + `0002_auth` (auth tables +
   enums + `set_updated_at()` trigger), sqlc config + typed queries for users/identities/sessions

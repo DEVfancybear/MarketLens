@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 2: Firebase ID-token verification (2026-07-06)
+- `internal/auth/firebase.go`: `NewVerifier(ctx, cfg)` initializes the Firebase Admin SDK
+  (`firebase.google.com/go/v4`) from the `FIREBASE_*` service-account env (builds the minimal
+  service-account JSON and passes it via `option.WithCredentialsJSON`), exposing an `*auth.Client`
+  behind a small `idTokenVerifier` interface.
+- `internal/auth/verify.go`: `VerifyGoogleToken(ctx, idToken) (Identity, error)` calls
+  `VerifyIDToken` and maps claims → `Identity{ UID, ProviderUID, Email, EmailVerified, Name,
+  PhotoURL }` (ProviderUID = Google `sub` from `firebase.identities["google.com"]`, falling back to
+  the Firebase uid). Every failure (empty/malformed/expired/wrong-audience) returns `ErrUnauthorized`
+  wrapping the cause — never a partial identity.
+- Unit tests (`verify_test.go`, no network/creds via a fake verifier): empty token → unauthorized;
+  verification error → unauthorized + zero identity; full claim mapping; ProviderUID uid-fallback.
+- Deps: `firebase.google.com/go/v4`, `google.golang.org/api/option` (+ transitive Google SDK).
+- Verified: `go build ./...`, `go vet ./...`, `go test ./...` (auth tests pass). Real-token check
+  deferred to Phase 4 wiring (needs a live Firebase project + a real ID token).
+
 ### Added - Backend Phase 1: Database layer (2026-07-06)
 - `internal/db/pool.go`: `pgxpool`-backed pool built from `DatabaseURL`, pings on startup, exposes
   `Ping`/`Close` (sensible pool defaults).
