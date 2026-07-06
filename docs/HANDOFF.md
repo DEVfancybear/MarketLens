@@ -9,15 +9,19 @@ older references:
 - Frontend docs referenced below as `docs/*.md` now generally live in `frontend/docs/`.
 - Older frontend milestone/audit/parity reports live in `frontend/docs/archive/`.
 - Run backend commands from `backend/`.
-- Backend framework is now **Fiber** — backend Phase 0 migrated the Go code off `net/http`
-  (`internal/httpserver` builds a `*fiber.App`). Backend Phases 1 (database layer), 2 (Firebase
-  ID-token verification), 3 (sessions & tokens) and 4 (auth endpoints + `RequireAuth` + CORS) are
-  done; next is Phase 5 (sync bootstrap + settings). **The auth routes only mount when both a DB and
-  Firebase are configured** — the live Google-login smoke test still needs a Postgres `DATABASE_URL`
-  (Firebase creds for project `tradingview-b36a5` are already verified working).
+- Backend framework is now **Fiber**. Backend Phases 0-5 are done: framework, database layer,
+  Firebase verification, sessions/tokens, auth endpoints, settings persistence, and
+  `/api/v1/sync/bootstrap`. Next is Phase 6 watchlists. **Protected routes only mount when both a DB
+  and Firebase are configured**.
 - The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
 
 Recent post-split work:
+
+- **Backend Phase 5 complete (settings & bootstrap):** `0003_settings` creates `user_settings` and
+  `layouts`; `internal/settings` provides repo + Fiber handlers for `GET/PUT/PATCH
+  /api/v1/settings` with auto-create defaults and deep merge patching; `internal/workspace` provides
+  `GET /api/v1/sync/bootstrap` returning settings plus empty arrays for future resources. Covered by
+  settings/workspace tests and `go test ./...`.
 
 - **Backend Phase 4 complete (auth endpoints & middleware):** `internal/users/repo.go`
   (`UpsertFromIdentity` — transactional: login by `(google, provider_uid)`, else link by email, else

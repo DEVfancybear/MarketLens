@@ -4,10 +4,10 @@ _Post-monorepo update 2026-07-06._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
-- Backend Phases 0-4 are complete. Current backend task is Phase 5: settings persistence and
-  `/api/v1/sync/bootstrap`.
-- Backend workspace persistence endpoints beyond auth are still planned; frontend persistence is
-  still mostly localStorage/IndexedDB until the Phase 5+ resources ship.
+- Backend Phases 0-5 are complete. Current backend task is Phase 6: watchlist persistence and
+  bootstrap watchlist hydration.
+- Backend workspace persistence endpoints beyond settings/bootstrap are still planned; frontend
+  persistence is still mostly localStorage/IndexedDB until the Phase 6+ resources ship.
 - Watchlist list metadata and sections are browser-local until backend sync lands.
 - Indicator catalog data must come from an API/provider; do not reintroduce hardcoded catalog
   fallbacks.

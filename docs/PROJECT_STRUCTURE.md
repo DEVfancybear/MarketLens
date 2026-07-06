@@ -51,9 +51,9 @@ backend/
 ```
 
 Backend framework decision: **Fiber**. The current backend is already on Fiber, with health,
-readiness, CORS, and Phase 4 auth routes mounted under `/api/v1/auth/*`. New backend endpoints and
-middleware should continue using Fiber handlers, route groups, and middleware. The active backend
-task is Phase 5: settings persistence and `GET /api/v1/sync/bootstrap`.
+readiness, CORS, Phase 4 auth routes, and Phase 5 settings/bootstrap routes mounted under
+`/api/v1`. New backend endpoints and middleware should continue using Fiber handlers, route groups,
+and middleware. The active backend task is Phase 6: watchlist persistence.
 
 The Python MT5 bridge is a **sidecar service** - it runs as a separate process alongside the Go API
 and communicates over WebSockets. It is not part of the Go HTTP request path.

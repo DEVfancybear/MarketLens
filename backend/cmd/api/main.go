@@ -14,7 +14,9 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/db/gen"
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
+	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/users"
+	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
 
 func main() {
@@ -41,13 +43,16 @@ func main() {
 	}
 
 	// Assemble the auth stack only when both a database and a Firebase service
-	// account are available. Otherwise the /api/v1/auth routes stay unmounted.
+	// account are available. Protected workspace routes use the same middleware
+	// and stay unmounted when auth cannot be assembled.
 	var authHandler *auth.Handler
+	var settingsHandler *settings.Handler
+	var workspaceHandler *workspace.Handler
 	switch {
 	case pool == nil:
-		log.Warn().Msg("auth routes disabled: no database configured")
+		log.Warn().Msg("protected api routes disabled: no database configured")
 	case !cfg.FirebaseConfigured():
-		log.Warn().Msg("auth routes disabled: Firebase service account not configured")
+		log.Warn().Msg("protected api routes disabled: Firebase service account not configured")
 	default:
 		verifier, verr := auth.NewVerifier(ctx, cfg)
 		if verr != nil {
@@ -57,10 +62,15 @@ func main() {
 		sessions := auth.NewSessionService(auth.NewPgSessionStore(gen.New(pool.Pool)), cfg)
 		svc := auth.NewService(verifier, users.NewRepo(pool.Pool), sessions, tokens)
 		authHandler = auth.NewHandler(svc, tokens, cfg)
-		log.Info().Msg("auth routes enabled")
+
+		requireAuth := auth.RequireAuth(tokens)
+		settingsStore := settings.NewRepo(pool.Pool)
+		settingsHandler = settings.NewHandler(settingsStore, requireAuth)
+		workspaceHandler = workspace.NewHandler(settingsStore, requireAuth)
+		log.Info().Msg("protected api routes enabled")
 	}
 
-	srv := httpserver.New(cfg, pool, authHandler)
+	srv := httpserver.New(cfg, pool, authHandler, settingsHandler, workspaceHandler)
 
 	if err := srv.Start(ctx); err != nil {
 		stdlog.Fatalf("server error: %v", err)

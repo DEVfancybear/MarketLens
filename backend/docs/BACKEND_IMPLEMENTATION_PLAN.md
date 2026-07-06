@@ -1,9 +1,8 @@
 # Backend Implementation Plan (phased)
 
-> Status: **planning**. A step-by-step build order for the Go backend, starting with Google auth and
-> ending with per-feature persistence. Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow),
-> `API.md` (endpoint contract). Each phase is independently shippable and has explicit acceptance
-> criteria so progress is unambiguous.
+> Status: Phases 0-5 are implemented. Phases 6+ remain as the per-resource persistence roadmap.
+> Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow), and `API.md` (endpoint contract). Each
+> phase is independently shippable and has explicit acceptance criteria so progress is unambiguous.
 
 ## ⚠ Framework reconciliation (read first)
 
@@ -161,6 +160,11 @@ for clients beyond the framework swap.
 ## Phase 5 — Sync bootstrap + first resource (settings)
 
 **Goal:** Prove the authed-resource pattern with the smallest resource, then expose bootstrap.
+
+**Implementation status (2026-07-06): complete.** `0003_settings` creates `user_settings` and
+`layouts`; `internal/settings` exposes `GET/PUT/PATCH /api/v1/settings`; `internal/workspace`
+exposes `GET /api/v1/sync/bootstrap` with settings plus empty resource arrays. Coverage:
+`go test ./...`.
 
 **Steps**
 1. Migration `0003_settings.sql` — `user_settings` (sections `ui`/`smc`/`chart`/`notifications`) +

@@ -10,7 +10,8 @@ Backend persistence and Google authentication.
 
 - Frontend trading terminal: implemented and actively evolving.
 - Frontend Google auth UI: implemented and verified.
-- Backend API: Fiber scaffold; `GET /health`, `GET /health/ready`, and `/api/v1/auth/*` exist.
+- Backend API: Fiber scaffold; `GET /health`, `GET /health/ready`, `/api/v1/auth/*`,
+  `/api/v1/settings`, and `/api/v1/sync/bootstrap` exist.
 - Backend database: **Phase 1 complete** - pgxpool, golang-migrate runner, `0001_extensions` +
   `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Live Neon smoke has
   verified auth-table migration and login/register flow.
@@ -18,12 +19,18 @@ Backend persistence and Google authentication.
   **Google login/register endpoints** (`POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`,
   `DELETE /auth/sessions`), `RequireAuth` middleware, CORS. 17 auth tests (incl. full flow via
   `app.Test`). Live Neon + Firebase smoke passed: first login creates the user, second login reuses
-  it, `/auth/me`, `/auth/refresh`, and `/auth/logout` all pass. Current backend task: **Phase 5 -
-  sync bootstrap + settings resource**.
+  it, `/auth/me`, `/auth/refresh`, and `/auth/logout` all pass.
+- Backend settings/sync: **Phase 5 complete** - `0003_settings` migration, `internal/settings`
+  `GET/PUT/PATCH /api/v1/settings`, and `GET /api/v1/sync/bootstrap` returning settings plus empty
+  resource arrays. Current backend task: **Phase 6 - watchlists**.
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
+- **Backend Phase 5 (Settings & sync bootstrap):** added `0003_settings` migration for
+  `user_settings` and `layouts`; added `internal/settings` repo/handler with auto-create-on-read,
+  replace, and deep-merge patch semantics; added `internal/workspace` bootstrap envelope; wired the
+  protected routes from `cmd/api`; covered merge behavior and Fiber handlers with tests.
 - **Backend Phase 4 (Auth endpoints & middleware):** `internal/users/repo.go`
   (`UpsertFromIdentity` transactional login/link/register + `GetUser`), `internal/auth/service.go`
   (`Service` LoginWithGoogle/Refresh/Logout/RevokeAllSessions/GetUser over a `UserUpserter` iface),

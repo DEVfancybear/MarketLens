@@ -11,10 +11,10 @@ The backend has two components:
 The Python bridge runs as a separate process. It is not part of the Go HTTP request path and does
 not share memory or state with the Go server.
 
-Current implementation note: Phase 0 migrated the backend to Fiber, and Phase 4 added the
-`/api/v1/auth/*` routes plus auth middleware and CORS. The current task is Phase 5:
-`user_settings`, `/api/v1/settings`, and `/api/v1/sync/bootstrap`. Keep business logic outside
-handlers so modules remain testable without an HTTP server.
+Current implementation note: Phases 0-5 are implemented: Fiber, database/auth foundations, Google
+auth routes, `user_settings`, `/api/v1/settings`, and `/api/v1/sync/bootstrap`. The current task is
+Phase 6 watchlists. Keep business logic outside handlers so modules remain testable without an HTTP
+server.
 
 ## Package Layout
 
@@ -25,6 +25,8 @@ internal/
   httpserver/            # HTTP app setup, routing, middleware, lifecycle
   health/                # Health-check endpoint
   auth/                  # Firebase verification, sessions, cookies, auth routes/middleware
+  settings/              # User settings repo/handler (Phase 5)
+  workspace/             # Sync bootstrap envelope (Phase 5)
   middleware/            # Shared Fiber middleware
 bridge/                  # Python MT5 WebSocket bridge (sidecar)
   ftmo_mt5/              # FTMO broker integration

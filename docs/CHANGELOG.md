@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 5: Settings & sync bootstrap (2026-07-06)
+- Added `0003_settings` migration for `user_settings` and `layouts`.
+- Added `internal/settings` repo/handler for protected `GET/PUT/PATCH /api/v1/settings`.
+  `GET` auto-creates a default row, `PUT` replaces all sections, and `PATCH` deep-merges JSON object
+  sections.
+- Added `internal/workspace` with protected `GET /api/v1/sync/bootstrap`, returning persisted
+  settings plus empty arrays for watchlists, drawing templates, indicators, Pine scripts, alerts,
+  and layouts until later backend phases fill them.
+- Wired Phase 5 routes from `cmd/api` when DB + Firebase auth are configured, and added unit/handler
+  coverage for settings merge semantics and bootstrap response shape.
+
 ### Fixed - Realtime candle continuity gaps (2026-07-06)
 - Fixed a chart gap where candles could disappear until a hard refresh after WebSocket reconnects,
   tab sleep, or out-of-order realtime delivery. `marketDataStore.updateCandleAtom` now upserts

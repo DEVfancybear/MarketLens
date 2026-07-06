@@ -3,10 +3,11 @@
 Base URL (dev): `http://localhost:8080`
 API prefix: `/api/v1` (except `/health`).
 
-> Status: `/health`, `/health/ready`, and `/api/v1/auth/*` are **implemented**. The remaining
-> `/api/v1` resources are planned contracts that the Go Fiber handlers will implement in Phase 5+
-> according to `BACKEND_IMPLEMENTATION_PLAN.md`. See `AUTH.md` for the auth flow and `DATABASE.md`
-> for the tables behind each resource.
+> Status: `/health`, `/health/ready`, `/api/v1/auth/*`, `/api/v1/settings`, and
+> `/api/v1/sync/bootstrap` are **implemented**. The remaining `/api/v1` resources are planned
+> contracts that the Go Fiber handlers will implement in Phase 6+ according to
+> `BACKEND_IMPLEMENTATION_PLAN.md`. See `AUTH.md` for the auth flow and `DATABASE.md` for the tables
+> behind each resource.
 
 ## Conventions
 
@@ -90,21 +91,22 @@ Sign out of every device (revoke all sessions). `200 { "ok": true }`.
 
 ## Sync bootstrap
 
-### `GET /api/v1/sync/bootstrap`  🔒
+### `GET /api/v1/sync/bootstrap`  protected, implemented
 
 One call that returns the user's whole workspace for hydrating local stores on sign-in
-(`DATABASE.md` §11).
+(`DATABASE.md` section 11). Phase 5 returns persisted settings plus empty arrays; later phases fill
+each resource slice.
 
 **Response** `200 OK`
 ```json
 {
-  "settings":         { "ui": {…}, "smc": {…}, "chart": {…}, "notifications": {…} },
-  "watchlists":       [ … ],
-  "drawingTemplates": [ … ],
-  "indicators":       [ … ],
-  "pineScripts":      [ … ],
-  "alerts":           [ … ],
-  "layouts":          [ … ]
+  "settings":         { "ui": {}, "smc": {}, "chart": {}, "notifications": {} },
+  "watchlists":       [],
+  "drawingTemplates": [],
+  "indicators":       [],
+  "pineScripts":      [],
+  "alerts":           [],
+  "layouts":          []
 }
 ```
 Loaded lazily by their own endpoints (larger / scoped payloads), **not** in bootstrap: per-symbol
@@ -112,13 +114,14 @@ Loaded lazily by their own endpoints (larger / scoped payloads), **not** in boot
 
 ---
 
-## Settings  🔒
+## Settings  protected, implemented
 
-Backed by `user_settings` (1:1). See `DATABASE.md` §6.1.
+Backed by `user_settings` (1:1). See `DATABASE.md` section 6.1. `GET` auto-creates the row for a
+new authenticated user, `PUT` replaces all four sections, and `PATCH` deep-merges object sections.
 
 | Method | Path                    | Purpose                                   |
 | ------ | ----------------------- | ----------------------------------------- |
-| GET    | `/api/v1/settings`      | Get `{ ui, smc, chart }`                  |
+| GET    | `/api/v1/settings`      | Get `{ ui, smc, chart, notifications }`   |
 | PUT    | `/api/v1/settings`      | Replace all sections                      |
 | PATCH  | `/api/v1/settings`      | Merge a partial (e.g. just `ui.theme`)    |
 

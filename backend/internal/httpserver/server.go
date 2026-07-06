@@ -16,6 +16,8 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/health"
 	"github.com/smc-trading-terminal/backend/internal/middleware"
+	"github.com/smc-trading-terminal/backend/internal/settings"
+	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
 
 type Server struct {
@@ -26,8 +28,14 @@ type Server struct {
 // New builds the Fiber server. pool may be nil (e.g. local dev with no
 // DATABASE_URL); the readiness probe then reports the database as unconfigured.
 // authHandler may be nil when auth cannot be assembled (no DB or no Firebase
-// config) — the /api/v1/auth routes are then simply not mounted.
-func New(cfg config.Config, pool *db.Pool, authHandler *auth.Handler) *Server {
+// config) - the protected /api/v1 routes are then simply not mounted.
+func New(
+	cfg config.Config,
+	pool *db.Pool,
+	authHandler *auth.Handler,
+	settingsHandler *settings.Handler,
+	workspaceHandler *workspace.Handler,
+) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:               "smc-trading-backend",
 		DisableStartupMessage: true,
@@ -60,6 +68,12 @@ func New(cfg config.Config, pool *db.Pool, authHandler *auth.Handler) *Server {
 	api := app.Group("/api/v1")
 	if authHandler != nil {
 		authHandler.Register(api)
+	}
+	if settingsHandler != nil {
+		settingsHandler.Register(api)
+	}
+	if workspaceHandler != nil {
+		workspaceHandler.Register(api)
 	}
 
 	return &Server{cfg: cfg, app: app}
