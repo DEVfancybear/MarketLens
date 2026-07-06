@@ -1,34 +1,43 @@
 package middleware
 
 import (
-	"net/http"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog/log"
 )
 
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-func Logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// Logging emits one structured zerolog line per request, preserving the fields
+// the previous net/http middleware logged (method, path, status, latency) and
+// adding the request id from the requestid middleware.
+func Logging() fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		next.ServeHTTP(rw, r)
+		err := c.Next()
 
-		log.Info().
-			Str("method", r.Method).
-			Str("path", r.URL.Path).
-			Int("status", rw.statusCode).
+		// On error the central ErrorHandler runs after this middleware unwinds,
+		// so the response status isn't set yet — derive it from the error.
+		status := c.Response().StatusCode()
+		if err != nil {
+			if fe, ok := err.(*fiber.Error); ok {
+				status = fe.Code
+			} else {
+				status = fiber.StatusInternalServerError
+			}
+		}
+
+		event := log.Info()
+		if id, ok := c.Locals("requestid").(string); ok && id != "" {
+			event = event.Str("request_id", id)
+		}
+		event.
+			Str("method", c.Method()).
+			Str("path", c.Path()).
+			Int("status", status).
 			Dur("latency", time.Since(start)).
 			Msg("request")
-	})
+
+		return err
+	}
 }

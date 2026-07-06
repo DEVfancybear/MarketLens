@@ -9,12 +9,17 @@ older references:
 - Frontend docs referenced below as `docs/*.md` now generally live in `frontend/docs/`.
 - Older frontend milestone/audit/parity reports live in `frontend/docs/archive/`.
 - Run backend commands from `backend/`.
-- Backend framework direction is Fiber, but current Go code is still `net/http`; migrate in backend
-  Phase 0 before adding new backend features.
+- Backend framework is now **Fiber** — backend Phase 0 migrated the Go code off `net/http`
+  (`internal/httpserver` builds a `*fiber.App`). Next backend step is Phase 1 (database layer).
 - The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
 
 Recent post-split work:
 
+- **Backend Phase 0 complete:** Fiber app boot (requestid → recover → zerolog logging), Fiber
+  `/health`, standard error envelope (`internal/httpserver/response.go`: `WriteError` + central
+  `ErrorHandler`), extended `config.Load() (Config, error)` with DB/auth/Firebase/CORS vars +
+  fail-fast in non-dev, and `backend/.env.example`. Build/vet/`/health` verified. See
+  `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` Phase 1 to continue (pgxpool + migrations + sqlc).
 - Backend planning docs were added under `backend/docs/`.
 - Google auth UI was added under the frontend.
 - Watchlist menu/rename/section state was updated toward TradingView parity; see

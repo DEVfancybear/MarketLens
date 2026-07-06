@@ -1,9 +1,9 @@
 package health
 
 import (
-	"encoding/json"
-	"net/http"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 type HealthResponse struct {
@@ -11,14 +11,12 @@ type HealthResponse struct {
 	Timestamp string `json:"timestamp"`
 }
 
-func RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /health", handleHealth)
+func RegisterRoutes(app *fiber.App) {
+	app.Get("/health", handleHealth)
 }
 
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(HealthResponse{
+func handleHealth(c *fiber.Ctx) error {
+	return c.JSON(HealthResponse{
 		Status:    "ok",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})

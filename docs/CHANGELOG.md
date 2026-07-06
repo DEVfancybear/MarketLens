@@ -4,6 +4,29 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 0: Fiber foundation & framework (2026-07-06)
+- Migrated the Go backend HTTP surface from stdlib `net/http`/`http.ServeMux` to
+  `github.com/gofiber/fiber/v2`. `GET /health` returns the same JSON as before.
+- `internal/httpserver/server.go` now builds a `*fiber.App` with `requestid` → `recover` →
+  zerolog logging middleware, and graceful shutdown via `app.ShutdownWithContext`.
+- `internal/httpserver/response.go`: `WriteError(c, status, code, message)` + a central Fiber
+  `ErrorHandler` producing the standard `{ "error": { "code", "message" } }` envelope from
+  `API.md` (status→slug map: 400 bad_request, 401 unauthorized, 404 not_found, 5xx internal, …).
+- `internal/health/handler.go` and `internal/middleware/logging.go` ported to Fiber handlers;
+  the logger emits `request_id` and derives the true status from the returned error for error
+  responses.
+- `internal/config/config.go` extended with `DatabaseURL`, `AuthJWTSecret`, `AuthAccessTTL`,
+  `AuthRefreshTTL`, `FirebaseProjectID`, `FirebaseClientEmail`, `FirebasePrivateKey` (un-escapes
+  `\n`), and `CORSAllowedOrigins`. `Load()` now returns `(Config, error)` and fails fast when a
+  required secret is missing and `APP_ENV != development`; `cmd/api/main.go` handles the error.
+- Added `backend/.env.example` documenting every var (mirrors `AUTH.md` §8) and `godotenv`
+  best-effort dev loading.
+- Files: `backend/{go.mod,go.sum,.env.example}`, `backend/cmd/api/main.go`,
+  `backend/internal/{httpserver/server.go,httpserver/response.go,health/handler.go,
+  middleware/logging.go,config/config.go}`.
+- Verified: `go build ./...`, `go vet ./...`, `/health` 200 with unchanged body, 404 returns the
+  error envelope, and production boot with missing secrets aborts with a clear log line.
+
 ### Changed - Documentation restored after monorepo split (2026-07-06)
 - Restored the pre-`9691bd1` memory docs instead of replacing them with short summaries.
 - Moved frontend-specific restored docs into `frontend/docs/`; older milestone, audit, and parity

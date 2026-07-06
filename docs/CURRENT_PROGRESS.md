@@ -10,12 +10,17 @@ Backend persistence and Google authentication.
 
 - Frontend trading terminal: implemented and actively evolving.
 - Frontend Google auth UI: implemented and verified.
-- Backend API: minimal scaffold only; `GET /health` exists.
-- Backend auth/database: designed in docs, not implemented.
-- Backend framework: Fiber is the target; current code is still stdlib `net/http` until Phase 0.
+- Backend API: Fiber scaffold; `GET /health` exists (Phase 0 complete).
+- Backend auth/database: designed in docs, not implemented (Phase 1 next: Postgres pool + migrations).
+- Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
+- **Backend Phase 0 (Foundation & framework):** migrated the Go backend from stdlib `net/http` to
+  Fiber, extended config with DB/auth/Firebase/CORS vars + fail-fast validation, added the standard
+  error-envelope helper (`WriteError` + Fiber `ErrorHandler`), and added `backend/.env.example`.
+  Verified via `go build`/`go vet`, a live `/health` probe, a 404 envelope check, and a
+  missing-secret production-boot abort.
 - Restored root project memory docs after the monorepo split.
 - Moved restored frontend-specific docs into `frontend/docs/` and archive reports into
   `frontend/docs/archive/`.
