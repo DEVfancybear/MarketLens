@@ -16,6 +16,7 @@ Current coverage:
 - `All` shortcut dispatch sentinel,
 - nearest loaded candle lookup for `Go to`,
 - logical range centering that preserves the current zoom span,
+- candle series merge/update planning for REST-history vs realtime races,
 - local date/time draft parsing,
 - fixed Monday-first calendar grid generation.
 

@@ -150,6 +150,28 @@ Key optimisations:
 - `ChartArea` subscribes to 5 atoms instead of full chartStore
 - `AlertOverlay` subscribes only to `alertsAtom` + `selectedAlertIdAtom`
 - `PriceChart` indicator overlay only re-renders when `indicatorsAtom` changes
+- `PriceChart` batches chart-context version bumps through `requestAnimationFrame()` so multiple
+  candle/viewport updates in one frame do not trigger duplicate overlay renders
+
+### Candle ingestion and render contract
+
+Realtime candles and REST history meet in `marketDataStore`, not inside chart components.
+`services/market-data/candleSeries.ts` owns the pure rules:
+
+- normalize candle time/order and enforce `high >= open/close` and `low <= open/close`,
+- merge a delayed REST history snapshot with already-received live candles instead of overwriting
+  the live forming bar,
+- classify chart updates as `update-latest`, `append`, or `replace`.
+
+This avoids the common reload-only bug where WebSocket candles arrive first, the REST history
+request resolves later, and `setCandles()` replaces the full series with an older snapshot. In that
+case the chart can look like it is missing candles until a hard refresh. The store now merges by
+time and preserves live forming bars at or after the history edge.
+
+`PriceChart` may call Lightweight Charts `series.update()` only when the candle array prefix is the
+same object references and only the latest bar changed or one new bar appended. Any history reload,
+replay window replacement, symbol/timeframe change, theme context change, or non-incremental data
+shape change must call full `setData()`.
 
 ### Access patterns
 

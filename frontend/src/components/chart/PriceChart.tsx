@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   type IChartApi,
@@ -44,6 +44,7 @@ import {
   timeScaleOptions,
 } from "./chartVisualProfile";
 import { computeIndicator } from "@/services/indicators";
+import { resolveRealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
 import { fmtPrice } from "@/utils/format";
@@ -158,6 +159,14 @@ export function PriceChart({
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
 
+  const scheduleVersionBump = useCallback(() => {
+    if (bumpRafRef.current !== null) return;
+    bumpRafRef.current = requestAnimationFrame(() => {
+      bumpRafRef.current = null;
+      setVersion((v) => v + 1);
+    });
+  }, []);
+
   useEffect(() => {
     prevMarkerPriceRef.current = null;
     markerUpRef.current = true;
@@ -211,14 +220,10 @@ export function PriceChart({
     setMainChart(chart);
     onReady?.(chart);
 
-    const bump = () => {
-      if (bumpRafRef.current !== null) return;
-      bumpRafRef.current = requestAnimationFrame(() => {
-        bumpRafRef.current = null;
-        setVersion((v) => v + 1);
-      });
-    };
-    const unsubscribeViewportEvents = subscribeChartViewportEvents(chart, bump);
+    const unsubscribeViewportEvents = subscribeChartViewportEvents(
+      chart,
+      scheduleVersionBump,
+    );
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
@@ -239,13 +244,17 @@ export function PriceChart({
       });
     });
 
-    const ro = new ResizeObserver(bump);
+    const ro = new ResizeObserver(scheduleVersionBump);
     ro.observe(containerRef.current);
 
     const indStore = indSeriesRef.current;
     return () => {
       ro.disconnect();
       unsubscribeViewportEvents();
+      if (bumpRafRef.current !== null) {
+        cancelAnimationFrame(bumpRafRef.current);
+        bumpRafRef.current = null;
+      }
       setMainChart(null);
       chart.remove();
       chartRef.current = null;
@@ -298,7 +307,6 @@ export function PriceChart({
     const c = chartColors(theme);
 
     const prev = prevCandlesRef.current;
-    const prevLast = prev[prev.length - 1];
     const last = candles[candles.length - 1];
 
     // Realtime fast path: a forming-bar tick (same length, same last time) or a
@@ -306,25 +314,16 @@ export function PriceChart({
     // O(1) updates (TradingView-style). Anything else (symbol/timeframe change,
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
-    const formingTick =
-      candles.length === prev.length &&
-      !!last &&
-      !!prevLast &&
-      last.time === prevLast.time;
-    const appended =
-      candles.length === prev.length + 1 &&
-      !!prevLast &&
-      candles[candles.length - 2]?.time === prevLast.time;
+    const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
     const structuralDataWindowChange =
       sameTheme &&
       prev.length > 0 &&
       candles.length > 0 &&
-      !formingTick &&
-      !appended;
+      updatePlan === "replace";
 
-    if (sameTheme && (formingTick || appended)) {
+    if (updatePlan === "update-latest" || updatePlan === "append") {
       // On append, finalize the previously-forming (now penultimate) bar first.
-      if (appended) {
+      if (updatePlan === "append") {
         const penult = candles[candles.length - 2];
         cs.update({
           time: penult.time as UTCTimestamp,
@@ -390,8 +389,8 @@ export function PriceChart({
         }
       });
     }
-    setVersion((v) => v + 1);
-  }, [candles, theme, replayActive]);
+    scheduleVersionBump();
+  }, [candles, theme, replayActive, scheduleVersionBump]);
 
   // ---- Overlay indicators (SMA/EMA/VWAP/ADR) ----
   const overlayIndicators = useMemo(

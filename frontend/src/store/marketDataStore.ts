@@ -20,6 +20,11 @@ import {
   type SubscriptionKey,
   type Timeframe,
 } from "@/types";
+import {
+  mergeHistoryWithLiveCandles,
+  normalizeMarketCandle,
+  normalizeMarketCandleSeries,
+} from "@/services/market-data/candleSeries";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 const MAX_CANDLES = 5000;
@@ -149,18 +154,21 @@ export const updateQuoteAtom = atom(null, (get, set, quote: MarketQuote) => {
 export const updateCandleAtom = atom(
   null,
   (get, set, symbol: string, timeframe: Timeframe, candle: MarketCandle) => {
+    const normalized = normalizeMarketCandle(candle);
+    if (!normalized) return;
+
     const key = subscriptionKey(symbol, timeframe);
     const all = get(candlesAtom);
     const series = all[key] ?? [];
     const last = series[series.length - 1];
     let next: MarketCandle[];
-    if (!last || candle.time > last.time) {
+    if (!last || normalized.time > last.time) {
       next =
         series.length >= MAX_CANDLES
-          ? [...series.slice(series.length - MAX_CANDLES + 1), candle]
-          : [...series, candle];
-    } else if (candle.time === last.time) {
-      next = [...series.slice(0, -1), candle];
+          ? [...series.slice(series.length - MAX_CANDLES + 1), normalized]
+          : [...series, normalized];
+    } else if (normalized.time === last.time) {
+      next = [...series.slice(0, -1), normalized];
     } else {
       return; // stale tick — no change
     }
@@ -174,10 +182,11 @@ export const setCandlesAtom = atom(
   null,
   (get, set, symbol: string, timeframe: Timeframe, candles: MarketCandle[]) => {
     const key = subscriptionKey(symbol, timeframe);
+    const existing = get(candlesAtom)[key] ?? [];
     const trimmed =
-      candles.length > MAX_CANDLES
-        ? candles.slice(candles.length - MAX_CANDLES)
-        : candles;
+      existing.length > 0
+        ? mergeHistoryWithLiveCandles(candles, existing, MAX_CANDLES)
+        : normalizeMarketCandleSeries(candles, MAX_CANDLES);
     set(candlesAtom, { ...get(candlesAtom), [key]: trimmed });
     set(lastUpdateAtom, Date.now());
     set(marketDataTickAtom, get(marketDataTickAtom) + 1);

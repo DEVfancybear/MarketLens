@@ -128,6 +128,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added `npm run test:watchlist` coverage for section rename/delete, symbol removal index repair,
   and drag/drop index rules.
 
+### Fixed - Chart realtime candle integrity and render batching (2026-07-06)
+- Added shared candle-series helpers for normalizing OHLC, merging delayed REST history with
+  already-received live candles, and deciding when chart updates are safe to apply incrementally.
+- Fixed the race where a history response could overwrite newer realtime/forming candles, leaving
+  the chart visually missing candles until a hard refresh.
+- Hardened `PriceChart` so Lightweight Charts `series.update()` is used only when the candle-array
+  prefix is unchanged; structural history/replay/window changes now use `setData()`.
+- Batched chart context version bumps through `requestAnimationFrame()` to reduce duplicate overlay
+  renders during rapid candle and viewport updates.
+- Added `npm run test:chart` coverage for the realtime/history merge and update-plan rules.
+
 ### Changed - Backend docs reconciled with the real frontend data model (2026-07-06)
 - Audited the frontend's actual persistence model and updated backend planning docs so implementation
   can match the real app instead of guessing from old mock-era assumptions.
