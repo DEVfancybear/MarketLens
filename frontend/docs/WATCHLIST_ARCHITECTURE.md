@@ -72,15 +72,20 @@ must target that section token, not only the numeric symbol index. `moveSymbolTo
 rebuilds the row order from section/symbol tokens, inserts the dragged symbol before or after the
 target section token, then derives section indexes back from the resulting token stream.
 
-Section header rows are treated as "drop inside section" targets. Moving a symbol outside all
-sections is handled by the unsectioned drop target at the top of the Watchlist/header area. This
-keeps empty trailing sections easy to target while still allowing symbols to be pulled out of a
-section into the ungrouped top area.
+Section header rows are treated as "drop inside section" targets. The UI also infers the active
+section from the pointer Y position inside the scroll body, so an empty trailing section remains
+droppable even when the pointer is below its 26px header row. Moving a symbol outside all sections
+is handled by the unsectioned drop target at the top of the Watchlist/header area. This keeps empty
+trailing sections easy to target while still allowing symbols to be pulled out of a section into
+the ungrouped top area.
 
 Watchlist symbol drag/drop is pointer-based, not native HTML `draggable`. Native drag produced a
 browser screenshot ghost of the row/list and inconsistent drop events in dense section layouts. The
-component now tracks pointer movement, resolves the hovered row token with `elementFromPoint()`, and
-renders a small ticker ghost with `pointer-events: none`.
+component now tracks pointer movement, resolves the hovered row token with `elementsFromPoint()`,
+and renders a small ticker ghost with `pointer-events: none`. `pointerup` performs one final
+hit-test at the release coordinates instead of trusting React state from the last `pointermove`;
+that avoids stale drop targets when a release happens immediately after the cursor crosses into a
+new section.
 
 ## UI Behavior
 
@@ -105,8 +110,9 @@ Enter/blur, and cancels on Escape.
 Section rows are rendered as full-width blue rows with a chevron and uppercase title. Adding a
 section inserts it above the selected symbol when possible, otherwise at the end of the active list.
 Double-clicking a section title opens inline rename mode. Section delete removes only the header and
-leaves symbols in place. Symbols are draggable; dropping on the top half of a section places the
-symbol before the section, while dropping on the lower half places it inside the section.
+leaves symbols in place. Symbols are draggable; dropping on a section header or the section's empty
+body moves the symbol inside that section, while the dedicated top drop strip moves it back outside
+all sections.
 
 ## Future Backend Sync
 

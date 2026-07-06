@@ -149,6 +149,7 @@ export function Watchlist() {
   const skipSectionBlurRef = useRef(false);
   const [dragState, setDragState] = useState<WatchlistDragState | null>(null);
   const [dropTarget, setDropTarget] = useState<WatchlistDropTarget | null>(null);
+  const watchlistBodyRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<WatchlistDragState | null>(null);
   const dropTargetRef = useRef<WatchlistDropTarget | null>(null);
   const suppressNextClickRef = useRef(false);
@@ -287,19 +288,24 @@ export function Watchlist() {
 
   const resolvePointerDropTarget = useCallback(
     (clientX: number, clientY: number): WatchlistDropTarget | null => {
-      const element = document.elementFromPoint(clientX, clientY);
-      if (!(element instanceof HTMLElement)) return null;
+      const elements = document
+        .elementsFromPoint(clientX, clientY)
+        .filter((element): element is HTMLElement => element instanceof HTMLElement);
 
-      const unsectioned = element.closest<HTMLElement>(
-        "[data-watchlist-drop='unsectioned']",
-      );
+      const closest = <T extends HTMLElement>(selector: string): T | null => {
+        for (const element of elements) {
+          const match = element.closest<T>(selector);
+          if (match) return match;
+        }
+        return null;
+      };
+
+      const unsectioned = closest<HTMLElement>("[data-watchlist-drop='unsectioned']");
       if (unsectioned) {
         return { kind: "unsectioned", key: "unsectioned-start" };
       }
 
-      const section = element.closest<HTMLElement>(
-        "[data-watchlist-section-id]",
-      );
+      const section = closest<HTMLElement>("[data-watchlist-section-id]");
       if (section?.dataset.watchlistSectionId) {
         return {
           kind: "section",
@@ -308,9 +314,7 @@ export function Watchlist() {
         };
       }
 
-      const symbol = element.closest<HTMLElement>(
-        "[data-watchlist-symbol-index]",
-      );
+      const symbol = closest<HTMLElement>("[data-watchlist-symbol-index]");
       if (symbol?.dataset.watchlistSymbolIndex) {
         const rowIndex = Number(symbol.dataset.watchlistSymbolIndex);
         if (!Number.isFinite(rowIndex)) return null;
@@ -320,6 +324,35 @@ export function Watchlist() {
           kind: "symbol",
           key: `symbol-${symbol.dataset.watchlistSymbol ?? rowIndex}-${after ? "after" : "before"}`,
           index: rowIndex + (after ? 1 : 0),
+        };
+      }
+
+      const body = watchlistBodyRef.current;
+      if (!body) return null;
+
+      const bodyRect = body.getBoundingClientRect();
+      const insideBody =
+        clientX >= bodyRect.left &&
+        clientX <= bodyRect.right &&
+        clientY >= bodyRect.top &&
+        clientY <= bodyRect.bottom;
+      if (!insideBody) return null;
+
+      const sectionRows = Array.from(
+        body.querySelectorAll<HTMLElement>("[data-watchlist-section-id]"),
+      );
+      let activeSectionId: string | null = null;
+      for (const sectionRow of sectionRows) {
+        const rect = sectionRow.getBoundingClientRect();
+        if (clientY < rect.top) break;
+        activeSectionId = sectionRow.dataset.watchlistSectionId ?? null;
+      }
+
+      if (activeSectionId) {
+        return {
+          kind: "section",
+          key: `section-${activeSectionId}`,
+          sectionId: activeSectionId,
         };
       }
 
@@ -354,34 +387,47 @@ export function Watchlist() {
     [moveSymbol],
   );
 
+  const updateDropTarget = useCallback((target: WatchlistDropTarget | null) => {
+    dropTargetRef.current = target;
+    setDropTarget(target);
+  }, []);
+
   useEffect(() => {
     if (!dragState) return;
 
     const onPointerMove = (event: PointerEvent) => {
-      setDragState((prev) => {
-        if (!prev) return prev;
-        const dx = event.clientX - prev.startX;
-        const dy = event.clientY - prev.startY;
-        const active = prev.active || Math.hypot(dx, dy) > 5;
-        if (active) {
-          event.preventDefault();
-          setDropTarget(resolvePointerDropTarget(event.clientX, event.clientY));
-        }
-        return { ...prev, x: event.clientX, y: event.clientY, active };
-      });
+      const prev = dragStateRef.current;
+      if (!prev) return;
+
+      const dx = event.clientX - prev.startX;
+      const dy = event.clientY - prev.startY;
+      const active = prev.active || Math.hypot(dx, dy) > 5;
+      const next = { ...prev, x: event.clientX, y: event.clientY, active };
+
+      dragStateRef.current = next;
+      setDragState(next);
+
+      if (active) {
+        event.preventDefault();
+        updateDropTarget(resolvePointerDropTarget(event.clientX, event.clientY));
+      }
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (event: PointerEvent) => {
       const state = dragStateRef.current;
       if (state?.active) {
         suppressNextClickRef.current = true;
-        applyPointerDrop(state.ticker, dropTargetRef.current);
+        const finalTarget =
+          resolvePointerDropTarget(event.clientX, event.clientY) ??
+          dropTargetRef.current;
+        applyPointerDrop(state.ticker, finalTarget);
         window.setTimeout(() => {
           suppressNextClickRef.current = false;
         }, 0);
       }
+      dragStateRef.current = null;
       setDragState(null);
-      setDropTarget(null);
+      updateDropTarget(null);
     };
 
     window.addEventListener("pointermove", onPointerMove, { passive: false });
@@ -392,7 +438,7 @@ export function Watchlist() {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [applyPointerDrop, dragState, resolvePointerDropTarget]);
+  }, [applyPointerDrop, dragState, resolvePointerDropTarget, updateDropTarget]);
 
   const startSymbolDrag = useCallback(
     (e: React.PointerEvent<HTMLElement>, ticker: string) => {
@@ -404,14 +450,16 @@ export function Watchlist() {
       ) {
         return;
       }
-      setDragState({
+      const next = {
         ticker,
         startX: e.clientX,
         startY: e.clientY,
         x: e.clientX,
         y: e.clientY,
         active: false,
-      });
+      };
+      dragStateRef.current = next;
+      setDragState(next);
     },
     [],
   );
@@ -587,7 +635,10 @@ export function Watchlist() {
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5">
+      <div
+        ref={watchlistBodyRef}
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5"
+      >
         {dragState?.active && sections.length > 0 && (
           <div
             className={cn(

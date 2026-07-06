@@ -136,6 +136,51 @@ test("drops a symbol into a trailing empty section", () => {
   );
 });
 
+test("moves a symbol from the first section into a trailing empty second section", () => {
+  const result = moveSymbolToSectionInList(
+    trailingEmptySectionList(),
+    "DOGEUSDT",
+    "section_2",
+    "inside-section",
+  );
+
+  assert.deepEqual(result.symbols, ["ETHUSDT", "DOGEUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 0],
+      ["section_2", 1],
+    ],
+  );
+});
+
+test("moves a symbol from the first section into a populated second section", () => {
+  const result = moveSymbolToSectionInList(
+    {
+      id: "wl_4",
+      name: "Watchlist",
+      shared: false,
+      symbols: ["DOGEUSDT", "ETHUSDT"],
+      sections: [
+        { id: "section_1", title: "SECTION 1", index: 0 },
+        { id: "section_2", title: "SECTION 2", index: 1 },
+      ],
+    },
+    "DOGEUSDT",
+    "section_2",
+    "inside-section",
+  );
+
+  assert.deepEqual(result.symbols, ["DOGEUSDT", "ETHUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 0],
+      ["section_2", 0],
+    ],
+  );
+});
+
 test("section rows treat most of the row as an inside-section drop", () => {
   assert.equal(resolveSectionDropMode(101, 100, 20), "inside-section");
   assert.equal(resolveSectionDropMode(106, 100, 20), "inside-section");

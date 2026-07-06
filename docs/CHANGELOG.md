@@ -111,6 +111,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `SECTION 1` is distinct from dropping it into `SECTION 2`.
 - Fixed dragging symbols into an empty trailing section by treating most of the section header as
   an inside-section target instead of a before-section target.
+- Fixed Section 1 -> Section 2 drops by resolving the final target from the pointer release
+  coordinates, not stale React state from the previous pointermove.
+- Expanded section hit-testing so the empty body below a trailing section header is still treated as
+  that section, matching the way users drag into TradingView watchlist sections.
 - Added an unsectioned top drop target so symbols can be dragged out of a section and back into the
   ungrouped Watchlist area.
 - Replaced native HTML row dragging with pointer-based Watchlist drag/drop to avoid the browser
