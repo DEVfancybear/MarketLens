@@ -56,6 +56,21 @@ Pure section/order rules live in `watchlistLayout.ts`:
 - section delete without deleting symbols
 - symbol removal with section-index repair
 - symbol drag/drop before a section or inside a section
+- token-based section targeting when multiple sections share the same symbol index
+
+The token model is important for this TradingView case:
+
+```text
+DOGE
+SECTION 1
+SECTION 2
+ETH
+```
+
+`SECTION 1` and `SECTION 2` can both start at the same symbol index. A drop on a specific section
+must target that section token, not only the numeric symbol index. `moveSymbolToSectionInList()`
+rebuilds the row order from section/symbol tokens, inserts the dragged symbol before or after the
+target section token, then derives section indexes back from the resulting token stream.
 
 ## UI Behavior
 

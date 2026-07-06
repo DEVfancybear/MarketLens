@@ -383,13 +383,25 @@ export function Watchlist() {
               )
             }
             onDrop={(e) =>
-              onDropTarget(
-                e,
-                row.section.index,
-                row.section.index,
-                "before-section",
-                "inside-section",
-              )
+              {
+                if (!draggedTicker) return;
+                e.preventDefault();
+                const target = resolveDrop(
+                  e,
+                  row.section.index,
+                  row.section.index,
+                  "before-section",
+                  "inside-section",
+                );
+                moveSymbol({
+                  ticker: draggedTicker,
+                  index: target.index,
+                  mode: target.mode,
+                  targetSectionId: row.section.id,
+                });
+                setDraggedTicker(null);
+                setDropTarget(null);
+              }
             }
           />
         );

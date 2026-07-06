@@ -24,6 +24,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   delete.
 - Added symbol drag/drop before a section or inside a section through shared Watchlist layout
   helpers.
+- Fixed drag/drop when two section headers share the same symbol index, so dropping DOGE into
+  `SECTION 1` is distinct from dropping it into `SECTION 2`.
 - Expanded the local watchlist store to preserve list metadata while keeping the legacy `watchlist`
   localStorage symbol array synchronized for existing code paths.
 - Added `npm run test:watchlist` coverage for section rename/delete, symbol removal index repair,

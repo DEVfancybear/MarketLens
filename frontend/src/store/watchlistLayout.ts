@@ -5,6 +5,10 @@ import type { WatchlistList, WatchlistSection } from "./watchlistStore";
 
 export type SectionInsertMode = "before-section" | "inside-section";
 
+type WatchlistLayoutToken =
+  | { kind: "section"; section: WatchlistSection }
+  | { kind: "symbol"; ticker: string };
+
 export function normalizeSectionTitle(title: string): string {
   return (title.trim() || "Section").slice(0, 40);
 }
@@ -70,6 +74,85 @@ export function removeSymbolFromList(
       }))
       .filter((section) => section.index <= symbols.length),
   };
+}
+
+function toLayoutTokens(list: WatchlistList): WatchlistLayoutToken[] {
+  const order = new Map(list.sections.map((section, index) => [section.id, index]));
+  const sections = [...list.sections].sort((a, b) => {
+    const byIndex = a.index - b.index;
+    if (byIndex !== 0) return byIndex;
+    return (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0);
+  });
+  const tokens: WatchlistLayoutToken[] = [];
+  let sectionIndex = 0;
+
+  for (let index = 0; index <= list.symbols.length; index += 1) {
+    while (
+      sections[sectionIndex] &&
+      sections[sectionIndex].index === index
+    ) {
+      tokens.push({ kind: "section", section: sections[sectionIndex] });
+      sectionIndex += 1;
+    }
+    if (index < list.symbols.length) {
+      tokens.push({ kind: "symbol", ticker: list.symbols[index] });
+    }
+  }
+
+  while (sections[sectionIndex]) {
+    tokens.push({ kind: "section", section: sections[sectionIndex] });
+    sectionIndex += 1;
+  }
+
+  return tokens;
+}
+
+function fromLayoutTokens(
+  list: WatchlistList,
+  tokens: WatchlistLayoutToken[],
+): WatchlistList {
+  const symbols: string[] = [];
+  const sections: WatchlistSection[] = [];
+
+  for (const token of tokens) {
+    if (token.kind === "symbol") {
+      symbols.push(token.ticker);
+    } else {
+      sections.push({
+        ...token.section,
+        index: clampSectionIndex(symbols.length, list.symbols.length),
+      });
+    }
+  }
+
+  return { ...list, symbols, sections };
+}
+
+export function moveSymbolToSectionInList(
+  list: WatchlistList,
+  ticker: string,
+  sectionId: string,
+  mode: SectionInsertMode = "inside-section",
+): WatchlistList {
+  if (!list.symbols.includes(ticker)) return list;
+
+  const tokensWithoutSymbol = toLayoutTokens(list).filter(
+    (token) => token.kind !== "symbol" || token.ticker !== ticker,
+  );
+  const sectionTokenIndex = tokensWithoutSymbol.findIndex(
+    (token) => token.kind === "section" && token.section.id === sectionId,
+  );
+  if (sectionTokenIndex < 0) return list;
+
+  const insertIndex =
+    mode === "before-section" ? sectionTokenIndex : sectionTokenIndex + 1;
+  const tokens = [
+    ...tokensWithoutSymbol.slice(0, insertIndex),
+    { kind: "symbol" as const, ticker },
+    ...tokensWithoutSymbol.slice(insertIndex),
+  ];
+
+  return fromLayoutTokens(list, tokens);
 }
 
 export function moveSymbolInList(

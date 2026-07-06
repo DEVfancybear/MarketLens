@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   moveSymbolInList,
+  moveSymbolToSectionInList,
   removeSectionFromList,
   removeSymbolFromList,
   renameSectionInList,
@@ -15,6 +16,19 @@ function list(): WatchlistList {
     shared: false,
     symbols: ["BTCUSDT", "GBPUSD", "USDCAD", "XAUUSD"],
     sections: [{ id: "section_1", title: "SECTION 1", index: 1 }],
+  };
+}
+
+function twoSectionList(): WatchlistList {
+  return {
+    id: "wl_2",
+    name: "Watchlist",
+    shared: false,
+    symbols: ["DOGEUSDT", "ETHUSDT"],
+    sections: [
+      { id: "section_1", title: "SECTION 1", index: 1 },
+      { id: "section_2", title: "SECTION 2", index: 1 },
+    ],
   };
 }
 
@@ -51,4 +65,40 @@ test("removing a symbol before a section shifts the section left", () => {
 
   assert.deepEqual(result.symbols, ["GBPUSD", "USDCAD", "XAUUSD"]);
   assert.equal(result.sections[0].index, 0);
+});
+
+test("drops a symbol into the first of multiple sections sharing an index", () => {
+  const result = moveSymbolToSectionInList(
+    twoSectionList(),
+    "DOGEUSDT",
+    "section_1",
+    "inside-section",
+  );
+
+  assert.deepEqual(result.symbols, ["DOGEUSDT", "ETHUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 0],
+      ["section_2", 1],
+    ],
+  );
+});
+
+test("drops a symbol into the second of multiple sections sharing an index", () => {
+  const result = moveSymbolToSectionInList(
+    twoSectionList(),
+    "DOGEUSDT",
+    "section_2",
+    "inside-section",
+  );
+
+  assert.deepEqual(result.symbols, ["DOGEUSDT", "ETHUSDT"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["section_1", 0],
+      ["section_2", 0],
+    ],
+  );
 });

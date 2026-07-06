@@ -8,6 +8,7 @@ import {
   clampSectionIndex,
   createWatchlistSection,
   moveSymbolInList,
+  moveSymbolToSectionInList,
   normalizeSectionTitle,
   removeSectionFromList,
   removeSymbolFromList,
@@ -41,6 +42,7 @@ type MoveSymbolPayload = {
   ticker: string;
   index: number;
   mode?: SectionInsertMode;
+  targetSectionId?: string;
 };
 
 const DEFAULT_SYMBOLS = [
@@ -339,7 +341,14 @@ export const moveWatchlistSymbolAtom = atom(
   (get, set, payload: MoveSymbolPayload) => {
     const activeId = get(activeWatchlistIdAtom);
     const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
-      moveSymbolInList(list, payload.ticker, payload.index, payload.mode),
+      payload.targetSectionId
+        ? moveSymbolToSectionInList(
+            list,
+            payload.ticker,
+            payload.targetSectionId,
+            payload.mode,
+          )
+        : moveSymbolInList(list, payload.ticker, payload.index, payload.mode),
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
@@ -376,7 +385,12 @@ export interface WatchlistActions {
   addSection: (title: string, index?: number) => void;
   renameSection: (sectionId: string, title: string) => void;
   removeSection: (sectionId: string) => void;
-  moveSymbol: (ticker: string, index: number, mode?: SectionInsertMode) => void;
+  moveSymbol: (
+    ticker: string,
+    index: number,
+    mode?: SectionInsertMode,
+    targetSectionId?: string,
+  ) => void;
   setSort: (key: SortKey) => void;
   hydrate: () => void;
 }
@@ -409,8 +423,8 @@ const watchlistCombinedAtom = atom<WatchlistStoreInterface>((get) => {
     renameSection: (sectionId, title) =>
       store.set(renameWatchlistSectionAtom, sectionId, title),
     removeSection: (sectionId) => store.set(removeWatchlistSectionAtom, sectionId),
-    moveSymbol: (ticker, index, mode) =>
-      store.set(moveWatchlistSymbolAtom, { ticker, index, mode }),
+    moveSymbol: (ticker, index, mode, targetSectionId) =>
+      store.set(moveWatchlistSymbolAtom, { ticker, index, mode, targetSectionId }),
     setSort: (key) => store.set(setWatchlistSortAtom, key),
     hydrate: () => store.set(hydrateWatchlistAtom),
   };
