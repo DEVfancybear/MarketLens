@@ -77,6 +77,11 @@ sections is handled by the unsectioned drop target at the top of the Watchlist/h
 keeps empty trailing sections easy to target while still allowing symbols to be pulled out of a
 section into the ungrouped top area.
 
+Watchlist symbol drag/drop is pointer-based, not native HTML `draggable`. Native drag produced a
+browser screenshot ghost of the row/list and inconsistent drop events in dense section layouts. The
+component now tracks pointer movement, resolves the hovered row token with `elementFromPoint()`, and
+renders a small ticker ghost with `pointer-events: none`.
+
 ## UI Behavior
 
 The Watchlist title opens a TradingView-style dropdown with:
