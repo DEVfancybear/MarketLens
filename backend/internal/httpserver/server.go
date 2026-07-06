@@ -3,12 +3,15 @@ package httpserver
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/rs/zerolog/log"
+	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/health"
@@ -22,7 +25,9 @@ type Server struct {
 
 // New builds the Fiber server. pool may be nil (e.g. local dev with no
 // DATABASE_URL); the readiness probe then reports the database as unconfigured.
-func New(cfg config.Config, pool *db.Pool) *Server {
+// authHandler may be nil when auth cannot be assembled (no DB or no Firebase
+// config) — the /api/v1/auth routes are then simply not mounted.
+func New(cfg config.Config, pool *db.Pool, authHandler *auth.Handler) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:               "smc-trading-backend",
 		DisableStartupMessage: true,
@@ -37,6 +42,12 @@ func New(cfg config.Config, pool *db.Pool) *Server {
 	app.Use(requestid.New())
 	app.Use(recover.New())
 	app.Use(middleware.Logging())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     strings.Join(cfg.CORSAllowedOrigins, ","),
+		AllowCredentials: true,
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		AllowHeaders:     "Content-Type,Authorization",
+	}))
 
 	// Avoid the typed-nil interface trap: pass a nil Pinger (not a non-nil
 	// interface wrapping a nil *db.Pool) when no pool is configured.
@@ -45,6 +56,11 @@ func New(cfg config.Config, pool *db.Pool) *Server {
 		pinger = pool
 	}
 	health.RegisterRoutes(app, pinger)
+
+	api := app.Group("/api/v1")
+	if authHandler != nil {
+		authHandler.Register(api)
+	}
 
 	return &Server{cfg: cfg, app: app}
 }

@@ -14,13 +14,22 @@ Backend persistence and Google authentication.
 - Backend database: **Phase 1 complete** — pgxpool, golang-migrate runner, `0001_extensions` +
   `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Not yet applied to a
   live Postgres (none available locally).
-- Backend auth: **Phases 2 & 3 complete** — Firebase ID-token verification + session/token services
-  (HS256 access JWT, opaque refresh with rotation & reuse-detection, auth cookies), unit-tested.
-  Phase 4 next: auth endpoints (`/api/v1/auth/*`) + `RequireAuth` middleware + CORS.
+- Backend auth: **Phases 2, 3 & 4 complete** — Firebase verification + session/token services +
+  **Google login/register endpoints** (`POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`,
+  `DELETE /auth/sessions`), `RequireAuth` middleware, CORS. 17 auth tests (incl. full flow via
+  `app.Test`). **Live login needs a Postgres `DATABASE_URL`** (Firebase creds verified working).
+  Phase 5 next: sync bootstrap + settings resource.
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
+- **Backend Phase 4 (Auth endpoints & middleware):** `internal/users/repo.go`
+  (`UpsertFromIdentity` transactional login/link/register + `GetUser`), `internal/auth/service.go`
+  (`Service` LoginWithGoogle/Refresh/Logout/RevokeAllSessions/GetUser over a `UserUpserter` iface),
+  `middleware.go` (`RequireAuth`), `handler.go` (5 Fiber auth routes returning the standard
+  envelope), CORS + `/api/v1` group in `httpserver`, and optional auth assembly in `cmd/api`
+  (mounted only when DB + Firebase are both configured). Integration-tested via `app.Test`; Firebase
+  creds confirmed to initialize the Admin SDK. Live login pending a Postgres DB.
 - **Backend Phase 3 (Sessions & tokens):** `internal/auth/jwt.go` (`TokenService` MintAccess/
   ParseAccess, HS256, none-alg guard), `session.go` (`SessionService` Create/Rotate/Revoke/RevokeAll
   over a pgx-free `SessionStore`, reuse detection revokes the family), `session_pgstore.go`

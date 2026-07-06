@@ -36,6 +36,12 @@ func (c Config) IsProduction() bool {
 	return c.Env != "development"
 }
 
+// FirebaseConfigured reports whether the full Firebase service account is set —
+// used to decide whether the auth routes can be mounted.
+func (c Config) FirebaseConfigured() bool {
+	return c.FirebaseProjectID != "" && c.FirebaseClientEmail != "" && c.FirebasePrivateKey != ""
+}
+
 // Load reads configuration from the environment. In development it best-effort
 // loads a local .env file first. It returns an error (rather than exiting) when
 // a required secret is missing outside development, so the caller controls the

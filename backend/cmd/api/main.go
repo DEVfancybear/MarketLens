@@ -9,9 +9,12 @@ import (
 	"syscall"
 
 	"github.com/rs/zerolog/log"
+	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
 	"github.com/smc-trading-terminal/backend/internal/db"
+	"github.com/smc-trading-terminal/backend/internal/db/gen"
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
+	"github.com/smc-trading-terminal/backend/internal/users"
 )
 
 func main() {
@@ -37,7 +40,27 @@ func main() {
 		log.Warn().Msg("DATABASE_URL not set; starting without a database (readiness will report unconfigured)")
 	}
 
-	srv := httpserver.New(cfg, pool)
+	// Assemble the auth stack only when both a database and a Firebase service
+	// account are available. Otherwise the /api/v1/auth routes stay unmounted.
+	var authHandler *auth.Handler
+	switch {
+	case pool == nil:
+		log.Warn().Msg("auth routes disabled: no database configured")
+	case !cfg.FirebaseConfigured():
+		log.Warn().Msg("auth routes disabled: Firebase service account not configured")
+	default:
+		verifier, verr := auth.NewVerifier(ctx, cfg)
+		if verr != nil {
+			stdlog.Fatalf("auth init error: %v", verr)
+		}
+		tokens := auth.NewTokenService(cfg)
+		sessions := auth.NewSessionService(auth.NewPgSessionStore(gen.New(pool.Pool)), cfg)
+		svc := auth.NewService(verifier, users.NewRepo(pool.Pool), sessions, tokens)
+		authHandler = auth.NewHandler(svc, tokens, cfg)
+		log.Info().Msg("auth routes enabled")
+	}
+
+	srv := httpserver.New(cfg, pool, authHandler)
 
 	if err := srv.Start(ctx); err != nil {
 		stdlog.Fatalf("server error: %v", err)

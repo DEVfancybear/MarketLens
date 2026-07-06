@@ -8,11 +8,12 @@ The historical roadmap below is preserved. The current top priority after the mo
    ~~Phase 1 — Database layer.~~ ✅ **Done** (pending a live Postgres to run `migrate up`/`down`).
    ~~Phase 2 — Firebase ID-token verification (`internal/auth/firebase.go` + `verify.go`).~~ ✅ **Done.**
    ~~Phase 3 — Sessions & tokens (`jwt.go`, `session.go` rotation/reuse, `cookies.go`).~~ ✅ **Done.**
-   Next backend step is **Phase 4 — Auth endpoints & middleware**: `internal/users/repo.go`
-   (`UpsertFromIdentity`), `internal/auth/{service,handler,middleware}.go` for
-   `POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`, `DELETE /auth/sessions`, `RequireAuth`,
-   and CORS — wires the verifier + session services + repo end-to-end and closes the Google
-   login/register request. (Needs a live Postgres + Firebase project for the manual smoke test.)
+   ~~Phase 4 — Auth endpoints & middleware (`/api/v1/auth/*`, `RequireAuth`, CORS,
+   `users.UpsertFromIdentity`).~~ ✅ **Done** (code + `app.Test`; Firebase creds verified).
+   **Remaining before it's live: provision Postgres, set `DATABASE_URL`, `make migrate-up`, then curl
+   `POST /auth/google` with a real Firebase ID token.** Next backend step is **Phase 5 — Sync
+   bootstrap + settings** (`0003_settings` migration, `internal/settings` GET/PUT/PATCH,
+   `GET /api/v1/sync/bootstrap`), then Phases 6–13 per-resource.
 2. Implement the remaining backend Firebase Google auth + per-resource persistence according to
    `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
 3. Add frontend remote workspace sync according to

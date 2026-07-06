@@ -46,9 +46,11 @@ type SessionStore interface {
 }
 
 // CreatedSession is returned when a session is created or rotated. RefreshToken
-// is the raw opaque token — returned exactly once, never persisted.
+// is the raw opaque token — returned exactly once, never persisted. UserID lets
+// the caller mint an access token after a rotation without a second lookup.
 type CreatedSession struct {
 	SessionID    string
+	UserID       string
 	RefreshToken string
 	ExpiresAt    time.Time
 }
@@ -132,6 +134,7 @@ func (s *SessionService) mint(ctx context.Context, userID, userAgent, ip string)
 
 	return CreatedSession{
 		SessionID:    sess.ID,
+		UserID:       sess.UserID,
 		RefreshToken: raw,
 		ExpiresAt:    sess.ExpiresAt,
 	}, nil

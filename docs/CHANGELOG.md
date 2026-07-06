@@ -4,6 +4,33 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 4: Auth endpoints & middleware (2026-07-06)
+- **Google login/register works end-to-end** (pending a live Postgres to exercise it).
+- `internal/users/repo.go`: `Repo.UpsertFromIdentity` (transactional) — finds `auth_identities` by
+  `(google, provider_uid)` → login (refresh profile + `last_login_at`); else links a new google
+  identity to an existing user by email; else registers a new user + identity. Returns
+  `(user, isNewUser)`. Plus `GetUser`. Implements `auth.UserUpserter`.
+- `internal/auth/service.go`: `User` DTO + `UserUpserter` interface + `Service` orchestrating
+  `LoginWithGoogle` (verify → upsert → create session → mint access), `Refresh` (rotate → mint),
+  `Logout`, `RevokeAllSessions`, `GetUser`. (`CreatedSession` now carries `UserID` so refresh can
+  mint without a second lookup.)
+- `internal/auth/middleware.go`: `RequireAuth` — reads the `access_token` cookie, `ParseAccess`,
+  puts `user_id`/`session_id` in `c.Locals`; 401 on failure.
+- `internal/auth/handler.go`: Fiber routes `POST /api/v1/auth/google`, `POST /auth/refresh`,
+  `POST /auth/logout` 🔒, `GET /auth/me` 🔒, `DELETE /auth/sessions` 🔒. Handlers return
+  `fiber.NewError` so the central ErrorHandler renders the standard envelope (no httpserver import →
+  no import cycle). Reuse/expired refresh clears cookies.
+- `httpserver/server.go`: CORS middleware (`CORSAllowedOrigins`, `AllowCredentials: true`) +
+  `/api/v1` group; mounts the auth handler when present. `cmd/api` assembles the auth stack only when
+  **both** a DB pool and a Firebase service account are configured (otherwise the routes stay
+  unmounted, logged clearly).
+- Tests (`handler_test.go` via `app.Test`, no DB/Firebase): full google→me→refresh→logout flow +
+  cookie assertions; `/me` without cookie → 401; bad/missing idToken → 401/400; refresh w/o cookie →
+  401. 17 auth tests total.
+- Verified: `go build/vet/test` pass; real Firebase creds (`tradingview-b36a5`) initialize the Admin
+  SDK; server boot with Firebase-but-no-DB disables auth routes as designed. **Live login smoke test
+  still needs a Postgres `DATABASE_URL`** (run `make migrate-up` first).
+
 ### Added - Backend Phase 3: Sessions & tokens (2026-07-06)
 - `internal/auth/jwt.go`: `TokenService` — `MintAccess(userID, sessionID)` HS256 JWT
   (`sub`/`sid`/`iat`/`exp`, `AUTH_JWT_SECRET`/`AUTH_ACCESS_TTL`) + `ParseAccess` with

@@ -11,11 +11,26 @@ older references:
 - Run backend commands from `backend/`.
 - Backend framework is now **Fiber** — backend Phase 0 migrated the Go code off `net/http`
   (`internal/httpserver` builds a `*fiber.App`). Backend Phases 1 (database layer), 2 (Firebase
-  ID-token verification) and 3 (sessions & tokens) are done; next is Phase 4 (auth endpoints +
-  `RequireAuth` + CORS).
+  ID-token verification), 3 (sessions & tokens) and 4 (auth endpoints + `RequireAuth` + CORS) are
+  done; next is Phase 5 (sync bootstrap + settings). **The auth routes only mount when both a DB and
+  Firebase are configured** — the live Google-login smoke test still needs a Postgres `DATABASE_URL`
+  (Firebase creds for project `tradingview-b36a5` are already verified working).
 - The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
 
 Recent post-split work:
+
+- **Backend Phase 4 complete (auth endpoints & middleware):** `internal/users/repo.go`
+  (`UpsertFromIdentity` — transactional: login by `(google, provider_uid)`, else link by email, else
+  register; + `GetUser`; implements `auth.UserUpserter`), `internal/auth/service.go` (`User` DTO +
+  `UserUpserter` iface + `Service` LoginWithGoogle/Refresh/Logout/RevokeAllSessions/GetUser),
+  `middleware.go` (`RequireAuth` → `access_token` cookie → `c.Locals`), `handler.go` (Fiber
+  `POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`, `DELETE /auth/sessions`; handlers return
+  `fiber.NewError` so the central ErrorHandler formats the envelope — auth imports neither httpserver
+  nor users, avoiding cycles). `httpserver` adds CORS + the `/api/v1` group; `cmd/api` assembles the
+  auth stack only when DB + Firebase are both present. Tested via `app.Test` (google→me→refresh→logout
+  + 401/400 paths); `CreatedSession` gained `UserID`. **To smoke-test live:** provision Postgres, set
+  `DATABASE_URL`, `make migrate-up`, boot `go run ./cmd/api`, then `POST /api/v1/auth/google` with a
+  real Firebase ID token.
 
 - **Backend Phase 3 complete (sessions & tokens):** `internal/auth/jwt.go` (`TokenService`
   MintAccess/ParseAccess — HS256, `sub`/`sid`/`iat`/`exp`, `WithValidMethods` none-alg guard),
