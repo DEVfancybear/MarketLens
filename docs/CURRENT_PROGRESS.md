@@ -28,7 +28,9 @@ Backend persistence and Google authentication.
   - header dropdown actions: share, copy, rename, add section, clear, create list
   - no upload/open-list or add-alert-on-list actions
   - rename mode with selected input in the header
-  - blue section rows with chevron
+  - blue section rows with chevron, inline double-click rename, and delete
+  - symbol drag/drop before sections or inside sections
+  - shared `watchlistLayout.ts` helpers for section/order index rules
   - list metadata persisted alongside the legacy symbol array for compatibility
 
 ## Recently Changed Files
@@ -38,13 +40,15 @@ Backend persistence and Google authentication.
 - Frontend auth docs: `frontend/docs/AUTH_UI.md`
 - Watchlist docs: `frontend/docs/WATCHLIST_ARCHITECTURE.md`
 - Watchlist code: `frontend/src/components/watchlist/Watchlist.tsx`,
-  `frontend/src/store/watchlistStore.ts`
+  `frontend/src/store/watchlistStore.ts`, `frontend/src/store/watchlistLayout.ts`
+- Watchlist tests: `frontend/tests/watchlist/watchlistLayout.test.ts`
 
 ## Verification Recently Run
 
 - `cd frontend && npm run typecheck`
 - `cd frontend && npm run lint`
 - `cd frontend && npm run build`
+- `cd frontend && npm run test:watchlist`
 
 Backend Go toolchain is available locally (`go version` works). Backend code was not changed in the
 Watchlist/docs work.

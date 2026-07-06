@@ -4,6 +4,16 @@ import { getDefaultStore } from "jotai";
 import { localStore } from "@/services/storage";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
+import {
+  clampSectionIndex,
+  createWatchlistSection,
+  moveSymbolInList,
+  normalizeSectionTitle,
+  removeSectionFromList,
+  removeSymbolFromList,
+  renameSectionInList,
+  type SectionInsertMode,
+} from "./watchlistLayout";
 
 export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
 
@@ -27,6 +37,11 @@ export interface WatchlistList {
 
 type SymbolUpdate = string[] | ((prev: string[]) => string[]);
 type AddSectionPayload = string | { title: string; index?: number };
+type MoveSymbolPayload = {
+  ticker: string;
+  index: number;
+  mode?: SectionInsertMode;
+};
 
 const DEFAULT_SYMBOLS = [
   "BTCUSDT",
@@ -73,12 +88,10 @@ function cleanSections(input: unknown, symbolCount: number): WatchlistSection[] 
       if (!section || typeof section !== "object") return null;
       const raw = section as Partial<WatchlistSection>;
       const title =
-        typeof raw.title === "string" && raw.title.trim()
-          ? raw.title.trim().slice(0, 40)
-          : "Section";
+        typeof raw.title === "string" ? normalizeSectionTitle(raw.title) : "Section";
       const index =
-        typeof raw.index === "number" && Number.isFinite(raw.index)
-          ? Math.max(0, Math.min(symbolCount, Math.round(raw.index)))
+        typeof raw.index === "number"
+          ? clampSectionIndex(raw.index, symbolCount)
           : symbolCount;
       return {
         id: typeof raw.id === "string" && raw.id ? raw.id : uid("wl_section"),
@@ -194,8 +207,12 @@ export const addWatchlistSymbolAtom = atom(null, (get, set, ticker: string) => {
 export const removeWatchlistSymbolAtom = atom(
   null,
   (get, set, ticker: string) => {
-    const symbols = get(watchlistSymbolsAtom).filter((s) => s !== ticker);
-    set(watchlistSymbolsAtom, symbols);
+    const activeId = get(activeWatchlistIdAtom);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
+      removeSymbolFromList(list, ticker),
+    );
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
   },
 );
 
@@ -271,7 +288,7 @@ export const addWatchlistSectionAtom = atom(
   null,
   (get, set, payload: AddSectionPayload) => {
     const title = typeof payload === "string" ? payload : payload.title;
-    const label = title.trim().slice(0, 40);
+    const label = normalizeSectionTitle(title);
     if (!label) return;
     const activeId = get(activeWatchlistIdAtom);
     const current = get(activeWatchlistAtom);
@@ -279,19 +296,51 @@ export const addWatchlistSectionAtom = atom(
       typeof payload === "string" ? undefined : payload.index;
     const index =
       typeof requestedIndex === "number" && Number.isFinite(requestedIndex)
-        ? Math.max(0, Math.min(current.symbols.length, Math.round(requestedIndex)))
+        ? clampSectionIndex(requestedIndex, current.symbols.length)
         : current.symbols.length;
     const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
       ...list,
       sections: [
         ...list.sections,
-        {
-          id: uid("wl_section"),
-          title: label,
-          index,
-        },
+        createWatchlistSection(label, index, list.symbols.length),
       ],
     }));
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
+export const renameWatchlistSectionAtom = atom(
+  null,
+  (get, set, sectionId: string, title: string) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
+      renameSectionInList(list, sectionId, title),
+    );
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
+export const removeWatchlistSectionAtom = atom(
+  null,
+  (get, set, sectionId: string) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
+      removeSectionFromList(list, sectionId),
+    );
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
+export const moveWatchlistSymbolAtom = atom(
+  null,
+  (get, set, payload: MoveSymbolPayload) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
+      moveSymbolInList(list, payload.ticker, payload.index, payload.mode),
+    );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
   },
@@ -325,6 +374,9 @@ export interface WatchlistActions {
   create: (name?: string) => void;
   clear: () => void;
   addSection: (title: string, index?: number) => void;
+  renameSection: (sectionId: string, title: string) => void;
+  removeSection: (sectionId: string) => void;
+  moveSymbol: (ticker: string, index: number, mode?: SectionInsertMode) => void;
   setSort: (key: SortKey) => void;
   hydrate: () => void;
 }
@@ -354,6 +406,11 @@ const watchlistCombinedAtom = atom<WatchlistStoreInterface>((get) => {
     clear: () => store.set(clearWatchlistAtom),
     addSection: (title, index) =>
       store.set(addWatchlistSectionAtom, { title, index }),
+    renameSection: (sectionId, title) =>
+      store.set(renameWatchlistSectionAtom, sectionId, title),
+    removeSection: (sectionId) => store.set(removeWatchlistSectionAtom, sectionId),
+    moveSymbol: (ticker, index, mode) =>
+      store.set(moveWatchlistSymbolAtom, { ticker, index, mode }),
     setSort: (key) => store.set(setWatchlistSortAtom, key),
     hydrate: () => store.set(hydrateWatchlistAtom),
   };

@@ -11,6 +11,7 @@ data flow. It currently remains browser-local until backend persistence is imple
 
 - `frontend/src/components/watchlist/Watchlist.tsx`
 - `frontend/src/store/watchlistStore.ts`
+- `frontend/src/store/watchlistLayout.ts`
 - `frontend/src/hooks/useMarketDataBootstrap.ts`
 
 ## Data Model
@@ -45,6 +46,16 @@ Write atoms:
 - `createWatchlistAtom`
 - `clearWatchlistAtom`
 - `addWatchlistSectionAtom`
+- `renameWatchlistSectionAtom`
+- `removeWatchlistSectionAtom`
+- `moveWatchlistSymbolAtom`
+
+Pure section/order rules live in `watchlistLayout.ts`:
+
+- section title normalization
+- section delete without deleting symbols
+- symbol removal with section-index repair
+- symbol drag/drop before a section or inside a section
 
 ## UI Behavior
 
@@ -68,6 +79,9 @@ Enter/blur, and cancels on Escape.
 
 Section rows are rendered as full-width blue rows with a chevron and uppercase title. Adding a
 section inserts it above the selected symbol when possible, otherwise at the end of the active list.
+Double-clicking a section title opens inline rename mode. Section delete removes only the header and
+leaves symbols in place. Symbols are draggable; dropping on the top half of a section places the
+symbol before the section, while dropping on the lower half places it inside the section.
 
 ## Future Backend Sync
 

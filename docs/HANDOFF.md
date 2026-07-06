@@ -19,6 +19,8 @@ Recent post-split work:
 - Google auth UI was added under the frontend.
 - Watchlist menu/rename/section state was updated toward TradingView parity; see
   `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
+- Watchlist section/order rules now live in `frontend/src/store/watchlistLayout.ts`; keep future
+  UI/backend sync paths using those helpers. Guard with `npm run test:watchlist`.
 
 _Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-03 (Pine Editor + source-code indicators)._
 

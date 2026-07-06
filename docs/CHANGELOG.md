@@ -20,9 +20,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   section, Clear list, and Create new list.
 - Removed unsupported actions requested by the user: Upload/Open list and Add alert on the list.
 - Added header rename mode with focused selected text and blue outline.
-- Added full-width blue section rows with chevron behavior.
+- Added full-width blue section rows with chevron behavior, inline double-click rename, and section
+  delete.
+- Added symbol drag/drop before a section or inside a section through shared Watchlist layout
+  helpers.
 - Expanded the local watchlist store to preserve list metadata while keeping the legacy `watchlist`
   localStorage symbol array synchronized for existing code paths.
+- Added `npm run test:watchlist` coverage for section rename/delete, symbol removal index repair,
+  and drag/drop index rules.
 
 ### Changed - Backend docs reconciled with the real frontend data model (2026-07-06)
 - Audited the frontend's actual persistence model and updated backend planning docs so implementation

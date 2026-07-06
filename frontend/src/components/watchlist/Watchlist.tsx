@@ -13,6 +13,7 @@ import {
   Search,
   Share2,
   Smile,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -30,7 +31,10 @@ import {
   clearWatchlistAtom,
   copyWatchlistAtom,
   createWatchlistAtom,
+  moveWatchlistSymbolAtom,
   removeWatchlistSymbolAtom,
+  removeWatchlistSectionAtom,
+  renameWatchlistSectionAtom,
   renameWatchlistAtom,
   setWatchlistSharedAtom,
   setWatchlistSortAtom,
@@ -64,7 +68,9 @@ const GRID =
 
 type DisplayRow =
   | { kind: "section"; section: WatchlistSection }
-  | { kind: "symbol"; ticker: string };
+  | { kind: "symbol"; ticker: string; index: number };
+
+type DropMode = "before-section" | "inside-section";
 
 function tvSign(s: string): string {
   return s.replace("-", "\u2212");
@@ -111,6 +117,9 @@ export function Watchlist() {
   const createWatchlist = useSetAtom(createWatchlistAtom);
   const clearWatchlist = useSetAtom(clearWatchlistAtom);
   const addSection = useSetAtom(addWatchlistSectionAtom);
+  const renameSection = useSetAtom(renameWatchlistSectionAtom);
+  const removeSection = useSetAtom(removeWatchlistSectionAtom);
+  const moveSymbol = useSetAtom(moveWatchlistSymbolAtom);
 
   const activeSymbol = useAtomValue(symbolAtom);
   const setSymbol = useSetAtom(setSymbolAtom);
@@ -123,6 +132,15 @@ export function Watchlist() {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
     {},
   );
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [sectionDraft, setSectionDraft] = useState("");
+  const skipSectionBlurRef = useRef(false);
+  const [draggedTicker, setDraggedTicker] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    key: string;
+    index: number;
+    mode?: DropMode;
+  } | null>(null);
 
   const quotes = useMarketDataStore((s) =>
     sortKey === "symbol" ? NO_QUOTES : s.quotes,
@@ -163,7 +181,11 @@ export function Watchlist() {
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     if (!sections.length) {
-      return ordered.map((ticker) => ({ kind: "symbol", ticker }));
+      return ordered.map((ticker) => ({
+        kind: "symbol",
+        ticker,
+        index: symbols.indexOf(ticker),
+      }));
     }
 
     const rows: DisplayRow[] = [];
@@ -184,7 +206,7 @@ export function Watchlist() {
         sectionIndex += 1;
       }
       if (index < symbols.length) {
-        rows.push({ kind: "symbol", ticker: symbols[index] });
+        rows.push({ kind: "symbol", ticker: symbols[index], index });
       }
     }
 
@@ -221,6 +243,89 @@ export function Watchlist() {
   );
   const onRemove = useCallback((ticker: string) => remove(ticker), [remove]);
 
+  const beginSectionRename = useCallback((section: WatchlistSection) => {
+    setSectionDraft(section.title);
+    setEditingSectionId(section.id);
+  }, []);
+
+  const commitSectionRename = useCallback(() => {
+    if (!editingSectionId) return;
+    renameSection(editingSectionId, sectionDraft);
+    setEditingSectionId(null);
+  }, [editingSectionId, renameSection, sectionDraft]);
+
+  const cancelSectionRename = useCallback(() => {
+    skipSectionBlurRef.current = true;
+    setEditingSectionId(null);
+    setSectionDraft("");
+  }, []);
+
+  const resolveDrop = useCallback(
+    (
+      e: React.DragEvent<HTMLElement>,
+      topIndex: number,
+      bottomIndex: number,
+      topMode: DropMode = "inside-section",
+      bottomMode: DropMode = "inside-section",
+    ) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      return {
+        index: after ? bottomIndex : topIndex,
+        mode: after ? bottomMode : topMode,
+      };
+    },
+    [],
+  );
+
+  const onDragOverTarget = useCallback(
+    (
+      e: React.DragEvent<HTMLElement>,
+      key: string,
+      topIndex: number,
+      bottomIndex: number,
+      topMode?: DropMode,
+      bottomMode?: DropMode,
+    ) => {
+      if (!draggedTicker) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const target = resolveDrop(
+        e,
+        topIndex,
+        bottomIndex,
+        topMode,
+        bottomMode,
+      );
+      setDropTarget({ key, ...target });
+    },
+    [draggedTicker, resolveDrop],
+  );
+
+  const onDropTarget = useCallback(
+    (
+      e: React.DragEvent<HTMLElement>,
+      topIndex: number,
+      bottomIndex: number,
+      topMode?: DropMode,
+      bottomMode?: DropMode,
+    ) => {
+      if (!draggedTicker) return;
+      e.preventDefault();
+      const target = resolveDrop(
+        e,
+        topIndex,
+        bottomIndex,
+        topMode,
+        bottomMode,
+      );
+      moveSymbol({ ticker: draggedTicker, index: target.index, mode: target.mode });
+      setDraggedTicker(null);
+      setDropTarget(null);
+    },
+    [draggedTicker, moveSymbol, resolveDrop],
+  );
+
   const [menu, setMenu] = useState<WatchlistMenuState | null>(null);
   const onRowContext = useCallback((e: React.MouseEvent, ticker: string) => {
     e.preventDefault();
@@ -254,6 +359,38 @@ export function Watchlist() {
                 [row.section.id]: !prev[row.section.id],
               }))
             }
+            editing={editingSectionId === row.section.id}
+            draft={sectionDraft}
+            dropActive={dropTarget?.key === `section-${row.section.id}`}
+            onDraftChange={setSectionDraft}
+            onStartRename={() => beginSectionRename(row.section)}
+            onCommitRename={commitSectionRename}
+            onCancelRename={cancelSectionRename}
+            shouldSkipBlur={() => {
+              if (!skipSectionBlurRef.current) return false;
+              skipSectionBlurRef.current = false;
+              return true;
+            }}
+            onRemove={() => removeSection(row.section.id)}
+            onDragOver={(e) =>
+              onDragOverTarget(
+                e,
+                `section-${row.section.id}`,
+                row.section.index,
+                row.section.index,
+                "before-section",
+                "inside-section",
+              )
+            }
+            onDrop={(e) =>
+              onDropTarget(
+                e,
+                row.section.index,
+                row.section.index,
+                "before-section",
+                "inside-section",
+              )
+            }
           />
         );
       }
@@ -267,6 +404,26 @@ export function Watchlist() {
           onSelect={onSelect}
           onRemove={onRemove}
           onContextMenu={onRowContext}
+          dragging={draggedTicker === row.ticker}
+          dropActive={dropTarget?.key === `symbol-${row.ticker}`}
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", row.ticker);
+            setDraggedTicker(row.ticker);
+          }}
+          onDragEnd={() => {
+            setDraggedTicker(null);
+            setDropTarget(null);
+          }}
+          onDragOver={(e) =>
+            onDragOverTarget(
+              e,
+              `symbol-${row.ticker}`,
+              row.index,
+              row.index + 1,
+            )
+          }
+          onDrop={(e) => onDropTarget(e, row.index, row.index + 1)}
         />
       );
     });
@@ -574,27 +731,110 @@ function HeaderCell({
 function SectionRow({
   section,
   collapsed,
+  editing,
+  draft,
+  dropActive,
   onToggle,
+  onDraftChange,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  shouldSkipBlur,
+  onRemove,
+  onDragOver,
+  onDrop,
 }: {
   section: WatchlistSection;
   collapsed: boolean;
+  editing: boolean;
+  draft: string;
+  dropActive: boolean;
   onToggle: () => void;
+  onDraftChange: (value: string) => void;
+  onStartRename: () => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  shouldSkipBlur: () => boolean;
+  onRemove: () => void;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!editing) return;
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, [editing]);
+
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex h-[26px] w-full items-center gap-1 border-y border-[#32467e] bg-[#22356d] px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-[#96a0bd] hover:bg-[#27407f]"
+    <div
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={cn(
+        "group flex h-[26px] w-full items-center gap-1 border-y border-[#32467e] bg-[#22356d] px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-[#96a0bd] hover:bg-[#27407f]",
+        dropActive && "shadow-[inset_0_0_0_1px_#668cff]",
+      )}
     >
-      <ChevronDown
-        size={13}
-        className={cn(
-          "shrink-0 text-[#96a0bd] transition-transform",
-          collapsed && "-rotate-90",
-        )}
-      />
-      <span className="truncate">{section.title}</span>
-    </button>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex h-full shrink-0 items-center justify-center"
+        aria-label={collapsed ? "Expand section" : "Collapse section"}
+      >
+        <ChevronDown
+          size={13}
+          className={cn(
+            "shrink-0 text-[#96a0bd] transition-transform",
+            collapsed && "-rotate-90",
+          )}
+        />
+      </button>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => onDraftChange(e.target.value)}
+          onBlur={() => {
+            if (shouldSkipBlur()) return;
+            onCommitRename();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onCommitRename();
+            if (e.key === "Escape") onCancelRename();
+          }}
+          className="h-[20px] min-w-0 flex-1 rounded-sm border border-brand bg-[#2d3569] px-1 text-[10px] font-semibold uppercase tracking-wide text-white outline-none selection:bg-brand"
+          aria-label={`Rename ${section.title}`}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onToggle}
+          onDoubleClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onStartRename();
+          }}
+          className="min-w-0 flex-1 truncate text-left uppercase"
+          title="Double click to rename section"
+        >
+          {section.title}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        className="ml-auto hidden h-[20px] w-[20px] shrink-0 items-center justify-center rounded-sm text-[#96a0bd] hover:bg-[#31498f] hover:text-bear group-hover:flex"
+        aria-label={`Delete ${section.title}`}
+        title="Delete section"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
   );
 }
 
@@ -604,6 +844,12 @@ interface RowProps {
   onSelect: (t: string) => void;
   onRemove: (t: string) => void;
   onContextMenu: (e: React.MouseEvent, ticker: string) => void;
+  dragging: boolean;
+  dropActive: boolean;
+  onDragStart: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
 }
 
 const WatchRow = memo(function WatchRow({
@@ -612,6 +858,12 @@ const WatchRow = memo(function WatchRow({
   onSelect,
   onRemove,
   onContextMenu,
+  dragging,
+  dropActive,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
 }: RowProps) {
   const quote = useQuote(ticker);
   const meta = getMarketSymbol(ticker);
@@ -641,12 +893,19 @@ const WatchRow = memo(function WatchRow({
 
   return (
     <div
+      draggable
       onClick={() => onSelect(ticker)}
       onContextMenu={(e) => onContextMenu(e, ticker)}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       className={cn(
         GRID,
         "group relative h-[30px] cursor-pointer select-none px-2 hover:bg-terminal-hover",
         active && "rounded-md shadow-[inset_0_0_0_1px_var(--text-faint)]",
+        dragging && "opacity-45",
+        dropActive && "shadow-[inset_0_1px_0_#668cff,inset_0_-1px_0_#668cff]",
       )}
     >
       <div className="flex min-w-0 items-center gap-1.5">
