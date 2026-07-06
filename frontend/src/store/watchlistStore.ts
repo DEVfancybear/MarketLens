@@ -1,6 +1,15 @@
 "use client";
-import { atom, useAtomValue } from "jotai";
+import { atom, useAtomValue, type Getter, type Setter } from "jotai";
 import { getDefaultStore } from "jotai";
+import { backendSessionAtom } from "@/store/authStore";
+import { logAtom } from "@/store/uiStore";
+import { isApiError } from "@/services/api/errors";
+import {
+  addWatchlistSymbol as addRemoteWatchlistSymbol,
+  createWatchlist as createRemoteWatchlist,
+  removeWatchlistSymbol as removeRemoteWatchlistSymbol,
+  updateWatchlist as updateRemoteWatchlist,
+} from "@/services/api/resources/watchlistsApi";
 import { localStore } from "@/services/storage";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
@@ -237,6 +246,72 @@ const EMPTY_REMOTE_LIST: WatchlistList = {
   sections: [],
 };
 
+function isRemoteSyncEnabled(get: Getter): boolean {
+  return get(backendSessionAtom);
+}
+
+function isServerWatchlistId(id: string): boolean {
+  return id !== DEFAULT_LIST_ID && !id.startsWith("wl");
+}
+
+function logRemoteSyncError(set: Setter, action: string, error: unknown): void {
+  const message = isApiError(error)
+    ? error.message
+    : (error as Error)?.message || "Unknown error";
+  set(logAtom, "error", `Watchlist sync failed (${action}): ${message}`);
+}
+
+function runRemoteSync(
+  get: Getter,
+  set: Setter,
+  action: string,
+  work: () => Promise<unknown>,
+): void {
+  if (!isRemoteSyncEnabled(get)) return;
+  void work().catch((error) => logRemoteSyncError(set, action, error));
+}
+
+async function replaceLocalListWithRemote(
+  get: Getter,
+  set: Setter,
+  localId: string,
+  remote: RemoteWatchlist,
+): Promise<WatchlistList | null> {
+  const lists = get(watchlistListsAtom);
+  const activeId = get(activeWatchlistIdAtom);
+  const local = lists.find((list) => list.id === localId);
+  if (!local) return null;
+
+  const nextList: WatchlistList = {
+    ...local,
+    id: remote.id,
+    name: remote.name || local.name,
+  };
+  const nextLists = lists.map((list) => (list.id === localId ? nextList : list));
+  const nextActiveId = activeId === localId ? nextList.id : activeId;
+  set(watchlistListsAtom, nextLists);
+  set(activeWatchlistIdAtom, nextActiveId);
+  persist(nextLists, nextActiveId);
+  return nextList;
+}
+
+async function createRemoteListFromLocal(
+  get: Getter,
+  set: Setter,
+  localId: string,
+  name: string,
+): Promise<void> {
+  const remote = await createRemoteWatchlist(name);
+  const synced = await replaceLocalListWithRemote(get, set, localId, remote);
+  if (!synced) return;
+
+  // Phase 6 backend stores a flat ordered symbol list only. Sections and local
+  // drag grouping stay client-owned until backend exposes a section/reorder API.
+  for (const symbol of synced.symbols) {
+    await addRemoteWatchlistSymbol(remote.id, symbol);
+  }
+}
+
 export const applyRemoteWatchlistsAtom = atom(
   null,
   (_get, set, payload: unknown) => {
@@ -267,24 +342,39 @@ export const addWatchlistSymbolAtom = atom(null, (get, set, ticker: string) => {
   if (!getMarketSymbol(symbol)) return;
   const symbols = get(watchlistSymbolsAtom);
   if (symbols.includes(symbol)) return;
+  const current = get(activeWatchlistAtom);
   set(watchlistSymbolsAtom, [...symbols, symbol]);
+
+  runRemoteSync(get, set, "add symbol", async () => {
+    if (!isServerWatchlistId(current.id)) return;
+    await addRemoteWatchlistSymbol(current.id, symbol);
+  });
 });
 
 export const removeWatchlistSymbolAtom = atom(
   null,
   (get, set, ticker: string) => {
+    const symbol = ticker.trim().toUpperCase();
+    const current = get(activeWatchlistAtom);
+    if (!current.symbols.includes(symbol)) return;
     const activeId = get(activeWatchlistIdAtom);
     const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
-      removeSymbolFromList(list, ticker),
+      removeSymbolFromList(list, symbol),
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+
+    runRemoteSync(get, set, "remove symbol", async () => {
+      if (!isServerWatchlistId(current.id)) return;
+      await removeRemoteWatchlistSymbol(current.id, symbol);
+    });
   },
 );
 
 export const renameWatchlistAtom = atom(null, (get, set, name: string) => {
   const nextName = name.trim().slice(0, 40);
   if (!nextName) return;
+  const current = get(activeWatchlistAtom);
   const activeId = get(activeWatchlistIdAtom);
   const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
     ...list,
@@ -292,6 +382,11 @@ export const renameWatchlistAtom = atom(null, (get, set, name: string) => {
   }));
   set(watchlistListsAtom, lists);
   persist(lists, activeId);
+
+  runRemoteSync(get, set, "rename list", async () => {
+    if (!isServerWatchlistId(current.id)) return;
+    await updateRemoteWatchlist(current.id, { name: nextName });
+  });
 });
 
 export const setWatchlistSharedAtom = atom(
@@ -323,6 +418,10 @@ export const copyWatchlistAtom = atom(null, (get, set) => {
   set(watchlistListsAtom, lists);
   set(activeWatchlistIdAtom, copy.id);
   persist(lists, copy.id);
+
+  runRemoteSync(get, set, "copy list", async () => {
+    await createRemoteListFromLocal(get, set, copy.id, copy.name);
+  });
 });
 
 export const createWatchlistAtom = atom(null, (get, set, name?: string) => {
@@ -337,9 +436,14 @@ export const createWatchlistAtom = atom(null, (get, set, name?: string) => {
   set(watchlistListsAtom, lists);
   set(activeWatchlistIdAtom, list.id);
   persist(lists, list.id);
+
+  runRemoteSync(get, set, "create list", async () => {
+    await createRemoteListFromLocal(get, set, list.id, list.name);
+  });
 });
 
 export const clearWatchlistAtom = atom(null, (get, set) => {
+  const current = get(activeWatchlistAtom);
   const activeId = get(activeWatchlistIdAtom);
   const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
     ...list,
@@ -348,6 +452,13 @@ export const clearWatchlistAtom = atom(null, (get, set) => {
   }));
   set(watchlistListsAtom, lists);
   persist(lists, activeId);
+
+  runRemoteSync(get, set, "clear list", async () => {
+    if (!isServerWatchlistId(current.id)) return;
+    for (const symbol of current.symbols) {
+      await removeRemoteWatchlistSymbol(current.id, symbol);
+    }
+  });
 });
 
 export const addWatchlistSectionAtom = atom(

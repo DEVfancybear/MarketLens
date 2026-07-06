@@ -1,4 +1,4 @@
-import { getJson } from "@/services/api/client";
+import { deleteJson, getJson, patchJson, postJson } from "@/services/api/client";
 
 export interface BackendWatchlist {
   id: string;
@@ -7,6 +7,56 @@ export interface BackendWatchlist {
   symbols: string[];
 }
 
+export interface UpdateWatchlistPayload {
+  name?: string;
+  position?: number;
+}
+
+interface DeleteWatchlistResponse {
+  ok: boolean;
+}
+
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
 export async function listWatchlists(): Promise<BackendWatchlist[]> {
   return getJson<BackendWatchlist[]>("watchlists");
+}
+
+export async function createWatchlist(name: string): Promise<BackendWatchlist> {
+  return postJson<BackendWatchlist>("watchlists", { name });
+}
+
+export async function updateWatchlist(
+  id: string,
+  payload: UpdateWatchlistPayload,
+): Promise<BackendWatchlist> {
+  return patchJson<BackendWatchlist>(
+    `watchlists/${encodePathSegment(id)}`,
+    payload,
+  );
+}
+
+export async function deleteWatchlist(id: string): Promise<void> {
+  await deleteJson<DeleteWatchlistResponse>(`watchlists/${encodePathSegment(id)}`);
+}
+
+export async function addWatchlistSymbol(
+  id: string,
+  symbol: string,
+): Promise<BackendWatchlist> {
+  return postJson<BackendWatchlist>(
+    `watchlists/${encodePathSegment(id)}/symbols`,
+    { symbol },
+  );
+}
+
+export async function removeWatchlistSymbol(
+  id: string,
+  symbol: string,
+): Promise<BackendWatchlist> {
+  return deleteJson<BackendWatchlist>(
+    `watchlists/${encodePathSegment(id)}/symbols/${encodePathSegment(symbol)}`,
+  );
 }

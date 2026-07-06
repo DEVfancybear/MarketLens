@@ -5,9 +5,9 @@ Last updated: 2026-07-07
 ## Goal
 
 The Watchlist should behave like TradingView while staying compatible with the existing frontend
-data flow. Authenticated bootstrap can hydrate flat watchlist lists/symbols from the backend; section
-metadata and local edits still use the existing frontend store until write-back and section
-persistence are added.
+data flow. Authenticated bootstrap hydrates flat watchlist lists/symbols from the backend and the
+main list/symbol actions write through to backend Phase 6 APIs. Section metadata and section/reorder
+edits stay in the frontend store until the backend exposes a section/reorder contract.
 
 ## Source Files
 
@@ -15,6 +15,7 @@ persistence are added.
 - `frontend/src/store/watchlistStore.ts`
 - `frontend/src/store/watchlistLayout.ts`
 - `frontend/src/hooks/useMarketDataBootstrap.ts`
+- `frontend/src/services/api/resources/watchlistsApi.ts`
 
 ## Data Model
 
@@ -28,6 +29,13 @@ The current implementation adds list metadata while keeping that legacy key sync
 
 This compatibility is important because chart context menus and market-data bootstrap still consume
 `watchlistSymbolsAtom`.
+
+Authenticated backend mode adds a second boundary:
+
+- `/api/v1/sync/bootstrap` is the read path for server-owned watchlist lists and symbols.
+- `watchlistsApi.ts` owns the Phase 6 endpoint calls.
+- `watchlistStore.ts` remains the UI runtime source of truth and performs optimistic local updates.
+- Anonymous mode still uses the local keys above.
 
 ## Store Atoms
 
@@ -135,14 +143,36 @@ top drop strip moves it back outside all sections.
 ## Backend Sync
 
 Current backend watchlist persistence stores list metadata and flat symbols. Frontend bootstrap
-hydrates those lists after auth through `/api/v1/sync/bootstrap`, but UI mutations and section
-metadata are not written back yet.
+hydrates those lists after auth through `/api/v1/sync/bootstrap`. If the backend has no watchlists
+yet, `useWorkspaceBootstrap()` creates the server-side default list with `POST /api/v1/watchlists`
+and applies the returned id. This avoids showing browser-local seed symbols as if they were server
+data.
+
+Implemented Phase 6 write-through:
+
+- Create list: local optimistic list, then `POST /api/v1/watchlists`, replacing the temporary id
+  with the backend id.
+- Copy list: local optimistic copy, then `POST /api/v1/watchlists` plus one add-symbol call per
+  copied symbol.
+- Rename list: optimistic local rename, then `PATCH /api/v1/watchlists/:id`.
+- Add symbol: optimistic local add, then `POST /api/v1/watchlists/:id/symbols`.
+- Remove symbol: optimistic local remove, then `DELETE /api/v1/watchlists/:id/symbols/:symbol`.
+- Clear list: optimistic local clear, then one remove-symbol call per previously present symbol.
+
+Known Phase 6 limits:
+
+- Backend does not persist section rows yet, so `addWatchlistSectionAtom`,
+  `renameWatchlistSectionAtom`, `removeWatchlistSectionAtom`, and `moveWatchlistSectionAtom` are
+  local-only.
+- Backend does not expose symbol reorder yet, so `moveWatchlistSymbolAtom` updates the TradingView
+  UI locally but cannot persist order changes server-side.
+- `setWatchlistSharedAtom` is local-only because Phase 6 has no shared-watchlist field.
+- Conflict handling for multiple browser tabs/devices is still pending.
 
 Next sync steps:
 
 1. Keep `watchlistSymbolsAtom` as the UI compatibility contract.
-2. Add write-through mutations for create/rename/delete list and add/remove/reorder symbols.
-3. Extend the backend contract before syncing section rows, because current Phase 6 only persists
-   flat symbols.
+2. Extend backend contract for section rows and symbol reorder.
+3. Sync section drag/drop and symbol reorder once the endpoint exists.
 4. Continue writing the legacy `watchlist` key until all older consumers are removed.
 5. Add conflict handling for multiple browser tabs/devices.

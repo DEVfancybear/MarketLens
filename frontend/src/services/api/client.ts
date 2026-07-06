@@ -87,3 +87,14 @@ export async function patchJson<T>(
     return normalizeApiError(error);
   }
 }
+
+export async function deleteJson<T>(
+  path: string,
+  options?: Options,
+): Promise<T> {
+  try {
+    return await apiClient.delete(path, options).json<T>();
+  } catch (error) {
+    return normalizeApiError(error);
+  }
+}

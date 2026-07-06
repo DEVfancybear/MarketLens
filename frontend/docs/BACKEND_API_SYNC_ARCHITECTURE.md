@@ -27,10 +27,10 @@ Current backend code has:
 - Settings API: `GET/PUT/PATCH /api/v1/settings`.
 - Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
-Current backend API status from `backend/docs/API.md`: auth, settings, and bootstrap are live;
-watchlists/drawings/indicators/Pine/alerts/journal/layouts/sim trading are still phase-by-phase
-work. Frontend work should remain staged behind `backendSession` and typed adapters. Do not remove
-working local behavior for anonymous users until each resource endpoint exists.
+Current backend API status from `backend/docs/API.md`: auth, settings, bootstrap, and Phase 6
+watchlists are live. Drawings/indicators/Pine/alerts/journal/layouts/sim trading remain
+phase-by-phase work. Frontend work should remain staged behind `backendSession` and typed adapters.
+Do not remove working local behavior for anonymous users until each resource endpoint exists.
 
 ## Source Of Truth Rules
 
@@ -77,7 +77,7 @@ frontend/src/services/api/
     authApi.ts            # implemented: /auth/me, /auth/refresh, /auth/google, /auth/logout
     settingsApi.ts        # implemented: GET/PUT/PATCH /settings
     syncApi.ts            # implemented: GET /sync/bootstrap
-    watchlistsApi.ts      # implemented: GET /watchlists read contract
+    watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
 ```
 
 Target structure as more backend phases land:
@@ -240,9 +240,10 @@ All atom updates from bootstrap should happen in one orchestration action so the
 half-local, half-remote state.
 
 Authenticated watchlist bootstrap treats backend data as authoritative. If the backend returns an
-empty watchlist array, the frontend keeps a stable empty "Watchlist" shell instead of falling back to
-the browser-local default symbols. This prevents accidental display of local seed data as server
-state.
+empty watchlist array, the frontend creates a default backend "Watchlist" through
+`POST /api/v1/watchlists` and then applies the returned server id. If that create fails, the UI keeps
+a stable empty local shell and logs a warning instead of falling back to the browser-local default
+symbols. This prevents accidental display of local seed data as server state.
 
 Suggested module:
 
@@ -305,7 +306,7 @@ Do not write to backend on every render or pointer move.
 | Resource | Mutation timing |
 | --- | --- |
 | Settings | debounce 300-500ms or save on dialog OK |
-| Watchlists | on add/remove/rename/drop commit |
+| Watchlists | on create/copy/rename/clear/add-symbol/remove-symbol commit; section/reorder sync waits for backend contract |
 | Drawings | create on completion; update on pointerup/settings OK; batch drag updates |
 | Drawing templates | explicit create/update/delete |
 | Indicators | add/remove/toggle immediately; style/settings on OK |
@@ -351,9 +352,12 @@ Frontend remote mode should not be enabled globally until each required slice ex
 - `GET /api/v1/sync/bootstrap` - backend implemented; frontend read/apply path implemented
 - `GET/PATCH /api/v1/settings` - backend implemented; frontend resource module implemented;
   write-sync from UI mutations pending
-- `GET/POST/PATCH/DELETE /api/v1/watchlists` - backend implemented; frontend bootstrap read path
-  implemented; mutation wiring pending
-- `POST/DELETE /api/v1/watchlists/:id/symbols` - backend implemented; frontend mutation wiring pending
+- `GET/POST/PATCH/DELETE /api/v1/watchlists` - backend implemented; frontend bootstrap read and
+  create/copy/rename/clear mutation paths implemented for authenticated sessions
+- `POST/DELETE /api/v1/watchlists/:id/symbols` - backend implemented; frontend add/remove mutation
+  paths implemented for authenticated sessions
+- Watchlist section rows and symbol reorder persistence - pending backend contract; frontend keeps
+  these local-only for now
 - `GET /api/v1/drawings?symbol=...`
 - `POST /api/v1/drawings/batch`
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts`
@@ -396,6 +400,10 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
 
 - Move `uiStore`, `smcStore`, timeframe favorites, notification settings, and `watchlistStore`
   mutations to API calls in remote mode.
+- Watchlist list/symbol write-through is partially implemented: create, copy, rename, clear,
+  add-symbol, and remove-symbol call Phase 6 backend APIs after optimistic local updates.
+- Watchlist section rows, section drag/drop, and symbol reorder are intentionally local-only until
+  backend adds section/reorder endpoints.
 - Stop reading local keys when `dataMode === "remote"`.
 - Add rollback/error toast for failed writes.
 

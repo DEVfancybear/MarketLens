@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Frontend Phase 6 watchlist API write-through (2026-07-07)
+- Expanded the frontend `ky` API client with a shared `deleteJson` helper.
+- Added typed Phase 6 watchlist resource calls for create/update/delete lists and add/remove
+  symbols.
+- `useWorkspaceBootstrap()` now creates a server-side default Watchlist when authenticated backend
+  bootstrap returns no watchlists, avoiding local seed symbols being shown as remote data.
+- Watchlist create, copy, rename, clear, add-symbol, and remove-symbol actions now optimistically
+  update the UI and write through to backend Phase 6 APIs when `backendSession` is active.
+- Documented that watchlist sections, section drag/drop, symbol reorder, and sharing remain
+  frontend-only until backend exposes those contracts.
+
 ### Fixed - TwelveData fallback for OANDA-primary symbols (2026-07-07)
 - Fixed OANDA-primary forex/metals/indices fallback so `NEXT_PUBLIC_TWELVEDATA_API_KEY` works even
   when no OANDA key is configured.

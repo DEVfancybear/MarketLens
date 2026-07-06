@@ -21,8 +21,9 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   remaining workspace slices are Phase 7+ and authenticated persistence should stay feature-flagged
   until each resource endpoint ships.
 - Frontend now consumes `GET /api/v1/sync/bootstrap` after backend auth and applies server UI
-  settings, SMC settings, notification defaults, and watchlists into Jotai atoms. Mutation write-back
-  for these slices is still the next sync step.
+  settings, SMC settings, notification defaults, and watchlists into Jotai atoms. Watchlist
+  list/symbol mutations now call backend Phase 6 APIs in authenticated mode; settings write-back and
+  future workspace resources are still pending.
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 
