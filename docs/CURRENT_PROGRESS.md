@@ -14,13 +14,18 @@ Backend persistence and Google authentication.
 - Backend database: **Phase 1 complete** — pgxpool, golang-migrate runner, `0001_extensions` +
   `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Not yet applied to a
   live Postgres (none available locally).
-- Backend auth: **Phase 2 complete** — Firebase ID-token verification (`internal/auth`,
-  `VerifyGoogleToken → Identity`, errors as `ErrUnauthorized`), unit-tested. Phase 3 next:
-  sessions & JWT services.
+- Backend auth: **Phases 2 & 3 complete** — Firebase ID-token verification + session/token services
+  (HS256 access JWT, opaque refresh with rotation & reuse-detection, auth cookies), unit-tested.
+  Phase 4 next: auth endpoints (`/api/v1/auth/*`) + `RequireAuth` middleware + CORS.
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
+- **Backend Phase 3 (Sessions & tokens):** `internal/auth/jwt.go` (`TokenService` MintAccess/
+  ParseAccess, HS256, none-alg guard), `session.go` (`SessionService` Create/Rotate/Revoke/RevokeAll
+  over a pgx-free `SessionStore`, reuse detection revokes the family), `session_pgstore.go`
+  (`PgSessionStore` adapter over `gen.Queries`), and `cookies.go` (HttpOnly/SameSite=Lax/env-gated
+  Secure, refresh scoped to `/api/v1/auth`). 9 new unit tests (jwt + session) via a fake store.
 - **Backend Phase 2 (Firebase ID-token verification):** `internal/auth/firebase.go` (Admin SDK init
   from `FIREBASE_*`) + `verify.go` (`VerifyGoogleToken` → `Identity{UID, ProviderUID, Email,
   EmailVerified, Name, PhotoURL}`, all failures as `ErrUnauthorized`, never a partial identity) +

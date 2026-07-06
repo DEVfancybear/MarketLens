@@ -4,6 +4,25 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 3: Sessions & tokens (2026-07-06)
+- `internal/auth/jwt.go`: `TokenService` — `MintAccess(userID, sessionID)` HS256 JWT
+  (`sub`/`sid`/`iat`/`exp`, `AUTH_JWT_SECRET`/`AUTH_ACCESS_TTL`) + `ParseAccess` with
+  `WithValidMethods(["HS256"])` (alg-confusion guard). Any failure → `ErrUnauthorized`.
+- `internal/auth/session.go`: `SessionService` over a pgx-free `SessionStore` interface —
+  `Create` (256-bit crypto refresh token, only its SHA-256 hash stored), `Rotate` (single-use;
+  unknown/expired → `ErrUnauthorized`; **reuse of a revoked token → revoke the whole session family
+  + `ErrSessionReuse`**; else revoke old + issue new), `Revoke`, `RevokeAll`. Injected clock for
+  testable expiry.
+- `internal/auth/session_pgstore.go`: `PgSessionStore` adapts the sqlc `gen.Queries` to
+  `SessionStore` (pgtype/UUID/timestamptz/inet conversions) — the production store, ready for Phase 4.
+- `internal/auth/cookies.go`: `SetAuthCookies`/`ClearAuthCookies` — HttpOnly, SameSite=Lax, Secure
+  gated by `APP_ENV` (off only in development); access cookie at `/`, refresh scoped to
+  `/api/v1/auth`; Max-Age from each TTL.
+- Dep: `github.com/golang-jwt/jwt/v5`.
+- Tests (`jwt_test.go`, `session_test.go`): mint→parse round-trip, expired rejected, wrong-secret
+  rejected, none-alg rejected; session create, rotate happy path, **reuse revokes the family**,
+  unknown/expired rejected. `go build/vet/test` all pass (13 auth tests).
+
 ### Added - Backend Phase 2: Firebase ID-token verification (2026-07-06)
 - `internal/auth/firebase.go`: `NewVerifier(ctx, cfg)` initializes the Firebase Admin SDK
   (`firebase.google.com/go/v4`) from the `FIREBASE_*` service-account env (builds the minimal

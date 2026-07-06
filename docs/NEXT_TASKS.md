@@ -7,10 +7,12 @@ The historical roadmap below is preserved. The current top priority after the mo
 1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ ✅ **Done (backend Phase 0).**
    ~~Phase 1 — Database layer.~~ ✅ **Done** (pending a live Postgres to run `migrate up`/`down`).
    ~~Phase 2 — Firebase ID-token verification (`internal/auth/firebase.go` + `verify.go`).~~ ✅ **Done.**
-   Next backend step is **Phase 3 — Sessions & tokens** (`internal/auth/jwt.go` HS256 access token,
-   `session.go` opaque refresh + rotation/reuse detection, `cookies.go`), then **Phase 4 — Auth
-   endpoints & middleware** (`/api/v1/auth/*`, `RequireAuth`, CORS) which wires the verifier + repo
-   end-to-end and closes the Google login/register request.
+   ~~Phase 3 — Sessions & tokens (`jwt.go`, `session.go` rotation/reuse, `cookies.go`).~~ ✅ **Done.**
+   Next backend step is **Phase 4 — Auth endpoints & middleware**: `internal/users/repo.go`
+   (`UpsertFromIdentity`), `internal/auth/{service,handler,middleware}.go` for
+   `POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`, `DELETE /auth/sessions`, `RequireAuth`,
+   and CORS — wires the verifier + session services + repo end-to-end and closes the Google
+   login/register request. (Needs a live Postgres + Firebase project for the manual smoke test.)
 2. Implement the remaining backend Firebase Google auth + per-resource persistence according to
    `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
 3. Add backend sync feature-by-feature for settings, watchlists, drawings, indicators, alerts,
