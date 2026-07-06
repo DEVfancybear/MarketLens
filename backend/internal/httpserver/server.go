@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/rs/zerolog/log"
 	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/health"
 	"github.com/smc-trading-terminal/backend/internal/middleware"
 )
@@ -19,7 +20,9 @@ type Server struct {
 	app *fiber.App
 }
 
-func New(cfg config.Config) *Server {
+// New builds the Fiber server. pool may be nil (e.g. local dev with no
+// DATABASE_URL); the readiness probe then reports the database as unconfigured.
+func New(cfg config.Config, pool *db.Pool) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:               "smc-trading-backend",
 		DisableStartupMessage: true,
@@ -35,7 +38,13 @@ func New(cfg config.Config) *Server {
 	app.Use(recover.New())
 	app.Use(middleware.Logging())
 
-	health.RegisterRoutes(app)
+	// Avoid the typed-nil interface trap: pass a nil Pinger (not a non-nil
+	// interface wrapping a nil *db.Pool) when no pool is configured.
+	var pinger health.Pinger
+	if pool != nil {
+		pinger = pool
+	}
+	health.RegisterRoutes(app, pinger)
 
 	return &Server{cfg: cfg, app: app}
 }

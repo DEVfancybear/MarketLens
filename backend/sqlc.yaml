@@ -1,0 +1,20 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    # Schema is the up-migrations only (down files DROP and would confuse sqlc).
+    schema:
+      - "migrations/0001_extensions.up.sql"
+      - "migrations/0002_auth.up.sql"
+    queries: "internal/db/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "internal/db/gen"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_interface: false
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: "citext"
+            go_type: "string"

@@ -4,6 +4,31 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 1: Database layer (2026-07-06)
+- `internal/db/pool.go`: `pgxpool`-backed pool built from `DatabaseURL`, pings on startup, exposes
+  `Ping`/`Close` (sensible pool defaults).
+- Migrations `backend/migrations/0001_extensions.(up|down).sql` (pgcrypto, citext) and
+  `0002_auth.(up|down).sql` (`users`, `auth_identities`, `sessions`, `push_tokens` + `user_status`/
+  `auth_provider`/`push_platform` enums + shared `set_updated_at()` trigger on the mutable auth
+  tables), from `DATABASE.md` §5.
+- `cmd/migrate`: golang-migrate runner (embedded `iofs` source → cross-platform, no `file://` path
+  issues; rewrites `postgres://` → `pgx5://`) supporting `up [N]`, `down [N|all]`, `version`,
+  `force V`. Added `backend/Makefile` (`migrate-up`/`migrate-down`/`migrate-version`/`sqlc`).
+- sqlc: `sqlc.yaml` (pgx/v5, `citext`→`string` override, pointers for nullables) + typed queries for
+  users/identities/sessions in `internal/db/queries/*.sql`; generated `internal/db/gen/*` (models +
+  query methods). Enums, `inet`→`*netip.Addr`, `jsonb`→`[]byte` all resolved.
+- Readiness: `GET /health/ready` pings the pool (`200 {ready:true,database:"up"}` /
+  `503 {..."down"|"unconfigured"}`); liveness `GET /health` stays DB-free. Server/main now build an
+  optional pool (dev without `DATABASE_URL` boots and reports `unconfigured`; typed-nil interface
+  trap guarded in `httpserver.New`).
+- Files: `backend/{go.mod,go.sum,sqlc.yaml,Makefile}`, `backend/migrations/*`,
+  `backend/cmd/migrate/main.go`, `backend/cmd/api/main.go`,
+  `backend/internal/{db/pool.go,db/queries/*.sql,db/gen/*,health/handler.go,httpserver/server.go}`.
+- Verified: `go build ./...`, `go vet ./...`, `sqlc generate` (compiling Go), live `/health` 200 +
+  `/health/ready` 503 unconfigured, and the migrate runner aborting cleanly without `DATABASE_URL`.
+  **Not yet run against a live Postgres** (none available locally) — `migrate up`/`down` +
+  `/health/ready` 200 need a DB to fully verify.
+
 ### Added - Backend Phase 0: Fiber foundation & framework (2026-07-06)
 - Migrated the Go backend HTTP surface from stdlib `net/http`/`http.ServeMux` to
   `github.com/gofiber/fiber/v2`. `GET /health` returns the same JSON as before.

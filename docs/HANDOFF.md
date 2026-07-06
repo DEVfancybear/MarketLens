@@ -10,16 +10,27 @@ older references:
 - Older frontend milestone/audit/parity reports live in `frontend/docs/archive/`.
 - Run backend commands from `backend/`.
 - Backend framework is now **Fiber** — backend Phase 0 migrated the Go code off `net/http`
-  (`internal/httpserver` builds a `*fiber.App`). Next backend step is Phase 1 (database layer).
+  (`internal/httpserver` builds a `*fiber.App`). Backend Phase 1 (database layer) is done; next is
+  Phase 2 (Firebase ID-token verification).
 - The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
 
 Recent post-split work:
 
+- **Backend Phase 1 complete (database layer):** `internal/db/pool.go` (pgxpool + Ping + Close);
+  migrations `backend/migrations/0001_extensions` + `0002_auth` (users/auth_identities/sessions/
+  push_tokens + enums + `set_updated_at()`); `cmd/migrate` golang-migrate runner (embedded iofs
+  source, `postgres://`→`pgx5://`, `up/down/version/force`) + `backend/Makefile`; sqlc (`sqlc.yaml`,
+  `internal/db/queries/*.sql`, generated `internal/db/gen/*`) for users/identities/sessions; and
+  `GET /health/ready` (pings the pool, 503 when down/unconfigured — liveness `/health` stays
+  DB-free). `cmd/api` builds an optional pool (dev boots without `DATABASE_URL`). **To fully verify:**
+  set `DATABASE_URL`, run `make migrate-up` (then `make migrate-down N=2`), and hit `/health/ready`
+  (expect 200 `{"database":"up"}`) — not done here (no local Postgres). Regenerate query code with
+  `make sqlc` (needs `sqlc` on PATH: `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`).
+  Continue with Phase 2 in `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
 - **Backend Phase 0 complete:** Fiber app boot (requestid → recover → zerolog logging), Fiber
   `/health`, standard error envelope (`internal/httpserver/response.go`: `WriteError` + central
   `ErrorHandler`), extended `config.Load() (Config, error)` with DB/auth/Firebase/CORS vars +
-  fail-fast in non-dev, and `backend/.env.example`. Build/vet/`/health` verified. See
-  `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md` Phase 1 to continue (pgxpool + migrations + sqlc).
+  fail-fast in non-dev, and `backend/.env.example`. Build/vet/`/health` verified.
 - Backend planning docs were added under `backend/docs/`.
 - Google auth UI was added under the frontend.
 - Watchlist menu/rename/section state was updated toward TradingView parity; see

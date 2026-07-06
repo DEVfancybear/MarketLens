@@ -5,9 +5,11 @@ _Post-monorepo update 2026-07-06._
 The historical roadmap below is preserved. The current top priority after the monorepo split is:
 
 1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ ✅ **Done (backend Phase 0).**
-   Next backend step is **Phase 1 — Database layer** (`pgxpool` + `golang-migrate` + `sqlc`,
-   `0001_extensions`/`0002_auth` migrations, `GET /health/ready`).
-2. Implement backend PostgreSQL persistence and Firebase Google auth according to
+   ~~Phase 1 — Database layer (`pgxpool` + `golang-migrate` + `sqlc`, `0001`/`0002` migrations,
+   `GET /health/ready`).~~ ✅ **Done (backend Phase 1)** — pending a live Postgres to run
+   `migrate up`/`down`. Next backend step is **Phase 2 — Firebase ID-token verification**
+   (`internal/auth/firebase.go` + `verify.go`), then Phase 3 sessions/JWT and Phase 4 auth endpoints.
+2. Implement the remaining backend Firebase Google auth + per-resource persistence according to
    `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`.
 3. Add backend sync feature-by-feature for settings, watchlists, drawings, indicators, alerts,
    journal, layouts, and simulated trading.

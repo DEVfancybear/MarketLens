@@ -10,12 +10,19 @@ Backend persistence and Google authentication.
 
 - Frontend trading terminal: implemented and actively evolving.
 - Frontend Google auth UI: implemented and verified.
-- Backend API: Fiber scaffold; `GET /health` exists (Phase 0 complete).
-- Backend auth/database: designed in docs, not implemented (Phase 1 next: Postgres pool + migrations).
+- Backend API: Fiber scaffold; `GET /health` (liveness) + `GET /health/ready` (DB readiness) exist.
+- Backend database: **Phase 1 complete** — pgxpool, golang-migrate runner, `0001_extensions` +
+  `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Not yet applied to a
+  live Postgres (none available locally). Phase 2 next: Firebase ID-token verification.
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
+- **Backend Phase 1 (Database layer):** pgxpool (`internal/db/pool.go`), golang-migrate runner
+  (`cmd/migrate`, embedded iofs source), migrations `0001_extensions` + `0002_auth` (auth tables +
+  enums + `set_updated_at()` trigger), sqlc config + typed queries for users/identities/sessions
+  (`internal/db/gen`), and `GET /health/ready` DB readiness probe (liveness stays DB-free). Verified
+  build/vet/`sqlc generate` + live health probes; live-DB migrate up/down still pending a Postgres.
 - **Backend Phase 0 (Foundation & framework):** migrated the Go backend from stdlib `net/http` to
   Fiber, extended config with DB/auth/Firebase/CORS vars + fail-fast validation, added the standard
   error-envelope helper (`WriteError` + Fiber `ErrorHandler`), and added `backend/.env.example`.
