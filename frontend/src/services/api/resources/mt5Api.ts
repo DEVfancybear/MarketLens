@@ -96,9 +96,9 @@ export async function getMt5History(params: {
   if (params.refresh) query.set("refresh", "true");
   return getJson<Mt5HistorySnapshot>(`mt5/history?${query.toString()}`, {
     // MT5 can spend a full retry window warming history for cold symbols or
-    // higher timeframes. The Go endpoint has a 30s HTTP budget; keep the browser
+    // higher timeframes. The Go endpoint has a 70s HTTP budget; keep the browser
     // above that so it does not cancel first and fall back to realtime-only UI.
-    timeout: 35_000,
+    timeout: 75_000,
     retry: { limit: 0 },
   });
 }

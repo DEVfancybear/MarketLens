@@ -14,6 +14,8 @@ import json
 import logging
 import os
 import signal
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Set
@@ -71,6 +73,7 @@ SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
 MT5_TICK_TIME_OFFSET_SECONDS = 0
+HISTORY_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt5-history")
 
 TIMEFRAME_MAP = {
     "1m": mt5.TIMEFRAME_M1,
@@ -128,20 +131,20 @@ def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
     return int(rates[-1]["time"]) >= current_bar - tf_seconds
 
 
-async def copy_rates_synced(
+def copy_rates_synced_blocking(
     symbol: str,
     mt5_timeframe: int,
     timeframe: str,
     limit: int,
 ) -> Any:
-    """Like copy_rates_from_pos, but refresh stale MT5 cache without blocking.
+    """Blocking history loader for the dedicated history worker.
 
-    MT5 often returns stale bars from copy_rates_from_pos while it downloads
-    recent history in the background. This bridge is intentionally single-threaded
-    because the MetaTrader5 Python package is safest when calls stay on one
-    thread. The retry delay therefore uses asyncio.sleep instead of time.sleep:
-    MT5 calls remain serialized on this event loop, while other WebSocket tasks
-    can keep processing ticks and pings during cold-start history sync.
+    Some MT5 `copy_rates_*` calls can block for many seconds while the terminal
+    downloads a cold symbol/timeframe. Running that call directly in the asyncio
+    WebSocket handler freezes every other message, so Go sees unrelated history
+    requests time out in a cascade. The executor has one worker, keeping history
+    calls serialized while the event loop remains free for ticks, pings, and
+    responses.
     """
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
@@ -149,20 +152,34 @@ async def copy_rates_synced(
         return rates
 
     for _ in range(HISTORY_SYNC_RETRIES):
-        # Anchoring a request one day in the (broker) future forces the terminal
-        # to fetch everything up to the latest bar for this symbol/timeframe.
-        # The +1 day margin makes this robust to MT5's datetime timezone quirks.
         mt5.copy_rates_from(
             symbol,
             mt5_timeframe,
             datetime.now(timezone.utc) + timedelta(days=1),
             2,
         )
-        await asyncio.sleep(HISTORY_SYNC_DELAY)
+        time.sleep(HISTORY_SYNC_DELAY)
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
         if _rates_are_fresh(rates, symbol, tf_seconds):
             break
     return rates
+
+
+async def copy_rates_synced_worker(
+    symbol: str,
+    mt5_timeframe: int,
+    timeframe: str,
+    limit: int,
+) -> Any:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        HISTORY_EXECUTOR,
+        copy_rates_synced_blocking,
+        symbol,
+        mt5_timeframe,
+        timeframe,
+        limit,
+    )
 
 
 def parse_symbols(raw: str) -> tuple[str, ...]:
@@ -425,7 +442,29 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         limit = int(message.get("limit") or 1500)
     except (TypeError, ValueError):
         limit = 1500
-    await websocket.send(await load_history_message(symbol, timeframe, limit, request_id))
+    asyncio.create_task(
+        send_history_response(websocket, symbol, timeframe, limit, request_id)
+    )
+
+
+async def send_history_response(
+    websocket: WebSocketServerProtocol,
+    symbol: str,
+    timeframe: str,
+    limit: int,
+    request_id: str,
+) -> None:
+    try:
+        await websocket.send(
+            await load_history_message(symbol, timeframe, limit, request_id)
+        )
+    except Exception as exc:  # noqa: BLE001 - client may disconnect mid-load.
+        LOG.warning(
+            "failed to send MT5 history response symbol=%s timeframe=%s: %s",
+            symbol,
+            timeframe,
+            exc,
+        )
 
 
 def add_stream_symbols(raw_symbols: Any) -> tuple[str, ...]:
@@ -537,7 +576,7 @@ async def load_history_messages(
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
             if mt5_timeframe is None:
                 continue
-            rates = await copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
+            rates = await copy_rates_synced_worker(symbol, mt5_timeframe, timeframe, limit)
             if rates is None:
                 LOG.warning(
                     "copy_rates_from_pos(%s, %s) failed (%s)",
@@ -599,7 +638,7 @@ async def load_history_message(
         payload["error"] = f"symbol_select({symbol}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
 
-    rates = await copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
+    rates = await copy_rates_synced_worker(symbol, mt5_timeframe, timeframe, limit)
     if rates is None:
         payload["error"] = f"copy_rates_from_pos({symbol}, {timeframe}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
@@ -707,6 +746,7 @@ async def main() -> None:
             except asyncio.CancelledError:
                 pass
         mt5.shutdown()
+        HISTORY_EXECUTOR.shutdown(wait=False, cancel_futures=True)
         LOG.info("MT5 bridge stopped")
 
 

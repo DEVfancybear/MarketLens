@@ -139,7 +139,9 @@ export class HistoricalDataService {
     });
     for (
       let attempt = 1;
-      snapshot.candles.length === 0 && attempt < MT5_HISTORY_ATTEMPTS;
+      snapshot.candles.length === 0 &&
+      !snapshot.lastError &&
+      attempt < MT5_HISTORY_ATTEMPTS;
       attempt += 1
     ) {
       await delay(MT5_HISTORY_RETRY_DELAY_MS);

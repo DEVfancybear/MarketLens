@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 history requests no longer cascade-timeout chart loads (2026-07-07)
+- Moved Python MT5 history loading onto a single dedicated history worker so a slow
+  `copy_rates_*` call for `1D`/`1W` does not block the WebSocket event loop and cause unrelated
+  history requests to return `candles: []` after a timeout.
+- Raised the Go MT5 history request/HTTP budgets to match cold MT5 history downloads and return
+  cached candles on timeout when a usable cache exists instead of dropping to an empty chart.
+- Reduced frontend initial history limits for high timeframes (`1D`, `1W`, `1M`) and stopped
+  retrying immediately after a backend timeout, preventing long spinner loops.
+
 ### Fixed - Chart right-whitespace pan/zoom no longer snaps back (2026-07-07)
 - Fixed a delayed viewport reset where dragging or zooming the chart into right-side whitespace
   would snap back after the next structural candle refresh. `PriceChart` no longer calls

@@ -23,8 +23,8 @@ const (
 	// after the first copy_rates_from request. Keep the WebSocket request budget
 	// above the Python retry window so the first chart load does not return an
 	// empty history while the terminal is still warming the cache.
-	defaultHistoryRequestTimeout = 25 * time.Second
-	defaultHistoryHTTPTimeout    = 30 * time.Second
+	defaultHistoryRequestTimeout = 60 * time.Second
+	defaultHistoryHTTPTimeout    = 70 * time.Second
 )
 
 // Config controls the backend API's connection to the local Python MT5 bridge.
@@ -252,16 +252,22 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 	// be served stale — MT5 can hand back cached bars that lag the live tick by
 	// many bars, which would leave a gap before the realtime candle.
 	if candles := s.cachedHistory(symbol, timeframe, limit, before); !refresh &&
-		len(candles) >= limit &&
+		len(candles) > 0 &&
 		(before > 0 || s.historyIsFresh(symbol, timeframe, candles)) {
 		return s.historySnapshot(symbol, timeframe, candles, "")
 	}
 
 	msg, err := s.requestHistory(ctx, symbol, timeframe, limit)
 	if err != nil {
+		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
+			return s.historySnapshot(symbol, timeframe, candles, err.Error())
+		}
 		return s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
 	}
 	if msg.Error != "" {
+		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
+			return s.historySnapshot(symbol, timeframe, candles, msg.Error)
+		}
 		return s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
 	}
 	return s.historySnapshot(symbol, timeframe, limitCandles(msg.Candles, limit, before), "")

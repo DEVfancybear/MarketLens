@@ -62,9 +62,10 @@ important for stocks and other slower symbols: a symbol can have a valid last qu
 - Set `MT5_STREAM_ALL_VISIBLE=false` and leave `MT5_SYMBOLS` empty to publish the catalog only
   without streaming ticks.
 
-On-demand history requests may need a short cold-start refresh because MT5 downloads recent bars
-after the first `copy_rates_from` call. The bridge retries with `asyncio.sleep`, not blocking
-`time.sleep`, so WebSocket pings and tick streaming continue while MT5 warms its cache.
+On-demand history requests may need a cold-start refresh because MT5 downloads recent bars after
+the first `copy_rates_from` call. The bridge runs `copy_rates_*` work on one dedicated history
+worker thread, so a slow `1D`/`1W` request does not freeze the asyncio WebSocket loop or block
+catalog/tick messages. Keep the worker single-threaded; MT5 history calls should stay serialized.
 
 MT5 `copy_rates_*` history timestamps are already UTC bar-open seconds according to the official
 MetaQuotes Python docs, so the bridge sends candle `time` values unchanged. Live tick timestamps are

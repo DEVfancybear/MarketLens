@@ -49,6 +49,9 @@ const MAX_BACKFILL_MISSING_BARS = 50;
 const MT5_HISTORY_REFRESH_MS = 3000;
 
 function historyBarsForTimeframe(timeframe: Timeframe): number {
+  if (timeframe === "1M") return 240;
+  if (timeframe === "1W") return 520;
+  if (timeframe === "1D") return 1000;
   if (timeframe === "1H" || timeframe === "2H") return 3000;
   return DEFAULT_HISTORY_BARS;
 }
