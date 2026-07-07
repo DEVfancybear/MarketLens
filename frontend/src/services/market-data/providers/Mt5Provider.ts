@@ -4,8 +4,8 @@
  * Browser-side market-data adapter for the Go backend's MT5 stream cache. The
  * browser never connects to Python/MT5 directly: Python streams ticks to Go,
  * Go caches latest ticks, and this provider polls `/api/v1/mt5/ticks` for the
- * currently subscribed symbols. MarketDataService's CandleEngine then turns
- * those price ticks into TradingView-style forming candles.
+ * currently subscribed symbols. These ticks are quote/watchlist data only; MT5
+ * chart candles come from `/api/v1/mt5/history`.
  */
 import { getMt5Ticks } from "@/services/api/resources/mt5Api";
 import {

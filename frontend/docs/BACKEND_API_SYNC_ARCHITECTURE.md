@@ -462,6 +462,9 @@ frontend/tests/fixtures/backend-bootstrap.json
 - MT5 chart candles are loaded and refreshed from `GET /api/v1/mt5/history`. Active charts can pass
   `refresh=true` with a small `limit` to bypass the backend cache and fetch the latest MT5 OHLC bars.
   `/api/v1/mt5/ticks` is quote/watchlist data only; do not synthesize MT5 candles from bid/ask ticks.
+  The frontend may subscribe any MT5 catalog symbol in a watchlist or chart; if it was not part of
+  the bridge's initial `streamSymbols`, the Go API requests on-demand streaming from the Python
+  sidecar.
   MT5 history candle `time` values are UTC bar-open seconds from `copy_rates_*`; the frontend must
   render them unchanged. If the bridge normalizes anything, it is tick timestamps only, and only so
   quote freshness checks compare ticks and rates in the same UTC domain.

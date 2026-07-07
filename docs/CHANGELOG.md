@@ -34,6 +34,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   history appeared to end well before the live tick.
 - Verified live against the FTMO MT5 terminal: every streamed symbol's history now ends on the
   current forming bar (gap ~0.4 bars) instead of lagging by up to ~29 days (GBPUSD).
+- Fixed MT5 watchlist live quotes when both `MT5_SYMBOLS` and `MT5_STREAM_ALL_VISIBLE=true` are set:
+  the bridge now streams every visible Market Watch symbol and treats `MT5_SYMBOLS` as extra
+  explicit symbols, instead of accidentally limiting live ticks to only the comma-separated list.
+- Added on-demand MT5 tick streaming: when the frontend polls `/api/v1/mt5/ticks?symbols=...` for a
+  catalog symbol that was not in the initial bridge stream set, the Go API asks the Python sidecar
+  to `symbol_select()` and add that symbol to the tick loop. This prevents watchlist rows such as
+  manually-added stocks from staying at `--` until the bridge is restarted.
 
 ### Fixed - MT5 chart candles and watchlist live prices (2026-07-07)
 - Added backend `GET /api/v1/mt5/ticks` and `GET /api/v1/mt5/history` on top of the local MT5
@@ -45,8 +52,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `streamSymbols` so rows have live `Last/Chg/Chg%` values.
 - Backend workspace/watchlist bootstrap now also uses streamable MT5 symbols instead of overwriting
   the live watchlist with the full MT5 catalog.
-- Removed the legacy `MT5_SYMBOL` fallback from the Python stream sidecar; use `MT5_SYMBOLS` for an
-  explicit subset or `MT5_STREAM_ALL_VISIBLE=true` to stream visible MT5 Market Watch symbols.
+- Removed the legacy `MT5_SYMBOL` fallback from the Python stream sidecar; use
+  `MT5_STREAM_ALL_VISIBLE=true` to stream visible MT5 Market Watch symbols, and use `MT5_SYMBOLS`
+  only for explicit extras.
 
 ### Changed - MT5 catalog as frontend symbol source of truth (2026-07-07)
 - Removed the frontend hardcoded market symbol seed list. The runtime registry now starts empty and
@@ -60,8 +68,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 ### Added - Backend Phase 6 MT5 tick streaming (2026-07-07)
 - Added `backend/bridge/mt5_stream/mt5_server.py`, a localhost Python WebSocket sidecar that
   initializes MetaTrader 5 through the `MetaTrader5` package, sends the MT5 symbol catalog on
-  connect, and streams de-duplicated ticks for configured `MT5_SYMBOLS` or visible Market Watch
-  symbols.
+  connect, and streams de-duplicated ticks for visible Market Watch symbols plus any explicit
+  `MT5_SYMBOLS` extras.
 - Added `backend/cmd/mt5-stream`, a Go consumer using `github.com/gorilla/websocket` with typed
   `Mt5Tick` decoding, formatted terminal logs, reconnect backoff, and graceful shutdown.
 - Added a Go API MT5 catalog cache service and `GET /api/v1/mt5/symbols` so the frontend can read

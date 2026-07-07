@@ -119,6 +119,8 @@ func (s *Service) Snapshot() Snapshot {
 }
 
 func (s *Service) Ticks(symbols []string) TickSnapshot {
+	s.ensureStreamSymbols(symbols)
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -147,6 +149,82 @@ func (s *Service) Ticks(symbols []string) TickSnapshot {
 		UpdatedAt: s.updatedAt,
 		LastError: s.lastErr,
 	}
+}
+
+func (s *Service) ensureStreamSymbols(symbols []string) {
+	if len(symbols) == 0 {
+		return
+	}
+
+	requested := make([]string, 0, len(symbols))
+	seenRequested := make(map[string]struct{}, len(symbols))
+	for _, symbol := range symbols {
+		normalized := normalizeSymbol(symbol)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seenRequested[normalized]; ok {
+			continue
+		}
+		seenRequested[normalized] = struct{}{}
+		requested = append(requested, normalized)
+	}
+	if len(requested) == 0 {
+		return
+	}
+
+	s.mu.RLock()
+	conn := s.conn
+	connected := s.connected
+	streamed := make(map[string]struct{}, len(s.streamSymbols))
+	for _, symbol := range s.streamSymbols {
+		streamed[normalizeSymbol(symbol)] = struct{}{}
+	}
+	available := make(map[string]struct{}, len(s.symbols))
+	for _, symbol := range s.symbols {
+		available[normalizeSymbol(symbol.Name)] = struct{}{}
+	}
+	missing := make([]string, 0, len(requested))
+	for _, symbol := range requested {
+		if _, ok := streamed[symbol]; ok {
+			continue
+		}
+		if _, ok := available[symbol]; !ok {
+			continue
+		}
+		missing = append(missing, symbol)
+	}
+	s.mu.RUnlock()
+
+	if !connected || conn == nil || len(missing) == 0 {
+		return
+	}
+
+	payload := map[string]any{
+		"type":    "stream.subscribe",
+		"symbols": missing,
+	}
+	s.writeMu.Lock()
+	err := conn.WriteJSON(payload)
+	s.writeMu.Unlock()
+	if err != nil {
+		log.Warn().Err(err).Strs("symbols", missing).Msg("request MT5 stream symbols")
+		return
+	}
+
+	s.mu.Lock()
+	existing := make(map[string]struct{}, len(s.streamSymbols)+len(missing))
+	for _, symbol := range s.streamSymbols {
+		existing[normalizeSymbol(symbol)] = struct{}{}
+	}
+	for _, symbol := range missing {
+		if _, ok := existing[symbol]; ok {
+			continue
+		}
+		s.streamSymbols = append(s.streamSymbols, symbol)
+		existing[symbol] = struct{}{}
+	}
+	s.mu.Unlock()
 }
 
 func (s *Service) History(ctx context.Context, symbol, timeframe string, limit int, before int64, refresh bool) HistorySnapshot {

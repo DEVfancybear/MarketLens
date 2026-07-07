@@ -33,7 +33,7 @@ export function useMarketDataBootstrap() {
       symbols.filter((s) => {
         const meta = getMarketSymbol(s);
         if (!meta) return false;
-        if (meta.provider === "mt5") return meta.streamable === true;
+        if (meta.provider === "mt5") return true;
         return true;
       }),
     );

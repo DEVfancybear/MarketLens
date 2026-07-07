@@ -33,8 +33,8 @@ python -m pip install -r bridge/mt5_stream/requirements.txt
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `MT5_SYMBOLS` | empty | Comma-separated symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
-| `MT5_STREAM_ALL_VISIBLE` | `true` | Stream every MT5 symbol currently marked visible when `MT5_SYMBOLS` is empty |
+| `MT5_SYMBOLS` | empty | Comma-separated extra symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
+| `MT5_STREAM_ALL_VISIBLE` | `true` | Stream every MT5 symbol currently marked visible. When enabled, `MT5_SYMBOLS` is added on top of visible symbols |
 | `MT5_STREAM_HOST` | `localhost` | WebSocket listen host |
 | `MT5_STREAM_PORT` | `8765` | WebSocket listen port |
 | `MT5_POLL_INTERVAL_MS` | `100` | Tick polling interval |
@@ -55,8 +55,8 @@ the bridge uses the account already active in the local MT5 terminal.
 The bridge always sends the full MT5 symbol catalog to every Go client on connect. Tick streaming is
 separate from catalog loading:
 
-- Set `MT5_SYMBOLS=EURUSD,GBPUSD` to stream specific symbols.
 - Set `MT5_STREAM_ALL_VISIBLE=true` to stream every symbol that is visible in Market Watch.
+- Set `MT5_SYMBOLS=EURUSD,GBPUSD` to add specific symbols even if they are not visible.
 - Set `MT5_STREAM_ALL_VISIBLE=false` and leave `MT5_SYMBOLS` empty to publish the catalog only
   without streaming ticks.
 
@@ -96,6 +96,9 @@ the Python bridge and returns connection status plus the latest symbol metadata.
 For live prices, the frontend calls `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD`.
 The Go API caches only the latest tick per streamed symbol. Ticks are quote/watchlist data only and
 must not be used to synthesize MT5 chart candles.
+If that endpoint asks for a catalog symbol that was not in the initial stream set, the Go API sends
+`stream.subscribe` to this bridge; the bridge calls `symbol_select()` and adds the symbol to the live
+tick loop without a process restart.
 
 For historical chart candles, the frontend calls
 `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500`. The Go API
@@ -165,6 +168,15 @@ The Go API can also request history over the same WebSocket:
 }
 ```
 
+The Go API can request extra live symbols over the same WebSocket:
+
+```json
+{
+  "type": "stream.subscribe",
+  "symbols": ["AAPL", "XAUUSD"]
+}
+```
+
 The Python bridge responds:
 
 ```json
@@ -186,6 +198,6 @@ The Python bridge responds:
 - Run the Python bridge and Go consumer as separate processes so either side can restart safely.
 - The Go consumer reconnects with exponential backoff if the Python bridge restarts.
 - `stream_symbols` is the source of truth for which catalog symbols can show live
-  prices. Set `MT5_SYMBOLS` or `MT5_STREAM_ALL_VISIBLE=true` if chart/watchlist
-  prices should update for more than one symbol.
+  prices. Use `MT5_STREAM_ALL_VISIBLE=true` for Market Watch parity, and use
+  `MT5_SYMBOLS` only to add explicit symbols beyond that visible set.
 - This stream is market-data only. Order execution remains a separate FTMO/MT5 bridge concern.

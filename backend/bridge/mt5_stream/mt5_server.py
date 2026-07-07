@@ -340,18 +340,34 @@ def resolve_stream_symbols(
     catalog: list[dict[str, Any]],
 ) -> tuple[str, ...]:
     available = {item["name"].upper(): item["name"] for item in catalog}
+    stream_symbols: list[str] = []
+    seen: set[str] = set()
+
+    def add_symbol(symbol: str) -> None:
+        key = symbol.upper()
+        resolved = available.get(key)
+        if resolved and resolved.upper() not in seen:
+            seen.add(resolved.upper())
+            stream_symbols.append(resolved)
+
+    if cfg.stream_all_visible:
+        for item in catalog:
+            if item["visible"]:
+                add_symbol(item["name"])
 
     if cfg.symbols:
         missing = [symbol for symbol in cfg.symbols if symbol.upper() not in available]
         if missing:
             raise RuntimeError(f"MT5 symbols not found: {', '.join(missing)}")
-        return tuple(available[symbol.upper()] for symbol in cfg.symbols)
+        for symbol in cfg.symbols:
+            add_symbol(symbol)
+        return tuple(stream_symbols)
 
-    if cfg.stream_all_visible:
-        return tuple(item["name"] for item in catalog if item["visible"])
+    if stream_symbols:
+        return tuple(stream_symbols)
 
     LOG.warning(
-        "No MT5_SYMBOLS configured and MT5_STREAM_ALL_VISIBLE=false; "
+        "No MT5 symbols selected and MT5_STREAM_ALL_VISIBLE=false; "
         "bridge will publish the symbol catalog only"
     )
     return ()
@@ -387,8 +403,15 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         LOG.warning("ignoring invalid client JSON")
         return
 
-    if message.get("type") != "history.request":
-        LOG.debug("ignoring client message type=%s", message.get("type"))
+    message_type = message.get("type")
+    if message_type == "stream.subscribe":
+        added = add_stream_symbols(message.get("symbols"))
+        if added:
+            await broadcast(symbol_catalog_message())
+        return
+
+    if message_type != "history.request":
+        LOG.debug("ignoring client message type=%s", message_type)
         return
 
     request_id = str(message.get("id") or "")
@@ -399,6 +422,47 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
     except (TypeError, ValueError):
         limit = 1500
     await websocket.send(await load_history_message(symbol, timeframe, limit, request_id))
+
+
+def add_stream_symbols(raw_symbols: Any) -> tuple[str, ...]:
+    """Add symbols to the live tick stream after the bridge has started.
+
+    The Go API calls this when the browser asks for ticks for a catalog symbol
+    that is not in the initial Market Watch visible set. This keeps startup
+    light while still allowing watchlist/search rows to obtain live prices on
+    demand.
+    """
+    global STREAM_SYMBOLS
+
+    if not isinstance(raw_symbols, list):
+        return ()
+
+    available = {item["name"].upper(): item["name"] for item in SYMBOL_CATALOG}
+    existing = {symbol.upper() for symbol in STREAM_SYMBOLS}
+    added: list[str] = []
+    for value in raw_symbols:
+        if not isinstance(value, str):
+            continue
+        requested = value.strip().upper()
+        symbol = available.get(requested)
+        if not symbol or symbol.upper() in existing:
+            continue
+        if not mt5.symbol_select(symbol, True):
+            LOG.warning("symbol_select(%s) failed (%s)", symbol, last_mt5_error())
+            continue
+        existing.add(symbol.upper())
+        added.append(symbol)
+
+    if not added:
+        return ()
+
+    STREAM_SYMBOLS = tuple([*STREAM_SYMBOLS, *added])
+    LOG.info(
+        "added MT5 stream symbols count=%d symbols=%s",
+        len(STREAM_SYMBOLS),
+        ",".join(added),
+    )
+    return tuple(added)
 
 
 def symbol_catalog_message() -> str:

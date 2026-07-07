@@ -259,15 +259,19 @@ MetaTrader 5 terminal
    (`localhost:8765` by default).
 3. Python sidecar loads the full MT5 symbol catalog with `symbols_get()` and sends it to each Go
    client on connect.
-4. Python sidecar streams ticks for `MT5_SYMBOLS` (comma-separated) or, if explicitly enabled,
-   every currently visible MT5 symbol through `MT5_STREAM_ALL_VISIBLE=true`. It de-dupes each symbol
-   by `time_msc` and broadcasts compact JSON tick messages.
+4. Python sidecar streams ticks for every currently visible MT5 symbol when
+   `MT5_STREAM_ALL_VISIBLE=true`; `MT5_SYMBOLS` adds explicit symbols on top of
+   that visible set. It de-dupes each symbol by `time_msc` and broadcasts
+   compact JSON tick messages.
 5. Go command `cmd/mt5-stream` connects with `github.com/gorilla/websocket`, decodes the symbol
    catalog plus strong typed `Mt5Tick` values, logs them, and reconnects with exponential backoff.
 6. The Go API process also starts a lightweight MT5 stream client. It caches the symbol catalog,
    latest ticks, and on-demand candle history, then exposes `/api/v1/mt5/symbols`,
    `/api/v1/mt5/ticks`, and `/api/v1/mt5/history` for the frontend. The frontend calls the Go API,
    never the Python bridge directly.
+   `GET /api/v1/mt5/ticks?symbols=...` also requests on-demand streaming for catalog symbols that
+   were not in the bridge's initial stream set, so manually-added watchlist symbols can receive
+   live quotes without restarting MT5.
 7. Candle history uses a request/reply message over the existing local bridge WebSocket:
    Fiber receives `GET /api/v1/mt5/history`, sends `history.request` to Python, waits for the
    matching `history` response, caches the candles briefly, and returns UTC OHLCV bars.
