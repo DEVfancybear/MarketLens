@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultReconnectMin = time.Second
-	defaultReconnectMax = 30 * time.Second
+	defaultReconnectMin       = time.Second
+	defaultReconnectMax       = 30 * time.Second
+	defaultStreamRequestRetry = 10 * time.Second
 
 	// Cold MT5 symbols can spend several seconds downloading recent history
 	// after the first copy_rates_from request. Keep the WebSocket request budget
@@ -53,6 +54,7 @@ type Service struct {
 	conn           *websocket.Conn
 	writeMu        sync.Mutex
 	pendingHistory map[string]chan HistoryMessage
+	pendingStream  map[string]time.Time
 	subscribers    map[uint64]*TickSubscriber
 	nextSubscriber uint64
 	updatedAt      time.Time
@@ -85,6 +87,7 @@ func NewService(cfg Config) *Service {
 		ticks:          make(map[string]Tick),
 		history:        make(map[string][]Candle),
 		pendingHistory: make(map[string]chan HistoryMessage),
+		pendingStream:  make(map[string]time.Time),
 		subscribers:    make(map[uint64]*TickSubscriber),
 	}
 }
@@ -183,6 +186,7 @@ func (s *Service) ensureStreamSymbols(symbols []string) {
 	for _, symbol := range s.streamSymbols {
 		streamed[normalizeSymbol(symbol)] = struct{}{}
 	}
+	now := time.Now()
 	available := make(map[string]struct{}, len(s.symbols))
 	for _, symbol := range s.symbols {
 		available[normalizeSymbol(symbol.Name)] = struct{}{}
@@ -193,6 +197,10 @@ func (s *Service) ensureStreamSymbols(symbols []string) {
 			continue
 		}
 		if _, ok := available[symbol]; !ok {
+			continue
+		}
+		if requestedAt, ok := s.pendingStream[symbol]; ok &&
+			now.Sub(requestedAt) < defaultStreamRequestRetry {
 			continue
 		}
 		missing = append(missing, symbol)
@@ -216,16 +224,8 @@ func (s *Service) ensureStreamSymbols(symbols []string) {
 	}
 
 	s.mu.Lock()
-	existing := make(map[string]struct{}, len(s.streamSymbols)+len(missing))
-	for _, symbol := range s.streamSymbols {
-		existing[normalizeSymbol(symbol)] = struct{}{}
-	}
 	for _, symbol := range missing {
-		if _, ok := existing[symbol]; ok {
-			continue
-		}
-		s.streamSymbols = append(s.streamSymbols, symbol)
-		existing[symbol] = struct{}{}
+		s.pendingStream[symbol] = now
 	}
 	s.mu.Unlock()
 }
@@ -379,6 +379,15 @@ func (s *Service) applyCatalog(catalog SymbolCatalog) {
 	}
 	s.streamSymbols = append([]string(nil), catalog.StreamSymbols...)
 	s.symbols = append([]Symbol(nil), catalog.Symbols...)
+	confirmed := make(map[string]struct{}, len(s.streamSymbols))
+	for _, symbol := range s.streamSymbols {
+		confirmed[normalizeSymbol(symbol)] = struct{}{}
+	}
+	for symbol := range s.pendingStream {
+		if _, ok := confirmed[symbol]; ok {
+			delete(s.pendingStream, symbol)
+		}
+	}
 	s.updatedAt = time.Now().UTC()
 	log.Info().
 		Int("count", s.count).

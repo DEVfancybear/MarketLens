@@ -387,6 +387,8 @@ async def register_client(websocket: WebSocketServerProtocol) -> None:
     LOG.info("client connected peer=%s clients=%d", peer, len(CLIENTS))
     try:
         await websocket.send(symbol_catalog_message())
+        for message in current_tick_messages(STREAM_SYMBOLS):
+            await websocket.send(message)
         for message in HISTORY_MESSAGES:
             await websocket.send(message)
         async for raw in websocket:
@@ -408,6 +410,8 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         added = add_stream_symbols(message.get("symbols"))
         if added:
             await broadcast(symbol_catalog_message())
+            for tick_message in current_tick_messages(added):
+                await broadcast(tick_message)
         return
 
     if message_type != "history.request":
@@ -476,6 +480,49 @@ def symbol_catalog_message() -> str:
         },
         separators=(",", ":"),
     )
+
+
+def tick_payload(symbol: str) -> tuple[dict[str, Any], int] | None:
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        LOG.warning("symbol_info_tick(%s) returned none (%s)", symbol, last_mt5_error())
+        return None
+
+    time_msc = int(getattr(tick, "time_msc", 0) or tick.time * 1000)
+    payload: dict[str, Any] = {
+        "type": "tick",
+        "source": "mt5",
+        "symbol": symbol,
+        "bid": float(tick.bid),
+        "ask": float(tick.ask),
+        "timestamp": normalize_mt5_tick_time(int(tick.time)),
+        "time_msc": time_msc - (MT5_TICK_TIME_OFFSET_SECONDS * 1000),
+    }
+    return payload, time_msc
+
+
+def tick_message(symbol: str) -> str | None:
+    result = tick_payload(symbol)
+    if result is None:
+        return None
+    payload, _ = result
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def current_tick_messages(symbols: tuple[str, ...]) -> list[str]:
+    """Return latest tick snapshots without waiting for a new market tick.
+
+    Many MT5 symbols, especially stocks outside their most active session, can
+    keep the same `time_msc` for minutes or hours. A newly connected Go backend
+    must still receive that latest quote immediately; otherwise watchlist rows
+    stay blank until the broker publishes a fresh tick.
+    """
+    messages: list[str] = []
+    for symbol in symbols:
+        message = tick_message(symbol)
+        if message is not None:
+            messages.append(message)
+    return messages
 
 
 async def load_history_messages(
@@ -598,29 +645,15 @@ async def stream_ticks(cfg: Config, stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
             for symbol in STREAM_SYMBOLS:
-                tick = mt5.symbol_info_tick(symbol)
-                if tick is None:
-                    LOG.warning(
-                        "symbol_info_tick(%s) returned none (%s)",
-                        symbol,
-                        last_mt5_error(),
-                    )
+                result = tick_payload(symbol)
+                if result is None:
                     continue
 
+                payload, time_msc = result
                 # time_msc gives stable de-duplication for high-frequency ticks.
-                time_msc = int(getattr(tick, "time_msc", 0) or tick.time * 1000)
                 if time_msc == last_time_msc_by_symbol.get(symbol):
                     continue
 
-                payload = {
-                    "type": "tick",
-                    "source": "mt5",
-                    "symbol": symbol,
-                    "bid": float(tick.bid),
-                    "ask": float(tick.ask),
-                    "timestamp": normalize_mt5_tick_time(int(tick.time)),
-                    "time_msc": time_msc - (MT5_TICK_TIME_OFFSET_SECONDS * 1000),
-                }
                 await broadcast(json.dumps(payload, separators=(",", ":")))
                 last_time_msc_by_symbol[symbol] = time_msc
         except Exception:

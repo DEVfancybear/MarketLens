@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 stock quote snapshots and rejected stream symbols (2026-07-07)
+- Fixed blank watchlist rows for slower MT5 symbols such as `AAPL`: the Python sidecar now sends the
+  current tick snapshot for every active stream symbol immediately when the Go backend connects, so
+  Go does not have to wait for a new broker tick before caching Last/Chg/Chg%.
+- Fixed an optimistic stream-state bug where the Go backend marked a requested symbol as
+  `streamSymbols` before the Python bridge confirmed `symbol_select()`. Symbols rejected by MT5,
+  such as an unavailable `ABBV` in the current terminal, now remain catalog/search-only instead of
+  being presented as live streamable data.
+
 ### Changed - MT5 watchlist realtime quotes use browser WebSocket (2026-07-07)
 - Added backend browser WebSocket `GET /api/v1/mt5/stream` for MT5 quote fan-out. The Go API still
   keeps the single Python MT5 sidecar connection, caches ticks, and now pushes subscribed

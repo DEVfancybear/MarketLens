@@ -460,6 +460,9 @@ frontend/tests/fixtures/backend-bootstrap.json
   catalog item. Catalog-only symbols remain searchable, and watchlist rows get live Last/Chg/Chg%
   through one shared browser WebSocket at `/api/v1/mt5/stream`. Do not poll
   `/api/v1/mt5/ticks` from the UI; `/ticks` is a one-off snapshot/debug endpoint.
+  `streamSymbols` is the confirmed live set from the Python bridge. The frontend should not treat a
+  catalog symbol as streamable until it appears there; symbols rejected by MT5 `symbol_select()` can
+  stay searchable but should not be expected to render live quote/chart data.
 - MT5 chart candles are loaded and refreshed from `GET /api/v1/mt5/history`. Active charts can pass
   `refresh=true` with a small `limit` to bypass the backend cache and fetch the latest MT5 OHLC bars.
   `/api/v1/mt5/stream` and `/api/v1/mt5/ticks` are quote/watchlist data only; do not synthesize MT5 candles from bid/ask ticks.

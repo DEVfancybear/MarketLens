@@ -184,6 +184,10 @@ Symbol catalog payload, sent when a Go client connects:
 }
 ```
 
+After the catalog, the Python bridge immediately sends the current tick snapshot for every active
+stream symbol. This avoids blank watchlist rows for low-frequency symbols whose `time_msc` may not
+change for a while after the Go backend reconnects.
+
 Tick payload:
 
 ```json
@@ -296,10 +300,11 @@ for one-off snapshots, debugging, and compatibility. MT5 chart candles must come
 from `/api/v1/mt5/history` because bid/ask ticks are not a full OHLC source.
 Active MT5 charts pass `refresh=true` with a small `limit` to bypass the backend
 cache and update the latest bars from MT5 rates. The `streamSymbols` array from
-`/api/v1/mt5/symbols` is the initial live set from bridge startup. If the browser
-later subscribes to a catalog symbol that is not in that initial set, the Go API
-sends a `stream.subscribe` message to the Python bridge so the symbol can start
-showing Last/Chg/Chg% without restarting the bridge.
+`/api/v1/mt5/symbols` is the confirmed live set from the Python bridge. If the browser later
+subscribes to a catalog symbol that is not in that initial set, the Go API sends a
+`stream.subscribe` message to the Python bridge and waits for the bridge catalog update to confirm
+the symbol is selectable. Symbols rejected by `symbol_select()` remain catalog/search-only and
+should not be shown as live streamable rows.
 
 MT5 history candle `time` values are the UTC bar-open seconds returned by
 MetaQuotes `copy_rates_*`. Do not apply broker/local timezone offsets to candle

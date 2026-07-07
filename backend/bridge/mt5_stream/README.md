@@ -52,8 +52,10 @@ python -m pip install -r bridge/mt5_stream/requirements.txt
 If one of `MT5_LOGIN`, `MT5_PASSWORD`, or `MT5_SERVER` is set, all three must be set. If none are set,
 the bridge uses the account already active in the local MT5 terminal.
 
-The bridge always sends the full MT5 symbol catalog to every Go client on connect. Tick streaming is
-separate from catalog loading:
+The bridge always sends the full MT5 symbol catalog to every Go client on connect, then immediately
+sends the current tick snapshot for every active stream symbol before waiting for new ticks. This is
+important for stocks and other slower symbols: a symbol can have a valid last quote even when
+`time_msc` does not change for a long period. Tick streaming is separate from catalog loading:
 
 - Set `MT5_STREAM_ALL_VISIBLE=true` to stream every symbol that is visible in Market Watch.
 - Set `MT5_SYMBOLS=EURUSD,GBPUSD` to add specific symbols even if they are not visible.
@@ -93,12 +95,14 @@ go run ./cmd/api
 The frontend should call `GET /api/v1/mt5/symbols`. The Go API keeps an in-memory catalog cache from
 the Python bridge and returns connection status plus the latest symbol metadata.
 
-For live prices, the frontend calls `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD`.
-The Go API caches only the latest tick per streamed symbol. Ticks are quote/watchlist data only and
-must not be used to synthesize MT5 chart candles.
-If that endpoint asks for a catalog symbol that was not in the initial stream set, the Go API sends
-`stream.subscribe` to this bridge; the bridge calls `symbol_select()` and adds the symbol to the live
-tick loop without a process restart.
+For live prices, the frontend opens the Go API WebSocket `GET /api/v1/mt5/stream`. The Go API
+caches only the latest tick per streamed symbol and fans those ticks out to browser subscribers.
+`GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` remains a one-off snapshot/debug endpoint. Ticks are
+quote/watchlist data only and must not be used to synthesize MT5 chart candles.
+If the Go API asks for a catalog symbol that was not in the initial stream set, it sends
+`stream.subscribe` to this bridge; the bridge calls `symbol_select()` and only adds the symbol to
+the live tick loop if MT5 confirms it is selectable. Symbols rejected by `symbol_select()` must not
+be treated as streamable by the frontend.
 
 For historical chart candles, the frontend calls
 `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500`. The Go API
