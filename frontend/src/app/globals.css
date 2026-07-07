@@ -133,35 +133,67 @@ body {
 }
 
 /* Watchlist tick flash — TradingView style: the Last cell alone flashes a
-   solid bull/bear block with white text, then fades back to normal. */
+   text color briefly; rows and cells keep their background stable. */
 @keyframes wlFlashUp {
-    from {
-        background-color: var(--bull);
-        color: #ffffff;
+    0% {
+        color: var(--bull);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--bull) 45%, transparent);
+    }
+    72% {
+        color: var(--bull);
+        text-shadow: 0 0 2px color-mix(in srgb, var(--bull) 16%, transparent);
     }
     to {
-        background-color: transparent;
+        color: inherit;
+        text-shadow: none;
     }
 }
 @keyframes wlFlashDown {
-    from {
-        background-color: var(--bear);
-        color: #ffffff;
+    0% {
+        color: var(--bear);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--bear) 45%, transparent);
+    }
+    72% {
+        color: var(--bear);
+        text-shadow: 0 0 2px color-mix(in srgb, var(--bear) 16%, transparent);
     }
     to {
-        background-color: transparent;
+        color: inherit;
+        text-shadow: none;
     }
 }
 .wl-flash-up {
-    animation: wlFlashUp 300ms ease-out;
+    animation: wlFlashUp 560ms ease-out;
 }
 .wl-flash-down {
-    animation: wlFlashDown 300ms ease-out;
+    animation: wlFlashDown 560ms ease-out;
+}
+
+/* Keep watchlist quote glyphs on a stable baseline during rapid ticks. */
+.wl-last-price {
+    font-feature-settings: "tnum" 1, "lnum" 1;
+    min-width: 0;
+}
+
+.wl-last-price__pip {
+    font-size: 9px;
+    line-height: 1;
+    margin-left: 1px;
+    position: relative;
+    top: -0.42em;
 }
 
 /* Tabular numerals in the UI sans font (TradingView numbers are not mono) */
 .tnum {
     font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wl-flash-up,
+    .wl-flash-down {
+        animation-duration: 1ms;
+    }
 }
 
 /* Resizer handles */

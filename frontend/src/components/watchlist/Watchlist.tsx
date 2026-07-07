@@ -1237,14 +1237,14 @@ const WatchRow = memo(function WatchRow({
         <span
           key={flash?.seq ?? 0}
           className={cn(
-            "tnum inline-block rounded-sm px-[3px] py-px text-[13px] leading-none text-ink",
+            "tnum wl-last-price inline-flex items-baseline justify-end px-[3px] py-px text-[13px] leading-none text-ink",
             flash?.dir === "up" && "wl-flash-up",
             flash?.dir === "down" && "wl-flash-down",
           )}
         >
           {body}
           {supDigit && (
-            <span className="align-super text-[9px]">{supDigit}</span>
+            <span className="wl-last-price__pip">{supDigit}</span>
           )}
         </span>
       </div>
