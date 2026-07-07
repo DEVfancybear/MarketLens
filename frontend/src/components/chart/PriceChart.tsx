@@ -44,7 +44,10 @@ import {
   timeScaleOptions,
 } from "./chartVisualProfile";
 import { computeIndicator } from "@/services/indicators";
-import { resolveRealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
+import {
+  resolveRealtimeSeriesUpdatePlan,
+  type RealtimeSeriesUpdatePlan,
+} from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
 import { fmtPrice } from "@/utils/format";
@@ -100,6 +103,31 @@ function labelBackground(color: string | undefined): string {
     return "rgba(8, 12, 18, 0.72)";
   }
   return color;
+}
+
+function rebuildCandleLookup(candles: readonly Candle[]): Map<number, Candle> {
+  return new Map(candles.map((candle) => [candle.time, candle]));
+}
+
+function updateCandleLookup(
+  lookup: Map<number, Candle>,
+  candles: readonly Candle[],
+  updatePlan: RealtimeSeriesUpdatePlan,
+): Map<number, Candle> {
+  if (candles.length === 0) return new Map();
+  if (updatePlan === "update-latest") {
+    const last = candles[candles.length - 1];
+    lookup.set(last.time, last);
+    return lookup;
+  }
+  if (updatePlan === "append") {
+    const penult = candles[candles.length - 2];
+    const last = candles[candles.length - 1];
+    if (penult) lookup.set(penult.time, penult);
+    lookup.set(last.time, last);
+    return lookup;
+  }
+  return rebuildCandleLookup(candles);
 }
 
 /**
@@ -301,9 +329,6 @@ export function PriceChart({
   useEffect(() => {
     const cs = candleSeriesRef.current;
     if (!cs) return;
-    candleByTimeRef.current = new Map(
-      candles.map((candle) => [candle.time, candle]),
-    );
     // Empty series => symbol/timeframe just changed; re-fit on next load.
     if (candles.length === 0) {
       fittedRef.current = false;
@@ -320,6 +345,11 @@ export function PriceChart({
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
+    candleByTimeRef.current = updateCandleLookup(
+      candleByTimeRef.current,
+      candles,
+      updatePlan,
+    );
     const structuralDataWindowChange =
       sameTheme &&
       prev.length > 0 &&

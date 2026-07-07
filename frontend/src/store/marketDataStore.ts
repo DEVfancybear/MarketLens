@@ -21,6 +21,7 @@ import {
   type Timeframe,
 } from "@/types";
 import {
+  marketCandleSeriesEqual,
   mergeHistoryWithLiveCandles,
   normalizeMarketCandle,
   normalizeMarketCandleSeries,
@@ -183,6 +184,7 @@ export const setCandlesAtom = atom(
       existing.length > 0
         ? mergeHistoryWithLiveCandles(candles, existing, MAX_CANDLES)
         : normalizeMarketCandleSeries(candles, MAX_CANDLES);
+    if (marketCandleSeriesEqual(existing, trimmed)) return;
     set(candlesAtom, { ...get(candlesAtom), [key]: trimmed });
     set(lastUpdateAtom, Date.now());
     set(marketDataTickAtom, get(marketDataTickAtom) + 1);

@@ -118,6 +118,10 @@ export const setTimeframeAtom = atom(
 );
 
 export const setCandlesAtom = atom(null, (_get, set, candles: Candle[]) => {
+  if (_get(candlesAtom) === candles) {
+    if (_get(loadingAtom)) set(loadingAtom, false);
+    return;
+  }
   set(candlesAtom, candles);
   set(loadingAtom, false);
 });

@@ -67,6 +67,18 @@ function candlesEqual(a: MarketCandle, b: MarketCandle): boolean {
   );
 }
 
+export function marketCandleSeriesEqual(
+  a: readonly MarketCandle[],
+  b: readonly MarketCandle[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (!candlesEqual(a[index], b[index])) return false;
+  }
+  return true;
+}
+
 /**
  * Upsert one realtime candle into an already-sorted series.
  *

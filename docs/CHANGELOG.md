@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Optimized candle render churn (2026-07-07)
+- Updated the main chart candle lookup cache to follow the realtime update plan:
+  update/append paths now touch only the changed candle entries instead of rebuilding
+  the full `Map<time, candle>` on every tick.
+- Skipped no-op MT5 history refresh publishes when the merged candle values are
+  unchanged, preventing periodic 3-second refreshes from forcing chart, indicator,
+  and overlay re-renders.
+- Added a chart-store same-reference guard so downstream mirror effects do not
+  re-emit the same candle array during realtime updates.
+
 ### Fixed - MT5 history requests no longer cascade-timeout chart loads (2026-07-07)
 - Moved Python MT5 history loading onto a single dedicated history worker so a slow
   `copy_rates_*` call for `1D`/`1W` does not block the WebSocket event loop and cause unrelated
