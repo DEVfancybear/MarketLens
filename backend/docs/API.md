@@ -154,7 +154,8 @@ Python sidecar directly.
 | WebSocket | `ws://localhost:8765` | Local tick stream (`MT5_STREAM_HOST`/`MT5_STREAM_PORT`) |
 | Go consumer | `backend/cmd/mt5-stream` | Consumes the stream with `github.com/gorilla/websocket` |
 | Go API | `GET /api/v1/mt5/symbols` | Returns the latest MT5 symbol catalog cached from the Python bridge |
-| Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | Returns latest cached ticks and requests on-demand streaming for requested catalog symbols |
+| Go API WebSocket | `GET /api/v1/mt5/stream` | Browser-facing realtime quote stream; clients send subscribe messages and receive pushed ticks |
+| Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | One-off latest cached tick snapshot/debug endpoint; also requests on-demand streaming for requested catalog symbols |
 | Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` bypasses the cache for active chart updates |
 
 Symbol catalog payload, sent when a Go client connects:
@@ -255,15 +256,50 @@ Latest tick API response:
 }
 ```
 
-The frontend `Mt5Provider` polls `/api/v1/mt5/ticks` for subscribed symbols, but
-ticks are quotes only. MT5 chart candles must come from `/api/v1/mt5/history`
-because bid/ask ticks are not a full OHLC source. Active MT5 charts pass
-`refresh=true` with a small `limit` to bypass the backend cache and update the
-latest bars from MT5 rates. The `streamSymbols` array from `/api/v1/mt5/symbols`
-is the initial live set from bridge startup. If the browser later requests ticks
-for a catalog symbol that is not in that initial set, the Go API sends a
-`stream.subscribe` message to the Python bridge so the symbol can start showing
-Last/Chg/Chg% without restarting the bridge.
+Browser realtime quote stream:
+
+```json
+// client -> server
+{ "type": "set_symbols", "symbols": ["EURUSD", "GBPUSD"] }
+
+// client -> server
+{ "type": "subscribe", "symbols": ["XAUUSD"] }
+
+// client -> server
+{ "type": "unsubscribe", "symbols": ["GBPUSD"] }
+
+// server -> client
+{
+  "type": "snapshot",
+  "connected": true,
+  "source": "mt5",
+  "symbols": ["EURUSD"],
+  "ticks": [
+    { "type": "tick", "source": "mt5", "symbol": "EURUSD", "bid": 1.08425, "ask": 1.08437, "timestamp": 1760000000 }
+  ],
+  "updatedAt": "2026-07-07T12:00:00Z"
+}
+
+// server -> client
+{
+  "type": "tick",
+  "connected": true,
+  "source": "mt5",
+  "tick": { "type": "tick", "source": "mt5", "symbol": "EURUSD", "bid": 1.08426, "ask": 1.08438, "timestamp": 1760000001 },
+  "updatedAt": "2026-07-07T12:00:01Z"
+}
+```
+
+The frontend `Mt5Provider` uses `/api/v1/mt5/stream` for subscribed watchlist/chart
+quotes. It must not poll `/api/v1/mt5/ticks` on an interval; `/ticks` is retained
+for one-off snapshots, debugging, and compatibility. MT5 chart candles must come
+from `/api/v1/mt5/history` because bid/ask ticks are not a full OHLC source.
+Active MT5 charts pass `refresh=true` with a small `limit` to bypass the backend
+cache and update the latest bars from MT5 rates. The `streamSymbols` array from
+`/api/v1/mt5/symbols` is the initial live set from bridge startup. If the browser
+later subscribes to a catalog symbol that is not in that initial set, the Go API
+sends a `stream.subscribe` message to the Python bridge so the symbol can start
+showing Last/Chg/Chg% without restarting the bridge.
 
 MT5 history candle `time` values are the UTC bar-open seconds returned by
 MetaQuotes `copy_rates_*`. Do not apply broker/local timezone offsets to candle

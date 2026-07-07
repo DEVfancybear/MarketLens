@@ -53,6 +53,8 @@ type Service struct {
 	conn           *websocket.Conn
 	writeMu        sync.Mutex
 	pendingHistory map[string]chan HistoryMessage
+	subscribers    map[uint64]*TickSubscriber
+	nextSubscriber uint64
 	updatedAt      time.Time
 	lastErr        string
 	startOnce      sync.Once
@@ -83,6 +85,7 @@ func NewService(cfg Config) *Service {
 		ticks:          make(map[string]Tick),
 		history:        make(map[string][]Candle),
 		pendingHistory: make(map[string]chan HistoryMessage),
+		subscribers:    make(map[uint64]*TickSubscriber),
 	}
 }
 
@@ -394,12 +397,31 @@ func (s *Service) applyTick(tick Tick) {
 	tick.Symbol = key
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.connected = true
 	s.lastErr = ""
 	s.source = tick.Source
 	s.ticks[key] = tick
 	s.updatedAt = time.Now().UTC()
+
+	subscribers := make([]*TickSubscriber, 0, len(s.subscribers))
+	for _, subscriber := range s.subscribers {
+		if subscriber.matches(key) {
+			subscribers = append(subscribers, subscriber)
+		}
+	}
+	updatedAt := s.updatedAt
+	s.mu.Unlock()
+
+	message := TickStreamMessage{
+		Type:      "tick",
+		Connected: true,
+		Source:    tick.Source,
+		Tick:      &tick,
+		UpdatedAt: updatedAt,
+	}
+	for _, subscriber := range subscribers {
+		subscriber.enqueue(message)
+	}
 }
 
 func (s *Service) applyHistory(history HistoryMessage) {
@@ -435,10 +457,11 @@ func (s *Service) applyHistory(history HistoryMessage) {
 
 func (s *Service) setConnected() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.connected = true
 	s.lastErr = ""
 	log.Info().Str("bridge", s.cfg.BridgeURL).Msg("connected to MT5 bridge")
+	s.mu.Unlock()
+	s.broadcastStreamStatus("")
 }
 
 func (s *Service) setConn(conn *websocket.Conn) {
@@ -669,17 +692,19 @@ func firstNonEmpty(values ...string) string {
 
 func (s *Service) setDisconnected(message string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.connected = false
 	s.lastErr = message
 	log.Warn().Str("bridge", s.cfg.BridgeURL).Msg(message)
+	s.mu.Unlock()
+	s.broadcastStreamStatus(message)
 }
 
 func (s *Service) setError(message string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.connected = false
 	s.lastErr = message
+	s.mu.Unlock()
+	s.broadcastStreamStatus(message)
 }
 
 func (s *Service) nextBackoff(current time.Duration) time.Duration {

@@ -3,11 +3,12 @@
  *
  * Browser-side market-data adapter for the Go backend's MT5 stream cache. The
  * browser never connects to Python/MT5 directly: Python streams ticks to Go,
- * Go caches latest ticks, and this provider polls `/api/v1/mt5/ticks` for the
- * currently subscribed symbols. These ticks are quote/watchlist data only; MT5
- * chart candles come from `/api/v1/mt5/history`.
+ * Go caches latest ticks, and this provider opens one browser WebSocket to
+ * `/api/v1/mt5/stream`. REST `/mt5/ticks` remains a snapshot/debug endpoint;
+ * watchlist quotes should use this push path instead of polling. MT5 chart
+ * candles still come from `/api/v1/mt5/history`.
  */
-import { getMt5Ticks } from "@/services/api/resources/mt5Api";
+import { apiWebSocketUrl } from "@/services/api/client";
 import {
   RECONNECT_BACKOFF_MS,
   type MarketDataEvent,
@@ -19,22 +20,36 @@ import {
 } from "@/types";
 import type { MarketDataServiceBinding } from "@/store/marketDataStore";
 
-const POLL_INTERVAL_MS = 750;
-const STALE_TIMEOUT_MS = 10_000;
-
 type StatusValue = Extract<MarketDataEvent, { type: "status" }>["status"];
+
+type Mt5StreamTick = {
+  symbol: string;
+  bid: number;
+  ask: number;
+  timestamp: number;
+  time_msc?: number;
+};
+
+type Mt5StreamMessage = {
+  type?: "status" | "snapshot" | "tick" | "error";
+  connected?: boolean;
+  source?: string;
+  symbols?: string[];
+  ticks?: Mt5StreamTick[];
+  tick?: Mt5StreamTick;
+  updatedAt?: string;
+  lastError?: string;
+};
 
 export class Mt5Provider implements MarketDataServiceBinding {
   readonly name: MarketProvider = "mt5";
 
   private listener: MarketDataListener | null;
   private readonly symbols = new Set<string>();
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private manualClose = false;
-  private inFlight = false;
-  private lastDataAt = 0;
   private readonly previousBySymbol = new Map<string, number>();
 
   constructor(opts: { onEvent?: MarketDataListener } = {}) {
@@ -46,23 +61,58 @@ export class Mt5Provider implements MarketDataServiceBinding {
   }
 
   connect() {
-    if (this.pollTimer || this.symbols.size === 0) return;
+    if (this.symbols.size === 0) return;
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+    if (typeof WebSocket === "undefined") {
+      this.emitStatus("error", "WebSocket unavailable");
+      return;
+    }
+
     this.manualClose = false;
     this.emitStatus(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
-    void this.poll();
-    this.pollTimer = setInterval(() => {
-      void this.poll();
-    }, POLL_INTERVAL_MS);
+
+    const ws = new WebSocket(apiWebSocketUrl("mt5/stream"));
+    this.ws = ws;
+
+    ws.onopen = () => {
+      if (this.ws !== ws) return;
+      this.reconnectAttempt = 0;
+      this.emitStatus("connected");
+      this.sendSymbols("set_symbols", [...this.symbols]);
+    };
+    ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
+      this.handleMessage(event.data);
+    };
+    ws.onerror = () => {
+      if (this.ws !== ws || this.manualClose) return;
+      this.emitStatus("error", "MT5 stream WebSocket error");
+    };
+    ws.onclose = () => {
+      if (this.ws === ws) this.ws = null;
+      if (this.manualClose || this.symbols.size === 0) {
+        this.emitStatus("disconnected");
+        return;
+      }
+      this.emitStatus("reconnecting", "MT5 stream disconnected");
+      this.scheduleReconnect();
+    };
   }
 
   disconnect() {
     this.manualClose = true;
-    this.stopPolling();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     this.reconnectAttempt = 0;
+    this.closeSocket();
     this.emitStatus("disconnected");
   }
 
@@ -70,54 +120,67 @@ export class Mt5Provider implements MarketDataServiceBinding {
     const symbol = sub.symbol.trim().toUpperCase();
     if (!symbol) return;
     this.symbols.add(symbol);
-    if (!this.pollTimer && !this.manualClose) this.connect();
+    this.manualClose = false;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendSymbols("subscribe", [symbol]);
+    } else {
+      this.connect();
+    }
   }
 
   unsubscribe(symbol: string, _timeframe?: Timeframe) {
     const normalized = symbol.trim().toUpperCase();
     this.symbols.delete(normalized);
     this.previousBySymbol.delete(normalized);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendSymbols("unsubscribe", [normalized]);
+    }
     if (this.symbols.size === 0) {
-      this.stopPolling();
+      this.manualClose = true;
+      this.closeSocket();
       this.emitStatus("disconnected");
     }
   }
 
-  private async poll() {
-    if (this.inFlight || this.symbols.size === 0) return;
-    this.inFlight = true;
+  private handleMessage(raw: unknown) {
+    let message: Mt5StreamMessage;
     try {
-      const snapshot = await getMt5Ticks([...this.symbols]);
-      if (!snapshot.connected) {
-        this.emitStatus("reconnecting", snapshot.lastError);
-        return;
-      }
+      message = JSON.parse(String(raw)) as Mt5StreamMessage;
+    } catch {
+      this.emitStatus("error", "Invalid MT5 stream message");
+      return;
+    }
 
-      if (snapshot.ticks.length > 0) {
-        this.lastDataAt = Date.now();
-        this.reconnectAttempt = 0;
+    if (message.type === "error") {
+      this.emitStatus("error", message.lastError);
+      return;
+    }
+
+    if (message.type === "status") {
+      this.emitStatus(message.connected ? "connected" : "reconnecting", message.lastError);
+      return;
+    }
+
+    if (message.type === "snapshot") {
+      if (message.connected === false) {
+        this.emitStatus("reconnecting", message.lastError);
+      } else {
         this.emitStatus("connected");
-      } else if (Date.now() - this.lastDataAt > STALE_TIMEOUT_MS) {
-        this.emitStatus("connecting", "Waiting for MT5 ticks");
       }
-
-      for (const tick of snapshot.ticks) {
+      for (const tick of message.ticks ?? []) {
         this.emit(this.normalizeTick(tick));
       }
-    } catch (error) {
-      this.handlePollError(error as Error);
-    } finally {
-      this.inFlight = false;
+      return;
+    }
+
+    if (message.type === "tick" && message.tick) {
+      this.reconnectAttempt = 0;
+      this.emitStatus("connected");
+      this.emit(this.normalizeTick(message.tick));
     }
   }
 
-  private normalizeTick(tick: {
-    symbol: string;
-    bid: number;
-    ask: number;
-    timestamp: number;
-    time_msc?: number;
-  }): MarketDataEvent {
+  private normalizeTick(tick: Mt5StreamTick): MarketDataEvent {
     const symbol = tick.symbol.trim().toUpperCase();
     const bid = Number(tick.bid);
     const ask = Number(tick.ask);
@@ -145,13 +208,6 @@ export class Mt5Provider implements MarketDataServiceBinding {
     return { type: "quote", provider: this.name, symbol, quote };
   }
 
-  private handlePollError(error: Error) {
-    if (this.manualClose) return;
-    this.emitStatus("error", error.message);
-    this.stopPolling();
-    this.scheduleReconnect();
-  }
-
   private scheduleReconnect() {
     if (this.manualClose || this.reconnectTimer) return;
     const delay =
@@ -165,10 +221,21 @@ export class Mt5Provider implements MarketDataServiceBinding {
     }, delay);
   }
 
-  private stopPolling() {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
+  private sendSymbols(type: "subscribe" | "unsubscribe" | "set_symbols", symbols: string[]) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const unique = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+    if (unique.length === 0 && type !== "set_symbols") return;
+    this.ws.send(JSON.stringify({ type, symbols: unique }));
+  }
+
+  private closeSocket() {
+    const ws = this.ws;
+    this.ws = null;
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
+    ) {
+      ws.close();
     }
   }
 

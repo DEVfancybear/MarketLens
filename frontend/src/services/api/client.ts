@@ -28,6 +28,16 @@ function apiUrl(path: string): string {
   return `${apiBase}/api/v1/${cleanPath}`;
 }
 
+export function apiWebSocketUrl(path: string): string {
+  const cleanPath = path.replace(/^\/+/, "");
+  const httpUrl = apiUrl(cleanPath);
+  const base =
+    typeof window !== "undefined" ? window.location.origin : "http://localhost";
+  const url = new URL(httpUrl, base);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
 const apiDefaults = {
   credentials: "include" as const,
   timeout: 15_000,

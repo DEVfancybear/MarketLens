@@ -267,11 +267,13 @@ MetaTrader 5 terminal
    catalog plus strong typed `Mt5Tick` values, logs them, and reconnects with exponential backoff.
 6. The Go API process also starts a lightweight MT5 stream client. It caches the symbol catalog,
    latest ticks, and on-demand candle history, then exposes `/api/v1/mt5/symbols`,
-   `/api/v1/mt5/ticks`, and `/api/v1/mt5/history` for the frontend. The frontend calls the Go API,
-   never the Python bridge directly.
-   `GET /api/v1/mt5/ticks?symbols=...` also requests on-demand streaming for catalog symbols that
-   were not in the bridge's initial stream set, so manually-added watchlist symbols can receive
-   live quotes without restarting MT5.
+   `/api/v1/mt5/stream`, `/api/v1/mt5/ticks`, and `/api/v1/mt5/history` for the frontend. The
+   frontend calls the Go API, never the Python bridge directly. Browser watchlists use
+   `/api/v1/mt5/stream` as a WebSocket: clients send `set_symbols`, `subscribe`, or `unsubscribe`,
+   and Go pushes `snapshot`/`tick` envelopes from its in-memory MT5 cache.
+   `GET /api/v1/mt5/ticks?symbols=...` is retained as a one-off snapshot/debug endpoint and also
+   requests on-demand streaming for catalog symbols that were not in the bridge's initial stream
+   set, so manually-added watchlist symbols can receive live quotes without restarting MT5.
 7. Candle history uses a request/reply message over the existing local bridge WebSocket:
    Fiber receives `GET /api/v1/mt5/history`, sends `history.request` to Python, waits for the
    matching `history` response, caches the candles briefly, and returns UTC OHLCV bars.
@@ -285,6 +287,8 @@ MetaTrader 5 terminal
   `[EURUSD] Bid: X.XXXXX | Ask: X.XXXXX | Time: HH:mm:ss`.
 - `GET /api/v1/mt5/symbols` returns the latest catalog from the Python bridge with connection
   status, stream symbols, and symbol metadata.
+- `GET /api/v1/mt5/stream` upgrades to a browser WebSocket and pushes subscribed tick updates
+  without frontend interval polling.
 - `GET /api/v1/mt5/ticks?symbols=EURUSD` returns the latest cached tick snapshot for requested
   stream symbols.
 - `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500` returns UTC candles from MT5

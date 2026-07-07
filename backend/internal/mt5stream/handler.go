@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -12,6 +13,10 @@ type SymbolSource interface {
 	Snapshot() Snapshot
 	Ticks(symbols []string) TickSnapshot
 	History(ctx context.Context, symbol, timeframe string, limit int, before int64, refresh bool) HistorySnapshot
+}
+
+type TickStreamSource interface {
+	RegisterTickSubscriber() *TickSubscriber
 }
 
 type Handler struct {
@@ -27,6 +32,13 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Get("/symbols", h.symbols)
 	g.Get("/ticks", h.ticks)
 	g.Get("/history", h.history)
+	g.Use("/stream", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	g.Get("/stream", websocket.New(h.stream))
 }
 
 func (h *Handler) symbols(c *fiber.Ctx) error {
@@ -87,6 +99,72 @@ func (h *Handler) history(c *fiber.Ctx) error {
 		snapshot.Candles = []Candle{}
 	}
 	return c.JSON(snapshot)
+}
+
+type tickStreamClientMessage struct {
+	Type    string   `json:"type"`
+	Symbols []string `json:"symbols"`
+}
+
+func (h *Handler) stream(c *websocket.Conn) {
+	if h == nil || h.source == nil {
+		_ = c.WriteJSON(TickStreamMessage{
+			Type:      "error",
+			Connected: false,
+			Source:    "mt5",
+			LastError: "MT5 stream service is not configured",
+		})
+		return
+	}
+	source, ok := h.source.(TickStreamSource)
+	if !ok {
+		_ = c.WriteJSON(TickStreamMessage{
+			Type:      "error",
+			Connected: false,
+			Source:    "mt5",
+			LastError: "MT5 stream service does not support browser streaming",
+		})
+		return
+	}
+
+	subscriber := source.RegisterTickSubscriber()
+	defer subscriber.Close()
+
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for {
+			select {
+			case message := <-subscriber.Messages():
+				if err := c.WriteJSON(message); err != nil {
+					return
+				}
+			case <-subscriber.Done():
+				return
+			}
+		}
+	}()
+
+	for {
+		var message tickStreamClientMessage
+		if err := c.ReadJSON(&message); err != nil {
+			break
+		}
+		switch strings.ToLower(strings.TrimSpace(message.Type)) {
+		case "unsubscribe":
+			subscriber.Unsubscribe(message.Symbols)
+		case "set", "set_symbols", "replace":
+			subscriber.SetSymbols(message.Symbols)
+		case "ping":
+			// The writer goroutine owns all writes; status messages and ticks are
+			// enough to prove liveness, so pings are accepted as no-ops.
+		default:
+			subscriber.Subscribe(message.Symbols)
+		}
+	}
+
+	subscriber.Close()
+	<-writerDone
 }
 
 func parseSymbolsQuery(raw string) []string {

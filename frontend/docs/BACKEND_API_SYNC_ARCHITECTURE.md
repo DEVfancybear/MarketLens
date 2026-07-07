@@ -78,7 +78,7 @@ frontend/src/services/api/
     settingsApi.ts        # implemented: GET/PUT/PATCH /settings
     syncApi.ts            # implemented: GET /sync/bootstrap
     watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
-    mt5Api.ts             # implemented: GET /mt5/symbols symbol catalog from backend cache
+    mt5Api.ts             # implemented: GET /mt5/symbols, /mt5/ticks snapshots, /mt5/history
 ```
 
 Target structure as more backend phases land:
@@ -457,11 +457,12 @@ frontend/tests/fixtures/backend-bootstrap.json
   list. After `getMt5Symbols()` succeeds, replace the registry from the full backend response so
   symbol search can see the actual MT5 catalog.
 - The active watchlist should default to `streamSymbols` from `/api/v1/mt5/symbols`, not every
-  catalog item. Catalog-only symbols remain searchable, but watchlist rows need live ticks from
-  `/api/v1/mt5/ticks` to show Last/Chg/Chg%.
+  catalog item. Catalog-only symbols remain searchable, and watchlist rows get live Last/Chg/Chg%
+  through one shared browser WebSocket at `/api/v1/mt5/stream`. Do not poll
+  `/api/v1/mt5/ticks` from the UI; `/ticks` is a one-off snapshot/debug endpoint.
 - MT5 chart candles are loaded and refreshed from `GET /api/v1/mt5/history`. Active charts can pass
   `refresh=true` with a small `limit` to bypass the backend cache and fetch the latest MT5 OHLC bars.
-  `/api/v1/mt5/ticks` is quote/watchlist data only; do not synthesize MT5 candles from bid/ask ticks.
+  `/api/v1/mt5/stream` and `/api/v1/mt5/ticks` are quote/watchlist data only; do not synthesize MT5 candles from bid/ask ticks.
   The frontend may subscribe any MT5 catalog symbol in a watchlist or chart; if it was not part of
   the bridge's initial `streamSymbols`, the Go API requests on-demand streaming from the Python
   sidecar.

@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - MT5 watchlist realtime quotes use browser WebSocket (2026-07-07)
+- Added backend browser WebSocket `GET /api/v1/mt5/stream` for MT5 quote fan-out. The Go API still
+  keeps the single Python MT5 sidecar connection, caches ticks, and now pushes subscribed
+  `snapshot`/`tick` envelopes to browser clients.
+- Reworked the frontend `Mt5Provider` to use one shared WebSocket with `set_symbols`, `subscribe`,
+  `unsubscribe`, reconnect, and automatic resubscribe. Watchlist quote updates no longer poll
+  `/api/v1/mt5/ticks` every interval.
+- Kept `GET /api/v1/mt5/ticks` as a one-off snapshot/debug endpoint and compatibility path.
+  MT5 candles still come only from `/api/v1/mt5/history`; bid/ask ticks are not synthesized into
+  chart OHLC bars.
+
 ### Fixed - MT5 history gap before the realtime candle (2026-07-07)
 - Fixed a gap between loaded history and the live forming candle: MT5 history could lag the live
   tick by many bars (18-2800), leaving the realtime candle floating far to the right. Two causes:
