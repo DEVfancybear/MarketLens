@@ -14,9 +14,8 @@ import json
 import logging
 import os
 import signal
-import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Set
 
 import MetaTrader5 as mt5
@@ -71,7 +70,7 @@ CLIENTS: Set[WebSocketServerProtocol] = set()
 SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
-MT5_TIME_OFFSET_SECONDS = 0
+MT5_TICK_TIME_OFFSET_SECONDS = 0
 
 TIMEFRAME_MAP = {
     "1m": mt5.TIMEFRAME_M1,
@@ -121,9 +120,12 @@ def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
     tick = mt5.symbol_info_tick(symbol)
     if tick is None or not tick.time:
         return True  # no live reference; don't loop forever
-    tick_time = normalize_mt5_time(int(tick.time))
+    tick_time = normalize_mt5_tick_time(int(tick.time))
     current_bar = tick_time - (tick_time % tf_seconds)
-    return normalize_mt5_time(int(rates[-1]["time"])) >= current_bar - tf_seconds
+    # MetaQuotes documents copy_rates_* output as UTC bar-open seconds. Keep rate
+    # times untouched here; applying the tick offset to rates shifts candles by
+    # the workstation/broker offset and creates a false gap before live price.
+    return int(rates[-1]["time"]) >= current_bar - tf_seconds
 
 
 async def copy_rates_synced(
@@ -150,7 +152,12 @@ async def copy_rates_synced(
         # Anchoring a request one day in the (broker) future forces the terminal
         # to fetch everything up to the latest bar for this symbol/timeframe.
         # The +1 day margin makes this robust to MT5's datetime timezone quirks.
-        mt5.copy_rates_from(symbol, mt5_timeframe, datetime.now() + timedelta(days=1), 2)
+        mt5.copy_rates_from(
+            symbol,
+            mt5_timeframe,
+            datetime.now(timezone.utc) + timedelta(days=1),
+            2,
+        )
         await asyncio.sleep(HISTORY_SYNC_DELAY)
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
         if _rates_are_fresh(rates, symbol, tf_seconds):
@@ -204,38 +211,47 @@ def env_bool(key: str, fallback: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def estimate_mt5_time_offset(symbols: tuple[str, ...]) -> int:
-    """Estimate broker-server timestamp offset and normalize MT5 times to UTC.
+def estimate_mt5_tick_time_offset(symbols: tuple[str, ...]) -> int:
+    """Estimate tick timestamp offset against MT5's own M1 history domain.
 
-    Some MT5 terminals expose tick/rate timestamps in broker-server time encoded
-    as UNIX seconds. On an FTMO-style UTC+3 server, that makes bars appear three
-    hours in the future and shifts higher timeframe buckets versus TradingView.
-    We estimate the offset from live ticks, round to the nearest hour, and apply
-    it consistently to ticks and history candles before they leave the bridge.
+    Do not compare ticks to the workstation clock: if the OS timezone, broker
+    server timezone, or demo clock differs, that heuristic can invent a 7-hour
+    shift and make chart history look stale. MT5 chart candles come from
+    `copy_rates_*`; use the newest M1 bar as the reference and only offset ticks
+    when subtracting an hour-rounded delta makes the tick land inside that M1
+    bar. If MT5 has not warmed M1 history yet, keep offset 0.
     """
-    now = int(time.time())
     offsets: dict[int, int] = {}
     for symbol in symbols:
         tick = mt5.symbol_info_tick(symbol)
         if tick is None or not tick.time:
             continue
-        delta = int(tick.time) - now
-        if abs(delta) > 18 * 3600:
+
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
+        if rates is None or len(rates) == 0:
             continue
+
+        tick_time = int(tick.time)
+        rate_time = int(rates[-1]["time"])
+        delta = tick_time - rate_time
+        if 0 <= delta < 180:
+            offsets[0] = offsets.get(0, 0) + 1
+            continue
+
         rounded = int(round(delta / 3600) * 3600)
-        if abs(rounded) < 1800:
-            rounded = 0
-        offsets[rounded] = offsets.get(rounded, 0) + 1
+        normalized_tick = tick_time - rounded
+        if 0 <= normalized_tick - rate_time < 180:
+            offsets[rounded] = offsets.get(rounded, 0) + 1
 
     if not offsets:
         return 0
     offset = max(offsets.items(), key=lambda item: item[1])[0]
-    LOG.info("MT5 time offset seconds=%d hours=%.1f", offset, offset / 3600)
+    LOG.info("MT5 tick time offset seconds=%d hours=%.1f", offset, offset / 3600)
     return offset
 
 
-def normalize_mt5_time(raw_time: int) -> int:
-    return int(raw_time) - MT5_TIME_OFFSET_SECONDS
+def normalize_mt5_tick_time(raw_time: int) -> int:
+    return int(raw_time) - MT5_TICK_TIME_OFFSET_SECONDS
 
 
 def setup_logging() -> None:
@@ -280,8 +296,8 @@ def initialize_mt5(cfg: Config) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
     stream_symbols = resolve_stream_symbols(cfg, catalog)
     select_symbols(stream_symbols)
 
-    global MT5_TIME_OFFSET_SECONDS
-    MT5_TIME_OFFSET_SECONDS = estimate_mt5_time_offset(stream_symbols)
+    global MT5_TICK_TIME_OFFSET_SECONDS
+    MT5_TICK_TIME_OFFSET_SECONDS = estimate_mt5_tick_time_offset(stream_symbols)
 
     LOG.info(
         "MT5 initialized account=%s server=%s symbols=%d stream_symbols=%s",
@@ -421,7 +437,7 @@ async def load_history_messages(
                 continue
             candles = [
                 {
-                    "time": normalize_mt5_time(int(row["time"])),
+                    "time": int(row["time"]),
                     "open": float(row["open"]),
                     "high": float(row["high"]),
                     "low": float(row["low"]),
@@ -479,7 +495,7 @@ async def load_history_message(
 
     payload["candles"] = [
         {
-            "time": normalize_mt5_time(int(row["time"])),
+            "time": int(row["time"]),
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
@@ -538,8 +554,8 @@ async def stream_ticks(cfg: Config, stop_event: asyncio.Event) -> None:
                     "symbol": symbol,
                     "bid": float(tick.bid),
                     "ask": float(tick.ask),
-                    "timestamp": normalize_mt5_time(int(tick.time)),
-                    "time_msc": time_msc - (MT5_TIME_OFFSET_SECONDS * 1000),
+                    "timestamp": normalize_mt5_tick_time(int(tick.time)),
+                    "time_msc": time_msc - (MT5_TICK_TIME_OFFSET_SECONDS * 1000),
                 }
                 await broadcast(json.dumps(payload, separators=(",", ":")))
                 last_time_msc_by_symbol[symbol] = time_msc

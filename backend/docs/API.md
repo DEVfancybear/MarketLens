@@ -263,6 +263,11 @@ latest bars from MT5 rates. The `streamSymbols` array from `/api/v1/mt5/symbols`
 is the authoritative list of symbols with live ticks; catalog-only symbols remain
 searchable/watchlist-visible but show `--` until the bridge streams them.
 
+MT5 history candle `time` values are the UTC bar-open seconds returned by
+MetaQuotes `copy_rates_*`. Do not apply broker/local timezone offsets to candle
+times. The bridge may normalize tick timestamps before publishing them so quote
+freshness checks compare ticks and rates in the same UTC domain.
+
 ---
 
 ## Drawings  🔒

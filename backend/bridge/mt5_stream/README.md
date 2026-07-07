@@ -64,9 +64,11 @@ On-demand history requests may need a short cold-start refresh because MT5 downl
 after the first `copy_rates_from` call. The bridge retries with `asyncio.sleep`, not blocking
 `time.sleep`, so WebSocket pings and tick streaming continue while MT5 warms its cache.
 
-The bridge normalizes MT5 broker-server timestamps to UTC before sending ticks or candles. This
-keeps higher-timeframe buckets aligned with TradingView-style chart time even when the broker server
-runs at an offset such as UTC+3.
+MT5 `copy_rates_*` history timestamps are already UTC bar-open seconds according to the official
+MetaQuotes Python docs, so the bridge sends candle `time` values unchanged. Live tick timestamps are
+normalized only when the terminal exposes them with a broker/workstation offset; that keeps quote
+freshness checks in the same UTC domain as history without shifting candles and creating false
+history gaps.
 
 ## Run
 
@@ -92,12 +94,12 @@ The frontend should call `GET /api/v1/mt5/symbols`. The Go API keeps an in-memor
 the Python bridge and returns connection status plus the latest symbol metadata.
 
 For live prices, the frontend calls `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD`.
-The Go API caches only the latest tick per streamed symbol; the frontend buckets
-those ticks into OHLC candles locally.
+The Go API caches only the latest tick per streamed symbol. Ticks are quote/watchlist data only and
+must not be used to synthesize MT5 chart candles.
 
 For historical chart candles, the frontend calls
 `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500`. The Go API
-serves cached candles when it has enough data; otherwise it sends a
+serves cached candles when it has enough current data; otherwise it sends a
 `history.request` message over the existing bridge WebSocket and waits for the
 Python sidecar to return `copy_rates_from_pos` data.
 

@@ -462,6 +462,9 @@ frontend/tests/fixtures/backend-bootstrap.json
 - MT5 chart candles are loaded and refreshed from `GET /api/v1/mt5/history`. Active charts can pass
   `refresh=true` with a small `limit` to bypass the backend cache and fetch the latest MT5 OHLC bars.
   `/api/v1/mt5/ticks` is quote/watchlist data only; do not synthesize MT5 candles from bid/ask ticks.
+  MT5 history candle `time` values are UTC bar-open seconds from `copy_rates_*`; the frontend must
+  render them unchanged. If the bridge normalizes anything, it is tick timestamps only, and only so
+  quote freshness checks compare ticks and rates in the same UTC domain.
   MT5 symbols must not fall through to Binance, TwelveData, or OANDA.
 - Keep chart rendering fast by separating "remote commit" from "canvas interaction". Draw locally
   during drag, commit on pointerup.

@@ -270,7 +270,7 @@ MetaTrader 5 terminal
    never the Python bridge directly.
 7. Candle history uses a request/reply message over the existing local bridge WebSocket:
    Fiber receives `GET /api/v1/mt5/history`, sends `history.request` to Python, waits for the
-   matching `history` response, caches the candles briefly, and returns normalized OHLCV bars.
+   matching `history` response, caches the candles briefly, and returns UTC OHLCV bars.
 8. Both processes handle graceful shutdown locally; the stream is market-data only and does not
    execute orders.
 
@@ -283,8 +283,9 @@ MetaTrader 5 terminal
   status, stream symbols, and symbol metadata.
 - `GET /api/v1/mt5/ticks?symbols=EURUSD` returns the latest cached tick snapshot for requested
   stream symbols.
-- `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500` returns normalized candles from
-  MT5 `copy_rates_from_pos` through the Python bridge.
+- `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500` returns UTC candles from MT5
+  `copy_rates_from_pos` through the Python bridge. `copy_rates_*` candle times are kept unchanged;
+  only live tick timestamps may be offset-normalized before freshness checks.
 - Restarting the Python bridge does not require restarting the Go consumer; it reconnects.
 
 **Complexity:** Low–Medium.

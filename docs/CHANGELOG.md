@@ -28,9 +28,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   eventually returns valid candles.
 - Removed MT5 tick-to-candle aggregation from the chart path. MT5 ticks now update quotes/watchlist
   only; chart candles refresh from MT5 OHLC history/rates with `refresh=true`.
-- Normalized MT5 broker-server timestamps to UTC in the Python bridge before publishing ticks and
-  history candles. This prevents 4H/1D candles from being shifted when the broker server clock runs
-  several hours ahead of the chart timezone.
+- Corrected MT5 time handling: `copy_rates_*` bar times are already UTC per MetaQuotes docs, so the
+  bridge now leaves candle timestamps unchanged and normalizes only tick timestamps when the
+  terminal exposes a broker/workstation offset. This fixes a false 7-hour gap where EURUSD M15
+  history appeared to end well before the live tick.
 - Verified live against the FTMO MT5 terminal: every streamed symbol's history now ends on the
   current forming bar (gap ~0.4 bars) instead of lagging by up to ~29 days (GBPUSD).
 

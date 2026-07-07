@@ -29,8 +29,8 @@ type SymbolCatalog struct {
 }
 
 // Tick is the market-data message emitted after the catalog. The service caches
-// the latest tick per symbol so the frontend can build realtime candles without
-// talking to MT5, Python, Binance, or TwelveData directly.
+// the latest tick per symbol for quotes/watchlist rows. MT5 chart candles come
+// from the history endpoint instead of being synthesized from bid/ask ticks.
 type Tick struct {
 	Type      string  `json:"type,omitempty"`
 	Source    string  `json:"source,omitempty"`
@@ -56,9 +56,9 @@ type Snapshot struct {
 }
 
 // TickSnapshot is returned by GET /api/v1/mt5/ticks. It is intentionally small:
-// the Python bridge streams ticks continuously, the Go service caches only the
-// latest value for each symbol, and frontend CandleEngine buckets those ticks
-// into OHLC candles for the active timeframe.
+// the Python bridge streams ticks continuously and the Go service caches only
+// the latest quote per symbol. The chart must use GET /api/v1/mt5/history for
+// real MT5 OHLC bars.
 type TickSnapshot struct {
 	Connected bool      `json:"connected"`
 	BridgeURL string    `json:"bridgeUrl"`
