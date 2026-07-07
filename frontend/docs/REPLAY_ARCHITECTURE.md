@@ -1,6 +1,6 @@
 # Replay Architecture
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-07_
 
 This document is the maintenance guide for Bar Replay. It explains the state
 machine, data visibility contract, chart viewport behavior, and regression
@@ -61,6 +61,8 @@ Research source:
 | `cursorAtom` | Current visible candle index in the master candle array |
 | `anchorAtom` | Earliest allowed replay cursor for the current replay session |
 | `totalAtom` | Master candle count when replay was armed or last synchronized |
+| `cursorTimeAtom` | Absolute open time of the current replay cursor |
+| `anchorTimeAtom` | Absolute open time of the replay anchor |
 
 Important invariant:
 
@@ -70,6 +72,11 @@ Important invariant:
 
 `setTotalAtom` clamps `anchor` and `cursor` when loaded history shrinks. If
 history becomes empty, it fully disarms replay and resets cursor state.
+
+`cursorTimeAtom` and `anchorTimeAtom` are required because replay must survive
+timeframe changes. Array index `120` on `15m` is not the same market time as
+array index `120` on `5m`; timeframe changes must remap indices from saved
+times with `reconcileReplayToCandlesAtom`.
 
 ## 4. State Machine
 
@@ -350,10 +357,20 @@ Check:
 - Selection overlay pointer events are enabled.
 - Chart pan/zoom is disabled only during selection.
 
-### Replay resets when symbol/timeframe changes
+### Replay resets or jumps to live after changing timeframe
 
-This is expected. `useMarketData()` calls `disarm()` when symbol/timeframe
-changes because the old cursor is invalid for the new master candle array.
+This is a bug. `useMarketData()` may disarm replay when the symbol changes, but
+it must not disarm replay when only the timeframe changes. The replay cursor is
+kept by absolute candle time and `reconcileReplayToCandlesAtom` maps that time
+to the new timeframe's candle index.
+
+Check:
+
+- `useMarketData()` guards `disarm()` behind `symbolChanged`.
+- Timeframe history loads around `cursorTimeAtom` when the cursor is far from
+  latest data.
+- After history is set, `reconcileReplayToCandlesAtom` runs instead of
+  index-only `setTotalAtom` while replay is active.
 
 ## 15. Known Boundaries
 

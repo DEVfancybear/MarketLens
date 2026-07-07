@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay timeframe changes keep the selected replay time (2026-07-07)
+- Fixed Bar Replay losing its selected past region when switching timeframe, e.g. selecting a replay
+  bar on `15m` and then changing to `5m`. Replay now stores absolute `anchorTime`/`cursorTime` and
+  remaps those timestamps to the new timeframe's candle index instead of treating the old index as
+  valid for the new candle array.
+- `useMarketData()` now disarms replay only when the symbol changes. Timeframe changes keep replay
+  armed, load history around the replay cursor when needed, and reconcile the new history through
+  `reconcileReplayToCandlesAtom`.
+- Extended `npm run check:replay-logic` to guard timeframe remapping and prevent regression back to
+  index-only replay state.
+
 ### Fixed - MT5 stock quote snapshots and rejected stream symbols (2026-07-07)
 - Fixed blank watchlist rows for slower MT5 symbols such as `AAPL`: the Python sidecar now sends the
   current tick snapshot for every active stream symbol immediately when the Go backend connects, so

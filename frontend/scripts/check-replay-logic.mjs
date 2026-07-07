@@ -25,6 +25,7 @@ const selectionLayer = readFileSync(
   resolve(root, "src/components/replay/ReplaySelectionLayer.tsx"),
   "utf8",
 );
+const useMarketData = readFileSync(resolve(root, "src/hooks/useMarketData.ts"), "utf8");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -68,6 +69,20 @@ function checkNearestDateSelection() {
   assert(indexNearestByTime(candles, 1030) === 0, "ties should keep the earlier bar");
   assert(indexNearestByTime(candles, 1200) === 2, "nearest date after history should clamp to last bar");
   assert(indexNearestByTime([], 1000) === -1, "empty candle list should return -1");
+}
+
+function checkTimeframeReplayMapping() {
+  const m15 = Array.from({ length: 12 }, (_, i) => ({ time: 1_000 + i * 900 }));
+  const m5 = Array.from({ length: 36 }, (_, i) => ({ time: 1_000 + i * 300 }));
+  const selectedM15Time = m15[5].time;
+  assert(
+    indexAtOrBefore(m5, selectedM15Time) === 15,
+    "timeframe changes must map replay cursor by candle time, not by old index",
+  );
+  assert(
+    indexAtOrBefore(m15, m5[16].time) === 5,
+    "higher-timeframe replay remap must use at-or-before to avoid future leakage",
+  );
 }
 
 function checkStaticGuards() {
@@ -128,9 +143,31 @@ function checkStaticGuards() {
       /const cursor = Math\.max\(anchor, Math\.min\(max, get\(cursorAtom\)\)\);/.test(replayStore),
     "setTotalAtom must clamp anchor and cursor when history shrinks",
   );
+  assert(
+    /export const cursorTimeAtom/.test(replayStore) &&
+      /export const anchorTimeAtom/.test(replayStore) &&
+      /export const reconcileReplayToCandlesAtom/.test(replayStore),
+    "replayStore must keep timestamp anchors so replay survives timeframe changes",
+  );
+  assert(
+    /indexAtOrBefore\(candles, savedCursorTime\)/.test(replayStore) &&
+      /set\(cursorTimeAtom, candles\[nextCursor\]\?\.time/.test(replayStore),
+    "replay timeframe reconciliation must map cursor time back to the new candle index",
+  );
+  assert(
+    /if \(symbolChanged\) \{\s*disarm\(\);\s*\}/.test(useMarketData),
+    "useMarketData must only disarm replay on symbol changes, not timeframe changes",
+  );
+  assert(
+    /replayHistoryBefore/.test(useMarketData) &&
+      /before:\s*replayActive && !symbolChanged/.test(useMarketData) &&
+      /reconcileReplay\(nextCandles\)/.test(useMarketData),
+    "useMarketData must load/reconcile timeframe history around the replay cursor",
+  );
 }
 
 checkNearestDateSelection();
+checkTimeframeReplayMapping();
 checkStaticGuards();
 
-console.log("[replay-logic] OK: date selection, viewport realignment, MTF no-lookahead, and total clamping are guarded");
+console.log("[replay-logic] OK: date selection, timeframe remap, viewport realignment, MTF no-lookahead, and total clamping are guarded");

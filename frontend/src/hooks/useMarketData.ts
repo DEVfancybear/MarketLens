@@ -23,7 +23,13 @@ import {
   setCandlesAtom,
   setLoadingAtom,
 } from "@/store/chartStore";
-import { disarmAtom, setTotalAtom } from "@/store/replayStore";
+import {
+  activeAtom,
+  cursorTimeAtom,
+  disarmAtom,
+  reconcileReplayToCandlesAtom,
+  setTotalAtom,
+} from "@/store/replayStore";
 import { getDefaultStore } from "jotai";
 import { logAtom } from "@/store/uiStore";
 import { getMarketDataState } from "@/store/marketDataStore";
@@ -53,6 +59,18 @@ function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
   return 20;
 }
 
+function replayHistoryBefore(
+  timeframe: Timeframe,
+  limit: number,
+  cursorTime: number | null,
+): number | undefined {
+  if (cursorTime == null) return undefined;
+  const step = TF_SECONDS[timeframe];
+  const targetWindowEnd = cursorTime + Math.floor(limit * step * 0.7);
+  const nearNow = Math.floor(Date.now() / 1000) + step;
+  return targetWindowEnd < nearNow ? targetWindowEnd : undefined;
+}
+
 export function useMarketData() {
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
@@ -60,9 +78,11 @@ export function useMarketData() {
   const setLoading = useSetAtom(setLoadingAtom);
   const disarm = useSetAtom(disarmAtom);
   const setTotal = useSetAtom(setTotalAtom);
+  const reconcileReplay = useSetAtom(reconcileReplayToCandlesAtom);
   const catalogStatus = useAtomValue(marketSymbolCatalogStatusAtom);
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
+  const previousSymbolRef = useRef<string | null>(null);
   const activeKey = `${symbol}:${timeframe}`;
   const [historyReadyKey, setHistoryReadyKey] = useState<string | null>(null);
 
@@ -73,8 +93,17 @@ export function useMarketData() {
   useEffect(() => {
     let cancelled = false;
     const key = `${symbol}:${timeframe}`;
+    const store = getDefaultStore();
+    const previousSymbol = previousSymbolRef.current;
+    const symbolChanged =
+      previousSymbol !== null && previousSymbol !== symbol;
+    previousSymbolRef.current = symbol;
+    const replayActive = store.get(activeAtom);
+    const replayCursorTime = store.get(cursorTimeAtom);
     setHistoryReadyKey(null);
-    disarm(); // a new market invalidates any replay cursor
+    if (symbolChanged) {
+      disarm();
+    }
 
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
     if (!symbol || !meta) {
@@ -103,11 +132,17 @@ export function useMarketData() {
 
     setLoading(true);
 
+    const historyLimit = historyBarsForTimeframe(timeframe);
+
     getHistoricalDataService()
       .loadHistory({
         symbol,
         timeframe,
-        limit: historyBarsForTimeframe(timeframe),
+        limit: historyLimit,
+        before:
+          replayActive && !symbolChanged
+            ? replayHistoryBefore(timeframe, historyLimit, replayCursorTime)
+            : undefined,
       })
       .then((hist) => {
         if (cancelled) return;
@@ -115,8 +150,13 @@ export function useMarketData() {
         // MT5 rates/history; ticks are used only for quotes/watchlist.
         getMarketDataState().setCandles(symbol, timeframe, hist);
         getMarketDataState().selectMarket(symbol, timeframe);
-        setCandles(hist as Candle[]);
-        setTotal(hist.length);
+        const nextCandles = hist as Candle[];
+        setCandles(nextCandles);
+        if (getDefaultStore().get(activeAtom)) {
+          reconcileReplay(nextCandles);
+        } else {
+          setTotal(nextCandles.length);
+        }
         setHistoryReadyKey(key);
         setLoading(false);
       })
@@ -142,9 +182,21 @@ export function useMarketData() {
   // ---- Mirror store candles → chartStore (drives chart/SMC/replay/trade) ----
   useEffect(() => {
     if (historyReadyKey !== activeKey) return;
-    setCandles(liveCandles as Candle[]);
-    setTotal(liveCandles.length);
-  }, [activeKey, historyReadyKey, liveCandles, setCandles, setTotal]);
+    const nextCandles = liveCandles as Candle[];
+    setCandles(nextCandles);
+    if (getDefaultStore().get(activeAtom)) {
+      reconcileReplay(nextCandles);
+    } else {
+      setTotal(nextCandles.length);
+    }
+  }, [
+    activeKey,
+    historyReadyKey,
+    liveCandles,
+    reconcileReplay,
+    setCandles,
+    setTotal,
+  ]);
 
   // ---- MT5 active-chart refresh: update OHLC from MT5 rates, not bid/ask ticks ----
   useEffect(() => {
