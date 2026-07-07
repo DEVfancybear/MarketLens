@@ -31,7 +31,11 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 - Backend MT5 streaming is local-only: run `python -m bridge.mt5_stream.mt5_server` from
   `backend/`, then `go run ./cmd/mt5-stream` to consume `ws://localhost:8765`. The Go API also
-  connects to that bridge and exposes the cached catalog at `GET /api/v1/mt5/symbols`.
+  connects to that bridge and exposes `GET /api/v1/mt5/symbols`, `GET /api/v1/mt5/ticks`, and
+  on-demand `GET /api/v1/mt5/history` for frontend chart/watchlist data.
+- Frontend MT5 market data now loads the full symbol catalog into the runtime registry, defaults the
+  watchlist to live `streamSymbols`, loads chart history from the backend, and updates forming
+  candles from backend MT5 ticks. It no longer calls third-party market-data APIs for MT5 symbols.
 
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 

@@ -30,10 +30,8 @@ import {
   CONDITION_SYMBOL,
   type AlertCondition,
 } from "@/store/alertStore";
-import {
-  MARKET_SYMBOLS,
-  getMarketSymbol,
-} from "@/services/market-data/symbols";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { useMarketSymbols } from "@/store/marketSymbolStore";
 import {
   getBrowserPermission,
   requestBrowserPermission,
@@ -111,6 +109,7 @@ export function AlertCenter() {
   const setSettings = useAlertStore((s) => s.setSettings);
   const push = usePushNotifications();
   const { refresh: refreshPush } = push;
+  const marketSymbols = useMarketSymbols();
 
   // ---- create form ----
   const [symbol, setSymbol] = useState(chartSymbol);
@@ -167,7 +166,10 @@ export function AlertCenter() {
     };
   }, [open]);
 
-  const sortedSymbols = useMemo(() => MARKET_SYMBOLS.map((s) => s.id), []);
+  const sortedSymbols = useMemo(
+    () => marketSymbols.map((s) => s.id),
+    [marketSymbols],
+  );
 
   const submit = () => {
     const target = Number(price);

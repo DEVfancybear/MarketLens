@@ -4,6 +4,7 @@ import { useHotkeys } from "@/hooks/useHotkeys";
 import { useSmcEngine } from "@/hooks/useSmcEngine";
 import { useTradeRuntime } from "@/hooks/useTradeRuntime";
 import { useMarketDataBootstrap } from "@/hooks/useMarketDataBootstrap";
+import { useMt5SymbolCatalog } from "@/hooks/useMt5SymbolCatalog";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { usePushAlertSync } from "@/hooks/usePushAlertSync";
 import { usePushTriggerReconcile } from "@/hooks/usePushTriggerReconcile";
@@ -25,6 +26,7 @@ export function GlobalRuntime() {
   useHotkeys();
   useSmcEngine();
   useTradeRuntime();
+  useMt5SymbolCatalog(); // loads MT5 symbols from backend; no third-party symbol API
   useMarketDataBootstrap(); // brings the realtime feed online + subscribes watchlist tickers
   useAlertEngine(); // evaluates price alerts off the same realtime feed (no polling/sockets)
   usePushAlertSync(); // keeps server-side push worker state in sync for closed-browser alerts

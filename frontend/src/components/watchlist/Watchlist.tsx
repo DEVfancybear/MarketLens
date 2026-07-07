@@ -16,10 +16,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  MARKET_SYMBOLS,
-  getMarketSymbol,
-} from "@/services/market-data/symbols";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { useMarketSymbols } from "@/store/marketSymbolStore";
 import {
   activeWatchlistAtom,
   watchlistSectionsAtom,
@@ -1336,7 +1334,8 @@ function AddSymbol({
   existing: string[];
 }) {
   const [q, setQ] = useState("");
-  const avail = MARKET_SYMBOLS.filter((s) => !existing.includes(s.id));
+  const marketSymbols = useMarketSymbols();
+  const avail = marketSymbols.filter((s) => !existing.includes(s.id));
   const filtered = avail.filter(
     (s) =>
       s.id.toLowerCase().includes(q.toLowerCase()) ||

@@ -453,6 +453,15 @@ frontend/tests/fixtures/backend-bootstrap.json
   workspace persistence.
 - MT5 symbol discovery should go through the Go API (`getMt5Symbols()` -> `GET /api/v1/mt5/symbols`).
   The frontend must not connect directly to the localhost Python sidecar.
+- The frontend symbol registry is runtime-only. Do not seed `MARKET_SYMBOLS` with a local static
+  list. After `getMt5Symbols()` succeeds, replace the registry from the full backend response so
+  symbol search can see the actual MT5 catalog.
+- The active watchlist should default to `streamSymbols` from `/api/v1/mt5/symbols`, not every
+  catalog item. Catalog-only symbols remain searchable, but watchlist rows need live ticks from
+  `/api/v1/mt5/ticks` to show Last/Chg/Chg%.
+- MT5 chart candles are loaded from `GET /api/v1/mt5/history` and live-updated from
+  `GET /api/v1/mt5/ticks` through `Mt5Provider` + `CandleEngine`. MT5 symbols must not fall
+  through to Binance, TwelveData, or OANDA.
 - Keep chart rendering fast by separating "remote commit" from "canvas interaction". Draw locally
   during drag, commit on pointerup.
 - Never call settings/watchlist/drawing APIs from render paths.

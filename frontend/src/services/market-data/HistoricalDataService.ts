@@ -18,6 +18,7 @@ import {
   type Timeframe,
 } from "@/types";
 import { getMarketSymbol, twelveDataSymbol } from "./symbols";
+import { getMt5History } from "@/services/api/resources/mt5Api";
 
 const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
 const TWELVEDATA_TS = "https://api.twelvedata.com/time_series";
@@ -98,6 +99,10 @@ export class HistoricalDataService {
     const providerSymbol = meta?.providerSymbol ?? symbol;
     const provider = meta?.provider;
 
+    if (provider === "mt5") {
+      return this.loadMt5(providerSymbol, timeframe, capped, before);
+    }
+
     if (provider === "oanda") {
       if (!this.oandaKey && this.tdKey) {
         return this.loadTwelveData(
@@ -113,6 +118,30 @@ export class HistoricalDataService {
       return this.loadTwelveData(twelveDataSymbol(symbol), timeframe, capped, before);
     }
     return this.loadBinance(providerSymbol, timeframe, capped, before);
+  }
+
+  // ------------------------------------------------------------------ MT5
+  private async loadMt5(
+    symbol: string,
+    timeframe: Timeframe,
+    limit: number,
+    before?: number,
+  ): Promise<MarketCandle[]> {
+    const snapshot = await getMt5History({ symbol, timeframe, limit, before });
+    if (snapshot.lastError && snapshot.candles.length === 0) {
+      throw new Error(snapshot.lastError);
+    }
+    return dedupeAscending(
+      snapshot.candles.map((candle) => ({
+        time: candle.time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+        closed: true,
+      })),
+    ).slice(-limit);
   }
 
   // ------------------------------------------------------------------ Binance

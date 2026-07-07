@@ -52,9 +52,13 @@ python -m bridge.mt5_stream.mt5_server
 # In a second terminal, consume the stream from Go
 go run ./cmd/mt5-stream
 
-# Or run the API and let FE call GET /api/v1/mt5/symbols
+# Or run the API and let FE call /api/v1/mt5/symbols, /ticks, and /history
 go run ./cmd/api
 ```
+
+The frontend reads the full MT5 catalog from `GET /api/v1/mt5/symbols`, live watchlist prices from
+`GET /api/v1/mt5/ticks`, and chart candles from on-demand `GET /api/v1/mt5/history` responses.
+It never connects to the Python bridge directly.
 
 ## Configuration
 

@@ -1,85 +1,21 @@
 import type { Mt5SymbolInfo } from "@/types/mt5";
-
-const DEFAULT_SYMBOLS: Record<string, Mt5SymbolInfo> = {
-  BTCUSDT: {
-    chartSymbol: "BTCUSDT",
-    brokerSymbol: "BTCUSD",
-    digits: 2,
-    point: 0.01,
-    lotStep: 0.01,
-    minLot: 0.01,
-    maxLot: 10,
-    tickSize: 0.01,
-    tickValue: 1,
-    tradeMode: "full",
-    updatedAt: 0,
-  },
-  ETHUSDT: {
-    chartSymbol: "ETHUSDT",
-    brokerSymbol: "ETHUSD",
-    digits: 2,
-    point: 0.01,
-    lotStep: 0.01,
-    minLot: 0.01,
-    maxLot: 50,
-    tickSize: 0.01,
-    tickValue: 1,
-    tradeMode: "full",
-    updatedAt: 0,
-  },
-  EURUSD: {
-    chartSymbol: "EURUSD",
-    brokerSymbol: "EURUSD",
-    digits: 5,
-    point: 0.00001,
-    lotStep: 0.01,
-    minLot: 0.01,
-    maxLot: 100,
-    tickSize: 0.00001,
-    tickValue: 1,
-    tradeMode: "full",
-    updatedAt: 0,
-  },
-  GBPUSD: {
-    chartSymbol: "GBPUSD",
-    brokerSymbol: "GBPUSD",
-    digits: 5,
-    point: 0.00001,
-    lotStep: 0.01,
-    minLot: 0.01,
-    maxLot: 100,
-    tickSize: 0.00001,
-    tickValue: 1,
-    tradeMode: "full",
-    updatedAt: 0,
-  },
-  XAUUSD: {
-    chartSymbol: "XAUUSD",
-    brokerSymbol: "XAUUSD",
-    digits: 2,
-    point: 0.01,
-    lotStep: 0.01,
-    minLot: 0.01,
-    maxLot: 50,
-    tickSize: 0.01,
-    tickValue: 1,
-    tradeMode: "full",
-    updatedAt: 0,
-  },
-};
+import { getMarketSymbol } from "@/services/market-data/symbols";
 
 export function getDefaultMt5SymbolInfo(symbol: string): Mt5SymbolInfo {
-  const known = DEFAULT_SYMBOLS[symbol.toUpperCase()];
-  if (known) return { ...known, updatedAt: Date.now() };
+  const id = symbol.trim().toUpperCase();
+  const market = getMarketSymbol(id);
+  const digits = market?.pricePrecision ?? 2;
+  const tickSize = market?.tickSize ?? 10 ** -Math.max(digits, 0);
+
   return {
-    chartSymbol: symbol,
-    brokerSymbol: symbol,
-    digits: 2,
-    point: 0.01,
+    chartSymbol: id || symbol,
+    brokerSymbol: market?.providerSymbol ?? (id || symbol),
+    digits,
+    point: tickSize,
     lotStep: 0.01,
     minLot: 0.01,
-    maxLot: 1,
-    tickSize: 0.01,
+    maxLot: 100,
+    tickSize,
     tickValue: 1,
     tradeMode: "full",
     updatedAt: Date.now(),

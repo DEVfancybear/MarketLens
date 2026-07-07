@@ -32,6 +32,7 @@ import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
 import { TF_SECONDS, type Candle, type Timeframe } from "@/types";
 import { findRecentCandleGap } from "@/services/market-data/candleSeries";
+import { getMarketSymbol } from "@/services/market-data/symbols";
 
 const DEFAULT_HISTORY_BARS = 1500;
 const MAX_BACKFILL_MISSING_BARS = 50;
@@ -56,9 +57,20 @@ export function useMarketData() {
   // ---- Select market + load history on symbol/timeframe change ----
   useEffect(() => {
     let cancelled = false;
+    disarm(); // a new market invalidates any replay cursor
+
+    const meta = symbol ? getMarketSymbol(symbol) : undefined;
+    if (!symbol || !meta) {
+      getMarketDataState().setCandles(symbol, timeframe, []);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     getMarketDataService(); // ensure the service exists + is bound to the store
     getMarketDataState().selectMarket(symbol, timeframe);
-    disarm(); // a new market invalidates any replay cursor
+
     setLoading(true);
 
     getHistoricalDataService()
@@ -97,6 +109,9 @@ export function useMarketData() {
 
   // ---- Repair short realtime gaps without a full page refresh ----
   useEffect(() => {
+    const meta = symbol ? getMarketSymbol(symbol) : undefined;
+    if (!symbol || !meta || meta.provider === "mt5") return;
+
     const step = TF_SECONDS[timeframe];
     const gap = findRecentCandleGap(
       liveCandles,

@@ -26,6 +26,7 @@ import { useHotkeys } from "@/hooks/useHotkeys";
 export function Terminal() {
   const hydrated = useStoreHydration();
   useHotkeys();
+
   if (!hydrated) return <Splash />;
 
   return (

@@ -27,6 +27,7 @@ import {
 import { BinanceProvider } from "./providers/BinanceProvider";
 import { TwelveDataProvider } from "./providers/TwelveDataProvider";
 import { OandaProvider } from "./providers/OandaProvider";
+import { Mt5Provider } from "./providers/Mt5Provider";
 import {
   getMarketSymbol,
   MARKET_SYMBOLS,
@@ -39,6 +40,7 @@ const TICK_ONLY: Record<MarketProvider, boolean> = {
   binance: false,
   twelvedata: true,
   oanda: true,
+  mt5: true,
   mock: false,
 };
 
@@ -53,12 +55,14 @@ export class MarketDataService implements MarketDataServiceBinding {
   private readonly binance: BinanceProvider;
   private readonly twelve: TwelveDataProvider | null;
   private readonly oanda: OandaProvider | null;
+  private readonly mt5: Mt5Provider;
 
   /** Active canonical symbols per provider (drives connect()/status aggregation). */
   private readonly symbolsByProvider: Record<MarketProvider, Set<string>> = {
     binance: new Set(),
     twelvedata: new Set(),
     oanda: new Set(),
+    mt5: new Set(),
     mock: new Set(),
   };
 
@@ -73,6 +77,7 @@ export class MarketDataService implements MarketDataServiceBinding {
     binance: "disconnected",
     twelvedata: "disconnected",
     oanda: "disconnected",
+    mt5: "disconnected",
     mock: "disconnected",
   };
 
@@ -80,6 +85,7 @@ export class MarketDataService implements MarketDataServiceBinding {
     const onEvent = (e: MarketDataEvent) => this.handleEvent(e);
 
     this.binance = new BinanceProvider({ onEvent });
+    this.mt5 = new Mt5Provider({ onEvent });
 
     // OANDA: the primary forex/metals/indices provider.
     const oandaKey = opts.oandaApiKey ?? process.env.NEXT_PUBLIC_OANDA_API_KEY;
@@ -126,6 +132,12 @@ export class MarketDataService implements MarketDataServiceBinding {
     const meta = getMarketSymbol(symbol);
     if (!meta) return null;
 
+    // MT5 symbols are discovered from the backend catalog and routed back to
+    // the Go API's MT5 tick cache. No third-party fallback is allowed here.
+    if (meta.provider === "mt5") {
+      return { provider: "mt5", binding: this.mt5 };
+    }
+
     if (meta.provider === "oanda") {
       if (this.oanda) return { provider: "oanda", binding: this.oanda };
       if (this.twelve) return { provider: "twelvedata", binding: this.twelve };
@@ -155,12 +167,14 @@ export class MarketDataService implements MarketDataServiceBinding {
     if (this.symbolsByProvider.binance.size > 0) this.binance.connect();
     if (this.symbolsByProvider.twelvedata.size > 0) this.twelve?.connect();
     if (this.symbolsByProvider.oanda.size > 0) this.oanda?.connect();
+    if (this.symbolsByProvider.mt5.size > 0) this.mt5.connect();
   }
 
   disconnect() {
     this.binance.disconnect();
     this.twelve?.disconnect();
     this.oanda?.disconnect();
+    this.mt5.disconnect();
   }
 
   subscribe(sub: MarketSubscription) {

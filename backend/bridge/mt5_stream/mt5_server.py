@@ -32,6 +32,9 @@ class Config:
     host: str
     port: int
     poll_interval_ms: int
+    history_bars: int
+    history_timeframes: tuple[str, ...]
+    preload_history: bool
     terminal_path: str | None
     login: int | None
     password: str | None
@@ -40,13 +43,21 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         login_raw = os.getenv("MT5_LOGIN", "").strip()
-        symbols_raw = os.getenv("MT5_SYMBOLS", os.getenv("MT5_SYMBOL", ""))
+        symbols_raw = os.getenv("MT5_SYMBOLS", "")
         return cls(
             symbols=parse_symbols(symbols_raw),
-            stream_all_visible=env_bool("MT5_STREAM_ALL_VISIBLE", False),
+            stream_all_visible=env_bool("MT5_STREAM_ALL_VISIBLE", True),
             host=os.getenv("MT5_STREAM_HOST", "localhost").strip(),
             port=int(os.getenv("MT5_STREAM_PORT", "8765")),
             poll_interval_ms=int(os.getenv("MT5_POLL_INTERVAL_MS", "100")),
+            history_bars=int(os.getenv("MT5_HISTORY_BARS", "1500")),
+            history_timeframes=parse_timeframes(
+                os.getenv(
+                    "MT5_HISTORY_TIMEFRAMES",
+                    "1m,3m,5m,15m,30m,1H,2H,4H,1D,1W,1M",
+                )
+            ),
+            preload_history=env_bool("MT5_PRELOAD_HISTORY", False),
             terminal_path=os.getenv("MT5_TERMINAL_PATH") or None,
             login=int(login_raw) if login_raw else None,
             password=os.getenv("MT5_PASSWORD") or None,
@@ -57,6 +68,21 @@ class Config:
 CLIENTS: Set[WebSocketServerProtocol] = set()
 SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
+HISTORY_MESSAGES: list[str] = []
+
+TIMEFRAME_MAP = {
+    "1m": mt5.TIMEFRAME_M1,
+    "3m": mt5.TIMEFRAME_M3,
+    "5m": mt5.TIMEFRAME_M5,
+    "15m": mt5.TIMEFRAME_M15,
+    "30m": mt5.TIMEFRAME_M30,
+    "1H": mt5.TIMEFRAME_H1,
+    "2H": mt5.TIMEFRAME_H2,
+    "4H": mt5.TIMEFRAME_H4,
+    "1D": mt5.TIMEFRAME_D1,
+    "1W": mt5.TIMEFRAME_W1,
+    "1M": mt5.TIMEFRAME_MN1,
+}
 
 
 def parse_symbols(raw: str) -> tuple[str, ...]:
@@ -69,6 +95,33 @@ def parse_symbols(raw: str) -> tuple[str, ...]:
         seen.add(symbol)
         symbols.append(symbol)
     return tuple(symbols)
+
+
+def parse_timeframes(raw: str) -> tuple[str, ...]:
+    timeframes: list[str] = []
+    seen: set[str] = set()
+    aliases = {
+        "1MIN": "1m",
+        "3MIN": "3m",
+        "5MIN": "5m",
+        "15MIN": "15m",
+        "30MIN": "30m",
+        "1H": "1H",
+        "2H": "2H",
+        "4H": "4H",
+        "1D": "1D",
+        "1W": "1W",
+        "1M": "1M",
+    }
+    for item in raw.split(","):
+        key = item.strip()
+        if not key:
+            continue
+        normalized = aliases.get(key.upper(), key)
+        if normalized in TIMEFRAME_MAP and normalized not in seen:
+            seen.add(normalized)
+            timeframes.append(normalized)
+    return tuple(timeframes)
 
 
 def env_bool(key: str, fallback: bool) -> bool:
@@ -144,6 +197,7 @@ def load_symbol_catalog() -> list[dict[str, Any]]:
                 "description": info.description,
                 "visible": bool(info.visible),
                 "digits": int(info.digits),
+                "point": float(info.point),
                 "spread": int(info.spread),
                 "trade_mode": int(info.trade_mode),
                 "currency_base": info.currency_base,
@@ -191,10 +245,34 @@ async def register_client(websocket: WebSocketServerProtocol) -> None:
     LOG.info("client connected peer=%s clients=%d", peer, len(CLIENTS))
     try:
         await websocket.send(symbol_catalog_message())
-        await websocket.wait_closed()
+        for message in HISTORY_MESSAGES:
+            await websocket.send(message)
+        async for raw in websocket:
+            await handle_client_message(websocket, raw)
     finally:
         CLIENTS.discard(websocket)
         LOG.info("client disconnected peer=%s clients=%d", peer, len(CLIENTS))
+
+
+async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) -> None:
+    try:
+        message = json.loads(raw)
+    except json.JSONDecodeError:
+        LOG.warning("ignoring invalid client JSON")
+        return
+
+    if message.get("type") != "history.request":
+        LOG.debug("ignoring client message type=%s", message.get("type"))
+        return
+
+    request_id = str(message.get("id") or "")
+    symbol = str(message.get("symbol") or "").strip()
+    timeframe = str(message.get("timeframe") or "15m").strip()
+    try:
+        limit = int(message.get("limit") or 1500)
+    except (TypeError, ValueError):
+        limit = 1500
+    await websocket.send(load_history_message(symbol, timeframe, limit, request_id))
 
 
 def symbol_catalog_message() -> str:
@@ -208,6 +286,99 @@ def symbol_catalog_message() -> str:
         },
         separators=(",", ":"),
     )
+
+
+def load_history_messages(
+    symbols: tuple[str, ...],
+    timeframes: tuple[str, ...],
+    bars: int,
+) -> list[str]:
+    messages: list[str] = []
+    limit = max(1, min(bars, 5000))
+    for symbol in symbols:
+        for timeframe in timeframes:
+            mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
+            if mt5_timeframe is None:
+                continue
+            rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
+            if rates is None:
+                LOG.warning(
+                    "copy_rates_from_pos(%s, %s) failed (%s)",
+                    symbol,
+                    timeframe,
+                    last_mt5_error(),
+                )
+                continue
+            candles = [
+                {
+                    "time": int(row["time"]),
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["tick_volume"]),
+                }
+                for row in rates
+            ]
+            messages.append(
+                json.dumps(
+                    {
+                        "type": "history",
+                        "source": "mt5",
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "candles": candles,
+                    },
+                    separators=(",", ":"),
+                )
+            )
+    LOG.info("loaded MT5 history messages=%d bars=%d", len(messages), limit)
+    return messages
+
+
+def load_history_message(
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    request_id: str = "",
+) -> str:
+    limit = max(1, min(int(bars or 1500), 5000))
+    mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
+    payload: dict[str, Any] = {
+        "type": "history",
+        "source": "mt5",
+        "request_id": request_id,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "candles": [],
+    }
+    if not symbol:
+        payload["error"] = "symbol is required"
+        return json.dumps(payload, separators=(",", ":"))
+    if mt5_timeframe is None:
+        payload["error"] = f"unsupported timeframe: {timeframe}"
+        return json.dumps(payload, separators=(",", ":"))
+    if not mt5.symbol_select(symbol, True):
+        payload["error"] = f"symbol_select({symbol}) failed ({last_mt5_error()})"
+        return json.dumps(payload, separators=(",", ":"))
+
+    rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
+    if rates is None:
+        payload["error"] = f"copy_rates_from_pos({symbol}, {timeframe}) failed ({last_mt5_error()})"
+        return json.dumps(payload, separators=(",", ":"))
+
+    payload["candles"] = [
+        {
+            "time": int(row["time"]),
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+            "volume": float(row["tick_volume"]),
+        }
+        for row in rates
+    ]
+    return json.dumps(payload, separators=(",", ":"))
 
 
 async def broadcast(message: str) -> None:
@@ -285,8 +456,13 @@ async def main() -> None:
             # still handled by KeyboardInterrupt around asyncio.run().
             pass
 
-    global SYMBOL_CATALOG, STREAM_SYMBOLS
+    global SYMBOL_CATALOG, STREAM_SYMBOLS, HISTORY_MESSAGES
     SYMBOL_CATALOG, STREAM_SYMBOLS = initialize_mt5(cfg)
+    HISTORY_MESSAGES = (
+        load_history_messages(STREAM_SYMBOLS, cfg.history_timeframes, cfg.history_bars)
+        if cfg.preload_history
+        else []
+    )
     tick_task: asyncio.Task[None] | None = None
     try:
         async with websockets.serve(

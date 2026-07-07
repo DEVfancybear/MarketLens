@@ -28,8 +28,8 @@ import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
 import { logAtom, setBottomTabAtom } from "./uiStore";
 
-// Default to a Binance crypto symbol so the chart streams live with no API key.
-const DEFAULT_SYMBOL = "BTCUSDT";
+// The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
+const DEFAULT_SYMBOL = "";
 const DEFAULT_TF: Timeframe = "15m";
 
 function drawingsKey(symbol: string) {

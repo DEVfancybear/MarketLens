@@ -11,7 +11,10 @@ import {
   updateWatchlist as updateRemoteWatchlist,
 } from "@/services/api/resources/watchlistsApi";
 import { localStore } from "@/services/storage";
-import { getMarketSymbol } from "@/services/market-data/symbols";
+import {
+  getAllMarketSymbols,
+  getMarketSymbol,
+} from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
 import {
   clampSectionIndex,
@@ -62,17 +65,6 @@ type MoveSectionPayload = {
   target: WatchlistSectionMoveTarget;
 };
 
-const DEFAULT_SYMBOLS = [
-  "BTCUSDT",
-  "ETHUSDT",
-  "SOLUSDT",
-  "EURUSD",
-  "GBPUSD",
-  "USDJPY",
-  "XAUUSD",
-  "SPX500",
-];
-
 const DEFAULT_LIST_ID = "default";
 const STORAGE_LISTS = "watchlist:lists";
 const STORAGE_ACTIVE = "watchlist:activeId";
@@ -81,13 +73,13 @@ const STORAGE_LEGACY_SYMBOLS = "watchlist";
 const DEFAULT_LIST: WatchlistList = {
   id: DEFAULT_LIST_ID,
   name: "Watchlist",
-  symbols: DEFAULT_SYMBOLS,
+  symbols: [],
   sections: [],
   shared: false,
 };
 
 function cleanSymbols(input: unknown): string[] {
-  if (!Array.isArray(input)) return DEFAULT_SYMBOLS;
+  if (!Array.isArray(input)) return [];
   const seen = new Set<string>();
   const symbols: string[] = [];
   for (const value of input) {
@@ -186,13 +178,28 @@ export const watchlistSymbolsAtom = atom(
   },
 );
 
+export const replaceWatchlistSymbolsFromCatalogAtom = atom(
+  null,
+  (get, set, symbols: string[]) => {
+    const activeId = get(activeWatchlistIdAtom);
+    const nextSymbols = cleanSymbols(symbols);
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+      ...list,
+      symbols: nextSymbols,
+      sections: [],
+    }));
+    set(watchlistListsAtom, lists);
+    persist(lists, activeId);
+  },
+);
+
 export const watchlistSectionsAtom = atom(
   (get) => get(activeWatchlistAtom).sections,
 );
 
 export const hydrateWatchlistAtom = atom(null, (_get, set) => {
   const storedLists = localStore.get<unknown>(STORAGE_LISTS, null);
-  const legacySymbols = localStore.get<string[]>(STORAGE_LEGACY_SYMBOLS, DEFAULT_SYMBOLS);
+  const legacySymbols = localStore.get<string[]>(STORAGE_LEGACY_SYMBOLS, []);
 
   const lists =
     Array.isArray(storedLists) && storedLists.length
@@ -238,6 +245,14 @@ function remoteWatchlistToLocal(input: RemoteWatchlist): WatchlistList {
     },
     fallback,
   );
+}
+
+function defaultWatchlistSymbolsFromCatalog(): string[] {
+  const catalog = getAllMarketSymbols();
+  const streamable = catalog
+    .filter((symbol) => symbol.provider !== "mt5" || symbol.streamable === true)
+    .map((symbol) => symbol.id);
+  return streamable.length > 0 ? streamable : catalog.map((symbol) => symbol.id);
 }
 
 const EMPTY_REMOTE_LIST: WatchlistList = {
@@ -314,8 +329,9 @@ async function createRemoteListFromLocal(
 
 export const applyRemoteWatchlistsAtom = atom(
   null,
-  (_get, set, payload: unknown) => {
+  (get, set, payload: unknown) => {
     if (!Array.isArray(payload)) return;
+    const catalogSymbols = defaultWatchlistSymbolsFromCatalog();
 
     const remoteLists = payload
       .filter((item): item is RemoteWatchlist => {
@@ -327,9 +343,39 @@ export const applyRemoteWatchlistsAtom = atom(
         );
       })
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-      .map(remoteWatchlistToLocal);
+      .map((item) => {
+        const list = remoteWatchlistToLocal(item);
+        if (catalogSymbols.length === 0) return list;
+        return {
+          ...list,
+          symbols: cleanSymbols(catalogSymbols),
+          sections: [],
+        };
+      });
 
-    const lists = remoteLists.length ? remoteLists : [EMPTY_REMOTE_LIST];
+    const lists = remoteLists.length
+      ? remoteLists
+      : [
+          {
+            ...EMPTY_REMOTE_LIST,
+            symbols: cleanSymbols(catalogSymbols),
+          },
+        ];
+
+    // If the catalog has not loaded yet, preserve a non-empty local list when a
+    // fresh backend account returns a single empty list. Once /mt5/symbols
+    // arrives, refreshMt5SymbolCatalogAtom replaces the list with the full API
+    // catalog.
+    const localSymbols = get(activeWatchlistAtom).symbols;
+    if (
+      catalogSymbols.length === 0 &&
+      lists.length === 1 &&
+      lists[0].symbols.length === 0 &&
+      localSymbols.length > 0
+    ) {
+      lists[0] = { ...lists[0], symbols: localSymbols };
+    }
+
     const activeId = lists[0].id;
     set(watchlistListsAtom, lists);
     set(activeWatchlistIdAtom, activeId);

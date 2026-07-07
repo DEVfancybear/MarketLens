@@ -2,10 +2,8 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
-import {
-  MARKET_SYMBOLS,
-  getMarketSymbol,
-} from "@/services/market-data/symbols";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { useMarketSymbols } from "@/store/marketSymbolStore";
 import { contractTagOf } from "@/services/exchange";
 import { useAtomValue, useSetAtom } from "jotai";
 import { symbolAtom, setSymbolAtom } from "@/store/chartStore";
@@ -14,15 +12,16 @@ import { cn } from "@/utils/cn";
 export function SymbolSearch() {
   const symbol = useAtomValue(symbolAtom);
   const setSymbol = useSetAtom(setSymbolAtom);
+  const marketSymbols = useMarketSymbols();
   const [q, setQ] = useState("");
 
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return MARKET_SYMBOLS;
-    return MARKET_SYMBOLS.filter(
+    if (!t) return marketSymbols;
+    return marketSymbols.filter(
       (s) => s.id.toLowerCase().includes(t) || s.name.toLowerCase().includes(t),
     );
-  }, [q]);
+  }, [marketSymbols, q]);
 
   const meta = getMarketSymbol(symbol);
 
@@ -38,7 +37,7 @@ export function SymbolSearch() {
         >
           <Search size={14} className="text-ink-muted" />
           <span className="text-sm font-bold leading-none tracking-tight text-ink">
-            {symbol}
+            {symbol || "Symbol"}
           </span>
           {meta && (
             <span className="rounded bg-terminal-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">

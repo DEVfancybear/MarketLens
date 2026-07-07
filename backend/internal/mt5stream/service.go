@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -39,6 +41,11 @@ type Service struct {
 	count          int
 	streamSymbols  []string
 	symbols        []Symbol
+	ticks          map[string]Tick
+	history        map[string][]Candle
+	conn           *websocket.Conn
+	writeMu        sync.Mutex
+	pendingHistory map[string]chan HistoryMessage
 	updatedAt      time.Time
 	lastErr        string
 	startOnce      sync.Once
@@ -66,6 +73,9 @@ func NewService(cfg Config) *Service {
 		reconnectMax:   reconnectMax,
 		readLimitBytes: readLimit,
 		source:         "mt5",
+		ticks:          make(map[string]Tick),
+		history:        make(map[string][]Candle),
+		pendingHistory: make(map[string]chan HistoryMessage),
 	}
 }
 
@@ -101,6 +111,68 @@ func (s *Service) Snapshot() Snapshot {
 	}
 }
 
+func (s *Service) Ticks(symbols []string) TickSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ticks := make([]Tick, 0, len(s.ticks))
+	if len(symbols) == 0 {
+		for _, tick := range s.ticks {
+			ticks = append(ticks, tick)
+		}
+	} else {
+		for _, symbol := range symbols {
+			if tick, ok := s.ticks[normalizeSymbol(symbol)]; ok {
+				ticks = append(ticks, tick)
+			}
+		}
+	}
+
+	sort.Slice(ticks, func(i, j int) bool {
+		return ticks[i].Symbol < ticks[j].Symbol
+	})
+
+	return TickSnapshot{
+		Connected: s.connected,
+		BridgeURL: s.cfg.BridgeURL,
+		Source:    s.source,
+		Ticks:     ticks,
+		UpdatedAt: s.updatedAt,
+		LastError: s.lastErr,
+	}
+}
+
+func (s *Service) History(ctx context.Context, symbol, timeframe string, limit int, before int64) HistorySnapshot {
+	symbol = normalizeSymbol(symbol)
+	timeframe = normalizeTimeframe(timeframe)
+	limit = clampLimit(limit)
+
+	if symbol == "" || timeframe == "" {
+		return HistorySnapshot{
+			Connected: false,
+			BridgeURL: s.cfg.BridgeURL,
+			Source:    "mt5",
+			Symbol:    symbol,
+			Timeframe: timeframe,
+			Candles:   []Candle{},
+			LastError: "symbol and timeframe are required",
+		}
+	}
+
+	if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) >= limit {
+		return s.historySnapshot(symbol, timeframe, candles, "")
+	}
+
+	msg, err := s.requestHistory(ctx, symbol, timeframe, limit)
+	if err != nil {
+		return s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
+	}
+	if msg.Error != "" {
+		return s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
+	}
+	return s.historySnapshot(symbol, timeframe, limitCandles(msg.Candles, limit, before), "")
+}
+
 func (s *Service) run(ctx context.Context) {
 	backoff := s.reconnectMin
 	for ctx.Err() == nil {
@@ -116,9 +188,11 @@ func (s *Service) run(ctx context.Context) {
 
 		backoff = s.reconnectMin
 		s.setConnected()
+		s.setConn(conn)
 		if err := s.readLoop(ctx, conn); err != nil && ctx.Err() == nil {
 			s.setDisconnected(fmt.Sprintf("read MT5 bridge: %v", err))
 		}
+		s.clearConn(conn)
 		_ = conn.Close()
 
 		if ctx.Err() != nil {
@@ -179,8 +253,17 @@ func (s *Service) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			}
 			s.applyCatalog(catalog)
 		case "tick", "":
-			// The Phase 6 HTTP API only exposes symbols. Tick fan-out is kept for
-			// a later frontend realtime transport so this service can stay small.
+			var tick Tick
+			if err := json.Unmarshal(payload, &tick); err != nil {
+				return fmt.Errorf("decode MT5 tick: %w", err)
+			}
+			s.applyTick(tick)
+		case "history":
+			var history HistoryMessage
+			if err := json.Unmarshal(payload, &history); err != nil {
+				return fmt.Errorf("decode MT5 history: %w", err)
+			}
+			s.applyHistory(history)
 		default:
 			log.Debug().Str("type", header.Type).Msg("ignored MT5 bridge message")
 		}
@@ -209,12 +292,233 @@ func (s *Service) applyCatalog(catalog SymbolCatalog) {
 		Msg("loaded MT5 symbol catalog")
 }
 
+func (s *Service) applyTick(tick Tick) {
+	key := normalizeSymbol(tick.Symbol)
+	if key == "" {
+		return
+	}
+	if tick.Source == "" {
+		tick.Source = "mt5"
+	}
+	tick.Symbol = key
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.connected = true
+	s.lastErr = ""
+	s.source = tick.Source
+	s.ticks[key] = tick
+	s.updatedAt = time.Now().UTC()
+}
+
+func (s *Service) applyHistory(history HistoryMessage) {
+	symbol := normalizeSymbol(history.Symbol)
+	timeframe := normalizeTimeframe(history.Timeframe)
+	if history.Source == "" {
+		history.Source = "mt5"
+	}
+	history.Symbol = symbol
+	history.Timeframe = timeframe
+
+	s.mu.Lock()
+	if symbol != "" && timeframe != "" && history.Error == "" {
+		s.history[historyKey(symbol, timeframe)] = append([]Candle(nil), history.Candles...)
+		s.connected = true
+		s.lastErr = ""
+		s.source = history.Source
+		s.updatedAt = time.Now().UTC()
+	}
+	pending := s.pendingHistory[history.RequestID]
+	if history.RequestID != "" {
+		delete(s.pendingHistory, history.RequestID)
+	}
+	s.mu.Unlock()
+
+	if pending != nil {
+		select {
+		case pending <- history:
+		default:
+		}
+	}
+}
+
 func (s *Service) setConnected() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.connected = true
 	s.lastErr = ""
 	log.Info().Str("bridge", s.cfg.BridgeURL).Msg("connected to MT5 bridge")
+}
+
+func (s *Service) setConn(conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.conn = conn
+}
+
+func (s *Service) clearConn(conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conn == conn {
+		s.conn = nil
+	}
+	for id, pending := range s.pendingHistory {
+		delete(s.pendingHistory, id)
+		close(pending)
+	}
+}
+
+func (s *Service) cachedHistory(symbol, timeframe string, limit int, before int64) []Candle {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return limitCandles(s.history[historyKey(symbol, timeframe)], limit, before)
+}
+
+func (s *Service) historySnapshot(symbol, timeframe string, candles []Candle, err string) HistorySnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if candles == nil {
+		candles = []Candle{}
+	}
+	return HistorySnapshot{
+		Connected: s.connected,
+		BridgeURL: s.cfg.BridgeURL,
+		Source:    s.source,
+		Symbol:    symbol,
+		Timeframe: timeframe,
+		Candles:   candles,
+		UpdatedAt: s.updatedAt,
+		LastError: firstNonEmpty(err, s.lastErr),
+	}
+}
+
+func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, limit int) (HistoryMessage, error) {
+	id := "hist-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	pending := make(chan HistoryMessage, 1)
+
+	s.mu.Lock()
+	conn := s.conn
+	if conn == nil || !s.connected {
+		lastErr := s.lastErr
+		s.mu.Unlock()
+		if lastErr == "" {
+			lastErr = "MT5 bridge is not connected"
+		}
+		return HistoryMessage{}, fmt.Errorf("%s", lastErr)
+	}
+	s.pendingHistory[id] = pending
+	s.mu.Unlock()
+
+	payload := map[string]any{
+		"type":      "history.request",
+		"id":        id,
+		"symbol":    symbol,
+		"timeframe": timeframe,
+		"limit":     limit,
+	}
+
+	s.writeMu.Lock()
+	err := conn.WriteJSON(payload)
+	s.writeMu.Unlock()
+	if err != nil {
+		s.mu.Lock()
+		delete(s.pendingHistory, id)
+		s.mu.Unlock()
+		return HistoryMessage{}, fmt.Errorf("request MT5 history: %w", err)
+	}
+
+	select {
+	case msg, ok := <-pending:
+		if !ok {
+			return HistoryMessage{}, fmt.Errorf("MT5 bridge disconnected while loading history")
+		}
+		return msg, nil
+	case <-ctx.Done():
+		s.mu.Lock()
+		delete(s.pendingHistory, id)
+		s.mu.Unlock()
+		return HistoryMessage{}, ctx.Err()
+	case <-time.After(8 * time.Second):
+		s.mu.Lock()
+		delete(s.pendingHistory, id)
+		s.mu.Unlock()
+		return HistoryMessage{}, fmt.Errorf("MT5 history request timed out")
+	}
+}
+
+func historyKey(symbol, timeframe string) string {
+	return normalizeSymbol(symbol) + ":" + normalizeTimeframe(timeframe)
+}
+
+func normalizeSymbol(symbol string) string {
+	b := make([]byte, 0, len(symbol))
+	for i := 0; i < len(symbol); i++ {
+		c := symbol[i]
+		if c >= 'a' && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		if c != ' ' && c != '\t' && c != '\r' && c != '\n' {
+			b = append(b, c)
+		}
+	}
+	return string(b)
+}
+
+func normalizeTimeframe(timeframe string) string {
+	switch timeframe {
+	case "1m", "3m", "5m", "15m", "30m", "1H", "2H", "4H", "1D", "1W", "1M":
+		return timeframe
+	case "1h":
+		return "1H"
+	case "2h":
+		return "2H"
+	case "4h":
+		return "4H"
+	case "1d":
+		return "1D"
+	case "1w":
+		return "1W"
+	case "1mo":
+		return "1M"
+	default:
+		return ""
+	}
+}
+
+func clampLimit(limit int) int {
+	if limit <= 0 {
+		return 1500
+	}
+	if limit > 5000 {
+		return 5000
+	}
+	return limit
+}
+
+func limitCandles(candles []Candle, limit int, before int64) []Candle {
+	if len(candles) == 0 {
+		return []Candle{}
+	}
+	filtered := make([]Candle, 0, len(candles))
+	for _, candle := range candles {
+		if before > 0 && candle.Time >= before {
+			continue
+		}
+		filtered = append(filtered, candle)
+	}
+	if len(filtered) > limit {
+		filtered = filtered[len(filtered)-limit:]
+	}
+	return append([]Candle(nil), filtered...)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *Service) setDisconnected(message string) {

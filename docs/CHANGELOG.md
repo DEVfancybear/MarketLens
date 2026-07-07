@@ -4,6 +4,29 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 chart candles and watchlist live prices (2026-07-07)
+- Added backend `GET /api/v1/mt5/ticks` and `GET /api/v1/mt5/history` on top of the local MT5
+  Python bridge cache/request path.
+- Added frontend `Mt5Provider` so MT5 symbols receive live quotes from the Go API and build forming
+  candles through the shared `CandleEngine`.
+- MT5 chart history now loads on demand from backend/Python `copy_rates_from_pos`, so the chart is
+  seeded with historical candles instead of showing only one realtime candle.
+- MT5 catalog hydration now uses the full catalog for symbol search, but defaults the watchlist to
+  `streamSymbols` so rows have live `Last/Chg/Chg%` values.
+- Backend workspace/watchlist bootstrap now also uses streamable MT5 symbols instead of overwriting
+  the live watchlist with the full MT5 catalog.
+- Removed the legacy `MT5_SYMBOL` fallback from the Python stream sidecar; use `MT5_SYMBOLS` for an
+  explicit subset or `MT5_STREAM_ALL_VISIBLE=true` to stream visible MT5 Market Watch symbols.
+
+### Changed - MT5 catalog as frontend symbol source of truth (2026-07-07)
+- Removed the frontend hardcoded market symbol seed list. The runtime registry now starts empty and
+  is replaced by `GET /api/v1/mt5/symbols`.
+- Watchlist, symbol search, and alert symbol pickers now read from the hydrated MT5 catalog instead
+  of static local data.
+- The active watchlist is replaced with MT5 `streamSymbols` after catalog refresh; the full catalog
+  remains available in symbol search.
+- MT5 symbols no longer fall through to Binance, TwelveData, or OANDA client-side routes.
+
 ### Added - Backend Phase 6 MT5 tick streaming (2026-07-07)
 - Added `backend/bridge/mt5_stream/mt5_server.py`, a localhost Python WebSocket sidecar that
   initializes MetaTrader 5 through the `MetaTrader5` package, sends the MT5 symbol catalog on

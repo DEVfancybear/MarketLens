@@ -29,7 +29,14 @@ export function useMarketDataBootstrap() {
     getMarketDataService(); // create + attach to the store (idempotent)
     const store = getMarketDataState();
 
-    const desired = new Set(symbols.filter((s) => getMarketSymbol(s)));
+    const desired = new Set(
+      symbols.filter((s) => {
+        const meta = getMarketSymbol(s);
+        if (!meta) return false;
+        if (meta.provider === "mt5") return meta.streamable === true;
+        return true;
+      }),
+    );
 
     // Subscribe newly-added watchlist symbols (ticker only).
     for (const sym of desired) {

@@ -1,286 +1,137 @@
+import type { Mt5Symbol } from "@/services/api/resources/mt5Api";
+import type { AssetClass, MarketSymbol } from "@/types";
+
 /**
- * Canonical market symbol registry (Phase 1, Step 6).
+ * Runtime symbol registry.
  *
- * This is **configuration**, not mock market data — it defines which provider
- * serves each symbol and how the canonical app id maps to the provider's native
- * id (Binance "BTCUSDT", OANDA "EUR_USD", TwelveData "EUR/USD").
- * The MarketDataService uses it to route subscriptions; the watchlist/symbol-search
- * will consume it in Steps 10+.
- *
- * Crypto → BinanceProvider (no key).
- * Forex/metals/indices → OandaProvider (needs NEXT_PUBLIC_OANDA_API_KEY).
- *   Falls back to TwelveDataProvider if OANDA key is unavailable.
+ * This file intentionally does not seed any hardcoded symbols. The MT5 bridge
+ * owns the catalog, the Go backend exposes it through /api/v1/mt5/symbols, and
+ * frontend stores replace this registry after the API call succeeds. Keeping a
+ * single mutable registry lets legacy imports keep working while avoiding a
+ * second client-side source of truth.
  */
-import type { MarketSymbol } from "@/types";
+export const MARKET_SYMBOLS: MarketSymbol[] = [];
 
-export const MARKET_SYMBOLS: MarketSymbol[] = [
-  // ---- Crypto (Binance) — providerSymbol === canonical id ----
-  {
-    id: "BTCUSDT",
-    name: "Bitcoin / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "BTC",
-    quote: "USDT",
-    pricePrecision: 2,
-    // The app displays crypto as TradingView-style perpetual contracts.
-    // BTCUSDT perps use 0.1 price ticks in the Long/Short position tool.
-    tickSize: 0.1,
-    providerSymbol: "BTCUSDT",
-    streamable: true,
-  },
-  {
-    id: "ETHUSDT",
-    name: "Ethereum / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "ETH",
-    quote: "USDT",
-    pricePrecision: 2,
-    tickSize: 0.01,
-    providerSymbol: "ETHUSDT",
-    streamable: true,
-  },
-  {
-    id: "SOLUSDT",
-    name: "Solana / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "SOL",
-    quote: "USDT",
-    pricePrecision: 2,
-    tickSize: 0.01,
-    providerSymbol: "SOLUSDT",
-    streamable: true,
-  },
-  {
-    id: "BNBUSDT",
-    name: "BNB / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "BNB",
-    quote: "USDT",
-    pricePrecision: 2,
-    tickSize: 0.01,
-    providerSymbol: "BNBUSDT",
-    streamable: true,
-  },
-  {
-    id: "XRPUSDT",
-    name: "XRP / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "XRP",
-    quote: "USDT",
-    pricePrecision: 4,
-    tickSize: 0.0001,
-    providerSymbol: "XRPUSDT",
-    streamable: true,
-  },
-  {
-    id: "ADAUSDT",
-    name: "Cardano / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "ADA",
-    quote: "USDT",
-    pricePrecision: 4,
-    tickSize: 0.0001,
-    providerSymbol: "ADAUSDT",
-    streamable: true,
-  },
-  {
-    id: "DOGEUSDT",
-    name: "Dogecoin / TetherUS",
-    provider: "binance",
-    assetClass: "crypto",
-    exchange: "BINANCE",
-    base: "DOGE",
-    quote: "USDT",
-    pricePrecision: 5,
-    tickSize: 0.00001,
-    providerSymbol: "DOGEUSDT",
-    streamable: true,
-  },
+let byId = new Map<string, MarketSymbol>();
 
-  // ---- Forex (OANDA primary; providerSymbol = OANDA underscore format) ----
-  {
-    id: "EURUSD",
-    name: "Euro / US Dollar",
-    provider: "oanda",
-    assetClass: "forex",
-    exchange: "FX",
-    base: "EUR",
-    quote: "USD",
-    pricePrecision: 5,
-    tickSize: 0.00001,
-    providerSymbol: "EUR_USD",
-    streamable: true,
-  },
-  {
-    id: "GBPUSD",
-    name: "British Pound / US Dollar",
-    provider: "oanda",
-    assetClass: "forex",
-    exchange: "FX",
-    base: "GBP",
-    quote: "USD",
-    pricePrecision: 5,
-    tickSize: 0.00001,
-    providerSymbol: "GBP_USD",
-    streamable: true,
-  },
-  {
-    id: "USDJPY",
-    name: "US Dollar / Japanese Yen",
-    provider: "oanda",
-    assetClass: "forex",
-    exchange: "FX",
-    base: "USD",
-    quote: "JPY",
-    pricePrecision: 3,
-    tickSize: 0.001,
-    providerSymbol: "USD_JPY",
-    streamable: true,
-  },
-  {
-    id: "AUDUSD",
-    name: "Australian Dollar / US Dollar",
-    provider: "oanda",
-    assetClass: "forex",
-    exchange: "FX",
-    base: "AUD",
-    quote: "USD",
-    pricePrecision: 5,
-    tickSize: 0.00001,
-    providerSymbol: "AUD_USD",
-    streamable: true,
-  },
-  {
-    id: "USDCAD",
-    name: "US Dollar / Canadian Dollar",
-    provider: "oanda",
-    assetClass: "forex",
-    exchange: "FX",
-    base: "USD",
-    quote: "CAD",
-    pricePrecision: 5,
-    tickSize: 0.00001,
-    providerSymbol: "USD_CAD",
-    streamable: true,
-  },
-  {
-    id: "USDCHF",
-    name: "US Dollar / Swiss Franc",
-    provider: "oanda",
-    assetClass: "forex",
-    exchange: "FX",
-    base: "USD",
-    quote: "CHF",
-    pricePrecision: 5,
-    tickSize: 0.00001,
-    providerSymbol: "USD_CHF",
-    streamable: true,
-  },
+export function getAllMarketSymbols(): MarketSymbol[] {
+  return [...MARKET_SYMBOLS];
+}
 
-  // ---- Metals (OANDA primary) ----
-  {
-    id: "XAUUSD",
-    name: "Gold / US Dollar",
-    provider: "oanda",
-    assetClass: "metal",
-    exchange: "OANDA",
-    base: "XAU",
-    quote: "USD",
-    pricePrecision: 2,
-    tickSize: 0.01,
-    providerSymbol: "XAU_USD",
-    streamable: true,
-  },
-  {
-    id: "XAGUSD",
-    name: "Silver / US Dollar",
-    provider: "oanda",
-    assetClass: "metal",
-    exchange: "OANDA",
-    base: "XAG",
-    quote: "USD",
-    pricePrecision: 3,
-    tickSize: 0.001,
-    providerSymbol: "XAG_USD",
-    streamable: true,
-  },
-
-  // ---- Indices (OANDA primary — CFD instruments) ----
-  {
-    id: "SPX500",
-    name: "S&P 500 Index",
-    provider: "oanda",
-    assetClass: "index",
-    exchange: "INDEX",
-    pricePrecision: 2,
-    tickSize: 0.1,
-    providerSymbol: "US_SPX500",
-    streamable: true,
-  },
-  {
-    id: "NAS100",
-    name: "Nasdaq 100 Index",
-    provider: "oanda",
-    assetClass: "index",
-    exchange: "INDEX",
-    pricePrecision: 2,
-    tickSize: 0.1,
-    providerSymbol: "US_NAS100",
-    streamable: true,
-  },
-];
-
-const byId = new Map(MARKET_SYMBOLS.map((s) => [s.id, s]));
+export function replaceMarketSymbols(symbols: MarketSymbol[]): void {
+  const normalized = normalizeUniqueSymbols(symbols);
+  MARKET_SYMBOLS.splice(0, MARKET_SYMBOLS.length, ...normalized);
+  byId = new Map(normalized.map((symbol) => [symbol.id.toUpperCase(), symbol]));
+}
 
 export function getMarketSymbol(id: string): MarketSymbol | undefined {
-  return byId.get(id);
+  return byId.get(id.trim().toUpperCase());
 }
 
-const TWELVEDATA_FALLBACK_SYMBOLS: Record<string, string> = {
-  EURUSD: "EUR/USD",
-  GBPUSD: "GBP/USD",
-  USDJPY: "USD/JPY",
-  AUDUSD: "AUD/USD",
-  USDCAD: "USD/CAD",
-  USDCHF: "USD/CHF",
-  XAUUSD: "XAU/USD",
-  XAGUSD: "XAG/USD",
-  SPX500: "SPX",
-  NAS100: "IXIC",
-};
+export function marketSymbolFromMt5(
+  input: Mt5Symbol,
+  streamable?: boolean,
+): MarketSymbol {
+  const rawName = input.name.trim();
+  const id = rawName.toUpperCase();
+  const base = normalizeCurrency(input.currency_base) ?? inferBase(id);
+  const quote = normalizeCurrency(input.currency_profit) ?? inferQuote(id);
+  const digits = Number.isFinite(input.digits) ? Math.max(input.digits, 0) : 5;
+  const point =
+    Number.isFinite(input.point) && input.point > 0
+      ? input.point
+      : 10 ** -digits;
 
-export function twelveDataSymbol(symbol: string): string {
-  const meta = getMarketSymbol(symbol);
-  if (!meta) return symbol;
-  if (meta.provider === "twelvedata") return meta.providerSymbol ?? symbol;
-  return TWELVEDATA_FALLBACK_SYMBOLS[meta.id] ?? meta.providerSymbol ?? symbol;
+  return {
+    id,
+    name: input.description?.trim() || formatSymbolName(id, base, quote),
+    provider: "mt5",
+    assetClass: inferAssetClass(input, base, quote),
+    exchange: "MT5",
+    base,
+    quote,
+    pricePrecision: digits,
+    tickSize: point,
+    providerSymbol: rawName,
+    streamable: streamable ?? false,
+  };
 }
 
 /**
- * Canonical → TwelveData providerSymbol map (for TwelveDataProvider.symbolMap).
- * Only symbols that still route via TwelveData (OANDA replacement means this
- * map is now empty by default, kept for backward compat if TwelveData is used
- * as a fallback).
+ * Compatibility helper for older provider code. With the MT5 catalog active,
+ * callers should not reach TwelveData, so this simply returns the provider
+ * symbol already supplied by the runtime registry.
  */
+export function twelveDataSymbol(symbol: string): string {
+  return getMarketSymbol(symbol)?.providerSymbol ?? symbol;
+}
+
 export function twelveDataSymbolMap(): Record<string, string> {
   return Object.fromEntries(
-    MARKET_SYMBOLS.map((s) => [s.id, twelveDataSymbol(s.id)]),
+    MARKET_SYMBOLS.map((symbol) => [symbol.id, symbol.providerSymbol]),
   );
 }
 
-/** Canonical → OANDA instrument name (underscore format). */
+/** Compatibility helper for older alert/OANDA code. */
 export function oandaInstrument(symbol: string): string {
   return getMarketSymbol(symbol)?.providerSymbol ?? symbol;
+}
+
+function normalizeUniqueSymbols(symbols: MarketSymbol[]): MarketSymbol[] {
+  const seen = new Set<string>();
+  const normalized: MarketSymbol[] = [];
+
+  for (const symbol of symbols) {
+    const id = symbol.id.trim().toUpperCase();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    normalized.push({
+      ...symbol,
+      id,
+      providerSymbol: symbol.providerSymbol || id,
+      streamable: symbol.streamable !== false,
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeCurrency(value?: string): string | undefined {
+  const trimmed = value?.trim().toUpperCase();
+  return trimmed || undefined;
+}
+
+function inferAssetClass(
+  input: Mt5Symbol,
+  base?: string,
+  quote?: string,
+): AssetClass {
+  const text = `${input.path ?? ""} ${input.description ?? ""} ${input.name}`.toLowerCase();
+  if (base === "XAU" || base === "XAG" || text.includes("metal")) return "metal";
+  if (text.includes("crypto") || base === "BTC" || base === "ETH") return "crypto";
+  if (
+    text.includes("index") ||
+    text.includes("indices") ||
+    text.includes("indice")
+  ) {
+    return "index";
+  }
+  if (base && quote) return "forex";
+  return "commodity";
+}
+
+function inferBase(symbol: string): string | undefined {
+  return symbol.length >= 6 ? symbol.slice(0, 3) : undefined;
+}
+
+function inferQuote(symbol: string): string | undefined {
+  return symbol.length >= 6 ? symbol.slice(3, 6) : undefined;
+}
+
+function formatSymbolName(
+  symbol: string,
+  base?: string,
+  quote?: string,
+): string {
+  return base && quote ? `${base} / ${quote}` : symbol;
 }

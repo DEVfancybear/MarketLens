@@ -121,7 +121,8 @@ export function useAlertEngine() {
 
     for (const sym of symbols) {
       const key = `${sym}:${selectedTimeframe}`;
-      if (!subbed.has(key) && getMarketSymbol(sym)) {
+      const meta = getMarketSymbol(sym);
+      if (!subbed.has(key) && meta && meta.provider !== "mt5") {
         getMarketDataState().subscribe({
           symbol: sym,
           channels: ["ticker"],

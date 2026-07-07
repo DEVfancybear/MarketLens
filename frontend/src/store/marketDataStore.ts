@@ -30,7 +30,7 @@ import {
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 const MAX_CANDLES = 5000;
 
-const DEFAULT_SYMBOL = "BTCUSDT";
+const DEFAULT_SYMBOL = "";
 const DEFAULT_TIMEFRAME: Timeframe = "1m";
 const DEFAULT_CHANNELS: MarketChannel[] = ["kline"];
 

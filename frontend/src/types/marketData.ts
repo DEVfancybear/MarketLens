@@ -14,7 +14,7 @@ import type { Timeframe } from "./market";
 export type { Timeframe } from "./market";
 
 /** Data origin. Each provider maps its native ids/payloads into the unified models. */
-export type MarketProvider = "binance" | "twelvedata" | "oanda" | "mock";
+export type MarketProvider = "binance" | "twelvedata" | "oanda" | "mt5" | "mock";
 
 /** Asset class — drives provider routing and formatting. */
 export type AssetClass =

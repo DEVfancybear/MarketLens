@@ -144,7 +144,9 @@ Backed by `watchlists` + `watchlist_symbols`.
 
 ## MT5 Tick Stream
 
-MT5 tick streaming is a localhost sidecar stream, not a public Fiber HTTP endpoint.
+MT5 tick streaming starts as a localhost Python sidecar stream and is exposed to
+the frontend only through the Go Fiber API. The browser must not connect to the
+Python sidecar directly.
 
 | Component | Path / Address | Purpose |
 | --- | --- | --- |
@@ -152,6 +154,7 @@ MT5 tick streaming is a localhost sidecar stream, not a public Fiber HTTP endpoi
 | WebSocket | `ws://localhost:8765` | Local tick stream (`MT5_STREAM_HOST`/`MT5_STREAM_PORT`) |
 | Go consumer | `backend/cmd/mt5-stream` | Consumes the stream with `github.com/gorilla/websocket` |
 | Go API | `GET /api/v1/mt5/symbols` | Returns the latest MT5 symbol catalog cached from the Python bridge |
+| Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | Returns latest cached ticks for requested MT5 symbols |
 
 Symbol catalog payload, sent when a Go client connects:
 
@@ -168,6 +171,7 @@ Symbol catalog payload, sent when a Go client connects:
       "description": "Euro vs US Dollar",
       "visible": true,
       "digits": 5,
+      "point": 0.00001,
       "spread": 10,
       "trade_mode": 4,
       "currency_base": "EUR",
@@ -212,6 +216,7 @@ Frontend/backend API response:
       "description": "Euro vs US Dollar",
       "visible": true,
       "digits": 5,
+      "point": 0.00001,
       "spread": 10,
       "trade_mode": 4,
       "currency_base": "EUR",
@@ -223,6 +228,35 @@ Frontend/backend API response:
   "lastError": ""
 }
 ```
+
+Latest tick API response:
+
+```json
+{
+  "connected": true,
+  "bridgeUrl": "ws://localhost:8765",
+  "source": "mt5",
+  "ticks": [
+    {
+      "type": "tick",
+      "source": "mt5",
+      "symbol": "EURUSD",
+      "bid": 1.08425,
+      "ask": 1.08437,
+      "timestamp": 1760000000,
+      "time_msc": 1760000000123
+    }
+  ],
+  "updatedAt": "2026-07-07T12:00:00Z",
+  "lastError": ""
+}
+```
+
+The frontend `Mt5Provider` polls `/api/v1/mt5/ticks` for subscribed symbols and
+uses the shared CandleEngine to bucket ticks into chart candles. The `streamSymbols`
+array from `/api/v1/mt5/symbols` is the authoritative list of symbols with live
+ticks; catalog-only symbols remain searchable/watchlist-visible but show `--`
+until the bridge streams them.
 
 ---
 
