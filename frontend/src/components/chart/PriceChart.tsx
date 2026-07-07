@@ -381,24 +381,22 @@ export function PriceChart({
       lastAutoFitLengthRef.current = candles.length;
       fittedRef.current = autoFit.markComplete;
     } else if (
-      structuralDataWindowChange ||
-      (replayActive &&
-        shouldRealignReplayViewport(
-          chartRef.current?.timeScale().getVisibleLogicalRange(),
-          candles.length,
-        ))
+      replayActive &&
+      shouldRealignReplayViewport(
+        chartRef.current?.timeScale().getVisibleLogicalRange(),
+        candles.length,
+      )
     ) {
       const dataLength = candles.length;
       requestAnimationFrame(() => {
         const chart = chartRef.current;
         if (!chart) return;
         if (
-          structuralDataWindowChange ||
-          (replayActive &&
-            shouldRealignReplayViewport(
-              chart.timeScale().getVisibleLogicalRange(),
-              dataLength,
-            ))
+          replayActive &&
+          shouldRealignReplayViewport(
+            chart.timeScale().getVisibleLogicalRange(),
+            dataLength,
+          )
         ) {
           keepLatestBarInView(chart, dataLength);
         }

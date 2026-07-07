@@ -173,21 +173,19 @@ stable while replay reveals candles at the right edge.
 
 ### Replay jump, scrubber, restart, re-select
 
-When the visible candle window is replaced non-incrementally,
-`PriceChart` calls `keepLatestBarInView()`:
+When replay is active and the current logical viewport no longer intersects the
+visible replay candle data, `PriceChart` calls `keepLatestBarInView()`:
 
 - preserve current logical zoom width,
 - move the logical right edge to the newest candle in the replacement slice,
 - keep the normal right offset.
 
 This prevents the blank-chart bug where the old viewport still looks at future
-whitespace after the replay cursor jumps into the past.
-
-`PriceChart` also runs the same protection when replay is active and the
-current logical range no longer intersects the visible candle data. This covers
-edge cases that are not a clean structural replace, such as stepping backward,
-scrubber jumps, browser restore state, or a stale future-whitespace viewport.
-The pure rules live in `replayViewport.ts`:
+whitespace after the replay cursor jumps into the past. Non-replay structural
+data replacements, including MT5 history refreshes and gap backfills, must not
+call `keepLatestBarInView()` because that steals control from a user who has
+panned or zoomed into right-side whitespace. The pure rules live in
+`replayViewport.ts`:
 
 - `replayRangeIntersectsData(range, dataLength)` checks whether the viewport
   overlaps `[0..lastVisibleReplayBar]`,

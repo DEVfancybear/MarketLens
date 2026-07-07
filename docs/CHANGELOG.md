@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart right-whitespace pan/zoom no longer snaps back (2026-07-07)
+- Fixed a delayed viewport reset where dragging or zooming the chart into right-side whitespace
+  would snap back after the next structural candle refresh. `PriceChart` no longer calls
+  `keepLatestBarInView()` for non-replay history refreshes or gap backfills; only replay's blank
+  viewport recovery may realign the logical range.
+- Updated replay and zoom/viewport docs, plus `check:replay-logic`, to guard against reintroducing
+  structural-refresh viewport hijacks.
+
 ### Fixed - Replay timeframe changes keep the selected replay time (2026-07-07)
 - Fixed Bar Replay losing its selected past region when switching timeframe, e.g. selecting a replay
   bar on `15m` and then changing to `5m`. Replay now stores absolute `anchorTime`/`cursorTime` and

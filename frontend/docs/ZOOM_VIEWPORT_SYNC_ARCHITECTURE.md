@@ -249,7 +249,8 @@ Replay changes viewport in two ways:
 1. Normal playback appends one visible candle.
 2. Date jump/scrubber/restart/re-select replaces the visible data window.
 
-For replacement, `PriceChart` realigns the viewport:
+For replay replacement, `PriceChart` realigns the viewport only when replay is
+active and the visible logical range no longer intersects the replay data:
 
 ```ts
 keepLatestBarInView(chart, dataLength)
@@ -257,6 +258,11 @@ keepLatestBarInView(chart, dataLength)
 
 This preserves current zoom width and moves the right edge to the newest candle
 in the replacement slice. It prevents looking at empty future whitespace.
+
+Do not use this path for ordinary realtime/history refreshes. If the user pans
+or zooms into right-side whitespace, a later MT5 refresh or gap backfill must
+leave that logical range alone; otherwise the chart snaps back to its previous
+position after a delay.
 
 Do not call `fitContent()` from individual replay controls.
 

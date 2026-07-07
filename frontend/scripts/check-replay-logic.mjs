@@ -121,7 +121,13 @@ function checkStaticGuards() {
       /const structuralDataWindowChange =/.test(priceChart) &&
       /shouldRealignReplayViewport/.test(priceChart) &&
       /keepLatestBarInView\(chart, dataLength\)/.test(priceChart),
-    "PriceChart must realign the viewport after replay jump/scrub data-window replacements",
+    "PriceChart must retain replay blank-viewport recovery",
+  );
+  assert(
+    !/structuralDataWindowChange\s*\|\|\s*\(\s*replayActive[\s\S]{0,500}keepLatestBarInView/.test(
+      priceChart,
+    ),
+    "PriceChart must not pull the viewport back to latest after non-replay structural refreshes",
   );
   assert(
     /export function replayRangeIntersectsData/.test(replayViewport) &&
