@@ -14,7 +14,9 @@ import json
 import logging
 import os
 import signal
+import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Set
 
 import MetaTrader5 as mt5
@@ -83,6 +85,65 @@ TIMEFRAME_MAP = {
     "1W": mt5.TIMEFRAME_W1,
     "1M": mt5.TIMEFRAME_MN1,
 }
+
+# Bar length in seconds, used to decide whether cached rates are up to date.
+# Note: "1m" is one minute; "1M" is one month. A month is variable length
+# (28-31 days), so the 31-day upper bound keeps the freshness check lenient — a
+# valid current-month bar always passes while a months-behind cache is refetched.
+TIMEFRAME_SECONDS = {
+    "1m": 60,
+    "3m": 180,
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+    "1H": 3600,
+    "2H": 7200,
+    "4H": 14400,
+    "1D": 86400,
+    "1W": 604800,
+    "1M": 2678400,
+}
+
+# MT5 returns cached (often stale) bars from copy_rates_from_pos and only
+# downloads recent history in the background. These bound how hard we retry to
+# get bars up to the current one before giving up.
+HISTORY_SYNC_RETRIES = int(os.getenv("MT5_HISTORY_SYNC_RETRIES", "12"))
+HISTORY_SYNC_DELAY = max(int(os.getenv("MT5_HISTORY_SYNC_DELAY_MS", "300")), 50) / 1000
+
+
+def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
+    """True when the last cached bar is within one bar of the current one."""
+    if rates is None or len(rates) == 0:
+        return False
+    if tf_seconds <= 0:
+        return True  # non-intraday timeframe: accept whatever MT5 returns
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None or not tick.time:
+        return True  # no live reference; don't loop forever
+    current_bar = int(tick.time) - (int(tick.time) % tf_seconds)
+    return int(rates[-1]["time"]) >= current_bar - tf_seconds
+
+
+def copy_rates_synced(symbol: str, mt5_timeframe: int, timeframe: str, limit: int) -> Any:
+    """Like copy_rates_from_pos, but forces MT5 to download recent bars when the
+    cached series is stale (common for symbols not shown in a chart), retrying
+    until the latest bar is current or the retry budget is exhausted. Fresh
+    symbols return on the first call with no added latency."""
+    tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
+    rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
+    if _rates_are_fresh(rates, symbol, tf_seconds):
+        return rates
+
+    for _ in range(HISTORY_SYNC_RETRIES):
+        # Anchoring a request one day in the (broker) future forces the terminal
+        # to fetch everything up to the latest bar for this symbol/timeframe.
+        # The +1 day margin makes this robust to MT5's datetime timezone quirks.
+        mt5.copy_rates_from(symbol, mt5_timeframe, datetime.now() + timedelta(days=1), 2)
+        time.sleep(HISTORY_SYNC_DELAY)
+        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
+        if _rates_are_fresh(rates, symbol, tf_seconds):
+            break
+    return rates
 
 
 def parse_symbols(raw: str) -> tuple[str, ...]:
@@ -300,7 +361,7 @@ def load_history_messages(
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
             if mt5_timeframe is None:
                 continue
-            rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
+            rates = copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
             if rates is None:
                 LOG.warning(
                     "copy_rates_from_pos(%s, %s) failed (%s)",
@@ -362,7 +423,7 @@ def load_history_message(
         payload["error"] = f"symbol_select({symbol}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
 
-    rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
+    rates = copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
     if rates is None:
         payload["error"] = f"copy_rates_from_pos({symbol}, {timeframe}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))

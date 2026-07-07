@@ -159,7 +159,12 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		}
 	}
 
-	if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) >= limit {
+	// Serve from cache only when it is complete AND still current. Paginating
+	// older data (before > 0) always uses the cache; the latest window must not
+	// be served stale — MT5 can hand back cached bars that lag the live tick by
+	// many bars, which would leave a gap before the realtime candle.
+	if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) >= limit &&
+		(before > 0 || s.historyIsFresh(symbol, timeframe, candles)) {
 		return s.historySnapshot(symbol, timeframe, candles, "")
 	}
 
@@ -372,6 +377,58 @@ func (s *Service) cachedHistory(symbol, timeframe string, limit int, before int6
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return limitCandles(s.history[historyKey(symbol, timeframe)], limit, before)
+}
+
+// historyIsFresh reports whether the cached candles reach the current bar,
+// judged against the latest streamed tick for the symbol. Stale cache (last bar
+// more than one interval behind the live bar) must be re-requested so the chart
+// has no gap between history and the realtime candle.
+func (s *Service) historyIsFresh(symbol, timeframe string, candles []Candle) bool {
+	tfSec := timeframeSeconds(timeframe)
+	if tfSec <= 0 || len(candles) == 0 {
+		return true
+	}
+	s.mu.RLock()
+	tick, ok := s.ticks[symbol]
+	s.mu.RUnlock()
+	if !ok || tick.Timestamp <= 0 {
+		return true // no live reference; don't force an endless refetch
+	}
+	currentBar := tick.Timestamp - (tick.Timestamp % tfSec)
+	return candles[len(candles)-1].Time >= currentBar-tfSec
+}
+
+func timeframeSeconds(timeframe string) int64 {
+	switch timeframe {
+	case "1m":
+		return 60
+	case "3m":
+		return 180
+	case "5m":
+		return 300
+	case "15m":
+		return 900
+	case "30m":
+		return 1800
+	case "1H":
+		return 3600
+	case "2H":
+		return 7200
+	case "4H":
+		return 14400
+	case "1D":
+		return 86400
+	case "1W":
+		return 604800
+	case "1M":
+		// Monthly bars ("1M", not "1m"). A month is variable length (28-31 days);
+		// use the 31-day upper bound so the freshness check stays lenient — a
+		// valid current-month bar always passes, while a cache several months
+		// behind is refetched.
+		return 2678400
+	default:
+		return 0
+	}
 }
 
 func (s *Service) historySnapshot(symbol, timeframe string, candles []Candle, err string) HistorySnapshot {

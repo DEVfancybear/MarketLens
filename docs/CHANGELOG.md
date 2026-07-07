@@ -4,6 +4,23 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 history gap before the realtime candle (2026-07-07)
+- Fixed a gap between loaded history and the live forming candle: MT5 history could lag the live
+  tick by many bars (18-2800), leaving the realtime candle floating far to the right. Two causes:
+  - **Python bridge** (`bridge/mt5_stream/mt5_server.py`): `copy_rates_from_pos` returns cached
+    bars and MT5 only downloads recent history in the background. Added `copy_rates_synced()`, which
+    forces the terminal to fetch up-to-now bars (a future-anchored `copy_rates_from`) and retries
+    until the last bar is current. Fresh symbols return immediately with no added latency.
+  - **Go backend** (`internal/mt5stream/service.go`): the per-symbol history cache was never
+    invalidated, so a symbol cached stale at startup (e.g. the default chart symbol requested before
+    MT5 synced) was served stale forever. `History()` now re-requests when the cached last bar lags
+    the latest streamed tick (`historyIsFresh`); pagination (`before>0`) still uses the cache.
+- Added `1M` (monthly) to the timeframe-seconds maps on both sides (using the 31-day upper bound so
+  a valid current-month bar passes the freshness check while a months-behind cache is refetched),
+  since the chart timeframe selector offers 1 Month. `1m` (minute) and `1M` (month) are distinct.
+- Verified live against the FTMO MT5 terminal: every streamed symbol's history now ends on the
+  current forming bar (gap ~0.4 bars) instead of lagging by up to ~29 days (GBPUSD).
+
 ### Fixed - MT5 chart candles and watchlist live prices (2026-07-07)
 - Added backend `GET /api/v1/mt5/ticks` and `GET /api/v1/mt5/history` on top of the local MT5
   Python bridge cache/request path.
