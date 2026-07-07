@@ -106,10 +106,12 @@ the live tick loop if MT5 confirms it is selectable. Symbols rejected by `symbol
 be treated as streamable by the frontend.
 
 For historical chart candles, the frontend calls
-`GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500`. The Go API
-serves cached candles when it has enough current data; otherwise it sends a
-`history.request` message over the existing bridge WebSocket and waits for the
-Python sidecar to return `copy_rates_from_pos` data.
+`GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500`. For older
+pages, it adds `before=<first_loaded_bar_time>`. The Go API serves cached
+candles when it has enough current data; otherwise it sends a `history.request`
+message over the existing bridge WebSocket. Latest windows use
+`copy_rates_from_pos`; older pages use `copy_rates_from(..., before - 1s, limit)`
+so infinite-scroll history loads bars strictly before the first loaded candle.
 
 The Go process logs ticks like:
 
@@ -169,7 +171,8 @@ The Go API can also request history over the same WebSocket:
   "id": "hist-request-id",
   "symbol": "EURUSD",
   "timeframe": "15m",
-  "limit": 1500
+  "limit": 1500,
+  "before": 1760000000
 }
 ```
 

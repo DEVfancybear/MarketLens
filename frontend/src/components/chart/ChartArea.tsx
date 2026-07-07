@@ -28,7 +28,7 @@ import { fmtPrice } from "@/utils/format";
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea() {
-  useMarketData();
+  const { loadOlderCandles } = useMarketData();
   const candles = useVisibleCandles();
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
@@ -86,7 +86,11 @@ export function ChartArea() {
       )}
 
       <div className="relative min-h-0 flex-1">
-        <PriceChart candles={candles} onReady={setMainChart}>
+        <PriceChart
+          candles={candles}
+          onLoadMoreHistory={loadOlderCandles}
+          onReady={setMainChart}
+        >
           <SmcLayer />
           <TradeLevels />
           <AlertLines />

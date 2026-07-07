@@ -15,7 +15,7 @@
  *
  * No sockets are created here; the MarketDataService/providers own connections.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
@@ -44,16 +44,24 @@ import {
   marketSymbolsAtom,
 } from "@/store/marketSymbolStore";
 
-const DEFAULT_HISTORY_BARS = 1500;
+const DEFAULT_HISTORY_BARS = 900;
+const DEFAULT_HISTORY_PAGE_BARS = 1000;
 const MAX_BACKFILL_MISSING_BARS = 50;
 const MT5_HISTORY_REFRESH_MS = 3000;
 
 function historyBarsForTimeframe(timeframe: Timeframe): number {
-  if (timeframe === "1M") return 240;
-  if (timeframe === "1W") return 520;
-  if (timeframe === "1D") return 1000;
-  if (timeframe === "1H" || timeframe === "2H") return 3000;
+  if (timeframe === "1M") return 120;
+  if (timeframe === "1W") return 260;
+  if (timeframe === "1D") return 600;
+  if (timeframe === "1H" || timeframe === "2H" || timeframe === "4H") return 1200;
   return DEFAULT_HISTORY_BARS;
+}
+
+function historyPageBarsForTimeframe(timeframe: Timeframe): number {
+  if (timeframe === "1M") return 120;
+  if (timeframe === "1W") return 260;
+  if (timeframe === "1D") return 600;
+  return DEFAULT_HISTORY_PAGE_BARS;
 }
 
 function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
@@ -85,12 +93,19 @@ export function useMarketData() {
   const catalogStatus = useAtomValue(marketSymbolCatalogStatusAtom);
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
+  const olderHistoryInFlightRef = useRef(false);
+  const exhaustedOlderHistoryRef = useRef<Set<string>>(new Set());
   const previousSymbolRef = useRef<string | null>(null);
   const activeKey = `${symbol}:${timeframe}`;
   const [historyReadyKey, setHistoryReadyKey] = useState<string | null>(null);
 
   // Realtime candle series from the store for the active symbol+timeframe.
   const liveCandles = useCandles(symbol, timeframe);
+
+  useEffect(() => {
+    olderHistoryInFlightRef.current = false;
+    exhaustedOlderHistoryRef.current.clear();
+  }, [activeKey]);
 
   // ---- Select market + load history on symbol/timeframe change ----
   useEffect(() => {
@@ -153,7 +168,10 @@ export function useMarketData() {
         // MT5 rates/history; ticks are used only for quotes/watchlist.
         getMarketDataState().setCandles(symbol, timeframe, hist);
         getMarketDataState().selectMarket(symbol, timeframe);
-        const nextCandles = hist as Candle[];
+        const nextCandles = getMarketDataState().getCandles(
+          symbol,
+          timeframe,
+        ) as Candle[];
         setCandles(nextCandles);
         if (getDefaultStore().get(activeAtom)) {
           reconcileReplay(nextCandles);
@@ -279,4 +297,43 @@ export function useMarketData() {
         );
       });
   }, [liveCandles, symbol, timeframe]);
+
+  const loadOlderCandles = useCallback(async () => {
+    if (historyReadyKey !== activeKey) return;
+    const store = getDefaultStore();
+    if (store.get(activeAtom)) return;
+
+    const current = getMarketDataState().getCandles(symbol, timeframe);
+    const first = current[0];
+    if (!symbol || !first || olderHistoryInFlightRef.current) return;
+
+    const cursorKey = `${symbol}:${timeframe}:${first.time}`;
+    if (exhaustedOlderHistoryRef.current.has(cursorKey)) return;
+
+    olderHistoryInFlightRef.current = true;
+    try {
+      const older = await getHistoricalDataService().loadHistory({
+        symbol,
+        timeframe,
+        limit: historyPageBarsForTimeframe(timeframe),
+        before: first.time,
+      });
+      if (older.length === 0 || older[0]?.time >= first.time) {
+        exhaustedOlderHistoryRef.current.add(cursorKey);
+        return;
+      }
+      getMarketDataState().setCandles(symbol, timeframe, older);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      store.set(
+        logAtom,
+        "warn",
+        `Older history load failed for ${symbol} ${timeframe}: ${message}`,
+      );
+    } finally {
+      olderHistoryInFlightRef.current = false;
+    }
+  }, [activeKey, historyReadyKey, symbol, timeframe]);
+
+  return { loadOlderCandles };
 }

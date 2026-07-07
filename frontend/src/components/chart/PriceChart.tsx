@@ -72,6 +72,8 @@ function keepLatestBarInView(chart: IChartApi, dataLength: number) {
   if (next) timeScale.setVisibleLogicalRange(next);
 }
 
+const LEFT_HISTORY_PREFETCH_BARS = 120;
+
 type IndicatorSeriesApi =
   | ISeriesApi<"Line">
   | ISeriesApi<"Histogram">
@@ -130,6 +132,17 @@ function updateCandleLookup(
   return rebuildCandleLookup(candles);
 }
 
+function prependedCandleCount(
+  previous: readonly Candle[],
+  next: readonly Candle[],
+): number {
+  if (previous.length === 0 || next.length <= previous.length) return 0;
+  const previousFirstTime = previous[0]?.time;
+  if (previousFirstTime == null) return 0;
+  const offset = next.findIndex((candle) => candle.time === previousFirstTime);
+  return offset > 0 ? offset : 0;
+}
+
 /**
  * Main candlestick chart. Plots the supplied (replay-aware) candles, overlays
  * non-pane indicators, reports the crosshair, and exposes an imperative
@@ -139,10 +152,12 @@ function updateCandleLookup(
 export function PriceChart({
   candles,
   children,
+  onLoadMoreHistory,
   onReady,
 }: {
   candles: Candle[];
   children?: React.ReactNode;
+  onLoadMoreHistory?: () => Promise<void> | void;
   onReady?: (chart: IChartApi) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,6 +173,10 @@ export function PriceChart({
   const bumpRafRef = useRef<number | null>(null);
   const prevMarkerPriceRef = useRef<number | null>(null);
   const markerUpRef = useRef(true);
+  const candlesRef = useRef<Candle[]>(candles);
+  const loadMoreHistoryRef = useRef(onLoadMoreHistory);
+  const loadMoreInFlightRef = useRef(false);
+  const lastLoadMoreFirstTimeRef = useRef<number | null>(null);
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
@@ -200,7 +219,16 @@ export function PriceChart({
   useEffect(() => {
     prevMarkerPriceRef.current = null;
     markerUpRef.current = true;
+    lastLoadMoreFirstTimeRef.current = null;
   }, [symbol, timeframe]);
+
+  useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
+
+  useEffect(() => {
+    loadMoreHistoryRef.current = onLoadMoreHistory;
+  }, [onLoadMoreHistory]);
 
   // ---- Create chart once ----
   useEffect(() => {
@@ -295,6 +323,36 @@ export function PriceChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !ready) return;
+
+    const maybeLoadOlderHistory = () => {
+      const loadMore = loadMoreHistoryRef.current;
+      if (!loadMore || loadMoreInFlightRef.current) return;
+
+      const range = chart.timeScale().getVisibleLogicalRange();
+      const first = candlesRef.current[0];
+      if (!range || !first || range.from > LEFT_HISTORY_PREFETCH_BARS) return;
+      if (lastLoadMoreFirstTimeRef.current === first.time) return;
+
+      lastLoadMoreFirstTimeRef.current = first.time;
+      loadMoreInFlightRef.current = true;
+      Promise.resolve(loadMore())
+        .catch(() => {
+          lastLoadMoreFirstTimeRef.current = null;
+        })
+        .finally(() => {
+          loadMoreInFlightRef.current = false;
+        });
+    };
+
+    const timeScale = chart.timeScale();
+    timeScale.subscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
+    maybeLoadOlderHistory();
+    return () => timeScale.unsubscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
+  }, [ready]);
+
   // ---- Re-theme / grid toggle / timeframe-aware time format ----
   useEffect(() => {
     const chart = chartRef.current;
@@ -345,6 +403,11 @@ export function PriceChart({
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
+    const prepended = prependedCandleCount(prev, candles);
+    const visibleRangeBeforePrepend =
+      prepended > 0
+        ? chartRef.current?.timeScale().getVisibleLogicalRange()
+        : null;
     candleByTimeRef.current = updateCandleLookup(
       candleByTimeRef.current,
       candles,
@@ -385,6 +448,12 @@ export function PriceChart({
           close: k.close,
         })),
       );
+      if (prepended > 0 && visibleRangeBeforePrepend) {
+        chartRef.current?.timeScale().setVisibleLogicalRange({
+          from: visibleRangeBeforePrepend.from + prepended,
+          to: visibleRangeBeforePrepend.to + prepended,
+        });
+      }
     }
 
     prevCandlesRef.current = candles;

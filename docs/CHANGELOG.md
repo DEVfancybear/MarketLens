@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Lazy-load older chart candles on left pan (2026-07-07)
+- Added MT5 history pagination end-to-end: frontend requests older pages with
+  `before=<first loaded candle time>`, Go forwards that cursor to the Python bridge,
+  and the bridge uses MT5 `copy_rates_from` to load bars strictly before the cursor.
+- Merged older MT5 history pages into the backend cache instead of replacing the
+  latest window, so repeated left-pan loads extend the chart history like TradingView.
+- Reduced the initial chart history window and added near-left viewport prefetch
+  with in-flight/cursor guards. The chart preserves the current logical range after
+  prepending candles, avoiding a visible jump when older bars arrive.
+
 ### Changed - Optimized candle render churn (2026-07-07)
 - Updated the main chart candle lookup cache to follow the realtime update plan:
   update/append paths now touch only the changed candle entries instead of rebuilding

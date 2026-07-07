@@ -257,7 +257,7 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		return s.historySnapshot(symbol, timeframe, candles, "")
 	}
 
-	msg, err := s.requestHistory(ctx, symbol, timeframe, limit)
+	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before)
 	if err != nil {
 		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
 			return s.historySnapshot(symbol, timeframe, candles, err.Error())
@@ -450,7 +450,8 @@ func (s *Service) applyHistory(history HistoryMessage) {
 
 	s.mu.Lock()
 	if symbol != "" && timeframe != "" && history.Error == "" {
-		s.history[historyKey(symbol, timeframe)] = append([]Candle(nil), history.Candles...)
+		key := historyKey(symbol, timeframe)
+		s.history[key] = mergeCandles(s.history[key], history.Candles)
 		s.connected = true
 		s.lastErr = ""
 		s.source = history.Source
@@ -573,7 +574,7 @@ func (s *Service) historySnapshot(symbol, timeframe string, candles []Candle, er
 	}
 }
 
-func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, limit int) (HistoryMessage, error) {
+func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, limit int, before int64) (HistoryMessage, error) {
 	id := "hist-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	pending := make(chan HistoryMessage, 1)
 
@@ -596,6 +597,9 @@ func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, 
 		"symbol":    symbol,
 		"timeframe": timeframe,
 		"limit":     limit,
+	}
+	if before > 0 {
+		payload["before"] = before
 	}
 
 	s.writeMu.Lock()
@@ -694,6 +698,40 @@ func limitCandles(candles []Candle, limit int, before int64) []Candle {
 		filtered = filtered[len(filtered)-limit:]
 	}
 	return append([]Candle(nil), filtered...)
+}
+
+func mergeCandles(existing []Candle, incoming []Candle) []Candle {
+	if len(existing) == 0 {
+		return sortCandlesCopy(incoming)
+	}
+	if len(incoming) == 0 {
+		return sortCandlesCopy(existing)
+	}
+
+	byTime := make(map[int64]Candle, len(existing)+len(incoming))
+	for _, candle := range existing {
+		byTime[candle.Time] = candle
+	}
+	for _, candle := range incoming {
+		byTime[candle.Time] = candle
+	}
+
+	merged := make([]Candle, 0, len(byTime))
+	for _, candle := range byTime {
+		merged = append(merged, candle)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Time < merged[j].Time
+	})
+	return merged
+}
+
+func sortCandlesCopy(candles []Candle) []Candle {
+	next := append([]Candle(nil), candles...)
+	sort.Slice(next, func(i, j int) bool {
+		return next[i].Time < next[j].Time
+	})
+	return next
 }
 
 func firstNonEmpty(values ...string) string {

@@ -136,6 +136,7 @@ def copy_rates_synced_blocking(
     mt5_timeframe: int,
     timeframe: str,
     limit: int,
+    before: int = 0,
 ) -> Any:
     """Blocking history loader for the dedicated history worker.
 
@@ -146,6 +147,14 @@ def copy_rates_synced_blocking(
     calls serialized while the event loop remains free for ticks, pings, and
     responses.
     """
+    if before > 0:
+        return mt5.copy_rates_from(
+            symbol,
+            mt5_timeframe,
+            datetime.fromtimestamp(max(0, before - 1), timezone.utc),
+            limit,
+        )
+
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
     if _rates_are_fresh(rates, symbol, tf_seconds):
@@ -170,6 +179,7 @@ async def copy_rates_synced_worker(
     mt5_timeframe: int,
     timeframe: str,
     limit: int,
+    before: int = 0,
 ) -> Any:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
@@ -179,6 +189,7 @@ async def copy_rates_synced_worker(
         mt5_timeframe,
         timeframe,
         limit,
+        before,
     )
 
 
@@ -442,8 +453,12 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         limit = int(message.get("limit") or 1500)
     except (TypeError, ValueError):
         limit = 1500
+    try:
+        before = int(message.get("before") or 0)
+    except (TypeError, ValueError):
+        before = 0
     asyncio.create_task(
-        send_history_response(websocket, symbol, timeframe, limit, request_id)
+        send_history_response(websocket, symbol, timeframe, limit, request_id, before)
     )
 
 
@@ -453,10 +468,11 @@ async def send_history_response(
     timeframe: str,
     limit: int,
     request_id: str,
+    before: int = 0,
 ) -> None:
     try:
         await websocket.send(
-            await load_history_message(symbol, timeframe, limit, request_id)
+            await load_history_message(symbol, timeframe, limit, request_id, before)
         )
     except Exception as exc:  # noqa: BLE001 - client may disconnect mid-load.
         LOG.warning(
@@ -617,6 +633,7 @@ async def load_history_message(
     timeframe: str,
     bars: int,
     request_id: str = "",
+    before: int = 0,
 ) -> str:
     limit = max(1, min(int(bars or 1500), 5000))
     mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
@@ -638,7 +655,7 @@ async def load_history_message(
         payload["error"] = f"symbol_select({symbol}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
 
-    rates = await copy_rates_synced_worker(symbol, mt5_timeframe, timeframe, limit)
+    rates = await copy_rates_synced_worker(symbol, mt5_timeframe, timeframe, limit, before)
     if rates is None:
         payload["error"] = f"copy_rates_from_pos({symbol}, {timeframe}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
