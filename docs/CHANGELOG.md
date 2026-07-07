@@ -18,6 +18,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added `1M` (monthly) to the timeframe-seconds maps on both sides (using the 31-day upper bound so
   a valid current-month bar passes the freshness check while a months-behind cache is refetched),
   since the chart timeframe selector offers 1 Month. `1m` (minute) and `1M` (month) are distinct.
+- Changed the Python bridge retry delay from blocking `time.sleep` to `await asyncio.sleep`, so a
+  cold MT5 history sync no longer freezes the WebSocket event loop long enough for Go requests to
+  time out. Go history request headroom was raised to cover the Python retry window.
 - Verified live against the FTMO MT5 terminal: every streamed symbol's history now ends on the
   current forming bar (gap ~0.4 bars) instead of lagging by up to ~29 days (GBPUSD).
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -79,7 +78,7 @@ func (h *Handler) history(c *fiber.Ctx) error {
 	limit := parseIntQuery(c.Query("limit"), 1500)
 	before := parseInt64Query(c.Query("before"), 0)
 
-	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), defaultHistoryHTTPTimeout)
 	defer cancel()
 
 	snapshot := h.source.History(ctx, symbol, timeframe, limit, before)

@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import signal
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Set
@@ -124,11 +123,21 @@ def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
     return int(rates[-1]["time"]) >= current_bar - tf_seconds
 
 
-def copy_rates_synced(symbol: str, mt5_timeframe: int, timeframe: str, limit: int) -> Any:
-    """Like copy_rates_from_pos, but forces MT5 to download recent bars when the
-    cached series is stale (common for symbols not shown in a chart), retrying
-    until the latest bar is current or the retry budget is exhausted. Fresh
-    symbols return on the first call with no added latency."""
+async def copy_rates_synced(
+    symbol: str,
+    mt5_timeframe: int,
+    timeframe: str,
+    limit: int,
+) -> Any:
+    """Like copy_rates_from_pos, but refresh stale MT5 cache without blocking.
+
+    MT5 often returns stale bars from copy_rates_from_pos while it downloads
+    recent history in the background. This bridge is intentionally single-threaded
+    because the MetaTrader5 Python package is safest when calls stay on one
+    thread. The retry delay therefore uses asyncio.sleep instead of time.sleep:
+    MT5 calls remain serialized on this event loop, while other WebSocket tasks
+    can keep processing ticks and pings during cold-start history sync.
+    """
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
     if _rates_are_fresh(rates, symbol, tf_seconds):
@@ -139,7 +148,7 @@ def copy_rates_synced(symbol: str, mt5_timeframe: int, timeframe: str, limit: in
         # to fetch everything up to the latest bar for this symbol/timeframe.
         # The +1 day margin makes this robust to MT5's datetime timezone quirks.
         mt5.copy_rates_from(symbol, mt5_timeframe, datetime.now() + timedelta(days=1), 2)
-        time.sleep(HISTORY_SYNC_DELAY)
+        await asyncio.sleep(HISTORY_SYNC_DELAY)
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
         if _rates_are_fresh(rates, symbol, tf_seconds):
             break
@@ -333,7 +342,7 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         limit = int(message.get("limit") or 1500)
     except (TypeError, ValueError):
         limit = 1500
-    await websocket.send(load_history_message(symbol, timeframe, limit, request_id))
+    await websocket.send(await load_history_message(symbol, timeframe, limit, request_id))
 
 
 def symbol_catalog_message() -> str:
@@ -349,7 +358,7 @@ def symbol_catalog_message() -> str:
     )
 
 
-def load_history_messages(
+async def load_history_messages(
     symbols: tuple[str, ...],
     timeframes: tuple[str, ...],
     bars: int,
@@ -361,7 +370,7 @@ def load_history_messages(
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
             if mt5_timeframe is None:
                 continue
-            rates = copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
+            rates = await copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
             if rates is None:
                 LOG.warning(
                     "copy_rates_from_pos(%s, %s) failed (%s)",
@@ -397,7 +406,7 @@ def load_history_messages(
     return messages
 
 
-def load_history_message(
+async def load_history_message(
     symbol: str,
     timeframe: str,
     bars: int,
@@ -423,7 +432,7 @@ def load_history_message(
         payload["error"] = f"symbol_select({symbol}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
 
-    rates = copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
+    rates = await copy_rates_synced(symbol, mt5_timeframe, timeframe, limit)
     if rates is None:
         payload["error"] = f"copy_rates_from_pos({symbol}, {timeframe}) failed ({last_mt5_error()})"
         return json.dumps(payload, separators=(",", ":"))
@@ -520,7 +529,7 @@ async def main() -> None:
     global SYMBOL_CATALOG, STREAM_SYMBOLS, HISTORY_MESSAGES
     SYMBOL_CATALOG, STREAM_SYMBOLS = initialize_mt5(cfg)
     HISTORY_MESSAGES = (
-        load_history_messages(STREAM_SYMBOLS, cfg.history_timeframes, cfg.history_bars)
+        await load_history_messages(STREAM_SYMBOLS, cfg.history_timeframes, cfg.history_bars)
         if cfg.preload_history
         else []
     )

@@ -198,7 +198,9 @@ Tick payload:
 
 The stream is local-only by default and must not be exposed directly to the internet.
 Use `MT5_SYMBOLS=EURUSD,GBPUSD` to stream a subset or `MT5_STREAM_ALL_VISIBLE=true` to stream the
-visible Market Watch symbols. Leaving both unset publishes only the catalog.
+visible Market Watch symbols. The default streams visible Market Watch symbols; set
+`MT5_STREAM_ALL_VISIBLE=false` with an empty `MT5_SYMBOLS` value only when you want catalog-only
+mode.
 
 Frontend/backend API response:
 

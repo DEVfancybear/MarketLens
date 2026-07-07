@@ -17,6 +17,13 @@ import (
 const (
 	defaultReconnectMin = time.Second
 	defaultReconnectMax = 30 * time.Second
+
+	// Cold MT5 symbols can spend several seconds downloading recent history
+	// after the first copy_rates_from request. Keep the WebSocket request budget
+	// above the Python retry window so the first chart load does not return an
+	// empty history while the terminal is still warming the cache.
+	defaultHistoryRequestTimeout = 25 * time.Second
+	defaultHistoryHTTPTimeout    = 30 * time.Second
 )
 
 // Config controls the backend API's connection to the local Python MT5 bridge.
@@ -484,6 +491,9 @@ func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, 
 		return HistoryMessage{}, fmt.Errorf("request MT5 history: %w", err)
 	}
 
+	timer := time.NewTimer(defaultHistoryRequestTimeout)
+	defer timer.Stop()
+
 	select {
 	case msg, ok := <-pending:
 		if !ok {
@@ -495,11 +505,11 @@ func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, 
 		delete(s.pendingHistory, id)
 		s.mu.Unlock()
 		return HistoryMessage{}, ctx.Err()
-	case <-time.After(8 * time.Second):
+	case <-timer.C:
 		s.mu.Lock()
 		delete(s.pendingHistory, id)
 		s.mu.Unlock()
-		return HistoryMessage{}, fmt.Errorf("MT5 history request timed out")
+		return HistoryMessage{}, fmt.Errorf("MT5 history request timed out after %s", defaultHistoryRequestTimeout)
 	}
 }
 
