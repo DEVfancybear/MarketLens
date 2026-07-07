@@ -64,6 +64,10 @@ On-demand history requests may need a short cold-start refresh because MT5 downl
 after the first `copy_rates_from` call. The bridge retries with `asyncio.sleep`, not blocking
 `time.sleep`, so WebSocket pings and tick streaming continue while MT5 warms its cache.
 
+The bridge normalizes MT5 broker-server timestamps to UTC before sending ticks or candles. This
+keeps higher-timeframe buckets aligned with TradingView-style chart time even when the broker server
+runs at an offset such as UTC+3.
+
 ## Run
 
 Start the Python bridge:

@@ -21,14 +21,23 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Changed the Python bridge retry delay from blocking `time.sleep` to `await asyncio.sleep`, so a
   cold MT5 history sync no longer freezes the WebSocket event loop long enough for Go requests to
   time out. Go history request headroom was raised to cover the Python retry window.
+- Fixed the frontend MT5 catalog/history race: the chart now waits for `/api/v1/mt5/symbols` to
+  hydrate before deciding a symbol has no route, then reloads history when the catalog becomes ready.
+- Raised the browser timeout for `/api/v1/mt5/history` and added one short history retry. MT5 daily
+  and higher-timeframe cold loads can exceed the generic 15s API timeout even when the backend
+  eventually returns valid candles.
+- Removed MT5 tick-to-candle aggregation from the chart path. MT5 ticks now update quotes/watchlist
+  only; chart candles refresh from MT5 OHLC history/rates with `refresh=true`.
+- Normalized MT5 broker-server timestamps to UTC in the Python bridge before publishing ticks and
+  history candles. This prevents 4H/1D candles from being shifted when the broker server clock runs
+  several hours ahead of the chart timezone.
 - Verified live against the FTMO MT5 terminal: every streamed symbol's history now ends on the
   current forming bar (gap ~0.4 bars) instead of lagging by up to ~29 days (GBPUSD).
 
 ### Fixed - MT5 chart candles and watchlist live prices (2026-07-07)
 - Added backend `GET /api/v1/mt5/ticks` and `GET /api/v1/mt5/history` on top of the local MT5
   Python bridge cache/request path.
-- Added frontend `Mt5Provider` so MT5 symbols receive live quotes from the Go API and build forming
-  candles through the shared `CandleEngine`.
+- Added frontend `Mt5Provider` so MT5 symbols receive live quotes from the Go API.
 - MT5 chart history now loads on demand from backend/Python `copy_rates_from_pos`, so the chart is
   seeded with historical candles instead of showing only one realtime candle.
 - MT5 catalog hydration now uses the full catalog for symbol search, but defaults the watchlist to

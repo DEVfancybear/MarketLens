@@ -40,7 +40,9 @@ const TICK_ONLY: Record<MarketProvider, boolean> = {
   binance: false,
   twelvedata: true,
   oanda: true,
-  mt5: true,
+  // MT5 ticks are bid/ask snapshots, not OHLC. Chart candles must come from
+  // MT5 rates/history, so do not synthesize candles from ticks.
+  mt5: false,
   mock: false,
 };
 

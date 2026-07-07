@@ -156,6 +156,8 @@ export interface HistoryRequest {
   limit?: number;
   /** Page cursor — load bars strictly before this time (UNIX seconds). */
   before?: number;
+  /** Bypass provider/backend cache and request the latest bars. */
+  refresh?: boolean;
 }
 
 // ----------------------------------------------------------------------------

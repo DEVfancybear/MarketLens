@@ -459,9 +459,10 @@ frontend/tests/fixtures/backend-bootstrap.json
 - The active watchlist should default to `streamSymbols` from `/api/v1/mt5/symbols`, not every
   catalog item. Catalog-only symbols remain searchable, but watchlist rows need live ticks from
   `/api/v1/mt5/ticks` to show Last/Chg/Chg%.
-- MT5 chart candles are loaded from `GET /api/v1/mt5/history` and live-updated from
-  `GET /api/v1/mt5/ticks` through `Mt5Provider` + `CandleEngine`. MT5 symbols must not fall
-  through to Binance, TwelveData, or OANDA.
+- MT5 chart candles are loaded and refreshed from `GET /api/v1/mt5/history`. Active charts can pass
+  `refresh=true` with a small `limit` to bypass the backend cache and fetch the latest MT5 OHLC bars.
+  `/api/v1/mt5/ticks` is quote/watchlist data only; do not synthesize MT5 candles from bid/ask ticks.
+  MT5 symbols must not fall through to Binance, TwelveData, or OANDA.
 - Keep chart rendering fast by separating "remote commit" from "canvas interaction". Draw locally
   during drag, commit on pointerup.
 - Never call settings/watchlist/drawing APIs from render paths.

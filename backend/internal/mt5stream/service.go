@@ -149,7 +149,7 @@ func (s *Service) Ticks(symbols []string) TickSnapshot {
 	}
 }
 
-func (s *Service) History(ctx context.Context, symbol, timeframe string, limit int, before int64) HistorySnapshot {
+func (s *Service) History(ctx context.Context, symbol, timeframe string, limit int, before int64, refresh bool) HistorySnapshot {
 	symbol = normalizeSymbol(symbol)
 	timeframe = normalizeTimeframe(timeframe)
 	limit = clampLimit(limit)
@@ -170,7 +170,8 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 	// older data (before > 0) always uses the cache; the latest window must not
 	// be served stale — MT5 can hand back cached bars that lag the live tick by
 	// many bars, which would leave a gap before the realtime candle.
-	if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) >= limit &&
+	if candles := s.cachedHistory(symbol, timeframe, limit, before); !refresh &&
+		len(candles) >= limit &&
 		(before > 0 || s.historyIsFresh(symbol, timeframe, candles)) {
 		return s.historySnapshot(symbol, timeframe, candles, "")
 	}

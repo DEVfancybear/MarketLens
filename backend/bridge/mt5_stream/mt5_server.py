@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import signal
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Set
@@ -70,6 +71,7 @@ CLIENTS: Set[WebSocketServerProtocol] = set()
 SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
+MT5_TIME_OFFSET_SECONDS = 0
 
 TIMEFRAME_MAP = {
     "1m": mt5.TIMEFRAME_M1,
@@ -119,8 +121,9 @@ def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
     tick = mt5.symbol_info_tick(symbol)
     if tick is None or not tick.time:
         return True  # no live reference; don't loop forever
-    current_bar = int(tick.time) - (int(tick.time) % tf_seconds)
-    return int(rates[-1]["time"]) >= current_bar - tf_seconds
+    tick_time = normalize_mt5_time(int(tick.time))
+    current_bar = tick_time - (tick_time % tf_seconds)
+    return normalize_mt5_time(int(rates[-1]["time"])) >= current_bar - tf_seconds
 
 
 async def copy_rates_synced(
@@ -201,6 +204,40 @@ def env_bool(key: str, fallback: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def estimate_mt5_time_offset(symbols: tuple[str, ...]) -> int:
+    """Estimate broker-server timestamp offset and normalize MT5 times to UTC.
+
+    Some MT5 terminals expose tick/rate timestamps in broker-server time encoded
+    as UNIX seconds. On an FTMO-style UTC+3 server, that makes bars appear three
+    hours in the future and shifts higher timeframe buckets versus TradingView.
+    We estimate the offset from live ticks, round to the nearest hour, and apply
+    it consistently to ticks and history candles before they leave the bridge.
+    """
+    now = int(time.time())
+    offsets: dict[int, int] = {}
+    for symbol in symbols:
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None or not tick.time:
+            continue
+        delta = int(tick.time) - now
+        if abs(delta) > 18 * 3600:
+            continue
+        rounded = int(round(delta / 3600) * 3600)
+        if abs(rounded) < 1800:
+            rounded = 0
+        offsets[rounded] = offsets.get(rounded, 0) + 1
+
+    if not offsets:
+        return 0
+    offset = max(offsets.items(), key=lambda item: item[1])[0]
+    LOG.info("MT5 time offset seconds=%d hours=%.1f", offset, offset / 3600)
+    return offset
+
+
+def normalize_mt5_time(raw_time: int) -> int:
+    return int(raw_time) - MT5_TIME_OFFSET_SECONDS
+
+
 def setup_logging() -> None:
     logging.basicConfig(
         level=os.getenv("MT5_STREAM_LOG_LEVEL", "INFO").upper(),
@@ -242,6 +279,9 @@ def initialize_mt5(cfg: Config) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
     catalog = load_symbol_catalog()
     stream_symbols = resolve_stream_symbols(cfg, catalog)
     select_symbols(stream_symbols)
+
+    global MT5_TIME_OFFSET_SECONDS
+    MT5_TIME_OFFSET_SECONDS = estimate_mt5_time_offset(stream_symbols)
 
     LOG.info(
         "MT5 initialized account=%s server=%s symbols=%d stream_symbols=%s",
@@ -381,7 +421,7 @@ async def load_history_messages(
                 continue
             candles = [
                 {
-                    "time": int(row["time"]),
+                    "time": normalize_mt5_time(int(row["time"])),
                     "open": float(row["open"]),
                     "high": float(row["high"]),
                     "low": float(row["low"]),
@@ -439,7 +479,7 @@ async def load_history_message(
 
     payload["candles"] = [
         {
-            "time": int(row["time"]),
+            "time": normalize_mt5_time(int(row["time"])),
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
@@ -498,8 +538,8 @@ async def stream_ticks(cfg: Config, stop_event: asyncio.Event) -> None:
                     "symbol": symbol,
                     "bid": float(tick.bid),
                     "ask": float(tick.ask),
-                    "timestamp": int(tick.time),
-                    "time_msc": time_msc,
+                    "timestamp": normalize_mt5_time(int(tick.time)),
+                    "time_msc": time_msc - (MT5_TIME_OFFSET_SECONDS * 1000),
                 }
                 await broadcast(json.dumps(payload, separators=(",", ":")))
                 last_time_msc_by_symbol[symbol] = time_msc

@@ -155,6 +155,7 @@ Python sidecar directly.
 | Go consumer | `backend/cmd/mt5-stream` | Consumes the stream with `github.com/gorilla/websocket` |
 | Go API | `GET /api/v1/mt5/symbols` | Returns the latest MT5 symbol catalog cached from the Python bridge |
 | Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | Returns latest cached ticks for requested MT5 symbols |
+| Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` bypasses the cache for active chart updates |
 
 Symbol catalog payload, sent when a Go client connects:
 
@@ -254,11 +255,13 @@ Latest tick API response:
 }
 ```
 
-The frontend `Mt5Provider` polls `/api/v1/mt5/ticks` for subscribed symbols and
-uses the shared CandleEngine to bucket ticks into chart candles. The `streamSymbols`
-array from `/api/v1/mt5/symbols` is the authoritative list of symbols with live
-ticks; catalog-only symbols remain searchable/watchlist-visible but show `--`
-until the bridge streams them.
+The frontend `Mt5Provider` polls `/api/v1/mt5/ticks` for subscribed symbols, but
+ticks are quotes only. MT5 chart candles must come from `/api/v1/mt5/history`
+because bid/ask ticks are not a full OHLC source. Active MT5 charts pass
+`refresh=true` with a small `limit` to bypass the backend cache and update the
+latest bars from MT5 rates. The `streamSymbols` array from `/api/v1/mt5/symbols`
+is the authoritative list of symbols with live ticks; catalog-only symbols remain
+searchable/watchlist-visible but show `--` until the bridge streams them.
 
 ---
 

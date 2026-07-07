@@ -85,6 +85,7 @@ export async function getMt5History(params: {
   timeframe: Timeframe;
   limit?: number;
   before?: number;
+  refresh?: boolean;
 }): Promise<Mt5HistorySnapshot> {
   const query = new URLSearchParams({
     symbol: params.symbol,
@@ -92,5 +93,12 @@ export async function getMt5History(params: {
     limit: String(params.limit ?? 1500),
   });
   if (params.before) query.set("before", String(params.before));
-  return getJson<Mt5HistorySnapshot>(`mt5/history?${query.toString()}`);
+  if (params.refresh) query.set("refresh", "true");
+  return getJson<Mt5HistorySnapshot>(`mt5/history?${query.toString()}`, {
+    // MT5 can spend a full retry window warming history for cold symbols or
+    // higher timeframes. The Go endpoint has a 30s HTTP budget; keep the browser
+    // above that so it does not cancel first and fall back to realtime-only UI.
+    timeout: 35_000,
+    retry: { limit: 0 },
+  });
 }

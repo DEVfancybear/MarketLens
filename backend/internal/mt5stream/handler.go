@@ -11,7 +11,7 @@ import (
 type SymbolSource interface {
 	Snapshot() Snapshot
 	Ticks(symbols []string) TickSnapshot
-	History(ctx context.Context, symbol, timeframe string, limit int, before int64) HistorySnapshot
+	History(ctx context.Context, symbol, timeframe string, limit int, before int64, refresh bool) HistorySnapshot
 }
 
 type Handler struct {
@@ -77,11 +77,12 @@ func (h *Handler) history(c *fiber.Ctx) error {
 	timeframe := c.Query("timeframe", "15m")
 	limit := parseIntQuery(c.Query("limit"), 1500)
 	before := parseInt64Query(c.Query("before"), 0)
+	refresh := parseBoolQuery(c.Query("refresh"))
 
 	ctx, cancel := context.WithTimeout(c.Context(), defaultHistoryHTTPTimeout)
 	defer cancel()
 
-	snapshot := h.source.History(ctx, symbol, timeframe, limit, before)
+	snapshot := h.source.History(ctx, symbol, timeframe, limit, before, refresh)
 	if snapshot.Candles == nil {
 		snapshot.Candles = []Candle{}
 	}
@@ -123,4 +124,13 @@ func parseInt64Query(raw string, fallback int64) int64 {
 		return fallback
 	}
 	return value
+}
+
+func parseBoolQuery(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }

@@ -24,7 +24,7 @@ func (f fakeSymbolSource) Ticks(_ []string) TickSnapshot {
 	return f.ticks
 }
 
-func (f fakeSymbolSource) History(_ context.Context, _ string, _ string, _ int, _ int64) HistorySnapshot {
+func (f fakeSymbolSource) History(_ context.Context, _ string, _ string, _ int, _ int64, _ bool) HistorySnapshot {
 	return f.history
 }
 

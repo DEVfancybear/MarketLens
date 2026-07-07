@@ -15,7 +15,7 @@
  *
  * No sockets are created here; the MarketDataService/providers own connections.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
@@ -33,13 +33,24 @@ import { getHistoricalDataService } from "@/services/market-data/HistoricalDataS
 import { TF_SECONDS, type Candle, type Timeframe } from "@/types";
 import { findRecentCandleGap } from "@/services/market-data/candleSeries";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import {
+  marketSymbolCatalogStatusAtom,
+  marketSymbolsAtom,
+} from "@/store/marketSymbolStore";
 
 const DEFAULT_HISTORY_BARS = 1500;
 const MAX_BACKFILL_MISSING_BARS = 50;
+const MT5_HISTORY_REFRESH_MS = 3000;
 
 function historyBarsForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "1H" || timeframe === "2H") return 3000;
   return DEFAULT_HISTORY_BARS;
+}
+
+function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
+  if (timeframe === "1D" || timeframe === "1W" || timeframe === "1M") return 5;
+  if (timeframe === "1H" || timeframe === "2H" || timeframe === "4H") return 10;
+  return 20;
 }
 
 export function useMarketData() {
@@ -49,7 +60,11 @@ export function useMarketData() {
   const setLoading = useSetAtom(setLoadingAtom);
   const disarm = useSetAtom(disarmAtom);
   const setTotal = useSetAtom(setTotalAtom);
+  const catalogStatus = useAtomValue(marketSymbolCatalogStatusAtom);
+  const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
+  const activeKey = `${symbol}:${timeframe}`;
+  const [historyReadyKey, setHistoryReadyKey] = useState<string | null>(null);
 
   // Realtime candle series from the store for the active symbol+timeframe.
   const liveCandles = useCandles(symbol, timeframe);
@@ -57,19 +72,34 @@ export function useMarketData() {
   // ---- Select market + load history on symbol/timeframe change ----
   useEffect(() => {
     let cancelled = false;
+    const key = `${symbol}:${timeframe}`;
+    setHistoryReadyKey(null);
     disarm(); // a new market invalidates any replay cursor
 
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
     if (!symbol || !meta) {
+      // The MT5 registry is hydrated asynchronously from the backend. On a cold
+      // page load the chart can mount before /api/v1/mt5/symbols completes; do
+      // not clear the chart as "unknown symbol" while the catalog is still
+      // loading. The catalog atoms are dependencies below, so this effect runs
+      // again and loads history once the backend catalog is ready.
+      if (symbol && (catalogStatus === "idle" || catalogStatus === "loading")) {
+        setLoading(true);
+        return () => {
+          cancelled = true;
+        };
+      }
       getMarketDataState().setCandles(symbol, timeframe, []);
+      setCandles([]);
+      setTotal(0);
       setLoading(false);
+      setHistoryReadyKey(key);
       return () => {
         cancelled = true;
       };
     }
 
     getMarketDataService(); // ensure the service exists + is bound to the store
-    getMarketDataState().selectMarket(symbol, timeframe);
 
     setLoading(true);
 
@@ -81,12 +111,20 @@ export function useMarketData() {
       })
       .then((hist) => {
         if (cancelled) return;
-        // Seed the store; realtime klines then merge onto this via updateCandle.
+        // Seed history before subscribing. For MT5, candles must come from
+        // MT5 rates/history; ticks are used only for quotes/watchlist.
         getMarketDataState().setCandles(symbol, timeframe, hist);
+        getMarketDataState().selectMarket(symbol, timeframe);
+        setCandles(hist as Candle[]);
+        setTotal(hist.length);
+        setHistoryReadyKey(key);
         setLoading(false);
       })
       .catch((err) => {
         if (cancelled) return;
+        getMarketDataState().setCandles(symbol, timeframe, []);
+        setCandles([]);
+        setTotal(0);
         setLoading(false);
         getDefaultStore().set(
           logAtom,
@@ -99,13 +137,56 @@ export function useMarketData() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, catalogStatus, catalogSize]);
 
   // ---- Mirror store candles → chartStore (drives chart/SMC/replay/trade) ----
   useEffect(() => {
+    if (historyReadyKey !== activeKey) return;
     setCandles(liveCandles as Candle[]);
     setTotal(liveCandles.length);
-  }, [liveCandles, setCandles, setTotal]);
+  }, [activeKey, historyReadyKey, liveCandles, setCandles, setTotal]);
+
+  // ---- MT5 active-chart refresh: update OHLC from MT5 rates, not bid/ask ticks ----
+  useEffect(() => {
+    const meta = symbol ? getMarketSymbol(symbol) : undefined;
+    if (!symbol || meta?.provider !== "mt5" || historyReadyKey !== activeKey) {
+      return;
+    }
+
+    let cancelled = false;
+    let inFlight = false;
+
+    const refreshLatestBars = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const hist = await getHistoricalDataService().loadHistory({
+          symbol,
+          timeframe,
+          limit: mt5RefreshBarsForTimeframe(timeframe),
+          refresh: true,
+        });
+        if (cancelled) return;
+        getMarketDataState().setCandles(symbol, timeframe, hist);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        getDefaultStore().set(
+          logAtom,
+          "warn",
+          `MT5 latest bars refresh failed for ${symbol} ${timeframe}: ${message}`,
+        );
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const timer = window.setInterval(refreshLatestBars, MT5_HISTORY_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeKey, historyReadyKey, symbol, timeframe]);
 
   // ---- Repair short realtime gaps without a full page refresh ----
   useEffect(() => {

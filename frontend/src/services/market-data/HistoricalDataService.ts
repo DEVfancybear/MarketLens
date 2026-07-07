@@ -26,6 +26,8 @@ const OANDA_PRACTICE = "https://api-fxpractice.oanda.com/v3";
 const OANDA_LIVE = "https://api-fxtrade.oanda.com/v3";
 const MAX_LIMIT = 5000;
 const BINANCE_PAGE = 1000;
+const MT5_HISTORY_ATTEMPTS = 2;
+const MT5_HISTORY_RETRY_DELAY_MS = 1500;
 
 /** Unified Timeframe → Binance interval. */
 const TF_TO_BINANCE: Record<Timeframe, string> = {
@@ -93,14 +95,14 @@ export class HistoricalDataService {
 
   /** Load up to `limit` (capped 5000) candles, optionally ending before `before` (sec). */
   async loadHistory(req: HistoryRequest): Promise<MarketCandle[]> {
-    const { symbol, timeframe, limit = 1500, before } = req;
+    const { symbol, timeframe, limit = 1500, before, refresh } = req;
     const capped = Math.min(Math.max(limit, 1), MAX_LIMIT);
     const meta = getMarketSymbol(symbol);
     const providerSymbol = meta?.providerSymbol ?? symbol;
     const provider = meta?.provider;
 
     if (provider === "mt5") {
-      return this.loadMt5(providerSymbol, timeframe, capped, before);
+      return this.loadMt5(providerSymbol, timeframe, capped, before, refresh);
     }
 
     if (provider === "oanda") {
@@ -126,10 +128,34 @@ export class HistoricalDataService {
     timeframe: Timeframe,
     limit: number,
     before?: number,
+    refresh?: boolean,
   ): Promise<MarketCandle[]> {
-    const snapshot = await getMt5History({ symbol, timeframe, limit, before });
-    if (snapshot.lastError && snapshot.candles.length === 0) {
-      throw new Error(snapshot.lastError);
+    let snapshot = await getMt5History({
+      symbol,
+      timeframe,
+      limit,
+      before,
+      refresh,
+    });
+    for (
+      let attempt = 1;
+      snapshot.candles.length === 0 && attempt < MT5_HISTORY_ATTEMPTS;
+      attempt += 1
+    ) {
+      await delay(MT5_HISTORY_RETRY_DELAY_MS);
+      snapshot = await getMt5History({
+        symbol,
+        timeframe,
+        limit,
+        before,
+        refresh,
+      });
+    }
+    if (snapshot.candles.length === 0) {
+      throw new Error(
+        snapshot.lastError ||
+          `MT5 returned no history candles for ${symbol} ${timeframe}`,
+      );
     }
     return dedupeAscending(
       snapshot.candles.map((candle) => ({
@@ -301,6 +327,10 @@ function parseTwelveDataTime(dt: string): number {
 
 function isoFromSeconds(sec: number): string {
   return new Date(sec * 1000).toISOString().slice(0, 19).replace("T", " ");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ---- singleton --------------------------------------------------------------
