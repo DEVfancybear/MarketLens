@@ -1,6 +1,9 @@
 "use client";
+import { useCallback, useEffect } from "react";
 import {
   Camera,
+  Copy,
+  Download,
   Maximize2,
   Minimize2,
   Moon,
@@ -79,7 +82,7 @@ export function TopToolbar() {
     }
   };
 
-  const screenshot = async () => {
+  const captureSnapshotBlob = useCallback(async () => {
     let blob: Blob | null = null;
     try {
       blob = await captureChart();
@@ -89,8 +92,14 @@ export function TopToolbar() {
     }
     if (!blob) {
       doLog("warn", "Screenshot failed: chart not ready");
-      return;
+      return null;
     }
+    return blob;
+  }, [doLog]);
+
+  const downloadSnapshot = useCallback(async () => {
+    const blob = await captureSnapshotBlob();
+    if (!blob) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -103,7 +112,49 @@ export function TopToolbar() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
     doLog("info", "Screenshot saved");
-  };
+  }, [captureSnapshotBlob, doLog, timeframe]);
+
+  const copySnapshot = useCallback(async () => {
+    const blob = await captureSnapshotBlob();
+    if (!blob) return;
+    const clipboard = navigator.clipboard as unknown as {
+      write?: (items: unknown[]) => Promise<void>;
+    };
+    const ClipboardItemCtor = (
+      globalThis as unknown as {
+        ClipboardItem?: new (items: Record<string, Blob>) => unknown;
+      }
+    ).ClipboardItem;
+    if (!clipboard.write || !ClipboardItemCtor) {
+      doLog("warn", "Copy image is not supported in this browser");
+      return;
+    }
+    try {
+      await clipboard.write([
+        new ClipboardItemCtor({ [blob.type || "image/png"]: blob }),
+      ]);
+      doLog("info", "Screenshot copied");
+    } catch (err) {
+      doLog("error", `Copy image failed: ${(err as Error).message}`);
+    }
+  }, [captureSnapshotBlob, doLog]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s" || !event.ctrlKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      if (event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        void downloadSnapshot();
+      } else if (event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        void copySnapshot();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [copySnapshot, downloadSnapshot]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -184,9 +235,53 @@ export function TopToolbar() {
             </span>
           )}
         </button>
-        <IconButton label="Screenshot" onClick={screenshot}>
-          <Camera size={15} />
-        </IconButton>
+        <Dropdown
+          align="right"
+          width={238}
+          trigger={(open) => (
+            <IconButton label="Take a snapshot" active={open}>
+              <Camera size={15} />
+            </IconButton>
+          )}
+        >
+          {(close) => (
+            <div className="py-1">
+              <div className="px-3 pb-1 pt-1 text-[11px] font-semibold text-ink-muted">
+                Take a snapshot
+              </div>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  void downloadSnapshot();
+                }}
+                className="h-8 text-[12px] font-semibold"
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <Download size={15} />
+                  <span className="truncate">Download image</span>
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-ink-faint">
+                  Ctrl + Alt + S
+                </span>
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  close();
+                  void copySnapshot();
+                }}
+                className="h-8 text-[12px] font-semibold"
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <Copy size={15} />
+                  <span className="truncate">Copy image</span>
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-ink-faint">
+                  Ctrl + Shift + S
+                </span>
+              </MenuItem>
+            </div>
+          )}
+        </Dropdown>
         <IconButton
           label="Toggle watchlist"
           onClick={toggleRight}

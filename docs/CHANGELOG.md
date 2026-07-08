@@ -4,6 +4,26 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Screenshot and watchlist menu parity (2026-07-08)
+- Changed the top-toolbar camera button to open a TradingView-style snapshot menu
+  with `Download image` (`Ctrl+Alt+S`) and `Copy image` (`Ctrl+Shift+S`) actions.
+- Hid the watchlist delete-list icon when only one watchlist exists, so the list
+  selector no longer shows a disabled trash affordance.
+
+### Fixed - Watchlist create-list flow keeps existing lists selectable (2026-07-08)
+- Replaced the browser `window.prompt` used by "Create new list..." with an in-app
+  TradingView-style dialog so watchlist actions do not escape the terminal UI.
+- Added active watchlist switching in the title dropdown, showing every saved list
+  with its symbol count so a newly created empty list no longer feels like it
+  deleted the previous list.
+- Added a per-list trash action in the title dropdown; deleting the active list
+  selects the nearest remaining list and syncs the delete to the backend when
+  the list has a server id.
+- Removed `Share list` and `Make a copy...` from the watchlist title menu to
+  match the requested TradingView clone surface.
+- Preserved the current active watchlist during backend watchlist bootstrap when
+  that list still exists in the server response.
+
 ### Added - Lazy-load older chart candles on left pan (2026-07-07)
 - Added MT5 history pagination end-to-end: frontend requests older pages with
   `before=<first loaded candle time>`, Go forwards that cursor to the Python bridge,

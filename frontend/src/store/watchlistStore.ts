@@ -7,6 +7,7 @@ import { isApiError } from "@/services/api/errors";
 import {
   addWatchlistSymbol as addRemoteWatchlistSymbol,
   createWatchlist as createRemoteWatchlist,
+  deleteWatchlist as deleteRemoteWatchlist,
   removeWatchlistSymbol as removeRemoteWatchlistSymbol,
   updateWatchlist as updateRemoteWatchlist,
 } from "@/services/api/resources/watchlistsApi";
@@ -197,6 +198,15 @@ export const watchlistSectionsAtom = atom(
   (get) => get(activeWatchlistAtom).sections,
 );
 
+export const setActiveWatchlistAtom = atom(null, (get, set, listId: string) => {
+  const lists = get(watchlistListsAtom);
+  const nextActive = lists.some((list) => list.id === listId)
+    ? listId
+    : activeList(lists, get(activeWatchlistIdAtom)).id;
+  set(activeWatchlistIdAtom, nextActive);
+  persist(lists, nextActive);
+});
+
 export const hydrateWatchlistAtom = atom(null, (_get, set) => {
   const storedLists = localStore.get<unknown>(STORAGE_LISTS, null);
   const legacySymbols = localStore.get<string[]>(STORAGE_LEGACY_SYMBOLS, []);
@@ -376,7 +386,10 @@ export const applyRemoteWatchlistsAtom = atom(
       lists[0] = { ...lists[0], symbols: localSymbols };
     }
 
-    const activeId = lists[0].id;
+    const previousActiveId = get(activeWatchlistIdAtom);
+    const activeId = lists.some((list) => list.id === previousActiveId)
+      ? previousActiveId
+      : lists[0].id;
     set(watchlistListsAtom, lists);
     set(activeWatchlistIdAtom, activeId);
     persist(lists, activeId);
@@ -485,6 +498,31 @@ export const createWatchlistAtom = atom(null, (get, set, name?: string) => {
 
   runRemoteSync(get, set, "create list", async () => {
     await createRemoteListFromLocal(get, set, list.id, list.name);
+  });
+});
+
+export const removeWatchlistAtom = atom(null, (get, set, listId: string) => {
+  const lists = get(watchlistListsAtom);
+  if (lists.length <= 1) return;
+  const target = lists.find((list) => list.id === listId);
+  if (!target) return;
+
+  const targetIndex = lists.findIndex((list) => list.id === listId);
+  const nextLists = lists.filter((list) => list.id !== listId);
+  const currentActiveId = get(activeWatchlistIdAtom);
+  const fallbackIndex = Math.min(targetIndex, nextLists.length - 1);
+  const nextActiveId =
+    currentActiveId === listId
+      ? nextLists[Math.max(0, fallbackIndex)].id
+      : currentActiveId;
+
+  set(watchlistListsAtom, nextLists);
+  set(activeWatchlistIdAtom, nextActiveId);
+  persist(nextLists, nextActiveId);
+
+  runRemoteSync(get, set, "delete list", async () => {
+    if (!isServerWatchlistId(target.id)) return;
+    await deleteRemoteWatchlist(target.id);
   });
 });
 
@@ -616,6 +654,8 @@ export interface WatchlistActions {
   setShared: (shared?: boolean) => void;
   copy: () => void;
   create: (name?: string) => void;
+  setActive: (listId: string) => void;
+  removeList: (listId: string) => void;
   clear: () => void;
   addSection: (title: string, index?: number) => void;
   renameSection: (sectionId: string, title: string) => void;
@@ -654,6 +694,8 @@ const watchlistCombinedAtom = atom<WatchlistStoreInterface>((get) => {
     setShared: (shared) => store.set(setWatchlistSharedAtom, shared),
     copy: () => store.set(copyWatchlistAtom),
     create: (name) => store.set(createWatchlistAtom, name),
+    setActive: (listId) => store.set(setActiveWatchlistAtom, listId),
+    removeList: (listId) => store.set(removeWatchlistAtom, listId),
     clear: () => store.set(clearWatchlistAtom),
     addSection: (title, index) =>
       store.set(addWatchlistSectionAtom, { title, index }),

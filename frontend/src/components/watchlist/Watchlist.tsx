@@ -4,14 +4,12 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Copy,
   Eraser,
   LayoutGrid,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
-  Share2,
   Smile,
   Trash2,
   X,
@@ -19,7 +17,9 @@ import {
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { useMarketSymbols } from "@/store/marketSymbolStore";
 import {
+  activeWatchlistIdAtom,
   activeWatchlistAtom,
+  watchlistListsAtom,
   watchlistSectionsAtom,
   watchlistSymbolsAtom,
   watchlistSortDirAtom,
@@ -27,17 +27,18 @@ import {
   addWatchlistSectionAtom,
   addWatchlistSymbolAtom,
   clearWatchlistAtom,
-  copyWatchlistAtom,
   createWatchlistAtom,
   moveWatchlistSectionAtom,
   moveWatchlistSymbolAtom,
+  removeWatchlistAtom,
   removeWatchlistSymbolAtom,
   removeWatchlistSectionAtom,
   renameWatchlistSectionAtom,
   renameWatchlistAtom,
-  setWatchlistSharedAtom,
+  setActiveWatchlistAtom,
   setWatchlistSortAtom,
   type SortKey,
+  type WatchlistList,
   type WatchlistSection,
 } from "@/store/watchlistStore";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -120,6 +121,8 @@ function priceParts(
 
 export function Watchlist() {
   const activeList = useAtomValue(activeWatchlistAtom);
+  const activeListId = useAtomValue(activeWatchlistIdAtom);
+  const lists = useAtomValue(watchlistListsAtom);
   const symbols = useAtomValue(watchlistSymbolsAtom);
   const sections = useAtomValue(watchlistSectionsAtom);
   const sortKey = useAtomValue(watchlistSortKeyAtom);
@@ -129,9 +132,9 @@ export function Watchlist() {
   const remove = useSetAtom(removeWatchlistSymbolAtom);
   const setSort = useSetAtom(setWatchlistSortAtom);
   const renameWatchlist = useSetAtom(renameWatchlistAtom);
-  const setShared = useSetAtom(setWatchlistSharedAtom);
-  const copyWatchlist = useSetAtom(copyWatchlistAtom);
   const createWatchlist = useSetAtom(createWatchlistAtom);
+  const setActiveWatchlist = useSetAtom(setActiveWatchlistAtom);
+  const removeWatchlist = useSetAtom(removeWatchlistAtom);
   const clearWatchlist = useSetAtom(clearWatchlistAtom);
   const addSection = useSetAtom(addWatchlistSectionAtom);
   const renameSection = useSetAtom(renameWatchlistSectionAtom);
@@ -145,6 +148,7 @@ export function Watchlist() {
 
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(activeList.name);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const skipRenameBlurRef = useRef(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
@@ -257,6 +261,14 @@ export function Watchlist() {
     setRenameDraft(activeList.name);
     setRenaming(true);
   }, [activeList.name]);
+
+  const createNamedWatchlist = useCallback(
+    (name: string) => {
+      createWatchlist(name);
+      setCreateDialogOpen(false);
+    },
+    [createWatchlist],
+  );
 
   const onRowClick = useCallback(
     (ticker: string) => {
@@ -714,12 +726,13 @@ export function Watchlist() {
           </div>
         ) : (
           <WatchlistTitleMenu
+            activeId={activeListId}
+            lists={lists}
             name={activeList.name}
-            shared={activeList.shared}
             symbolCount={symbols.length}
             sectionCount={sections.length}
-            onToggleShare={() => setShared()}
-            onCopy={copyWatchlist}
+            onSelectList={setActiveWatchlist}
+            onRemoveList={removeWatchlist}
             onRename={startRename}
             onAddSection={() => {
               const activeIndex = symbols.indexOf(activeSymbol);
@@ -729,10 +742,7 @@ export function Watchlist() {
               });
             }}
             onClear={clearWatchlist}
-            onCreate={() => {
-              const name = window.prompt("Create new list", "Untitled list");
-              if (name !== null) createWatchlist(name);
-            }}
+            onCreate={() => setCreateDialogOpen(true)}
           />
         )}
 
@@ -838,28 +848,36 @@ export function Watchlist() {
           onCreateAlert={onCreateAlert}
         />
       )}
+      {createDialogOpen && (
+        <CreateWatchlistDialog
+          onCancel={() => setCreateDialogOpen(false)}
+          onCreate={createNamedWatchlist}
+        />
+      )}
     </div>
   );
 }
 
 function WatchlistTitleMenu({
+  activeId,
+  lists,
   name,
-  shared,
   symbolCount,
   sectionCount,
-  onToggleShare,
-  onCopy,
+  onSelectList,
+  onRemoveList,
   onRename,
   onAddSection,
   onClear,
   onCreate,
 }: {
+  activeId: string;
+  lists: WatchlistList[];
   name: string;
-  shared: boolean;
   symbolCount: number;
   sectionCount: number;
-  onToggleShare: () => void;
-  onCopy: () => void;
+  onSelectList: (listId: string) => void;
+  onRemoveList: (listId: string) => void;
   onRename: () => void;
   onAddSection: () => void;
   onClear: () => void;
@@ -886,33 +904,22 @@ function WatchlistTitleMenu({
     >
       {(close) => (
         <div className="py-0.5">
-          <WatchlistMenuRow
-            icon={<Share2 size={16} />}
-            label="Share list"
-            onClick={onToggleShare}
-          >
-            <span
-              className={cn(
-                "ml-auto inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors",
-                shared ? "bg-brand" : "bg-terminal-border",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-4 w-4 rounded-full bg-ink transition-transform",
-                  shared && "translate-x-4",
-                )}
+          <div className="max-h-36 overflow-y-auto py-0.5">
+            {lists.map((list) => (
+              <WatchlistListMenuRow
+                key={list.id}
+                active={list.id === activeId}
+                canRemove={lists.length > 1}
+                list={list}
+                onSelect={() => {
+                  onSelectList(list.id);
+                  close();
+                }}
+                onRemove={() => onRemoveList(list.id)}
               />
-            </span>
-          </WatchlistMenuRow>
-          <WatchlistMenuRow
-            icon={<Copy size={16} />}
-            label="Make a copy..."
-            onClick={() => {
-              onCopy();
-              close();
-            }}
-          />
+            ))}
+          </div>
+          <div className="my-1 h-px bg-terminal-border" />
           <WatchlistMenuRow
             icon={<Pencil size={16} />}
             label="Rename"
@@ -954,6 +961,150 @@ function WatchlistTitleMenu({
         </div>
       )}
     </Dropdown>
+  );
+}
+
+function WatchlistListMenuRow({
+  active,
+  canRemove,
+  list,
+  onSelect,
+  onRemove,
+}: {
+  active: boolean;
+  canRemove: boolean;
+  list: WatchlistList;
+  onSelect: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="group flex h-8 items-center text-[12px] font-semibold text-ink transition-colors hover:bg-terminal-hover">
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 text-left"
+      >
+        {active ? (
+          <Check size={16} className="shrink-0 text-brand" />
+        ) : (
+          <span className="h-4 w-4 shrink-0" />
+        )}
+        <span className="truncate">{list.name}</span>
+        <span className="ml-auto text-[10px] text-ink-faint">
+          {list.symbols.length}
+        </span>
+      </button>
+      {canRemove && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+          className={cn(
+            "mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-muted opacity-0 transition-colors hover:bg-terminal-panel hover:text-bear group-hover:opacity-100",
+            active && "opacity-60",
+          )}
+          aria-label={`Remove ${list.name}`}
+          title="Remove list"
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CreateWatchlistDialog({
+  onCancel,
+  onCreate,
+}: {
+  onCancel: () => void;
+  onCreate: (name: string) => void;
+}) {
+  const [name, setName] = useState("Untitled list");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, []);
+
+  const commit = () => {
+    onCreate(name.trim() || "Untitled list");
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/20 pt-[15vh]"
+      data-chart-ui
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        className="flex w-[380px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] text-[#f0f0f0] shadow-2xl shadow-black/70"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-watchlist-title"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pb-3 pt-5">
+          <h3
+            id="create-watchlist-title"
+            className="text-[20px] font-semibold leading-none text-[#f0f0f0]"
+          >
+            Create new list
+          </h3>
+          <button
+            type="button"
+            className="rounded p-1 text-[#b8bcc6] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] focus-ring"
+            onClick={onCancel}
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="min-h-[120px] space-y-3 px-5 py-5">
+          <label
+            htmlFor="new-watchlist-name"
+            className="block text-[13px] font-semibold text-[#d1d4dc]"
+          >
+            List name
+          </label>
+          <input
+            ref={inputRef}
+            id="new-watchlist-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") onCancel();
+            }}
+            className="h-[36px] w-full rounded-md border border-[#2962ff] bg-[#1f1f1f] px-3 text-[14px] font-medium text-[#f0f0f0] outline-none selection:bg-[#2962ff] selection:text-white focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+          />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#3a3a3a] px-5 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-[34px] rounded-md border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] transition-colors hover:bg-[#2a2a2a] focus-ring"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={commit}
+            className="h-[34px] rounded-md border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] transition-colors hover:bg-white focus-ring"
+          >
+            Ok
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
