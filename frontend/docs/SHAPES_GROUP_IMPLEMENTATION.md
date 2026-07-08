@@ -69,7 +69,8 @@ use the new branch, so the change is additive (low blast radius).
 `DrawingToolbar.tsx`:
 
 - Flyout now supports **section headers** (e.g. "SHAPES"), **favorite stars**
-  (persisted in `localStorage` under `tv:favTools`), and **hotkey labels**.
+  (remote-backed through `/api/v1/drawing-tool-favorites` for authenticated users,
+  with `tv:favTools` as anonymous/cache fallback), and **hotkey labels**.
 - The Shapes group lists the full SHAPES set in TradingView order.
 - Rectangle keeps the `Alt+Shift+R` hotkey label.
 
@@ -101,7 +102,9 @@ separate floating toolbar on top of the chart, matching the TradingView
 favorite-drawing-tools workflow more closely. The left `DrawingToolbar` must not
 grow extra buttons when a tool is starred.
 
-The floating toolbar is still driven by the same persisted `tv:favTools` set.
+The floating toolbar is still driven by the same favorite set as the flyout stars.
+For signed-in users that set is persisted by the backend `drawing_tool_favorites`
+resource; `tv:favTools` is kept only for anonymous/cache fallback.
 Each favorite is a direct one-click tool button, and right-click removes it from
 favorites. A module-level `TOOL_BY_ID` lookup (built from `GROUPS`) resolves each
 favorite's icon/label.

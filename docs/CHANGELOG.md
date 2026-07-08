@@ -8,6 +8,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added `drawings` and `drawing_templates` migrations plus Go Fiber handlers for
   `GET/POST/PUT/PATCH/DELETE /api/v1/drawings`, `POST /api/v1/drawings/batch`, and
   `GET/POST/PUT/DELETE /api/v1/drawing-templates`.
+- Added `drawing_tool_favorites` persistence plus `GET/PUT /api/v1/drawing-tool-favorites`, so
+  the drawing toolbar star list no longer depends on `tv:favTools` localStorage for signed-in users.
 - Wired `/api/v1/sync/bootstrap` to include global drawing templates while keeping per-symbol
   drawings lazy-loaded.
 - Added the frontend `drawingsApi` ky resource and connected `chartStore` to load drawings by

@@ -25,6 +25,9 @@ type Store interface {
 	SaveTemplate(ctx context.Context, userID string, input DrawingTemplateWrite) (DrawingTemplate, error)
 	UpdateTemplate(ctx context.Context, userID, id string, input DrawingTemplateWrite) (DrawingTemplate, error)
 	DeleteTemplate(ctx context.Context, userID, id string) error
+
+	GetToolFavorites(ctx context.Context, userID string) (DrawingToolFavorites, error)
+	ReplaceToolFavorites(ctx context.Context, userID string, input DrawingToolFavoritesWrite) (DrawingToolFavorites, error)
 }
 
 type Repo struct {
@@ -264,6 +267,39 @@ func (r *Repo) DeleteTemplate(ctx context.Context, userID, id string) error {
 	return nil
 }
 
+func (r *Repo) GetToolFavorites(ctx context.Context, userID string) (DrawingToolFavorites, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return DrawingToolFavorites{}, err
+	}
+	favs, err := scanToolFavorites(r.pool.QueryRow(ctx, `
+SELECT tools, updated_at
+FROM drawing_tool_favorites
+WHERE user_id = $1`, uid))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DrawingToolFavorites{Tools: []string{}}, nil
+	}
+	return favs, err
+}
+
+func (r *Repo) ReplaceToolFavorites(ctx context.Context, userID string, input DrawingToolFavoritesWrite) (DrawingToolFavorites, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return DrawingToolFavorites{}, err
+	}
+	tools := normalizeToolFavorites(input.Tools)
+	raw, err := json.Marshal(tools)
+	if err != nil {
+		return DrawingToolFavorites{}, err
+	}
+	return scanToolFavorites(r.pool.QueryRow(ctx, `
+INSERT INTO drawing_tool_favorites (user_id, tools)
+VALUES ($1, $2)
+ON CONFLICT (user_id) DO UPDATE
+SET tools = EXCLUDED.tools, updated_at = now()
+RETURNING tools, updated_at`, uid, json.RawMessage(raw)))
+}
+
 type queryer interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
@@ -325,6 +361,23 @@ func scanTemplate(row scanner) (DrawingTemplate, error) {
 	return t, nil
 }
 
+func scanToolFavorites(row scanner) (DrawingToolFavorites, error) {
+	var raw json.RawMessage
+	var favs DrawingToolFavorites
+	if err := row.Scan(&raw, &favs.UpdatedAt); err != nil {
+		return DrawingToolFavorites{}, err
+	}
+	if len(raw) == 0 {
+		favs.Tools = []string{}
+		return favs, nil
+	}
+	if err := json.Unmarshal(raw, &favs.Tools); err != nil {
+		return DrawingToolFavorites{}, err
+	}
+	favs.Tools = normalizeToolFavorites(favs.Tools)
+	return favs, nil
+}
+
 func deleteByAnyID(ctx context.Context, tx pgx.Tx, uid pgtype.UUID, item DrawingDelete) (int, error) {
 	if strings.TrimSpace(item.ID) != "" {
 		id, err := parseUUID(item.ID)
@@ -374,6 +427,20 @@ func normalizeTemplateWrite(input DrawingTemplateWrite) (DrawingTemplateWrite, e
 		return DrawingTemplateWrite{}, fmt.Errorf("%w: style must be json", ErrBadRequest)
 	}
 	return input, nil
+}
+
+func normalizeToolFavorites(input []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, value := range input {
+		tool := strings.TrimSpace(value)
+		if tool == "" || seen[tool] {
+			continue
+		}
+		seen[tool] = true
+		out = append(out, tool)
+	}
+	return out
 }
 
 func normalizeRequired(_ string, value string) string {

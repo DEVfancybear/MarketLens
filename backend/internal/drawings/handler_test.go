@@ -16,9 +16,10 @@ import (
 )
 
 type fakeDrawingStore struct {
-	drawings  map[string][]Drawing
-	templates map[string][]DrawingTemplate
-	seq       int
+	drawings      map[string][]Drawing
+	templates     map[string][]DrawingTemplate
+	toolFavorites map[string]DrawingToolFavorites
+	seq           int
 
 	lastUser   string
 	lastSymbol string
@@ -26,8 +27,9 @@ type fakeDrawingStore struct {
 
 func newFakeDrawingStore() *fakeDrawingStore {
 	return &fakeDrawingStore{
-		drawings:  map[string][]Drawing{},
-		templates: map[string][]DrawingTemplate{},
+		drawings:      map[string][]Drawing{},
+		templates:     map[string][]DrawingTemplate{},
+		toolFavorites: map[string]DrawingToolFavorites{},
 	}
 }
 
@@ -181,6 +183,25 @@ func (f *fakeDrawingStore) DeleteTemplate(_ context.Context, userID, id string) 
 	return ErrNotFound
 }
 
+func (f *fakeDrawingStore) GetToolFavorites(_ context.Context, userID string) (DrawingToolFavorites, error) {
+	f.lastUser = userID
+	if favs, ok := f.toolFavorites[userID]; ok {
+		return favs, nil
+	}
+	return DrawingToolFavorites{Tools: []string{}}, nil
+}
+
+func (f *fakeDrawingStore) ReplaceToolFavorites(_ context.Context, userID string, input DrawingToolFavoritesWrite) (DrawingToolFavorites, error) {
+	f.lastUser = userID
+	f.seq++
+	favs := DrawingToolFavorites{
+		Tools:     normalizeToolFavorites(input.Tools),
+		UpdatedAt: time.Unix(int64(f.seq), 0).UTC(),
+	}
+	f.toolFavorites[userID] = favs
+	return favs, nil
+}
+
 func (f *fakeDrawingStore) upsert(userID string, input DrawingWrite) Drawing {
 	for i := range f.drawings[userID] {
 		if input.ClientID != "" && f.drawings[userID][i].ClientID == input.ClientID {
@@ -283,6 +304,36 @@ func TestDrawingTemplateCRUDRoutes(t *testing.T) {
 	resp, text = doDrawing(t, app, http.MethodDelete, "/api/v1/drawing-templates/"+created.ID, "")
 	if resp.StatusCode != fiber.StatusOK || !strings.Contains(text, `"ok":true`) {
 		t.Fatalf("delete template status=%d body=%s", resp.StatusCode, text)
+	}
+}
+
+func TestDrawingToolFavoritesRoutes(t *testing.T) {
+	store := newFakeDrawingStore()
+	app := newDrawingTestApp(store, "user-1")
+
+	resp, text := doDrawing(t, app, http.MethodGet, "/api/v1/drawing-tool-favorites", "")
+	if resp.StatusCode != fiber.StatusOK || !strings.Contains(text, `"tools":[]`) {
+		t.Fatalf("empty favorites status=%d body=%s", resp.StatusCode, text)
+	}
+
+	resp, text = doDrawing(t, app, http.MethodPut, "/api/v1/drawing-tool-favorites", `{"tools":["trendline","long","trendline",""]}`)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("put favorites status=%d body=%s", resp.StatusCode, text)
+	}
+	var favs DrawingToolFavorites
+	if err := json.Unmarshal([]byte(text), &favs); err != nil {
+		t.Fatalf("decode favorites: %v", err)
+	}
+	if got := strings.Join(favs.Tools, ","); got != "trendline,long" {
+		t.Fatalf("favorites should preserve order and dedupe, got %q", got)
+	}
+	if store.lastUser != "user-1" {
+		t.Fatalf("favorites should use auth user, got %q", store.lastUser)
+	}
+
+	resp, text = doDrawing(t, app, http.MethodGet, "/api/v1/drawing-tool-favorites", "")
+	if resp.StatusCode != fiber.StatusOK || !strings.Contains(text, `"tools":["trendline","long"]`) {
+		t.Fatalf("get favorites status=%d body=%s", resp.StatusCode, text)
 	}
 }
 

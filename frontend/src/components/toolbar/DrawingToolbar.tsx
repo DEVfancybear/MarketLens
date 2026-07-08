@@ -41,12 +41,19 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  getDrawingToolFavorites,
+  replaceDrawingToolFavorites,
+} from "@/services/api/resources/drawingsApi";
+import { isApiError } from "@/services/api/errors";
+import {
   activeToolAtom,
   drawColorAtom,
   setActiveToolAtom,
   setDrawColorAtom,
   clearDrawingsAtom,
 } from "@/store/chartStore";
+import { backendSessionAtom } from "@/store/authStore";
+import { logAtom } from "@/store/uiStore";
 import type { DrawingTool } from "@/types";
 
 // ---- Tool groups (TradingView pattern) ----
@@ -297,29 +304,95 @@ function useLastUsed(): Record<string, DrawingTool> {
 
 const FAV_KEY = "tv:favTools";
 
-/** Favorite tools (persisted). Star toggle in the flyout, TradingView-style. */
+function readLocalFavorites(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalFavorites(tools: string[]) {
+  try {
+    localStorage.setItem(FAV_KEY, JSON.stringify(tools));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function normalizeFavoriteTools(tools: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tool of tools) {
+    if (!TOOL_BY_ID.has(tool as DrawingTool) || seen.has(tool)) continue;
+    seen.add(tool);
+    out.push(tool);
+  }
+  return out;
+}
+
+function apiMessage(error: unknown): string {
+  return isApiError(error)
+    ? error.message
+    : (error as Error)?.message || "unknown error";
+}
+
+/** Favorite tools. Remote mode uses Phase 7 API; localStorage is anonymous/cache fallback. */
 function useFavorites(): [Set<string>, (tool: string) => void] {
-  const [fav, setFav] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      return new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
-  const toggle = useCallback((tool: string) => {
-    setFav((prev) => {
-      const next = new Set(prev);
-      if (next.has(tool)) next.delete(tool);
-      else next.add(tool);
-      try {
-        localStorage.setItem(FAV_KEY, JSON.stringify([...next]));
-      } catch {
-        /* storage unavailable */
-      }
-      return next;
-    });
-  }, []);
+  const backendSession = useAtomValue(backendSessionAtom);
+  const log = useSetAtom(logAtom);
+  const [fav, setFav] = useState<Set<string>>(
+    () => new Set(normalizeFavoriteTools(readLocalFavorites())),
+  );
+
+  useEffect(() => {
+    if (!backendSession) return;
+    let cancelled = false;
+    void getDrawingToolFavorites()
+      .then((result) => {
+        if (cancelled) return;
+        const tools = normalizeFavoriteTools(result.tools);
+        const next = new Set(tools);
+        setFav(next);
+        writeLocalFavorites(tools);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        log("warn", `Drawing tool favorites loaded from local cache: ${apiMessage(error)}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendSession, log]);
+
+  const persist = useCallback(
+    (tools: string[]) => {
+      const normalized = normalizeFavoriteTools(tools);
+      writeLocalFavorites(normalized);
+      if (!backendSession) return;
+      void replaceDrawingToolFavorites(normalized).catch((error) => {
+        log("error", `Drawing tool favorites sync failed: ${apiMessage(error)}`);
+      });
+    },
+    [backendSession, log],
+  );
+
+  const toggle = useCallback(
+    (tool: string) => {
+      setFav((prev) => {
+        const next = new Set(prev);
+        if (next.has(tool)) next.delete(tool);
+        else next.add(tool);
+        const normalized = normalizeFavoriteTools([...next]);
+        const normalizedSet = new Set(normalized);
+        persist(normalized);
+        return normalizedSet;
+      });
+    },
+    [persist],
+  );
   return [fav, toggle];
 }
 

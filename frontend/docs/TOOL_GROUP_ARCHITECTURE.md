@@ -89,8 +89,9 @@ TradingView chart behavior:
 
 - Favorites render as a separate floating toolbar on top of the chart, not as a
   quick-access strip inserted into the main left drawing toolbar.
-- The floating toolbar reads the same persisted `tv:favTools` set as the flyout
-  star controls.
+- The floating toolbar reads the same favorite set as the flyout star controls.
+  Authenticated mode loads/saves it through `GET/PUT /api/v1/drawing-tool-favorites`;
+  `tv:favTools` remains the anonymous/cache fallback.
 - One click activates a favorite tool. Right-click removes it from favorites.
 - The toolbar has a grip handle and uses the shared draggable-dialog hook so it
   can be moved without duplicating drag/clamp math.

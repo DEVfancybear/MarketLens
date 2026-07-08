@@ -59,6 +59,11 @@ export interface BackendDrawingTemplateWrite {
   style: Partial<DrawingTemplate>;
 }
 
+export interface BackendDrawingToolFavorites {
+  tools: string[];
+  updatedAt: string;
+}
+
 function encodeQuery(value: string): string {
   return encodeURIComponent(value);
 }
@@ -123,4 +128,16 @@ export async function updateDrawingTemplate(
 
 export async function deleteDrawingTemplate(id: string): Promise<void> {
   await deleteJson<{ ok: boolean }>(`drawing-templates/${encodePath(id)}`);
+}
+
+export async function getDrawingToolFavorites(): Promise<BackendDrawingToolFavorites> {
+  return getJson<BackendDrawingToolFavorites>("drawing-tool-favorites");
+}
+
+export async function replaceDrawingToolFavorites(
+  tools: string[],
+): Promise<BackendDrawingToolFavorites> {
+  return putJson<BackendDrawingToolFavorites>("drawing-tool-favorites", {
+    tools,
+  });
 }

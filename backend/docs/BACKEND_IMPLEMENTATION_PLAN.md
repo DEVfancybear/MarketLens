@@ -332,18 +332,22 @@ the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). *
    instead of duplicating.
 4. Handler: `GET /api/v1/drawings?symbol=…`, `POST /api/v1/drawings`, `PUT/PATCH/DELETE
    /api/v1/drawings/:id`, `POST /api/v1/drawings/batch` (sync flush).
-5. **Also in this phase — `drawing_templates`** (`DATABASE.md` §7.3): the frontend `drawingTemplates`
-   key is **global** style presets (not per-symbol). Add CRUD `GET/POST /api/v1/drawing-templates`,
-   `PUT/DELETE /api/v1/drawing-templates/:id`; `UNIQUE (user_id, name, family)`.
-6. Bootstrap: **omit** the full drawing set (can be large) — load lazily per symbol on first chart
-   open. **Include** `drawingTemplates` in bootstrap (small, global, needed everywhere).
+  5. **Also in this phase — `drawing_templates`** (`DATABASE.md` §7.3): the frontend `drawingTemplates`
+     key is **global** style presets (not per-symbol). Add CRUD `GET/POST /api/v1/drawing-templates`,
+     `PUT/DELETE /api/v1/drawing-templates/:id`; `UNIQUE (user_id, name, family)`.
+  6. **Also in this phase — `drawing_tool_favorites`**: the frontend `tv:favTools` key is a global,
+     ordered drawing-toolbar star list. Add `GET/PUT /api/v1/drawing-tool-favorites`; replace the
+     whole ordered array on every star toggle.
+  7. Bootstrap: **omit** the full drawing set (can be large) — load lazily per symbol on first chart
+     open. **Include** `drawingTemplates` in bootstrap (small, global, needed everywhere).
 
 **Acceptance**
 - Draw → reload → drawing reappears pinned to the same `(time, price)`.
 - Flushing the same batch twice (retry) yields no duplicates (`client_id` dedupe).
-- `PATCH { locked: true }` / `{ hidden: true }` round-trips.
-- Save a style template, apply it on another chart after reload.
-- Fetching another user's drawing id → `404`.
+  - `PATCH { locked: true }` / `{ hidden: true }` round-trips.
+  - Save a style template, apply it on another chart after reload.
+  - Star drawing tools, reload, and the floating favorites toolbar restores the same ordered tools.
+  - Fetching another user's drawing id → `404`.
 
 **Complexity:** Medium (batch + dedupe is the real work).
 

@@ -21,6 +21,7 @@ Today the frontend keeps **all** user data in the browser. Exact keys and shapes
 | `tv:favoriteTimeframes` → `string[]`                                 | localStorage   | `user_settings.chart`                          |
 | `drawings:<symbol>` → `Drawing[]`                                   | localStorage   | `drawings`                                      |
 | `drawingTemplates` → `DrawingTemplate[]` (**global**, style presets) | localStorage   | `drawing_templates`                            |
+| `tv:favTools` → `string[]` (**global**, drawing toolbar stars)       | localStorage   | `drawing_tool_favorites`                       |
 | `indicators` → `IndicatorConfig[]`                                  | localStorage   | `indicator_presets`                            |
 | `pineScripts` → `CustomIndicatorScript[]`                           | localStorage   | `pine_scripts`                                 |
 | `watchlist` → `string[]`                                            | localStorage   | `watchlists` + `watchlist_symbols`             |
@@ -347,7 +348,22 @@ CREATE TABLE drawing_templates (
 CREATE INDEX idx_drawing_templates_user ON drawing_templates(user_id);
 ```
 
-### 7.4 `pine_scripts`
+### 7.4 `drawing_tool_favorites`
+
+**Global** ordered list of drawing tool ids starred in the drawing flyouts and shown in the
+floating favorites toolbar. The frontend owns the tool registry, so the backend stores ids as an
+opaque `jsonb` array and only scopes them by `user_id`.
+
+```sql
+CREATE TABLE drawing_tool_favorites (
+  user_id    uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tools      jsonb NOT NULL DEFAULT '[]',       -- e.g. ["trendline", "long", "fib"]
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT chk_drawing_tool_favorites_array CHECK (jsonb_typeof(tools) = 'array')
+);
+```
+
+### 7.5 `pine_scripts`
 
 Matches `CustomIndicatorScript` (`pineScripts` key). **Create before `indicator_presets`** — the
 latter FKs into this.
@@ -369,7 +385,7 @@ CREATE UNIQUE INDEX idx_pine_scripts_client ON pine_scripts(user_id, client_id)
   WHERE client_id IS NOT NULL;
 ```
 
-### 7.5 `indicator_presets`
+### 7.6 `indicator_presets`
 
 One row per `IndicatorConfig` (`indicators` key). The whole config lives in `config jsonb`
 (length/length2/length3, colors, `inputValues`, `styleValues`); a few fields are promoted to columns

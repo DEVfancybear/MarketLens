@@ -79,3 +79,15 @@ type DrawingTemplateWrite struct {
 	Family string          `json:"family"`
 	Style  json.RawMessage `json:"style"`
 }
+
+// DrawingToolFavorites stores the ordered tool ids starred in the drawing
+// toolbar. The backend does not validate tool ids because the frontend owns the
+// tool registry and can evolve it without a schema migration.
+type DrawingToolFavorites struct {
+	Tools     []string  `json:"tools"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type DrawingToolFavoritesWrite struct {
+	Tools []string `json:"tools"`
+}

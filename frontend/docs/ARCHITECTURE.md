@@ -130,11 +130,12 @@ workspace slices should move behind typed DTO adapters one at a time. See
 
 Current local persistence is still used for anonymous mode and not-yet-migrated workspace slices:
 
-- localStorage: `ui`, `drawings:<symbol>`, `indicators`, `pineScripts`, `drawingTemplates`,
-  `watchlist:lists`, `watchlist:activeId`, legacy `watchlist`, `smc-settings`, `alerts`,
-  `pushNotifications`, chart/timezone preferences, interval favorites, drawing tool favorites.
+- localStorage: anonymous/cache fallback for `ui`, `drawings:<symbol>`, `indicators`,
+  `pineScripts`, `drawingTemplates`, legacy `watchlist`, `smc-settings`, `alerts`,
+  `pushNotifications`, chart/timezone preferences, interval favorites, and drawing tool favorites.
 - IndexedDB: journal entries and screenshots through `services/storage.ts`.
-- Backend: auth/session, settings, and sync bootstrap are live; full authenticated workspace
+- Backend: auth/session, settings, sync bootstrap, Phase 6 watchlists, MT5 data APIs, and Phase 7
+  drawings/drawing templates/drawing tool favorites are live; remaining authenticated workspace
   persistence is pending per resource.
 
 ## Rendering And Overlays

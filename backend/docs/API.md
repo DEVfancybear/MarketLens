@@ -382,6 +382,16 @@ Global (not per-symbol) style presets — backed by `drawing_templates`.
 | PUT    | `/api/v1/drawing-templates/:id`   | Update                                      |
 | DELETE | `/api/v1/drawing-templates/:id`   | Delete                                      |
 
+## Drawing tool favorites  protected, implemented
+
+Global ordered star list for the drawing toolbar/floating favorites toolbar — backed by
+`drawing_tool_favorites`.
+
+| Method | Path                              | Purpose                           |
+| ------ | --------------------------------- | --------------------------------- |
+| GET    | `/api/v1/drawing-tool-favorites`  | Get `{ tools }`                   |
+| PUT    | `/api/v1/drawing-tool-favorites`  | Replace ordered `{ tools: [] }`   |
+
 ---
 
 ## Indicators  🔒

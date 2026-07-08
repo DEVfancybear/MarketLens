@@ -28,9 +28,9 @@ Current backend code has:
 - Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
 Current backend API status from `backend/docs/API.md`: auth, settings, bootstrap, Phase 6
-watchlists, and Phase 7 drawings/drawing templates are live. Indicators/Pine/alerts/journal/
-layouts/sim trading remain phase-by-phase work. Frontend work should remain staged behind
-`backendSession` and typed adapters.
+watchlists, and Phase 7 drawings/drawing templates/drawing tool favorites are live.
+Indicators/Pine/alerts/journal/layouts/sim trading remain phase-by-phase work. Frontend work should
+remain staged behind `backendSession` and typed adapters.
 Do not remove working local behavior for anonymous users until each resource endpoint exists.
 
 ## Source Of Truth Rules
@@ -272,6 +272,7 @@ Responsibilities:
 | Watchlist lists/sections/symbols | `watchlist`, `watchlist:lists`, `watchlist:activeId` | `watchlists` + `watchlist_symbols` |
 | Drawings per symbol | `drawings:<symbol>` | `drawings.payload` |
 | Drawing templates | `drawingTemplates` | `drawing_templates.style` |
+| Drawing tool favorites | `tv:favTools` | `drawing_tool_favorites.tools` |
 | Indicator presets | `indicators` | `indicator_presets.config` |
 | Pine scripts | `pineScripts` | `pine_scripts` |
 | Alerts and history | `alerts` | `alerts` + `alert_events` |
@@ -312,6 +313,7 @@ Do not write to backend on every render or pointer move.
 | Watchlists | on create/rename/delete/active-list/change-layout commit; section and reorder use the same layout endpoint |
 | Drawings | create on completion; update on pointerup/settings OK; batch drag updates |
 | Drawing templates | explicit create/update/delete |
+| Drawing tool favorites | replace whole ordered list on star toggle |
 | Indicators | add/remove/toggle immediately; style/settings on OK |
 | Pine scripts | explicit Save |
 | Alerts | create/update/delete action |
@@ -371,6 +373,8 @@ Frontend remote mode should not be enabled globally until each required slice ex
 - `POST /api/v1/drawings/batch` - backend implemented; frontend debounced upsert/delete path wired
 - `GET/POST/PUT/DELETE /api/v1/drawing-templates` - backend implemented; frontend bootstrap,
   save, and delete paths wired
+- `GET/PUT /api/v1/drawing-tool-favorites` - backend implemented; frontend drawing toolbar
+  read/write path wired
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts`
 - `GET/POST/PUT/DELETE /api/v1/indicators`
 
@@ -424,7 +428,8 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
 - Drawings and drawing templates are implemented for Phase 7:
   - drawing payloads lazy-load per current symbol from `/api/v1/drawings`,
   - drawing mutations flush through `/api/v1/drawings/batch`,
-  - templates hydrate from bootstrap and save/delete through `/api/v1/drawing-templates`.
+  - templates hydrate from bootstrap and save/delete through `/api/v1/drawing-templates`,
+  - drawing toolbar favorites read/write through `/api/v1/drawing-tool-favorites`.
 - Remaining Phase FE-3 work: Pine scripts and indicator presets.
 - Ensure Pine scripts hydrate before custom indicators.
 

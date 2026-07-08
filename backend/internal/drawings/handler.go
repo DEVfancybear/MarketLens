@@ -33,6 +33,10 @@ func (h *Handler) Register(router fiber.Router) {
 	t.Post("/", h.saveTemplate)
 	t.Put("/:id", h.updateTemplate)
 	t.Delete("/:id", h.deleteTemplate)
+
+	f := router.Group("/drawing-tool-favorites", h.requireAuth)
+	f.Get("/", h.getToolFavorites)
+	f.Put("/", h.replaceToolFavorites)
 }
 
 func (h *Handler) list(c *fiber.Ctx) error {
@@ -139,6 +143,26 @@ func (h *Handler) deleteTemplate(c *fiber.Ctx) error {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
+}
+
+func (h *Handler) getToolFavorites(c *fiber.Ctx) error {
+	favs, err := h.store.GetToolFavorites(c.Context(), userID(c))
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(favs)
+}
+
+func (h *Handler) replaceToolFavorites(c *fiber.Ctx) error {
+	var req DrawingToolFavoritesWrite
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	favs, err := h.store.ReplaceToolFavorites(c.Context(), userID(c), req)
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(favs)
 }
 
 func userID(c *fiber.Ctx) string {
