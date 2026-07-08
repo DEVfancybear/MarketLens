@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Drawing render culling and hover redraw (2026-07-08)
+- Changed drawing viewport culling to use each tool adapter's `boundingBox()`
+  instead of raw anchor points, so extended/ray/fib/position-style geometry is
+  not dropped while panning or zooming.
+- Added hover and multi-select state to the drawing render memo guard, and
+  schedule redraws when the hovered drawing changes.
+- Cached the right-side whitespace `toX()` projection fallback by viewport
+  version and candle anchors to reduce repeated candle scans while keeping
+  future-time drawings pinned to the chart.
+- Updated rectangle `Extend` hit-test and bounding-box logic so the visible
+  extended region can be selected and is not culled.
+- Added TypeScript drawing regression tests for adapter-owned viewport culling,
+  rectangle extend geometry, and hover/multi-select render memo keys.
+
 ### Fixed - Auth workspace reset boundary (2026-07-08)
 - Reset user-scoped frontend workspace state when auth resolves to anonymous, so sign-out no longer
   leaves the previous user's watchlist, settings, drawings, indicators, alerts, Trade prefill, or

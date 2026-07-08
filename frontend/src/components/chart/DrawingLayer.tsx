@@ -90,6 +90,17 @@ export function DrawingLayer() {
   );
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
+  const xFallbackRef = useRef<{
+    version: number;
+    candleCount: number;
+    anchorIndex: number;
+    anchorTime: number;
+    anchorX: number;
+    refIndex: number;
+    refTime: number;
+    secondsPerBar: number;
+    pxPerBar: number;
+  } | null>(null);
   const toX = useCallback((time: number) => {
     const chart = ctxRef.current?.chart;
     if (!chart) return null;
@@ -103,6 +114,22 @@ export function DrawingLayer() {
     // the last candle.
     const candles = getDefaultStore().get(candlesAtom);
     if (candles.length < 2) return null;
+    const version = ctxRef.current?.version ?? 0;
+    const cached = xFallbackRef.current;
+    if (
+      cached &&
+      cached.version === version &&
+      cached.candleCount === candles.length &&
+      cached.anchorIndex < candles.length &&
+      cached.refIndex < candles.length &&
+      candles[cached.anchorIndex]?.time === cached.anchorTime &&
+      candles[cached.refIndex]?.time === cached.refTime
+    ) {
+      return (
+        cached.anchorX +
+        ((time - cached.anchorTime) / cached.secondsPerBar) * cached.pxPerBar
+      );
+    }
     // Anchor = nearest candle (scanning back from the last) that still projects.
     let i = candles.length - 1;
     let cx: number | null = null;
@@ -122,6 +149,17 @@ export function DrawingLayer() {
     const span = i - j;
     const barW = (cx - px) / span; // pixels per bar
     const iv = (candles[i].time - candles[j].time) / span || 1; // seconds per bar
+    xFallbackRef.current = {
+      version,
+      candleCount: candles.length,
+      anchorIndex: i,
+      anchorTime: candles[i].time,
+      anchorX: cx,
+      refIndex: j,
+      refTime: candles[j].time,
+      secondsPerBar: iv,
+      pxPerBar: barW,
+    };
     return cx + ((time - candles[i].time) / iv) * barW;
   }, []);
   const toY = useCallback(
@@ -380,6 +418,7 @@ export function DrawingLayer() {
         drawings: stateRef.current.drawings,
         drawingsHidden: stateRef.current.drawingsHidden,
         selectedDrawingId: stateRef.current.selectedDrawingId,
+        selectedDrawingIds: stateRef.current.selectedDrawingIds,
         drawColor,
         activeTool,
         machine: machineRef.current,

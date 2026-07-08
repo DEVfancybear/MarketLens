@@ -6,10 +6,56 @@
  */
 import type { Drawing } from "@/types";
 import type { HitTestProjector } from "../hittest/HitTestEngine";
+import { getTool } from "../tools/ToolRegistry";
 
 interface Entry {
   drawing: Drawing;
   bbox: { x: number; y: number; w: number; h: number };
+}
+
+function pointFallbackBox(
+  d: Drawing,
+  toX: HitTestProjector,
+  toY: HitTestProjector,
+): Entry["bbox"] | null {
+  if (!d.points.length) return null;
+  const points = d.points.map((pt) => {
+    const x = toX(pt.time);
+    const y = toY(pt.price);
+    return { x: x ?? 0, y: y ?? 0 };
+  });
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return {
+    x: minX - 10,
+    y: minY - 10,
+    w: Math.max(1, maxX - minX + 20),
+    h: Math.max(1, maxY - minY + 20),
+  };
+}
+
+function normalizeBox(box: Entry["bbox"] | null): Entry["bbox"] | null {
+  if (!box) return null;
+  if (
+    !Number.isFinite(box.x) ||
+    !Number.isFinite(box.y) ||
+    !Number.isFinite(box.w) ||
+    !Number.isFinite(box.h)
+  ) {
+    return null;
+  }
+  const x = box.w < 0 ? box.x + box.w : box.x;
+  const y = box.h < 0 ? box.y + box.h : box.y;
+  return {
+    x,
+    y,
+    w: Math.max(1, Math.abs(box.w)),
+    h: Math.max(1, Math.abs(box.h)),
+  };
 }
 
 export class SpatialIndex {
@@ -24,23 +70,12 @@ export class SpatialIndex {
     this.entries = [];
     for (const d of drawings) {
       if (d.visible === false) continue;
-      const points = d.points.map((pt) => {
-        const x = toX(pt.time),
-          y = toY(pt.price);
-        // Fallback to 0 so off-screen drawings are still indexed.
-        return { x: x ?? 0, y: y ?? 0 };
-      });
-      const xs = points.map((p) => p.x),
-        ys = points.map((p) => p.y);
-      this.entries.push({
-        drawing: d,
-        bbox: {
-          x: Math.min(...xs) - 10,
-          y: Math.min(...ys) - 10,
-          w: Math.max(...xs) - Math.min(...xs) + 20,
-          h: Math.max(...ys) - Math.min(...ys) + 20,
-        },
-      });
+      const adapter = getTool(d.tool);
+      const bbox = normalizeBox(
+        adapter?.boundingBox(d, toX, toY) ?? pointFallbackBox(d, toX, toY),
+      );
+      if (!bbox) continue;
+      this.entries.push({ drawing: d, bbox });
     }
     // Sort by zIndex (descending) — topmost first.
     this.entries.sort(

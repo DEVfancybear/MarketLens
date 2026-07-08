@@ -4,13 +4,23 @@
 import type { Drawing } from "@/types";
 import { renderDrawing, type Projector } from "../drawingRenderer";
 import type { Point } from "@/types";
-import type { Machine } from "../interaction/DrawingInteractionManager";
 import { getTool } from "../tools/ToolRegistry";
 import { CoordinateCache } from "./CoordinateCache";
 import { SpatialIndex } from "./SpatialIndex";
 import { PerformanceMonitor } from "./PerformanceMonitor";
+import {
+  sameRenderMemoState,
+  selectedIdsHash,
+  type RenderMemoState,
+} from "./renderMemo";
 
 const VIEWPORT_FOLLOW_MS = 450;
+
+type RenderMachine = {
+  state: string;
+  anchors: Point[];
+  drawingTool: Drawing["tool"] | null;
+};
 
 export interface RenderLoopDeps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -20,9 +30,10 @@ export interface RenderLoopDeps {
     drawings: Drawing[];
     drawingsHidden: boolean;
     selectedDrawingId: string | null;
+    selectedDrawingIds?: Set<string>;
     drawColor: string;
     activeTool: Drawing["tool"];
-    machine: Machine | null;
+    machine: RenderMachine | null;
     chartReady: boolean;
     /** Map of drawing ID → live points during drag. */
     livePoints: Map<string, Point[]> | null;
@@ -64,16 +75,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   // redraws for a short burst.
   let viewportFollowUntil = 0;
   let rafId: number | null = null;
-  let lastCanvasW = 0,
-    lastCanvasH = 0;
-  let lastDrawingsHash = "";
-  let lastSelectedId: string | null = null;
-  let lastHidden = false;
-  let lastMachineState = "";
-  let lastMachineAnchorsSig = "";
-  let lastActiveTool = "";
-  let lastDrawColor = "";
-  let lastLiveHash = "";
+  let lastMemoState: RenderMemoState | null = null;
 
   function drawingsHash(ds: Drawing[]): string {
     let h = String(ds.length);
@@ -254,34 +256,31 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     }
     const drawHash = drawingsHash(data.drawings);
     const liveH = liveHash(data.livePoints);
+    const selectedHash = selectedIdsHash(data.selectedDrawingIds);
+    const memoState: RenderMemoState = {
+      drawingsHash: drawHash,
+      selectedDrawingId: data.selectedDrawingId,
+      selectedDrawingIdsHash: selectedHash,
+      drawingsHidden: data.drawingsHidden,
+      machineState,
+      machineAnchorsSig,
+      activeTool: data.activeTool,
+      drawColor: data.drawColor,
+      liveHash: liveH,
+      hoveredId: data.hoveredId,
+      canvasW: cw,
+      canvasH: ch,
+    };
 
     if (
       !forceNext &&
-      drawHash === lastDrawingsHash &&
-      data.selectedDrawingId === lastSelectedId &&
-      data.drawingsHidden === lastHidden &&
-      machineState === lastMachineState &&
-      machineAnchorsSig === lastMachineAnchorsSig &&
-      data.activeTool === lastActiveTool &&
-      data.drawColor === lastDrawColor &&
-      liveH === lastLiveHash &&
-      cw === lastCanvasW &&
-      ch === lastCanvasH
+      lastMemoState &&
+      sameRenderMemoState(memoState, lastMemoState)
     )
       return;
 
     forceNext = false;
-    lastDrawingsHash = drawHash;
-    lastSelectedId = data.selectedDrawingId;
-    lastHidden = data.drawingsHidden;
-    lastMachineState = machineState;
-    lastMachineAnchorsSig = machineAnchorsSig;
-    lastActiveTool = data.activeTool;
-    lastDrawColor = data.drawColor;
-    lastLiveHash = liveH;
-    lastCanvasW = cw;
-    lastCanvasH = ch;
-
+    lastMemoState = memoState;
     const g = canvas.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
@@ -354,7 +353,9 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     }
     for (const d of sorted) {
       if (d.visible === false) continue;
-      const selected = d.id === data.selectedDrawingId;
+      const selected =
+        d.id === data.selectedDrawingId ||
+        data.selectedDrawingIds?.has(d.id) === true;
       g.strokeStyle = d.color;
       g.fillStyle = d.color;
       g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);

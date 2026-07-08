@@ -10,6 +10,17 @@ import {
 } from "../ToolRegistry";
 import { handle, applyStyle, line, renderShapeText } from "./shared";
 
+const EXTENDED_RECT_SPAN = 100000;
+
+function projectedHorizontalBounds(d: Drawing, x1: number, x2: number) {
+  let left = Math.min(x1, x2);
+  let right = Math.max(x1, x2);
+  const ext = d.extend ?? "none";
+  if (ext === "left" || ext === "both") left = -EXTENDED_RECT_SPAN;
+  if (ext === "right" || ext === "both") right = EXTENDED_RECT_SPAN;
+  return { left, right };
+}
+
 const plugin: DrawingToolPlugin = {
   tool: "rectangle",
   minPoints: 2,
@@ -52,7 +63,8 @@ const plugin: DrawingToolPlugin = {
     if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
     if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p1", distance: pointDist(px, py, x1, y1) });
     if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p2", distance: pointDist(px, py, x2, y2) });
-    const bodyDist = distToRect(px, py, x1, y1, x2, y2);
+    const { left, right } = projectedHorizontalBounds(d, x1, x2);
+    const bodyDist = distToRect(px, py, left, y1, right, y2);
     if (bodyDist < TOL) results.push({ drawing: d, target: "body", distance: bodyDist });
     return results;
   },
@@ -61,7 +73,13 @@ const plugin: DrawingToolPlugin = {
     const x1 = toX(d.points[0].time), y1 = toY(d.points[0].price);
     const x2 = toX(d.points[1].time), y2 = toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
-    return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+    const { left, right } = projectedHorizontalBounds(d, x1, x2);
+    return {
+      x: left,
+      y: Math.min(y1, y2),
+      w: right - left,
+      h: Math.abs(y2 - y1),
+    };
   },
 };
 

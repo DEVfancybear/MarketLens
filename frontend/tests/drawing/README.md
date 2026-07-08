@@ -16,6 +16,10 @@ shape-like TradingView tools:
 - Ray and Extended Line body hit-tests must match their one-way / two-way
   extension behavior, and axis-aligned line tools must drag on the expected
   axis only.
+- Drawing viewport culling must use each tool adapter's `boundingBox()` instead
+  of raw anchors, so extended geometry remains visible/selectable after pan/zoom.
+- The render-loop memo guard must repaint when hover or multi-select state
+  changes, even when drawing points and the primary selected id are unchanged.
 
 ## Run
 
@@ -39,4 +43,5 @@ Add tests here when changing:
 - Shape plugin hit-testing or anchor behavior
 - Line plugin hit-testing, extension behavior, or axis-constrained movement
 - Shape plugin viewport bounds or curve sampling
+- Renderer viewport culling or memo-guard keys
 - Multi-point shape drag/resize behavior that relies on `anchorIndex`

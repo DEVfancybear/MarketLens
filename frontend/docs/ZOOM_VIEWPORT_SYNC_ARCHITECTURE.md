@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-07-08_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -210,6 +210,8 @@ state:
 - active tool,
 - live drag points,
 - machine state,
+- hovered drawing id,
+- full multi-selection set,
 - canvas size,
 - `forceNext`.
 
@@ -228,6 +230,29 @@ coordCache.nextFrame()
 
 The cache key is only `time` or `price`, not viewport. Reusing it across frames
 will freeze drawings at old pixel coordinates.
+
+`DrawingLayer.toX()` also keeps a separate whitespace-projection fallback cache.
+That cache is keyed by `ChartContext.version`, candle count, and the projected
+anchor candle. It exists because `timeScale().timeToCoordinate()` returns `null`
+for drawing points placed beyond loaded candles, while TradingView still keeps
+position boxes, rays, and extended objects visually attached in right-side
+whitespace. Do not replace this with raw pixel persistence.
+
+## 10.1 Drawing Culling
+
+`SpatialIndex` must index each tool by its adapter `boundingBox()`, not by raw
+anchor points. Many TradingView-style tools render outside their anchors:
+
+- horizontal lines,
+- vertical/cross lines,
+- rays and extended lines,
+- rectangle `Extend`,
+- fib levels,
+- long/short position labels and zones.
+
+If a plugin's rendered geometry extends beyond its anchors, update that
+plugin's `boundingBox()` and `hitTest()` together. Otherwise pan/zoom can cull a
+visible drawing or make the extended portion impossible to select.
 
 ## 11. Indicator Panes
 
@@ -274,6 +299,8 @@ Do not call `fitContent()` from individual replay controls.
 - Use `markDirty(true, true)` for chart viewport changes.
 - Use `markDirty()` for drawing data changes.
 - Keep coordinate caches frame-local.
+- Keep whitespace projection caches viewport-versioned.
+- Keep drawing viewport culling adapter-owned via `boundingBox()`.
 - Do not add per-tool zoom patches.
 - Always unsubscribe LWC and DOM event handlers on teardown.
 

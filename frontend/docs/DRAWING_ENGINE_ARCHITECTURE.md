@@ -1,6 +1,6 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-06 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, and viewport invalidation rules._
+_Date: 2026-06-25. Updated 2026-07-08 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, viewport invalidation rules, and adapter-owned viewport culling._
 
 ## Architecture rule (read before touching drawing/chart interaction)
 
@@ -158,13 +158,20 @@ the previous frame's. The key currently covers:
 |---|---|---|
 | `drawHash` | `drawings` ids + point `(time,price)` | drawing added/removed/edited |
 | `selectedDrawingId` | store | selection styling |
+| `selectedDrawingIds` | store | multi-select styling |
 | `drawingsHidden` | store | hide-all toggle |
+| `hoveredId` | interaction ref | hover outline styling |
 | `machineState` | interaction machine | Idle/Drawing/Moving/Resizing |
 | `machineAnchorsSig` | machine anchors **incl. positions** | live rubber-band preview |
 | `activeTool`, `drawColor` | store | pending preview styling |
 | `liveHash` | live drag points `(time,price)` | drag-in-progress preview |
 | `cw`, `ch` | canvas pixel size | resize |
 | `forceNext` | viewport subscription | **see below** |
+
+The comparison lives in `renderer/renderMemo.ts` so Node tests can lock the
+memo-key contract without importing the browser canvas renderer. Update
+`tests/drawing/renderCulling.test.ts` whenever a new render input should affect
+pixels.
 
 > ⚠️ The guard tracks **values, not just counts/lengths**. Tracking a length is a trap:
 > two of the 2026-06-27 bugs came from keys that ignored position —
@@ -409,6 +416,30 @@ text behavior.
 
 Full Long/Short rendering and movement details live in
 `POSITION_TOOL_ARCHITECTURE.md`.
+
+## Render culling maintenance - updated 2026-07-08
+
+Right-side whitespace is a separate case: Lightweight Charts returns `null` for
+`timeToCoordinate()` when a drawing point sits beyond loaded candles. `DrawingLayer.toX()`
+therefore extrapolates from the nearest projected candle pair and caches that fallback by
+`ChartContext.version` + candle count + anchor candle. This keeps long/short tools, rays, and
+future-time drawings pinned while avoiding a backward candle scan for every point in a frame.
+
+`renderer/SpatialIndex.ts` filters drawings before render/hit-test, but it must never invent
+geometry from raw anchors. It asks each adapter for `boundingBox(d, toX, toY)` and only falls
+back to point bounds if a legacy plugin does not provide one.
+
+This is required because many tools render outside their anchors:
+
+- horizontal, vertical, and cross lines;
+- ray and extended line;
+- fib levels;
+- rectangle `Extend`;
+- long/short position zones and labels.
+
+If a plugin renders beyond its anchors, its `boundingBox()` and `hitTest()` must describe that
+same visible geometry. Otherwise the renderer may cull a visible object after pan/zoom, or the
+user may be unable to select the visible extended portion.
 
 The Long / Short Position tool must use symbol metadata for tick math. Do not infer a tick from the
 price magnitude.

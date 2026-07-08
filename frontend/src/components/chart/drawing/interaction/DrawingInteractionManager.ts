@@ -559,16 +559,26 @@ export function useDrawingInteractionManager(
       const cur = getState();
       if (cur.activeTool !== "cursor") return;
       if (!canvas || !isOverCanvas(e, canvas)) {
-        hoveredIdRef.current = null;
+        if (hoveredIdRef.current !== null) {
+          hoveredIdRef.current = null;
+          scheduleRedrawRef.current();
+        }
         return;
       }
       const hp = fromEvent(e);
       if (!hp) {
-        hoveredIdRef.current = null;
+        if (hoveredIdRef.current !== null) {
+          hoveredIdRef.current = null;
+          scheduleRedrawRef.current();
+        }
         return;
       }
       const hit = hitTest(cur.drawings, hp, toX, toY);
-      hoveredIdRef.current = hit?.drawing.id ?? null;
+      const nextHoveredId = hit?.drawing.id ?? null;
+      if (hoveredIdRef.current !== nextHoveredId) {
+        hoveredIdRef.current = nextHoveredId;
+        scheduleRedrawRef.current();
+      }
     };
 
     const handleUp = () => {
