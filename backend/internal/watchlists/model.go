@@ -11,10 +11,32 @@ var (
 	ErrBadRequest = errors.New("watchlists: bad request")
 )
 
-// Watchlist is a named list with its ordered symbols.
+// WatchlistSection is a TradingView-style divider row anchored at a symbol
+// insertion index. It lets the frontend restore grouped watchlist layout without
+// browser localStorage.
+type WatchlistSection struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Index int    `json:"index"`
+}
+
+// WatchlistLayout is the full mutable list body used by drag/drop, clear,
+// add/remove symbol, and section actions. Sending the whole layout keeps every
+// frontend gesture backed by one common backend write path.
+type WatchlistLayout struct {
+	Symbols  []string           `json:"symbols"`
+	Sections []WatchlistSection `json:"sections"`
+}
+
+// Watchlist is a named list with ordered symbols and section dividers.
 type Watchlist struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Position int      `json:"position"`
-	Symbols  []string `json:"symbols"`
+	ID       string             `json:"id"`
+	Name     string             `json:"name"`
+	Position int                `json:"position"`
+	Symbols  []string           `json:"symbols"`
+	Sections []WatchlistSection `json:"sections"`
+	Shared   bool               `json:"shared"`
+	Active   bool               `json:"active,omitempty"`
+	SortKey  string             `json:"sortKey"`
+	SortDir  string             `json:"sortDir"`
 }

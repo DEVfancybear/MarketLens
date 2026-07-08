@@ -7,10 +7,8 @@ The historical issue log below is preserved. Current monorepo-specific issues:
 - Backend Phases 0-6 are complete: auth, settings/bootstrap, and watchlist persistence are live.
   Next backend persistence work starts at Phase 7 drawings/templates.
 - Frontend authenticated bootstrap now reads server UI settings, SMC settings, notification
-  settings, and watchlists. Mutation write-back is still pending, so changes after hydration still
-  rely on the existing local frontend stores until each write path is wired.
-- Watchlist sections remain frontend-local because the current backend watchlist contract stores
-  list names, positions, and flat symbols only.
+  settings, and full watchlist layouts. Watchlist mutation write-back is wired through backend
+  Phase 6 APIs; browser localStorage is no longer a watchlist source of truth.
 - Indicator catalog data must come from an API/provider; do not reintroduce hardcoded catalog
   fallbacks.
 - Frontend docs referenced below as `docs/*.md` generally live under `frontend/docs/` after the

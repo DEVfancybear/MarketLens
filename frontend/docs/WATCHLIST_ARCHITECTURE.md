@@ -1,13 +1,12 @@
 # Watchlist Architecture
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 ## Goal
 
-The Watchlist should behave like TradingView while staying compatible with the existing frontend
-data flow. Authenticated bootstrap hydrates flat watchlist lists/symbols from the backend and the
-main list/symbol actions write through to backend Phase 6 APIs. Section metadata and section/reorder
-edits stay in the frontend store until the backend exposes a section/reorder contract.
+The Watchlist should behave like TradingView while treating backend Phase 6 as the source of truth.
+Frontend Jotai state is only an optimistic in-memory cache; browser localStorage is no longer used
+for watchlist lists, active list, symbols, sections, or reorder state.
 
 ## Source Files
 
@@ -19,23 +18,24 @@ edits stay in the frontend store until the backend exposes a section/reorder con
 
 ## Data Model
 
-The legacy contract is a flat symbol array stored in localStorage key `watchlist`.
+Backend-owned model:
 
-The current implementation adds list metadata while keeping that legacy key synchronized:
+- `/api/v1/sync/bootstrap` reads server-owned watchlists during authenticated bootstrap.
+- `/api/v1/watchlists` lists/creates/deletes named lists.
+- `/api/v1/watchlists/active` persists the active list id.
+- `/api/v1/watchlists/:id` renames/reorders list metadata and updates `shared`,
+  `sortKey`, and `sortDir`.
+- `/api/v1/watchlists/:id/layout` replaces the full ordered symbol array and section rows.
 
-- `watchlist:lists` stores named lists, sharing state, symbols, and section rows.
-- `watchlist:activeId` stores the active list id.
-- `watchlist` stores the active list symbols for older code paths.
+Frontend-owned runtime:
 
-This compatibility is important because chart context menus and market-data bootstrap still consume
-`watchlistSymbolsAtom`.
-
-Authenticated backend mode adds a second boundary:
-
-- `/api/v1/sync/bootstrap` is the read path for server-owned watchlist lists and symbols.
-- `watchlistsApi.ts` owns the Phase 6 endpoint calls.
-- `watchlistStore.ts` remains the UI runtime source of truth and performs optimistic local updates.
-- Anonymous mode still uses the local keys above.
+- `watchlistStore.ts` performs optimistic in-memory updates so the UI responds immediately.
+- `watchlistSymbolsAtom` remains the compatibility read contract for chart context menus and
+  market-data subscriptions.
+- `watchlistsApi.ts` is the only watchlist network boundary and uses `ky` through the shared API
+  client.
+- If the backend session is unavailable, the UI can still mutate the in-memory cache for the
+  current tab, but it is intentionally not persisted to localStorage.
 
 ## Store Atoms
 
@@ -44,6 +44,8 @@ Read atoms:
 - `activeWatchlistAtom`
 - `watchlistSymbolsAtom`
 - `watchlistSectionsAtom`
+- `watchlistSortKeyAtom`
+- `watchlistSortDirAtom`
 
 Write atoms:
 
@@ -60,6 +62,7 @@ Write atoms:
 - `removeWatchlistSectionAtom`
 - `moveWatchlistSymbolAtom`
 - `moveWatchlistSectionAtom`
+- `setWatchlistSortAtom`
 
 Pure section/order rules live in `watchlistLayout.ts`:
 
@@ -116,8 +119,7 @@ matches the TradingView feel more closely and keeps dense watchlists readable wh
 
 The Watchlist title opens a TradingView-style dropdown with:
 
-- Share list
-- Make a copy
+- Saved list selector with per-list delete when more than one list exists
 - Rename
 - Add section
 - Clear list
@@ -125,6 +127,8 @@ The Watchlist title opens a TradingView-style dropdown with:
 
 The menu intentionally omits unsupported TradingView actions:
 
+- Share list
+- Make a copy
 - Add alert on the list
 - Upload list
 - Open list
@@ -140,39 +144,42 @@ a symbol or another section repositions the group boundary. Symbols are draggabl
 section header or the section's empty body moves the symbol inside that section, while the dedicated
 top drop strip moves it back outside all sections.
 
+The Sort by menu is live for both plain and sectioned lists:
+
+- `Symbol name` sorts alphabetically.
+- `Last price`, `Change`, `Change %`, and `Volume` sort from realtime quote data.
+- Clicking the active sort key toggles `asc`/`desc`.
+- For sectioned lists, sorting happens inside each section group so section headers keep their
+  TradingView-style grouping role instead of floating away from their symbols.
+- Sort ordering uses a quote snapshot when the user selects/toggles sort or changes list/layout.
+  Realtime ticks update each `WatchRow` price/change cell, but they do not continuously reorder the
+  parent list. This prevents dense watchlists from jumping every tick when values are close.
+
 ## Backend Sync
 
-Current backend watchlist persistence stores list metadata and flat symbols. Frontend bootstrap
-hydrates those lists after auth through `/api/v1/sync/bootstrap`. If the backend has no watchlists
-yet, `useWorkspaceBootstrap()` creates the server-side default list with `POST /api/v1/watchlists`
-and applies the returned id. This avoids showing browser-local seed symbols as if they were server
-data.
+Backend watchlist persistence stores list metadata, active list preference, ordered symbols, section
+rows, the `shared` flag, and sort preference (`sortKey`/`sortDir`). Frontend bootstrap hydrates
+those lists after auth through
+`/api/v1/sync/bootstrap`. If the backend has no watchlists yet, `useWorkspaceBootstrap()` creates a
+server-side default list with `POST /api/v1/watchlists` and applies the returned id.
 
 Implemented Phase 6 write-through:
 
-- Create list: local optimistic list, then `POST /api/v1/watchlists`, replacing the temporary id
-  with the backend id.
-- Copy list: local optimistic copy, then `POST /api/v1/watchlists` plus one add-symbol call per
-  copied symbol.
-- Rename list: optimistic local rename, then `PATCH /api/v1/watchlists/:id`.
-- Add symbol: optimistic local add, then `POST /api/v1/watchlists/:id/symbols`.
-- Remove symbol: optimistic local remove, then `DELETE /api/v1/watchlists/:id/symbols/:symbol`.
-- Clear list: optimistic local clear, then one remove-symbol call per previously present symbol.
+- Set active list: optimistic active id, then `PUT /api/v1/watchlists/active`.
+- Create list: optimistic list, then `POST /api/v1/watchlists`, replacing the temporary id with the
+  backend id and saving layout.
+- Rename list/shared flag/sort preference: optimistic metadata update, then
+  `PATCH /api/v1/watchlists/:id`.
+- Delete list: optimistic removal, then `DELETE /api/v1/watchlists/:id` and active preference sync.
+- Add/remove/clear symbol: optimistic local layout update, then
+  `PUT /api/v1/watchlists/:id/layout`.
+- Add/rename/delete section: optimistic local layout update, then
+  `PUT /api/v1/watchlists/:id/layout`.
+- Symbol/section drag-drop reorder: optimistic local layout update, then
+  `PUT /api/v1/watchlists/:id/layout`.
 
 Known Phase 6 limits:
 
-- Backend does not persist section rows yet, so `addWatchlistSectionAtom`,
-  `renameWatchlistSectionAtom`, `removeWatchlistSectionAtom`, and `moveWatchlistSectionAtom` are
-  local-only.
-- Backend does not expose symbol reorder yet, so `moveWatchlistSymbolAtom` updates the TradingView
-  UI locally but cannot persist order changes server-side.
-- `setWatchlistSharedAtom` is local-only because Phase 6 has no shared-watchlist field.
 - Conflict handling for multiple browser tabs/devices is still pending.
-
-Next sync steps:
-
-1. Keep `watchlistSymbolsAtom` as the UI compatibility contract.
-2. Extend backend contract for section rows and symbol reorder.
-3. Sync section drag/drop and symbol reorder once the endpoint exists.
-4. Continue writing the legacy `watchlist` key until all older consumers are removed.
-5. Add conflict handling for multiple browser tabs/devices.
+- The compatibility `POST/DELETE /symbols` endpoints remain for older clients, but the frontend uses
+  the full-layout endpoint for every modern watchlist gesture.

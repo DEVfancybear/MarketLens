@@ -4,6 +4,31 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Watchlist Sort by action (2026-07-08)
+- Added backend migration `0006_watchlist_sort_preferences` so each watchlist
+  persists `sortKey` and `sortDir` with the server-owned Phase 6 data model.
+- Extended `PATCH /api/v1/watchlists/:id` and bootstrap responses with sort
+  metadata, so refreshes restore the selected Sort by mode.
+- Fixed the frontend row renderer so Sort by applies even when the active
+  watchlist has section rows; symbols are sorted inside each section group.
+- Stopped realtime quote ticks from re-sorting the entire watchlist parent on
+  every update. Sort now uses a quote snapshot at selection/layout time while
+  row prices continue updating live.
+
+### Changed - Watchlist Phase 6 backend-owned layout (2026-07-08)
+- Added backend migration `0005_watchlist_layout` for `watchlist_sections`,
+  `watchlist_preferences`, and `watchlists.shared`, so TradingView-style sections,
+  active list, and shared flag persist server-side.
+- Added `PUT /api/v1/watchlists/active` and `PUT /api/v1/watchlists/:id/layout`.
+  The layout endpoint atomically replaces ordered symbols and section dividers and
+  is now the common write path for add/remove/clear symbol, section edits, and
+  drag/drop reorder.
+- Updated the frontend watchlist API/store so authenticated watchlist actions use
+  backend Phase 6 APIs. Browser localStorage is no longer used as a watchlist
+  source of truth; Jotai keeps only an optimistic in-memory cache.
+- Stopped MT5 symbol catalog refresh from overwriting user watchlists with the
+  full symbol catalog. The catalog now only updates symbol search/metadata.
+
 ### Changed - Screenshot and watchlist menu parity (2026-07-08)
 - Changed the top-toolbar camera button to open a TradingView-style snapshot menu
   with `Download image` (`Ctrl+Alt+S`) and `Copy image` (`Ctrl+Shift+S`) actions.

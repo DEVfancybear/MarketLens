@@ -15,7 +15,8 @@ import { isApiError } from "@/services/api/errors";
  *
  * Auth/session establishment stays in useAuthSession(). This hook runs after
  * `backendSessionAtom` flips true and applies server-owned sections into atoms.
- * Anonymous users keep the existing localStorage path.
+ * Watchlists are no longer localStorage-backed; anonymous/offline edits are only
+ * an in-memory cache for the current tab.
  */
 export function useWorkspaceBootstrap(): void {
   const backendSession = useAtomValue(backendSessionAtom);

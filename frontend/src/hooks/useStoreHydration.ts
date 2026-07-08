@@ -7,10 +7,11 @@ import { hydrateWatchlistAtom } from "@/store/watchlistStore";
 import { hydrateSmcAtom } from "@/store/smcStore";
 
 /**
- * Loads all persisted (localStorage-backed) store state AFTER mount, then flips
+ * Loads persisted local UI/chart/SMC store state AFTER mount, then flips
  * a `hydrated` flag. Stores initialise with deterministic SSR-safe defaults, so
  * the server HTML and the first client render always match; persisted values are
- * applied here, post-hydration, where a state update is safe.
+ * applied here, post-hydration, where a state update is safe. Watchlists are
+ * server-owned; their hydration atom only clears legacy local state assumptions.
  */
 export function useStoreHydration(): boolean {
   const [hydrated, setHydrated] = useState(false);

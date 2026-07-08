@@ -25,7 +25,8 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   until each resource endpoint ships.
 - Frontend now consumes `GET /api/v1/sync/bootstrap` after backend auth and applies server UI
   settings, SMC settings, notification defaults, and watchlists into Jotai atoms. Watchlist
-  list/symbol mutations now call backend Phase 6 APIs in authenticated mode; settings write-back and
+  list/symbol/section/reorder/active-list mutations now call backend Phase 6 APIs in authenticated
+  mode; browser localStorage is no longer a watchlist source of truth. Settings write-back and
   future workspace resources are still pending.
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
@@ -33,9 +34,10 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   `backend/`, then `go run ./cmd/mt5-stream` to consume `ws://localhost:8765`. The Go API also
   connects to that bridge and exposes `GET /api/v1/mt5/symbols`, `GET /api/v1/mt5/ticks`, and
   on-demand `GET /api/v1/mt5/history` for frontend chart/watchlist data.
-- Frontend MT5 market data now loads the full symbol catalog into the runtime registry, defaults the
-  watchlist to live `streamSymbols`, loads chart history from the backend, and updates forming
-  candles from backend MT5 ticks. It no longer calls third-party market-data APIs for MT5 symbols.
+- Frontend MT5 market data now loads the full symbol catalog into the runtime registry for search
+  and metadata while watchlists stay server-owned. Charts load history from the backend and update
+  forming candles from backend MT5 ticks. It no longer calls third-party market-data APIs for MT5
+  symbols.
 
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 

@@ -129,16 +129,61 @@ new authenticated user, `PUT` replaces all four sections, and `PATCH` deep-merge
 
 ## Watchlists  🔒
 
-Backed by `watchlists` + `watchlist_symbols`.
+Backed by `watchlists`, `watchlist_symbols`, `watchlist_sections`, and
+`watchlist_preferences`. The backend owns the full watchlist layout; frontend
+Jotai state is only an optimistic in-memory cache.
 
-| Method | Path                                            | Purpose                    |
-| ------ | ----------------------------------------------- | -------------------------- |
-| GET    | `/api/v1/watchlists`                            | List with their symbols    |
-| POST   | `/api/v1/watchlists`                            | Create `{ name }`          |
-| PATCH  | `/api/v1/watchlists/:id`                        | Rename / reorder           |
-| DELETE | `/api/v1/watchlists/:id`                        | Delete a list              |
-| POST   | `/api/v1/watchlists/:id/symbols`                | Add `{ symbol }`           |
-| DELETE | `/api/v1/watchlists/:id/symbols/:symbol`        | Remove a symbol            |
+| Method | Path                                            | Purpose                                  |
+| ------ | ----------------------------------------------- | ---------------------------------------- |
+| GET    | `/api/v1/watchlists`                            | List with symbols, sections, active flag |
+| POST   | `/api/v1/watchlists`                            | Create `{ name }`                        |
+| PUT    | `/api/v1/watchlists/active`                     | Set active list `{ id }`                 |
+| PATCH  | `/api/v1/watchlists/:id`                        | Rename / reorder / shared / sort metadata |
+| DELETE | `/api/v1/watchlists/:id`                        | Delete a list                            |
+| PUT    | `/api/v1/watchlists/:id/layout`                 | Replace full symbols/sections layout     |
+| POST   | `/api/v1/watchlists/:id/symbols`                | Add `{ symbol }` compatibility endpoint  |
+| DELETE | `/api/v1/watchlists/:id/symbols/:symbol`        | Remove a symbol compatibility endpoint   |
+
+Watchlist shape:
+
+```json
+{
+  "id": "uuid",
+  "name": "Watchlist",
+  "position": 0,
+  "symbols": ["EURUSD", "XAUUSD"],
+  "sections": [{ "id": "uuid", "title": "SECTION 1", "index": 1 }],
+  "shared": false,
+  "sortKey": "symbol",
+  "sortDir": "asc",
+  "active": true
+}
+```
+
+Metadata patch accepts any subset of:
+
+```json
+{
+  "name": "Majors",
+  "position": 0,
+  "shared": false,
+  "sortKey": "price",
+  "sortDir": "desc"
+}
+```
+
+Full-layout write:
+
+```json
+{
+  "symbols": ["EURUSD", "XAUUSD"],
+  "sections": [{ "title": "SECTION 1", "index": 1 }]
+}
+```
+
+Use `PUT /api/v1/watchlists/:id/layout` for add/remove/clear symbol,
+section add/rename/delete, and drag/drop reorder. It is the common persistence
+path for TradingView-style watchlist gestures.
 
 ---
 

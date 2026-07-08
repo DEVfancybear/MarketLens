@@ -16,11 +16,14 @@ import (
 
 // fakeStore is an in-memory Store keyed by user id.
 type fakeStore struct {
-	byUser map[string][]Watchlist
-	seq    int
+	byUser   map[string][]Watchlist
+	activeID map[string]string
+	seq      int
 }
 
-func newFakeStore() *fakeStore { return &fakeStore{byUser: map[string][]Watchlist{}} }
+func newFakeStore() *fakeStore {
+	return &fakeStore{byUser: map[string][]Watchlist{}, activeID: map[string]string{}}
+}
 
 func (f *fakeStore) find(userID, id string) (int, bool) {
 	for i, w := range f.byUser[userID] {
@@ -36,6 +39,9 @@ func (f *fakeStore) List(_ context.Context, userID string) ([]Watchlist, error) 
 	if out == nil {
 		out = []Watchlist{}
 	}
+	for i := range out {
+		out[i].Active = f.activeID[userID] == out[i].ID || (f.activeID[userID] == "" && i == 0)
+	}
 	return out, nil
 }
 
@@ -44,12 +50,24 @@ func (f *fakeStore) Create(_ context.Context, userID, name string) (Watchlist, e
 		return Watchlist{}, ErrBadRequest
 	}
 	f.seq++
-	w := Watchlist{ID: "wl-" + itoa(f.seq), Name: name, Position: len(f.byUser[userID]), Symbols: []string{}}
+	w := Watchlist{
+		ID:       "wl-" + itoa(f.seq),
+		Name:     name,
+		Position: len(f.byUser[userID]),
+		Symbols:  []string{},
+		Sections: []WatchlistSection{},
+		SortKey:  "symbol",
+		SortDir:  "asc",
+	}
 	f.byUser[userID] = append(f.byUser[userID], w)
+	if f.activeID[userID] == "" {
+		f.activeID[userID] = w.ID
+		w.Active = true
+	}
 	return w, nil
 }
 
-func (f *fakeStore) Update(_ context.Context, userID, id string, name *string, position *int) (Watchlist, error) {
+func (f *fakeStore) Update(_ context.Context, userID, id string, name *string, position *int, shared *bool, sortKey *string, sortDir *string) (Watchlist, error) {
 	i, ok := f.find(userID, id)
 	if !ok {
 		return Watchlist{}, ErrNotFound
@@ -60,6 +78,15 @@ func (f *fakeStore) Update(_ context.Context, userID, id string, name *string, p
 	if position != nil {
 		f.byUser[userID][i].Position = *position
 	}
+	if shared != nil {
+		f.byUser[userID][i].Shared = *shared
+	}
+	if sortKey != nil {
+		f.byUser[userID][i].SortKey = *sortKey
+	}
+	if sortDir != nil {
+		f.byUser[userID][i].SortDir = *sortDir
+	}
 	return f.byUser[userID][i], nil
 }
 
@@ -69,7 +96,39 @@ func (f *fakeStore) Delete(_ context.Context, userID, id string) error {
 		return ErrNotFound
 	}
 	f.byUser[userID] = append(f.byUser[userID][:i], f.byUser[userID][i+1:]...)
+	if f.activeID[userID] == id {
+		if len(f.byUser[userID]) > 0 {
+			f.activeID[userID] = f.byUser[userID][0].ID
+		} else {
+			delete(f.activeID, userID)
+		}
+	}
 	return nil
+}
+
+func (f *fakeStore) SetActive(_ context.Context, userID, id string) (Watchlist, error) {
+	i, ok := f.find(userID, id)
+	if !ok {
+		return Watchlist{}, ErrNotFound
+	}
+	f.activeID[userID] = id
+	f.byUser[userID][i].Active = true
+	return f.byUser[userID][i], nil
+}
+
+func (f *fakeStore) ReplaceLayout(_ context.Context, userID, id string, layout WatchlistLayout) (Watchlist, error) {
+	i, ok := f.find(userID, id)
+	if !ok {
+		return Watchlist{}, ErrNotFound
+	}
+	symbols := normalizeSymbols(layout.Symbols)
+	sections := normalizeSections(layout.Sections, len(symbols))
+	for j := range sections {
+		sections[j].ID = "sec-" + itoa(j+1)
+	}
+	f.byUser[userID][i].Symbols = symbols
+	f.byUser[userID][i].Sections = sections
+	return f.byUser[userID][i], nil
 }
 
 func (f *fakeStore) AddSymbol(_ context.Context, userID, id, symbol string) (Watchlist, error) {
@@ -159,6 +218,23 @@ func TestWatchlistCRUDFlow(t *testing.T) {
 		t.Fatalf("expected [BTCUSDT], got %v", withSym.Symbols)
 	}
 
+	// replace full layout
+	resp, body = do(t, app, http.MethodPut, "/api/v1/watchlists/"+created.ID+"/layout", `{"symbols":["EURUSD","BTCUSDT"],"sections":[{"title":"SECTION 1","index":1}]}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("replaceLayout status=%d body=%s", resp.StatusCode, body)
+	}
+	var layout Watchlist
+	json.Unmarshal([]byte(body), &layout)
+	if len(layout.Symbols) != 2 || layout.Symbols[0] != "EURUSD" || len(layout.Sections) != 1 || layout.Sections[0].Index != 1 {
+		t.Fatalf("unexpected layout: %+v", layout)
+	}
+
+	// set active
+	resp, body = do(t, app, http.MethodPut, "/api/v1/watchlists/active", `{"id":"`+created.ID+`"}`)
+	if resp.StatusCode != 200 || !strings.Contains(body, `"active":true`) {
+		t.Fatalf("setActive status=%d body=%s", resp.StatusCode, body)
+	}
+
 	// list
 	resp, body = do(t, app, http.MethodGet, "/api/v1/watchlists", "")
 	if resp.StatusCode != 200 || !strings.Contains(body, "BTCUSDT") {
@@ -169,6 +245,12 @@ func TestWatchlistCRUDFlow(t *testing.T) {
 	resp, _ = do(t, app, http.MethodPatch, "/api/v1/watchlists/"+created.ID, `{"name":"Majors"}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("rename status=%d", resp.StatusCode)
+	}
+
+	// persist sort preference
+	resp, body = do(t, app, http.MethodPatch, "/api/v1/watchlists/"+created.ID, `{"sortKey":"price","sortDir":"desc"}`)
+	if resp.StatusCode != 200 || !strings.Contains(body, `"sortKey":"price"`) || !strings.Contains(body, `"sortDir":"desc"`) {
+		t.Fatalf("sort patch status=%d body=%s", resp.StatusCode, body)
 	}
 
 	// remove symbol

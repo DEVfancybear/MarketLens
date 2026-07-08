@@ -12,9 +12,10 @@ The historical roadmap below is preserved. The current top priority after the mo
    `users.UpsertFromIdentity`).~~ Done (code + `app.Test`; live Neon/Firebase login, refresh, me, and logout smoke passed).
    ~~Phase 5 - Sync bootstrap + settings (`0003_settings`, `internal/settings` GET/PUT/PATCH,
    `GET /api/v1/sync/bootstrap`).~~ Done.
-   ~~Phase 6 - Watchlists (`0004_watchlists`, `internal/watchlists` CRUD + symbols, bootstrap
-   slice) + local MT5 tick streaming (`bridge/mt5_stream`, `cmd/mt5-stream`).~~ Done (watchlists
-   verified live on Neon; MT5 stream code is ready for a Windows host with MT5 installed).
+   ~~Phase 6 - Watchlists (`0004_watchlists` + `0005_watchlist_layout`,
+   `internal/watchlists` CRUD + full layout + active list, bootstrap slice) + local MT5 tick
+   streaming (`bridge/mt5_stream`, `cmd/mt5-stream`).~~ Done (watchlists verified live on Neon;
+   MT5 stream code is ready for a Windows host with MT5 installed).
    Current backend step is **Phase 7 - Drawings** (`0005`-ish charting migration: `drawings` +
    `drawing_templates`; batch upsert deduped on `client_id`; `GET /drawings?symbol=`, bulk
    `/drawings/batch`, `drawing-templates` CRUD), then Phases 8-13 per-resource.
@@ -25,8 +26,8 @@ The historical roadmap below is preserved. The current top priority after the mo
    `sync/bootstrap` apply path, and feature-by-feature mutations for settings, watchlists,
    drawings, indicators, alerts, journal, layouts, and simulated trading. Bootstrap read/apply is
    now wired for UI settings, SMC settings, notification defaults, and watchlists. Watchlist
-   list/symbol write-through is wired to backend Phase 6. Settings write-back and section/reorder
-   persistence remain pending.
+   list/symbol/section/reorder/active-list write-through is wired to backend Phase 6. Settings
+   write-back remains pending.
 4. Keep frontend feature docs under `frontend/docs/`; use `frontend/docs/archive/` for historical
    audit/parity reports.
 

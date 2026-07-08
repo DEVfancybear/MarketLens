@@ -1,6 +1,6 @@
 # Current Progress
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 ## Current Milestone
 
@@ -12,7 +12,8 @@ Backend persistence and Google authentication.
 - Frontend Google auth UI: implemented and verified.
 - Frontend backend sync: auth/session is wired; `GET /api/v1/sync/bootstrap` is now consumed after
   backend auth and applies server UI settings, SMC settings, notification defaults, and watchlists.
-  UI mutation writes back to backend are the next frontend sync step.
+  Watchlist mutations write back to backend Phase 6 APIs; other UI mutation write-back remains a
+  later frontend sync step.
 - Backend API: Fiber scaffold; `GET /health`, `GET /health/ready`, `/api/v1/auth/*`,
   `/api/v1/settings`, `/api/v1/watchlists*`, and `/api/v1/sync/bootstrap` exist.
 - Backend database: **Phase 1 complete** - pgxpool, golang-migrate runner, `0001_extensions` +
@@ -26,18 +27,22 @@ Backend persistence and Google authentication.
 - Backend settings/sync: **Phase 5 complete** - `0003_settings` migration, `internal/settings`
   `GET/PUT/PATCH /api/v1/settings`, and `GET /api/v1/sync/bootstrap` returning settings plus empty
   resource arrays.
-- Backend watchlists: **Phase 6 complete** - `0004_watchlists` migration, `internal/watchlists`
-  CRUD (`GET/POST /api/v1/watchlists`, `PATCH/DELETE /:id`, add/remove symbol), user-scoped with
-  cross-user 404, and the `sync/bootstrap` watchlists slice populated. Verified live on Neon.
+- Backend watchlists: **Phase 6 complete** - `0004_watchlists` + `0005_watchlist_layout`
+  migrations, `internal/watchlists` CRUD plus active-list and full layout persistence
+  (`GET/POST /api/v1/watchlists`, `PUT /active`, `PATCH/DELETE /:id`, `PUT /:id/layout`,
+  add/remove symbol compatibility endpoints), user-scoped with cross-user 404, and the
+  `sync/bootstrap` watchlists slice populated. Verified live on Neon before the layout extension;
+  current code is unit-tested.
   Current backend task: **Phase 7 - drawings** (+ drawing_templates).
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
 ## Completed Since Commit `9691bd1`
 
-- **Backend Phase 6 (Watchlists):** `0004_watchlists` migration (`watchlists` + `watchlist_symbols`);
+- **Backend Phase 6 (Watchlists):** `0004_watchlists` migration (`watchlists` + `watchlist_symbols`)
+  plus `0005_watchlist_layout` (`watchlist_sections`, `watchlist_preferences`, `watchlists.shared`);
   `internal/watchlists` model/repo/handler (hand-written pgx, user-scoped, idempotent symbol adds,
-  cross-user 404); CRUD endpoints behind `RequireAuth`; `sync/bootstrap` watchlists slice filled.
-  Unit-tested via `app.Test` and verified live end-to-end against Neon.
+  active list, full-layout replace, cross-user 404); endpoints behind `RequireAuth`;
+  `sync/bootstrap` watchlists slice filled. Unit-tested via `app.Test`.
 - **Backend Phase 5 (Settings & sync bootstrap):** added `0003_settings` migration for
   `user_settings` and `layouts`; added `internal/settings` repo/handler with auto-create-on-read,
   replace, and deep-merge patch semantics; added `internal/workspace` bootstrap envelope; wired the

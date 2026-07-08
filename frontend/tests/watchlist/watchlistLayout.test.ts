@@ -17,6 +17,8 @@ function list(): WatchlistList {
     id: "wl_1",
     name: "Watchlist",
     shared: false,
+    sortKey: "symbol",
+    sortDir: "asc",
     symbols: ["BTCUSDT", "GBPUSD", "USDCAD", "XAUUSD"],
     sections: [{ id: "section_1", title: "SECTION 1", index: 1 }],
   };
@@ -27,6 +29,8 @@ function twoSectionList(): WatchlistList {
     id: "wl_2",
     name: "Watchlist",
     shared: false,
+    sortKey: "symbol",
+    sortDir: "asc",
     symbols: ["DOGEUSDT", "ETHUSDT"],
     sections: [
       { id: "section_1", title: "SECTION 1", index: 1 },
@@ -40,6 +44,8 @@ function trailingEmptySectionList(): WatchlistList {
     id: "wl_3",
     name: "Watchlist",
     shared: false,
+    sortKey: "symbol",
+    sortDir: "asc",
     symbols: ["DOGEUSDT", "ETHUSDT"],
     sections: [
       { id: "section_1", title: "SECTION 1", index: 0 },
@@ -161,6 +167,8 @@ test("moves a symbol from the first section into a populated second section", ()
       id: "wl_4",
       name: "Watchlist",
       shared: false,
+      sortKey: "symbol",
+      sortDir: "asc",
       symbols: ["DOGEUSDT", "ETHUSDT"],
       sections: [
         { id: "section_1", title: "SECTION 1", index: 0 },

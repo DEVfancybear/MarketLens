@@ -5,17 +5,14 @@ import { backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
 import { isApiError } from "@/services/api/errors";
 import {
-  addWatchlistSymbol as addRemoteWatchlistSymbol,
   createWatchlist as createRemoteWatchlist,
   deleteWatchlist as deleteRemoteWatchlist,
-  removeWatchlistSymbol as removeRemoteWatchlistSymbol,
+  replaceWatchlistLayout as replaceRemoteWatchlistLayout,
+  setActiveWatchlist as setRemoteActiveWatchlist,
   updateWatchlist as updateRemoteWatchlist,
+  type BackendWatchlist,
 } from "@/services/api/resources/watchlistsApi";
-import { localStore } from "@/services/storage";
-import {
-  getAllMarketSymbols,
-  getMarketSymbol,
-} from "@/services/market-data/symbols";
+import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
 import {
   clampSectionIndex,
@@ -33,6 +30,7 @@ import {
 } from "./watchlistLayout";
 
 export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
+export type SortDir = "asc" | "desc";
 
 export interface WatchlistSection {
   id: string;
@@ -50,6 +48,8 @@ export interface WatchlistList {
   symbols: string[];
   sections: WatchlistSection[];
   shared: boolean;
+  sortKey: SortKey;
+  sortDir: SortDir;
 }
 
 type SymbolUpdate = string[] | ((prev: string[]) => string[]);
@@ -67,9 +67,6 @@ type MoveSectionPayload = {
 };
 
 const DEFAULT_LIST_ID = "default";
-const STORAGE_LISTS = "watchlist:lists";
-const STORAGE_ACTIVE = "watchlist:activeId";
-const STORAGE_LEGACY_SYMBOLS = "watchlist";
 
 const DEFAULT_LIST: WatchlistList = {
   id: DEFAULT_LIST_ID,
@@ -77,7 +74,23 @@ const DEFAULT_LIST: WatchlistList = {
   symbols: [],
   sections: [],
   shared: false,
+  sortKey: "symbol",
+  sortDir: "asc",
 };
+
+function cleanSortKey(input: unknown, fallback: SortKey = "symbol"): SortKey {
+  return input === "symbol" ||
+    input === "price" ||
+    input === "change" ||
+    input === "changeAbs" ||
+    input === "volume"
+    ? input
+    : fallback;
+}
+
+function cleanSortDir(input: unknown, fallback: SortDir = "asc"): SortDir {
+  return input === "desc" || input === "asc" ? input : fallback;
+}
 
 function cleanSymbols(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
@@ -86,7 +99,7 @@ function cleanSymbols(input: unknown): string[] {
   for (const value of input) {
     if (typeof value !== "string") continue;
     const symbol = value.trim().toUpperCase();
-    if (!symbol || seen.has(symbol) || !getMarketSymbol(symbol)) continue;
+    if (!symbol || seen.has(symbol)) continue;
     seen.add(symbol);
     symbols.push(symbol);
   }
@@ -128,6 +141,8 @@ function normalizeList(input: unknown, fallback = DEFAULT_LIST): WatchlistList {
     symbols,
     sections: cleanSections(raw.sections, symbols.length),
     shared: raw.shared === true,
+    sortKey: cleanSortKey(raw.sortKey, fallback.sortKey),
+    sortDir: cleanSortDir(raw.sortDir, fallback.sortDir),
   };
 }
 
@@ -136,11 +151,10 @@ function activeList(lists: WatchlistList[], activeId: string): WatchlistList {
 }
 
 function persist(lists: WatchlistList[], activeId: string): void {
-  const active = activeList(lists, activeId);
-  localStore.set(STORAGE_LISTS, lists);
-  localStore.set(STORAGE_ACTIVE, active.id);
-  // Keep the old key in sync so older code/users can migrate without data loss.
-  localStore.set(STORAGE_LEGACY_SYMBOLS, active.symbols);
+  void lists;
+  void activeId;
+  // Watchlists are backend-owned. Jotai keeps only an in-memory optimistic cache
+  // so browser localStorage cannot become a stale second source of truth.
 }
 
 function updateActive(
@@ -155,7 +169,7 @@ function updateActive(
 export const watchlistListsAtom = atom<WatchlistList[]>([DEFAULT_LIST]);
 export const activeWatchlistIdAtom = atom<string>(DEFAULT_LIST_ID);
 export const watchlistSortKeyAtom = atom<SortKey>("symbol");
-export const watchlistSortDirAtom = atom<"asc" | "desc">("asc");
+export const watchlistSortDirAtom = atom<SortDir>("asc");
 
 export const activeWatchlistAtom = atom((get) =>
   activeList(get(watchlistListsAtom), get(activeWatchlistIdAtom)),
@@ -176,21 +190,19 @@ export const watchlistSymbolsAtom = atom(
     }));
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
+
+    runRemoteSync(get, set, "set symbols", async () => {
+      await replaceRemoteLayoutFromLocal(nextList);
+    });
   },
 );
 
 export const replaceWatchlistSymbolsFromCatalogAtom = atom(
   null,
-  (get, set, symbols: string[]) => {
-    const activeId = get(activeWatchlistIdAtom);
-    const nextSymbols = cleanSymbols(symbols);
-    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
-      ...list,
-      symbols: nextSymbols,
-      sections: [],
-    }));
-    set(watchlistListsAtom, lists);
-    persist(lists, activeId);
+  () => {
+    // Deprecated: watchlist symbols are server-owned. MT5 catalog refreshes must
+    // not overwrite user watchlists.
   },
 );
 
@@ -204,40 +216,25 @@ export const setActiveWatchlistAtom = atom(null, (get, set, listId: string) => {
     ? listId
     : activeList(lists, get(activeWatchlistIdAtom)).id;
   set(activeWatchlistIdAtom, nextActive);
+  const nextList = activeList(lists, nextActive);
+  set(watchlistSortKeyAtom, nextList.sortKey);
+  set(watchlistSortDirAtom, nextList.sortDir);
   persist(lists, nextActive);
+
+  runRemoteSync(get, set, "set active list", async () => {
+    if (!isServerWatchlistId(nextActive)) return;
+    await setRemoteActiveWatchlist(nextActive);
+  });
 });
 
 export const hydrateWatchlistAtom = atom(null, (_get, set) => {
-  const storedLists = localStore.get<unknown>(STORAGE_LISTS, null);
-  const legacySymbols = localStore.get<string[]>(STORAGE_LEGACY_SYMBOLS, []);
-
-  const lists =
-    Array.isArray(storedLists) && storedLists.length
-      ? storedLists.map((list) => normalizeList(list)).filter(Boolean)
-      : [
-          {
-            ...DEFAULT_LIST,
-            symbols: cleanSymbols(legacySymbols),
-          },
-        ];
-
-  const normalized = lists.length ? lists : [DEFAULT_LIST];
-  const storedActive = localStore.get<string>(STORAGE_ACTIVE, normalized[0].id);
-  const activeId = normalized.some((list) => list.id === storedActive)
-    ? storedActive
-    : normalized[0].id;
-
-  set(watchlistListsAtom, normalized);
-  set(activeWatchlistIdAtom, activeId);
-  persist(normalized, activeId);
+  set(watchlistListsAtom, [DEFAULT_LIST]);
+  set(activeWatchlistIdAtom, DEFAULT_LIST_ID);
+  set(watchlistSortKeyAtom, DEFAULT_LIST.sortKey);
+  set(watchlistSortDirAtom, DEFAULT_LIST.sortDir);
 });
 
-interface RemoteWatchlist {
-  id: string;
-  name: string;
-  position?: number;
-  symbols?: string[];
-}
+type RemoteWatchlist = BackendWatchlist;
 
 function remoteWatchlistToLocal(input: RemoteWatchlist): WatchlistList {
   const fallback: WatchlistList = {
@@ -250,19 +247,13 @@ function remoteWatchlistToLocal(input: RemoteWatchlist): WatchlistList {
       id: input.id,
       name: input.name,
       symbols: input.symbols ?? [],
-      sections: [],
-      shared: false,
+      sections: input.sections ?? [],
+      shared: input.shared === true,
+      sortKey: input.sortKey,
+      sortDir: input.sortDir,
     },
     fallback,
   );
-}
-
-function defaultWatchlistSymbolsFromCatalog(): string[] {
-  const catalog = getAllMarketSymbols();
-  const streamable = catalog
-    .filter((symbol) => symbol.provider !== "mt5" || symbol.streamable === true)
-    .map((symbol) => symbol.id);
-  return streamable.length > 0 ? streamable : catalog.map((symbol) => symbol.id);
 }
 
 const EMPTY_REMOTE_LIST: WatchlistList = {
@@ -296,6 +287,21 @@ function runRemoteSync(
   void work().catch((error) => logRemoteSyncError(set, action, error));
 }
 
+function remoteLayoutPayload(list: WatchlistList) {
+  return {
+    symbols: list.symbols,
+    sections: list.sections.map((section) => ({
+      title: section.title,
+      index: section.index,
+    })),
+  };
+}
+
+async function replaceRemoteLayoutFromLocal(list: WatchlistList): Promise<void> {
+  if (!isServerWatchlistId(list.id)) return;
+  await replaceRemoteWatchlistLayout(list.id, remoteLayoutPayload(list));
+}
+
 async function replaceLocalListWithRemote(
   get: Getter,
   set: Setter,
@@ -311,11 +317,17 @@ async function replaceLocalListWithRemote(
     ...local,
     id: remote.id,
     name: remote.name || local.name,
+    sortKey: cleanSortKey(remote.sortKey, local.sortKey),
+    sortDir: cleanSortDir(remote.sortDir, local.sortDir),
   };
   const nextLists = lists.map((list) => (list.id === localId ? nextList : list));
   const nextActiveId = activeId === localId ? nextList.id : activeId;
   set(watchlistListsAtom, nextLists);
   set(activeWatchlistIdAtom, nextActiveId);
+  if (nextActiveId === nextList.id) {
+    set(watchlistSortKeyAtom, nextList.sortKey);
+    set(watchlistSortDirAtom, nextList.sortDir);
+  }
   persist(nextLists, nextActiveId);
   return nextList;
 }
@@ -329,11 +341,15 @@ async function createRemoteListFromLocal(
   const remote = await createRemoteWatchlist(name);
   const synced = await replaceLocalListWithRemote(get, set, localId, remote);
   if (!synced) return;
-
-  // Phase 6 backend stores a flat ordered symbol list only. Sections and local
-  // drag grouping stay client-owned until backend exposes a section/reorder API.
-  for (const symbol of synced.symbols) {
-    await addRemoteWatchlistSymbol(remote.id, symbol);
+  await replaceRemoteLayoutFromLocal(synced);
+  if (synced.sortKey !== "symbol" || synced.sortDir !== "asc") {
+    await updateRemoteWatchlist(synced.id, {
+      sortKey: synced.sortKey,
+      sortDir: synced.sortDir,
+    });
+  }
+  if (get(activeWatchlistIdAtom) === synced.id) {
+    await setRemoteActiveWatchlist(synced.id);
   }
 }
 
@@ -341,7 +357,6 @@ export const applyRemoteWatchlistsAtom = atom(
   null,
   (get, set, payload: unknown) => {
     if (!Array.isArray(payload)) return;
-    const catalogSymbols = defaultWatchlistSymbolsFromCatalog();
 
     const remoteLists = payload
       .filter((item): item is RemoteWatchlist => {
@@ -353,45 +368,30 @@ export const applyRemoteWatchlistsAtom = atom(
         );
       })
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-      .map((item) => {
-        const list = remoteWatchlistToLocal(item);
-        if (catalogSymbols.length === 0) return list;
-        return {
-          ...list,
-          symbols: cleanSymbols(catalogSymbols),
-          sections: [],
-        };
-      });
+      .map((item) => remoteWatchlistToLocal(item));
 
     const lists = remoteLists.length
       ? remoteLists
-      : [
-          {
-            ...EMPTY_REMOTE_LIST,
-            symbols: cleanSymbols(catalogSymbols),
-          },
-        ];
-
-    // If the catalog has not loaded yet, preserve a non-empty local list when a
-    // fresh backend account returns a single empty list. Once /mt5/symbols
-    // arrives, refreshMt5SymbolCatalogAtom replaces the list with the full API
-    // catalog.
-    const localSymbols = get(activeWatchlistAtom).symbols;
-    if (
-      catalogSymbols.length === 0 &&
-      lists.length === 1 &&
-      lists[0].symbols.length === 0 &&
-      localSymbols.length > 0
-    ) {
-      lists[0] = { ...lists[0], symbols: localSymbols };
-    }
+      : [EMPTY_REMOTE_LIST];
 
     const previousActiveId = get(activeWatchlistIdAtom);
-    const activeId = lists.some((list) => list.id === previousActiveId)
+    const remoteActive = payload.find(
+      (item): item is RemoteWatchlist =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        (item as RemoteWatchlist).active === true &&
+        typeof (item as RemoteWatchlist).id === "string",
+    );
+    const activeId = remoteActive?.id
+      ? remoteActive.id
+      : lists.some((list) => list.id === previousActiveId)
       ? previousActiveId
       : lists[0].id;
     set(watchlistListsAtom, lists);
     set(activeWatchlistIdAtom, activeId);
+    const nextActiveList = activeList(lists, activeId);
+    set(watchlistSortKeyAtom, nextActiveList.sortKey);
+    set(watchlistSortDirAtom, nextActiveList.sortDir);
     persist(lists, activeId);
   },
 );
@@ -401,12 +401,17 @@ export const addWatchlistSymbolAtom = atom(null, (get, set, ticker: string) => {
   if (!getMarketSymbol(symbol)) return;
   const symbols = get(watchlistSymbolsAtom);
   if (symbols.includes(symbol)) return;
-  const current = get(activeWatchlistAtom);
-  set(watchlistSymbolsAtom, [...symbols, symbol]);
+  const activeId = get(activeWatchlistIdAtom);
+  const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+    ...list,
+    symbols: [...list.symbols, symbol],
+  }));
+  set(watchlistListsAtom, lists);
+  persist(lists, activeId);
+  const nextList = activeList(lists, activeId);
 
   runRemoteSync(get, set, "add symbol", async () => {
-    if (!isServerWatchlistId(current.id)) return;
-    await addRemoteWatchlistSymbol(current.id, symbol);
+    await replaceRemoteLayoutFromLocal(nextList);
   });
 });
 
@@ -422,10 +427,10 @@ export const removeWatchlistSymbolAtom = atom(
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
 
     runRemoteSync(get, set, "remove symbol", async () => {
-      if (!isServerWatchlistId(current.id)) return;
-      await removeRemoteWatchlistSymbol(current.id, symbol);
+      await replaceRemoteLayoutFromLocal(nextList);
     });
   },
 );
@@ -452,12 +457,19 @@ export const setWatchlistSharedAtom = atom(
   null,
   (get, set, shared?: boolean) => {
     const activeId = get(activeWatchlistIdAtom);
+    const current = get(activeWatchlistAtom);
+    const nextShared = shared ?? !current.shared;
     const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
       ...list,
-      shared: shared ?? !list.shared,
+      shared: nextShared,
     }));
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+
+    runRemoteSync(get, set, "set shared", async () => {
+      if (!isServerWatchlistId(current.id)) return;
+      await updateRemoteWatchlist(current.id, { shared: nextShared });
+    });
   },
 );
 
@@ -468,6 +480,8 @@ export const copyWatchlistAtom = atom(null, (get, set) => {
     id: uid("wl"),
     name: `${current.name} copy`.slice(0, 40),
     shared: false,
+    sortKey: current.sortKey,
+    sortDir: current.sortDir,
     sections: current.sections.map((section) => ({
       ...section,
       id: uid("wl_section"),
@@ -476,6 +490,8 @@ export const copyWatchlistAtom = atom(null, (get, set) => {
   const lists = [...get(watchlistListsAtom), copy];
   set(watchlistListsAtom, lists);
   set(activeWatchlistIdAtom, copy.id);
+  set(watchlistSortKeyAtom, copy.sortKey);
+  set(watchlistSortDirAtom, copy.sortDir);
   persist(lists, copy.id);
 
   runRemoteSync(get, set, "copy list", async () => {
@@ -490,10 +506,14 @@ export const createWatchlistAtom = atom(null, (get, set, name?: string) => {
     symbols: [],
     sections: [],
     shared: false,
+    sortKey: "symbol",
+    sortDir: "asc",
   };
   const lists = [...get(watchlistListsAtom), list];
   set(watchlistListsAtom, lists);
   set(activeWatchlistIdAtom, list.id);
+  set(watchlistSortKeyAtom, list.sortKey);
+  set(watchlistSortDirAtom, list.sortDir);
   persist(lists, list.id);
 
   runRemoteSync(get, set, "create list", async () => {
@@ -518,16 +538,21 @@ export const removeWatchlistAtom = atom(null, (get, set, listId: string) => {
 
   set(watchlistListsAtom, nextLists);
   set(activeWatchlistIdAtom, nextActiveId);
+  const nextActiveList = activeList(nextLists, nextActiveId);
+  set(watchlistSortKeyAtom, nextActiveList.sortKey);
+  set(watchlistSortDirAtom, nextActiveList.sortDir);
   persist(nextLists, nextActiveId);
 
   runRemoteSync(get, set, "delete list", async () => {
     if (!isServerWatchlistId(target.id)) return;
     await deleteRemoteWatchlist(target.id);
+    if (isServerWatchlistId(nextActiveId)) {
+      await setRemoteActiveWatchlist(nextActiveId);
+    }
   });
 });
 
 export const clearWatchlistAtom = atom(null, (get, set) => {
-  const current = get(activeWatchlistAtom);
   const activeId = get(activeWatchlistIdAtom);
   const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
     ...list,
@@ -536,12 +561,10 @@ export const clearWatchlistAtom = atom(null, (get, set) => {
   }));
   set(watchlistListsAtom, lists);
   persist(lists, activeId);
+  const nextList = activeList(lists, activeId);
 
   runRemoteSync(get, set, "clear list", async () => {
-    if (!isServerWatchlistId(current.id)) return;
-    for (const symbol of current.symbols) {
-      await removeRemoteWatchlistSymbol(current.id, symbol);
-    }
+    await replaceRemoteLayoutFromLocal(nextList);
   });
 });
 
@@ -568,6 +591,11 @@ export const addWatchlistSectionAtom = atom(
     }));
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
+
+    runRemoteSync(get, set, "add section", async () => {
+      await replaceRemoteLayoutFromLocal(nextList);
+    });
   },
 );
 
@@ -580,6 +608,11 @@ export const renameWatchlistSectionAtom = atom(
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
+
+    runRemoteSync(get, set, "rename section", async () => {
+      await replaceRemoteLayoutFromLocal(nextList);
+    });
   },
 );
 
@@ -592,6 +625,11 @@ export const removeWatchlistSectionAtom = atom(
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
+
+    runRemoteSync(get, set, "remove section", async () => {
+      await replaceRemoteLayoutFromLocal(nextList);
+    });
   },
 );
 
@@ -613,6 +651,11 @@ export const moveWatchlistSymbolAtom = atom(
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
+
+    runRemoteSync(get, set, "move symbol", async () => {
+      await replaceRemoteLayoutFromLocal(nextList);
+    });
   },
 );
 
@@ -625,17 +668,34 @@ export const moveWatchlistSectionAtom = atom(
     );
     set(watchlistListsAtom, lists);
     persist(lists, activeId);
+    const nextList = activeList(lists, activeId);
+
+    runRemoteSync(get, set, "move section", async () => {
+      await replaceRemoteLayoutFromLocal(nextList);
+    });
   },
 );
 
 export const setWatchlistSortAtom = atom(null, (get, set, key: SortKey) => {
   const curKey = get(watchlistSortKeyAtom);
   const curDir = get(watchlistSortDirAtom);
+  const nextDir: SortDir = curKey === key && curDir === "asc" ? "desc" : "asc";
+  const activeId = get(activeWatchlistIdAtom);
+  const current = get(activeWatchlistAtom);
   set(watchlistSortKeyAtom, key);
-  set(
-    watchlistSortDirAtom,
-    curKey === key && curDir === "asc" ? "desc" : "asc",
-  );
+  set(watchlistSortDirAtom, nextDir);
+  const lists = updateActive(get(watchlistListsAtom), activeId, (list) => ({
+    ...list,
+    sortKey: key,
+    sortDir: nextDir,
+  }));
+  set(watchlistListsAtom, lists);
+  persist(lists, activeId);
+
+  runRemoteSync(get, set, "set sort", async () => {
+    if (!isServerWatchlistId(current.id)) return;
+    await updateRemoteWatchlist(current.id, { sortKey: key, sortDir: nextDir });
+  });
 });
 
 interface WatchlistState {
@@ -644,7 +704,7 @@ interface WatchlistState {
   symbols: string[];
   sections: WatchlistSection[];
   sortKey: SortKey;
-  sortDir: "asc" | "desc";
+  sortDir: SortDir;
 }
 
 export interface WatchlistActions {

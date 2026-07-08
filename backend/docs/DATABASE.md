@@ -263,6 +263,48 @@ CREATE TABLE watchlist_symbols (
 CREATE INDEX idx_watchlist_symbols_list ON watchlist_symbols(watchlist_id);
 ```
 
+Migration `0005_watchlist_layout` extends this schema for the current
+TradingView-style watchlist UI:
+
+```sql
+ALTER TABLE watchlists
+  ADD COLUMN shared boolean NOT NULL DEFAULT false;
+
+CREATE TABLE watchlist_sections (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  watchlist_id uuid NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
+  title        text NOT NULL,
+  symbol_index integer NOT NULL DEFAULT 0,
+  position     integer NOT NULL DEFAULT 0,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE watchlist_preferences (
+  user_id             uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  active_watchlist_id uuid REFERENCES watchlists(id) ON DELETE SET NULL,
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
+```
+
+The frontend writes section edits and symbol/section drag-drop through one
+full-layout endpoint, so `watchlist_sections.symbol_index` is the section
+divider's insertion index in the ordered `watchlist_symbols` array.
+
+Migration `0006_watchlist_sort_preferences` adds the selected TradingView-style
+Sort by mode to each list:
+
+```sql
+ALTER TABLE watchlists
+  ADD COLUMN sort_key text NOT NULL DEFAULT 'symbol',
+  ADD COLUMN sort_dir text NOT NULL DEFAULT 'asc';
+```
+
+`sort_key` is one of `symbol`, `price`, `change`, `changeAbs`, or `volume`.
+`sort_dir` is `asc` or `desc`. The frontend still computes live price/change
+ordering from realtime quotes, but the selected sort mode is restored from the
+backend on refresh and across devices.
+
 ### 7.2 `drawings`
 
 One row per drawing (`Drawing`, ~35 tool types). Geometry/style stay in `payload jsonb` verbatim —

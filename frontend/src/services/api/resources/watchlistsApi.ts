@@ -1,15 +1,43 @@
-import { deleteJson, getJson, patchJson, postJson } from "@/services/api/client";
+import {
+  deleteJson,
+  getJson,
+  patchJson,
+  postJson,
+  putJson,
+} from "@/services/api/client";
+
+export interface BackendWatchlistSection {
+  id: string;
+  title: string;
+  index: number;
+}
 
 export interface BackendWatchlist {
   id: string;
   name: string;
   position: number;
   symbols: string[];
+  sections?: BackendWatchlistSection[];
+  shared?: boolean;
+  active?: boolean;
+  sortKey?: "symbol" | "price" | "change" | "changeAbs" | "volume";
+  sortDir?: "asc" | "desc";
 }
 
 export interface UpdateWatchlistPayload {
   name?: string;
   position?: number;
+  shared?: boolean;
+  sortKey?: "symbol" | "price" | "change" | "changeAbs" | "volume";
+  sortDir?: "asc" | "desc";
+}
+
+export interface ReplaceWatchlistLayoutPayload {
+  symbols: string[];
+  sections: Array<{
+    title: string;
+    index: number;
+  }>;
 }
 
 interface DeleteWatchlistResponse {
@@ -34,6 +62,20 @@ export async function updateWatchlist(
 ): Promise<BackendWatchlist> {
   return patchJson<BackendWatchlist>(
     `watchlists/${encodePathSegment(id)}`,
+    payload,
+  );
+}
+
+export async function setActiveWatchlist(id: string): Promise<BackendWatchlist> {
+  return putJson<BackendWatchlist>("watchlists/active", { id });
+}
+
+export async function replaceWatchlistLayout(
+  id: string,
+  payload: ReplaceWatchlistLayoutPayload,
+): Promise<BackendWatchlist> {
+  return putJson<BackendWatchlist>(
+    `watchlists/${encodePathSegment(id)}/layout`,
     payload,
   );
 }

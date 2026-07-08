@@ -11,7 +11,6 @@ import {
 import type { MarketSymbol } from "@/types";
 import { setSymbolAtom, symbolAtom } from "./chartStore";
 import { logAtom } from "./uiStore";
-import { replaceWatchlistSymbolsFromCatalogAtom } from "./watchlistStore";
 
 export type MarketSymbolCatalogStatus = "idle" | "loading" | "ready" | "error";
 
@@ -42,12 +41,6 @@ export const refreshMt5SymbolCatalogAtom = atom(null, async (get, set) => {
       const liveSymbolIds = snapshot.streamSymbols
         .map((symbol) => symbol.trim().toUpperCase())
         .filter((symbol) => getMarketSymbol(symbol));
-      set(
-        replaceWatchlistSymbolsFromCatalogAtom,
-        liveSymbolIds.length > 0
-          ? liveSymbolIds
-          : symbols.map((symbol) => symbol.id),
-      );
 
       const currentSymbol = get(symbolAtom);
       const currentMeta = currentSymbol

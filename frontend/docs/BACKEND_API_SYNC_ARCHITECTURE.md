@@ -307,7 +307,7 @@ Do not write to backend on every render or pointer move.
 | Resource | Mutation timing |
 | --- | --- |
 | Settings | debounce 300-500ms or save on dialog OK |
-| Watchlists | on create/copy/rename/clear/add-symbol/remove-symbol commit; section/reorder sync waits for backend contract |
+| Watchlists | on create/rename/delete/active-list/change-layout commit; section and reorder use the same layout endpoint |
 | Drawings | create on completion; update on pointerup/settings OK; batch drag updates |
 | Drawing templates | explicit create/update/delete |
 | Indicators | add/remove/toggle immediately; style/settings on OK |
@@ -354,11 +354,12 @@ Frontend remote mode should not be enabled globally until each required slice ex
 - `GET/PATCH /api/v1/settings` - backend implemented; frontend resource module implemented;
   write-sync from UI mutations pending
 - `GET/POST/PATCH/DELETE /api/v1/watchlists` - backend implemented; frontend bootstrap read and
-  create/copy/rename/clear mutation paths implemented for authenticated sessions
-- `POST/DELETE /api/v1/watchlists/:id/symbols` - backend implemented; frontend add/remove mutation
-  paths implemented for authenticated sessions
-- Watchlist section rows and symbol reorder persistence - pending backend contract; frontend keeps
-  these local-only for now
+  create/rename/delete mutation paths implemented for authenticated sessions
+- `PUT /api/v1/watchlists/active` - backend implemented; frontend active-list mutation wired
+- `PUT /api/v1/watchlists/:id/layout` - backend implemented; frontend add/remove/clear symbol,
+  section edits, and drag/drop reorder write through this full-layout endpoint
+- `POST/DELETE /api/v1/watchlists/:id/symbols` - backend compatibility endpoints retained; modern
+  frontend watchlist gestures use the layout endpoint
 - `GET /api/v1/drawings?symbol=...`
 - `POST /api/v1/drawings/batch`
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts`
@@ -388,7 +389,8 @@ Everything else can remain lazy or phased:
 - Call `sync/bootstrap` after backend auth. **Implemented via `useWorkspaceBootstrap()`.**
 - Apply backend JSON into atoms. **Implemented for UI settings, SMC settings, notification
   settings, and watchlists.**
-- Keep anonymous local mode unchanged. **Implemented.**
+- Keep anonymous mode usable as current-tab memory only; do not persist watchlists to localStorage.
+  **Implemented.**
 - Remaining read-path work: chart preferences are still component-local, and future backend slices
   need resource-specific adapters.
 - Add a feature flag:
@@ -401,11 +403,10 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
 
 - Move `uiStore`, `smcStore`, timeframe favorites, notification settings, and `watchlistStore`
   mutations to API calls in remote mode.
-- Watchlist list/symbol write-through is partially implemented: create, copy, rename, clear,
-  add-symbol, and remove-symbol call Phase 6 backend APIs after optimistic local updates.
-- Watchlist section rows, section drag/drop, and symbol reorder are intentionally local-only until
-  backend adds section/reorder endpoints.
-- Stop reading local keys when `dataMode === "remote"`.
+- Watchlist write-through is implemented: create, rename, delete, set-active, shared flag,
+  add/remove/clear symbol, section edits, and symbol/section reorder call Phase 6 backend APIs after
+  optimistic in-memory updates.
+- Stop reading local watchlist keys. **Implemented.**
 - Add rollback/error toast for failed writes.
 
 ### Phase FE-3: Chart Artifacts

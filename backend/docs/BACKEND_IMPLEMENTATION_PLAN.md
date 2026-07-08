@@ -238,6 +238,15 @@ does not link against Python/C++ MT5 libraries.
 - Add/remove a symbol, rename a list, reorder — all survive reload and appear on a second device.
 - Adding a duplicate symbol is a no-op (no 500, no dup row).
 
+**2026-07-08 update:** Phase 6A now persists the full TradingView-style
+watchlist layout. Migration `0005_watchlist_layout` adds
+`watchlist_sections`, `watchlist_preferences`, and `watchlists.shared`.
+`PUT /api/v1/watchlists/active` stores the active list. `PUT
+/api/v1/watchlists/:id/layout` replaces the ordered symbols and section
+dividers in one transaction and is the common write path for add/remove/clear
+symbol, section add/rename/delete, and drag/drop reorder. Browser localStorage is
+no longer a watchlist source of truth.
+
 #### Phase 6B — MT5 Tick Streaming
 
 **Goal:** Stream live MT5 tick data from a locally installed MetaTrader 5 terminal into Go without
