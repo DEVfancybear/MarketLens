@@ -358,7 +358,7 @@ freshness checks compare ticks and rates in the same UTC domain.
 
 ---
 
-## Drawings  🔒
+## Drawings  protected, implemented
 
 Backed by `drawings`. Payload mirrors the frontend `DRAWING_OBJECT_MODEL`.
 
@@ -371,7 +371,7 @@ Backed by `drawings`. Payload mirrors the frontend `DRAWING_OBJECT_MODEL`.
 | DELETE | `/api/v1/drawings/:id`          | Delete one                                     |
 | POST   | `/api/v1/drawings/batch`        | Bulk upsert (sync flush; dedupes on `clientId`)|
 
-## Drawing templates  🔒
+## Drawing templates  protected, implemented
 
 Global (not per-symbol) style presets — backed by `drawing_templates`.
 

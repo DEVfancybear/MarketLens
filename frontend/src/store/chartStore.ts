@@ -1,5 +1,5 @@
 "use client";
-import { atom, getDefaultStore } from "jotai";
+import { atom, getDefaultStore, type Getter, type Setter } from "jotai";
 import { useAtomValue } from "jotai";
 import type {
   Candle,
@@ -18,6 +18,17 @@ import {
 } from "@/types";
 import type { Mt5SymbolInfo } from "@/types/mt5";
 import { localStore } from "@/services/storage";
+import {
+  deleteDrawingTemplate,
+  listDrawings,
+  saveDrawingTemplate,
+  syncDrawingsBatch,
+  type BackendDrawing,
+  type BackendDrawingDelete,
+  type BackendDrawingTemplate,
+  type BackendDrawingWrite,
+} from "@/services/api/resources/drawingsApi";
+import { isApiError } from "@/services/api/errors";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
@@ -27,6 +38,7 @@ import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing
 import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
 import { logAtom, setBottomTabAtom } from "./uiStore";
+import { backendSessionAtom } from "./authStore";
 
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
 const DEFAULT_SYMBOL = "";
@@ -67,6 +79,97 @@ function positionLotSymbolInfo(
 const TEMPLATES_KEY = "drawingTemplates";
 const PINE_SCRIPTS_KEY = "pineScripts";
 
+type AtomGet = Getter;
+type AtomSet = Setter;
+
+function apiMessage(error: unknown): string {
+  return isApiError(error)
+    ? error.message
+    : (error as Error)?.message || "unknown error";
+}
+
+function persistLocalDrawings(symbol: string, drawings: Drawing[]) {
+  localStore.set(drawingsKey(symbol), drawings);
+}
+
+function backendDrawingToLocal(row: BackendDrawing): Drawing {
+  return {
+    ...row.payload,
+    id: row.clientId || row.payload.id || row.id,
+    tool: row.payload.tool || (row.toolType as DrawingTool),
+    locked: row.locked,
+    visible: !row.hidden,
+  };
+}
+
+function localDrawingToBackend(symbol: string, drawing: Drawing): BackendDrawingWrite {
+  return {
+    symbol,
+    toolType: drawing.tool,
+    payload: drawing,
+    locked: drawing.locked === true,
+    hidden: drawing.visible === false,
+    clientId: drawing.id,
+  };
+}
+
+function backendTemplateToLocal(row: BackendDrawingTemplate): DrawingTemplate {
+  return {
+    ...row.style,
+    id: row.id,
+    name: row.name,
+    family: row.family,
+    color: row.style.color || "#2962ff",
+  };
+}
+
+function localTemplateToBackend(
+  template: DrawingTemplate,
+): { name: string; family: DrawingTemplate["family"]; style: Partial<DrawingTemplate> } {
+  const { id: _id, name, family, ...style } = template;
+  return { name, family, style };
+}
+
+const pendingDrawingUpserts = new Map<string, BackendDrawingWrite>();
+const pendingDrawingDeletes = new Map<string, BackendDrawingDelete>();
+let drawingSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleDrawingBatchSync(get: AtomGet, set: AtomSet) {
+  if (!get(backendSessionAtom)) return;
+  if (drawingSyncTimer) clearTimeout(drawingSyncTimer);
+  drawingSyncTimer = setTimeout(() => {
+    drawingSyncTimer = null;
+    const upserts = [...pendingDrawingUpserts.values()];
+    const deletes = [...pendingDrawingDeletes.values()];
+    if (!upserts.length && !deletes.length) return;
+    pendingDrawingUpserts.clear();
+    pendingDrawingDeletes.clear();
+    void syncDrawingsBatch({ upserts, deletes }).catch((error) => {
+      for (const item of upserts) pendingDrawingUpserts.set(item.clientId || item.payload.id, item);
+      for (const item of deletes) {
+        const key = item.clientId || item.id;
+        if (key) pendingDrawingDeletes.set(key, item);
+      }
+      set(logAtom, "error", `Drawing sync failed: ${apiMessage(error)}`);
+    });
+  }, 800);
+}
+
+function queueDrawingUpsert(get: AtomGet, set: AtomSet, symbol: string, drawing: Drawing) {
+  if (!get(backendSessionAtom)) return;
+  const write = localDrawingToBackend(symbol, drawing);
+  pendingDrawingDeletes.delete(drawing.id);
+  pendingDrawingUpserts.set(drawing.id, write);
+  scheduleDrawingBatchSync(get, set);
+}
+
+function queueDrawingDelete(get: AtomGet, set: AtomSet, symbol: string, drawing: Drawing) {
+  if (!get(backendSessionAtom)) return;
+  pendingDrawingUpserts.delete(drawing.id);
+  pendingDrawingDeletes.set(drawing.id, { clientId: drawing.id, symbol });
+  scheduleDrawingBatchSync(get, set);
+}
+
 // ---------------------------------------------------------------------------
 // Primitive atoms (one per state field)
 // ---------------------------------------------------------------------------
@@ -76,6 +179,7 @@ export const timeframeAtom = atom<Timeframe>(DEFAULT_TF);
 export const candlesAtom = atom<Candle[]>([]);
 export const loadingAtom = atom<boolean>(false);
 export const drawingsAtom = atom<Drawing[]>([]);
+export const drawingTemplatesAtom = atom<DrawingTemplate[]>([]);
 export const indicatorsAtom = atom<IndicatorConfig[]>([]);
 export const pineScriptsAtom = atom<CustomIndicatorScript[]>([]);
 export const pineEditorScriptIdAtom = atom<string | null>(null);
@@ -93,6 +197,36 @@ export const crosshairAtom = atom<{
   candle: Candle | null;
 } | null>(null);
 
+export const loadDrawingsForSymbolAtom = atom(
+  null,
+  async (_get, set, symbol: string) => {
+    if (!symbol || !_get(backendSessionAtom)) return;
+    try {
+      const rows = await listDrawings(symbol);
+      if (_get(symbolAtom) !== symbol) return;
+      const drawings = rows.map(backendDrawingToLocal);
+      set(drawingsAtom, drawings);
+      persistLocalDrawings(symbol, drawings);
+    } catch (error) {
+      set(logAtom, "warn", `Drawings loaded from local cache: ${apiMessage(error)}`);
+    }
+  },
+);
+
+export const loadActiveSymbolDrawingsAtom = atom(null, (_get, set) => {
+  const symbol = _get(symbolAtom);
+  if (symbol) void set(loadDrawingsForSymbolAtom, symbol);
+});
+
+export const applyRemoteDrawingTemplatesAtom = atom(
+  null,
+  (_get, set, rows: BackendDrawingTemplate[]) => {
+    const templates = rows.map(backendTemplateToLocal);
+    set(drawingTemplatesAtom, templates);
+    localStore.set(TEMPLATES_KEY, templates);
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Write atoms (actions) that read / modify multiple atoms
 // ---------------------------------------------------------------------------
@@ -103,6 +237,7 @@ export const setSymbolAtom = atom(null, (_get, set, symbol: string) => {
   set(candlesAtom, []);
   set(loadingAtom, true);
   set(drawingsAtom, localStore.get<Drawing[]>(drawingsKey(symbol), []));
+  void set(loadDrawingsForSymbolAtom, symbol);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
 });
@@ -218,7 +353,9 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
   // must not keep spawning duplicates.
   set(activeToolAtom, "cursor");
   set(selectedDrawingIdAtom, drawing.id);
-  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+  const symbol = _get(symbolAtom);
+  persistLocalDrawings(symbol, drawings);
+  queueDrawingUpsert(_get, set, symbol, drawing);
 });
 
 export const updateDrawingAtom = atom(
@@ -232,7 +369,9 @@ export const updateDrawingAtom = atom(
       return updatedDrawing;
     });
     set(drawingsAtom, drawings);
-    localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+    const symbol = _get(symbolAtom);
+    persistLocalDrawings(symbol, drawings);
+    if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 
     if (isPositionDrawing(updatedDrawing) && touchesPositionTradePlan(patch)) {
       const activePrefill = _get(orderPrefillAtom);
@@ -258,10 +397,13 @@ export const updateDrawingAtom = atom(
 );
 
 export const removeDrawingAtom = atom(null, (_get, set, id: string) => {
+  const symbol = _get(symbolAtom);
+  const removed = _get(drawingsAtom).find((d) => d.id === id);
   const drawings = _get(drawingsAtom).filter((d) => d.id !== id);
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, null);
-  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+  persistLocalDrawings(symbol, drawings);
+  if (removed) queueDrawingDelete(_get, set, symbol, removed);
 });
 
 export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
@@ -280,24 +422,32 @@ export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
   const drawings = [..._get(drawingsAtom), copy];
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, copy.id);
-  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+  const symbol = _get(symbolAtom);
+  persistLocalDrawings(symbol, drawings);
+  queueDrawingUpsert(_get, set, symbol, copy);
 });
 
 export const lockDrawingAtom = atom(null, (_get, set, id: string) => {
+  let updatedDrawing: Drawing | null = null;
   const drawings = _get(drawingsAtom).map((d) =>
-    d.id === id ? { ...d, locked: !d.locked } : d,
+    d.id === id ? (updatedDrawing = { ...d, locked: !d.locked }) : d,
   );
   set(drawingsAtom, drawings);
-  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+  const symbol = _get(symbolAtom);
+  persistLocalDrawings(symbol, drawings);
+  if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 });
 
 export const hideDrawingAtom = atom(null, (_get, set, id: string) => {
+  let updatedDrawing: Drawing | null = null;
   const drawings = _get(drawingsAtom).map((d) =>
-    d.id === id ? { ...d, visible: d.visible === false } : d,
+    d.id === id ? (updatedDrawing = { ...d, visible: d.visible === false }) : d,
   );
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, null);
-  localStore.set(drawingsKey(_get(symbolAtom)), drawings);
+  const symbol = _get(symbolAtom);
+  persistLocalDrawings(symbol, drawings);
+  if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 });
 
 export const bringToFrontAtom = atom(null, (_get, set, id: string) => {
@@ -388,10 +538,14 @@ export const selectAllAtom = atom(null, (_get, set) => {
 });
 
 export const clearDrawingsAtom = atom(null, (_get, set) => {
+  const symbol = _get(symbolAtom);
+  for (const drawing of _get(drawingsAtom)) {
+    queueDrawingDelete(_get, set, symbol, drawing);
+  }
   set(drawingsAtom, []);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
-  localStore.set(drawingsKey(_get(symbolAtom)), []);
+  persistLocalDrawings(symbol, []);
 });
 
 export const addIndicatorAtom = atom(null, (_get, set, type: BuiltInIndicatorType) => {
@@ -640,8 +794,6 @@ export const setEditingDrawingAtom = atom(
 // Drawing style templates (global, style-only presets)
 // ---------------------------------------------------------------------------
 
-export const drawingTemplatesAtom = atom<DrawingTemplate[]>([]);
-
 /** Extract the style-only subset from a drawing. */
 function styleSubset(d: Drawing): Partial<Drawing> {
   const out: Partial<Drawing> = {};
@@ -675,6 +827,24 @@ export const saveTemplateAtom = atom(
     ];
     set(drawingTemplatesAtom, next);
     localStore.set(TEMPLATES_KEY, next);
+    if (_get(backendSessionAtom)) {
+      void saveDrawingTemplate(localTemplateToBackend(template))
+        .then((row) => {
+          const saved = backendTemplateToLocal(row);
+          const latest = _get(drawingTemplatesAtom);
+          const updated = [
+            ...latest.filter(
+              (t) => !(t.name === saved.name && t.family === saved.family),
+            ),
+            saved,
+          ];
+          set(drawingTemplatesAtom, updated);
+          localStore.set(TEMPLATES_KEY, updated);
+        })
+        .catch((error) => {
+          set(logAtom, "error", `Template save failed: ${apiMessage(error)}`);
+        });
+    }
   },
 );
 
@@ -695,11 +865,19 @@ export const applyTemplateAtom = atom(
 export const deleteTemplateAtom = atom(
   null,
   (_get, set, arg: { name: string; family: DrawingTemplate["family"] }) => {
+    const removed = _get(drawingTemplatesAtom).find(
+      (t) => t.name === arg.name && t.family === arg.family,
+    );
     const next = _get(drawingTemplatesAtom).filter(
       (t) => !(t.name === arg.name && t.family === arg.family),
     );
     set(drawingTemplatesAtom, next);
     localStore.set(TEMPLATES_KEY, next);
+    if (_get(backendSessionAtom) && removed?.id) {
+      void deleteDrawingTemplate(removed.id).catch((error) => {
+        set(logAtom, "error", `Template delete failed: ${apiMessage(error)}`);
+      });
+    }
   },
 );
 

@@ -30,6 +30,7 @@ next-env.d.ts
 
 # Debug logs
 npm-debug.log*
+.runtime-logs/
 
 # Go
 backend/vendor/

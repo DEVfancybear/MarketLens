@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 7 drawings API and frontend sync (2026-07-08)
+- Added `drawings` and `drawing_templates` migrations plus Go Fiber handlers for
+  `GET/POST/PUT/PATCH/DELETE /api/v1/drawings`, `POST /api/v1/drawings/batch`, and
+  `GET/POST/PUT/DELETE /api/v1/drawing-templates`.
+- Wired `/api/v1/sync/bootstrap` to include global drawing templates while keeping per-symbol
+  drawings lazy-loaded.
+- Added the frontend `drawingsApi` ky resource and connected `chartStore` to load drawings by
+  symbol and flush drawing create/update/delete mutations through a debounced batch sync keyed by
+  `clientId`.
+- Kept `drawings:<symbol>` and `drawingTemplates` localStorage only as anonymous/cache fallback,
+  not as the authenticated source of truth.
+- Added backend handler tests for drawing batch idempotency, drawing template CRUD, API error
+  mapping, and bootstrap drawing-template hydration.
+
 ### Fixed - Watchlist Sort by action (2026-07-08)
 - Added backend migration `0006_watchlist_sort_preferences` so each watchlist
   persists `sortKey` and `sortDir` with the server-owned Phase 6 data model.

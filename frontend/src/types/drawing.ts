@@ -266,6 +266,8 @@ export function styleFamily(tool: DrawingTool): StyleFamily {
  * bad template can't move or duplicate objects.
  */
 export interface DrawingTemplate {
+  /** Backend id when the template is synced; absent for anonymous/local presets. */
+  id?: string;
   name: string;
   family: StyleFamily;
   color: string;

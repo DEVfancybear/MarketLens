@@ -6,6 +6,10 @@ import { applyRemoteUISettingsAtom, logAtom } from "@/store/uiStore";
 import { applyRemoteSmcSettingsAtom } from "@/store/smcStore";
 import { applyRemoteNotificationSettingsAtom } from "@/store/alertStore";
 import { applyRemoteWatchlistsAtom } from "@/store/watchlistStore";
+import {
+  applyRemoteDrawingTemplatesAtom,
+  loadActiveSymbolDrawingsAtom,
+} from "@/store/chartStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
 import { createWatchlist as createRemoteWatchlist } from "@/services/api/resources/watchlistsApi";
 import { isApiError } from "@/services/api/errors";
@@ -25,6 +29,8 @@ export function useWorkspaceBootstrap(): void {
   const applySmc = useSetAtom(applyRemoteSmcSettingsAtom);
   const applyNotifications = useSetAtom(applyRemoteNotificationSettingsAtom);
   const applyWatchlists = useSetAtom(applyRemoteWatchlistsAtom);
+  const applyDrawingTemplates = useSetAtom(applyRemoteDrawingTemplatesAtom);
+  const loadActiveDrawings = useSetAtom(loadActiveSymbolDrawingsAtom);
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
 
@@ -57,6 +63,8 @@ export function useWorkspaceBootstrap(): void {
         applySmc(bootstrap.settings.smc);
         applyNotifications(bootstrap.settings.notifications);
         applyWatchlists(watchlists);
+        applyDrawingTemplates(bootstrap.drawingTemplates);
+        loadActiveDrawings();
         log("info", "Workspace synced from backend");
       })
       .catch((error) => {
@@ -73,6 +81,8 @@ export function useWorkspaceBootstrap(): void {
     };
   }, [
     applyNotifications,
+    applyDrawingTemplates,
+    loadActiveDrawings,
     applySmc,
     applyUI,
     applyWatchlists,

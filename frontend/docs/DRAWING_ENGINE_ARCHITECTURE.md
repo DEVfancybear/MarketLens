@@ -50,7 +50,8 @@ For the shared chart zoom/pan/viewport invalidation contract, see
 │  chartStore.ts        ← single source of truth                     │
 │  drawings[], selectedDrawingId, selectedDrawingIds, activeTool,    │
 │  drawColor, drawingsHidden, drawingsLocked                         │
-│  Persistence: localStorage `drawings:<symbol>`                     │
+│  Persistence: backend Phase 7 `/drawings` in remote mode;           │
+│  localStorage `drawings:<symbol>` only as anonymous/cache fallback  │
 └───────────────────────────┬────────────────────────────────────────┘
                             │ delegates to
 ┌───────────────────────────▼────────────────────────────────────────┐
@@ -84,7 +85,8 @@ For the shared chart zoom/pan/viewport invalidation contract, see
 
 3. User clicks second point
    → pointerdown → addDrawing({ tool:'trendline', points:[p1,p2] }) + history CreateCommand
-   → chartStore.addDrawing() → appends to drawings[], persists to localStorage
+   → chartStore.addDrawing() → appends to drawings[], updates local cache,
+     queues backend `/drawings/batch` upsert when authenticated
    → DrawingLayer's store-change effect → markDirty → repaint
 
 4. Chart pan/zoom/resize
@@ -108,7 +110,10 @@ the memo guard decides whether a frame is actually painted.
 - **chartStore.activeTool** determines the current creation mode
 - **drawingRenderer.ts** (`renderDrawing`) and **hittest/HitTestEngine.ts** (`hitTest`) are
   pure — they read the Drawing model and delegate to the tool adapter, never mutating state
-- **Persistence** is co-located with state mutations in chartStore
+- **Persistence** is co-located with state mutations in chartStore: authenticated users lazy-load
+  drawings by symbol from backend Phase 7 and flush create/update/delete through a debounced batch
+  queue keyed by frontend `Drawing.id` (`clientId` server-side); anonymous users keep the existing
+  localStorage fallback
 - Transient interaction state (in-progress anchors, live drag points) lives in the
   **interaction machine / refs**, NOT the store — it is committed to the store only on
   pointerup (via `updateDrawing` + a history command)

@@ -1,11 +1,12 @@
 import { getJson } from "@/services/api/client";
 import type { SettingsDocument } from "./settingsApi";
 import type { BackendWatchlist } from "./watchlistsApi";
+import type { BackendDrawingTemplate } from "./drawingsApi";
 
 export interface WorkspaceBootstrap {
   settings: SettingsDocument;
   watchlists: BackendWatchlist[];
-  drawingTemplates: unknown[];
+  drawingTemplates: BackendDrawingTemplate[];
   indicators: unknown[];
   pineScripts: unknown[];
   alerts: unknown[];

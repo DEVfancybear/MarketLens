@@ -27,9 +27,10 @@ Current backend code has:
 - Settings API: `GET/PUT/PATCH /api/v1/settings`.
 - Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
-Current backend API status from `backend/docs/API.md`: auth, settings, bootstrap, and Phase 6
-watchlists are live. Drawings/indicators/Pine/alerts/journal/layouts/sim trading remain
-phase-by-phase work. Frontend work should remain staged behind `backendSession` and typed adapters.
+Current backend API status from `backend/docs/API.md`: auth, settings, bootstrap, Phase 6
+watchlists, and Phase 7 drawings/drawing templates are live. Indicators/Pine/alerts/journal/
+layouts/sim trading remain phase-by-phase work. Frontend work should remain staged behind
+`backendSession` and typed adapters.
 Do not remove working local behavior for anonymous users until each resource endpoint exists.
 
 ## Source Of Truth Rules
@@ -78,6 +79,7 @@ frontend/src/services/api/
     settingsApi.ts        # implemented: GET/PUT/PATCH /settings
     syncApi.ts            # implemented: GET /sync/bootstrap
     watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
+    drawingsApi.ts        # implemented: drawings batch sync + drawing template CRUD
     mt5Api.ts             # implemented: GET /mt5/symbols, /mt5/ticks snapshots, /mt5/history
 ```
 
@@ -326,6 +328,11 @@ POST /api/v1/drawings/batch
 Payload should include upserts and deletes with `clientId` so repeated flushes do not duplicate
 objects.
 
+Current implementation note: `chartStore` writes optimistically, keeps `drawings:<symbol>` only as
+an anonymous/cache fallback, and debounces remote drawing mutations into
+`POST /api/v1/drawings/batch`. The backend stores each drawing payload verbatim and dedupes by the
+frontend `Drawing.id` sent as `clientId`.
+
 ## Migration From Existing Local Data
 
 Do not silently merge old localStorage into remote state every startup. That creates confusing
@@ -360,8 +367,10 @@ Frontend remote mode should not be enabled globally until each required slice ex
   section edits, and drag/drop reorder write through this full-layout endpoint
 - `POST/DELETE /api/v1/watchlists/:id/symbols` - backend compatibility endpoints retained; modern
   frontend watchlist gestures use the layout endpoint
-- `GET /api/v1/drawings?symbol=...`
-- `POST /api/v1/drawings/batch`
+- `GET /api/v1/drawings?symbol=...` - backend implemented; frontend lazy-loads current symbol
+- `POST /api/v1/drawings/batch` - backend implemented; frontend debounced upsert/delete path wired
+- `GET/POST/PUT/DELETE /api/v1/drawing-templates` - backend implemented; frontend bootstrap,
+  save, and delete paths wired
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts`
 - `GET/POST/PUT/DELETE /api/v1/indicators`
 
@@ -412,8 +421,11 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
 ### Phase FE-3: Chart Artifacts
 
 - Move drawings, drawing templates, Pine scripts, and indicator presets to backend.
-- Use batch writes for drawings.
-- Lazy-load drawings per current symbol.
+- Drawings and drawing templates are implemented for Phase 7:
+  - drawing payloads lazy-load per current symbol from `/api/v1/drawings`,
+  - drawing mutations flush through `/api/v1/drawings/batch`,
+  - templates hydrate from bootstrap and save/delete through `/api/v1/drawing-templates`.
+- Remaining Phase FE-3 work: Pine scripts and indicator presets.
 - Ensure Pine scripts hydrate before custom indicators.
 
 ### Phase FE-4: Alerts, Journal, Layouts, Sim
