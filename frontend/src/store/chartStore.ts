@@ -92,6 +92,18 @@ function persistLocalDrawings(symbol: string, drawings: Drawing[]) {
   localStore.set(drawingsKey(symbol), drawings);
 }
 
+function clearLocalChartWorkspace() {
+  localStore.remove("indicators");
+  localStore.remove(PINE_SCRIPTS_KEY);
+  localStore.remove(TEMPLATES_KEY);
+  if (typeof window === "undefined") return;
+  for (const key of Object.keys(window.localStorage)) {
+    if (key.startsWith("drawings:")) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
 function backendDrawingToLocal(row: BackendDrawing): Drawing {
   return {
     ...row.payload,
@@ -895,6 +907,34 @@ export const hydrateAtom = atom(null, (_get, set) => {
     drawingTemplatesAtom,
     localStore.get<DrawingTemplate[]>(TEMPLATES_KEY, []),
   );
+});
+
+export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
+  if (drawingSyncTimer) {
+    clearTimeout(drawingSyncTimer);
+    drawingSyncTimer = null;
+  }
+  pendingDrawingUpserts.clear();
+  pendingDrawingDeletes.clear();
+
+  set(drawingsAtom, []);
+  set(drawingTemplatesAtom, []);
+  set(indicatorsAtom, []);
+  set(pineScriptsAtom, []);
+  set(pineEditorScriptIdAtom, null);
+  set(pineEditorTitleAtom, "Untitled script");
+  set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
+  set(activeToolAtom, "cursor");
+  set(drawColorAtom, "#2962ff");
+  set(selectedDrawingIdAtom, null);
+  set(selectedDrawingIdsAtom, new Set());
+  set(drawingsLockedAtom, false);
+  set(drawingsHiddenAtom, false);
+  set(editingIndicatorIdAtom, null);
+  set(editingDrawingIdAtom, null);
+  set(crosshairAtom, null);
+  set(orderPrefillAtom, null);
+  clearLocalChartWorkspace();
 });
 
 // ---------------------------------------------------------------------------

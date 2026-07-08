@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Auth workspace reset boundary (2026-07-08)
+- Reset user-scoped frontend workspace state when auth resolves to anonymous, so sign-out no longer
+  leaves the previous user's watchlist, settings, drawings, indicators, alerts, Trade prefill, or
+  tool favorites visible.
+- Kept login restore backend-owned: once the backend session is established, `sync/bootstrap` loads
+  the signed-in user's settings/watchlists and drawing resources are loaded through their Phase 7
+  APIs.
+
 ### Added - Backend Phase 7 drawings API and frontend sync (2026-07-08)
 - Added `drawings` and `drawing_templates` migrations plus Go Fiber handlers for
   `GET/POST/PUT/PATCH/DELETE /api/v1/drawings`, `POST /api/v1/drawings/batch`, and

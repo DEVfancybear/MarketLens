@@ -20,6 +20,7 @@ import {
   setTimeframeAtom,
   timeframeAtom,
 } from "@/store/chartStore";
+import { authStatusAtom } from "@/store/authStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import {
@@ -249,6 +250,7 @@ export function ChartTimeToolbar({
   const pendingShortcutId = useRef(0);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
+  const authStatus = useAtomValue(authStatusAtom);
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
   const activeTimeZone = chartTimeZoneToIntlTimeZone(timeZoneId);
@@ -261,6 +263,12 @@ export function ChartTimeToolbar({
   useEffect(() => {
     window.localStorage.setItem(TIME_ZONE_STORAGE_KEY, timeZoneId);
   }, [timeZoneId]);
+
+  useEffect(() => {
+    if (authStatus !== "anonymous") return;
+    window.localStorage.removeItem(TIME_ZONE_STORAGE_KEY);
+    setTimeZoneId(EXCHANGE_TIME_ZONE_ID);
+  }, [authStatus]);
 
   const applyShortcutViewport = useCallback(
     (shortcut: TimeRangeShortcut) => {

@@ -80,6 +80,14 @@ export const clearPushRegistrationAtom = atom(null, (_get, set) => {
   persist();
 });
 
+export const resetNotificationsToDefaultsAtom = atom(null, (_get, set) => {
+  set(pushRegistrationAtom, null);
+  set(pushStatusAtom, "idle");
+  set(pushPermissionAtom, "unsupported");
+  set(pushErrorAtom, null);
+  localStore.remove(STORAGE_KEY);
+});
+
 export const setPushRegisteringAtom = atom(null, (_get, set) => {
   set(pushStatusAtom, "registering");
   set(pushErrorAtom, null);

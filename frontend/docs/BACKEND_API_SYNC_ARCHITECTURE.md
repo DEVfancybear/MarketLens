@@ -248,6 +248,13 @@ empty watchlist array, the frontend creates a default backend "Watchlist" throug
 a stable empty local shell and logs a warning instead of falling back to the browser-local default
 symbols. This prevents accidental display of local seed data as server state.
 
+Logout is the inverse boundary. When auth resolves to `anonymous`, `useWorkspaceBootstrap()` resets
+user-scoped atoms to defaults and clears their browser cache keys. This prevents a signed-out screen
+from showing the previous user's watchlists or workspace settings. The reset intentionally leaves
+public market data infrastructure alone; MT5 symbols/quotes can continue streaming, but no
+server-owned watchlist layout, drawings, indicator config, alert state, or tool favorites remain in
+view.
+
 Suggested module:
 
 ```text
@@ -259,7 +266,11 @@ Responsibilities:
 - Track `dataMode`, `bootstrapStatus`, `lastSyncedAt`, `syncError`.
 - Expose `bootstrapRemoteWorkspaceAtom`.
 - Expose `applyBootstrapAtom`.
-- Expose `resetRemoteWorkspaceAtom` for logout.
+- Expose `resetRemoteWorkspaceAtom` for logout. The current implementation keeps this logic inside
+  `useWorkspaceBootstrap()` and calls per-store reset atoms (`resetUIToDefaultsAtom`,
+  `resetSmcToDefaultsAtom`, `resetAlertsToDefaultsAtom`,
+  `resetChartWorkspaceToDefaultsAtom`, `resetTradeAtom`, and
+  `resetNotificationsToDefaultsAtom`).
 
 ## Store Mapping
 

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { localStore } from "@/services/storage";
+import { authStatusAtom } from "@/store/authStore";
 import type { Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
 import {
@@ -21,6 +22,7 @@ import {
   toggleFavoriteTimeframe,
   visibleToolbarTimeframes,
 } from "./timeframeSelectorModel";
+import { useAtomValue } from "jotai";
 
 export function TimeframeSelector({
   timeframe,
@@ -33,6 +35,7 @@ export function TimeframeSelector({
     DEFAULT_FAVORITE_TIMEFRAMES,
   );
   const [customOpen, setCustomOpen] = useState(false);
+  const authStatus = useAtomValue(authStatusAtom);
 
   useEffect(() => {
     const saved = localStore.get<string[]>(
@@ -42,6 +45,12 @@ export function TimeframeSelector({
     const next = normalizeFavoriteTimeframes(saved);
     setFavorites(next.length ? next : DEFAULT_FAVORITE_TIMEFRAMES);
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "anonymous") return;
+    localStore.remove(TIMEFRAME_FAVORITES_KEY);
+    setFavorites(DEFAULT_FAVORITE_TIMEFRAMES);
+  }, [authStatus]);
 
   const visible = useMemo(
     () => visibleToolbarTimeframes(favorites, timeframe),

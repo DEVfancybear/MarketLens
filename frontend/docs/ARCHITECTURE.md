@@ -128,7 +128,10 @@ workspace slices should move behind typed DTO adapters one at a time. See
 
 ## Persistence
 
-Current local persistence is still used for anonymous mode and not-yet-migrated workspace slices:
+Current local persistence is still used only as a transient anonymous/cache layer for
+not-yet-migrated workspace slices. When auth resolves to `anonymous` after sign-out, user-scoped
+atoms are reset to defaults and their old local cache keys are cleared so the signed-out screen does
+not display the previous user's workspace.
 
 - localStorage: anonymous/cache fallback for `ui`, `drawings:<symbol>`, `indicators`,
   `pineScripts`, `drawingTemplates`, legacy `watchlist`, `smc-settings`, `alerts`,

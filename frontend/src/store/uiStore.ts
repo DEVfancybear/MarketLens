@@ -209,6 +209,22 @@ export const applyRemoteUISettingsAtom = atom(
 // ---------------------------------------------------------------------------
 // Non-React accessor — mirrors `useUIStore.getState()` for non-React code.
 // ---------------------------------------------------------------------------
+export const resetUIToDefaultsAtom = atom(null, (_get, set) => {
+  const panels = { ...DEFAULT_PANELS };
+  set(themeAtom, "dark");
+  set(panelsAtom, panels);
+  set(bottomTabAtom, "replay");
+  set(rightOpenAtom, true);
+  set(bottomOpenAtom, true);
+  set(fullscreenAtom, false);
+  set(alertCenterOpenAtom, false);
+  set(gridVisibleAtom, true);
+  localStore.remove("ui");
+  if (typeof document !== "undefined") {
+    document.documentElement.className = "theme-dark";
+  }
+});
+
 export function getUIState() {
   const store = getDefaultStore();
   return {

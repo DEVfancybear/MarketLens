@@ -350,6 +350,17 @@ export const applyRemoteNotificationSettingsAtom = atom(
 
 // ── Write atoms: backward-compat (chart context menu) ────────────────────────
 
+export const resetAlertsToDefaultsAtom = atom(null, (_get, set) => {
+  set(alertsAtom, []);
+  set(triggeredAlertsAtom, []);
+  set(historyAtom, []);
+  set(settingsAtom, DEFAULT_SETTINGS);
+  set(selectedAlertIdAtom, null);
+  set(editingAlertIdAtom, null);
+  localStore.remove(STORAGE_KEY);
+  set(alertTickAtom, Date.now());
+});
+
 export const addAlertAtom = atom(
   null,
   (

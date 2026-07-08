@@ -84,6 +84,12 @@ export const applyRemoteSmcSettingsAtom = atom(
 );
 
 // ── Combined state + actions (for compatibility hook) ──────────────────────
+export const resetSmcToDefaultsAtom = atom(null, (_get, set) => {
+  set(smcSnapshotAtom, EMPTY);
+  set(smcSettingsAtom, DEFAULT_SETTINGS);
+  localStore.remove("smc-settings");
+});
+
 interface SmcState {
   snapshot: SmcSnapshot;
   settings: SmcSettings;

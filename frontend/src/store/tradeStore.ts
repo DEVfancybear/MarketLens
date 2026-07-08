@@ -203,6 +203,9 @@ export const resetTradeAtom = atom(null, (get, set) => {
   set(equityAtom, get(startingEquityAtom));
   set(priceAtom, 0);
   set(timeAtom, 0);
+  set(tradeSymbolAtom, "");
+  set(orderPrefillAtom, null);
+  set(orderPrefillVersionAtom, get(orderPrefillVersionAtom) + 1);
 });
 
 export const setOrderPrefillAtom = atom(

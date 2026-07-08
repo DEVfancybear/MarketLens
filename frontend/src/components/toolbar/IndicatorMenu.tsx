@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { authStatusAtom } from "@/store/authStore";
 import {
   addCustomIndicatorFromScriptAtom,
   deletePineScriptAtom,
@@ -71,6 +72,11 @@ function readCatalogFavorites(): Record<string, IndicatorCatalogItem> {
 function writeCatalogFavorites(items: Record<string, IndicatorCatalogItem>) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(FAVORITE_CATALOG_KEY, JSON.stringify(items));
+}
+
+function clearCatalogFavorites() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(FAVORITE_CATALOG_KEY);
 }
 
 function defaultTypeFilter(tab: BrowserTab): TypeFilter {
@@ -200,6 +206,7 @@ export function IndicatorMenu() {
   const deleteDialogDrag = useDraggableDialog();
 
   const scripts = useAtomValue(pineScriptsAtom);
+  const authStatus = useAtomValue(authStatusAtom);
   const addCustomIndicator = useSetAtom(addCustomIndicatorFromScriptAtom);
   const deleteScript = useSetAtom(deletePineScriptAtom);
   const loadPineScript = useSetAtom(loadPineScriptAtom);
@@ -215,6 +222,12 @@ export function IndicatorMenu() {
   useEffect(() => {
     setCatalogFavorites(readCatalogFavorites());
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "anonymous") return;
+    clearCatalogFavorites();
+    setCatalogFavorites({});
+  }, [authStatus]);
 
   useEffect(() => {
     if (!open) return;

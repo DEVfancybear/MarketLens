@@ -1,15 +1,28 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { authUserAtom, backendSessionAtom } from "@/store/authStore";
-import { applyRemoteUISettingsAtom, logAtom } from "@/store/uiStore";
-import { applyRemoteSmcSettingsAtom } from "@/store/smcStore";
-import { applyRemoteNotificationSettingsAtom } from "@/store/alertStore";
+import { authStatusAtom, authUserAtom, backendSessionAtom } from "@/store/authStore";
+import {
+  applyRemoteUISettingsAtom,
+  logAtom,
+  resetUIToDefaultsAtom,
+} from "@/store/uiStore";
+import {
+  applyRemoteSmcSettingsAtom,
+  resetSmcToDefaultsAtom,
+} from "@/store/smcStore";
+import {
+  applyRemoteNotificationSettingsAtom,
+  resetAlertsToDefaultsAtom,
+} from "@/store/alertStore";
 import { applyRemoteWatchlistsAtom } from "@/store/watchlistStore";
 import {
   applyRemoteDrawingTemplatesAtom,
   loadActiveSymbolDrawingsAtom,
+  resetChartWorkspaceToDefaultsAtom,
 } from "@/store/chartStore";
+import { resetTradeAtom } from "@/store/tradeStore";
+import { resetNotificationsToDefaultsAtom } from "@/store/notificationStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
 import { createWatchlist as createRemoteWatchlist } from "@/services/api/resources/watchlistsApi";
 import { isApiError } from "@/services/api/errors";
@@ -23,18 +36,48 @@ import { isApiError } from "@/services/api/errors";
  * an in-memory cache for the current tab.
  */
 export function useWorkspaceBootstrap(): void {
+  const authStatus = useAtomValue(authStatusAtom);
   const backendSession = useAtomValue(backendSessionAtom);
   const user = useAtomValue(authUserAtom);
   const applyUI = useSetAtom(applyRemoteUISettingsAtom);
+  const resetUI = useSetAtom(resetUIToDefaultsAtom);
   const applySmc = useSetAtom(applyRemoteSmcSettingsAtom);
+  const resetSmc = useSetAtom(resetSmcToDefaultsAtom);
   const applyNotifications = useSetAtom(applyRemoteNotificationSettingsAtom);
+  const resetAlerts = useSetAtom(resetAlertsToDefaultsAtom);
   const applyWatchlists = useSetAtom(applyRemoteWatchlistsAtom);
   const applyDrawingTemplates = useSetAtom(applyRemoteDrawingTemplatesAtom);
   const loadActiveDrawings = useSetAtom(loadActiveSymbolDrawingsAtom);
+  const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
+  const resetTrade = useSetAtom(resetTradeAtom);
+  const resetPushNotifications = useSetAtom(resetNotificationsToDefaultsAtom);
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
+  const anonymousResetRef = useRef(false);
 
   useEffect(() => {
+    if (authStatus === "anonymous") {
+      bootstrappedUserRef.current = null;
+      if (!anonymousResetRef.current) {
+        anonymousResetRef.current = true;
+        resetUI();
+        resetSmc();
+        resetAlerts();
+        applyWatchlists([]);
+        resetChartWorkspace();
+        resetTrade();
+        resetPushNotifications();
+        log("info", "Workspace reset to defaults");
+      }
+      return;
+    }
+
+    if (authStatus === "loading" || authStatus === "authenticating") {
+      return;
+    }
+
+    anonymousResetRef.current = false;
+
     if (!backendSession || !user) {
       bootstrappedUserRef.current = null;
       return;
@@ -80,6 +123,7 @@ export function useWorkspaceBootstrap(): void {
       cancelled = true;
     };
   }, [
+    authStatus,
     applyNotifications,
     applyDrawingTemplates,
     loadActiveDrawings,
@@ -88,6 +132,12 @@ export function useWorkspaceBootstrap(): void {
     applyWatchlists,
     backendSession,
     log,
+    resetAlerts,
+    resetChartWorkspace,
+    resetPushNotifications,
+    resetSmc,
+    resetTrade,
+    resetUI,
     user,
   ]);
 }

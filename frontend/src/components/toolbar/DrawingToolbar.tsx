@@ -52,7 +52,7 @@ import {
   setDrawColorAtom,
   clearDrawingsAtom,
 } from "@/store/chartStore";
-import { backendSessionAtom } from "@/store/authStore";
+import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
 import type { DrawingTool } from "@/types";
 
@@ -322,6 +322,15 @@ function writeLocalFavorites(tools: string[]) {
   }
 }
 
+function clearLocalFavorites() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(FAV_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function normalizeFavoriteTools(tools: readonly string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -342,12 +351,18 @@ function apiMessage(error: unknown): string {
 /** Favorite tools. Remote mode uses Phase 7 API; localStorage is anonymous/cache fallback. */
 function useFavorites(): [Set<string>, (tool: string) => void] {
   const backendSession = useAtomValue(backendSessionAtom);
+  const authStatus = useAtomValue(authStatusAtom);
   const log = useSetAtom(logAtom);
   const [fav, setFav] = useState<Set<string>>(
     () => new Set(normalizeFavoriteTools(readLocalFavorites())),
   );
 
   useEffect(() => {
+    if (authStatus === "anonymous") {
+      clearLocalFavorites();
+      setFav(new Set());
+      return;
+    }
     if (!backendSession) return;
     let cancelled = false;
     void getDrawingToolFavorites()
@@ -365,7 +380,7 @@ function useFavorites(): [Set<string>, (tool: string) => void] {
     return () => {
       cancelled = true;
     };
-  }, [backendSession, log]);
+  }, [authStatus, backendSession, log]);
 
   const persist = useCallback(
     (tools: string[]) => {

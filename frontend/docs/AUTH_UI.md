@@ -52,7 +52,9 @@ Backend session exchange happens after Firebase emits a user:
 - backend configured and exchange succeeds: `backendSession = true`
 - backend configured and exchange fails: `backendSession = false`, `authError` is set, UI identity
   remains Firebase-authed
-- backend not configured: `backendSession = false`, anonymous/local persistence remains available
+- backend not configured: `backendSession = false`; the UI stays usable, but logout/anonymous
+  transitions still reset user-scoped workspace state to defaults so a previous signed-in user's
+  watchlists, drawings, indicators, alerts, and preferences are not displayed.
 
 ## Configuration
 
@@ -86,3 +88,10 @@ Firebase console:
 
 `UserMenu` attempts `POST /api/v1/auth/logout` first, then always signs out Firebase. Backend logout
 is best-effort so an expired backend cookie cannot trap the user in the signed-in UI.
+
+When Firebase reports `anonymous`, `useWorkspaceBootstrap()` resets the screen to the default
+workspace. The reset covers watchlists, UI panel preferences, SMC toggles, alert settings/history,
+push registration state, Trade panel runtime, indicators/Pine scripts, drawings/templates, and
+drawing-tool favorites. Login performs the opposite path: once `backendSession` is true,
+`GET /api/v1/sync/bootstrap` rehydrates the authenticated user's settings and watchlists, then loads
+drawing templates and current-symbol drawings from the backend.
