@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Signed-out Pine workspace controls (2026-07-09)
+- Removed the public Store favorite-looking star marker for signed-out users so
+  public indicators no longer appear as user favorites before authentication.
+- Hid chart legend source-code controls for CUSTOM indicators unless the user is
+  authenticated, keeping `{}` source access aligned with the private Pine
+  workspace.
+- Added UI access-rule tests for signed-out Pine source and favorite controls.
+
 ### Fixed - Pine 10-in-1 moving average parity (2026-07-09)
 - Extended the Go Pine runtime for the public `10 in 1 Different Moving Averages`
   script: multiline `=>` functions, nested `if`/`else if`, `switch` expressions,

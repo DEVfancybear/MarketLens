@@ -1,5 +1,7 @@
 import { Braces, Eye, EyeOff, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useAtomValue } from "jotai";
+import { authStatusAtom } from "@/store/authStore";
 import type { IndicatorConfig } from "@/types";
 import {
   getPineRuntimeInputs,
@@ -13,6 +15,7 @@ import {
   inputsInStatusLine,
   valuesInStatusLine,
 } from "@/services/indicatorStyle";
+import { canShowPineSourceControls } from "@/services/privateWorkspaceAccess";
 
 function pineLegendInputs(
   indicator: IndicatorConfig,
@@ -69,6 +72,8 @@ export function IndicatorLegend({
   onRemove: (id: string) => void;
   valueTextById?: Record<string, string>;
 }) {
+  const authStatus = useAtomValue(authStatusAtom);
+  const canShowSourceControls = canShowPineSourceControls(authStatus);
   const [inputDefinitionsById, setInputDefinitionsById] = useState<
     Record<string, {
       sourceCode: string;
@@ -153,13 +158,15 @@ export function IndicatorLegend({
             >
               <Settings size={14} />
             </LegendButton>
-            <LegendButton
-              title={sourceEnabled ? "Open source code" : "Source unavailable"}
-              disabled={!sourceEnabled}
-              onClick={() => onSource(indicator)}
-            >
-              <Braces size={14} />
-            </LegendButton>
+            {canShowSourceControls && (
+              <LegendButton
+                title={sourceEnabled ? "Open source code" : "Source unavailable"}
+                disabled={!sourceEnabled}
+                onClick={() => onSource(indicator)}
+              >
+                <Braces size={14} />
+              </LegendButton>
+            )}
             <LegendButton
               danger
               title="Remove indicator"

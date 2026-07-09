@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  canShowPineSourceControls,
+  canShowUserFavoriteControls,
   canUsePrivatePineWorkspace,
   fallbackBottomTabForAuth,
   visibleBottomPanelTabs,
@@ -24,10 +26,14 @@ test("private Pine workspace is available only after authentication", () => {
 
   for (const status of blocked) {
     assert.equal(canUsePrivatePineWorkspace(status), false);
+    assert.equal(canShowPineSourceControls(status), false);
+    assert.equal(canShowUserFavoriteControls(status), false);
     assert.deepEqual(visibleIndicatorBrowserTabs(status), ["store"]);
   }
 
   assert.equal(canUsePrivatePineWorkspace("authed"), true);
+  assert.equal(canShowPineSourceControls("authed"), true);
+  assert.equal(canShowUserFavoriteControls("authed"), true);
   assert.deepEqual(visibleIndicatorBrowserTabs("authed"), [
     "favorites",
     "myScripts",

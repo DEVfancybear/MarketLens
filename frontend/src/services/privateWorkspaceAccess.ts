@@ -9,6 +9,14 @@ export function canUsePrivatePineWorkspace(authStatus: AuthStatus): boolean {
   return authStatus === "authed";
 }
 
+export function canShowPineSourceControls(authStatus: AuthStatus): boolean {
+  return canUsePrivatePineWorkspace(authStatus);
+}
+
+export function canShowUserFavoriteControls(authStatus: AuthStatus): boolean {
+  return canUsePrivatePineWorkspace(authStatus);
+}
+
 export function visibleIndicatorBrowserTabs(
   authStatus: AuthStatus,
 ): IndicatorBrowserTab[] {

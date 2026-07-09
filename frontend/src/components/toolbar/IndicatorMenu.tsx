@@ -33,6 +33,7 @@ import {
   publicIndicatorScriptId,
 } from "@/services/indicatorStoreModel";
 import {
+  canShowUserFavoriteControls,
   canUsePrivatePineWorkspace,
   type IndicatorBrowserTab,
 } from "@/services/privateWorkspaceAccess";
@@ -109,6 +110,7 @@ export function IndicatorMenu() {
   const togglePineFavorite = useSetAtom(togglePineFavoriteAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const canUsePrivatePine = canUsePrivatePineWorkspace(authStatus);
+  const canShowFavorites = canShowUserFavoriteControls(authStatus);
 
   useEffect(() => {
     if (!open) return;
@@ -369,6 +371,7 @@ export function IndicatorMenu() {
                           <StoreRow
                             key={`store:${item.id}`}
                             item={item}
+                            showFavoriteMarker={canShowFavorites}
                             onAdd={() => void addPublicScript(item)}
                           />
                         ))}
@@ -513,19 +516,23 @@ function ScriptRow({
 
 function StoreRow({
   item,
+  showFavoriteMarker,
   onAdd,
 }: {
   item: PublicIndicatorScript;
+  showFavoriteMarker: boolean;
   onAdd: () => void;
 }) {
   return (
     <div className="group grid min-h-8 grid-cols-[minmax(220px,1fr)_128px_92px] items-center rounded-md px-1 text-[13px] text-ink transition-colors hover:bg-terminal-hover">
       <div className="flex min-w-0 items-center gap-2">
-        <Star
-          size={16}
-          fill="currentColor"
-          className="h-7 w-7 shrink-0 rounded p-1.5 text-ink"
-        />
+        {showFavoriteMarker && (
+          <Star
+            size={16}
+            fill="none"
+            className="h-7 w-7 shrink-0 rounded p-1.5 text-ink-muted"
+          />
+        )}
         <button
           type="button"
           onClick={onAdd}
