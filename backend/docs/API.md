@@ -475,6 +475,54 @@ Oversized source code above 64 KB returns `400`.
 
 ---
 
+## Pine runtime
+
+Runtime-only compiler endpoints. These routes do not persist scripts and do not
+require auth. Saved script CRUD remains under `/api/v1/pine-scripts`; the
+runtime receives source plus candles and returns chart primitives.
+
+| Method | Path                           | Purpose                                      |
+| ------ | ------------------------------ | -------------------------------------------- |
+| POST   | `/api/v1/pine-runtime/meta`    | Extract `indicator()` / `study()` metadata   |
+| POST   | `/api/v1/pine-runtime/inputs`  | Extract Inputs-tab schema                    |
+| POST   | `/api/v1/pine-runtime/styles`  | Extract Style-tab schema                     |
+| POST   | `/api/v1/pine-runtime/compile` | Compile source against supplied OHLCV bars   |
+
+Compile request:
+
+```json
+{
+  "scriptId": "ind_abc",
+  "sourceCode": "indicator(\"VSA\")\nplot(volume)",
+  "timeframe": "15m",
+  "candles": [
+    { "time": 1783420800, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 100 }
+  ],
+  "inputOverrides": {},
+  "styleOverrides": {}
+}
+```
+
+Compile response:
+
+```json
+{
+  "meta": { "name": "VSA", "overlay": false },
+  "result": { "id": "ind_abc", "series": [] },
+  "errors": [],
+  "warnings": [],
+  "unsupportedFeatures": []
+}
+```
+
+Current runtime subset covers metadata/input/style extraction, series
+assignments, recursive/self-referential series patterns, plot/hline/fill output,
+and the Pine functions needed by VSA Volume and Better RSI. Object APIs such as
+`line.new`, `label.new`, `box.new`, and `table.new` are reported in
+`unsupportedFeatures` until the Go object runtime is ported.
+
+---
+
 ## Alerts  🔒
 
 Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery channels; the

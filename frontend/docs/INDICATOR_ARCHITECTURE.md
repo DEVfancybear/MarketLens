@@ -10,9 +10,12 @@ drawing state, alert state, or chart pointer handling. Every indicator must cons
 array it is given, and the caller must pass the replay-aware visible candle slice. This keeps
 indicator rendering no-look-ahead by construction.
 
-Custom Pine-like scripts must be parsed through the whitelist compiler in `services/pineScript.ts`.
-Do not execute user-provided source with `eval`, `new Function`, dynamic imports, or any other
-general JavaScript execution path.
+Custom Pine-like scripts currently pass through the whitelist compiler in
+`services/pineScript.ts`. The active migration plan is to move Pine parsing and
+compilation into the Go backend; see
+[`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md).
+During that migration, do not execute user-provided source with `eval`,
+`new Function`, dynamic imports, or any other general JavaScript execution path.
 
 ## Overview
 
@@ -201,15 +204,32 @@ Add-to-chart flow:
 
 ```
 PineEditor Play or My scripts Add
-  -> compilePineScript(sourceCode, visibleCandles preview)
+  -> POST /api/v1/pine-runtime/compile preview through pineRuntimeApi
   -> if compile errors: show status + log
   -> savePineScriptAtom(...)
   -> addCustomIndicatorFromScriptAtom(savedScript)
   -> if savedScript is metadata-only, GET /api/v1/pine-scripts/:id first
   -> indicatorsAtom gets type: "CUSTOM"
   -> authenticated mode POST /api/v1/indicators with clientId
-  -> PriceChart / IndicatorPane renders through computeIndicator()
+  -> PriceChart / IndicatorPane requests backend compile through pineRuntimeCache
+  -> computeIndicator() reads cached IndicatorResult without synchronous Pine compile
 ```
+
+Custom indicator rendering is now asynchronous:
+
+```
+PriceChart / IndicatorPane
+  -> ensurePineIndicatorResult(config, visibleCandles)
+  -> POST /api/v1/pine-runtime/compile
+  -> cache IndicatorResult by source hash + candle range + inputs + styles
+  -> notify subscribers
+  -> chart rerenders cached result
+```
+
+During migration, `pineRuntimeCache` falls back to the old TypeScript runtime
+only when the backend is unavailable or returns unsupported object APIs
+(`line.new`, `box.new`, `label.new`, `table.new`). Do not add new Pine language
+support to the fallback path; add it to `backend/internal/pineruntime`.
 
 Edit existing custom indicator source:
 

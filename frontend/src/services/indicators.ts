@@ -15,8 +15,8 @@ import type {
   LinePoint,
 } from '@/types';
 import { dayKey } from '@/utils/time';
-import { computeCustomIndicator } from '@/services/pineScript';
 import { applyCommonSeriesStyle } from '@/services/indicatorStyle';
+import { getCachedPineIndicatorResult } from '@/services/pineRuntimeCache';
 
 function styleFieldKey(
   key: string,
@@ -315,7 +315,7 @@ export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): Indic
       };
     }
     case 'CUSTOM':
-      return computeCustomIndicator(cfg, candles);
+      return getCachedPineIndicatorResult(cfg, candles) ?? { id: cfg.id, series: [] };
     default:
       return { id: cfg.id, series: [] };
   }

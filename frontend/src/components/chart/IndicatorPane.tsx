@@ -29,6 +29,10 @@ import {
 } from "./chartVisualProfile";
 import { computeIndicator } from "@/services/indicators";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
+import {
+  ensurePineIndicatorResult,
+  subscribePineRuntimeCache,
+} from "@/services/pineRuntimeCache";
 import { IndicatorLegend } from "./IndicatorLegend";
 
 type PaneSeriesApi =
@@ -91,6 +95,7 @@ export function IndicatorPane({
   const setPineEditorSource = useSetAtom(pineEditorSourceAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const [legendValueText, setLegendValueText] = useState("");
+  const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -147,6 +152,15 @@ export function IndicatorPane({
     handler();
     return () => sub.unsubscribeVisibleLogicalRangeChange(handler);
   }, [mainChart]);
+
+  useEffect(
+    () => subscribePineRuntimeCache(() => setPineRuntimeVersion((value) => value + 1)),
+    [],
+  );
+
+  useEffect(() => {
+    if (cfg.type === "CUSTOM") ensurePineIndicatorResult(cfg, candles);
+  }, [cfg, candles]);
 
   // Data
   useEffect(() => {
@@ -269,7 +283,7 @@ export function IndicatorPane({
         })),
       );
     });
-  }, [cfg, candles, theme]);
+  }, [cfg, candles, theme, pineRuntimeVersion]);
 
   const toggleVisibility = () => {
     updateIndicator({ id: cfg.id, patch: { visible: cfg.visible === false } });

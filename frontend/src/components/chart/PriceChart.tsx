@@ -45,6 +45,10 @@ import {
 } from "./chartVisualProfile";
 import { computeIndicator } from "@/services/indicators";
 import {
+  ensurePineIndicatorResult,
+  subscribePineRuntimeCache,
+} from "@/services/pineRuntimeCache";
+import {
   resolveRealtimeSeriesUpdatePlan,
   type RealtimeSeriesUpdatePlan,
 } from "@/services/market-data/candleSeries";
@@ -204,6 +208,7 @@ export function PriceChart({
   const [indicatorDashboards, setIndicatorDashboards] = useState<
     IndicatorDashboard[]
   >([]);
+  const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
   const countdown = useCountdown(timeframe);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
@@ -513,13 +518,22 @@ export function PriceChart({
     () => indicators.filter((i) => !i.separatePane),
     [indicators],
   );
+  useEffect(
+    () => subscribePineRuntimeCache(() => setPineRuntimeVersion((value) => value + 1)),
+    [],
+  );
+  useEffect(() => {
+    overlayIndicators.forEach((cfg) => {
+      if (cfg.type === "CUSTOM") ensurePineIndicatorResult(cfg, candles);
+    });
+  }, [overlayIndicators, candles]);
   const overlayResults = useMemo(
     () =>
       overlayIndicators.map((cfg) => ({
         cfg,
         result: computeIndicator(cfg, candles),
       })),
-    [overlayIndicators, candles],
+    [overlayIndicators, candles, pineRuntimeVersion],
   );
   const overlayLegendValueText = useMemo(
     () =>

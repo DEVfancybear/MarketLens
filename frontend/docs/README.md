@@ -12,6 +12,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `CHART_TIME_NAVIGATION_ARCHITECTURE.md` | Chart time navigation and range shortcuts |
 | `CHART_VISUAL_PROFILE.md` | Chart visual profile / rendering |
 | `INDICATOR_ARCHITECTURE.md` | Pine indicator runtime and renderer |
+| `../../docs/PINE_RUNTIME_GO_MIGRATION.md` | Cross-package migration plan for moving Pine compile/runtime ownership to Go |
 | `REPLAY_ARCHITECTURE.md` | Replay mode engine |
 | `RESPONSIVE_ARCHITECTURE.md` | Responsive layout system |
 | `SETTTING_ARCHITECTURE.md` | Settings dialog architecture |

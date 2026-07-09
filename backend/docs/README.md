@@ -16,3 +16,9 @@ HTTP persistence task is Phase 7 drawings.
 | `AUTH.md`          | Google sign-in / sign-up flow and implemented routes |
 | `BACKEND_IMPLEMENTATION_PLAN.md` | Phased build order for the Go backend|
 | `CONFIGURATION.md` | Environment and configuration                      |
+
+## Cross-Package Runtime Plans
+
+| File | Purpose |
+| --- | --- |
+| [`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md) | Plan for moving Pine parsing/compilation from frontend TypeScript into the Go backend runtime |

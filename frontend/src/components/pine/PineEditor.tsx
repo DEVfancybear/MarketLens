@@ -27,6 +27,7 @@ import {
 } from "@/store/chartStore";
 import { logAtom } from "@/store/uiStore";
 import { compilePineScript, extractPineScriptMeta } from "@/services/pineScript";
+import { compilePineRuntime } from "@/services/api/resources/pineRuntimeApi";
 import type { CustomIndicatorScript } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -101,7 +102,11 @@ export function PineEditor() {
   };
 
   const handleRun = async () => {
-    const preview = compilePineScript(source, candles.slice(-500), "preview");
+    let preview = await compilePineRuntime({
+      scriptId: "preview",
+      sourceCode: source,
+      candles: candles.slice(-500),
+    }).catch(() => compilePineScript(source, candles.slice(-500), "preview"));
     if (preview.errors.length > 0) {
       const message = preview.errors[0];
       setStatus({ level: "error", text: message });

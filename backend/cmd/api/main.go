@@ -17,6 +17,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/users"
@@ -43,6 +44,7 @@ func main() {
 	})
 	mt5Service.Start(ctx)
 	mt5Handler := mt5stream.NewHandler(mt5Service)
+	pineRuntimeHandler := pineruntime.NewHandler()
 
 	// Connect to Postgres when a URL is configured. In local dev without a DB,
 	// the server still boots and /health/ready reports the DB as unconfigured.
@@ -109,6 +111,7 @@ func main() {
 		pineScriptsHandler,
 		workspaceHandler,
 		mt5Handler,
+		pineRuntimeHandler,
 	)
 
 	if err := srv.Start(ctx); err != nil {

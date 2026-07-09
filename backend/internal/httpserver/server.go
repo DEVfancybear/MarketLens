@@ -19,6 +19,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/middleware"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
@@ -45,6 +46,7 @@ func New(
 	pineScriptsHandler *pinescripts.Handler,
 	workspaceHandler *workspace.Handler,
 	mt5Handler *mt5stream.Handler,
+	pineRuntimeHandler *pineruntime.Handler,
 ) *Server {
 	app := fiber.New(fiber.Config{
 		AppName:               "smc-trading-backend",
@@ -99,6 +101,9 @@ func New(
 	}
 	if mt5Handler != nil {
 		mt5Handler.Register(api)
+	}
+	if pineRuntimeHandler != nil {
+		pineRuntimeHandler.Register(api)
 	}
 
 	return &Server{cfg: cfg, app: app}
