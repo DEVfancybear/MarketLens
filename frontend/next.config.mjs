@@ -44,6 +44,19 @@ const nextConfig = {
   reactStrictMode: false,
   // Native Web Workers via `new Worker(new URL('./x.worker.ts', import.meta.url))`
   // are supported out of the box by the Next 15 / Turbopack + webpack pipeline.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin-allow-popups",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

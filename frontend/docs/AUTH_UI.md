@@ -84,6 +84,13 @@ Firebase console:
 - Enable Authentication -> Sign-in method -> Google.
 - Add localhost and production domains under Authorized domains.
 
+Browser popup headers:
+
+- Google popup sign-in requires the app window to remain allowed to observe the popup lifecycle.
+  `frontend/next.config.mjs` sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` for all
+  routes. Do not change this to `same-origin`; Chrome will warn that COOP blocks Firebase's
+  `window.closed` check and popup sign-in can become unreliable.
+
 ## Logout
 
 `UserMenu` attempts `POST /api/v1/auth/logout` first, then always signs out Firebase. Backend logout

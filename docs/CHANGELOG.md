@@ -4,6 +4,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Firebase Google popup COOP warning (2026-07-09)
+- Set the frontend `Cross-Origin-Opener-Policy` header to `same-origin-allow-popups` so Firebase
+  Google popup sign-in can observe the popup lifecycle without Chrome blocking `window.closed`.
+- Documented the auth popup header requirement in `frontend/docs/AUTH_UI.md`.
+
 ### Changed - MT5 history request scheduling (2026-07-09)
 - Added Go-side MT5 history single-flight and a bridge concurrency slot so duplicate
   `symbol/timeframe/limit/before` requests share one Python bridge call.
