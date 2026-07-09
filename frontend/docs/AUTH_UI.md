@@ -23,6 +23,13 @@ SignInButton
 The `/auth/google` call receives `{ idToken }`, sets backend `access_token` and `refresh_token`
 httpOnly cookies, and returns `{ user, isNewUser }`.
 
+During normal API use, `src/services/api/client.ts` owns session recovery for every backend resource
+wrapper (`getJson`, `postJson`, `putJson`, `patchJson`, `deleteJson`). When an authenticated call
+returns `401`, the client first attempts `POST /api/v1/auth/refresh`; if refresh is unavailable but
+Firebase still has a current user, it exchanges a fresh Firebase ID token through
+`POST /api/v1/auth/google`, then retries the original request once. The auth endpoints themselves do
+not trigger this recovery path, which avoids recursive login loops.
+
 In local development the backend API defaults to `http://localhost:8080` when
 `NEXT_PUBLIC_API_BASE_URL` is not set. Production deployments must set `NEXT_PUBLIC_API_BASE_URL`
 explicitly. Anonymous mode still works when the backend is unavailable, but authenticated remote

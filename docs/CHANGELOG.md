@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Backend session recovery for API calls (2026-07-09)
+- Added shared frontend API-client recovery for authenticated backend calls: a `401` now attempts
+  `/api/v1/auth/refresh`, falls back to Firebase ID-token exchange through `/api/v1/auth/google`,
+  then retries the original request once.
+- Applied the recovery path across `getJson`, `postJson`, `putJson`, `patchJson`, and `deleteJson`
+  so Pine scripts, watchlists, drawings, indicators, settings, and bootstrap calls use the same
+  session behavior.
+- Made Pine Editor publish reconnect the backend session before saving/publishing and mapped raw
+  `unauthorized` API errors to the existing expired-session user message.
+- Added UI tests covering read/write retry preservation, Firebase exchange fallback, auth endpoint
+  recursion guards, and backend `401` error messaging.
+
 ### Fixed - Indicator pane right-offset gaps (2026-07-09)
 - Projected Pine `hline()` and `fill()` reference series against the visible
   logical viewport, including right-offset whitespace after the latest candle,

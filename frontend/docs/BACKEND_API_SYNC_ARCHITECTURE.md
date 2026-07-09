@@ -138,8 +138,10 @@ The shared client must:
 ```
 
 - Return typed data, not raw `Response`, from resource modules.
-- Treat `401` as "remote session invalid"; do not silently fall back to stale local authenticated
-  data.
+- On `401`, attempt backend session recovery in the shared client: refresh cookies, then exchange
+  the current Firebase ID token when available, then retry the original request once. If recovery
+  still fails, treat the remote session as invalid; do not silently fall back to stale local
+  authenticated data.
 - Keep retries conservative. Configure `ky` to retry idempotent reads only; mutations should rely on
   `clientId` or explicit queueing.
 
@@ -240,6 +242,10 @@ Recommended frontend startup order:
 11. Apply alerts and notification settings.
 12. Apply layouts metadata.
 13. Lazy-load current symbol drawings.
+
+The same refresh/exchange order is also used after startup by the shared API client whenever a
+resource call returns `401`; the auth endpoints themselves are excluded from recovery to prevent
+recursive retries.
 
 All atom updates from bootstrap should happen in one orchestration action so the UI does not render
 half-local, half-remote state.

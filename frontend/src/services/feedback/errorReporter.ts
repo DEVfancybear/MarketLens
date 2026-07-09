@@ -4,6 +4,7 @@ import { getDefaultStore } from "jotai";
 import {
   describeUserFacingError,
   errorMessage,
+  isApiError,
   type UserFacingError,
 } from "@/services/api/errors";
 import { pushToastAtom } from "@/store/toastStore";
@@ -27,6 +28,9 @@ export function userFacingErrorMessage(
   error: unknown,
   fallback = "Unknown error",
 ): string {
+  if (isApiError(error)) {
+    return describeUserFacingError(error, "Request failed").message;
+  }
   return errorMessage(error, fallback);
 }
 

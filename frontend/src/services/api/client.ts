@@ -54,6 +54,10 @@ export function isBackendApiConfigured(): boolean {
 
 export const apiClient = ky.create(apiDefaults);
 
+let sessionRefreshPromise: Promise<boolean> | null = null;
+let sessionExchangePromise: Promise<boolean> | null = null;
+let currentIdTokenProviderForTests: (() => Promise<string | null>) | null = null;
+
 async function apiErrorFromHTTP(error: HTTPError): Promise<ApiError> {
   const { response } = error;
   try {
@@ -66,6 +70,67 @@ async function apiErrorFromHTTP(error: HTTPError): Promise<ApiError> {
   }
 }
 
+function cleanApiPath(path: string): string {
+  return path.replace(/^\/+/, "").split("?")[0] ?? "";
+}
+
+function shouldAttemptSessionRecovery(path: string): boolean {
+  const cleanPath = cleanApiPath(path);
+  return cleanPath !== "auth/refresh" && cleanPath !== "auth/google";
+}
+
+async function refreshBackendSession(): Promise<boolean> {
+  sessionRefreshPromise ??= apiClient
+    .post(apiUrl("auth/refresh"), {
+      retry: { limit: 0 },
+      timeout: 15_000,
+    })
+    .then(() => true)
+    .catch(() => false)
+    .finally(() => {
+      sessionRefreshPromise = null;
+    });
+  return sessionRefreshPromise;
+}
+
+async function exchangeFirebaseSession(): Promise<boolean> {
+  if (typeof window === "undefined" && !currentIdTokenProviderForTests) {
+    return false;
+  }
+  sessionExchangePromise ??= (async () => {
+    try {
+      const idToken = currentIdTokenProviderForTests
+        ? await currentIdTokenProviderForTests()
+        : await import("../auth/firebaseAuth").then((mod) =>
+            mod.currentIdToken(),
+          );
+      if (!idToken) return false;
+      await apiClient.post(apiUrl("auth/google"), {
+        json: { idToken },
+        retry: { limit: 0 },
+        timeout: 15_000,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  })().finally(() => {
+    sessionExchangePromise = null;
+  });
+  return sessionExchangePromise;
+}
+
+async function recoverBackendSession(): Promise<boolean> {
+  if (await refreshBackendSession()) return true;
+  return exchangeFirebaseSession();
+}
+
+export function __setCurrentIdTokenProviderForTests(
+  provider: (() => Promise<string | null>) | null,
+): void {
+  currentIdTokenProviderForTests = provider;
+}
+
 export async function normalizeApiError(error: unknown): Promise<never> {
   if (error instanceof HTTPError) {
     throw await apiErrorFromHTTP(error);
@@ -73,12 +138,33 @@ export async function normalizeApiError(error: unknown): Promise<never> {
   throw error;
 }
 
-export async function getJson<T>(path: string, options?: Options): Promise<T> {
+async function withSessionRefresh<T>(
+  path: string,
+  request: () => Promise<T>,
+): Promise<T> {
   try {
-    return await apiClient.get(apiUrl(path), options).json<T>();
+    return await request();
   } catch (error) {
+    if (
+      error instanceof HTTPError &&
+      error.response.status === 401 &&
+      shouldAttemptSessionRecovery(path) &&
+      (await recoverBackendSession())
+    ) {
+      try {
+        return await request();
+      } catch (retryError) {
+        return normalizeApiError(retryError);
+      }
+    }
     return normalizeApiError(error);
   }
+}
+
+export async function getJson<T>(path: string, options?: Options): Promise<T> {
+  return withSessionRefresh(path, () =>
+    apiClient.get(apiUrl(path), options).json<T>(),
+  );
 }
 
 export async function postJson<T>(
@@ -86,11 +172,9 @@ export async function postJson<T>(
   json?: unknown,
   options?: Options,
 ): Promise<T> {
-  try {
-    return await apiClient.post(apiUrl(path), { ...options, json }).json<T>();
-  } catch (error) {
-    return normalizeApiError(error);
-  }
+  return withSessionRefresh(path, () =>
+    apiClient.post(apiUrl(path), { ...options, json }).json<T>(),
+  );
 }
 
 export async function putJson<T>(
@@ -98,11 +182,9 @@ export async function putJson<T>(
   json?: unknown,
   options?: Options,
 ): Promise<T> {
-  try {
-    return await apiClient.put(apiUrl(path), { ...options, json }).json<T>();
-  } catch (error) {
-    return normalizeApiError(error);
-  }
+  return withSessionRefresh(path, () =>
+    apiClient.put(apiUrl(path), { ...options, json }).json<T>(),
+  );
 }
 
 export async function patchJson<T>(
@@ -110,20 +192,16 @@ export async function patchJson<T>(
   json?: unknown,
   options?: Options,
 ): Promise<T> {
-  try {
-    return await apiClient.patch(apiUrl(path), { ...options, json }).json<T>();
-  } catch (error) {
-    return normalizeApiError(error);
-  }
+  return withSessionRefresh(path, () =>
+    apiClient.patch(apiUrl(path), { ...options, json }).json<T>(),
+  );
 }
 
 export async function deleteJson<T>(
   path: string,
   options?: Options,
 ): Promise<T> {
-  try {
-    return await apiClient.delete(apiUrl(path), options).json<T>();
-  } catch (error) {
-    return normalizeApiError(error);
-  }
+  return withSessionRefresh(path, () =>
+    apiClient.delete(apiUrl(path), options).json<T>(),
+  );
 }

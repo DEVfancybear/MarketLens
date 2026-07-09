@@ -12,7 +12,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { authStatusAtom } from "@/store/authStore";
+import {
+  authStatusAtom,
+  backendSessionAtom,
+  setBackendSessionAtom,
+} from "@/store/authStore";
 import {
   addCustomIndicatorFromScriptAtom,
   candlesAtom,
@@ -32,6 +36,8 @@ import {
   getPineRuntimeMeta,
 } from "@/services/api/resources/pineRuntimeApi";
 import { publishPineScriptRemote } from "@/services/api/resources/pineScriptsApi";
+import { ensureCurrentBackendSession } from "@/services/auth/authClient";
+import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import type { PineScriptMeta } from "@/services/pineRuntimeTypes";
 import type { CustomIndicatorScript } from "@/types";
 import { cn } from "@/utils/cn";
@@ -39,6 +45,7 @@ import { canUsePrivatePineWorkspace } from "@/services/privateWorkspaceAccess";
 
 export function PineEditor() {
   const authStatus = useAtomValue(authStatusAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
   const [scriptId] = useAtom(pineEditorScriptIdAtom);
   const [title, setTitle] = useAtom(pineEditorTitleAtom);
   const [source, setSource] = useAtom(pineEditorSourceAtom);
@@ -51,6 +58,7 @@ export function PineEditor() {
   const toggleFavorite = useSetAtom(togglePineFavoriteAtom);
   const newScript = useSetAtom(newPineScriptAtom);
   const doLog = useSetAtom(logAtom);
+  const setBackendSession = useSetAtom(setBackendSessionAtom);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
@@ -106,11 +114,23 @@ export function PineEditor() {
     (trimmedTitle && trimmedTitle !== "Untitled script"
       ? trimmedTitle
       : meta.name) || "Untitled script";
+  const displayedStatus =
+    !backendSession && status.level !== "error"
+      ? { level: "idle" as const, text: "Connecting backend session..." }
+      : status;
 
   const syncScroll = () => {
     if (gutterRef.current && textareaRef.current) {
       gutterRef.current.scrollTop = textareaRef.current.scrollTop;
     }
+  };
+
+  const ensureBackendReady = async (): Promise<boolean> => {
+    if (backendSession) return true;
+    setStatus({ level: "idle", text: "Connecting backend session..." });
+    const connected = await ensureCurrentBackendSession();
+    setBackendSession(connected);
+    return connected;
   };
 
   const saveCurrentScript = () =>
@@ -152,6 +172,14 @@ export function PineEditor() {
   const handlePublish = async () => {
     setPublishing(true);
     try {
+      if (!(await ensureBackendReady())) {
+        const message =
+          "Backend login is not ready. Sign out and sign in again if it does not reconnect.";
+        setStatus({ level: "error", text: message });
+        doLog("error", `Publish script failed: ${message}`);
+        return;
+      }
+
       const saved = await saveCurrentScript();
       const published = await publishPineScriptRemote(saved.id, {
         name: saved.name,
@@ -159,8 +187,7 @@ export function PineEditor() {
       setStatus({ level: "ok", text: `Published ${published.name}` });
       doLog("info", `Published Pine script: ${published.name}`);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Publish script failed";
+      const message = userFacingErrorMessage(error, "Publish script failed");
       setStatus({ level: "error", text: message });
       doLog("error", `Publish script failed: ${message}`);
     } finally {
@@ -329,13 +356,13 @@ export function PineEditor() {
             <span
               className={cn(
                 "ml-auto truncate text-2xs",
-                status.level === "ok" && "text-bull",
-                status.level === "error" && "text-bear",
-                status.level === "idle" && "text-ink-muted",
+                displayedStatus.level === "ok" && "text-bull",
+                displayedStatus.level === "error" && "text-bear",
+                displayedStatus.level === "idle" && "text-ink-muted",
               )}
-              title={status.text}
+              title={displayedStatus.text}
             >
-              {status.text}
+              {displayedStatus.text}
             </span>
           </div>
 
