@@ -1,6 +1,6 @@
 # SMC Overlay Maintenance
 
-Updated: 2026-07-02
+Updated: 2026-07-09
 
 This document is the handoff reference for the Smart Money Concepts overlay.
 
@@ -41,6 +41,16 @@ Keep this list in sync across:
 - `src/components/toolbar/SmcMenu.tsx`
 - `src/components/smc/SmcLayer.tsx`
 - `scripts/check-smc-overlay-parity.mjs`
+
+Default state:
+
+- All SMC feature toggles are disabled by default. The SMC menu should open with no checked
+  features on a fresh workspace, after signout, and when backend settings contain `{}`.
+- Browser persistence uses `smc-settings-v2`. The older `smc-settings` key came from the previous
+  all-on default and is intentionally removed during hydration so old localStorage does not
+  re-enable overlays after refresh.
+- Authenticated users can still restore explicit backend SMC preferences. Missing backend keys are
+  backfilled to `false`.
 
 ## Live Rendering Contract
 

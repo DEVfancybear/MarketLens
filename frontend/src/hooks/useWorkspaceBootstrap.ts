@@ -27,7 +27,10 @@ import { resetTradeAtom } from "@/store/tradeStore";
 import { resetNotificationsToDefaultsAtom } from "@/store/notificationStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
 import { createWatchlist as createRemoteWatchlist } from "@/services/api/resources/watchlistsApi";
-import { isApiError } from "@/services/api/errors";
+import {
+  reportFrontendError,
+  userFacingErrorMessage,
+} from "@/services/feedback/errorReporter";
 
 /**
  * Hydrates frontend stores from the backend Phase 5 bootstrap endpoint.
@@ -99,9 +102,10 @@ export function useWorkspaceBootstrap(): void {
           try {
             watchlists = [await createRemoteWatchlist("Watchlist")];
           } catch (error) {
-            const message = isApiError(error)
-              ? error.message
-              : (error as Error)?.message || "default watchlist create failed";
+            const message = userFacingErrorMessage(
+              error,
+              "default watchlist create failed",
+            );
             log("warn", `Default watchlist was not created on backend: ${message}`);
           }
         }
@@ -119,10 +123,10 @@ export function useWorkspaceBootstrap(): void {
       .catch((error) => {
         if (cancelled) return;
         bootstrappedUserRef.current = null;
-        const message = isApiError(error)
-          ? error.message
-          : (error as Error)?.message || "Workspace bootstrap failed";
-        log("error", `Workspace bootstrap failed: ${message}`);
+        reportFrontendError(error, {
+          title: "Workspace sync failed",
+          logPrefix: "Workspace bootstrap failed",
+        });
       });
 
     return () => {

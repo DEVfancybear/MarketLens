@@ -44,7 +44,7 @@ import {
   getDrawingToolFavorites,
   replaceDrawingToolFavorites,
 } from "@/services/api/resources/drawingsApi";
-import { isApiError } from "@/services/api/errors";
+import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import {
   activeToolAtom,
   drawColorAtom,
@@ -343,9 +343,7 @@ function normalizeFavoriteTools(tools: readonly string[]): string[] {
 }
 
 function apiMessage(error: unknown): string {
-  return isApiError(error)
-    ? error.message
-    : (error as Error)?.message || "unknown error";
+  return userFacingErrorMessage(error, "unknown error");
 }
 
 /** Favorite tools. Remote mode uses Phase 7 API; localStorage is anonymous/cache fallback. */

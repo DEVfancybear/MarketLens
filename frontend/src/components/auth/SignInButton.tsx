@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useSetAtom } from "jotai";
 import { authConfigStatus, signInWithGoogle } from "@/services/auth/firebaseAuth";
 import { setAuthErrorAtom, setAuthStatusAtom } from "@/store/authStore";
-import { logAtom } from "@/store/uiStore";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 import { GoogleIcon } from "./GoogleIcon";
 
 /** "Sign in with Google" button. First sign-in also registers the account. */
@@ -16,7 +16,6 @@ export function SignInButton({
 }) {
   const setStatus = useSetAtom(setAuthStatusAtom);
   const setError = useSetAtom(setAuthErrorAtom);
-  const doLog = useSetAtom(logAtom);
 
   const onClick = async () => {
     if (busy) return;
@@ -29,10 +28,10 @@ export function SignInButton({
         : "Firebase auth not configured";
       setError(message);
       setStatus("anonymous");
-      doLog(
-        "error",
-        `${message}. Set NEXT_PUBLIC_FIREBASE_* in frontend/.env.local or repo root .env.local.`,
-      );
+      reportFrontendError(new Error(message), {
+        title: "Sign-in unavailable",
+        logPrefix: "Google sign-in config",
+      });
       return;
     }
 
@@ -52,14 +51,16 @@ export function SignInButton({
         return;
       }
 
-      const msg = (err as Error)?.message ?? "Sign-in failed";
+      const reported = reportFrontendError(err, {
+        title: "Google sign-in failed",
+        logPrefix: "Google sign-in failed",
+      });
       setStatus("anonymous");
-      setError(msg);
-      doLog("error", `Google sign-in failed: ${msg}`);
+      setError(reported.message);
     }
   };
 
-  const label = busy ? "Signing in..." : error ? "Auth error" : "Sign in";
+  const label = busy ? "Signing in..." : error ? "Sign-in failed" : "Sign in";
 
   return (
     <button

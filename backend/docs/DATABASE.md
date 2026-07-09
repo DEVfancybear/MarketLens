@@ -209,13 +209,18 @@ Collapses several small localStorage blobs into one row per user, one jsonb sect
 ```sql
 CREATE TABLE user_settings (
   user_id       uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  ui            jsonb NOT NULL DEFAULT '{}',  -- `ui` store: { theme, panels } ONLY (all that persists today)
-  smc           jsonb NOT NULL DEFAULT '{}',  -- `smc-settings`: 8 overlay toggles (SmcSettings)
+  ui            jsonb NOT NULL DEFAULT '{}',  -- `ui` store: theme, panels, bottomOpen, shell flags
+  smc           jsonb NOT NULL DEFAULT '{}',  -- `smc-settings-v2`: 8 overlay toggles (SmcSettings)
   chart         jsonb NOT NULL DEFAULT '{}',  -- default TF, chart style, `tv:favoriteTimeframes`
   notifications jsonb NOT NULL DEFAULT '{}',  -- global AlertSettings: toast/sound/browser/push/telegram/discord
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 ```
+
+The database defaults stay compact, but the settings repository normalizes `{}` before returning
+API responses. Current normalized defaults are `ui.bottomOpen=false` and every SMC toggle `false`,
+so fresh users, old rows, and signout resets all start with the bottom panel hidden and no SMC
+overlay selected.
 
 ### 6.2 `layouts` (chart layouts / templates)
 

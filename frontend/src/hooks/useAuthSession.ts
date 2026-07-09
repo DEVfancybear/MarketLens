@@ -12,7 +12,7 @@ import {
   setBackendSessionAtom,
 } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
-import { isApiError } from "@/services/api/errors";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 
 /**
  * Mount-once bridge from Firebase Auth to authStore. On sign-in it establishes
@@ -46,11 +46,11 @@ export function useAuthSession(): void {
         }
       } catch (error) {
         store.set(setBackendSessionAtom, false);
-        const message = isApiError(error)
-          ? error.message
-          : (error as Error)?.message || "Backend login failed";
-        store.set(setAuthErrorAtom, message);
-        store.set(logAtom, "error", `Backend login failed: ${message}`);
+        const reported = reportFrontendError(error, {
+          title: "Backend login failed",
+          logPrefix: "Backend login failed",
+        });
+        store.set(setAuthErrorAtom, reported.message);
       }
     });
 

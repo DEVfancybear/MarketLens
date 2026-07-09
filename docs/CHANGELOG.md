@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Frontend API error reporting (2026-07-09)
+- Added a shared frontend error formatter/reporter for backend API, Firebase Auth, timeout, and
+  network failures.
+- Replaced the vague toolbar `Auth error` label with clearer sign-in failure handling and toast
+  messages for Google sign-in/backend session exchange.
+- Applied the common reporter to sign-out, workspace bootstrap, watchlist sync, and MT5 symbol
+  catalog loading; chart/drawing/indicator/Pine sync logs now use the shared formatter text.
+
+### Changed - Workspace defaults for SMC and bottom panel (2026-07-09)
+- Changed the default workspace to start with the bottom panel collapsed and every SMC overlay
+  toggle disabled.
+- Added frontend default-state tests and backend settings normalization tests so `{}` settings rows
+  backfill to `ui.bottomOpen=false` and all SMC toggles `false`.
+- Moved SMC browser persistence to `smc-settings-v2` and clear the legacy `smc-settings` key during
+  hydration to avoid restoring the old all-on default after refresh.
+
 ### Fixed - Pine ADR runtime stability across MT5 refreshes (2026-07-09)
 - Added a backend Pine runtime warm-up path for lagged higher-timeframe SMA expressions such as
   `request.security(..., "D", ta.sma(high - low, length)[1])`, so ADR-style scripts do not render

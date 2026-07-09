@@ -2,6 +2,7 @@
 import { atom, useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
 import { getMt5Symbols, type Mt5SymbolSnapshot } from "@/services/api/resources/mt5Api";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 import {
   getAllMarketSymbols,
   getMarketSymbol,
@@ -66,8 +67,10 @@ export const refreshMt5SymbolCatalogAtom = atom(null, async (get, set) => {
     }
   } catch (error) {
     set(marketSymbolCatalogStatusAtom, "error");
-    const message = (error as Error)?.message || "MT5 symbol catalog failed";
-    set(logAtom, "error", `MT5 symbol catalog failed: ${message}`);
+    reportFrontendError(error, {
+      title: "MT5 symbol catalog failed",
+      logPrefix: "MT5 symbol catalog failed",
+    });
   }
 });
 

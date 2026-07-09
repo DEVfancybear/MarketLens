@@ -2,6 +2,7 @@
 import { atom, useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
 import { localStore } from "@/services/storage";
+import { DEFAULT_SMC_SETTINGS } from "./workspaceDefaults";
 import type { SmcSnapshot } from "@/types";
 
 /** Toggle visibility of each SMC overlay group. */
@@ -28,16 +29,9 @@ const EMPTY: SmcSnapshot = {
   trend: "ranging",
 };
 
-const DEFAULT_SETTINGS: SmcSettings = {
-  structure: true,
-  fvg: true,
-  orderBlocks: true,
-  liquidity: true,
-  displacement: false,
-  sessions: true,
-  killzones: true,
-  swings: true,
-};
+const SMC_STORAGE_KEY = "smc-settings-v2";
+const LEGACY_SMC_STORAGE_KEY = "smc-settings";
+const DEFAULT_SETTINGS: SmcSettings = { ...DEFAULT_SMC_SETTINGS };
 
 // ── State atoms ────────────────────────────────────────────────────────────
 export const smcSnapshotAtom = atom<SmcSnapshot>(EMPTY);
@@ -55,31 +49,39 @@ export const toggleSmcAtom = atom(null, (get, set, key: keyof SmcSettings) => {
   const enabled = !get(smcSettingsAtom)[key];
   const settings = { ...get(smcSettingsAtom), [key]: enabled };
   set(smcSettingsAtom, settings);
-  localStore.set("smc-settings", settings);
+  localStore.remove(LEGACY_SMC_STORAGE_KEY);
+  localStore.set(SMC_STORAGE_KEY, settings);
   console.debug("SMC toggle:", { feature: key, enabled });
 });
 
 export const hydrateSmcAtom = atom(null, (_get, set) => {
-  set(smcSettingsAtom, localStore.get("smc-settings", DEFAULT_SETTINGS));
+  localStore.remove(LEGACY_SMC_STORAGE_KEY);
+  set(
+    smcSettingsAtom,
+    normalizeSmcSettings(localStore.get<unknown>(SMC_STORAGE_KEY, DEFAULT_SETTINGS)),
+  );
 });
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function normalizeSmcSettings(payload: unknown): SmcSettings {
+  const settings: SmcSettings = { ...DEFAULT_SETTINGS };
+  if (!isObject(payload)) return settings;
+  for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof SmcSettings>) {
+    if (typeof payload[key] === "boolean") settings[key] = payload[key];
+  }
+  return settings;
+}
+
 export const applyRemoteSmcSettingsAtom = atom(
   null,
-  (get, set, payload: unknown) => {
-    if (!isObject(payload)) return;
-
-    const current = get(smcSettingsAtom);
-    const settings: SmcSettings = { ...current };
-    for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof SmcSettings>) {
-      if (typeof payload[key] === "boolean") settings[key] = payload[key];
-    }
-
+  (_get, set, payload: unknown) => {
+    const settings = normalizeSmcSettings(payload);
     set(smcSettingsAtom, settings);
-    localStore.set("smc-settings", settings);
+    localStore.remove(LEGACY_SMC_STORAGE_KEY);
+    localStore.set(SMC_STORAGE_KEY, settings);
   },
 );
 
@@ -87,7 +89,8 @@ export const applyRemoteSmcSettingsAtom = atom(
 export const resetSmcToDefaultsAtom = atom(null, (_get, set) => {
   set(smcSnapshotAtom, EMPTY);
   set(smcSettingsAtom, DEFAULT_SETTINGS);
-  localStore.remove("smc-settings");
+  localStore.remove(LEGACY_SMC_STORAGE_KEY);
+  localStore.remove(SMC_STORAGE_KEY);
 });
 
 interface SmcState {

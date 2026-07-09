@@ -1,10 +1,9 @@
 "use client";
 import { LogOut } from "lucide-react";
-import { useSetAtom } from "jotai";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { signOutUser } from "@/services/auth/firebaseAuth";
 import { backendLogout } from "@/services/auth/authClient";
-import { logAtom } from "@/store/uiStore";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { AuthUser } from "@/store/authStore";
 
 function initials(user: AuthUser): string {
@@ -17,18 +16,22 @@ function initials(user: AuthUser): string {
 
 /** Avatar dropdown shown when signed in: identity + sign out. */
 export function UserMenu({ user }: { user: AuthUser }) {
-  const doLog = useSetAtom(logAtom);
-
   const handleSignOut = async () => {
     try {
       try {
         await backendLogout(); // best-effort backend session revoke
       } catch (err) {
-        doLog("error", `Backend sign-out failed: ${(err as Error)?.message ?? ""}`);
+        reportFrontendError(err, {
+          title: "Backend sign-out failed",
+          logPrefix: "Backend sign-out failed",
+        });
       }
       await signOutUser(); // Firebase sign-out (useAuthSession clears state)
     } catch (err) {
-      doLog("error", `Sign-out failed: ${(err as Error)?.message ?? ""}`);
+      reportFrontendError(err, {
+        title: "Sign-out failed",
+        logPrefix: "Firebase sign-out failed",
+      });
     }
   };
 

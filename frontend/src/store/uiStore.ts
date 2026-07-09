@@ -1,6 +1,7 @@
 "use client";
-import { atom, getDefaultStore } from "jotai";
+import { atom, getDefaultStore, type Getter } from "jotai";
 import { localStore } from "@/services/storage";
+import { DEFAULT_PANELS, DEFAULT_UI_SETTINGS } from "./workspaceDefaults";
 
 export type Theme = "dark" | "light";
 
@@ -40,17 +41,16 @@ export interface UIState {
   }[];
 }
 
-// SSR-safe deterministic defaults — identical on server and first client render.
-const DEFAULT_PANELS: PanelSizes = { right: 320, bottom: 240, left: 52 };
-
+// SSR-safe deterministic defaults live in workspaceDefaults.ts so tests and
+// backend sync docs can assert the same first-load behavior.
 // ---------------------------------------------------------------------------
 // Individual state atoms
 // ---------------------------------------------------------------------------
 export const themeAtom = atom<Theme>("dark");
-export const panelsAtom = atom<PanelSizes>(DEFAULT_PANELS);
+export const panelsAtom = atom<PanelSizes>({ ...DEFAULT_PANELS });
 export const bottomTabAtom = atom<BottomTab>("replay");
 export const rightOpenAtom = atom<boolean>(true);
-export const bottomOpenAtom = atom<boolean>(true);
+export const bottomOpenAtom = atom<boolean>(DEFAULT_UI_SETTINGS.bottomOpen);
 export const fullscreenAtom = atom<boolean>(false);
 export const alertCenterOpenAtom = atom<boolean>(false);
 export const gridVisibleAtom = atom<boolean>(true);
@@ -82,7 +82,7 @@ export const uiStateAtom = atom<UIState>((get) => ({
 
 export const setThemeAtom = atom(null, (get, set, theme: Theme) => {
   set(themeAtom, theme);
-  localStore.set("ui", { theme, panels: get(panelsAtom) });
+  persistUI(get, { theme });
   if (typeof document !== "undefined") {
     document.documentElement.className = `theme-${theme}`;
   }
@@ -102,18 +102,22 @@ export const setPanelAtom = atom(
   (get, set, key: keyof PanelSizes, value: number) => {
     const panels = { ...get(panelsAtom), [key]: value };
     set(panelsAtom, panels);
-    localStore.set("ui", { theme: get(themeAtom), panels });
+    persistUI(get, { panels });
   },
 );
 
-export const setBottomTabAtom = atom(null, (_get, set, tab: BottomTab) => {
+export const setBottomTabAtom = atom(null, (get, set, tab: BottomTab) => {
   set(bottomTabAtom, tab);
   set(bottomOpenAtom, true);
   if (tab === "pine") {
-    set(panelsAtom, (prev) => ({
-      ...prev,
-      bottom: Math.max(prev.bottom, 320),
-    }));
+    const panels = {
+      ...get(panelsAtom),
+      bottom: Math.max(get(panelsAtom).bottom, 320),
+    };
+    set(panelsAtom, panels);
+    persistUI(get, { panels, bottomOpen: true });
+  } else {
+    persistUI(get, { bottomOpen: true });
   }
 });
 
@@ -122,11 +126,14 @@ export const toggleRightAtom = atom(null, (get, set) => {
 });
 
 export const toggleBottomAtom = atom(null, (get, set) => {
-  set(bottomOpenAtom, (prev) => !prev);
+  const open = !get(bottomOpenAtom);
+  set(bottomOpenAtom, open);
+  persistUI(get, { bottomOpen: open });
 });
 
-export const setBottomOpenAtom = atom(null, (_get, set, open: boolean) => {
+export const setBottomOpenAtom = atom(null, (get, set, open: boolean) => {
   set(bottomOpenAtom, open);
+  persistUI(get, { bottomOpen: open });
 });
 
 export const setFullscreenAtom = atom(null, (_get, set, v: boolean) => {
@@ -156,9 +163,14 @@ export const hydrateAtom = atom(null, (get, set) => {
   const persisted = localStore.get("ui", {
     theme: get(themeAtom),
     panels: get(panelsAtom),
+    bottomOpen: DEFAULT_UI_SETTINGS.bottomOpen,
   });
   set(themeAtom, persisted.theme);
-  set(panelsAtom, persisted.panels);
+  set(panelsAtom, sanitizePanels(persisted.panels, get(panelsAtom)));
+  set(
+    bottomOpenAtom,
+    normalizeBoolean(persisted.bottomOpen, DEFAULT_UI_SETTINGS.bottomOpen),
+  );
   if (typeof document !== "undefined") {
     document.documentElement.className = `theme-${persisted.theme}`;
   }
@@ -186,6 +198,21 @@ function sanitizePanels(value: unknown, fallback: PanelSizes): PanelSizes {
   };
 }
 
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function persistUI(
+  get: Getter,
+  overrides: Partial<Pick<UIState, "theme" | "panels" | "bottomOpen">> = {},
+): void {
+  localStore.set("ui", {
+    theme: overrides.theme ?? get(themeAtom),
+    panels: overrides.panels ?? get(panelsAtom),
+    bottomOpen: overrides.bottomOpen ?? get(bottomOpenAtom),
+  });
+}
+
 export const applyRemoteUISettingsAtom = atom(
   null,
   (get, set, payload: unknown) => {
@@ -196,10 +223,15 @@ export const applyRemoteUISettingsAtom = atom(
         ? payload.theme
         : get(themeAtom);
     const panels = sanitizePanels(payload.panels, get(panelsAtom));
+    const bottomOpen = normalizeBoolean(
+      payload.bottomOpen,
+      DEFAULT_UI_SETTINGS.bottomOpen,
+    );
 
     set(themeAtom, theme);
     set(panelsAtom, panels);
-    localStore.set("ui", { theme, panels });
+    set(bottomOpenAtom, bottomOpen);
+    localStore.set("ui", { theme, panels, bottomOpen });
     if (typeof document !== "undefined") {
       document.documentElement.className = `theme-${theme}`;
     }
@@ -215,7 +247,7 @@ export const resetUIToDefaultsAtom = atom(null, (_get, set) => {
   set(panelsAtom, panels);
   set(bottomTabAtom, "replay");
   set(rightOpenAtom, true);
-  set(bottomOpenAtom, true);
+  set(bottomOpenAtom, DEFAULT_UI_SETTINGS.bottomOpen);
   set(fullscreenAtom, false);
   set(alertCenterOpenAtom, false);
   set(gridVisibleAtom, true);

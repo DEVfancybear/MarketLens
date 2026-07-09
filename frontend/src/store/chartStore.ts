@@ -41,7 +41,7 @@ import {
   updatePineScriptRemote,
   type BackendPineScript,
 } from "@/services/api/resources/pineScriptsApi";
-import { isApiError } from "@/services/api/errors";
+import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
@@ -100,9 +100,7 @@ type AtomGet = Getter;
 type AtomSet = Setter;
 
 function apiMessage(error: unknown): string {
-  return isApiError(error)
-    ? error.message
-    : (error as Error)?.message || "unknown error";
+  return userFacingErrorMessage(error, "unknown error");
 }
 
 function persistLocalDrawings(symbol: string, drawings: Drawing[]) {

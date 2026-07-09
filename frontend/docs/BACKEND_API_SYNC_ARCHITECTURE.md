@@ -257,6 +257,16 @@ public market data infrastructure alone; MT5 symbols/quotes can continue streami
 server-owned watchlist layout, drawings, indicator config, alert state, or tool favorites remain in
 view.
 
+Workspace defaults must match TradingView's quiet first-load behavior:
+
+- The bottom panel is collapsed by default (`ui.bottomOpen: false`). Opening Replay/Trade/Pine still
+  persists the user's current choice under the `ui` key.
+- SMC overlays are all disabled by default. The frontend persists the new shape under
+  `smc-settings-v2`; the previous `smc-settings` key is cleared during hydration because it may
+  contain the old all-on default.
+- Backend `user_settings` rows that contain `{}` are normalized by the API to these explicit
+  defaults before bootstrap reaches frontend atoms.
+
 Suggested module:
 
 ```text
@@ -279,7 +289,7 @@ Responsibilities:
 | Current frontend data | Current local key | Backend resource |
 | --- | --- | --- |
 | UI panels/theme/bottom state | `ui` | `user_settings.ui` through `/api/v1/settings` |
-| SMC toggles | `smc-settings` | `user_settings.smc` through `/api/v1/settings` |
+| SMC toggles | `smc-settings-v2` | `user_settings.smc` through `/api/v1/settings` |
 | Timeframe favorites/timezone/chart prefs | `tv:favoriteTimeframes`, toolbar local state | `user_settings.chart` |
 | Alert global settings | inside `alerts` key | `user_settings.notifications` |
 | Watchlist lists/sections/symbols | `watchlist`, `watchlist:lists`, `watchlist:activeId` | `watchlists` + `watchlist_symbols` |

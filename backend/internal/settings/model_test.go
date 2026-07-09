@@ -47,6 +47,44 @@ func TestApplyPatchRejectsNonObjectSections(t *testing.T) {
 	}
 }
 
+func TestEmptyDocumentUsesCollapsedBottomAndDisabledSMC(t *testing.T) {
+	doc := EmptyDocument()
+
+	ui := object(t, doc.UI)
+	if ui["bottomOpen"] != false {
+		t.Fatalf("bottom panel should default closed, got %v", ui["bottomOpen"])
+	}
+
+	smc := object(t, doc.SMC)
+	for key, value := range smc {
+		if value != false {
+			t.Fatalf("SMC setting %s should default false, got %v", key, value)
+		}
+	}
+}
+
+func TestNormalizeDocumentBackfillsDefaultWorkspaceState(t *testing.T) {
+	doc := NormalizeDocument(Document{
+		UI:            raw(`{}`),
+		SMC:           raw(`{"liquidity":true}`),
+		Chart:         raw(`{}`),
+		Notifications: raw(`{}`),
+	})
+
+	ui := object(t, doc.UI)
+	if ui["bottomOpen"] != false {
+		t.Fatalf("bottom panel should be backfilled closed, got %v", ui["bottomOpen"])
+	}
+
+	smc := object(t, doc.SMC)
+	if smc["liquidity"] != true {
+		t.Fatalf("explicit remote SMC setting should be preserved, got %v", smc["liquidity"])
+	}
+	if smc["structure"] != false || smc["sessions"] != false {
+		t.Fatalf("missing SMC settings should backfill false, got %#v", smc)
+	}
+}
+
 func raw(s string) json.RawMessage {
 	return json.RawMessage(s)
 }

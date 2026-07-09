@@ -2,8 +2,7 @@
 import { atom, useAtomValue, type Getter, type Setter } from "jotai";
 import { getDefaultStore } from "jotai";
 import { backendSessionAtom } from "@/store/authStore";
-import { logAtom } from "@/store/uiStore";
-import { isApiError } from "@/services/api/errors";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 import {
   createWatchlist as createRemoteWatchlist,
   deleteWatchlist as deleteRemoteWatchlist,
@@ -270,21 +269,21 @@ function isServerWatchlistId(id: string): boolean {
   return id !== DEFAULT_LIST_ID && !id.startsWith("wl");
 }
 
-function logRemoteSyncError(set: Setter, action: string, error: unknown): void {
-  const message = isApiError(error)
-    ? error.message
-    : (error as Error)?.message || "Unknown error";
-  set(logAtom, "error", `Watchlist sync failed (${action}): ${message}`);
+function logRemoteSyncError(action: string, error: unknown): void {
+  reportFrontendError(error, {
+    title: "Watchlist sync failed",
+    logPrefix: `Watchlist sync failed (${action})`,
+  });
 }
 
 function runRemoteSync(
   get: Getter,
-  set: Setter,
+  _set: Setter,
   action: string,
   work: () => Promise<unknown>,
 ): void {
   if (!isRemoteSyncEnabled(get)) return;
-  void work().catch((error) => logRemoteSyncError(set, action, error));
+  void work().catch((error) => logRemoteSyncError(action, error));
 }
 
 function remoteLayoutPayload(list: WatchlistList) {

@@ -9,6 +9,9 @@ import (
 var (
 	ErrBadPatch = errors.New("settings: bad patch")
 	emptyJSON   = json.RawMessage(`{}`)
+
+	defaultUIJSON  = json.RawMessage(`{"theme":"dark","panels":{"right":320,"bottom":240,"left":52},"bottomTab":"replay","rightOpen":true,"bottomOpen":false,"fullscreen":false,"alertCenterOpen":false,"gridVisible":true}`)
+	defaultSMCJSON = json.RawMessage(`{"structure":false,"fvg":false,"orderBlocks":false,"liquidity":false,"displacement":false,"sessions":false,"killzones":false,"swings":false}`)
 )
 
 // Document is the complete persisted settings payload returned by the settings API.
@@ -29,8 +32,8 @@ type Patch struct {
 
 func EmptyDocument() Document {
 	return Document{
-		UI:            cloneRaw(emptyJSON),
-		SMC:           cloneRaw(emptyJSON),
+		UI:            cloneRaw(defaultUIJSON),
+		SMC:           cloneRaw(defaultSMCJSON),
 		Chart:         cloneRaw(emptyJSON),
 		Notifications: cloneRaw(emptyJSON),
 	}
@@ -38,8 +41,8 @@ func EmptyDocument() Document {
 
 func NormalizeDocument(doc Document) Document {
 	return Document{
-		UI:            normalizeSection(doc.UI),
-		SMC:           normalizeSection(doc.SMC),
+		UI:            normalizeSectionWithDefaults(doc.UI, defaultUIJSON),
+		SMC:           normalizeSectionWithDefaults(doc.SMC, defaultSMCJSON),
 		Chart:         normalizeSection(doc.Chart),
 		Notifications: normalizeSection(doc.Notifications),
 	}
@@ -81,6 +84,15 @@ func normalizeSection(raw json.RawMessage) json.RawMessage {
 		return cloneRaw(emptyJSON)
 	}
 	return cloneRaw(raw)
+}
+
+func normalizeSectionWithDefaults(raw json.RawMessage, defaults json.RawMessage) json.RawMessage {
+	raw = normalizeSection(raw)
+	merged, err := mergeJSONObjects(defaults, raw)
+	if err != nil {
+		return cloneRaw(defaults)
+	}
+	return merged
 }
 
 func cloneRaw(raw json.RawMessage) json.RawMessage {
