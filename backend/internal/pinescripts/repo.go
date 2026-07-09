@@ -18,6 +18,9 @@ type Store interface {
 	Save(ctx context.Context, userID string, input ScriptWrite) (Script, error)
 	Replace(ctx context.Context, userID, ref string, input ScriptWrite) (Script, error)
 	Delete(ctx context.Context, userID, ref string) error
+	ListPublic(ctx context.Context, query string) ([]PublicScript, error)
+	GetPublic(ctx context.Context, ref string) (PublicScript, error)
+	Publish(ctx context.Context, userID, ref string, input PublishRequest) (PublicScript, error)
 }
 
 type Repo struct {
@@ -159,6 +162,112 @@ WHERE user_id = $1
 	return nil
 }
 
+func (r *Repo) ListPublic(ctx context.Context, query string) ([]PublicScript, error) {
+	query = strings.TrimSpace(query)
+	rows, err := r.pool.Query(ctx, `
+SELECT p.id,
+       p.script_id,
+       p.name,
+       p.source_code,
+       p.user_id,
+       COALESCE(NULLIF(u.display_name, ''), u.email, 'Unknown') AS author,
+       p.boosts,
+       p.meta,
+       p.created_at,
+       p.updated_at
+FROM public_pine_scripts p
+JOIN users u ON u.id = p.user_id
+WHERE $1::text = ''
+   OR p.name ILIKE '%' || $1 || '%'
+   OR COALESCE(NULLIF(u.display_name, ''), u.email, '') ILIKE '%' || $1 || '%'
+ORDER BY p.boosts DESC, p.updated_at DESC, p.created_at DESC, p.id
+LIMIT 100`, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []PublicScript{}
+	for rows.Next() {
+		item, err := scanPublicScript(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) GetPublic(ctx context.Context, ref string) (PublicScript, error) {
+	refUUID, refScriptID := splitRef(ref)
+	item, err := scanPublicScript(r.pool.QueryRow(ctx, `
+SELECT p.id,
+       p.script_id,
+       p.name,
+       p.source_code,
+       p.user_id,
+       COALESCE(NULLIF(u.display_name, ''), u.email, 'Unknown') AS author,
+       p.boosts,
+       p.meta,
+       p.created_at,
+       p.updated_at
+FROM public_pine_scripts p
+JOIN users u ON u.id = p.user_id
+WHERE ($1::uuid IS NOT NULL AND p.id = $1::uuid)
+   OR ($2::text <> '' AND p.script_id::text = $2::text)`,
+		refUUID, refScriptID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PublicScript{}, ErrNotFound
+	}
+	return item, err
+}
+
+func (r *Repo) Publish(ctx context.Context, userID, ref string, input PublishRequest) (PublicScript, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return PublicScript{}, err
+	}
+	refUUID, refClientID := splitRef(ref)
+	name := ""
+	if input.Name != nil {
+		name = strings.TrimSpace(*input.Name)
+	}
+	item, err := scanPublicScript(r.pool.QueryRow(ctx, `
+WITH source AS (
+  SELECT id, user_id, name, source_code, meta
+  FROM pine_scripts
+  WHERE user_id = $1
+    AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
+),
+upserted AS (
+  INSERT INTO public_pine_scripts (script_id, user_id, name, source_code, meta)
+  SELECT id, user_id, COALESCE(NULLIF($4, ''), name), source_code, meta
+  FROM source
+  ON CONFLICT (script_id) DO UPDATE
+  SET name = EXCLUDED.name,
+      source_code = EXCLUDED.source_code,
+      meta = EXCLUDED.meta,
+      updated_at = now()
+  RETURNING id, script_id, name, source_code, user_id, boosts, meta, created_at, updated_at
+)
+SELECT p.id,
+       p.script_id,
+       p.name,
+       p.source_code,
+       p.user_id,
+       COALESCE(NULLIF(u.display_name, ''), u.email, 'Unknown') AS author,
+       p.boosts,
+       p.meta,
+       p.created_at,
+       p.updated_at
+FROM upserted p
+JOIN users u ON u.id = p.user_id`, uid, refUUID, refClientID, name))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PublicScript{}, ErrNotFound
+	}
+	return item, err
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -180,6 +289,35 @@ func scanScript(row rowScanner) (Script, error) {
 		return Script{}, err
 	}
 	item.ID = uuidString(id)
+	if len(item.Meta) == 0 {
+		item.Meta = json.RawMessage(`{}`)
+	}
+	return item, nil
+}
+
+func scanPublicScript(row rowScanner) (PublicScript, error) {
+	var id pgtype.UUID
+	var scriptID pgtype.UUID
+	var authorID pgtype.UUID
+	var item PublicScript
+	err := row.Scan(
+		&id,
+		&scriptID,
+		&item.Name,
+		&item.SourceCode,
+		&authorID,
+		&item.Author,
+		&item.Boosts,
+		&item.Meta,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err != nil {
+		return PublicScript{}, err
+	}
+	item.ID = uuidString(id)
+	item.ScriptID = uuidString(scriptID)
+	item.AuthorID = uuidString(authorID)
 	if len(item.Meta) == 0 {
 		item.Meta = json.RawMessage(`{}`)
 	}

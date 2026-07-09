@@ -3,138 +3,40 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  BarChart3,
-  Bookmark,
   Braces,
   ChartNoAxesCombined,
   Code2,
-  Flame,
-  LineChart,
   Search,
+  ShoppingBag,
   Star,
   Trash2,
-  TrendingUp,
   UserRound,
-  WalletCards,
   X,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { authStatusAtom } from "@/store/authStore";
 import {
   addCustomIndicatorFromScriptAtom,
+  addCustomIndicatorFromSourceAtom,
   deletePineScriptAtom,
-  pineScriptsAtom,
   loadPineScriptAtom,
+  pineScriptsAtom,
   togglePineFavoriteAtom,
 } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
+import {
+  listIndicatorStore,
+  type PublicIndicatorScript,
+} from "@/services/api/resources/pineScriptsApi";
+import {
+  formatPublicBoosts,
+  publicIndicatorScriptId,
+} from "@/services/indicatorStoreModel";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { CustomIndicatorScript } from "@/types";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
-import {
-  filterCatalogItems,
-  type IndicatorCatalogCategory,
-  type IndicatorCatalogItem,
-  type IndicatorCatalogResponse,
-  type IndicatorCatalogType,
-} from "@/services/tradingViewIndicatorCatalog";
 
-type BrowserTab =
-  | "favorites"
-  | "myScripts"
-  | "purchased"
-  | IndicatorCatalogCategory;
-type TypeFilter = "all" | IndicatorCatalogType;
-
-const FAVORITE_CATALOG_KEY = "tv:indicatorCatalogFavorites";
-
-const API_TAB_CATEGORY: Partial<Record<BrowserTab, IndicatorCatalogCategory>> = {
-  technicals: "technicals",
-  fundamentals: "fundamentals",
-  editors: "editors",
-  top: "top",
-  trending: "trending",
-};
-
-function readCatalogFavorites(): Record<string, IndicatorCatalogItem> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(FAVORITE_CATALOG_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed as Record<string, IndicatorCatalogItem>;
-  } catch {
-    return {};
-  }
-}
-
-function writeCatalogFavorites(items: Record<string, IndicatorCatalogItem>) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(FAVORITE_CATALOG_KEY, JSON.stringify(items));
-}
-
-function clearCatalogFavorites() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(FAVORITE_CATALOG_KEY);
-}
-
-function defaultTypeFilter(tab: BrowserTab): TypeFilter {
-  return tab === "technicals" ? "indicator" : "all";
-}
-
-function titleForTab(tab: BrowserTab): string {
-  const labels: Record<BrowserTab, string> = {
-    favorites: "Favorites",
-    myScripts: "My scripts",
-    purchased: "Purchased",
-    technicals: "Technicals",
-    fundamentals: "Fundamentals",
-    editors: "Editors' picks",
-    top: "Top",
-    trending: "Trending",
-  };
-  return labels[tab];
-}
-
-function typeChipsFor(tab: BrowserTab): { value: TypeFilter; label: string }[] {
-  if (tab === "technicals") {
-    return [
-      { value: "indicator", label: "Indicators" },
-      { value: "strategy", label: "Strategies" },
-      { value: "profile", label: "Profiles" },
-      { value: "pattern", label: "Patterns" },
-    ];
-  }
-  if (tab === "fundamentals") {
-    return [{ value: "all", label: "All" }];
-  }
-  if (tab === "editors" || tab === "top" || tab === "trending") {
-    return [
-      { value: "all", label: "All" },
-      { value: "indicator", label: "Indicators" },
-      { value: "strategy", label: "Strategies" },
-    ];
-  }
-  return [];
-}
-
-function SidebarSection({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
-        {label}
-      </div>
-      <div className="space-y-1">{children}</div>
-    </div>
-  );
-}
+type BrowserTab = "favorites" | "myScripts" | "store";
 
 function SidebarButton({
   active,
@@ -180,99 +82,33 @@ function scriptMatches(script: CustomIndicatorScript, query: string) {
   );
 }
 
-function openExternal(url: string | undefined) {
-  if (!url) return;
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
 export function IndicatorMenu() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<BrowserTab>("favorites");
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [deleteTarget, setDeleteTarget] =
     useState<CustomIndicatorScript | null>(null);
-  const [catalogByCategory, setCatalogByCategory] = useState<
-    Partial<Record<IndicatorCatalogCategory, IndicatorCatalogResponse>>
-  >({});
-  const [loadingCategory, setLoadingCategory] =
-    useState<IndicatorCatalogCategory | null>(null);
-  const [catalogFavorites, setCatalogFavorites] = useState<
-    Record<string, IndicatorCatalogItem>
-  >({});
+  const [storeRows, setStoreRows] = useState<PublicIndicatorScript[]>([]);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
+  const storeRequestRef = useRef(0);
   const indicatorDialogDrag = useDraggableDialog();
   const deleteDialogDrag = useDraggableDialog();
 
   const scripts = useAtomValue(pineScriptsAtom);
-  const authStatus = useAtomValue(authStatusAtom);
   const addCustomIndicator = useSetAtom(addCustomIndicatorFromScriptAtom);
+  const addCustomIndicatorFromSource = useSetAtom(addCustomIndicatorFromSourceAtom);
   const deleteScript = useSetAtom(deletePineScriptAtom);
   const loadPineScript = useSetAtom(loadPineScriptAtom);
   const togglePineFavorite = useSetAtom(togglePineFavoriteAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
 
-  const apiCategory = API_TAB_CATEGORY[tab];
-  const chips = typeChipsFor(tab);
-  const catalogResponse = apiCategory
-    ? catalogByCategory[apiCategory]
-    : undefined;
-
-  useEffect(() => {
-    setCatalogFavorites(readCatalogFavorites());
-  }, []);
-
-  useEffect(() => {
-    if (authStatus !== "anonymous") return;
-    clearCatalogFavorites();
-    setCatalogFavorites({});
-  }, [authStatus]);
-
   useEffect(() => {
     if (!open) return;
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [open]);
-
-  useEffect(() => {
-    setTypeFilter(defaultTypeFilter(tab));
-  }, [tab]);
-
-  useEffect(() => {
-    if (!open || !apiCategory || catalogByCategory[apiCategory]) return;
-    const controller = new AbortController();
-    setLoadingCategory(apiCategory);
-    fetch(`/api/indicators/tradingview?category=${apiCategory}`, {
-      signal: controller.signal,
-    })
-      .then((res) => res.json() as Promise<IndicatorCatalogResponse>)
-      .then((data) => {
-        setCatalogByCategory((prev) => ({ ...prev, [apiCategory]: data }));
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        setCatalogByCategory((prev) => ({
-          ...prev,
-          [apiCategory]: {
-            items: [],
-            source: "pending",
-            fetchedAt: Date.now(),
-            error:
-              error instanceof Error
-                ? error.message
-                : "TradingView indicator request failed.",
-          },
-        }));
-      })
-      .finally(() => {
-        setLoadingCategory((current) =>
-          current === apiCategory ? null : current,
-        );
-      });
-    return () => controller.abort();
-  }, [apiCategory, catalogByCategory, open]);
 
   useEffect(() => {
     if (!open) setDeleteTarget(null);
@@ -289,6 +125,34 @@ export function IndicatorMenu() {
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteTarget, open]);
 
+  useEffect(() => {
+    if (!open || tab !== "store") return;
+    const requestId = storeRequestRef.current + 1;
+    storeRequestRef.current = requestId;
+    const timeout = window.setTimeout(() => {
+      setStoreLoading(true);
+      setStoreError(null);
+      listIndicatorStore(query)
+        .then((rows) => {
+          if (storeRequestRef.current !== requestId) return;
+          setStoreRows(rows);
+        })
+        .catch((error) => {
+          if (storeRequestRef.current !== requestId) return;
+          const description = reportFrontendError(error, {
+            title: "Indicator Store load failed",
+            toast: false,
+          });
+          setStoreRows([]);
+          setStoreError(description.message);
+        })
+        .finally(() => {
+          if (storeRequestRef.current === requestId) setStoreLoading(false);
+        });
+    }, 200);
+    return () => window.clearTimeout(timeout);
+  }, [open, query, tab]);
+
   const filteredScripts = useMemo(() => {
     const sorted = [...scripts].sort(
       (a, b) =>
@@ -303,16 +167,6 @@ export function IndicatorMenu() {
     return base.filter((script) => scriptMatches(script, query));
   }, [query, scripts, tab]);
 
-  const favoriteCatalogRows = useMemo(() => {
-    if (tab !== "favorites") return [];
-    return filterCatalogItems(Object.values(catalogFavorites), query, "all");
-  }, [catalogFavorites, query, tab]);
-
-  const catalogRows = useMemo(() => {
-    if (!apiCategory || !catalogResponse) return [];
-    return filterCatalogItems(catalogResponse.items, query, typeFilter);
-  }, [apiCategory, catalogResponse, query, typeFilter]);
-
   const openPineEditor = () => {
     setOpen(false);
     setBottomTab("pine");
@@ -322,16 +176,6 @@ export function IndicatorMenu() {
     loadPineScript(script.id);
     setOpen(false);
     setBottomTab("pine");
-  };
-
-  const toggleCatalogFavorite = (item: IndicatorCatalogItem) => {
-    setCatalogFavorites((prev) => {
-      const next = { ...prev };
-      if (next[item.id]) delete next[item.id];
-      else next[item.id] = item;
-      writeCatalogFavorites(next);
-      return next;
-    });
   };
 
   const confirmDeleteScript = () => {
@@ -345,10 +189,14 @@ export function IndicatorMenu() {
     setQuery("");
   };
 
-  const sourcePending =
-    apiCategory &&
-    catalogResponse?.source === "pending" &&
-    catalogResponse.items.length === 0;
+  const addPublicScript = async (script: PublicIndicatorScript) => {
+    await addCustomIndicatorFromSource({
+      name: script.name,
+      sourceCode: script.sourceCode,
+      scriptId: publicIndicatorScriptId(script),
+    });
+    setOpen(false);
+  };
 
   return (
     <>
@@ -420,62 +268,31 @@ export function IndicatorMenu() {
 
               <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] gap-5 px-5 pb-4 pt-4">
                 <aside className="min-h-0 space-y-5 overflow-auto pr-1">
-                  <SidebarSection label="Personal">
-                    <SidebarButton
-                      active={tab === "favorites" && !query.trim()}
-                      icon={<Star size={22} strokeWidth={1.6} />}
-                      label="Favorites"
-                      onClick={() => selectTab("favorites")}
-                    />
-                    <SidebarButton
-                      active={tab === "myScripts" && !query.trim()}
-                      icon={<UserRound size={22} strokeWidth={1.6} />}
-                      label="My scripts"
-                      onClick={() => selectTab("myScripts")}
-                    />
-                    <SidebarButton
-                      active={tab === "purchased" && !query.trim()}
-                      icon={<WalletCards size={22} strokeWidth={1.6} />}
-                      label="Purchased"
-                      onClick={() => selectTab("purchased")}
-                    />
-                  </SidebarSection>
-
-                  <SidebarSection label="Built-in">
-                    <SidebarButton
-                      active={tab === "technicals" && !query.trim()}
-                      icon={<LineChart size={22} strokeWidth={1.6} />}
-                      label="Technicals"
-                      onClick={() => selectTab("technicals")}
-                    />
-                    <SidebarButton
-                      active={tab === "fundamentals" && !query.trim()}
-                      icon={<BarChart3 size={22} strokeWidth={1.6} />}
-                      label="Fundamentals"
-                      onClick={() => selectTab("fundamentals")}
-                    />
-                  </SidebarSection>
-
-                  <SidebarSection label="Community">
-                    <SidebarButton
-                      active={tab === "editors" && !query.trim()}
-                      icon={<Bookmark size={22} strokeWidth={1.6} />}
-                      label="Editors' picks"
-                      onClick={() => selectTab("editors")}
-                    />
-                    <SidebarButton
-                      active={tab === "top" && !query.trim()}
-                      icon={<TrendingUp size={22} strokeWidth={1.6} />}
-                      label="Top"
-                      onClick={() => selectTab("top")}
-                    />
-                    <SidebarButton
-                      active={tab === "trending" && !query.trim()}
-                      icon={<Flame size={22} strokeWidth={1.6} />}
-                      label="Trending"
-                      onClick={() => selectTab("trending")}
-                    />
-                  </SidebarSection>
+                  <div>
+                    <div className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                      Personal
+                    </div>
+                    <div className="space-y-1">
+                      <SidebarButton
+                        active={tab === "favorites" && !query.trim()}
+                        icon={<Star size={22} strokeWidth={1.6} />}
+                        label="Favorites"
+                        onClick={() => selectTab("favorites")}
+                      />
+                      <SidebarButton
+                        active={tab === "myScripts" && !query.trim()}
+                        icon={<UserRound size={22} strokeWidth={1.6} />}
+                        label="My scripts"
+                        onClick={() => selectTab("myScripts")}
+                      />
+                      <SidebarButton
+                        active={tab === "store" && !query.trim()}
+                        icon={<ShoppingBag size={22} strokeWidth={1.6} />}
+                        label="Store"
+                        onClick={() => selectTab("store")}
+                      />
+                    </div>
+                  </div>
 
                   <button
                     type="button"
@@ -488,39 +305,13 @@ export function IndicatorMenu() {
                 </aside>
 
                 <section className="min-w-0 overflow-hidden">
-                  <div className="mb-3 flex min-h-7 items-center gap-2">
-                    {chips.map((chip) => (
-                      <button
-                        key={chip.value}
-                        type="button"
-                        onClick={() => setTypeFilter(chip.value)}
-                        className={cn(
-                          "h-7 rounded-full px-3 text-[13px] font-semibold transition-colors",
-                          typeFilter === chip.value
-                            ? "bg-white text-[#111]"
-                            : "bg-[#2c2c2c] text-ink-muted hover:bg-[#3a3a3a] hover:text-ink",
-                        )}
-                      >
-                        {chip.label}
-                      </button>
-                    ))}
-                  </div>
-
                   <div className="grid grid-cols-[minmax(220px,1fr)_128px_92px] px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
                     <div>{tab === "myScripts" ? "Script name" : "Name"}</div>
-                    <div>{tab === "myScripts" ? "" : "Author"}</div>
-                    <div>{tab === "myScripts" ? "" : "Boosts"}</div>
+                    <div>{tab === "store" ? "Author" : ""}</div>
+                    <div>{tab === "store" ? "Boosts" : ""}</div>
                   </div>
 
-                  <div className="max-h-[430px] overflow-auto pr-1">
-                    {tab === "purchased" && (
-                      <EmptyState>
-                        Purchased scripts require a TradingView authenticated
-                        endpoint. This category is pending until a real API is
-                        available.
-                      </EmptyState>
-                    )}
-
+                  <div className="max-h-[462px] overflow-auto pr-1">
                     {(tab === "favorites" || tab === "myScripts") && (
                       <>
                         {filteredScripts.map((script) => (
@@ -533,59 +324,36 @@ export function IndicatorMenu() {
                             onDelete={() => setDeleteTarget(script)}
                           />
                         ))}
-                        {favoriteCatalogRows.map((item) => (
-                          <CatalogRow
-                            key={`catalog-favorite:${item.id}`}
-                            item={item}
-                            favorite
-                            onFavorite={() => toggleCatalogFavorite(item)}
-                            onOpen={() => openExternal(item.url)}
-                          />
-                        ))}
-                        {filteredScripts.length === 0 &&
-                          favoriteCatalogRows.length === 0 && (
-                            <EmptyState>
-                              {tab === "favorites"
-                                ? "No favorites found."
-                                : "No scripts found."}
-                            </EmptyState>
-                          )}
+                        {filteredScripts.length === 0 && (
+                          <EmptyState>
+                            {tab === "favorites"
+                              ? "No favorites found."
+                              : "No scripts found."}
+                          </EmptyState>
+                        )}
                       </>
                     )}
 
-                    {apiCategory && loadingCategory === apiCategory && (
-                      <EmptyState>Loading TradingView data...</EmptyState>
+                    {tab === "store" && storeLoading && (
+                      <EmptyState>Loading public indicators...</EmptyState>
                     )}
-
-                    {apiCategory &&
-                      loadingCategory !== apiCategory &&
-                      sourcePending && (
-                        <EmptyState>
-                          TradingView data is pending for {titleForTab(tab)}.
-                          {catalogResponse?.error
-                            ? ` ${catalogResponse.error}`
-                            : ""}
-                        </EmptyState>
-                      )}
-
-                    {apiCategory &&
-                      loadingCategory !== apiCategory &&
-                      !sourcePending && (
-                        <>
-                          {catalogRows.map((item) => (
-                            <CatalogRow
-                              key={`catalog:${item.id}`}
-                              item={item}
-                              favorite={Boolean(catalogFavorites[item.id])}
-                              onFavorite={() => toggleCatalogFavorite(item)}
-                              onOpen={() => openExternal(item.url)}
-                            />
-                          ))}
-                          {catalogRows.length === 0 && catalogResponse && (
-                            <EmptyState>No indicators found.</EmptyState>
-                          )}
-                        </>
-                      )}
+                    {tab === "store" && !storeLoading && storeError && (
+                      <EmptyState>{storeError}</EmptyState>
+                    )}
+                    {tab === "store" && !storeLoading && !storeError && (
+                      <>
+                        {storeRows.map((item) => (
+                          <StoreRow
+                            key={`store:${item.id}`}
+                            item={item}
+                            onAdd={() => void addPublicScript(item)}
+                          />
+                        ))}
+                        {storeRows.length === 0 && (
+                          <EmptyState>No public indicators found.</EmptyState>
+                        )}
+                      </>
+                    )}
                   </div>
                 </section>
               </div>
@@ -720,35 +488,24 @@ function ScriptRow({
   );
 }
 
-function CatalogRow({
+function StoreRow({
   item,
-  favorite,
-  onFavorite,
-  onOpen,
+  onAdd,
 }: {
-  item: IndicatorCatalogItem;
-  favorite: boolean;
-  onFavorite: () => void;
-  onOpen: () => void;
+  item: PublicIndicatorScript;
+  onAdd: () => void;
 }) {
   return (
     <div className="group grid min-h-8 grid-cols-[minmax(220px,1fr)_128px_92px] items-center rounded-md px-1 text-[13px] text-ink transition-colors hover:bg-terminal-hover">
       <div className="flex min-w-0 items-center gap-2">
+        <Star
+          size={16}
+          fill="currentColor"
+          className="h-7 w-7 shrink-0 rounded p-1.5 text-ink"
+        />
         <button
           type="button"
-          onClick={onFavorite}
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch",
-            favorite && "text-choch",
-          )}
-          aria-label="Add to favorites"
-          title="Add to favorites"
-        >
-          <Star size={16} fill={favorite ? "currentColor" : "none"} />
-        </button>
-        <button
-          type="button"
-          onClick={onOpen}
+          onClick={onAdd}
           className="min-w-0 flex-1 truncate py-1.5 text-left font-semibold hover:text-brand"
           title={item.name}
         >
@@ -757,7 +514,7 @@ function CatalogRow({
       </div>
       <button
         type="button"
-        onClick={onOpen}
+        onClick={onAdd}
         className="truncate py-1.5 text-left text-brand hover:text-brand/80"
         title={item.author}
       >
@@ -765,11 +522,11 @@ function CatalogRow({
       </button>
       <button
         type="button"
-        onClick={onOpen}
+        onClick={onAdd}
         className="truncate py-1.5 text-left font-semibold text-ink"
-        title={item.boosts}
+        title={formatPublicBoosts(item.boosts)}
       >
-        {item.boosts}
+        {formatPublicBoosts(item.boosts)}
       </button>
     </div>
   );

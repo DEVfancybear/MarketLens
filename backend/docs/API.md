@@ -467,6 +467,7 @@ id/clientId when the editor needs source text. `clientId` is the frontend
 | GET    | `/api/v1/pine-scripts`        | List metadata                  |
 | GET    | `/api/v1/pine-scripts/:id`    | Get one (with `source`)        |
 | POST   | `/api/v1/pine-scripts`        | Create/upsert by `clientId`    |
+| POST   | `/api/v1/pine-scripts/:id/publish` | Publish/update in public Store |
 | PUT    | `/api/v1/pine-scripts/:id`    | Patch name/source/favorite/meta|
 | DELETE | `/api/v1/pine-scripts/:id`    | Delete                         |
 
@@ -489,6 +490,43 @@ Favorite-only patch:
 ```
 
 Oversized source code above 64 KB returns `400`.
+
+---
+
+## Indicator Store public
+
+Backed by `public_pine_scripts`. Reads do not require auth. Publishing still
+requires the owner to save a private Pine script first, then call the protected
+publish endpoint above.
+
+| Method | Path                         | Purpose                              |
+| ------ | ---------------------------- | ------------------------------------ |
+| GET    | `/api/v1/indicator-store`    | List public indicators               |
+| GET    | `/api/v1/indicator-store/:id`| Get one public indicator             |
+
+Query:
+
+```text
+GET /api/v1/indicator-store?query=rsi
+```
+
+Response rows include `sourceCode` so anonymous visitors can add public scripts
+to chart without a private script lookup:
+
+```json
+{
+  "id": "public-uuid",
+  "scriptId": "source-script-uuid",
+  "name": "Better RSI",
+  "sourceCode": "indicator(\"Better RSI\")\nplot(close)",
+  "authorId": "user-uuid",
+  "author": "TradeCalmly",
+  "boosts": 0,
+  "meta": {},
+  "createdAt": "2026-07-09T00:00:00Z",
+  "updatedAt": "2026-07-09T00:00:00Z"
+}
+```
 
 ---
 

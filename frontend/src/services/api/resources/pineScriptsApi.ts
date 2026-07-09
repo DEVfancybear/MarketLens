@@ -20,6 +20,19 @@ export interface PineScriptWrite {
   clientId?: string;
 }
 
+export interface PublicIndicatorScript {
+  id: string;
+  scriptId: string;
+  name: string;
+  sourceCode: string;
+  authorId: string;
+  author: string;
+  boosts: number;
+  meta?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function backendPineScriptToLocal(row: BackendPineScript): CustomIndicatorScript {
   return {
     id: row.clientId || row.id,
@@ -68,4 +81,23 @@ export async function deletePineScriptRemote(
   idOrClientId: string,
 ): Promise<{ ok: boolean }> {
   return deleteJson<{ ok: boolean }>(`pine-scripts/${encodeURIComponent(idOrClientId)}`);
+}
+
+export async function publishPineScriptRemote(
+  idOrClientId: string,
+  input: { name?: string } = {},
+): Promise<PublicIndicatorScript> {
+  return postJson<PublicIndicatorScript>(
+    `pine-scripts/${encodeURIComponent(idOrClientId)}/publish`,
+    input,
+  );
+}
+
+export async function listIndicatorStore(
+  query = "",
+): Promise<PublicIndicatorScript[]> {
+  const suffix = query.trim()
+    ? `?query=${encodeURIComponent(query.trim())}`
+    : "";
+  return getJson<PublicIndicatorScript[]>(`indicator-store${suffix}`);
 }

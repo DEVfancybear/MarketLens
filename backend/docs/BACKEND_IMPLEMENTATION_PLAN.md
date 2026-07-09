@@ -381,14 +381,16 @@ store:** `chartStore.indicators` (persisted as `indicators`). Pine *scripts* are
 
 ### Phase 9 — Pine scripts
 
-**Status:** Implemented in package `internal/pinescripts`, `/api/v1/pine-scripts`, and
-metadata bootstrap. The backing `pine_scripts` table is created by `0009_indicator_presets` because
-Phase 8 needs it as an FK target.
+**Status:** Implemented in package `internal/pinescripts`, `/api/v1/pine-scripts`, metadata
+bootstrap, and public `/api/v1/indicator-store`. The backing `pine_scripts` table is created by
+`0009_indicator_presets` because Phase 8 needs it as an FK target; public Store rows live in
+`public_pine_scripts` from `0010_public_pine_scripts`.
 
 **Goal:** Persist user-authored Pine-like source indicators.
 
 **Table:** `pine_scripts` (`DATABASE.md` §7.5 — matches `CustomIndicatorScript`: `source_code`,
-`favorite`, `client_id`). **Frontend store:** `chartStore` Pine state (persisted as `pineScripts`).
+`favorite`, `client_id`) plus `public_pine_scripts` for published Store rows. **Frontend store:**
+`chartStore` Pine state (persisted as `pineScripts`).
 **Create before `indicator_presets`** in `0004` (FK target).
 
 **Steps**
@@ -399,13 +401,16 @@ Phase 8 needs it as an FK target.
 3. Repo: cap `source_code` length (e.g. reject > 64 KB); store parsed inputs / last compile status in
    `meta jsonb`.
 4. Handler: `GET /api/v1/pine-scripts`, `GET /api/v1/pine-scripts/:id`, `POST /api/v1/pine-scripts`,
-   `PUT/DELETE /api/v1/pine-scripts/:id`.
+   `PUT/DELETE /api/v1/pine-scripts/:id`, `POST /api/v1/pine-scripts/:id/publish`, and public
+   `GET /api/v1/indicator-store`.
 5. Bootstrap: `pineScripts` array (metadata only; fetch source on open).
 
 **Acceptance**
 - Save a script, edit its source, toggle favorite, reload → latest state loads; list stays light.
 - Oversized source is rejected with `400 bad_request`.
 - A `CUSTOM` indicator's `script_id` resolves to the right script (cross-check with Phase 8).
+- Publishing a script creates/updates a public Store row; anonymous clients can list Store rows and
+  receive source code without auth.
 
 **Complexity:** Low–Medium.
 

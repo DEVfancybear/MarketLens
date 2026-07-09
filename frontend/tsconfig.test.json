@@ -31,6 +31,6 @@
     "src/components/chart/drawing/tools/positionTradePrefill.ts",
     "src/services/market-data/symbols.ts",
     "src/store/watchlistLayout.ts",
-    "src/services/tradingViewIndicatorCatalog.ts"
+    "src/services/indicatorStoreModel.ts"
   ]
 }

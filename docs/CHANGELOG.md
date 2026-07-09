@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Public Indicator Store and Pine publishing (2026-07-09)
+- Simplified the `Indicators, metrics, and strategies` modal to `Favorites`, `My scripts`, and
+  `Store`; removed the old TradingView catalog scraping route, parser, fallback tests, and unused
+  sidebar categories.
+- Added Pine Editor `Publish script` action and removed the redundant cloud upload icon.
+- Added backend `public_pine_scripts`, public `GET /api/v1/indicator-store`, and protected
+  `POST /api/v1/pine-scripts/:id/publish` so public Store indicators come from backend data.
+- Added frontend Store model tests and backend publish/public-store handler tests.
+
 ### Changed - Drawing interaction preview performance (2026-07-09)
 - Changed DrawingInteractionManager live creation previews to update the mutable interaction
   machine ref and rAF render loop without publishing React state on every pointermove.

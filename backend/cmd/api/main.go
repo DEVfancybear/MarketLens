@@ -70,6 +70,11 @@ func main() {
 	var indicatorsHandler *indicators.Handler
 	var pineScriptsHandler *pinescripts.Handler
 	var workspaceHandler *workspace.Handler
+	var pineScriptsStore *pinescripts.Repo
+	if pool != nil {
+		pineScriptsStore = pinescripts.NewRepo(pool.Pool)
+		pineScriptsHandler = pinescripts.NewHandler(pineScriptsStore, nil)
+	}
 	switch {
 	case pool == nil:
 		log.Warn().Msg("protected api routes disabled: no database configured")
@@ -94,7 +99,6 @@ func main() {
 		drawingsHandler = drawings.NewHandler(drawingsStore, requireAuth)
 		indicatorsStore := indicators.NewRepo(pool.Pool)
 		indicatorsHandler = indicators.NewHandler(indicatorsStore, requireAuth)
-		pineScriptsStore := pinescripts.NewRepo(pool.Pool)
 		pineScriptsHandler = pinescripts.NewHandler(pineScriptsStore, requireAuth)
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, requireAuth)
 		log.Info().Msg("protected api routes enabled")

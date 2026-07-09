@@ -390,7 +390,31 @@ CREATE UNIQUE INDEX idx_pine_scripts_client ON pine_scripts(user_id, client_id)
   WHERE client_id IS NOT NULL;
 ```
 
-### 7.6 `indicator_presets`
+### 7.6 `public_pine_scripts`
+
+Public Store entries for Pine scripts. The Store is readable without auth, but
+rows are created/updated only through an authenticated owner publish action.
+`source_code` is copied from the private script at publish time so Store reads do
+not need to join private script permissions.
+
+```sql
+CREATE TABLE public_pine_scripts (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  script_id   uuid NOT NULL REFERENCES pine_scripts(id) ON DELETE CASCADE,
+  user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        text NOT NULL,
+  source_code text NOT NULL,
+  meta        jsonb NOT NULL DEFAULT '{}',
+  boosts      integer NOT NULL DEFAULT 0,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (script_id)
+);
+CREATE INDEX idx_public_pine_scripts_user ON public_pine_scripts(user_id);
+CREATE INDEX idx_public_pine_scripts_updated ON public_pine_scripts(updated_at DESC);
+```
+
+### 7.7 `indicator_presets`
 
 One row per `IndicatorConfig` (`indicators` key). The whole config lives in `config jsonb`
 (length/length2/length3, colors, `inputValues`, `styleValues`); a few fields are promoted to columns

@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CloudUpload,
   Edit3,
   FilePlus2,
   Play,
   Save,
   Search,
   Star,
+  TriangleAlert,
   Trash2,
 } from "lucide-react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -30,6 +30,7 @@ import {
   compilePineRuntime,
   getPineRuntimeMeta,
 } from "@/services/api/resources/pineRuntimeApi";
+import { publishPineScriptRemote } from "@/services/api/resources/pineScriptsApi";
 import type { PineScriptMeta } from "@/services/pineRuntimeTypes";
 import type { CustomIndicatorScript } from "@/types";
 import { cn } from "@/utils/cn";
@@ -55,6 +56,7 @@ export function PineEditor() {
     text: string;
   }>({ level: "idle", text: "Ready" });
   const [query, setQuery] = useState("");
+  const [publishing, setPublishing] = useState(false);
   const [meta, setMeta] = useState<PineScriptMeta>({
     name: "Untitled script",
     overlay: true,
@@ -144,6 +146,25 @@ export function PineEditor() {
     doLog("info", `Added Pine indicator: ${saved.name}`);
   };
 
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      const saved = await saveCurrentScript();
+      const published = await publishPineScriptRemote(saved.id, {
+        name: saved.name,
+      });
+      setStatus({ level: "ok", text: `Published ${published.name}` });
+      doLog("info", `Published Pine script: ${published.name}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Publish script failed";
+      setStatus({ level: "error", text: message });
+      doLog("error", `Publish script failed: ${message}`);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const handleLoad = async (script: CustomIndicatorScript) => {
     await loadScript(script.id);
     setStatus({ level: "idle", text: `Loaded ${script.name}` });
@@ -184,16 +205,18 @@ export function PineEditor() {
           <Play size={16} />
         </button>
         <button
-          onClick={handleSave}
-          className="flex h-8 w-8 items-center justify-center rounded text-brand transition-colors hover:bg-brand/15"
-          title="Save script"
-          aria-label="Save script"
+          onClick={handlePublish}
+          disabled={publishing}
+          className="ml-auto flex h-8 items-center gap-1.5 rounded border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover disabled:cursor-not-allowed disabled:opacity-60"
+          title="Publish script"
+          aria-label="Publish script"
         >
-          <CloudUpload size={17} />
+          <TriangleAlert size={14} />
+          {publishing ? "Publishing..." : "Publish script"}
         </button>
         <button
           onClick={handleSave}
-          className="ml-auto flex h-8 items-center gap-1.5 rounded border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover"
+          className="flex h-8 items-center gap-1.5 rounded border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover"
         >
           <Save size={14} />
           Save

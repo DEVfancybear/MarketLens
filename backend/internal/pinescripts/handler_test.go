@@ -15,9 +15,10 @@ import (
 )
 
 type fakeScriptStore struct {
-	items    map[string][]Script
-	seq      int
-	lastUser string
+	items       map[string][]Script
+	publicItems []PublicScript
+	seq         int
+	lastUser    string
 }
 
 func newFakeScriptStore() *fakeScriptStore {
@@ -103,6 +104,61 @@ func (f *fakeScriptStore) Delete(_ context.Context, userID, ref string) error {
 	return ErrNotFound
 }
 
+func (f *fakeScriptStore) ListPublic(_ context.Context, query string) ([]PublicScript, error) {
+	query = strings.ToLower(strings.TrimSpace(query))
+	out := []PublicScript{}
+	for _, item := range f.publicItems {
+		if query == "" ||
+			strings.Contains(strings.ToLower(item.Name), query) ||
+			strings.Contains(strings.ToLower(item.Author), query) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeScriptStore) GetPublic(_ context.Context, ref string) (PublicScript, error) {
+	for _, item := range f.publicItems {
+		if item.ID == ref || item.ScriptID == ref {
+			return item, nil
+		}
+	}
+	return PublicScript{}, ErrNotFound
+}
+
+func (f *fakeScriptStore) Publish(_ context.Context, userID, ref string, input PublishRequest) (PublicScript, error) {
+	f.lastUser = userID
+	script, err := f.Get(context.Background(), userID, ref)
+	if err != nil {
+		return PublicScript{}, err
+	}
+	name := script.Name
+	if input.Name != nil && strings.TrimSpace(*input.Name) != "" {
+		name = strings.TrimSpace(*input.Name)
+	}
+	for i := range f.publicItems {
+		if f.publicItems[i].ScriptID == script.ID {
+			f.publicItems[i].Name = name
+			f.publicItems[i].SourceCode = script.SourceCode
+			return f.publicItems[i], nil
+		}
+	}
+	item := PublicScript{
+		ID:         "pub-" + script.ID,
+		ScriptID:   script.ID,
+		Name:       name,
+		SourceCode: script.SourceCode,
+		AuthorID:   userID,
+		Author:     "Tester",
+		Boosts:     0,
+		Meta:       json.RawMessage(`{}`),
+		CreatedAt:  script.CreatedAt,
+		UpdatedAt:  script.UpdatedAt,
+	}
+	f.publicItems = append(f.publicItems, item)
+	return item, nil
+}
+
 func TestPineScriptHandlerSaveListGetPatchDelete(t *testing.T) {
 	store := newFakeScriptStore()
 	app := fiber.New()
@@ -181,6 +237,81 @@ func TestPineScriptHandlerRejectsBadJSON(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestPineScriptHandlerPublishesPublicStoreWithoutAuthForRead(t *testing.T) {
+	store := newFakeScriptStore()
+	app := fiber.New()
+	NewHandler(store, fakeRequireAuth).Register(app.Group("/api/v1"))
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pine-scripts",
+		strings.NewReader(`{"name":"VSA Volume","sourceCode":"indicator(\"VSA Volume\")","clientId":"pine-vsa"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("save script: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("save status = %d, want 201", resp.StatusCode)
+	}
+
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/pine-scripts/pine-vsa/publish",
+		strings.NewReader(`{"name":"VSA Public"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = app.Test(req)
+	if err != nil {
+		t.Fatalf("publish script: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusCreated {
+		t.Fatalf("publish status = %d, want 201", resp.StatusCode)
+	}
+
+	publicApp := fiber.New()
+	NewHandler(store, nil).Register(publicApp.Group("/api/v1"))
+	resp, err = publicApp.Test(httptest.NewRequest(http.MethodGet, "/api/v1/indicator-store?query=vsa", nil))
+	if err != nil {
+		t.Fatalf("list public store: %v", err)
+	}
+	var list []PublicScript
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		t.Fatalf("decode public list: %v", err)
+	}
+	if len(list) != 1 || list[0].Name != "VSA Public" || !strings.Contains(list[0].SourceCode, "VSA") {
+		t.Fatalf("public store row mismatch: %+v", list)
+	}
+
+	resp, err = publicApp.Test(httptest.NewRequest(http.MethodGet, "/api/v1/indicator-store/pub-pine-srv-1", nil))
+	if err != nil {
+		t.Fatalf("get public store row: %v", err)
+	}
+	var one PublicScript
+	if err := json.NewDecoder(resp.Body).Decode(&one); err != nil {
+		t.Fatalf("decode public get: %v", err)
+	}
+	if one.ScriptID != "pine-srv-1" || one.Author == "" {
+		t.Fatalf("public get row mismatch: %+v", one)
+	}
+}
+
+func TestPineScriptHandlerPublishMissingScriptReturns404(t *testing.T) {
+	app := fiber.New()
+	NewHandler(newFakeScriptStore(), fakeRequireAuth).Register(app.Group("/api/v1"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/pine-scripts/missing/publish", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("publish missing script: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("publish missing status = %d, want 404", resp.StatusCode)
 	}
 }
 

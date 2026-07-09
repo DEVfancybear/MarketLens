@@ -373,6 +373,13 @@ return metadata only. `chartStore.loadPineScriptAtom()` and
 favorite toggle, and delete write through `/api/v1/pine-scripts` while keeping
 the local editor responsive.
 
+Public indicator Store is intentionally outside the private workspace sync
+payload. Pine Editor publishes the current script with
+`POST /api/v1/pine-scripts/:id/publish`; the indicator browser Store tab reads
+`GET /api/v1/indicator-store` without auth and adds those rows to the chart by
+source code, scoped with `store:<public-id>` script ids so they do not collide
+with private Pine script ids.
+
 ## Migration From Existing Local Data
 
 Do not silently merge old localStorage into remote state every startup. That creates confusing

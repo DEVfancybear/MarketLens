@@ -271,28 +271,22 @@ button edits source code. See `SETTTING_ARCHITECTURE.md`.
 
 ## Indicator browser
 
-`components/toolbar/IndicatorMenu.tsx` is a TradingView-style modal opened from the top toolbar.
-It replaces the old compact dropdown and separates local Pine scripts from
-TradingView catalog data:
-
-Research source:
-
-- TradingView public scripts directory: https://www.tradingview.com/scripts/
+`components/toolbar/IndicatorMenu.tsx` is a TradingView-style modal opened from
+the top toolbar. It intentionally keeps only the product-supported script
+surfaces:
 
 - Header: `Indicators, metrics, and strategies`.
-- Search filters saved scripts, TradingView catalog rows, author labels, and source text.
-- Sidebar sections: Favorites, My scripts, Purchased, Built-in, and Community.
-- Table columns: Name, Author, Boosts.
-- `My scripts` uses a TradingView-style `SCRIPT NAME` list; each saved script has star,
-  source-code `{}` and trash actions.
-- Saved scripts can be favorited, added to chart, opened in the bottom Pine Editor, or deleted
-  after confirmation.
-- TradingView catalog rows are loaded through `GET /api/indicators/tradingview?category=...`.
-  The route scrapes TradingView public script pages and normalizes rows in
-  `services/tradingViewIndicatorCatalog.ts`.
-- Do not add local fallback indicator lists. If TradingView has no public data
-  for a category or parsing fails, the API returns `source: "pending"` and an
-  empty row list. The UI must show that pending state instead of inventing data.
+- Sidebar tabs: `Favorites`, `My scripts`, and `Store`.
+- `Favorites` and `My scripts` read saved Pine scripts from `chartStore.pineScripts`.
+- `Store` reads public scripts from `GET /api/v1/indicator-store`; the endpoint
+  does not require auth and returns `sourceCode` so any visitor can add the
+  script to chart.
+- Saved scripts can be favorited, added to chart, opened in the bottom Pine
+  Editor, or deleted after confirmation.
+- Pine Editor publishes the current saved script through
+  `POST /api/v1/pine-scripts/:id/publish`.
+- Do not reintroduce hardcoded TradingView catalog fallback data. Public Store
+  rows must come from backend API data only.
 
 ## Pine-like compiler contract
 

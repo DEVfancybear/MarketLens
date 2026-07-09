@@ -33,3 +33,23 @@ type ScriptWrite struct {
 	Meta       json.RawMessage `json:"meta,omitempty"`
 	ClientID   string          `json:"clientId,omitempty"`
 }
+
+// PublicScript is a published Pine script visible in the unauthenticated
+// indicator store. Store rows intentionally include sourceCode so the frontend
+// can add a public script to the chart without a second private lookup.
+type PublicScript struct {
+	ID         string          `json:"id"`
+	ScriptID   string          `json:"scriptId"`
+	Name       string          `json:"name"`
+	SourceCode string          `json:"sourceCode"`
+	AuthorID   string          `json:"authorId"`
+	Author     string          `json:"author"`
+	Boosts     int             `json:"boosts"`
+	Meta       json.RawMessage `json:"meta,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
+}
+
+type PublishRequest struct {
+	Name *string `json:"name,omitempty"`
+}
