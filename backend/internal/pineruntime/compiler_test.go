@@ -167,6 +167,61 @@ if showDash and barstate.islast
     table.cell(dash, 0, 7, showAdrDate ? "ADR Date" : "", text_color=color.silver)
     table.cell(dash, 1, 7, showAdrDate ? adrDateStr : "", text_color=color.white)`
 
+const multiMovingAverageSource = `//@version=5
+indicator(title='10 in 1 Different Moving Averages ( SMA/EMA/WMA/RMA/HMA/VWMA )', shorttitle=' 10 in 1 MAs', overlay=true)
+
+bool plot_ma_1 = input.bool(true, 'MA 1', inline='ma1', group=" Simple Moving averages")
+string ma_1_type = input.string(defval='EMA', title='', inline='ma1', options=['RMA', 'SMA', 'EMA', 'WMA','HMA','VWMA'], group=" Simple Moving averages")
+int ma_1_val = input.int(200, '', minval=1, inline='ma1', group=" Simple Moving averages")
+string ma1_res = input.string(title='', defval='Normal MA', inline='ma1', options=["Normal MA","Open","High","Low","Close","hl2","hlc3","ohlc4","hlcc4","Multitimeframe MA","Chart","1 Minute","Day"], group=" Simple Moving averages")
+color ma_1_colour = input.color(color.red, '', inline='ma1', group=" Simple Moving averages")
+
+ma_function(source, length, type) =>
+    if type == 'RMA'
+        ta.rma(source, length)
+    else if type == 'SMA'
+        ta.sma(source, length)
+    else if type == 'EMA'
+        ta.ema(source, length)
+    else if type == 'WMA'
+        ta.wma(source, length)
+    else if type == 'HMA'
+        if(length<2)
+            ta.hma(source,2)
+        else
+            ta.hma(source, length)
+    else
+        ta.vwma(source, length)
+
+type_nor(type)=>
+    if (type == "Open") or (type == "High") or (type == "Low") or (type == "Close") or (type == "Normal MA")
+        true
+    else
+        false
+
+tf(res)=>
+    if (res == "1 Minute")
+        '1'
+    else if (res == "Day")
+        'D'
+    else
+        timeframe.period
+
+pr(res)=>
+    switch res
+        "Open" => open
+        "High" => high
+        "Low" => low
+        "Close" => close
+        "hlc3" => hlc3
+        "ohlc4" => ohlc4
+        "hlcc4" => hlcc4
+        => close
+
+ma_1 = plot_ma_1 ? (type_nor(ma1_res) ? ma_function(pr(ma1_res), ma_1_val, ma_1_type) : request.security(syminfo.tickerid, tf(ma1_res), ma_function(close, ma_1_val, ma_1_type))) : na
+
+plot(plot_ma_1 ? ma_1 : na, 'MA 1', ma_1_colour, linewidth=1)`
+
 func sampleCandles(n int) []Candle {
 	candles := make([]Candle, n)
 	price := 100.0
@@ -359,6 +414,37 @@ plot(x, style=linebr, linewidth=3, color=color.red, title="Break Plot")`
 				t.Fatalf("linebr segment bridged a gap: key=%s step=%d data=%+v", series.Key, step, series.Data)
 			}
 		}
+	}
+}
+
+func TestCompileMultiMovingAverageFunctionBody(t *testing.T) {
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID:   "multi-ma",
+		SourceCode: multiMovingAverageSource,
+		Candles:    sampleCandles(260),
+	})
+	if len(resp.Errors) > 0 {
+		t.Fatalf("compile errors: %+v", resp.Errors)
+	}
+	if resp.Meta.ShortTitle != "10 in 1 MAs" {
+		t.Fatalf("short title = %q, want 10 in 1 MAs", resp.Meta.ShortTitle)
+	}
+	if len(resp.Result.Series) != 1 {
+		t.Fatalf("series count = %d, want 1: %+v", len(resp.Result.Series), resp.Result.Series)
+	}
+	series := resp.Result.Series[0]
+	if series.Key != "MA 1" {
+		t.Fatalf("series key = %q, want MA 1", series.Key)
+	}
+	if len(series.Data) == 0 {
+		t.Fatalf("MA 1 should have data")
+	}
+	last := series.Data[len(series.Data)-1]
+	if !usable(last.Value) {
+		t.Fatalf("last MA 1 value should be usable, got %+v", last)
+	}
+	if series.Color != "#f44336" {
+		t.Fatalf("series color = %q, want Pine red", series.Color)
 	}
 }
 

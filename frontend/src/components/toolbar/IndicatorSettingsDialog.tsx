@@ -35,6 +35,7 @@ import {
   getPineRuntimeMeta,
   getPineRuntimeStyles,
 } from "@/services/api/resources/pineRuntimeApi";
+import { groupIndicatorInputRows } from "@/components/toolbar/indicatorSettingsInputRows";
 import type {
   PineInputDefinition,
   PineScriptMeta,
@@ -288,20 +289,6 @@ function initialDraft(indicator: IndicatorConfig): SettingsDraft {
   };
 }
 
-function groupFields(fields: PineInputDefinition[]) {
-  const groups: { name: string | null; fields: PineInputDefinition[] }[] = [];
-  for (const field of fields) {
-    const name = field.group ?? null;
-    const current = groups[groups.length - 1];
-    if (!current || current.name !== name) {
-      groups.push({ name, fields: [field] });
-    } else {
-      current.fields.push(field);
-    }
-  }
-  return groups;
-}
-
 function groupStyleDefinitions(fields: PineStyleDefinition[]) {
   const groups: { name: string; fields: PineStyleDefinition[] }[] = [];
   for (const field of fields) {
@@ -407,7 +394,9 @@ export function IndicatorSettingsDialog() {
   }
 
   const isCustom = indicator.type === "CUSTOM";
-  const title = isCustom ? indicator.name ?? pineMeta?.name ?? "Custom script" : indicator.type;
+  const title = isCustom
+    ? pineMeta?.shortTitle || indicator.name || pineMeta?.name || "Custom script"
+    : indicator.type;
   const inputFields = isCustom ? pineInputs : builtInInputFields(draft.type);
   const styleFields = isCustom ? pineStyles : builtInStyleDefinitions(draft.type);
 
@@ -536,7 +525,7 @@ export function IndicatorSettingsDialog() {
         role="dialog"
         aria-modal="true"
         aria-label={`${title} settings`}
-        className="flex max-h-[min(760px,calc(100vh-32px))] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] text-[#f0f0f0] shadow-2xl shadow-black/70"
+        className="flex max-h-[min(760px,calc(100vh-32px))] w-[min(520px,calc(100vw-32px))] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] text-[#f0f0f0] shadow-2xl shadow-black/70"
       >
         <header
           {...dragHandleProps}
@@ -681,20 +670,29 @@ function InputGroups({
 }) {
   return (
     <div className="space-y-5">
-      {groupFields(fields).map((group, index) => (
+      {groupIndicatorInputRows(fields).map((group, index) => (
         <div key={`${group.name ?? "default"}:${index}`} className="space-y-3">
           {group.name && (
             <div className="pb-3 pt-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8d93]">
               {group.name}
             </div>
           )}
-          {group.fields.map((field) => (
-            <InputField
-              key={field.key}
-              field={field}
-              value={currentFieldValue(field, values)}
-              onChange={(value) => onChange(field.key, value)}
-            />
+          {group.rows.map((row) => (
+            row.inline ? (
+              <InputInlineRow
+                key={row.key}
+                fields={row.fields}
+                values={values}
+                onChange={onChange}
+              />
+            ) : (
+              <InputField
+                key={row.key}
+                field={row.fields[0]}
+                value={currentFieldValue(row.fields[0], values)}
+                onChange={(value) => onChange(row.fields[0].key, value)}
+              />
+            )
           ))}
         </div>
       ))}
@@ -896,64 +894,141 @@ function InputField({
     );
   }
 
+  return (
+    <FieldRow label={field.title}>
+      <InputControl field={field} value={value} onChange={onChange} />
+    </FieldRow>
+  );
+}
+
+function InputInlineRow({
+  fields,
+  values,
+  onChange,
+}: {
+  fields: PineInputDefinition[];
+  values: IndicatorInputValues;
+  onChange: (key: string, value: IndicatorInputValue) => void;
+}) {
+  const first = fields[0];
+  const firstIsToggle = first.kind === "bool";
+  const label = first.title || fields.find((field) => field.title)?.title || first.key;
+  const controlFields = firstIsToggle ? fields.slice(1) : fields;
+
+  return (
+    <div className="flex min-h-[36px] items-center gap-3">
+      <div className="w-[72px] shrink-0">
+        {firstIsToggle ? (
+          <label className="flex cursor-pointer items-center gap-2 text-[14px] font-semibold text-[#d1d4dc]">
+            <input
+              type="checkbox"
+              checked={currentFieldValue(first, values) === true || currentFieldValue(first, values) === "true"}
+              onChange={(event) => onChange(first.key, event.target.checked)}
+              className="h-[18px] w-[18px] rounded border-[#d1d4dc] accent-[#f0f3fa]"
+            />
+            <span className="min-w-0 truncate">{label}</span>
+          </label>
+        ) : (
+          <div className="min-w-0 truncate text-[14px] font-semibold text-[#d1d4dc]">
+            {label}
+          </div>
+        )}
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+        {controlFields.map((field) => (
+          <InputControl
+            key={field.key}
+            field={field}
+            value={currentFieldValue(field, values)}
+            onChange={(value) => onChange(field.key, value)}
+            compact
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InputControl({
+  field,
+  value,
+  onChange,
+  compact = false,
+}: {
+  field: PineInputDefinition;
+  value: IndicatorInputValue;
+  onChange: (value: IndicatorInputValue) => void;
+  compact?: boolean;
+}) {
+  if (field.kind === "bool") {
+    return (
+      <label className="flex min-h-[32px] cursor-pointer items-center gap-2 text-[14px] font-medium text-[#d1d4dc]">
+        <input
+          type="checkbox"
+          checked={value === true || value === "true"}
+          onChange={(event) => onChange(event.target.checked)}
+          className="h-[18px] w-[18px] rounded border-[#d1d4dc] accent-[#f0f3fa]"
+        />
+        {field.title && <span className="min-w-0 truncate">{field.title}</span>}
+      </label>
+    );
+  }
+
   if (field.kind === "color") {
     return (
-      <FieldRow label={field.title}>
-        <label className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-md border border-[#50535a] bg-[#242424]">
-          <input
-            type="color"
-            value={hexColor(value, hexColor(field.defaultValue, "#2962ff"))}
-            onChange={(event) => onChange(event.target.value)}
-            className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
-            aria-label={field.title}
-          />
-        </label>
-      </FieldRow>
+      <label className="flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-md border border-[#50535a] bg-[#242424]">
+        <input
+          type="color"
+          value={hexColor(value, hexColor(field.defaultValue, "#2962ff"))}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
+          aria-label={field.title || field.key}
+        />
+      </label>
     );
   }
 
   if (field.options?.length) {
     return (
-      <FieldRow label={field.title}>
-        <SelectControl
-          value={String(value)}
-          options={field.options.map((option) => ({
-            value: String(option),
-            label: field.kind === "source"
-              ? SOURCE_LABELS[String(option)] ?? String(option)
-              : String(option),
-          }))}
-          onChange={onChange}
-        />
-      </FieldRow>
+      <SelectControl
+        value={String(value)}
+        options={field.options.map((option) => ({
+          value: String(option),
+          label: field.kind === "source"
+            ? SOURCE_LABELS[String(option)] ?? String(option)
+            : String(option),
+        }))}
+        onChange={onChange}
+        className={compact ? "w-[108px]" : undefined}
+      />
     );
   }
 
   if (field.kind === "int" || field.kind === "float") {
     return (
-      <FieldRow label={field.title}>
-        <input
-          type="number"
-          min={field.min}
-          max={field.max}
-          step={field.step ?? (field.kind === "int" ? 1 : "any")}
-          value={String(value)}
-          onChange={(event) => onChange(event.target.value)}
-          onBlur={(event) => onChange(coerceFieldValue(field, event.target.value))}
-          className="h-[34px] w-[100px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
-        />
-      </FieldRow>
+      <input
+        type="number"
+        min={field.min}
+        max={field.max}
+        step={field.step ?? (field.kind === "int" ? 1 : "any")}
+        value={String(value)}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={(event) => onChange(coerceFieldValue(field, event.target.value))}
+        className="h-[34px] w-[100px] shrink-0 rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+      />
     );
   }
 
   return (
-    <FieldRow label={field.title}>
-      <input
-        value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-[34px] w-[160px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
-      />
-    </FieldRow>
+    <input
+      value={String(value)}
+      onChange={(event) => onChange(event.target.value)}
+      className={cn(
+        "h-[34px] shrink-0 rounded-md border border-[#50535a] bg-[#1f1f1f] px-3 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
+        compact ? "w-[108px]" : "w-[160px]",
+      )}
+    />
   );
 }
 
@@ -1000,16 +1075,21 @@ function SelectControl({
   value,
   options,
   onChange,
+  className,
 }: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
+  className?: string;
 }) {
   return (
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-[34px] min-w-[100px] rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+      className={cn(
+        "h-[34px] min-w-[100px] shrink-0 rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 text-[14px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
+        className,
+      )}
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>

@@ -18,9 +18,10 @@ type Candle struct {
 }
 
 type ScriptMeta struct {
-	Name      string `json:"name"`
-	Overlay   bool   `json:"overlay"`
-	Timeframe string `json:"timeframe,omitempty"`
+	Name       string `json:"name"`
+	ShortTitle string `json:"shortTitle,omitempty"`
+	Overlay    bool   `json:"overlay"`
+	Timeframe  string `json:"timeframe,omitempty"`
 }
 
 type InputValue any
@@ -113,10 +114,11 @@ type MetaRequest struct {
 }
 
 type MetaResponse struct {
-	Name      string         `json:"name"`
-	Overlay   bool           `json:"overlay"`
-	Timeframe string         `json:"timeframe,omitempty"`
-	Errors    []RuntimeError `json:"errors"`
+	Name       string         `json:"name"`
+	ShortTitle string         `json:"shortTitle,omitempty"`
+	Overlay    bool           `json:"overlay"`
+	Timeframe  string         `json:"timeframe,omitempty"`
+	Errors     []RuntimeError `json:"errors"`
 }
 
 type InputsRequest struct {

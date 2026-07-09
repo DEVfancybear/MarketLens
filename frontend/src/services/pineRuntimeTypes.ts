@@ -14,6 +14,7 @@ plot(close, title="Close", color=color.blue)`;
 
 export interface PineScriptMeta {
   name: string;
+  shortTitle?: string;
   overlay: boolean;
   timeframe?: string;
 }

@@ -91,9 +91,19 @@ func readAssignments(cleaned string, context *evalContext, errors *[]RuntimeErro
 			continue
 		}
 		if match := functionDefinitionMatch(text); len(match) > 0 {
+			expression := strings.TrimSpace(match[3])
+			if expression == "" {
+				parsed, end, err := parsePineFunctionBody(lines, index, line.indent)
+				if err != nil {
+					*errors = append(*errors, RuntimeError{Line: line.number, Message: err.Error()})
+					continue
+				}
+				expression = parsed
+				index = end - 1
+			}
 			context.functions[match[1]] = pineFunction{
 				params:     functionParameterNames(match[2]),
-				expression: strings.TrimSpace(match[3]),
+				expression: expression,
 			}
 			continue
 		}
@@ -113,7 +123,7 @@ func readAssignments(cleaned string, context *evalContext, errors *[]RuntimeErro
 		if isDeclarationExpression(expression) {
 			continue
 		}
-		if strings.HasPrefix(expression, "if ") || expression == "if" {
+		if isPineIfExpressionStart(expression) {
 			parsed, end, err := parsePineIfExpression(lines, index, line.indent, expression)
 			if err != nil {
 				*errors = append(*errors, RuntimeError{Line: line.number, Message: err.Error()})
@@ -169,7 +179,22 @@ func parsePineIfExpression(lines []sourceLine, startIndex int, indent int, first
 	if trueEnd < len(lines) {
 		elseLine = lines[trueEnd]
 	}
-	if elseLine.indent != indent || elseLine.text != "else" {
+	if elseLine.indent != indent {
+		return "", trueEnd, fmt.Errorf("Pine if-expression missing else branch")
+	}
+	if strings.HasPrefix(elseLine.text, "else if ") || strings.HasPrefix(elseLine.text, "else if(") {
+		nested, falseEnd, err := parsePineIfExpression(
+			lines,
+			trueEnd,
+			indent,
+			strings.TrimSpace(strings.TrimPrefix(elseLine.text, "else ")),
+		)
+		if err != nil {
+			return "", falseEnd, err
+		}
+		return fmt.Sprintf("(%s) ? (%s) : (%s)", condition, whenTrue, nested), falseEnd, nil
+	}
+	if elseLine.text != "else" {
 		return "", trueEnd, fmt.Errorf("Pine if-expression missing else branch")
 	}
 	whenFalse, falseEnd, err := parsePineIfBranch(lines, trueEnd+1, indent)
@@ -177,6 +202,114 @@ func parsePineIfExpression(lines []sourceLine, startIndex int, indent int, first
 		return "", trueEnd + 1, err
 	}
 	return fmt.Sprintf("(%s) ? (%s) : (%s)", condition, whenTrue, whenFalse), falseEnd, nil
+}
+
+func parsePineFunctionBody(lines []sourceLine, startIndex int, parentIndent int) (string, int, error) {
+	index := startIndex + 1
+	for index < len(lines) && lines[index].text == "" {
+		index++
+	}
+	if index >= len(lines) || lines[index].indent <= parentIndent {
+		return "", index, fmt.Errorf("Pine function body is empty")
+	}
+	if isPineIfExpressionStart(lines[index].text) {
+		return parsePineIfExpression(lines, index, lines[index].indent, lines[index].text)
+	}
+	if isPineSwitchExpressionStart(lines[index].text) {
+		return parsePineSwitchExpression(lines, index, lines[index].indent, lines[index].text)
+	}
+	return parsePineIfBranch(lines, index, parentIndent)
+}
+
+func isPineIfExpressionStart(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed == "if" || strings.HasPrefix(trimmed, "if ") || strings.HasPrefix(trimmed, "if(")
+}
+
+func isPineSwitchExpressionStart(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed == "switch" || strings.HasPrefix(trimmed, "switch ")
+}
+
+func parsePineSwitchExpression(lines []sourceLine, startIndex int, indent int, firstText string) (string, int, error) {
+	selector := strings.TrimSpace(strings.TrimPrefix(firstText, "switch"))
+	index := startIndex + 1
+	for index < len(lines) && lines[index].text == "" {
+		index++
+	}
+	if index >= len(lines) || lines[index].indent <= indent {
+		return "", index, fmt.Errorf("Pine switch expression has no cases")
+	}
+	caseIndent := lines[index].indent
+	type switchCase struct {
+		condition string
+		value     string
+		fallback  bool
+	}
+	cases := []switchCase{}
+	for index < len(lines) {
+		line := lines[index]
+		if line.text == "" {
+			index++
+			continue
+		}
+		if line.indent < caseIndent || line.indent <= indent {
+			break
+		}
+		if line.indent > caseIndent {
+			index++
+			continue
+		}
+		arrow := strings.Index(line.text, "=>")
+		if arrow < 0 {
+			break
+		}
+		condition := strings.TrimSpace(line.text[:arrow])
+		value := strings.TrimSpace(line.text[arrow+2:])
+		if value == "" {
+			value = "na"
+		}
+		if isPineIfExpressionStart(value) {
+			parsed, end, err := parsePineIfExpression(lines, index, line.indent, value)
+			if err != nil {
+				return "", end, err
+			}
+			value = parsed
+			index = end
+		} else if isPineSwitchExpressionStart(value) {
+			parsed, end, err := parsePineSwitchExpression(lines, index, line.indent, value)
+			if err != nil {
+				return "", end, err
+			}
+			value = parsed
+			index = end
+		} else {
+			index++
+		}
+		cases = append(cases, switchCase{
+			condition: condition,
+			value:     value,
+			fallback:  condition == "",
+		})
+	}
+	expression := "na"
+	for _, item := range cases {
+		if item.fallback {
+			expression = item.value
+		}
+	}
+	for i := len(cases) - 1; i >= 0; i-- {
+		item := cases[i]
+		if item.fallback {
+			continue
+		}
+		condition := item.condition
+		if selector != "" {
+			condition = fmt.Sprintf("%s == %s", selector, item.condition)
+		}
+		expression = fmt.Sprintf("(%s) ? (%s) : (%s)", condition, item.value, expression)
+	}
+	return expression, index, nil
 }
 
 func parsePineIfBranch(lines []sourceLine, startIndex int, parentIndent int) (string, int, error) {
@@ -208,8 +341,15 @@ func parsePineIfBranch(lines []sourceLine, startIndex int, parentIndent int) (st
 		}
 		if match := assignmentMatch(line.text); len(match) > 0 {
 			value := strings.TrimSpace(match[3])
-			if strings.HasPrefix(value, "if ") || value == "if" {
+			if isPineIfExpressionStart(value) {
 				parsed, end, err := parsePineIfExpression(lines, index, line.indent, value)
+				if err != nil {
+					return "", end, err
+				}
+				value = parsed
+				index = end
+			} else if isPineSwitchExpressionStart(value) {
+				parsed, end, err := parsePineSwitchExpression(lines, index, line.indent, value)
 				if err != nil {
 					return "", end, err
 				}
@@ -222,8 +362,17 @@ func parsePineIfBranch(lines []sourceLine, startIndex int, parentIndent int) (st
 			expression = value
 			continue
 		}
-		if strings.HasPrefix(line.text, "if ") || line.text == "if" {
+		if isPineIfExpressionStart(line.text) {
 			parsed, end, err := parsePineIfExpression(lines, index, line.indent, line.text)
+			if err != nil {
+				return "", end, err
+			}
+			expression = parsed
+			index = end
+			continue
+		}
+		if isPineSwitchExpressionStart(line.text) {
+			parsed, end, err := parsePineSwitchExpression(lines, index, line.indent, line.text)
 			if err != nil {
 				return "", end, err
 			}

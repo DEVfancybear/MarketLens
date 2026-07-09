@@ -40,10 +40,11 @@ func (h *Handler) meta(c *fiber.Ctx) error {
 	}
 	meta := ExtractMeta(req.SourceCode)
 	return c.JSON(MetaResponse{
-		Name:      meta.Name,
-		Overlay:   meta.Overlay,
-		Timeframe: meta.Timeframe,
-		Errors:    []RuntimeError{},
+		Name:       meta.Name,
+		ShortTitle: meta.ShortTitle,
+		Overlay:    meta.Overlay,
+		Timeframe:  meta.Timeframe,
+		Errors:     []RuntimeError{},
 	})
 }
 

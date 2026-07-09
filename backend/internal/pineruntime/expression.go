@@ -424,6 +424,8 @@ func resolveIdentifier(name string, context *evalContext) (pineValue, error) {
 		return pairAverage(context.candles, "high", "low", "close"), nil
 	case "ohlc4":
 		return pairAverage(context.candles, "open", "high", "low", "close"), nil
+	case "hlcc4":
+		return pairAverage(context.candles, "high", "low", "close", "close"), nil
 	case "true":
 		return boolValue(true), nil
 	case "false":
@@ -481,6 +483,11 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 	}
 
 	switch name {
+	case "request.security":
+		if len(args) >= 3 {
+			return args[2].value, nil
+		}
+		return naNumber(), nil
 	case "time":
 		tf := ""
 		if len(args) > 0 && args[0].value.kind == kindString {
@@ -570,6 +577,16 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 		return seriesValue(exponentialAverage(toSeries(byNameOrIndex("source", 0), len(context.candles)), period(byNameOrIndex("length", 1)))), nil
 	case "ta.rma", "rma":
 		return seriesValue(runningMovingAverage(toSeries(byNameOrIndex("source", 0), len(context.candles)), period(byNameOrIndex("length", 1)))), nil
+	case "ta.wma", "wma":
+		return seriesValue(weightedMovingAverage(toSeries(byNameOrIndex("source", 0), len(context.candles)), period(byNameOrIndex("length", 1)))), nil
+	case "ta.hma", "hma":
+		return seriesValue(hullMovingAverage(toSeries(byNameOrIndex("source", 0), len(context.candles)), period(byNameOrIndex("length", 1)))), nil
+	case "ta.vwma", "vwma":
+		return seriesValue(volumeWeightedMovingAverage(
+			toSeries(byNameOrIndex("source", 0), len(context.candles)),
+			toSeries(sourceSeries(context.candles, "volume"), len(context.candles)),
+			period(byNameOrIndex("length", 1)),
+		)), nil
 	case "ta.rsi", "rsi":
 		return seriesValue(rsiSeries(toSeries(byNameOrIndex("source", 0), len(context.candles)), period(byNameOrIndex("length", 1)))), nil
 	case "ta.change", "change":
@@ -707,6 +724,77 @@ func runningMovingAverage(values []float64, length int) []float64 {
 		}
 	}
 	return out
+}
+
+func weightedMovingAverage(values []float64, length int) []float64 {
+	out := make([]float64, len(values))
+	for i := range out {
+		out[i] = math.NaN()
+		if i < length-1 {
+			continue
+		}
+		sum := float64(0)
+		weightSum := float64(0)
+		ok := true
+		for j := 0; j < length; j++ {
+			index := i - j
+			weight := float64(length - j)
+			if !usable(values[index]) {
+				ok = false
+				break
+			}
+			sum += values[index] * weight
+			weightSum += weight
+		}
+		if ok && weightSum != 0 {
+			out[i] = sum / weightSum
+		}
+	}
+	return out
+}
+
+func volumeWeightedMovingAverage(values []float64, volumes []float64, length int) []float64 {
+	out := make([]float64, len(values))
+	for i := range out {
+		out[i] = math.NaN()
+		if i < length-1 {
+			continue
+		}
+		sum := float64(0)
+		volumeSum := float64(0)
+		ok := true
+		for j := i - length + 1; j <= i; j++ {
+			if j < 0 || j >= len(volumes) || !usable(values[j]) || !usable(volumes[j]) {
+				ok = false
+				break
+			}
+			sum += values[j] * volumes[j]
+			volumeSum += volumes[j]
+		}
+		if ok && volumeSum != 0 {
+			out[i] = sum / volumeSum
+		}
+	}
+	return out
+}
+
+func hullMovingAverage(values []float64, length int) []float64 {
+	if length <= 1 {
+		return weightedMovingAverage(values, 1)
+	}
+	halfLength := int(math.Max(1, math.Floor(float64(length)/2)))
+	sqrtLength := int(math.Max(1, math.Round(math.Sqrt(float64(length)))))
+	half := weightedMovingAverage(values, halfLength)
+	full := weightedMovingAverage(values, length)
+	diff := make([]float64, len(values))
+	for i := range diff {
+		if usable(half[i]) && usable(full[i]) {
+			diff[i] = 2*half[i] - full[i]
+		} else {
+			diff[i] = math.NaN()
+		}
+	}
+	return weightedMovingAverage(diff, sqrtLength)
 }
 
 func rsiSeries(values []float64, length int) []float64 {

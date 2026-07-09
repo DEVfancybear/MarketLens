@@ -48,7 +48,7 @@ CUSTOM indicators no longer call the compiler synchronously from
 the latest cached `IndicatorResult`, and rerender when the cache resolves.
 
 Go runtime supports the chart-visible subset currently needed by VSA Volume,
-Better RSI, and ADR-style object-heavy scripts:
+Better RSI, ADR-style object-heavy scripts, and multi-moving-average overlays:
 
 - Plot/hline/fill output.
 - Per-bar color series and histogram plots.
@@ -57,6 +57,12 @@ Better RSI, and ADR-style object-heavy scripts:
   frontend chart panes can project them onto the active logical viewport,
   including TradingView-style right-offset whitespace beyond the latest candle.
 - `request.security()` for daily aggregation on chart candles.
+- Nested `request.security()` expression fallback for scripts that place the call
+  inside larger ternary expressions.
+- Multiline user-defined functions declared with `=>`, including nested
+  `if`/`else if`/`else` and `switch` expression bodies.
+- Moving-average helpers `ta.sma`, `ta.ema`, `ta.rma`, `ta.wma`, `ta.hma`, and
+  `ta.vwma`, plus common OHLC sources including `hlcc4`.
 - Mutable Pine drawing objects compiled into immutable chart output:
   `line.new/set_*`, `box.new/set_*`, `label.new/set_*`, and `table.new/cell`.
 
@@ -115,7 +121,7 @@ Implemented endpoints under `/api/v1/pine-runtime`.
 
 ### `POST /api/v1/pine-runtime/meta`
 
-Extract script title and overlay/timeframe metadata without candles.
+Extract script title, short title, and overlay/timeframe metadata without candles.
 
 Request:
 
@@ -130,6 +136,7 @@ Response:
 ```json
 {
   "name": "My script",
+  "shortTitle": "My script",
   "overlay": true,
   "timeframe": "",
   "errors": []
@@ -139,6 +146,9 @@ Response:
 ### `POST /api/v1/pine-runtime/inputs`
 
 Return settings rows for the Inputs tab.
+Inputs preserve Pine `group` and `inline` metadata. The frontend uses `inline`
+to render TradingView-style horizontal rows for related controls such as
+checkbox, moving-average type, length, source, and color.
 
 Request:
 
@@ -158,12 +168,12 @@ Response:
   "inputs": [
     {
       "key": "length",
-      "label": "Length",
-      "type": "integer",
-      "value": 20,
+      "title": "Length",
+      "kind": "int",
       "defaultValue": 14,
       "options": null,
-      "group": "Calculation"
+      "group": "Calculation",
+      "inline": "ma1"
     }
   ],
   "errors": []
@@ -413,9 +423,10 @@ Backend tests:
 
 - Metadata extraction for v3/v4/v5 `study()` and `indicator()`.
 - Input extraction for `input()`, `input.int`, `input.float`, `input.bool`,
-  `input.color`, `input.source`, and grouped inputs.
+  `input.color`, `input.source`, grouped inputs, and Pine `inline` row metadata.
 - Style extraction for `plot`, `hline`, `fill`, labels, lines, boxes, and tables.
-- Compile fixtures for VSA Volume, Better RSI, and ADR 50 SR Pro.
+- Compile fixtures for VSA Volume, Better RSI, ADR 50 SR Pro, and the
+  10-in-1 moving-average script shape.
 - Replay safety: compile only receives and emits values for supplied candles.
 - Concurrency: compile multiple scripts in parallel without data races.
 
@@ -423,6 +434,8 @@ Frontend tests:
 
 - Pine Editor calls backend compile before add-to-chart.
 - Settings dialog uses backend schema cache.
+- Settings dialog preserves Pine `inline` rows and chart legends prefer
+  `shorttitle` metadata when present.
 - Chart ignores stale compile responses after timeframe/symbol/replay changes.
 - CUSTOM indicator render does not block main chart initialization.
 - Logout clears user-specific script/schema/compile cache.
@@ -433,6 +446,8 @@ Frontend tests:
 Manual checks:
 
 - Add VSA, Better RSI, and ADR from Pine Editor.
+- Add 10-in-1 moving averages from Pine Editor and confirm the chart shows
+  `10 in 1 MAs` with visible MA lines and horizontal Inputs rows.
 - Change inputs and style values.
 - Switch symbol/timeframe while custom indicators are visible.
 - Start replay, select a past bar, then switch timeframe.

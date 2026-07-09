@@ -35,6 +35,7 @@
     "src/services/market-data/symbols.ts",
     "src/store/watchlistLayout.ts",
     "src/services/indicatorStoreModel.ts",
-    "src/services/privateWorkspaceAccess.ts"
+    "src/services/privateWorkspaceAccess.ts",
+    "src/components/toolbar/indicatorSettingsInputRows.ts"
   ]
 }

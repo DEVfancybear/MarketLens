@@ -58,6 +58,7 @@ export async function getPineRuntimeMeta(sourceCode: string): Promise<PineScript
   });
   return {
     name: response.name,
+    shortTitle: response.shortTitle,
     overlay: response.overlay,
     timeframe: response.timeframe,
   };

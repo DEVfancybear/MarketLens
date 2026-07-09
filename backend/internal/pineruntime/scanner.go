@@ -281,7 +281,7 @@ func sourceLines(cleaned string) []sourceLine {
 
 var assignmentRe = regexp.MustCompile(`^(?:(?:export\s+)?(?:(?:var|varip|const|simple|series)\s+)*(?:float|int|bool|color|string|line|label|box|table)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(:=|=)\s*(.+)$`)
 var compoundAssignmentRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*([+\-*/])=\s*(.+)$`)
-var functionDefinitionRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*=>\s*(.+)$`)
+var functionDefinitionRe = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*=>\s*(.*)$`)
 
 func assignmentMatch(text string) []string {
 	return assignmentRe.FindStringSubmatch(text)

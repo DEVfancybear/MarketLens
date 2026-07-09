@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Pine 10-in-1 moving average parity (2026-07-09)
+- Extended the Go Pine runtime for the public `10 in 1 Different Moving Averages`
+  script: multiline `=>` functions, nested `if`/`else if`, `switch` expressions,
+  `ta.wma`, `ta.hma`, `ta.vwma`, `hlcc4`, and nested `request.security()` calls.
+- Added Pine `shorttitle` metadata to `/api/v1/pine-runtime/meta` and frontend
+  metadata types so chart legends and settings dialogs can show TradingView-style
+  short indicator names such as `10 in 1 MAs`.
+- Reworked custom indicator Inputs settings rows to honor Pine `inline`, so grouped
+  MA controls render horizontally as checkbox, MA type, length, source, and color
+  instead of stacked one-control rows.
+- Added backend regression coverage for the multi-moving-average script shape and
+  frontend UI grouping coverage for Pine inline input rows.
+
 ### Fixed - Backend session recovery for API calls (2026-07-09)
 - Added shared frontend API-client recovery for authenticated backend calls: a `401` now attempts
   `/api/v1/auth/refresh`, falls back to Firebase ID-token exchange through `/api/v1/auth/google`,

@@ -75,6 +75,10 @@ func ExtractMeta(source string) ScriptMeta {
 			name = value
 		}
 	}
+	shortTitle := ""
+	if value, ok := unquote(args.named["shorttitle"]); ok {
+		shortTitle = strings.TrimSpace(value)
+	}
 	overlay := false
 	if value, ok := parseBoolLiteral(args.named["overlay"]); ok {
 		overlay = value
@@ -85,7 +89,7 @@ func ExtractMeta(source string) ScriptMeta {
 	} else if value, ok := unquote(args.named["resolution"]); ok {
 		timeframe = value
 	}
-	return ScriptMeta{Name: name, Overlay: overlay, Timeframe: timeframe}
+	return ScriptMeta{Name: name, ShortTitle: shortTitle, Overlay: overlay, Timeframe: timeframe}
 }
 
 func inputCallName(expression string) string {

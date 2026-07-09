@@ -1,8 +1,14 @@
 import { Braces, Eye, EyeOff, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { IndicatorConfig } from "@/types";
-import { getPineRuntimeInputs } from "@/services/api/resources/pineRuntimeApi";
-import type { PineInputDefinition } from "@/services/pineRuntimeTypes";
+import {
+  getPineRuntimeInputs,
+  getPineRuntimeMeta,
+} from "@/services/api/resources/pineRuntimeApi";
+import type {
+  PineInputDefinition,
+  PineScriptMeta,
+} from "@/services/pineRuntimeTypes";
 import {
   inputsInStatusLine,
   valuesInStatusLine,
@@ -25,10 +31,11 @@ export function indicatorLegendTitle(
   indicator: IndicatorConfig,
   valueText?: string,
   inputDefinitions?: PineInputDefinition[],
+  meta?: PineScriptMeta,
 ): string {
   const base =
     indicator.type === "CUSTOM"
-      ? indicator.name ?? "Custom script"
+      ? meta?.shortTitle || indicator.name || meta?.name || "Custom script"
       : indicator.type;
   const params =
     inputsInStatusLine(indicator.styleValues)
@@ -63,7 +70,11 @@ export function IndicatorLegend({
   valueTextById?: Record<string, string>;
 }) {
   const [inputDefinitionsById, setInputDefinitionsById] = useState<
-    Record<string, { sourceCode: string; definitions: PineInputDefinition[] }>
+    Record<string, {
+      sourceCode: string;
+      definitions: PineInputDefinition[];
+      meta: PineScriptMeta | null;
+    }>
   >({});
 
   useEffect(() => {
@@ -71,19 +82,30 @@ export function IndicatorLegend({
     for (const indicator of indicators) {
       if (indicator.type !== "CUSTOM" || !indicator.sourceCode?.trim()) continue;
       if (inputDefinitionsById[indicator.id]?.sourceCode === indicator.sourceCode) continue;
-      getPineRuntimeInputs(indicator.sourceCode, indicator.inputValues ?? {})
-        .then((definitions) => {
+      Promise.all([
+        getPineRuntimeInputs(indicator.sourceCode, indicator.inputValues ?? {}),
+        getPineRuntimeMeta(indicator.sourceCode),
+      ])
+        .then(([definitions, meta]) => {
           if (cancelled) return;
           setInputDefinitionsById((current) => ({
             ...current,
-            [indicator.id]: { sourceCode: indicator.sourceCode ?? "", definitions },
+            [indicator.id]: {
+              sourceCode: indicator.sourceCode ?? "",
+              definitions,
+              meta,
+            },
           }));
         })
         .catch(() => {
           if (cancelled) return;
           setInputDefinitionsById((current) => ({
             ...current,
-            [indicator.id]: { sourceCode: indicator.sourceCode ?? "", definitions: [] },
+            [indicator.id]: {
+              sourceCode: indicator.sourceCode ?? "",
+              definitions: [],
+              meta: null,
+            },
           }));
         });
     }
@@ -103,6 +125,7 @@ export function IndicatorLegend({
           indicator,
           valueTextById?.[indicator.id],
           inputDefinitionsById[indicator.id]?.definitions,
+          inputDefinitionsById[indicator.id]?.meta ?? undefined,
         );
         return (
           <div
