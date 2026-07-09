@@ -203,6 +203,23 @@ Python sidecar directly.
 | Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | One-off latest cached tick snapshot/debug endpoint; also requests on-demand streaming for requested catalog symbols |
 | Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` bypasses the cache for active chart updates |
 
+History scheduling:
+
+- The browser must request chart candles from `GET /api/v1/mt5/history`; ticks are quote/watchlist
+  data only and must not be used to synthesize missing candles.
+- The Go service keeps a per-`symbol:timeframe` candle cache. If the latest window is already
+  cached, the endpoint returns cached candles immediately and refreshes stale/latest windows in the
+  background so timeframe changes do not block on MT5 warm-up.
+- Older pagination requests (`before > 0`) still wait for MT5 history because they extend the left
+  side of the visible chart and cannot be served from a latest-window fallback.
+- Identical history requests are single-flighted in Go: only one payload is sent to the Python MT5
+  bridge and concurrent callers share the result.
+- History requests are gated by a Go-side concurrency slot before writing to the Python bridge. If
+  the browser aborts a stale request while it is queued, the request is canceled before it reaches
+  MT5. This is required because the Python bridge executes MT5 history work on a single safe worker.
+- Frontend timeframe/symbol effects should pass `AbortSignal` to the API call and abort cleanup
+  requests on selection changes.
+
 Symbol catalog payload, sent when a Go client connects:
 
 ```json

@@ -1,5 +1,6 @@
 import { getJson } from "@/services/api/client";
 import type { Timeframe } from "@/types";
+import type { Options } from "ky";
 
 export interface Mt5Symbol {
   name: string;
@@ -86,7 +87,7 @@ export async function getMt5History(params: {
   limit?: number;
   before?: number;
   refresh?: boolean;
-}): Promise<Mt5HistorySnapshot> {
+}, options?: Options): Promise<Mt5HistorySnapshot> {
   const query = new URLSearchParams({
     symbol: params.symbol,
     timeframe: params.timeframe,
@@ -100,5 +101,6 @@ export async function getMt5History(params: {
     // above that so it does not cancel first and fall back to realtime-only UI.
     timeout: 75_000,
     retry: { limit: 0 },
+    ...options,
   });
 }

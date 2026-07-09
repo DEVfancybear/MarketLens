@@ -565,3 +565,28 @@ NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
 
 The simulator remains the default execution mode. MT5 UI should hide or show disabled status when
 the flag is off, and simulator order placement must remain unchanged.
+
+## 12. Market Data History Scheduling
+
+The chart data path uses the Go backend as the only browser-facing MT5 market-data API:
+
+```text
+Browser useMarketData()
+  -> GET /api/v1/mt5/history
+  -> Go mt5stream history scheduler/cache
+  -> Python MT5 sidecar history.request
+  -> MetaTrader5 copy_rates*
+```
+
+Rules for frontend maintainers:
+
+- Chart candles must come from MT5 history/rates. Realtime ticks are only for watchlist quotes and
+  latest-price labels; do not synthesize chart candles from bid/ask ticks.
+- Pass an `AbortSignal` for symbol/timeframe history loads. Cleanup on symbol/timeframe change must
+  abort the old request so the Go scheduler can drop queued stale work before it reaches MT5.
+- Keep active-chart refresh small (`refresh=true`, latest bars only). The Go service returns cached
+  candles immediately when possible and refreshes stale latest windows in the background.
+- Left-edge pagination (`before`) is allowed to wait because it is user-driven and must load older
+  bars, not reuse the latest-window cache.
+- The Go service single-flights identical history requests and serializes bridge access because the
+  Python sidecar keeps MT5 calls on one worker for terminal/thread safety.

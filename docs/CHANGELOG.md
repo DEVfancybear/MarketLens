@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - MT5 history request scheduling (2026-07-09)
+- Added Go-side MT5 history single-flight and a bridge concurrency slot so duplicate
+  `symbol/timeframe/limit/before` requests share one Python bridge call.
+- Changed latest-window MT5 history loads to return cached candles immediately and refresh stale
+  data in the background, while older `before` pagination still waits for MT5 rates.
+- Wired frontend MT5 history loads to `AbortSignal` cleanup on symbol/timeframe changes so stale
+  browser requests can be canceled before they queue behind the single-threaded MT5 bridge.
+- Added backend WebSocket bridge harness tests covering coalesced history requests and canceled
+  queued requests that must not be sent to Python/MT5.
+
 ### Added - Frontend API error reporting (2026-07-09)
 - Added a shared frontend error formatter/reporter for backend API, Firebase Auth, timeout, and
   network failures.

@@ -82,6 +82,12 @@ function replayHistoryBefore(
   return targetWindowEnd < nearNow ? targetWindowEnd : undefined;
 }
 
+function isAbortError(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof DOMException) return error.name === "AbortError";
+  return (error as { name?: string }).name === "AbortError";
+}
+
 export function useMarketData() {
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
@@ -151,6 +157,7 @@ export function useMarketData() {
     setLoading(true);
 
     const historyLimit = historyBarsForTimeframe(timeframe);
+    const controller = new AbortController();
 
     getHistoricalDataService()
       .loadHistory({
@@ -161,6 +168,8 @@ export function useMarketData() {
           replayActive && !symbolChanged
             ? replayHistoryBefore(timeframe, historyLimit, replayCursorTime)
             : undefined,
+      }, {
+        signal: controller.signal,
       })
       .then((hist) => {
         if (cancelled) return;
@@ -182,6 +191,7 @@ export function useMarketData() {
         setLoading(false);
       })
       .catch((err) => {
+        if (isAbortError(err)) return;
         if (cancelled) return;
         getMarketDataState().setCandles(symbol, timeframe, []);
         setCandles([]);
@@ -196,6 +206,7 @@ export function useMarketData() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol, timeframe, catalogStatus, catalogSize]);
@@ -228,20 +239,25 @@ export function useMarketData() {
 
     let cancelled = false;
     let inFlight = false;
+    let activeController: AbortController | null = null;
 
     const refreshLatestBars = async () => {
       if (cancelled || inFlight) return;
       inFlight = true;
+      activeController = new AbortController();
       try {
         const hist = await getHistoricalDataService().loadHistory({
           symbol,
           timeframe,
           limit: mt5RefreshBarsForTimeframe(timeframe),
           refresh: true,
+        }, {
+          signal: activeController.signal,
         });
         if (cancelled) return;
         getMarketDataState().setCandles(symbol, timeframe, hist);
       } catch (err) {
+        if (isAbortError(err)) return;
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
         getDefaultStore().set(
@@ -250,6 +266,7 @@ export function useMarketData() {
           `MT5 latest bars refresh failed for ${symbol} ${timeframe}: ${message}`,
         );
       } finally {
+        activeController = null;
         inFlight = false;
       }
     };
@@ -257,6 +274,7 @@ export function useMarketData() {
     const timer = window.setInterval(refreshLatestBars, MT5_HISTORY_REFRESH_MS);
     return () => {
       cancelled = true;
+      activeController?.abort();
       window.clearInterval(timer);
     };
   }, [activeKey, historyReadyKey, symbol, timeframe]);

@@ -80,6 +80,10 @@ export interface HistoricalDataServiceOptions {
   oandaPractice?: boolean;
 }
 
+export interface LoadHistoryOptions {
+  signal?: AbortSignal;
+}
+
 export class HistoricalDataService {
   private readonly tdKey: string;
   private readonly oandaKey: string;
@@ -94,7 +98,10 @@ export class HistoricalDataService {
   }
 
   /** Load up to `limit` (capped 5000) candles, optionally ending before `before` (sec). */
-  async loadHistory(req: HistoryRequest): Promise<MarketCandle[]> {
+  async loadHistory(
+    req: HistoryRequest,
+    options: LoadHistoryOptions = {},
+  ): Promise<MarketCandle[]> {
     const { symbol, timeframe, limit = 1500, before, refresh } = req;
     const capped = Math.min(Math.max(limit, 1), MAX_LIMIT);
     const meta = getMarketSymbol(symbol);
@@ -102,7 +109,14 @@ export class HistoricalDataService {
     const provider = meta?.provider;
 
     if (provider === "mt5") {
-      return this.loadMt5(providerSymbol, timeframe, capped, before, refresh);
+      return this.loadMt5(
+        providerSymbol,
+        timeframe,
+        capped,
+        before,
+        refresh,
+        options,
+      );
     }
 
     if (provider === "oanda") {
@@ -129,6 +143,7 @@ export class HistoricalDataService {
     limit: number,
     before?: number,
     refresh?: boolean,
+    options: LoadHistoryOptions = {},
   ): Promise<MarketCandle[]> {
     let snapshot = await getMt5History({
       symbol,
@@ -136,6 +151,8 @@ export class HistoricalDataService {
       limit,
       before,
       refresh,
+    }, {
+      signal: options.signal,
     });
     for (
       let attempt = 1;
@@ -144,13 +161,15 @@ export class HistoricalDataService {
       attempt < MT5_HISTORY_ATTEMPTS;
       attempt += 1
     ) {
-      await delay(MT5_HISTORY_RETRY_DELAY_MS);
+      await delay(MT5_HISTORY_RETRY_DELAY_MS, options.signal);
       snapshot = await getMt5History({
         symbol,
         timeframe,
         limit,
         before,
         refresh,
+      }, {
+        signal: options.signal,
       });
     }
     if (snapshot.candles.length === 0) {
@@ -331,8 +350,26 @@ function isoFromSeconds(sec: number): string {
   return new Date(sec * 1000).toISOString().slice(0, 19).replace("T", " ");
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function abortReason(signal: AbortSignal): unknown {
+  return (
+    signal.reason ??
+    Object.assign(new Error("Aborted"), { name: "AbortError" })
+  );
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortReason(signal));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(abortReason(signal));
+      },
+      { once: true },
+    );
+  });
 }
 
 // ---- singleton --------------------------------------------------------------

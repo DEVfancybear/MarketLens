@@ -25,6 +25,7 @@ const (
 	// empty history while the terminal is still warming the cache.
 	defaultHistoryRequestTimeout = 60 * time.Second
 	defaultHistoryHTTPTimeout    = 70 * time.Second
+	defaultHistoryConcurrency    = 1
 )
 
 // Config controls the backend API's connection to the local Python MT5 bridge.
@@ -54,6 +55,8 @@ type Service struct {
 	conn           *websocket.Conn
 	writeMu        sync.Mutex
 	pendingHistory map[string]chan HistoryMessage
+	historyFlights map[string]*historyFlight
+	historySlots   chan struct{}
 	pendingStream  map[string]time.Time
 	subscribers    map[uint64]*TickSubscriber
 	nextSubscriber uint64
@@ -63,6 +66,12 @@ type Service struct {
 	reconnectMin   time.Duration
 	reconnectMax   time.Duration
 	readLimitBytes int64
+}
+
+type historyFlight struct {
+	done chan struct{}
+	msg  HistoryMessage
+	err  error
 }
 
 func NewService(cfg Config) *Service {
@@ -87,6 +96,8 @@ func NewService(cfg Config) *Service {
 		ticks:          make(map[string]Tick),
 		history:        make(map[string][]Candle),
 		pendingHistory: make(map[string]chan HistoryMessage),
+		historyFlights: make(map[string]*historyFlight),
+		historySlots:   make(chan struct{}, defaultHistoryConcurrency),
 		pendingStream:  make(map[string]time.Time),
 		subscribers:    make(map[uint64]*TickSubscriber),
 	}
@@ -247,14 +258,24 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		}
 	}
 
-	// Serve from cache only when it is complete AND still current. Paginating
-	// older data (before > 0) always uses the cache; the latest window must not
-	// be served stale — MT5 can hand back cached bars that lag the live tick by
-	// many bars, which would leave a gap before the realtime candle.
-	if candles := s.cachedHistory(symbol, timeframe, limit, before); !refresh &&
-		len(candles) > 0 &&
-		(before > 0 || s.historyIsFresh(symbol, timeframe, candles)) {
-		return s.historySnapshot(symbol, timeframe, candles, "")
+	// Serve known data immediately whenever possible. The latest window refreshes
+	// in the background when the cache is stale or refresh=true, which keeps
+	// timeframe switches responsive while MT5 warms or reloads rates. Older
+	// pagination still waits for MT5 because returning a stale page would duplicate
+	// the current viewport instead of extending the left edge.
+	candles := s.cachedHistory(symbol, timeframe, limit, before)
+	if len(candles) > 0 {
+		if before > 0 || (!refresh && s.historyIsFresh(symbol, timeframe, candles)) {
+			return s.historySnapshot(symbol, timeframe, candles, "")
+		}
+		if before == 0 {
+			// Keep the chart responsive while MT5 warms or refreshes rates. The
+			// background request updates the Go cache; the next frontend refresh
+			// receives fresh bars without making this HTTP call wait behind the
+			// single-threaded MT5 history bridge.
+			s.refreshHistoryAsync(symbol, timeframe, limit, before)
+			return s.historySnapshot(symbol, timeframe, candles, "")
+		}
 	}
 
 	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before)
@@ -547,7 +568,7 @@ func timeframeSeconds(timeframe string) int64 {
 		return 604800
 	case "1M":
 		// Monthly bars ("1M", not "1m"). A month is variable length (28-31 days);
-		// use the 31-day upper bound so the freshness check stays lenient — a
+		// use the 31-day upper bound so the freshness check stays lenient: a
 		// valid current-month bar always passes, while a cache several months
 		// behind is refetched.
 		return 2678400
@@ -575,6 +596,83 @@ func (s *Service) historySnapshot(symbol, timeframe string, candles []Candle, er
 }
 
 func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, limit int, before int64) (HistoryMessage, error) {
+	key := historyRequestKey(symbol, timeframe, limit, before)
+	flight, leader := s.joinHistoryFlight(key)
+	if !leader {
+		return flight.wait(ctx)
+	}
+
+	msg, err := s.performHistoryRequest(ctx, symbol, timeframe, limit, before)
+	s.finishHistoryFlight(key, flight, msg, err)
+	return msg, err
+}
+
+func (f *historyFlight) wait(ctx context.Context) (HistoryMessage, error) {
+	select {
+	case <-f.done:
+		return f.msg, f.err
+	case <-ctx.Done():
+		return HistoryMessage{}, ctx.Err()
+	}
+}
+
+func (s *Service) joinHistoryFlight(key string) (*historyFlight, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if flight := s.historyFlights[key]; flight != nil {
+		return flight, false
+	}
+	flight := &historyFlight{done: make(chan struct{})}
+	s.historyFlights[key] = flight
+	return flight, true
+}
+
+func (s *Service) finishHistoryFlight(key string, flight *historyFlight, msg HistoryMessage, err error) {
+	flight.msg = msg
+	flight.err = err
+	close(flight.done)
+
+	s.mu.Lock()
+	if s.historyFlights[key] == flight {
+		delete(s.historyFlights, key)
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) hasHistoryFlight(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.historyFlights[key] != nil
+}
+
+func (s *Service) refreshHistoryAsync(symbol, timeframe string, limit int, before int64) {
+	key := historyRequestKey(symbol, timeframe, limit, before)
+	if s.hasHistoryFlight(key) {
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
+		defer cancel()
+		if _, err := s.requestHistory(ctx, symbol, timeframe, limit, before); err != nil {
+			log.Debug().
+				Err(err).
+				Str("symbol", symbol).
+				Str("timeframe", timeframe).
+				Int("limit", limit).
+				Int64("before", before).
+				Msg("refresh MT5 history")
+		}
+	}()
+}
+
+func (s *Service) performHistoryRequest(ctx context.Context, symbol, timeframe string, limit int, before int64) (HistoryMessage, error) {
+	release, err := s.acquireHistorySlot(ctx)
+	if err != nil {
+		return HistoryMessage{}, err
+	}
+	defer release()
+
 	id := "hist-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	pending := make(chan HistoryMessage, 1)
 
@@ -603,7 +701,7 @@ func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, 
 	}
 
 	s.writeMu.Lock()
-	err := conn.WriteJSON(payload)
+	err = conn.WriteJSON(payload)
 	s.writeMu.Unlock()
 	if err != nil {
 		s.mu.Lock()
@@ -634,8 +732,21 @@ func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, 
 	}
 }
 
+func (s *Service) acquireHistorySlot(ctx context.Context) (func(), error) {
+	select {
+	case s.historySlots <- struct{}{}:
+		return func() { <-s.historySlots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func historyKey(symbol, timeframe string) string {
 	return normalizeSymbol(symbol) + ":" + normalizeTimeframe(timeframe)
+}
+
+func historyRequestKey(symbol, timeframe string, limit int, before int64) string {
+	return historyKey(symbol, timeframe) + ":" + strconv.Itoa(limit) + ":" + strconv.FormatInt(before, 10)
 }
 
 func normalizeSymbol(symbol string) string {

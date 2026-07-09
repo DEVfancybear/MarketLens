@@ -36,8 +36,10 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   on-demand `GET /api/v1/mt5/history` for frontend chart/watchlist data.
 - Frontend MT5 market data now loads the full symbol catalog into the runtime registry for search
   and metadata while watchlists stay server-owned. Charts load history from the backend and update
-  forming candles from backend MT5 ticks. It no longer calls third-party market-data APIs for MT5
-  symbols.
+  forming candles from backend MT5 ticks. The Go backend single-flights duplicate history requests,
+  serves cached latest windows immediately, and refreshes stale rates in the background so timeframe
+  changes do not wait behind old MT5 bridge work. It no longer calls third-party market-data APIs
+  for MT5 symbols.
 
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 
