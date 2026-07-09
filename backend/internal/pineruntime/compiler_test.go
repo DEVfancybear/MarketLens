@@ -317,6 +317,29 @@ func TestCompileADRObjectRuntime(t *testing.T) {
 	}
 }
 
+func TestRequestSecurityLaggedSMABootstrapsFromPartialDailyHistory(t *testing.T) {
+	source := `//@version=5
+indicator("Daily ADR Warmup")
+adr = request.security(syminfo.tickerid, "D", ta.sma(high - low, 10)[1], lookahead=barmerge.lookahead_off)
+plot(adr, title="ADR")`
+
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID:   "security-warmup",
+		SourceCode: source,
+		Candles:    sampleIntradayCandles(4),
+	})
+	if len(resp.Errors) > 0 {
+		t.Fatalf("compile errors: %+v", resp.Errors)
+	}
+	if len(resp.Result.Series) == 0 || len(resp.Result.Series[0].Data) == 0 {
+		t.Fatalf("expected bootstrapped ADR plot, got %+v", resp.Result.Series)
+	}
+	last := resp.Result.Series[0].Data[len(resp.Result.Series[0].Data)-1]
+	if !usable(last.Value) || last.Value <= 0 {
+		t.Fatalf("expected usable bootstrapped ADR value, got %+v", last)
+	}
+}
+
 func TestHandlerCompileUsesHTTPContract(t *testing.T) {
 	app := fiber.New()
 	NewHandler().Register(app.Group("/api/v1"))

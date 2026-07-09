@@ -16,7 +16,10 @@ import type {
 } from '@/types';
 import { dayKey } from '@/utils/time';
 import { applyCommonSeriesStyle } from '@/services/indicatorStyle';
-import { getCachedPineIndicatorResult } from '@/services/pineRuntimeCache';
+import {
+  getCachedPineIndicatorResult,
+  type PineCompileContext,
+} from '@/services/pineRuntimeCache';
 
 function styleFieldKey(
   key: string,
@@ -208,7 +211,11 @@ export function adrLevels(candles: Candle[], length: number) {
 }
 
 /** Compute a configured indicator into the generic IndicatorResult shape. */
-export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): IndicatorResult {
+export function computeIndicator(
+  cfg: IndicatorConfig,
+  candles: Candle[],
+  ctx?: PineCompileContext,
+): IndicatorResult {
   switch (cfg.type) {
     case 'SMA':
       return {
@@ -315,7 +322,7 @@ export function computeIndicator(cfg: IndicatorConfig, candles: Candle[]): Indic
       };
     }
     case 'CUSTOM':
-      return getCachedPineIndicatorResult(cfg, candles) ?? { id: cfg.id, series: [] };
+      return getCachedPineIndicatorResult(cfg, candles, ctx) ?? { id: cfg.id, series: [] };
     default:
       return { id: cfg.id, series: [] };
   }

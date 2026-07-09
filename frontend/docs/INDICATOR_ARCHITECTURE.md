@@ -307,7 +307,9 @@ Research source:
 - Horizontal lines, background fill bands, line widths/styles, and per-bar line colors are supported
   for RSI-style scripts.
 - Daily `request.security()` aggregation and object APIs (`line`, `box`, `label`, `table`) are
-  compiled in Go for ADR-style scripts.
+  compiled in Go for ADR-style scripts. Frontend compile requests include extra historical candles
+  for scripts that use `request.security()` so higher-timeframe values are not computed only from
+  the visible viewport.
 
 Supported source structure:
 
@@ -362,6 +364,11 @@ Supported functions:
 - Timeframe bridge: `request.security(..., timeframe, expression, lookahead=barmerge.lookahead_off)`
   over higher-timeframe candles aggregated from the chart runtime for common second/minute/day/week
   and month strings, plus `time(timeframe)` and `timeframe.change(timeframe)`.
+  The Go runtime has a narrow bootstrap path for lagged SMA security expressions such as
+  `ta.sma(high - low, length)[1]`: if the strict SMA is still `na` because the supplied higher-
+  timeframe history is shorter than TradingView would normally preload, it fills missing values from
+  the completed higher-timeframe buckets that are available. This prevents ADR-style scripts from
+  disappearing on 1m/5m windows while preserving strict values once enough history exists.
 - Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`, `hline(...)`,
   `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
@@ -372,6 +379,17 @@ Supported functions:
   text color, optional background color, and projected time/price; active `label.style_label_left`
   labels are moved to the emitted object's right edge to avoid line/text collisions. This is a
   shared subset, not an indicator-name adapter.
+
+Object-heavy Pine scripts can emit one object per trading day. The frontend cache keeps only the
+latest few emitted segments per object handle before rendering, so ADR-style historical lines remain
+readable across 1m/5m/15m/H1 instead of flooding the chart.
+
+For custom scripts that use `request.security()`, the frontend runtime cache is keyed by the candle
+window (`length`, first bar time, last bar time) rather than every OHLC value. MT5 can refresh the
+latest bars every few seconds with the same timestamps; recompiling and temporarily rendering an
+empty result on each refresh would remove and re-add Pine overlay series, which makes the chart look
+like it reloads. The cache keeps the latest successful result for the same script/symbol/timeframe
+while a new compile is pending.
 
 Unsupported Pine features should fail with a user-visible compile error instead of silently doing
 the wrong thing. Examples: strategies, orders, arrays, loops, multi-symbol `request.security`,

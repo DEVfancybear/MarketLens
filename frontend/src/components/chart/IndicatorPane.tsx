@@ -10,6 +10,8 @@ import type { Candle, IndicatorConfig, IndicatorSeries } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import { themeAtom } from "@/store/uiStore";
 import {
+  symbolAtom,
+  timeframeAtom,
   loadPineScriptAtom,
   pineEditorScriptIdAtom,
   pineEditorSourceAtom,
@@ -86,6 +88,8 @@ export function IndicatorPane({
   const seriesRef = useRef<PaneSeriesApi[]>([]);
   const seriesSignatureRef = useRef("");
   const theme = useAtomValue(themeAtom);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
   const updateIndicator = useSetAtom(updateIndicatorAtom);
   const removeIndicator = useSetAtom(removeIndicatorAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
@@ -159,8 +163,10 @@ export function IndicatorPane({
   );
 
   useEffect(() => {
-    if (cfg.type === "CUSTOM") ensurePineIndicatorResult(cfg, candles);
-  }, [cfg, candles]);
+    if (cfg.type === "CUSTOM") {
+      ensurePineIndicatorResult(cfg, candles, { symbol, timeframe });
+    }
+  }, [cfg, candles, symbol, timeframe]);
 
   // Data
   useEffect(() => {
@@ -173,7 +179,7 @@ export function IndicatorPane({
       setLegendValueText("");
       return;
     }
-    const result = computeIndicator(cfg, candles);
+    const result = computeIndicator(cfg, candles, { symbol, timeframe });
     setLegendValueText(indicatorResultValueText(result));
     const signature = seriesSignature(result.series);
 
@@ -283,7 +289,7 @@ export function IndicatorPane({
         })),
       );
     });
-  }, [cfg, candles, theme, pineRuntimeVersion]);
+  }, [cfg, candles, theme, pineRuntimeVersion, symbol, timeframe]);
 
   const toggleVisibility = () => {
     updateIndicator({ id: cfg.id, patch: { visible: cfg.visible === false } });

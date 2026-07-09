@@ -70,7 +70,7 @@ export function timeScaleOptions(
     lockVisibleTimeRangeOnResize: true,
     rightBarStaysOnScroll: true,
     shiftVisibleRangeOnNewBar: true,
-    allowShiftVisibleRangeOnWhitespaceReplacement: true,
+    allowShiftVisibleRangeOnWhitespaceReplacement: false,
     ticksVisible: false,
   };
 }

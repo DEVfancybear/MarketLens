@@ -326,6 +326,26 @@ The candle range hash should include first candle time, last candle time, candle
 count, and replay cursor when active. Do not stringify every candle for normal
 render invalidation; full candles are only sent in the compile request.
 
+For scripts that use `request.security()`, the frontend cache is intentionally
+window-based (`length`, first bar time, last bar time) rather than full-OHLC
+based. MT5 refreshes the latest rates every few seconds with the same bar
+timestamps; recompiling and blanking the result during each refresh removes and
+re-adds object-heavy overlays such as ADR, which visually reloads the chart. The
+cache keeps the latest successful result per script/symbol/timeframe while a new
+compile is pending.
+
+The Go runtime also has a narrow bootstrap for lagged higher-timeframe SMA
+expressions, for example:
+
+```pine
+request.security(syminfo.tickerid, "D", ta.sma(high - low, length)[1])
+```
+
+TradingView usually has enough preloaded daily history for this to be warmed up
+before the visible intraday window. If the backend request only contains a short
+daily context, the strict SMA remains `na`; the bootstrap fills missing strict
+values from the completed higher-timeframe buckets available in the request.
+
 ## Migration Plan
 
 ### Phase A - Backend runtime shell
@@ -336,6 +356,7 @@ Status: implemented for plot/hline/fill, daily `request.security()`, and common 
 2. Added `/api/v1/pine-runtime/meta`, `/inputs`, `/styles`, `/compile`.
 3. Return structured runtime diagnostics instead of panics or generic 500s.
 4. Added tests for VSA, Better RSI, ADR object runtime, and HTTP compile route.
+5. Added a partial-daily `request.security()` warm-up regression test for ADR-style scripts.
 
 ### Phase B - Frontend async adapter
 
@@ -346,6 +367,8 @@ Status: implemented for compile result cache.
 3. Wired Pine Editor preview/add-to-chart validation to backend compile.
 4. `PriceChart` and `IndicatorPane` request backend compile asynchronously and render cached results.
 5. `IndicatorSettingsDialog` and legend status-line input summaries request backend schemas.
+6. `request.security()` scripts request extra historical candles and use a window-based cache key so
+   MT5 same-window OHLC refreshes do not temporarily blank overlay output.
 
 ### Phase C - Chart runtime migration
 

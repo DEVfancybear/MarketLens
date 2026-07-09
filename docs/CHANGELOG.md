@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Pine ADR runtime stability across MT5 refreshes (2026-07-09)
+- Added a backend Pine runtime warm-up path for lagged higher-timeframe SMA expressions such as
+  `request.security(..., "D", ta.sma(high - low, length)[1])`, so ADR-style scripts do not render
+  blank on 1m/5m windows when the supplied daily context is shorter than TradingView's preloaded
+  history.
+- Added frontend higher-timeframe compile context for custom Pine scripts using
+  `request.security()`, and limited object-heavy output to the latest few emitted segments per
+  object handle to keep ADR overlays readable across M5/M15/H1.
+- Changed custom Pine cache keys for `request.security()` scripts to track the candle window instead
+  of every OHLC tick, and kept the latest successful result while a new compile is pending. This
+  prevents MT5 same-window refreshes from temporarily removing/re-adding ADR series and making the
+  chart look like it reloads.
+- Added backend coverage for partial-daily `request.security()` warm-up and frontend chart tests for
+  Pine cache-key stability, scoped fallback behavior, and whitespace replacement viewport stability.
+
 ### Added - Backend Pine runtime API and frontend async compile cache (2026-07-09)
 - Added `backend/internal/pineruntime` with metadata/input/style extraction and a Go Pine subset
   compiler for plot/hline/fill scripts and object-heavy ADR-style scripts.

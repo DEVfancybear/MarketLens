@@ -4,6 +4,8 @@ import {
   createChart,
   type IChartApi,
   type ISeriesApi,
+  type Logical,
+  type LogicalRange,
   type UTCTimestamp,
 } from "lightweight-charts";
 import type {
@@ -136,15 +138,22 @@ function updateCandleLookup(
   return rebuildCandleLookup(candles);
 }
 
-function prependedCandleCount(
+function logicalRangeAfterDataReplacement(
+  range: LogicalRange | null,
   previous: readonly Candle[],
   next: readonly Candle[],
-): number {
-  if (previous.length === 0 || next.length <= previous.length) return 0;
+): LogicalRange | null {
+  if (!range || previous.length === 0 || next.length === 0) return null;
   const previousFirstTime = previous[0]?.time;
-  if (previousFirstTime == null) return 0;
-  const offset = next.findIndex((candle) => candle.time === previousFirstTime);
-  return offset > 0 ? offset : 0;
+  if (previousFirstTime == null) return range;
+  const nextIndexOfPreviousFirst = next.findIndex(
+    (candle) => candle.time === previousFirstTime,
+  );
+  if (nextIndexOfPreviousFirst <= 0) return range;
+  return {
+    from: (Number(range.from) + nextIndexOfPreviousFirst) as Logical,
+    to: (Number(range.to) + nextIndexOfPreviousFirst) as Logical,
+  };
 }
 
 /**
@@ -380,7 +389,7 @@ export function PriceChart({
         ...(timeframeChanged ? defaultViewport : {}),
         rightBarStaysOnScroll: true,
         shiftVisibleRangeOnNewBar: true,
-        allowShiftVisibleRangeOnWhitespaceReplacement: true,
+        allowShiftVisibleRangeOnWhitespaceReplacement: false,
       },
       localization: { timeFormatter: makeTimeFormatter(timeframe) },
       crosshair: crosshairOptions(theme),
@@ -408,9 +417,13 @@ export function PriceChart({
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
-    const prepended = prependedCandleCount(prev, candles);
-    const visibleRangeBeforePrepend =
-      prepended > 0
+    const structuralDataWindowChange =
+      sameTheme &&
+      prev.length > 0 &&
+      candles.length > 0 &&
+      updatePlan === "replace";
+    const visibleRangeBeforeReplace =
+      structuralDataWindowChange && fittedRef.current
         ? chartRef.current?.timeScale().getVisibleLogicalRange()
         : null;
     candleByTimeRef.current = updateCandleLookup(
@@ -418,11 +431,6 @@ export function PriceChart({
       candles,
       updatePlan,
     );
-    const structuralDataWindowChange =
-      sameTheme &&
-      prev.length > 0 &&
-      candles.length > 0 &&
-      updatePlan === "replace";
 
     if (updatePlan === "update-latest" || updatePlan === "append") {
       // On append, finalize the previously-forming (now penultimate) bar first.
@@ -453,10 +461,14 @@ export function PriceChart({
           close: k.close,
         })),
       );
-      if (prepended > 0 && visibleRangeBeforePrepend) {
-        chartRef.current?.timeScale().setVisibleLogicalRange({
-          from: visibleRangeBeforePrepend.from + prepended,
-          to: visibleRangeBeforePrepend.to + prepended,
+      const restoredRange = logicalRangeAfterDataReplacement(
+        visibleRangeBeforeReplace ?? null,
+        prev,
+        candles,
+      );
+      if (restoredRange) {
+        requestAnimationFrame(() => {
+          chartRef.current?.timeScale().setVisibleLogicalRange(restoredRange);
         });
       }
     }
@@ -524,16 +536,18 @@ export function PriceChart({
   );
   useEffect(() => {
     overlayIndicators.forEach((cfg) => {
-      if (cfg.type === "CUSTOM") ensurePineIndicatorResult(cfg, candles);
+      if (cfg.type === "CUSTOM") {
+        ensurePineIndicatorResult(cfg, candles, { symbol, timeframe });
+      }
     });
-  }, [overlayIndicators, candles]);
+  }, [overlayIndicators, candles, symbol, timeframe]);
   const overlayResults = useMemo(
     () =>
       overlayIndicators.map((cfg) => ({
         cfg,
-        result: computeIndicator(cfg, candles),
+        result: computeIndicator(cfg, candles, { symbol, timeframe }),
       })),
-    [overlayIndicators, candles, pineRuntimeVersion],
+    [overlayIndicators, candles, pineRuntimeVersion, symbol, timeframe],
   );
   const overlayLegendValueText = useMemo(
     () =>

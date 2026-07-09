@@ -13,10 +13,12 @@ Current coverage:
 
 - bottom time-toolbar range shortcut math,
 - TradingView-like chart visual profile margins and right-offset defaults,
+- viewport-stability options that prevent whitespace replacement from snapping a user-panned chart,
 - `All` shortcut dispatch sentinel,
 - nearest loaded candle lookup for `Go to`,
 - logical range centering that preserves the current zoom span,
 - candle series merge/update planning for REST-history vs realtime races,
+- custom Pine `request.security()` cache-key policy for MT5 same-window OHLC refreshes,
 - local date/time draft parsing,
 - fixed Monday-first calendar grid generation.
 
