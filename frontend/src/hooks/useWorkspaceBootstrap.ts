@@ -17,6 +17,7 @@ import {
 } from "@/store/alertStore";
 import { applyRemoteWatchlistsAtom } from "@/store/watchlistStore";
 import {
+  applyRemoteIndicatorsAtom,
   applyRemoteDrawingTemplatesAtom,
   loadActiveSymbolDrawingsAtom,
   resetChartWorkspaceToDefaultsAtom,
@@ -47,6 +48,7 @@ export function useWorkspaceBootstrap(): void {
   const resetAlerts = useSetAtom(resetAlertsToDefaultsAtom);
   const applyWatchlists = useSetAtom(applyRemoteWatchlistsAtom);
   const applyDrawingTemplates = useSetAtom(applyRemoteDrawingTemplatesAtom);
+  const applyIndicators = useSetAtom(applyRemoteIndicatorsAtom);
   const loadActiveDrawings = useSetAtom(loadActiveSymbolDrawingsAtom);
   const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
   const resetTrade = useSetAtom(resetTradeAtom);
@@ -107,6 +109,7 @@ export function useWorkspaceBootstrap(): void {
         applyNotifications(bootstrap.settings.notifications);
         applyWatchlists(watchlists);
         applyDrawingTemplates(bootstrap.drawingTemplates);
+        applyIndicators(bootstrap.indicators);
         loadActiveDrawings();
         log("info", "Workspace synced from backend");
       })
@@ -126,6 +129,7 @@ export function useWorkspaceBootstrap(): void {
     authStatus,
     applyNotifications,
     applyDrawingTemplates,
+    applyIndicators,
     loadActiveDrawings,
     applySmc,
     applyUI,

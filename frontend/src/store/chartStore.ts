@@ -28,6 +28,11 @@ import {
   type BackendDrawingTemplate,
   type BackendDrawingWrite,
 } from "@/services/api/resources/drawingsApi";
+import {
+  deleteIndicatorPreset,
+  saveIndicatorPreset,
+  type BackendIndicatorPreset,
+} from "@/services/api/resources/indicatorsApi";
 import { isApiError } from "@/services/api/errors";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -142,9 +147,22 @@ function localTemplateToBackend(
   return { name, family, style };
 }
 
+function backendIndicatorToLocal(row: BackendIndicatorPreset): IndicatorConfig {
+  return {
+    ...row.config,
+    id: row.clientId || row.config.id || row.id,
+    type: (row.config.type || row.indicatorType) as IndicatorConfig["type"],
+    visible: row.visible,
+  };
+}
+
 const pendingDrawingUpserts = new Map<string, BackendDrawingWrite>();
 const pendingDrawingDeletes = new Map<string, BackendDrawingDelete>();
 let drawingSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+const pendingIndicatorUpserts = new Map<string, IndicatorConfig>();
+const pendingIndicatorDeletes = new Set<string>();
+let indicatorSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleDrawingBatchSync(get: AtomGet, set: AtomSet) {
   if (!get(backendSessionAtom)) return;
@@ -180,6 +198,55 @@ function queueDrawingDelete(get: AtomGet, set: AtomSet, symbol: string, drawing:
   pendingDrawingUpserts.delete(drawing.id);
   pendingDrawingDeletes.set(drawing.id, { clientId: drawing.id, symbol });
   scheduleDrawingBatchSync(get, set);
+}
+
+function scheduleIndicatorSync(get: AtomGet, set: AtomSet) {
+  if (!get(backendSessionAtom)) return;
+  if (indicatorSyncTimer) clearTimeout(indicatorSyncTimer);
+  indicatorSyncTimer = setTimeout(() => {
+    indicatorSyncTimer = null;
+    const upserts = [...pendingIndicatorUpserts.values()];
+    const deletes = [...pendingIndicatorDeletes.values()];
+    if (!upserts.length && !deletes.length) return;
+    pendingIndicatorUpserts.clear();
+    pendingIndicatorDeletes.clear();
+    const positions = new Map(
+      get(indicatorsAtom).map((indicator, index) => [indicator.id, index]),
+    );
+    void (async () => {
+      for (const id of deletes) {
+        await deleteIndicatorPreset(id);
+      }
+      for (const indicator of upserts) {
+        await saveIndicatorPreset(indicator, positions.get(indicator.id) ?? 0);
+      }
+    })().catch((error) => {
+      for (const indicator of upserts) pendingIndicatorUpserts.set(indicator.id, indicator);
+      for (const id of deletes) pendingIndicatorDeletes.add(id);
+      set(logAtom, "error", `Indicator sync failed: ${apiMessage(error)}`);
+    });
+  }, 600);
+}
+
+function queueIndicatorUpsert(get: AtomGet, set: AtomSet, indicator: IndicatorConfig) {
+  if (!get(backendSessionAtom)) return;
+  pendingIndicatorDeletes.delete(indicator.id);
+  pendingIndicatorUpserts.set(indicator.id, indicator);
+  scheduleIndicatorSync(get, set);
+}
+
+function queueIndicatorDelete(get: AtomGet, set: AtomSet, id: string) {
+  if (!get(backendSessionAtom)) return;
+  pendingIndicatorUpserts.delete(id);
+  pendingIndicatorDeletes.add(id);
+  scheduleIndicatorSync(get, set);
+}
+
+function commitIndicators(get: AtomGet, set: AtomSet, indicators: IndicatorConfig[]) {
+  set(indicatorsAtom, indicators);
+  localStore.set("indicators", indicators);
+  if (!get(backendSessionAtom)) return;
+  indicators.forEach((indicator) => queueIndicatorUpsert(get, set, indicator));
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +303,21 @@ export const applyRemoteDrawingTemplatesAtom = atom(
     const templates = rows.map(backendTemplateToLocal);
     set(drawingTemplatesAtom, templates);
     localStore.set(TEMPLATES_KEY, templates);
+  },
+);
+
+export const applyRemoteIndicatorsAtom = atom(
+  null,
+  (_get, set, rows: BackendIndicatorPreset[]) => {
+    pendingIndicatorUpserts.clear();
+    pendingIndicatorDeletes.clear();
+    if (indicatorSyncTimer) {
+      clearTimeout(indicatorSyncTimer);
+      indicatorSyncTimer = null;
+    }
+    const indicators = rows.map(backendIndicatorToLocal);
+    set(indicatorsAtom, indicators);
+    localStore.set("indicators", indicators);
   },
 );
 
@@ -563,8 +645,7 @@ export const clearDrawingsAtom = atom(null, (_get, set) => {
 export const addIndicatorAtom = atom(null, (_get, set, type: BuiltInIndicatorType) => {
   const cfg = defaultIndicator(type, uid("ind"));
   const indicators = [..._get(indicatorsAtom), cfg];
-  set(indicatorsAtom, indicators);
-  localStore.set("indicators", indicators);
+  commitIndicators(_get, set, indicators);
 });
 
 export const toggleIndicatorAtom = atom(
@@ -575,8 +656,12 @@ export const toggleIndicatorAtom = atom(
     const indicators = has
       ? current.filter((i) => i.type !== type)
       : [...current, defaultIndicator(type, uid("ind"))];
-    set(indicatorsAtom, indicators);
-    localStore.set("indicators", indicators);
+    if (has) {
+      current
+        .filter((indicator) => indicator.type === type)
+        .forEach((indicator) => queueIndicatorDelete(_get, set, indicator.id));
+    }
+    commitIndicators(_get, set, indicators);
   },
 );
 
@@ -587,18 +672,20 @@ export const updateIndicatorAtom = atom(
     const indicators = _get(indicatorsAtom).map((i) =>
       i.id === id ? { ...i, ...patch } : i,
     );
-    set(indicatorsAtom, indicators);
-    localStore.set("indicators", indicators);
+    commitIndicators(_get, set, indicators);
   },
 );
 
 export const removeIndicatorAtom = atom(null, (_get, set, id: string) => {
   const indicators = _get(indicatorsAtom).filter((i) => i.id !== id);
-  set(indicatorsAtom, indicators);
-  localStore.set("indicators", indicators);
+  queueIndicatorDelete(_get, set, id);
+  commitIndicators(_get, set, indicators);
 });
 
 export const clearIndicatorsAtom = atom(null, (_get, set) => {
+  _get(indicatorsAtom).forEach((indicator) =>
+    queueIndicatorDelete(_get, set, indicator.id),
+  );
   set(indicatorsAtom, []);
   localStore.set("indicators", []);
 });
@@ -621,8 +708,8 @@ function customIndicatorConfig(
   };
 }
 
-function persistIndicators(indicators: IndicatorConfig[]) {
-  localStore.set("indicators", indicators);
+function persistIndicators(get: AtomGet, set: AtomSet, indicators: IndicatorConfig[]) {
+  commitIndicators(get, set, indicators);
 }
 
 function persistPineScripts(scripts: CustomIndicatorScript[]) {
@@ -686,8 +773,7 @@ export const savePineScriptAtom = atom(
           }
         : indicator,
     );
-    set(indicatorsAtom, indicators);
-    persistIndicators(indicators);
+    persistIndicators(_get, set, indicators);
 
     return script;
   },
@@ -714,8 +800,7 @@ export const addCustomIndicatorFromScriptAtom = atom(
             : item,
         )
       : [...current, cfg];
-    set(indicatorsAtom, indicators);
-    persistIndicators(indicators);
+    persistIndicators(_get, set, indicators);
   },
 );
 
@@ -750,8 +835,7 @@ export const addCustomIndicatorFromSourceAtom = atom(
             : item,
         )
       : [...current, cfg];
-    set(indicatorsAtom, indicators);
-    persistIndicators(indicators);
+    persistIndicators(_get, set, indicators);
   },
 );
 
@@ -914,8 +998,14 @@ export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
     clearTimeout(drawingSyncTimer);
     drawingSyncTimer = null;
   }
+  if (indicatorSyncTimer) {
+    clearTimeout(indicatorSyncTimer);
+    indicatorSyncTimer = null;
+  }
   pendingDrawingUpserts.clear();
   pendingDrawingDeletes.clear();
+  pendingIndicatorUpserts.clear();
+  pendingIndicatorDeletes.clear();
 
   set(drawingsAtom, []);
   set(drawingTemplatesAtom, []);

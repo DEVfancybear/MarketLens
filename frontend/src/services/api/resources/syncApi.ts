@@ -2,12 +2,13 @@ import { getJson } from "@/services/api/client";
 import type { SettingsDocument } from "./settingsApi";
 import type { BackendWatchlist } from "./watchlistsApi";
 import type { BackendDrawingTemplate } from "./drawingsApi";
+import type { BackendIndicatorPreset } from "./indicatorsApi";
 
 export interface WorkspaceBootstrap {
   settings: SettingsDocument;
   watchlists: BackendWatchlist[];
   drawingTemplates: BackendDrawingTemplate[];
-  indicators: unknown[];
+  indicators: BackendIndicatorPreset[];
   pineScripts: unknown[];
   alerts: unknown[];
   layouts: unknown[];

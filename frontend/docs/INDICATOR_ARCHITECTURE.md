@@ -51,6 +51,7 @@ IndicatorResult { id, series[] }
 |---|---|
 | Indicator and script types | `src/types/indicators.ts` |
 | Indicator state, persistence, script actions | `src/store/chartStore.ts` |
+| Backend indicator presets API | `src/services/api/resources/indicatorsApi.ts` |
 | Built-in indicator calculations and dispatch | `src/services/indicators.ts` |
 | Pine-like parser/compiler | `src/services/pineScript.ts` |
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
@@ -118,7 +119,7 @@ State lives in `chartStore.ts`:
 
 | Atom | Purpose | Persistence |
 |---|---|---|
-| `indicatorsAtom` | Active chart indicator instances | localStorage `indicators` |
+| `indicatorsAtom` | Active chart indicator instances | Backend `indicator_presets.config` in authenticated mode; localStorage `indicators` for anonymous/cache fallback |
 | `pineScriptsAtom` | Saved Pine-like source-code scripts | localStorage `pineScripts` |
 | `pineEditorScriptIdAtom` | Currently loaded script id in editor | runtime |
 | `pineEditorTitleAtom` | Current editor title field | runtime |
@@ -127,13 +128,44 @@ State lives in `chartStore.ts`:
 Hydration is part of `chartStore.hydrateAtom`, which is called by `useStoreHydration()` after mount.
 This keeps localStorage access client-only and avoids SSR mismatch.
 
+Authenticated users are then overwritten by the backend Phase 8 bootstrap path:
+
+```
+GET /api/v1/sync/bootstrap
+  -> indicators: BackendIndicatorPreset[]
+  -> useWorkspaceBootstrap()
+  -> chartStore.applyRemoteIndicatorsAtom()
+  -> indicatorsAtom + local cache update
+```
+
+The backend stores the full `IndicatorConfig` as opaque JSON in
+`indicator_presets.config`. It also promotes `indicatorType`, `visible`,
+`position`, and `clientId` for filtering, ordering, and idempotent writes. The
+frontend always sends `IndicatorConfig.id` as `clientId`, then maps
+`clientId || config.id || backend id` back to the local indicator id when
+hydrating.
+
+Add/remove/toggle/settings changes are optimistic in `chartStore` and then
+debounced to:
+
+```
+POST   /api/v1/indicators        # create/upsert by clientId
+PUT    /api/v1/indicators/:id    # replace by backend id or clientId
+DELETE /api/v1/indicators/:id    # delete by backend id or clientId
+```
+
+Pine script source persistence is not part of Phase 8. CUSTOM indicators keep
+their current `scriptId` and `sourceCode` copy in the indicator config until the
+Phase 9 `pine_scripts` API is wired.
+
 ## Built-in indicator flow
 
 ```
 IndicatorMenu click SMA/EMA/etc.
   -> toggleIndicatorAtom(type)
   -> defaultIndicator(type, uid("ind"))
-  -> indicatorsAtom update + localStorage write
+  -> indicatorsAtom update + localStorage/cache write
+  -> authenticated mode queues POST/DELETE /api/v1/indicators by clientId
   -> ChartArea sees indicatorsAtom
   -> PriceChart or IndicatorPane calls computeIndicator(config, visibleCandles)
   -> Lightweight Charts series receives calculated LinePoint[]

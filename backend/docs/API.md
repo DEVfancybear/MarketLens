@@ -396,14 +396,45 @@ Global ordered star list for the drawing toolbar/floating favorites toolbar — 
 
 ## Indicators  🔒
 
-Backed by `indicator_presets`.
+Backed by `indicator_presets`. The backend stores the full frontend
+`IndicatorConfig` in `config` and promotes `indicatorType`, `visible`,
+`position`, and `clientId` for ordering and idempotent sync. `clientId` is the
+frontend `IndicatorConfig.id`; `:id` may be either the backend UUID or that
+client id.
 
 | Method | Path                        | Purpose                          |
 | ------ | --------------------------- | -------------------------------- |
 | GET    | `/api/v1/indicators`        | List presets                     |
-| POST   | `/api/v1/indicators`        | Create `{ indicatorType, name, settings }` |
-| PUT    | `/api/v1/indicators/:id`    | Update settings/enabled/position |
+| POST   | `/api/v1/indicators`        | Create/upsert by `clientId`      |
+| PUT    | `/api/v1/indicators/:id`    | Replace config/visible/position |
 | DELETE | `/api/v1/indicators/:id`    | Remove                           |
+
+Request body:
+
+```json
+{
+  "indicatorType": "EMA",
+  "config": { "id": "ind_abc", "type": "EMA", "length": 50, "visible": true },
+  "visible": true,
+  "position": 0,
+  "clientId": "ind_abc"
+}
+```
+
+Response rows:
+
+```json
+{
+  "id": "server-uuid",
+  "indicatorType": "EMA",
+  "config": { "id": "ind_abc", "type": "EMA", "length": 50, "visible": true },
+  "visible": true,
+  "position": 0,
+  "clientId": "ind_abc",
+  "createdAt": "2026-07-09T00:00:00Z",
+  "updatedAt": "2026-07-09T00:00:00Z"
+}
+```
 
 ---
 

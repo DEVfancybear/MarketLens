@@ -137,9 +137,9 @@ not display the previous user's workspace.
   `pineScripts`, `drawingTemplates`, legacy `watchlist`, `smc-settings`, `alerts`,
   `pushNotifications`, chart/timezone preferences, interval favorites, and drawing tool favorites.
 - IndexedDB: journal entries and screenshots through `services/storage.ts`.
-- Backend: auth/session, settings, sync bootstrap, Phase 6 watchlists, MT5 data APIs, and Phase 7
-  drawings/drawing templates/drawing tool favorites are live; remaining authenticated workspace
-  persistence is pending per resource.
+- Backend: auth/session, settings, sync bootstrap, Phase 6 watchlists, MT5 data APIs, Phase 7
+  drawings/drawing templates/drawing tool favorites, and Phase 8 indicator presets are live;
+  remaining authenticated workspace persistence is pending per resource.
 
 ## Rendering And Overlays
 

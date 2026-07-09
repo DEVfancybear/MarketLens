@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 8 indicators API and frontend sync (2026-07-09)
+- Added `pine_scripts` FK target and `indicator_presets` persistence for TradingView-style
+  indicator presets.
+- Added `GET/POST/PUT/DELETE /api/v1/indicators` with idempotent `clientId` upsert semantics, plus
+  bootstrap hydration through `/api/v1/sync/bootstrap`.
+- Wired the frontend indicator store to apply backend presets on login and optimistically sync
+  add/remove/toggle/settings changes through the shared `ky` API layer.
+- Kept `indicators` localStorage as anonymous/cache fallback only; authenticated users now restore
+  indicator state from backend Phase 8.
+- Added backend tests covering indicator handler save/list/delete and bootstrap indicator hydration.
+
 ### Fixed - Drawing render culling and hover redraw (2026-07-08)
 - Changed drawing viewport culling to use each tool adapter's `boundingBox()`
   instead of raw anchor points, so extended/ray/fib/position-style geometry is

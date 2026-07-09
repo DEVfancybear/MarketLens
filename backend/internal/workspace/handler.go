@@ -7,6 +7,7 @@ import (
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
+	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 )
@@ -29,10 +30,17 @@ type DrawingTemplateLister interface {
 	ListTemplates(ctx context.Context, userID string) ([]drawings.DrawingTemplate, error)
 }
 
+// IndicatorLister is the Phase 8 bootstrap slice. Indicator configs are small
+// and global to the workspace, so they are safe to include during sign-in.
+type IndicatorLister interface {
+	List(ctx context.Context, userID string) ([]indicators.IndicatorPreset, error)
+}
+
 type Handler struct {
 	settings         SettingsReader
 	watchlists       WatchlistLister
 	drawingTemplates DrawingTemplateLister
+	indicators       IndicatorLister
 	requireAuth      fiber.Handler
 }
 
@@ -40,12 +48,14 @@ func NewHandler(
 	settings SettingsReader,
 	watchlists WatchlistLister,
 	drawingTemplates DrawingTemplateLister,
+	indicators IndicatorLister,
 	requireAuth fiber.Handler,
 ) *Handler {
 	return &Handler{
 		settings:         settings,
 		watchlists:       watchlists,
 		drawingTemplates: drawingTemplates,
+		indicators:       indicators,
 		requireAuth:      requireAuth,
 	}
 }
@@ -55,13 +65,13 @@ func (h *Handler) Register(router fiber.Router) {
 }
 
 type bootstrapResponse struct {
-	Settings         settings.Document          `json:"settings"`
-	Watchlists       []watchlists.Watchlist     `json:"watchlists"`
-	DrawingTemplates []drawings.DrawingTemplate `json:"drawingTemplates"`
-	Indicators       []any                      `json:"indicators"`
-	PineScripts      []any                      `json:"pineScripts"`
-	Alerts           []any                      `json:"alerts"`
-	Layouts          []any                      `json:"layouts"`
+	Settings         settings.Document            `json:"settings"`
+	Watchlists       []watchlists.Watchlist       `json:"watchlists"`
+	DrawingTemplates []drawings.DrawingTemplate   `json:"drawingTemplates"`
+	Indicators       []indicators.IndicatorPreset `json:"indicators"`
+	PineScripts      []any                        `json:"pineScripts"`
+	Alerts           []any                        `json:"alerts"`
+	Layouts          []any                        `json:"layouts"`
 }
 
 func (h *Handler) bootstrap(c *fiber.Ctx) error {
@@ -88,12 +98,20 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		}
 	}
 
+	indicatorPresets := []indicators.IndicatorPreset{}
+	if h.indicators != nil {
+		indicatorPresets, err = h.indicators.List(c.Context(), userID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+		}
+	}
+
 	empty := []any{}
 	return c.JSON(bootstrapResponse{
 		Settings:         doc,
 		Watchlists:       lists,
 		DrawingTemplates: templates,
-		Indicators:       empty,
+		Indicators:       indicatorPresets,
 		PineScripts:      empty,
 		Alerts:           empty,
 		Layouts:          empty,

@@ -28,9 +28,9 @@ Current backend code has:
 - Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
 Current backend API status from `backend/docs/API.md`: auth, settings, bootstrap, Phase 6
-watchlists, and Phase 7 drawings/drawing templates/drawing tool favorites are live.
-Indicators/Pine/alerts/journal/layouts/sim trading remain phase-by-phase work. Frontend work should
-remain staged behind `backendSession` and typed adapters.
+watchlists, Phase 7 drawings/drawing templates/drawing tool favorites, and Phase 8 indicator
+presets are live. Pine scripts, alerts, journal, layouts, and sim trading remain phase-by-phase
+work. Frontend work should remain staged behind `backendSession` and typed adapters.
 Do not remove working local behavior for anonymous users until each resource endpoint exists.
 
 ## Source Of Truth Rules
@@ -80,6 +80,7 @@ frontend/src/services/api/
     syncApi.ts            # implemented: GET /sync/bootstrap
     watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
     drawingsApi.ts        # implemented: drawings batch sync + drawing template CRUD
+    indicatorsApi.ts      # implemented: GET/POST/PUT/DELETE indicator presets
     mt5Api.ts             # implemented: GET /mt5/symbols, /mt5/ticks snapshots, /mt5/history
 ```
 
@@ -232,7 +233,7 @@ Recommended frontend startup order:
 5. Call `GET /api/v1/sync/bootstrap`.
 6. Apply settings first.
 7. Apply watchlists.
-8. Apply Pine scripts before custom indicators.
+8. Apply Pine scripts before custom indicators when Phase 9 is available.
 9. Apply indicators.
 10. Apply drawing templates.
 11. Apply alerts and notification settings.
@@ -312,6 +313,8 @@ Rules:
 - Store backend UUID separately only if needed by API calls.
 - For drawings and Pine scripts, send the frontend object id as `clientId` so retries and migration
   are idempotent.
+- For indicator presets, send `IndicatorConfig.id` as `clientId`; the backend upserts by
+  `(user_id, client_id)` and stores the full config JSON verbatim.
 - For custom indicators, resolve script links after Pine scripts have been adapted.
 
 ## Mutation Strategy
@@ -345,6 +348,12 @@ Current implementation note: `chartStore` writes optimistically, keeps `drawings
 an anonymous/cache fallback, and debounces remote drawing mutations into
 `POST /api/v1/drawings/batch`. The backend stores each drawing payload verbatim and dedupes by the
 frontend `Drawing.id` sent as `clientId`.
+
+Current indicator implementation note: `chartStore` writes optimistically,
+keeps `indicators` localStorage only as anonymous/cache fallback, and debounces
+remote add/update/delete into `/api/v1/indicators`. The backend stores each
+`IndicatorConfig` payload verbatim and dedupes by the frontend `IndicatorConfig.id`
+sent as `clientId`.
 
 ## Migration From Existing Local Data
 
@@ -386,8 +395,9 @@ Frontend remote mode should not be enabled globally until each required slice ex
   save, and delete paths wired
 - `GET/PUT /api/v1/drawing-tool-favorites` - backend implemented; frontend drawing toolbar
   read/write path wired
+- `GET/POST/PUT/DELETE /api/v1/indicators` - backend implemented; frontend bootstrap read and
+  optimistic add/update/delete sync wired
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts`
-- `GET/POST/PUT/DELETE /api/v1/indicators`
 
 Everything else can remain lazy or phased:
 
@@ -405,8 +415,8 @@ Everything else can remain lazy or phased:
   implemented.**
 - Replace `authClient.ts` internal fetch helper with shared client. **Done for auth.**
 - Add MSW or test fixtures for planned backend JSON.
-- Remaining foundation work: add DTO/adapters for drawings, indicators, Pine scripts, alerts,
-  journal, layouts, and sim-trading as backend phases land.
+- Remaining foundation work: add DTO/adapters for Pine scripts, alerts, journal, layouts, and
+  sim-trading as backend phases land.
 
 ### Phase FE-1: Remote Bootstrap Read Path
 
@@ -441,7 +451,11 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
   - drawing mutations flush through `/api/v1/drawings/batch`,
   - templates hydrate from bootstrap and save/delete through `/api/v1/drawing-templates`,
   - drawing toolbar favorites read/write through `/api/v1/drawing-tool-favorites`.
-- Remaining Phase FE-3 work: Pine scripts and indicator presets.
+- Indicator presets are implemented for Phase 8:
+  - presets hydrate from bootstrap,
+  - add/remove/toggle/settings changes sync through `/api/v1/indicators`,
+  - `clientId` keeps frontend indicator ids stable across retries and reloads.
+- Remaining Phase FE-3 work: Pine scripts.
 - Ensure Pine scripts hydrate before custom indicators.
 
 ### Phase FE-4: Alerts, Journal, Layouts, Sim

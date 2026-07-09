@@ -357,12 +357,15 @@ the frontend `DRAWING_OBJECT_MODEL` — the backend stores, never interprets). *
 
 **Goal:** Persist indicator presets (built-in EMA/RSI/MACD/… settings + enabled + order).
 
-**Table:** `indicator_presets` (`DATABASE.md` §7.5 — full `IndicatorConfig` in `config jsonb`,
+**Table:** `indicator_presets` (`DATABASE.md` §7.6 — full `IndicatorConfig` in `config jsonb`,
 `indicator_type`/`visible`/`position` promoted to columns, `script_id` FK for `CUSTOM`). **Frontend
 store:** `chartStore.indicators` (persisted as `indicators`). Pine *scripts* are Phase 9.
 
+**Status:** Implemented in migration `0009_indicator_presets`, package
+`internal/indicators`, `/api/v1/indicators`, and `sync/bootstrap`.
+
 **Steps**
-1. Migration `0004_charting` (indicator_presets portion — **after** pine_scripts, for the FK).
+1. Migration `0009_indicator_presets` (indicator_presets portion, after `pine_scripts` for the FK).
 2. Queries: list ordered by `position`; create; update `config`/`visible`/`position`; delete.
 3. Repo: keep `config jsonb` opaque (the full `IndicatorConfig`: length(s), colors, `inputValues`,
    `styleValues`); resolve `script_id` for `CUSTOM` indicators to the user's `pine_scripts` row.

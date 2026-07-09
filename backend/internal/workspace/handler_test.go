@@ -11,6 +11,7 @@ import (
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
+	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 )
@@ -41,6 +42,16 @@ func (f *fakeDrawingTemplateLister) ListTemplates(_ context.Context, userID stri
 	return f.templates, nil
 }
 
+type fakeIndicatorLister struct {
+	items    []indicators.IndicatorPreset
+	lastUser string
+}
+
+func (f *fakeIndicatorLister) List(_ context.Context, userID string) ([]indicators.IndicatorPreset, error) {
+	f.lastUser = userID
+	return f.items, nil
+}
+
 func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	reader := &fakeSettingsReader{doc: settings.Document{
 		UI:            json.RawMessage(`{"theme":"dark"}`),
@@ -56,9 +67,19 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 			Style:  json.RawMessage(`{"color":"#2962ff"}`),
 		}},
 	}
+	indicatorLister := &fakeIndicatorLister{
+		items: []indicators.IndicatorPreset{{
+			ID:            "ind-srv-1",
+			IndicatorType: "EMA",
+			Config:        json.RawMessage(`{"id":"ind-1","type":"EMA","length":50}`),
+			Visible:       true,
+			Position:      0,
+			ClientID:      "ind-1",
+		}},
+	}
 
 	app := fiber.New()
-	NewHandler(reader, &fakeWatchlistLister{}, templateLister, fakeRequireAuth).Register(app.Group("/api/v1"))
+	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, fakeRequireAuth).Register(app.Group("/api/v1"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/bootstrap", nil)
 	resp, err := app.Test(req)
@@ -74,15 +95,18 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	if templateLister.lastUser != "user-1" {
 		t.Fatalf("template lister should pass auth user id, got %q", templateLister.lastUser)
 	}
+	if indicatorLister.lastUser != "user-1" {
+		t.Fatalf("indicator lister should pass auth user id, got %q", indicatorLister.lastUser)
+	}
 
 	var body struct {
-		Settings         settings.Document          `json:"settings"`
-		Watchlists       []any                      `json:"watchlists"`
-		DrawingTemplates []drawings.DrawingTemplate `json:"drawingTemplates"`
-		Indicators       []any                      `json:"indicators"`
-		PineScripts      []any                      `json:"pineScripts"`
-		Alerts           []any                      `json:"alerts"`
-		Layouts          []any                      `json:"layouts"`
+		Settings         settings.Document            `json:"settings"`
+		Watchlists       []any                        `json:"watchlists"`
+		DrawingTemplates []drawings.DrawingTemplate   `json:"drawingTemplates"`
+		Indicators       []indicators.IndicatorPreset `json:"indicators"`
+		PineScripts      []any                        `json:"pineScripts"`
+		Alerts           []any                        `json:"alerts"`
+		Layouts          []any                        `json:"layouts"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode bootstrap response: %v", err)
@@ -93,6 +117,9 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	}
 	if len(body.DrawingTemplates) != 1 || body.DrawingTemplates[0].Name != "Blue line" {
 		t.Fatalf("bootstrap should include drawing templates, got %+v", body.DrawingTemplates)
+	}
+	if len(body.Indicators) != 1 || body.Indicators[0].ClientID != "ind-1" {
+		t.Fatalf("bootstrap should include indicator presets, got %+v", body.Indicators)
 	}
 	if string(body.Settings.UI) != `{"theme":"dark"}` {
 		t.Fatalf("unexpected settings ui: %s", body.Settings.UI)

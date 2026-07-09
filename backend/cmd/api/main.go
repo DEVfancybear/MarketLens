@@ -15,6 +15,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/db/gen"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
+	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/users"
@@ -63,6 +64,7 @@ func main() {
 	var settingsHandler *settings.Handler
 	var watchlistsHandler *watchlists.Handler
 	var drawingsHandler *drawings.Handler
+	var indicatorsHandler *indicators.Handler
 	var workspaceHandler *workspace.Handler
 	switch {
 	case pool == nil:
@@ -86,7 +88,9 @@ func main() {
 		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)
 		drawingsStore := drawings.NewRepo(pool.Pool)
 		drawingsHandler = drawings.NewHandler(drawingsStore, requireAuth)
-		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, requireAuth)
+		indicatorsStore := indicators.NewRepo(pool.Pool)
+		indicatorsHandler = indicators.NewHandler(indicatorsStore, requireAuth)
+		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, requireAuth)
 		log.Info().Msg("protected api routes enabled")
 	}
 
@@ -97,6 +101,7 @@ func main() {
 		settingsHandler,
 		watchlistsHandler,
 		drawingsHandler,
+		indicatorsHandler,
 		workspaceHandler,
 		mt5Handler,
 	)

@@ -400,10 +400,13 @@ CREATE TABLE indicator_presets (
   config         jsonb NOT NULL DEFAULT '{}',-- full IndicatorConfig
   visible        boolean NOT NULL DEFAULT true, -- IndicatorConfig.visible
   position       integer NOT NULL DEFAULT 0,
+  client_id      text,                       -- frontend IndicatorConfig.id for idempotent sync
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_indicator_presets_user ON indicator_presets(user_id);
+CREATE UNIQUE INDEX idx_indicator_presets_client ON indicator_presets(user_id, client_id)
+  WHERE client_id IS NOT NULL;
 ```
 
 ---
