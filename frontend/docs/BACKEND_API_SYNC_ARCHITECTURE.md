@@ -28,8 +28,8 @@ Current backend code has:
 - Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
 Current backend API status from `backend/docs/API.md`: auth, settings, bootstrap, Phase 6
-watchlists, Phase 7 drawings/drawing templates/drawing tool favorites, and Phase 8 indicator
-presets are live. Pine scripts, alerts, journal, layouts, and sim trading remain phase-by-phase
+watchlists, Phase 7 drawings/drawing templates/drawing tool favorites, Phase 8 indicator presets,
+and Phase 9 Pine scripts are live. Alerts, journal, layouts, and sim trading remain phase-by-phase
 work. Frontend work should remain staged behind `backendSession` and typed adapters.
 Do not remove working local behavior for anonymous users until each resource endpoint exists.
 
@@ -81,6 +81,7 @@ frontend/src/services/api/
     watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
     drawingsApi.ts        # implemented: drawings batch sync + drawing template CRUD
     indicatorsApi.ts      # implemented: GET/POST/PUT/DELETE indicator presets
+    pineScriptsApi.ts     # implemented: metadata list, full-source get, save/update/delete
     mt5Api.ts             # implemented: GET /mt5/symbols, /mt5/ticks snapshots, /mt5/history
 ```
 
@@ -355,6 +356,13 @@ remote add/update/delete into `/api/v1/indicators`. The backend stores each
 `IndicatorConfig` payload verbatim and dedupes by the frontend `IndicatorConfig.id`
 sent as `clientId`.
 
+Current Pine script implementation note: bootstrap and `GET /api/v1/pine-scripts`
+return metadata only. `chartStore.loadPineScriptAtom()` and
+`addCustomIndicatorFromScriptAtom()` fetch the full source through
+`GET /api/v1/pine-scripts/:id` when the editor or chart needs it. Save,
+favorite toggle, and delete write through `/api/v1/pine-scripts` while keeping
+the local editor responsive.
+
 ## Migration From Existing Local Data
 
 Do not silently merge old localStorage into remote state every startup. That creates confusing
@@ -397,7 +405,8 @@ Frontend remote mode should not be enabled globally until each required slice ex
   read/write path wired
 - `GET/POST/PUT/DELETE /api/v1/indicators` - backend implemented; frontend bootstrap read and
   optimistic add/update/delete sync wired
-- `GET/POST/PUT/DELETE /api/v1/pine-scripts`
+- `GET/POST/PUT/DELETE /api/v1/pine-scripts` - backend implemented; frontend metadata bootstrap,
+  full-source lazy load, save, favorite, and delete wired
 
 Everything else can remain lazy or phased:
 
@@ -415,14 +424,14 @@ Everything else can remain lazy or phased:
   implemented.**
 - Replace `authClient.ts` internal fetch helper with shared client. **Done for auth.**
 - Add MSW or test fixtures for planned backend JSON.
-- Remaining foundation work: add DTO/adapters for Pine scripts, alerts, journal, layouts, and
-  sim-trading as backend phases land.
+- Remaining foundation work: add DTO/adapters for alerts, journal, layouts, and sim-trading as
+  backend phases land.
 
 ### Phase FE-1: Remote Bootstrap Read Path
 
 - Call `sync/bootstrap` after backend auth. **Implemented via `useWorkspaceBootstrap()`.**
 - Apply backend JSON into atoms. **Implemented for UI settings, SMC settings, notification
-  settings, and watchlists.**
+  settings, watchlists, drawing templates, Pine script metadata, and indicators.**
 - Keep anonymous mode usable as current-tab memory only; do not persist watchlists to localStorage.
   **Implemented.**
 - Remaining read-path work: chart preferences are still component-local, and future backend slices
@@ -455,7 +464,11 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
   - presets hydrate from bootstrap,
   - add/remove/toggle/settings changes sync through `/api/v1/indicators`,
   - `clientId` keeps frontend indicator ids stable across retries and reloads.
-- Remaining Phase FE-3 work: Pine scripts.
+- Pine scripts are implemented for Phase 9:
+  - metadata hydrates from bootstrap,
+  - full source lazy-loads when opening or adding a script,
+  - save/favorite/delete sync through `/api/v1/pine-scripts`.
+- Remaining Phase FE-3 work: none for indicators/Pine; future work is richer Pine runtime support.
 - Ensure Pine scripts hydrate before custom indicators.
 
 ### Phase FE-4: Alerts, Journal, Layouts, Sim

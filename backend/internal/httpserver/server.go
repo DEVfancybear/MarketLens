@@ -19,6 +19,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/middleware"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
@@ -41,6 +42,7 @@ func New(
 	watchlistsHandler *watchlists.Handler,
 	drawingsHandler *drawings.Handler,
 	indicatorsHandler *indicators.Handler,
+	pineScriptsHandler *pinescripts.Handler,
 	workspaceHandler *workspace.Handler,
 	mt5Handler *mt5stream.Handler,
 ) *Server {
@@ -88,6 +90,9 @@ func New(
 	}
 	if indicatorsHandler != nil {
 		indicatorsHandler.Register(api)
+	}
+	if pineScriptsHandler != nil {
+		pineScriptsHandler.Register(api)
 	}
 	if workspaceHandler != nil {
 		workspaceHandler.Register(api)

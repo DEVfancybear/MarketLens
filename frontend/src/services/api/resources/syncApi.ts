@@ -3,13 +3,14 @@ import type { SettingsDocument } from "./settingsApi";
 import type { BackendWatchlist } from "./watchlistsApi";
 import type { BackendDrawingTemplate } from "./drawingsApi";
 import type { BackendIndicatorPreset } from "./indicatorsApi";
+import type { BackendPineScript } from "./pineScriptsApi";
 
 export interface WorkspaceBootstrap {
   settings: SettingsDocument;
   watchlists: BackendWatchlist[];
   drawingTemplates: BackendDrawingTemplate[];
   indicators: BackendIndicatorPreset[];
-  pineScripts: unknown[];
+  pineScripts: BackendPineScript[];
   alerts: unknown[];
   layouts: unknown[];
 }

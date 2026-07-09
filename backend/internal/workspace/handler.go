@@ -8,6 +8,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
+	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 )
@@ -36,11 +37,18 @@ type IndicatorLister interface {
 	List(ctx context.Context, userID string) ([]indicators.IndicatorPreset, error)
 }
 
+// PineScriptLister is metadata-only in bootstrap; source text is fetched lazily
+// when the editor opens a script.
+type PineScriptLister interface {
+	List(ctx context.Context, userID string) ([]pinescripts.Script, error)
+}
+
 type Handler struct {
 	settings         SettingsReader
 	watchlists       WatchlistLister
 	drawingTemplates DrawingTemplateLister
 	indicators       IndicatorLister
+	pineScripts      PineScriptLister
 	requireAuth      fiber.Handler
 }
 
@@ -49,6 +57,7 @@ func NewHandler(
 	watchlists WatchlistLister,
 	drawingTemplates DrawingTemplateLister,
 	indicators IndicatorLister,
+	pineScripts PineScriptLister,
 	requireAuth fiber.Handler,
 ) *Handler {
 	return &Handler{
@@ -56,6 +65,7 @@ func NewHandler(
 		watchlists:       watchlists,
 		drawingTemplates: drawingTemplates,
 		indicators:       indicators,
+		pineScripts:      pineScripts,
 		requireAuth:      requireAuth,
 	}
 }
@@ -69,7 +79,7 @@ type bootstrapResponse struct {
 	Watchlists       []watchlists.Watchlist       `json:"watchlists"`
 	DrawingTemplates []drawings.DrawingTemplate   `json:"drawingTemplates"`
 	Indicators       []indicators.IndicatorPreset `json:"indicators"`
-	PineScripts      []any                        `json:"pineScripts"`
+	PineScripts      []pinescripts.Script         `json:"pineScripts"`
 	Alerts           []any                        `json:"alerts"`
 	Layouts          []any                        `json:"layouts"`
 }
@@ -106,13 +116,21 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		}
 	}
 
+	pineScriptRows := []pinescripts.Script{}
+	if h.pineScripts != nil {
+		pineScriptRows, err = h.pineScripts.List(c.Context(), userID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+		}
+	}
+
 	empty := []any{}
 	return c.JSON(bootstrapResponse{
 		Settings:         doc,
 		Watchlists:       lists,
 		DrawingTemplates: templates,
 		Indicators:       indicatorPresets,
-		PineScripts:      empty,
+		PineScripts:      pineScriptRows,
 		Alerts:           empty,
 		Layouts:          empty,
 	})

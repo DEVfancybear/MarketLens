@@ -138,7 +138,8 @@ not display the previous user's workspace.
   `pushNotifications`, chart/timezone preferences, interval favorites, and drawing tool favorites.
 - IndexedDB: journal entries and screenshots through `services/storage.ts`.
 - Backend: auth/session, settings, sync bootstrap, Phase 6 watchlists, MT5 data APIs, Phase 7
-  drawings/drawing templates/drawing tool favorites, and Phase 8 indicator presets are live;
+  drawings/drawing templates/drawing tool favorites, Phase 8 indicator presets, and Phase 9 Pine
+  scripts are live;
   remaining authenticated workspace persistence is pending per resource.
 
 ## Rendering And Overlays

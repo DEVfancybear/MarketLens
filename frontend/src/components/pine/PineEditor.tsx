@@ -94,13 +94,13 @@ export function PineEditor() {
       sourceCode: source,
     });
 
-  const handleSave = () => {
-    const saved = saveCurrentScript();
+  const handleSave = async () => {
+    const saved = await saveCurrentScript();
     setStatus({ level: "ok", text: `Saved ${saved.name}` });
     doLog("info", `Saved Pine script: ${saved.name}`);
   };
 
-  const handleRun = () => {
+  const handleRun = async () => {
     const preview = compilePineScript(source, candles.slice(-500), "preview");
     if (preview.errors.length > 0) {
       const message = preview.errors[0];
@@ -109,25 +109,25 @@ export function PineEditor() {
       return;
     }
 
-    const saved = saveCurrentScript();
-    addCustomIndicator(saved);
+    const saved = await saveCurrentScript();
+    await addCustomIndicator(saved);
     setStatus({ level: "ok", text: `Added ${saved.name} to chart` });
     doLog("info", `Added Pine indicator: ${saved.name}`);
   };
 
-  const handleLoad = (script: CustomIndicatorScript) => {
-    loadScript(script.id);
+  const handleLoad = async (script: CustomIndicatorScript) => {
+    await loadScript(script.id);
     setStatus({ level: "idle", text: `Loaded ${script.name}` });
   };
 
-  const handleAddSaved = (script: CustomIndicatorScript) => {
-    addCustomIndicator(script);
+  const handleAddSaved = async (script: CustomIndicatorScript) => {
+    await addCustomIndicator(script);
     setStatus({ level: "ok", text: `Added ${script.name} to chart` });
     doLog("info", `Added Pine indicator: ${script.name}`);
   };
 
-  const handleDelete = (script: CustomIndicatorScript) => {
-    deleteScript(script.id);
+  const handleDelete = async (script: CustomIndicatorScript) => {
+    await deleteScript(script.id);
     setStatus({ level: "idle", text: `Deleted ${script.name}` });
   };
 

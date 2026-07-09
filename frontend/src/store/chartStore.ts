@@ -33,6 +33,14 @@ import {
   saveIndicatorPreset,
   type BackendIndicatorPreset,
 } from "@/services/api/resources/indicatorsApi";
+import {
+  backendPineScriptToLocal,
+  deletePineScriptRemote,
+  getPineScript,
+  savePineScriptRemote,
+  updatePineScriptRemote,
+  type BackendPineScript,
+} from "@/services/api/resources/pineScriptsApi";
 import { isApiError } from "@/services/api/errors";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -154,6 +162,56 @@ function backendIndicatorToLocal(row: BackendIndicatorPreset): IndicatorConfig {
     type: (row.config.type || row.indicatorType) as IndicatorConfig["type"],
     visible: row.visible,
   };
+}
+
+function commitPineScripts(set: AtomSet, scripts: CustomIndicatorScript[]) {
+  set(pineScriptsAtom, scripts);
+  localStore.set(PINE_SCRIPTS_KEY, scripts);
+}
+
+function upsertPineScriptLocal(
+  get: AtomGet,
+  set: AtomSet,
+  script: CustomIndicatorScript,
+) {
+  const current = get(pineScriptsAtom);
+  const next = current.some((item) => item.id === script.id)
+    ? current.map((item) => (item.id === script.id ? script : item))
+    : [script, ...current];
+  commitPineScripts(set, next);
+}
+
+async function fetchFullPineScript(
+  get: AtomGet,
+  set: AtomSet,
+  id: string,
+): Promise<CustomIndicatorScript | null> {
+  const current = get(pineScriptsAtom).find((item) => item.id === id);
+  if (current?.sourceCode) return current;
+  if (!get(backendSessionAtom)) return current ?? null;
+  try {
+    const row = await getPineScript(id);
+    const script = backendPineScriptToLocal(row);
+    upsertPineScriptLocal(get, set, script);
+    return script;
+  } catch (error) {
+    set(logAtom, "error", `Pine script load failed: ${apiMessage(error)}`);
+    return current ?? null;
+  }
+}
+
+async function syncPineScriptSave(
+  get: AtomGet,
+  set: AtomSet,
+  script: CustomIndicatorScript,
+) {
+  if (!get(backendSessionAtom)) return;
+  try {
+    const saved = backendPineScriptToLocal(await savePineScriptRemote(script));
+    upsertPineScriptLocal(get, set, saved);
+  } catch (error) {
+    set(logAtom, "error", `Pine script sync failed: ${apiMessage(error)}`);
+  }
 }
 
 const pendingDrawingUpserts = new Map<string, BackendDrawingWrite>();
@@ -318,6 +376,13 @@ export const applyRemoteIndicatorsAtom = atom(
     const indicators = rows.map(backendIndicatorToLocal);
     set(indicatorsAtom, indicators);
     localStore.set("indicators", indicators);
+  },
+);
+
+export const applyRemotePineScriptsAtom = atom(
+  null,
+  (_get, set, rows: BackendPineScript[]) => {
+    commitPineScripts(set, rows.map(backendPineScriptToLocal));
   },
 );
 
@@ -712,19 +777,15 @@ function persistIndicators(get: AtomGet, set: AtomSet, indicators: IndicatorConf
   commitIndicators(get, set, indicators);
 }
 
-function persistPineScripts(scripts: CustomIndicatorScript[]) {
-  localStore.set(PINE_SCRIPTS_KEY, scripts);
-}
-
 export const newPineScriptAtom = atom(null, (_get, set) => {
   set(pineEditorScriptIdAtom, null);
   set(pineEditorTitleAtom, "Untitled script");
   set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
 });
 
-export const loadPineScriptAtom = atom(null, (_get, set, id: string) => {
-  const script = _get(pineScriptsAtom).find((item) => item.id === id);
-  if (!script) return;
+export const loadPineScriptAtom = atom(null, async (_get, set, id: string) => {
+  const script = await fetchFullPineScript(_get, set, id);
+  if (!script?.sourceCode) return;
   set(pineEditorScriptIdAtom, script.id);
   set(pineEditorTitleAtom, script.name);
   set(pineEditorSourceAtom, script.sourceCode);
@@ -732,7 +793,7 @@ export const loadPineScriptAtom = atom(null, (_get, set, id: string) => {
 
 export const savePineScriptAtom = atom(
   null,
-  (
+  async (
     _get,
     set,
     arg: { id?: string | null; name: string; sourceCode: string },
@@ -755,8 +816,8 @@ export const savePineScriptAtom = atom(
           item.id === script.id ? script : item,
         )
       : [script, ..._get(pineScriptsAtom)];
-    set(pineScriptsAtom, scripts);
-    persistPineScripts(scripts);
+    commitPineScripts(set, scripts);
+    await syncPineScriptSave(_get, set, script);
 
     set(pineEditorScriptIdAtom, script.id);
     set(pineEditorTitleAtom, script.name);
@@ -781,11 +842,19 @@ export const savePineScriptAtom = atom(
 
 export const addCustomIndicatorFromScriptAtom = atom(
   null,
-  (_get, set, script: CustomIndicatorScript) => {
-    const cfg = customIndicatorConfig(script);
+  async (_get, set, script: CustomIndicatorScript) => {
+    const fullScript =
+      script.sourceCode || !script.id
+        ? script
+        : await fetchFullPineScript(_get, set, script.id);
+    if (!fullScript?.sourceCode) {
+      set(logAtom, "error", `Pine source is not loaded for ${script.name}`);
+      return;
+    }
+    const cfg = customIndicatorConfig(fullScript);
     const current = _get(indicatorsAtom);
     const existing = current.find(
-      (item) => item.type === "CUSTOM" && item.scriptId === script.id,
+      (item) => item.type === "CUSTOM" && item.scriptId === fullScript.id,
     );
     const indicators = existing
       ? current.map((item) =>
@@ -839,21 +908,38 @@ export const addCustomIndicatorFromSourceAtom = atom(
   },
 );
 
-export const deletePineScriptAtom = atom(null, (_get, set, id: string) => {
+export const deletePineScriptAtom = atom(null, async (_get, set, id: string) => {
   const scripts = _get(pineScriptsAtom).filter((item) => item.id !== id);
-  set(pineScriptsAtom, scripts);
-  persistPineScripts(scripts);
+  commitPineScripts(set, scripts);
   if (_get(pineEditorScriptIdAtom) === id) {
     set(newPineScriptAtom);
   }
+  if (_get(backendSessionAtom)) {
+    try {
+      await deletePineScriptRemote(id);
+    } catch (error) {
+      set(logAtom, "error", `Pine script delete failed: ${apiMessage(error)}`);
+    }
+  }
 });
 
-export const togglePineFavoriteAtom = atom(null, (_get, set, id: string) => {
+export const togglePineFavoriteAtom = atom(null, async (_get, set, id: string) => {
+  const nextFavorite =
+    !_get(pineScriptsAtom).find((item) => item.id === id)?.favorite;
   const scripts = _get(pineScriptsAtom).map((item) =>
     item.id === id ? { ...item, favorite: !item.favorite } : item,
   );
-  set(pineScriptsAtom, scripts);
-  persistPineScripts(scripts);
+  commitPineScripts(set, scripts);
+  if (_get(backendSessionAtom)) {
+    try {
+      const saved = backendPineScriptToLocal(
+        await updatePineScriptRemote(id, { favorite: nextFavorite }),
+      );
+      upsertPineScriptLocal(_get, set, saved);
+    } catch (error) {
+      set(logAtom, "error", `Pine favorite sync failed: ${apiMessage(error)}`);
+    }
+  }
 });
 
 export const setCrosshairAtom = atom(

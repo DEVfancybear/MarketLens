@@ -12,6 +12,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
+	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 )
@@ -52,6 +53,16 @@ func (f *fakeIndicatorLister) List(_ context.Context, userID string) ([]indicato
 	return f.items, nil
 }
 
+type fakePineScriptLister struct {
+	items    []pinescripts.Script
+	lastUser string
+}
+
+func (f *fakePineScriptLister) List(_ context.Context, userID string) ([]pinescripts.Script, error) {
+	f.lastUser = userID
+	return f.items, nil
+}
+
 func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	reader := &fakeSettingsReader{doc: settings.Document{
 		UI:            json.RawMessage(`{"theme":"dark"}`),
@@ -77,9 +88,17 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 			ClientID:      "ind-1",
 		}},
 	}
+	pineScriptLister := &fakePineScriptLister{
+		items: []pinescripts.Script{{
+			ID:       "pine-srv-1",
+			Name:     "Better RSI",
+			Favorite: true,
+			ClientID: "pine-1",
+		}},
+	}
 
 	app := fiber.New()
-	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, fakeRequireAuth).Register(app.Group("/api/v1"))
+	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, pineScriptLister, fakeRequireAuth).Register(app.Group("/api/v1"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/bootstrap", nil)
 	resp, err := app.Test(req)
@@ -98,13 +117,16 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	if indicatorLister.lastUser != "user-1" {
 		t.Fatalf("indicator lister should pass auth user id, got %q", indicatorLister.lastUser)
 	}
+	if pineScriptLister.lastUser != "user-1" {
+		t.Fatalf("pine script lister should pass auth user id, got %q", pineScriptLister.lastUser)
+	}
 
 	var body struct {
 		Settings         settings.Document            `json:"settings"`
 		Watchlists       []any                        `json:"watchlists"`
 		DrawingTemplates []drawings.DrawingTemplate   `json:"drawingTemplates"`
 		Indicators       []indicators.IndicatorPreset `json:"indicators"`
-		PineScripts      []any                        `json:"pineScripts"`
+		PineScripts      []pinescripts.Script         `json:"pineScripts"`
 		Alerts           []any                        `json:"alerts"`
 		Layouts          []any                        `json:"layouts"`
 	}
@@ -120,6 +142,9 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	}
 	if len(body.Indicators) != 1 || body.Indicators[0].ClientID != "ind-1" {
 		t.Fatalf("bootstrap should include indicator presets, got %+v", body.Indicators)
+	}
+	if len(body.PineScripts) != 1 || body.PineScripts[0].ClientID != "pine-1" || body.PineScripts[0].SourceCode != "" {
+		t.Fatalf("bootstrap should include pine script metadata only, got %+v", body.PineScripts)
 	}
 	if string(body.Settings.UI) != `{"theme":"dark"}` {
 		t.Fatalf("unexpected settings ui: %s", body.Settings.UI)

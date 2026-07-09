@@ -381,14 +381,18 @@ store:** `chartStore.indicators` (persisted as `indicators`). Pine *scripts* are
 
 ### Phase 9 — Pine scripts
 
+**Status:** Implemented in package `internal/pinescripts`, `/api/v1/pine-scripts`, and
+metadata bootstrap. The backing `pine_scripts` table is created by `0009_indicator_presets` because
+Phase 8 needs it as an FK target.
+
 **Goal:** Persist user-authored Pine-like source indicators.
 
-**Table:** `pine_scripts` (`DATABASE.md` §7.4 — matches `CustomIndicatorScript`: `source_code`,
+**Table:** `pine_scripts` (`DATABASE.md` §7.5 — matches `CustomIndicatorScript`: `source_code`,
 `favorite`, `client_id`). **Frontend store:** `chartStore` Pine state (persisted as `pineScripts`).
 **Create before `indicator_presets`** in `0004` (FK target).
 
 **Steps**
-1. Migration `0004_charting` (pine_scripts portion, first among the FK pair).
+1. Migration `0009_indicator_presets` (pine_scripts portion, first among the FK pair).
 2. Queries: list **metadata only** (id, name, favorite, updated_at — **not** `source_code`, keep the
    list light); get one with full `source_code`; create; update `name`/`source_code`/`favorite`/
    `meta`; delete. Dedupe on `client_id`.

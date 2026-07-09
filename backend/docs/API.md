@@ -440,15 +440,38 @@ Response rows:
 
 ## Pine scripts  🔒
 
-Backed by `pine_scripts`.
+Backed by `pine_scripts`. List and bootstrap responses are metadata-only
+(`sourceCode` omitted) so the script browser stays light. Fetch one script by
+id/clientId when the editor needs source text. `clientId` is the frontend
+`CustomIndicatorScript.id`; `:id` may be either backend UUID or client id.
 
 | Method | Path                          | Purpose                        |
 | ------ | ----------------------------- | ------------------------------ |
-| GET    | `/api/v1/pine-scripts`        | List                           |
+| GET    | `/api/v1/pine-scripts`        | List metadata                  |
 | GET    | `/api/v1/pine-scripts/:id`    | Get one (with `source`)        |
-| POST   | `/api/v1/pine-scripts`        | Create `{ name, source }`      |
-| PUT    | `/api/v1/pine-scripts/:id`    | Update `{ name, source, meta }`|
+| POST   | `/api/v1/pine-scripts`        | Create/upsert by `clientId`    |
+| PUT    | `/api/v1/pine-scripts/:id`    | Patch name/source/favorite/meta|
 | DELETE | `/api/v1/pine-scripts/:id`    | Delete                         |
+
+Create/upsert body:
+
+```json
+{
+  "name": "Better RSI",
+  "sourceCode": "indicator(\"Better RSI\")\nplot(close)",
+  "favorite": true,
+  "clientId": "pine_abc",
+  "meta": {}
+}
+```
+
+Favorite-only patch:
+
+```json
+{ "favorite": false }
+```
+
+Oversized source code above 64 KB returns `400`.
 
 ---
 

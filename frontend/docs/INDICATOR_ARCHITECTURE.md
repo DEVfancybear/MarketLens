@@ -56,6 +56,7 @@ IndicatorResult { id, series[] }
 | Pine-like parser/compiler | `src/services/pineScript.ts` |
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
 | Indicator dropdown entry points | `src/components/toolbar/IndicatorMenu.tsx` |
+| Backend Pine scripts API | `src/services/api/resources/pineScriptsApi.ts` |
 | Shared settings dialog | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
 | Settings architecture guide | `SETTTING_ARCHITECTURE.md` |
 | Overlay rendering on price chart | `src/components/chart/PriceChart.tsx` |
@@ -120,7 +121,7 @@ State lives in `chartStore.ts`:
 | Atom | Purpose | Persistence |
 |---|---|---|
 | `indicatorsAtom` | Active chart indicator instances | Backend `indicator_presets.config` in authenticated mode; localStorage `indicators` for anonymous/cache fallback |
-| `pineScriptsAtom` | Saved Pine-like source-code scripts | localStorage `pineScripts` |
+| `pineScriptsAtom` | Saved Pine-like source-code scripts | Backend `pine_scripts` in authenticated mode; localStorage `pineScripts` for anonymous/cache fallback |
 | `pineEditorScriptIdAtom` | Currently loaded script id in editor | runtime |
 | `pineEditorTitleAtom` | Current editor title field | runtime |
 | `pineEditorSourceAtom` | Current editor source field | runtime |
@@ -154,9 +155,11 @@ PUT    /api/v1/indicators/:id    # replace by backend id or clientId
 DELETE /api/v1/indicators/:id    # delete by backend id or clientId
 ```
 
-Pine script source persistence is not part of Phase 8. CUSTOM indicators keep
-their current `scriptId` and `sourceCode` copy in the indicator config until the
-Phase 9 `pine_scripts` API is wired.
+Phase 9 wires Pine script source persistence through `/api/v1/pine-scripts`.
+Bootstrap carries script metadata only; the editor fetches full `sourceCode`
+when a script is opened or when a metadata row is added to the chart.
+CUSTOM indicator configs still carry a source copy so active chart indicators can
+render immediately after bootstrap.
 
 ## Built-in indicator flow
 
@@ -189,7 +192,8 @@ PineEditor Save
   -> savePineScriptAtom({ id, name, sourceCode })
   -> extractPineScriptMeta(sourceCode)
   -> insert/update pineScriptsAtom
-  -> localStorage `pineScripts`
+  -> localStorage `pineScripts` anonymous/cache update
+  -> authenticated mode POST /api/v1/pine-scripts with clientId
   -> update active CUSTOM indicators with the same scriptId
 ```
 
@@ -201,7 +205,9 @@ PineEditor Play or My scripts Add
   -> if compile errors: show status + log
   -> savePineScriptAtom(...)
   -> addCustomIndicatorFromScriptAtom(savedScript)
+  -> if savedScript is metadata-only, GET /api/v1/pine-scripts/:id first
   -> indicatorsAtom gets type: "CUSTOM"
+  -> authenticated mode POST /api/v1/indicators with clientId
   -> PriceChart / IndicatorPane renders through computeIndicator()
 ```
 
@@ -211,7 +217,23 @@ Edit existing custom indicator source:
 Indicator legend source-code `{}` button
   -> if config.type === "CUSTOM" and scriptId exists:
        loadPineScriptAtom(scriptId)
+       GET /api/v1/pine-scripts/:id if sourceCode is not already loaded
        setBottomTabAtom("pine")
+```
+
+Authenticated full flow:
+
+```
+Save script
+  -> /api/v1/pine-scripts stores source + favorite + clientId
+Add saved script
+  -> load full source when needed
+  -> create CUSTOM IndicatorConfig with scriptId + sourceCode copy
+  -> /api/v1/indicators stores active chart preset
+Reload/login
+  -> bootstrap applies pineScripts metadata first
+  -> bootstrap applies indicator presets second
+  -> active CUSTOM indicators render from their config sourceCode copy
 ```
 
 Edit existing custom indicator settings:

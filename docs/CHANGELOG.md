@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Phase 9 Pine scripts API and frontend indicator flow (2026-07-09)
+- Added `GET/POST/PUT/DELETE /api/v1/pine-scripts`, including metadata-only list/bootstrap,
+  full-source fetch, idempotent `clientId` save, favorite patching, delete, and 64 KB source
+  validation.
+- Wired `sync/bootstrap` to hydrate Pine script metadata before indicator presets so CUSTOM
+  indicators can resolve saved scripts predictably.
+- Connected Pine Editor save/load/add/delete/favorite actions to the backend through the shared
+  `ky` API layer while keeping optimistic local editor state.
+- Kept CUSTOM indicator configs carrying a source copy, so active indicators render after reload even
+  before the script source is lazily opened in the editor.
+- Added backend handler tests for Pine script create/list/get/favorite/delete and bootstrap metadata.
+
 ### Added - Backend Phase 8 indicators API and frontend sync (2026-07-09)
 - Added `pine_scripts` FK target and `indicator_presets` persistence for TradingView-style
   indicator presets.
