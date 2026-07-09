@@ -20,6 +20,10 @@ shape-like TradingView tools:
   of raw anchors, so extended geometry remains visible/selectable after pan/zoom.
 - The render-loop memo guard must repaint when hover or multi-select state
   changes, even when drawing points and the primary selected id are unchanged.
+- The interaction machine factory must return fresh mutable containers so
+  rAF-based live previews and multi-drag state cannot leak between gestures.
+- Hit-testing must preserve TradingView priority while avoiding unnecessary
+  candidate sorting in the hot path.
 
 ## Run
 
@@ -45,3 +49,5 @@ Add tests here when changing:
 - Shape plugin viewport bounds or curve sampling
 - Renderer viewport culling or memo-guard keys
 - Multi-point shape drag/resize behavior that relies on `anchorIndex`
+- Interaction state-machine helpers that underpin pointermove preview behavior
+- Hit-test priority, especially anchor-vs-body and z-index ordering

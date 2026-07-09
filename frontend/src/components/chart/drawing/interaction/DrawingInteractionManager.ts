@@ -10,31 +10,19 @@ import {
   DeleteDrawingCommand,
   DuplicateDrawingCommand,
 } from "../history/CommandManager";
+import {
+  createInitialMachine,
+  INITIAL_MACHINE,
+  type InteractionState,
+  type Machine,
+} from "./machine";
 
-export type InteractionState =
-  "Idle" | "Drawing" | "MovingDrawing" | "ResizingHandle";
-
-export interface Machine {
-  state: InteractionState;
-  anchors: Point[];
-  drawingTool: DrawingTool | null;
-  drawingId: string | null;
-  dragAnchor: number;
-  dragStart: Point | null;
-  dragOrig: Point[] | null;
-  multiDragOrig: Map<string, Point[]>;
-}
-
-export const INITIAL_MACHINE: Machine = {
-  state: "Idle",
-  anchors: [],
-  drawingTool: null,
-  drawingId: null,
-  dragAnchor: -1,
-  dragStart: null,
-  dragOrig: null,
-  multiDragOrig: new Map(),
-};
+export {
+  createInitialMachine,
+  INITIAL_MACHINE,
+  type InteractionState,
+  type Machine,
+} from "./machine";
 
 function minPoints(t: DrawingTool): number {
   return getTool(t)?.minPoints ?? 2;
@@ -137,13 +125,15 @@ export function useDrawingInteractionManager(
   const openDrawingSettingsRef = useRef(openDrawingSettings);
   openDrawingSettingsRef.current = openDrawingSettings;
 
-  const [machine, setMachine] = useState<Machine>(INITIAL_MACHINE);
+  const [machine, setMachine] = useState<Machine>(() => createInitialMachine());
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
   const machineRef = useRef<Machine>(machine);
-  machineRef.current = machine;
   const scheduleRedrawRef = useRef(scheduleRedraw);
   scheduleRedrawRef.current = scheduleRedraw;
   const livePointsRef = useRef<Map<string, Point[]> | null>(null);
+  const livePointsWorkRef = useRef<Map<string, Point[]>>(new Map());
+  const hoverRafRef = useRef<number | null>(null);
+  const pendingHoverEventRef = useRef<PointerEvent | null>(null);
   // Confirmed click points for an in-progress multi-point draw (polyline, path,
   // curve, triangle, arc, double-curve). Empty for 1-/2-point tools.
   const committedRef = useRef<Point[]>([]);
@@ -169,9 +159,26 @@ export function useDrawingInteractionManager(
     y: number;
     t: number;
   } | null>(null);
-  const transition = useCallback((next: Partial<Machine>) => {
-    setMachine((prev) => ({ ...prev, ...next }));
+  const patchMachine = useCallback((next: Partial<Machine>, publish = true) => {
+    const updated = { ...machineRef.current, ...next };
+    machineRef.current = updated;
+    if (publish) setMachine(updated);
     scheduleRedrawRef.current();
+  }, []);
+  const transition = useCallback(
+    (next: Partial<Machine>) => patchMachine(next, true),
+    [patchMachine],
+  );
+  const previewTransition = useCallback(
+    (next: Partial<Machine>) => patchMachine(next, false),
+    [patchMachine],
+  );
+  const cancelHoverFrame = useCallback(() => {
+    pendingHoverEventRef.current = null;
+    if (hoverRafRef.current != null) {
+      cancelAnimationFrame(hoverRafRef.current);
+      hoverRafRef.current = null;
+    }
   }, []);
   const releaseCapture = useCallback(() => {
     const c = canvasRef.current;
@@ -186,15 +193,18 @@ export function useDrawingInteractionManager(
     activePointerIdRef.current = null;
   }, [canvasRef]);
   const reset = useCallback(() => {
-    setMachine(INITIAL_MACHINE);
+    const nextMachine = createInitialMachine();
+    machineRef.current = nextMachine;
+    setMachine(nextMachine);
     releaseCapture();
     pointerClaimedRef.current = false;
     dragActiveRef.current = false;
+    cancelHoverFrame();
     committedRef.current = [];
     // Restore chart pan/zoom synchronously when the interaction ends.
     freezeChartRef.current?.(false);
     scheduleRedrawRef.current();
-  }, [releaseCapture]);
+  }, [cancelHoverFrame, releaseCapture]);
 
   // ---- Drawing mode ----
   useEffect(() => {
@@ -352,15 +362,18 @@ export function useDrawingInteractionManager(
         if (shouldRecordContinuousPoint(last, p, toX, toY)) {
           const next = [...committed, p];
           committedRef.current = next;
-          transition({ anchors: next });
+          previewTransition({ anchors: next });
         }
         return;
       }
       // Multi-point draw: preview the already-committed points plus the live
       // cursor as the next vertex. 2-point tools keep [start, cursor].
       const committed = committedRef.current;
-      if (committed.length > 0) transition({ anchors: [...committed, p] });
-      else transition({ anchors: [m.anchors[0], p] });
+      if (committed.length > 0) {
+        previewTransition({ anchors: [...committed, p] });
+      } else {
+        previewTransition({ anchors: [m.anchors[0], p] });
+      }
     };
     const hU = (e: PointerEvent) => {
       const m = machineRef.current;
@@ -490,7 +503,9 @@ export function useDrawingInteractionManager(
         const anchorIndex = hit.anchorIndex ?? -1;
         const orig = hit.drawing.points.map((pt: Point) => ({ ...pt }));
         drawingIdRef.current = hit.drawing.id;
+        livePointsWorkRef.current.clear();
         livePointsRef.current = null;
+        cancelHoverFrame();
         // Clear TP/SL hit status when the user starts dragging.  Clearing
         // hitTime too lets the renderer fresh-detect with live points during
         // the drag so the highlight updates in real-time (no delay).
@@ -528,7 +543,8 @@ export function useDrawingInteractionManager(
         if (!p) return;
         const dt = p.time - m.dragStart.time,
           dp = p.price - m.dragStart.price;
-        const multiMap = new Map<string, Point[]>();
+        const multiMap = livePointsWorkRef.current;
+        multiMap.clear();
         if (m.multiDragOrig.size > 0) {
           for (const [id, origPts] of m.multiDragOrig)
             multiMap.set(
@@ -559,25 +575,42 @@ export function useDrawingInteractionManager(
       const cur = getState();
       if (cur.activeTool !== "cursor") return;
       if (!canvas || !isOverCanvas(e, canvas)) {
+        cancelHoverFrame();
         if (hoveredIdRef.current !== null) {
           hoveredIdRef.current = null;
           scheduleRedrawRef.current();
         }
         return;
       }
-      const hp = fromEvent(e);
-      if (!hp) {
-        if (hoveredIdRef.current !== null) {
-          hoveredIdRef.current = null;
-          scheduleRedrawRef.current();
-        }
-        return;
-      }
-      const hit = hitTest(cur.drawings, hp, toX, toY);
-      const nextHoveredId = hit?.drawing.id ?? null;
-      if (hoveredIdRef.current !== nextHoveredId) {
-        hoveredIdRef.current = nextHoveredId;
-        scheduleRedrawRef.current();
+      pendingHoverEventRef.current = e;
+      if (hoverRafRef.current == null) {
+        hoverRafRef.current = requestAnimationFrame(() => {
+          hoverRafRef.current = null;
+          const event = pendingHoverEventRef.current;
+          pendingHoverEventRef.current = null;
+          const state = getState();
+          if (
+            !event ||
+            machineRef.current.state !== "Idle" ||
+            state.activeTool !== "cursor"
+          ) {
+            return;
+          }
+          const hp = fromEvent(event);
+          if (!hp) {
+            if (hoveredIdRef.current !== null) {
+              hoveredIdRef.current = null;
+              scheduleRedrawRef.current();
+            }
+            return;
+          }
+          const hit = hitTest(state.drawings, hp, toX, toY);
+          const nextHoveredId = hit?.drawing.id ?? null;
+          if (hoveredIdRef.current !== nextHoveredId) {
+            hoveredIdRef.current = nextHoveredId;
+            scheduleRedrawRef.current();
+          }
+        });
       }
     };
 
@@ -600,6 +633,7 @@ export function useDrawingInteractionManager(
         }
         releaseCapture();
         livePointsRef.current = null;
+        livePointsWorkRef.current.clear();
         drawingIdRef.current = null;
         reset();
       }
@@ -670,6 +704,7 @@ export function useDrawingInteractionManager(
       document.removeEventListener("wheel", blockChartEvent, true);
       document.removeEventListener("touchstart", blockChartEvent, true);
       document.removeEventListener("touchmove", blockChartEvent, true);
+      cancelHoverFrame();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

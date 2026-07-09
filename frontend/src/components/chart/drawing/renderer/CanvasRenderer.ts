@@ -76,8 +76,13 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   let viewportFollowUntil = 0;
   let rafId: number | null = null;
   let lastMemoState: RenderMemoState | null = null;
+  let lastDrawingsRef: Drawing[] | null = null;
+  let lastDrawingsHash = "";
+  let lastSelectedIdsRef: Set<string> | undefined;
+  let lastSelectedIdsHash = "-";
 
   function drawingsHash(ds: Drawing[]): string {
+    if (ds === lastDrawingsRef) return lastDrawingsHash;
     let h = String(ds.length);
     for (let i = 0; i < ds.length; i++) {
       const d = ds[i];
@@ -213,6 +218,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         "," +
         JSON.stringify(d.positionStats ?? []);
     }
+    lastDrawingsRef = ds;
+    lastDrawingsHash = h;
     return h;
   }
 
@@ -256,7 +263,12 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     }
     const drawHash = drawingsHash(data.drawings);
     const liveH = liveHash(data.livePoints);
-    const selectedHash = selectedIdsHash(data.selectedDrawingIds);
+    let selectedHash = lastSelectedIdsHash;
+    if (data.selectedDrawingIds !== lastSelectedIdsRef) {
+      selectedHash = selectedIdsHash(data.selectedDrawingIds);
+      lastSelectedIdsRef = data.selectedDrawingIds;
+      lastSelectedIdsHash = selectedHash;
+    }
     const memoState: RenderMemoState = {
       drawingsHash: drawHash,
       selectedDrawingId: data.selectedDrawingId,
@@ -285,14 +297,18 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, rect.width, rect.height);
 
-    const storeDrawings: Drawing[] = data.drawingsHidden
-      ? []
-      : [...data.drawings];
+    let storeDrawings: Drawing[] = data.drawingsHidden ? [] : data.drawings;
     if (data.livePoints && data.livePoints.size > 0) {
+      let copied = false;
       for (let i = 0; i < storeDrawings.length; i++) {
         const pts = data.livePoints.get(storeDrawings[i].id);
-        if (pts)
+        if (pts) {
+          if (!copied) {
+            storeDrawings = [...storeDrawings];
+            copied = true;
+          }
           storeDrawings[i] = { ...storeDrawings[i], points: pts, _dragging: true };
+        }
       }
     }
 

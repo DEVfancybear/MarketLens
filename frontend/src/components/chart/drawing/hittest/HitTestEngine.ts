@@ -11,6 +11,7 @@
  */
 import type { Drawing, Point } from "@/types";
 import { getTool, HANDLE_RADIUS } from "../tools/ToolRegistry";
+import { hitPriorityScore } from "./hitPriority";
 
 // Import adapters to trigger registration.
 import "../tools/adapters";
@@ -35,14 +36,6 @@ export type HitResult = {
   distance: number;
 };
 
-/** TradingView priority: anchor > body. Primary sort: isAnchor desc, zIndex desc, distance asc. */
-function hitScore(h: HitResult, z: number): number {
-  const isAnchor = h.target !== "body" ? 1 : 0;
-  // Pack priority into a single number for sorting.
-  // Higher = better. isAnchor dominates, then zIndex, then -distance.
-  return isAnchor * 1e12 + z * 1e6 + (1000 - Math.min(h.distance, 999));
-}
-
 export function hitTest(
   drawings: Drawing[],
   p: Point,
@@ -53,8 +46,8 @@ export function hitTest(
   const py = toY(p.price);
   if (px == null || py == null) return null;
 
-  // Collect all candidate hits across all visible drawings.
-  const allCandidates: { hit: HitResult; zIndex: number }[] = [];
+  let best: HitResult | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const d of drawings) {
     if (d.visible === false) continue;
@@ -93,22 +86,14 @@ export function hitTest(
         }
       }
 
-      allCandidates.push({
-        hit: { ...c, anchorIndex: anchorIdx },
-        zIndex: d.zIndex ?? 0,
-      });
+      const hit = { ...c, anchorIndex: anchorIdx };
+      const score = hitPriorityScore(hit, d.zIndex ?? 0);
+      if (score > bestScore) {
+        best = hit;
+        bestScore = score;
+      }
     }
   }
 
-  if (allCandidates.length === 0) {
-    return null;
-  }
-
-  // Sort by TradingView priority: anchor > body, then topmost drawing, then closest.
-  allCandidates.sort(
-    (a, b) => hitScore(b.hit, b.zIndex) - hitScore(a.hit, a.zIndex),
-  );
-
-  const best = allCandidates[0].hit;
   return best;
 }

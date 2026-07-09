@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Drawing interaction preview performance (2026-07-09)
+- Changed DrawingInteractionManager live creation previews to update the mutable interaction
+  machine ref and rAF render loop without publishing React state on every pointermove.
+- Throttled drawing hover hit-testing to one rAF pass per frame and reused the live drag-point map
+  across pointermoves.
+- Changed hit-testing to track the best candidate directly, preserving TradingView priority without
+  allocating and sorting all hit candidates on every pointer event.
+- Added a pure `interaction/machine.ts` factory so every drawing gesture receives isolated mutable
+  state containers.
+- Cached `CanvasRenderer` drawing hashes by drawings-array identity during live drag/resize frames,
+  avoiding repeated full-object hashing when only `livePointsRef` changes, and kept render drawing
+  arrays copy-on-write for idle frames.
+- Added drawing tests for interaction machine isolation and hit-test priority, then updated drawing
+  architecture docs.
+
 ### Fixed - Watchlist stale MT5 symbols (2026-07-09)
 - Sanitized backend watchlist layouts against the live MT5 catalog during bootstrap and catalog
   refresh, then sync the cleaned layout back to the backend.

@@ -1,6 +1,6 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-08 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, viewport invalidation rules, and adapter-owned viewport culling._
+_Date: 2026-06-25. Updated 2026-07-09 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, viewport invalidation rules, adapter-owned viewport culling, and mutable rAF interaction previews._
 
 ## Architecture rule (read before touching drawing/chart interaction)
 
@@ -80,7 +80,7 @@ For the shared chart zoom/pan/viewport invalidation contract, see
    → DrawingInteractionManager (Drawing-mode pointerdown) → machine = Drawing, anchors=[p1]
 
 2. User moves the pointer (before the 2nd click)
-   → pointermove → machine.anchors = [p1, cursor] → scheduleRedraw (markDirty)
+   → pointermove → machineRef.anchors = [p1, cursor] → scheduleRedraw (markDirty)
    → CanvasRenderer paints a live "rubber-band" preview (a __pending drawing)
 
 3. User clicks second point
@@ -117,6 +117,31 @@ the memo guard decides whether a frame is actually painted.
 - Transient interaction state (in-progress anchors, live drag points) lives in the
   **interaction machine / refs**, NOT the store — it is committed to the store only on
   pointerup (via `updateDrawing` + a history command)
+
+### Mutable preview contract
+
+TradingView-style drawing needs pointer feedback to feel immediate. The interaction manager keeps
+high-frequency preview data in mutable refs and schedules the canvas render loop with
+`requestAnimationFrame()`:
+
+- Creating a 2-point object such as Rectangle/Trendline updates `machineRef.anchors` on every
+  pointermove without publishing React state for every pixel.
+- Dragging/resizing existing objects updates `livePointsRef` and commits to `chartStore.drawings[]`
+  only on pointerup.
+- React `machine` state is still published for low-frequency boundaries such as Idle -> Drawing,
+  MovingDrawing, ResizingHandle, and reset. UI that only needs the interaction state (cursor,
+  chart pan/zoom freeze) stays correct without forcing React renders during the drag itself.
+- `interaction/machine.ts` owns `createInitialMachine()` so every interaction gets fresh mutable
+  containers (`multiDragOrig`, anchors) instead of sharing state across sessions.
+- Hover hit-testing is rAF-throttled. Raw pointermove stores only the latest pointer event; the
+  actual `hitTest()` runs at most once per frame. This keeps dense drawings responsive while still
+  updating hover/selection affordances immediately to the eye.
+- Live drag points reuse one mutable `Map` across pointermoves. The arrays inside it are replaced
+  with freshly computed geometry, but the container is not reallocated every event.
+
+Future tools should use the adapter contract (`move`, `moveAnchor`, `getAnchors`) and let the
+manager handle live preview. Do not call store updates from pointermove for new tools; store writes
+belong at the interaction boundary.
 
 ## Render loop & repaint contract (READ THIS BEFORE TOUCHING THE CANVAS)
 
@@ -172,6 +197,14 @@ The comparison lives in `renderer/renderMemo.ts` so Node tests can lock the
 memo-key contract without importing the browser canvas renderer. Update
 `tests/drawing/renderCulling.test.ts` whenever a new render input should affect
 pixels.
+
+`CanvasRenderer` caches the `drawingsHash` by `drawings[]` array identity. During live
+drag/resize, store drawings are intentionally unchanged while `liveHash` changes, so re-hashing all
+objects every animation frame is wasted work. Any code that mutates a drawing in place would break
+this optimization and is not allowed; chartStore actions must replace the drawings array.
+
+The renderer also avoids copying `drawings[]` unless live points or a pending drawing need a
+temporary overlay object. Keep this copy-on-write rule intact when adding render inputs.
 
 > ⚠️ The guard tracks **values, not just counts/lengths**. Tracking a length is a trap:
 > two of the 2026-06-27 bugs came from keys that ignored position —

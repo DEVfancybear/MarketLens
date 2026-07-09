@@ -11,6 +11,7 @@ export {
   type Machine,
   type InteractionState,
   INITIAL_MACHINE,
+  createInitialMachine,
 } from "../interaction/DrawingInteractionManager";
 
 export {

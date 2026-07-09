@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { Drawing } from "../../src/types/drawing";
+import { hitPriorityScore } from "../../src/components/chart/drawing/hittest/hitPriority";
 import { SpatialIndex } from "../../src/components/chart/drawing/renderer/SpatialIndex";
 import {
   sameRenderMemoState,
@@ -100,5 +101,18 @@ test("render memo key changes when only hover or multi-select changes", () => {
     selectedIdsHash(new Set(["z", "a", "z"])),
     "a,z",
     "multi-select hashes must be stable regardless of insertion order",
+  );
+});
+
+test("hit priority preserves TradingView anchor/body and z-index ordering", () => {
+  assert.ok(
+    hitPriorityScore({ target: "p1", distance: 20 }, 1) >
+      hitPriorityScore({ target: "body", distance: 0 }, 100),
+    "anchor hits must outrank body hits even on lower z-index drawings",
+  );
+  assert.ok(
+    hitPriorityScore({ target: "body", distance: 8 }, 2) >
+      hitPriorityScore({ target: "body", distance: 0 }, 1),
+    "same-family hits should prefer the topmost drawing before distance",
   );
 });
