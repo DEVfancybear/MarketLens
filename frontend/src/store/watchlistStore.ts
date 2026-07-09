@@ -11,7 +11,8 @@ import {
   updateWatchlist as updateRemoteWatchlist,
   type BackendWatchlist,
 } from "@/services/api/resources/watchlistsApi";
-import { getMarketSymbol } from "@/services/market-data/symbols";
+import { getAllMarketSymbols, getMarketSymbol } from "@/services/market-data/symbols";
+import { legacySymbolAliases } from "@/services/market-data/symbolAliases";
 import { uid } from "@/utils/id";
 import {
   clampSectionIndex,
@@ -24,6 +25,7 @@ import {
   removeSectionFromList,
   removeSymbolFromList,
   renameSectionInList,
+  sanitizeListForCatalog,
   type SectionInsertMode,
   type WatchlistSectionMoveTarget,
 } from "./watchlistLayout";
@@ -296,6 +298,44 @@ function remoteLayoutPayload(list: WatchlistList) {
   };
 }
 
+function currentCatalogSet(): Set<string> {
+  return new Set(getAllMarketSymbols().map((symbol) => symbol.id.toUpperCase()));
+}
+
+function sanitizeListsForCatalog(
+  lists: WatchlistList[],
+  catalogSymbols: ReadonlySet<string>,
+): WatchlistList[] {
+  return lists.map((list) =>
+    sanitizeListForCatalog(list, catalogSymbols, legacySymbolAliases()),
+  );
+}
+
+function listLayoutChanged(a: WatchlistList, b: WatchlistList): boolean {
+  return (
+    a.symbols.join("\0") !== b.symbols.join("\0") ||
+    JSON.stringify(remoteLayoutPayload(a).sections) !==
+      JSON.stringify(remoteLayoutPayload(b).sections)
+  );
+}
+
+function syncSanitizedRemoteLayouts(
+  get: Getter,
+  set: Setter,
+  previous: WatchlistList[],
+  next: WatchlistList[],
+  action: string,
+): void {
+  runRemoteSync(get, set, action, async () => {
+    for (const list of next) {
+      if (!isServerWatchlistId(list.id)) continue;
+      const before = previous.find((item) => item.id === list.id);
+      if (before && !listLayoutChanged(before, list)) continue;
+      await replaceRemoteLayoutFromLocal(list);
+    }
+  });
+}
+
 async function replaceRemoteLayoutFromLocal(list: WatchlistList): Promise<void> {
   if (!isServerWatchlistId(list.id)) return;
   await replaceRemoteWatchlistLayout(list.id, remoteLayoutPayload(list));
@@ -369,9 +409,13 @@ export const applyRemoteWatchlistsAtom = atom(
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
       .map((item) => remoteWatchlistToLocal(item));
 
-    const lists = remoteLists.length
+    const rawLists = remoteLists.length
       ? remoteLists
       : [EMPTY_REMOTE_LIST];
+    const catalogSymbols = currentCatalogSet();
+    const lists = catalogSymbols.size
+      ? sanitizeListsForCatalog(rawLists, catalogSymbols)
+      : rawLists;
 
     const previousActiveId = get(activeWatchlistIdAtom);
     const remoteActive = payload.find(
@@ -392,6 +436,45 @@ export const applyRemoteWatchlistsAtom = atom(
     set(watchlistSortKeyAtom, nextActiveList.sortKey);
     set(watchlistSortDirAtom, nextActiveList.sortDir);
     persist(lists, activeId);
+    if (catalogSymbols.size) {
+      syncSanitizedRemoteLayouts(
+        get,
+        set,
+        rawLists,
+        lists,
+        "sanitize remote watchlist symbols",
+      );
+    }
+  },
+);
+
+export const sanitizeWatchlistsForCatalogAtom = atom(
+  null,
+  (get, set, catalogSymbolIds: readonly string[] | ReadonlySet<string>) => {
+    const catalogSymbols = new Set(
+      [...catalogSymbolIds].map((symbol) => symbol.trim().toUpperCase()),
+    );
+    if (!catalogSymbols.size) return;
+
+    const previous = get(watchlistListsAtom);
+    const lists = sanitizeListsForCatalog(previous, catalogSymbols);
+    if (lists.every((list, index) => !listLayoutChanged(previous[index], list))) {
+      return;
+    }
+
+    const activeId = get(activeWatchlistIdAtom);
+    set(watchlistListsAtom, lists);
+    const nextActive = activeList(lists, activeId);
+    set(watchlistSortKeyAtom, nextActive.sortKey);
+    set(watchlistSortDirAtom, nextActive.sortDir);
+    persist(lists, activeId);
+    syncSanitizedRemoteLayouts(
+      get,
+      set,
+      previous,
+      lists,
+      "sanitize catalog symbols",
+    );
   },
 );
 

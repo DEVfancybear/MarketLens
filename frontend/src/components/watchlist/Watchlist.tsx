@@ -46,7 +46,7 @@ import { getMarketDataState } from "@/store/marketDataStore";
 import { useQuote } from "@/hooks/useQuote";
 import { setSymbolAtom, symbolAtom } from "@/store/chartStore";
 import { getAlertState } from "@/store/alertStore";
-import { setAlertCenterAtom } from "@/store/uiStore";
+import { logAtom, setAlertCenterAtom } from "@/store/uiStore";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { IconButton } from "@/components/ui/IconButton";
 import { fmtPrice } from "@/utils/format";
@@ -280,15 +280,21 @@ export function Watchlist() {
     [createWatchlist],
   );
 
+  const log = useSetAtom(logAtom);
   const onRowClick = useCallback(
     (ticker: string) => {
       if (suppressNextClickRef.current) {
         suppressNextClickRef.current = false;
         return;
       }
-      setSymbol(ticker);
+      const meta = getMarketSymbol(ticker);
+      if (!meta) {
+        log("warn", `${ticker} is not available in the MT5 catalog`);
+        return;
+      }
+      setSymbol(meta.id);
     },
-    [setSymbol],
+    [log, setSymbol],
   );
   const onRemove = useCallback((ticker: string) => remove(ticker), [remove]);
 

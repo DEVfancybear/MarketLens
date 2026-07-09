@@ -1,6 +1,6 @@
 # Watchlist Architecture
 
-Last updated: 2026-07-08
+Last updated: 2026-07-09
 
 ## Goal
 
@@ -36,6 +36,30 @@ Frontend-owned runtime:
   client.
 - If the backend session is unavailable, the UI can still mutate the in-memory cache for the
   current tab, but it is intentionally not persisted to localStorage.
+
+## MT5 Catalog Cleanup
+
+The MT5 symbol catalog is the only source of tradable/displayable symbols. Watchlists are loaded
+from the backend and may contain stale symbols from older providers or previous migrations. The
+frontend therefore sanitizes every remote watchlist against the current MT5 catalog before rows can
+drive chart, history, drawing, or quote API calls.
+
+Cleanup rules:
+
+- `applyRemoteWatchlistsAtom` normalizes backend rows first, then removes symbols that are not in
+  the loaded MT5 catalog.
+- `refreshMt5SymbolCatalogAtom` runs the same sanitizer after `/api/v1/mt5/symbols` succeeds, which
+  covers the startup order where bootstrap arrives before the catalog.
+- Valid legacy aliases are migrated only when the target symbol exists in the MT5 catalog, for
+  example older Binance-style `BTCUSDT`/`ETHUSDT` rows can become `BTCUSD`/`ETHUSD`.
+- Invalid symbols are not clickable in the Watchlist. This prevents empty downstream calls such as
+  `GET /api/v1/drawings?symbol=ETCUSD` or empty history requests when the broker catalog does not
+  expose that symbol.
+- Sanitized layouts are written back through `PUT /api/v1/watchlists/:id/layout` so stale symbols do
+  not return on the next refresh.
+
+The cleanup code lives in pure layout helpers (`sanitizeListForCatalog`) plus store integration in
+`watchlistStore.ts`; tests live in `frontend/tests/watchlist/watchlistLayout.test.ts`.
 
 ## Store Atoms
 

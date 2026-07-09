@@ -91,6 +91,51 @@ export function removeSymbolFromList(
   };
 }
 
+export function sanitizeListForCatalog(
+  list: WatchlistList,
+  catalogSymbols: ReadonlySet<string>,
+  legacyAliases: Readonly<Record<string, string>> = {},
+): WatchlistList {
+  if (!catalogSymbols.size) return list;
+
+  const seen = new Set<string>();
+  const nextSymbols: string[] = [];
+  const keptBeforeOriginalIndex: number[] = [];
+  let keptCount = 0;
+
+  for (let index = 0; index < list.symbols.length; index += 1) {
+    keptBeforeOriginalIndex[index] = keptCount;
+    const rawSymbol = list.symbols[index]?.trim().toUpperCase();
+    const alias = rawSymbol ? legacyAliases[rawSymbol] : undefined;
+    const symbol = (alias || rawSymbol || "").trim().toUpperCase();
+    if (!symbol || !catalogSymbols.has(symbol) || seen.has(symbol)) continue;
+    seen.add(symbol);
+    nextSymbols.push(symbol);
+    keptCount += 1;
+  }
+  keptBeforeOriginalIndex[list.symbols.length] = keptCount;
+
+  const symbolsChanged =
+    nextSymbols.length !== list.symbols.length ||
+    nextSymbols.some((symbol, index) => symbol !== list.symbols[index]);
+
+  const sections = list.sections.map((section) => {
+    const originalIndex = clampSectionIndex(section.index, list.symbols.length);
+    const nextIndex = keptBeforeOriginalIndex[originalIndex] ?? keptCount;
+    return {
+      ...section,
+      index: clampSectionIndex(nextIndex, nextSymbols.length),
+    };
+  });
+
+  const sectionsChanged =
+    sections.length !== list.sections.length ||
+    sections.some((section, index) => section.index !== list.sections[index]?.index);
+
+  if (!symbolsChanged && !sectionsChanged) return list;
+  return { ...list, symbols: nextSymbols, sections };
+}
+
 function toLayoutTokens(list: WatchlistList): WatchlistLayoutToken[] {
   const order = new Map(list.sections.map((section, index) => [section.id, index]));
   const sections = [...list.sections].sort((a, b) => {

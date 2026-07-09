@@ -9,6 +9,7 @@ import {
   removeSymbolFromList,
   renameSectionInList,
   resolveSectionDropMode,
+  sanitizeListForCatalog,
 } from "../../src/store/watchlistLayout";
 import type { WatchlistList } from "../../src/store/watchlistStore";
 
@@ -258,6 +259,34 @@ test("reorders section dividers that share one symbol boundary", () => {
     [
       ["section_2", 1],
       ["section_1", 1],
+    ],
+  );
+});
+
+test("sanitizes stale server symbols against the MT5 catalog", () => {
+  const result = sanitizeListForCatalog(
+    {
+      id: "wl_5",
+      name: "Watchlist",
+      shared: false,
+      sortKey: "symbol",
+      sortDir: "asc",
+      symbols: ["BTCUSDT", "DOGEUSD", "ETCUSD", "ETHUSD", "XAUUSD"],
+      sections: [
+        { id: "coin", title: "COIN", index: 1 },
+        { id: "forex", title: "FOREX", index: 4 },
+      ],
+    },
+    new Set(["BTCUSD", "ETHUSD", "XAUUSD"]),
+    { BTCUSDT: "BTCUSD", ETCUSD: "ETHUSD" },
+  );
+
+  assert.deepEqual(result.symbols, ["BTCUSD", "ETHUSD", "XAUUSD"]);
+  assert.deepEqual(
+    result.sections.map((section) => [section.id, section.index]),
+    [
+      ["coin", 1],
+      ["forex", 2],
     ],
   );
 });

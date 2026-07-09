@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Watchlist stale MT5 symbols (2026-07-09)
+- Sanitized backend watchlist layouts against the live MT5 catalog during bootstrap and catalog
+  refresh, then sync the cleaned layout back to the backend.
+- Added legacy symbol resolution for older rows such as `BTCUSDT`/`ETHUSDT` only when the resolved
+  MT5 symbol exists in the catalog.
+- Blocked Watchlist row selection for symbols missing from the MT5 catalog so chart, history, and
+  drawing APIs are no longer called with unsupported symbols such as `ETCUSD`.
+- Added watchlist layout tests covering catalog sanitization, alias migration, dedupe, and section
+  index repair.
+
 ### Fixed - Firebase Google popup COOP warning (2026-07-09)
 - Set the frontend `Cross-Origin-Opener-Policy` header to `same-origin-allow-popups` so Firebase
   Google popup sign-in can observe the popup lifecycle without Chrome blocking `window.closed`.

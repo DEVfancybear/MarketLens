@@ -9,9 +9,11 @@ import {
   marketSymbolFromMt5,
   replaceMarketSymbols,
 } from "@/services/market-data/symbols";
+import { resolveCatalogSymbolId } from "@/services/market-data/symbolAliases";
 import type { MarketSymbol } from "@/types";
 import { setSymbolAtom, symbolAtom } from "./chartStore";
 import { logAtom } from "./uiStore";
+import { sanitizeWatchlistsForCatalogAtom } from "./watchlistStore";
 
 export type MarketSymbolCatalogStatus = "idle" | "loading" | "ready" | "error";
 
@@ -39,6 +41,10 @@ export const refreshMt5SymbolCatalogAtom = atom(null, async (get, set) => {
     if (symbols.length > 0) {
       replaceMarketSymbols(symbols);
       set(marketSymbolsAtom, getAllMarketSymbols());
+      set(
+        sanitizeWatchlistsForCatalogAtom,
+        symbols.map((symbol) => symbol.id),
+      );
       const liveSymbolIds = snapshot.streamSymbols
         .map((symbol) => symbol.trim().toUpperCase())
         .filter((symbol) => getMarketSymbol(symbol));
@@ -55,9 +61,21 @@ export const refreshMt5SymbolCatalogAtom = atom(null, async (get, set) => {
         symbols[0].id;
       const currentCanStream =
         currentMeta && (currentMeta.provider !== "mt5" || currentMeta.streamable);
+      const catalogSymbolIds = new Set(symbols.map((symbol) => symbol.id));
+      const resolvedCurrentSymbol = currentSymbol
+        ? resolveCatalogSymbolId(currentSymbol, catalogSymbolIds)
+        : undefined;
       const preferredStreamSymbol = pickPreferredStreamSymbol(liveSymbolIds);
-      if (!currentCanStream && (preferredStreamSymbol || firstStreamSymbol)) {
-        set(setSymbolAtom, preferredStreamSymbol || firstStreamSymbol);
+      const normalizedCurrentSymbol = currentSymbol.trim().toUpperCase();
+      const nextSymbol =
+        resolvedCurrentSymbol &&
+        resolvedCurrentSymbol !== normalizedCurrentSymbol
+          ? resolvedCurrentSymbol
+          : !currentCanStream
+          ? preferredStreamSymbol || firstStreamSymbol
+          : undefined;
+      if (nextSymbol) {
+        set(setSymbolAtom, nextSymbol);
       }
     }
 
