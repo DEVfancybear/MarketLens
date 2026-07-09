@@ -138,6 +138,9 @@ type expressionParser struct {
 }
 
 func evaluateExpression(expression string, context *evalContext) (pineValue, error) {
+	if value, handled, err := evaluateRequestSecurityExpression(expression, context); handled {
+		return value, err
+	}
 	tokens, err := tokenize(expression)
 	if err != nil {
 		return pineValue{}, err
@@ -304,7 +307,11 @@ func (p *expressionParser) parsePrimary() (pineValue, error) {
 			if p.next().text != ")" {
 				return pineValue{}, fmt.Errorf("unclosed call %s()", tok.text)
 			}
-			return evaluateCall(tok.text, args, p.context)
+			value, err := evaluateCall(tok.text, args, p.context)
+			if err != nil {
+				return pineValue{}, err
+			}
+			return p.parsePostfix(value)
 		}
 		value, err := resolveIdentifier(tok.text, p.context)
 		if err != nil {
@@ -381,6 +388,26 @@ func resolveIdentifier(name string, context *evalContext) (pineValue, error) {
 			return naNumber(), nil
 		}
 		return numberValue(float64(context.candles[len(context.candles)-1].Time)), nil
+	case "barstate.islast":
+		values := make([]float64, len(context.candles))
+		if len(values) > 0 {
+			values[len(values)-1] = 1
+		}
+		return seriesValue(values), nil
+	case "barstate.isfirst":
+		values := make([]float64, len(context.candles))
+		if len(values) > 0 {
+			values[0] = 1
+		}
+		return seriesValue(values), nil
+	case "barstate.isconfirmed", "barstate.ishistory":
+		values := make([]float64, len(context.candles))
+		for i := range values {
+			values[i] = 1
+		}
+		return seriesValue(values), nil
+	case "barstate.isrealtime":
+		return boolValue(false), nil
 	case "timeframe.period":
 		return stringValue(inferTimeframePeriod(context.candles)), nil
 	case "syminfo.mintick":
@@ -454,6 +481,15 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 	}
 
 	switch name {
+	case "time":
+		tf := ""
+		if len(args) > 0 && args[0].value.kind == kindString {
+			tf = args[0].value.text
+		}
+		if tf == "" {
+			return sourceSeries(context.candles, "time"), nil
+		}
+		return seriesValue(timeframeOpenTimeSeries(context.candles, tf)), nil
 	case "input", "input.int", "input.float", "input.source", "input.bool", "input.color", "input.string", "input.text_area", "input.timeframe", "input.symbol", "input.session":
 		if value, ok := named("defval"); ok {
 			return value, nil

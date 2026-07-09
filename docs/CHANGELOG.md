@@ -6,16 +6,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ### Added - Backend Pine runtime API and frontend async compile cache (2026-07-09)
 - Added `backend/internal/pineruntime` with metadata/input/style extraction and a Go Pine subset
-  compiler for plot/hline/fill scripts.
+  compiler for plot/hline/fill scripts and object-heavy ADR-style scripts.
 - Added `/api/v1/pine-runtime/meta`, `/inputs`, `/styles`, and `/compile`; compile runs in a
-  goroutine with a request-scoped timeout and returns structured errors plus `unsupportedFeatures`.
-- Added backend tests for VSA Volume colored histograms, Better RSI bands/plots, unsupported object
-  runtime detection, and the HTTP compile route.
+  goroutine with a request-scoped timeout and returns structured errors.
+- Added Go runtime support for daily `request.security()` aggregation plus Pine drawing objects:
+  `line.new/set_*`, `box.new/set_*`, `label.new/set_*`, and `table.new/cell`.
+- Added backend tests for VSA Volume colored histograms, Better RSI bands/plots, ADR object
+  runtime rendering, and the HTTP compile route.
 - Added frontend `pineRuntimeApi` and `pineRuntimeCache`; CUSTOM indicators now request backend
   compile asynchronously and render cached `IndicatorResult` output instead of synchronously
   compiling in `computeIndicator()`.
-- Kept a temporary TypeScript fallback for backend outages and object-heavy scripts such as ADR
-  until the Go object runtime is ported.
+- Removed the browser-side `pineScript.ts` compiler fallback. The frontend now only keeps Pine API
+  contract types/default editor source in `pineRuntimeTypes.ts`.
 
 ### Added - Backend Phase 9 Pine scripts API and frontend indicator flow (2026-07-09)
 - Added `GET/POST/PUT/DELETE /api/v1/pine-scripts`, including metadata-only list/bootstrap,

@@ -517,9 +517,11 @@ Compile response:
 
 Current runtime subset covers metadata/input/style extraction, series
 assignments, recursive/self-referential series patterns, plot/hline/fill output,
-and the Pine functions needed by VSA Volume and Better RSI. Object APIs such as
-`line.new`, `label.new`, `box.new`, and `table.new` are reported in
-`unsupportedFeatures` until the Go object runtime is ported.
+daily `request.security()` aggregation, and the Pine functions needed by VSA
+Volume, Better RSI, and ADR-style scripts. Object APIs such as `line.new`,
+`line.set_*`, `label.new`, `label.set_*`, `box.new`, `box.set_*`,
+`table.new`, and `table.cell` compile to chart-ready line, fill, label, and
+dashboard payloads.
 
 ---
 

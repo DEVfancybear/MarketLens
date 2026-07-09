@@ -10,12 +10,11 @@ drawing state, alert state, or chart pointer handling. Every indicator must cons
 array it is given, and the caller must pass the replay-aware visible candle slice. This keeps
 indicator rendering no-look-ahead by construction.
 
-Custom Pine-like scripts currently pass through the whitelist compiler in
-`services/pineScript.ts`. The active migration plan is to move Pine parsing and
-compilation into the Go backend; see
+Custom Pine-like scripts pass through the whitelist compiler in
+`backend/internal/pineruntime`. The frontend does not compile Pine source; see
 [`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md).
-During that migration, do not execute user-provided source with `eval`,
-`new Function`, dynamic imports, or any other general JavaScript execution path.
+Do not execute user-provided source with `eval`, `new Function`, dynamic imports,
+or any other general JavaScript execution path.
 
 ## Overview
 
@@ -38,7 +37,7 @@ services/indicators.ts
         |
         +-- built-in calculation functions
         |
-        +-- services/pineScript.ts for CUSTOM indicators
+        +-- pineRuntimeCache for CUSTOM backend compile results
         |
         v
 IndicatorResult { id, series[] }
@@ -56,7 +55,8 @@ IndicatorResult { id, series[] }
 | Indicator state, persistence, script actions | `src/store/chartStore.ts` |
 | Backend indicator presets API | `src/services/api/resources/indicatorsApi.ts` |
 | Built-in indicator calculations and dispatch | `src/services/indicators.ts` |
-| Pine-like parser/compiler | `src/services/pineScript.ts` |
+| Pine runtime API client/cache | `src/services/api/resources/pineRuntimeApi.ts`, `src/services/pineRuntimeCache.ts` |
+| Pine runtime shared types/default source | `src/services/pineRuntimeTypes.ts` |
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
 | Indicator dropdown entry points | `src/components/toolbar/IndicatorMenu.tsx` |
 | Backend Pine scripts API | `src/services/api/resources/pineScriptsApi.ts` |
@@ -193,7 +193,7 @@ Save flow:
 ```
 PineEditor Save
   -> savePineScriptAtom({ id, name, sourceCode })
-  -> extractPineScriptMeta(sourceCode)
+  -> POST /api/v1/pine-runtime/meta for title/overlay metadata
   -> insert/update pineScriptsAtom
   -> localStorage `pineScripts` anonymous/cache update
   -> authenticated mode POST /api/v1/pine-scripts with clientId
@@ -226,10 +226,9 @@ PriceChart / IndicatorPane
   -> chart rerenders cached result
 ```
 
-During migration, `pineRuntimeCache` falls back to the old TypeScript runtime
-only when the backend is unavailable or returns unsupported object APIs
-(`line.new`, `box.new`, `label.new`, `table.new`). Do not add new Pine language
-support to the fallback path; add it to `backend/internal/pineruntime`.
+`pineRuntimeCache` never compiles Pine in the browser. If the backend compile
+fails, the failure is isolated to that indicator result; new Pine language
+support belongs in `backend/internal/pineruntime`.
 
 Edit existing custom indicator source:
 
@@ -262,9 +261,9 @@ Edit existing custom indicator settings:
 Indicator legend settings gear
   -> setEditingIndicatorAtom(id)
   -> IndicatorSettingsDialog
-  -> extractPineInputDefinitions(sourceCode)
+  -> POST /api/v1/pine-runtime/inputs and /styles
   -> update IndicatorConfig.inputValues
-  -> compilePineScript(sourceCode, candles, id, inputValues)
+  -> pineRuntimeCache invalidates by input/style hash and recompiles through backend
 ```
 
 Custom indicators do not bypass `IndicatorSettingsDialog`. The gear edits input values; the `{}`
@@ -297,7 +296,7 @@ Research source:
 
 ## Pine-like compiler contract
 
-`services/pineScript.ts` implements a safe subset compiler:
+`backend/internal/pineruntime` implements a safe subset compiler:
 
 - No `eval`.
 - No arbitrary JavaScript calls.
@@ -307,6 +306,8 @@ Research source:
 - Histogram plots and per-bar colors are supported for volume-style scripts.
 - Horizontal lines, background fill bands, line widths/styles, and per-bar line colors are supported
   for RSI-style scripts.
+- Daily `request.security()` aggregation and object APIs (`line`, `box`, `label`, `table`) are
+  compiled in Go for ADR-style scripts.
 
 Supported source structure:
 
@@ -479,10 +480,10 @@ To add a new built-in indicator:
 
 To add a new Pine subset function:
 
-1. Add a whitelist case in `evaluateCall()` in `services/pineScript.ts`.
-2. Implement the calculation as a pure series helper.
-3. Return `PineValue` as either `number` or `series`.
-4. Add a simple script example to manual QA.
+1. Add a whitelist case in `backend/internal/pineruntime/expression.go`.
+2. Implement the calculation as a pure series helper in the Go runtime package.
+3. Return `pineValue` as either scalar, series, color, color series, string, or bool.
+4. Add a backend fixture test in `backend/internal/pineruntime/compiler_test.go`.
 
 ## Verification checklist
 

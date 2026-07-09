@@ -78,6 +78,94 @@ else
     c
 plot(showCycler? lvl:na, style = line, color = mycolor, transp = 30, linewidth=2, title  = 'Cycler colors')`
 
+const adrSource = `//@version=5
+indicator("ADR 50 SR Pro", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+adrPeriod    = input.int(10, "ADR Period", options=[5, 10, 20], group="Calculation")
+showLabels   = input.bool(true,  "Show Labels", group="Display")
+showZones    = input.bool(true,  "Show Zones", group="Display")
+zoneWidthPct = input.float(2.0,  "Zone Width % (of ADR)", minval=0.0, step=0.5, group="Display")
+showDash     = input.bool(true,  "Show Dashboard", group="Display")
+showAdrDate  = input.bool(true,  "Show ADR Date", group="Display")
+showDistance = input.bool(true,  "Show Distance", group="Display")
+lineWidth    = input.int(2, "Line Width", minval=1, maxval=5, group="Style")
+colHigh    = input.color(color.red,   "ADR H50 Color", group="Colors")
+colLow     = input.color(color.green, "ADR L50 Color", group="Colors")
+zoneTransp = input.int(85, "Zone Transparency", minval=0, maxval=100, group="Colors")
+adr   = request.security(syminfo.tickerid, "D", ta.sma(high - low, adrPeriod)[1], lookahead=barmerge.lookahead_off)
+dOpen = request.security(syminfo.tickerid, "D", open, lookahead=barmerge.lookahead_off)
+todayRange = request.security(syminfo.tickerid, "D", high - low, lookahead=barmerge.lookahead_off)
+lastDayTime = request.security(syminfo.tickerid, "D", time[1], lookahead=barmerge.lookahead_off)
+h50 = dOpen + adr * 0.50
+l50 = dOpen - adr * 0.50
+zoneHalf = adr * (zoneWidthPct / 100.0) / 2.0
+newDay = ta.change(time("D")) != 0
+isForex  = syminfo.type == "forex"
+unitSize = isForex ? syminfo.mintick * 10.0 : syminfo.mintick
+unitName = isForex ? "pips" : "pts"
+toUnits(float priceDiff) => unitSize > 0 ? priceDiff / unitSize : priceDiff
+var line  lnHigh = na
+var line  lnLow  = na
+var label lbHigh = na
+var label lbLow  = na
+var box   bxHigh = na
+var box   bxLow  = na
+if newDay
+    lnHigh := line.new(bar_index, h50, bar_index, h50, color=colHigh, width=lineWidth, style=line.style_solid)
+    lnLow  := line.new(bar_index, l50, bar_index, l50, color=colLow,  width=lineWidth, style=line.style_solid)
+    bxHigh := box.new(bar_index, h50 + zoneHalf, bar_index, h50 - zoneHalf, border_color=na, bgcolor = showZones ? color.new(colHigh, zoneTransp) : na)
+    bxLow  := box.new(bar_index, l50 + zoneHalf, bar_index, l50 - zoneHalf, border_color=na, bgcolor = showZones ? color.new(colLow,  zoneTransp) : na)
+    lbHigh := label.new(bar_index, h50, "ADR H50", style=label.style_label_left, color=color.new(color.black, 100), textcolor=colHigh)
+    lbLow  := label.new(bar_index, l50, "ADR L50", style=label.style_label_left, color=color.new(color.black, 100), textcolor=colLow)
+if not na(lnHigh)
+    line.set_x2(lnHigh, bar_index)
+    line.set_y1(lnHigh, h50)
+    line.set_y2(lnHigh, h50)
+    line.set_x2(lnLow, bar_index)
+    line.set_y1(lnLow, l50)
+    line.set_y2(lnLow, l50)
+    box.set_right(bxHigh, bar_index)
+    box.set_top(bxHigh, h50 + zoneHalf)
+    box.set_bottom(bxHigh, h50 - zoneHalf)
+    box.set_bgcolor(bxHigh, showZones ? color.new(colHigh, zoneTransp) : na)
+    box.set_right(bxLow, bar_index)
+    box.set_top(bxLow, l50 + zoneHalf)
+    box.set_bottom(bxLow, l50 - zoneHalf)
+    box.set_bgcolor(bxLow, showZones ? color.new(colLow, zoneTransp) : na)
+    label.set_xy(lbHigh, bar_index, h50)
+    label.set_text(lbHigh, showLabels ? "ADR H50  " + str.tostring(h50, format.mintick) : "")
+    label.set_textcolor(lbHigh, showLabels ? colHigh : color.new(colHigh, 100))
+    label.set_xy(lbLow, bar_index, l50)
+    label.set_text(lbLow, showLabels ? "ADR L50  " + str.tostring(l50, format.mintick) : "")
+    label.set_textcolor(lbLow, showLabels ? colLow : color.new(colLow, 100))
+hasData = not na(adr)
+touchHigh = hasData and low <= h50 and high >= h50
+touchLow = hasData and low <= l50 and high >= l50
+adrCompletion = adr > 0 ? (todayRange / adr) * 100.0 : 0.0
+completionCol = adrCompletion > 100 ? color.red : adrCompletion >= 50 ? color.yellow : color.lime
+adrUnits = toUnits(adr)
+rangeUnits = toUnits(todayRange)
+distHigh = math.abs(toUnits(h50 - close))
+distLow = math.abs(toUnits(close - l50))
+adrDateStr = str.format_time(lastDayTime, "yyyy-MM-dd", syminfo.timezone)
+var table dash = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 75), frame_color=color.gray, frame_width=1, border_color=color.new(color.gray, 50), border_width=1)
+if showDash and barstate.islast
+    table.cell(dash, 0, 0, "ADR 50 SR Pro", text_color=color.aqua)
+    table.cell(dash, 1, 0, unitName, text_color=color.gray)
+    table.cell(dash, 0, 1, "ADR Period", text_color=color.silver)
+    table.cell(dash, 1, 1, str.tostring(adrPeriod), text_color=color.white)
+    table.cell(dash, 0, 2, "ADR Value", text_color=color.silver)
+    table.cell(dash, 1, 2, str.tostring(adrUnits, "#.#") + " " + unitName, text_color=color.white)
+    table.cell(dash, 0, 3, "Today Range", text_color=color.silver)
+    table.cell(dash, 1, 3, str.tostring(rangeUnits, "#.#") + " " + unitName, text_color=color.white)
+    table.cell(dash, 0, 4, "ADR Completion", text_color=color.silver)
+    table.cell(dash, 1, 4, str.tostring(adrCompletion, "#") + "%", text_color=completionCol)
+    table.cell(dash, 0, 5, "To H50", text_color=color.silver)
+    table.cell(dash, 1, 5, showDistance ? str.tostring(distHigh, "#.#") + " " + unitName : "-", text_color=colHigh)
+    table.cell(dash, 0, 6, "To L50", text_color=color.silver)
+    table.cell(dash, 1, 6, showDistance ? str.tostring(distLow, "#.#") + " " + unitName : "-", text_color=colLow)
+    table.cell(dash, 0, 7, showAdrDate ? "ADR Date" : "", text_color=color.silver)
+    table.cell(dash, 1, 7, showAdrDate ? adrDateStr : "", text_color=color.white)`
+
 func sampleCandles(n int) []Candle {
 	candles := make([]Candle, n)
 	price := 100.0
@@ -96,6 +184,33 @@ func sampleCandles(n int) []Candle {
 			Close:  close,
 			Volume: 40 + float64((i*17)%220),
 		}
+		price = close
+	}
+	return candles
+}
+
+func sampleIntradayCandles(days int) []Candle {
+	candles := make([]Candle, 0, days*96)
+	price := 100.0
+	start := int64(1782864000)
+	for i := 0; i < days*96; i++ {
+		close := price + float64((i%11)-5)*0.13
+		if i%96 == 10 {
+			close += 1.8
+		}
+		if i%96 == 55 {
+			close -= 1.1
+		}
+		high := max(price, close) + 0.35 + float64(i%5)*0.03
+		low := min(price, close) - 0.35 - float64(i%3)*0.02
+		candles = append(candles, Candle{
+			Time:   start + int64(i*900),
+			Open:   price,
+			High:   high,
+			Low:    low,
+			Close:  close,
+			Volume: 100 + float64((i*19)%300),
+		})
 		price = close
 	}
 	return candles
@@ -169,17 +284,36 @@ func TestCompileBetterRSIProducesBandsAndPlots(t *testing.T) {
 	}
 }
 
-func TestCompileReportsUnsupportedObjectRuntime(t *testing.T) {
+func TestCompileADRObjectRuntime(t *testing.T) {
 	resp := Compile(context.Background(), CompileRequest{
-		ScriptID: "objects",
-		SourceCode: `indicator("Objects", overlay=true)
-var line ln = na
-ln := line.new(bar_index, close, bar_index, close)
-line.set_x2(ln, bar_index)`,
-		Candles: sampleCandles(20),
+		ScriptID:   "adr",
+		SourceCode: adrSource,
+		Candles:    sampleIntradayCandles(18),
 	})
-	if len(resp.UnsupportedFeatures) == 0 {
-		t.Fatalf("expected unsupported object feature")
+	if len(resp.Errors) > 0 {
+		t.Fatalf("compile errors: %+v", resp.Errors)
+	}
+	if len(resp.UnsupportedFeatures) > 0 {
+		t.Fatalf("unexpected unsupported features: %+v", resp.UnsupportedFeatures)
+	}
+	hasLine := false
+	hasFill := false
+	for _, series := range resp.Result.Series {
+		if series.Type == "line" {
+			hasLine = true
+		}
+		if series.Type == "baselineFill" {
+			hasFill = true
+		}
+	}
+	if !hasLine || !hasFill {
+		t.Fatalf("expected ADR line and zone series, got %+v", resp.Result.Series)
+	}
+	if len(resp.Result.Labels) == 0 {
+		t.Fatalf("expected ADR labels")
+	}
+	if resp.Result.Dashboard == nil || len(resp.Result.Dashboard.Rows) < 4 {
+		t.Fatalf("expected ADR dashboard, got %+v", resp.Result.Dashboard)
 	}
 }
 

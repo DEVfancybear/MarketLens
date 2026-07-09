@@ -4,7 +4,7 @@
  *
  * TradingView exposes one settings surface for every indicator, while the Inputs tab is generated
  * from that script's `input.*()` declarations. This component follows the same split:
- * - CUSTOM indicators read their schema from `extractPineInputDefinitions()`.
+ * - CUSTOM indicators read their schema from the Go Pine runtime API.
  * - Built-ins provide small local schemas but use the exact same field renderer.
  * - Saving only stores per-instance values; the Pine runtime re-executes the script with those
  *   values on the next chart render.
@@ -31,12 +31,15 @@ import type {
 } from "@/types";
 import { defaultIndicator } from "@/services/indicators";
 import {
-  extractPineInputDefinitions,
-  extractPineScriptMeta,
-  extractPineStyleDefinitions,
-  type PineInputDefinition,
-  type PineStyleDefinition,
-} from "@/services/pineScript";
+  getPineRuntimeInputs,
+  getPineRuntimeMeta,
+  getPineRuntimeStyles,
+} from "@/services/api/resources/pineRuntimeApi";
+import type {
+  PineInputDefinition,
+  PineScriptMeta,
+  PineStyleDefinition,
+} from "@/services/pineRuntimeTypes";
 import {
   commonStyleDefaults,
   STYLE_INPUTS_IN_STATUS_LINE_KEY,
@@ -322,30 +325,41 @@ export function IndicatorSettingsDialog() {
     useDraggableDialog();
 
   const indicator = indicators.find((item) => item.id === editingId);
-  const pineInputs = useMemo(
-    () =>
-      indicator?.type === "CUSTOM"
-        ? extractPineInputDefinitions(indicator.sourceCode ?? "")
-        : [],
-    [indicator],
-  );
-  const pineStyles = useMemo(
-    () =>
-      indicator?.type === "CUSTOM"
-        ? extractPineStyleDefinitions(indicator.sourceCode ?? "")
-        : [],
-    [indicator],
-  );
-  const pineMeta = useMemo(
-    () =>
-      indicator?.type === "CUSTOM"
-        ? extractPineScriptMeta(indicator.sourceCode ?? "")
-        : null,
-    [indicator],
-  );
+  const [pineSchema, setPineSchema] = useState<{
+    sourceCode: string;
+    inputs: PineInputDefinition[];
+    styles: PineStyleDefinition[];
+    meta: PineScriptMeta | null;
+  }>({ sourceCode: "", inputs: [], styles: [], meta: null });
+  const pineInputs = pineSchema.inputs;
+  const pineStyles = pineSchema.styles;
+  const pineMeta = pineSchema.meta;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("inputs");
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
+
+  useEffect(() => {
+    const sourceCode = indicator?.type === "CUSTOM" ? indicator.sourceCode ?? "" : "";
+    if (!sourceCode.trim()) {
+      setPineSchema({ sourceCode: "", inputs: [], styles: [], meta: null });
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      getPineRuntimeInputs(sourceCode, indicator?.inputValues ?? {}),
+      getPineRuntimeStyles(sourceCode, indicator?.styleValues ?? {}),
+      getPineRuntimeMeta(sourceCode),
+    ])
+      .then(([inputs, styles, meta]) => {
+        if (!cancelled) setPineSchema({ sourceCode, inputs, styles, meta });
+      })
+      .catch(() => {
+        if (!cancelled) setPineSchema({ sourceCode, inputs: [], styles: [], meta: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [indicator?.id, indicator?.sourceCode, indicator?.inputValues, indicator?.styleValues, indicator?.type]);
 
   useEffect(() => {
     if (!indicator) return;

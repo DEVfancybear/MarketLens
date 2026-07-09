@@ -171,9 +171,10 @@ mapping. Legacy `fib` mirrors retracement for saved drawings. Read
 Recent indicator note: Pine source-code indicators now live in the bottom `Pine Editor` tab, with
 an embedded `My scripts` sidebar rather than a popup. Saved scripts persist under `pineScripts`;
 active chart instances remain in `indicators` as type `CUSTOM`. Custom scripts are parsed by the
-whitelist compiler in `src/services/pineScript.ts`; do not introduce `eval`, `new Function`, or any
-general JavaScript execution path for user source. Read `docs/INDICATOR_ARCHITECTURE.md` and guard
-with `npm run check:pine-indicator`.
+whitelist compiler in `backend/internal/pineruntime`; the frontend only calls Pine runtime APIs and
+renders returned `IndicatorResult` payloads. Do not introduce `eval`, `new Function`, or any general
+JavaScript execution path for user source. Read `docs/INDICATOR_ARCHITECTURE.md`,
+`docs/PINE_RUNTIME_GO_MIGRATION.md`, and guard with backend runtime tests.
 
 ## Repo state
 - **Branch:** `master`
@@ -213,7 +214,7 @@ with `npm run check:pine-indicator`.
   remove-all action. `IndicatorPane` shows settings gear. `useHotkeys` extended with drawing
   shortcuts (1–9 tool switch, Delete, Ctrl+D duplicate, Ctrl+A select all, Ctrl+I toggle SMA,
   Escape deselect/cancel). Source-code indicators are handled by the bottom `Pine Editor` tab
-  and `src/services/pineScript.ts`; see `docs/INDICATOR_ARCHITECTURE.md`. Left rail width
+  and backend `internal/pineruntime`; see `docs/INDICATOR_ARCHITECTURE.md`. Left rail width
   increased 40->52px. See `CURRENT_PROGRESS.md`.
 - **Position settings dialog (updated 2026-07-01):** `chart/PositionSettingsDialog.tsx` is a
   TradingView-style Inputs/Style/Visibility modal for the long/short tool, opened via the gear
@@ -559,7 +560,8 @@ Live pipeline: `provider → MarketDataService → marketDataStore → hooks →
 - Left toolbar + indicators (Phase 5): `components/toolbar/DrawingToolbar.tsx`,
   `components/toolbar/IndicatorMenu.tsx`, `components/toolbar/IndicatorSettingsDialog.tsx`,
   `components/chart/IndicatorPane.tsx`, `components/pine/PineEditor.tsx`,
-  `services/pineScript.ts`, `hooks/useHotkeys.ts`. Architecture: `docs/INDICATOR_ARCHITECTURE.md`.
+  `services/pineRuntimeCache.ts`, `services/api/resources/pineRuntimeApi.ts`, `hooks/useHotkeys.ts`.
+  Architecture: `docs/INDICATOR_ARCHITECTURE.md`.
 - Visibility gate: `hooks/useVisibleCandles.ts`.
 - Watchlist: `components/watchlist/Watchlist.tsx`, `store/watchlistStore.ts`.
 - Runtime loops: `components/layout/GlobalRuntime.tsx`.

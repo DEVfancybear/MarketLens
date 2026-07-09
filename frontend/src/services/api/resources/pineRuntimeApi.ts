@@ -11,7 +11,7 @@ import type {
   PineInputDefinition,
   PineScriptMeta,
   PineStyleDefinition,
-} from "@/services/pineScript";
+} from "@/services/pineRuntimeTypes";
 
 export interface PineRuntimeError {
   message: string;

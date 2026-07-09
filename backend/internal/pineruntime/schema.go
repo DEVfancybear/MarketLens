@@ -378,7 +378,10 @@ func parseIntBase(input string, base int) (int64, error) {
 }
 
 func lineStyle(expression string) int {
-	key := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(expression, "plot.style_")))
+	key := strings.ToLower(strings.TrimSpace(expression))
+	for _, prefix := range []string{"plot.style_", "line.style_", "hline.style_"} {
+		key = strings.TrimPrefix(key, prefix)
+	}
 	switch key {
 	case "dotted":
 		return 1
@@ -527,6 +530,51 @@ func ExtractStyles(source string) []StyleDefinition {
 			Group:             "Fills",
 			DefaultVisible:    true,
 			DefaultColor:      resolveColor(colorExpr, "#e040fb"),
+			SupportsColor:     true,
+			SupportsLineWidth: false,
+			SupportsLineStyle: false,
+		})
+	}
+
+	lines := sourceLines(cleaned)
+	for index, call := range objectCreationCalls(lines, "line.new") {
+		colorExpr := rawArg(call.args, "color", 6)
+		widthExpr := rawArg(call.args, "width", 8)
+		defs = append(defs, StyleDefinition{
+			Key:               styleKey("line", call.variable),
+			Title:             call.variable,
+			Target:            "line",
+			Group:             "Drawing Objects",
+			DefaultVisible:    true,
+			DefaultColor:      resolveColor(colorExpr, defaultColors[(len(defs)+index)%len(defaultColors)]),
+			DefaultLineWidth:  intPtr(lineWidth(widthExpr, 2)),
+			DefaultLineStyle:  intPtr(lineStyle(rawArg(call.args, "style", 7))),
+			SupportsColor:     true,
+			SupportsLineWidth: true,
+			SupportsLineStyle: true,
+		})
+	}
+	for index, call := range objectCreationCalls(lines, "box.new") {
+		defs = append(defs, StyleDefinition{
+			Key:               styleKey("box", call.variable),
+			Title:             call.variable,
+			Target:            "box",
+			Group:             "Drawing Objects",
+			DefaultVisible:    true,
+			DefaultColor:      resolveColor(rawArg(call.args, "bgcolor", 9), defaultColors[(len(defs)+index)%len(defaultColors)]),
+			SupportsColor:     true,
+			SupportsLineWidth: false,
+			SupportsLineStyle: false,
+		})
+	}
+	for index, call := range objectCreationCalls(lines, "label.new") {
+		defs = append(defs, StyleDefinition{
+			Key:               styleKey("label", call.variable),
+			Title:             call.variable,
+			Target:            "label",
+			Group:             "Drawing Objects",
+			DefaultVisible:    true,
+			DefaultColor:      resolveColor(rawArg(call.args, "textcolor", 7), defaultColors[(len(defs)+index)%len(defaultColors)]),
 			SupportsColor:     true,
 			SupportsLineWidth: false,
 			SupportsLineStyle: false,

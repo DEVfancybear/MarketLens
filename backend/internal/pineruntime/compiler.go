@@ -63,21 +63,19 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		})
 	}
 	resp.Result.Series = append(resp.Result.Series, readPlots(cleaned, context, req.Candles, req.StyleOverrides, &resp.Errors)...)
-	if len(resp.Result.Series) == 0 && len(resp.Errors) == 0 {
-		resp.Errors = append(resp.Errors, RuntimeError{Message: "No supported plot(), hline(), or fill() output found"})
+	if objectResult := compileObjectRuntime(cleaned, req.Candles, id, context, req.StyleOverrides, &resp.Errors); objectResult != nil {
+		resp.Result.Series = append(resp.Result.Series, objectResult.Series...)
+		resp.Result.Labels = append(resp.Result.Labels, objectResult.Labels...)
+		resp.Result.Dashboard = objectResult.Dashboard
+	}
+	if len(resp.Result.Series) == 0 && len(resp.Result.Labels) == 0 && resp.Result.Dashboard == nil && len(resp.Errors) == 0 {
+		resp.Errors = append(resp.Errors, RuntimeError{Message: "No supported plot(), hline(), fill(), or drawing object output found"})
 	}
 	return resp
 }
 
 func unsupportedFeatures(source string) []string {
-	cleaned := normalizeSource(source)
-	features := []string{}
-	for _, token := range []string{"line.new(", "box.new(", "label.new(", "table.new(", "request.security("} {
-		if strings.Contains(cleaned, token) {
-			features = append(features, strings.TrimSuffix(token, "("))
-		}
-	}
-	return features
+	return []string{}
 }
 
 func readAssignments(cleaned string, context *evalContext, errors *[]RuntimeError) {

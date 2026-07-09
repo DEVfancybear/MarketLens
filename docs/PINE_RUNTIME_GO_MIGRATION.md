@@ -1,15 +1,13 @@
 # Pine Runtime Go Migration
 
 _Date: 2026-07-09. Scope: move the Pine-like parser/compiler runtime out of the
-frontend `pineScript.ts` service and into the Go backend._
+frontend and into the Go backend._
 
 ## Goal
 
-The current custom-indicator runtime is mostly implemented in
-`frontend/src/services/pineScript.ts`. That file parses source metadata, extracts
-settings schemas, evaluates a supported Pine subset, and emits chart-ready
-series/objects. It has grown too large for frontend maintenance and runs on the
-browser main thread during chart rendering.
+The custom-indicator runtime is owned by `backend/internal/pineruntime`. The
+frontend no longer ships a Pine compiler; it only calls backend schema/compile
+APIs and renders the returned `IndicatorResult`.
 
 The migration goal is to make the backend the owner of Pine parsing and
 compilation, while the frontend stays responsible for:
@@ -17,8 +15,7 @@ compilation, while the frontend stays responsible for:
 - Pine Editor UI and saved-script actions.
 - Indicator settings UI generated from backend schemas.
 - Chart rendering from backend-normalized `PineCompilation` payloads.
-- Lightweight anonymous fallback only while backend runtime parity is being
-  completed.
+- No browser-side Pine parsing/compilation fallback.
 
 ## Non-Goals
 
@@ -35,9 +32,9 @@ Implemented on 2026-07-09:
 
 | Concern | Current owner |
 | --- | --- |
-| Script metadata extraction | Go `backend/internal/pineruntime` API; frontend still has local fallback helpers |
-| Input schema extraction | Go `backend/internal/pineruntime` API; settings dialog still uses local helper until async schema cache migration |
-| Style schema extraction | Go `backend/internal/pineruntime` API; settings dialog still uses local helper until async schema cache migration |
+| Script metadata extraction | Go `backend/internal/pineruntime` API |
+| Input schema extraction | Go `backend/internal/pineruntime` API |
+| Style schema extraction | Go `backend/internal/pineruntime` API, including plot/hline/fill and line/box/label objects |
 | Pine subset compilation | Go `backend/internal/pineruntime` through `/api/v1/pine-runtime/compile` |
 | Built-in indicator calculations | `frontend/src/services/indicators.ts` |
 | Active indicator dispatch | `frontend/src/services/indicators.ts` |
@@ -50,11 +47,18 @@ CUSTOM indicators no longer call the compiler synchronously from
 `computeIndicator()`. The chart/pane effects request backend compilation, render
 the latest cached `IndicatorResult`, and rerender when the cache resolves.
 
-Temporary migration bridge: Go runtime supports plot/hline/fill and core
-series expressions used by VSA Volume and Better RSI. Object-heavy scripts
-(`line.new`, `box.new`, `label.new`, `table.new`) are reported through
-`unsupportedFeatures`; the frontend cache falls back to the old TypeScript
-runtime for those scripts so existing ADR object rendering does not regress.
+Go runtime supports the chart-visible subset currently needed by VSA Volume,
+Better RSI, and ADR-style object-heavy scripts:
+
+- Plot/hline/fill output.
+- Per-bar color series and histogram plots.
+- `request.security()` for daily aggregation on chart candles.
+- Mutable Pine drawing objects compiled into immutable chart output:
+  `line.new/set_*`, `box.new/set_*`, `label.new/set_*`, and `table.new/cell`.
+
+The previous `frontend/src/services/pineScript.ts` fallback has been deleted.
+Unsupported language features must now be added to Go or reported as backend
+diagnostics; do not reintroduce a browser compiler.
 
 ## Target Ownership
 
@@ -90,9 +94,11 @@ backend/internal/pineruntime/
   scanner.go       # balanced call scanning, args, source lines
   schema.go        # indicator()/study(), input.*(), plot/hline/fill style extraction
   expression.go    # expression tokenizer/parser/evaluator
+  request_security.go # request.security() timeframe aggregation and expansion
+  object_runtime.go # line/box/label/table object compilation
   value.go         # Pine value model and series helpers
   models.go        # request/response structs
-  compiler_test.go # VSA, Better RSI, unsupported objects, HTTP contract tests
+  compiler_test.go # VSA, Better RSI, ADR object runtime, HTTP contract tests
 ```
 
 Keep this package isolated from persistence packages. It should not import
@@ -324,12 +330,12 @@ render invalidation; full candles are only sent in the compile request.
 
 ### Phase A - Backend runtime shell
 
-Status: implemented for the plot/hline/fill Pine subset.
+Status: implemented for plot/hline/fill, daily `request.security()`, and common object APIs.
 
 1. Added `internal/pineruntime` models and handlers.
 2. Added `/api/v1/pine-runtime/meta`, `/inputs`, `/styles`, `/compile`.
-3. Return structured `unsupportedFeatures` instead of panics or generic 500s.
-4. Added tests for VSA, Better RSI, unsupported object runtime, and HTTP compile route.
+3. Return structured runtime diagnostics instead of panics or generic 500s.
+4. Added tests for VSA, Better RSI, ADR object runtime, and HTTP compile route.
 
 ### Phase B - Frontend async adapter
 
@@ -337,9 +343,9 @@ Status: implemented for compile result cache.
 
 1. Added `src/services/api/resources/pineRuntimeApi.ts`.
 2. Added `src/services/pineRuntimeCache.ts`.
-3. Wired Pine Editor preview/add-to-chart validation to backend compile with TS fallback.
+3. Wired Pine Editor preview/add-to-chart validation to backend compile.
 4. `PriceChart` and `IndicatorPane` request backend compile asynchronously and render cached results.
-5. Existing `pineScript.ts` remains a temporary fallback for unsupported object scripts and backend outages.
+5. `IndicatorSettingsDialog` and legend status-line input summaries request backend schemas.
 
 ### Phase C - Chart runtime migration
 
@@ -352,14 +358,12 @@ Status: implemented for CUSTOM indicator render path.
 
 ### Phase D - Remove frontend compiler ownership
 
-Status: pending.
+Status: implemented.
 
-1. Replace `pineScript.ts` with thin compatibility helpers, or split it into:
-   - `pineRuntimeClient.ts` for API calls.
-   - `pineRuntimeFallback.ts` for anonymous/offline fallback only.
-2. Stop adding new Pine language support in TypeScript.
-3. Update docs and tests to name Go as the source of truth.
-4. Port object runtime support (`line`, `box`, `label`, `table`) to Go and remove the ADR fallback.
+1. Removed `frontend/src/services/pineScript.ts`.
+2. Added `frontend/src/services/pineRuntimeTypes.ts` for API contract types and default editor source.
+3. Stopped adding Pine support in TypeScript; Go is the source of truth.
+4. Ported object runtime support (`line`, `box`, `label`, `table`) and daily `request.security()` to Go.
 
 ## Error Handling
 
@@ -371,7 +375,7 @@ Backend errors should be user-actionable:
 | Unsupported feature | Show warning; render supported output if safe |
 | Timeout | Keep previous cached output and show non-blocking warning |
 | Too many candles/source too large | Ask frontend to reduce request size or paginate visible range |
-| Network/backend unavailable | Use temporary fallback only if explicitly enabled |
+| Network/backend unavailable | Keep previous cached output or render an empty result for that indicator |
 
 Never return a blank chart because a custom indicator failed. Indicator failure
 must be isolated to that indicator.
@@ -418,8 +422,6 @@ Manual checks:
 
 ## Open Decisions
 
-- Whether anonymous/offline mode should keep a limited TypeScript fallback or
-  require backend availability for Pine scripts.
 - Whether compile-by-script-id should be added:
   `POST /api/v1/pine-runtime/compile/:scriptId`.
 - Whether backend should cache compile responses by source hash and candle range,

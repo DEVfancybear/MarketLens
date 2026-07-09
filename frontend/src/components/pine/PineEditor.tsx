@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CloudUpload,
   Edit3,
@@ -26,8 +26,11 @@ import {
   togglePineFavoriteAtom,
 } from "@/store/chartStore";
 import { logAtom } from "@/store/uiStore";
-import { compilePineScript, extractPineScriptMeta } from "@/services/pineScript";
-import { compilePineRuntime } from "@/services/api/resources/pineRuntimeApi";
+import {
+  compilePineRuntime,
+  getPineRuntimeMeta,
+} from "@/services/api/resources/pineRuntimeApi";
+import type { PineScriptMeta } from "@/services/pineRuntimeTypes";
 import type { CustomIndicatorScript } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -52,8 +55,25 @@ export function PineEditor() {
     text: string;
   }>({ level: "idle", text: "Ready" });
   const [query, setQuery] = useState("");
+  const [meta, setMeta] = useState<PineScriptMeta>({
+    name: "Untitled script",
+    overlay: true,
+  });
 
-  const meta = useMemo(() => extractPineScriptMeta(source), [source]);
+  useEffect(() => {
+    let cancelled = false;
+    getPineRuntimeMeta(source)
+      .then((next) => {
+        if (!cancelled) setMeta(next);
+      })
+      .catch(() => {
+        if (!cancelled) setMeta({ name: "Untitled script", overlay: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source]);
+
   const filteredScripts = useMemo(() => {
     const q = query.trim().toLowerCase();
     return scripts
@@ -102,11 +122,15 @@ export function PineEditor() {
   };
 
   const handleRun = async () => {
-    let preview = await compilePineRuntime({
+    const preview = await compilePineRuntime({
       scriptId: "preview",
       sourceCode: source,
       candles: candles.slice(-500),
-    }).catch(() => compilePineScript(source, candles.slice(-500), "preview"));
+    }).catch((error) => ({
+      meta,
+      result: { id: "preview", series: [] },
+      errors: [error instanceof Error ? error.message : "Pine backend compile failed"],
+    }));
     if (preview.errors.length > 0) {
       const message = preview.errors[0];
       setStatus({ level: "error", text: message });

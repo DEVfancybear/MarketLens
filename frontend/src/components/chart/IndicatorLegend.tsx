@@ -1,15 +1,19 @@
 import { Braces, Eye, EyeOff, Settings, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { IndicatorConfig } from "@/types";
-import { extractPineInputDefinitions } from "@/services/pineScript";
+import { getPineRuntimeInputs } from "@/services/api/resources/pineRuntimeApi";
+import type { PineInputDefinition } from "@/services/pineRuntimeTypes";
 import {
   inputsInStatusLine,
   valuesInStatusLine,
 } from "@/services/indicatorStyle";
 
-function pineLegendInputs(indicator: IndicatorConfig): string {
-  const sourceCode = indicator.sourceCode;
-  if (!sourceCode) return "";
-  return extractPineInputDefinitions(sourceCode)
+function pineLegendInputs(
+  indicator: IndicatorConfig,
+  definitions: PineInputDefinition[] = [],
+): string {
+  if (definitions.length === 0) return "";
+  return definitions
     .filter((input) => input.kind !== "bool" && input.kind !== "color")
     .slice(0, 6)
     .map((input) => indicator.inputValues?.[input.key] ?? input.defaultValue)
@@ -20,6 +24,7 @@ function pineLegendInputs(indicator: IndicatorConfig): string {
 export function indicatorLegendTitle(
   indicator: IndicatorConfig,
   valueText?: string,
+  inputDefinitions?: PineInputDefinition[],
 ): string {
   const base =
     indicator.type === "CUSTOM"
@@ -28,7 +33,7 @@ export function indicatorLegendTitle(
   const params =
     inputsInStatusLine(indicator.styleValues)
       ? indicator.type === "CUSTOM"
-        ? pineLegendInputs(indicator)
+        ? pineLegendInputs(indicator, inputDefinitions)
         : indicator.type !== "VWAP" && indicator.length
           ? String(indicator.length)
           : ""
@@ -57,6 +62,36 @@ export function IndicatorLegend({
   onRemove: (id: string) => void;
   valueTextById?: Record<string, string>;
 }) {
+  const [inputDefinitionsById, setInputDefinitionsById] = useState<
+    Record<string, { sourceCode: string; definitions: PineInputDefinition[] }>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const indicator of indicators) {
+      if (indicator.type !== "CUSTOM" || !indicator.sourceCode?.trim()) continue;
+      if (inputDefinitionsById[indicator.id]?.sourceCode === indicator.sourceCode) continue;
+      getPineRuntimeInputs(indicator.sourceCode, indicator.inputValues ?? {})
+        .then((definitions) => {
+          if (cancelled) return;
+          setInputDefinitionsById((current) => ({
+            ...current,
+            [indicator.id]: { sourceCode: indicator.sourceCode ?? "", definitions },
+          }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setInputDefinitionsById((current) => ({
+            ...current,
+            [indicator.id]: { sourceCode: indicator.sourceCode ?? "", definitions: [] },
+          }));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [indicators, inputDefinitionsById]);
+
   if (indicators.length === 0) return null;
 
   return (
@@ -64,7 +99,11 @@ export function IndicatorLegend({
       {indicators.map((indicator) => {
         const visible = indicator.visible !== false;
         const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
-        const title = indicatorLegendTitle(indicator, valueTextById?.[indicator.id]);
+        const title = indicatorLegendTitle(
+          indicator,
+          valueTextById?.[indicator.id],
+          inputDefinitionsById[indicator.id]?.definitions,
+        );
         return (
           <div
             key={indicator.id}

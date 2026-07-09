@@ -46,7 +46,11 @@ import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
 import { defaultIndicator } from "@/services/indicators";
-import { DEFAULT_PINE_SOURCE, extractPineScriptMeta } from "@/services/pineScript";
+import { getPineRuntimeMeta } from "@/services/api/resources/pineRuntimeApi";
+import {
+  DEFAULT_PINE_SOURCE,
+  type PineScriptMeta,
+} from "@/services/pineRuntimeTypes";
 import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing/tools/positionTradePrefill";
 import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
@@ -755,11 +759,19 @@ export const clearIndicatorsAtom = atom(null, (_get, set) => {
   localStore.set("indicators", []);
 });
 
-function customIndicatorConfig(
+async function pineRuntimeMeta(sourceCode: string): Promise<PineScriptMeta> {
+  try {
+    return await getPineRuntimeMeta(sourceCode);
+  } catch {
+    return { name: "Untitled script", overlay: true };
+  }
+}
+
+async function customIndicatorConfig(
   script: Pick<CustomIndicatorScript, "id" | "name" | "sourceCode">,
   id = uid("ind"),
-): IndicatorConfig {
-  const meta = extractPineScriptMeta(script.sourceCode);
+): Promise<IndicatorConfig> {
+  const meta = await pineRuntimeMeta(script.sourceCode);
   return {
     id,
     type: "CUSTOM",
@@ -798,7 +810,7 @@ export const savePineScriptAtom = atom(
     set,
     arg: { id?: string | null; name: string; sourceCode: string },
   ) => {
-    const meta = extractPineScriptMeta(arg.sourceCode);
+    const meta = await pineRuntimeMeta(arg.sourceCode);
     const now = Date.now();
     const existing = arg.id
       ? _get(pineScriptsAtom).find((item) => item.id === arg.id)
@@ -851,7 +863,7 @@ export const addCustomIndicatorFromScriptAtom = atom(
       set(logAtom, "error", `Pine source is not loaded for ${script.name}`);
       return;
     }
-    const cfg = customIndicatorConfig(fullScript);
+    const cfg = await customIndicatorConfig(fullScript);
     const current = _get(indicatorsAtom);
     const existing = current.find(
       (item) => item.type === "CUSTOM" && item.scriptId === fullScript.id,
@@ -875,13 +887,13 @@ export const addCustomIndicatorFromScriptAtom = atom(
 
 export const addCustomIndicatorFromSourceAtom = atom(
   null,
-  (
+  async (
     _get,
     set,
     arg: { name: string; sourceCode: string; scriptId?: string | null },
   ) => {
-    const meta = extractPineScriptMeta(arg.sourceCode);
-    const cfg = customIndicatorConfig({
+    const meta = await pineRuntimeMeta(arg.sourceCode);
+    const cfg = await customIndicatorConfig({
       id: arg.scriptId ?? uid("pine-draft"),
       name: arg.name.trim() || meta.name,
       sourceCode: arg.sourceCode,

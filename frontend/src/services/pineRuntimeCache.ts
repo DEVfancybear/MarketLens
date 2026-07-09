@@ -1,6 +1,5 @@
 import type { Candle, IndicatorConfig, IndicatorResult } from "@/types";
 import { compilePineRuntime } from "@/services/api/resources/pineRuntimeApi";
-import { compilePineScript } from "@/services/pineScript";
 
 type Listener = () => void;
 
@@ -101,43 +100,10 @@ export function ensurePineIndicatorResult(
     styleOverrides: cfg.styleValues,
   })
     .then((compiled) => {
-      const hasUnsupportedObjectRuntime = (compiled.unsupportedFeatures ?? []).some((item) =>
-        item === "line.new" ||
-        item === "box.new" ||
-        item === "label.new" ||
-        item === "table.new",
-      );
-      if (compiled.errors.length === 0 && !hasUnsupportedObjectRuntime) {
-        cache.set(key, compiled.result);
-        return;
-      }
-
-      // Temporary migration bridge: object-heavy scripts such as ADR still use
-      // the existing TypeScript runtime until the Go object runtime reaches
-      // parity. This keeps chart behavior intact while new Pine support moves
-      // to backend first.
-      cache.set(
-        key,
-        compilePineScript(
-          cfg.sourceCode ?? "",
-          candles,
-          cfg.id,
-          cfg.inputValues,
-          cfg.styleValues,
-        ).result,
-      );
+      cache.set(key, compiled.errors.length === 0 ? compiled.result : { id: cfg.id, series: [] });
     })
     .catch(() => {
-      cache.set(
-        key,
-        compilePineScript(
-          cfg.sourceCode ?? "",
-          candles,
-          cfg.id,
-          cfg.inputValues,
-          cfg.styleValues,
-        ).result,
-      );
+      cache.set(key, { id: cfg.id, series: [] });
     })
     .finally(() => {
       inflight.delete(key);

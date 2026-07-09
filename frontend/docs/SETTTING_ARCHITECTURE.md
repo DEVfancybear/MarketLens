@@ -6,7 +6,7 @@ This document is the maintenance guide for indicator settings. The important rul
 
 **Do not build one settings dialog per indicator.** The settings UI is shared. Indicator-specific
 controls must come from a schema, and CUSTOM Pine indicators must get that schema from their
-`input.*()` declarations.
+`input.*()` declarations through the Go Pine runtime API.
 
 The filename intentionally follows the requested project spelling: `SETTTING_ARCHITECTURE.md`.
 
@@ -25,18 +25,17 @@ The filename intentionally follows the requested project spelling: `SETTTING_ARC
 Indicator legend gear
   -> setEditingIndicatorAtom(indicator.id)
   -> IndicatorSettingsDialog
-     -> built-in schema OR extractPineInputDefinitions(sourceCode)
-     -> built-in style schema OR extractPineStyleDefinitions(sourceCode)
+     -> built-in schema OR POST /api/v1/pine-runtime/inputs
+     -> built-in style schema OR POST /api/v1/pine-runtime/styles
      -> local draft values
      -> updateIndicatorAtom({ inputValues, styleValues / built-in fields })
-  -> indicatorsAtom persisted to localStorage
-  -> computeIndicator(config, candles)
-     -> CUSTOM: computeCustomIndicator(config, candles)
-        -> compilePineScript(sourceCode, candles, id, inputValues, styleValues)
-           -> EvalContext.inputOverrides
-           -> style overrides applied to visual declarations
-           -> evaluated Pine values
-           -> IndicatorResult
+  -> indicatorsAtom persisted to backend/local anonymous cache
+  -> PriceChart / IndicatorPane invalidates pineRuntimeCache
+  -> POST /api/v1/pine-runtime/compile with inputValues/styleValues
+     -> EvalContext.inputOverrides
+     -> style overrides applied to visual declarations
+     -> evaluated Pine values
+     -> IndicatorResult
 ```
 
 ## Key Files
@@ -46,7 +45,8 @@ Indicator legend gear
 | Shared settings dialog | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
 | Active indicator model | `src/types/indicators.ts` |
 | Indicator persistence/actions | `src/store/chartStore.ts` |
-| Pine input/style schema extraction and runtime overrides | `src/services/pineScript.ts` |
+| Pine input/style schema API client | `src/services/api/resources/pineRuntimeApi.ts` |
+| Pine runtime shared types/default source | `src/services/pineRuntimeTypes.ts` |
 | Shared output/status style keys | `src/services/indicatorStyle.ts` |
 | Built-in indicator defaults | `src/services/indicators.ts` |
 | Overlay/separate-pane settings entry points | `src/components/chart/PriceChart.tsx`, `src/components/chart/IndicatorPane.tsx` |
@@ -93,7 +93,7 @@ defaults such as transparent fills.
 
 ## Pine Input Schema
 
-`extractPineInputDefinitions(sourceCode)` parses top-level assignments like:
+`POST /api/v1/pine-runtime/inputs` parses top-level assignments like:
 
 ```pine
 len = input.int(14, "Period", minval=1)
@@ -125,7 +125,7 @@ change; variable names are what the runtime evaluates later.
 
 ## Pine Style Schema
 
-`extractPineStyleDefinitions(sourceCode)` parses visual declarations into style rows:
+`POST /api/v1/pine-runtime/styles` parses visual declarations into style rows:
 
 - `plot(...)`
 - `hline(...)`
@@ -181,8 +181,8 @@ their intended runtime color logic.
 `IndicatorSettingsDialog` has three tabs:
 
 - `Inputs`: renders Pine inputs or built-in input schema.
-- `Style`: renders common visual controls from built-in style schema or
-  `extractPineStyleDefinitions()`. Rows can expose visibility, color, line width, and line style.
+- `Style`: renders common visual controls from built-in style schema or backend Pine style schema.
+  Rows can expose visibility, color, line width, and line style.
   Pine `input.color(...)` controls remain in `Inputs`, because those are script-authored inputs.
   The bottom of the tab always renders TradingView-style common controls:
   `Output Values -> Precision`, `Labels on price scale`, `Values in status line`, and
@@ -198,13 +198,13 @@ The dialog edits local draft state. It only writes to `indicatorsAtom` when the 
 CUSTOM indicators compile through:
 
 ```ts
-compilePineScript(sourceCode, candles, indicatorId, inputValues, styleValues)
+POST /api/v1/pine-runtime/compile
 ```
 
-The compiler stores overrides in:
+The Go compiler stores overrides in:
 
-```ts
-EvalContext.inputOverrides: Map<string, IndicatorInputValue>
+```go
+evalContext.inputOverrides map[string]InputValue
 ```
 
 During assignment evaluation, `evaluateInputExpression(expression, context, variableName)` checks
@@ -231,7 +231,7 @@ defaults in another part.
 CUSTOM indicator style overrides compile through:
 
 ```ts
-compilePineScript(sourceCode, candles, indicatorId, inputValues, styleValues)
+POST /api/v1/pine-runtime/compile
 ```
 
 The compiler applies style values after expression evaluation and before emitting
@@ -288,19 +288,19 @@ separate surfaces.
 When a new public script needs an unsupported input kind:
 
 1. Extend `PineInputKind`.
-2. Update `inferInputKind()` and `inputDefaultValue()` in `pineScript.ts`.
+2. Update `inferInputKind()` and `inputDefaultValue()` in `backend/internal/pineruntime/schema.go`.
 3. Update `InputField` in `IndicatorSettingsDialog.tsx` to render the UI control.
-4. Update `inputOverrideValue()` to convert the saved value into a `PineValue`.
-5. Add a focused guard in `scripts/check-pine-indicator.mjs`.
+4. Update `inputOverrideValue()` in `backend/internal/pineruntime/compiler.go` to convert the saved value into a `pineValue`.
+5. Add a focused backend test in `backend/internal/pineruntime/compiler_test.go`.
 
 Do not special-case the indicator title, saved script name, or source filename.
 
 When a new visual primitive needs style support:
 
 1. Extend `PineStyleTarget` if needed.
-2. Add extraction to `extractPineStyleDefinitions()`.
+2. Add extraction to `ExtractStyles()` in `backend/internal/pineruntime/schema.go`.
 3. Add runtime application in the compiler path that emits that visual primitive.
-4. Add or update guard coverage in `scripts/check-pine-indicator.mjs`.
+4. Add or update guard coverage in `backend/internal/pineruntime/compiler_test.go`.
 
 Do not add an indicator-name branch such as `if (name.includes("ADR"))`.
 
