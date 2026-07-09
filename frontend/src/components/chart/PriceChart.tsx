@@ -34,6 +34,7 @@ import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { activeAtom as replayActiveAtom } from "@/store/replayStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
+import { indicatorSeriesDataForCandles } from "@/services/indicatorSeriesProjection";
 import { chartColors, makeTimeFormatter } from "./chartTheme";
 import {
   RIGHT_OFFSET_BARS,
@@ -641,7 +642,7 @@ export function PriceChart({
           });
         }
         series![idx].setData(
-          s.data.map((p) => ({
+          indicatorSeriesDataForCandles(s, candles).map((p) => ({
             time: p.time as UTCTimestamp,
             value: p.value,
             ...(p.color ? { color: p.color } : {}),
@@ -649,7 +650,7 @@ export function PriceChart({
         );
       });
     }
-  }, [overlayResults, ready, theme]);
+  }, [candles, overlayResults, ready, theme]);
 
   useEffect(() => {
     const chart = chartRef.current;

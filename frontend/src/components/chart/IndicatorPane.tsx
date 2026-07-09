@@ -6,7 +6,12 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle, IndicatorConfig, IndicatorSeries } from "@/types";
+import type {
+  Candle,
+  IndicatorConfig,
+  IndicatorResult,
+  IndicatorSeries,
+} from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import { themeAtom } from "@/store/uiStore";
 import {
@@ -32,10 +37,15 @@ import {
 import { computeIndicator } from "@/services/indicators";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import {
+  indicatorSeriesDataForCandles,
+  type IndicatorLogicalRange,
+} from "@/services/indicatorSeriesProjection";
+import {
   ensurePineIndicatorResult,
   subscribePineRuntimeCache,
 } from "@/services/pineRuntimeCache";
 import { IndicatorLegend } from "./IndicatorLegend";
+import { indicatorPaneTimeAnchorData } from "./indicatorPaneTimeScale";
 
 type PaneSeriesApi =
   | ISeriesApi<"Line">
@@ -85,8 +95,13 @@ export function IndicatorPane({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const anchorSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const seriesRef = useRef<PaneSeriesApi[]>([]);
   const seriesSignatureRef = useRef("");
+  const candlesRef = useRef<readonly Candle[]>(candles);
+  const resultRef = useRef<IndicatorResult | null>(null);
+  const visibleLogicalRangeRef = useRef<IndicatorLogicalRange | null>(null);
+  const projectedRangeKeyRef = useRef("");
   const theme = useAtomValue(themeAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
@@ -100,6 +115,45 @@ export function IndicatorPane({
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const [legendValueText, setLegendValueText] = useState("");
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
+
+  const refreshViewportProjectedSeries = (onlyExtended: boolean) => {
+    const result = resultRef.current;
+    const sourceCandles = candlesRef.current;
+    if (!result) return;
+    const visibleRange = visibleLogicalRangeRef.current;
+
+    anchorSeriesRef.current?.setData(
+      indicatorPaneTimeAnchorData(sourceCandles, result, visibleRange).map(
+        (point) => ({
+          time: point.time as UTCTimestamp,
+          value: point.value,
+        }),
+      ),
+    );
+
+    result.series.forEach((s, index) => {
+      if (onlyExtended && !s.extendToVisibleRange) return;
+      const series = seriesRef.current[index];
+      if (!series) return;
+      const isHist = s.type === "histogram" || s.key === "hist";
+      series.setData(
+        indicatorSeriesDataForCandles(s, sourceCandles, visibleRange).map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+          ...(p.color
+            ? { color: p.color }
+            : isHist
+              ? {
+                  color:
+                    p.value >= 0
+                      ? chartColors(theme).bull
+                      : chartColors(theme).bear,
+                }
+              : {}),
+        })),
+      );
+    });
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -120,10 +174,17 @@ export function IndicatorPane({
       handleScale: false,
     });
     chartRef.current = chart;
+    anchorSeriesRef.current = chart.addLineSeries({
+      color: "rgba(0, 0, 0, 0)",
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
 
     return () => {
       chart.remove();
       chartRef.current = null;
+      anchorSeriesRef.current = null;
       seriesRef.current = [];
       seriesSignatureRef.current = "";
     };
@@ -150,6 +211,14 @@ export function IndicatorPane({
     const target = chartRef.current?.timeScale();
     const handler = () => {
       const range = sub.getVisibleLogicalRange();
+      if (range) {
+        visibleLogicalRangeRef.current = { from: range.from, to: range.to };
+        const rangeKey = `${Math.floor(range.from)}:${Math.ceil(range.to)}`;
+        if (rangeKey !== projectedRangeKeyRef.current) {
+          projectedRangeKeyRef.current = rangeKey;
+          refreshViewportProjectedSeries(true);
+        }
+      }
       if (range && target) target.setVisibleLogicalRange(range);
     };
     sub.subscribeVisibleLogicalRangeChange(handler);
@@ -172,6 +241,7 @@ export function IndicatorPane({
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    candlesRef.current = candles;
     if (cfg.visible === false) {
       for (const series of seriesRef.current) chart.removeSeries(series);
       seriesRef.current = [];
@@ -180,6 +250,7 @@ export function IndicatorPane({
       return;
     }
     const result = computeIndicator(cfg, candles, { symbol, timeframe });
+    resultRef.current = result;
     setLegendValueText(indicatorResultValueText(result));
     const signature = seriesSignature(result.series);
 
@@ -272,24 +343,11 @@ export function IndicatorPane({
               }),
         });
       }
-      series.setData(
-        s.data.map((p) => ({
-          time: p.time as UTCTimestamp,
-          value: p.value,
-          ...(p.color
-            ? { color: p.color }
-            : isHist
-              ? {
-                  color:
-                    p.value >= 0
-                      ? chartColors(theme).bull
-                      : chartColors(theme).bear,
-                }
-              : {}),
-        })),
-      );
     });
-  }, [cfg, candles, theme, pineRuntimeVersion, symbol, timeframe]);
+    refreshViewportProjectedSeries(false);
+    const range = mainChart?.timeScale().getVisibleLogicalRange();
+    if (range) chart.timeScale().setVisibleLogicalRange(range);
+  }, [cfg, candles, theme, pineRuntimeVersion, symbol, timeframe, mainChart]);
 
   const toggleVisibility = () => {
     updateIndicator({ id: cfg.id, patch: { visible: cfg.visible === false } });

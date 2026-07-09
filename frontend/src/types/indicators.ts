@@ -62,6 +62,8 @@ export interface IndicatorSeries {
   lineStyle?: IndicatorLineStyle;
   baseValue?: number;
   lastValueVisible?: boolean;
+  statusLineVisible?: boolean;
+  extendToVisibleRange?: boolean;
   lineVisible?: boolean;
   /** Optional output precision from the common indicator Style tab. */
   precision?: number;

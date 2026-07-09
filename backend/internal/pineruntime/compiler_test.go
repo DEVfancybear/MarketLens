@@ -3,6 +3,7 @@ package pineruntime
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -274,13 +275,90 @@ func TestCompileBetterRSIProducesBandsAndPlots(t *testing.T) {
 		t.Fatalf("expected hlines/fill/plots, got %d", len(resp.Result.Series))
 	}
 	foundRSI := false
+	foundCycler := false
+	foundExtendedReference := false
 	for _, series := range resp.Result.Series {
+		if (series.Type == "line" || series.Type == "baselineFill") &&
+			series.ExtendToVisibleRange != nil &&
+			*series.ExtendToVisibleRange {
+			foundExtendedReference = true
+		}
 		if series.Key == "RSI" && len(series.Data) > 0 {
 			foundRSI = true
+			if len(series.Data) < 150 {
+				t.Fatalf("RSI plot should retain the visible candle range, got %d points", len(series.Data))
+			}
+			minValue := math.Inf(1)
+			maxValue := math.Inf(-1)
+			for _, point := range series.Data {
+				minValue = min(minValue, point.Value)
+				maxValue = max(maxValue, point.Value)
+				if point.Value < 0 || point.Value > 100 {
+					t.Fatalf("RSI value out of oscillator bounds: %+v", point)
+				}
+			}
+			if maxValue-minValue < 5 {
+				t.Fatalf("RSI plot should vary visibly, min=%f max=%f", minValue, maxValue)
+			}
+		}
+		if series.Key == "Cycler colors" && len(series.Data) > 0 {
+			foundCycler = true
 		}
 	}
 	if !foundRSI {
 		t.Fatalf("missing RSI plot: %+v", resp.Result.Series)
+	}
+	if !foundCycler {
+		t.Fatalf("missing cycler plot: %+v", resp.Result.Series)
+	}
+	if !foundExtendedReference {
+		t.Fatalf("missing viewport-extended hline/fill reference output: %+v", resp.Result.Series)
+	}
+}
+
+func TestCompileLineBreakPlotDoesNotBridgeNaGaps(t *testing.T) {
+	source := `//@version=5
+indicator("Line break")
+x = close > 100 ? close : na
+plot(x, style=linebr, linewidth=3, color=color.red, title="Break Plot")`
+	candles := sampleCandles(12)
+	for index := range candles {
+		if index >= 4 && index <= 7 {
+			candles[index].Close = 95
+		} else {
+			candles[index].Close = 105 + float64(index)
+		}
+	}
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID:   "linebr",
+		SourceCode: source,
+		Candles:    candles,
+	})
+	if len(resp.Errors) > 0 {
+		t.Fatalf("compile errors: %+v", resp.Errors)
+	}
+	segments := []IndicatorSeries{}
+	for _, series := range resp.Result.Series {
+		if strings.HasPrefix(series.Key, "Break Plot:") {
+			segments = append(segments, series)
+		}
+	}
+	if len(segments) != 2 {
+		t.Fatalf("expected two linebr segments, got %d: %+v", len(segments), resp.Result.Series)
+	}
+	for _, series := range segments {
+		if series.StatusLineVisible == nil || *series.StatusLineVisible {
+			t.Fatalf("linebr helper segments should stay out of status line: %+v", series)
+		}
+		if series.ExtendToVisibleRange != nil && *series.ExtendToVisibleRange {
+			t.Fatalf("linebr helper segments must not be viewport-extended: %+v", series)
+		}
+		for index := 1; index < len(series.Data); index++ {
+			step := series.Data[index].Time - series.Data[index-1].Time
+			if step > 900 {
+				t.Fatalf("linebr segment bridged a gap: key=%s step=%d data=%+v", series.Key, step, series.Data)
+			}
+		}
 	}
 }
 

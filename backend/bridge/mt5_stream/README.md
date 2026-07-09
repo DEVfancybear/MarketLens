@@ -62,10 +62,19 @@ important for stocks and other slower symbols: a symbol can have a valid last qu
 - Set `MT5_STREAM_ALL_VISIBLE=false` and leave `MT5_SYMBOLS` empty to publish the catalog only
   without streaming ticks.
 
-On-demand history requests may need a cold-start refresh because MT5 downloads recent bars after
-the first `copy_rates_from` call. The bridge runs `copy_rates_*` work on one dedicated history
-worker thread, so a slow `1D`/`1W` request does not freeze the asyncio WebSocket loop or block
-catalog/tick messages. Keep the worker single-threaded; MT5 history calls should stay serialized.
+MT5 Python calls are blocking. After startup, the bridge sends every MT5 call
+that can run during normal operation through one dedicated worker thread:
+history loading, current tick snapshots for new clients, live tick polling, and
+on-demand `symbol_select()` from `stream.subscribe`. This keeps the asyncio
+WebSocket loop free to accept Go reconnects and send the symbol catalog even
+when MT5 is slow or a large Market Watch list is being polled. Keep the worker
+single-threaded; the MT5 Python package should not be called concurrently from
+multiple runtime threads.
+
+On-demand history requests may need a cold-start refresh because MT5 downloads
+recent bars after the first `copy_rates_from` call. The worker serializes
+`copy_rates_*` work, so a slow `1D`/`1W` request does not freeze the asyncio
+WebSocket loop or block catalog/tick messages.
 
 MT5 `copy_rates_*` history timestamps are already UTC bar-open seconds according to the official
 MetaQuotes Python docs, so the bridge sends candle `time` values unchanged. Live tick timestamps are
@@ -118,6 +127,19 @@ The Go process logs ticks like:
 ```text
 [EURUSD] Bid: 1.08425 | Ask: 1.08437 | Time: 14:05:31
 ```
+
+## Tests
+
+The Python bridge unit tests stub the `MetaTrader5` module, so they can run on a
+machine without MT5 installed:
+
+```bash
+python -m unittest bridge.mt5_stream.test_mt5_server -v
+```
+
+These tests cover tick de-duplication, timestamp normalization,
+`stream.subscribe` symbol selection, and the non-blocking worker wrapper that
+keeps asyncio responsive while MT5 calls are running.
 
 ## Payload Contract
 

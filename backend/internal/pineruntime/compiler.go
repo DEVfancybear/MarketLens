@@ -53,13 +53,15 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		if !line.visible {
 			continue
 		}
+		extendToVisibleRange := true
 		resp.Result.Series = append(resp.Result.Series, IndicatorSeries{
-			Key:       line.title,
-			Color:     line.color,
-			Data:      flatLinePoints(line.value, req.Candles),
-			Type:      "line",
-			LineWidth: &line.lineWidth,
-			LineStyle: &line.lineStyle,
+			Key:                  line.title,
+			Color:                line.color,
+			Data:                 flatLinePoints(line.value, req.Candles),
+			Type:                 "line",
+			LineWidth:            &line.lineWidth,
+			LineStyle:            &line.lineStyle,
+			ExtendToVisibleRange: &extendToVisibleRange,
 		})
 	}
 	resp.Result.Series = append(resp.Result.Series, readPlots(cleaned, context, req.Candles, req.StyleOverrides, &resp.Errors)...)
@@ -527,17 +529,69 @@ func readPlots(cleaned string, context *evalContext, candles []Candle, styles ma
 		}
 		lineWidth := styleLineWidthValue(styles, key, lineWidth(widthExpr, 2))
 		lineStyle := styleLineStyleValue(styles, key, lineStyle(args.named["linestyle"]))
-		seriesType := plotType(args.named["style"])
-		data := seriesToLinePoints(toSeries(value, len(candles)), candles, colors)
-		out = append(out, IndicatorSeries{
+		styleExpr := args.named["style"]
+		if styleExpr == "" && len(args.positional) > 4 {
+			styleExpr = args.positional[4]
+		}
+		seriesType := plotType(styleExpr)
+		base := IndicatorSeries{
 			Key:       title,
 			Color:     color,
 			Type:      seriesType,
 			LineWidth: &lineWidth,
 			LineStyle: &lineStyle,
-			Data:      data,
-		})
+		}
+		values := toSeries(value, len(candles))
+		if seriesType == "line" && plotLineBreak(styleExpr) {
+			out = append(out, lineBreakPlotSeries(base, values, candles, colors)...)
+			continue
+		}
+		base.Data = seriesToLinePoints(values, candles, colors)
+		out = append(out, base)
 	}
+	return out
+}
+
+func boolPtr(value bool) *bool { return &value }
+
+func lineBreakPlotSeries(base IndicatorSeries, values []float64, candles []Candle, colors []string) []IndicatorSeries {
+	out := []IndicatorSeries{}
+	segment := []LinePoint{}
+	seen := map[int64]bool{}
+	flush := func() {
+		if len(segment) < 2 {
+			segment = []LinePoint{}
+			return
+		}
+		item := base
+		item.Key = fmt.Sprintf("%s:%d", base.Key, len(out)+1)
+		item.Data = segment
+		item.LastValueVisible = boolPtr(false)
+		item.StatusLineVisible = boolPtr(false)
+		out = append(out, item)
+		segment = []LinePoint{}
+	}
+	for i, value := range values {
+		if i >= len(candles) {
+			break
+		}
+		if !usable(value) {
+			flush()
+			continue
+		}
+		t := candles[i].Time
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
+		point := LinePoint{Time: t, Value: value}
+		if i < len(colors) && colors[i] != "" {
+			color := colors[i]
+			point.Color = &color
+		}
+		segment = append(segment, point)
+	}
+	flush()
 	return out
 }
 
@@ -707,14 +761,16 @@ func readFills(cleaned string, context *evalContext, hlines []hlineDef, candles 
 		}
 		lineVisible := false
 		lastValueVisible := false
+		extendToVisibleRange := true
 		out = append(out, IndicatorSeries{
-			Key:              title,
-			Color:            color,
-			Type:             "baselineFill",
-			BaseValue:        &low,
-			LineVisible:      &lineVisible,
-			LastValueVisible: &lastValueVisible,
-			Data:             flatLinePoints(high, candles),
+			Key:                  title,
+			Color:                color,
+			Type:                 "baselineFill",
+			BaseValue:            &low,
+			LineVisible:          &lineVisible,
+			LastValueVisible:     &lastValueVisible,
+			ExtendToVisibleRange: &extendToVisibleRange,
+			Data:                 flatLinePoints(high, candles),
 		})
 	}
 	return out

@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   bottomTabAtom,
@@ -6,6 +7,11 @@ import {
   logsAtom,
   type BottomTab,
 } from "@/store/uiStore";
+import { authStatusAtom } from "@/store/authStore";
+import {
+  fallbackBottomTabForAuth,
+  visibleBottomPanelTabs,
+} from "@/services/privateWorkspaceAccess";
 import { cn } from "@/utils/cn";
 import { fmtDateTime } from "@/utils/time";
 import { ReplayPanel } from "@/components/replay/ReplayPanel";
@@ -29,25 +35,35 @@ const TABS: { key: BottomTab; label: string }[] = [
  */
 export function BottomPanel() {
   const bottomTab = useAtomValue(bottomTabAtom);
+  const authStatus = useAtomValue(authStatusAtom);
+  const setRawBottomTab = useSetAtom(bottomTabAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
+  const visibleTabs = visibleBottomPanelTabs(TABS, authStatus);
+  const effectiveTab = fallbackBottomTabForAuth(bottomTab, authStatus);
+
+  useEffect(() => {
+    if (effectiveTab !== bottomTab) {
+      setRawBottomTab(effectiveTab);
+    }
+  }, [bottomTab, effectiveTab, setRawBottomTab]);
 
   return (
     <div className="flex h-full flex-col">
       {/* Tab strip */}
       <div className="flex h-8 shrink-0 items-end border-b border-terminal-border px-2">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setBottomTab(t.key)}
             className={cn(
               "relative px-3 pb-1.5 pt-1 text-2xs font-medium transition-colors",
-              bottomTab === t.key
+              effectiveTab === t.key
                 ? "text-ink"
                 : "text-ink-muted hover:text-ink",
             )}
           >
             {t.label}
-            {bottomTab === t.key && (
+            {effectiveTab === t.key && (
               <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t bg-brand" />
             )}
           </button>
@@ -55,12 +71,12 @@ export function BottomPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {bottomTab === "replay" && <ReplayPanel />}
-        {bottomTab === "trade" && <TradePanel />}
-        {bottomTab === "journal" && <JournalPanel />}
-        {bottomTab === "analytics" && <AnalyticsPanel />}
-        {bottomTab === "pine" && <PineEditor />}
-        {bottomTab === "logs" && <LogsView />}
+        {effectiveTab === "replay" && <ReplayPanel />}
+        {effectiveTab === "trade" && <TradePanel />}
+        {effectiveTab === "journal" && <JournalPanel />}
+        {effectiveTab === "analytics" && <AnalyticsPanel />}
+        {effectiveTab === "pine" && <PineEditor />}
+        {effectiveTab === "logs" && <LogsView />}
       </div>
     </div>
   );

@@ -57,7 +57,9 @@ export function applyCommonSeriesStyle(
   return {
     ...series,
     lastValueVisible:
-      series.type === "baselineFill" ? false : labelsOnPriceScale(values),
+      series.lastValueVisible === false || series.type === "baselineFill"
+        ? false
+        : labelsOnPriceScale(values),
     precision,
   };
 }
@@ -70,6 +72,7 @@ function formatLegendValue(value: number): string {
 export function indicatorResultValueText(result: IndicatorResult): string {
   const values = result.series
     .filter((series) => series.type !== "baselineFill")
+    .filter((series) => series.statusLineVisible !== false)
     .filter((series) => {
       const first = series.data.find((item) => Number.isFinite(item.value));
       if (!first) return false;

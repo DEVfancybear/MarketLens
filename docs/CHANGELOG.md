@@ -4,6 +4,48 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Indicator pane right-offset gaps (2026-07-09)
+- Projected Pine `hline()` and `fill()` reference series against the visible
+  logical viewport, including right-offset whitespace after the latest candle,
+  so Better RSI bands no longer stop early in separate panes.
+- Extended the transparent indicator-pane time anchor with synthetic
+  right-offset slots while keeping dynamic plots and `linebr` helper segments
+  unchanged.
+- Added frontend chart tests for right-offset pane anchors and reference-series
+  projection.
+
+### Fixed - MT5 bridge event-loop blocking (2026-07-09)
+- Moved Python MT5 tick snapshots, live tick polling, and on-demand
+  `stream.subscribe` symbol selection onto the single MT5 worker thread so the
+  asyncio WebSocket loop can still accept Go reconnects and send symbol catalogs.
+- Added Python bridge unit tests with a stubbed `MetaTrader5` module covering
+  tick de-duplication, timestamp normalization, symbol selection, and the
+  non-blocking worker wrapper.
+
+### Fixed - Pine line-break plots (2026-07-09)
+- Compiled Pine `plot(..., style=linebr)` output into independent line segments
+  at `na` gaps so Better RSI no longer draws diagonal bridges across hidden
+  oversold/overbought ranges.
+- Preserved backend-hidden price-label flags through the frontend common style
+  pass and excluded helper line-break segments from indicator status-line text.
+- Marked Pine `hline()`/`fill()` reference outputs with `extendToVisibleRange`
+  and normalized them in both chart renderers so Better RSI bands/levels no
+  longer leave a right-side gap when the visible candle range changes.
+
+### Fixed - Indicator pane time-scale sync (2026-07-09)
+- Added a transparent per-candle time-anchor series to separate indicator panes so sparse Pine
+  outputs with `na` gaps, including Better RSI, stay aligned with the main chart logical range.
+- Strengthened Better RSI backend runtime tests to assert visible RSI/cycler plots, bounded
+  oscillator values, and enough retained plot points.
+
+### Fixed - Private Pine workspace auth gating (2026-07-09)
+- Hid `Favorites`, `My scripts`, and the bottom Pine Editor from anonymous/loading/authenticating
+  users while keeping the public indicator Store available without auth.
+- Hid private bottom-panel tabs (`Trade`, `Journal`, `Analytics`, `Logs`) before login; anonymous
+  users now keep only the public `Replay` tab visible.
+- Added a shared `privateWorkspaceAccess` rule and UI tests so indicator modal tabs, bottom-panel
+  tabs, and Pine Editor mount behavior stay aligned.
+
 ### Changed - Public Indicator Store and Pine publishing (2026-07-09)
 - Simplified the `Indicators, metrics, and strategies` modal to `Favorites`, `My scripts`, and
   `Store`; removed the old TradingView catalog scraping route, parser, fallback tests, and unused

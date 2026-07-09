@@ -37,6 +37,14 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_BRIDGE_RECONNECT_MIN` | duration | `1s` | Go API/client minimum reconnect backoff |
 | `MT5_BRIDGE_RECONNECT_MAX` | duration | `30s` | Go API/client maximum reconnect backoff |
 
+Bridge regression tests can run without an installed MT5 terminal because they
+stub the `MetaTrader5` module:
+
+```powershell
+cd backend
+python -m unittest bridge.mt5_stream.test_mt5_server -v
+```
+
 ## Setting variables
 
 ### Linux / macOS

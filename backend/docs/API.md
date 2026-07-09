@@ -217,6 +217,11 @@ History scheduling:
 - History requests are gated by a Go-side concurrency slot before writing to the Python bridge. If
   the browser aborts a stale request while it is queued, the request is canceled before it reaches
   MT5. This is required because the Python bridge executes MT5 history work on a single safe worker.
+- The Python bridge also runs tick snapshots, live tick polling, and
+  `stream.subscribe` symbol selection through the same single MT5 worker. Do
+  not call `MetaTrader5` directly from the asyncio WebSocket loop; doing so can
+  block new Go bridge handshakes and make `/api/v1/mt5/symbols` return
+  `connected=false` with an `i/o timeout`.
 - Frontend timeframe/symbol effects should pass `AbortSignal` to the API call and abort cleanup
   requests on selection changes.
 
@@ -573,10 +578,15 @@ Compile response:
 Current runtime subset covers metadata/input/style extraction, series
 assignments, recursive/self-referential series patterns, plot/hline/fill output,
 daily `request.security()` aggregation, and the Pine functions needed by VSA
-Volume, Better RSI, and ADR-style scripts. Object APIs such as `line.new`,
-`line.set_*`, `label.new`, `label.set_*`, `box.new`, `box.set_*`,
-`table.new`, and `table.cell` compile to chart-ready line, fill, label, and
-dashboard payloads.
+Volume, Better RSI, and ADR-style scripts. `plot(..., style=linebr)` and
+`plot.style_linebr` compile into independent chart series split at every `na`
+gap so the frontend never bridges conditional plot ranges. `hline()` and
+`fill()` reference outputs carry `extendToVisibleRange=true`; clients should
+project those sparse series onto the current candle window before rendering so
+indicator panes do not show right-side gaps. Object APIs such as `line.new`,
+`line.set_*`, `label.new`, `label.set_*`, `box.new`,
+`box.set_*`, `table.new`, and `table.cell` compile to chart-ready line, fill,
+label, and dashboard payloads.
 
 ---
 

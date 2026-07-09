@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { authStatusAtom } from "@/store/authStore";
 import {
   addCustomIndicatorFromScriptAtom,
   candlesAtom,
@@ -34,8 +35,10 @@ import { publishPineScriptRemote } from "@/services/api/resources/pineScriptsApi
 import type { PineScriptMeta } from "@/services/pineRuntimeTypes";
 import type { CustomIndicatorScript } from "@/types";
 import { cn } from "@/utils/cn";
+import { canUsePrivatePineWorkspace } from "@/services/privateWorkspaceAccess";
 
 export function PineEditor() {
+  const authStatus = useAtomValue(authStatusAtom);
   const [scriptId] = useAtom(pineEditorScriptIdAtom);
   const [title, setTitle] = useAtom(pineEditorTitleAtom);
   const [source, setSource] = useAtom(pineEditorSourceAtom);
@@ -180,6 +183,10 @@ export function PineEditor() {
     await deleteScript(script.id);
     setStatus({ level: "idle", text: `Deleted ${script.name}` });
   };
+
+  if (!canUsePrivatePineWorkspace(authStatus)) {
+    return null;
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#050505]">

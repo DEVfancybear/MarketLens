@@ -412,6 +412,11 @@ func plotType(expression string) string {
 	return "line"
 }
 
+func plotLineBreak(expression string) bool {
+	key := strings.ToLower(strings.TrimSpace(expression))
+	return key == "linebr" || strings.Contains(key, ".linebr")
+}
+
 func hlineVariableName(line string) string {
 	match := regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*hline\s*\(`).FindStringSubmatch(line)
 	if len(match) == 0 {

@@ -73,7 +73,12 @@ SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
 MT5_TICK_TIME_OFFSET_SECONDS = 0
-HISTORY_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt5-history")
+# The MetaTrader5 Python module is blocking and should be treated as
+# single-thread-affine. Keep every MT5 call that runs after startup on this one
+# worker thread so asyncio can still accept WebSocket handshakes, send symbol
+# catalogs, and process Go requests while MT5 is polling ticks or warming
+# history.
+MT5_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt5-worker")
 
 TIMEFRAME_MAP = {
     "1m": mt5.TIMEFRAME_M1,
@@ -183,7 +188,7 @@ async def copy_rates_synced_worker(
 ) -> Any:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        HISTORY_EXECUTOR,
+        MT5_EXECUTOR,
         copy_rates_synced_blocking,
         symbol,
         mt5_timeframe,
@@ -191,6 +196,12 @@ async def copy_rates_synced_worker(
         limit,
         before,
     )
+
+
+async def run_mt5_worker(func: Any, *args: Any) -> Any:
+    """Run a blocking MT5 function on the single MT5 worker thread."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(MT5_EXECUTOR, func, *args)
 
 
 def parse_symbols(raw: str) -> tuple[str, ...]:
@@ -415,7 +426,7 @@ async def register_client(websocket: WebSocketServerProtocol) -> None:
     LOG.info("client connected peer=%s clients=%d", peer, len(CLIENTS))
     try:
         await websocket.send(symbol_catalog_message())
-        for message in current_tick_messages(STREAM_SYMBOLS):
+        for message in await current_tick_messages_worker(STREAM_SYMBOLS):
             await websocket.send(message)
         for message in HISTORY_MESSAGES:
             await websocket.send(message)
@@ -435,10 +446,10 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
 
     message_type = message.get("type")
     if message_type == "stream.subscribe":
-        added = add_stream_symbols(message.get("symbols"))
+        added = await add_stream_symbols_worker(message.get("symbols"))
         if added:
             await broadcast(symbol_catalog_message())
-            for tick_message in current_tick_messages(added):
+            for tick_message in await current_tick_messages_worker(added):
                 await broadcast(tick_message)
         return
 
@@ -524,6 +535,10 @@ def add_stream_symbols(raw_symbols: Any) -> tuple[str, ...]:
     return tuple(added)
 
 
+async def add_stream_symbols_worker(raw_symbols: Any) -> tuple[str, ...]:
+    return await run_mt5_worker(add_stream_symbols, raw_symbols)
+
+
 def symbol_catalog_message() -> str:
     return json.dumps(
         {
@@ -578,6 +593,37 @@ def current_tick_messages(symbols: tuple[str, ...]) -> list[str]:
         if message is not None:
             messages.append(message)
     return messages
+
+
+async def current_tick_messages_worker(symbols: tuple[str, ...]) -> list[str]:
+    return await run_mt5_worker(current_tick_messages, symbols)
+
+
+def changed_tick_messages(
+    symbols: tuple[str, ...],
+    last_time_msc_by_symbol: dict[str, int],
+) -> tuple[list[str], dict[str, int]]:
+    messages: list[str] = []
+    next_seen = dict(last_time_msc_by_symbol)
+    for symbol in symbols:
+        result = tick_payload(symbol)
+        if result is None:
+            continue
+
+        payload, time_msc = result
+        if time_msc == next_seen.get(symbol):
+            continue
+
+        messages.append(json.dumps(payload, separators=(",", ":")))
+        next_seen[symbol] = time_msc
+    return messages, next_seen
+
+
+async def changed_tick_messages_worker(
+    symbols: tuple[str, ...],
+    last_time_msc_by_symbol: dict[str, int],
+) -> tuple[list[str], dict[str, int]]:
+    return await run_mt5_worker(changed_tick_messages, symbols, last_time_msc_by_symbol)
 
 
 async def load_history_messages(
@@ -700,18 +746,12 @@ async def stream_ticks(cfg: Config, stop_event: asyncio.Event) -> None:
 
     while not stop_event.is_set():
         try:
-            for symbol in STREAM_SYMBOLS:
-                result = tick_payload(symbol)
-                if result is None:
-                    continue
-
-                payload, time_msc = result
-                # time_msc gives stable de-duplication for high-frequency ticks.
-                if time_msc == last_time_msc_by_symbol.get(symbol):
-                    continue
-
-                await broadcast(json.dumps(payload, separators=(",", ":")))
-                last_time_msc_by_symbol[symbol] = time_msc
+            messages, last_time_msc_by_symbol = await changed_tick_messages_worker(
+                STREAM_SYMBOLS,
+                last_time_msc_by_symbol,
+            )
+            for message in messages:
+                await broadcast(message)
         except Exception:
             LOG.exception("tick streaming loop failed")
 
@@ -763,7 +803,7 @@ async def main() -> None:
             except asyncio.CancelledError:
                 pass
         mt5.shutdown()
-        HISTORY_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+        MT5_EXECUTOR.shutdown(wait=False, cancel_futures=True)
         LOG.info("MT5 bridge stopped")
 
 

@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { authStatusAtom } from "@/store/authStore";
 import {
   addCustomIndicatorFromScriptAtom,
   addCustomIndicatorFromSourceAtom,
@@ -31,12 +32,14 @@ import {
   formatPublicBoosts,
   publicIndicatorScriptId,
 } from "@/services/indicatorStoreModel";
+import {
+  canUsePrivatePineWorkspace,
+  type IndicatorBrowserTab,
+} from "@/services/privateWorkspaceAccess";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { CustomIndicatorScript } from "@/types";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
-
-type BrowserTab = "favorites" | "myScripts" | "store";
 
 function SidebarButton({
   active,
@@ -84,7 +87,7 @@ function scriptMatches(script: CustomIndicatorScript, query: string) {
 
 export function IndicatorMenu() {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<BrowserTab>("favorites");
+  const [tab, setTab] = useState<IndicatorBrowserTab>("store");
   const [query, setQuery] = useState("");
   const [deleteTarget, setDeleteTarget] =
     useState<CustomIndicatorScript | null>(null);
@@ -97,6 +100,7 @@ export function IndicatorMenu() {
   const indicatorDialogDrag = useDraggableDialog();
   const deleteDialogDrag = useDraggableDialog();
 
+  const authStatus = useAtomValue(authStatusAtom);
   const scripts = useAtomValue(pineScriptsAtom);
   const addCustomIndicator = useSetAtom(addCustomIndicatorFromScriptAtom);
   const addCustomIndicatorFromSource = useSetAtom(addCustomIndicatorFromSourceAtom);
@@ -104,11 +108,19 @@ export function IndicatorMenu() {
   const loadPineScript = useSetAtom(loadPineScriptAtom);
   const togglePineFavorite = useSetAtom(togglePineFavoriteAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
+  const canUsePrivatePine = canUsePrivatePineWorkspace(authStatus);
 
   useEffect(() => {
     if (!open) return;
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [open]);
+
+  useEffect(() => {
+    if (!canUsePrivatePine && tab !== "store") {
+      setTab("store");
+      setQuery("");
+    }
+  }, [canUsePrivatePine, tab]);
 
   useEffect(() => {
     if (!open) setDeleteTarget(null);
@@ -154,6 +166,7 @@ export function IndicatorMenu() {
   }, [open, query, tab]);
 
   const filteredScripts = useMemo(() => {
+    if (!canUsePrivatePine) return [];
     const sorted = [...scripts].sort(
       (a, b) =>
         Number(b.favorite) - Number(a.favorite) || b.updatedAt - a.updatedAt,
@@ -165,14 +178,16 @@ export function IndicatorMenu() {
           ? sorted
           : [];
     return base.filter((script) => scriptMatches(script, query));
-  }, [query, scripts, tab]);
+  }, [canUsePrivatePine, query, scripts, tab]);
 
   const openPineEditor = () => {
+    if (!canUsePrivatePine) return;
     setOpen(false);
     setBottomTab("pine");
   };
 
   const openScriptSource = (script: CustomIndicatorScript) => {
+    if (!canUsePrivatePine) return;
     loadPineScript(script.id);
     setOpen(false);
     setBottomTab("pine");
@@ -184,7 +199,8 @@ export function IndicatorMenu() {
     setDeleteTarget(null);
   };
 
-  const selectTab = (next: BrowserTab) => {
+  const selectTab = (next: IndicatorBrowserTab) => {
+    if (!canUsePrivatePine && next !== "store") return;
     setTab(next);
     setQuery("");
   };
@@ -273,18 +289,22 @@ export function IndicatorMenu() {
                       Personal
                     </div>
                     <div className="space-y-1">
-                      <SidebarButton
-                        active={tab === "favorites" && !query.trim()}
-                        icon={<Star size={22} strokeWidth={1.6} />}
-                        label="Favorites"
-                        onClick={() => selectTab("favorites")}
-                      />
-                      <SidebarButton
-                        active={tab === "myScripts" && !query.trim()}
-                        icon={<UserRound size={22} strokeWidth={1.6} />}
-                        label="My scripts"
-                        onClick={() => selectTab("myScripts")}
-                      />
+                      {canUsePrivatePine && (
+                        <>
+                          <SidebarButton
+                            active={tab === "favorites" && !query.trim()}
+                            icon={<Star size={22} strokeWidth={1.6} />}
+                            label="Favorites"
+                            onClick={() => selectTab("favorites")}
+                          />
+                          <SidebarButton
+                            active={tab === "myScripts" && !query.trim()}
+                            icon={<UserRound size={22} strokeWidth={1.6} />}
+                            label="My scripts"
+                            onClick={() => selectTab("myScripts")}
+                          />
+                        </>
+                      )}
                       <SidebarButton
                         active={tab === "store" && !query.trim()}
                         icon={<ShoppingBag size={22} strokeWidth={1.6} />}
@@ -294,14 +314,16 @@ export function IndicatorMenu() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={openPineEditor}
-                    className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] font-semibold text-brand transition-colors hover:bg-brand/10"
-                  >
-                    <Code2 size={16} />
-                    <span className="min-w-0 truncate">Open Pine Editor</span>
-                  </button>
+                  {canUsePrivatePine && (
+                    <button
+                      type="button"
+                      onClick={openPineEditor}
+                      className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] font-semibold text-brand transition-colors hover:bg-brand/10"
+                    >
+                      <Code2 size={16} />
+                      <span className="min-w-0 truncate">Open Pine Editor</span>
+                    </button>
+                  )}
                 </aside>
 
                 <section className="min-w-0 overflow-hidden">
@@ -312,7 +334,8 @@ export function IndicatorMenu() {
                   </div>
 
                   <div className="max-h-[462px] overflow-auto pr-1">
-                    {(tab === "favorites" || tab === "myScripts") && (
+                    {canUsePrivatePine &&
+                      (tab === "favorites" || tab === "myScripts") && (
                       <>
                         {filteredScripts.map((script) => (
                           <ScriptRow

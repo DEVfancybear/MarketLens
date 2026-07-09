@@ -277,7 +277,9 @@ surfaces:
 
 - Header: `Indicators, metrics, and strategies`.
 - Sidebar tabs: `Favorites`, `My scripts`, and `Store`.
-- `Favorites` and `My scripts` read saved Pine scripts from `chartStore.pineScripts`.
+- `Favorites` and `My scripts` are private workspace tabs. They render only
+  when `authStatus === "authed"` and read saved Pine scripts from
+  `chartStore.pineScripts`.
 - `Store` reads public scripts from `GET /api/v1/indicator-store`; the endpoint
   does not require auth and returns `sourceCode` so any visitor can add the
   script to chart.
@@ -285,6 +287,12 @@ surfaces:
   Editor, or deleted after confirmation.
 - Pine Editor publishes the current saved script through
   `POST /api/v1/pine-scripts/:id/publish`.
+- `services/privateWorkspaceAccess.ts` owns the shared auth gate for the
+  indicator browser tabs, bottom-panel tab list, and Pine Editor mount guard.
+  Anonymous/loading/authenticating users see only public Store indicators; the
+  bottom panel exposes only `Replay`. Private bottom-panel tabs (`Trade`,
+  `Journal`, `Analytics`, `Pine Editor`, `Logs`) are hidden and any stale active
+  private tab is remapped to `Replay` without forcing the bottom panel open.
 - Do not reintroduce hardcoded TradingView catalog fallback data. Public Store
   rows must come from backend API data only.
 
@@ -300,6 +308,21 @@ surfaces:
 - Histogram plots and per-bar colors are supported for volume-style scripts.
 - Horizontal lines, background fill bands, line widths/styles, and per-bar line colors are supported
   for RSI-style scripts.
+- Pine line-break plots (`plot(..., style=linebr)` or
+  `plot.style_linebr`) must compile into independent line segments separated at
+  every `na` gap. Do not emit one sparse line series for `linebr`, because
+  Lightweight Charts connects finite points across missing bars and creates
+  diagonal bridges that TradingView does not show. Helper segments should keep
+  `lastValueVisible=false` and `statusLineVisible=false` so conditional
+  highlight plots do not add extra price labels or status-line values.
+- Pine reference outputs that are intended to span the current viewport,
+  especially `hline()` and `fill()`, must carry `extendToVisibleRange=true`.
+  Frontend renderers then project those sparse reference series onto the
+  current logical viewport before calling `setData()`. The projection includes
+  TradingView-style right-offset whitespace by adding synthetic time slots after
+  the last real candle. This prevents right-side blank gaps when Pine compile
+  cache and chart viewport ranges differ, without stretching dynamic plots or
+  `linebr` helper segments.
 - Daily `request.security()` aggregation and object APIs (`line`, `box`, `label`, `table`) are
   compiled in Go for ADR-style scripts. Frontend compile requests include extra historical candles
   for scripts that use `request.security()` so higher-timeframe values are not computed only from
@@ -363,7 +386,8 @@ Supported functions:
   timeframe history is shorter than TradingView would normally preload, it fills missing values from
   the completed higher-timeframe buckets that are available. This prevents ADR-style scripts from
   disappearing on 1m/5m windows while preserving strict values once enough history exists.
-- Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`, `hline(...)`,
+- Plot metadata: `plot(..., title=..., color=..., style=plot.style_columns)`,
+  `plot(..., style=linebr|plot.style_linebr)`, `hline(...)`,
   `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
 - Object runtime subset: `line.new` with `line.set_*`, `box.new` with `box.set_*`,
@@ -442,12 +466,27 @@ Separate-pane indicators render in `IndicatorPane`:
 - `indicators.filter(i => i.visible && i.separatePane)`
 - Each pane owns its own lightweight chart.
 - Time scale is synchronized to the main chart logical range.
+- `IndicatorPane` always adds a transparent time-anchor line from
+  `indicatorPaneTimeScale.ts` before user-visible series. The anchor has one
+  point per candle and extends with synthetic right-offset slots when the main
+  chart viewport reaches beyond the latest candle. This is required because
+  Lightweight Charts synchronizes panes by logical index, while Pine plots can
+  omit `na` points and TradingView leaves whitespace to the right of the latest
+  bar. Without the anchor, scripts such as Better RSI can show hline price
+  labels while the RSI plot/fill is clipped before the pane's right edge.
+- `linebr` output is already split by the backend runtime. The pane renderer
+  should render those returned segments as independent line series and must not
+  merge them back together.
+- Series marked `extendToVisibleRange` are normalized through
+  `indicatorSeriesProjection.ts` in both `PriceChart` and `IndicatorPane`, so
+  hlines and filled bands track the visible logical viewport for every
+  indicator, including the right-offset whitespace area.
 - Histogram and line points preserve per-bar `data[].color` before applying fallback colors.
 - Series APIs are retained in refs and reused between candle updates. Recreate only when the
   returned series signature changes; otherwise call `setData()` on existing series.
-- Pine hlines and fill bands should emit sparse points only: first/last real candle plus a small
-  flat right-extension tail. This keeps Better RSI light while matching TradingView's right-offset
-  whitespace rendering.
+- Pine hlines and fill bands should emit sparse reference points only. The
+  frontend projection layer owns viewport/right-offset expansion; do not add
+  fake candle data or compile-time right-tail candles to fix visual gaps.
 
 The source of `candles` must be `useVisibleCandles()` from `ChartArea`, not raw full history. This
 is the replay safety rule.

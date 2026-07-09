@@ -60,16 +60,18 @@ type LinePoint struct {
 }
 
 type IndicatorSeries struct {
-	Key              string      `json:"key"`
-	Color            string      `json:"color"`
-	Data             []LinePoint `json:"data"`
-	Type             string      `json:"type,omitempty"`
-	LineWidth        *int        `json:"lineWidth,omitempty"`
-	LineStyle        *int        `json:"lineStyle,omitempty"`
-	BaseValue        *float64    `json:"baseValue,omitempty"`
-	LastValueVisible *bool       `json:"lastValueVisible,omitempty"`
-	LineVisible      *bool       `json:"lineVisible,omitempty"`
-	Precision        *int        `json:"precision,omitempty"`
+	Key                  string      `json:"key"`
+	Color                string      `json:"color"`
+	Data                 []LinePoint `json:"data"`
+	Type                 string      `json:"type,omitempty"`
+	LineWidth            *int        `json:"lineWidth,omitempty"`
+	LineStyle            *int        `json:"lineStyle,omitempty"`
+	BaseValue            *float64    `json:"baseValue,omitempty"`
+	LastValueVisible     *bool       `json:"lastValueVisible,omitempty"`
+	StatusLineVisible    *bool       `json:"statusLineVisible,omitempty"`
+	ExtendToVisibleRange *bool       `json:"extendToVisibleRange,omitempty"`
+	LineVisible          *bool       `json:"lineVisible,omitempty"`
+	Precision            *int        `json:"precision,omitempty"`
 }
 
 type IndicatorOverlayLabel struct {

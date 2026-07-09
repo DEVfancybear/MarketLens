@@ -22,6 +22,9 @@
     "src/components/chart/chartVisualProfile.ts",
     "src/components/chart/chartAutoFitPolicy.ts",
     "src/components/chart/chartTimeNavigation.ts",
+    "src/components/chart/indicatorPaneTimeScale.ts",
+    "src/services/indicatorStyle.ts",
+    "src/services/indicatorSeriesProjection.ts",
     "src/services/pineRuntimeCachePolicy.ts",
     "src/components/chart/drawing/tools/plugins/lineGeometry.ts",
     "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",
@@ -31,6 +34,7 @@
     "src/components/chart/drawing/tools/positionTradePrefill.ts",
     "src/services/market-data/symbols.ts",
     "src/store/watchlistLayout.ts",
-    "src/services/indicatorStoreModel.ts"
+    "src/services/indicatorStoreModel.ts",
+    "src/services/privateWorkspaceAccess.ts"
   ]
 }

@@ -380,6 +380,14 @@ payload. Pine Editor publishes the current script with
 source code, scoped with `store:<public-id>` script ids so they do not collide
 with private Pine script ids.
 
+Private Pine workspace surfaces are auth-gated in
+`frontend/src/services/privateWorkspaceAccess.ts`. Anonymous/loading users see
+only the public Store in the indicator browser, and the bottom panel keeps only
+`Replay` until Firebase auth resolves to `authed`. This prevents local anonymous
+state or a stale hydrated tab from exposing a user's `Favorites`, `My scripts`,
+`Trade`, `Journal`, `Analytics`, `Pine Editor`, or `Logs` workspace before
+login.
+
 ## Migration From Existing Local Data
 
 Do not silently merge old localStorage into remote state every startup. That creates confusing

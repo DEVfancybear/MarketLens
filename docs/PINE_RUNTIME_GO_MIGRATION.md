@@ -52,6 +52,10 @@ Better RSI, and ADR-style object-heavy scripts:
 
 - Plot/hline/fill output.
 - Per-bar color series and histogram plots.
+- Pine `linebr` plots split into independent line segments at `na` gaps.
+- Pine `hline`/`fill` reference outputs marked with `extendToVisibleRange` so
+  frontend chart panes can project them onto the active logical viewport,
+  including TradingView-style right-offset whitespace beyond the latest candle.
 - `request.security()` for daily aggregation on chart candles.
 - Mutable Pine drawing objects compiled into immutable chart output:
   `line.new/set_*`, `box.new/set_*`, `label.new/set_*`, and `table.new/cell`.
@@ -422,6 +426,9 @@ Frontend tests:
 - Chart ignores stale compile responses after timeframe/symbol/replay changes.
 - CUSTOM indicator render does not block main chart initialization.
 - Logout clears user-specific script/schema/compile cache.
+- Indicator pane projection keeps sparse Pine `hline()`/`fill()` references
+  extended through right-offset whitespace without extending dynamic plots or
+  `linebr` helper segments.
 
 Manual checks:
 
@@ -436,7 +443,7 @@ Manual checks:
 - New Pine language support is implemented in Go, not in frontend TypeScript.
 - Frontend chart render path no longer synchronously compiles Pine scripts.
 - Existing supported scripts keep visual parity: VSA colored volume, Better RSI
-  hlines/fills/cycler, ADR lines/labels/table.
+  hlines/fills/cycler/line-break highlights, ADR lines/labels/table.
 - Backend compile responses are deterministic for the same source, candles,
   inputs, and styles.
 - Backend handles multiple compile requests concurrently without shared-state
