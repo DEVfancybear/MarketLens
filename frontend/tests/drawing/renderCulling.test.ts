@@ -39,6 +39,28 @@ test("spatial culling uses adapter bounds for extended rectangle geometry", () =
   assert.deepEqual(index.queryViewport(500, 40, 10, 10), [extended]);
 });
 
+test("drag viewport reuses static culling and substitutes live rectangle geometry", () => {
+  const index = new SpatialIndex();
+  const original = rectangleDrawing();
+  const live = rectangleDrawing({
+    points: [
+      { time: 500, price: 40 },
+      { time: 600, price: 90 },
+    ],
+  });
+  index.rebuild([original], toX, toY);
+
+  const visible = index.queryViewportWithOverrides(
+    0,
+    0,
+    100,
+    100,
+    new Map([[original.id, live]]),
+  );
+
+  assert.deepEqual(visible, [live]);
+});
+
 test("rectangle extend hit-testing covers the visible extended region", () => {
   const adapter = getTool("rectangle");
   assert.ok(adapter);

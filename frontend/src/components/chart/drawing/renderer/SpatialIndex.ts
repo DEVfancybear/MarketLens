@@ -114,4 +114,28 @@ export class SpatialIndex {
     }
     return results;
   }
+
+  /**
+   * Query a cached static index while replacing actively dragged drawings with
+   * their live geometry. Overrides are always included because the original
+   * indexed box may no longer intersect the viewport after a large drag.
+   */
+  queryViewportWithOverrides(
+    vx: number,
+    vy: number,
+    vw: number,
+    vh: number,
+    overrides: ReadonlyMap<string, Drawing>,
+  ): Drawing[] {
+    const results = this.queryViewport(vx, vy, vw, vh).map(
+      (drawing) => overrides.get(drawing.id) ?? drawing,
+    );
+    const included = new Set(results.map((drawing) => drawing.id));
+    for (const drawing of overrides.values()) {
+      if (drawing.visible === false || included.has(drawing.id)) continue;
+      results.push(drawing);
+      included.add(drawing.id);
+    }
+    return results;
+  }
 }

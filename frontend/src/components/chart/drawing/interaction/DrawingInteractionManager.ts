@@ -16,6 +16,7 @@ import {
   type InteractionState,
   type Machine,
 } from "./machine";
+import { PointerFrameCoalescer } from "./PointerFrameCoalescer";
 
 export {
   createInitialMachine,
@@ -134,6 +135,9 @@ export function useDrawingInteractionManager(
   const livePointsWorkRef = useRef<Map<string, Point[]>>(new Map());
   const hoverRafRef = useRef<number | null>(null);
   const pendingHoverEventRef = useRef<PointerEvent | null>(null);
+  const dragMoveCoalescerRef = useRef<PointerFrameCoalescer<PointerEvent> | null>(
+    null,
+  );
   // Confirmed click points for an in-progress multi-point draw (polyline, path,
   // curve, triangle, arc, double-curve). Empty for 1-/2-point tools.
   const committedRef = useRef<Point[]>([]);
@@ -199,6 +203,10 @@ export function useDrawingInteractionManager(
     releaseCapture();
     pointerClaimedRef.current = false;
     dragActiveRef.current = false;
+    dragMoveCoalescerRef.current?.cancel();
+    livePointsRef.current = null;
+    livePointsWorkRef.current.clear();
+    drawingIdRef.current = null;
     cancelHoverFrame();
     committedRef.current = [];
     // Restore chart pan/zoom synchronously when the interaction ends.
@@ -534,41 +542,54 @@ export function useDrawingInteractionManager(
       }
     };
 
+    const applyDragMove = (e: PointerEvent) => {
+      const m = machineRef.current;
+      if (
+        (m.state !== "MovingDrawing" && m.state !== "ResizingHandle") ||
+        !m.dragStart ||
+        !m.drawingTool
+      ) {
+        return;
+      }
+      const p = fromEvent(e);
+      if (!p) return;
+      const dt = p.time - m.dragStart.time,
+        dp = p.price - m.dragStart.price;
+      const multiMap = livePointsWorkRef.current;
+      multiMap.clear();
+      if (m.multiDragOrig.size > 0) {
+        for (const [id, origPts] of m.multiDragOrig)
+          multiMap.set(
+            id,
+            origPts.map((pt) => ({
+              time: pt.time + dt,
+              price: pt.price + dp,
+            })),
+          );
+      } else {
+        const adapter = getTool(m.drawingTool);
+        const next =
+          m.dragAnchor >= 0
+            ? adapter
+              ? adapter.moveAnchor(m.dragOrig!, m.dragAnchor, p)
+              : defaultMoveAnchor(m.dragOrig!, m.dragAnchor, p)
+            : adapter
+              ? adapter.move(m.dragOrig!, p, m.dragStart)
+              : defaultMove(m.dragOrig!, p, m.dragStart);
+        multiMap.set(m.drawingId!, next);
+      }
+      livePointsRef.current = multiMap;
+      scheduleRedrawRef.current();
+    };
+    const dragMoves = new PointerFrameCoalescer<PointerEvent>(applyDragMove);
+    dragMoveCoalescerRef.current = dragMoves;
+
     const handleMove = (e: PointerEvent) => {
       const m = machineRef.current;
-
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
-        if (!m.dragStart || !m.drawingTool) return;
-        const p = fromEvent(e);
-        if (!p) return;
-        const dt = p.time - m.dragStart.time,
-          dp = p.price - m.dragStart.price;
-        const multiMap = livePointsWorkRef.current;
-        multiMap.clear();
-        if (m.multiDragOrig.size > 0) {
-          for (const [id, origPts] of m.multiDragOrig)
-            multiMap.set(
-              id,
-              origPts.map((pt) => ({
-                time: pt.time + dt,
-                price: pt.price + dp,
-              })),
-            );
-        } else {
-          const adapter = getTool(m.drawingTool);
-          const next =
-            m.dragAnchor >= 0
-              ? adapter
-                ? adapter.moveAnchor(m.dragOrig!, m.dragAnchor, p)
-                : defaultMoveAnchor(m.dragOrig!, m.dragAnchor, p)
-              : adapter
-                ? adapter.move(m.dragOrig!, p, m.dragStart)
-                : defaultMove(m.dragOrig!, p, m.dragStart);
-          multiMap.set(m.drawingId!, next);
-        }
-        livePointsRef.current = multiMap;
-
-        scheduleRedrawRef.current();
+        e.preventDefault();
+        e.stopPropagation();
+        dragMoves.push(e);
         return;
       }
       // Hover
@@ -614,13 +635,16 @@ export function useDrawingInteractionManager(
       }
     };
 
-    const handleUp = () => {
+    const handleUp = (e: PointerEvent) => {
       const m = machineRef.current;
       // Always release the chart-event block on any pointer release, even if the
       // machine never reached a drag state, so the blocker can never get stuck.
       dragActiveRef.current = false;
 
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
+        e.preventDefault();
+        e.stopPropagation();
+        dragMoves.flush(e);
         const multiMap = livePointsRef.current;
         if (multiMap && multiMap.size > 0) {
           for (const [id, pts] of multiMap) {
@@ -704,6 +728,10 @@ export function useDrawingInteractionManager(
       document.removeEventListener("wheel", blockChartEvent, true);
       document.removeEventListener("touchstart", blockChartEvent, true);
       document.removeEventListener("touchmove", blockChartEvent, true);
+      dragMoves.cancel();
+      if (dragMoveCoalescerRef.current === dragMoves) {
+        dragMoveCoalescerRef.current = null;
+      }
       cancelHoverFrame();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

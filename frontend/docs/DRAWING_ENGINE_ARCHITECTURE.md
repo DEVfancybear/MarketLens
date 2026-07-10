@@ -1,6 +1,6 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-09 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, viewport invalidation rules, adapter-owned viewport culling, and mutable rAF interaction previews._
+_Date: 2026-06-25. Updated 2026-07-10 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, viewport invalidation rules, adapter-owned viewport culling, and frame-coalesced mutable interaction previews._
 
 ## Architecture rule (read before touching drawing/chart interaction)
 
@@ -136,6 +136,10 @@ high-frequency preview data in mutable refs and schedules the canvas render loop
 - Hover hit-testing is rAF-throttled. Raw pointermove stores only the latest pointer event; the
   actual `hitTest()` runs at most once per frame. This keeps dense drawings responsive while still
   updating hover/selection affordances immediately to the eye.
+- Existing-drawing move/resize uses `PointerFrameCoalescer`: the first sample is applied
+  immediately, additional samples in the same animation frame collapse to the newest sample, and
+  pointerup flushes its exact coordinate before the store/history commit. This bounds geometry and
+  projection work to the display cadence without losing the final drag position.
 - Live drag points reuse one mutable `Map` across pointermoves. The arrays inside it are replaced
   with freshly computed geometry, but the container is not reallocated every event.
 
@@ -461,6 +465,12 @@ future-time drawings pinned while avoiding a backward candle scan for every poin
 `renderer/SpatialIndex.ts` filters drawings before render/hit-test, but it must never invent
 geometry from raw anchors. It asks each adapter for `boundingBox(d, toX, toY)` and only falls
 back to point bounds if a legacy plugin does not provide one.
+
+During an existing-drawing drag, `CanvasRenderer` keeps the last static spatial index when the
+drawings array, canvas dimensions, hidden state, and viewport projection are unchanged. It queries
+that index with `queryViewportWithOverrides()` so only actively dragged drawings use live geometry.
+An override is included even if its original indexed box was outside the viewport. Forced viewport
+invalidations (`markDirty(true)`) and structural/store changes rebuild the index before reuse.
 
 This is required because many tools render outside their anchors:
 

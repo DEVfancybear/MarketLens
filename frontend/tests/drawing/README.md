@@ -50,4 +50,6 @@ Add tests here when changing:
 - Renderer viewport culling or memo-guard keys
 - Multi-point shape drag/resize behavior that relies on `anchorIndex`
 - Interaction state-machine helpers that underpin pointermove preview behavior
+- Common pointer-frame coalescing, including immediate feedback, latest-sample collapse, and exact
+  pointerup flush behavior
 - Hit-test priority, especially anchor-vs-body and z-index ordering

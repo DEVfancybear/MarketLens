@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Drawing drag frame pacing and render culling (2026-07-10)
+- Coalesced common move/resize pointer samples to animation frames while preserving immediate first
+  feedback and the exact pointerup position for the final store/history commit.
+- Reused the static drawing spatial index during live drag and substituted only actively moved
+  geometry, avoiding a full adapter bounding-box rebuild for every pointer sample.
+- Added regression coverage for pointer-frame collapse, final-position flushing, and live rectangle
+  viewport substitution; manually verified dense automated rectangle drags without console errors.
+
 ### Fixed - Push notification click opened default EURUSD chart (2026-07-10)
 - Added alert-symbol deep links to Firebase `webpush.fcmOptions.link` and the
   generated messaging service worker.

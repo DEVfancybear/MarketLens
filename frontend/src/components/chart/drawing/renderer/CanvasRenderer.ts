@@ -80,6 +80,11 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   let lastDrawingsHash = "";
   let lastSelectedIdsRef: Set<string> | undefined;
   let lastSelectedIdsHash = "-";
+  let spatialDrawingsRef: Drawing[] | null = null;
+  let spatialCanvasW = -1;
+  let spatialCanvasH = -1;
+  let spatialHidden = false;
+  let spatialInvalidated = true;
 
   function drawingsHash(ds: Drawing[]): string {
     if (ds === lastDrawingsRef) return lastDrawingsHash;
@@ -337,8 +342,39 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
           ]
         : storeDrawings;
 
-    spatialIndex.rebuild(all, toX, toY);
-    const viewport = spatialIndex.queryViewport(0, 0, rect.width, rect.height);
+    const liveOverrides = new Map<string, Drawing>();
+    if (data.livePoints && data.livePoints.size > 0) {
+      for (const drawing of storeDrawings) {
+        if (data.livePoints.has(drawing.id)) {
+          liveOverrides.set(drawing.id, drawing);
+        }
+      }
+    }
+    const canReuseSpatialIndex =
+      liveOverrides.size > 0 &&
+      !spatialInvalidated &&
+      spatialDrawingsRef === data.drawings &&
+      spatialCanvasW === cw &&
+      spatialCanvasH === ch &&
+      spatialHidden === data.drawingsHidden;
+    let viewport: Drawing[];
+    if (canReuseSpatialIndex) {
+      viewport = spatialIndex.queryViewportWithOverrides(
+        0,
+        0,
+        rect.width,
+        rect.height,
+        liveOverrides,
+      );
+    } else {
+      spatialIndex.rebuild(all, toX, toY);
+      viewport = spatialIndex.queryViewport(0, 0, rect.width, rect.height);
+      spatialDrawingsRef = pr ? null : data.drawings;
+      spatialCanvasW = cw;
+      spatialCanvasH = ch;
+      spatialHidden = data.drawingsHidden;
+      spatialInvalidated = false;
+    }
     // Long/Short tools must never be culled — their right edge can sit in
     // whitespace where timeToCoordinate returns null and the bbox collapses.
     for (const d of storeDrawings) {
@@ -394,7 +430,10 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     rafId = requestAnimationFrame(() => render());
   }
   function markDirty(force = false, followViewport = false) {
-    if (force) forceNext = true;
+    if (force) {
+      forceNext = true;
+      spatialInvalidated = true;
+    }
     if (followViewport) {
       viewportFollowUntil = Math.max(
         viewportFollowUntil,
