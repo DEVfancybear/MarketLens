@@ -1,6 +1,6 @@
 # Candle Virtualization — Phase 3 Chunked Canonical Repository
 
-_Implemented: 2026-07-11. Focused browser allocation/heap gate pending._
+_Implemented and benchmarked: 2026-07-11._
 
 ## Scope
 
@@ -114,5 +114,32 @@ Acceptance counters:
   not regress materially versus the legacy path;
 - fresh-page heap remains bounded and all correctness tests stay green.
 
-Phase 3 becomes complete after this capture confirms lower candle-object churn
-without timestamp, consumer, or heap regression.
+## Final Phase 3 capture
+
+The fresh-page 5,000-candle capture passed every repository invariant:
+
+- profile marker 1, ten prepends, ten delayed corrections, and 5,000 final
+  candles;
+- 77,440 repository candle references reused versus 49,990 in the legacy path;
+- the 27,450-reference difference is the unchanged history retained across ten
+  prepends (both paths retain 4,999 references per delayed correction);
+- 360 chunk references reused and 24 chunks in the final repository;
+- repository prepend took 7.6ms, correction 0.8ms, and all 20 compatibility
+  materializations 5.5ms;
+- legacy prepend took 22.3ms and correction 1.3ms.
+
+The conservative repository total including every compatibility materialization
+was 13.9ms versus 23.6ms for the legacy array path, a 41.1% reduction. The
+integrated live-store path also recorded five merges totaling 1.5ms and five
+materializations totaling 0.4ms.
+
+Fresh-page heap usage was 68.6MB (164.2MB committed) and stayed bounded. The
+chart retained one intentional 4,700-point Replay-prefix `setData`, followed by
+600 incremental candle updates. Frame p95 was 16.8ms; one 5.7-second
+background-tab interval invalidates max frame and wall-clock duration but does
+not affect the repository timing/counter gate.
+
+Phase 3 is complete. The primary candle replacement cost was only 6.9ms for one
+intentional operation, so current traces do not justify Phase 4 primary-series
+windowing. That phase remains optional and deferred unless larger-history
+captures identify the primary canvas data size as a material bottleneck.

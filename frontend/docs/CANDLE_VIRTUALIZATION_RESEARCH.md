@@ -1,6 +1,6 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phases 0–2 complete; Phase 3 implemented with focused allocation/heap gate pending._
+_Status: Phases 0–3 complete; optional Phase 4 primary-series windowing is not currently justified by traces._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
