@@ -4,6 +4,39 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert line lifecycle audit hardening (2026-07-10)
+- Added arming revisions so create/edit/drag/enable/re-arm operations cannot
+  reuse a market tick observed before the current alert definition existed.
+- Gave every active alert symbol its own reference-counted ticker subscription
+  and fixed MT5 ticker/kline ownership so deleting an alert cannot disconnect a
+  chart or leave off-watchlist alerts without live prices.
+- Frozen previous prices per symbol for each worker pass, preventing multiple
+  same-symbol alerts from producing loop-order-dependent crossing results.
+- Rejected historical candle fallback, stale worker snapshots, invalid MT5
+  Bid/Ask, and out-of-order realtime ticks from alert evaluation.
+- Reset recurring trigger stamps only for semantic arming changes and synced
+  browser-open recurring triggers into worker state to suppress duplicate push,
+  Telegram, or Discord delivery for the same crossing.
+- Rejected disabled and duplicate one-time triggers in the Go transaction,
+  preserved `updatedAt` across trigger-only lifecycle changes, and refreshed
+  native line labels when condition changes without a price change.
+- Expanded alert regression coverage to 16 tests for direction, revisions,
+  drag behavior, stale data, subscription ownership, and bootstrap gating.
+
+### Fixed - Closed-browser triggered alert line restored on reopen (2026-07-10)
+- Added a workspace readiness gate so push alert sync and closed-browser trigger
+  reconciliation cannot run while Firebase identity, backend session exchange,
+  or workspace bootstrap is still in flight.
+- Reconcile confirmed worker triggers immediately after the backend snapshot is
+  applied and whenever the active-alert snapshot changes, instead of allowing a
+  later `active` bootstrap row to restore a one-time alert line for up to the
+  next 60-second poll.
+- Kept worker state intact until reconciliation can consume it, then persisted
+  the trigger/event through the normal per-alert Go API queue before debounced
+  push sync removes the one-time worker alert.
+- Added a regression test for identity changes closing the push runtime gate and
+  documented the reopen lifecycle ordering in the Phase 10 guide.
+
 ### Fixed - Alert lines triggering before MT5 price crossed (2026-07-10)
 - Replaced candle high/low range recovery with strict consecutive-tick rules:
   `crossUp` requires `previous < target && current >= target`, while `crossDown`

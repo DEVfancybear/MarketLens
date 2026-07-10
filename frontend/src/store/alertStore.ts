@@ -25,7 +25,10 @@ import {
   type BackendAlertSnapshot,
 } from "@/services/api/resources/alertsApi";
 import { patchSettings } from "@/services/api/resources/settingsApi";
-import { isTriggerPriceValid } from "@/services/alertConditions";
+import {
+  hasAlertArmingChange,
+  isTriggerPriceValid,
+} from "@/services/alertConditions";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -235,16 +238,28 @@ export const createAlertAtom = atom(
 export const updateAlertAtom = atom(
   null,
   (get, set, id: string, patch: Partial<Omit<Alert, "id">>) => {
+    const existing =
+      get(alertsAtom).find((alert) => alert.id === id) ??
+      get(triggeredAlertsAtom).find((alert) => alert.id === id);
+    if (!existing) return;
+    const rearm =
+      existing.status === "active" && hasAlertArmingChange(existing, patch);
+    const applyPatch = (alert: Alert): Alert => ({
+      ...alert,
+      ...patch,
+      updatedAt: Date.now() / 1000,
+      ...(rearm ? { status: "active", triggeredAt: undefined, triggerPrice: undefined } : {}),
+    });
     set(
       alertsAtom,
       get(alertsAtom).map((a) =>
-        a.id === id ? { ...a, ...patch, updatedAt: Date.now() / 1000 } : a,
+        a.id === id ? applyPatch(a) : a,
       ),
     );
     set(
       triggeredAlertsAtom,
       get(triggeredAlertsAtom).map((a) =>
-        a.id === id ? { ...a, ...patch, updatedAt: Date.now() / 1000 } : a,
+        a.id === id ? applyPatch(a) : a,
       ),
     );
     persist();
@@ -253,7 +268,10 @@ export const updateAlertAtom = atom(
       get(triggeredAlertsAtom).find((alert) => alert.id === id);
     if (current) {
       queueAlertSync(get, id, "update", () =>
-        patchRemoteAlert(id, localAlertToPatch(current)),
+        patchRemoteAlert(id, {
+          ...localAlertToPatch(current),
+          ...(rearm ? { status: "active" } : {}),
+        }),
       );
     }
   },
@@ -314,13 +332,19 @@ export const editAlertAtom = atom(null, (_get, set, id: string | null) => {
 
 export const triggerAlertAtom = atom(
   null,
-  (get, set, id: string, triggerPrice: number): Alert | undefined => {
+  (
+    get,
+    set,
+    id: string,
+    triggerPrice: number,
+    triggeredAtMs?: number,
+  ): Alert | undefined => {
     const alert = get(alertsAtom).find((a) => a.id === id);
-    if (!alert) return undefined;
+    if (!alert || !alert.enabled || alert.status !== "active") return undefined;
     if (!isTriggerPriceValid(alert.condition, alert.price, triggerPrice)) {
       return undefined;
     }
-    const now = Date.now() / 1000;
+    const now = (triggeredAtMs ?? Date.now()) / 1000;
     const fired: Alert = {
       ...alert,
       status: "triggered",
@@ -372,6 +396,7 @@ export const resetAlertAtom = atom(null, (get, set, id: string) => {
   const rearmed: Alert = {
     ...fired,
     status: "active",
+    updatedAt: Date.now() / 1000,
     triggeredAt: undefined,
     triggerPrice: undefined,
   };

@@ -34,6 +34,7 @@
     "src/components/chart/drawing/tools/positionTradePrefill.ts",
     "src/services/market-data/symbols.ts",
     "src/services/market-data/mt5Price.ts",
+    "src/services/market-data/subscriptionRegistry.ts",
     "src/services/alertConditions.ts",
     "src/store/watchlistLayout.ts",
     "src/services/indicatorStoreModel.ts",

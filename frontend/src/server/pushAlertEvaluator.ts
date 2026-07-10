@@ -1,6 +1,13 @@
 import type { PushAlertCondition } from "@/types/pushAlerts";
-import { mt5ChartPrice } from "@/services/market-data/mt5Price";
-import { isPriceConditionMet } from "@/services/alertConditions";
+import {
+  isFreshMt5Tick,
+  mt5ChartPrice,
+} from "@/services/market-data/mt5Price";
+import {
+  alertArmingRevision,
+  isPriceConditionMet,
+  previousPriceForRevision,
+} from "@/services/alertConditions";
 import type { PushDeviceRecord, ServerPushAlert } from "@/types/pushAlerts";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
 import { sendExternalAlertNotifications } from "./externalNotifications";
@@ -46,7 +53,13 @@ interface PriceSnapshot {
 }
 
 export function alertSignature(alert: ServerPushAlert): string {
-  return `${alert.condition}:${alert.symbol}:${alert.price}:${alert.recurring}`;
+  return alertArmingRevision(
+    alert.condition,
+    alert.symbol,
+    alert.price,
+    alert.recurring,
+    alert.updatedAt,
+  );
 }
 
 const CONDITION_SYMBOL: Record<PushAlertCondition, string> = {
@@ -85,13 +98,21 @@ async function fetchMt5Price(symbol: string): Promise<PriceSnapshot | undefined>
   }
   const body = (await res.json()) as {
     connected?: boolean;
-    ticks?: Array<{ symbol?: string; bid?: number; ask?: number }>;
+    ticks?: Array<{
+      symbol?: string;
+      bid?: number;
+      ask?: number;
+      timestamp?: number;
+      time_msc?: number;
+    }>;
   };
   if (body.connected === false) return undefined;
   const normalized = symbol.trim().toUpperCase();
   const tick = body.ticks?.find(
     (item) => item.symbol?.trim().toUpperCase() === normalized,
   );
+  const timestampMs = Number(tick?.time_msc) || Number(tick?.timestamp) * 1000;
+  if (!isFreshMt5Tick(timestampMs)) return undefined;
   const current = mt5ChartPrice(Number(tick?.bid), Number(tick?.ask));
   return current === undefined ? undefined : { current };
 }
@@ -180,6 +201,7 @@ async function runEvaluation(
       continue;
     }
     const lastPrices = { ...device.lastPrices };
+    const previousPrices = { ...device.lastPrices };
     const alertState = { ...device.alertState };
 
     for (const alert of device.alerts) {
@@ -205,7 +227,11 @@ async function runEvaluation(
           ? state.lastEvaluatedAt
           : alert.updatedAt;
       const priceWindowSinceLastEval = price;
-      const prev = lastPrices[alert.symbol];
+      const prev = previousPriceForRevision(
+        signature,
+        state?.signature,
+        previousPrices[alert.symbol],
+      );
       const oneTimeFired = state?.oneTimeFired && !alert.recurring;
       const rearmBlocked =
         alert.recurring &&

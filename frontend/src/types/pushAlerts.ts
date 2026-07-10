@@ -8,6 +8,8 @@ export interface ServerPushAlert {
   note?: string;
   recurring: boolean;
   updatedAt: number;
+  lastTriggeredAt?: number;
+  triggerPrice?: number;
   push?: boolean;
   telegram?: boolean;
   discord?: boolean;
@@ -47,13 +49,7 @@ export interface PushAlertDb {
   devices: Record<string, PushDeviceRecord>;
 }
 
-/**
- * A server-confirmed trigger for an alert that was synced for closed-browser
- * evaluation. Lets the client reconcile its own local Active/Triggered state
- * when a crossing was too brief for the client's own (chart-timeframe-bound)
- * candle scan to see, but the server (1-minute resolution) already caught it
- * and delivered a notification.
- */
+/** A server-confirmed closed-browser trigger reconciled after workspace bootstrap. */
 export interface PushAlertTriggerStatus {
   alertId: string;
   symbol: string;

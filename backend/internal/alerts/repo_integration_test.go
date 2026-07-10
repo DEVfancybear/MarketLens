@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -71,12 +72,29 @@ func TestRepoIntegrationAlertLifecycleAndPushToken(t *testing.T) {
 		t.Fatalf("unexpected patch result: %+v", patched)
 	}
 
+	_, _, err = repo.Trigger(ctx, userID, created.ClientID, 1.131)
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("disabled trigger error = %v, want ErrBadRequest", err)
+	}
+	enabled = true
+	patched, err = repo.Patch(ctx, userID, created.ClientID, PatchInput{Enabled: &enabled})
+	if err != nil {
+		t.Fatalf("enable alert: %v", err)
+	}
+
 	triggered, event, err := repo.Trigger(ctx, userID, created.ClientID, 1.131)
 	if err != nil {
 		t.Fatalf("trigger alert: %v", err)
 	}
 	if triggered.Status != "triggered" || event.AlertID != created.ClientID {
 		t.Fatalf("unexpected trigger: alert=%+v event=%+v", triggered, event)
+	}
+	if !triggered.UpdatedAt.Equal(patched.UpdatedAt) {
+		t.Fatalf("trigger changed arming revision: before=%v after=%v", patched.UpdatedAt, triggered.UpdatedAt)
+	}
+	_, _, err = repo.Trigger(ctx, userID, created.ClientID, 1.131)
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("duplicate one-time trigger error = %v, want ErrBadRequest", err)
 	}
 	if err := repo.Delete(ctx, userID, created.ClientID); err != nil {
 		t.Fatalf("delete alert: %v", err)

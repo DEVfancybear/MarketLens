@@ -1,5 +1,69 @@
 export type PriceAlertCondition = "above" | "below" | "crossUp" | "crossDown";
 
+export function alertArmingRevision(
+  condition: PriceAlertCondition,
+  symbol: string,
+  target: number,
+  recurring: boolean,
+  updatedAt: number,
+): string {
+  return [condition, symbol, target, recurring, updatedAt].join(":");
+}
+
+export function previousPriceForRevision(
+  revision: string,
+  previousRevision: string | undefined,
+  previousPrice: number | undefined,
+): number | undefined {
+  return revision === previousRevision ? previousPrice : undefined;
+}
+
+export function conditionForTargetSide(
+  base: PriceAlertCondition,
+  target: number,
+  current: number | undefined,
+): PriceAlertCondition {
+  if (current === undefined) return base;
+  const targetIsAbove = target >= current;
+  if (base === "crossUp" || base === "crossDown") {
+    return targetIsAbove ? "crossUp" : "crossDown";
+  }
+  return targetIsAbove ? "above" : "below";
+}
+
+export function alertLineRenderKey(
+  alerts: Array<{ id: string; condition: PriceAlertCondition; price: number }>,
+): string {
+  return alerts
+    .map((alert) => `${alert.id}:${alert.condition}:${alert.price}`)
+    .join("|");
+}
+
+export function hasAlertArmingChange(
+  current: {
+    symbol: string;
+    condition: PriceAlertCondition;
+    price: number;
+    recurring: boolean;
+    enabled: boolean;
+  },
+  patch: Partial<{
+    symbol: string;
+    condition: PriceAlertCondition;
+    price: number;
+    recurring: boolean;
+    enabled: boolean;
+  }>,
+): boolean {
+  return (
+    (patch.symbol !== undefined && patch.symbol !== current.symbol) ||
+    (patch.condition !== undefined && patch.condition !== current.condition) ||
+    (patch.price !== undefined && patch.price !== current.price) ||
+    (patch.recurring !== undefined && patch.recurring !== current.recurring) ||
+    (patch.enabled === true && !current.enabled)
+  );
+}
+
 export function isPriceConditionMet(
   condition: PriceAlertCondition,
   target: number,

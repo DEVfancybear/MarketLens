@@ -88,6 +88,55 @@ back across the line entirely between polls can be missed. This is preferred to
 creating a false trigger from ambiguous candle history. A future durable MT5
 tick stream can remove that sampling limitation without changing alert rules.
 
+### Arming revisions and data quality
+
+Every create, edit, drag, enable, recurring-mode change, or manual re-arm
+creates a new arming revision from `condition`, `symbol`, `price`, `recurring`,
+and `updatedAt`. The first quote for a new revision establishes its baseline and
+cannot satisfy a crossing condition. Note/channel-only edits retain the latest
+trigger stamp; target/condition/enable/re-arm changes clear it.
+
+The browser engine owns a reference-counted ticker subscription for every alert
+symbol, including MT5 symbols outside the current chart and watchlist. Ticker
+and kline ownership are tracked separately, so deleting an alert cannot
+unsubscribe a chart that still owns the same symbol.
+
+Only live MT5 quotes are evaluated in-browser; historical candle close is not a
+fallback. The MT5 adapter rejects invalid Bid/Ask and out-of-order timestamps.
+The closed-browser worker rejects snapshots older than 60 seconds or more than
+5 seconds in the future. All alerts for one symbol in one worker pass read the
+same frozen previous/current pair, avoiding loop-order-dependent crossings.
+
+Recurring browser-open triggers sync their trigger timestamp and price into the
+worker state. This prevents the worker from delivering the same crossing again
+through push or external channels. Backend trigger transactions accept only
+enabled, active alerts; duplicate one-time and disabled trigger requests fail
+without inserting history events. Triggering does not change `updatedAt`, so it
+does not accidentally create a new arming revision.
+
+### Reopen reconciliation order
+
+On browser reopen, authenticated workspace bootstrap still reads the alert as
+`active` until the closed-browser trigger is written back. Push synchronization
+and trigger reconciliation are therefore gated by `workspaceReadyAtom`:
+
+```text
+Firebase identity resolved
+  -> backend session exchange resolved
+  -> workspace bootstrap applies active/triggered/history snapshot
+  -> workspaceReady = true
+  -> fetch closed-browser trigger status immediately
+  -> triggerAlertAtom moves one-time alert Active -> Triggered
+  -> per-alert API queue persists trigger/event in Go
+  -> debounced push sync removes the consumed one-time alert from worker state
+```
+
+Identity changes close the gate immediately. The gate stays closed while the
+backend login exchange or workspace request is in flight, preventing an early
+local reconcile from being overwritten by a later `active` bootstrap snapshot.
+Reconciliation also reruns whenever the active alert snapshot changes, so it
+does not wait for the normal 60-second status poll after bootstrap.
+
 History survives alert deletion. `alert_events.alert_id` uses `ON DELETE SET
 NULL`, while `alert_ref` stores the stable client ID/UUID returned to the UI.
 This matches Alert Center: clearing Triggered does not clear History.
@@ -181,13 +230,17 @@ wrong side of its alert line.
 | `src/store/alertStore.ts` | Optimistic state, per-alert queues, migration, settings sync |
 | `src/services/alertConditions.ts` | Shared level/cross predicates and final trigger-price guard |
 | `src/services/market-data/mt5Price.ts` | Bid-based MT5 chart/alert price normalization |
+| `src/services/market-data/subscriptionRegistry.ts` | Independent ticker/kline ownership per MT5 symbol |
 | `src/hooks/useAlertEngine.ts` | Consecutive-tick live alert evaluation |
 | `src/server/pushAlertEvaluator.ts` | Closed-browser MT5 tick polling and evaluation |
-| `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot |
+| `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot, then opens the push runtime gate |
 | `src/services/notifications/push.ts` | Dual token registration/unregistration |
 | `src/hooks/usePushNotifications.ts` | Enables Go token sync only for backend sessions |
+| `src/hooks/usePushTriggerReconcile.ts` | Post-bootstrap closed-browser lifecycle reconciliation |
 | `tests/alerts/alertsApi.test.ts` | Adapter and method/path/body contract tests |
 | `tests/alerts/alertConditions.test.ts` | Crossing, level, wrong-side, and MT5 Bid regression tests |
+| `tests/alerts/pushWorkspaceGate.test.ts` | Identity/bootstrap ordering gate regression test |
+| `tests/alerts/mt5AlertSubscription.test.ts` | Alert ticker/chart kline ownership regression test |
 
 Backend implementation lives in `backend/internal/alerts`; schema migration is
 `backend/migrations/0011_alerts`.

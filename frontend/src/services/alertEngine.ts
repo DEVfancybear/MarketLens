@@ -12,7 +12,10 @@
  *  crossDown  → previous > target AND current ≤ target
  */
 import type { Alert, AlertCondition } from '@/store/alertStore';
-import { isPriceConditionMet } from "@/services/alertConditions";
+import {
+  conditionForTargetSide,
+  isPriceConditionMet,
+} from "@/services/alertConditions";
 
 export interface AlertPriceSnapshot {
   current: number;
@@ -48,6 +51,5 @@ export function isAlertTriggered(
  * Used by the chart context menu, mirroring TradingView's quick-alert behaviour.
  */
 export function inferCondition(target: number, current: number | undefined): AlertCondition {
-  if (current === undefined) return 'crossUp';
-  return target >= current ? 'crossUp' : 'crossDown';
+  return conditionForTargetSide("crossUp", target, current);
 }

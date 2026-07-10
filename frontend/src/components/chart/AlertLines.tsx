@@ -8,6 +8,7 @@ import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
+import { alertLineRenderKey } from "@/services/alertConditions";
 
 /**
  * AlertLines — draws native lightweight-charts price lines for active alerts.
@@ -37,7 +38,7 @@ export function AlertLines() {
   // re-run) — using it directly as an effect dependency would tear down and
   // recreate every native price line dozens of times per second. Key on a
   // primitive derived from the fields the effect actually cares about instead.
-  const symbolAlertsKey = symbolAlerts.map((a) => `${a.id}:${a.price}`).join("|");
+  const symbolAlertsKey = alertLineRenderKey(symbolAlerts);
 
   useEffect(() => {
     const series = seriesRef.current;

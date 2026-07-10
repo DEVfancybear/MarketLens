@@ -18,8 +18,12 @@ import {
   type MarketSubscription,
   type Timeframe,
 } from "@/types";
-import { mt5ChartPrice } from "@/services/market-data/mt5Price";
+import {
+  isOrderedMt5Tick,
+  mt5ChartPrice,
+} from "@/services/market-data/mt5Price";
 import type { MarketDataServiceBinding } from "@/store/marketDataStore";
+import { SymbolSubscriptionRegistry } from "../subscriptionRegistry";
 
 type StatusValue = Extract<MarketDataEvent, { type: "status" }>["status"];
 
@@ -47,11 +51,13 @@ export class Mt5Provider implements MarketDataServiceBinding {
 
   private listener: MarketDataListener | null;
   private readonly symbols = new Set<string>();
+  private readonly subscriptions = new SymbolSubscriptionRegistry();
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private manualClose = false;
   private readonly previousBySymbol = new Map<string, number>();
+  private readonly timestampBySymbol = new Map<string, number>();
 
   constructor(opts: { onEvent?: MarketDataListener } = {}) {
     this.listener = opts.onEvent ?? null;
@@ -120,6 +126,10 @@ export class Mt5Provider implements MarketDataServiceBinding {
   subscribe(sub: MarketSubscription) {
     const symbol = sub.symbol.trim().toUpperCase();
     if (!symbol) return;
+    const key = sub.channels.includes("kline")
+      ? sub.timeframe ?? "kline"
+      : "ticker";
+    if (!this.subscriptions.add(symbol, key)) return;
     this.symbols.add(symbol);
     this.manualClose = false;
     if (this.ws?.readyState === WebSocket.OPEN) {
@@ -129,10 +139,13 @@ export class Mt5Provider implements MarketDataServiceBinding {
     }
   }
 
-  unsubscribe(symbol: string, _timeframe?: Timeframe) {
+  unsubscribe(symbol: string, timeframe?: Timeframe) {
     const normalized = symbol.trim().toUpperCase();
+    if (!this.subscriptions.has(normalized)) return;
+    if (this.subscriptions.remove(normalized, timeframe ?? "ticker")) return;
     this.symbols.delete(normalized);
     this.previousBySymbol.delete(normalized);
+    this.timestampBySymbol.delete(normalized);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.sendSymbols("unsubscribe", [normalized]);
     }
@@ -169,7 +182,8 @@ export class Mt5Provider implements MarketDataServiceBinding {
         this.emitStatus("connected");
       }
       for (const tick of message.ticks ?? []) {
-        this.emit(this.normalizeTick(tick));
+        const event = this.normalizeTick(tick);
+        if (event) this.emit(event);
       }
       return;
     }
@@ -177,22 +191,28 @@ export class Mt5Provider implements MarketDataServiceBinding {
     if (message.type === "tick" && message.tick) {
       this.reconnectAttempt = 0;
       this.emitStatus("connected");
-      this.emit(this.normalizeTick(message.tick));
+      const event = this.normalizeTick(message.tick);
+      if (event) this.emit(event);
     }
   }
 
-  private normalizeTick(tick: Mt5StreamTick): MarketDataEvent {
+  private normalizeTick(tick: Mt5StreamTick): MarketDataEvent | null {
     const symbol = tick.symbol.trim().toUpperCase();
     const bid = Number(tick.bid);
     const ask = Number(tick.ask);
-    const last = mt5ChartPrice(bid, ask) ?? 0;
-    const previous = this.previousBySymbol.get(symbol) ?? last;
-    this.previousBySymbol.set(symbol, last);
+    const last = mt5ChartPrice(bid, ask);
+    if (!symbol || last === undefined) return null;
 
     const timestamp =
       Number.isFinite(tick.time_msc) && tick.time_msc
         ? tick.time_msc
         : tick.timestamp * 1000;
+    if (!isOrderedMt5Tick(timestamp, this.timestampBySymbol.get(symbol))) {
+      return null;
+    }
+    const previous = this.previousBySymbol.get(symbol) ?? last;
+    this.previousBySymbol.set(symbol, last);
+    this.timestampBySymbol.set(symbol, timestamp);
     const change = last - previous;
     const quote: MarketQuote = {
       symbol,
@@ -202,7 +222,7 @@ export class Mt5Provider implements MarketDataServiceBinding {
       bid,
       ask,
       volume: 0,
-      timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+      timestamp,
     };
     return { type: "quote", provider: this.name, symbol, quote };
   }

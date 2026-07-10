@@ -5,14 +5,17 @@ import { alertsAtom, settingsAtom } from "@/store/alertStore";
 import { pushRegistrationAtom } from "@/store/notificationStore";
 import { syncServerPushAlerts } from "@/services/notifications/push";
 import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
+import { workspaceReadyAtom } from "@/store/authStore";
 
 export function usePushAlertSync() {
   const alerts = useAtomValue(alertsAtom);
   const settings = useAtomValue(settingsAtom);
   const registration = useAtomValue(pushRegistrationAtom);
   const externalSyncToken = useExternalSyncToken();
+  const workspaceReady = useAtomValue(workspaceReadyAtom);
 
   useEffect(() => {
+    if (!workspaceReady) return;
     const syncToken = registration?.token ?? externalSyncToken;
     const hasExternalAlertFlags = alerts.some(
       (alert) => alert.telegram || alert.discord,
@@ -80,5 +83,6 @@ export function usePushAlertSync() {
     settings.discord,
     settings.push,
     settings.telegram,
+    workspaceReady,
   ]);
 }

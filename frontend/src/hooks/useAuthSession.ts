@@ -8,6 +8,7 @@ import {
 } from "@/services/auth/authClient";
 import {
   setAuthErrorAtom,
+  setBackendSessionResolvedAtom,
   setAuthUserAtom,
   setBackendSessionAtom,
 } from "@/store/authStore";
@@ -28,11 +29,13 @@ export function useAuthSession(): void {
 
       if (!user || !firebaseUser) {
         store.set(setBackendSessionAtom, false);
+        store.set(setBackendSessionResolvedAtom, true);
         return;
       }
 
       if (!backendAuthConfigured()) {
         store.set(setBackendSessionAtom, false);
+        store.set(setBackendSessionResolvedAtom, true);
         return;
       }
 
@@ -40,12 +43,14 @@ export function useAuthSession(): void {
         const idToken = await firebaseUser.getIdToken();
         const result = await ensureBackendGoogleSession(idToken);
         store.set(setBackendSessionAtom, Boolean(result));
+        store.set(setBackendSessionResolvedAtom, true);
         store.set(setAuthErrorAtom, null);
         if (result?.isNewUser) {
           store.set(logAtom, "info", "Welcome - account created");
         }
       } catch (error) {
         store.set(setBackendSessionAtom, false);
+        store.set(setBackendSessionResolvedAtom, true);
         const reported = reportFrontendError(error, {
           title: "Backend login failed",
           logPrefix: "Backend login failed",

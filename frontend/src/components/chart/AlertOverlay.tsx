@@ -27,12 +27,12 @@ import {
   alertTickAtom,
   CONDITION_SYMBOL,
   type Alert,
-  type AlertCondition,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
 import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
+import { conditionForTargetSide } from "@/services/alertConditions";
 
 const HIT_PX = 12; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
@@ -42,18 +42,6 @@ const DRAG_THRESHOLD = 3;
 const ALERT_DEBUG = false;
 
 /** Recompute the condition while dragging, keeping the alert's family (level vs cross). */
-function sideCondition(
-  base: AlertCondition,
-  price: number,
-  market: number | undefined,
-): AlertCondition {
-  if (market === undefined) return base;
-  const above = price >= market;
-  if (base === "crossUp" || base === "crossDown")
-    return above ? "crossUp" : "crossDown";
-  return above ? "above" : "below";
-}
-
 export function AlertOverlay() {
   const ctx = useChartCtx();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -429,7 +417,11 @@ export function AlertOverlay() {
       ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
       priceScale.applyOptions({ autoScale: prevAutoScale });
       if (moved && lastPrice !== origPrice) {
-        const condition = sideCondition(a.condition, lastPrice, marketPrice);
+        const condition = conditionForTargetSide(
+          a.condition,
+          lastPrice,
+          marketPrice,
+        );
         updateAlert(a.id, { price: lastPrice, condition });
       }
       // Release the guard after the store commit above so AlertLines' next

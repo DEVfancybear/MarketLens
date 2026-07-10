@@ -6,6 +6,7 @@ import type {
   PushDeviceRecord,
   ServerPushAlert,
 } from "@/types/pushAlerts";
+import { alertArmingRevision } from "@/services/alertConditions";
 
 const DB_VERSION = 1;
 const STORE_DIR = ".data";
@@ -58,7 +59,46 @@ function sanitizeAlert(alert: ServerPushAlert): ServerPushAlert | null {
     discord: Boolean(alert.discord),
   };
   if (alert.note) sanitized.note = String(alert.note).slice(0, 240);
+  if (Number.isFinite(alert.lastTriggeredAt)) {
+    sanitized.lastTriggeredAt = alert.lastTriggeredAt;
+  }
+  if (Number.isFinite(alert.triggerPrice)) {
+    sanitized.triggerPrice = alert.triggerPrice;
+  }
   return sanitized;
+}
+
+function mergeClientTriggerState(
+  alerts: ServerPushAlert[],
+  state: PushDeviceRecord["alertState"],
+): PushDeviceRecord["alertState"] {
+  const next = { ...state };
+  for (const alert of alerts) {
+    const signature = alertArmingRevision(
+      alert.condition,
+      alert.symbol,
+      alert.price,
+      alert.recurring,
+      alert.updatedAt,
+    );
+    if (
+      alert.lastTriggeredAt === undefined ||
+      alert.triggerPrice === undefined ||
+      (next[alert.id]?.lastTriggeredAt ?? 0) > alert.lastTriggeredAt ||
+      ((next[alert.id]?.lastTriggeredAt ?? 0) === alert.lastTriggeredAt &&
+        next[alert.id]?.signature === signature)
+    ) {
+      continue;
+    }
+    next[alert.id] = {
+      signature,
+      lastTriggeredAt: alert.lastTriggeredAt,
+      lastEvaluatedAt: alert.lastTriggeredAt,
+      oneTimeFired: !alert.recurring,
+      triggerPrice: alert.triggerPrice,
+    };
+  }
+  return next;
 }
 
 function pruneState(device: PushDeviceRecord): PushDeviceRecord {
@@ -200,7 +240,7 @@ export async function syncPushAlerts(
       settingsTelegram: Boolean(request.settingsTelegram),
       settingsDiscord: Boolean(request.settingsDiscord),
       lastPrices: existing?.lastPrices ?? {},
-      alertState: existing?.alertState ?? {},
+      alertState: mergeClientTriggerState(alerts, existing?.alertState ?? {}),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
@@ -228,7 +268,7 @@ export async function syncPushAlerts(
     settingsTelegram: Boolean(request.settingsTelegram),
     settingsDiscord: Boolean(request.settingsDiscord),
     lastPrices: existing?.lastPrices ?? {},
-    alertState: existing?.alertState ?? {},
+    alertState: mergeClientTriggerState(alerts, existing?.alertState ?? {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   });

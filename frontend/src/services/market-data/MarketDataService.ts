@@ -23,6 +23,7 @@ import {
   type MarketProvider,
   type MarketSubscription,
   type Timeframe,
+  subscriptionKey,
 } from "@/types";
 import { BinanceProvider } from "./providers/BinanceProvider";
 import { TwelveDataProvider } from "./providers/TwelveDataProvider";
@@ -73,6 +74,12 @@ export class MarketDataService implements MarketDataServiceBinding {
 
   /** Active kline timeframe per symbol (so ticks build the right bar). */
   private readonly tfBySymbol = new Map<string, Timeframe>();
+
+  /** Provider-facing subscriptions retained across ticker/kline consumers. */
+  private readonly subscriptionsBySymbol = new Map<
+    string,
+    Map<string, MarketSubscription>
+  >();
 
   /** Latest status reported by each provider. */
   private readonly statuses: Record<MarketProvider, ConnectionStatus> = {
@@ -189,6 +196,16 @@ export class MarketDataService implements MarketDataServiceBinding {
       );
       return;
     }
+    const key = subscriptionKey(
+      sub.symbol,
+      sub.channels.includes("kline") ? sub.timeframe : undefined,
+    );
+    const subscriptions =
+      this.subscriptionsBySymbol.get(sub.symbol) ??
+      new Map<string, MarketSubscription>();
+    if (subscriptions.has(key)) return;
+    subscriptions.set(key, sub);
+    this.subscriptionsBySymbol.set(sub.symbol, subscriptions);
     console.debug(
       "[MarketDataService] subscribe",
       sub.symbol,
@@ -205,12 +222,25 @@ export class MarketDataService implements MarketDataServiceBinding {
     if (!meta) return;
 
     const provider = meta.provider;
-    if (!timeframe) {
+    const key = subscriptionKey(symbol, timeframe);
+    const subscriptions = this.subscriptionsBySymbol.get(symbol);
+    subscriptions?.delete(key);
+
+    if (!subscriptions || subscriptions.size === 0) {
+      this.subscriptionsBySymbol.delete(symbol);
       this.symbolsByProvider[provider]?.delete(symbol);
       this.tfBySymbol.delete(symbol);
       this.candleEngine.reset(symbol);
-    } else {
+    } else if (timeframe) {
       this.candleEngine.reset(symbol, timeframe);
+      const remainingKline = [...subscriptions.values()].find((sub) =>
+        sub.channels.includes("kline"),
+      );
+      if (remainingKline?.timeframe) {
+        this.tfBySymbol.set(symbol, remainingKline.timeframe);
+      } else {
+        this.tfBySymbol.delete(symbol);
+      }
     }
 
     const routed = this.route(symbol);

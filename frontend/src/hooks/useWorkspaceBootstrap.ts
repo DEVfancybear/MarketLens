@@ -1,7 +1,13 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { authStatusAtom, authUserAtom, backendSessionAtom } from "@/store/authStore";
+import {
+  authStatusAtom,
+  authUserAtom,
+  backendSessionAtom,
+  backendSessionResolvedAtom,
+  setWorkspaceReadyAtom,
+} from "@/store/authStore";
 import {
   applyRemoteUISettingsAtom,
   logAtom,
@@ -44,6 +50,7 @@ import {
 export function useWorkspaceBootstrap(): void {
   const authStatus = useAtomValue(authStatusAtom);
   const backendSession = useAtomValue(backendSessionAtom);
+  const backendSessionResolved = useAtomValue(backendSessionResolvedAtom);
   const user = useAtomValue(authUserAtom);
   const applyUI = useSetAtom(applyRemoteUISettingsAtom);
   const resetUI = useSetAtom(resetUIToDefaultsAtom);
@@ -60,6 +67,7 @@ export function useWorkspaceBootstrap(): void {
   const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
   const resetTrade = useSetAtom(resetTradeAtom);
   const resetPushNotifications = useSetAtom(resetNotificationsToDefaultsAtom);
+  const setWorkspaceReady = useSetAtom(setWorkspaceReadyAtom);
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
   const anonymousResetRef = useRef(false);
@@ -78,10 +86,12 @@ export function useWorkspaceBootstrap(): void {
         resetPushNotifications();
         log("info", "Workspace reset to defaults");
       }
+      setWorkspaceReady(true);
       return;
     }
 
     if (authStatus === "loading" || authStatus === "authenticating") {
+      setWorkspaceReady(false);
       return;
     }
 
@@ -89,12 +99,14 @@ export function useWorkspaceBootstrap(): void {
 
     if (!backendSession || !user) {
       bootstrappedUserRef.current = null;
+      setWorkspaceReady(backendSessionResolved);
       return;
     }
     if (bootstrappedUserRef.current === user.uid) return;
 
     let cancelled = false;
     bootstrappedUserRef.current = user.uid;
+    setWorkspaceReady(false);
 
     void getWorkspaceBootstrap()
       .then(async (bootstrap) => {
@@ -125,11 +137,13 @@ export function useWorkspaceBootstrap(): void {
         applyPineScripts(bootstrap.pineScripts);
         applyIndicators(bootstrap.indicators);
         loadActiveDrawings();
+        setWorkspaceReady(true);
         log("info", "Workspace synced from backend");
       })
       .catch((error) => {
         if (cancelled) return;
         bootstrappedUserRef.current = null;
+        setWorkspaceReady(true);
         reportFrontendError(error, {
           title: "Workspace sync failed",
           logPrefix: "Workspace bootstrap failed",
@@ -151,6 +165,7 @@ export function useWorkspaceBootstrap(): void {
     applyUI,
     applyWatchlists,
     backendSession,
+    backendSessionResolved,
     log,
     resetAlerts,
     resetChartWorkspace,
@@ -158,6 +173,7 @@ export function useWorkspaceBootstrap(): void {
     resetSmc,
     resetTrade,
     resetUI,
+    setWorkspaceReady,
     user,
   ]);
 }

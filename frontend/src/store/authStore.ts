@@ -29,9 +29,17 @@ export const authStatusAtom = atom<AuthStatus>("loading");
 export const authErrorAtom = atom<string | null>(null);
 /** True once the backend `/auth/google` exchange has established a session. */
 export const backendSessionAtom = atom<boolean>(false);
+/** Distinguishes an in-flight backend login exchange from a completed offline fallback. */
+export const backendSessionResolvedAtom = atom<boolean>(false);
+/** True after the current identity's local reset or backend bootstrap is applied. */
+export const workspaceReadyAtom = atom<boolean>(false);
 
 // ── Write atoms (actions) ──────────────────────────────────────────────────
-export const setAuthUserAtom = atom(null, (_get, set, user: AuthUser | null) => {
+export const setAuthUserAtom = atom(null, (get, set, user: AuthUser | null) => {
+  if (get(authUserAtom)?.uid !== user?.uid) {
+    set(workspaceReadyAtom, false);
+    set(backendSessionResolvedAtom, user === null);
+  }
   set(authUserAtom, user);
   set(authStatusAtom, user ? "authed" : "anonymous");
   if (user) set(authErrorAtom, null);
@@ -48,6 +56,17 @@ export const setAuthErrorAtom = atom(null, (_get, set, error: string | null) => 
 
 export const setBackendSessionAtom = atom(null, (_get, set, ok: boolean) => {
   set(backendSessionAtom, ok);
+});
+
+export const setBackendSessionResolvedAtom = atom(
+  null,
+  (_get, set, resolved: boolean) => {
+    set(backendSessionResolvedAtom, resolved);
+  },
+);
+
+export const setWorkspaceReadyAtom = atom(null, (_get, set, ready: boolean) => {
+  set(workspaceReadyAtom, ready);
 });
 
 // ── Combined state (compatibility hook) ────────────────────────────────────

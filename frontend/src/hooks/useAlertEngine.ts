@@ -1,87 +1,62 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { getDefaultStore, useAtomValue } from "jotai";
-import {
-  getMarketDataState,
-  marketDataTickAtom,
-  selectedTimeframeAtom,
-  type MarketDataStoreInterface,
-} from "@/store/marketDataStore";
+import { getDefaultStore } from "jotai";
+import { getMarketDataState, marketDataTickAtom } from "@/store/marketDataStore";
 import {
   useAlertStore,
   getAlertState,
   RECURRING_REARM_MS,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import {
+  alertArmingRevision,
+  previousPriceForRevision,
+} from "@/services/alertConditions";
 import { isAlertTriggered } from "@/services/alertEngine";
 import { deliverAlert } from "@/services/notifications/notify";
-import { subscriptionKey } from "@/types";
-
-function latestPrice(
-  md: MarketDataStoreInterface,
-  symbol: string,
-): number | undefined {
-  const quote = md.quotes[symbol];
+function latestPrice(symbol: string): number | undefined {
+  const marketData = getMarketDataState();
+  const quote = marketData.quotes[symbol];
   if (quote && Number.isFinite(quote.last)) return quote.last;
-
-  const series = md.candles[subscriptionKey(symbol, md.selectedTimeframe)];
-  const close = series?.[series.length - 1]?.close;
-  return Number.isFinite(close) ? close : undefined;
+  return undefined;
 }
 
-/** Evaluates line alerts only from consecutive live MT5 prices. */
+/** Evaluates alert revisions only from consecutive live MT5 prices. */
 export function useAlertEngine() {
   const alertSymbolsKey = useAlertStore((state) => {
     const symbols = new Set(state.alerts.map((alert) => alert.symbol));
     return [...symbols].sort().join(",");
   });
-  const selectedTimeframe = useAtomValue(selectedTimeframeAtom);
-  const subscribedRef = useRef<Set<string>>(new Set());
+  const subscribedSymbolsRef = useRef<Set<string>>(new Set());
   const previousPriceRef = useRef<Map<string, number>>(new Map());
-  const seenAlertIdsRef = useRef<Set<string>>(new Set());
+  const revisionByAlertRef = useRef<Map<string, string>>(new Map());
 
+  // Alerts own a ticker subscription even when their symbol is not charted or
+  // watch-listed. marketDataStore reference-counts shared subscriptions.
   useEffect(() => {
     const symbols = alertSymbolsKey ? alertSymbolsKey.split(",") : [];
-    const desired = new Set(symbols.map((symbol) => `${symbol}:${selectedTimeframe}`));
-    const subscribed = subscribedRef.current;
+    const desired = new Set(symbols);
+    const subscribed = subscribedSymbolsRef.current;
 
     for (const symbol of symbols) {
-      const key = `${symbol}:${selectedTimeframe}`;
-      const meta = getMarketSymbol(symbol);
-      if (!subscribed.has(key) && meta && meta.provider !== "mt5") {
-        getMarketDataState().subscribe({ symbol, channels: ["ticker"] });
-        getMarketDataState().subscribe({
-          symbol,
-          channels: ["kline"],
-          timeframe: selectedTimeframe,
-        });
-        subscribed.add(key);
-      }
+      if (subscribed.has(symbol) || !getMarketSymbol(symbol)) continue;
+      getMarketDataState().subscribe({ symbol, channels: ["ticker"] });
+      subscribed.add(symbol);
     }
 
-    for (const key of [...subscribed]) {
-      if (desired.has(key)) continue;
-      const [symbol, timeframe] = key.split(":");
+    for (const symbol of [...subscribed]) {
+      if (desired.has(symbol)) continue;
       getMarketDataState().unsubscribe(symbol);
-      getMarketDataState().unsubscribe(
-        symbol,
-        timeframe as typeof selectedTimeframe,
-      );
-      subscribed.delete(key);
+      subscribed.delete(symbol);
     }
-  }, [alertSymbolsKey, selectedTimeframe]);
+  }, [alertSymbolsKey]);
 
   useEffect(() => {
-    const subscribed = subscribedRef.current;
+    const subscribed = subscribedSymbolsRef.current;
     return () => {
-      for (const key of subscribed) {
-        const [symbol, timeframe] = key.split(":");
+      for (const symbol of subscribed) {
         getMarketDataState().unsubscribe(symbol);
-        getMarketDataState().unsubscribe(
-          symbol,
-          timeframe as typeof selectedTimeframe,
-        );
       }
       subscribed.clear();
     };
@@ -89,7 +64,6 @@ export function useAlertEngine() {
 
   useEffect(() => {
     const evaluate = () => {
-      const marketData = getMarketDataState();
       const { alerts, triggerAlert, settings } = getAlertState();
       if (alerts.length === 0) return;
 
@@ -97,7 +71,7 @@ export function useAlertEngine() {
       const prices = new Map<string, number>();
       for (const alert of alerts) {
         if (prices.has(alert.symbol)) continue;
-        const price = latestPrice(marketData, alert.symbol);
+        const price = latestPrice(alert.symbol);
         if (price !== undefined) prices.set(alert.symbol, price);
       }
 
@@ -106,10 +80,18 @@ export function useAlertEngine() {
         const current = prices.get(alert.symbol);
         if (current === undefined) continue;
 
-        const firstEvaluation = !seenAlertIdsRef.current.has(alert.id);
-        const previous = firstEvaluation
-          ? undefined
-          : previousPriceRef.current.get(alert.symbol);
+        const revision = alertArmingRevision(
+          alert.condition,
+          alert.symbol,
+          alert.price,
+          alert.recurring,
+          alert.updatedAt,
+        );
+        const previous = previousPriceForRevision(
+          revision,
+          revisionByAlertRef.current.get(alert.id),
+          previousPriceRef.current.get(alert.symbol),
+        );
         const rearmBlocked =
           alert.recurring &&
           alert.triggeredAt !== undefined &&
@@ -119,12 +101,12 @@ export function useAlertEngine() {
           const fired = triggerAlert(alert.id, current);
           if (fired) deliverAlert(fired, current, settings);
         }
-        seenAlertIdsRef.current.add(alert.id);
+        revisionByAlertRef.current.set(alert.id, revision);
       }
 
       const activeIds = new Set(alerts.map((alert) => alert.id));
-      for (const id of seenAlertIdsRef.current) {
-        if (!activeIds.has(id)) seenAlertIdsRef.current.delete(id);
+      for (const id of revisionByAlertRef.current.keys()) {
+        if (!activeIds.has(id)) revisionByAlertRef.current.delete(id);
       }
       for (const [symbol, price] of prices) {
         previousPriceRef.current.set(symbol, price);

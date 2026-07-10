@@ -211,17 +211,31 @@ func (r *Repo) Trigger(ctx context.Context, userID, ref string, triggerPrice flo
 	var selectedAlertID pgtype.UUID
 	var condition string
 	var targetPrice float64
+	var enabled bool
+	var status string
 	err = tx.QueryRow(ctx, `
-SELECT id, condition::text, price
+SELECT id, condition::text, price, enabled, status::text
 FROM alerts
 WHERE user_id = $1
   AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
-FOR UPDATE`, uid, refUUID, refClientID).Scan(&selectedAlertID, &condition, &targetPrice)
+FOR UPDATE`, uid, refUUID, refClientID).Scan(
+		&selectedAlertID,
+		&condition,
+		&targetPrice,
+		&enabled,
+		&status,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Alert{}, Event{}, ErrNotFound
 	}
 	if err != nil {
 		return Alert{}, Event{}, err
+	}
+	if !enabled || status != "active" {
+		return Alert{}, Event{}, fmt.Errorf(
+			"%w: only enabled active alerts can be triggered",
+			ErrBadRequest,
+		)
 	}
 	if !validTriggerPrice(condition, targetPrice, triggerPrice) {
 		return Alert{}, Event{}, fmt.Errorf(
@@ -234,8 +248,7 @@ FOR UPDATE`, uid, refUUID, refClientID).Scan(&selectedAlertID, &condition, &targ
 UPDATE alerts SET
   status = CASE WHEN recurring THEN 'active'::alert_status ELSE 'triggered'::alert_status END,
   trigger_price = $3,
-  triggered_at = now(),
-  updated_at = now()
+  triggered_at = now()
 WHERE user_id = $1 AND id = $2
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,

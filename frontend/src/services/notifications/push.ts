@@ -244,6 +244,11 @@ export async function syncServerPushAlerts({
     note: alert.note,
     recurring: alert.recurring,
     updatedAt: Math.round((alert.updatedAt ?? alert.createdAt) * 1000),
+    lastTriggeredAt:
+      alert.triggeredAt === undefined
+        ? undefined
+        : Math.round(alert.triggeredAt * 1000),
+    triggerPrice: alert.triggerPrice,
     push: alert.push,
     telegram: alert.telegram,
     discord: alert.discord,
