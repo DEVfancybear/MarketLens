@@ -110,12 +110,17 @@ export function IndicatorPane({
   const seriesSignatureRef = useRef("");
   const seriesStyleSignatureRef = useRef("");
   const anchorDataRef = useRef<IndicatorWritePoint[]>([]);
+  const anchorValueRef = useRef<number | null>(null);
+  const anchorContextRef = useRef("");
   const seriesDataRef = useRef<Map<number, IndicatorWritePoint[]>>(new Map());
   const candlesRef = useRef<readonly Candle[]>(candles);
   const resultRef = useRef<IndicatorResult | null>(null);
   const visibleLogicalRangeRef = useRef<IndicatorLogicalRange | null>(null);
   const projectedRangeKeyRef = useRef("");
   const viewportRafRef = useRef<number | null>(null);
+  const legendAppliedRef = useRef<string | null>(null);
+  const legendPendingRef = useRef<string | null>(null);
+  const legendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const theme = useAtomValue(themeAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
@@ -129,6 +134,35 @@ export function IndicatorPane({
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const [legendValueText, setLegendValueText] = useState("");
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
+  const anchorContext = `${cfg.id}:${symbol}:${timeframe}`;
+  if (anchorContextRef.current !== anchorContext) {
+    anchorContextRef.current = anchorContext;
+    anchorValueRef.current = null;
+    anchorDataRef.current = [];
+  }
+
+  const publishLegendValue = useCallback((next: string) => {
+    if (legendAppliedRef.current == null) {
+      legendAppliedRef.current = next;
+      setLegendValueText(next);
+      return;
+    }
+    if (legendAppliedRef.current === next || legendPendingRef.current === next) {
+      incrementChartPerformanceCounter("indicator.legend.skipped");
+      return;
+    }
+    legendPendingRef.current = next;
+    if (legendTimerRef.current) return;
+    legendTimerRef.current = setTimeout(() => {
+      legendTimerRef.current = null;
+      const pending = legendPendingRef.current;
+      legendPendingRef.current = null;
+      if (pending == null || pending === legendAppliedRef.current) return;
+      legendAppliedRef.current = pending;
+      incrementChartPerformanceCounter("indicator.legend.updates");
+      setLegendValueText(pending);
+    }, 500);
+  }, []);
 
   const refreshViewportProjectedSeries = useCallback((onlyExtended: boolean) => {
     const result = resultRef.current;
@@ -138,12 +172,15 @@ export function IndicatorPane({
 
     const anchorData = measureChartPerformance(
       "indicator.pane-anchor-projection",
-      () => indicatorPaneTimeAnchorData(sourceCandles, result, visibleRange).map(
-        (point) => ({
+      () => {
+        const points = indicatorPaneTimeAnchorData(sourceCandles, result, visibleRange);
+        const anchorValue = anchorValueRef.current ?? points[0]?.value ?? 0;
+        anchorValueRef.current = anchorValue;
+        return points.map((point) => ({
           time: point.time as UTCTimestamp,
-          value: point.value,
-        }),
-      ),
+          value: anchorValue,
+        }));
+      },
       { candles: sourceCandles.length },
     );
     const anchor = anchorSeriesRef.current;
@@ -241,7 +278,11 @@ export function IndicatorPane({
       seriesSignatureRef.current = "";
       seriesStyleSignatureRef.current = "";
       anchorDataRef.current = [];
+      anchorValueRef.current = null;
       seriesDataStore.clear();
+      if (legendTimerRef.current) clearTimeout(legendTimerRef.current);
+      legendTimerRef.current = null;
+      legendPendingRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -316,14 +357,19 @@ export function IndicatorPane({
       seriesSignatureRef.current = "";
       seriesStyleSignatureRef.current = "";
       anchorDataRef.current = [];
+      anchorValueRef.current = null;
       seriesDataRef.current.clear();
+      legendAppliedRef.current = "";
+      legendPendingRef.current = null;
+      if (legendTimerRef.current) clearTimeout(legendTimerRef.current);
+      legendTimerRef.current = null;
       setLegendValueText("");
       return;
     }
     void pineRuntimeVersion;
     const result = computeIndicator(cfg, candles, { symbol, timeframe });
     resultRef.current = result;
-    setLegendValueText(indicatorResultValueText(result));
+    publishLegendValue(indicatorResultValueText(result));
     const signature = seriesStructureSignature(result.series);
     const styleSignature = seriesStyleSignature(result.series);
     const structureChanged = seriesSignatureRef.current !== signature;
@@ -441,6 +487,7 @@ export function IndicatorPane({
     symbol,
     timeframe,
     mainChart,
+    publishLegendValue,
     refreshViewportProjectedSeries,
   ]);
 

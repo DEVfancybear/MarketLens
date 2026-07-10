@@ -1,0 +1,49 @@
+{
+  "scenario": "Phase 1 corrective capture 1: 5000 bars, pane/custom indicators, 5Hz single-in-flight SMC",
+  "capturedAt": "2026-07-10T21:02:56.506Z",
+  "environment": {
+    "browser": "Edge 150",
+    "os": "Windows 10",
+    "viewport": "838x794",
+    "devicePixelRatio": 1.25,
+    "hardwareConcurrency": 12
+  },
+  "elapsedMs": 56028.0,
+  "heapUsedBytes": 510146930,
+  "knownInvalidSample": {
+    "metric": "frame.interval.maxMs",
+    "value": 18256.1,
+    "reason": "benchmark tab was backgrounded"
+  },
+  "counters": {
+    "frame.count": 1298,
+    "frame.missed-vsync": 366,
+    "frame.over33_4ms": 325,
+    "main.long-task.count": 132,
+    "react.commit.count": 1125,
+    "react.ChartArea.nested-update.commits": 249,
+    "series.indicator.setData.calls": 1206,
+    "series.indicator.setData.points": 26057,
+    "series.indicator.update.calls": 600,
+    "series.indicator.skipped": 6923,
+    "series.pane-anchor.setData.calls": 151,
+    "series.pane-anchor.setData.points": 759950,
+    "series.pane-anchor.update.calls": 2,
+    "series.pane-anchor.skipped": 396,
+    "smc.worker.post.calls": 220,
+    "smc.worker.post.candles": 330000,
+    "smc.worker.post.candlesAvoided": 736673,
+    "smc.worker.post.estimatedBytes": 18480000
+  },
+  "metrics": {
+    "frame.interval": { "p50Ms": 16.7, "p95Ms": 66.8, "p99Ms": 83.4, "maxMs": 18256.1 },
+    "main.long-task": { "totalMs": 7719.0, "p95Ms": 77.0, "p99Ms": 101.0, "maxMs": 107.0 },
+    "react.commit": { "totalMs": 11763.0, "p95Ms": 21.2, "p99Ms": 29.0, "maxMs": 46.5 },
+    "series.indicator.setData": { "totalMs": 1545.2, "p95Ms": 2.4, "p99Ms": 5.9, "maxMs": 8.8 },
+    "series.pane-anchor.setData": { "totalMs": 564.6, "p95Ms": 7.1, "p99Ms": 10.0, "maxMs": 10.9 },
+    "smc.worker.round-trip": { "totalMs": 11456.1, "p95Ms": 92.4, "p99Ms": 116.1, "maxMs": 128.8 },
+    "smc.worker.transfer-and-queue": { "totalMs": 10197.1, "p95Ms": 87.1, "p99Ms": 109.6, "maxMs": 123.4 },
+    "smc.worker.compute": { "totalMs": 1259.0, "p95Ms": 9.6, "p99Ms": 11.7, "maxMs": 12.4 }
+  },
+  "result": "SMC regression corrected; dynamic anchor and nested legend commits isolated for second correction"
+}

@@ -119,8 +119,30 @@ compute to the post-render effect, changes SMC cadence to 200ms (5Hz), permits
 only one worker request in flight, and retains only the newest trailing input.
 Stale worker snapshots are not committed while newer input is pending.
 
-The corrective iteration requires one more identical browser capture before
-the overall Phase 1 performance gate can be declared passed.
+### Corrective capture 1
+
+The 200ms/single-in-flight SMC correction reduced worker calls from 301 to 220,
+estimated bytes from 25.3MB to 18.5MB, long-task count from 301 to 132, and
+long-task total from 25,238ms to 7,719ms. Frame p95 recovered from 116.8ms to
+66.8ms, matching the Phase 0 baseline rather than regressing beyond it. SMC
+round-trip p95 improved from 126.7ms to 92.4ms.
+
+This capture contains an 18.26-second frame interval caused by the benchmark tab
+being backgrounded; max frame and wall-clock duration are invalid, while the
+p50/p95/p99 distributions and operation counters remain useful. Future runs
+must keep the benchmark tab focused.
+
+Two newly isolated costs remained:
+
+- the pane anchor replaced 151 times because its invisible fallback value was
+  derived from a changing indicator result;
+- restoring post-render legend updates produced 249 nested commits.
+
+The second correction pins the invisible anchor value for each
+`indicator:symbol:timeframe` context and throttles legend text publication to
+2Hz while indicator math and chart writes remain immediate. One final focused
+browser capture is required before the overall Phase 1 performance gate can be
+declared passed.
 
 ## Deferred item
 
