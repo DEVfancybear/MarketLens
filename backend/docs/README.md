@@ -2,9 +2,9 @@
 
 Documentation for the SMC Trading Terminal Go API server.
 
-Backend framework decision: Fiber. Current code is a Fiber API with health/readiness, auth,
-settings/bootstrap, Phase 6 watchlists, and a local MT5 tick streaming sidecar/consumer. The next
-HTTP persistence task is Phase 7 drawings.
+Backend framework decision: Fiber. Current code includes health/readiness,
+auth, settings/bootstrap, watchlists, drawings, indicators, Pine scripts/runtime,
+Phase 10 alerts/push tokens, and the local MT5 streaming sidecar/consumer.
 
 ## Index
 

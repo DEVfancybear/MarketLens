@@ -7,6 +7,10 @@ import {
   getFirebaseMessaging,
   getFirebaseVapidKey,
 } from "@/services/firebase/client";
+import {
+  deletePushToken as deleteBackendPushToken,
+  registerPushToken as registerBackendPushToken,
+} from "@/services/api/resources/alertsApi";
 
 export interface PushCapability {
   supported: boolean;
@@ -140,7 +144,9 @@ export async function getPushCapability(): Promise<PushCapability> {
   };
 }
 
-export async function registerPushToken(): Promise<PushRegistration> {
+export async function registerPushToken(
+  syncBackend = false,
+): Promise<PushRegistration> {
   const capability = await getPushCapability();
   if (!capability.supported) {
     throw new Error(capability.error ?? "Push notifications are unsupported.");
@@ -181,6 +187,13 @@ export async function registerPushToken(): Promise<PushRegistration> {
   if (!registered.ok) {
     throw new Error(`Push token server registration failed: ${registered.error}`);
   }
+  if (syncBackend) {
+    await registerBackendPushToken({
+      fcmToken: token,
+      platform: "web",
+      permission,
+    });
+  }
 
   return {
     token,
@@ -192,28 +205,21 @@ export async function registerPushToken(): Promise<PushRegistration> {
 
 export async function unregisterPushToken(): Promise<void> {
   const messaging = await getFirebaseMessaging();
-  let token: string | undefined;
-  if (messaging) {
-    try {
-      token = await getToken(messaging, {
-        vapidKey: getFirebaseVapidKey(),
-      });
-    } catch {
-      token = undefined;
-    }
-  }
   if (!messaging) return;
   try {
     await deleteToken(messaging);
   } catch {
     /* Token may already be gone or unavailable. Local state is still cleared. */
   }
-  if (token) {
-    await postJson("/api/push/unregister", { token });
-  }
 }
 
-export async function unregisterServerPushToken(token: string): Promise<void> {
+export async function unregisterServerPushToken(
+  token: string,
+  syncBackend = false,
+): Promise<void> {
+  if (syncBackend) {
+    await deleteBackendPushToken(token).catch(() => undefined);
+  }
   await postJson("/api/push/unregister", { token });
 }
 

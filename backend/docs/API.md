@@ -3,11 +3,10 @@
 Base URL (dev): `http://localhost:8080`
 API prefix: `/api/v1` (except `/health`).
 
-> Status: `/health`, `/health/ready`, `/api/v1/auth/*`, `/api/v1/settings`, and
-> `/api/v1/sync/bootstrap` are **implemented**. The remaining `/api/v1` resources are planned
-> contracts that the Go Fiber handlers will implement in Phase 6+ according to
-> `BACKEND_IMPLEMENTATION_PLAN.md`. See `AUTH.md` for the auth flow and `DATABASE.md` for the tables
-> behind each resource.
+> Status: health, auth, settings/bootstrap, watchlists, drawings, indicators,
+> Pine scripts/runtime, MT5, and Phase 10 alerts/push tokens are implemented.
+> Later-phase resources remain planned contracts. See `AUTH.md` for auth and
+> `DATABASE.md` for persistence details.
 
 ## Conventions
 
@@ -93,9 +92,8 @@ Sign out of every device (revoke all sessions). `200 { "ok": true }`.
 
 ### `GET /api/v1/sync/bootstrap`  protected, implemented
 
-One call that returns the user's whole workspace for hydrating local stores on sign-in
-(`DATABASE.md` section 11). Phase 5 returns persisted settings plus empty arrays; later phases fill
-each resource slice.
+One call that returns the user's workspace for hydrating local stores on sign-in
+(`DATABASE.md` section 11). Alert history is capped at 200 rows by the repository.
 
 **Response** `200 OK`
 ```json
@@ -106,6 +104,8 @@ each resource slice.
   "indicators":       [],
   "pineScripts":      [],
   "alerts":           [],
+  "triggeredAlerts":  [],
+  "history":          [],
   "layouts":          []
 }
 ```
@@ -604,24 +604,27 @@ label, and dashboard payloads.
 
 ---
 
-## Alerts  🔒
+## Alerts  protected, implemented
 
 Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery channels; the
 **global** notification defaults (`AlertSettings`) are read/written via `/api/v1/settings`
 (`notifications` section), not here.
 
-| Method | Path                          | Purpose                                   |
-| ------ | ----------------------------- | ----------------------------------------- |
-| GET    | `/api/v1/alerts`              | List (filter `?status=active`)            |
-| POST   | `/api/v1/alerts`              | Create (see body below)                   |
-| PATCH  | `/api/v1/alerts/:id`          | Update / pause (`enabled:false`) / resume |
-| DELETE | `/api/v1/alerts/:id`          | Delete                                    |
-| GET    | `/api/v1/alerts/:id/events`   | Trigger history for one alert             |
-| GET    | `/api/v1/alerts/history`      | All trigger events (newest-first, ~200 cap)|
+| Method | Path                            | Purpose                                      |
+| ------ | ------------------------------- | -------------------------------------------- |
+| GET    | `/api/v1/alerts`                | List; optional `?status=active|triggered`    |
+| POST   | `/api/v1/alerts`                | Idempotent create/upsert by `clientId`       |
+| PATCH  | `/api/v1/alerts/:id`            | Update / pause (`enabled:false`) / re-arm    |
+| DELETE | `/api/v1/alerts/:id`            | Delete alert; retained history is unaffected |
+| POST   | `/api/v1/alerts/:id/trigger`    | Atomically trigger and append one event      |
+| GET    | `/api/v1/alerts/:id/events`     | Trigger history for one alert                |
+| GET    | `/api/v1/alerts/history`        | All events, newest-first, max 200            |
+| DELETE | `/api/v1/alerts/history`        | Clear the authenticated user's event history |
 
 **Create/update body**
 ```json
 {
+  "clientId": "alert_abc123",
   "symbol": "BTCUSDT",
   "condition": "crossUp",           // above | below | crossUp | crossDown
   "price": 65000,
@@ -633,9 +636,23 @@ Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery c
 }
 ```
 
-**Event** (`AlertHistoryEntry`): `{ id, alertId, symbol, condition, targetPrice, triggerPrice, triggeredAt }`.
+`clientId` is the frontend alert ID. The backend keeps its own UUID and accepts
+either ID in `:id`, allowing optimistic create/update/trigger/delete operations
+to remain ordered without replacing IDs in chart overlays.
 
-### Push tokens (FCM)
+**Trigger body**
+
+```json
+{ "triggerPrice": 65012.5 }
+```
+
+The trigger response is `{ "alert": Alert, "event": AlertEvent }`. A one-time
+alert moves to `triggered`; a recurring alert remains `active` and receives new
+`triggeredAt`/`triggerPrice` values. Event shape:
+`{ id, alertId, symbol, condition, targetPrice, triggerPrice, triggeredAt, delivered }`.
+Events retain their stable `alertId` after an alert is deleted.
+
+### Push tokens (FCM), protected, implemented
 
 | Method | Path                       | Purpose                                            |
 | ------ | -------------------------- | -------------------------------------------------- |

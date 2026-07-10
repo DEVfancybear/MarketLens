@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/smc-trading-terminal/backend/internal/alerts"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
@@ -43,12 +44,19 @@ type PineScriptLister interface {
 	List(ctx context.Context, userID string) ([]pinescripts.Script, error)
 }
 
+// AlertSnapshotReader supplies the complete small alert workspace slice used
+// at sign-in. Trigger history is capped by the alerts repository.
+type AlertSnapshotReader interface {
+	Snapshot(ctx context.Context, userID string) (alerts.Snapshot, error)
+}
+
 type Handler struct {
 	settings         SettingsReader
 	watchlists       WatchlistLister
 	drawingTemplates DrawingTemplateLister
 	indicators       IndicatorLister
 	pineScripts      PineScriptLister
+	alerts           AlertSnapshotReader
 	requireAuth      fiber.Handler
 }
 
@@ -58,6 +66,7 @@ func NewHandler(
 	drawingTemplates DrawingTemplateLister,
 	indicators IndicatorLister,
 	pineScripts PineScriptLister,
+	alertSnapshots AlertSnapshotReader,
 	requireAuth fiber.Handler,
 ) *Handler {
 	return &Handler{
@@ -66,6 +75,7 @@ func NewHandler(
 		drawingTemplates: drawingTemplates,
 		indicators:       indicators,
 		pineScripts:      pineScripts,
+		alerts:           alertSnapshots,
 		requireAuth:      requireAuth,
 	}
 }
@@ -80,7 +90,9 @@ type bootstrapResponse struct {
 	DrawingTemplates []drawings.DrawingTemplate   `json:"drawingTemplates"`
 	Indicators       []indicators.IndicatorPreset `json:"indicators"`
 	PineScripts      []pinescripts.Script         `json:"pineScripts"`
-	Alerts           []any                        `json:"alerts"`
+	Alerts           []alerts.Alert               `json:"alerts"`
+	TriggeredAlerts  []alerts.Alert               `json:"triggeredAlerts"`
+	History          []alerts.Event               `json:"history"`
 	Layouts          []any                        `json:"layouts"`
 }
 
@@ -124,6 +136,18 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		}
 	}
 
+	alertSnapshot := alerts.Snapshot{
+		Alerts:          []alerts.Alert{},
+		TriggeredAlerts: []alerts.Alert{},
+		History:         []alerts.Event{},
+	}
+	if h.alerts != nil {
+		alertSnapshot, err = h.alerts.Snapshot(c.Context(), userID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+		}
+	}
+
 	empty := []any{}
 	return c.JSON(bootstrapResponse{
 		Settings:         doc,
@@ -131,7 +155,9 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		DrawingTemplates: templates,
 		Indicators:       indicatorPresets,
 		PineScripts:      pineScriptRows,
-		Alerts:           empty,
+		Alerts:           alertSnapshot.Alerts,
+		TriggeredAlerts:  alertSnapshot.TriggeredAlerts,
+		History:          alertSnapshot.History,
 		Layouts:          empty,
 	})
 }

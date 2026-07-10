@@ -6,10 +6,25 @@
  * atom; each action is a write atom. A compatibility `useAlertStore` hook
  * and `getAlertState()` for non-React code keep the existing API.
  */
-import { atom, useAtomValue } from "jotai";
+import { atom, useAtomValue, type Getter } from "jotai";
 import { getDefaultStore } from "jotai";
 import { uid } from "@/utils/id";
 import { localStore } from "@/services/storage";
+import { backendSessionAtom } from "@/store/authStore";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
+import {
+  backendAlertEventToLocal,
+  backendAlertToLocal,
+  clearAlertHistory as clearRemoteAlertHistory,
+  createAlert as createRemoteAlert,
+  deleteAlert as deleteRemoteAlert,
+  localAlertToCreate,
+  localAlertToPatch,
+  patchAlert as patchRemoteAlert,
+  triggerAlert as triggerRemoteAlert,
+  type BackendAlertSnapshot,
+} from "@/services/api/resources/alertsApi";
+import { patchSettings } from "@/services/api/resources/settingsApi";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -117,6 +132,64 @@ function persist() {
   store.set(alertTickAtom, store.get(alertTickAtom) + 1);
 }
 
+const alertSyncQueues = new Map<string, Promise<void>>();
+let historySyncQueue: Promise<void> = Promise.resolve();
+let settingsSyncQueue: Promise<void> = Promise.resolve();
+
+function syncEnabled(get: Getter): boolean {
+  return get(backendSessionAtom);
+}
+
+function reportSyncError(action: string, error: unknown): void {
+  reportFrontendError(error, {
+    title: "Alert sync failed",
+    logPrefix: `Alert sync failed (${action})`,
+  });
+}
+
+function queueAlertSync(
+  get: Getter,
+  alertID: string,
+  action: string,
+  request: () => Promise<unknown>,
+): void {
+  if (!syncEnabled(get)) return;
+  const previous = alertSyncQueues.get(alertID) ?? Promise.resolve();
+  let tracked: Promise<void>;
+  tracked = previous
+    .catch(() => undefined)
+    .then(request)
+    .then(() => undefined)
+    .catch((error) => reportSyncError(action, error))
+    .finally(() => {
+      if (alertSyncQueues.get(alertID) === tracked) {
+        alertSyncQueues.delete(alertID);
+      }
+    });
+  alertSyncQueues.set(alertID, tracked);
+}
+
+function queueHistoryClear(get: Getter): void {
+  if (!syncEnabled(get)) return;
+  const pendingAlertMutations = [...alertSyncQueues.values()];
+  historySyncQueue = Promise.allSettled([
+    historySyncQueue,
+    ...pendingAlertMutations,
+  ])
+    .then(clearRemoteAlertHistory)
+    .catch((error) => reportSyncError("clear history", error));
+}
+
+function queueSettingsSync(get: Getter): void {
+  if (!syncEnabled(get)) return;
+  const notifications = { ...get(settingsAtom) };
+  settingsSyncQueue = settingsSyncQueue
+    .catch(() => undefined)
+    .then(() => patchSettings({ notifications }))
+    .then(() => undefined)
+    .catch((error) => reportSyncError("notification settings", error));
+}
+
 // ── State atoms ──────────────────────────────────────────────────────────────
 export const alertsAtom = atom<Alert[]>([]);
 export const triggeredAlertsAtom = atom<Alert[]>([]);
@@ -151,6 +224,9 @@ export const createAlertAtom = atom(
     };
     set(alertsAtom, [alert, ...get(alertsAtom)]);
     persist();
+    queueAlertSync(get, alert.id, "create", () =>
+      createRemoteAlert(localAlertToCreate(alert)),
+    );
     return alert;
   },
 );
@@ -171,6 +247,14 @@ export const updateAlertAtom = atom(
       ),
     );
     persist();
+    const current =
+      get(alertsAtom).find((alert) => alert.id === id) ??
+      get(triggeredAlertsAtom).find((alert) => alert.id === id);
+    if (current) {
+      queueAlertSync(get, id, "update", () =>
+        patchRemoteAlert(id, localAlertToPatch(current)),
+      );
+    }
   },
 );
 
@@ -186,6 +270,7 @@ export const deleteAlertAtom = atom(null, (get, set, id: string) => {
   if (get(selectedAlertIdAtom) === id) set(selectedAlertIdAtom, null);
   if (get(editingAlertIdAtom) === id) set(editingAlertIdAtom, null);
   persist();
+  queueAlertSync(get, id, "delete", () => deleteRemoteAlert(id));
 });
 
 export const duplicateAlertAtom = atom(
@@ -207,6 +292,9 @@ export const duplicateAlertAtom = atom(
     set(alertsAtom, [clone, ...get(alertsAtom)]);
     set(selectedAlertIdAtom, clone.id);
     persist();
+    queueAlertSync(get, clone.id, "duplicate", () =>
+      createRemoteAlert(localAlertToCreate(clone)),
+    );
     return clone;
   },
 );
@@ -267,6 +355,9 @@ export const triggerAlertAtom = atom(
       );
     }
     persist();
+    queueAlertSync(get, id, "trigger", () =>
+      triggerRemoteAlert(id, triggerPrice),
+    );
     return fired;
   },
 );
@@ -286,18 +377,26 @@ export const resetAlertAtom = atom(null, (get, set, id: string) => {
   );
   set(alertsAtom, [rearmed, ...get(alertsAtom)]);
   persist();
+  queueAlertSync(get, id, "re-arm", () =>
+    patchRemoteAlert(id, { ...localAlertToPatch(rearmed), status: "active" }),
+  );
 });
 
 // ── Write atoms: bulk / settings ─────────────────────────────────────────────
 
-export const clearTriggeredAtom = atom(null, (_get, set) => {
+export const clearTriggeredAtom = atom(null, (get, set) => {
+  const ids = get(triggeredAlertsAtom).map((alert) => alert.id);
   set(triggeredAlertsAtom, []);
   persist();
+  for (const id of ids) {
+    queueAlertSync(get, id, "clear triggered", () => deleteRemoteAlert(id));
+  }
 });
 
-export const clearHistoryAtom = atom(null, (_get, set) => {
+export const clearHistoryAtom = atom(null, (get, set) => {
   set(historyAtom, []);
   persist();
+  queueHistoryClear(get);
 });
 
 export const setSettingsAtom = atom(
@@ -305,6 +404,7 @@ export const setSettingsAtom = atom(
   (get, set, patch: Partial<AlertSettings>) => {
     set(settingsAtom, { ...get(settingsAtom), ...patch });
     persist();
+    queueSettingsSync(get);
   },
 );
 
@@ -348,9 +448,59 @@ export const applyRemoteNotificationSettingsAtom = atom(
   },
 );
 
+export const applyRemoteAlertsAtom = atom(
+  null,
+  (get, set, snapshot: BackendAlertSnapshot) => {
+    const localAlerts = get(alertsAtom);
+    const localTriggered = get(triggeredAlertsAtom);
+    const localHistory = get(historyAtom);
+    const remoteEmpty =
+      snapshot.alerts.length === 0 &&
+      snapshot.triggeredAlerts.length === 0 &&
+      snapshot.history.length === 0;
+
+    // First backend sign-in migration: preserve the existing browser workspace
+    // and idempotently upload it instead of letting an empty server snapshot
+    // erase alerts created before Phase 10 persistence existed.
+    if (
+      remoteEmpty &&
+      (localAlerts.length > 0 ||
+        localTriggered.length > 0 ||
+        localHistory.length > 0)
+    ) {
+      for (const alert of localAlerts) {
+        queueAlertSync(get, alert.id, "migrate active", () =>
+          createRemoteAlert(localAlertToCreate(alert)),
+        );
+      }
+      for (const alert of localTriggered) {
+        queueAlertSync(get, alert.id, "migrate triggered create", () =>
+          createRemoteAlert(localAlertToCreate(alert)),
+        );
+        queueAlertSync(get, alert.id, "migrate triggered event", () =>
+          triggerRemoteAlert(alert.id, alert.triggerPrice ?? alert.price),
+        );
+      }
+      persist();
+      return;
+    }
+
+    set(alertsAtom, snapshot.alerts.map(backendAlertToLocal));
+    set(
+      triggeredAlertsAtom,
+      snapshot.triggeredAlerts.map(backendAlertToLocal),
+    );
+    set(historyAtom, snapshot.history.map(backendAlertEventToLocal));
+    set(selectedAlertIdAtom, null);
+    set(editingAlertIdAtom, null);
+    persist();
+  },
+);
+
 // ── Write atoms: backward-compat (chart context menu) ────────────────────────
 
 export const resetAlertsToDefaultsAtom = atom(null, (_get, set) => {
+	alertSyncQueues.clear();
   set(alertsAtom, []);
   set(triggeredAlertsAtom, []);
   set(historyAtom, []);
@@ -379,8 +529,12 @@ export const removeAlertAtom = atom(null, (get, set, id: string) => {
 });
 
 export const clearAlertsAtom = atom(null, (_get, set) => {
+  const ids = _get(alertsAtom).map((alert) => alert.id);
   set(alertsAtom, []);
   persist();
+  for (const id of ids) {
+    queueAlertSync(_get, id, "clear active", () => deleteRemoteAlert(id));
+  }
 });
 
 // ── Combined interface (for compatibility hook + getState) ───────────────────

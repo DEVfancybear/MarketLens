@@ -4,10 +4,30 @@ The backend reads configuration from environment variables.
 
 ## Go API
 
-| Variable  | Type    | Default         | Description                                    |
-| --------- | ------- | --------------- | ---------------------------------------------- |
-| `PORT`    | integer | `8080`          | TCP port the HTTP server listens on            |
-| `APP_ENV` | string  | `"development"` | Runtime environment (`development`, `production`) |
+Copy `backend/.env.example` to `backend/.env` for local development.
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `PORT` | integer | `8080` | TCP port the HTTP server listens on |
+| `APP_ENV` | string | `development` | Runtime environment; production enables required-secret checks and secure cookies |
+| `DATABASE_URL` | string | empty | PostgreSQL used by migrations, workspace sync, alerts, history, and push-token ownership |
+| `AUTH_JWT_SECRET` | string | empty | Backend access/refresh token secret; use at least 32 random bytes in production |
+| `AUTH_ACCESS_TTL` | duration | `15m` | Access-token lifetime |
+| `AUTH_REFRESH_TTL` | duration | `720h` | Refresh-token lifetime |
+| `FIREBASE_PROJECT_ID` | string | empty | Firebase Admin project used to verify ID tokens |
+| `FIREBASE_CLIENT_EMAIL` | string | empty | Firebase Admin service-account email |
+| `FIREBASE_PRIVATE_KEY` | string | empty | Firebase Admin PEM; escaped `\n` newlines are supported |
+| `CORS_ALLOWED_ORIGINS` | CSV | `http://localhost:3000` | Credentialed browser origins; wildcard is unsupported |
+
+### Phase 10 push responsibility
+
+The Go API does not send FCM notifications. It stores authenticated device-token ownership in
+PostgreSQL through `/api/v1/push/tokens`; Phase 10 therefore needs `DATABASE_URL` and the normal
+Firebase Admin authentication configuration, but no additional Go push secret.
+
+The Next server evaluates closed-browser alerts and sends FCM. Configure it from
+`frontend/.env.example`. The same Firebase project/service account can be used in both env files,
+but server credentials must never use a `NEXT_PUBLIC_` prefix.
 
 ## MT5 Tick Stream
 

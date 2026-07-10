@@ -62,6 +62,10 @@ Push failures are logged and do not block alert history or other notification ch
 
 ## Configuration
 
+Copy `frontend/.env.example` to `frontend/.env.local`. The public Firebase Web values and the
+server-only Firebase Admin values are both required for end-to-end browser push: the browser uses
+the Web config to obtain an FCM token, while Next route handlers use Admin credentials to send it.
+
 Public client values:
 
 ```env
@@ -73,7 +77,7 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_VAPID_KEY=
 ```
 
-Server-only values for `/api/push/send`:
+Server-only values for `/api/push/send` and the closed-browser evaluator:
 
 ```env
 FIREBASE_PROJECT_ID=
@@ -82,6 +86,9 @@ FIREBASE_PRIVATE_KEY=
 ```
 
 `FIREBASE_PRIVATE_KEY` may be stored with escaped newlines (`\n`); the API route normalizes it.
+Never expose these values with a `NEXT_PUBLIC_` prefix. The Go API separately needs Firebase Admin
+credentials in `backend/.env` for ID-token verification, even when both runtimes use the same
+Firebase project and service account.
 
 Closed-browser worker values:
 
@@ -89,6 +96,7 @@ Closed-browser worker values:
 PUSH_WORKER_URL=http://localhost:3000
 PUSH_WORKER_INTERVAL_MS=15000
 PUSH_WORKER_SECRET=
+DISABLE_PUSH_WORKER=false
 ```
 
 Optional server-side market data values:
@@ -233,8 +241,16 @@ losing pushes for any realistically long closed-browser window.
 
 ## Persistence Note
 
-When Firebase Admin env is configured, synced push devices and alerts are stored in Firestore
-collection `pushAlertDevices`. This is the expected production/Vercel path.
+Phase 10 adds authenticated Go persistence without replacing the closed-browser
+worker. Alert definitions/history are stored in PostgreSQL `alerts` and
+`alert_events`; FCM ownership is stored in `push_tokens`. Enabling a token with
+an active backend session writes `POST /api/v1/push/tokens`.
+
+When Firebase Admin env is configured, closed-browser evaluator device state
+and its alert snapshots remain in Firestore collection `pushAlertDevices`.
+This store drives evaluation/delivery, while PostgreSQL drives user workspace
+hydration and durable alert history. See `PHASE10_ALERT_API_SYNC.md` for the
+dual-write and reconciliation flow.
 
 When Firebase Admin env is missing, local development falls back to `.data/push-alerts.json`.
 That fallback is not suitable for Vercel/serverless persistence and should not be committed.

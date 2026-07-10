@@ -31,6 +31,7 @@
     "test:drawing": "tsc -p tsconfig.test.json && node --test .test-build/tests/drawing/*.test.js",
     "test:indicator-catalog": "tsc -p tsconfig.test.json && node --test .test-build/tests/indicatorCatalog/*.test.js",
     "test:watchlist": "tsc -p tsconfig.test.json && node --test .test-build/tests/watchlist/*.test.js",
+    "test:alerts": "tsc -p tsconfig.test.json && node --test .test-build/tests/alerts/*.test.js",
     "test:chart": "tsc -p tsconfig.test.json && node --test .test-build/tests/chart/*.test.js",
     "test:ui": "tsc -p tsconfig.test.json && node --test .test-build/tests/ui/*.test.js",
     "lint": "eslint src/",

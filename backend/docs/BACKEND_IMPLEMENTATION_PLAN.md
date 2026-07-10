@@ -418,6 +418,11 @@ bootstrap, and public `/api/v1/indicator-store`. The backing `pine_scripts` tabl
 
 ### Phase 10 — Alerts + push tokens
 
+**Status: Implemented 2026-07-10.** Migration `0011_alerts` is applied after
+the existing Phase 9/Store migrations. The protected handlers live in
+`internal/alerts`; bootstrap now returns active alerts, triggered alerts, and
+the newest 200 history rows.
+
 **Goal:** Persist price alerts, their trigger history, and per-device FCM tokens. Unlocks
 closed-browser push targeting every device.
 
@@ -427,7 +432,7 @@ closed-browser push targeting every device.
 `alerts`), plus the push seam (`usePushAlertSync`, `notificationStore`).
 
 **Steps**
-1. Migration `0005_alerts` (alerts + alert_events) — `push_tokens` shipped in `0002_auth`.
+1. Migration `0011_alerts` (alerts + retained alert_events) — `push_tokens` shipped in `0002_auth`.
 2. Queries: alerts CRUD including the **per-alert channel flags** (`sound`/`browser`/`push`/
    `telegram`/`discord`) and `enabled`/`locked`/`note`/`recurring`; pause == `enabled=false`; on
    trigger set `status='triggered'`, `trigger_price`, `triggered_at` **and** insert an `alert_events`
@@ -437,11 +442,23 @@ closed-browser push targeting every device.
 3. Repo: validate server-side (`above|below|crossUp|crossDown`, `price > 0`); prune `alert_events` to
    the newest ~200 per user (matches the frontend cap).
 4. Handler: `GET/POST /api/v1/alerts`, `PATCH/DELETE /api/v1/alerts/:id`,
-   `GET /api/v1/alerts/:id/events`, `GET /api/v1/alerts/history`,
+   `POST /api/v1/alerts/:id/trigger`, `GET /api/v1/alerts/:id/events`,
+   `GET/DELETE /api/v1/alerts/history`,
    `POST /api/v1/push/tokens`, `DELETE /api/v1/push/tokens/:tok`. Global notification prefs are read/
    written via `/api/v1/settings` (`notifications` section), not here.
 5. Bootstrap: `alerts` array + `triggeredAlerts` + recent `history`. Integrate token registration with
    the existing frontend push flow (send the FCM token + `permission` to `/push/tokens`).
+
+Implementation notes discovered during the frontend audit:
+- `alerts.client_id` stores the optimistic frontend `Alert.id`; POST upserts on
+  `(user_id, client_id)`, and resource routes accept either UUID or client ID.
+- Triggering is a dedicated transaction so an alert state update and its event
+  cannot diverge. Recurring alerts remain active; one-time alerts become triggered.
+- `alert_events.alert_ref` survives alert deletion and `alert_id` uses
+  `ON DELETE SET NULL`, matching the UI where clearing Triggered does not clear History.
+- FCM registration is dual-written: Postgres owns authenticated user/device
+  association, while the existing Next push worker store remains responsible
+  for closed-browser evaluation and delivery state.
 
 **Acceptance**
 - Create an alert with specific channels (e.g. push+telegram), pause/resume, delete — all persist.

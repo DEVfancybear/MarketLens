@@ -297,14 +297,14 @@ Responsibilities:
 | UI panels/theme/bottom state | `ui` | `user_settings.ui` through `/api/v1/settings` |
 | SMC toggles | `smc-settings-v2` | `user_settings.smc` through `/api/v1/settings` |
 | Timeframe favorites/timezone/chart prefs | `tv:favoriteTimeframes`, toolbar local state | `user_settings.chart.favoriteTimeframes` through `/api/v1/settings/chart/favorite-timeframes` |
-| Alert global settings | inside `alerts` key | `user_settings.notifications` |
+| Alert global settings | inside `alerts` key | `user_settings.notifications` through `/api/v1/settings` |
 | Watchlist lists/sections/symbols | `watchlist`, `watchlist:lists`, `watchlist:activeId` | `watchlists` + `watchlist_symbols` |
 | Drawings per symbol | `drawings:<symbol>` | `drawings.payload` |
 | Drawing templates | `drawingTemplates` | `drawing_templates.style` |
 | Drawing tool favorites | `tv:favTools` | `drawing_tool_favorites.tools` |
 | Indicator presets | `indicators` | `indicator_presets.config` |
 | Pine scripts | `pineScripts` | `pine_scripts` |
-| Alerts and history | `alerts` | `alerts` + `alert_events` |
+| Alerts and history | `alerts` | `/api/v1/alerts*` backed by `alerts` + retained `alert_events` |
 | Journal entries | IndexedDB `journal` | `journal_entries` |
 | Screenshots | IndexedDB `screenshots` | `screenshots` metadata + object storage |
 | Layouts | not fully centralized today | `layouts.state` |
@@ -332,6 +332,8 @@ Rules:
   are idempotent.
 - For indicator presets, send `IndicatorConfig.id` as `clientId`; the backend upserts by
   `(user_id, client_id)` and stores the full config JSON verbatim.
+- For alerts, send `Alert.id` as `clientId`, serialize mutations per alert,
+  and use the dedicated trigger endpoint so lifecycle and history stay atomic.
 - For custom indicators, resolve script links after Pine scripts have been adapted.
 
 ## Mutation Strategy
@@ -347,7 +349,7 @@ Do not write to backend on every render or pointer move.
 | Drawing tool favorites | replace whole ordered list on star toggle |
 | Indicators | add/remove/toggle immediately; style/settings on OK |
 | Pine scripts | explicit Save |
-| Alerts | create/update/delete action |
+| Alerts | create/update/delete/trigger action; serialize by optimistic client ID |
 | Journal | create/update/delete action; fetch paginated |
 | Screenshots | upload URL -> direct PUT -> register metadata |
 | Sim trading | order/close action; runtime can remain local until Phase 13 endpoints exist |

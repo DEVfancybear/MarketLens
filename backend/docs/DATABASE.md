@@ -1,8 +1,9 @@
 # Database Design
 
-> Status: **Design / planning** (not yet implemented). Source of truth for the persistence layer the
-> Go Fiber backend will own. See `AUTH.md` for the Google auth flow, `API.md` for endpoints, and
-> `BACKEND_IMPLEMENTATION_PLAN.md` for the build order.
+> Status: implemented through migration `0011_alerts` (Phase 10). Later
+> trading, journal, screenshot, and layout sections remain design contracts.
+> See `AUTH.md` for auth, `API.md` for endpoints, and
+> `BACKEND_IMPLEMENTATION_PLAN.md` for rollout order.
 >
 > **Audited against the frontend 2026-07-06** — every table below is reconciled with the real
 > localStorage/IndexedDB shapes and TypeScript types (`frontend/src/types/*`, `store/*`). The jsonb
@@ -456,6 +457,7 @@ CREATE TYPE alert_status    AS ENUM ('active', 'triggered');  -- frontend states
 CREATE TABLE alerts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id     text,                         -- frontend Alert.id for idempotent sync
   symbol        text NOT NULL,
   condition     alert_condition NOT NULL,
   price         numeric(20,8) NOT NULL,       -- target price
@@ -477,6 +479,7 @@ CREATE TABLE alerts (
 );
 CREATE INDEX idx_alerts_user ON alerts(user_id);
 CREATE INDEX idx_alerts_active_symbol ON alerts(symbol) WHERE status = 'active' AND enabled;
+CREATE UNIQUE INDEX idx_alerts_client ON alerts(user_id, client_id) WHERE client_id IS NOT NULL;
 ```
 
 ### 8.2 `alert_events` (trigger history)
@@ -487,7 +490,8 @@ Frontend caps history at 200 rows — enforce a per-user prune on write or via a
 ```sql
 CREATE TABLE alert_events (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  alert_id      uuid NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+  alert_id      uuid REFERENCES alerts(id) ON DELETE SET NULL,
+  alert_ref     text NOT NULL,                 -- stable client_id/UUID retained after alert deletion
   user_id       uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   symbol        text NOT NULL,
   condition     alert_condition NOT NULL,
@@ -497,8 +501,14 @@ CREATE TABLE alert_events (
   delivered     boolean NOT NULL DEFAULT false  -- push/notification delivery result
 );
 CREATE INDEX idx_alert_events_alert ON alert_events(alert_id);
+CREATE INDEX idx_alert_events_ref ON alert_events(user_id, alert_ref, triggered_at DESC);
 CREATE INDEX idx_alert_events_user ON alert_events(user_id, triggered_at DESC);
 ```
+
+Triggering is transactional: update `alerts`, insert `alert_events`, then prune
+older user events beyond 200 before commit. `alert_id` is nullable by design;
+deleting or clearing a triggered alert must not erase the History audit trail
+shown by the frontend.
 
 ---
 
@@ -633,17 +643,19 @@ Server authoritative, client cache — so auth can ship before every feature is 
 0001_extensions.sql   pgcrypto, citext
 0002_auth.sql         users, auth_identities, sessions, push_tokens (+ enums)
 0003_settings.sql     user_settings (ui/smc/chart/notifications), layouts
-0004_charting.sql     watchlists, watchlist_symbols, drawings, drawing_templates,
-                      pine_scripts, indicator_presets   ← pine_scripts BEFORE indicator_presets (FK)
-0005_alerts.sql       alerts, alert_events (+ enums)
-0006_trading.sql      sim_accounts, sim_positions (+ trade_side/order_type/position_status enums)
-0007_journal.sql      journal_entries (FK → sim_positions), screenshots (+ screenshot_phase enum)
-0008_triggers.sql     set_updated_at() + attach to all mutable tables
+0004_watchlists.sql              watchlists + symbols
+0005_watchlist_layout.sql        sections + shared metadata
+0006_watchlist_sort_preferences  watchlist sort preference
+0007_drawings.sql                drawings + templates
+0008_drawing_tool_favorites.sql  favorite drawing tools
+0009_indicator_presets.sql       pine scripts + indicator presets
+0010_public_pine_scripts.sql     published public indicator Store
+0011_alerts.sql                  alerts + retained alert events (+ enums)
 ```
 
-Two hard ordering rules: **pine_scripts before indicator_presets** (0004), and **sim_positions
-(0006) before journal_entries (0007)**. Roll out auth (`0001`–`0002`) first; the rest can land
-feature-by-feature.
+Future trading/journal migrations must still create `sim_positions` before a
+`journal_entries.position_id` foreign key. Applied development schema after
+Phase 10 is version `11`.
 
 ---
 

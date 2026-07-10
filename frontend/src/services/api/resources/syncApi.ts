@@ -4,6 +4,7 @@ import type { BackendWatchlist } from "./watchlistsApi";
 import type { BackendDrawingTemplate } from "./drawingsApi";
 import type { BackendIndicatorPreset } from "./indicatorsApi";
 import type { BackendPineScript } from "./pineScriptsApi";
+import type { BackendAlert, BackendAlertEvent } from "./alertsApi";
 
 export interface WorkspaceBootstrap {
   settings: SettingsDocument;
@@ -11,7 +12,9 @@ export interface WorkspaceBootstrap {
   drawingTemplates: BackendDrawingTemplate[];
   indicators: BackendIndicatorPreset[];
   pineScripts: BackendPineScript[];
-  alerts: unknown[];
+  alerts: BackendAlert[];
+  triggeredAlerts: BackendAlert[];
+  history: BackendAlertEvent[];
   layouts: unknown[];
 }
 

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { backendSessionAtom } from "@/store/authStore";
 import {
   clearPushRegistrationAtom,
   hydratePushAtom,
@@ -25,6 +26,7 @@ export function usePushNotifications() {
   const status = useAtomValue(pushStatusAtom);
   const permission = useAtomValue(pushPermissionAtom);
   const error = useAtomValue(pushErrorAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
 
   const hydrate = useSetAtom(hydratePushAtom);
   const setCapability = useSetAtom(setPushCapabilityAtom);
@@ -55,7 +57,7 @@ export function usePushNotifications() {
   const enable = useCallback(async () => {
     setRegistering();
     try {
-      const next = await registerPushToken();
+      const next = await registerPushToken(backendSession);
       setRegistration(next);
       return next;
     } catch (err) {
@@ -64,14 +66,14 @@ export function usePushNotifications() {
       setError(message);
       throw err;
     }
-  }, [setError, setRegistering, setRegistration]);
+  }, [backendSession, setError, setRegistering, setRegistration]);
 
   const disable = useCallback(async () => {
     const token = registration?.token;
     await unregisterPushToken();
-    if (token) await unregisterServerPushToken(token);
+    if (token) await unregisterServerPushToken(token, backendSession);
     clearRegistration();
-  }, [clearRegistration, registration?.token]);
+  }, [backendSession, clearRegistration, registration?.token]);
 
   return {
     registration,

@@ -12,6 +12,7 @@ import {
   resetSmcToDefaultsAtom,
 } from "@/store/smcStore";
 import {
+  applyRemoteAlertsAtom,
   applyRemoteNotificationSettingsAtom,
   resetAlertsToDefaultsAtom,
 } from "@/store/alertStore";
@@ -49,6 +50,7 @@ export function useWorkspaceBootstrap(): void {
   const applySmc = useSetAtom(applyRemoteSmcSettingsAtom);
   const resetSmc = useSetAtom(resetSmcToDefaultsAtom);
   const applyNotifications = useSetAtom(applyRemoteNotificationSettingsAtom);
+  const applyAlerts = useSetAtom(applyRemoteAlertsAtom);
   const resetAlerts = useSetAtom(resetAlertsToDefaultsAtom);
   const applyWatchlists = useSetAtom(applyRemoteWatchlistsAtom);
   const applyDrawingTemplates = useSetAtom(applyRemoteDrawingTemplatesAtom);
@@ -113,6 +115,11 @@ export function useWorkspaceBootstrap(): void {
         applyUI(bootstrap.settings.ui);
         applySmc(bootstrap.settings.smc);
         applyNotifications(bootstrap.settings.notifications);
+        applyAlerts({
+          alerts: bootstrap.alerts,
+          triggeredAlerts: bootstrap.triggeredAlerts,
+          history: bootstrap.history,
+        });
         applyWatchlists(watchlists);
         applyDrawingTemplates(bootstrap.drawingTemplates);
         applyPineScripts(bootstrap.pineScripts);
@@ -134,6 +141,7 @@ export function useWorkspaceBootstrap(): void {
     };
   }, [
     authStatus,
+    applyAlerts,
     applyNotifications,
     applyDrawingTemplates,
     applyPineScripts,

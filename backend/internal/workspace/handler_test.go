@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	alertspkg "github.com/smc-trading-terminal/backend/internal/alerts"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
@@ -58,6 +59,16 @@ type fakePineScriptLister struct {
 	lastUser string
 }
 
+type fakeAlertSnapshotReader struct {
+	snapshot alertspkg.Snapshot
+	lastUser string
+}
+
+func (f *fakeAlertSnapshotReader) Snapshot(_ context.Context, userID string) (alertspkg.Snapshot, error) {
+	f.lastUser = userID
+	return f.snapshot, nil
+}
+
 func (f *fakePineScriptLister) List(_ context.Context, userID string) ([]pinescripts.Script, error) {
 	f.lastUser = userID
 	return f.items, nil
@@ -96,9 +107,14 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 			ClientID: "pine-1",
 		}},
 	}
+	alertReader := &fakeAlertSnapshotReader{snapshot: alertspkg.Snapshot{
+		Alerts:          []alertspkg.Alert{{ID: "alert-server-1", ClientID: "alert-1", Symbol: "EURUSD", Status: "active"}},
+		TriggeredAlerts: []alertspkg.Alert{},
+		History:         []alertspkg.Event{},
+	}}
 
 	app := fiber.New()
-	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, pineScriptLister, fakeRequireAuth).Register(app.Group("/api/v1"))
+	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, pineScriptLister, alertReader, fakeRequireAuth).Register(app.Group("/api/v1"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/bootstrap", nil)
 	resp, err := app.Test(req)
@@ -120,6 +136,9 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	if pineScriptLister.lastUser != "user-1" {
 		t.Fatalf("pine script lister should pass auth user id, got %q", pineScriptLister.lastUser)
 	}
+	if alertReader.lastUser != "user-1" {
+		t.Fatalf("alert snapshot should pass auth user id, got %q", alertReader.lastUser)
+	}
 
 	var body struct {
 		Settings         settings.Document            `json:"settings"`
@@ -127,14 +146,17 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 		DrawingTemplates []drawings.DrawingTemplate   `json:"drawingTemplates"`
 		Indicators       []indicators.IndicatorPreset `json:"indicators"`
 		PineScripts      []pinescripts.Script         `json:"pineScripts"`
-		Alerts           []any                        `json:"alerts"`
+		Alerts           []alertspkg.Alert            `json:"alerts"`
+		TriggeredAlerts  []alertspkg.Alert            `json:"triggeredAlerts"`
+		History          []alertspkg.Event            `json:"history"`
 		Layouts          []any                        `json:"layouts"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode bootstrap response: %v", err)
 	}
 	if body.Watchlists == nil || body.DrawingTemplates == nil || body.Indicators == nil ||
-		body.PineScripts == nil || body.Alerts == nil || body.Layouts == nil {
+		body.PineScripts == nil || body.Alerts == nil || body.TriggeredAlerts == nil ||
+		body.History == nil || body.Layouts == nil {
 		t.Fatal("bootstrap arrays must be empty arrays, not null")
 	}
 	if len(body.DrawingTemplates) != 1 || body.DrawingTemplates[0].Name != "Blue line" {
@@ -145,6 +167,9 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	}
 	if len(body.PineScripts) != 1 || body.PineScripts[0].ClientID != "pine-1" || body.PineScripts[0].SourceCode != "" {
 		t.Fatalf("bootstrap should include pine script metadata only, got %+v", body.PineScripts)
+	}
+	if len(body.Alerts) != 1 || body.Alerts[0].ClientID != "alert-1" {
+		t.Fatalf("bootstrap should include alerts, got %+v", body.Alerts)
 	}
 	if string(body.Settings.UI) != `{"theme":"dark"}` {
 		t.Fatalf("unexpected settings ui: %s", body.Settings.UI)

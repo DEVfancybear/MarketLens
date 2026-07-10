@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/rs/zerolog/log"
+	"github.com/smc-trading-terminal/backend/internal/alerts"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
 	"github.com/smc-trading-terminal/backend/internal/db"
@@ -69,6 +70,7 @@ func main() {
 	var drawingsHandler *drawings.Handler
 	var indicatorsHandler *indicators.Handler
 	var pineScriptsHandler *pinescripts.Handler
+	var alertsHandler *alerts.Handler
 	var workspaceHandler *workspace.Handler
 	var pineScriptsStore *pinescripts.Repo
 	if pool != nil {
@@ -100,7 +102,9 @@ func main() {
 		indicatorsStore := indicators.NewRepo(pool.Pool)
 		indicatorsHandler = indicators.NewHandler(indicatorsStore, requireAuth)
 		pineScriptsHandler = pinescripts.NewHandler(pineScriptsStore, requireAuth)
-		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, requireAuth)
+		alertsStore := alerts.NewRepo(pool.Pool)
+		alertsHandler = alerts.NewHandler(alertsStore, requireAuth)
+		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, requireAuth)
 		log.Info().Msg("protected api routes enabled")
 	}
 
@@ -113,6 +117,7 @@ func main() {
 		drawingsHandler,
 		indicatorsHandler,
 		pineScriptsHandler,
+		alertsHandler,
 		workspaceHandler,
 		mt5Handler,
 		pineRuntimeHandler,

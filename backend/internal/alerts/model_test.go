@@ -1,0 +1,57 @@
+package alerts
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestNormalizeCreateDefaultsAndValidation(t *testing.T) {
+	input, err := normalizeCreate(CreateInput{
+		ClientID:  " alert-1 ",
+		Symbol:    " EURUSD ",
+		Condition: "crossUp",
+		Price:     1.125,
+	})
+	if err != nil {
+		t.Fatalf("normalizeCreate: %v", err)
+	}
+	if input.ClientID != "alert-1" || input.Symbol != "EURUSD" {
+		t.Fatalf("unexpected normalized input: %+v", input)
+	}
+	if input.Enabled == nil || !*input.Enabled {
+		t.Fatal("alerts should default enabled")
+	}
+	if input.Channels == nil || !input.Channels.Sound {
+		t.Fatal("alerts should default sound on")
+	}
+
+	_, err = normalizeCreate(CreateInput{Symbol: "EURUSD", Condition: "touch", Price: 1})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("bad condition error = %v, want ErrBadRequest", err)
+	}
+	_, err = normalizeCreate(CreateInput{Symbol: "EURUSD", Condition: "above", Price: 0})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("bad price error = %v, want ErrBadRequest", err)
+	}
+}
+
+func TestNormalizePatchRequiresTriggerEndpointForTriggeredStatus(t *testing.T) {
+	status := "triggered"
+	_, err := normalizePatch(PatchInput{Status: &status})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("triggered status error = %v, want ErrBadRequest", err)
+	}
+}
+
+func TestNormalizePushToken(t *testing.T) {
+	input, err := normalizePushToken(PushTokenInput{
+		FCMToken:   " token-1 ",
+		Permission: "GRANTED",
+	})
+	if err != nil {
+		t.Fatalf("normalizePushToken: %v", err)
+	}
+	if input.FCMToken != "token-1" || input.Platform != "web" || input.Permission != "granted" {
+		t.Fatalf("unexpected normalized token: %+v", input)
+	}
+}

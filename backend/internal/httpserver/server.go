@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/rs/zerolog/log"
+	"github.com/smc-trading-terminal/backend/internal/alerts"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
 	"github.com/smc-trading-terminal/backend/internal/db"
@@ -44,6 +45,7 @@ func New(
 	drawingsHandler *drawings.Handler,
 	indicatorsHandler *indicators.Handler,
 	pineScriptsHandler *pinescripts.Handler,
+	alertsHandler *alerts.Handler,
 	workspaceHandler *workspace.Handler,
 	mt5Handler *mt5stream.Handler,
 	pineRuntimeHandler *pineruntime.Handler,
@@ -95,6 +97,9 @@ func New(
 	}
 	if pineScriptsHandler != nil {
 		pineScriptsHandler.Register(api)
+	}
+	if alertsHandler != nil {
+		alertsHandler.Register(api)
 	}
 	if workspaceHandler != nil {
 		workspaceHandler.Register(api)

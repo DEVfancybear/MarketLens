@@ -58,9 +58,14 @@ npm run test:ui
 
 ## Environment
 
-Next runs from the `frontend/` directory. Put frontend-only env values in `frontend/.env.local`.
+Next runs from the `frontend/` directory. Copy `.env.example` to `.env.local`. On PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
 For local convenience, `next.config.mjs` also fills missing values from the repository root
-`.env.local` / `.env`.
+`.env.local` / `.env`, but `frontend/.env.local` is the canonical frontend configuration.
 
 Required for Google login:
 
@@ -69,6 +74,8 @@ NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
 NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=...
 ```
 
 Backend API:
@@ -79,6 +86,21 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 
 In development this defaults to `http://localhost:8080`. Production deployments must set it
 explicitly.
+
+FCM delivery and closed-browser evaluation run in the Next server and require server-only values:
+
+```env
+FIREBASE_PROJECT_ID=...
+FIREBASE_CLIENT_EMAIL=...
+FIREBASE_PRIVATE_KEY=... # PEM with escaped \n newlines
+PUSH_WORKER_SECRET=...
+PUSH_WORKER_INTERVAL_MS=15000
+```
+
+Never prefix Firebase Admin credentials with `NEXT_PUBLIC_`. The Go API uses Admin credentials in
+`backend/.env` for authentication, while Next uses them to send FCM. Go stores Phase 10 alert and
+device-token ownership data but does not deliver push notifications. See `.env.example` for all
+optional quote-provider, external-notification, and MT5 values.
 
 ## Project Structure
 

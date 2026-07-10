@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Phase 10 alert and push-token API sync (2026-07-10)
+- Added PostgreSQL alert/event migration and protected Go CRUD, trigger,
+  history, and FCM token endpoints with user ownership and validation.
+- Made trigger updates transactional, capped history at 200, and retained event
+  audit rows after alert deletion through stable frontend alert references.
+- Connected Alert Center and chart alert actions to per-alert optimistic API
+  queues, hydrated active/triggered/history state through workspace bootstrap,
+  and migrated legacy local alerts on first backend sign-in.
+- Dual-registered authenticated FCM tokens with the Go API while preserving the
+  existing Next closed-browser evaluation/delivery flow.
+- Added backend route/model/bootstrap tests, frontend DTO/API contract tests,
+  and detailed Phase 10 architecture documentation.
+- Added frontend/backend env templates and configuration guidance that separates
+  PostgreSQL token ownership from Next-based FCM evaluation and delivery.
+
 ### Added - Favorite timeframe API sync (2026-07-10)
 - Added protected `GET`/`PUT /api/v1/settings/chart/favorite-timeframes` endpoints backed by
   `user_settings.chart.favoriteTimeframes`.
