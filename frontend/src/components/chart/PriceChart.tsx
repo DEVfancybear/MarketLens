@@ -46,7 +46,7 @@ import {
   timeScaleDefaults,
   timeScaleOptions,
 } from "./chartVisualProfile";
-import { computeIndicator } from "@/services/indicators";
+import { computeCachedIndicator } from "@/services/indicatorComputationCache";
 import {
   ensurePineIndicatorResult,
   subscribePineRuntimeCache,
@@ -85,6 +85,11 @@ import {
   resolveIndicatorSeriesWritePlan,
   type IndicatorWritePoint,
 } from "@/services/indicatorSeriesWritePlan";
+import {
+  indicatorPointsInViewport,
+  resolveCandleViewport,
+  type CandleViewport,
+} from "@/services/candleViewport";
 
 function keepLatestBarInView(chart: IChartApi, dataLength: number) {
   const timeScale = chart.timeScale();
@@ -230,6 +235,8 @@ export function PriceChart({
   const loadMoreHistoryRef = useRef(onLoadMoreHistory);
   const loadMoreInFlightRef = useRef(false);
   const lastLoadMoreFirstTimeRef = useRef<number | null>(null);
+  const indicatorViewportRef = useRef<CandleViewport | null>(null);
+  const visibleLogicalRangeRef = useRef<LogicalRange | null>(null);
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
@@ -253,6 +260,8 @@ export function PriceChart({
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
+  const [indicatorViewport, setIndicatorViewport] =
+    useState<CandleViewport | null>(null);
   const [priceMarker, setPriceMarker] =
     useState<CurrentPriceMarkerState | null>(null);
   const [indicatorLabels, setIndicatorLabels] = useState<
@@ -275,6 +284,21 @@ export function PriceChart({
     bumpRafRef.current = requestAnimationFrame(() => {
       incrementChartPerformanceCounter("viewport.frames");
       bumpRafRef.current = null;
+      const range = chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
+      visibleLogicalRangeRef.current = range;
+      const previousViewport = indicatorViewportRef.current;
+      const nextViewport = resolveCandleViewport(
+        candlesRef.current.length,
+        range,
+        previousViewport,
+      );
+      indicatorViewportRef.current = nextViewport;
+      if (nextViewport?.revision !== previousViewport?.revision) {
+        incrementChartPerformanceCounter("indicator.viewport.windowShifts");
+        setIndicatorViewport(nextViewport);
+      } else if (nextViewport) {
+        incrementChartPerformanceCounter("indicator.viewport.windowRetained");
+      }
       setVersion((v) => v + 1);
     });
   }, []);
@@ -283,6 +307,9 @@ export function PriceChart({
     prevMarkerPriceRef.current = null;
     markerUpRef.current = true;
     lastLoadMoreFirstTimeRef.current = null;
+    indicatorViewportRef.current = null;
+    visibleLogicalRangeRef.current = null;
+    setIndicatorViewport(null);
   }, [symbol, timeframe]);
 
   useEffect(() => {
@@ -719,7 +746,7 @@ export function PriceChart({
       void pineRuntimeVersion;
       return overlayIndicators.map((cfg) => ({
         cfg,
-        result: computeIndicator(cfg, candles, { symbol, timeframe }),
+        result: computeCachedIndicator(cfg, candles, { symbol, timeframe }),
       }));
     },
     [overlayIndicators, candles, pineRuntimeVersion, symbol, timeframe],
@@ -842,11 +869,25 @@ export function PriceChart({
         indStyleRef.current.set(cacheKey, styleSignature);
         const projected = measureChartPerformance(
           "indicator.projection",
-          () => indicatorSeriesDataForCandles(s, candles).map((p) => ({
-            time: p.time as UTCTimestamp,
-            value: p.value,
-            ...(p.color ? { color: p.color } : {}),
-          })),
+          () => {
+            const source = indicatorSeriesDataForCandles(
+              s,
+              candles,
+              visibleLogicalRangeRef.current,
+            );
+            const windowed = s.extendToVisibleRange
+              ? source
+              : indicatorPointsInViewport(source, candles, indicatorViewport);
+            incrementChartPerformanceCounter(
+              "indicator.viewport.pointsAvoided",
+              Math.max(0, source.length - windowed.length),
+            );
+            return windowed.map((p) => ({
+              time: p.time as UTCTimestamp,
+              value: p.value,
+              ...(p.color ? { color: p.color } : {}),
+            }));
+          },
           { candles: candles.length, indicator: cfg.type },
         );
         const plan = resolveIndicatorSeriesWritePlan(
@@ -870,7 +911,7 @@ export function PriceChart({
         indDataRef.current.set(cacheKey, projected);
       });
     }
-  }, [candles, overlayResults, ready, theme]);
+  }, [candles, indicatorViewport, overlayResults, ready, theme]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -901,7 +942,8 @@ export function PriceChart({
               : chart.timeScale().timeToCoordinate(label.time as UTCTimestamp);
           if (x == null) return [];
           const leftClip = -80;
-          if (x < leftClip) return [];
+          const rightClip = width + 80;
+          if (x < leftClip || x > rightClip) return [];
           return [
             {
               key: label.key,

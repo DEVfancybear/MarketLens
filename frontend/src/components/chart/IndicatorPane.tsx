@@ -34,7 +34,7 @@ import {
   panePriceScaleOptions,
   transparentLayoutOptions,
 } from "./chartVisualProfile";
-import { computeIndicator } from "@/services/indicators";
+import { computeCachedIndicator } from "@/services/indicatorComputationCache";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import {
   indicatorSeriesDataForCandles,
@@ -55,6 +55,11 @@ import {
   resolveIndicatorSeriesWritePlan,
   type IndicatorWritePoint,
 } from "@/services/indicatorSeriesWritePlan";
+import {
+  indicatorPointsInViewport,
+  resolveCandleViewport,
+  type CandleViewport,
+} from "@/services/candleViewport";
 
 type PaneSeriesApi =
   | ISeriesApi<"Line">
@@ -117,6 +122,7 @@ export function IndicatorPane({
   const resultRef = useRef<IndicatorResult | null>(null);
   const visibleLogicalRangeRef = useRef<IndicatorLogicalRange | null>(null);
   const projectedRangeKeyRef = useRef("");
+  const viewportRef = useRef<CandleViewport | null>(null);
   const viewportRafRef = useRef<number | null>(null);
   const legendAppliedRef = useRef<string | null>(null);
   const legendPendingRef = useRef<string | null>(null);
@@ -139,6 +145,8 @@ export function IndicatorPane({
     anchorContextRef.current = anchorContext;
     anchorValueRef.current = null;
     anchorDataRef.current = [];
+    viewportRef.current = null;
+    projectedRangeKeyRef.current = "";
   }
 
   const publishLegendValue = useCallback((next: string) => {
@@ -209,20 +217,30 @@ export function IndicatorPane({
       const isHist = s.type === "histogram" || s.key === "hist";
       const projected = measureChartPerformance(
         "indicator.projection",
-        () => indicatorSeriesDataForCandles(s, sourceCandles, visibleRange).map((p) => ({
-          time: p.time as UTCTimestamp,
-          value: p.value,
-          ...(p.color
-            ? { color: p.color }
-            : isHist
-              ? {
-                  color:
-                    p.value >= 0
-                      ? chartColors(theme).bull
-                      : chartColors(theme).bear,
-                }
-              : {}),
-        })),
+        () => {
+          const source = indicatorSeriesDataForCandles(s, sourceCandles, visibleRange);
+          const windowed = s.extendToVisibleRange
+            ? source
+            : indicatorPointsInViewport(source, sourceCandles, viewportRef.current);
+          incrementChartPerformanceCounter(
+            "indicator.viewport.pointsAvoided",
+            Math.max(0, source.length - windowed.length),
+          );
+          return windowed.map((p) => ({
+            time: p.time as UTCTimestamp,
+            value: p.value,
+            ...(p.color
+              ? { color: p.color }
+              : isHist
+                ? {
+                    color:
+                      p.value >= 0
+                        ? chartColors(theme).bull
+                        : chartColors(theme).bear,
+                  }
+                : {}),
+          }));
+        },
         { candles: sourceCandles.length, indicator: cfg.type },
       );
       const previous = seriesDataRef.current.get(index) ?? [];
@@ -310,10 +328,24 @@ export function IndicatorPane({
       const range = sub.getVisibleLogicalRange();
       if (range) {
         visibleLogicalRangeRef.current = { from: range.from, to: range.to };
+        const previousViewport = viewportRef.current;
+        const nextViewport = resolveCandleViewport(
+          candlesRef.current.length,
+          visibleLogicalRangeRef.current,
+          previousViewport,
+        );
+        viewportRef.current = nextViewport;
+        const renderWindowChanged =
+          nextViewport?.revision !== previousViewport?.revision;
+        incrementChartPerformanceCounter(
+          renderWindowChanged
+            ? "indicator.viewport.windowShifts"
+            : "indicator.viewport.windowRetained",
+        );
         const rangeKey = `${Math.floor(range.from)}:${Math.ceil(range.to)}`;
         if (rangeKey !== projectedRangeKeyRef.current) {
           projectedRangeKeyRef.current = rangeKey;
-          refreshViewportProjectedSeries(true);
+          refreshViewportProjectedSeries(!renderWindowChanged);
         }
       }
       if (range && target) target.setVisibleLogicalRange(range);
@@ -367,9 +399,18 @@ export function IndicatorPane({
       return;
     }
     void pineRuntimeVersion;
-    const result = computeIndicator(cfg, candles, { symbol, timeframe });
+    const result = computeCachedIndicator(cfg, candles, { symbol, timeframe });
     resultRef.current = result;
     publishLegendValue(indicatorResultValueText(result));
+    const currentRange = mainChart?.timeScale().getVisibleLogicalRange();
+    if (currentRange) {
+      visibleLogicalRangeRef.current = { from: currentRange.from, to: currentRange.to };
+      viewportRef.current = resolveCandleViewport(
+        candles.length,
+        visibleLogicalRangeRef.current,
+        viewportRef.current,
+      );
+    }
     const signature = seriesStructureSignature(result.series);
     const styleSignature = seriesStyleSignature(result.series);
     const structureChanged = seriesSignatureRef.current !== signature;

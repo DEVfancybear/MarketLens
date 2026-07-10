@@ -1,12 +1,15 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phases 0–1 complete; Phase 2 derived-data work is next._
+_Status: Phases 0–1 complete; Phase 2 implemented with focused browser CPU gate pending._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
 [`CANDLE_VIRTUALIZATION_PHASE0.md`](./CANDLE_VIRTUALIZATION_PHASE0.md).
 Phase 1 incremental optimizations and validation gates are recorded in
 [`CANDLE_VIRTUALIZATION_PHASE1.md`](./CANDLE_VIRTUALIZATION_PHASE1.md).
+Phase 2 viewport-aware derived-data implementation and its capture gate are
+recorded in
+[`CANDLE_VIRTUALIZATION_PHASE2.md`](./CANDLE_VIRTUALIZATION_PHASE2.md).
 
 ## 1. Executive decision
 
