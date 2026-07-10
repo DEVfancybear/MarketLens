@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   type IChartApi,
@@ -47,30 +47,36 @@ import {
 import { IndicatorLegend } from "./IndicatorLegend";
 import { indicatorPaneTimeAnchorData } from "./indicatorPaneTimeScale";
 import {
+  incrementChartPerformanceCounter,
   measureChartPerformance,
   measureChartSeriesWrite,
 } from "@/services/chartPerformanceProbe";
+import {
+  resolveIndicatorSeriesWritePlan,
+  type IndicatorWritePoint,
+} from "@/services/indicatorSeriesWritePlan";
 
 type PaneSeriesApi =
   | ISeriesApi<"Line">
   | ISeriesApi<"Histogram">
   | ISeriesApi<"Baseline">;
 
-function seriesSignature(series: IndicatorSeries[]) {
+function seriesStructureSignature(series: IndicatorSeries[]) {
   return series
-    .map((s) =>
-      [
-        s.key,
-        s.type ?? "line",
-        s.lineWidth ?? "",
-        s.lineStyle ?? "",
-        s.baseValue ?? "",
-        s.lineVisible ?? "",
-        s.lastValueVisible ?? "",
-        s.precision ?? "",
-      ].join(":"),
-    )
+    .map((s) => [s.key, s.type ?? "line"].join(":"))
     .join("|");
+}
+
+function seriesStyleSignature(series: IndicatorSeries[]) {
+  return series.map((s) => [
+    s.color,
+    s.lineWidth ?? "",
+    s.lineStyle ?? "",
+    s.baseValue ?? "",
+    s.lineVisible ?? "",
+    s.lastValueVisible ?? "",
+    s.precision ?? "",
+  ].join(":")).join("|");
 }
 
 function seriesPriceFormatOptions(series: IndicatorSeries) {
@@ -102,10 +108,14 @@ export function IndicatorPane({
   const anchorSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const seriesRef = useRef<PaneSeriesApi[]>([]);
   const seriesSignatureRef = useRef("");
+  const seriesStyleSignatureRef = useRef("");
+  const anchorDataRef = useRef<IndicatorWritePoint[]>([]);
+  const seriesDataRef = useRef<Map<number, IndicatorWritePoint[]>>(new Map());
   const candlesRef = useRef<readonly Candle[]>(candles);
   const resultRef = useRef<IndicatorResult | null>(null);
   const visibleLogicalRangeRef = useRef<IndicatorLogicalRange | null>(null);
   const projectedRangeKeyRef = useRef("");
+  const viewportRafRef = useRef<number | null>(null);
   const theme = useAtomValue(themeAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
@@ -117,10 +127,9 @@ export function IndicatorPane({
   const setPineEditorTitle = useSetAtom(pineEditorTitleAtom);
   const setPineEditorSource = useSetAtom(pineEditorSourceAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
-  const [legendValueText, setLegendValueText] = useState("");
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
 
-  const refreshViewportProjectedSeries = (onlyExtended: boolean) => {
+  const refreshViewportProjectedSeries = useCallback((onlyExtended: boolean) => {
     const result = resultRef.current;
     const sourceCandles = candlesRef.current;
     if (!result) return;
@@ -136,11 +145,24 @@ export function IndicatorPane({
       ),
       { candles: sourceCandles.length },
     );
-    if (anchorSeriesRef.current) {
+    const anchor = anchorSeriesRef.current;
+    const anchorPlan = resolveIndicatorSeriesWritePlan(anchorDataRef.current, anchorData);
+    if (anchor && anchorPlan === "replace") {
       measureChartSeriesWrite("pane-anchor", "setData", anchorData.length, () =>
-        anchorSeriesRef.current!.setData(anchorData),
+        anchor.setData(anchorData),
       );
+    } else if (
+      anchor &&
+      (anchorPlan === "append" || anchorPlan === "update-latest")
+    ) {
+      const latest = anchorData.at(-1);
+      if (latest) {
+        measureChartSeriesWrite("pane-anchor", "update", 1, () => anchor.update(latest));
+      }
+    } else if (anchorPlan === "none") {
+      incrementChartPerformanceCounter("series.pane-anchor.skipped");
     }
+    anchorDataRef.current = anchorData;
 
     result.series.forEach((s, index) => {
       if (onlyExtended && !s.extendToVisibleRange) return;
@@ -165,11 +187,23 @@ export function IndicatorPane({
         })),
         { candles: sourceCandles.length, indicator: cfg.type },
       );
-      measureChartSeriesWrite("indicator", "setData", projected.length, () =>
-        series.setData(projected),
-      );
+      const previous = seriesDataRef.current.get(index) ?? [];
+      const plan = resolveIndicatorSeriesWritePlan(previous, projected);
+      if (plan === "replace") {
+        measureChartSeriesWrite("indicator", "setData", projected.length, () =>
+          series.setData(projected),
+        );
+      } else if (plan === "append" || plan === "update-latest") {
+        const latest = projected.at(-1);
+        if (latest) {
+          measureChartSeriesWrite("indicator", "update", 1, () => series.update(latest));
+        }
+      } else {
+        incrementChartPerformanceCounter("series.indicator.skipped");
+      }
+      seriesDataRef.current.set(index, projected);
     });
-  };
+  }, [cfg.type, theme]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -196,6 +230,7 @@ export function IndicatorPane({
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
+    const seriesDataStore = seriesDataRef.current;
 
     return () => {
       chart.remove();
@@ -203,6 +238,9 @@ export function IndicatorPane({
       anchorSeriesRef.current = null;
       seriesRef.current = [];
       seriesSignatureRef.current = "";
+      seriesStyleSignatureRef.current = "";
+      anchorDataRef.current = [];
+      seriesDataStore.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -225,7 +263,8 @@ export function IndicatorPane({
     if (!mainChart) return;
     const sub = mainChart.timeScale();
     const target = chartRef.current?.timeScale();
-    const handler = () => {
+    const applyRange = () => {
+      viewportRafRef.current = null;
       const range = sub.getVisibleLogicalRange();
       if (range) {
         visibleLogicalRangeRef.current = { from: range.from, to: range.to };
@@ -237,10 +276,22 @@ export function IndicatorPane({
       }
       if (range && target) target.setVisibleLogicalRange(range);
     };
+    const handler = () => {
+      incrementChartPerformanceCounter("indicator.viewport.notifications");
+      if (viewportRafRef.current !== null) {
+        incrementChartPerformanceCounter("indicator.viewport.coalesced");
+        return;
+      }
+      viewportRafRef.current = requestAnimationFrame(applyRange);
+    };
     sub.subscribeVisibleLogicalRangeChange(handler);
-    handler();
-    return () => sub.unsubscribeVisibleLogicalRangeChange(handler);
-  }, [mainChart]);
+    applyRange();
+    return () => {
+      sub.unsubscribeVisibleLogicalRangeChange(handler);
+      if (viewportRafRef.current !== null) cancelAnimationFrame(viewportRafRef.current);
+      viewportRafRef.current = null;
+    };
+  }, [mainChart, refreshViewportProjectedSeries]);
 
   useEffect(
     () => subscribePineRuntimeCache(() => setPineRuntimeVersion((value) => value + 1)),
@@ -253,6 +304,20 @@ export function IndicatorPane({
     }
   }, [cfg, candles, symbol, timeframe]);
 
+  const result = useMemo(
+    () => {
+      void pineRuntimeVersion;
+      return cfg.visible === false
+        ? null
+        : computeIndicator(cfg, candles, { symbol, timeframe });
+    },
+    [cfg, candles, pineRuntimeVersion, symbol, timeframe],
+  );
+  const legendValueText = useMemo(
+    () => result ? indicatorResultValueText(result) : "",
+    [result],
+  );
+
   // Data
   useEffect(() => {
     const chart = chartRef.current;
@@ -262,15 +327,19 @@ export function IndicatorPane({
       for (const series of seriesRef.current) chart.removeSeries(series);
       seriesRef.current = [];
       seriesSignatureRef.current = "";
-      setLegendValueText("");
+      seriesStyleSignatureRef.current = "";
+      anchorDataRef.current = [];
+      seriesDataRef.current.clear();
       return;
     }
-    const result = computeIndicator(cfg, candles, { symbol, timeframe });
+    if (!result) return;
     resultRef.current = result;
-    setLegendValueText(indicatorResultValueText(result));
-    const signature = seriesSignature(result.series);
+    const signature = seriesStructureSignature(result.series);
+    const styleSignature = seriesStyleSignature(result.series);
+    const structureChanged = seriesSignatureRef.current !== signature;
 
-    if (seriesSignatureRef.current !== signature) {
+    if (structureChanged) {
+      incrementChartPerformanceCounter("series.indicator.created", result.series.length);
       seriesRef.current.forEach((series) => {
         try {
           chart.removeSeries(series);
@@ -312,6 +381,8 @@ export function IndicatorPane({
             });
       });
       seriesSignatureRef.current = signature;
+      seriesStyleSignatureRef.current = styleSignature;
+      seriesDataRef.current.clear();
 
       if (cfg.type === "RSI" && seriesRef.current[0]) {
         seriesRef.current[0].createPriceLine({
@@ -333,37 +404,53 @@ export function IndicatorPane({
       }
     }
 
-    result.series.forEach((s, index) => {
-      const series = seriesRef.current[index];
-      if (!series) return;
-      const isHist = s.type === "histogram" || s.key === "hist";
-      if (s.type === "baselineFill") {
-        series.applyOptions({
-          topFillColor1: s.color,
-          topFillColor2: s.color,
-          ...seriesPriceFormatOptions(s),
-        });
-      } else {
-        series.applyOptions({
-          color: s.color,
-          ...(isHist
-            ? {
-                lastValueVisible: s.lastValueVisible ?? true,
-                ...seriesPriceFormatOptions(s),
-              }
-            : {
-                lineWidth: s.lineWidth ?? 2,
-                lineStyle: s.lineStyle ?? 0,
-                lastValueVisible: s.lastValueVisible ?? true,
-                ...seriesPriceFormatOptions(s),
-              }),
-        });
-      }
-    });
+    if (!structureChanged && seriesStyleSignatureRef.current !== styleSignature) {
+      result.series.forEach((s, index) => {
+        const series = seriesRef.current[index];
+        if (!series) return;
+        incrementChartPerformanceCounter("series.indicator.applyOptions.calls");
+        const isHist = s.type === "histogram" || s.key === "hist";
+        if (s.type === "baselineFill") {
+          series.applyOptions({
+            topFillColor1: s.color,
+            topFillColor2: s.color,
+            ...seriesPriceFormatOptions(s),
+          });
+        } else {
+          series.applyOptions({
+            color: s.color,
+            ...(isHist
+              ? {
+                  lastValueVisible: s.lastValueVisible ?? true,
+                  ...seriesPriceFormatOptions(s),
+                }
+              : {
+                  lineWidth: s.lineWidth ?? 2,
+                  lineStyle: s.lineStyle ?? 0,
+                  lastValueVisible: s.lastValueVisible ?? true,
+                  ...seriesPriceFormatOptions(s),
+                }),
+          });
+        }
+      });
+      seriesStyleSignatureRef.current = styleSignature;
+    } else if (!structureChanged) {
+      incrementChartPerformanceCounter(
+        "series.indicator.applyOptions.skipped",
+        result.series.length,
+      );
+    }
     refreshViewportProjectedSeries(false);
     const range = mainChart?.timeScale().getVisibleLogicalRange();
     if (range) chart.timeScale().setVisibleLogicalRange(range);
-  }, [cfg, candles, theme, pineRuntimeVersion, symbol, timeframe, mainChart]);
+  }, [
+    cfg,
+    candles,
+    theme,
+    mainChart,
+    result,
+    refreshViewportProjectedSeries,
+  ]);
 
   const toggleVisibility = () => {
     updateIndicator({ id: cfg.id, patch: { visible: cfg.visible === false } });

@@ -4,6 +4,7 @@ import { useChartSeries } from "@/hooks/useChartSeries";
 import { setSmcSnapshotAtom } from "@/store/smcStore";
 import { useSetAtom } from "jotai";
 import { computeSmc } from "@/services/smc/smcEngine";
+import { selectSmcInputWindow } from "@/services/smc/smcInputWindow";
 import type { SmcSnapshot } from "@/types";
 import {
   beginChartPerformanceMeasure,
@@ -87,23 +88,31 @@ export function useSmcEngine() {
 
   useEffect(() => {
     const dispatch = (data: typeof candles) => {
+      const workerData = selectSmcInputWindow(data);
+      incrementChartPerformanceCounter(
+        "smc.worker.post.candlesAvoided",
+        data.length - workerData.length,
+      );
       const worker = workerRef.current;
       const reqId = ++reqRef.current;
       if (worker) {
         sentAtRef.current.set(reqId, performance.now());
         incrementChartPerformanceCounter("smc.worker.post.calls");
-        incrementChartPerformanceCounter("smc.worker.post.candles", data.length);
+        incrementChartPerformanceCounter("smc.worker.post.candles", workerData.length);
         // Approximation for seven numeric Candle fields; actual structured-clone
         // overhead is browser-specific and can be inspected in the trace.
-        incrementChartPerformanceCounter("smc.worker.post.estimatedBytes", data.length * 56);
-        worker.postMessage({ reqId, candles: data });
+        incrementChartPerformanceCounter(
+          "smc.worker.post.estimatedBytes",
+          workerData.length * 56,
+        );
+        worker.postMessage({ reqId, candles: workerData });
       } else {
         // Synchronous fallback.
         const endMeasure = beginChartPerformanceMeasure("smc.main.compute", {
-          candles: data.length,
+          candles: workerData.length,
         });
         try {
-          setSnapshot(computeSmc(data));
+          setSnapshot(computeSmc(workerData));
         } finally {
           endMeasure();
         }

@@ -15,6 +15,7 @@ import { detectOrderBlocks, type OrderBlockOptions } from './orderBlockEngine';
 import { detectLiquidity, type LiquidityOptions } from './liquidityEngine';
 import { detectDisplacements, type DisplacementOptions } from './displacementEngine';
 import { computeSessions, computeKillZones } from './sessionEngine';
+import { selectSmcInputWindow, SMC_INPUT_MAX_BARS } from './smcInputWindow';
 
 export interface SmcOptions {
   maxBars: number;
@@ -25,7 +26,7 @@ export interface SmcOptions {
   displacement?: DisplacementOptions;
 }
 
-export const DEFAULT_SMC_OPTIONS: SmcOptions = { maxBars: 1500 };
+export const DEFAULT_SMC_OPTIONS: SmcOptions = { maxBars: SMC_INPUT_MAX_BARS };
 
 export function computeSmc(
   allCandles: Candle[],
@@ -33,8 +34,7 @@ export function computeSmc(
 ): SmcSnapshot {
   // Window the analysis but keep absolute indices irrelevant (engines are
   // self-contained on the slice; consumers match by time).
-  const candles =
-    allCandles.length > opts.maxBars ? allCandles.slice(-opts.maxBars) : allCandles;
+  const candles = selectSmcInputWindow(allCandles, opts.maxBars);
 
   if (candles.length < 10) {
     return {

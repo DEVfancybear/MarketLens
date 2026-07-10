@@ -81,6 +81,10 @@ import {
   measureChartSeriesWrite,
 } from "@/services/chartPerformanceProbe";
 import { installChartBenchmarkHarness } from "@/services/chartBenchmarkHarness";
+import {
+  resolveIndicatorSeriesWritePlan,
+  type IndicatorWritePoint,
+} from "@/services/indicatorSeriesWritePlan";
 
 function keepLatestBarInView(chart: IChartApi, dataLength: number) {
   const timeScale = chart.timeScale();
@@ -116,6 +120,22 @@ function seriesPriceFormatOptions(series: IndicatorSeries) {
       minMove: 1 / 10 ** series.precision,
     },
   };
+}
+
+function indicatorStructureSignature(series: readonly IndicatorSeries[]) {
+  return series.map((item) => `${item.key}:${item.type ?? "line"}`).join("|");
+}
+
+function indicatorStyleSignature(series: IndicatorSeries) {
+  return [
+    series.color,
+    series.lineWidth ?? "",
+    series.lineStyle ?? "",
+    series.baseValue ?? "",
+    series.lineVisible ?? "",
+    series.lastValueVisible ?? "",
+    series.precision ?? "",
+  ].join(":");
 }
 
 function labelBackground(color: string | undefined): string {
@@ -191,6 +211,9 @@ export function PriceChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const indSeriesRef = useRef<Map<string, IndicatorSeriesApi[]>>(new Map());
+  const indStructureRef = useRef<Map<string, string>>(new Map());
+  const indStyleRef = useRef<Map<string, string>>(new Map());
+  const indDataRef = useRef<Map<string, IndicatorWritePoint[]>>(new Map());
   const fittedRef = useRef(false);
   const lastAutoFitLengthRef = useRef(0);
   const prevCandlesRef = useRef<Candle[]>([]);
@@ -350,6 +373,9 @@ export function PriceChart({
     ro.observe(containerRef.current);
 
     const indStore = indSeriesRef.current;
+    const indStructureStore = indStructureRef.current;
+    const indStyleStore = indStyleRef.current;
+    const indDataStore = indDataRef.current;
     return () => {
       ro.disconnect();
       uninstallBenchmarkHarness();
@@ -367,6 +393,9 @@ export function PriceChart({
       chartRef.current = null;
       candleSeriesRef.current = null;
       indStore.clear();
+      indStructureStore.clear();
+      indStyleStore.clear();
+      indDataStore.clear();
       setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -686,11 +715,13 @@ export function PriceChart({
     });
   }, [overlayIndicators, candles, symbol, timeframe]);
   const overlayResults = useMemo(
-    () =>
-      overlayIndicators.map((cfg) => ({
+    () => {
+      void pineRuntimeVersion;
+      return overlayIndicators.map((cfg) => ({
         cfg,
         result: computeIndicator(cfg, candles, { symbol, timeframe }),
-      })),
+      }));
+    },
     [overlayIndicators, candles, pineRuntimeVersion, symbol, timeframe],
   );
   const overlayLegendValueText = useMemo(
@@ -715,12 +746,22 @@ export function PriceChart({
       if (!activeIds.has(id)) {
         series.forEach((s) => chart.removeSeries(s));
         store.delete(id);
+        indStructureRef.current.delete(id);
+        for (const key of [...indStyleRef.current.keys()]) {
+          if (key.startsWith(`${id}:`)) indStyleRef.current.delete(key);
+        }
+        for (const key of [...indDataRef.current.keys()]) {
+          if (key.startsWith(`${id}:`)) indDataRef.current.delete(key);
+        }
       }
     }
 
     for (const { cfg, result } of overlayResults) {
       let series = store.get(cfg.id);
-      if (!series || series.length !== result.series.length) {
+      const structureSignature = indicatorStructureSignature(result.series);
+      const structureChanged = indStructureRef.current.get(cfg.id) !== structureSignature;
+      if (!series || structureChanged) {
+        incrementChartPerformanceCounter("series.indicator.created", result.series.length);
         series?.forEach((s) => chart.removeSeries(s));
         series = result.series.map((s) => {
           if (s.type === "baselineFill") {
@@ -757,33 +798,48 @@ export function PriceChart({
               });
         });
         store.set(cfg.id, series);
+        indStructureRef.current.set(cfg.id, structureSignature);
+        for (const key of [...indStyleRef.current.keys()]) {
+          if (key.startsWith(`${cfg.id}:`)) indStyleRef.current.delete(key);
+        }
+        for (const key of [...indDataRef.current.keys()]) {
+          if (key.startsWith(`${cfg.id}:`)) indDataRef.current.delete(key);
+        }
       }
       result.series.forEach((s, idx) => {
-        if (s.type === "baselineFill") {
-          series![idx].applyOptions({
-            baseValue: { type: "price", price: s.baseValue ?? 0 },
-            topFillColor1: s.color,
-            topFillColor2: s.color,
-            lineVisible: s.lineVisible ?? false,
-            lastValueVisible: s.lastValueVisible ?? false,
-            ...seriesPriceFormatOptions(s),
-          });
-        } else {
-          series![idx].applyOptions({
-            color: s.color,
-            ...(s.type === "histogram"
-              ? {
-                  lastValueVisible: s.lastValueVisible ?? false,
-                  ...seriesPriceFormatOptions(s),
-                }
-              : {
-                  lineWidth: s.lineWidth ?? 2,
-                  lineStyle: s.lineStyle ?? 0,
-                  lastValueVisible: s.lastValueVisible ?? false,
-                  ...seriesPriceFormatOptions(s),
-                }),
-          });
+        const cacheKey = `${cfg.id}:${idx}`;
+        const styleSignature = indicatorStyleSignature(s);
+        if (!structureChanged && indStyleRef.current.get(cacheKey) !== styleSignature) {
+          incrementChartPerformanceCounter("series.indicator.applyOptions.calls");
+          if (s.type === "baselineFill") {
+            series![idx].applyOptions({
+              baseValue: { type: "price", price: s.baseValue ?? 0 },
+              topFillColor1: s.color,
+              topFillColor2: s.color,
+              lineVisible: s.lineVisible ?? false,
+              lastValueVisible: s.lastValueVisible ?? false,
+              ...seriesPriceFormatOptions(s),
+            });
+          } else {
+            series![idx].applyOptions({
+              color: s.color,
+              ...(s.type === "histogram"
+                ? {
+                    lastValueVisible: s.lastValueVisible ?? false,
+                    ...seriesPriceFormatOptions(s),
+                  }
+                : {
+                    lineWidth: s.lineWidth ?? 2,
+                    lineStyle: s.lineStyle ?? 0,
+                    lastValueVisible: s.lastValueVisible ?? false,
+                    ...seriesPriceFormatOptions(s),
+                  }),
+            });
+          }
+        } else if (!structureChanged) {
+          incrementChartPerformanceCounter("series.indicator.applyOptions.skipped");
         }
+        indStyleRef.current.set(cacheKey, styleSignature);
         const projected = measureChartPerformance(
           "indicator.projection",
           () => indicatorSeriesDataForCandles(s, candles).map((p) => ({
@@ -793,9 +849,25 @@ export function PriceChart({
           })),
           { candles: candles.length, indicator: cfg.type },
         );
-        measureChartSeriesWrite("indicator", "setData", projected.length, () =>
-          series![idx].setData(projected),
+        const plan = resolveIndicatorSeriesWritePlan(
+          indDataRef.current.get(cacheKey) ?? [],
+          projected,
         );
+        if (plan === "replace") {
+          measureChartSeriesWrite("indicator", "setData", projected.length, () =>
+            series![idx].setData(projected),
+          );
+        } else if (plan === "append" || plan === "update-latest") {
+          const latest = projected.at(-1);
+          if (latest) {
+            measureChartSeriesWrite("indicator", "update", 1, () =>
+              series![idx].update(latest),
+            );
+          }
+        } else {
+          incrementChartPerformanceCounter("series.indicator.skipped");
+        }
+        indDataRef.current.set(cacheKey, projected);
       });
     }
   }, [candles, overlayResults, ready, theme]);

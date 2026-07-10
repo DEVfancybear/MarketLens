@@ -1,10 +1,12 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phase 0 CPU baseline complete; controlled heap-retention capture pending._
+_Status: Phases 0–1 implemented; Phase 1 post-change benchmark pending._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
 [`CANDLE_VIRTUALIZATION_PHASE0.md`](./CANDLE_VIRTUALIZATION_PHASE0.md).
+Phase 1 incremental optimizations and validation gates are recorded in
+[`CANDLE_VIRTUALIZATION_PHASE1.md`](./CANDLE_VIRTUALIZATION_PHASE1.md).
 
 ## 1. Executive decision
 
