@@ -35,6 +35,8 @@ import {
   transparentLayoutOptions,
 } from "./chartVisualProfile";
 import { computeCachedIndicator } from "@/services/indicatorComputationCache";
+import { computeIndicator } from "@/services/indicators";
+import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import {
   indicatorSeriesDataForCandles,
@@ -130,6 +132,7 @@ export function IndicatorPane({
   const theme = useAtomValue(themeAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const optimizationDecision = getChartOptimizationDecision(candles.length);
   const updateIndicator = useSetAtom(updateIndicatorAtom);
   const removeIndicator = useSetAtom(removeIndicatorAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
@@ -219,7 +222,7 @@ export function IndicatorPane({
         "indicator.projection",
         () => {
           const source = indicatorSeriesDataForCandles(s, sourceCandles, visibleRange);
-          const windowed = s.extendToVisibleRange
+          const windowed = s.extendToVisibleRange || !optimizationDecision.derivedData
             ? source
             : indicatorPointsInViewport(source, sourceCandles, viewportRef.current);
           incrementChartPerformanceCounter(
@@ -259,7 +262,7 @@ export function IndicatorPane({
       }
       seriesDataRef.current.set(index, projected);
     });
-  }, [cfg.type, theme]);
+  }, [cfg.type, optimizationDecision.derivedData, theme]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -328,24 +331,28 @@ export function IndicatorPane({
       const range = sub.getVisibleLogicalRange();
       if (range) {
         visibleLogicalRangeRef.current = { from: range.from, to: range.to };
-        const previousViewport = viewportRef.current;
-        const nextViewport = resolveCandleViewport(
-          candlesRef.current.length,
-          visibleLogicalRangeRef.current,
-          previousViewport,
-        );
-        viewportRef.current = nextViewport;
-        const renderWindowChanged =
-          nextViewport?.revision !== previousViewport?.revision;
-        incrementChartPerformanceCounter(
-          renderWindowChanged
-            ? "indicator.viewport.windowShifts"
-            : "indicator.viewport.windowRetained",
-        );
+        let renderWindowChanged = false;
+        if (optimizationDecision.derivedData) {
+          const previousViewport = viewportRef.current;
+          const nextViewport = resolveCandleViewport(
+            candlesRef.current.length,
+            visibleLogicalRangeRef.current,
+            previousViewport,
+          );
+          viewportRef.current = nextViewport;
+          renderWindowChanged = nextViewport?.revision !== previousViewport?.revision;
+          incrementChartPerformanceCounter(
+            renderWindowChanged
+              ? "indicator.viewport.windowShifts"
+              : "indicator.viewport.windowRetained",
+          );
+        }
         const rangeKey = `${Math.floor(range.from)}:${Math.ceil(range.to)}`;
         if (rangeKey !== projectedRangeKeyRef.current) {
           projectedRangeKeyRef.current = rangeKey;
-          refreshViewportProjectedSeries(!renderWindowChanged);
+          refreshViewportProjectedSeries(
+            !optimizationDecision.derivedData || !renderWindowChanged,
+          );
         }
       }
       if (range && target) target.setVisibleLogicalRange(range);
@@ -365,7 +372,11 @@ export function IndicatorPane({
       if (viewportRafRef.current !== null) cancelAnimationFrame(viewportRafRef.current);
       viewportRafRef.current = null;
     };
-  }, [mainChart, refreshViewportProjectedSeries]);
+  }, [
+    mainChart,
+    optimizationDecision.derivedData,
+    refreshViewportProjectedSeries,
+  ]);
 
   useEffect(
     () => subscribePineRuntimeCache(() => setPineRuntimeVersion((value) => value + 1)),
@@ -399,12 +410,14 @@ export function IndicatorPane({
       return;
     }
     void pineRuntimeVersion;
-    const result = computeCachedIndicator(
-      cfg,
-      candles,
-      { symbol, timeframe },
-      pineRuntimeVersion,
-    );
+    const result = optimizationDecision.derivedData
+      ? computeCachedIndicator(
+          cfg,
+          candles,
+          { symbol, timeframe },
+          pineRuntimeVersion,
+        )
+      : computeIndicator(cfg, candles, { symbol, timeframe });
     resultRef.current = result;
     publishLegendValue(indicatorResultValueText(result));
     const currentRange = mainChart?.timeScale().getVisibleLogicalRange();
@@ -530,6 +543,7 @@ export function IndicatorPane({
     candles,
     theme,
     pineRuntimeVersion,
+    optimizationDecision.derivedData,
     symbol,
     timeframe,
     mainChart,

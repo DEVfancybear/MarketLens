@@ -22,7 +22,10 @@ import {
 } from "@/types";
 import {
   marketCandleSeriesEqual,
+  mergeHistoryWithLiveCandles,
   normalizeMarketCandle,
+  normalizeMarketCandleSeries,
+  upsertMarketCandleIntoSeries,
 } from "@/services/market-data/candleSeries";
 import {
   createCandleRepository,
@@ -37,6 +40,7 @@ import {
   beginChartPerformanceMeasure,
   incrementChartPerformanceCounter,
 } from "@/services/chartPerformanceProbe";
+import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 const MAX_CANDLES = 5000;
@@ -217,8 +221,26 @@ export const updateCandleAtom = atom(
 
     const key = subscriptionKey(symbol, timeframe);
     const all = get(candlesAtom);
+    const series = all[key] ?? [];
+    const rollout = getChartOptimizationDecision(Math.max(series.length, 1));
+    incrementChartPerformanceCounter(
+      rollout.chunkRepository
+        ? "rollout.repository.optimizedWrites"
+        : "rollout.repository.legacyWrites",
+    );
+    if (!rollout.chunkRepository) {
+      const next = upsertMarketCandleIntoSeries(series, normalized, MAX_CANDLES);
+      if (
+        next.length === series.length &&
+        next.every((item, index) => item === series[index])
+      ) return;
+      set(candlesAtom, { ...all, [key]: next });
+      set(lastUpdateAtom, Date.now());
+      set(marketDataTickAtom, get(marketDataTickAtom) + 1);
+      return;
+    }
     const repositories = get(candleRepositoriesAtom);
-    const previous = repositories[key] ?? createCandleRepository(all[key] ?? [], MAX_CANDLES);
+    const previous = repositories[key] ?? createCandleRepository(series, MAX_CANDLES);
     const endUpsert = beginChartPerformanceMeasure("candle.repository.upsert", {
       candles: previous.length,
       chunks: previous.chunks.length,
@@ -253,6 +275,22 @@ export const setCandlesAtom = atom(
     const key = subscriptionKey(symbol, timeframe);
     const all = get(candlesAtom);
     const existing = all[key] ?? [];
+    const rollout = getChartOptimizationDecision(Math.max(existing.length, candles.length));
+    incrementChartPerformanceCounter(
+      rollout.chunkRepository
+        ? "rollout.repository.optimizedWrites"
+        : "rollout.repository.legacyWrites",
+    );
+    if (!rollout.chunkRepository) {
+      const trimmed = existing.length > 0
+        ? mergeHistoryWithLiveCandles(candles, existing, MAX_CANDLES)
+        : normalizeMarketCandleSeries(candles, MAX_CANDLES);
+      if (marketCandleSeriesEqual(existing, trimmed)) return;
+      set(candlesAtom, { ...all, [key]: trimmed });
+      set(lastUpdateAtom, Date.now());
+      set(marketDataTickAtom, get(marketDataTickAtom) + 1);
+      return;
+    }
     const repositories = get(candleRepositoriesAtom);
     const previous = repositories[key] ?? createCandleRepository(existing, MAX_CANDLES);
     const endMerge = beginChartPerformanceMeasure("candle.repository.merge", {

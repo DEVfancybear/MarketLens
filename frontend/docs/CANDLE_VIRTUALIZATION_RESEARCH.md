@@ -1,6 +1,6 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phases 0–3 complete; optional Phase 4 primary-series windowing is not currently justified by traces._
+_Status: Phases 0–3 complete; Phase 4 skipped by trace evidence; Phase 5 rollout implemented with deterministic A/B gate pending._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
@@ -12,6 +12,8 @@ recorded in
 [`CANDLE_VIRTUALIZATION_PHASE2.md`](./CANDLE_VIRTUALIZATION_PHASE2.md).
 Phase 3 chunked canonical storage and its allocation benchmark are recorded in
 [`CANDLE_VIRTUALIZATION_PHASE3.md`](./CANDLE_VIRTUALIZATION_PHASE3.md).
+The Phase 4 skip decision and Phase 5 rollout/rollback policy are recorded in
+[`CANDLE_VIRTUALIZATION_PHASE5.md`](./CANDLE_VIRTUALIZATION_PHASE5.md).
 
 ## 1. Executive decision
 

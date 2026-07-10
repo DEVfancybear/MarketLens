@@ -6,6 +6,7 @@ import {
 } from "@/services/chartPerformanceProbe";
 import { getActiveChartBenchmarkCandles } from "@/services/chartBenchmarkFixtures";
 import { runCandleRepositoryBenchmark } from "@/services/market-data/candleRepositoryBenchmark";
+import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
 
 export interface ChartBenchmarkOptions {
   panFrames?: number;
@@ -36,6 +37,21 @@ export function installChartBenchmarkHarness(
       const replayBars = Math.min(options.replayBars ?? 300, totalCandles);
       resetChartPerformanceProbe();
       incrementChartPerformanceCounter("benchmark.candles", totalCandles);
+      const rollout = getChartOptimizationDecision(totalCandles);
+      incrementChartPerformanceCounter(
+        `rollout.requested.${rollout.requestedMode}`,
+      );
+      incrementChartPerformanceCounter(
+        `rollout.effective.${rollout.effectiveMode}`,
+      );
+      incrementChartPerformanceCounter(
+        rollout.derivedData ? "rollout.derived.enabled" : "rollout.derived.disabled",
+      );
+      incrementChartPerformanceCounter(
+        rollout.chunkRepository
+          ? "rollout.repository.enabled"
+          : "rollout.repository.disabled",
+      );
       const profile = new URLSearchParams(window.location.search).get("chartBenchmarkProfile");
       incrementChartPerformanceCounter(
         profile === "phase3"

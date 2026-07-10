@@ -47,6 +47,8 @@ import {
   timeScaleOptions,
 } from "./chartVisualProfile";
 import { computeCachedIndicator } from "@/services/indicatorComputationCache";
+import { computeIndicator } from "@/services/indicators";
+import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
 import {
   ensurePineIndicatorResult,
   subscribePineRuntimeCache,
@@ -239,6 +241,7 @@ export function PriceChart({
   const lastLoadMoreFirstTimeRef = useRef<number | null>(null);
   const indicatorViewportRef = useRef<CandleViewport | null>(null);
   const visibleLogicalRangeRef = useRef<LogicalRange | null>(null);
+  const derivedDataEnabledRef = useRef(true);
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
@@ -277,6 +280,8 @@ export function PriceChart({
   const countdown = useCountdown(timeframe);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
+  const optimizationDecision = getChartOptimizationDecision(candles.length);
+  derivedDataEnabledRef.current = optimizationDecision.derivedData;
 
   const scheduleVersionBump = useCallback(() => {
     incrementChartPerformanceCounter("viewport.notifications");
@@ -289,18 +294,20 @@ export function PriceChart({
       bumpRafRef.current = null;
       const range = chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
       visibleLogicalRangeRef.current = range;
-      const previousViewport = indicatorViewportRef.current;
-      const nextViewport = resolveCandleViewport(
-        candlesRef.current.length,
-        range,
-        previousViewport,
-      );
-      indicatorViewportRef.current = nextViewport;
-      if (nextViewport?.revision !== previousViewport?.revision) {
-        incrementChartPerformanceCounter("indicator.viewport.windowShifts");
-        setIndicatorViewport(nextViewport);
-      } else if (nextViewport) {
-        incrementChartPerformanceCounter("indicator.viewport.windowRetained");
+      if (derivedDataEnabledRef.current) {
+        const previousViewport = indicatorViewportRef.current;
+        const nextViewport = resolveCandleViewport(
+          candlesRef.current.length,
+          range,
+          previousViewport,
+        );
+        indicatorViewportRef.current = nextViewport;
+        if (nextViewport?.revision !== previousViewport?.revision) {
+          incrementChartPerformanceCounter("indicator.viewport.windowShifts");
+          setIndicatorViewport(nextViewport);
+        } else if (nextViewport) {
+          incrementChartPerformanceCounter("indicator.viewport.windowRetained");
+        }
       }
       setVersion((v) => v + 1);
     });
@@ -749,15 +756,24 @@ export function PriceChart({
       void pineRuntimeVersion;
       return overlayIndicators.map((cfg) => ({
         cfg,
-        result: computeCachedIndicator(
-          cfg,
-          candles,
-          { symbol, timeframe },
-          pineRuntimeVersion,
-        ),
+        result: optimizationDecision.derivedData
+          ? computeCachedIndicator(
+              cfg,
+              candles,
+              { symbol, timeframe },
+              pineRuntimeVersion,
+            )
+          : computeIndicator(cfg, candles, { symbol, timeframe }),
       }));
     },
-    [overlayIndicators, candles, pineRuntimeVersion, symbol, timeframe],
+    [
+      overlayIndicators,
+      candles,
+      optimizationDecision.derivedData,
+      pineRuntimeVersion,
+      symbol,
+      timeframe,
+    ],
   );
   const overlayLegendValueText = useMemo(
     () =>
@@ -883,7 +899,7 @@ export function PriceChart({
               candles,
               visibleLogicalRangeRef.current,
             );
-            const windowed = s.extendToVisibleRange
+            const windowed = s.extendToVisibleRange || !optimizationDecision.derivedData
               ? source
               : indicatorPointsInViewport(source, candles, indicatorViewport);
             incrementChartPerformanceCounter(
@@ -919,7 +935,14 @@ export function PriceChart({
         indDataRef.current.set(cacheKey, projected);
       });
     }
-  }, [candles, indicatorViewport, overlayResults, ready, theme]);
+  }, [
+    candles,
+    indicatorViewport,
+    optimizationDecision.derivedData,
+    overlayResults,
+    ready,
+    theme,
+  ]);
 
   useEffect(() => {
     const chart = chartRef.current;
