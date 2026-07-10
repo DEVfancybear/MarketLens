@@ -2,7 +2,7 @@
  * Trade engine — pure position-sizing, risk and P/L math. No state; the store
  * owns positions and calls these helpers.
  */
-import type { Candle, OrderRequest, Position, RiskMetrics, Side } from '@/types';
+import type { Candle, OrderRequest, Position, RiskMetrics, Side } from '../types';
 
 export const dirSign = (side: Side): number => (side === 'long' ? 1 : -1);
 

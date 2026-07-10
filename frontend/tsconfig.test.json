@@ -22,6 +22,7 @@
     "src/components/chart/chartVisualProfile.ts",
     "src/components/chart/chartAutoFitPolicy.ts",
     "src/components/chart/chartTimeNavigation.ts",
+    "src/components/chart/replayViewport.ts",
     "src/components/chart/indicatorPaneTimeScale.ts",
     "src/services/indicatorStyle.ts",
     "src/services/indicatorSeriesProjection.ts",
@@ -41,6 +42,9 @@
     "src/services/notifications/deepLink.ts",
     "src/store/watchlistLayout.ts",
     "src/services/indicatorStoreModel.ts",
+    "src/services/replayEngine.ts",
+    "src/services/tradeEngine.ts",
+    "src/utils/time.ts",
     "src/services/privateWorkspaceAccess.ts",
     "src/components/toolbar/indicatorSettingsInputRows.ts"
   ]

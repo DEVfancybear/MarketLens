@@ -17,6 +17,10 @@ Phase 6 must physically delete the legacy frontend replay clock/store/engine, MT
 paths, and replay trade processing according to section 11 of the plan; disabling them behind a
 feature flag is not completion.
 
+Phase 0 is complete: `npm run test:replay` replaces the regex guard, Go and TypeScript consume
+`testdata/replay/contracts.v1.json`, and all six audited legacy gaps have executable reproductions.
+The next implementation step is Phase 1 persistence and immutable dataset preparation.
+
 The historical roadmap below is preserved. The current top priority after the monorepo split is:
 
 1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ Done (backend Phase 0).

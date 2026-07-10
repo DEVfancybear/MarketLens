@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "timeUnit": "unix_seconds",
+  "selectionCases": [
+    {
+      "name": "before-first-clamps-to-first",
+      "candles": [1000, 1060, 1120],
+      "requestedTime": 900,
+      "expectedNearestIndex": 0,
+      "expectedAtOrBeforeIndex": -1
+    },
+    {
+      "name": "nearest-prefers-later-closer-bar",
+      "candles": [1000, 1060, 1120],
+      "requestedTime": 1055,
+      "expectedNearestIndex": 1,
+      "expectedAtOrBeforeIndex": 0
+    },
+    {
+      "name": "nearest-tie-keeps-earlier-bar",
+      "candles": [1000, 1060, 1120],
+      "requestedTime": 1030,
+      "expectedNearestIndex": 0,
+      "expectedAtOrBeforeIndex": 0
+    },
+    {
+      "name": "after-last-clamps-to-last",
+      "candles": [1000, 1060, 1120],
+      "requestedTime": 1200,
+      "expectedNearestIndex": 2,
+      "expectedAtOrBeforeIndex": 2
+    }
+  ],
+  "knownGaps": {
+    "partialMtf": {
+      "symbol": "EURUSD",
+      "chartIntervalSeconds": 900,
+      "revealedThrough": 1714554600,
+      "sourceFinalBar": {
+        "time": 1714554000,
+        "open": 100,
+        "high": 120,
+        "low": 80,
+        "close": 115,
+        "volume": 90
+      },
+      "revealedBaseBars": [
+        {
+          "symbol": "EURUSD",
+          "seq": 0,
+          "time": 1714554000,
+          "open": 100,
+          "high": 105,
+          "low": 98,
+          "close": 102,
+          "volume": 10
+        },
+        {
+          "symbol": "EURUSD",
+          "seq": 1,
+          "time": 1714554300,
+          "open": 102,
+          "high": 106,
+          "low": 101,
+          "close": 104,
+          "volume": 20
+        }
+      ],
+      "expectedPartialBar": {
+        "time": 1714554000,
+        "open": 100,
+        "high": 106,
+        "low": 98,
+        "close": 104,
+        "volume": 30,
+        "complete": false
+      }
+    },
+    "skippedTradeFill": {
+      "symbol": "EURUSD",
+      "order": {
+        "clientOrderId": "eur-stop-entry",
+        "symbol": "EURUSD",
+        "side": "long",
+        "type": "stop",
+        "entry": 105
+      },
+      "revealedBars": [
+        {
+          "symbol": "EURUSD",
+          "seq": 0,
+          "time": 2000,
+          "open": 100,
+          "high": 102,
+          "low": 99,
+          "close": 101,
+          "volume": 1
+        },
+        {
+          "symbol": "EURUSD",
+          "seq": 1,
+          "time": 2060,
+          "open": 101,
+          "high": 106,
+          "low": 100,
+          "close": 104,
+          "volume": 1
+        },
+        {
+          "symbol": "EURUSD",
+          "seq": 2,
+          "time": 2120,
+          "open": 104,
+          "high": 104.5,
+          "low": 102,
+          "close": 103,
+          "volume": 1
+        }
+      ],
+      "expectedFill": {
+        "seq": 1,
+        "price": 105
+      }
+    },
+    "rewindWithOpenPosition": {
+      "lastProcessedSeq": 5,
+      "requestedSeq": 2,
+      "hasTrades": true,
+      "expectedError": "rewind_requires_fork"
+    },
+    "crossSymbolFill": {
+      "marketSymbol": "EURUSD",
+      "orders": [
+        {
+          "clientOrderId": "btc-stop-entry",
+          "symbol": "BTCUSD",
+          "side": "long",
+          "type": "stop",
+          "entry": 1.15
+        },
+        {
+          "clientOrderId": "eur-stop-entry",
+          "symbol": "EURUSD",
+          "side": "long",
+          "type": "stop",
+          "entry": 1.15
+        }
+      ],
+      "bar": {
+        "symbol": "EURUSD",
+        "seq": 7,
+        "time": 3000,
+        "open": 1.1,
+        "high": 1.2,
+        "low": 1.05,
+        "close": 1.18,
+        "volume": 1
+      },
+      "expectedTriggeredClientOrderIds": ["eur-stop-entry"]
+    },
+    "hiddenTabResume": {
+      "playingBeforeDisconnect": true,
+      "elapsedWallTimeMs": 300000,
+      "speed": 10,
+      "expectedStatus": "paused",
+      "expectedSteps": 0,
+      "expectedPauseReason": "no_subscribers"
+    },
+    "unavailableTimeframe": {
+      "savedTime": 1000,
+      "currentCursor": 7,
+      "newCandleTimes": [2000, 2060, 2120],
+      "expectedError": "data_point_unavailable",
+      "expectedCursor": 7
+    }
+  }
+}

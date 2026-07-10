@@ -1,4 +1,4 @@
-import { TF_SECONDS, type Timeframe } from '@/types';
+import { TF_SECONDS, type Timeframe } from '../types';
 
 /** UTC day key, e.g. "2026-06-24". */
 export function dayKey(timeSec: number): string {

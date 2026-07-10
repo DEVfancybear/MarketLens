@@ -312,7 +312,9 @@ npm run lint
 npm run build
 ```
 
-`check:replay-logic` currently guards:
+`check:replay-logic` now delegates to `test:replay` and executes TypeScript
+behavior tests instead of scanning source text with regular expressions. It
+currently guards:
 
 - closest-date selection,
 - outside-history date clamping,
@@ -320,6 +322,13 @@ npm run build
 - MTF snapshot at-or-before behavior,
 - replay total/cursor clamping,
 - `PriceChart` viewport realignment after replay window replacement.
+
+Phase 0 backend-migration contracts additionally load the shared
+`testdata/replay/contracts.v1.json` fixture from TypeScript and Go. Known-gap
+tests reproduce partial-MTF look-ahead, skipped intermediate trade fills,
+rewind with open positions, cross-symbol fills, hidden-tab catch-up, and
+unavailable timeframe mapping. They remain expected legacy gaps until their
+owning backend implementation phases replace them with parity assertions.
 
 Manual smoke test:
 

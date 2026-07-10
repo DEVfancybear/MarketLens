@@ -764,14 +764,26 @@ not satisfy deletion.
 
 ## 12. Implementation phases
 
-### Phase 0 — executable contracts
+### Phase 0 — executable contracts (completed 2026-07-10)
 
-- Convert replay regex checks into TypeScript behavioral tests.
-- Add reproductions for MTF partial-bar look-ahead, skipped +10 trade fills,
-  rewind with open positions, cross-symbol fills, hidden-tab catch-up, and
-  unavailable timeframe mapping.
-- Define shared JSON fixtures for Go/frontend contract tests.
-- No production behavior changes.
+- [x] Replaced `scripts/check-replay-logic.mjs` source-regex assertions with
+  `npm run test:replay` executable TypeScript behavior tests.
+- [x] Added reproductions for MTF partial-bar look-ahead, skipped +10 trade
+  fills, rewind with open positions, cross-symbol fills, hidden-tab catch-up,
+  and unavailable timeframe mapping. These are known-gap reproductions, not
+  claims that the production bugs are fixed.
+- [x] Added `testdata/replay/contracts.v1.json`, loaded by frontend tests and
+  `backend/internal/replaycontract/fixtures_test.go`.
+- [x] Extracted and behaviorally tested `clampReplayBounds()` while keeping the
+  legacy store's production behavior unchanged.
+
+Phase 0 verification baseline:
+
+```text
+frontend: npm run test:replay
+backend:  go test ./internal/replaycontract
+shared:   testdata/replay/contracts.v1.json (schemaVersion=1)
+```
 
 ### Phase 1 — persistence and dataset preparation
 

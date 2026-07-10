@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Replay Phase 0 executable contracts (2026-07-10)
+- Replaced the replay source-regex guard with 12 executable TypeScript behavior/known-gap tests
+  under `npm run test:replay`, while preserving the compatibility `check:replay-logic` command.
+- Added shared versioned replay fixtures consumed by both TypeScript and Go contract tests.
+- Added explicit reproductions for partial-MTF look-ahead, skipped intermediate trade fills,
+  rewind with open positions, cross-symbol fills, hidden-tab catch-up, and unavailable timeframe
+  remapping; these remain known gaps for later backend phases, not production fixes.
+- Extracted replay-bound clamping into a pure tested helper without changing legacy runtime
+  behavior, and removed the obsolete `scripts/check-replay-logic.mjs` regex scanner.
+
 ### Planned - Backend-owned deterministic replay architecture (2026-07-10)
 - Designed the Go/PostgreSQL replay target: durable sessions, immutable dataset snapshots,
   serialized commands, sequenced events, checkpoints, replay intervals, progressive MTF

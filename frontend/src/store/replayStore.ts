@@ -2,6 +2,7 @@
 import { atom, useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
 import { candlesAtom } from "@/store/chartStore";
+import { clampReplayBounds } from "@/services/replayEngine";
 import type { Candle } from "@/types";
 
 export type ReplaySpeed = 0.1 | 0.3 | 0.5 | 1 | 3 | 10;
@@ -151,9 +152,13 @@ export const setCursorAtom = atom(null, (get, set, i: number) => {
 
 // Guarded: only update when the value actually changes.
 export const setTotalAtom = atom(null, (get, set, total: number) => {
-  const safeTotal = Math.max(0, total);
-  if (safeTotal !== get(totalAtom)) set(totalAtom, safeTotal);
-  if (safeTotal === 0) {
+  const bounds = clampReplayBounds(
+    total,
+    get(anchorAtom),
+    get(cursorAtom),
+  );
+  if (bounds.total !== get(totalAtom)) set(totalAtom, bounds.total);
+  if (bounds.total === 0) {
     set(activeAtom, false);
     set(selectingAtom, false);
     set(reSelectingAtom, false);
@@ -164,12 +169,9 @@ export const setTotalAtom = atom(null, (get, set, total: number) => {
     set(cursorTimeAtom, null);
     return;
   }
-  const max = safeTotal - 1;
-  const anchor = Math.min(get(anchorAtom), max);
-  if (anchor !== get(anchorAtom)) set(anchorAtom, anchor);
-  const cursor = Math.max(anchor, Math.min(max, get(cursorAtom)));
-  if (cursor !== get(cursorAtom)) set(cursorAtom, cursor);
-  if (cursor >= max) set(playingAtom, false);
+  if (bounds.anchor !== get(anchorAtom)) set(anchorAtom, bounds.anchor);
+  if (bounds.cursor !== get(cursorAtom)) set(cursorAtom, bounds.cursor);
+  if (bounds.atEnd) set(playingAtom, false);
 });
 
 // ── Combined state + actions (for compatibility hook) ──────────────────────

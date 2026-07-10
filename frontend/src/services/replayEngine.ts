@@ -5,26 +5,55 @@
  * derive the visible slice as candles[0..cursor]. These helpers never look
  * beyond a supplied index/time, preserving the no-look-ahead guarantee.
  */
-import type { Candle, Direction, Timeframe } from '@/types';
-import { TF_SECONDS } from '@/types';
-import { utcHours } from '@/utils/time';
-import type { ReplaySpeed } from '@/store/replayStore';
+import type { Candle, Direction, Timeframe } from '../types';
+import { TF_SECONDS } from '../types';
+import { utcHours } from '../utils/time';
+
+type ReplaySpeedValue = 0.1 | 0.3 | 0.5 | 1 | 3 | 10;
 
 /** Milliseconds between auto-steps for a given speed (1x ≈ 1s per candle). */
-export function speedToIntervalMs(speed: ReplaySpeed): number {
+export function speedToIntervalMs(speed: ReplaySpeedValue): number {
   return Math.max(16, 1000 / speed);
 }
 
-export function replaySpeedLabel(speed: ReplaySpeed): string {
+export function replaySpeedLabel(speed: ReplaySpeedValue): string {
   return `${speed}x`;
 }
 
-export function replaySpeedDescription(speed: ReplaySpeed): string {
+export function replaySpeedDescription(speed: ReplaySpeedValue): string {
   if (speed < 1) {
     const seconds = Math.round(1 / speed);
     return `1 update per ${seconds} sec`;
   }
   return `${speed} update${speed === 1 ? "" : "s"} per sec`;
+}
+
+export interface ReplayBounds {
+  total: number;
+  anchor: number;
+  cursor: number;
+  atEnd: boolean;
+}
+
+/** Clamp replay indexes when the immutable master history changes length. */
+export function clampReplayBounds(
+  total: number,
+  anchor: number,
+  cursor: number,
+): ReplayBounds {
+  const safeTotal = Math.max(0, total);
+  if (safeTotal === 0) {
+    return { total: 0, anchor: 0, cursor: 0, atEnd: true };
+  }
+  const max = safeTotal - 1;
+  const nextAnchor = Math.min(anchor, max);
+  const nextCursor = Math.max(nextAnchor, Math.min(max, cursor));
+  return {
+    total: safeTotal,
+    anchor: nextAnchor,
+    cursor: nextCursor,
+    atEnd: nextCursor >= max,
+  };
 }
 
 /** Largest index whose candle time is <= `time` (binary search). */
