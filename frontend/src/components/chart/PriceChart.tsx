@@ -203,11 +203,13 @@ function logicalRangeAfterDataReplacement(
  */
 export function PriceChart({
   candles,
+  indicatorsOverride,
   children,
   onLoadMoreHistory,
   onReady,
 }: {
   candles: Candle[];
+  indicatorsOverride?: IndicatorConfig[];
   children?: React.ReactNode;
   onLoadMoreHistory?: () => Promise<void> | void;
   onReady?: (chart: IChartApi) => void;
@@ -247,7 +249,8 @@ export function PriceChart({
   const replaySpeed = replaySnapshot?.speed ?? 1;
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
-  const indicators = useAtomValue(indicatorsAtom);
+  const storedIndicators = useAtomValue(indicatorsAtom);
+  const indicators = indicatorsOverride ?? storedIndicators;
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const updateIndicator = useSetAtom(updateIndicatorAtom);
   const removeIndicator = useSetAtom(removeIndicatorAtom);
@@ -746,7 +749,12 @@ export function PriceChart({
       void pineRuntimeVersion;
       return overlayIndicators.map((cfg) => ({
         cfg,
-        result: computeCachedIndicator(cfg, candles, { symbol, timeframe }),
+        result: computeCachedIndicator(
+          cfg,
+          candles,
+          { symbol, timeframe },
+          pineRuntimeVersion,
+        ),
       }));
     },
     [overlayIndicators, candles, pineRuntimeVersion, symbol, timeframe],

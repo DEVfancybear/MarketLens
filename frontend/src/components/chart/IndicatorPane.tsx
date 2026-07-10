@@ -399,7 +399,12 @@ export function IndicatorPane({
       return;
     }
     void pineRuntimeVersion;
-    const result = computeCachedIndicator(cfg, candles, { symbol, timeframe });
+    const result = computeCachedIndicator(
+      cfg,
+      candles,
+      { symbol, timeframe },
+      pineRuntimeVersion,
+    );
     resultRef.current = result;
     publishLegendValue(indicatorResultValueText(result));
     const currentRange = mainChart?.timeScale().getVisibleLogicalRange();

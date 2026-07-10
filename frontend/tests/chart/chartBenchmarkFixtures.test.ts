@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CHART_BENCHMARK_SIZES,
   createChartBenchmarkCandles,
+  createPhase2BenchmarkIndicators,
 } from "../../src/services/chartBenchmarkFixtures";
 
 test("benchmark fixtures provide every Phase 0 size", () => {
@@ -12,6 +13,19 @@ test("benchmark fixtures provide every Phase 0 size", () => {
     assert.equal(candles.length, size);
     assert.ok(candles.every((candle, index) => index === 0 || candle.time > candles[index - 1].time));
   }
+});
+
+test("Phase 2 benchmark profile exercises every incremental built-in dependency", () => {
+  const indicators = createPhase2BenchmarkIndicators();
+  assert.deepEqual(indicators.map((indicator) => indicator.type), [
+    "SMA",
+    "EMA",
+    "VWAP",
+    "RSI",
+    "MACD",
+  ]);
+  assert.equal(indicators.filter((indicator) => indicator.separatePane).length, 2);
+  assert.equal(new Set(indicators.map((indicator) => indicator.id)).size, indicators.length);
 });
 
 test("benchmark fixtures are deterministic and valid OHLC", () => {

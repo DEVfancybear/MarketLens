@@ -30,6 +30,7 @@ import { fmtPrice } from "@/utils/format";
 import { ChartPerformanceOverlay } from "./ChartPerformanceOverlay";
 import {
   createChartBenchmarkCandles,
+  createPhase2BenchmarkIndicators,
   isChartBenchmarkSize,
   setActiveChartBenchmarkCandles,
 } from "@/services/chartBenchmarkFixtures";
@@ -51,11 +52,15 @@ export function ChartArea() {
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
   const [benchmarkCandles, setBenchmarkCandles] = useState<Candle[] | null>(null);
   const [benchmarkVisibleCount, setBenchmarkVisibleCount] = useState<number | null>(null);
+  const [phase2BenchmarkProfile, setPhase2BenchmarkProfile] = useState(false);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const requested = Number(new URLSearchParams(window.location.search).get("chartFixture"));
     if (!isChartBenchmarkSize(requested)) return;
+    setPhase2BenchmarkProfile(
+      new URLSearchParams(window.location.search).get("chartBenchmarkProfile") === "phase2",
+    );
     const fixture = createChartBenchmarkCandles(requested);
     setActiveChartBenchmarkCandles(fixture);
     setBenchmarkCandles(fixture);
@@ -85,9 +90,13 @@ export function ChartArea() {
   const meta = getMarketSymbol(symbol);
   const precision = meta?.pricePrecision ?? 2;
   const exchange = meta?.exchange ?? "";
+  const displayedIndicators = useMemo(
+    () => phase2BenchmarkProfile ? createPhase2BenchmarkIndicators() : indicators,
+    [indicators, phase2BenchmarkProfile],
+  );
   const paneIndicators = useMemo(
-    () => indicators.filter((i) => i.separatePane),
-    [indicators],
+    () => displayedIndicators.filter((i) => i.separatePane),
+    [displayedIndicators],
   );
   const replayOwnsChart = Boolean(replay.snapshot) ||
     replay.connection === "connecting" ||
@@ -142,6 +151,7 @@ export function ChartArea() {
       <div className="relative min-h-0 flex-1">
         <PriceChart
           candles={displayedCandles}
+          indicatorsOverride={displayedIndicators}
           onLoadMoreHistory={benchmarkCandles ? undefined : loadOlderCandles}
           onReady={setMainChart}
         >

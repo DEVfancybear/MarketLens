@@ -20,6 +20,7 @@ import {
 
 interface IndicatorCacheEntry {
   signature: string;
+  runtimeRevision: number;
   candles: readonly Candle[];
   result: IndicatorResult;
   ema?: number[];
@@ -50,6 +51,7 @@ function touch(key: string, entry: IndicatorCacheEntry) {
 
 function createEntry(
   signature: string,
+  runtimeRevision: number,
   cfg: IndicatorConfig,
   candles: readonly Candle[],
   ctx?: PineCompileContext,
@@ -57,6 +59,7 @@ function createEntry(
   const mutableCandles = candles as Candle[];
   const entry: IndicatorCacheEntry = {
     signature,
+    runtimeRevision,
     candles,
     result: computeIndicator(cfg, mutableCandles, ctx),
   };
@@ -171,19 +174,17 @@ export function computeCachedIndicator(
   cfg: IndicatorConfig,
   candles: readonly Candle[],
   ctx?: PineCompileContext,
+  runtimeRevision = 0,
 ): IndicatorResult {
   const key = cacheKey(cfg, ctx);
   const signature = configSignature(cfg);
   const dependency = indicatorDependencyFor(cfg);
-  if (cfg.type === "CUSTOM") {
-    // Pine compilation completes asynchronously and publishes through its own
-    // runtime-cache subscription. An identity hit here could otherwise retain
-    // the pre-compilation placeholder after that notification.
-    incrementChartPerformanceCounter("indicator.cache.fullHistoryFallbacks");
-    return computeIndicator(cfg, candles as Candle[], ctx);
-  }
   const existing = cache.get(key);
-  if (existing?.signature === signature && existing.candles === candles) {
+  if (
+    existing?.signature === signature &&
+    existing.candles === candles &&
+    (cfg.type !== "CUSTOM" || existing.runtimeRevision === runtimeRevision)
+  ) {
     incrementChartPerformanceCounter("indicator.cache.identityHits");
     touch(key, existing);
     return existing.result;
@@ -212,7 +213,7 @@ export function computeCachedIndicator(
       ? "indicator.cache.fullHistoryFallbacks"
       : "indicator.cache.rebuilds",
   );
-  const entry = createEntry(signature, cfg, candles, ctx);
+  const entry = createEntry(signature, runtimeRevision, cfg, candles, ctx);
   touch(key, entry);
   return entry.result;
 }

@@ -89,7 +89,7 @@ The Phase 0 probe now exposes:
 Use the same focused 5,000-candle fixture with the tab kept in the foreground:
 
 ```text
-http://localhost:3000/?chartPerf=1&chartFixture=5000
+http://localhost:3000/?chartPerf=1&chartFixture=5000&chartBenchmarkProfile=phase2
 await window.__chartBenchmark.run()
 copy(window.__chartPerformanceProbe.exportJson())
 ```
@@ -110,3 +110,31 @@ The Phase 2 gate is:
 The ≥30% browser CPU gate remains pending until the post-change JSON capture is
 recorded. Phase 3 must not begin from whole-app frame percentiles contaminated
 by a background tab or unrelated live MT5 work.
+
+The `phase2` benchmark profile injects a deterministic SMA, EMA, VWAP, RSI, and
+MACD set without modifying the saved indicator workspace. Omit the profile only
+for a separate custom-Pine fallback capture.
+
+## First post-change capture
+
+The first 5,000-candle capture used the saved custom-Pine workspace rather than
+a deterministic built-in workload. It confirmed that viewport presentation is
+active:
+
+- 467,740 offscreen indicator points were not published;
+- 435 viewport notifications retained the current window versus 102 shifts;
+- 11,198 unchanged indicator writes were skipped;
+- pane-anchor updates remained incremental (295 updates, five replacements).
+
+It is not a valid built-in incremental gate. All 1,209 measured computations
+were custom-Pine full-history fallbacks, so no `indicator.cache.append` or
+`indicator.cache.update-latest` counter could occur. Derived compute plus
+projection totaled 2,561ms, indicator `setData` totaled 2,209ms, frame p95 was
+100.1ms, and 300 long tasks totaled 21,780ms. Heap usage was 493MB after an
+already-running development session, so it also requires a fresh-page capture
+before comparison.
+
+The follow-up adds the deterministic `phase2` URL profile above. Custom Pine
+identity reuse is keyed by the Pine runtime revision: repeated renders can
+reuse a result, while an async compile completion changes the revision and
+invalidates the placeholder safely.
