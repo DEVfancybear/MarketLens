@@ -20,6 +20,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
+	"github.com/smc-trading-terminal/backend/internal/replay"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/users"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
@@ -72,6 +73,7 @@ func main() {
 	var pineScriptsHandler *pinescripts.Handler
 	var alertsHandler *alerts.Handler
 	var workspaceHandler *workspace.Handler
+	var replayHandler *replay.Handler
 	var pineScriptsStore *pinescripts.Repo
 	if pool != nil {
 		pineScriptsStore = pinescripts.NewRepo(pool.Pool)
@@ -105,6 +107,13 @@ func main() {
 		alertsStore := alerts.NewRepo(pool.Pool)
 		alertsHandler = alerts.NewHandler(alertsStore, requireAuth)
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, requireAuth)
+		if cfg.ReplayEngineEnabled {
+			replayStore := replay.NewRepo(pool.Pool)
+			replayService := replay.NewService(replayStore, mt5Service, cfg.ReplayMaxBars)
+			replayHandler = replay.NewHandler(replayService, requireAuth)
+			replay.NewCleaner(replayStore, cfg.ReplayCleanupInterval, cfg.ReplaySessionRetention, cfg.ReplayDatasetRetention).Start(ctx)
+			log.Info().Int("max_bars", cfg.ReplayMaxBars).Msg("backend replay Phase 1 enabled")
+		}
 		log.Info().Msg("protected api routes enabled")
 	}
 
@@ -119,6 +128,7 @@ func main() {
 		pineScriptsHandler,
 		alertsHandler,
 		workspaceHandler,
+		replayHandler,
 		mt5Handler,
 		pineRuntimeHandler,
 	)

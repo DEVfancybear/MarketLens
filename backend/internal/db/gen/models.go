@@ -96,6 +96,177 @@ func (ns NullPushPlatform) Value() (driver.Value, error) {
 	return string(ns.PushPlatform), nil
 }
 
+type ReplayDataKind string
+
+const (
+	ReplayDataKindBars  ReplayDataKind = "bars"
+	ReplayDataKindTicks ReplayDataKind = "ticks"
+)
+
+func (e *ReplayDataKind) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplayDataKind(s)
+	case string:
+		*e = ReplayDataKind(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplayDataKind: %T", src)
+	}
+	return nil
+}
+
+type NullReplayDataKind struct {
+	ReplayDataKind ReplayDataKind `json:"replay_data_kind"`
+	Valid          bool           `json:"valid"` // Valid is true if ReplayDataKind is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplayDataKind) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplayDataKind, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplayDataKind.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplayDataKind) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplayDataKind), nil
+}
+
+type ReplayDatasetStatus string
+
+const (
+	ReplayDatasetStatusLoading ReplayDatasetStatus = "loading"
+	ReplayDatasetStatusReady   ReplayDatasetStatus = "ready"
+	ReplayDatasetStatusFailed  ReplayDatasetStatus = "failed"
+)
+
+func (e *ReplayDatasetStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplayDatasetStatus(s)
+	case string:
+		*e = ReplayDatasetStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplayDatasetStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReplayDatasetStatus struct {
+	ReplayDatasetStatus ReplayDatasetStatus `json:"replay_dataset_status"`
+	Valid               bool                `json:"valid"` // Valid is true if ReplayDatasetStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplayDatasetStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplayDatasetStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplayDatasetStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplayDatasetStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplayDatasetStatus), nil
+}
+
+type ReplaySessionMode string
+
+const (
+	ReplaySessionModeSingleChart ReplaySessionMode = "single_chart"
+	ReplaySessionModeAllCharts   ReplaySessionMode = "all_charts"
+)
+
+func (e *ReplaySessionMode) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplaySessionMode(s)
+	case string:
+		*e = ReplaySessionMode(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplaySessionMode: %T", src)
+	}
+	return nil
+}
+
+type NullReplaySessionMode struct {
+	ReplaySessionMode ReplaySessionMode `json:"replay_session_mode"`
+	Valid             bool              `json:"valid"` // Valid is true if ReplaySessionMode is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplaySessionMode) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplaySessionMode, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplaySessionMode.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplaySessionMode) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplaySessionMode), nil
+}
+
+type ReplaySessionStatus string
+
+const (
+	ReplaySessionStatusPreparing ReplaySessionStatus = "preparing"
+	ReplaySessionStatusPaused    ReplaySessionStatus = "paused"
+	ReplaySessionStatusClosed    ReplaySessionStatus = "closed"
+	ReplaySessionStatusFailed    ReplaySessionStatus = "failed"
+)
+
+func (e *ReplaySessionStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplaySessionStatus(s)
+	case string:
+		*e = ReplaySessionStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplaySessionStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReplaySessionStatus struct {
+	ReplaySessionStatus ReplaySessionStatus `json:"replay_session_status"`
+	Valid               bool                `json:"valid"` // Valid is true if ReplaySessionStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplaySessionStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplaySessionStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplaySessionStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplaySessionStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplaySessionStatus), nil
+}
+
 type UserStatus string
 
 const (
@@ -158,6 +329,75 @@ type PushToken struct {
 	Permission *string            `json:"permission"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
+}
+
+type ReplayDataset struct {
+	ID                  pgtype.UUID         `json:"id"`
+	Provider            string              `json:"provider"`
+	Symbol              string              `json:"symbol"`
+	DataKind            ReplayDataKind      `json:"data_kind"`
+	SourceTimeframe     string              `json:"source_timeframe"`
+	BaseIntervalSeconds int32               `json:"base_interval_seconds"`
+	FirstTime           pgtype.Timestamptz  `json:"first_time"`
+	LastTime            pgtype.Timestamptz  `json:"last_time"`
+	SnapshotAt          pgtype.Timestamptz  `json:"snapshot_at"`
+	RowCount            int32               `json:"row_count"`
+	ChecksumSha256      *string             `json:"checksum_sha256"`
+	Status              ReplayDatasetStatus `json:"status"`
+	SourceMeta          []byte              `json:"source_meta"`
+	LastError           *string             `json:"last_error"`
+	CreatedAt           pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz  `json:"updated_at"`
+	ReadyAt             pgtype.Timestamptz  `json:"ready_at"`
+}
+
+type ReplayDatasetBar struct {
+	DatasetID       pgtype.UUID        `json:"dataset_id"`
+	Seq             int64              `json:"seq"`
+	OpenTime        pgtype.Timestamptz `json:"open_time"`
+	IntervalSeconds int32              `json:"interval_seconds"`
+	Open            pgtype.Numeric     `json:"open"`
+	High            pgtype.Numeric     `json:"high"`
+	Low             pgtype.Numeric     `json:"low"`
+	Close           pgtype.Numeric     `json:"close"`
+	Volume          pgtype.Numeric     `json:"volume"`
+	Complete        bool               `json:"complete"`
+}
+
+type ReplaySession struct {
+	ID                    pgtype.UUID         `json:"id"`
+	UserID                pgtype.UUID         `json:"user_id"`
+	Status                ReplaySessionStatus `json:"status"`
+	Mode                  ReplaySessionMode   `json:"mode"`
+	Generation            int32               `json:"generation"`
+	Version               int64               `json:"version"`
+	NextEventSeq          int64               `json:"next_event_seq"`
+	Speed                 pgtype.Numeric      `json:"speed"`
+	ReplayIntervalSeconds int32               `json:"replay_interval_seconds"`
+	StartTime             pgtype.Timestamptz  `json:"start_time"`
+	SimulatedTime         pgtype.Timestamptz  `json:"simulated_time"`
+	EndTime               pgtype.Timestamptz  `json:"end_time"`
+	PauseReason           *string             `json:"pause_reason"`
+	Config                []byte              `json:"config"`
+	LastError             *string             `json:"last_error"`
+	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz  `json:"updated_at"`
+	ClosedAt              pgtype.Timestamptz  `json:"closed_at"`
+}
+
+type ReplayTrack struct {
+	ID             pgtype.UUID        `json:"id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	DatasetID      pgtype.UUID        `json:"dataset_id"`
+	Slot           int16              `json:"slot"`
+	Symbol         string             `json:"symbol"`
+	Provider       string             `json:"provider"`
+	ChartTimeframe string             `json:"chart_timeframe"`
+	CursorSeq      int64              `json:"cursor_seq"`
+	VisibleThrough pgtype.Timestamptz `json:"visible_through"`
+	AggregateState []byte             `json:"aggregate_state"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Session struct {

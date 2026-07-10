@@ -22,6 +22,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
+	"github.com/smc-trading-terminal/backend/internal/replay"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
@@ -47,6 +48,7 @@ func New(
 	pineScriptsHandler *pinescripts.Handler,
 	alertsHandler *alerts.Handler,
 	workspaceHandler *workspace.Handler,
+	replayHandler *replay.Handler,
 	mt5Handler *mt5stream.Handler,
 	pineRuntimeHandler *pineruntime.Handler,
 ) *Server {
@@ -103,6 +105,9 @@ func New(
 	}
 	if workspaceHandler != nil {
 		workspaceHandler.Register(api)
+	}
+	if replayHandler != nil {
+		replayHandler.Register(api)
 	}
 	if mt5Handler != nil {
 		mt5Handler.Register(api)

@@ -55,6 +55,15 @@ func errorHandler(c *fiber.Ctx, err error) error {
 		status = fe.Code
 		message = fe.Message
 	}
+	code := codeForStatus(status)
+	if apiErr, ok := err.(interface {
+		HTTPStatus() int
+		ErrorCode() string
+	}); ok {
+		status = apiErr.HTTPStatus()
+		code = apiErr.ErrorCode()
+		message = err.Error()
+	}
 
-	return WriteError(c, status, codeForStatus(status), message)
+	return WriteError(c, status, code, message)
 }

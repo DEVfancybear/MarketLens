@@ -35,6 +35,12 @@ type Config struct {
 	MT5BridgeReadLimitBytes int64
 	MT5BridgeReconnectMin   time.Duration
 	MT5BridgeReconnectMax   time.Duration
+
+	ReplayEngineEnabled    bool
+	ReplayMaxBars          int
+	ReplayCleanupInterval  time.Duration
+	ReplaySessionRetention time.Duration
+	ReplayDatasetRetention time.Duration
 }
 
 // IsProduction reports whether the app is running outside local development.
@@ -76,6 +82,11 @@ func Load() (Config, error) {
 		MT5BridgeReadLimitBytes: getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
 		MT5BridgeReconnectMin:   getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
 		MT5BridgeReconnectMax:   getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
+		ReplayEngineEnabled:     getEnvBool("REPLAY_ENGINE_ENABLED", false),
+		ReplayMaxBars:           getEnvInt("REPLAY_MAX_BARS_PER_TRACK", 5000),
+		ReplayCleanupInterval:   getEnvDuration("REPLAY_CLEANUP_INTERVAL", time.Hour),
+		ReplaySessionRetention:  getEnvDuration("REPLAY_SESSION_RETENTION", 720*time.Hour),
+		ReplayDatasetRetention:  getEnvDuration("REPLAY_DATASET_RETENTION", 168*time.Hour),
 	}
 
 	if err := cfg.validate(); err != nil {

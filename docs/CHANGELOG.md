@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Replay Phase 1 persistence and dataset preparation (2026-07-10)
+- Added auth-only replay session create/get/close APIs; Phase 1 sessions are
+  immutable, paused snapshots and do not yet run a backend clock.
+- Added PostgreSQL replay dataset/session/track schema, generated sqlc queries,
+  transactional checksum-based dataset reuse, and bounded retention cleanup.
+- Added validated MT5 history pinning with deterministic SHA-256 checksums and
+  explicit first/last available bounds for reconnect inspection.
+- Added backend/frontend feature flags and a typed frontend Phase 1 snapshot
+  client without changing the active legacy playback authority.
+- Added dataset normalization, checksum, selection, service validation, and
+  feature-flag regression tests. Operational details and API examples live in
+  `docs/REPLAY_BACKEND_PHASE1.md`.
+
 ### Added - Backend Replay Phase 0 executable contracts (2026-07-10)
 - Replaced the replay source-regex guard with 12 executable TypeScript behavior/known-gap tests
   under `npm run test:replay`, while preserving the compatibility `check:replay-logic` command.
@@ -22,7 +35,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   reports, with deterministic intrabar rules and explicit fork/reset behavior on rewind.
 - Added detailed database SQL, REST/WebSocket contracts, ownership boundaries, migration phases,
   tests, observability, security, retention, rollout, and rollback gates in
-  `docs/REPLAY_BACKEND_MIGRATION_PLAN.md`; no runtime migration has been applied yet.
+  `docs/REPLAY_BACKEND_MIGRATION_PLAN.md`; the repository now contains the Phase 1
+  persistence subset while later clock, aggregation, trading, and synchronization
+  tables remain planned.
 - Added a mandatory frontend deletion contract covering the legacy replay clock/store/engine,
   history and MTF loaders, replay trade processing, replacement client-only modules, CI boundary
   enforcement, deletion order, and rollback rules that cannot restore local replay authority.

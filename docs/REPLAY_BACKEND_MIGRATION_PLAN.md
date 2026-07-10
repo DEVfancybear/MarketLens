@@ -1,6 +1,6 @@
 # Backend-Owned Replay: Architecture, Database, and Migration Plan
 
-_Status: design approved for implementation planning; no runtime code or migration has been applied._
+_Status: Phase 1 implemented in the repository; migration deployment and Phases 2-6 remain environment-dependent._
 _Date: 2026-07-10._
 
 ## 1. Executive decision
@@ -253,9 +253,12 @@ contract.
 
 ## 9. Database design
 
-Planned migration name: `0012_replay_backend`. This section is the source of
-truth for that migration; do not create the migration until the API model and
-sqlc queries are reviewed together.
+Migration `0012_replay_backend` implements the Phase 1 subset: immutable bar
+datasets, paused sessions, and tracks. The SQL below remains the target schema;
+commands, events, checkpoints, and replay-trading tables are added by the phase
+that first owns their behavior rather than being deployed as unused Phase 1
+tables. Every follow-up migration must preserve the ownership, determinism, and
+retention constraints in this section.
 
 ### 9.1 Control and immutable market datasets
 
@@ -785,12 +788,23 @@ backend:  go test ./internal/replaycontract
 shared:   testdata/replay/contracts.v1.json (schemaVersion=1)
 ```
 
-### Phase 1 — persistence and dataset preparation
+### Phase 1 — persistence and dataset preparation (completed 2026-07-10)
 
-- Add migration `0012_replay_backend`, sqlc queries, repositories, and cleanup job.
-- Build MT5 history dataset loader with checksum and first/last available bounds.
-- Add session create/get/close endpoints; sessions remain paused.
-- Frontend may inspect a backend snapshot behind `REPLAY_BACKEND_V1`.
+- [x] Added migration `0012_replay_backend`, generated sqlc queries, transactional
+  repository, checksum reuse lock, and bounded retention cleanup job.
+- [x] Built the MT5 chart-timeframe dataset loader with deterministic SHA-256,
+  validation/deduplication, and explicit first/last available bounds.
+- [x] Added auth-only session create/get/close endpoints; every created session
+  remains paused and has no backend playback clock or commands yet.
+- [x] Added a typed frontend snapshot client behind
+  `NEXT_PUBLIC_REPLAY_BACKEND_V1`; the active legacy UI is intentionally not
+  connected to backend playback during Phase 1.
+
+Phase 1 supports one `single_chart` track, a `time` start selector, and
+`replayInterval=auto`. It pins up to the MT5 history service's 5,000-row request
+limit at the selected chart timeframe. Base-interval loading, progressive
+aggregation, asynchronous preparation events, and synchronized tracks remain
+Phase 3/5 work. See `docs/REPLAY_BACKEND_PHASE1.md` for the deployed contract.
 
 ### Phase 2 — single-chart backend clock
 
