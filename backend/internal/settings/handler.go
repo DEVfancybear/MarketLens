@@ -22,6 +22,8 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/settings", h.requireAuth, h.get)
 	router.Put("/settings", h.requireAuth, h.replace)
 	router.Patch("/settings", h.requireAuth, h.patch)
+	router.Get("/settings/chart/favorite-timeframes", h.requireAuth, h.getFavoriteTimeframes)
+	router.Put("/settings/chart/favorite-timeframes", h.requireAuth, h.replaceFavoriteTimeframes)
 }
 
 func (h *Handler) get(c *fiber.Ctx) error {
@@ -57,6 +59,30 @@ func (h *Handler) patch(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(doc)
+}
+
+func (h *Handler) getFavoriteTimeframes(c *fiber.Ctx) error {
+	doc, err := h.store.Get(c.Context(), userID(c))
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+	}
+	return c.JSON(FavoriteTimeframesFromDocument(doc))
+}
+
+func (h *Handler) replaceFavoriteTimeframes(c *fiber.Ctx) error {
+	var req FavoriteTimeframesWrite
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	patch, err := FavoriteTimeframesPatch(req.Timeframes)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	doc, err := h.store.Patch(c.Context(), userID(c), patch)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+	}
+	return c.JSON(FavoriteTimeframesFromDocument(doc))
 }
 
 func userID(c *fiber.Ctx) string {

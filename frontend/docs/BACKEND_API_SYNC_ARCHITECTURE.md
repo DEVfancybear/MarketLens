@@ -296,7 +296,7 @@ Responsibilities:
 | --- | --- | --- |
 | UI panels/theme/bottom state | `ui` | `user_settings.ui` through `/api/v1/settings` |
 | SMC toggles | `smc-settings-v2` | `user_settings.smc` through `/api/v1/settings` |
-| Timeframe favorites/timezone/chart prefs | `tv:favoriteTimeframes`, toolbar local state | `user_settings.chart` |
+| Timeframe favorites/timezone/chart prefs | `tv:favoriteTimeframes`, toolbar local state | `user_settings.chart.favoriteTimeframes` through `/api/v1/settings/chart/favorite-timeframes` |
 | Alert global settings | inside `alerts` key | `user_settings.notifications` |
 | Watchlist lists/sections/symbols | `watchlist`, `watchlist:lists`, `watchlist:activeId` | `watchlists` + `watchlist_symbols` |
 | Drawings per symbol | `drawings:<symbol>` | `drawings.payload` |

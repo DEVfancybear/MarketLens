@@ -119,11 +119,25 @@ Loaded lazily by their own endpoints (larger / scoped payloads), **not** in boot
 Backed by `user_settings` (1:1). See `DATABASE.md` section 6.1. `GET` auto-creates the row for a
 new authenticated user, `PUT` replaces all four sections, and `PATCH` deep-merges object sections.
 
-| Method | Path                    | Purpose                                   |
-| ------ | ----------------------- | ----------------------------------------- |
-| GET    | `/api/v1/settings`      | Get `{ ui, smc, chart, notifications }`   |
-| PUT    | `/api/v1/settings`      | Replace all sections                      |
-| PATCH  | `/api/v1/settings`      | Merge a partial (e.g. just `ui.theme`)    |
+| Method | Path                                         | Purpose                                          |
+| ------ | -------------------------------------------- | ------------------------------------------------ |
+| GET    | `/api/v1/settings`                           | Get `{ ui, smc, chart, notifications }`          |
+| PUT    | `/api/v1/settings`                           | Replace all sections                             |
+| PATCH  | `/api/v1/settings`                           | Merge a partial (e.g. just `ui.theme`)           |
+| GET    | `/api/v1/settings/chart/favorite-timeframes` | Get the signed-in user's starred chart intervals |
+| PUT    | `/api/v1/settings/chart/favorite-timeframes` | Replace the signed-in user's starred intervals   |
+
+Favorite timeframe requests use this shape:
+
+```json
+{ "timeframes": ["1m", "5m", "15m"] }
+```
+
+The API canonicalizes duplicates into chart order and accepts only `1m`, `3m`,
+`5m`, `15m`, `30m`, `1H`, `2H`, `4H`, `1D`, `1W`, and `1M`. A missing stored
+value returns the default `1m`, `5m`, `15m`; an explicit empty array is kept so
+users can remove every favorite. The update patches only
+`user_settings.chart.favoriteTimeframes`, preserving other chart preferences.
 
 ---
 

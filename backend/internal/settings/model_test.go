@@ -85,6 +85,36 @@ func TestNormalizeDocumentBackfillsDefaultWorkspaceState(t *testing.T) {
 	}
 }
 
+func TestFavoriteTimeframesFromDocumentPreservesExplicitEmptyList(t *testing.T) {
+	missing := FavoriteTimeframesFromDocument(EmptyDocument())
+	if got, want := len(missing.Timeframes), 3; got != want {
+		t.Fatalf("missing favorites length = %d, want %d", got, want)
+	}
+
+	empty := FavoriteTimeframesFromDocument(Document{Chart: raw(`{"favoriteTimeframes":[]}`)})
+	if len(empty.Timeframes) != 0 {
+		t.Fatalf("explicit empty favorites should be preserved, got %#v", empty.Timeframes)
+	}
+}
+
+func TestFavoriteTimeframesPatchNormalizesAndValidates(t *testing.T) {
+	patch, err := FavoriteTimeframesPatch([]string{"1H", "1m", "5m", "1m"})
+	if err != nil {
+		t.Fatalf("FavoriteTimeframesPatch: %v", err)
+	}
+	doc, err := ApplyPatch(Document{Chart: raw(`{"style":"bars"}`)}, patch)
+	if err != nil {
+		t.Fatalf("ApplyPatch: %v", err)
+	}
+	got := FavoriteTimeframesFromDocument(doc)
+	if want := []string{"1m", "5m", "1H"}; len(got.Timeframes) != len(want) {
+		t.Fatalf("favorites = %#v, want %#v", got.Timeframes, want)
+	}
+	if _, err := FavoriteTimeframesPatch([]string{"10m"}); !errors.Is(err, ErrBadPatch) {
+		t.Fatalf("unsupported timeframe error = %v, want ErrBadPatch", err)
+	}
+}
+
 func raw(s string) json.RawMessage {
 	return json.RawMessage(s)
 }

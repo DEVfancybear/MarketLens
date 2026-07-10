@@ -5,8 +5,14 @@ import { ChevronDown, ChevronUp, Plus, Star, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
+import {
+  getFavoriteTimeframes,
+  replaceFavoriteTimeframes,
+} from "@/services/api/resources/settingsApi";
+import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import { localStore } from "@/services/storage";
-import { authStatusAtom } from "@/store/authStore";
+import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
+import { logAtom } from "@/store/uiStore";
 import type { Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
 import {
@@ -22,7 +28,7 @@ import {
   toggleFavoriteTimeframe,
   visibleToolbarTimeframes,
 } from "./timeframeSelectorModel";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 
 export function TimeframeSelector({
   timeframe,
@@ -36,6 +42,10 @@ export function TimeframeSelector({
   );
   const [customOpen, setCustomOpen] = useState(false);
   const authStatus = useAtomValue(authStatusAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
+  const log = useSetAtom(logAtom);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const favoritesRevisionRef = useRef(0);
 
   useEffect(() => {
     const saved = localStore.get<string[]>(
@@ -52,19 +62,65 @@ export function TimeframeSelector({
     setFavorites(DEFAULT_FAVORITE_TIMEFRAMES);
   }, [authStatus]);
 
+  useEffect(() => {
+    if (authStatus === "anonymous" || !backendSession) return;
+
+    let cancelled = false;
+    const requestRevision = favoritesRevisionRef.current;
+    void getFavoriteTimeframes()
+      .then(({ timeframes }) => {
+        if (cancelled || requestRevision !== favoritesRevisionRef.current) return;
+        const normalized = normalizeFavoriteTimeframes(timeframes);
+        setFavorites(normalized);
+        localStore.set(TIMEFRAME_FAVORITES_KEY, normalized);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        log(
+          "warn",
+          `Timeframe favorites loaded from local cache: ${userFacingErrorMessage(error, "unknown error")}`,
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus, backendSession, log]);
+
   const visible = useMemo(
     () => visibleToolbarTimeframes(favorites, timeframe),
     [favorites, timeframe],
   );
 
-  const persistFavorites = (next: Timeframe[]) => {
-    setFavorites(next);
-    localStore.set(TIMEFRAME_FAVORITES_KEY, next);
-  };
+  const persistFavorites = useCallback(
+    (next: Timeframe[]) => {
+      const normalized = normalizeFavoriteTimeframes(next);
+      favoritesRevisionRef.current += 1;
+      setFavorites(normalized);
+      localStore.set(TIMEFRAME_FAVORITES_KEY, normalized);
+      if (!backendSession) return;
 
-  const toggleFavorite = (nextTimeframe: Timeframe) => {
-    persistFavorites(toggleFavoriteTimeframe(favorites, nextTimeframe));
-  };
+      // Queue writes so two quick star clicks cannot leave an older list on the server.
+      saveQueueRef.current = saveQueueRef.current
+        .catch(() => undefined)
+        .then(() => replaceFavoriteTimeframes(normalized))
+        .then(() => undefined)
+        .catch((error) => {
+          log(
+            "error",
+            `Timeframe favorites sync failed: ${userFacingErrorMessage(error, "unknown error")}`,
+          );
+        });
+    },
+    [backendSession, log],
+  );
+
+  const toggleFavorite = useCallback(
+    (nextTimeframe: Timeframe) => {
+      persistFavorites(toggleFavoriteTimeframe(favorites, nextTimeframe));
+    },
+    [favorites, persistFavorites],
+  );
 
   return (
     <div className="flex items-center gap-0.5">

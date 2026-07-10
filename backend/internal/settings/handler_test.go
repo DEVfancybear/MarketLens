@@ -110,6 +110,66 @@ func TestSettingsHandlerRejectsUnknownSection(t *testing.T) {
 	}
 }
 
+func TestSettingsHandlerFavoriteTimeframesRoutes(t *testing.T) {
+	store := newFakeSettingsStore()
+	store.doc.Chart = raw(`{"style":"candles"}`)
+	app := newSettingsTestApp(store)
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/settings/chart/favorite-timeframes", nil))
+	if err != nil {
+		t.Fatalf("get favorites: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("get favorites status = %d, want 200", resp.StatusCode)
+	}
+	var defaults FavoriteTimeframes
+	if err := json.NewDecoder(resp.Body).Decode(&defaults); err != nil {
+		t.Fatalf("decode defaults: %v", err)
+	}
+	if got, want := strings.Join(defaults.Timeframes, ","), "1m,5m,15m"; got != want {
+		t.Fatalf("default favorites = %q, want %q", got, want)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/settings/chart/favorite-timeframes",
+		strings.NewReader(`{"timeframes":["1H","1m","5m","1m"]}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = app.Test(req)
+	if err != nil {
+		t.Fatalf("put favorites: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("put favorites status = %d, want 200", resp.StatusCode)
+	}
+	var saved FavoriteTimeframes
+	if err := json.NewDecoder(resp.Body).Decode(&saved); err != nil {
+		t.Fatalf("decode saved favorites: %v", err)
+	}
+	if got, want := strings.Join(saved.Timeframes, ","), "1m,5m,1H"; got != want {
+		t.Fatalf("saved favorites = %q, want %q", got, want)
+	}
+	chart := object(t, store.doc.Chart)
+	if chart["style"] != "candles" {
+		t.Fatalf("favorite update should preserve chart settings, got %#v", chart)
+	}
+
+	badReq := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/settings/chart/favorite-timeframes",
+		strings.NewReader(`{"timeframes":["10m"]}`),
+	)
+	badReq.Header.Set("Content-Type", "application/json")
+	resp, err = app.Test(badReq)
+	if err != nil {
+		t.Fatalf("put invalid favorites: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("invalid favorites status = %d, want 400", resp.StatusCode)
+	}
+}
+
 func newSettingsTestApp(store Store) *fiber.App {
 	app := fiber.New()
 	NewHandler(store, fakeRequireAuth).Register(app.Group("/api/v1"))

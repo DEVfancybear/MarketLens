@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 )
 
 var (
@@ -13,6 +14,24 @@ var (
 	defaultUIJSON  = json.RawMessage(`{"theme":"dark","panels":{"right":320,"bottom":240,"left":52},"bottomTab":"replay","rightOpen":true,"bottomOpen":false,"fullscreen":false,"alertCenterOpen":false,"gridVisible":true}`)
 	defaultSMCJSON = json.RawMessage(`{"structure":false,"fvg":false,"orderBlocks":false,"liquidity":false,"displacement":false,"sessions":false,"killzones":false,"swings":false}`)
 )
+
+const chartFavoriteTimeframesKey = "favoriteTimeframes"
+
+var defaultFavoriteTimeframes = []string{"1m", "5m", "15m"}
+
+var favoriteTimeframeOrder = map[string]int{
+	"1m":  0,
+	"3m":  1,
+	"5m":  2,
+	"15m": 3,
+	"30m": 4,
+	"1H":  5,
+	"2H":  6,
+	"4H":  7,
+	"1D":  8,
+	"1W":  9,
+	"1M":  10,
+}
 
 // Document is the complete persisted settings payload returned by the settings API.
 type Document struct {
@@ -28,6 +47,17 @@ type Patch struct {
 	SMC           *json.RawMessage
 	Chart         *json.RawMessage
 	Notifications *json.RawMessage
+}
+
+// FavoriteTimeframes is the chart toolbar's ordered set of starred intervals.
+// It deliberately lives in the existing chart settings document so it shares
+// the same user ownership and cross-device persistence as other preferences.
+type FavoriteTimeframes struct {
+	Timeframes []string `json:"timeframes"`
+}
+
+type FavoriteTimeframesWrite struct {
+	Timeframes []string `json:"timeframes"`
 }
 
 func EmptyDocument() Document {
@@ -77,6 +107,79 @@ func ApplyPatch(base Document, patch Patch) (Document, error) {
 		}
 	}
 	return base, nil
+}
+
+// FavoriteTimeframesFromDocument extracts a safe, canonical favorite list.
+// Older rows do not have the chart field yet, so they receive the UI defaults.
+// An explicit empty array remains empty and means the user has unstarred every
+// interval.
+func FavoriteTimeframesFromDocument(doc Document) FavoriteTimeframes {
+	var chart map[string]json.RawMessage
+	if err := json.Unmarshal(normalizeSection(doc.Chart), &chart); err != nil {
+		return FavoriteTimeframes{Timeframes: cloneStrings(defaultFavoriteTimeframes)}
+	}
+
+	raw, ok := chart[chartFavoriteTimeframesKey]
+	if !ok {
+		return FavoriteTimeframes{Timeframes: cloneStrings(defaultFavoriteTimeframes)}
+	}
+
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
+		return FavoriteTimeframes{Timeframes: cloneStrings(defaultFavoriteTimeframes)}
+	}
+
+	normalized, err := normalizeFavoriteTimeframes(values)
+	if err != nil {
+		return FavoriteTimeframes{Timeframes: cloneStrings(defaultFavoriteTimeframes)}
+	}
+	return FavoriteTimeframes{Timeframes: normalized}
+}
+
+// FavoriteTimeframesPatch validates and serializes an update without replacing
+// unrelated chart settings such as style or scale preferences.
+func FavoriteTimeframesPatch(values []string) (Patch, error) {
+	normalized, err := normalizeFavoriteTimeframes(values)
+	if err != nil {
+		return Patch{}, err
+	}
+	raw, err := json.Marshal(map[string]any{
+		chartFavoriteTimeframesKey: normalized,
+	})
+	if err != nil {
+		return Patch{}, fmt.Errorf("%w: marshal favorite timeframes: %v", ErrBadPatch, err)
+	}
+	chart := json.RawMessage(raw)
+	return Patch{Chart: &chart}, nil
+}
+
+func normalizeFavoriteTimeframes(values []string) ([]string, error) {
+	if values == nil {
+		return nil, fmt.Errorf("%w: timeframes is required", ErrBadPatch)
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	for _, timeframe := range values {
+		if _, ok := favoriteTimeframeOrder[timeframe]; !ok {
+			return nil, fmt.Errorf("%w: unsupported timeframe %q", ErrBadPatch, timeframe)
+		}
+		seen[timeframe] = struct{}{}
+	}
+
+	normalized := make([]string, 0, len(seen))
+	for timeframe := range seen {
+		normalized = append(normalized, timeframe)
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return favoriteTimeframeOrder[normalized[i]] < favoriteTimeframeOrder[normalized[j]]
+	})
+	return normalized, nil
+}
+
+func cloneStrings(values []string) []string {
+	out := make([]string, len(values))
+	copy(out, values)
+	return out
 }
 
 func normalizeSection(raw json.RawMessage) json.RawMessage {

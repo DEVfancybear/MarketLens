@@ -150,7 +150,10 @@ Implementation rules:
 - `TimeframeSelector` renders visible top buttons from
   `visibleToolbarTimeframes(favorites, activeTimeframe)`.
 - Default favorites are `1m`, `5m`, and `15m`.
-- Favorite state is persisted under `tv:favoriteTimeframes`.
+- Favorite state is cached under `tv:favoriteTimeframes`. With an authenticated
+  backend session, `TimeframeSelector` loads and replaces it through
+  `GET`/`PUT /api/v1/settings/chart/favorite-timeframes`; local storage remains
+  the offline/cache fallback.
 - If the active timeframe is not favorited, it is appended to the visible top
   buttons so the current chart resolution is always visible.
 - The popup groups intervals into `TICKS`, `SECONDS`, `MINUTES`, `HOURS`, and

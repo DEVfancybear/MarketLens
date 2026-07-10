@@ -11,6 +11,10 @@ export interface SettingsDocument {
 
 export type SettingsPatch = Partial<SettingsDocument>;
 
+export interface FavoriteTimeframesResponse {
+  timeframes: string[];
+}
+
 export async function getSettings(): Promise<SettingsDocument> {
   return getJson<SettingsDocument>("settings");
 }
@@ -25,4 +29,16 @@ export async function patchSettings(
   patch: SettingsPatch,
 ): Promise<SettingsDocument> {
   return patchJson<SettingsDocument>("settings", patch);
+}
+
+export async function getFavoriteTimeframes(): Promise<FavoriteTimeframesResponse> {
+  return getJson<FavoriteTimeframesResponse>("settings/chart/favorite-timeframes");
+}
+
+export async function replaceFavoriteTimeframes(
+  timeframes: string[],
+): Promise<FavoriteTimeframesResponse> {
+  return putJson<FavoriteTimeframesResponse>("settings/chart/favorite-timeframes", {
+    timeframes,
+  });
 }

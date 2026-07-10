@@ -18,7 +18,7 @@ Today the frontend keeps **all** user data in the browser. Exact keys and shapes
 | -------------------------------------------------------------------- | -------------- | ---------------------------------------------- |
 | `ui` → `{ theme, panels }` **only**                                  | localStorage   | `user_settings.ui`                             |
 | `smc-settings` → 8 boolean toggles (`SmcSettings`)                   | localStorage   | `user_settings.smc`                            |
-| `tv:favoriteTimeframes` → `string[]`                                 | localStorage   | `user_settings.chart`                          |
+| `tv:favoriteTimeframes` → `string[]`                                 | localStorage   | `user_settings.chart.favoriteTimeframes`       |
 | `drawings:<symbol>` → `Drawing[]`                                   | localStorage   | `drawings`                                      |
 | `drawingTemplates` → `DrawingTemplate[]` (**global**, style presets) | localStorage   | `drawing_templates`                            |
 | `tv:favTools` → `string[]` (**global**, drawing toolbar stars)       | localStorage   | `drawing_tool_favorites`                       |
@@ -211,16 +211,17 @@ CREATE TABLE user_settings (
   user_id       uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   ui            jsonb NOT NULL DEFAULT '{}',  -- `ui` store: theme, panels, bottomOpen, shell flags
   smc           jsonb NOT NULL DEFAULT '{}',  -- `smc-settings-v2`: 8 overlay toggles (SmcSettings)
-  chart         jsonb NOT NULL DEFAULT '{}',  -- default TF, chart style, `tv:favoriteTimeframes`
+  chart         jsonb NOT NULL DEFAULT '{}',  -- default TF, chart style, `favoriteTimeframes`
   notifications jsonb NOT NULL DEFAULT '{}',  -- global AlertSettings: toast/sound/browser/push/telegram/discord
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 ```
 
 The database defaults stay compact, but the settings repository normalizes `{}` before returning
-API responses. Current normalized defaults are `ui.bottomOpen=false` and every SMC toggle `false`,
-so fresh users, old rows, and signout resets all start with the bottom panel hidden and no SMC
-overlay selected.
+API responses. Current normalized defaults are `ui.bottomOpen=false`, every SMC toggle `false`,
+and the chart favorite timeframes `1m`, `5m`, `15m` when the chart field is absent. An explicit
+empty favorite array is preserved. This lets fresh users and old rows receive sensible toolbar
+defaults without a data migration.
 
 ### 6.2 `layouts` (chart layouts / templates)
 

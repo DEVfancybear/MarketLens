@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Favorite timeframe API sync (2026-07-10)
+- Added protected `GET`/`PUT /api/v1/settings/chart/favorite-timeframes` endpoints backed by
+  `user_settings.chart.favoriteTimeframes`.
+- Validated supported chart intervals, de-duplicated favorites into chart order, retained an
+  explicit empty list, and preserved unrelated chart settings during updates.
+- Connected the top interval selector to load and save authenticated users' favorites, with
+  optimistic queued writes and `localStorage` retained as the offline/cache fallback.
+- Documented the API contract, persistence mapping, and frontend synchronization flow.
+
 ### Fixed - Signed-out Pine workspace controls (2026-07-09)
 - Removed the public Store favorite-looking star marker for signed-out users so
   public indicators no longer appear as user favorites before authentication.
