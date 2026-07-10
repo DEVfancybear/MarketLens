@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { useVisibleCandles } from "@/hooks/useVisibleCandles";
+import { useChartSeries } from "@/hooks/useChartSeries";
 import { setSmcSnapshotAtom } from "@/store/smcStore";
 import { useSetAtom } from "jotai";
 import { computeSmc } from "@/services/smc/smcEngine";
@@ -15,7 +15,7 @@ const THROTTLE_MS = 90;
  * can't be created (e.g. older browsers / SSR hydration edge cases).
  */
 export function useSmcEngine() {
-  const candles = useVisibleCandles();
+  const candles = useChartSeries();
   const setSnapshot = useSetAtom(setSmcSnapshotAtom);
 
   const workerRef = useRef<Worker | null>(null);

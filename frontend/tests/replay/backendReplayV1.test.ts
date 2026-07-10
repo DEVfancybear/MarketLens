@@ -3,9 +3,11 @@ import test from "node:test";
 
 import { isReplayBackendV1Enabled } from "../../src/services/replay/backendReplayFlag";
 
-test("backend replay Phase 1 requires an explicit true feature flag", () => {
-  assert.equal(isReplayBackendV1Enabled(undefined), false);
+test("backend replay defaults on and supports an explicit deployment kill switch", () => {
+  assert.equal(isReplayBackendV1Enabled(undefined), true);
   assert.equal(isReplayBackendV1Enabled("false"), false);
-  assert.equal(isReplayBackendV1Enabled("1"), false);
+  assert.equal(isReplayBackendV1Enabled("0"), false);
+  assert.equal(isReplayBackendV1Enabled("off"), false);
+  assert.equal(isReplayBackendV1Enabled("1"), true);
   assert.equal(isReplayBackendV1Enabled(" TRUE "), true);
 });

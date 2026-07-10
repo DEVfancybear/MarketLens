@@ -488,8 +488,8 @@ Separate-pane indicators render in `IndicatorPane`:
   frontend projection layer owns viewport/right-offset expansion; do not add
   fake candle data or compile-time right-tail candles to fix visual gaps.
 
-The source of `candles` must be `useVisibleCandles()` from `ChartArea`, not raw full history. This
-is the replay safety rule.
+The source of `candles` must be `useChartSeries()` from `ChartArea`, not raw full history. During
+Replay that projection contains only server-revealed bars.
 
 ## Overlay vs separate pane
 

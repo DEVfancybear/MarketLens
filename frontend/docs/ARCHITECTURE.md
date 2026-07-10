@@ -69,7 +69,8 @@ Important atom modules:
 | `watchlistStore` | watchlist lists, active list, sections, symbol order, sorting |
 | `alertStore` | alerts, triggered alerts, history, alert settings, selected/editing alert |
 | `notificationStore` | Firebase push registration and permission state |
-| `replayStore` | bar replay cursor, selection, playback, speed, anchor |
+| `replayClientStore` | read-only backend Replay snapshot, revealed bars, connection/error state |
+| `replayTradingClientStore` | isolated backend Replay account/order/fill/position projection |
 | `tradeStore` | simulator positions, order prefill, equity, latest trade market |
 | `mt5Store` | MT5 bridge config, status, account snapshot, orders, symbol info, command log |
 | `smcStore` | SMC settings and current computed snapshot |
@@ -86,8 +87,8 @@ MarketDataService
   -> marketDataStore
   -> useMarketData()
   -> chartStore.candlesAtom
-  -> useVisibleCandles()
-  -> PriceChart / indicators / SMC / replay / trade runtime
+  -> useChartSeries() (live candles or server-revealed Replay bars)
+  -> PriceChart / indicators / SMC
 ```
 
 `services/market-data/candleSeries.ts` owns candle normalization, merge, realtime upsert, and short
@@ -127,9 +128,10 @@ changes must use full `setData()`.
 
 ## Replay Safety
 
-`useVisibleCandles()` is the only candle source chart renderers, indicators, SMC, and trade runtime
-should consume. When replay is active it returns `candles[0..cursor]`; future bars do not exist to
-downstream engines. See `REPLAY_ARCHITECTURE.md` for replay viewport and jump behavior.
+`useChartSeries()` is the candle source for chart renderers, indicators, and SMC. During Replay it
+returns only bars revealed by the backend session; the browser does not slice full history or own a
+cursor. The normal simulator continues to read live candles and is paused from market feeding while
+the isolated Replay ledger is active. See `REPLAY_ARCHITECTURE.md`.
 
 ## Backend And Auth Flow
 

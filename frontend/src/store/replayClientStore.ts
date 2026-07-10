@@ -1,3 +1,6 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
 import type {
   ReplayBar,
   ReplayEventEnvelope,
@@ -47,6 +50,13 @@ export class ReplayClientStore {
   }
 
   replaceSnapshot(snapshot: ReplaySessionSnapshot): void {
+    const current = this.projection.snapshot;
+    if (
+      current?.id === snapshot.id &&
+      snapshot.lastEventSeq < current.lastEventSeq
+    ) {
+      return;
+    }
     const trackIds = new Set(snapshot.tracks.map((track) => track.id));
     const barsByTrack = Object.fromEntries(
       Object.entries(this.projection.barsByTrack).filter(([trackId]) => trackIds.has(trackId)),
@@ -147,6 +157,14 @@ export class ReplayClientStore {
 }
 
 export const replayClientStore = new ReplayClientStore();
+
+export function useReplayClientProjection(): ReplayClientProjection {
+  return useSyncExternalStore(
+    (listener) => replayClientStore.subscribe(listener),
+    () => replayClientStore.getState(),
+    () => replayClientStore.getState(),
+  );
+}
 
 function isReplayBar(value: ReplayBar | undefined): value is ReplayBar {
   return !!value && typeof value.time === "string" &&

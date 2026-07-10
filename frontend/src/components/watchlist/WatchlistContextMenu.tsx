@@ -15,10 +15,11 @@ interface Props {
   onClose: () => void;
   onRemove: (ticker: string) => void;
   onCreateAlert: (ticker: string) => void;
+  disableAlertCreation?: boolean;
 }
 
 /** Right-click context menu for a watchlist row. */
-export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert }: Props) {
+export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert, disableAlertCreation }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: state.x, y: state.y });
 
@@ -57,7 +58,7 @@ export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert }
   };
 
   const items = [
-    { icon: <Bell size={14} className="text-choch" />, label: `Create Alert for ${state.ticker}`, onClick: act(() => onCreateAlert(state.ticker)) },
+    { icon: <Bell size={14} className="text-choch" />, label: `Create Alert for ${state.ticker}`, onClick: act(() => onCreateAlert(state.ticker)), disabled: disableAlertCreation },
     { icon: <X size={14} className="text-bear" />, label: `Remove from Watchlist`, onClick: act(() => onRemove(state.ticker)) },
   ];
 
@@ -74,8 +75,9 @@ export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert }
         <button
           key={i}
           role="menuitem"
+          disabled={it.disabled}
           onClick={it.onClick}
-          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs text-ink transition-colors hover:bg-terminal-hover"
+          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs text-ink transition-colors hover:bg-terminal-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           {it.icon}
           {it.label}

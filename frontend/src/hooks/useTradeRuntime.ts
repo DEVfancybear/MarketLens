@@ -1,11 +1,9 @@
 "use client";
 import { useEffect } from "react";
-import { useVisibleCandles } from "@/hooks/useVisibleCandles";
 import { useAtomValue, useSetAtom } from "jotai";
-import { symbolAtom } from "@/store/chartStore";
+import { candlesAtom, symbolAtom } from "@/store/chartStore";
 import { setTradeMarketAtom } from "@/store/tradeStore";
-import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
-import { activeAtom } from "@/store/replayStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 
 /**
  * Feeds only the normal live/simulator market loop. Backend-enabled replay is
@@ -13,16 +11,14 @@ import { activeAtom } from "@/store/replayStore";
  * normal simulator ledger.
  */
 export function useTradeRuntime() {
-  const candles = useVisibleCandles();
+  const candles = useAtomValue(candlesAtom);
   const symbol = useAtomValue(symbolAtom);
-  const replayActive = useAtomValue(activeAtom);
+  const replay = useReplayClientProjection();
   const setMarket = useSetAtom(setTradeMarketAtom);
 
   useEffect(() => {
-    if (isReplayBackendV1Enabled() && replayActive) {
-      return;
-    }
+    if (replay.snapshot) return;
     const last = candles[candles.length - 1];
     if (last) setMarket({ symbol, candle: last });
-  }, [candles, replayActive, symbol, setMarket]);
+  }, [candles, replay.snapshot, symbol, setMarket]);
 }

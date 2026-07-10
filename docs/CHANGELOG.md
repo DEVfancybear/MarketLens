@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Backend Replay Phase 6 cutover and cleanup (2026-07-11)
+- Enabled backend-owned Replay by default for authenticated users; the remaining
+  public flag is a UI kill switch and cannot restore local replay logic.
+- Deleted the legacy frontend clock, cursor store, replay engine, MTF/history
+  replay paths, replay trade feed, shadow controller, and their obsolete tests.
+- Rewired chart, indicators, SMC, controls, synchronized layouts, and isolated
+  trading to the ordered server projection and versioned REST/WebSocket client.
+- Added stale-snapshot protection, backend fork/seek rewind handling, auth and
+  loading gates, and disabled new alert creation while Replay is active.
+- Added ESLint restrictions, `check:replay-client-boundary`, and CI enforcement.
+  Verified 16 Replay client tests, typecheck, lint with zero errors, production
+  build, `go test ./...`, and `go vet ./...`.
+
 ### Added - Backend Replay Phase 5 synchronized layouts (2026-07-10)
 - Added `single_chart`/`all_charts` session validation with up to four ordered
   tracks and configurable `REPLAY_MAX_TRACKS_PER_SESSION` quota.

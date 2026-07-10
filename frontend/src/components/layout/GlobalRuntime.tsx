@@ -1,6 +1,5 @@
 "use client";
-import { useReplayPlayback } from "@/hooks/useReplayPlayback";
-import { useReplayBackendShadow } from "@/hooks/useReplayBackendShadow";
+import { ReplayClientRuntime } from "@/components/replay/ReplayClientRuntime";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import { useSmcEngine } from "@/hooks/useSmcEngine";
 import { useTradeRuntime } from "@/hooks/useTradeRuntime";
@@ -20,12 +19,10 @@ import { hydratePushAtom } from "@/store/notificationStore";
 import { useEffect } from "react";
 
 /**
- * Headless component that mounts global runtime loops: the replay clock,
- * keyboard shortcuts, and the SMC recompute pipeline. Render once at the root.
+ * Headless component that mounts global runtime integrations. Replay timing is
+ * owned by the Go session actor; this component mounts transport only.
  */
 export function GlobalRuntime() {
-  useReplayPlayback();
-  useReplayBackendShadow(); // Phase 3: mirrors controls; revealed bars stay in the backend projection
   useHotkeys();
   useSmcEngine();
   useTradeRuntime();
@@ -49,5 +46,5 @@ export function GlobalRuntime() {
     hydratePush();
   }, [loadJournal, hydrateAlerts, hydratePush]);
 
-  return null;
+  return <ReplayClientRuntime />;
 }

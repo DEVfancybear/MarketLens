@@ -9,18 +9,15 @@ engine. The detailed architecture, database schema, API/WebSocket contracts, fro
 map, test gates, and six implementation phases are in
 [`REPLAY_BACKEND_MIGRATION_PLAN.md`](REPLAY_BACKEND_MIGRATION_PLAN.md).
 
-Implementation order is Phase 0 executable regression contracts, Phase 1 persistence/dataset
-preparation, Phase 2 single-chart backend clock, Phase 3 replay interval and MTF aggregation,
-Phase 4 isolated replay trading, and Phase 5 synchronized layouts are complete. Continue with
-Phase 6 cutover/legacy cleanup.
-Do not move ad hoc replay business logic into new frontend hooks while this migration is active.
-Phase 6 must physically delete the legacy frontend replay clock/store/engine, MTF/history replay
-paths, and replay trade processing according to section 11 of the plan; disabling them behind a
-feature flag is not completion.
+Replay backend Phases 0-6 are complete and repository-verified. Phase 6 physically deleted the
+legacy frontend clock/store/engine, provider-history replay path, client MTF aggregation, and replay
+trade processing. Backend Replay is now the default authenticated path; the deployment flag is a UI
+kill switch only. `npm run check:replay-client-boundary` prevents local Replay authority from being
+reintroduced. See [`REPLAY_BACKEND_PHASE6.md`](REPLAY_BACKEND_PHASE6.md).
 
-Phases 0-5 are complete and repository-verified. `npm run test:replay` covers the executable
-contracts shared with Go. The next implementation step is Phase 6 cutover and mandatory legacy
-frontend replay cleanup.
+The next implementation priority returns to backend per-resource persistence, beginning with Phase
+7 drawings, plus operational Replay E2E/performance validation against a deployed PostgreSQL/MT5
+environment.
 
 The historical roadmap below is preserved. The current top priority after the monorepo split is:
 

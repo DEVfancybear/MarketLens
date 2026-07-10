@@ -42,8 +42,6 @@
     "src/services/notifications/deepLink.ts",
     "src/store/watchlistLayout.ts",
     "src/services/indicatorStoreModel.ts",
-    "src/services/replayEngine.ts",
-    "src/services/tradeEngine.ts",
     "src/utils/time.ts",
     "src/services/privateWorkspaceAccess.ts",
     "src/components/toolbar/indicatorSettingsInputRows.ts"

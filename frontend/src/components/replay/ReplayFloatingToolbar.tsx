@@ -1,4 +1,5 @@
 "use client";
+
 import {
   ChevronsRight,
   GripVertical,
@@ -8,130 +9,108 @@ import {
   StepForward,
   X,
 } from "lucide-react";
-import { useReplayStore, REPLAY_SPEEDS } from "@/store/replayStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
-  replaySpeedDescription,
-  replaySpeedLabel,
-} from "@/services/replayEngine";
+  exitReplaySession,
+  runReplayCommand,
+  stepActiveReplay,
+} from "@/services/replay/replaySocket";
 import { cn } from "@/utils/cn";
 import { ReplayTimingMenu } from "./ReplayTimingMenu";
+import {
+  cancelReplaySelectionAtom,
+  replaySelectionModeAtom,
+  REPLAY_SPEEDS,
+  replaySpeedDescription,
+  replaySpeedLabel,
+} from "./replayUiState";
+
+function fire(command: Promise<void>): void {
+  void command.catch(() => undefined);
+}
 
 export function ReplayFloatingToolbar() {
-  const r = useReplayStore();
-  const visible = r.active || r.selecting || r.reSelecting;
+  const projection = useReplayClientProjection();
+  const selection = useAtomValue(replaySelectionModeAtom);
+  const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
+  const snapshot = projection.snapshot;
+  const visible = Boolean(snapshot) || selection !== "idle" || projection.connection === "connecting";
   if (!visible) return null;
 
-  const atEnd = r.cursor >= r.total - 1;
-  const speedIndex = Math.max(0, REPLAY_SPEEDS.indexOf(r.speed));
-  const selecting = r.selecting || r.reSelecting;
+  const playing = snapshot?.status === "playing";
+  const atEnd = snapshot?.status === "completed";
+  const speedIndex = Math.max(0, REPLAY_SPEEDS.findIndex((speed) => speed === snapshot?.speed));
 
   return (
-    <div
-      data-chart-ui
-      className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2"
-    >
-      <div
-        data-chart-ui
-        className="pointer-events-auto flex h-10 items-center rounded-md border border-terminal-border bg-terminal-panel-2 shadow-2xl shadow-black/45"
-      >
+    <div data-chart-ui className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2">
+      <div data-chart-ui className="pointer-events-auto flex h-10 items-center rounded-md border border-terminal-border bg-terminal-panel-2 shadow-2xl shadow-black/45">
         <div className="flex h-full w-7 items-center justify-center border-r border-terminal-border text-ink-faint">
           <GripVertical size={15} />
         </div>
-
         <ReplayTimingMenu compact />
 
-        {selecting ? (
+        {selection !== "idle" ? (
           <div className="flex h-full items-center gap-2 border-l border-terminal-border px-3">
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                r.reSelecting ? "bg-choch" : "bg-brand",
-              )}
-            />
+            <span className="h-2 w-2 rounded-full bg-brand" />
             <span className="whitespace-nowrap text-[11px] font-medium text-ink">
-              Click a candle to choose the replay start
+              Click a candle to request the Replay time
             </span>
             <button
               type="button"
-              onClick={() =>
-                r.reSelecting ? r.cancelReSelect() : r.cancelSelect()
-              }
+              onClick={cancelSelection}
               className="ml-1 flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-terminal-hover hover:text-bear"
               title="Cancel"
             >
               <X size={15} />
             </button>
           </div>
-        ) : (
+        ) : snapshot ? (
           <>
-            <ToolbarButton
-              label="Restart"
-              onClick={() => {
-                r.pause();
-                r.restart();
-              }}
-            >
+            <ToolbarButton label="Restart" onClick={() => fire(runReplayCommand("restart"))}>
               <RotateCcw size={15} />
             </ToolbarButton>
             <ToolbarButton
               label="Play / pause"
               disabled={atEnd}
-              active={r.playing}
-              onClick={() => (r.playing ? r.pause() : r.play())}
+              active={playing}
+              onClick={() => fire(runReplayCommand(playing ? "pause" : "play"))}
             >
-              {r.playing ? <Pause size={16} /> : <Play size={16} />}
+              {playing ? <Pause size={16} /> : <Play size={16} />}
             </ToolbarButton>
-            <ToolbarButton
-              label="Forward one bar"
-              disabled={atEnd}
-              onClick={() => {
-                r.pause();
-                r.step(1);
-              }}
-            >
+            <ToolbarButton label="Forward one bar" disabled={atEnd} onClick={() => fire(stepActiveReplay(1))}>
               <StepForward size={16} />
             </ToolbarButton>
 
             <div className="flex h-full items-center gap-2 border-l border-terminal-border px-3">
-              <span className="text-[11px] font-medium text-ink-muted">
-                Speed
-              </span>
+              <span className="text-[11px] font-medium text-ink-muted">Speed</span>
               <input
                 type="range"
                 min={0}
                 max={REPLAY_SPEEDS.length - 1}
                 step={1}
                 value={speedIndex}
-                onChange={(e) => {
-                  const speed = REPLAY_SPEEDS[Number(e.target.value)] ?? r.speed;
-                  r.setSpeed(speed);
+                onChange={(event) => {
+                  const speed = REPLAY_SPEEDS[Number(event.target.value)] ?? 1;
+                  fire(runReplayCommand("set_speed", { speed }));
                 }}
                 className="h-1 w-28 cursor-pointer appearance-none rounded bg-terminal-border accent-brand"
-                title={replaySpeedDescription(r.speed)}
+                title={replaySpeedDescription(snapshot.speed)}
               />
               <span className="w-8 text-right text-[11px] font-semibold text-ink">
-                {replaySpeedLabel(r.speed)}
+                {replaySpeedLabel(snapshot.speed)}
               </span>
             </div>
 
-            <ToolbarButton
-              label="Go to latest bar"
-              disabled={atEnd}
-              onClick={() => {
-                r.pause();
-                r.setCursor(r.total - 1);
-              }}
-            >
+            <ToolbarButton label="Go to live chart" onClick={() => fire(exitReplaySession())}>
               <ChevronsRight size={16} />
             </ToolbarButton>
-            <ToolbarButton
-              label="Exit replay"
-              danger
-              onClick={r.disarm}
-            >
+            <ToolbarButton label="Exit replay" danger onClick={() => fire(exitReplaySession())}>
               <X size={16} />
             </ToolbarButton>
           </>
+        ) : (
+          <span className="px-3 text-[11px] text-ink-muted">Preparing backend Replay...</span>
         )}
       </div>
     </div>

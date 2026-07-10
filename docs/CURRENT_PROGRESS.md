@@ -1,6 +1,6 @@
 # Current Progress
 
-Last updated: 2026-07-08
+Last updated: 2026-07-11
 
 ## Current Milestone
 
@@ -8,6 +8,9 @@ Backend persistence and Google authentication.
 
 ## Status
 
+- Replay backend migration: **Phases 0-6 complete** - deterministic Go/PostgreSQL clock,
+  aggregation, isolated trading, synchronized layouts, frontend cutover, mandatory legacy deletion,
+  and CI client-boundary enforcement. See `REPLAY_BACKEND_PHASE6.md`.
 - Frontend trading terminal: implemented and actively evolving.
 - Frontend Google auth UI: implemented and verified.
 - Frontend backend sync: auth/session is wired; `GET /api/v1/sync/bootstrap` is now consumed after

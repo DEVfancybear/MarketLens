@@ -1,7 +1,12 @@
 "use client";
 import { useEffect } from "react";
-import { getReplayState } from "@/store/replayStore";
 import { getDefaultStore } from "jotai";
+import { replayClientStore } from "@/store/replayClientStore";
+import { runReplayCommand, stepActiveReplay } from "@/services/replay/replaySocket";
+import {
+  cancelReplaySelectionAtom,
+  replaySelectionModeAtom,
+} from "@/components/replay/replayUiState";
 import { toggleAlertCenterAtom } from "@/store/uiStore";
 import {
   setActiveToolAtom,
@@ -69,24 +74,18 @@ export function useHotkeys() {
       )
         return;
 
-      const r = getReplayState();
+      const store = getDefaultStore();
+      const replay = replayClientStore.getState().snapshot;
+      const selection = store.get(replaySelectionModeAtom);
       const mod = e.ctrlKey || e.metaKey;
 
       // --- Escape: re-select > initial select > drawing deselect > tool cancel ---
       if (e.key === "Escape" && !mod) {
-        // Re-select mode takes top priority — cancel it before anything else.
-        if (r.reSelecting) {
+        if (selection !== "idle") {
           e.preventDefault();
-          r.cancelReSelect();
+          store.set(cancelReplaySelectionAtom);
           return;
         }
-        // Initial bar selection.
-        if (r.selecting) {
-          e.preventDefault();
-          r.cancelSelect();
-          return;
-        }
-        const store = getDefaultStore();
         // Don't deselect if a dialog is open (indicator / position settings).
         if (
           store.get(editingIndicatorIdAtom) ||
@@ -149,37 +148,36 @@ export function useHotkeys() {
         return;
       }
 
-      // Replay-transport keys checked against the replay state (r).
+      const fire = (command: Promise<void>) => void command.catch(() => undefined);
+      const replaySelecting = selection !== "idle";
       switch (e.key) {
         case " ":
-          if (r.active && !r.reSelecting) {
+          if (replay && !replaySelecting) {
             e.preventDefault();
-            r.playing ? r.pause() : r.play();
+            fire(runReplayCommand(replay.status === "playing" ? "pause" : "play"));
           }
           return;
         case "ArrowDown":
-          if (r.active && e.shiftKey && !r.reSelecting) {
+          if (replay && e.shiftKey && !replaySelecting) {
             e.preventDefault();
-            r.playing ? r.pause() : r.play();
+            fire(runReplayCommand(replay.status === "playing" ? "pause" : "play"));
           }
           return;
         case "ArrowRight":
-          if (r.active && !r.reSelecting) {
+          if (replay && !replaySelecting) {
             e.preventDefault();
-            r.pause();
-            r.step(1);
+            fire(stepActiveReplay(e.shiftKey ? 10 : 1));
           }
           return;
         case "ArrowLeft":
-          if (r.active && !r.reSelecting) {
+          if (replay && !replaySelecting) {
             e.preventDefault();
-            r.pause();
-            r.step(e.shiftKey ? -10 : -1);
+            fire(stepActiveReplay(e.shiftKey ? -10 : -1));
           }
           return;
         case "r":
         case "R":
-          if (r.active && !r.reSelecting) r.restart();
+          if (replay && !replaySelecting) fire(runReplayCommand("restart"));
           return;
         case "a":
         case "A":

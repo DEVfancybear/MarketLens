@@ -31,7 +31,14 @@ import {
   candlesAtom,
   symbolAtom,
 } from "@/store/chartStore";
-import { useReplayStore } from "@/store/replayStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
+import { backendSessionAtom } from "@/store/authStore";
+import { exitReplaySession } from "@/services/replay/replaySocket";
+import {
+  beginReplaySelectionAtom,
+  cancelReplaySelectionAtom,
+  replaySelectionModeAtom,
+} from "@/components/replay/replayUiState";
 import {
   themeAtom,
   rightOpenAtom,
@@ -57,11 +64,14 @@ export function TopToolbar() {
   // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
   // on every realtime tick and would re-render the whole toolbar. Its length is
   // read lazily in `toggleReplay` via getState(). `timeframe`/`setTimeframe` only
-  // change on user action. (replay/ui stores no longer churn per tick — see the
-  // guarded `replayStore.setTotal`.)
+  // change on user action. Backend Replay updates arrive as server events.
   const timeframe = useAtomValue(timeframeAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
-  const replay = useReplayStore();
+  const replay = useReplayClientProjection();
+  const backendSession = useAtomValue(backendSessionAtom);
+  const replaySelection = useAtomValue(replaySelectionModeAtom);
+  const beginReplaySelection = useSetAtom(beginReplaySelectionAtom);
+  const cancelReplaySelection = useSetAtom(cancelReplaySelectionAtom);
   const theme = useAtomValue(themeAtom);
   const rightOpen = useAtomValue(rightOpenAtom);
   const fullscreen = useAtomValue(fullscreenAtom);
@@ -78,17 +88,17 @@ export function TopToolbar() {
   const setReplayLayoutMode = useSetAtom(setReplayLayoutModeAtom);
 
   const toggleReplay = () => {
-    if (replay.active && replay.reSelecting) {
-      // Cancel re-select mode, return to paused replay.
-      replay.cancelReSelect();
-    } else if (replay.active) {
-      replay.disarm();
-    } else if (replay.selecting) {
-      replay.cancelSelect();
+    if (replaySelection !== "idle") {
+      cancelReplaySelection();
+    } else if (replay.snapshot) {
+      void exitReplaySession();
     } else {
+      if (!backendSession) {
+        setBottomTab("replay");
+        return;
+      }
       if (getDefaultStore().get(candlesAtom).length < 50) return;
-      // Enter TradingView-style bar selection: click a candle to start.
-      replay.beginSelect();
+      beginReplaySelection();
       setBottomTab("replay");
     }
   };
@@ -196,17 +206,13 @@ export function TopToolbar() {
         onClick={toggleReplay}
         className={cn(
           "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
-          replay.active || replay.selecting
+          replay.snapshot || replaySelection !== "idle"
             ? "bg-brand/15 text-brand"
             : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
         )}
       >
         <PlayCircle size={14} />
-        {replay.reSelecting
-          ? "Cancel select"
-          : replay.selecting
-            ? "Select bar…"
-            : "Replay"}
+        {replaySelection !== "idle" ? "Cancel select" : "Replay"}
       </button>
 
       {/* Layout selector (visual presets) */}

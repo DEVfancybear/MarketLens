@@ -39,8 +39,7 @@ import type { OrderPrefill, OrderType, Side } from "@/types";
 import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
 import { LiveOrderConfirmDialog } from "./LiveOrderConfirmDialog";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
-import { activeAtom } from "@/store/replayStore";
-import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
 
@@ -60,8 +59,7 @@ export function OrderTicket() {
   const placeMt5 = useSetAtom(placeMt5OrderAtom);
   const closeAllMt5 = useSetAtom(closeAllMt5Atom);
   const replayTrading = useReplayTrading();
-  const replayActive = useAtomValue(activeAtom);
-  const isolatedReplay = isReplayBackendV1Enabled() && replayActive;
+  const isolatedReplay = Boolean(useReplayClientProjection().snapshot);
   const replayMode = replayTrading.active && executionMode === "simulator";
   const replayPreparing = isolatedReplay && !replayMode;
   const simulatorPrice = replayMode ? replayTrading.price : price;

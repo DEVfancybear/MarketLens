@@ -17,6 +17,31 @@ const eslintConfig = [
       "react-hooks/exhaustive-deps": "warn",
     },
   },
+  {
+    files: ["src/components/replay/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/store/chartStore",
+              importNames: ["candlesAtom"],
+              message: "Replay UI receives candidate coordinates as props; it must not own full chart history.",
+            },
+            {
+              name: "@/services/market-data/HistoricalDataService",
+              message: "Active Replay history is loaded by the backend dataset service.",
+            },
+            {
+              name: "@/services/tradeEngine",
+              message: "Replay orders and fills are owned by the backend ledger.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

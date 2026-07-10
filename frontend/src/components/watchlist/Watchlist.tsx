@@ -46,6 +46,7 @@ import { getMarketDataState } from "@/store/marketDataStore";
 import { useQuote } from "@/hooks/useQuote";
 import { setSymbolAtom, symbolAtom } from "@/store/chartStore";
 import { getAlertState } from "@/store/alertStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import { logAtom, setAlertCenterAtom } from "@/store/uiStore";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { IconButton } from "@/components/ui/IconButton";
@@ -156,6 +157,7 @@ function sortWatchlistEntries(
 }
 
 export function Watchlist() {
+  const replayActive = Boolean(useReplayClientProjection().snapshot);
   const activeList = useAtomValue(activeWatchlistAtom);
   const activeListId = useAtomValue(activeWatchlistIdAtom);
   const lists = useAtomValue(watchlistListsAtom);
@@ -632,13 +634,14 @@ export function Watchlist() {
 
   const onCreateAlert = useCallback(
     (ticker: string) => {
+      if (replayActive) return;
       const store = getAlertState();
       const quote = getMarketDataState().quotes[ticker];
       const price = quote?.last ?? 0;
       store.createAlert({ symbol: ticker, condition: "crossUp", price });
       setAlertCenter(true);
     },
-    [setAlertCenter],
+    [replayActive, setAlertCenter],
   );
 
   const renderRows = () => {
@@ -862,6 +865,7 @@ export function Watchlist() {
           onClose={() => setMenu(null)}
           onRemove={onRemove}
           onCreateAlert={onCreateAlert}
+          disableAlertCreation={replayActive}
         />
       )}
       {createDialogOpen && (

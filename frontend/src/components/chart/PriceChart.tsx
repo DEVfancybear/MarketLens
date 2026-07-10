@@ -31,7 +31,7 @@ import {
   pineEditorTitleAtom,
 } from "@/store/chartStore";
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
-import { activeAtom as replayActiveAtom } from "@/store/replayStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { indicatorSeriesDataForCandles } from "@/services/indicatorSeriesProjection";
@@ -194,7 +194,7 @@ export function PriceChart({
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
-  const replayActive = useAtomValue(replayActiveAtom);
+  const replayActive = Boolean(useReplayClientProjection().snapshot);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const indicators = useAtomValue(indicatorsAtom);

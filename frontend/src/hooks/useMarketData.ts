@@ -9,8 +9,8 @@
  *     the kline stream, drop the old one) and load history via
  *     `HistoricalDataService` into `marketDataStore`.
  *  2. Continuously mirror the store's candle series for the active key into
- *     `chartStore.candles`, so the rest of the app (chart, indicators, SMC,
- *     replay, trade) keeps reading `chartStore.candles` via `useVisibleCandles`
+ *     `chartStore.candles`, so the rest of the live app (chart, indicators,
+ *     SMC and simulator trading) keeps reading `chartStore.candles`
  *     unchanged — now fed by realtime data instead of the mock generator.
  *
  * No sockets are created here; the MarketDataService/providers own connections.
@@ -23,13 +23,6 @@ import {
   setCandlesAtom,
   setLoadingAtom,
 } from "@/store/chartStore";
-import {
-  activeAtom,
-  cursorTimeAtom,
-  disarmAtom,
-  reconcileReplayToCandlesAtom,
-  setTotalAtom,
-} from "@/store/replayStore";
 import { getDefaultStore } from "jotai";
 import { logAtom } from "@/store/uiStore";
 import { getMarketDataState } from "@/store/marketDataStore";
@@ -58,43 +51,31 @@ function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
   return 20;
 }
 
-function replayHistoryBefore(
-  timeframe: Timeframe,
-  limit: number,
-  cursorTime: number | null,
-): number | undefined {
-  if (cursorTime == null) return undefined;
-  const step = TF_SECONDS[timeframe];
-  const targetWindowEnd = cursorTime + Math.floor(limit * step * 0.7);
-  const nearNow = Math.floor(Date.now() / 1000) + step;
-  return targetWindowEnd < nearNow ? targetWindowEnd : undefined;
-}
-
 function isAbortError(error: unknown): boolean {
   if (!error) return false;
   if (error instanceof DOMException) return error.name === "AbortError";
   return (error as { name?: string }).name === "AbortError";
 }
 
-export function useMarketData() {
+export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const setCandles = useSetAtom(setCandlesAtom);
   const setLoading = useSetAtom(setLoadingAtom);
-  const disarm = useSetAtom(disarmAtom);
-  const setTotal = useSetAtom(setTotalAtom);
-  const reconcileReplay = useSetAtom(reconcileReplayToCandlesAtom);
   const catalogStatus = useAtomValue(marketSymbolCatalogStatusAtom);
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
   const olderHistoryInFlightRef = useRef(false);
   const exhaustedOlderHistoryRef = useRef<Set<string>>(new Set());
-  const previousSymbolRef = useRef<string | null>(null);
   const activeKey = `${symbol}:${timeframe}`;
   const [historyReadyKey, setHistoryReadyKey] = useState<string | null>(null);
 
   // Realtime candle series from the store for the active symbol+timeframe.
   const liveCandles = useCandles(symbol, timeframe);
+
+  useEffect(() => {
+    if (!enabled) setLoading(false);
+  }, [enabled, setLoading]);
 
   useEffect(() => {
     olderHistoryInFlightRef.current = false;
@@ -103,19 +84,10 @@ export function useMarketData() {
 
   // ---- Select market + load history on symbol/timeframe change ----
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const key = `${symbol}:${timeframe}`;
-    const store = getDefaultStore();
-    const previousSymbol = previousSymbolRef.current;
-    const symbolChanged =
-      previousSymbol !== null && previousSymbol !== symbol;
-    previousSymbolRef.current = symbol;
-    const replayActive = store.get(activeAtom);
-    const replayCursorTime = store.get(cursorTimeAtom);
     setHistoryReadyKey(null);
-    if (symbolChanged) {
-      disarm();
-    }
 
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
     if (!symbol || !meta) {
@@ -132,7 +104,6 @@ export function useMarketData() {
       }
       getMarketDataState().setCandles(symbol, timeframe, []);
       setCandles([]);
-      setTotal(0);
       setLoading(false);
       setHistoryReadyKey(key);
       return () => {
@@ -144,19 +115,13 @@ export function useMarketData() {
 
     const marketData = getMarketDataState();
     const cached = marketData.getCandles(symbol, timeframe) as Candle[];
-    const hasCachedHistory =
-      cached.length > 0 && (!replayActive || replayCursorTime == null);
+    const hasCachedHistory = cached.length > 0;
     if (hasCachedHistory) {
       // Timeframe caches remain in marketDataStore. Paint them synchronously and
       // revalidate in the background instead of covering the chart with a
       // spinner every time the user switches back to an already visited frame.
       marketData.selectMarket(symbol, timeframe);
       setCandles(cached);
-      if (replayActive) {
-        reconcileReplay(cached);
-      } else {
-        setTotal(cached.length);
-      }
       setHistoryReadyKey(key);
       setLoading(false);
     } else {
@@ -175,10 +140,6 @@ export function useMarketData() {
           symbol,
           timeframe,
           limit: historyLimit,
-          before:
-            replayActive && !symbolChanged
-              ? replayHistoryBefore(timeframe, historyLimit, replayCursorTime)
-              : undefined,
           refresh: hasCachedHistory || undefined,
         }, {
           signal: controller.signal,
@@ -194,11 +155,6 @@ export function useMarketData() {
             timeframe,
           ) as Candle[];
           setCandles(nextCandles);
-          if (getDefaultStore().get(activeAtom)) {
-            reconcileReplay(nextCandles);
-          } else {
-            setTotal(nextCandles.length);
-          }
           setHistoryReadyKey(key);
           setLoading(false);
         })
@@ -208,7 +164,6 @@ export function useMarketData() {
           if (!hasCachedHistory) {
             getMarketDataState().setCandles(symbol, timeframe, []);
             setCandles([]);
-            setTotal(0);
           }
           setLoading(false);
           getDefaultStore().set(
@@ -225,29 +180,25 @@ export function useMarketData() {
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, timeframe, catalogStatus, catalogSize]);
+  }, [symbol, timeframe, catalogStatus, catalogSize, enabled]);
 
   // ---- Mirror store candles → chartStore (drives chart/SMC/replay/trade) ----
   useEffect(() => {
+    if (!enabled) return;
     if (historyReadyKey !== activeKey) return;
     const nextCandles = liveCandles as Candle[];
     setCandles(nextCandles);
-    if (getDefaultStore().get(activeAtom)) {
-      reconcileReplay(nextCandles);
-    } else {
-      setTotal(nextCandles.length);
-    }
   }, [
     activeKey,
+    enabled,
     historyReadyKey,
     liveCandles,
-    reconcileReplay,
     setCandles,
-    setTotal,
   ]);
 
   // ---- MT5 active-chart refresh: update OHLC from MT5 rates, not bid/ask ticks ----
   useEffect(() => {
+    if (!enabled) return;
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
     if (!symbol || meta?.provider !== "mt5" || historyReadyKey !== activeKey) {
       return;
@@ -297,10 +248,11 @@ export function useMarketData() {
       activeController?.abort();
       window.clearInterval(timer);
     };
-  }, [activeKey, historyReadyKey, symbol, timeframe]);
+  }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);
 
   // ---- Repair short realtime gaps without a full page refresh ----
   useEffect(() => {
+    if (!enabled) return;
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
     if (!symbol || !meta || meta.provider === "mt5") return;
 
@@ -334,12 +286,12 @@ export function useMarketData() {
           `Gap backfill failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
         );
       });
-  }, [liveCandles, symbol, timeframe]);
+  }, [enabled, liveCandles, symbol, timeframe]);
 
   const loadOlderCandles = useCallback(async () => {
+    if (!enabled) return;
     if (historyReadyKey !== activeKey) return;
     const store = getDefaultStore();
-    if (store.get(activeAtom)) return;
 
     const current = getMarketDataState().getCandles(symbol, timeframe);
     const first = current[0];
@@ -371,7 +323,7 @@ export function useMarketData() {
     } finally {
       olderHistoryInFlightRef.current = false;
     }
-  }, [activeKey, historyReadyKey, symbol, timeframe]);
+  }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);
 
   return { loadOlderCandles };
 }

@@ -1,8 +1,14 @@
 import { apiWebSocketUrl } from "@/services/api/client";
 import {
+  closeReplaySession,
+  createReplaySession,
+  forkReplaySession,
   getReplayEvents,
   getReplaySession,
   getReplayTrackBars,
+  sendReplayCommand,
+  type CreateReplaySessionInput,
+  type ReplayCommandInput,
   type ReplayEventEnvelope,
   type ReplaySessionSnapshot,
 } from "@/services/api/resources/replayApi";
@@ -141,6 +147,150 @@ export class ReplaySocket {
     const response = await getReplayTrackBars(this.sessionId, trackId);
     this.store.replaceBars(response.sessionId, response.trackId, response.bars);
   }
+}
+
+let activeSocket: ReplaySocket | null = null;
+let lifecycleVersion = 0;
+let commandSequence = 0;
+let commandQueue = Promise.resolve<unknown>(undefined);
+
+function commandKey(type: string): string {
+  commandSequence += 1;
+  return `replay:${type}:${Date.now().toString(36)}:${commandSequence}`;
+}
+
+async function hydrateSnapshotBars(snapshot: ReplaySessionSnapshot): Promise<void> {
+  await Promise.all(snapshot.tracks.map(async (track) => {
+    const response = await getReplayTrackBars(snapshot.id, track.id);
+    replayClientStore.replaceBars(response.sessionId, response.trackId, response.bars);
+  }));
+}
+
+async function activateSnapshot(
+  snapshot: ReplaySessionSnapshot,
+  expectedLifecycle: number,
+): Promise<void> {
+  if (expectedLifecycle !== lifecycleVersion) {
+    await closeReplaySession(snapshot.id).catch(() => undefined);
+    return;
+  }
+  replayClientStore.replaceSnapshot(snapshot);
+  const socket = new ReplaySocket(snapshot.id);
+  activeSocket = socket;
+  await socket.connect();
+}
+
+/** Create the only active backend-owned Replay session. */
+export async function startReplaySession(
+  input: CreateReplaySessionInput,
+): Promise<void> {
+  const expectedLifecycle = ++lifecycleVersion;
+  const previousId = replayClientStore.getState().snapshot?.id;
+  activeSocket?.stop();
+  activeSocket = null;
+  replayClientStore.clear();
+  replayClientStore.setConnection("connecting");
+  if (previousId) void closeReplaySession(previousId).catch(() => undefined);
+
+  try {
+    const snapshot = await createReplaySession(input);
+    await activateSnapshot(snapshot, expectedLifecycle);
+  } catch (error) {
+    if (expectedLifecycle !== lifecycleVersion) return;
+    replayClientStore.setConnection(
+      "error",
+      error instanceof Error ? error.message : "Replay session could not be created",
+    );
+    throw error;
+  }
+}
+
+/** Stop transport, clear the projection, and close the server session. */
+export async function exitReplaySession(): Promise<void> {
+  lifecycleVersion += 1;
+  const sessionId = replayClientStore.getState().snapshot?.id;
+  activeSocket?.stop();
+  activeSocket = null;
+  replayClientStore.clear();
+  if (sessionId) await closeReplaySession(sessionId).catch(() => undefined);
+}
+
+/** Serialize commands so every request uses the latest authoritative version. */
+export function runReplayCommand(
+  type: ReplayCommandInput["type"],
+  payload?: Record<string, unknown>,
+): Promise<void> {
+  const requestedSessionId = replayClientStore.getState().snapshot?.id;
+  if (!requestedSessionId) return Promise.reject(new Error("Replay session is unavailable"));
+  const run = async () => {
+    const snapshot = replayClientStore.getState().snapshot;
+    if (snapshot?.id !== requestedSessionId) return;
+    if (!snapshot || snapshot.status === "closed" || snapshot.status === "failed") {
+      throw new Error("Replay session is unavailable");
+    }
+    const result = await sendReplayCommand(snapshot.id, {
+      idempotencyKey: commandKey(type),
+      expectedVersion: snapshot.version,
+      type,
+      payload,
+    });
+    replayClientStore.replaceSnapshot(result.snapshot);
+    await hydrateSnapshotBars(result.snapshot);
+  };
+  const next = commandQueue.then(run, run);
+  commandQueue = next.catch((error) => {
+    const current = replayClientStore.getState();
+    replayClientStore.setConnection(
+      current.connection,
+      error instanceof Error ? error.message : "Replay command failed",
+    );
+  });
+  return next;
+}
+
+/** Fork at a new UTC time; backward movement never restores a local clock. */
+export async function forkActiveReplay(time: string): Promise<void> {
+  const current = replayClientStore.getState().snapshot;
+  if (!current) throw new Error("Replay session is unavailable");
+  const expectedLifecycle = ++lifecycleVersion;
+  replayClientStore.setConnection("connecting");
+  try {
+    const snapshot = await forkReplaySession(current.id, time);
+    activeSocket?.stop();
+    activeSocket = null;
+    await activateSnapshot(snapshot, expectedLifecycle);
+    void closeReplaySession(current.id).catch(() => undefined);
+  } catch (error) {
+    if (expectedLifecycle === lifecycleVersion) {
+      replayClientStore.setConnection(
+        activeSocket ? "connected" : "error",
+        error instanceof Error ? error.message : "Replay fork failed",
+      );
+    }
+    throw error;
+  }
+}
+
+export function stepActiveReplay(count: number): Promise<void> {
+  if (count > 0) return runReplayCommand("step", { count });
+  const projection = replayClientStore.getState();
+  const track = projection.snapshot?.tracks[0];
+  if (!track) return Promise.reject(new Error("Replay track is unavailable"));
+  const bars = projection.barsByTrack[track.id] ?? [];
+  const currentIndex = bars.findLastIndex(
+    (bar) => Date.parse(bar.time) <= Date.parse(track.visibleThrough),
+  );
+  const target = bars[Math.max(0, currentIndex + count)];
+  if (!target) return Promise.resolve();
+  const trading = projection.snapshot?.trading;
+  const hasTradingState = Boolean(
+    trading?.fills.length ||
+    trading?.orders.length ||
+    trading?.positions.some((position) => Math.abs(position.netQuantity) > 1e-12),
+  );
+  return hasTradingState
+    ? forkActiveReplay(target.time)
+    : runReplayCommand("seek", { time: target.time });
 }
 
 function isTradingEvent(type: string): boolean {

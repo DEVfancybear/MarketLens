@@ -1,167 +1,133 @@
 "use client";
+
 import {
-  Play,
-  Pause,
-  Square,
-  RotateCcw,
-  ChevronRight,
-  ChevronLeft,
-  ChevronsRight,
-  ChevronsLeft,
-  Power,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Pause,
+  Play,
+  Power,
+  RotateCcw,
   X,
 } from "lucide-react";
-import { useReplayStore, REPLAY_SPEEDS } from "@/store/replayStore";
+import { useAtomValue, useSetAtom } from "jotai";
+import { backendSessionAtom } from "@/store/authStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
-  replaySpeedDescription,
-  replaySpeedLabel,
-} from "@/services/replayEngine";
-import { useAtomValue } from "jotai";
-import { candlesAtom } from "@/store/chartStore";
+  exitReplaySession,
+  runReplayCommand,
+  stepActiveReplay,
+} from "@/services/replay/replaySocket";
+import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
 import { cn } from "@/utils/cn";
 import { IconButton } from "@/components/ui/IconButton";
 import { ReplayTimingMenu } from "./ReplayTimingMenu";
+import {
+  beginReplayReselectionAtom,
+  beginReplaySelectionAtom,
+  cancelReplaySelectionAtom,
+  replaySelectionModeAtom,
+  REPLAY_SPEEDS,
+  replaySpeedDescription,
+  replaySpeedLabel,
+  replayControlMessage,
+} from "./replayUiState";
+
+function fire(command: Promise<void>): void {
+  void command.catch(() => undefined);
+}
 
 export function ReplayControls() {
-  const r = useReplayStore();
-  const candles = useAtomValue(candlesAtom);
-  const atEnd = r.cursor >= r.total - 1;
+  const projection = useReplayClientProjection();
+  const backendSession = useAtomValue(backendSessionAtom);
+  const selection = useAtomValue(replaySelectionModeAtom);
+  const beginSelect = useSetAtom(beginReplaySelectionAtom);
+  const beginReselect = useSetAtom(beginReplayReselectionAtom);
+  const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
+  const snapshot = projection.snapshot;
+  const active = Boolean(snapshot);
+  const playing = snapshot?.status === "playing";
+  const atEnd = snapshot?.status === "completed";
+  const enabled = isReplayBackendV1Enabled();
 
-  // ── Re-select mode (Select Bar while replay is already active) ──
-  if (r.active && r.reSelecting) {
+  if (selection !== "idle") {
     return (
       <div className="flex items-center gap-3">
-        <span className="flex items-center gap-2 rounded bg-choch/15 px-3 py-1.5 text-xs font-semibold text-choch">
-          <BarChart3 size={13} /> Click a bar on the chart to restart replay
-          from that candle
+        <span className="flex items-center gap-2 rounded bg-brand/15 px-3 py-1.5 text-xs font-semibold text-brand">
+          <BarChart3 size={13} /> Click a bar on the chart to choose the Replay time
         </span>
         <button
-          onClick={r.cancelReSelect}
+          onClick={cancelSelection}
           className="flex items-center gap-1 rounded border border-terminal-border px-2.5 py-1.5 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
         >
           <X size={12} /> Cancel (Esc)
         </button>
         <span className="text-2xs text-ink-faint">
-          Replay will restart from the selected bar. Current position is
-          preserved until you click.
+          The backend validates the requested UTC time and owns all revealed bars.
         </span>
       </div>
     );
   }
 
-  // ── Idle / initial selection ──
-  if (!r.active) {
-    if (r.selecting) {
-      return (
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-2 rounded bg-brand/15 px-3 py-1.5 text-xs font-semibold text-brand">
-            <Play size={13} /> Click a bar on the chart to start replay
-          </span>
-          <button
-            onClick={r.cancelSelect}
-            className="rounded border border-terminal-border px-2.5 py-1.5 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
-          >
-            Cancel (Esc)
-          </button>
-          <span className="text-2xs text-ink-faint">
-            The selection cursor snaps to the nearest candle. Everything after
-            it is hidden — no look-ahead.
-          </span>
-        </div>
-      );
-    }
+  if (!active) {
+    const unavailable = replayControlMessage({
+      enabled,
+      authenticated: backendSession,
+      connection: projection.connection,
+      error: projection.error,
+    });
     return (
       <div className="flex items-center gap-3">
         <ReplayTimingMenu />
         <button
-          onClick={() => {
-            if (candles.length < 2) return;
-            r.beginSelect();
-          }}
-          className="flex items-center gap-2 rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover"
+          disabled={!enabled || !backendSession || projection.connection === "connecting"}
+          onClick={beginSelect}
+          className="flex items-center gap-2 rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Play size={13} /> Start Replay
         </button>
         <span className="text-2xs text-ink-faint">
-          Use Replay timing for Select bar, Select date, or Random bar.
+          {unavailable ?? "Select a bar, date, or random UTC time."}
         </span>
       </div>
     );
   }
 
-  // ── Replay active (not re-selecting) ──
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <IconButton label="Restart (R)" onClick={r.restart}>
+      <IconButton label="Restart (R)" onClick={() => fire(runReplayCommand("restart"))}>
         <RotateCcw size={15} />
       </IconButton>
-      <IconButton
-        label="Prev 10 (Shift+←)"
-        onClick={() => {
-          r.pause();
-          r.step(-10);
-        }}
-      >
+      <IconButton label="Rewind 10 bars" onClick={() => fire(stepActiveReplay(-10))}>
         <ChevronsLeft size={16} />
       </IconButton>
-      <IconButton
-        label="Prev candle (←)"
-        onClick={() => {
-          r.pause();
-          r.step(-1);
-        }}
-      >
+      <IconButton label="Previous bar" onClick={() => fire(stepActiveReplay(-1))}>
         <ChevronLeft size={16} />
       </IconButton>
-
       <button
-        onClick={() => (r.playing ? r.pause() : r.play())}
-        disabled={atEnd}
+        onClick={() => fire(runReplayCommand(playing ? "pause" : "play"))}
+        disabled={atEnd || projection.connection === "connecting"}
         className={cn(
           "mx-1 flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors disabled:opacity-40",
-          r.playing
-            ? "bg-choch hover:opacity-90"
-            : "bg-brand hover:bg-brand-hover",
+          playing ? "bg-choch hover:opacity-90" : "bg-brand hover:bg-brand-hover",
         )}
         title="Play / Pause (Space)"
       >
-        {r.playing ? (
-          <Pause size={16} />
-        ) : (
-          <Play size={16} className="ml-0.5" />
-        )}
+        {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
       </button>
-
-      <IconButton
-        label="Next candle (→)"
-        onClick={() => {
-          r.pause();
-          r.step(1);
-        }}
-      >
+      <IconButton label="Next bar" onClick={() => fire(stepActiveReplay(1))}>
         <ChevronRight size={16} />
       </IconButton>
-      <IconButton
-        label="Next 10 (Shift+→)"
-        onClick={() => {
-          r.pause();
-          r.step(10);
-        }}
-      >
+      <IconButton label="Forward 10 bars" onClick={() => fire(stepActiveReplay(10))}>
         <ChevronsRight size={16} />
       </IconButton>
-      <IconButton label="Stop" onClick={r.stop}>
-        <Square size={14} />
-      </IconButton>
 
       <div className="mx-2 h-5 w-px bg-terminal-border" />
-
       <ReplayTimingMenu compact />
-
       <div className="mx-2 h-5 w-px bg-terminal-border" />
 
-      {/* Speed */}
       <div className="flex items-center gap-2 px-1">
         <span className="text-2xs font-medium text-ink-muted">Speed</span>
         <input
@@ -169,41 +135,41 @@ export function ReplayControls() {
           min={0}
           max={REPLAY_SPEEDS.length - 1}
           step={1}
-          value={Math.max(0, REPLAY_SPEEDS.indexOf(r.speed))}
-          onChange={(e) => {
-            const speed = REPLAY_SPEEDS[Number(e.target.value)] ?? r.speed;
-            r.setSpeed(speed);
+          value={Math.max(0, REPLAY_SPEEDS.findIndex((speed) => speed === snapshot?.speed))}
+          onChange={(event) => {
+            const speed = REPLAY_SPEEDS[Number(event.target.value)] ?? 1;
+            fire(runReplayCommand("set_speed", { speed }));
           }}
           className="h-1 w-28 cursor-pointer appearance-none rounded bg-terminal-border accent-brand"
-          title={replaySpeedDescription(r.speed)}
+          title={replaySpeedDescription(snapshot?.speed ?? 1)}
         />
         <span className="w-8 text-right text-2xs font-semibold text-ink">
-          {replaySpeedLabel(r.speed)}
+          {replaySpeedLabel(snapshot?.speed ?? 1)}
         </span>
       </div>
 
       <div className="mx-2 h-5 w-px bg-terminal-border" />
-
-      {/* Select Bar — TradingView-style bar re-select while replay is active */}
       <button
-        onClick={r.beginReSelect}
-        className={cn(
-          "flex items-center gap-1.5 rounded px-2 py-1 text-2xs transition-colors",
-          "text-ink-muted hover:bg-terminal-hover hover:text-choch",
-        )}
-        title="Select Bar — choose a different starting candle"
+        onClick={() => {
+          if (playing) fire(runReplayCommand("pause"));
+          beginReselect();
+        }}
+        className="flex items-center gap-1.5 rounded px-2 py-1 text-2xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch"
+        title="Choose another backend Replay time"
       >
         <BarChart3 size={13} /> Select Bar
       </button>
-
       <div className="mx-2 h-5 w-px bg-terminal-border" />
-
       <button
-        onClick={r.disarm}
+        onClick={() => {
+          cancelSelection();
+          fire(exitReplaySession());
+        }}
         className="flex items-center gap-1.5 rounded px-2 py-1 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-bear"
       >
         <Power size={13} /> Exit Replay
       </button>
+      {projection.error && <span className="ml-2 text-2xs text-bear">{projection.error}</span>}
     </div>
   );
 }

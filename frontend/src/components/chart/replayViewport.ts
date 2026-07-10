@@ -35,6 +35,23 @@ export function shouldRealignReplayViewport(
   return dataLength > 0 && !replayRangeIntersectsData(range, dataLength);
 }
 
+/** Presentation-only snap for turning a chart x-coordinate time into a UTC request. */
+export function nearestReplayCandidateIndex(times: number[], requestedTime: number): number {
+  if (times.length === 0) return -1;
+  let low = 0;
+  let high = times.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (times[mid] < requestedTime) low = mid + 1;
+    else high = mid - 1;
+  }
+  if (low <= 0) return 0;
+  if (low >= times.length) return times.length - 1;
+  return Math.abs(times[low - 1] - requestedTime) <= Math.abs(times[low] - requestedTime)
+    ? low - 1
+    : low;
+}
+
 export function latestReplayLogicalRange(
   dataLength: number,
   currentRange: LogicalRangeLike | null | undefined,

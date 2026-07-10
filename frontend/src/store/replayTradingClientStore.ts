@@ -22,8 +22,11 @@ function enqueueTradingCommand(
   type: ReplayCommandInput["type"],
   payload?: Record<string, unknown>,
 ): Promise<void> {
+  const requestedSessionId = replayClientStore.getState().snapshot?.id;
+  if (!requestedSessionId) return Promise.reject(new Error("Replay trading session is unavailable"));
   const run = async () => {
     const snapshot = replayClientStore.getState().snapshot;
+    if (snapshot?.id !== requestedSessionId) return;
     if (!snapshot?.trading || snapshot.status === "closed") {
       throw new Error("Replay trading session is unavailable");
     }

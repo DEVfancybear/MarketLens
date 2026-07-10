@@ -2,11 +2,13 @@
 import { useMemo, useState } from "react";
 import type { IChartApi } from "lightweight-charts";
 import { useMarketData } from "@/hooks/useMarketData";
-import { useVisibleCandles } from "@/hooks/useVisibleCandles";
+import { useChartSeries } from "@/hooks/useChartSeries";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useAtomValue } from "jotai";
 import {
   symbolAtom,
   timeframeAtom,
+  candlesAtom,
   loadingAtom,
   indicatorsAtom,
   crosshairAtom,
@@ -28,8 +30,12 @@ import { fmtPrice } from "@/utils/format";
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea() {
-  const { loadOlderCandles } = useMarketData();
-  const candles = useVisibleCandles();
+  const replay = useReplayClientProjection();
+  const { loadOlderCandles } = useMarketData({
+    enabled: !replay.snapshot && replay.connection !== "connecting",
+  });
+  const candles = useChartSeries();
+  const replaySelectionCandidates = useAtomValue(candlesAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
@@ -96,7 +102,7 @@ export function ChartArea() {
           <AlertLines />
           <AlertOverlay />
           <DrawingLayer />
-          <ReplaySelectionLayer />
+          <ReplaySelectionLayer candidates={replaySelectionCandidates} />
         </PriceChart>
         <ReplayFloatingToolbar />
         <RiskPanel />

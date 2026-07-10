@@ -5,8 +5,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { Radio, Wifi } from "lucide-react";
 import type { ExecutionMode } from "@/types/mt5";
 import { useEffect } from "react";
-import { activeAtom } from "@/store/replayStore";
-import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 
 const MODES: { value: ExecutionMode; label: string }[] = [
   { value: "simulator", label: "Sim" },
@@ -17,8 +16,7 @@ export function ExecutionModeSwitch() {
   const mode = useAtomValue(executionModeAtom);
   const enabled = useAtomValue(mt5EnabledAtom);
   const setMode = useSetAtom(setExecutionModeAtom);
-  const replayActive = useAtomValue(activeAtom);
-  const isolatedReplay = isReplayBackendV1Enabled() && replayActive;
+  const isolatedReplay = Boolean(useReplayClientProjection().snapshot);
 
   useEffect(() => {
     if (isolatedReplay && mode !== "simulator") setMode("simulator");

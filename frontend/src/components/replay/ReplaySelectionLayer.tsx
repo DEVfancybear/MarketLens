@@ -1,288 +1,188 @@
 "use client";
+
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
-import { useChartCtx } from "@/components/chart/ChartContext";
-import {
-  selectingAtom,
-  reSelectingAtom,
-  armAtom,
-  cancelSelectAtom,
-  cancelReSelectAtom,
-  confirmReSelectAtom,
-} from "@/store/replayStore";
 import { useAtomValue, useSetAtom } from "jotai";
-import { getDefaultStore } from "jotai";
-import { candlesAtom } from "@/store/chartStore";
+import { useChartCtx } from "@/components/chart/ChartContext";
+import { backendSessionAtom } from "@/store/authStore";
+import { symbolAtom, timeframeAtom } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
-import { indexNearestByTime } from "@/services/replayEngine";
+import {
+  chartLayoutPresetAtom,
+  replayLayoutModeAtom,
+} from "@/store/replayLayoutStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
+import {
+  forkActiveReplay,
+  startReplaySession,
+} from "@/services/replay/replaySocket";
 import { fmtDateTime } from "@/utils/time";
+import type { Candle } from "@/types";
+import { nearestReplayCandidateIndex } from "@/components/chart/replayViewport";
+import {
+  cancelReplaySelectionAtom,
+  replaySelectionModeAtom,
+  replaySessionInputAt,
+} from "./replayUiState";
 
-/**
- * TradingView-style Bar Replay selection overlay.
- *
- * Handles TWO modes:
- *
- * 1. **Initial selection** (selectingAtom === true):
- *    User has not yet started replay. They click a candle to set the initial
- *    start point and arm replay.
- *
- * 2. **Re-selection** (reSelectingAtom === true):
- *    Replay is already active. The "Select Bar" button was pressed. User can
- *    click a different candle to restart replay from that bar without ever
- *    exiting replay mode.
- *
- * In both modes the canvas:
- *   - captures pointer events (pointer-events: auto, z-index above chart),
- *   - disables chart pan/zoom,
- *   - draws a vertical cursor snapped to the nearest candle + date label
- *     and shaded "future" region,
- *   - clears hover state on leave / cancel.
- *
- * When neither mode is active the canvas is pointer-events:none and paints
- * nothing, so it never blocks normal chart interaction or the drawing layer.
- *
- * **Performance:** hover data is stored in refs, never React state, so mouse
- * move triggers only a lightweight canvas repaint — no store updates, no
- * React re-renders, no candle rebuilds.
- */
-export function ReplaySelectionLayer() {
+/** Presentation-only UTC candidate selection; the backend validates the time. */
+export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
   const ctx = useChartCtx();
-  const selecting = useAtomValue(selectingAtom);
-  const reSelecting = useAtomValue(reSelectingAtom);
-  const arm = useSetAtom(armAtom);
-  const cancelSelect = useSetAtom(cancelSelectAtom);
-  const cancelReSelect = useSetAtom(cancelReSelectAtom);
-  const confirmReSelect = useSetAtom(confirmReSelectAtom);
+  const selection = useAtomValue(replaySelectionModeAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const layoutPreset = useAtomValue(chartLayoutPresetAtom);
+  const replayMode = useAtomValue(replayLayoutModeAtom);
+  const projection = useReplayClientProjection();
+  const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // ---- Transient hover data (refs, never React state) ----
-  const hoverIdxRef = useRef<number | null>(null);
+  const hoverIndexRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
-  const rafRef = useRef<number | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const active = selection !== "idle" && backendSession;
+  const candidateSeries = useMemo(() => candidates, [candidates]);
 
-  const isActive = selecting || reSelecting;
+  const nearestIndex = useCallback((clientX: number): number | null => {
+    const canvas = canvasRef.current;
+    if (!ctx || !canvas || candidateSeries.length === 0) return null;
+    const x = clientX - canvas.getBoundingClientRect().left;
+    const time = ctx.chart.timeScale().coordinateToTime(x);
+    if (time == null) return candidateSeries.length - 1;
+    const index = nearestReplayCandidateIndex(
+      candidateSeries.map((candle) => candle.time),
+      time as number,
+    );
+    return index >= 0 ? index : null;
+  }, [candidateSeries, ctx]);
 
-  // While not armed, ctx.candles is the full master series. Memoised so
-  // hook deps stay stable.
-  const candles = useMemo(() => ctx?.candles ?? [], [ctx]);
-
-  // During re-select we need the FULL candle list (not the replay-truncated
-  // visible slice) so the user can pick any bar including future ones.
-  const fullCandles = useMemo(() => {
-    if (!reSelecting) return candles;
-    return getDefaultStore().get(candlesAtom);
-  }, [reSelecting, candles]);
-
-  // ---- Snap a clientX to the nearest candle index ----
-  const nearestIndex = useCallback(
-    (clientX: number): number | null => {
-      const canvas = canvasRef.current;
-      const data = reSelecting ? fullCandles : candles;
-      if (!ctx || !canvas || data.length === 0) return null;
-      const rect = canvas.getBoundingClientRect();
-      const x = clientX - rect.left;
-      const ts = ctx.chart.timeScale();
-      const t = ts.coordinateToTime(x);
-      if (t == null) return data.length - 1; // right whitespace → last bar
-      return indexNearestByTime(data, t as number);
-    },
-    [ctx, candles, fullCandles, reSelecting],
-  );
-
-  // ---- Draw the snapping cursor (reads from refs, writes to canvas) ----
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !ctx) return;
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    if (
-      canvas.width !== rect.width * dpr ||
-      canvas.height !== rect.height * dpr
-    ) {
+    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
     }
-    const g = canvas.getContext("2d")!;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, rect.width, rect.height);
-
-    const hoverIdx = hoverIdxRef.current;
-    const data = reSelecting ? fullCandles : candles;
-    if (!isActive || hoverIdx == null || !data[hoverIdx]) return;
-
-    const ts = ctx.chart.timeScale();
-    const x = ts.timeToCoordinate(data[hoverIdx].time as UTCTimestamp);
+    const graphics = canvas.getContext("2d")!;
+    graphics.setTransform(dpr, 0, 0, dpr, 0, 0);
+    graphics.clearRect(0, 0, rect.width, rect.height);
+    const index = hoverIndexRef.current;
+    const candle = index == null ? undefined : candidateSeries[index];
+    if (!active || !candle) return;
+    const x = ctx.chart.timeScale().timeToCoordinate(candle.time as UTCTimestamp);
     if (x == null) return;
-    const accent =
-      getComputedStyle(document.documentElement)
-        .getPropertyValue("--accent")
-        .trim() || "#2962ff";
-
-    // Shade the would-be-hidden future region.
-    g.fillStyle = reSelecting
-      ? "rgba(255,152,0,0.07)" // orange tint for re-select mode
+    const accent = selection === "reselecting" ? "#ff9800" : "#2962ff";
+    graphics.fillStyle = selection === "reselecting"
+      ? "rgba(255,152,0,0.07)"
       : "rgba(41,98,255,0.07)";
-    g.fillRect(x, 0, rect.width - x, rect.height);
-
-    // Vertical selection line.
-    g.strokeStyle = reSelecting ? "#ff9800" : accent;
-    g.lineWidth = 1.5;
-    g.setLineDash([4, 3]);
-    g.beginPath();
-    g.moveTo(x, 0);
-    g.lineTo(x, rect.height);
-    g.stroke();
-    g.setLineDash([]);
-
-    // Date label chip.
-    const label = fmtDateTime(data[hoverIdx].time);
-    // Canvas can't resolve var(--font-sans); use a concrete family.
-    g.font = '10px "Inter", system-ui, sans-serif';
-    const w = g.measureText(label).width + 12;
-    const chipColor = reSelecting ? "#ff9800" : accent;
-    g.fillStyle = chipColor;
-    g.fillRect(x - w / 2, 4, w, 16);
-    g.fillStyle = "#fff";
-    g.textBaseline = "middle";
-    g.textAlign = "center";
-    g.fillText(label, x, 12.5);
-    g.textAlign = "start";
-
+    graphics.fillRect(x, 0, rect.width - x, rect.height);
+    graphics.strokeStyle = accent;
+    graphics.lineWidth = 1.5;
+    graphics.setLineDash([4, 3]);
+    graphics.beginPath();
+    graphics.moveTo(x, 0);
+    graphics.lineTo(x, rect.height);
+    graphics.stroke();
+    graphics.setLineDash([]);
+    const label = fmtDateTime(candle.time);
+    graphics.font = '10px "Inter", system-ui, sans-serif';
+    const width = graphics.measureText(label).width + 12;
+    graphics.fillStyle = accent;
+    graphics.fillRect(x - width / 2, 4, width, 16);
+    graphics.fillStyle = "#fff";
+    graphics.textBaseline = "middle";
+    graphics.textAlign = "center";
+    graphics.fillText(label, x, 12.5);
+    graphics.textAlign = "start";
     dirtyRef.current = false;
-  }, [ctx, isActive, candles, fullCandles, reSelecting]);
+  }, [active, candidateSeries, ctx, selection]);
 
-  // Schedule a canvas redraw on next rAF (deduplicated).
   const scheduleDraw = useCallback(() => {
-    if (rafRef.current !== null) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
       if (dirtyRef.current) draw();
     });
   }, [draw]);
 
-  // ---- Disable chart pan/zoom while selecting; restore afterwards ----
   useEffect(() => {
     if (!ctx) return;
-    ctx.chart.applyOptions(
-      isActive
-        ? { handleScroll: false, handleScale: false }
-        : { handleScroll: true, handleScale: true },
-    );
-    if (!isActive) {
-      hoverIdxRef.current = null;
+    ctx.chart.applyOptions(active
+      ? { handleScroll: false, handleScale: false }
+      : { handleScroll: true, handleScale: true });
+    if (!active) {
+      hoverIndexRef.current = null;
       dirtyRef.current = true;
       scheduleDraw();
     }
-    return () => {
-      ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
-    };
-  }, [isActive, ctx, scheduleDraw]);
+    return () => ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
+  }, [active, ctx, scheduleDraw]);
 
-  // ---- Esc / Right-click cancels selection ----
-  useEffect(() => {
-    if (!isActive) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (reSelecting) cancelReSelect();
-        else cancelSelect();
-      }
-    };
-    const onCtx = (e: MouseEvent) => {
-      // Right-click cancels re-select (TradingView convention).
-      if (reSelecting) {
-        e.preventDefault();
-        e.stopPropagation();
-        cancelReSelect();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("contextmenu", onCtx, true);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("contextmenu", onCtx, true);
-    };
-  }, [isActive, selecting, reSelecting, cancelSelect, cancelReSelect]);
-
-  // Redraw when chart version changes (pan/zoom/resize).
   useEffect(() => {
     dirtyRef.current = true;
     scheduleDraw();
-  }, [scheduleDraw, ctx?.version]);
+  }, [active, candidateSeries, ctx?.version, scheduleDraw]);
 
-  // Redraw when active state or candle data changes.
-  useEffect(() => {
-    dirtyRef.current = true;
-    scheduleDraw();
-  }, [scheduleDraw, isActive, candles, fullCandles]);
+  const onMove = useCallback((event: React.PointerEvent) => {
+    if (!active) return;
+    const index = nearestIndex(event.clientX);
+    if (index !== hoverIndexRef.current) {
+      hoverIndexRef.current = index;
+      dirtyRef.current = true;
+      scheduleDraw();
+    }
+  }, [active, nearestIndex, scheduleDraw]);
 
-  // ---- Pointer handlers (ref-based, zero React state updates) ----
-  const onMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!isActive) return;
-      const idx = nearestIndex(e.clientX);
-      if (idx !== hoverIdxRef.current) {
-        hoverIdxRef.current = idx;
-        dirtyRef.current = true;
-        scheduleDraw();
-      }
-    },
-    [isActive, nearestIndex, scheduleDraw],
-  );
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (!isActive) return;
-      e.preventDefault();
-      const idx = nearestIndex(e.clientX);
-      const data = reSelecting ? fullCandles : candles;
-      if (idx == null || !data[idx]) return;
-
-      if (reSelecting) {
-        // Re-select mode: move anchor + cursor to the chosen bar.
-        confirmReSelect(idx);
-      } else {
-        // Initial selection mode: arm replay at the chosen bar.
-        const total = getDefaultStore().get(candlesAtom).length;
-        arm(idx, total);
-        setBottomTab("replay");
-      }
-    },
-    [
-      isActive,
-      nearestIndex,
-      reSelecting,
-      candles,
-      fullCandles,
-      confirmReSelect,
-      arm,
-      setBottomTab,
-    ],
-  );
-
-  const onPointerLeave = useCallback(() => {
-    if (!isActive) return;
-    hoverIdxRef.current = null;
-    dirtyRef.current = true;
-    scheduleDraw();
-  }, [isActive, scheduleDraw]);
+  const onPointerDown = useCallback((event: React.PointerEvent) => {
+    if (!active) return;
+    event.preventDefault();
+    const index = nearestIndex(event.clientX);
+    const candle = index == null ? undefined : candidateSeries[index];
+    if (!candle) return;
+    cancelSelection();
+    setBottomTab("replay");
+    const request = projection.snapshot
+      ? forkActiveReplay(new Date(candle.time * 1000).toISOString())
+      : startReplaySession(replaySessionInputAt(
+          candle.time,
+          { symbol, chartTimeframe: timeframe },
+          replayMode,
+          layoutPreset,
+        ));
+    void request.catch(() => undefined);
+  }, [
+    active,
+    cancelSelection,
+    candidateSeries,
+    layoutPreset,
+    nearestIndex,
+    projection.snapshot,
+    replayMode,
+    setBottomTab,
+    symbol,
+    timeframe,
+  ]);
 
   return (
     <canvas
       ref={canvasRef}
       onPointerMove={onMove}
       onPointerDown={onPointerDown}
-      onPointerLeave={onPointerLeave}
-      onContextMenu={(e) => {
-        // Prevent browser context menu during selection modes.
-        if (isActive) e.preventDefault();
+      onPointerLeave={() => {
+        hoverIndexRef.current = null;
+        dirtyRef.current = true;
+        scheduleDraw();
+      }}
+      onContextMenu={(event) => {
+        if (!active) return;
+        event.preventDefault();
+        cancelSelection();
       }}
       className="absolute inset-0 h-full w-full"
-      style={{
-        zIndex: 30,
-        pointerEvents: isActive ? "auto" : "none",
-        cursor: isActive ? "crosshair" : "default",
-      }}
+      style={{ zIndex: 30, pointerEvents: active ? "auto" : "none", cursor: active ? "crosshair" : "default" }}
     />
   );
 }

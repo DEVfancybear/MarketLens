@@ -84,6 +84,18 @@ test("reconnect snapshot replaces stale projection", () => {
   assert.equal(store.getState().snapshot?.tracks[0].cursorSeq, 17);
 });
 
+test("an older command response cannot regress an event-updated projection", () => {
+  const store = new ReplayClientStore();
+  store.replaceSnapshot(snapshot());
+  store.applyEvent(event(1));
+  const stale = snapshot();
+  stale.version = 1;
+  stale.lastEventSeq = 0;
+  store.replaceSnapshot(stale);
+  assert.equal(store.getState().snapshot?.lastEventSeq, 1);
+  assert.equal(store.getState().snapshot?.tracks[0].cursorSeq, 11);
+});
+
 test("progressive bar upserts replace only the revealed aggregate", () => {
   const store = new ReplayClientStore();
   store.replaceSnapshot(snapshot());

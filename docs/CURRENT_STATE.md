@@ -28,6 +28,11 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   list/symbol/section/reorder/active-list mutations now call backend Phase 6 APIs in authenticated
   mode; browser localStorage is no longer a watchlist source of truth. Settings write-back and
   future workspace resources are still pending.
+- Backend Replay migration Phases 0-6 are complete. Authenticated Replay now uses only the Go actor,
+  server-revealed bars, server aggregation, and isolated server trading ledger. The legacy frontend
+  replay clock/store/engine and replay history/MTF/trade-processing paths were physically deleted;
+  `check:replay-client-boundary` is enforced in CI. The remaining environment flag is a UI kill
+  switch and cannot reactivate a browser engine.
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 - Backend MT5 streaming is local-only: run `python -m bridge.mt5_stream.mt5_server` from

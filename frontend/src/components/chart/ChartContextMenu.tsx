@@ -41,6 +41,7 @@ import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { uid } from "@/utils/id";
 import { cn } from "@/utils/cn";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 
 /** Right-click chart context-menu state (per the spec). */
 export interface ContextMenuState {
@@ -92,6 +93,7 @@ export function ChartContextMenu({
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const log = useSetAtom(logAtom);
   const createAlert = useAlertStore((s) => s.createAlert);
+  const replayActive = Boolean(useReplayClientProjection().snapshot);
   const watchlistSymbols = useAtomValue(watchlistSymbolsAtom);
   const addToWatchlist = useSetAtom(addWatchlistSymbolAtom);
   const removeFromWatchlist = useSetAtom(removeWatchlistSymbolAtom);
@@ -182,7 +184,9 @@ export function ChartContextMenu({
     {
       icon: <Bell size={14} className="text-choch" />,
       label: `Create Alert for ${symbol} at ${priceStr}`,
+      disabled: replayActive,
       onClick: act(() => {
+        if (replayActive) return;
         const candles = getDefaultStore().get(candlesAtom);
         const current = candles[candles.length - 1]?.close;
         const condition = inferCondition(state.price, current);

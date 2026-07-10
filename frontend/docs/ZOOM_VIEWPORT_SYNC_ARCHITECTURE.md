@@ -53,7 +53,7 @@ candles/grid move first and drawings/labels follow later.
 | Time navigation | `src/components/chart/ChartTimeToolbar.tsx`, `src/components/chart/chartTimeNavigation.ts` | Applies shortcut/date/range navigation through the chart time scale |
 | SMC overlay | `src/components/smc/SmcLayer.tsx` | Repaints from `ChartContext.version` |
 | Indicator panes | `src/components/chart/IndicatorPane.tsx` | Mirrors main chart logical range |
-| Replay viewport | `src/services/replayEngine.ts`, `src/components/chart/PriceChart.tsx` | Handles cursor/date jumps and data-window replacement |
+| Replay viewport | `src/components/chart/replayViewport.ts`, `src/components/chart/PriceChart.tsx` | Presentation-only realignment after server reset/upsert windows |
 | Guard | `scripts/check-drawing-viewport-repaint.mjs` | Static regression guard for the viewport repaint contract |
 
 ## 4. Source Of Truth

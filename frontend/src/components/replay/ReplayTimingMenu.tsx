@@ -1,4 +1,5 @@
 "use client";
+
 import { useMemo, useState } from "react";
 import {
   BarChart3,
@@ -8,66 +9,88 @@ import {
   Shuffle,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { candlesAtom } from "@/store/chartStore";
+import { backendSessionAtom } from "@/store/authStore";
+import { symbolAtom, timeframeAtom } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
-import { useReplayStore } from "@/store/replayStore";
-import { indexNearestByTime } from "@/services/replayEngine";
+import {
+  chartLayoutPresetAtom,
+  replayLayoutModeAtom,
+} from "@/store/replayLayoutStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
+import {
+  forkActiveReplay,
+  runReplayCommand,
+  startReplaySession,
+} from "@/services/replay/replaySocket";
 import { parseDateInput } from "@/utils/time";
 import { cn } from "@/utils/cn";
 import { Dropdown } from "@/components/ui/Dropdown";
+import {
+  beginReplayReselectionAtom,
+  beginReplaySelectionAtom,
+  replaySelectionModeAtom,
+  replaySessionInputAt,
+} from "./replayUiState";
 
 function toInputDateTime(timeSec?: number): string {
   if (!timeSec) return "";
   return new Date(timeSec * 1000).toISOString().slice(0, 16);
 }
 
-export function ReplayTimingMenu({
-  compact = false,
-}: {
-  compact?: boolean;
-}) {
-  const r = useReplayStore();
-  const candles = useAtomValue(candlesAtom);
+export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
+  const projection = useReplayClientProjection();
+  const backendSession = useAtomValue(backendSessionAtom);
+  const selection = useAtomValue(replaySelectionModeAtom);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const layoutPreset = useAtomValue(chartLayoutPresetAtom);
+  const replayMode = useAtomValue(replayLayoutModeAtom);
+  const beginSelect = useSetAtom(beginReplaySelectionAtom);
+  const beginReselect = useSetAtom(beginReplayReselectionAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const [dateMode, setDateMode] = useState(false);
-  const current = candles[r.cursor] ?? candles[Math.floor(candles.length * 0.7)];
-  const [dateInput, setDateInput] = useState(() =>
-    toInputDateTime(current?.time),
-  );
-
-  const canReplay = candles.length >= 2;
+  const snapshot = projection.snapshot;
+  const currentTime = snapshot
+    ? Math.floor(Date.parse(snapshot.simulatedTime) / 1000)
+    : Math.floor(Date.now() / 1000);
+  const [dateInput, setDateInput] = useState(() => toInputDateTime(currentTime));
+  const canReplay = backendSession;
   const label = useMemo(() => {
-    if (r.selecting || r.reSelecting) return "Select bar";
-    if (!r.active) return "Replay timing";
-    return "Select bar";
-  }, [r.active, r.selecting, r.reSelecting]);
+    if (selection !== "idle") return "Select bar";
+    return snapshot ? "Select time" : "Replay timing";
+  }, [selection, snapshot]);
 
-  const armAt = (idx: number) => {
+  const startAt = (time: number) => {
     if (!canReplay) return;
-    const clamped = Math.max(0, Math.min(candles.length - 1, idx));
-    r.arm(clamped, candles.length);
     setBottomTab("replay");
+    void startReplaySession(
+      replaySessionInputAt(time, { symbol, chartTimeframe: timeframe }, replayMode, layoutPreset),
+    ).catch(() => undefined);
+  };
+
+  const moveTo = (time: number) => {
+    if (!snapshot) {
+      startAt(time);
+      return;
+    }
+    const iso = new Date(time * 1000).toISOString();
+    const movingBackward = time < Date.parse(snapshot.simulatedTime) / 1000;
+    const command = movingBackward
+      ? forkActiveReplay(iso)
+      : runReplayCommand("seek", { time: iso });
+    void command.catch(() => undefined);
   };
 
   const selectBar = () => {
     if (!canReplay) return;
-    if (r.active) r.beginReSelect();
-    else r.beginSelect();
+    if (snapshot) beginReselect();
+    else beginSelect();
     setBottomTab("replay");
   };
 
-  const selectFirst = () => armAt(0);
-
-  const selectRandom = () => {
-    if (!canReplay) return;
-    const max = Math.max(0, candles.length - 2);
-    armAt(Math.floor(Math.random() * (max + 1)));
-  };
-
   const selectDate = () => {
-    const t = parseDateInput(dateInput);
-    if (t == null || !canReplay) return;
-    armAt(indexNearestByTime(candles, t));
+    const time = parseDateInput(dateInput);
+    if (time != null) moveTo(time);
   };
 
   return (
@@ -79,12 +102,8 @@ export function ReplayTimingMenu({
           type="button"
           className={cn(
             "flex items-center gap-2 rounded text-left font-medium transition-colors",
-            compact
-              ? "h-8 px-2 text-[11px]"
-              : "h-9 px-2.5 text-xs",
-            open
-              ? "bg-brand text-white"
-              : "text-ink hover:bg-terminal-hover",
+            compact ? "h-8 px-2 text-[11px]" : "h-9 px-2.5 text-xs",
+            open ? "bg-brand text-white" : "text-ink hover:bg-terminal-hover",
           )}
           title="Replay timing"
         >
@@ -97,24 +116,22 @@ export function ReplayTimingMenu({
       {(close) => (
         <div className="py-1">
           <div className="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-normal text-ink-faint">
-            Replay timing
+            Backend Replay timing
           </div>
           {dateMode ? (
             <div className="space-y-2 px-3 pb-2 pt-1">
-              <label className="block text-[10px] uppercase tracking-normal text-ink-faint">
-                Select date
-              </label>
               <input
                 type="datetime-local"
                 value={dateInput}
-                onChange={(e) => setDateInput(e.target.value)}
+                onChange={(event) => setDateInput(event.target.value)}
                 className="h-8 w-full rounded border border-terminal-border bg-terminal-bg px-2 text-[11px] text-ink outline-none focus:border-brand"
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
-                    selectFirst();
+                    const first = snapshot?.tracks[0]?.dataset.firstAvailableTime;
+                    if (first) moveTo(Date.parse(first) / 1000);
                     close();
                     setDateMode(false);
                   }}
@@ -139,20 +156,12 @@ export function ReplayTimingMenu({
             </div>
           ) : (
             <>
-              <TimingItem
-                icon={<BarChart3 size={16} />}
-                label="Select bar"
-                onClick={() => {
-                  selectBar();
-                  close();
-                }}
-                disabled={!canReplay}
-              />
+              <TimingItem icon={<BarChart3 size={16} />} label="Select bar" onClick={() => { selectBar(); close(); }} disabled={!canReplay} />
               <TimingItem
                 icon={<CalendarClock size={16} />}
                 label="Select date..."
                 onClick={() => {
-                  setDateInput(toInputDateTime(current?.time));
+                  setDateInput(toInputDateTime(currentTime));
                   setDateMode(true);
                 }}
                 disabled={!canReplay}
@@ -161,7 +170,11 @@ export function ReplayTimingMenu({
                 icon={<Shuffle size={16} />}
                 label="Random bar"
                 onClick={() => {
-                  selectRandom();
+                  const first = snapshot?.tracks[0]?.dataset.firstAvailableTime;
+                  const last = snapshot?.tracks[0]?.dataset.lastAvailableTime;
+                  const from = first ? Date.parse(first) / 1000 : Date.now() / 1000 - 30 * 86400;
+                  const to = last ? Date.parse(last) / 1000 : Date.now() / 1000;
+                  moveTo(Math.floor(from + Math.random() * Math.max(1, to - from)));
                   close();
                 }}
                 disabled={!canReplay}

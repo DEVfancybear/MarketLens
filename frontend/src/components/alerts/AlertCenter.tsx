@@ -24,6 +24,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { alertCenterOpenAtom, setAlertCenterAtom } from "@/store/uiStore";
 import { symbolAtom } from "@/store/chartStore";
 import { useMarketDataStore } from "@/store/marketDataStore";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   useAlertStore,
   CONDITION_LABEL,
@@ -94,6 +95,7 @@ function Toggle({
 export function AlertCenter() {
   const open = useAtomValue(alertCenterOpenAtom);
   const setOpen = useSetAtom(setAlertCenterAtom);
+  const replayActive = Boolean(useReplayClientProjection().snapshot);
 
   const chartSymbol = useAtomValue(symbolAtom);
   const alerts = useAlertStore((s) => s.alerts);
@@ -172,6 +174,7 @@ export function AlertCenter() {
   );
 
   const submit = () => {
+    if (replayActive) return;
     const target = Number(price);
     if (!Number.isFinite(target) || target <= 0) return;
     createAlert({ symbol, condition, price: target, recurring });
@@ -406,9 +409,11 @@ export function AlertCenter() {
               />
               <button
                 onClick={submit}
-                className="rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand/85"
+                disabled={replayActive}
+                title={replayActive ? "Alert creation is disabled during Replay" : undefined}
+                className="rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand/85 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Create alert
+                {replayActive ? "Disabled in Replay" : "Create alert"}
               </button>
             </div>
           </div>

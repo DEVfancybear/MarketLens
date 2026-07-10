@@ -861,16 +861,19 @@ track, progressive aggregate, and isolated trading ledger through one atomic
 barrier and never fabricates candles across sparse provider-calendar gaps. See
 `docs/REPLAY_BACKEND_PHASE5.md` for the deployed contract and verification.
 
-### Phase 6 — cutover and cleanup
+### Phase 6 — cutover and cleanup (completed 2026-07-11)
 
-- Enable backend replay by default for authenticated users.
-- Execute the mandatory deletion contract in section 11.1: remove the frontend
+- [x] Enable backend replay by default for authenticated users.
+- [x] Execute the mandatory deletion contract in section 11.1: remove the frontend
   clock, cursor/state machine, provider-history replay paths, MTF aggregation,
   and replay trade processing after one stable backend-owned release.
-- Keep a kill switch that disables the Replay UI or selects a compatible backend
+- [x] Keep a kill switch that disables the Replay UI or selects a compatible backend
   API version. It must not reactivate deleted local replay logic.
-- Enable `check:replay-client-boundary` in CI and reject reintroduction of
+- [x] Enable `check:replay-client-boundary` in CI and reject reintroduction of
   frontend replay business logic.
+
+See `docs/REPLAY_BACKEND_PHASE6.md` for the deletion proof and repository
+verification runbook.
 
 ## 13. Test strategy and acceptance gates
 

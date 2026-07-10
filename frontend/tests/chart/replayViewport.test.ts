@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   latestReplayLogicalRange,
+  nearestReplayCandidateIndex,
   replayRangeIntersectsData,
   shouldRealignReplayViewport,
 } from "../../src/components/chart/replayViewport";
@@ -31,4 +32,10 @@ test("latest replay logical range has a deterministic fallback when current rang
   const next = latestReplayLogicalRange(50, null, 8);
 
   assert.deepEqual(next, { from: -63, to: 57 });
+});
+
+test("selection geometry converts a coordinate time to a UTC candidate only", () => {
+  assert.equal(nearestReplayCandidateIndex([100, 200, 300], 249), 1);
+  assert.equal(nearestReplayCandidateIndex([100, 200, 300], 251), 2);
+  assert.equal(nearestReplayCandidateIndex([], 251), -1);
 });
