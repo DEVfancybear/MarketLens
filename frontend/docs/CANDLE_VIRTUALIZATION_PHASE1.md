@@ -84,6 +84,44 @@ counter-level invariants:
 Primary-series windowing remains deferred unless a later large-history trace
 shows that its current write path becomes material.
 
+## First post-change capture
+
+The first 5,000-bar post-change capture confirmed the targeted write reductions
+but did not pass the overall responsiveness gate.
+
+| Metric | Phase 0 | Phase 1 first capture | Change |
+| --- | ---: | ---: | ---: |
+| Indicator `setData` calls | 9,077 | 1,217 | -86.6% |
+| Indicator `setData` points | 2,999,891 | 150,024 | -95.0% |
+| Indicator `setData` time | 7,556.7ms | 2,132.9ms | -71.8% |
+| Pane-anchor `setData` calls | 807 | 3 | -99.6% |
+| Pane-anchor `setData` points | 4,056,427 | 14,696 | -99.6% |
+| Pane-anchor `setData` time | 2,699.1ms | 15.8ms | -99.4% |
+| Estimated SMC bytes posted | 59.2MB | 25.3MB | -57.3% aggregate |
+| Frame p95 | 66.7ms | 116.8ms | regression |
+| Long-task total | 20,059ms | 25,238ms | regression |
+| React commit p95 | 12.3ms | 22.3ms | regression |
+
+Additional positive counters: 7,563 indicator writes skipped, 555 indicator
+updates used, 9,335 repeated style applications skipped, and 1,008,350 SMC
+candles avoided before cloning. Per SMC request the payload fell from roughly
+4,852 candles to exactly 1,500 (69.1%).
+
+The overall regression had two measured causes:
+
+1. Once chart writes became cheaper, the 90ms SMC scheduler completed 301
+   requests instead of 218; SMC transfer/queue became the dominant latency.
+2. Moving pane indicator computation into React render removed few commits but
+   charged synchronous compute to render/commit and increased React p95.
+
+The corrective iteration keeps the successful write plans, restores indicator
+compute to the post-render effect, changes SMC cadence to 200ms (5Hz), permits
+only one worker request in flight, and retains only the newest trailing input.
+Stale worker snapshots are not committed while newer input is pending.
+
+The corrective iteration requires one more identical browser capture before
+the overall Phase 1 performance gate can be declared passed.
+
 ## Deferred item
 
 Removing the `marketDataStore` to `chartStore.candlesAtom` compatibility mirror

@@ -16,7 +16,7 @@ import {
   subscribeActiveChartBenchmarkCandles,
 } from "@/services/chartBenchmarkFixtures";
 
-const THROTTLE_MS = 90;
+const THROTTLE_MS = 200;
 
 /**
  * Recomputes the SMC snapshot from the visible candles whenever they change,
@@ -40,9 +40,12 @@ export function useSmcEngine() {
   const pendingRef = useRef<typeof candles | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentAtRef = useRef<Map<number, number>>(new Map());
+  const workerInFlightRef = useRef(false);
+  const dispatchRef = useRef<((data: typeof candles) => void) | null>(null);
 
   // Spin up the worker once.
   useEffect(() => {
+    const sentAtStore = sentAtRef.current;
     try {
       const worker = new Worker(
         new URL("../workers/smc.worker.ts", import.meta.url),
@@ -50,7 +53,8 @@ export function useSmcEngine() {
       worker.onmessage = (
         e: MessageEvent<{ reqId: number; snapshot?: SmcSnapshot; computeMs?: number }>,
       ) => {
-        const sentAt = sentAtRef.current.get(e.data.reqId);
+        workerInFlightRef.current = false;
+        const sentAt = sentAtStore.get(e.data.reqId);
         if (sentAt != null) {
           const roundTripMs = performance.now() - sentAt;
           recordChartPerformanceDuration("smc.worker.round-trip", roundTripMs, {
@@ -63,7 +67,7 @@ export function useSmcEngine() {
               { reqId: e.data.reqId },
             );
           }
-          sentAtRef.current.delete(e.data.reqId);
+          sentAtStore.delete(e.data.reqId);
         }
         if (e.data.computeMs != null) {
           recordChartPerformanceDuration("smc.worker.compute", e.data.computeMs, {
@@ -71,8 +75,23 @@ export function useSmcEngine() {
           });
         }
         // Only accept the latest in-flight request.
-        if (e.data.snapshot && e.data.reqId === reqRef.current) {
+        if (
+          e.data.snapshot &&
+          e.data.reqId === reqRef.current &&
+          pendingRef.current == null
+        ) {
           setSnapshot(e.data.snapshot);
+        }
+        const pending = pendingRef.current;
+        if (pending) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          const delay = Math.max(0, THROTTLE_MS - (Date.now() - lastSentRef.current));
+          timerRef.current = setTimeout(() => {
+            timerRef.current = null;
+            const latest = pendingRef.current ?? pending;
+            pendingRef.current = null;
+            dispatchRef.current?.(latest);
+          }, delay);
         }
       };
       workerRef.current = worker;
@@ -82,20 +101,31 @@ export function useSmcEngine() {
     return () => {
       workerRef.current?.terminate();
       workerRef.current = null;
+      workerInFlightRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      pendingRef.current = null;
+      sentAtStore.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const dispatch = (data: typeof candles) => {
+      const worker = workerRef.current;
+      if (worker && workerInFlightRef.current) {
+        pendingRef.current = data;
+        incrementChartPerformanceCounter("smc.worker.post.coalesced");
+        return;
+      }
       const workerData = selectSmcInputWindow(data);
       incrementChartPerformanceCounter(
         "smc.worker.post.candlesAvoided",
         data.length - workerData.length,
       );
-      const worker = workerRef.current;
-      const reqId = ++reqRef.current;
       if (worker) {
+        const reqId = ++reqRef.current;
+        workerInFlightRef.current = true;
         sentAtRef.current.set(reqId, performance.now());
         incrementChartPerformanceCounter("smc.worker.post.calls");
         incrementChartPerformanceCounter("smc.worker.post.candles", workerData.length);
@@ -119,10 +149,14 @@ export function useSmcEngine() {
       }
       lastSentRef.current = Date.now();
     };
+    dispatchRef.current = dispatch;
 
     const now = Date.now();
     const since = now - lastSentRef.current;
     if (since >= THROTTLE_MS) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      pendingRef.current = null;
       dispatch(candles);
     } else {
       // Coalesce rapid updates (e.g. 100x replay) into one trailing dispatch.
@@ -130,8 +164,9 @@ export function useSmcEngine() {
       if (!timerRef.current) {
         timerRef.current = setTimeout(() => {
           timerRef.current = null;
-          if (pendingRef.current) dispatch(pendingRef.current);
+          const latest = pendingRef.current;
           pendingRef.current = null;
+          if (latest) dispatch(latest);
         }, THROTTLE_MS - since);
       }
     }

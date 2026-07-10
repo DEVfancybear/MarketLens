@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createChart,
   type IChartApi,
@@ -127,6 +127,7 @@ export function IndicatorPane({
   const setPineEditorTitle = useSetAtom(pineEditorTitleAtom);
   const setPineEditorSource = useSetAtom(pineEditorSourceAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
+  const [legendValueText, setLegendValueText] = useState("");
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
 
   const refreshViewportProjectedSeries = useCallback((onlyExtended: boolean) => {
@@ -304,20 +305,6 @@ export function IndicatorPane({
     }
   }, [cfg, candles, symbol, timeframe]);
 
-  const result = useMemo(
-    () => {
-      void pineRuntimeVersion;
-      return cfg.visible === false
-        ? null
-        : computeIndicator(cfg, candles, { symbol, timeframe });
-    },
-    [cfg, candles, pineRuntimeVersion, symbol, timeframe],
-  );
-  const legendValueText = useMemo(
-    () => result ? indicatorResultValueText(result) : "",
-    [result],
-  );
-
   // Data
   useEffect(() => {
     const chart = chartRef.current;
@@ -330,10 +317,13 @@ export function IndicatorPane({
       seriesStyleSignatureRef.current = "";
       anchorDataRef.current = [];
       seriesDataRef.current.clear();
+      setLegendValueText("");
       return;
     }
-    if (!result) return;
+    void pineRuntimeVersion;
+    const result = computeIndicator(cfg, candles, { symbol, timeframe });
     resultRef.current = result;
+    setLegendValueText(indicatorResultValueText(result));
     const signature = seriesStructureSignature(result.series);
     const styleSignature = seriesStyleSignature(result.series);
     const structureChanged = seriesSignatureRef.current !== signature;
@@ -447,8 +437,10 @@ export function IndicatorPane({
     cfg,
     candles,
     theme,
+    pineRuntimeVersion,
+    symbol,
+    timeframe,
     mainChart,
-    result,
     refreshViewportProjectedSeries,
   ]);
 

@@ -1,0 +1,44 @@
+{
+  "scenario": "Phase 1 first capture: 5000 bars, pane/custom indicators, SMC, scripted pan/zoom/300-bar replay",
+  "capturedAt": "2026-07-10T20:56:08.383Z",
+  "environment": {
+    "browser": "Edge 150",
+    "os": "Windows 10",
+    "viewport": "838x794",
+    "devicePixelRatio": 1.25,
+    "hardwareConcurrency": 12
+  },
+  "elapsedMs": 40341.1,
+  "heapUsedBytes": 773842223,
+  "counters": {
+    "frame.count": 758,
+    "frame.missed-vsync": 308,
+    "frame.over33_4ms": 304,
+    "main.long-task.count": 301,
+    "react.commit.count": 911,
+    "series.indicator.setData.calls": 1217,
+    "series.indicator.setData.points": 150024,
+    "series.indicator.update.calls": 555,
+    "series.indicator.skipped": 7563,
+    "series.indicator.applyOptions.skipped": 9335,
+    "series.pane-anchor.setData.calls": 3,
+    "series.pane-anchor.setData.points": 14696,
+    "series.pane-anchor.update.calls": 292,
+    "series.pane-anchor.skipped": 128,
+    "smc.worker.post.calls": 301,
+    "smc.worker.post.candles": 451500,
+    "smc.worker.post.candlesAvoided": 1008350,
+    "smc.worker.post.estimatedBytes": 25284000
+  },
+  "metrics": {
+    "frame.interval": { "p50Ms": 16.8, "p95Ms": 116.8, "p99Ms": 133.6, "maxMs": 283.4 },
+    "main.long-task": { "totalMs": 25238.0, "p95Ms": 101.0, "p99Ms": 127.0, "maxMs": 163.0 },
+    "react.commit": { "totalMs": 10165.2, "p95Ms": 22.3, "p99Ms": 25.7, "maxMs": 75.9 },
+    "series.indicator.setData": { "totalMs": 2132.9, "p95Ms": 3.9, "p99Ms": 7.1, "maxMs": 47.2 },
+    "series.pane-anchor.setData": { "totalMs": 15.8, "p95Ms": 7.8, "p99Ms": 7.8, "maxMs": 7.8 },
+    "smc.worker.round-trip": { "totalMs": 26564.5, "p95Ms": 126.7, "p99Ms": 145.3, "maxMs": 199.3 },
+    "smc.worker.transfer-and-queue": { "totalMs": 24510.1, "p95Ms": 117.3, "p99Ms": 137.6, "maxMs": 189.4 },
+    "smc.worker.compute": { "totalMs": 2054.4, "p95Ms": 10.8, "p99Ms": 12.2, "maxMs": 15.2 }
+  },
+  "result": "targeted write reductions passed; overall responsiveness gate failed; corrective iteration required"
+}
