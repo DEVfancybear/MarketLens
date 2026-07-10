@@ -44,7 +44,7 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_HISTORY_BARS` | integer | `1500` | Default candle count for Python history responses |
 | `MT5_HISTORY_TIMEFRAMES` | string | `1m,3m,5m,15m,30m,1H,2H,4H,1D,1W,1M` | Supported preload timeframes when `MT5_PRELOAD_HISTORY=true` |
 | `MT5_PRELOAD_HISTORY` | boolean | `false` | Preload history messages on every bridge connection; normally leave false because the Go API requests history on demand |
-| `MT5_HISTORY_SYNC_RETRIES` | integer | `12` | Python bridge retry budget when MT5 initially returns stale history bars |
+| `MT5_HISTORY_SYNC_RETRIES` | integer | `2` | Python bridge retry budget when MT5 initially returns empty history |
 | `MT5_HISTORY_SYNC_DELAY_MS` | integer | `300` | Non-blocking async delay between MT5 history refresh attempts |
 | `MT5_TERMINAL_PATH` | string | empty | Optional MT5 terminal executable path |
 | `MT5_LOGIN` | integer | empty | Optional MT5 login; set with password/server |

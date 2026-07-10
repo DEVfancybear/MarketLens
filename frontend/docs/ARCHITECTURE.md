@@ -106,7 +106,7 @@ of truth for initial/page sizes and MT5 refresh cadence:
 | `2H` | 500 / 500 | 15s |
 | `4H` | 400 / 400 | 30s |
 | `1D` | 300 / 300 | 60s |
-| `1W` | 260 / 260 | 5m |
+| `1W` | 100 / 260 | 5m |
 | `1M` | 60 / 60 | 5m |
 
 `marketDataStore` retains candles per `symbol:timeframe`. `useMarketData()` paints an existing
@@ -118,6 +118,8 @@ loads request only the policy's initial window; panning left requests another pa
 Symbol/timeframe effects pass an `AbortSignal` through `HistoricalDataService` to the Go API. A
 selection change cancels obsolete work end-to-end; the active selection must not wait behind queued
 history requests for frames the user has already left.
+The initial request is deferred by 75ms so React development Strict Mode probes and rapid toolbar
+clicks are collapsed before any HTTP work begins.
 
 `PriceChart` uses incremental Lightweight Charts updates only for true latest-bar updates/appends.
 History reloads, replay window replacements, symbol/timeframe changes, and non-incremental data

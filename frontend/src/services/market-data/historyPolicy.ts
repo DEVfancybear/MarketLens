@@ -1,5 +1,8 @@
 import type { Timeframe } from "@/types";
 
+/** Collapses Strict Mode probes and rapid selection changes before REST starts. */
+export const HISTORY_SELECTION_DEBOUNCE_MS = 75;
+
 /**
  * Keep the first paint small and load older bars only when the user pans left.
  * Large MT5 requests are disproportionately expensive on a cold timeframe.
@@ -14,7 +17,7 @@ const INITIAL_BARS: Record<Timeframe, number> = {
   "2H": 500,
   "4H": 400,
   "1D": 300,
-  "1W": 260,
+  "1W": 100,
   "1M": 60,
 };
 

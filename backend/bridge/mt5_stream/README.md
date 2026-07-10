@@ -41,7 +41,7 @@ python -m pip install -r bridge/mt5_stream/requirements.txt
 | `MT5_HISTORY_BARS` | `1500` | Default bars returned for a history request |
 | `MT5_HISTORY_TIMEFRAMES` | `1m,3m,5m,15m,30m,1H,2H,4H,1D,1W,1M` | Timeframes eligible for optional preload |
 | `MT5_PRELOAD_HISTORY` | `false` | Preload history for streamed symbols on connect; normally leave false and use on-demand requests |
-| `MT5_HISTORY_SYNC_RETRIES` | `12` | Retry budget when MT5 returns stale history during cold start |
+| `MT5_HISTORY_SYNC_RETRIES` | `2` | Retry budget when MT5 returns empty history during cold start |
 | `MT5_HISTORY_SYNC_DELAY_MS` | `300` | Async delay between MT5 history refresh attempts |
 | `MT5_TERMINAL_PATH` | empty | Optional MT5 terminal executable path |
 | `MT5_LOGIN` | empty | Optional MT5 account login |
@@ -72,9 +72,11 @@ single-threaded; the MT5 Python package should not be called concurrently from
 multiple runtime threads.
 
 On-demand history requests may need a cold-start refresh because MT5 downloads
-recent bars after the first `copy_rates_from` call. The worker serializes
-`copy_rates_*` work, so a slow `1D`/`1W` request does not freeze the asyncio
-WebSocket loop or block catalog/tick messages.
+recent bars after the first `copy_rates_from` call. A non-empty history window
+is returned immediately even if its newest bar is slightly stale; later active
+chart refreshes pick up the terminal's warmed bars. Only empty responses use the
+bounded retry budget. The worker serializes `copy_rates_*` work, so a slow
+request does not freeze the asyncio WebSocket loop or block catalog messages.
 
 History `symbol_select()` and `copy_rates_*` execute together on that worker.
 The Go client can send `history.cancel` when every HTTP waiter has abandoned a

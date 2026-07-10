@@ -116,7 +116,7 @@ TIMEFRAME_SECONDS = {
 # MT5 returns cached (often stale) bars from copy_rates_from_pos and only
 # downloads recent history in the background. These bound how hard we retry to
 # get bars up to the current one before giving up.
-HISTORY_SYNC_RETRIES = int(os.getenv("MT5_HISTORY_SYNC_RETRIES", "12"))
+HISTORY_SYNC_RETRIES = int(os.getenv("MT5_HISTORY_SYNC_RETRIES", "2"))
 HISTORY_SYNC_DELAY = max(int(os.getenv("MT5_HISTORY_SYNC_DELAY_MS", "300")), 50) / 1000
 
 
@@ -176,9 +176,21 @@ def copy_rates_synced_blocking(
 
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
-    if _rates_are_fresh(rates, symbol, timeframe, tf_seconds):
+    if rates is not None and len(rates) > 0:
+        if not _rates_are_fresh(rates, symbol, timeframe, tf_seconds):
+            LOG.debug(
+                "returning available MT5 history while terminal warms "
+                "symbol=%s timeframe=%s bars=%d",
+                symbol,
+                timeframe,
+                len(rates),
+            )
         return rates
 
+    # Retry only an empty response. A non-empty but slightly stale window is
+    # immediately useful for first paint, and subsequent active-chart refreshes
+    # will pick up the terminal's asynchronously warmed bars. Waiting for strict
+    # freshness here can multiply slow MT5 calls into a 60-second queue stall.
     for _ in range(HISTORY_SYNC_RETRIES):
         mt5.copy_rates_from(
             symbol,
@@ -188,8 +200,8 @@ def copy_rates_synced_blocking(
         )
         time.sleep(HISTORY_SYNC_DELAY)
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
-        if _rates_are_fresh(rates, symbol, timeframe, tf_seconds):
-            break
+        if rates is not None and len(rates) > 0:
+            return rates
     return rates
 
 

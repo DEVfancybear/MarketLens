@@ -39,6 +39,10 @@ class Mt5ServerTickTests(unittest.TestCase):
     def setUp(self) -> None:
         self.original_symbol_info_tick = mt5_server.mt5.symbol_info_tick
         self.original_symbol_select = mt5_server.mt5.symbol_select
+        self.original_copy_rates_from_pos = getattr(
+            mt5_server.mt5, "copy_rates_from_pos", None
+        )
+        self.original_copy_rates_from = getattr(mt5_server.mt5, "copy_rates_from", None)
         self.original_catalog = list(mt5_server.SYMBOL_CATALOG)
         self.original_stream_symbols = tuple(mt5_server.STREAM_SYMBOLS)
         self.original_tick_offset = mt5_server.MT5_TICK_TIME_OFFSET_SECONDS
@@ -46,6 +50,20 @@ class Mt5ServerTickTests(unittest.TestCase):
     def tearDown(self) -> None:
         mt5_server.mt5.symbol_info_tick = self.original_symbol_info_tick
         mt5_server.mt5.symbol_select = self.original_symbol_select
+        if (
+            self.original_copy_rates_from_pos is None
+            and hasattr(mt5_server.mt5, "copy_rates_from_pos")
+        ):
+            delattr(mt5_server.mt5, "copy_rates_from_pos")
+        elif self.original_copy_rates_from_pos is not None:
+            mt5_server.mt5.copy_rates_from_pos = self.original_copy_rates_from_pos
+        if (
+            self.original_copy_rates_from is None
+            and hasattr(mt5_server.mt5, "copy_rates_from")
+        ):
+            delattr(mt5_server.mt5, "copy_rates_from")
+        elif self.original_copy_rates_from is not None:
+            mt5_server.mt5.copy_rates_from = self.original_copy_rates_from
         mt5_server.SYMBOL_CATALOG = self.original_catalog
         mt5_server.STREAM_SYMBOLS = self.original_stream_symbols
         mt5_server.MT5_TICK_TIME_OFFSET_SECONDS = self.original_tick_offset
@@ -130,6 +148,29 @@ class Mt5ServerTickTests(unittest.TestCase):
                 mt5_server.TIMEFRAME_SECONDS["1W"],
             )
         )
+
+    def test_non_empty_stale_history_returns_without_warmup_retry(self) -> None:
+        rates = [{"time": 1_700_000_000}]
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=1_800_000_000
+        )
+        mt5_server.mt5.copy_rates_from_pos = (
+            lambda _symbol, _timeframe, _start, _limit: rates
+        )
+
+        def unexpected_warmup(*_args: object) -> None:
+            self.fail("non-empty history must not enter the blocking warm-up loop")
+
+        mt5_server.mt5.copy_rates_from = unexpected_warmup
+
+        result = mt5_server.copy_rates_synced_blocking(
+            "ETHUSD",
+            mt5_server.TIMEFRAME_MAP["15m"],
+            "15m",
+            900,
+        )
+
+        self.assertIs(result, rates)
 
 
 class Mt5ServerWorkerTests(unittest.IsolatedAsyncioTestCase):

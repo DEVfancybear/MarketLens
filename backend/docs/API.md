@@ -246,6 +246,10 @@ History scheduling:
 - Weekly and monthly freshness use calendar-tolerant windows (two weeks and 62 days respectively),
   not Unix-epoch modulo arithmetic. This avoids repeated cold-cache retries for valid broker-aligned
   `1W` and variable-length `1M` bars.
+- Python returns the first non-empty MT5 rate window immediately. Slightly stale data is usable for
+  first paint and is revalidated by later active-chart refreshes; only empty windows consume the
+  bounded bridge retry budget. This prevents one cold symbol from holding the single MT5 worker for
+  a full chain of freshness retries.
 
 Symbol catalog payload, sent when a Go client connects:
 

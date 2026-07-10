@@ -44,6 +44,7 @@ import {
   marketSymbolsAtom,
 } from "@/store/marketSymbolStore";
 import {
+  HISTORY_SELECTION_DEBOUNCE_MS,
   historyPageBars,
   initialHistoryBars,
   mt5HistoryRefreshMs,
@@ -165,56 +166,62 @@ export function useMarketData() {
     const historyLimit = initialHistoryBars(timeframe);
     const controller = new AbortController();
 
-    getHistoricalDataService()
-      .loadHistory({
-        symbol,
-        timeframe,
-        limit: historyLimit,
-        before:
-          replayActive && !symbolChanged
-            ? replayHistoryBefore(timeframe, historyLimit, replayCursorTime)
-            : undefined,
-        refresh: hasCachedHistory || undefined,
-      }, {
-        signal: controller.signal,
-      })
-      .then((hist) => {
-        if (cancelled) return;
-        // Seed history before subscribing. For MT5, candles must come from
-        // MT5 rates/history; ticks are used only for quotes/watchlist.
-        getMarketDataState().setCandles(symbol, timeframe, hist);
-        getMarketDataState().selectMarket(symbol, timeframe);
-        const nextCandles = getMarketDataState().getCandles(
+    // Deferring one tick avoids React Strict Mode's mount/cleanup probe from
+    // issuing a real HTTP request. It also collapses rapid timeframe clicks so
+    // MT5 only receives work for the selection the user actually stopped on.
+    const requestTimer = window.setTimeout(() => {
+      getHistoricalDataService()
+        .loadHistory({
           symbol,
           timeframe,
-        ) as Candle[];
-        setCandles(nextCandles);
-        if (getDefaultStore().get(activeAtom)) {
-          reconcileReplay(nextCandles);
-        } else {
-          setTotal(nextCandles.length);
-        }
-        setHistoryReadyKey(key);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        if (cancelled) return;
-        if (!hasCachedHistory) {
-          getMarketDataState().setCandles(symbol, timeframe, []);
-          setCandles([]);
-          setTotal(0);
-        }
-        setLoading(false);
-        getDefaultStore().set(
-          logAtom,
-          hasCachedHistory ? "warn" : "error",
-          `History load failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
-        );
-      });
+          limit: historyLimit,
+          before:
+            replayActive && !symbolChanged
+              ? replayHistoryBefore(timeframe, historyLimit, replayCursorTime)
+              : undefined,
+          refresh: hasCachedHistory || undefined,
+        }, {
+          signal: controller.signal,
+        })
+        .then((hist) => {
+          if (cancelled) return;
+          // Seed history before subscribing. For MT5, candles must come from
+          // MT5 rates/history; ticks are used only for quotes/watchlist.
+          getMarketDataState().setCandles(symbol, timeframe, hist);
+          getMarketDataState().selectMarket(symbol, timeframe);
+          const nextCandles = getMarketDataState().getCandles(
+            symbol,
+            timeframe,
+          ) as Candle[];
+          setCandles(nextCandles);
+          if (getDefaultStore().get(activeAtom)) {
+            reconcileReplay(nextCandles);
+          } else {
+            setTotal(nextCandles.length);
+          }
+          setHistoryReadyKey(key);
+          setLoading(false);
+        })
+        .catch((err) => {
+          if (isAbortError(err)) return;
+          if (cancelled) return;
+          if (!hasCachedHistory) {
+            getMarketDataState().setCandles(symbol, timeframe, []);
+            setCandles([]);
+            setTotal(0);
+          }
+          setLoading(false);
+          getDefaultStore().set(
+            logAtom,
+            hasCachedHistory ? "warn" : "error",
+            `History load failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
+          );
+        });
+    }, HISTORY_SELECTION_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(requestTimer);
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
