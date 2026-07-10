@@ -233,3 +233,21 @@ func TestEngineConcurrentExpectedVersionAllowsOneMutation(t *testing.T) {
 		t.Fatalf("successes=%d conflicts=%d", successes, conflicts)
 	}
 }
+
+func TestReplayClockBatchesFastSpeedsAtOneCommitPerSecond(t *testing.T) {
+	if got := replayClockStepCount(10); got != 10 {
+		t.Fatalf("10x step count=%d", got)
+	}
+	if got := replayClockCadence(10); got != time.Second {
+		t.Fatalf("10x cadence=%s", got)
+	}
+	if got := replayClockStepCount(0.3); got != 1 {
+		t.Fatalf("0.3x step count=%d", got)
+	}
+	if got := replayClockStepCount(10, 1400*time.Millisecond); got != 14 {
+		t.Fatalf("10x delayed step count=%d", got)
+	}
+	if got := replayClockCadence(0.3); got < 3*time.Second || got > 4*time.Second {
+		t.Fatalf("0.3x cadence=%s", got)
+	}
+}

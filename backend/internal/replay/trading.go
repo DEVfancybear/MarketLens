@@ -336,6 +336,13 @@ func (l *ledgerRuntime) closePosition(ctx context.Context, track *gen.ListReplay
 }
 
 func (l *ledgerRuntime) processRows(ctx context.Context, track *gen.ListReplayTracksForSessionForUpdateRow, rows []gen.ReplayDatasetBar) ([]eventDraft, error) {
+	active, err := l.hasActiveMarketState(ctx, track.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !active {
+		return nil, nil
+	}
 	var drafts []eventDraft
 	for _, bar := range rows {
 		brackets, err := l.processBrackets(ctx, track, bar)
@@ -363,6 +370,15 @@ func (l *ledgerRuntime) processRows(ctx context.Context, track *gen.ListReplayTr
 		}
 	}
 	return drafts, nil
+}
+
+func (l *ledgerRuntime) hasActiveMarketState(ctx context.Context, trackID pgtype.UUID) (bool, error) {
+	var active bool
+	err := l.db.QueryRow(ctx, `SELECT
+    EXISTS(SELECT 1 FROM replay_orders WHERE session_id=$1 AND track_id=$2 AND status IN('pending','partially_filled')) OR
+    EXISTS(SELECT 1 FROM replay_positions WHERE session_id=$1 AND track_id=$2 AND net_quantity<>0)`,
+		l.sessionID, trackID).Scan(&active)
+	return active, err
 }
 
 func (l *ledgerRuntime) pendingOrders(ctx context.Context, trackID pgtype.UUID) ([]ledgerOrder, error) {

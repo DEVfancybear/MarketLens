@@ -131,6 +131,21 @@ test("track reset clears revealed bars until HTTP hydration", () => {
   assert.deepEqual(store.getState().barsByTrack["track-1"], []);
 });
 
+test("high-speed bar batches are applied as one ordered projection event", () => {
+  const store = new ReplayClientStore();
+  store.replaceSnapshot(snapshot());
+  const bars = [
+    { time: "2026-05-01T10:01:00Z", open: 1, high: 2, low: 1, close: 1.5, volume: 10, complete: true },
+    { time: "2026-05-01T10:02:00Z", open: 1.5, high: 3, low: 1.4, close: 2, volume: 12, complete: true },
+  ];
+  assert.equal(store.applyEvent({
+    sessionId: "session-1", eventSeq: 1, version: 2,
+    simulatedTime: "2026-05-01T10:02:00Z", type: "track.bars.batch",
+    payload: { trackId: "track-1", bars },
+  }), "applied");
+  assert.deepEqual(store.getState().barsByTrack["track-1"], bars);
+});
+
 test("authoritative snapshots replace the isolated replay trading ledger", () => {
   const store = new ReplayClientStore();
   const initial = snapshot();

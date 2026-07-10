@@ -50,6 +50,12 @@ export function ChartArea() {
     () => indicators.filter((i) => i.separatePane),
     [indicators],
   );
+  const replayOwnsChart = Boolean(replay.snapshot) ||
+    replay.connection === "connecting" ||
+    replay.connection === "recovering";
+  const showLoading = replayOwnsChart
+    ? replay.connection === "connecting" && candles.length === 0
+    : loading;
 
   const last = candles[candles.length - 1];
   const legend = crosshair?.candle ?? last;
@@ -85,7 +91,7 @@ export function ChartArea() {
 
       {/* Current-price marker is rendered inside PriceChart so it can track the price scale. */}
 
-      {loading && (
+      {showLoading && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-terminal-bg/40">
           <Loader2 className="animate-spin text-brand" size={24} />
         </div>

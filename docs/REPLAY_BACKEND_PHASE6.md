@@ -49,12 +49,48 @@ typecheck, and production build.
 
 ## Verification
 
+### Replay timing and rendering follow-up (2026-07-11)
+
+The Phase 6 authority boundary is unchanged, but playback delivery and chart
+presentation now use a bounded batching pipeline:
+
+```text
+actor clock (speed + elapsed time)
+  -> one __clock_step { count } transaction
+  -> aggregate/finalize source rows + isolated ledger
+  -> track.bars.batch + cursor.advanced
+  -> replayClientStore timestamp merge
+  -> PriceChart series.update() + requestAnimationFrame interpolation
+```
+
+- Auto interval follows the current single-chart timeframe or the largest
+  supported common interval in synchronized layouts. Changing timeframe/layout
+  replaces the session at its current simulated time and recalculates Auto.
+- Speeds `>= 1x` batch approximately `speed` intervals per second; elapsed-time
+  catch-up compensates for transaction latency and the first fast tick begins
+  immediately after Play.
+- The server emits a finalized overlap candle plus newly revealed candles in one
+  batch. The frontend finalizes that overlap first and animates only the new
+  candles, avoiding repeated full-series `setData()` calls.
+- Empty trading ledgers take a one-query fast path. Deterministic row-by-row
+  processing remains enabled whenever pending orders or non-zero positions
+  exist.
+- Speed slider traffic is coalesced latest-wins so Play cannot sit behind stale
+  `set_speed` requests. Paused/completed/reconnected views always snap back to
+  authoritative data.
+
+Observed local PostgreSQL validation after the fast path showed successive
+clock commits approximately 1.24-1.44 seconds apart instead of the previous
+multi-second/per-row stall; a test session advanced continuously to its dataset
+end. Exact latency still depends on database location and active trading state.
+
 Passed on 2026-07-11:
 
 - `npm run typecheck`
 - `npm run lint` (zero errors; five pre-existing hook warnings)
 - `npm run check:replay-client-boundary` (282 source files)
-- `npm run test:replay` (19 tests)
+- `npm run test:replay` (21 tests)
+- `npm run test:chart` (61 tests)
 - `npm run build`
 - `go test ./...`
 - `go vet ./...`

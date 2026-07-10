@@ -92,6 +92,33 @@ func TestRuntimeOneReplayIntervalProcessesEveryBaseRow(t *testing.T) {
 	}
 }
 
+func TestRuntimeFastClockEmitsOneOrderedBarBatch(t *testing.T) {
+	bars, session, track := runtimeFixture()
+	session.Status = gen.ReplaySessionStatusPlaying
+	drafts, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{
+		Type: "__clock_step", Payload: []byte(`{"count":3}`),
+	})
+	if err != nil || !changed {
+		t.Fatalf("changed=%t err=%v", changed, err)
+	}
+	batches, upserts := 0, 0
+	for _, draft := range drafts {
+		switch draft.typ {
+		case "track.bars.batch":
+			batches++
+			payload := draft.payload.(map[string]any)
+			if got := len(payload["bars"].([]ReplayBar)); got != 3 {
+				t.Fatalf("batch bars=%d", got)
+			}
+		case "track.bar.upsert":
+			upserts++
+		}
+	}
+	if batches != 1 || upserts != 0 || track.CursorSeq != 4 {
+		t.Fatalf("batches=%d upserts=%d cursor=%d drafts=%#v", batches, upserts, track.CursorSeq, drafts)
+	}
+}
+
 func TestRuntimeSynchronizedStepAdvancesEveryTrackAtOneBarrier(t *testing.T) {
 	bars, session, first := runtimeFixture()
 	second := first

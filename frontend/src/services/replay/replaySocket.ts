@@ -155,6 +155,8 @@ let activeSocket: ReplaySocket | null = null;
 let lifecycleVersion = 0;
 let commandSequence = 0;
 let commandQueue = Promise.resolve<unknown>(undefined);
+let desiredSpeed: { sessionId: string; speed: number } | null = null;
+let speedFlush: Promise<void> | null = null;
 
 function commandKey(type: string): string {
   commandSequence += 1;
@@ -258,7 +260,9 @@ export function runReplayCommand(
     }
     const result = await sendVersionedReplayCommand(snapshot.id, type, payload);
     replayClientStore.replaceSnapshot(result.snapshot);
-    await hydrateSnapshotBars(result.snapshot);
+    if (type === "step" || type === "seek" || type === "restart") {
+      await hydrateSnapshotBars(result.snapshot);
+    }
   };
   const next = commandQueue.then(run, run);
   commandQueue = next.catch((error) => {
@@ -269,6 +273,36 @@ export function runReplayCommand(
     );
   });
   return next;
+}
+
+/** Coalesce noisy range-input events so Play never waits behind stale speed commands. */
+export function setActiveReplaySpeed(speed: number): Promise<void> {
+  const snapshot = replayClientStore.getState().snapshot;
+  if (!snapshot) return Promise.reject(new Error("Replay session is unavailable"));
+  if (!Number.isFinite(speed) || speed <= 0 || speed > 100) {
+    return Promise.reject(new Error("Replay speed must be between 0 and 100"));
+  }
+  if (!speedFlush && snapshot.speed === speed) return Promise.resolve();
+
+  desiredSpeed = { sessionId: snapshot.id, speed };
+  if (!speedFlush) {
+    speedFlush = flushReplaySpeed().finally(() => {
+      speedFlush = null;
+      desiredSpeed = null;
+    });
+  }
+  return speedFlush;
+}
+
+async function flushReplaySpeed(): Promise<void> {
+  while (desiredSpeed) {
+    const request = desiredSpeed;
+    desiredSpeed = null;
+    const snapshot = replayClientStore.getState().snapshot;
+    if (!snapshot || snapshot.id !== request.sessionId) continue;
+    if (snapshot.speed === request.speed) continue;
+    await runReplayCommand("set_speed", { speed: request.speed });
+  }
 }
 
 /** Fork at a new UTC time; backward movement never restores a local clock. */

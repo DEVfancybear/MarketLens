@@ -23,6 +23,7 @@
     "src/components/chart/chartAutoFitPolicy.ts",
     "src/components/chart/chartTimeNavigation.ts",
     "src/components/chart/replayViewport.ts",
+    "src/components/chart/replayCandlePresentation.ts",
     "src/components/chart/indicatorPaneTimeScale.ts",
     "src/services/indicatorStyle.ts",
     "src/services/indicatorSeriesProjection.ts",

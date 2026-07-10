@@ -200,9 +200,9 @@ func resolveReplayIntervalForTracks(requested string, tracks []normalizedTrackIn
 		return resolved, nil
 	}
 
-	// Pick the largest supported interval that can be built from every pinned
-	// source dataset and divides every chart timeframe. Calendar months are the
-	// only non-fixed bucket and intentionally synchronize at one day.
+	// Match TradingView's Auto policy: one chart uses its chart interval, while
+	// synchronized layouts use the largest interval shared by every track.
+	// Calendar months intentionally synchronize at one day.
 	candidates := []int{86400, 14400, 7200, 3600, 1800, 900, 300, 180, 60}
 	for _, candidate := range candidates {
 		valid := true

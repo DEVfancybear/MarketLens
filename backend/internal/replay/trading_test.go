@@ -1,12 +1,43 @@
 package replay
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smc-trading-terminal/backend/internal/db/gen"
 )
+
+type activeStateRow struct{ active bool }
+
+func (r activeStateRow) Scan(dest ...any) error {
+	*(dest[0].(*bool)) = r.active
+	return nil
+}
+
+type activeStateDB struct {
+	active     bool
+	rowQueries int
+	otherCalls int
+}
+
+func (db *activeStateDB) QueryRow(context.Context, string, ...any) pgx.Row {
+	db.rowQueries++
+	return activeStateRow{active: db.active}
+}
+
+func (db *activeStateDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	db.otherCalls++
+	return nil, nil
+}
+
+func (db *activeStateDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	db.otherCalls++
+	return pgconn.CommandTag{}, nil
+}
 
 func tradingBar(open, high, low, close float64) gen.ReplayDatasetBar {
 	return gen.ReplayDatasetBar{Seq: 7, OpenTime: timestamp(time.Unix(1_700_000_000, 0)),
@@ -63,6 +94,20 @@ func TestReplayPerUnitCommissionIsAuditable(t *testing.T) {
 	got, err := commissionFromModel([]byte(`{"kind":"per_unit","value":"0.25"}`), 4)
 	if err != nil || got != 1 {
 		t.Fatalf("commission=%v err=%v", got, err)
+	}
+}
+
+func TestReplayBatchSkipsPerBarLedgerQueriesWithoutOrdersOrPositions(t *testing.T) {
+	db := &activeStateDB{}
+	ledger := &ledgerRuntime{db: db, sessionID: pgtype.UUID{Valid: true}}
+	rows := make([]gen.ReplayDatasetBar, 150)
+	track := &gen.ListReplayTracksForSessionForUpdateRow{ID: pgtype.UUID{Valid: true}}
+	drafts, err := ledger.processRows(context.Background(), track, rows)
+	if err != nil || len(drafts) != 0 {
+		t.Fatalf("drafts=%#v err=%v", drafts, err)
+	}
+	if db.rowQueries != 1 || db.otherCalls != 0 {
+		t.Fatalf("row queries=%d other calls=%d", db.rowQueries, db.otherCalls)
 	}
 }
 

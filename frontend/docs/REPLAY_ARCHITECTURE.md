@@ -31,6 +31,7 @@ Replay controls / UTC selection candidate
 | `hooks/useChartSeries.ts` | Select live candles or server-revealed Replay bars |
 | `components/replay/*` | Presentation controls, UTC candidate selection, dashboard, and lifecycle gate |
 | `components/chart/replayViewport.ts` | Presentation-only viewport and coordinate geometry |
+| `components/chart/replayCandlePresentation.ts` | Identity-preserving projection and frame-by-frame OHLC interpolation |
 
 `ReplayClientRuntime` closes the session on logout or kill-switch activation and
 recreates it when synchronized layout configuration changes. It never schedules
@@ -49,6 +50,82 @@ responses cannot replace a projection that has already applied a newer event.
 If the actor clock advances before a command arrives, the client retries a
 `version_conflict` with the returned current version and a new idempotency key.
 Backward movement with trading state uses a backend fork.
+
+## Interval and clock semantics
+
+Replay speed means revealed Replay intervals per wall-clock second, matching
+TradingView's update model; it does not mean chart candles per network request.
+For a single chart, Auto resolves to its current chart timeframe (`5m -> 300`,
+`15m -> 900`, `1H -> 3600`). A synchronized multi-chart layout resolves to the
+largest supported interval common to every track. Weekly and monthly charts use
+one day because their calendar boundaries cannot be represented by a fixed
+week/month duration.
+
+For speed below 1x, the actor reveals one interval every `1 / speed` seconds.
+For speed at or above 1x, it uses one durable command transaction per second and
+sets `count = round(speed * elapsedSeconds)`, bounded to 1..100. The first fast
+tick is scheduled immediately after Play. Transaction time is subtracted from
+the next timer, and elapsed-time catch-up prevents a slow database round trip
+from permanently reducing the requested playback rate.
+
+`__clock_step { count }` advances all synchronized tracks and the isolated
+trading ledger atomically. A multi-interval advance emits one ordered
+`track.bars.batch` rather than one WebSocket message and React render per source
+row. The batch contains the finalized version of the previously-forming candle,
+the completed new candles, and the latest forming candle. `cursor.advanced`
+follows it in the same authoritative event order.
+
+## Candle presentation
+
+`replayClientStore` merges a batch by timestamp in one projection update.
+`useChartSeries` uses a `WeakMap` projector so the unchanged candle prefix keeps
+object identity. The last old candle is allowed to change because the batch
+finalizes it; this overlap must not turn a valid append into a full `setData()`.
+
+`PriceChart` therefore performs the following presentation sequence:
+
+1. restore the last authoritative prefix;
+2. finalize the overlapping forming candle with `series.update()`;
+3. append each genuinely new candle with `series.update()`;
+4. interpolate OHLC and volume on `requestAnimationFrame`, starting flat at the
+   candle open and finishing at the authoritative values;
+5. snap to the authoritative series if playback pauses, completes, reconnects,
+   or a structural dataset replacement occurs.
+
+Animation duration is `clamp(920 / speed, 90, 850)` milliseconds per newly
+revealed candle. At 10x, a normal ten-candle server batch is presented in about
+900ms, leaving room before the next clock batch. The chart never invents a
+price, candle timestamp, cursor, or simulated time; interpolation is only a
+visual transition between server-owned values.
+
+## Timeframe and layout changes during Replay
+
+Changing symbol, timeframe, layout, or Replay scope while a session exists
+creates a replacement backend session at the current authoritative simulated
+time. The replacement preserves speed and account configuration, requests Auto
+interval again, reconnects the event stream, and hydrates only the replacement
+track bars. `useMarketData` remains disabled during this handoff, while
+`ChartArea` treats Replay's own projection/connection as the loading authority.
+This prevents the perpetual provider-loading spinner previously seen when
+switching from `15m` to `5m` inside Replay.
+
+Old sessions whose stored interval no longer matches Auto are normalized with a
+versioned `set_replay_interval` command. This keeps the same behavior across all
+supported chart timeframes rather than carrying an interval chosen for the
+previous chart.
+
+## Performance guardrails
+
+The common no-order/no-position case performs one active-ledger-state query per
+track and skips all per-source-row order, bracket, and mark-to-market queries.
+This is critical because one 10x `15m` clock batch can reveal roughly 150 source
+`1m` rows. Active orders or positions still use deterministic row-by-row ledger
+processing so fills and brackets cannot skip intermediate prices.
+
+Speed slider commands are latest-wins/coalesced, while all other Replay commands
+remain serialized and versioned. `step`, `seek`, and `restart` explicitly
+rehydrate bars; ordinary Play ticks rely on ordered socket events and do not
+issue a full bars request per update.
 
 ## Market and trading isolation
 
@@ -77,6 +154,9 @@ Run:
 ```bash
 npm run check:replay-client-boundary
 npm run test:replay
+npm run test:chart
+npm run typecheck
+go test ./internal/replay/...
 ```
 
 The boundary scan keeps mandatory legacy files/identifiers deleted, rejects
@@ -84,3 +164,8 @@ full-history/local-trading imports in Replay UI, restricts market timers, and
 limits projection writes. ESLint applies matching restricted imports. See
 `../../docs/REPLAY_BACKEND_PHASE6.md` from the monorepo root for the deletion proof
 and full verification runbook.
+
+Regression coverage includes Auto interval selection, timeframe replacement,
+speed batching and elapsed catch-up, immediate fast Play, ordered batch events,
+no-ledger fast path, projection batch merging, finalized-forming-bar overlap,
+OHLC interpolation bounds, normal-speed single append, and high-speed append.

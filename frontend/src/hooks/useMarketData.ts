@@ -75,7 +75,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
 
   useEffect(() => {
     if (!enabled) setLoading(false);
-  }, [enabled, setLoading]);
+  }, [enabled, setLoading, symbol, timeframe]);
 
   useEffect(() => {
     olderHistoryInFlightRef.current = false;

@@ -4,6 +4,28 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - TradingView-style Replay pacing and timeframe lifecycle (2026-07-11)
+- Changed fast playback to one elapsed-time-aware batch transaction per second,
+  with an immediate first tick and bounded catch-up instead of one database
+  transaction per revealed interval.
+- Added ordered `track.bars.batch` projection, identity-preserving candle mapping,
+  and `requestAnimationFrame` OHLC interpolation through Lightweight Charts'
+  incremental `series.update()` path.
+- Fixed batches that finalize the previous forming candle being mistaken for a
+  structural series replacement; both one-candle and multi-candle updates now
+  animate without reloading the whole chart.
+- Restored Auto interval semantics for every timeframe and synchronized layout,
+  and fixed Replay session replacement/loading when symbol, timeframe, layout,
+  or scope changes while Replay remains active.
+- Coalesced speed-slider commands, prevented stale speed requests from delaying
+  Play, and added authoritative snapping on pause/completion/reconnect.
+- Removed the no-trade N+1 ledger path by checking active orders/positions once
+  per track before processing a batch. Active trading retains deterministic
+  per-source-row evaluation.
+- Added regression tests for clock batching/catch-up, immediate Play, batch
+  events, Auto intervals, projection merging, finalized candle overlap, and
+  smooth candle interpolation.
+
 ### Changed - Backend Replay Phase 6 cutover and cleanup (2026-07-11)
 - Enabled backend-owned Replay by default for authenticated users; the remaining
   public flag is a UI kill switch and cannot restore local replay logic.

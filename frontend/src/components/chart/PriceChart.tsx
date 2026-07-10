@@ -68,6 +68,13 @@ import {
   shouldRealignReplayViewport,
 } from "./replayViewport";
 import { decideAutoFitCandleWindow } from "./chartAutoFitPolicy";
+import {
+  interpolateReplayCandle,
+  replayAppendedCandles,
+  replayCandleAnimationDuration,
+  replayCandleAnimationStart,
+  replayCandlesEqual,
+} from "./replayCandlePresentation";
 
 function keepLatestBarInView(chart: IChartApi, dataLength: number) {
   const timeScale = chart.timeScale();
@@ -185,6 +192,9 @@ export function PriceChart({
   const prevThemeRef = useRef<string>("");
   const appliedTimeframeRef = useRef<Timeframe | null>(null);
   const bumpRafRef = useRef<number | null>(null);
+  const candleAnimationRafRef = useRef<number | null>(null);
+  const renderedLatestCandleRef = useRef<Candle | null>(null);
+  const renderedCandleCountRef = useRef(0);
   const prevMarkerPriceRef = useRef<number | null>(null);
   const markerUpRef = useRef(true);
   const candlesRef = useRef<Candle[]>(candles);
@@ -194,7 +204,11 @@ export function PriceChart({
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
-  const replayActive = Boolean(useReplayClientProjection().snapshot);
+  const replayProjection = useReplayClientProjection();
+  const replaySnapshot = replayProjection.snapshot;
+  const replayActive = Boolean(replaySnapshot);
+  const replayPlaying = replaySnapshot?.status === "playing";
+  const replaySpeed = replaySnapshot?.speed ?? 1;
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const indicators = useAtomValue(indicatorsAtom);
@@ -328,6 +342,10 @@ export function PriceChart({
         cancelAnimationFrame(bumpRafRef.current);
         bumpRafRef.current = null;
       }
+      if (candleAnimationRafRef.current !== null) {
+        cancelAnimationFrame(candleAnimationRafRef.current);
+        candleAnimationRafRef.current = null;
+      }
       setMainChart(null);
       chart.remove();
       chartRef.current = null;
@@ -402,6 +420,10 @@ export function PriceChart({
   useEffect(() => {
     const cs = candleSeriesRef.current;
     if (!cs) return;
+    if (candleAnimationRafRef.current !== null) {
+      cancelAnimationFrame(candleAnimationRafRef.current);
+      candleAnimationRafRef.current = null;
+    }
     // Empty series => symbol/timeframe just changed; re-fit on next load.
     if (candles.length === 0) {
       fittedRef.current = false;
@@ -418,6 +440,9 @@ export function PriceChart({
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
+    const replayBurst = replayPlaying && sameTheme
+      ? replayAppendedCandles(prev, candles)
+      : null;
     const structuralDataWindowChange =
       sameTheme &&
       prev.length > 0 &&
@@ -433,7 +458,84 @@ export function PriceChart({
       updatePlan,
     );
 
-    if (updatePlan === "update-latest" || updatePlan === "append") {
+    if (replayActive && !replayPlaying && renderedCandleCountRef.current !== candles.length) {
+      cs.setData(
+        candles.map((candle) => ({
+          time: candle.time as UTCTimestamp,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+        })),
+      );
+      renderedLatestCandleRef.current = last ?? null;
+      renderedCandleCountRef.current = candles.length;
+    } else if (replayBurst) {
+      // A backend clock commit finalizes the overlapping forming bar, then
+      // appends one or more newly revealed bars. Present only those new bars
+      // at the selected updates-per-second rate.
+      cs.setData(
+        prev.map((candle) => ({
+          time: candle.time as UTCTimestamp,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+        })),
+      );
+      const finalizedPrevious = candles[prev.length - 1];
+      if (finalizedPrevious?.time === prev.at(-1)?.time) {
+        cs.update({
+          time: finalizedPrevious.time as UTCTimestamp,
+          open: finalizedPrevious.open,
+          high: finalizedPrevious.high,
+          low: finalizedPrevious.low,
+          close: finalizedPrevious.close,
+        });
+        renderedLatestCandleRef.current = finalizedPrevious;
+      }
+      renderedCandleCountRef.current = prev.length;
+      const duration = replayCandleAnimationDuration(replaySpeed);
+      let burstIndex = 0;
+      let target = replayBurst[burstIndex]!;
+      let start = replayCandleAnimationStart(null, target);
+      let startedAt: number | null = null;
+      const updateRendered = (candle: Candle) => {
+        cs.update({
+          time: candle.time as UTCTimestamp,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+        });
+        renderedLatestCandleRef.current = candle;
+      };
+      const renderBurstFrame = (now: number) => {
+        if (startedAt == null) startedAt = now;
+        const progress = (now - startedAt) / duration;
+        updateRendered(interpolateReplayCandle(start, target, progress));
+        scheduleVersionBump();
+        if (progress < 1) {
+          candleAnimationRafRef.current = requestAnimationFrame(renderBurstFrame);
+          return;
+        }
+        burstIndex += 1;
+        if (burstIndex >= replayBurst.length) {
+          renderedCandleCountRef.current = candles.length;
+          candleAnimationRafRef.current = null;
+          return;
+        }
+        target = replayBurst[burstIndex]!;
+        start = replayCandleAnimationStart(null, target);
+        startedAt = null;
+        updateRendered(start);
+        renderedCandleCountRef.current = prev.length + burstIndex + 1;
+        candleAnimationRafRef.current = requestAnimationFrame(renderBurstFrame);
+      };
+      updateRendered(start);
+      renderedCandleCountRef.current = prev.length + 1;
+      candleAnimationRafRef.current = requestAnimationFrame(renderBurstFrame);
+    } else if (updatePlan === "update-latest" || updatePlan === "append") {
       // On append, finalize the previously-forming (now penultimate) bar first.
       if (updatePlan === "append") {
         const penult = candles[candles.length - 2];
@@ -445,13 +547,49 @@ export function PriceChart({
           close: penult.close,
         });
       }
-      cs.update({
-        time: last!.time as UTCTimestamp,
-        open: last!.open,
-        high: last!.high,
-        low: last!.low,
-        close: last!.close,
-      });
+      const target = last!;
+      const start = replayCandleAnimationStart(renderedLatestCandleRef.current, target);
+      if (replayPlaying && !replayCandlesEqual(start, target)) {
+        const duration = replayCandleAnimationDuration(replaySpeed);
+        let startedAt: number | null = null;
+        const renderFrame = (now: number) => {
+          if (startedAt == null) startedAt = now;
+          const rendered = interpolateReplayCandle(start, target, (now - startedAt) / duration);
+          cs.update({
+            time: rendered.time as UTCTimestamp,
+            open: rendered.open,
+            high: rendered.high,
+            low: rendered.low,
+            close: rendered.close,
+          });
+          renderedLatestCandleRef.current = rendered;
+          scheduleVersionBump();
+          if (!replayCandlesEqual(rendered, target)) {
+            candleAnimationRafRef.current = requestAnimationFrame(renderFrame);
+          } else {
+            candleAnimationRafRef.current = null;
+          }
+        };
+        cs.update({
+          time: start.time as UTCTimestamp,
+          open: start.open,
+          high: start.high,
+          low: start.low,
+          close: start.close,
+        });
+        renderedLatestCandleRef.current = start;
+        candleAnimationRafRef.current = requestAnimationFrame(renderFrame);
+      } else {
+        cs.update({
+          time: target.time as UTCTimestamp,
+          open: target.open,
+          high: target.high,
+          low: target.low,
+          close: target.close,
+        });
+        renderedLatestCandleRef.current = target;
+      }
+      renderedCandleCountRef.current = candles.length;
     } else {
       cs.setData(
         candles.map((k) => ({
@@ -462,6 +600,8 @@ export function PriceChart({
           close: k.close,
         })),
       );
+      renderedLatestCandleRef.current = last ?? null;
+      renderedCandleCountRef.current = candles.length;
       const restoredRange = logicalRangeAfterDataReplacement(
         visibleRangeBeforeReplace ?? null,
         prev,
@@ -520,7 +660,14 @@ export function PriceChart({
       });
     }
     scheduleVersionBump();
-  }, [candles, theme, replayActive, scheduleVersionBump]);
+  }, [
+    candles,
+    theme,
+    replayActive,
+    replayPlaying,
+    replaySpeed,
+    scheduleVersionBump,
+  ]);
 
   // ---- Overlay indicators (SMA/EMA/VWAP/ADR) ----
   const overlayIndicators = useMemo(
@@ -729,7 +876,8 @@ export function PriceChart({
     const series = candleSeriesRef.current;
     const container = containerRef.current;
     if (!chart || !series || !container || !ready) return;
-    const price = lastQuote?.last ?? candles[candles.length - 1]?.close;
+    const renderedReplayCandle = replayActive ? renderedLatestCandleRef.current : null;
+    const price = renderedReplayCandle?.close ?? lastQuote?.last ?? candles[candles.length - 1]?.close;
     if (price == null) {
       setPriceMarker(null);
       return;
@@ -740,7 +888,7 @@ export function PriceChart({
       setPriceMarker(null);
       return;
     }
-    const last = candles[candles.length - 1];
+    const last = renderedReplayCandle ?? candles[candles.length - 1];
     const previousPrice = prevMarkerPriceRef.current;
     let up = markerUpRef.current;
     if (previousPrice == null) {
@@ -763,7 +911,7 @@ export function PriceChart({
       color: markerColor,
       countdown,
     });
-  }, [candles, countdown, lastQuote?.last, ready, theme, version]);
+  }, [candles, countdown, lastQuote?.last, ready, replayActive, theme, version]);
 
   const ctx: ChartCtx | null = useMemo(() => {
     if (!ready || !chartRef.current || !candleSeriesRef.current) return null;

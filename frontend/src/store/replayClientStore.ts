@@ -115,10 +115,17 @@ export class ReplayClientStore {
       const payload = event.payload as { trackId?: string; bar?: ReplayBar };
       if (!payload.trackId || !isReplayBar(payload.bar)) return "invalid";
       const existing = this.projection.barsByTrack[payload.trackId] ?? [];
-      const index = existing.findIndex((bar) => bar.time === payload.bar!.time);
-      const bars = index >= 0
-        ? existing.map((bar, currentIndex) => currentIndex === index ? payload.bar! : bar)
-        : [...existing, payload.bar].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+      const bars = mergeReplayBars(existing, [payload.bar]);
+      this.projection = {
+        ...this.projection,
+        barsByTrack: { ...this.projection.barsByTrack, [payload.trackId]: bars },
+      };
+    } else if (event.type === "track.bars.batch") {
+      const payload = event.payload as { trackId?: string; bars?: ReplayBar[] };
+      if (!payload.trackId || !Array.isArray(payload.bars) ||
+        payload.bars.length === 0 || !payload.bars.every(isReplayBar)) return "invalid";
+      const existing = this.projection.barsByTrack[payload.trackId] ?? [];
+      const bars = mergeReplayBars(existing, payload.bars);
       this.projection = {
         ...this.projection,
         barsByTrack: { ...this.projection.barsByTrack, [payload.trackId]: bars },
@@ -170,4 +177,10 @@ function isReplayBar(value: ReplayBar | undefined): value is ReplayBar {
   return !!value && typeof value.time === "string" &&
     [value.open, value.high, value.low, value.close, value.volume].every(Number.isFinite) &&
     typeof value.complete === "boolean";
+}
+
+function mergeReplayBars(existing: ReplayBar[], incoming: ReplayBar[]): ReplayBar[] {
+  const byTime = new Map(existing.map((bar) => [bar.time, bar]));
+  for (const bar of incoming) byTime.set(bar.time, bar);
+  return [...byTime.values()].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
 }

@@ -68,6 +68,11 @@ is looking to enable it) with "Preserve log" on, removed again once confirmed.
   _Fix:_ pin a compatible `framer-motion`/`motion-dom` pair, or remove it from `package.json`.
 
 ## Limitations (by design)
+- **Replay with active orders/positions costs more than an empty-ledger run.**
+  Empty Replay ledgers skip per-source-row trading queries, but pending orders,
+  brackets, and non-zero positions intentionally retain deterministic row-by-row
+  processing so high/low crossings are not skipped. High-speed latency therefore
+  still depends on database proximity and the amount of active trading state.
 - **Position-tool TP/SL highlight uses the live last price.** The Long/Short tool
   brightens its profit/risk zone from `candlesAtom`'s last close. In **replay mode**
   this is the master series' final close, not the replay-cursor price, so the

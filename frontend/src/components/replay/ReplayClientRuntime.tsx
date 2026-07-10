@@ -13,9 +13,13 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
 import {
   exitReplaySession,
+  runReplayCommand,
   startReplaySession,
 } from "@/services/replay/replaySocket";
-import { cancelReplaySelectionAtom } from "./replayUiState";
+import {
+  cancelReplaySelectionAtom,
+  replayAutoIntervalSeconds,
+} from "./replayUiState";
 
 /** Owns only backend transport lifecycle; it never advances market time. */
 export function ReplayClientRuntime(): null {
@@ -27,6 +31,7 @@ export function ReplayClientRuntime(): null {
   const projection = useReplayClientProjection();
   const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
   const replacingRef = useRef(false);
+  const normalizingIntervalRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (backendSession && isReplayBackendV1Enabled()) return;
@@ -35,6 +40,27 @@ export function ReplayClientRuntime(): null {
       void exitReplaySession();
     }
   }, [backendSession, cancelSelection, projection.connection, projection.snapshot]);
+
+  useEffect(() => {
+    const snapshot = projection.snapshot;
+    if (!backendSession || !snapshot || snapshot.tracks.length === 0) return;
+    const autoInterval = replayAutoIntervalSeconds(snapshot.tracks);
+    if (!autoInterval) return;
+    if (snapshot.replayIntervalSeconds === autoInterval) {
+      normalizingIntervalRef.current = null;
+      return;
+    }
+    const key = `${snapshot.id}:${autoInterval}`;
+    if (normalizingIntervalRef.current === key) return;
+    normalizingIntervalRef.current = key;
+    void runReplayCommand("set_replay_interval", { replayInterval: "auto" })
+      .catch(() => undefined)
+      .finally(() => {
+        if (normalizingIntervalRef.current === key) {
+          normalizingIntervalRef.current = null;
+        }
+      });
+  }, [backendSession, projection.snapshot]);
 
   useEffect(() => {
     const snapshot = projection.snapshot;

@@ -18,6 +18,7 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   exitReplaySession,
   runReplayCommand,
+  setActiveReplaySpeed,
   stepActiveReplay,
 } from "@/services/replay/replaySocket";
 import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
@@ -138,7 +139,7 @@ export function ReplayControls() {
           value={Math.max(0, REPLAY_SPEEDS.findIndex((speed) => speed === snapshot?.speed))}
           onChange={(event) => {
             const speed = REPLAY_SPEEDS[Number(event.target.value)] ?? 1;
-            fire(runReplayCommand("set_speed", { speed }));
+            fire(setActiveReplaySpeed(speed));
           }}
           className="h-1 w-28 cursor-pointer appearance-none rounded bg-terminal-border accent-brand"
           title={replaySpeedDescription(snapshot?.speed ?? 1)}

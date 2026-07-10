@@ -109,6 +109,33 @@ func TestServiceCreatePinsSynchronizedLayoutAndResolvesSharedAutoInterval(t *tes
 	}
 }
 
+func TestAutoReplayIntervalMatchesChartResolutionForEveryTimeframe(t *testing.T) {
+	tests := []struct {
+		timeframe string
+		want      int
+	}{
+		{"1m", 60}, {"3m", 180}, {"5m", 300}, {"15m", 900},
+		{"30m", 1800}, {"1H", 3600}, {"2H", 7200}, {"4H", 14400},
+		{"1D", 86400}, {"1W", 86400}, {"1M", 86400},
+	}
+	for _, tt := range tests {
+		t.Run(tt.timeframe, func(t *testing.T) {
+			_, chartSeconds, ok := normalizeTimeframe(tt.timeframe)
+			if !ok {
+				t.Fatalf("unsupported test timeframe %s", tt.timeframe)
+			}
+			_, sourceSeconds := phase3SourceTimeframe(tt.timeframe)
+			got, err := resolveReplayIntervalForTracks("auto", []normalizedTrackInput{{
+				input: TrackInput{ChartTimeframe: tt.timeframe}, chartSeconds: chartSeconds,
+				sourceSeconds: sourceSeconds,
+			}})
+			if err != nil || got != tt.want {
+				t.Fatalf("auto interval=%d want=%d err=%v", got, tt.want, err)
+			}
+		})
+	}
+}
+
 func TestServiceCreateRejectsInvalidSynchronizedSlotsAndQuota(t *testing.T) {
 	service := NewService(&fakeStore{}, &fakeHistory{}, 100, 2)
 	input := CreateSessionInput{Mode: "all_charts", Start: StartInput{Kind: "time", Time: time.Now().UTC()}, Tracks: []TrackInput{

@@ -395,11 +395,10 @@ func applySynchronizedStep(
 		track.CursorSeq = selected.Seq
 		track.VisibleThrough = selected.OpenTime
 		changedTracks = append(changedTracks, i)
-		for _, bar := range coalesceBarUpserts(upserts) {
-			drafts = append(drafts, eventDraft{typ: "track.bar.upsert", payload: map[string]any{
-				"trackId": uuidString(track.ID), "bar": bar,
-			}})
-		}
+		drafts = appendReplayBarDrafts(
+			drafts, uuidString(track.ID), coalesceBarUpserts(upserts),
+			commandType == "__clock_step" && count > 1,
+		)
 		if ledger != nil {
 			trading, tradeErr := ledger.processRows(ctx, track, rows)
 			if tradeErr != nil {
@@ -637,11 +636,10 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 			track.AggregateState = marshalAggregateState(state)
 			track.CursorSeq = selected.Seq
 			track.VisibleThrough = selected.OpenTime
-			for _, bar := range coalesceBarUpserts(upserts) {
-				drafts = append(drafts, eventDraft{typ: "track.bar.upsert", payload: map[string]any{
-					"trackId": uuidString(track.ID), "bar": bar,
-				}})
-			}
+			drafts = appendReplayBarDrafts(
+				drafts, uuidString(track.ID), coalesceBarUpserts(upserts),
+				commandType == "__clock_step" && count > 1,
+			)
 			if ledger != nil {
 				trading, err := ledger.processRows(ctx, track, rows)
 				if err != nil {
@@ -818,7 +816,7 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 
 func replayStepCount(input CommandInput, commandType string) (int, error) {
 	count := 1
-	if commandType == "step" {
+	if commandType == "step" || commandType == "__clock_step" {
 		var body struct {
 			Count int `json:"count"`
 		}
@@ -833,6 +831,20 @@ func replayStepCount(input CommandInput, commandType string) (int, error) {
 		return 0, fmt.Errorf("%w: step.count must be between 1 and %d", ErrBadRequest, maxStepCount)
 	}
 	return count, nil
+}
+
+func appendReplayBarDrafts(drafts []eventDraft, trackID string, bars []ReplayBar, batch bool) []eventDraft {
+	if batch && len(bars) > 1 {
+		return append(drafts, eventDraft{typ: "track.bars.batch", payload: map[string]any{
+			"trackId": trackID, "bars": bars,
+		}})
+	}
+	for _, bar := range bars {
+		drafts = append(drafts, eventDraft{typ: "track.bar.upsert", payload: map[string]any{
+			"trackId": trackID, "bar": bar,
+		}})
+	}
+	return drafts
 }
 
 func currentAggregateState(ctx context.Context, q runtimeBarQueries, track *gen.ListReplayTracksForSessionForUpdateRow) (aggregateState, error) {

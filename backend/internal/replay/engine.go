@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -284,6 +286,7 @@ type sessionActor struct {
 	timer             *time.Timer
 	heartbeat         *time.Timer
 	tick              int64
+	clockAnchor       time.Time
 }
 
 func newSessionActor(engine *Engine, userID, sessionID string, snapshot SessionSnapshot) *sessionActor {
@@ -329,11 +332,25 @@ func (a *sessionActor) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case request := <-a.requests:
+			previousStatus := a.snapshot.Status
+			previousSpeed := a.snapshot.Speed
 			result, events, err := a.apply(request.ctx, request.input)
 			if err == nil && !result.Duplicate {
 				a.snapshot = result.Snapshot
+				startedFastPlayback := previousStatus != "playing" && a.snapshot.Status == "playing" && a.snapshot.Speed >= 1
+				if a.snapshot.Status != "playing" {
+					a.clockAnchor = time.Time{}
+				} else if startedFastPlayback {
+					a.clockAnchor = time.Now().Add(-time.Second)
+				} else if previousStatus != "playing" || previousSpeed != a.snapshot.Speed {
+					a.clockAnchor = time.Now()
+				}
 				a.engine.publish(events)
-				a.resetTimers()
+				if startedFastPlayback {
+					a.resetTimersAfter(replayClockCadence(a.snapshot.Speed) - 16*time.Millisecond)
+				} else {
+					a.resetTimers()
+				}
 				if a.snapshot.Status == "playing" {
 					a.engine.schedulePauseIfUnobserved(a.userID, a.sessionID)
 				}
@@ -344,14 +361,26 @@ func (a *sessionActor) run(ctx context.Context) {
 				return
 			}
 		case <-tick:
+			startedAt := time.Now()
 			a.tick++
-			input := CommandInput{IdempotencyKey: fmt.Sprintf("clock:%s:%d:%d", a.sessionID, a.snapshot.Version, a.tick), Type: "__clock_step"}
+			elapsed := time.Second
+			if !a.clockAnchor.IsZero() {
+				elapsed = startedAt.Sub(a.clockAnchor)
+			}
+			count := replayClockStepCount(a.snapshot.Speed, elapsed)
+			payload, _ := json.Marshal(map[string]int{"count": count})
+			input := CommandInput{IdempotencyKey: fmt.Sprintf("clock:%s:%d:%d", a.sessionID, a.snapshot.Version, a.tick), Type: "__clock_step", Payload: payload}
 			result, events, err := a.apply(ctx, input)
 			if err == nil && !result.Duplicate {
 				a.snapshot = result.Snapshot
+				if a.snapshot.Status == "playing" {
+					a.clockAnchor = startedAt
+				} else {
+					a.clockAnchor = time.Time{}
+				}
 				a.engine.publish(events)
 			}
-			a.resetTimers()
+			a.resetTimersAfter(time.Since(startedAt))
 		case <-heartbeat:
 			leaseUntil := time.Now().UTC().Add(a.engine.leaseTTL)
 			owned, err := a.engine.store.RenewActorLease(ctx, a.engine.owner, a.sessionID, leaseUntil)
@@ -380,6 +409,10 @@ func (a *sessionActor) releaseOwnership() {
 }
 
 func (a *sessionActor) resetTimers() {
+	a.resetTimersAfter(0)
+}
+
+func (a *sessionActor) resetTimersAfter(elapsed time.Duration) {
 	if a.timer != nil {
 		a.timer.Stop()
 		a.timer = nil
@@ -391,12 +424,30 @@ func (a *sessionActor) resetTimers() {
 		}
 		return
 	}
-	delay := time.Duration(float64(time.Second) / a.snapshot.Speed)
+	delay := replayClockCadence(a.snapshot.Speed) - elapsed
 	if delay < 16*time.Millisecond {
 		delay = 16 * time.Millisecond
 	}
 	a.timer = time.NewTimer(delay)
 	a.resetHeartbeat()
+}
+
+func replayClockCadence(speed float64) time.Duration {
+	if speed >= 1 {
+		return time.Second
+	}
+	return time.Duration(float64(time.Second) / speed)
+}
+
+func replayClockStepCount(speed float64, elapsed ...time.Duration) int {
+	if speed < 1 {
+		return 1
+	}
+	seconds := 1.0
+	if len(elapsed) > 0 && elapsed[0] > 0 {
+		seconds = elapsed[0].Seconds()
+	}
+	return min(max(int(math.Round(speed*seconds)), 1), 100)
 }
 
 func (a *sessionActor) resetHeartbeat() {

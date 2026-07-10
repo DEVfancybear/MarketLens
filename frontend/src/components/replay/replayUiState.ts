@@ -7,12 +7,13 @@ import {
   type ChartLayoutPreset,
   type ReplayLayoutMode,
 } from "../../store/replayLayoutStore";
-import type { Timeframe } from "../../types";
+import { TF_SECONDS, type Timeframe } from "../../types";
 
 export type ReplaySelectionMode = "idle" | "selecting" | "reselecting";
 export type ReplaySpeed = 0.1 | 0.3 | 0.5 | 1 | 3 | 10;
 
 export const REPLAY_SPEEDS: ReplaySpeed[] = [0.1, 0.3, 0.5, 1, 3, 10];
+const REPLAY_INTERVAL_CANDIDATES = [86400, 14400, 7200, 3600, 1800, 900, 300, 180, 60];
 export const replaySelectionModeAtom = atom<ReplaySelectionMode>("idle");
 
 export const beginReplaySelectionAtom = atom(null, (_get, set) => {
@@ -34,6 +35,19 @@ export function replaySpeedLabel(speed: number): string {
 export function replaySpeedDescription(speed: number): string {
   if (speed < 1) return `1 update per ${Math.round(1 / speed)} sec`;
   return `${speed} update${speed === 1 ? "" : "s"} per sec`;
+}
+
+export function replayAutoIntervalSeconds(
+  tracks: Array<{ chartTimeframe: string; dataset: { baseIntervalSeconds: number } }>,
+): number | null {
+  if (tracks.length === 0) return null;
+  return REPLAY_INTERVAL_CANDIDATES.find((candidate) => tracks.every((track) => {
+    const chartSeconds = TF_SECONDS[track.chartTimeframe as Timeframe];
+    const sourceSeconds = track.dataset.baseIntervalSeconds;
+    if (!chartSeconds || candidate < sourceSeconds) return false;
+    if (track.chartTimeframe === "1M") return candidate === 86400;
+    return chartSeconds % candidate === 0;
+  })) ?? null;
 }
 
 export function replayControlMessage(input: {
