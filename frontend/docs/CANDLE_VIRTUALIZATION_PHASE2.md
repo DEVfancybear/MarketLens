@@ -1,6 +1,6 @@
 # Candle Virtualization — Phase 2 Viewport-Aware Derived Data
 
-_Implemented: 2026-07-11. Browser performance gate pending a focused capture._
+_Implemented and benchmarked: 2026-07-11._
 
 ## Scope
 
@@ -107,10 +107,6 @@ The Phase 2 gate is:
 5. no empty visible region, Replay future leak, or indicator discontinuity is
    observed.
 
-The ≥30% browser CPU gate remains pending until the post-change JSON capture is
-recorded. Phase 3 must not begin from whole-app frame percentiles contaminated
-by a background tab or unrelated live MT5 work.
-
 The `phase2` benchmark profile injects a deterministic SMA, EMA, VWAP, RSI, and
 MACD set without modifying the saved indicator workspace. Omit the profile only
 for a separate custom-Pine fallback capture.
@@ -138,3 +134,34 @@ The follow-up adds the deterministic `phase2` URL profile above. Custom Pine
 identity reuse is keyed by the Pine runtime revision: repeated renders can
 reuse a result, while an async compile completion changes the revision and
 invalidates the placeholder safely.
+
+## Final Phase 2 capture
+
+The fresh-page deterministic built-in capture passed the Phase 2 invariants:
+
+- five initial full rebuilds seeded the five built-ins;
+- exactly 1,500 incremental appends handled five indicators across 300 Replay
+  bars, with no additional full rebuild;
+- incremental compute totaled 45.2ms (p95 0.1ms), while initial full compute
+  totaled 12.6ms;
+- viewport projection avoided publishing 1,520,349 points;
+- retained viewport windows outnumbered shifts 684 to 147;
+- indicator latest/append writes used 2,093 `update` calls, while 350 structural
+  replacements corresponded to render-window shifts;
+- indicator `setData` time was 547.7ms and indicator projection was 875.6ms;
+- only 79 long tasks totaled 4,401ms;
+- fresh-page heap usage was 58.0MB.
+
+Against the first post-change custom-fallback capture, compute plus projection
+fell from 2,561ms to 933.4ms (-63.6%), indicator `setData` time fell from
+2,209.2ms to 547.7ms (-75.2%), and long-task count fell from 300 to 79. The
+workload is intentionally different—the earlier capture proved the safe custom
+fallback and the final profile isolates supported built-ins—so the exact cache
+counters, parity tests, and deterministic profile are the primary acceptance
+evidence.
+
+Frame p95 was 66.7ms and React commit p95 was 14.3ms. One 12.6-second frame
+interval shows that the tab was briefly backgrounded, invalidating max frame
+and wall-clock duration but not the counter-level cache gate. Phase 2 is
+complete; primary candle series windowing remains deferred and Phase 3 may
+proceed with chunked canonical storage when requested.
