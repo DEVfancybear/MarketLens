@@ -96,6 +96,50 @@ func (ns NullPushPlatform) Value() (driver.Value, error) {
 	return string(ns.PushPlatform), nil
 }
 
+type ReplayCommandStatus string
+
+const (
+	ReplayCommandStatusAccepted ReplayCommandStatus = "accepted"
+	ReplayCommandStatusApplied  ReplayCommandStatus = "applied"
+	ReplayCommandStatusRejected ReplayCommandStatus = "rejected"
+	ReplayCommandStatusFailed   ReplayCommandStatus = "failed"
+)
+
+func (e *ReplayCommandStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplayCommandStatus(s)
+	case string:
+		*e = ReplayCommandStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplayCommandStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReplayCommandStatus struct {
+	ReplayCommandStatus ReplayCommandStatus `json:"replay_command_status"`
+	Valid               bool                `json:"valid"` // Valid is true if ReplayCommandStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplayCommandStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplayCommandStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplayCommandStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplayCommandStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplayCommandStatus), nil
+}
+
 type ReplayDataKind string
 
 const (
@@ -228,6 +272,8 @@ type ReplaySessionStatus string
 const (
 	ReplaySessionStatusPreparing ReplaySessionStatus = "preparing"
 	ReplaySessionStatusPaused    ReplaySessionStatus = "paused"
+	ReplaySessionStatusPlaying   ReplaySessionStatus = "playing"
+	ReplaySessionStatusCompleted ReplaySessionStatus = "completed"
 	ReplaySessionStatusClosed    ReplaySessionStatus = "closed"
 	ReplaySessionStatusFailed    ReplaySessionStatus = "failed"
 )
@@ -331,6 +377,31 @@ type PushToken struct {
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
 }
 
+type ReplayCheckpoint struct {
+	ID             pgtype.UUID        `json:"id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	Generation     int32              `json:"generation"`
+	EventSeq       int64              `json:"event_seq"`
+	SimulatedTime  pgtype.Timestamptz `json:"simulated_time"`
+	Snapshot       []byte             `json:"snapshot"`
+	ChecksumSha256 string             `json:"checksum_sha256"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type ReplayCommand struct {
+	ID              pgtype.UUID         `json:"id"`
+	SessionID       pgtype.UUID         `json:"session_id"`
+	CommandSeq      int64               `json:"command_seq"`
+	IdempotencyKey  string              `json:"idempotency_key"`
+	ExpectedVersion *int64              `json:"expected_version"`
+	CommandType     string              `json:"command_type"`
+	Payload         []byte              `json:"payload"`
+	Status          ReplayCommandStatus `json:"status"`
+	Result          []byte              `json:"result"`
+	CreatedAt       pgtype.Timestamptz  `json:"created_at"`
+	ProcessedAt     pgtype.Timestamptz  `json:"processed_at"`
+}
+
 type ReplayDataset struct {
 	ID                  pgtype.UUID         `json:"id"`
 	Provider            string              `json:"provider"`
@@ -364,6 +435,16 @@ type ReplayDatasetBar struct {
 	Complete        bool               `json:"complete"`
 }
 
+type ReplayEvent struct {
+	SessionID   pgtype.UUID        `json:"session_id"`
+	EventSeq    int64              `json:"event_seq"`
+	Version     int64              `json:"version"`
+	EventType   string             `json:"event_type"`
+	SimulatedAt pgtype.Timestamptz `json:"simulated_at"`
+	Payload     []byte             `json:"payload"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type ReplaySession struct {
 	ID                    pgtype.UUID         `json:"id"`
 	UserID                pgtype.UUID         `json:"user_id"`
@@ -383,6 +464,8 @@ type ReplaySession struct {
 	CreatedAt             pgtype.Timestamptz  `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz  `json:"updated_at"`
 	ClosedAt              pgtype.Timestamptz  `json:"closed_at"`
+	ActorOwner            *string             `json:"actor_owner"`
+	ActorLeaseUntil       pgtype.Timestamptz  `json:"actor_lease_until"`
 }
 
 type ReplayTrack struct {

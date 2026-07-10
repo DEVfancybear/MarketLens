@@ -26,10 +26,11 @@ export interface ReplayTrackSnapshot {
 
 export interface ReplaySessionSnapshot {
   id: string;
-  status: "preparing" | "paused" | "closed" | "failed";
+  status: "preparing" | "paused" | "playing" | "completed" | "closed" | "failed";
   mode: "single_chart" | "all_charts";
   generation: number;
   version: number;
+  lastEventSeq: number;
   speed: number;
   replayIntervalSeconds: number;
   startTime: string;
@@ -40,6 +41,29 @@ export interface ReplaySessionSnapshot {
   createdAt: string;
   updatedAt: string;
   closedAt?: string;
+}
+
+export interface ReplayCommandInput {
+  idempotencyKey: string;
+  expectedVersion?: number;
+  type: "play" | "pause" | "step" | "seek" | "restart" | "close" | "set_speed";
+  payload?: Record<string, unknown>;
+}
+
+export interface ReplayCommandResult {
+  commandId: string;
+  status: "applied";
+  duplicate: boolean;
+  snapshot: ReplaySessionSnapshot;
+}
+
+export interface ReplayEventEnvelope {
+  sessionId: string;
+  eventSeq: number;
+  version: number;
+  simulatedTime: string;
+  type: "snapshot" | "state.changed" | "cursor.advanced" | "error" | string;
+  payload: unknown;
 }
 
 export interface CreateReplaySessionInput {
@@ -76,4 +100,25 @@ export function closeReplaySession(
   sessionId: string,
 ): Promise<ReplaySessionSnapshot> {
   return deleteJson(`replay/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function sendReplayCommand(
+  sessionId: string,
+  input: ReplayCommandInput,
+): Promise<ReplayCommandResult> {
+  return postJson(
+    `replay/sessions/${encodeURIComponent(sessionId)}/commands`,
+    input,
+    { retry: { limit: 0 } },
+  );
+}
+
+export function getReplayEvents(
+  sessionId: string,
+  afterSeq: number,
+): Promise<ReplayEventEnvelope[]> {
+  return getJson(
+    `replay/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${afterSeq}`,
+    { retry: { limit: 0 } },
+  );
 }

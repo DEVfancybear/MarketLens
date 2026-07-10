@@ -1,6 +1,7 @@
 package replay
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -10,6 +11,10 @@ var (
 	ErrNotFound           = errors.New("replay: not found")
 	ErrDataUnavailable    = errors.New("replay: data point unavailable")
 	ErrDatasetPreparation = errors.New("replay: dataset preparation failed")
+	ErrVersionConflict    = errors.New("replay: version conflict")
+	ErrSessionBusy        = errors.New("replay: session busy")
+	ErrSessionClosed      = errors.New("replay: session closed")
+	ErrCheckpointCorrupt  = errors.New("replay: checkpoint checksum mismatch")
 )
 
 type StartInput struct {
@@ -62,6 +67,7 @@ type SessionSnapshot struct {
 	Mode                  string          `json:"mode"`
 	Generation            int             `json:"generation"`
 	Version               int64           `json:"version"`
+	LastEventSeq          int64           `json:"lastEventSeq"`
 	Speed                 float64         `json:"speed"`
 	ReplayIntervalSeconds int             `json:"replayIntervalSeconds"`
 	StartTime             time.Time       `json:"startTime"`
@@ -73,6 +79,36 @@ type SessionSnapshot struct {
 	UpdatedAt             time.Time       `json:"updatedAt"`
 	ClosedAt              *time.Time      `json:"closedAt,omitempty"`
 }
+
+type CommandInput struct {
+	IdempotencyKey  string          `json:"idempotencyKey"`
+	ExpectedVersion *int64          `json:"expectedVersion,omitempty"`
+	Type            string          `json:"type"`
+	Payload         json.RawMessage `json:"payload,omitempty"`
+	ActorOwner      string          `json:"-"`
+	ActorLeaseUntil time.Time       `json:"-"`
+}
+
+type CommandResult struct {
+	CommandID string          `json:"commandId"`
+	Status    string          `json:"status"`
+	Duplicate bool            `json:"duplicate"`
+	Snapshot  SessionSnapshot `json:"snapshot"`
+}
+
+type EventEnvelope struct {
+	SessionID     string          `json:"sessionId"`
+	EventSeq      int64           `json:"eventSeq"`
+	Version       int64           `json:"version"`
+	SimulatedTime time.Time       `json:"simulatedTime"`
+	Type          string          `json:"type"`
+	Payload       json.RawMessage `json:"payload"`
+}
+
+type VersionConflictError struct{ CurrentVersion int64 }
+
+func (e *VersionConflictError) Error() string { return ErrVersionConflict.Error() }
+func (e *VersionConflictError) Unwrap() error { return ErrVersionConflict }
 
 type Bar struct {
 	Time   time.Time

@@ -1,6 +1,6 @@
 # Backend-Owned Replay: Architecture, Database, and Migration Plan
 
-_Status: Phase 1 implemented in the repository; migration deployment and Phases 2-6 remain environment-dependent._
+_Status: Phases 1-2 implemented and environment-verified; Phases 3-6 remain planned._
 _Date: 2026-07-10._
 
 ## 1. Executive decision
@@ -806,12 +806,21 @@ limit at the selected chart timeframe. Base-interval loading, progressive
 aggregation, asynchronous preparation events, and synchronized tracks remain
 Phase 3/5 work. See `docs/REPLAY_BACKEND_PHASE1.md` for the deployed contract.
 
-### Phase 2 — single-chart backend clock
+### Phase 2 — single-chart backend clock (completed 2026-07-10)
 
-- Implement session actor, commands, events, checkpoint recovery, and WebSocket.
-- Move play/pause/step/speed/cursor authority to Go.
-- Shadow-run frontend and backend cursors in development; report divergence.
-- Keep old engine as instant rollback.
+- [x] Added migration `0013_replay_clock` with commands, ordered events,
+  checkpoints, and the `playing`/`completed` states.
+- [x] Implemented the in-process single-writer actor, deterministic server
+  clock, play/pause/step/seek/restart/speed/close commands, optimistic version
+  checks, idempotency, checkpoint validation, pooler-safe durable actor leases,
+  and restart-as-paused recovery.
+- [x] Added auth-only command/event/WebSocket endpoints, complete reconnect
+  snapshots, event gap recovery, and five-second no-subscriber pause behavior.
+- [x] Added a feature-flagged frontend projection/socket and development shadow
+  controller. The legacy cursor remains the rendered rollback path and is never
+  mutated by backend events during Phase 2.
+
+See `docs/REPLAY_BACKEND_PHASE2.md` for the deployed contract and verification.
 
 ### Phase 3 — replay interval and aggregation
 
@@ -911,6 +920,7 @@ REPLAY_MAX_CONCURRENT_SESSIONS_PER_USER=3
 REPLAY_MAX_TRACKS_PER_SESSION=4
 REPLAY_MAX_BARS_PER_TRACK=40000
 REPLAY_DISCONNECT_GRACE=5s
+REPLAY_ACTOR_LEASE_TTL=5s
 REPLAY_CHECKPOINT_EVERY_EVENTS=250
 REPLAY_SESSION_RETENTION=720h
 REPLAY_DATASET_RETENTION=168h

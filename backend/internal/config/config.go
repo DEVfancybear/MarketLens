@@ -41,6 +41,8 @@ type Config struct {
 	ReplayCleanupInterval  time.Duration
 	ReplaySessionRetention time.Duration
 	ReplayDatasetRetention time.Duration
+	ReplayDisconnectGrace  time.Duration
+	ReplayActorLeaseTTL    time.Duration
 }
 
 // IsProduction reports whether the app is running outside local development.
@@ -87,6 +89,8 @@ func Load() (Config, error) {
 		ReplayCleanupInterval:   getEnvDuration("REPLAY_CLEANUP_INTERVAL", time.Hour),
 		ReplaySessionRetention:  getEnvDuration("REPLAY_SESSION_RETENTION", 720*time.Hour),
 		ReplayDatasetRetention:  getEnvDuration("REPLAY_DATASET_RETENTION", 168*time.Hour),
+		ReplayDisconnectGrace:   getEnvDuration("REPLAY_DISCONNECT_GRACE", 5*time.Second),
+		ReplayActorLeaseTTL:     getEnvDuration("REPLAY_ACTOR_LEASE_TTL", 5*time.Second),
 	}
 
 	if err := cfg.validate(); err != nil {

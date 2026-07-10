@@ -146,19 +146,23 @@ func (r *Repo) getByIDs(ctx context.Context, uid, sid pgtype.UUID) (SessionSnaps
 	out := sessionSnapshot(session)
 	out.Tracks = make([]TrackSnapshot, 0, len(tracks))
 	for _, track := range tracks {
-		checksum := ""
-		if track.ChecksumSha256 != nil {
-			checksum = *track.ChecksumSha256
-		}
-		out.Tracks = append(out.Tracks, TrackSnapshot{
-			ID: uuidString(track.ID), Slot: int(track.Slot), Symbol: track.Symbol, Provider: track.Provider,
-			ChartTimeframe: track.ChartTimeframe, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough.Time,
-			Dataset: DatasetSnapshot{ID: uuidString(track.DatasetID), DataKind: string(track.DataKind), SourceTimeframe: track.SourceTimeframe,
-				BaseIntervalSeconds: int(track.BaseIntervalSeconds), FirstAvailableTime: track.FirstTime.Time, LastAvailableTime: track.LastTime.Time,
-				SnapshotAt: track.SnapshotAt.Time, RowCount: int(track.RowCount), ChecksumSHA256: checksum, Status: string(track.DatasetStatus)},
-		})
+		out.Tracks = append(out.Tracks, snapshotTrack(track))
 	}
 	return out, nil
+}
+
+func snapshotTrack(track gen.ListReplayTracksForSessionRow) TrackSnapshot {
+	checksum := ""
+	if track.ChecksumSha256 != nil {
+		checksum = *track.ChecksumSha256
+	}
+	return TrackSnapshot{
+		ID: uuidString(track.ID), Slot: int(track.Slot), Symbol: track.Symbol, Provider: track.Provider,
+		ChartTimeframe: track.ChartTimeframe, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough.Time,
+		Dataset: DatasetSnapshot{ID: uuidString(track.DatasetID), DataKind: string(track.DataKind), SourceTimeframe: track.SourceTimeframe,
+			BaseIntervalSeconds: int(track.BaseIntervalSeconds), FirstAvailableTime: track.FirstTime.Time, LastAvailableTime: track.LastTime.Time,
+			SnapshotAt: track.SnapshotAt.Time, RowCount: int(track.RowCount), ChecksumSHA256: checksum, Status: string(track.DatasetStatus)},
+	}
 }
 
 func (r *Repo) Cleanup(ctx context.Context, sessionCutoff, datasetCutoff time.Time, limit int32) (CleanupResult, error) {
@@ -176,7 +180,8 @@ func (r *Repo) Cleanup(ctx context.Context, sessionCutoff, datasetCutoff time.Ti
 func sessionSnapshot(row gen.ReplaySession) SessionSnapshot {
 	speed, _ := row.Speed.Float64Value()
 	out := SessionSnapshot{ID: uuidString(row.ID), Status: string(row.Status), Mode: string(row.Mode), Generation: int(row.Generation), Version: row.Version,
-		Speed: speed.Float64, ReplayIntervalSeconds: int(row.ReplayIntervalSeconds), StartTime: row.StartTime.Time, SimulatedTime: row.SimulatedTime.Time,
+		LastEventSeq: row.NextEventSeq - 1,
+		Speed:        speed.Float64, ReplayIntervalSeconds: int(row.ReplayIntervalSeconds), StartTime: row.StartTime.Time, SimulatedTime: row.SimulatedTime.Time,
 		Tracks: []TrackSnapshot{}, CreatedAt: row.CreatedAt.Time, UpdatedAt: row.UpdatedAt.Time}
 	if row.EndTime.Valid {
 		value := row.EndTime.Time

@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Replay Phase 2 single-chart clock (2026-07-10)
+- Added PostgreSQL command, ordered event, and checkpoint persistence in
+  migration `0013_replay_clock`, including optimistic versions and idempotency.
+- Added the Go replay actor and deterministic clock with play, pause, bounded
+  step, seek, restart, speed, close, disconnect pause, and restart recovery.
+- Added pooler-safe durable actor ownership with heartbeat/expiry so only one
+  API instance can advance a playing session.
+- Added auth-only REST command/event recovery and WebSocket snapshot/event APIs.
+- Added a frontend read-only projection, ordered socket recovery, and
+  feature-flagged development shadow comparison while retaining legacy replay
+  as the Phase 2 rollback path.
+- Verified the migration, real MT5 clock flow, WebSocket ordering, version
+  conflict details, checkpoint checksum, no-subscriber pause, and server-restart
+  recovery in the local PostgreSQL environment.
+
 ### Added - Backend Replay Phase 1 persistence and dataset preparation (2026-07-10)
 - Added auth-only replay session create/get/close APIs; Phase 1 sessions are
   immutable, paused snapshots and do not yet run a backend clock.

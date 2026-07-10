@@ -1,0 +1,510 @@
+package replay
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smc-trading-terminal/backend/internal/db/gen"
+)
+
+const maxStepCount = 100
+
+type eventDraft struct {
+	typ     string
+	payload any
+}
+
+type runtimeBarQueries interface {
+	GetReplayDatasetBarBySeq(context.Context, gen.GetReplayDatasetBarBySeqParams) (gen.ReplayDatasetBar, error)
+	FindReplayDatasetBarAtOrBefore(context.Context, gen.FindReplayDatasetBarAtOrBeforeParams) (gen.ReplayDatasetBar, error)
+}
+
+type commandRejection struct {
+	Code           string `json:"code"`
+	CurrentVersion int64  `json:"currentVersion,omitempty"`
+}
+
+func (r *Repo) ApplyCommand(ctx context.Context, userID, sessionID string, input CommandInput) (CommandResult, []EventEnvelope, error) {
+	return r.applyCommand(ctx, r.pool, userID, sessionID, input)
+}
+
+type commandBeginner interface {
+	Begin(context.Context) (pgx.Tx, error)
+}
+
+func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userID, sessionID string, input CommandInput) (CommandResult, []EventEnvelope, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	sid, err := parseUUID(sessionID)
+	if err != nil {
+		return CommandResult{}, nil, ErrNotFound
+	}
+	tx, err := beginner.Begin(ctx)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	defer tx.Rollback(ctx)
+	q := r.queries.WithTx(tx)
+	locked, err := q.TryLockReplaySession(ctx, sessionID)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	if !locked {
+		return CommandResult{}, nil, ErrSessionBusy
+	}
+	session, err := q.GetReplaySessionForUserForUpdate(ctx, gen.GetReplaySessionForUserForUpdateParams{ID: sid, UserID: uid})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CommandResult{}, nil, ErrNotFound
+	}
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+
+	existing, err := q.GetReplayCommandByIdempotency(ctx, gen.GetReplayCommandByIdempotencyParams{
+		SessionID: sid, UserID: uid, IdempotencyKey: input.IdempotencyKey,
+	})
+	if err == nil {
+		return duplicateCommandResult(existing)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return CommandResult{}, nil, err
+	}
+	commandSeq, err := q.NextReplayCommandSeq(ctx, sid)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	payload := normalizedPayload(input.Payload)
+	command, err := q.CreateReplayCommand(ctx, gen.CreateReplayCommandParams{
+		SessionID: sid, CommandSeq: int64(commandSeq), IdempotencyKey: input.IdempotencyKey,
+		ExpectedVersion: input.ExpectedVersion, CommandType: input.Type, Payload: payload,
+	})
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	if input.ExpectedVersion != nil && *input.ExpectedVersion != session.Version {
+		rejection, _ := json.Marshal(commandRejection{Code: "version_conflict", CurrentVersion: session.Version})
+		if _, err := q.MarkReplayCommandRejected(ctx, gen.MarkReplayCommandRejectedParams{ID: command.ID, Result: rejection}); err != nil {
+			return CommandResult{}, nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return CommandResult{}, nil, err
+		}
+		return CommandResult{}, nil, &VersionConflictError{CurrentVersion: session.Version}
+	}
+	if session.Status == gen.ReplaySessionStatusClosed {
+		rejection, _ := json.Marshal(commandRejection{Code: "session_closed"})
+		if _, err := q.MarkReplayCommandRejected(ctx, gen.MarkReplayCommandRejectedParams{ID: command.ID, Result: rejection}); err != nil {
+			return CommandResult{}, nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return CommandResult{}, nil, err
+		}
+		return CommandResult{}, nil, ErrSessionClosed
+	}
+	leaseChanged, err := claimRuntimeActor(&session, input)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+
+	tracks, err := q.ListReplayTracksForSessionForUpdate(ctx, sid)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	if len(tracks) != 1 {
+		return CommandResult{}, nil, fmt.Errorf("replay: Phase 2 expected one track, got %d", len(tracks))
+	}
+	track := tracks[0]
+	drafts, changed, err := applyRuntimeTransition(ctx, q, &session, &track, input)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	if session.Status != gen.ReplaySessionStatusPlaying && session.ActorOwner != nil {
+		session.ActorOwner = nil
+		session.ActorLeaseUntil = pgtype.Timestamptz{}
+		leaseChanged = true
+	}
+	if changed {
+		session.Version++
+		session.NextEventSeq += int64(len(drafts))
+	}
+	if changed || leaseChanged {
+		updated, err := q.UpdateReplayRuntimeSession(ctx, gen.UpdateReplayRuntimeSessionParams{
+			ID: session.ID, Status: session.Status, Version: session.Version, NextEventSeq: session.NextEventSeq,
+			Speed: session.Speed, SimulatedTime: session.SimulatedTime, PauseReason: session.PauseReason, ClosedAt: session.ClosedAt,
+			ActorOwner: session.ActorOwner, ActorLeaseUntil: session.ActorLeaseUntil,
+		})
+		if err != nil {
+			return CommandResult{}, nil, err
+		}
+		session = updated
+	}
+	if changed {
+		if _, err := q.UpdateReplayTrackCursor(ctx, gen.UpdateReplayTrackCursorParams{
+			ID: track.ID, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough,
+		}); err != nil {
+			return CommandResult{}, nil, err
+		}
+	}
+
+	events := make([]EventEnvelope, 0, len(drafts))
+	firstSeq := session.NextEventSeq - int64(len(drafts))
+	for i, draft := range drafts {
+		payload, err := json.Marshal(draft.payload)
+		if err != nil {
+			return CommandResult{}, nil, err
+		}
+		row, err := q.CreateReplayEvent(ctx, gen.CreateReplayEventParams{
+			SessionID: sid, EventSeq: firstSeq + int64(i), Version: session.Version,
+			EventType: draft.typ, SimulatedAt: session.SimulatedTime, Payload: payload,
+		})
+		if err != nil {
+			return CommandResult{}, nil, err
+		}
+		events = append(events, eventEnvelope(row))
+	}
+
+	snapshot, err := snapshotWithQueries(ctx, q, uid, sid)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	result := CommandResult{CommandID: uuidString(command.ID), Status: "applied", Snapshot: snapshot}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return CommandResult{}, nil, err
+	}
+	if changed {
+		checksum := sha256.Sum256(resultJSONForCheckpoint(snapshot))
+		if _, err := q.CreateReplayCheckpoint(ctx, gen.CreateReplayCheckpointParams{
+			SessionID: sid, Generation: session.Generation, EventSeq: snapshot.LastEventSeq,
+			SimulatedTime: session.SimulatedTime, Snapshot: resultJSONForCheckpoint(snapshot), ChecksumSha256: hex.EncodeToString(checksum[:]),
+		}); err != nil {
+			return CommandResult{}, nil, err
+		}
+	}
+	if _, err := q.MarkReplayCommandApplied(ctx, gen.MarkReplayCommandAppliedParams{ID: command.ID, Result: resultJSON}); err != nil {
+		return CommandResult{}, nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return CommandResult{}, nil, err
+	}
+	return result, events, nil
+}
+
+func claimRuntimeActor(session *gen.ReplaySession, input CommandInput) (bool, error) {
+	commandType := strings.ToLower(strings.TrimSpace(input.Type))
+	requiresActor := session.Status == gen.ReplaySessionStatusPlaying || commandType == "play" || commandType == "__clock_step"
+	if !requiresActor {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	activeOtherOwner := session.ActorOwner != nil && *session.ActorOwner != input.ActorOwner &&
+		session.ActorLeaseUntil.Valid && session.ActorLeaseUntil.Time.After(now)
+	if input.ActorOwner == "" {
+		if commandType == "__pause_server_restart" && !activeOtherOwner {
+			return false, nil
+		}
+		return false, ErrSessionBusy
+	}
+	if activeOtherOwner {
+		return false, ErrSessionBusy
+	}
+	leaseUntil := input.ActorLeaseUntil.UTC()
+	if leaseUntil.IsZero() || !leaseUntil.After(now) {
+		leaseUntil = now.Add(5 * time.Second)
+	}
+	owner := input.ActorOwner
+	changed := session.ActorOwner == nil || *session.ActorOwner != owner ||
+		!session.ActorLeaseUntil.Valid || !session.ActorLeaseUntil.Time.Equal(leaseUntil)
+	session.ActorOwner = &owner
+	session.ActorLeaseUntil = timestamp(leaseUntil)
+	return changed, nil
+}
+
+func (r *Repo) RenewActorLease(ctx context.Context, owner, sessionID string, leaseUntil time.Time) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `UPDATE replay_sessions
+SET actor_lease_until = $3
+WHERE id = $1 AND status = 'playing' AND actor_owner = $2`, sessionID, owner, leaseUntil.UTC())
+	return tag.RowsAffected() == 1, err
+}
+
+func (r *Repo) ReleaseActorLease(ctx context.Context, owner, sessionID string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE replay_sessions
+SET actor_owner = NULL, actor_lease_until = NULL
+WHERE id = $1 AND actor_owner = $2`, sessionID, owner)
+	return err
+}
+
+func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *gen.ReplaySession, track *gen.ListReplayTracksForSessionForUpdateRow, input CommandInput) ([]eventDraft, bool, error) {
+	oldStatus := session.Status
+	oldSpeed, _ := session.Speed.Float64Value()
+	oldCursor := track.CursorSeq
+	commandType := strings.ToLower(strings.TrimSpace(input.Type))
+	var selected *gen.ReplayDatasetBar
+
+	switch commandType {
+	case "play":
+		if session.Status == gen.ReplaySessionStatusCompleted {
+			return nil, false, fmt.Errorf("%w: restart or seek before playing a completed session", ErrBadRequest)
+		}
+		if session.Status == gen.ReplaySessionStatusPaused {
+			session.Status = gen.ReplaySessionStatusPlaying
+			session.PauseReason = nil
+		}
+	case "pause", "__pause_no_subscribers", "__pause_server_restart":
+		if session.Status == gen.ReplaySessionStatusPlaying {
+			session.Status = gen.ReplaySessionStatusPaused
+			reason := "manual"
+			if commandType == "__pause_no_subscribers" {
+				reason = "no_subscribers"
+			} else if commandType == "__pause_server_restart" {
+				reason = "server_restart"
+			}
+			session.PauseReason = &reason
+		}
+	case "step", "__clock_step":
+		if commandType == "step" && session.Status != gen.ReplaySessionStatusPaused {
+			return nil, false, fmt.Errorf("%w: step requires a paused session", ErrBadRequest)
+		}
+		if commandType == "__clock_step" && session.Status != gen.ReplaySessionStatusPlaying {
+			return nil, false, nil
+		}
+		count := 1
+		if commandType == "step" {
+			var body struct {
+				Count int `json:"count"`
+			}
+			if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil {
+				return nil, false, fmt.Errorf("%w: invalid step payload", ErrBadRequest)
+			}
+			if body.Count != 0 {
+				count = body.Count
+			}
+		}
+		if count < 1 || count > maxStepCount {
+			return nil, false, fmt.Errorf("%w: step.count must be between 1 and %d", ErrBadRequest, maxStepCount)
+		}
+		target := track.CursorSeq + int64(count)
+		lastSeq := int64(track.RowCount) - 1
+		if session.EndTime.Valid {
+			endBar, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
+				DatasetID: track.DatasetID, OpenTime: session.EndTime,
+			})
+			if err != nil {
+				return nil, false, err
+			}
+			if endBar.Seq < lastSeq {
+				lastSeq = endBar.Seq
+			}
+		}
+		if target > lastSeq {
+			target = lastSeq
+		}
+		if target > track.CursorSeq {
+			bar, err := q.GetReplayDatasetBarBySeq(ctx, gen.GetReplayDatasetBarBySeqParams{DatasetID: track.DatasetID, Seq: target})
+			if err != nil {
+				return nil, false, err
+			}
+			selected = &bar
+		}
+		if target >= lastSeq {
+			session.Status = gen.ReplaySessionStatusCompleted
+			session.PauseReason = nil
+		}
+	case "set_speed":
+		var body struct {
+			Speed float64 `json:"speed"`
+		}
+		if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil || !finite(body.Speed) || body.Speed <= 0 || body.Speed > 100 {
+			return nil, false, fmt.Errorf("%w: speed must be between 0 and 100", ErrBadRequest)
+		}
+		session.Speed = numeric(body.Speed)
+	case "seek", "restart":
+		target := session.StartTime.Time
+		if commandType == "seek" {
+			var body struct {
+				Time time.Time `json:"time"`
+			}
+			if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil || body.Time.IsZero() {
+				return nil, false, fmt.Errorf("%w: seek.time is required", ErrBadRequest)
+			}
+			target = body.Time.UTC()
+		}
+		if target.Before(track.FirstTime.Time) || !target.Before(track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds)*time.Second)) {
+			return nil, false, ErrDataUnavailable
+		}
+		bar, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, ErrDataUnavailable
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		selected = &bar
+		session.Status = gen.ReplaySessionStatusPaused
+		reason := commandType
+		session.PauseReason = &reason
+	case "close":
+		session.Status = gen.ReplaySessionStatusClosed
+		reason := "closed"
+		session.PauseReason = &reason
+		session.ClosedAt = timestamp(time.Now().UTC())
+	default:
+		return nil, false, fmt.Errorf("%w: unsupported Phase 2 command %q", ErrBadRequest, input.Type)
+	}
+
+	if selected != nil {
+		track.CursorSeq = selected.Seq
+		track.VisibleThrough = selected.OpenTime
+		session.SimulatedTime = selected.OpenTime
+	}
+	newSpeed, _ := session.Speed.Float64Value()
+	changed := oldStatus != session.Status || oldCursor != track.CursorSeq || oldSpeed.Float64 != newSpeed.Float64 || commandType == "close"
+	if !changed {
+		return nil, false, nil
+	}
+	drafts := make([]eventDraft, 0, 2)
+	if oldCursor != track.CursorSeq {
+		drafts = append(drafts, eventDraft{typ: "cursor.advanced", payload: map[string]any{
+			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
+		}})
+	}
+	if oldStatus != session.Status || oldSpeed.Float64 != newSpeed.Float64 || commandType == "close" {
+		drafts = append(drafts, eventDraft{typ: "state.changed", payload: map[string]any{
+			"status": string(session.Status), "speed": newSpeed.Float64, "pauseReason": session.PauseReason,
+		}})
+	}
+	return drafts, true, nil
+}
+
+func duplicateCommandResult(command gen.ReplayCommand) (CommandResult, []EventEnvelope, error) {
+	if command.Status == gen.ReplayCommandStatusRejected {
+		var rejection commandRejection
+		_ = json.Unmarshal(command.Result, &rejection)
+		if rejection.Code == "version_conflict" {
+			return CommandResult{}, nil, &VersionConflictError{CurrentVersion: rejection.CurrentVersion}
+		}
+		if rejection.Code == "session_closed" {
+			return CommandResult{}, nil, ErrSessionClosed
+		}
+	}
+	var result CommandResult
+	if err := json.Unmarshal(command.Result, &result); err != nil {
+		return CommandResult{}, nil, err
+	}
+	result.Duplicate = true
+	return result, nil, nil
+}
+
+func snapshotWithQueries(ctx context.Context, q *gen.Queries, uid, sid pgtype.UUID) (SessionSnapshot, error) {
+	session, err := q.GetReplaySessionForUser(ctx, gen.GetReplaySessionForUserParams{ID: sid, UserID: uid})
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	tracks, err := q.ListReplayTracksForSession(ctx, sid)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	out := sessionSnapshot(session)
+	out.Tracks = make([]TrackSnapshot, 0, len(tracks))
+	for _, track := range tracks {
+		out.Tracks = append(out.Tracks, snapshotTrack(track))
+	}
+	return out, nil
+}
+
+func (r *Repo) Events(ctx context.Context, userID, sessionID string, afterSeq int64, limit int32) ([]EventEnvelope, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	sid, err := parseUUID(sessionID)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	if _, err := r.queries.GetReplaySessionForUser(ctx, gen.GetReplaySessionForUserParams{ID: sid, UserID: uid}); errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if afterSeq < 0 {
+		afterSeq = 0
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	rows, err := r.queries.ListReplayEventsForUser(ctx, gen.ListReplayEventsForUserParams{SessionID: sid, UserID: uid, EventSeq: afterSeq, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]EventEnvelope, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, eventEnvelope(row))
+	}
+	return out, nil
+}
+
+func (r *Repo) VerifyLatestCheckpoint(ctx context.Context, userID, sessionID string) error {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return err
+	}
+	sid, err := parseUUID(sessionID)
+	if err != nil {
+		return ErrNotFound
+	}
+	checkpoint, err := r.queries.GetLatestReplayCheckpoint(ctx, gen.GetLatestReplayCheckpointParams{SessionID: sid, UserID: uid})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var snapshot SessionSnapshot
+	if err := json.Unmarshal(checkpoint.Snapshot, &snapshot); err != nil {
+		return ErrCheckpointCorrupt
+	}
+	sum := sha256.Sum256(resultJSONForCheckpoint(snapshot))
+	if hex.EncodeToString(sum[:]) != checkpoint.ChecksumSha256 {
+		return ErrCheckpointCorrupt
+	}
+	return nil
+}
+
+func (r *Repo) PlayingSessions(ctx context.Context) ([][2]string, error) {
+	rows, err := r.queries.ListPlayingReplaySessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][2]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, [2]string{uuidString(row.UserID), uuidString(row.ID)})
+	}
+	return out, nil
+}
+
+func eventEnvelope(row gen.ReplayEvent) EventEnvelope {
+	return EventEnvelope{SessionID: uuidString(row.SessionID), EventSeq: row.EventSeq, Version: row.Version,
+		SimulatedTime: row.SimulatedAt.Time, Type: row.EventType, Payload: json.RawMessage(row.Payload)}
+}
+
+func normalizedPayload(payload json.RawMessage) []byte {
+	if len(payload) == 0 || string(payload) == "null" {
+		return []byte("{}")
+	}
+	return payload
+}
+
+func resultJSONForCheckpoint(snapshot SessionSnapshot) []byte {
+	payload, _ := json.Marshal(snapshot)
+	return payload
+}

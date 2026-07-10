@@ -15,7 +15,7 @@ const closeReplaySessionForUser = `-- name: CloseReplaySessionForUser :one
 UPDATE replay_sessions SET
   status = 'closed', pause_reason = 'closed', closed_at = now(), version = version + 1
 WHERE id = $1 AND user_id = $2 AND status <> 'closed'
-RETURNING id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at
+RETURNING id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at, actor_owner, actor_lease_until
 `
 
 type CloseReplaySessionForUserParams struct {
@@ -45,6 +45,89 @@ func (q *Queries) CloseReplaySessionForUser(ctx context.Context, arg CloseReplay
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.ActorOwner,
+		&i.ActorLeaseUntil,
+	)
+	return i, err
+}
+
+const createReplayCheckpoint = `-- name: CreateReplayCheckpoint :one
+INSERT INTO replay_checkpoints (
+  session_id, generation, event_seq, simulated_time, snapshot, checksum_sha256
+) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, session_id, generation, event_seq, simulated_time, snapshot, checksum_sha256, created_at
+`
+
+type CreateReplayCheckpointParams struct {
+	SessionID      pgtype.UUID        `json:"session_id"`
+	Generation     int32              `json:"generation"`
+	EventSeq       int64              `json:"event_seq"`
+	SimulatedTime  pgtype.Timestamptz `json:"simulated_time"`
+	Snapshot       []byte             `json:"snapshot"`
+	ChecksumSha256 string             `json:"checksum_sha256"`
+}
+
+func (q *Queries) CreateReplayCheckpoint(ctx context.Context, arg CreateReplayCheckpointParams) (ReplayCheckpoint, error) {
+	row := q.db.QueryRow(ctx, createReplayCheckpoint,
+		arg.SessionID,
+		arg.Generation,
+		arg.EventSeq,
+		arg.SimulatedTime,
+		arg.Snapshot,
+		arg.ChecksumSha256,
+	)
+	var i ReplayCheckpoint
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.Generation,
+		&i.EventSeq,
+		&i.SimulatedTime,
+		&i.Snapshot,
+		&i.ChecksumSha256,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createReplayCommand = `-- name: CreateReplayCommand :one
+INSERT INTO replay_commands (
+  session_id, command_seq, idempotency_key, expected_version, command_type, payload
+) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, session_id, command_seq, idempotency_key, expected_version, command_type, payload, status, result, created_at, processed_at
+`
+
+type CreateReplayCommandParams struct {
+	SessionID       pgtype.UUID `json:"session_id"`
+	CommandSeq      int64       `json:"command_seq"`
+	IdempotencyKey  string      `json:"idempotency_key"`
+	ExpectedVersion *int64      `json:"expected_version"`
+	CommandType     string      `json:"command_type"`
+	Payload         []byte      `json:"payload"`
+}
+
+func (q *Queries) CreateReplayCommand(ctx context.Context, arg CreateReplayCommandParams) (ReplayCommand, error) {
+	row := q.db.QueryRow(ctx, createReplayCommand,
+		arg.SessionID,
+		arg.CommandSeq,
+		arg.IdempotencyKey,
+		arg.ExpectedVersion,
+		arg.CommandType,
+		arg.Payload,
+	)
+	var i ReplayCommand
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.CommandSeq,
+		&i.IdempotencyKey,
+		&i.ExpectedVersion,
+		&i.CommandType,
+		&i.Payload,
+		&i.Status,
+		&i.Result,
+		&i.CreatedAt,
+		&i.ProcessedAt,
 	)
 	return i, err
 }
@@ -133,12 +216,50 @@ func (q *Queries) CreateReplayDatasetBar(ctx context.Context, arg CreateReplayDa
 	return err
 }
 
+const createReplayEvent = `-- name: CreateReplayEvent :one
+INSERT INTO replay_events (
+  session_id, event_seq, version, event_type, simulated_at, payload
+) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING session_id, event_seq, version, event_type, simulated_at, payload, created_at
+`
+
+type CreateReplayEventParams struct {
+	SessionID   pgtype.UUID        `json:"session_id"`
+	EventSeq    int64              `json:"event_seq"`
+	Version     int64              `json:"version"`
+	EventType   string             `json:"event_type"`
+	SimulatedAt pgtype.Timestamptz `json:"simulated_at"`
+	Payload     []byte             `json:"payload"`
+}
+
+func (q *Queries) CreateReplayEvent(ctx context.Context, arg CreateReplayEventParams) (ReplayEvent, error) {
+	row := q.db.QueryRow(ctx, createReplayEvent,
+		arg.SessionID,
+		arg.EventSeq,
+		arg.Version,
+		arg.EventType,
+		arg.SimulatedAt,
+		arg.Payload,
+	)
+	var i ReplayEvent
+	err := row.Scan(
+		&i.SessionID,
+		&i.EventSeq,
+		&i.Version,
+		&i.EventType,
+		&i.SimulatedAt,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createReplaySession = `-- name: CreateReplaySession :one
 INSERT INTO replay_sessions (
   user_id, status, mode, speed, replay_interval_seconds,
   start_time, simulated_time, end_time, pause_reason, config
 ) VALUES ($1, 'paused', $2, $3, $4, $5, $5, $6, 'created', $7)
-RETURNING id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at
+RETURNING id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at, actor_owner, actor_lease_until
 `
 
 type CreateReplaySessionParams struct {
@@ -181,6 +302,8 @@ func (q *Queries) CreateReplaySession(ctx context.Context, arg CreateReplaySessi
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.ActorOwner,
+		&i.ActorLeaseUntil,
 	)
 	return i, err
 }
@@ -281,6 +404,65 @@ func (q *Queries) DeleteUnusedReplayDatasets(ctx context.Context, arg DeleteUnus
 	return result.RowsAffected(), nil
 }
 
+const findReplayDatasetBarAtOrBefore = `-- name: FindReplayDatasetBarAtOrBefore :one
+SELECT dataset_id, seq, open_time, interval_seconds, open, high, low, close, volume, complete FROM replay_dataset_bars
+WHERE dataset_id = $1 AND open_time <= $2
+ORDER BY open_time DESC
+LIMIT 1
+`
+
+type FindReplayDatasetBarAtOrBeforeParams struct {
+	DatasetID pgtype.UUID        `json:"dataset_id"`
+	OpenTime  pgtype.Timestamptz `json:"open_time"`
+}
+
+func (q *Queries) FindReplayDatasetBarAtOrBefore(ctx context.Context, arg FindReplayDatasetBarAtOrBeforeParams) (ReplayDatasetBar, error) {
+	row := q.db.QueryRow(ctx, findReplayDatasetBarAtOrBefore, arg.DatasetID, arg.OpenTime)
+	var i ReplayDatasetBar
+	err := row.Scan(
+		&i.DatasetID,
+		&i.Seq,
+		&i.OpenTime,
+		&i.IntervalSeconds,
+		&i.Open,
+		&i.High,
+		&i.Low,
+		&i.Close,
+		&i.Volume,
+		&i.Complete,
+	)
+	return i, err
+}
+
+const getLatestReplayCheckpoint = `-- name: GetLatestReplayCheckpoint :one
+SELECT c.id, c.session_id, c.generation, c.event_seq, c.simulated_time, c.snapshot, c.checksum_sha256, c.created_at FROM replay_checkpoints c
+JOIN replay_sessions s ON s.id = c.session_id
+WHERE c.session_id = $1 AND s.user_id = $2
+ORDER BY c.generation DESC, c.event_seq DESC
+LIMIT 1
+`
+
+type GetLatestReplayCheckpointParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetLatestReplayCheckpoint(ctx context.Context, arg GetLatestReplayCheckpointParams) (ReplayCheckpoint, error) {
+	row := q.db.QueryRow(ctx, getLatestReplayCheckpoint, arg.SessionID, arg.UserID)
+	var i ReplayCheckpoint
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.Generation,
+		&i.EventSeq,
+		&i.SimulatedTime,
+		&i.Snapshot,
+		&i.ChecksumSha256,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getReadyReplayDatasetByChecksum = `-- name: GetReadyReplayDatasetByChecksum :one
 SELECT id, provider, symbol, data_kind, source_timeframe, base_interval_seconds, first_time, last_time, snapshot_at, row_count, checksum_sha256, status, source_meta, last_error, created_at, updated_at, ready_at FROM replay_datasets
 WHERE checksum_sha256 = $1 AND status = 'ready'
@@ -312,8 +494,66 @@ func (q *Queries) GetReadyReplayDatasetByChecksum(ctx context.Context, checksumS
 	return i, err
 }
 
+const getReplayCommandByIdempotency = `-- name: GetReplayCommandByIdempotency :one
+SELECT c.id, c.session_id, c.command_seq, c.idempotency_key, c.expected_version, c.command_type, c.payload, c.status, c.result, c.created_at, c.processed_at FROM replay_commands c
+JOIN replay_sessions s ON s.id = c.session_id
+WHERE c.session_id = $1 AND s.user_id = $2 AND c.idempotency_key = $3
+`
+
+type GetReplayCommandByIdempotencyParams struct {
+	SessionID      pgtype.UUID `json:"session_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+	IdempotencyKey string      `json:"idempotency_key"`
+}
+
+func (q *Queries) GetReplayCommandByIdempotency(ctx context.Context, arg GetReplayCommandByIdempotencyParams) (ReplayCommand, error) {
+	row := q.db.QueryRow(ctx, getReplayCommandByIdempotency, arg.SessionID, arg.UserID, arg.IdempotencyKey)
+	var i ReplayCommand
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.CommandSeq,
+		&i.IdempotencyKey,
+		&i.ExpectedVersion,
+		&i.CommandType,
+		&i.Payload,
+		&i.Status,
+		&i.Result,
+		&i.CreatedAt,
+		&i.ProcessedAt,
+	)
+	return i, err
+}
+
+const getReplayDatasetBarBySeq = `-- name: GetReplayDatasetBarBySeq :one
+SELECT dataset_id, seq, open_time, interval_seconds, open, high, low, close, volume, complete FROM replay_dataset_bars WHERE dataset_id = $1 AND seq = $2
+`
+
+type GetReplayDatasetBarBySeqParams struct {
+	DatasetID pgtype.UUID `json:"dataset_id"`
+	Seq       int64       `json:"seq"`
+}
+
+func (q *Queries) GetReplayDatasetBarBySeq(ctx context.Context, arg GetReplayDatasetBarBySeqParams) (ReplayDatasetBar, error) {
+	row := q.db.QueryRow(ctx, getReplayDatasetBarBySeq, arg.DatasetID, arg.Seq)
+	var i ReplayDatasetBar
+	err := row.Scan(
+		&i.DatasetID,
+		&i.Seq,
+		&i.OpenTime,
+		&i.IntervalSeconds,
+		&i.Open,
+		&i.High,
+		&i.Low,
+		&i.Close,
+		&i.Volume,
+		&i.Complete,
+	)
+	return i, err
+}
+
 const getReplaySessionForUser = `-- name: GetReplaySessionForUser :one
-SELECT id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at FROM replay_sessions WHERE id = $1 AND user_id = $2
+SELECT id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at, actor_owner, actor_lease_until FROM replay_sessions WHERE id = $1 AND user_id = $2
 `
 
 type GetReplaySessionForUserParams struct {
@@ -343,8 +583,124 @@ func (q *Queries) GetReplaySessionForUser(ctx context.Context, arg GetReplaySess
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClosedAt,
+		&i.ActorOwner,
+		&i.ActorLeaseUntil,
 	)
 	return i, err
+}
+
+const getReplaySessionForUserForUpdate = `-- name: GetReplaySessionForUserForUpdate :one
+SELECT id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at, actor_owner, actor_lease_until FROM replay_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE
+`
+
+type GetReplaySessionForUserForUpdateParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetReplaySessionForUserForUpdate(ctx context.Context, arg GetReplaySessionForUserForUpdateParams) (ReplaySession, error) {
+	row := q.db.QueryRow(ctx, getReplaySessionForUserForUpdate, arg.ID, arg.UserID)
+	var i ReplaySession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Mode,
+		&i.Generation,
+		&i.Version,
+		&i.NextEventSeq,
+		&i.Speed,
+		&i.ReplayIntervalSeconds,
+		&i.StartTime,
+		&i.SimulatedTime,
+		&i.EndTime,
+		&i.PauseReason,
+		&i.Config,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+		&i.ActorOwner,
+		&i.ActorLeaseUntil,
+	)
+	return i, err
+}
+
+const listPlayingReplaySessions = `-- name: ListPlayingReplaySessions :many
+SELECT id, user_id FROM replay_sessions WHERE status = 'playing' ORDER BY updated_at
+`
+
+type ListPlayingReplaySessionsRow struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) ListPlayingReplaySessions(ctx context.Context) ([]ListPlayingReplaySessionsRow, error) {
+	rows, err := q.db.Query(ctx, listPlayingReplaySessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlayingReplaySessionsRow{}
+	for rows.Next() {
+		var i ListPlayingReplaySessionsRow
+		if err := rows.Scan(&i.ID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReplayEventsForUser = `-- name: ListReplayEventsForUser :many
+SELECT e.session_id, e.event_seq, e.version, e.event_type, e.simulated_at, e.payload, e.created_at FROM replay_events e
+JOIN replay_sessions s ON s.id = e.session_id
+WHERE e.session_id = $1 AND s.user_id = $2 AND e.event_seq > $3
+ORDER BY e.event_seq
+LIMIT $4
+`
+
+type ListReplayEventsForUserParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	EventSeq  int64       `json:"event_seq"`
+	Limit     int32       `json:"limit"`
+}
+
+func (q *Queries) ListReplayEventsForUser(ctx context.Context, arg ListReplayEventsForUserParams) ([]ReplayEvent, error) {
+	rows, err := q.db.Query(ctx, listReplayEventsForUser,
+		arg.SessionID,
+		arg.UserID,
+		arg.EventSeq,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReplayEvent{}
+	for rows.Next() {
+		var i ReplayEvent
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.EventSeq,
+			&i.Version,
+			&i.EventType,
+			&i.SimulatedAt,
+			&i.Payload,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listReplayTracksForSession = `-- name: ListReplayTracksForSession :many
@@ -423,6 +779,83 @@ func (q *Queries) ListReplayTracksForSession(ctx context.Context, sessionID pgty
 	return items, nil
 }
 
+const listReplayTracksForSessionForUpdate = `-- name: ListReplayTracksForSessionForUpdate :many
+SELECT t.id, t.session_id, t.dataset_id, t.slot, t.symbol, t.provider, t.chart_timeframe, t.cursor_seq, t.visible_through, t.aggregate_state, t.created_at, t.updated_at, d.data_kind, d.source_timeframe, d.base_interval_seconds,
+       d.first_time, d.last_time, d.snapshot_at, d.row_count,
+       d.checksum_sha256, d.status AS dataset_status
+FROM replay_tracks t
+JOIN replay_datasets d ON d.id = t.dataset_id
+WHERE t.session_id = $1
+ORDER BY t.slot
+FOR UPDATE OF t
+`
+
+type ListReplayTracksForSessionForUpdateRow struct {
+	ID                  pgtype.UUID         `json:"id"`
+	SessionID           pgtype.UUID         `json:"session_id"`
+	DatasetID           pgtype.UUID         `json:"dataset_id"`
+	Slot                int16               `json:"slot"`
+	Symbol              string              `json:"symbol"`
+	Provider            string              `json:"provider"`
+	ChartTimeframe      string              `json:"chart_timeframe"`
+	CursorSeq           int64               `json:"cursor_seq"`
+	VisibleThrough      pgtype.Timestamptz  `json:"visible_through"`
+	AggregateState      []byte              `json:"aggregate_state"`
+	CreatedAt           pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz  `json:"updated_at"`
+	DataKind            ReplayDataKind      `json:"data_kind"`
+	SourceTimeframe     string              `json:"source_timeframe"`
+	BaseIntervalSeconds int32               `json:"base_interval_seconds"`
+	FirstTime           pgtype.Timestamptz  `json:"first_time"`
+	LastTime            pgtype.Timestamptz  `json:"last_time"`
+	SnapshotAt          pgtype.Timestamptz  `json:"snapshot_at"`
+	RowCount            int32               `json:"row_count"`
+	ChecksumSha256      *string             `json:"checksum_sha256"`
+	DatasetStatus       ReplayDatasetStatus `json:"dataset_status"`
+}
+
+func (q *Queries) ListReplayTracksForSessionForUpdate(ctx context.Context, sessionID pgtype.UUID) ([]ListReplayTracksForSessionForUpdateRow, error) {
+	rows, err := q.db.Query(ctx, listReplayTracksForSessionForUpdate, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReplayTracksForSessionForUpdateRow{}
+	for rows.Next() {
+		var i ListReplayTracksForSessionForUpdateRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.DatasetID,
+			&i.Slot,
+			&i.Symbol,
+			&i.Provider,
+			&i.ChartTimeframe,
+			&i.CursorSeq,
+			&i.VisibleThrough,
+			&i.AggregateState,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DataKind,
+			&i.SourceTimeframe,
+			&i.BaseIntervalSeconds,
+			&i.FirstTime,
+			&i.LastTime,
+			&i.SnapshotAt,
+			&i.RowCount,
+			&i.ChecksumSha256,
+			&i.DatasetStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockReplayDatasetChecksum = `-- name: LockReplayDatasetChecksum :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
 `
@@ -430,6 +863,66 @@ SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
 func (q *Queries) LockReplayDatasetChecksum(ctx context.Context, hashtextextended string) error {
 	_, err := q.db.Exec(ctx, lockReplayDatasetChecksum, hashtextextended)
 	return err
+}
+
+const markReplayCommandApplied = `-- name: MarkReplayCommandApplied :one
+UPDATE replay_commands SET status = 'applied', result = $2, processed_at = now()
+WHERE id = $1
+RETURNING id, session_id, command_seq, idempotency_key, expected_version, command_type, payload, status, result, created_at, processed_at
+`
+
+type MarkReplayCommandAppliedParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Result []byte      `json:"result"`
+}
+
+func (q *Queries) MarkReplayCommandApplied(ctx context.Context, arg MarkReplayCommandAppliedParams) (ReplayCommand, error) {
+	row := q.db.QueryRow(ctx, markReplayCommandApplied, arg.ID, arg.Result)
+	var i ReplayCommand
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.CommandSeq,
+		&i.IdempotencyKey,
+		&i.ExpectedVersion,
+		&i.CommandType,
+		&i.Payload,
+		&i.Status,
+		&i.Result,
+		&i.CreatedAt,
+		&i.ProcessedAt,
+	)
+	return i, err
+}
+
+const markReplayCommandRejected = `-- name: MarkReplayCommandRejected :one
+UPDATE replay_commands SET status = 'rejected', result = $2, processed_at = now()
+WHERE id = $1
+RETURNING id, session_id, command_seq, idempotency_key, expected_version, command_type, payload, status, result, created_at, processed_at
+`
+
+type MarkReplayCommandRejectedParams struct {
+	ID     pgtype.UUID `json:"id"`
+	Result []byte      `json:"result"`
+}
+
+func (q *Queries) MarkReplayCommandRejected(ctx context.Context, arg MarkReplayCommandRejectedParams) (ReplayCommand, error) {
+	row := q.db.QueryRow(ctx, markReplayCommandRejected, arg.ID, arg.Result)
+	var i ReplayCommand
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.CommandSeq,
+		&i.IdempotencyKey,
+		&i.ExpectedVersion,
+		&i.CommandType,
+		&i.Payload,
+		&i.Status,
+		&i.Result,
+		&i.CreatedAt,
+		&i.ProcessedAt,
+	)
+	return i, err
 }
 
 const markReplayDatasetReady = `-- name: MarkReplayDatasetReady :one
@@ -475,6 +968,127 @@ func (q *Queries) MarkReplayDatasetReady(ctx context.Context, arg MarkReplayData
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ReadyAt,
+	)
+	return i, err
+}
+
+const nextReplayCommandSeq = `-- name: NextReplayCommandSeq :one
+SELECT COALESCE(MAX(command_seq), 0)::bigint + 1 FROM replay_commands WHERE session_id = $1
+`
+
+func (q *Queries) NextReplayCommandSeq(ctx context.Context, sessionID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, nextReplayCommandSeq, sessionID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const tryLockReplaySession = `-- name: TryLockReplaySession :one
+SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))::boolean
+`
+
+func (q *Queries) TryLockReplaySession(ctx context.Context, hashtextextended string) (bool, error) {
+	row := q.db.QueryRow(ctx, tryLockReplaySession, hashtextextended)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const updateReplayRuntimeSession = `-- name: UpdateReplayRuntimeSession :one
+UPDATE replay_sessions SET
+  status = $2,
+  version = $3,
+  next_event_seq = $4,
+  speed = $5,
+  simulated_time = $6,
+  pause_reason = $7,
+  closed_at = $8,
+  actor_owner = $9,
+  actor_lease_until = $10
+WHERE id = $1
+RETURNING id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at, actor_owner, actor_lease_until
+`
+
+type UpdateReplayRuntimeSessionParams struct {
+	ID              pgtype.UUID         `json:"id"`
+	Status          ReplaySessionStatus `json:"status"`
+	Version         int64               `json:"version"`
+	NextEventSeq    int64               `json:"next_event_seq"`
+	Speed           pgtype.Numeric      `json:"speed"`
+	SimulatedTime   pgtype.Timestamptz  `json:"simulated_time"`
+	PauseReason     *string             `json:"pause_reason"`
+	ClosedAt        pgtype.Timestamptz  `json:"closed_at"`
+	ActorOwner      *string             `json:"actor_owner"`
+	ActorLeaseUntil pgtype.Timestamptz  `json:"actor_lease_until"`
+}
+
+func (q *Queries) UpdateReplayRuntimeSession(ctx context.Context, arg UpdateReplayRuntimeSessionParams) (ReplaySession, error) {
+	row := q.db.QueryRow(ctx, updateReplayRuntimeSession,
+		arg.ID,
+		arg.Status,
+		arg.Version,
+		arg.NextEventSeq,
+		arg.Speed,
+		arg.SimulatedTime,
+		arg.PauseReason,
+		arg.ClosedAt,
+		arg.ActorOwner,
+		arg.ActorLeaseUntil,
+	)
+	var i ReplaySession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.Mode,
+		&i.Generation,
+		&i.Version,
+		&i.NextEventSeq,
+		&i.Speed,
+		&i.ReplayIntervalSeconds,
+		&i.StartTime,
+		&i.SimulatedTime,
+		&i.EndTime,
+		&i.PauseReason,
+		&i.Config,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ClosedAt,
+		&i.ActorOwner,
+		&i.ActorLeaseUntil,
+	)
+	return i, err
+}
+
+const updateReplayTrackCursor = `-- name: UpdateReplayTrackCursor :one
+UPDATE replay_tracks SET cursor_seq = $2, visible_through = $3
+WHERE id = $1
+RETURNING id, session_id, dataset_id, slot, symbol, provider, chart_timeframe, cursor_seq, visible_through, aggregate_state, created_at, updated_at
+`
+
+type UpdateReplayTrackCursorParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	CursorSeq      int64              `json:"cursor_seq"`
+	VisibleThrough pgtype.Timestamptz `json:"visible_through"`
+}
+
+func (q *Queries) UpdateReplayTrackCursor(ctx context.Context, arg UpdateReplayTrackCursorParams) (ReplayTrack, error) {
+	row := q.db.QueryRow(ctx, updateReplayTrackCursor, arg.ID, arg.CursorSeq, arg.VisibleThrough)
+	var i ReplayTrack
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.DatasetID,
+		&i.Slot,
+		&i.Symbol,
+		&i.Provider,
+		&i.ChartTimeframe,
+		&i.CursorSeq,
+		&i.VisibleThrough,
+		&i.AggregateState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useReplayPlayback } from "@/hooks/useReplayPlayback";
+import { useReplayBackendShadow } from "@/hooks/useReplayBackendShadow";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import { useSmcEngine } from "@/hooks/useSmcEngine";
 import { useTradeRuntime } from "@/hooks/useTradeRuntime";
@@ -24,6 +25,7 @@ import { useEffect } from "react";
  */
 export function GlobalRuntime() {
   useReplayPlayback();
+  useReplayBackendShadow(); // Phase 2: observes legacy playback; backend never mutates the local cursor
   useHotkeys();
   useSmcEngine();
   useTradeRuntime();

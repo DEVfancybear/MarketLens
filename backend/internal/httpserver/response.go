@@ -8,6 +8,7 @@ import "github.com/gofiber/fiber/v2"
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Details any    `json:"details,omitempty"`
 }
 
 type errorResponse struct {
@@ -18,7 +19,11 @@ type errorResponse struct {
 // code is the stable machine-readable slug (e.g. "unauthorized"); message is
 // the human-readable detail.
 func WriteError(c *fiber.Ctx, status int, code, message string) error {
-	return c.Status(status).JSON(errorResponse{Error: errorBody{Code: code, Message: message}})
+	return WriteErrorWithDetails(c, status, code, message, nil)
+}
+
+func WriteErrorWithDetails(c *fiber.Ctx, status int, code, message string, details any) error {
+	return c.Status(status).JSON(errorResponse{Error: errorBody{Code: code, Message: message, Details: details}})
 }
 
 // codeForStatus maps an HTTP status to the stable slug used in error.code.
@@ -56,6 +61,7 @@ func errorHandler(c *fiber.Ctx, err error) error {
 		message = fe.Message
 	}
 	code := codeForStatus(status)
+	var details any
 	if apiErr, ok := err.(interface {
 		HTTPStatus() int
 		ErrorCode() string
@@ -63,7 +69,10 @@ func errorHandler(c *fiber.Ctx, err error) error {
 		status = apiErr.HTTPStatus()
 		code = apiErr.ErrorCode()
 		message = err.Error()
+		if withDetails, ok := err.(interface{ ErrorDetails() any }); ok {
+			details = withDetails.ErrorDetails()
+		}
 	}
 
-	return WriteError(c, status, code, message)
+	return WriteErrorWithDetails(c, status, code, message, details)
 }
