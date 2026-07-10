@@ -7,6 +7,10 @@ API prefix: `/api/v1` (except `/health`).
 > Pine scripts/runtime, MT5, and Phase 10 alerts/push tokens are implemented.
 > Later-phase resources remain planned contracts. See `AUTH.md` for auth and
 > `DATABASE.md` for persistence details.
+>
+> Backend-owned replay endpoints are design-only. The complete planned REST,
+> WebSocket, command, event, error, and concurrency contracts live in
+> `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`.
 
 ## Conventions
 

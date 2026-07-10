@@ -22,3 +22,4 @@ Phase 10 alerts/push tokens, and the local MT5 streaming sidecar/consumer.
 | File | Purpose |
 | --- | --- |
 | [`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md) | Plan for moving Pine parsing/compilation from frontend TypeScript into the Go backend runtime |
+| [`../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`](../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md) | Design for backend-owned replay sessions, database, API, deterministic engine, and frontend cutover |

@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Planned - Backend-owned deterministic replay architecture (2026-07-10)
+- Designed the Go/PostgreSQL replay target: durable sessions, immutable dataset snapshots,
+  serialized commands, sequenced events, checkpoints, replay intervals, progressive MTF
+  aggregation, and synchronized multi-chart tracks.
+- Designed an isolated replay-trading ledger for accounts, orders, fills, positions, equity, and
+  reports, with deterministic intrabar rules and explicit fork/reset behavior on rewind.
+- Added detailed database SQL, REST/WebSocket contracts, ownership boundaries, migration phases,
+  tests, observability, security, retention, rollout, and rollback gates in
+  `docs/REPLAY_BACKEND_MIGRATION_PLAN.md`; no runtime migration has been applied yet.
+- Added a mandatory frontend deletion contract covering the legacy replay clock/store/engine,
+  history and MTF loaders, replay trade processing, replacement client-only modules, CI boundary
+  enforcement, deletion order, and rollback rules that cannot restore local replay authority.
+
 ### Fixed - Drawing drag frame pacing and render culling (2026-07-10)
 - Coalesced common move/resize pointer samples to animation frames while preserving immediate first
   feedback and the exact pointerup position for the final store/history commit.

@@ -28,6 +28,7 @@ owning package docs.
 | File | Purpose |
 | --- | --- |
 | [`../frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`](../frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md) | Frontend plan for applying backend JSON/API as the authenticated workspace source of truth |
+| `REPLAY_BACKEND_MIGRATION_PLAN.md` | Cross-stack design for moving replay sessions, clock, aggregation, and replay trading from frontend to Go/PostgreSQL |
 | `PINE_RUNTIME_GO_MIGRATION.md` | Cross-package plan for moving Pine parsing/compilation from frontend TypeScript to the Go backend |
 
 ## Documentation Rules

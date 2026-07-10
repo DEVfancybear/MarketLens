@@ -8,6 +8,11 @@
 > **Audited against the frontend 2026-07-06** — every table below is reconciled with the real
 > localStorage/IndexedDB shapes and TypeScript types (`frontend/src/types/*`, `store/*`). The jsonb
 > columns intentionally mirror the frontend types so the client model can round-trip untouched.
+>
+> Backend-owned replay is a planned post-Phase-10 schema. Its control, immutable
+> dataset, checkpoint, and replay-trading tables are designed in
+> `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`. Migration `0012_replay_backend`
+> must not be created until that API/schema contract is reviewed.
 
 ---
 

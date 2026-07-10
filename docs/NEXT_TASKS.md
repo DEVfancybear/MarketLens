@@ -2,6 +2,21 @@
 
 _Post-monorepo update 2026-07-06._
 
+## Approved backend replay initiative (design first)
+
+Replay will migrate from a frontend-owned candle cursor to a deterministic Go/PostgreSQL session
+engine. The detailed architecture, database schema, API/WebSocket contracts, frontend ownership
+map, test gates, and six implementation phases are in
+[`REPLAY_BACKEND_MIGRATION_PLAN.md`](REPLAY_BACKEND_MIGRATION_PLAN.md).
+
+Implementation order is Phase 0 executable regression contracts, Phase 1 persistence/dataset
+preparation, Phase 2 single-chart backend clock, Phase 3 replay interval and MTF aggregation,
+Phase 4 isolated replay trading, Phase 5 synchronized layouts, then Phase 6 cutover/legacy cleanup.
+Do not move ad hoc replay business logic into new frontend hooks while this migration is active.
+Phase 6 must physically delete the legacy frontend replay clock/store/engine, MTF/history replay
+paths, and replay trade processing according to section 11 of the plan; disabling them behind a
+feature flag is not completion.
+
 The historical roadmap below is preserved. The current top priority after the monorepo split is:
 
 1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ Done (backend Phase 0).

@@ -2,6 +2,13 @@
 
 _Last updated: 2026-07-07_
 
+> **Current/legacy architecture.** Replay is still frontend-owned today. The
+> approved target is a backend-owned deterministic replay engine with durable
+> sessions, datasets, multi-timeframe aggregation, and isolated replay trading.
+> Read `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md` before adding new replay
+> business logic here. Until backend cutover, the invariants in this document
+> remain mandatory for production maintenance.
+
 This document is the maintenance guide for Bar Replay. It explains the state
 machine, data visibility contract, chart viewport behavior, and regression
 checks. Read this before changing replay selection, jump, playback, chart
