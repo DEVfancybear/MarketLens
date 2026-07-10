@@ -3,10 +3,10 @@
 import { useMemo, useSyncExternalStore } from "react";
 import {
   getReplayReport,
-  sendReplayCommand,
   type ReplayCommandInput,
   type ReplayReport,
 } from "@/services/api/resources/replayApi";
+import { sendVersionedReplayCommand } from "@/services/replay/replaySocket";
 import { replayClientStore } from "@/store/replayClientStore";
 import type { OrderRequest } from "@/types";
 
@@ -30,12 +30,7 @@ function enqueueTradingCommand(
     if (!snapshot?.trading || snapshot.status === "closed") {
       throw new Error("Replay trading session is unavailable");
     }
-    const result = await sendReplayCommand(snapshot.id, {
-      idempotencyKey: commandKey(type),
-      expectedVersion: snapshot.version,
-      type,
-      payload,
-    });
+    const result = await sendVersionedReplayCommand(snapshot.id, type, payload, "trading");
     replayClientStore.replaceSnapshot(result.snapshot);
   };
   const next = commandQueue.then(run, run);

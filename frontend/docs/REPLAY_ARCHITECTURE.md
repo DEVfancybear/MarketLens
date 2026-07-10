@@ -46,6 +46,8 @@ bounds and returns explicit errors.
 Controls send `play`, `pause`, `step`, `seek`, `restart`, and `set_speed`
 commands using the current server version. Commands are serialized. Older
 responses cannot replace a projection that has already applied a newer event.
+If the actor clock advances before a command arrives, the client retries a
+`version_conflict` with the returned current version and a new idempotency key.
 Backward movement with trading state uses a backend fork.
 
 ## Market and trading isolation

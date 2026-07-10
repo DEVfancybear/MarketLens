@@ -9,6 +9,7 @@ import {
   sendReplayCommand,
   type CreateReplaySessionInput,
   type ReplayCommandInput,
+  type ReplayCommandResult,
   type ReplayEventEnvelope,
   type ReplaySessionSnapshot,
 } from "@/services/api/resources/replayApi";
@@ -16,6 +17,7 @@ import {
   replayClientStore,
   type ReplayClientStore,
 } from "@/store/replayClientStore";
+import { withReplayVersionRetry } from "./replayCommandRetry";
 
 export class ReplaySocket {
   private socket: WebSocket | null = null;
@@ -159,6 +161,32 @@ function commandKey(type: string): string {
   return `replay:${type}:${Date.now().toString(36)}:${commandSequence}`;
 }
 
+export async function sendVersionedReplayCommand(
+  sessionId: string,
+  type: ReplayCommandInput["type"],
+  payload?: Record<string, unknown>,
+  scope = "control",
+): Promise<ReplayCommandResult> {
+  const snapshot = replayClientStore.getState().snapshot;
+  if (!snapshot || snapshot.id !== sessionId) {
+    throw new Error("Replay session is unavailable");
+  }
+  return withReplayVersionRetry(
+    snapshot.version,
+    (expectedVersion, attempt) => sendReplayCommand(sessionId, {
+      idempotencyKey: commandKey(`${scope}:${type}:${attempt}`),
+      expectedVersion,
+      type,
+      payload,
+    }),
+    async () => {
+      const fresh = await getReplaySession(sessionId);
+      replayClientStore.replaceSnapshot(fresh);
+      return fresh.version;
+    },
+  );
+}
+
 async function hydrateSnapshotBars(snapshot: ReplaySessionSnapshot): Promise<void> {
   await Promise.all(snapshot.tracks.map(async (track) => {
     const response = await getReplayTrackBars(snapshot.id, track.id);
@@ -228,12 +256,7 @@ export function runReplayCommand(
     if (!snapshot || snapshot.status === "closed" || snapshot.status === "failed") {
       throw new Error("Replay session is unavailable");
     }
-    const result = await sendReplayCommand(snapshot.id, {
-      idempotencyKey: commandKey(type),
-      expectedVersion: snapshot.version,
-      type,
-      payload,
-    });
+    const result = await sendVersionedReplayCommand(snapshot.id, type, payload);
     replayClientStore.replaceSnapshot(result.snapshot);
     await hydrateSnapshotBars(result.snapshot);
   };

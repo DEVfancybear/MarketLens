@@ -64,7 +64,7 @@ async function apiErrorFromHTTP(error: HTTPError): Promise<ApiError> {
     const body = (await response.clone().json()) as BackendErrorEnvelope;
     const code = body.error?.code ?? "http_error";
     const message = body.error?.message ?? response.statusText;
-    return new ApiError(response.status, code, message);
+    return new ApiError(response.status, code, message, body.error?.details);
   } catch {
     return new ApiError(response.status, "http_error", response.statusText);
   }

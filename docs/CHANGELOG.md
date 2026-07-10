@@ -13,6 +13,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   trading to the ordered server projection and versioned REST/WebSocket client.
 - Added stale-snapshot protection, backend fork/seek rewind handling, auth and
   loading gates, and disabled new alert creation while Replay is active.
+- Fixed transport/trading commands returning `409 version_conflict` while the
+  backend clock advances by retrying with the server's `currentVersion` (or a
+  refreshed snapshot) and a fresh idempotency key.
 - Added ESLint restrictions, `check:replay-client-boundary`, and CI enforcement.
   Verified 16 Replay client tests, typecheck, lint with zero errors, production
   build, `go test ./...`, and `go vet ./...`.

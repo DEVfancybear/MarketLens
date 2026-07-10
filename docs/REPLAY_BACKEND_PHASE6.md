@@ -53,8 +53,8 @@ Passed on 2026-07-11:
 
 - `npm run typecheck`
 - `npm run lint` (zero errors; five pre-existing hook warnings)
-- `npm run check:replay-client-boundary` (281 source files)
-- `npm run test:replay` (16 tests)
+- `npm run check:replay-client-boundary` (282 source files)
+- `npm run test:replay` (19 tests)
 - `npm run build`
 - `go test ./...`
 - `go vet ./...`
