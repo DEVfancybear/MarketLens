@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { TF_SECONDS, type Timeframe } from "@/types";
+import { formatCountdown } from "@/components/chart/countdownPresentation";
 
 /**
  * TradingView-style countdown timer.
@@ -27,17 +28,5 @@ export function useCountdown(tf: Timeframe): string {
     return () => clearInterval(id);
   }, [tf]);
 
-  if (remaining <= 0) return "0:00";
-
-  const h = Math.floor(remaining / 3600);
-  const m = Math.floor((remaining % 3600) / 60);
-  const s = remaining % 60;
-
-  const pad = (n: number) => String(n).padStart(2, "0");
-
-  // Sub-hour: MM:SS
-  if (h === 0) return `${m}:${pad(s)}`;
-
-  // 1H+: HH:MM:SS
-  return `${h}:${pad(m)}:${pad(s)}`;
+  return formatCountdown(remaining);
 }

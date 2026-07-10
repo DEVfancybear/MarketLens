@@ -1,6 +1,6 @@
 # Chart Visual Profile
 
-_Last updated: 2026-07-07_
+_Last updated: 2026-07-11_
 
 This document is the maintenance guide for the TradingView-like chart visual
 baseline. Read this before changing chart colors, grid density, price scale
@@ -43,6 +43,7 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 | Auto-fit policy | `src/components/chart/chartAutoFitPolicy.ts` | Guards the initial viewport against realtime/history races |
 | Palette and time formatting | `src/components/chart/chartTheme.ts` | Theme colors, bar spacing by timeframe, crosshair time formatter |
 | Main chart | `src/components/chart/PriceChart.tsx` | Creates the candlestick chart and applies the shared profile |
+| Candle countdown | `src/hooks/useCountdown.ts`, `src/components/chart/countdownPresentation.ts` | Computes the next wall-clock bar boundary and formats the visible timer |
 | Candle continuity | `src/services/market-data/candleSeries.ts` | Normalizes, merges, upserts, and detects short gaps in candle data before it reaches the chart |
 | Active feed bridge | `src/hooks/useMarketData.ts` | Mirrors active market candles into `chartStore` and backfills short realtime gaps |
 | Market data store | `src/store/marketDataStore.ts` | Runtime source of truth for quote/candle ingress |
@@ -95,12 +96,38 @@ profile first.
 ## 6. Current Price Marker
 
 The current price marker is a compact DOM overlay because the app shows both
-symbol and price in one chip. It should remain a single-line chip on the right
-edge. Avoid stacking symbol, price, and countdown vertically; that covers too
-much chart area compared with TradingView.
+symbol, price, and candle-close countdown. Its layout follows TradingView's
+asymmetric two-level marker:
 
-The countdown can remain as metadata/title or move to a dedicated status area,
-but it should not increase the price chip height.
+```text
+┌────────┬───────────┐
+│ SYMBOL │     PRICE │  <- centered on the series price coordinate
+└────────┤ COUNTDOWN │
+         └───────────┘
+```
+
+- The symbol occupies only the left side of the top row.
+- Price and countdown form one right-hand column so the countdown background
+  never extends below the symbol.
+- The countdown row uses the same bull/bear marker color with a 20% dark inset.
+- The triangle pointer and price line align to the vertical center of the top
+  19px price row. Adding the 15px countdown row must not shift that alignment.
+- Clamp the marker's price coordinate to leave 25px below it near the bottom of
+  the chart; otherwise the countdown is clipped by the chart container.
+- Keep the built-in series price line color synchronized with the marker's last
+  movement direction.
+
+`useCountdown` updates independently of quote arrival every 250ms and targets
+the next boundary from `TF_SECONDS[timeframe]`. `formatCountdown` floors the
+remaining seconds and renders:
+
+- `M:SS` below one hour, for example `2:47` or `13:15`;
+- `H:MM:SS` at one hour or above, for example `4:05:06`;
+- `0:00` for an unavailable/non-positive value.
+
+The timer is presentation-only. It does not create candles, advance Replay
+time, or replace server/provider timestamps. Keep the value in visible DOM text
+and retain the `title="Next bar: ..."` metadata for accessibility/inspection.
 
 ## 7. Indicator Legend
 
@@ -144,7 +171,10 @@ Manual checks:
 - right price axis is stable and wide enough for BTC/forex labels,
 - no volume bars are visible on a clean default chart,
 - adding a Volume/VSA indicator still renders volume through the indicator path,
-- current price marker is one compact line,
+- current price marker has a one-row symbol plus a two-row price/countdown
+  column, with the price row centered on the live price line,
+- countdown visibly changes once per second and is not clipped near the bottom
+  chart boundary,
 - indicator legend does not obscure the symbol/OHLC header,
 - separate RSI/MACD panes visually match the main chart baseline.
 

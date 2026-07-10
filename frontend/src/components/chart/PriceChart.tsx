@@ -921,8 +921,10 @@ export function PriceChart({
     const colors = chartColors(theme);
     const markerColor = up ? colors.bull : colors.bear;
     series.applyOptions({ priceLineColor: markerColor });
-    const minY = 12;
-    const maxY = Math.max(minY, container.clientHeight - 12);
+    // The price row is centered on the series coordinate; reserve extra room
+    // below it for the TradingView-style candle-close countdown row.
+    const minY = 10;
+    const maxY = Math.max(minY, container.clientHeight - 25);
     setPriceMarker({
       y: Math.min(Math.max(coordinate, minY), maxY),
       price,
@@ -1082,20 +1084,38 @@ function CurrentPriceMarker({
 }) {
   return (
     <div
-      className="pointer-events-none absolute right-0 z-30 flex -translate-y-1/2 items-center font-mono text-[11px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
-      style={{ top: marker.y }}
+      data-testid="current-price-marker"
+      className="pointer-events-none absolute right-0 z-30 flex items-start font-mono font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
+      style={{ top: marker.y, transform: "translateY(-9.5px)" }}
       title={`Next bar: ${marker.countdown}`}
     >
       <div
-        className="relative flex h-[19px] items-center gap-1 rounded-l-[2px] px-1.5"
+        className="relative flex h-[19px] items-center rounded-l-[2px] pl-1.5 pr-1 text-[11px]"
         style={{ backgroundColor: marker.color }}
       >
         <span>{symbol}</span>
-        <span className="tabular-nums">{fmtPrice(marker.price, precision)}</span>
         <span
           className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
           style={{ borderRightColor: marker.color }}
         />
+      </div>
+      <div className="flex flex-col items-stretch">
+        <div
+          className="flex h-[19px] items-center justify-end whitespace-nowrap pl-1 pr-1.5 text-[11px] tabular-nums"
+          style={{ backgroundColor: marker.color }}
+        >
+          {fmtPrice(marker.price, precision)}
+        </div>
+        <div
+          data-countdown={marker.countdown}
+          className="flex h-[15px] items-center justify-center px-1.5 text-[10px] tabular-nums"
+          style={{
+            backgroundColor: marker.color,
+            boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",
+          }}
+        >
+          {marker.countdown}
+        </div>
       </div>
     </div>
   );

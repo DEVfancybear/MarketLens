@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - TradingView-style current-candle countdown (2026-07-11)
+- Rendered the existing candle-close countdown as visible text in the current
+  price marker instead of exposing it only through the marker tooltip.
+- Matched TradingView's asymmetric badge: symbol occupies the left top row,
+  while price and a darker countdown form a two-row column on the right.
+- Kept the price row centered on the series coordinate and reserved lower chart
+  space so the countdown cannot be clipped when price is near the viewport edge.
+- Extracted and tested pure `M:SS` / `H:MM:SS` countdown formatting, including
+  safe handling for unavailable and non-positive values.
+
 ### Fixed - Replay Pause race and responsive controls (2026-07-11)
 - Made Pause an idempotent safety command that can apply to the latest backend
   session state when a clock transaction advances beyond the request's
