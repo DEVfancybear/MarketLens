@@ -227,10 +227,15 @@ History scheduling:
 - Older pagination requests (`before > 0`) still wait for MT5 history because they extend the left
   side of the visible chart and cannot be served from a latest-window fallback.
 - Identical history requests are single-flighted in Go: only one payload is sent to the Python MT5
-  bridge and concurrent callers share the result.
+  bridge and concurrent callers share the result. Each caller waits with its own context, so one
+  canceled browser effect does not cancel another active waiter for the same history window.
 - History requests are gated by a Go-side concurrency slot before writing to the Python bridge. If
   the browser aborts a stale request while it is queued, the request is canceled before it reaches
   MT5. This is required because the Python bridge executes MT5 history work on a single safe worker.
+- When every waiter abandons a request that has already reached the bridge, Go sends
+  `history.cancel`. Python cancels the associated asyncio task; executor work that is still queued is
+  removed before it can delay the newly selected timeframe. An MT5 call already executing cannot be
+  interrupted, but its abandoned response is no longer sent to Go.
 - The Python bridge also runs tick snapshots, live tick polling, and
   `stream.subscribe` symbol selection through the same single MT5 worker. Do
   not call `MetaTrader5` directly from the asyncio WebSocket loop; doing so can
@@ -238,6 +243,9 @@ History scheduling:
   `connected=false` with an `i/o timeout`.
 - Frontend timeframe/symbol effects should pass `AbortSignal` to the API call and abort cleanup
   requests on selection changes.
+- Weekly and monthly freshness use calendar-tolerant windows (two weeks and 62 days respectively),
+  not Unix-epoch modulo arithmetic. This avoids repeated cold-cache retries for valid broker-aligned
+  `1W` and variable-length `1M` bars.
 
 Symbol catalog payload, sent when a Go client connects:
 

@@ -72,6 +72,7 @@ CLIENTS: Set[WebSocketServerProtocol] = set()
 SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
+HISTORY_TASKS: dict[tuple[int, str], asyncio.Task[None]] = {}
 MT5_TICK_TIME_OFFSET_SECONDS = 0
 # The MetaTrader5 Python module is blocking and should be treated as
 # single-thread-affine. Keep every MT5 call that runs after startup on this one
@@ -119,7 +120,12 @@ HISTORY_SYNC_RETRIES = int(os.getenv("MT5_HISTORY_SYNC_RETRIES", "12"))
 HISTORY_SYNC_DELAY = max(int(os.getenv("MT5_HISTORY_SYNC_DELAY_MS", "300")), 50) / 1000
 
 
-def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
+def _rates_are_fresh(
+    rates: Any,
+    symbol: str,
+    timeframe: str,
+    tf_seconds: int,
+) -> bool:
     """True when the last cached bar is within one bar of the current one."""
     if rates is None or len(rates) == 0:
         return False
@@ -129,11 +135,19 @@ def _rates_are_fresh(rates: Any, symbol: str, tf_seconds: int) -> bool:
     if tick is None or not tick.time:
         return True  # no live reference; don't loop forever
     tick_time = normalize_mt5_tick_time(int(tick.time))
+    last_rate_time = int(rates[-1]["time"])
+    if timeframe == "1W":
+        # Weekly bars are broker/calendar aligned, not aligned to the Unix epoch.
+        return last_rate_time >= tick_time - (2 * 7 * 86400)
+    if timeframe == "1M":
+        # Calendar months vary from 28-31 days. Accept the current or previous
+        # monthly bar without repeatedly warming an already valid MT5 cache.
+        return last_rate_time >= tick_time - (2 * 31 * 86400)
     current_bar = tick_time - (tick_time % tf_seconds)
     # MetaQuotes documents copy_rates_* output as UTC bar-open seconds. Keep rate
     # times untouched here; applying the tick offset to rates shifts candles by
     # the workstation/broker offset and creates a false gap before live price.
-    return int(rates[-1]["time"]) >= current_bar - tf_seconds
+    return last_rate_time >= current_bar - tf_seconds
 
 
 def copy_rates_synced_blocking(
@@ -162,7 +176,7 @@ def copy_rates_synced_blocking(
 
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
-    if _rates_are_fresh(rates, symbol, tf_seconds):
+    if _rates_are_fresh(rates, symbol, timeframe, tf_seconds):
         return rates
 
     for _ in range(HISTORY_SYNC_RETRIES):
@@ -174,7 +188,7 @@ def copy_rates_synced_blocking(
         )
         time.sleep(HISTORY_SYNC_DELAY)
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
-        if _rates_are_fresh(rates, symbol, tf_seconds):
+        if _rates_are_fresh(rates, symbol, timeframe, tf_seconds):
             break
     return rates
 
@@ -190,6 +204,50 @@ async def copy_rates_synced_worker(
     return await loop.run_in_executor(
         MT5_EXECUTOR,
         copy_rates_synced_blocking,
+        symbol,
+        mt5_timeframe,
+        timeframe,
+        limit,
+        before,
+    )
+
+
+def copy_selected_rates_synced_blocking(
+    symbol: str,
+    mt5_timeframe: int,
+    timeframe: str,
+    limit: int,
+    before: int = 0,
+) -> tuple[Any, str]:
+    """Select and load one history window on the MT5-affine worker."""
+    if not mt5.symbol_select(symbol, True):
+        return None, f"symbol_select({symbol}) failed ({last_mt5_error()})"
+    rates = copy_rates_synced_blocking(
+        symbol,
+        mt5_timeframe,
+        timeframe,
+        limit,
+        before,
+    )
+    if rates is None:
+        return None, (
+            f"copy_rates_from_pos({symbol}, {timeframe}) failed "
+            f"({last_mt5_error()})"
+        )
+    return rates, ""
+
+
+async def copy_selected_rates_synced_worker(
+    symbol: str,
+    mt5_timeframe: int,
+    timeframe: str,
+    limit: int,
+    before: int = 0,
+) -> tuple[Any, str]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        MT5_EXECUTOR,
+        copy_selected_rates_synced_blocking,
         symbol,
         mt5_timeframe,
         timeframe,
@@ -433,6 +491,11 @@ async def register_client(websocket: WebSocketServerProtocol) -> None:
         async for raw in websocket:
             await handle_client_message(websocket, raw)
     finally:
+        client_id = id(websocket)
+        for key, task in tuple(HISTORY_TASKS.items()):
+            if key[0] == client_id:
+                HISTORY_TASKS.pop(key, None)
+                task.cancel()
         CLIENTS.discard(websocket)
         LOG.info("client disconnected peer=%s clients=%d", peer, len(CLIENTS))
 
@@ -453,6 +516,13 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
                 await broadcast(tick_message)
         return
 
+    if message_type == "history.cancel":
+        request_id = str(message.get("id") or "")
+        task = HISTORY_TASKS.pop((id(websocket), request_id), None)
+        if task is not None:
+            task.cancel()
+        return
+
     if message_type != "history.request":
         LOG.debug("ignoring client message type=%s", message_type)
         return
@@ -468,9 +538,15 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         before = int(message.get("before") or 0)
     except (TypeError, ValueError):
         before = 0
-    asyncio.create_task(
+    task_key = (id(websocket), request_id)
+    previous = HISTORY_TASKS.pop(task_key, None)
+    if previous is not None:
+        previous.cancel()
+    task = asyncio.create_task(
         send_history_response(websocket, symbol, timeframe, limit, request_id, before)
     )
+    HISTORY_TASKS[task_key] = task
+    task.add_done_callback(lambda _task, key=task_key: HISTORY_TASKS.pop(key, None))
 
 
 async def send_history_response(
@@ -485,6 +561,11 @@ async def send_history_response(
         await websocket.send(
             await load_history_message(symbol, timeframe, limit, request_id, before)
         )
+    except asyncio.CancelledError:
+        # The browser changed symbol/timeframe. If this work was still queued in
+        # the single MT5 executor, cancellation removes it before it can delay
+        # the newly active chart request.
+        return
     except Exception as exc:  # noqa: BLE001 - client may disconnect mid-load.
         LOG.warning(
             "failed to send MT5 history response symbol=%s timeframe=%s: %s",
@@ -697,13 +778,15 @@ async def load_history_message(
     if mt5_timeframe is None:
         payload["error"] = f"unsupported timeframe: {timeframe}"
         return json.dumps(payload, separators=(",", ":"))
-    if not mt5.symbol_select(symbol, True):
-        payload["error"] = f"symbol_select({symbol}) failed ({last_mt5_error()})"
-        return json.dumps(payload, separators=(",", ":"))
-
-    rates = await copy_rates_synced_worker(symbol, mt5_timeframe, timeframe, limit, before)
-    if rates is None:
-        payload["error"] = f"copy_rates_from_pos({symbol}, {timeframe}) failed ({last_mt5_error()})"
+    rates, error = await copy_selected_rates_synced_worker(
+        symbol,
+        mt5_timeframe,
+        timeframe,
+        limit,
+        before,
+    )
+    if error:
+        payload["error"] = error
         return json.dumps(payload, separators=(",", ":"))
 
     payload["candles"] = [

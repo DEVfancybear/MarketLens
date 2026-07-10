@@ -71,9 +71,11 @@ type Service struct {
 }
 
 type historyFlight struct {
-	done chan struct{}
-	msg  HistoryMessage
-	err  error
+	done    chan struct{}
+	msg     HistoryMessage
+	err     error
+	cancel  context.CancelFunc
+	waiters int
 }
 
 func NewService(cfg Config) *Service {
@@ -601,8 +603,15 @@ func (s *Service) historyIsFresh(symbol, timeframe string, candles []Candle) boo
 	if !ok || tick.Timestamp <= 0 {
 		return true // no live reference; don't force an endless refetch
 	}
+	lastBar := candles[len(candles)-1].Time
+	if timeframe == "1W" {
+		return lastBar >= tick.Timestamp-(2*7*86400)
+	}
+	if timeframe == "1M" {
+		return lastBar >= tick.Timestamp-(2*31*86400)
+	}
 	currentBar := tick.Timestamp - (tick.Timestamp % tfSec)
-	return candles[len(candles)-1].Time >= currentBar-tfSec
+	return lastBar >= currentBar-tfSec
 }
 
 func timeframeSeconds(timeframe string) int64 {
@@ -659,20 +668,29 @@ func (s *Service) historySnapshot(symbol, timeframe string, candles []Candle, er
 func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, limit int, before int64) (HistoryMessage, error) {
 	key := historyRequestKey(symbol, timeframe, limit, before)
 	flight, leader := s.joinHistoryFlight(key)
-	if !leader {
-		return flight.wait(ctx)
-	}
+	if leader {
+		requestCtx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
+		s.mu.Lock()
+		if s.historyFlights[key] == flight {
+			flight.cancel = cancel
+		}
+		s.mu.Unlock()
 
-	msg, err := s.performHistoryRequest(ctx, symbol, timeframe, limit, before)
-	s.finishHistoryFlight(key, flight, msg, err)
-	return msg, err
+		go func() {
+			defer cancel()
+			msg, err := s.performHistoryRequest(requestCtx, symbol, timeframe, limit, before)
+			s.finishHistoryFlight(key, flight, msg, err)
+		}()
+	}
+	return s.waitForHistoryFlight(ctx, key, flight)
 }
 
-func (f *historyFlight) wait(ctx context.Context) (HistoryMessage, error) {
+func (s *Service) waitForHistoryFlight(ctx context.Context, key string, flight *historyFlight) (HistoryMessage, error) {
 	select {
-	case <-f.done:
-		return f.msg, f.err
+	case <-flight.done:
+		return flight.msg, flight.err
 	case <-ctx.Done():
+		s.leaveHistoryFlight(key, flight)
 		return HistoryMessage{}, ctx.Err()
 	}
 }
@@ -681,11 +699,30 @@ func (s *Service) joinHistoryFlight(key string) (*historyFlight, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if flight := s.historyFlights[key]; flight != nil {
+		flight.waiters++
 		return flight, false
 	}
-	flight := &historyFlight{done: make(chan struct{})}
+	flight := &historyFlight{done: make(chan struct{}), waiters: 1}
 	s.historyFlights[key] = flight
 	return flight, true
+}
+
+func (s *Service) leaveHistoryFlight(key string, flight *historyFlight) {
+	var cancel context.CancelFunc
+	s.mu.Lock()
+	if s.historyFlights[key] == flight {
+		flight.waiters--
+		if flight.waiters <= 0 {
+			// Remove the abandoned flight immediately so a new active chart request
+			// cannot join a canceled StrictMode/timeframe-switch request.
+			delete(s.historyFlights, key)
+			cancel = flight.cancel
+		}
+	}
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (s *Service) finishHistoryFlight(key string, flight *historyFlight, msg HistoryMessage, err error) {
@@ -784,12 +821,30 @@ func (s *Service) performHistoryRequest(ctx context.Context, symbol, timeframe s
 		s.mu.Lock()
 		delete(s.pendingHistory, id)
 		s.mu.Unlock()
+		s.cancelBridgeHistory(conn, id)
 		return HistoryMessage{}, ctx.Err()
 	case <-timer.C:
 		s.mu.Lock()
 		delete(s.pendingHistory, id)
 		s.mu.Unlock()
+		s.cancelBridgeHistory(conn, id)
 		return HistoryMessage{}, fmt.Errorf("MT5 history request timed out after %s", defaultHistoryRequestTimeout)
+	}
+}
+
+func (s *Service) cancelBridgeHistory(conn *websocket.Conn, id string) {
+	if conn == nil || id == "" {
+		return
+	}
+	payload := map[string]any{
+		"type": "history.cancel",
+		"id":   id,
+	}
+	s.writeMu.Lock()
+	err := conn.WriteJSON(payload)
+	s.writeMu.Unlock()
+	if err != nil {
+		log.Debug().Err(err).Str("request_id", id).Msg("cancel MT5 history")
 	}
 }
 

@@ -94,6 +94,31 @@ MarketDataService
 gap detection. This is the common path that prevents WebSocket/history races from dropping candles
 until a hard refresh.
 
+Historical first paint is progressive. `services/market-data/historyPolicy.ts` is the single source
+of truth for initial/page sizes and MT5 refresh cadence:
+
+| Timeframe | Initial/page bars | Active MT5 refresh |
+| --- | ---: | ---: |
+| `1m`, `3m`, `5m` | 900 / 1000 | 3s |
+| `15m` | 900 / 1000 | 5s |
+| `30m` | 720 / 720 | 5s |
+| `1H` | 600 / 600 | 15s |
+| `2H` | 500 / 500 | 15s |
+| `4H` | 400 / 400 | 30s |
+| `1D` | 300 / 300 | 60s |
+| `1W` | 260 / 260 | 5m |
+| `1M` | 60 / 60 | 5m |
+
+`marketDataStore` retains candles per `symbol:timeframe`. `useMarketData()` paints an existing
+timeframe cache synchronously and revalidates it in the background, so switching back does not show
+the loading overlay or blank a valid chart. A failed revalidation keeps the cached series. Cold
+loads request only the policy's initial window; panning left requests another page with
+`before=<first candle time>`. MT5 refresh timers run only while the document is visible.
+
+Symbol/timeframe effects pass an `AbortSignal` through `HistoricalDataService` to the Go API. A
+selection change cancels obsolete work end-to-end; the active selection must not wait behind queued
+history requests for frames the user has already left.
+
 `PriceChart` uses incremental Lightweight Charts updates only for true latest-bar updates/appends.
 History reloads, replay window replacements, symbol/timeframe changes, and non-incremental data
 changes must use full `setData()`.

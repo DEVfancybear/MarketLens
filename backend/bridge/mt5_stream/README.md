@@ -76,11 +76,18 @@ recent bars after the first `copy_rates_from` call. The worker serializes
 `copy_rates_*` work, so a slow `1D`/`1W` request does not freeze the asyncio
 WebSocket loop or block catalog/tick messages.
 
+History `symbol_select()` and `copy_rates_*` execute together on that worker.
+The Go client can send `history.cancel` when every HTTP waiter has abandoned a
+request. Cancellation removes work that is still queued in the executor and
+prevents an obsolete response from being sent. A blocking MetaTrader5 call that
+has already started must finish on its worker thread.
+
 MT5 `copy_rates_*` history timestamps are already UTC bar-open seconds according to the official
 MetaQuotes Python docs, so the bridge sends candle `time` values unchanged. Live tick timestamps are
 normalized only when the terminal exposes them with a broker/workstation offset; that keeps quote
 freshness checks in the same UTC domain as history without shifting candles and creating false
-history gaps.
+history gaps. `1W` and `1M` freshness checks use calendar-tolerant age windows because broker weeks
+and variable-length months are not aligned to fixed Unix-epoch intervals.
 
 ## Run
 
@@ -121,6 +128,8 @@ candles when it has enough current data; otherwise it sends a `history.request`
 message over the existing bridge WebSocket. Latest windows use
 `copy_rates_from_pos`; older pages use `copy_rates_from(..., before - 1s, limit)`
 so infinite-scroll history loads bars strictly before the first loaded candle.
+The frontend uses timeframe-aware progressive window sizes rather than requesting
+1500 bars for every first paint, then loads older pages only as the chart pans left.
 
 The Go process logs ticks like:
 
@@ -195,6 +204,16 @@ The Go API can also request history over the same WebSocket:
   "timeframe": "15m",
   "limit": 1500,
   "before": 1760000000
+}
+```
+
+If the browser changes symbol or timeframe and no caller still needs that
+request, Go cancels it with the same request id:
+
+```json
+{
+  "type": "history.cancel",
+  "id": "hist-request-id"
 }
 ```
 

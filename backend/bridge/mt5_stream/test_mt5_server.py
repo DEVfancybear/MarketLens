@@ -100,6 +100,37 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.assertEqual(mt5_server.STREAM_SYMBOLS, ("EURUSD", "XAUUSD"))
         self.assertEqual(selected, [("XAUUSD", True)])
 
+    def test_calendar_timeframe_freshness_uses_variable_windows(self) -> None:
+        tick_time = 1_800_000_000
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=tick_time
+        )
+
+        self.assertTrue(
+            mt5_server._rates_are_fresh(
+                [{"time": tick_time - (40 * 86400)}],
+                "NZDJPY",
+                "1M",
+                mt5_server.TIMEFRAME_SECONDS["1M"],
+            )
+        )
+        self.assertFalse(
+            mt5_server._rates_are_fresh(
+                [{"time": tick_time - (70 * 86400)}],
+                "NZDJPY",
+                "1M",
+                mt5_server.TIMEFRAME_SECONDS["1M"],
+            )
+        )
+        self.assertTrue(
+            mt5_server._rates_are_fresh(
+                [{"time": tick_time - (10 * 86400)}],
+                "NZDJPY",
+                "1W",
+                mt5_server.TIMEFRAME_SECONDS["1W"],
+            )
+        )
+
 
 class Mt5ServerWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_tick_snapshot_worker_does_not_block_asyncio_loop(self) -> None:
@@ -126,6 +157,21 @@ class Mt5ServerWorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotEqual(worker_threads[0], threading.get_ident())
         finally:
             mt5_server.current_tick_messages = original_current_tick_messages
+
+    async def test_history_cancel_removes_queued_request_task(self) -> None:
+        websocket = SimpleNamespace()
+        task = asyncio.create_task(asyncio.sleep(10))
+        key = (id(websocket), "hist-cancel-me")
+        mt5_server.HISTORY_TASKS[key] = task
+
+        await mt5_server.handle_client_message(
+            websocket,
+            json.dumps({"type": "history.cancel", "id": "hist-cancel-me"}),
+        )
+        await asyncio.sleep(0)
+
+        self.assertNotIn(key, mt5_server.HISTORY_TASKS)
+        self.assertTrue(task.cancelled())
 
 
 if __name__ == "__main__":

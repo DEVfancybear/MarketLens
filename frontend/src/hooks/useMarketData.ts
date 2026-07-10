@@ -43,26 +43,13 @@ import {
   marketSymbolCatalogStatusAtom,
   marketSymbolsAtom,
 } from "@/store/marketSymbolStore";
+import {
+  historyPageBars,
+  initialHistoryBars,
+  mt5HistoryRefreshMs,
+} from "@/services/market-data/historyPolicy";
 
-const DEFAULT_HISTORY_BARS = 900;
-const DEFAULT_HISTORY_PAGE_BARS = 1000;
 const MAX_BACKFILL_MISSING_BARS = 50;
-const MT5_HISTORY_REFRESH_MS = 3000;
-
-function historyBarsForTimeframe(timeframe: Timeframe): number {
-  if (timeframe === "1M") return 120;
-  if (timeframe === "1W") return 260;
-  if (timeframe === "1D") return 600;
-  if (timeframe === "1H" || timeframe === "2H" || timeframe === "4H") return 1200;
-  return DEFAULT_HISTORY_BARS;
-}
-
-function historyPageBarsForTimeframe(timeframe: Timeframe): number {
-  if (timeframe === "1M") return 120;
-  if (timeframe === "1W") return 260;
-  if (timeframe === "1D") return 600;
-  return DEFAULT_HISTORY_PAGE_BARS;
-}
 
 function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "1D" || timeframe === "1W" || timeframe === "1M") return 5;
@@ -154,9 +141,28 @@ export function useMarketData() {
 
     getMarketDataService(); // ensure the service exists + is bound to the store
 
-    setLoading(true);
+    const marketData = getMarketDataState();
+    const cached = marketData.getCandles(symbol, timeframe) as Candle[];
+    const hasCachedHistory =
+      cached.length > 0 && (!replayActive || replayCursorTime == null);
+    if (hasCachedHistory) {
+      // Timeframe caches remain in marketDataStore. Paint them synchronously and
+      // revalidate in the background instead of covering the chart with a
+      // spinner every time the user switches back to an already visited frame.
+      marketData.selectMarket(symbol, timeframe);
+      setCandles(cached);
+      if (replayActive) {
+        reconcileReplay(cached);
+      } else {
+        setTotal(cached.length);
+      }
+      setHistoryReadyKey(key);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
-    const historyLimit = historyBarsForTimeframe(timeframe);
+    const historyLimit = initialHistoryBars(timeframe);
     const controller = new AbortController();
 
     getHistoricalDataService()
@@ -168,6 +174,7 @@ export function useMarketData() {
           replayActive && !symbolChanged
             ? replayHistoryBefore(timeframe, historyLimit, replayCursorTime)
             : undefined,
+        refresh: hasCachedHistory || undefined,
       }, {
         signal: controller.signal,
       })
@@ -193,13 +200,15 @@ export function useMarketData() {
       .catch((err) => {
         if (isAbortError(err)) return;
         if (cancelled) return;
-        getMarketDataState().setCandles(symbol, timeframe, []);
-        setCandles([]);
-        setTotal(0);
+        if (!hasCachedHistory) {
+          getMarketDataState().setCandles(symbol, timeframe, []);
+          setCandles([]);
+          setTotal(0);
+        }
         setLoading(false);
         getDefaultStore().set(
           logAtom,
-          "error",
+          hasCachedHistory ? "warn" : "error",
           `History load failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
         );
       });
@@ -271,7 +280,11 @@ export function useMarketData() {
       }
     };
 
-    const timer = window.setInterval(refreshLatestBars, MT5_HISTORY_REFRESH_MS);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshLatestBars();
+      }
+    }, mt5HistoryRefreshMs(timeframe));
     return () => {
       cancelled = true;
       activeController?.abort();
@@ -333,7 +346,7 @@ export function useMarketData() {
       const older = await getHistoricalDataService().loadHistory({
         symbol,
         timeframe,
-        limit: historyPageBarsForTimeframe(timeframe),
+        limit: historyPageBars(timeframe),
         before: first.time,
       });
       if (older.length === 0 || older[0]?.time >= first.time) {
