@@ -137,4 +137,13 @@ result below; never record cookies, database URLs, or Firebase credentials.
 
 ### Environment verification log
 
-- Pending.
+- 2026-07-10, local Windows development environment (`Asia/Saigon`): migrated
+  PostgreSQL from version 11 to version 12 with `dirty=false`; started the API
+  with `REPLAY_ENGINE_ENABLED=true`; connected the Python market-data bridge to
+  the installed MetaTrader 5 terminal and loaded the 167-symbol FTMO catalog.
+- Authenticated smoke flow against real `EURUSD`/`15m` MT5 history passed:
+  unauthenticated create `401`, authenticated create `202`, get `200`, close
+  `200`, repeated close `200`; the paused snapshot pinned 5,000 rows. The smoke
+  session and its now-unreferenced dataset were deleted after verification.
+- Verification processes were stopped after the test. The local ignored
+  `backend/.env` retains the Replay Phase 1 settings for the next API start.
