@@ -225,6 +225,137 @@ func (ns NullReplayDatasetStatus) Value() (driver.Value, error) {
 	return string(ns.ReplayDatasetStatus), nil
 }
 
+type ReplayOrderSide string
+
+const (
+	ReplayOrderSideBuy  ReplayOrderSide = "buy"
+	ReplayOrderSideSell ReplayOrderSide = "sell"
+)
+
+func (e *ReplayOrderSide) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplayOrderSide(s)
+	case string:
+		*e = ReplayOrderSide(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplayOrderSide: %T", src)
+	}
+	return nil
+}
+
+type NullReplayOrderSide struct {
+	ReplayOrderSide ReplayOrderSide `json:"replay_order_side"`
+	Valid           bool            `json:"valid"` // Valid is true if ReplayOrderSide is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplayOrderSide) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplayOrderSide, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplayOrderSide.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplayOrderSide) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplayOrderSide), nil
+}
+
+type ReplayOrderStatus string
+
+const (
+	ReplayOrderStatusPending         ReplayOrderStatus = "pending"
+	ReplayOrderStatusPartiallyFilled ReplayOrderStatus = "partially_filled"
+	ReplayOrderStatusFilled          ReplayOrderStatus = "filled"
+	ReplayOrderStatusCancelled       ReplayOrderStatus = "cancelled"
+	ReplayOrderStatusRejected        ReplayOrderStatus = "rejected"
+)
+
+func (e *ReplayOrderStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplayOrderStatus(s)
+	case string:
+		*e = ReplayOrderStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplayOrderStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReplayOrderStatus struct {
+	ReplayOrderStatus ReplayOrderStatus `json:"replay_order_status"`
+	Valid             bool              `json:"valid"` // Valid is true if ReplayOrderStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplayOrderStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplayOrderStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplayOrderStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplayOrderStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplayOrderStatus), nil
+}
+
+type ReplayOrderType string
+
+const (
+	ReplayOrderTypeMarket    ReplayOrderType = "market"
+	ReplayOrderTypeLimit     ReplayOrderType = "limit"
+	ReplayOrderTypeStop      ReplayOrderType = "stop"
+	ReplayOrderTypeStopLimit ReplayOrderType = "stop_limit"
+)
+
+func (e *ReplayOrderType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReplayOrderType(s)
+	case string:
+		*e = ReplayOrderType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReplayOrderType: %T", src)
+	}
+	return nil
+}
+
+type NullReplayOrderType struct {
+	ReplayOrderType ReplayOrderType `json:"replay_order_type"`
+	Valid           bool            `json:"valid"` // Valid is true if ReplayOrderType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReplayOrderType) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReplayOrderType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReplayOrderType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReplayOrderType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReplayOrderType), nil
+}
+
 type ReplaySessionMode string
 
 const (
@@ -377,6 +508,17 @@ type PushToken struct {
 	LastSeenAt pgtype.Timestamptz `json:"last_seen_at"`
 }
 
+type ReplayAccount struct {
+	SessionID       pgtype.UUID        `json:"session_id"`
+	BaseCurrency    string             `json:"base_currency"`
+	StartingEquity  pgtype.Numeric     `json:"starting_equity"`
+	Balance         pgtype.Numeric     `json:"balance"`
+	Equity          pgtype.Numeric     `json:"equity"`
+	CommissionModel []byte             `json:"commission_model"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ReplayCheckpoint struct {
 	ID             pgtype.UUID        `json:"id"`
 	SessionID      pgtype.UUID        `json:"session_id"`
@@ -435,6 +577,15 @@ type ReplayDatasetBar struct {
 	Complete        bool               `json:"complete"`
 }
 
+type ReplayEquityPoint struct {
+	SessionID   pgtype.UUID        `json:"session_id"`
+	EventSeq    int64              `json:"event_seq"`
+	SimulatedAt pgtype.Timestamptz `json:"simulated_at"`
+	Balance     pgtype.Numeric     `json:"balance"`
+	Equity      pgtype.Numeric     `json:"equity"`
+	Drawdown    pgtype.Numeric     `json:"drawdown"`
+}
+
 type ReplayEvent struct {
 	SessionID   pgtype.UUID        `json:"session_id"`
 	EventSeq    int64              `json:"event_seq"`
@@ -443,6 +594,55 @@ type ReplayEvent struct {
 	SimulatedAt pgtype.Timestamptz `json:"simulated_at"`
 	Payload     []byte             `json:"payload"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ReplayFill struct {
+	ID          pgtype.UUID        `json:"id"`
+	SessionID   pgtype.UUID        `json:"session_id"`
+	OrderID     pgtype.UUID        `json:"order_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	DatasetSeq  int64              `json:"dataset_seq"`
+	SimulatedAt pgtype.Timestamptz `json:"simulated_at"`
+	Price       pgtype.Numeric     `json:"price"`
+	Quantity    pgtype.Numeric     `json:"quantity"`
+	Commission  pgtype.Numeric     `json:"commission"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ReplayOrder struct {
+	ID             pgtype.UUID        `json:"id"`
+	SessionID      pgtype.UUID        `json:"session_id"`
+	TrackID        pgtype.UUID        `json:"track_id"`
+	ClientOrderID  string             `json:"client_order_id"`
+	Side           ReplayOrderSide    `json:"side"`
+	OrderType      ReplayOrderType    `json:"order_type"`
+	Status         ReplayOrderStatus  `json:"status"`
+	Quantity       pgtype.Numeric     `json:"quantity"`
+	FilledQuantity pgtype.Numeric     `json:"filled_quantity"`
+	LimitPrice     pgtype.Numeric     `json:"limit_price"`
+	StopPrice      pgtype.Numeric     `json:"stop_price"`
+	TakeProfit     pgtype.Numeric     `json:"take_profit"`
+	StopLoss       pgtype.Numeric     `json:"stop_loss"`
+	SubmittedAt    pgtype.Timestamptz `json:"submitted_at"`
+	UpdatedAtSim   pgtype.Timestamptz `json:"updated_at_sim"`
+	RejectReason   *string            `json:"reject_reason"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ReplayPosition struct {
+	ID            pgtype.UUID        `json:"id"`
+	SessionID     pgtype.UUID        `json:"session_id"`
+	TrackID       pgtype.UUID        `json:"track_id"`
+	Symbol        string             `json:"symbol"`
+	NetQuantity   pgtype.Numeric     `json:"net_quantity"`
+	AveragePrice  pgtype.Numeric     `json:"average_price"`
+	RealizedPnl   pgtype.Numeric     `json:"realized_pnl"`
+	UnrealizedPnl pgtype.Numeric     `json:"unrealized_pnl"`
+	StopLoss      pgtype.Numeric     `json:"stop_loss"`
+	TakeProfit    pgtype.Numeric     `json:"take_profit"`
+	UpdatedAtSim  pgtype.Timestamptz `json:"updated_at_sim"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ReplaySession struct {

@@ -117,3 +117,35 @@ test("track reset clears revealed bars until HTTP hydration", () => {
   }), "applied");
   assert.deepEqual(store.getState().barsByTrack["track-1"], []);
 });
+
+test("authoritative snapshots replace the isolated replay trading ledger", () => {
+  const store = new ReplayClientStore();
+  const initial = snapshot();
+  initial.trading = {
+    account: { baseCurrency: "USD", startingEquity: 10_000, balance: 10_000, equity: 10_000 },
+    orders: [], fills: [], positions: [],
+  };
+  store.replaceSnapshot(initial);
+
+  const filled = snapshot();
+  filled.version = 2;
+  filled.lastEventSeq = 4;
+  filled.trading = {
+    account: { baseCurrency: "USD", startingEquity: 10_000, balance: 10_025, equity: 10_025 },
+    orders: [{
+      id: "order-1", trackId: "track-1", clientOrderId: "client-1", side: "buy",
+      orderType: "market", status: "filled", quantity: 1, filledQuantity: 1,
+      submittedAt: "2026-05-01T10:01:00Z",
+    }],
+    fills: [{
+      id: "fill-1", orderId: "order-1", trackId: "track-1", datasetSeq: 11,
+      simulatedAt: "2026-05-01T10:01:00Z", price: 1.1, quantity: 1, commission: 0,
+    }],
+    positions: [],
+  };
+  store.replaceSnapshot(filled);
+
+  assert.equal(store.getState().snapshot?.trading?.account.balance, 10_025);
+  assert.equal(store.getState().snapshot?.trading?.fills[0].datasetSeq, 11);
+  assert.equal(store.getState().snapshot?.trading?.orders[0].status, "filled");
+});

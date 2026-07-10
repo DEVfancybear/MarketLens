@@ -18,6 +18,7 @@ import { RotateCcw } from "lucide-react";
 import { ExecutionModeSwitch } from "./ExecutionModeSwitch";
 import { Mt5ConnectionPanel } from "./Mt5ConnectionPanel";
 import { Mt5CommandLog } from "./Mt5CommandLog";
+import { useReplayTrading } from "@/store/replayTradingClientStore";
 
 /** Trade simulator tab: order ticket + live positions, with account header. */
 export function TradePanel() {
@@ -28,15 +29,32 @@ export function TradePanel() {
   const mt5Account = useAtomValue(mt5AccountAtom);
   const mt5Positions = useAtomValue(mt5PositionsAtom);
   const reset = useSetAtom(resetTradeAtom);
+  const replayTrading = useReplayTrading();
+  const replayMode = replayTrading.active && executionMode === "simulator";
 
   const openPnl = positions
     .filter((p) => p.status === "open")
     .reduce((s, p) => s + p.unrealizedPnl, 0);
-  const netReturn = ((equity - startingEquity) / startingEquity) * 100;
   const mt5OpenPnl = mt5Positions.reduce((s, p) => s + p.profit, 0);
-  const activeEquity =
-    executionMode === "mt5" && mt5Account ? mt5Account.equity : equity;
-  const activeOpenPnl = executionMode === "mt5" ? mt5OpenPnl : openPnl;
+  const replayOpenPnl = replayTrading.positions.reduce((sum, position) => sum + position.unrealizedPnl, 0);
+  const activeEquity = replayMode
+    ? replayTrading.account?.equity ?? equity
+    : executionMode === "mt5" && mt5Account ? mt5Account.equity : equity;
+  const activeOpenPnl = replayMode ? replayOpenPnl : executionMode === "mt5" ? mt5OpenPnl : openPnl;
+  const activeStartingEquity = replayMode
+    ? replayTrading.account?.startingEquity ?? startingEquity
+    : startingEquity;
+  const activeReturn = ((activeEquity - activeStartingEquity) / activeStartingEquity) * 100;
+
+  const exportReplayReport = async () => {
+    const report = await replayTrading.report();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `replay-report-${report.sessionId}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex h-full bg-terminal-panel">
@@ -54,15 +72,20 @@ export function TradePanel() {
             <>
               <Stat
                 label="Return"
-                value={`${netReturn >= 0 ? "+" : ""}${netReturn.toFixed(2)}%`}
-                accent={netReturn >= 0 ? "var(--bull)" : "var(--bear)"}
+                value={`${activeReturn >= 0 ? "+" : ""}${activeReturn.toFixed(2)}%`}
+                accent={activeReturn >= 0 ? "var(--bull)" : "var(--bear)"}
               />
               <button
-                onClick={reset}
+                onClick={() => replayMode ? void replayTrading.reset() : reset()}
                 className="ml-auto flex items-center gap-1 rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
               >
                 <RotateCcw size={12} /> Reset account
               </button>
+              {replayMode && (
+                <button onClick={() => void exportReplayReport()} className="rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink">
+                  Export report
+                </button>
+              )}
             </>
           )}
           {executionMode === "mt5" && <Mt5ConnectionPanel />}

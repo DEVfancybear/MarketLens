@@ -18,6 +18,8 @@ type SessionService interface {
 	Get(context.Context, string, string) (SessionSnapshot, error)
 	Bars(context.Context, string, string, string, string) (RevealedBarsSnapshot, error)
 	Close(context.Context, string, string) (SessionSnapshot, error)
+	Report(context.Context, string, string) (ReplayReport, error)
+	Fork(context.Context, string, string, time.Time) (SessionSnapshot, error)
 }
 
 type Handler struct {
@@ -40,6 +42,8 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Delete("/:id", h.close)
 	g.Post("/:id/commands", h.command)
 	g.Get("/:id/events", h.events)
+	g.Get("/:id/report", h.report)
+	g.Post("/:id/fork", h.fork)
 	g.Get("/:id/tracks/:trackId/bars", h.bars)
 	g.Use("/:id/stream", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
@@ -48,6 +52,35 @@ func (h *Handler) Register(router fiber.Router) {
 		return fiber.ErrUpgradeRequired
 	})
 	g.Get("/:id/stream", websocket.New(h.stream))
+}
+
+func (h *Handler) fork(c *fiber.Ctx) error {
+	var input ForkSessionInput
+	if err := json.Unmarshal(c.Body(), &input); err != nil {
+		return fiber.NewError(400, "invalid request body")
+	}
+	snapshot, err := h.service.Fork(c.Context(), replayUserID(c), c.Params("id"), input.Time)
+	if err != nil {
+		return replayAPIError(err)
+	}
+	return c.Status(fiber.StatusCreated).JSON(snapshot)
+}
+
+func (h *Handler) report(c *fiber.Ctx) error {
+	report, err := h.service.Report(c.Context(), replayUserID(c), c.Params("id"))
+	if err != nil {
+		return replayAPIError(err)
+	}
+	if c.Query("format") == "csv" {
+		c.Set(fiber.HeaderContentType, "text/csv; charset=utf-8")
+		c.Set(fiber.HeaderContentDisposition, `attachment; filename="replay-report.csv"`)
+		body := "simulated_at,order_id,price,quantity,commission\n"
+		for _, fill := range report.Fills {
+			body += fill.SimulatedAt.Format(time.RFC3339) + "," + fill.OrderID + "," + strconv.FormatFloat(fill.Price, 'f', -1, 64) + "," + strconv.FormatFloat(fill.Quantity, 'f', -1, 64) + "," + strconv.FormatFloat(fill.Commission, 'f', -1, 64) + "\n"
+		}
+		return c.SendString(body)
+	}
+	return c.JSON(report)
 }
 func (h *Handler) create(c *fiber.Ctx) error {
 	var input CreateSessionInput
@@ -195,6 +228,8 @@ func replayAPIError(err error) error {
 		return apierror.New(409, "session_busy", "replay session is busy; retry the command")
 	case errors.Is(err, ErrSessionClosed):
 		return apierror.New(409, "session_closed", "replay session is closed")
+	case errors.Is(err, ErrRewindRequiresFork):
+		return apierror.New(409, "rewind_requires_fork", "rewinding a traded replay requires a fork or resetTrading confirmation")
 	default:
 		return fiber.NewError(500, "internal server error")
 	}

@@ -38,6 +38,9 @@ import { cn } from "@/utils/cn";
 import type { OrderPrefill, OrderType, Side } from "@/types";
 import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
 import { LiveOrderConfirmDialog } from "./LiveOrderConfirmDialog";
+import { useReplayTrading } from "@/store/replayTradingClientStore";
+import { activeAtom } from "@/store/replayStore";
+import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
 
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
 
@@ -56,6 +59,15 @@ export function OrderTicket() {
   const requireMt5Confirmation = useAtomValue(mt5RequireConfirmationAtom);
   const placeMt5 = useSetAtom(placeMt5OrderAtom);
   const closeAllMt5 = useSetAtom(closeAllMt5Atom);
+  const replayTrading = useReplayTrading();
+  const replayActive = useAtomValue(activeAtom);
+  const isolatedReplay = isReplayBackendV1Enabled() && replayActive;
+  const replayMode = replayTrading.active && executionMode === "simulator";
+  const replayPreparing = isolatedReplay && !replayMode;
+  const simulatorPrice = replayMode ? replayTrading.price : price;
+  const simulatorEquity = replayMode
+    ? replayTrading.account?.equity ?? equity
+    : equity;
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const [type, setType] = useState<OrderType>("market");
@@ -82,9 +94,9 @@ export function OrderTicket() {
   });
 
   const simulatorMetrics = useMemo(
-    () => computeRisk(buildOrder("long"), price, equity),
+    () => computeRisk(buildOrder("long"), simulatorPrice, simulatorEquity),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [type, entry, sl, tp, risk, price, equity],
+    [type, entry, sl, tp, risk, simulatorPrice, simulatorEquity],
   );
   const activeSymbolInfo = mt5SymbolInfo[symbol];
   const sizingSymbolInfo = useMemo(
@@ -145,6 +157,7 @@ export function OrderTicket() {
   };
 
   const submit = (side: Side) => {
+    if (replayPreparing) return;
     if (type !== "market" && !parseTicketNumber(entry)) return;
     if (executionMode === "mt5") {
       const order = buildMt5Order(side);
@@ -156,10 +169,15 @@ export function OrderTicket() {
       else placeMt5(order);
       return;
     }
+    if (replayMode) {
+      void replayTrading.place(buildOrder(side), metrics.positionSize);
+      return;
+    }
     place(buildOrder(side));
   };
 
   const requestCloseAll = () => {
+    if (replayPreparing) return;
     if (executionMode === "mt5") {
       const info = mt5SymbolInfo[symbol];
       const request: Mt5CloseAllRequest = {
@@ -175,7 +193,8 @@ export function OrderTicket() {
       else closeAllMt5(request);
       return;
     }
-    closeAll();
+    if (replayMode) void replayTrading.closeAll();
+    else closeAll();
   };
 
   // Quick-trade hotkeys (B / S / X) use the current ticket settings.
@@ -285,7 +304,7 @@ export function OrderTicket() {
             </span>
           )}
           <span className="tabular text-xs text-ink-muted">
-            {fmtPrice(price, prec)}
+            {fmtPrice(simulatorPrice, prec)}
           </span>
         </div>
       </div>
@@ -313,7 +332,7 @@ export function OrderTicket() {
             label="Entry price"
             value={entry}
             onChange={setEntry}
-            placeholder={fmtPrice(price, prec)}
+            placeholder={fmtPrice(simulatorPrice, prec)}
           />
         )}
         <div className="grid grid-cols-2 gap-2">
@@ -356,6 +375,7 @@ export function OrderTicket() {
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => submit("long")}
+            disabled={replayPreparing}
             className={cn(
               "h-10 rounded-sm bg-[#089981] text-xs font-semibold text-white hover:bg-[#0aa987]",
               plannedSide === "long" && "ring-2 ring-[#089981]/50 ring-offset-1 ring-offset-terminal-panel",
@@ -365,6 +385,7 @@ export function OrderTicket() {
           </button>
           <button
             onClick={() => submit("short")}
+            disabled={replayPreparing}
             className={cn(
               "h-10 rounded-sm bg-[#f23645] text-xs font-semibold text-white hover:bg-[#ff4d5b]",
               plannedSide === "short" && "ring-2 ring-[#f23645]/50 ring-offset-1 ring-offset-terminal-panel",
@@ -375,6 +396,7 @@ export function OrderTicket() {
         </div>
         <button
           onClick={requestCloseAll}
+          disabled={replayPreparing}
           className="h-7 rounded-sm border border-terminal-border text-2xs font-medium text-ink-muted hover:bg-terminal-hover hover:text-ink"
         >
           Close All

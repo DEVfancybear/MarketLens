@@ -7,6 +7,7 @@ sql:
       - "migrations/0002_auth.up.sql"
       - "migrations/0012_replay_backend.up.sql"
       - "migrations/0013_replay_clock.up.sql"
+      - "migrations/0014_replay_trading.up.sql"
     queries: "internal/db/queries"
     gen:
       go:

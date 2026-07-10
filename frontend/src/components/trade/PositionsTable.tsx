@@ -17,7 +17,8 @@ import { fmtMoney, fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
 import { useAtomValue, useSetAtom } from "jotai";
 import { cn } from "@/utils/cn";
-import { Ban, X } from "lucide-react";
+import { Ban, Pencil, X } from "lucide-react";
+import { useReplayTrading } from "@/store/replayTradingClientStore";
 
 /** Open & pending positions with mark-to-market P/L and close controls. */
 export function PositionsTable() {
@@ -28,6 +29,7 @@ export function PositionsTable() {
   const closePosition = useSetAtom(closePositionAtom);
   const cancelPending = useSetAtom(cancelPendingAtom);
   const closeMt5Position = useSetAtom(closeMt5PositionAtom);
+  const replayTrading = useReplayTrading();
 
   const live = positions.filter(
     (p) => p.status === "open" || p.status === "pending",
@@ -144,6 +146,92 @@ export function PositionsTable() {
                       <X size={12} />
                     </button>
                   </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (replayTrading.active) {
+    const replayPositions = replayTrading.positions.filter(
+      (position) => Math.abs(position.netQuantity) > 1e-12,
+    );
+    const pending = replayTrading.orders.filter(
+      (order) => order.status === "pending" || order.status === "partially_filled",
+    );
+    return (
+      <div className="min-w-0 flex-1 overflow-auto bg-terminal-panel">
+        <table className="w-full border-collapse text-2xs">
+          <thead className="sticky top-0 bg-terminal-panel-2 text-ink-faint">
+            <tr className="border-b border-terminal-border [&>th]:h-7 [&>th]:px-2 [&>th]:text-left [&>th]:font-medium">
+              <th>Symbol</th><th>Side</th><th>Type</th><th>Qty</th><th>Entry</th>
+              <th>SL</th><th>TP</th><th className="text-right">P/L</th><th>Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {replayPositions.length === 0 && pending.length === 0 && (
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-ink-faint">
+                No replay positions. Orders and fills are isolated to this replay session.
+              </td></tr>
+            )}
+            {replayPositions.map((position) => {
+              const side = position.netQuantity > 0 ? "long" : "short";
+              const prec = getMarketSymbol(position.symbol)?.pricePrecision ?? 2;
+              const entryOrder = [...replayTrading.orders].reverse().find(
+                (order) => order.trackId === position.trackId && order.status === "filled" &&
+                  ((position.netQuantity > 0 && order.side === "buy") ||
+                    (position.netQuantity < 0 && order.side === "sell")),
+              );
+              const editBracket = () => {
+                if (!entryOrder) return;
+                const stopText = window.prompt("Replay stop loss", position.stopLoss?.toString() ?? "");
+                if (stopText == null) return;
+                const targetText = window.prompt("Replay take profit", position.takeProfit?.toString() ?? "");
+                if (targetText == null) return;
+                const stopLoss = stopText.trim() ? Number(stopText) : undefined;
+                const takeProfit = targetText.trim() ? Number(targetText) : undefined;
+                if ((stopLoss != null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) ||
+                  (takeProfit != null && (!Number.isFinite(takeProfit) || takeProfit <= 0))) return;
+                void replayTrading.updateBracket(entryOrder.id, stopLoss, takeProfit);
+              };
+              return (
+                <tr key={position.id} className="border-b border-terminal-border hover:bg-terminal-hover [&>td]:h-8 [&>td]:px-2">
+                  <td className="font-semibold text-ink">{position.symbol}</td>
+                  <td className={side === "long" ? "text-bull" : "text-bear"}>{side.toUpperCase()}</td>
+                  <td className="text-ink-muted">market</td>
+                  <td className="tabular">{Math.abs(position.netQuantity).toFixed(4)}</td>
+                  <td className="tabular">{fmtPrice(position.averagePrice, prec)}</td>
+                  <td className="tabular text-ink-muted">{position.stopLoss ? fmtPrice(position.stopLoss, prec) : "-"}</td>
+                  <td className="tabular text-ink-muted">{position.takeProfit ? fmtPrice(position.takeProfit, prec) : "-"}</td>
+                  <td className="tabular text-right" style={{ color: position.unrealizedPnl >= 0 ? "var(--bull)" : "var(--bear)" }}>{fmtMoney(position.unrealizedPnl)}</td>
+                  <td><span className="rounded-sm bg-bull/15 px-1.5 py-0.5 text-[9px] uppercase text-bull">open</span></td>
+                  <td className="text-right"><div className="flex items-center justify-end gap-1">
+                    <button disabled={!entryOrder} onClick={editBracket} title="Edit replay bracket" className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white disabled:opacity-40"><Pencil size={11} /></button>
+                    <button onClick={() => void replayTrading.close(position.id, 0.5)} className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-terminal-hover px-1 text-[9px] text-ink hover:bg-brand hover:text-white">1/2</button>
+                    <button onClick={() => void replayTrading.close(position.id)} className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"><X size={12} /></button>
+                  </div></td>
+                </tr>
+              );
+            })}
+            {pending.map((order) => {
+              const symbol = replayTrading.symbol ?? "Replay";
+              const price = order.limitPrice ?? order.stopPrice ?? 0;
+              const prec = getMarketSymbol(symbol)?.pricePrecision ?? 5;
+              return (
+                <tr key={order.id} className="border-b border-terminal-border hover:bg-terminal-hover [&>td]:h-8 [&>td]:px-2">
+                  <td className="font-semibold text-ink">{symbol}</td>
+                  <td className={order.side === "buy" ? "text-bull" : "text-bear"}>{order.side.toUpperCase()}</td>
+                  <td className="capitalize text-ink-muted">{order.orderType}</td>
+                  <td className="tabular">{(order.quantity - order.filledQuantity).toFixed(4)}</td>
+                  <td className="tabular">{fmtPrice(price, prec)}</td>
+                  <td className="tabular text-ink-muted">{order.stopLoss ? fmtPrice(order.stopLoss, prec) : "-"}</td>
+                  <td className="tabular text-ink-muted">{order.takeProfit ? fmtPrice(order.takeProfit, prec) : "-"}</td>
+                  <td className="text-right text-ink-faint">-</td>
+                  <td><span className="rounded-sm bg-choch/15 px-1.5 py-0.5 text-[9px] uppercase text-choch">pending</span></td>
+                  <td className="text-right"><button onClick={() => void replayTrading.cancel(order.id)} className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink-faint hover:text-bear"><Ban size={12} /></button></td>
                 </tr>
               );
             })}

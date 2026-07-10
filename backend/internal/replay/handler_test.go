@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/smc-trading-terminal/backend/internal/auth"
@@ -28,6 +29,12 @@ func (f *fakeSessionService) Bars(context.Context, string, string, string, strin
 	return RevealedBarsSnapshot{}, nil
 }
 func (f *fakeSessionService) Close(context.Context, string, string) (SessionSnapshot, error) {
+	return SessionSnapshot{}, nil
+}
+func (f *fakeSessionService) Report(context.Context, string, string) (ReplayReport, error) {
+	return ReplayReport{}, nil
+}
+func (f *fakeSessionService) Fork(context.Context, string, string, time.Time) (SessionSnapshot, error) {
 	return SessionSnapshot{}, nil
 }
 

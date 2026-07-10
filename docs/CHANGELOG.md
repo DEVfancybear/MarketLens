@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Replay Phase 4 isolated trading (2026-07-10)
+- Added migration `0014_replay_trading` with session-scoped accounts, orders,
+  fills, net positions, equity points, ownership constraints, and audit fields.
+- The replay actor now processes every revealed base row through deterministic
+  market/limit/stop/stop-limit and bracket rules in the cursor transaction.
+- Added order/cancel/close/bracket/reset commands, execution events, replay
+  report JSON/CSV, clean session forks, and the backward-rewind reset guard.
+- Added a dedicated read-only frontend replay trading projection and wired the
+  ticket, position table, chart levels, account header, and report export to it.
+  Normal simulator feeding and MT5 execution are disabled during backend replay.
+- Verified schema `version=14 dirty=false`, all Go tests, 18 replay client
+  tests, TypeScript typecheck, and the production frontend build.
+
 ### Added - Backend Replay Phase 3 intervals and aggregation (2026-07-10)
 - Replay datasets now load `1m` intraday or `1D` calendar source rows and keep
   replay interval independent from the displayed chart timeframe.

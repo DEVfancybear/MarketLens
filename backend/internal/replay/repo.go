@@ -93,6 +93,9 @@ func (r *Repo) Prepare(ctx context.Context, userID string, prepared PreparedSess
 			return SessionSnapshot{}, err
 		}
 	}
+	if err := insertReplayAccount(ctx, tx, session.ID, prepared.Trading); err != nil {
+		return SessionSnapshot{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return SessionSnapshot{}, err
 	}
@@ -189,6 +192,109 @@ func (r *Repo) Close(ctx context.Context, userID, sessionID string) (SessionSnap
 	return r.getByIDs(ctx, uid, sid)
 }
 
+func (r *Repo) Report(ctx context.Context, userID, sessionID string) (ReplayReport, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return ReplayReport{}, err
+	}
+	sid, err := parseUUID(sessionID)
+	if err != nil {
+		return ReplayReport{}, ErrNotFound
+	}
+	if _, err := r.queries.GetReplaySessionForUser(ctx, gen.GetReplaySessionForUserParams{ID: sid, UserID: uid}); errors.Is(err, pgx.ErrNoRows) {
+		return ReplayReport{}, ErrNotFound
+	} else if err != nil {
+		return ReplayReport{}, err
+	}
+	return buildReplayReport(ctx, r.pool, sid)
+}
+
+func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.Time) (SessionSnapshot, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	sid, err := parseUUID(sessionID)
+	if err != nil {
+		return SessionSnapshot{}, ErrNotFound
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	defer tx.Rollback(ctx)
+	q := r.queries.WithTx(tx)
+	source, err := q.GetReplaySessionForUser(ctx, gen.GetReplaySessionForUserParams{ID: sid, UserID: uid})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SessionSnapshot{}, ErrNotFound
+	}
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	tracks, err := q.ListReplayTracksForSession(ctx, sid)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	if len(tracks) != 1 {
+		return SessionSnapshot{}, fmt.Errorf("%w: Phase 4 fork requires one track", ErrBadRequest)
+	}
+	track := tracks[0]
+	if target.Before(track.FirstTime.Time) || target.After(source.SimulatedTime.Time) {
+		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+	}
+	selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+	}
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	rows, err := q.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{DatasetID: track.DatasetID, Seq: selected.Seq})
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	bars := make([]sourceBar, 0, len(rows))
+	for _, row := range rows {
+		bars = append(bars, sourceBarFromRow(row))
+	}
+	_, aggregate, err := aggregateRevealedBars(track.ChartTimeframe, bars)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	forked, err := q.CreateReplaySession(ctx, gen.CreateReplaySessionParams{
+		UserID: uid, Mode: source.Mode, Speed: source.Speed, ReplayIntervalSeconds: source.ReplayIntervalSeconds,
+		StartTime: selected.OpenTime, EndTime: source.EndTime, Config: source.Config,
+	})
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE replay_sessions SET generation=$2 WHERE id=$1`, forked.ID, source.Generation+1); err != nil {
+		return SessionSnapshot{}, err
+	}
+	if _, err := q.CreateReplayTrack(ctx, gen.CreateReplayTrackParams{
+		SessionID: forked.ID, DatasetID: track.DatasetID, Slot: track.Slot, Symbol: track.Symbol,
+		Provider: track.Provider, ChartTimeframe: track.ChartTimeframe, CursorSeq: selected.Seq,
+		VisibleThrough: selected.OpenTime, AggregateState: marshalAggregateState(aggregate),
+	}); err != nil {
+		return SessionSnapshot{}, err
+	}
+	var prepared PreparedTrading
+	var commission []byte
+	err = tx.QueryRow(ctx, `SELECT starting_equity::float8,base_currency,commission_model FROM replay_accounts WHERE session_id=$1`, sid).Scan(&prepared.StartingEquity, &prepared.BaseCurrency, &commission)
+	if err == nil {
+		prepared.Commission = commission
+		if err := insertReplayAccount(ctx, tx, forked.ID, &prepared); err != nil {
+			return SessionSnapshot{}, err
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return SessionSnapshot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return SessionSnapshot{}, err
+	}
+	return r.getByIDs(ctx, uid, forked.ID)
+}
+
 func (r *Repo) getByIDs(ctx context.Context, uid, sid pgtype.UUID) (SessionSnapshot, error) {
 	session, err := r.queries.GetReplaySessionForUser(ctx, gen.GetReplaySessionForUserParams{ID: sid, UserID: uid})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -205,6 +311,10 @@ func (r *Repo) getByIDs(ctx context.Context, uid, sid pgtype.UUID) (SessionSnaps
 	out.Tracks = make([]TrackSnapshot, 0, len(tracks))
 	for _, track := range tracks {
 		out.Tracks = append(out.Tracks, snapshotTrack(track))
+	}
+	out.Trading, err = loadTradingSnapshot(ctx, r.pool, sid)
+	if err != nil {
+		return SessionSnapshot{}, err
 	}
 	return out, nil
 }

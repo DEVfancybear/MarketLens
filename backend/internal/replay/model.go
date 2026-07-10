@@ -16,6 +16,7 @@ var (
 	ErrSessionClosed             = errors.New("replay: session closed")
 	ErrCheckpointCorrupt         = errors.New("replay: checkpoint checksum mismatch")
 	ErrUnsupportedReplayInterval = errors.New("replay: unsupported replay interval")
+	ErrRewindRequiresFork        = errors.New("replay: rewind requires fork or trading reset")
 )
 
 type StartInput struct {
@@ -30,12 +31,21 @@ type TrackInput struct {
 }
 
 type CreateSessionInput struct {
-	Mode           string       `json:"mode"`
-	Start          StartInput   `json:"start"`
-	EndTime        *time.Time   `json:"endTime"`
-	ReplayInterval string       `json:"replayInterval"`
-	Speed          float64      `json:"speed"`
-	Tracks         []TrackInput `json:"tracks"`
+	Mode           string        `json:"mode"`
+	Start          StartInput    `json:"start"`
+	EndTime        *time.Time    `json:"endTime"`
+	ReplayInterval string        `json:"replayInterval"`
+	Speed          float64       `json:"speed"`
+	Tracks         []TrackInput  `json:"tracks"`
+	Trading        *TradingInput `json:"trading,omitempty"`
+}
+
+type TradingInput struct {
+	Enabled        bool            `json:"enabled"`
+	StartingEquity string          `json:"startingEquity"`
+	BaseCurrency   string          `json:"baseCurrency"`
+	Commission     json.RawMessage `json:"commission"`
+	BarPathModel   string          `json:"barPathModel"`
 }
 
 type DatasetSnapshot struct {
@@ -72,22 +82,88 @@ type RevealedBarsSnapshot struct {
 }
 
 type SessionSnapshot struct {
-	ID                    string          `json:"id"`
-	Status                string          `json:"status"`
-	Mode                  string          `json:"mode"`
-	Generation            int             `json:"generation"`
-	Version               int64           `json:"version"`
-	LastEventSeq          int64           `json:"lastEventSeq"`
-	Speed                 float64         `json:"speed"`
-	ReplayIntervalSeconds int             `json:"replayIntervalSeconds"`
-	StartTime             time.Time       `json:"startTime"`
-	SimulatedTime         time.Time       `json:"simulatedTime"`
-	EndTime               *time.Time      `json:"endTime,omitempty"`
-	PauseReason           string          `json:"pauseReason,omitempty"`
-	Tracks                []TrackSnapshot `json:"tracks"`
-	CreatedAt             time.Time       `json:"createdAt"`
-	UpdatedAt             time.Time       `json:"updatedAt"`
-	ClosedAt              *time.Time      `json:"closedAt,omitempty"`
+	ID                    string           `json:"id"`
+	Status                string           `json:"status"`
+	Mode                  string           `json:"mode"`
+	Generation            int              `json:"generation"`
+	Version               int64            `json:"version"`
+	LastEventSeq          int64            `json:"lastEventSeq"`
+	Speed                 float64          `json:"speed"`
+	ReplayIntervalSeconds int              `json:"replayIntervalSeconds"`
+	StartTime             time.Time        `json:"startTime"`
+	SimulatedTime         time.Time        `json:"simulatedTime"`
+	EndTime               *time.Time       `json:"endTime,omitempty"`
+	PauseReason           string           `json:"pauseReason,omitempty"`
+	Tracks                []TrackSnapshot  `json:"tracks"`
+	Trading               *TradingSnapshot `json:"trading,omitempty"`
+	CreatedAt             time.Time        `json:"createdAt"`
+	UpdatedAt             time.Time        `json:"updatedAt"`
+	ClosedAt              *time.Time       `json:"closedAt,omitempty"`
+}
+
+type ReplayAccount struct {
+	BaseCurrency   string  `json:"baseCurrency"`
+	StartingEquity float64 `json:"startingEquity"`
+	Balance        float64 `json:"balance"`
+	Equity         float64 `json:"equity"`
+}
+
+type ReplayOrder struct {
+	ID             string    `json:"id"`
+	TrackID        string    `json:"trackId"`
+	ClientOrderID  string    `json:"clientOrderId"`
+	Side           string    `json:"side"`
+	OrderType      string    `json:"orderType"`
+	Status         string    `json:"status"`
+	Quantity       float64   `json:"quantity"`
+	FilledQuantity float64   `json:"filledQuantity"`
+	LimitPrice     *float64  `json:"limitPrice,omitempty"`
+	StopPrice      *float64  `json:"stopPrice,omitempty"`
+	TakeProfit     *float64  `json:"takeProfit,omitempty"`
+	StopLoss       *float64  `json:"stopLoss,omitempty"`
+	SubmittedAt    time.Time `json:"submittedAt"`
+}
+
+type ReplayFill struct {
+	ID          string    `json:"id"`
+	OrderID     string    `json:"orderId"`
+	TrackID     string    `json:"trackId"`
+	DatasetSeq  int64     `json:"datasetSeq"`
+	SimulatedAt time.Time `json:"simulatedAt"`
+	Price       float64   `json:"price"`
+	Quantity    float64   `json:"quantity"`
+	Commission  float64   `json:"commission"`
+}
+
+type ReplayPosition struct {
+	ID            string   `json:"id"`
+	TrackID       string   `json:"trackId"`
+	Symbol        string   `json:"symbol"`
+	NetQuantity   float64  `json:"netQuantity"`
+	AveragePrice  float64  `json:"averagePrice"`
+	RealizedPnL   float64  `json:"realizedPnl"`
+	UnrealizedPnL float64  `json:"unrealizedPnl"`
+	StopLoss      *float64 `json:"stopLoss,omitempty"`
+	TakeProfit    *float64 `json:"takeProfit,omitempty"`
+}
+
+type TradingSnapshot struct {
+	Account   ReplayAccount    `json:"account"`
+	Orders    []ReplayOrder    `json:"orders"`
+	Fills     []ReplayFill     `json:"fills"`
+	Positions []ReplayPosition `json:"positions"`
+}
+
+type ReplayReport struct {
+	SessionID     string        `json:"sessionId"`
+	GeneratedAt   time.Time     `json:"generatedAt"`
+	Account       ReplayAccount `json:"account"`
+	ClosedTrades  int           `json:"closedTrades"`
+	WinningTrades int           `json:"winningTrades"`
+	LosingTrades  int           `json:"losingTrades"`
+	NetPnL        float64       `json:"netPnl"`
+	MaxDrawdown   float64       `json:"maxDrawdown"`
+	Fills         []ReplayFill  `json:"fills"`
 }
 
 type CommandInput struct {
@@ -97,6 +173,10 @@ type CommandInput struct {
 	Payload         json.RawMessage `json:"payload,omitempty"`
 	ActorOwner      string          `json:"-"`
 	ActorLeaseUntil time.Time       `json:"-"`
+}
+
+type ForkSessionInput struct {
+	Time time.Time `json:"time"`
 }
 
 type CommandResult struct {
@@ -162,6 +242,13 @@ type PreparedSession struct {
 	EndTime               *time.Time
 	Config                []byte
 	Tracks                []PreparedTrack
+	Trading               *PreparedTrading
+}
+
+type PreparedTrading struct {
+	StartingEquity float64
+	BaseCurrency   string
+	Commission     []byte
 }
 
 type CleanupResult struct {

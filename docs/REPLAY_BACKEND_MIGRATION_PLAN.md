@@ -1,6 +1,6 @@
 # Backend-Owned Replay: Architecture, Database, and Migration Plan
 
-_Status: Phases 1-2 implemented and environment-verified; Phases 3-6 remain planned._
+_Status: Phases 1-4 implemented and environment-verified; Phases 5-6 remain planned._
 _Date: 2026-07-10._
 
 ## 1. Executive decision
@@ -841,10 +841,14 @@ from migration `0012`; no new database migration is required. See
 
 ### Phase 4 — isolated replay trading
 
-- Implement account/order/fill/position/equity ledger.
-- Process every revealed base row in order.
-- Add bracket drag/update commands, execution markers, report/export.
-- Require fork/reset for backward seek.
+- [x] Implement account/order/fill/position/equity ledger.
+- [x] Process every revealed base row in order.
+- [x] Add bracket update commands, execution events/markers, report/export.
+- [x] Require fork/reset for backward seek.
+
+Phase 4 uses migration `0014_replay_trading` and makes the feature-flagged Trade
+UI consume the isolated server ledger without dual-writing the normal simulator
+or MT5. See `docs/REPLAY_BACKEND_PHASE4.md` for the deployed contract.
 
 ### Phase 5 — synchronized layouts
 

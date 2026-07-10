@@ -44,6 +44,12 @@ func (f *fakeStore) Bars(context.Context, string, string, string, string) (Revea
 func (f *fakeStore) Close(context.Context, string, string) (SessionSnapshot, error) {
 	return f.snapshot, nil
 }
+func (f *fakeStore) Report(context.Context, string, string) (ReplayReport, error) {
+	return ReplayReport{}, nil
+}
+func (f *fakeStore) Fork(context.Context, string, string, time.Time) (SessionSnapshot, error) {
+	return f.snapshot, nil
+}
 func (f *fakeStore) Cleanup(context.Context, time.Time, time.Time, int32) (CleanupResult, error) {
 	return CleanupResult{}, nil
 }

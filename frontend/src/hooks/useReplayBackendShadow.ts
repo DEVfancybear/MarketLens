@@ -74,6 +74,13 @@ export function useReplayBackendShadow(): void {
       replayInterval: "auto",
       speed,
       tracks: [{ slot: 0, symbol, chartTimeframe: timeframe }],
+      trading: {
+        enabled: true,
+        startingEquity: "10000",
+        baseCurrency: "USD",
+        commission: { kind: "per_unit", value: "0" },
+        barPathModel: "conservative_ohlc",
+      },
     })
       .then(async (snapshot) => {
         if (cancelled) {

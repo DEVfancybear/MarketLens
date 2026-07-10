@@ -11,15 +11,16 @@ map, test gates, and six implementation phases are in
 
 Implementation order is Phase 0 executable regression contracts, Phase 1 persistence/dataset
 preparation, Phase 2 single-chart backend clock, Phase 3 replay interval and MTF aggregation,
-Phase 4 isolated replay trading, Phase 5 synchronized layouts, then Phase 6 cutover/legacy cleanup.
+Phase 4 isolated replay trading is complete. Continue with Phase 5 synchronized layouts, then
+Phase 6 cutover/legacy cleanup.
 Do not move ad hoc replay business logic into new frontend hooks while this migration is active.
 Phase 6 must physically delete the legacy frontend replay clock/store/engine, MTF/history replay
 paths, and replay trade processing according to section 11 of the plan; disabling them behind a
 feature flag is not completion.
 
-Phase 0 is complete: `npm run test:replay` replaces the regex guard, Go and TypeScript consume
-`testdata/replay/contracts.v1.json`, and all six audited legacy gaps have executable reproductions.
-The next implementation step is Phase 1 persistence and immutable dataset preparation.
+Phases 0-4 are complete and environment-verified. `npm run test:replay` covers the executable
+contracts shared with Go. The next implementation step is Phase 5 synchronized layouts and the
+shared simulated-time barrier.
 
 The historical roadmap below is preserved. The current top priority after the monorepo split is:
 

@@ -126,7 +126,8 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		return CommandResult{}, nil, fmt.Errorf("replay: Phase 3 expected one track, got %d", len(tracks))
 	}
 	track := tracks[0]
-	drafts, changed, err := applyRuntimeTransition(ctx, q, &session, &track, input)
+	ledger := &ledgerRuntime{db: tx, sessionID: sid}
+	drafts, changed, err := applyRuntimeTransition(ctx, q, &session, &track, input, ledger)
 	if err != nil {
 		return CommandResult{}, nil, err
 	}
@@ -174,8 +175,19 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		}
 		events = append(events, eventEnvelope(row))
 	}
+	if tradeChangedInDrafts(drafts) && len(events) > 0 {
+		lastEventSeq := events[len(events)-1].EventSeq
+		_, err := tx.Exec(ctx, `INSERT INTO replay_equity_points(session_id,event_seq,simulated_at,balance,equity,drawdown)
+      SELECT a.session_id,$2,$3,a.balance,a.equity,
+        GREATEST(0, COALESCE((SELECT max(ep.equity) FROM replay_equity_points ep WHERE ep.session_id=a.session_id),a.starting_equity)-a.equity)
+      FROM replay_accounts a WHERE a.session_id=$1
+      ON CONFLICT(session_id,event_seq) DO NOTHING`, sid, lastEventSeq, session.SimulatedTime.Time)
+		if err != nil {
+			return CommandResult{}, nil, err
+		}
+	}
 
-	snapshot, err := snapshotWithQueries(ctx, q, uid, sid)
+	snapshot, err := snapshotWithQueries(ctx, q, tx, uid, sid)
 	if err != nil {
 		return CommandResult{}, nil, err
 	}
@@ -200,6 +212,16 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		return CommandResult{}, nil, err
 	}
 	return result, events, nil
+}
+
+func tradeChangedInDrafts(drafts []eventDraft) bool {
+	for _, draft := range drafts {
+		if strings.HasPrefix(draft.typ, "order.") || draft.typ == "fill.created" ||
+			draft.typ == "position.updated" || draft.typ == "account.updated" || draft.typ == "trading.reset" {
+			return true
+		}
+	}
+	return false
 }
 
 func claimRuntimeActor(session *gen.ReplaySession, input CommandInput) (bool, error) {
@@ -246,7 +268,7 @@ WHERE id = $1 AND actor_owner = $2`, sessionID, owner)
 	return err
 }
 
-func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *gen.ReplaySession, track *gen.ListReplayTracksForSessionForUpdateRow, input CommandInput) ([]eventDraft, bool, error) {
+func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *gen.ReplaySession, track *gen.ListReplayTracksForSessionForUpdateRow, input CommandInput, ledgers ...*ledgerRuntime) ([]eventDraft, bool, error) {
 	oldStatus := session.Status
 	oldSpeed, _ := session.Speed.Float64Value()
 	oldCursor := track.CursorSeq
@@ -255,6 +277,11 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 	oldAggregate := string(track.AggregateState)
 	commandType := strings.ToLower(strings.TrimSpace(input.Type))
 	drafts := make([]eventDraft, 0, 8)
+	tradeChanged := false
+	var ledger *ledgerRuntime
+	if len(ledgers) > 0 {
+		ledger = ledgers[0]
+	}
 
 	switch commandType {
 	case "play":
@@ -328,6 +355,16 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 					"trackId": uuidString(track.ID), "bar": bar,
 				}})
 			}
+			if ledger != nil {
+				trading, err := ledger.processRows(ctx, track, rows)
+				if err != nil {
+					return nil, false, err
+				}
+				if len(trading) > 0 {
+					tradeChanged = true
+					drafts = append(drafts, trading...)
+				}
+			}
 		}
 		session.SimulatedTime = timestamp(targetTime)
 		if !targetTime.Before(completionTime) {
@@ -357,14 +394,40 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 		session.ReplayIntervalSeconds = int32(interval)
 	case "seek", "restart":
 		target := session.StartTime.Time
+		resetTrading := false
 		if commandType == "seek" {
 			var body struct {
-				Time time.Time `json:"time"`
+				Time         time.Time `json:"time"`
+				ResetTrading bool      `json:"resetTrading"`
 			}
 			if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil || body.Time.IsZero() {
 				return nil, false, fmt.Errorf("%w: seek.time is required", ErrBadRequest)
 			}
 			target = body.Time.UTC()
+			resetTrading = body.ResetTrading
+		} else {
+			var body struct {
+				ResetTrading bool `json:"resetTrading"`
+			}
+			_ = json.Unmarshal(normalizedPayload(input.Payload), &body)
+			resetTrading = body.ResetTrading
+		}
+		if ledger != nil && target.Before(session.SimulatedTime.Time) {
+			hasFills, err := ledger.hasFills(ctx)
+			if err != nil {
+				return nil, false, err
+			}
+			if hasFills && !resetTrading {
+				return nil, false, ErrRewindRequiresFork
+			}
+			if hasFills {
+				resetEvents, err := ledger.reset(ctx, target)
+				if err != nil {
+					return nil, false, err
+				}
+				drafts = append(drafts, resetEvents...)
+				tradeChanged = true
+			}
 		}
 		if target.Before(track.FirstTime.Time) || !target.Before(track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds)*time.Second)) {
 			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)}
@@ -398,6 +461,43 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 		drafts = append(drafts, eventDraft{typ: "track.reset", payload: map[string]any{
 			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
 		}})
+	case "place_order", "cancel_order", "close_position", "update_order", "reset_trading":
+		if ledger == nil {
+			return nil, false, fmt.Errorf("%w: replay trading is unavailable", ErrBadRequest)
+		}
+		enabled, err := ledger.enabled(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		if !enabled {
+			return nil, false, fmt.Errorf("%w: replay trading is disabled for this session", ErrBadRequest)
+		}
+		var tradeEvents []eventDraft
+		switch commandType {
+		case "place_order":
+			bar, err := q.GetReplayDatasetBarBySeq(ctx, gen.GetReplayDatasetBarBySeqParams{DatasetID: track.DatasetID, Seq: track.CursorSeq})
+			if err != nil {
+				return nil, false, err
+			}
+			tradeEvents, err = ledger.place(ctx, track, session, bar, input.Payload)
+		case "cancel_order":
+			tradeEvents, err = ledger.cancel(ctx, input.Payload, session.SimulatedTime.Time)
+		case "close_position":
+			bar, barErr := q.GetReplayDatasetBarBySeq(ctx, gen.GetReplayDatasetBarBySeqParams{DatasetID: track.DatasetID, Seq: track.CursorSeq})
+			if barErr != nil {
+				return nil, false, barErr
+			}
+			tradeEvents, err = ledger.closePosition(ctx, track, session, bar, input.Payload)
+		case "update_order":
+			tradeEvents, err = ledger.updateBracket(ctx, input.Payload, session.SimulatedTime.Time)
+		case "reset_trading":
+			tradeEvents, err = ledger.reset(ctx, session.SimulatedTime.Time)
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		drafts = append(drafts, tradeEvents...)
+		tradeChanged = true
 	case "close":
 		session.Status = gen.ReplaySessionStatusClosed
 		reason := "closed"
@@ -410,7 +510,7 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 	newSpeed, _ := session.Speed.Float64Value()
 	changed := oldStatus != session.Status || oldCursor != track.CursorSeq || oldSpeed.Float64 != newSpeed.Float64 ||
 		oldReplayInterval != session.ReplayIntervalSeconds || !oldSimulated.Equal(session.SimulatedTime.Time) ||
-		oldAggregate != string(track.AggregateState) || commandType == "close"
+		oldAggregate != string(track.AggregateState) || commandType == "close" || tradeChanged
 	if !changed {
 		return nil, false, nil
 	}
@@ -484,7 +584,7 @@ func duplicateCommandResult(command gen.ReplayCommand) (CommandResult, []EventEn
 	return result, nil, nil
 }
 
-func snapshotWithQueries(ctx context.Context, q *gen.Queries, uid, sid pgtype.UUID) (SessionSnapshot, error) {
+func snapshotWithQueries(ctx context.Context, q *gen.Queries, db tradingDB, uid, sid pgtype.UUID) (SessionSnapshot, error) {
 	session, err := q.GetReplaySessionForUser(ctx, gen.GetReplaySessionForUserParams{ID: sid, UserID: uid})
 	if err != nil {
 		return SessionSnapshot{}, err
@@ -497,6 +597,10 @@ func snapshotWithQueries(ctx context.Context, q *gen.Queries, uid, sid pgtype.UU
 	out.Tracks = make([]TrackSnapshot, 0, len(tracks))
 	for _, track := range tracks {
 		out.Tracks = append(out.Tracks, snapshotTrack(track))
+	}
+	out.Trading, err = loadTradingSnapshot(ctx, db, sid)
+	if err != nil {
+		return SessionSnapshot{}, err
 	}
 	return out, nil
 }

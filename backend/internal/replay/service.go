@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ type SessionStore interface {
 	Get(context.Context, string, string) (SessionSnapshot, error)
 	Bars(context.Context, string, string, string, string) (RevealedBarsSnapshot, error)
 	Close(context.Context, string, string) (SessionSnapshot, error)
+	Report(context.Context, string, string) (ReplayReport, error)
+	Fork(context.Context, string, string, time.Time) (SessionSnapshot, error)
 	Cleanup(context.Context, time.Time, time.Time, int32) (CleanupResult, error)
 }
 
@@ -124,11 +127,57 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 	if preparedTrack.SnapshotAt.IsZero() {
 		preparedTrack.SnapshotAt = time.Now().UTC()
 	}
-	config, _ := json.Marshal(map[string]any{"phase": 3, "requestedStartTime": input.Start.Time.UTC(), "calendar": "UTC"})
+	preparedTrading, err := validateTradingInput(input.Trading)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	config, _ := json.Marshal(map[string]any{
+		"phase": 4, "requestedStartTime": input.Start.Time.UTC(), "calendar": "UTC",
+		"barPathModel": "conservative_ohlc", "tradingEnabled": preparedTrading != nil,
+	})
 	return s.store.Prepare(ctx, userID, PreparedSession{
 		Mode: input.Mode, Speed: input.Speed, ReplayIntervalSeconds: replayInterval,
-		StartTime: selected, EndTime: input.EndTime, Config: config, Tracks: []PreparedTrack{preparedTrack},
+		StartTime: selected, EndTime: input.EndTime, Config: config, Tracks: []PreparedTrack{preparedTrack}, Trading: preparedTrading,
 	})
+}
+
+func validateTradingInput(input *TradingInput) (*PreparedTrading, error) {
+	if input == nil || !input.Enabled {
+		return nil, nil
+	}
+	equity := 10000.0
+	if strings.TrimSpace(input.StartingEquity) != "" {
+		var err error
+		equity, err = strconv.ParseFloat(input.StartingEquity, 64)
+		if err != nil || !finite(equity) || equity <= 0 || equity > 1e12 {
+			return nil, fmt.Errorf("%w: trading.startingEquity must be between 0 and 1000000000000", ErrBadRequest)
+		}
+	}
+	currency := strings.ToUpper(strings.TrimSpace(input.BaseCurrency))
+	if currency == "" {
+		currency = "USD"
+	}
+	if len(currency) != 3 {
+		return nil, fmt.Errorf("%w: trading.baseCurrency must be a three-letter currency", ErrBadRequest)
+	}
+	path := strings.TrimSpace(input.BarPathModel)
+	if path != "" && path != "conservative_ohlc" {
+		return nil, fmt.Errorf("%w: unsupported trading.barPathModel", ErrBadRequest)
+	}
+	commission := normalizedPayload(input.Commission)
+	var model map[string]any
+	if err := json.Unmarshal(commission, &model); err != nil {
+		return nil, fmt.Errorf("%w: invalid trading.commission", ErrBadRequest)
+	}
+	if len(model) > 0 {
+		kind, _ := model["kind"].(string)
+		valueText, _ := model["value"].(string)
+		value, valueErr := strconv.ParseFloat(valueText, 64)
+		if kind != "per_unit" || valueErr != nil || !finite(value) || value < 0 {
+			return nil, fmt.Errorf("%w: trading.commission must be a non-negative per_unit model", ErrBadRequest)
+		}
+	}
+	return &PreparedTrading{StartingEquity: equity, BaseCurrency: currency, Commission: commission}, nil
 }
 
 func (s *Service) Get(ctx context.Context, userID, sessionID string) (SessionSnapshot, error) {
@@ -139,6 +188,15 @@ func (s *Service) Bars(ctx context.Context, userID, sessionID, trackID, timefram
 }
 func (s *Service) Close(ctx context.Context, userID, sessionID string) (SessionSnapshot, error) {
 	return s.store.Close(ctx, userID, sessionID)
+}
+func (s *Service) Report(ctx context.Context, userID, sessionID string) (ReplayReport, error) {
+	return s.store.Report(ctx, userID, sessionID)
+}
+func (s *Service) Fork(ctx context.Context, userID, sessionID string, target time.Time) (SessionSnapshot, error) {
+	if target.IsZero() {
+		return SessionSnapshot{}, fmt.Errorf("%w: fork time is required", ErrBadRequest)
+	}
+	return s.store.Fork(ctx, userID, sessionID, target.UTC())
 }
 
 func phase3SourceTimeframe(chartTimeframe string) (string, int) {

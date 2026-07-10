@@ -103,6 +103,9 @@ export class ReplaySocket {
         const trackId = (event.payload as { trackId?: string }).trackId;
         if (trackId) await this.hydrateTrack(trackId);
       }
+      if (result === "applied" && isTradingEvent(event.type)) {
+        await this.replaceFromServer();
+      }
       return;
     }
     this.store.setConnection("recovering");
@@ -138,4 +141,10 @@ export class ReplaySocket {
     const response = await getReplayTrackBars(this.sessionId, trackId);
     this.store.replaceBars(response.sessionId, response.trackId, response.bars);
   }
+}
+
+function isTradingEvent(type: string): boolean {
+  return type.startsWith("order.") || type === "fill.created" ||
+    type === "position.updated" || type === "account.updated" ||
+    type === "trading.reset";
 }

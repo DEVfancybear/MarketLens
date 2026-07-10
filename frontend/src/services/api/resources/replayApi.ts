@@ -57,15 +57,82 @@ export interface ReplaySessionSnapshot {
   endTime?: string;
   pauseReason?: string;
   tracks: ReplayTrackSnapshot[];
+  trading?: ReplayTradingSnapshot;
   createdAt: string;
   updatedAt: string;
   closedAt?: string;
 }
 
+export interface ReplayAccountSnapshot {
+  baseCurrency: string;
+  startingEquity: number;
+  balance: number;
+  equity: number;
+}
+
+export interface ReplayOrderSnapshot {
+  id: string;
+  trackId: string;
+  clientOrderId: string;
+  side: "buy" | "sell";
+  orderType: "market" | "limit" | "stop" | "stop_limit";
+  status: "pending" | "partially_filled" | "filled" | "cancelled" | "rejected";
+  quantity: number;
+  filledQuantity: number;
+  limitPrice?: number;
+  stopPrice?: number;
+  takeProfit?: number;
+  stopLoss?: number;
+  submittedAt: string;
+}
+
+export interface ReplayFillSnapshot {
+  id: string;
+  orderId: string;
+  trackId: string;
+  datasetSeq: number;
+  simulatedAt: string;
+  price: number;
+  quantity: number;
+  commission: number;
+}
+
+export interface ReplayPositionSnapshot {
+  id: string;
+  trackId: string;
+  symbol: string;
+  netQuantity: number;
+  averagePrice: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  stopLoss?: number;
+  takeProfit?: number;
+}
+
+export interface ReplayTradingSnapshot {
+  account: ReplayAccountSnapshot;
+  orders: ReplayOrderSnapshot[];
+  fills: ReplayFillSnapshot[];
+  positions: ReplayPositionSnapshot[];
+}
+
+export interface ReplayReport {
+  sessionId: string;
+  generatedAt: string;
+  account: ReplayAccountSnapshot;
+  closedTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  netPnl: number;
+  maxDrawdown: number;
+  fills: ReplayFillSnapshot[];
+}
+
 export interface ReplayCommandInput {
   idempotencyKey: string;
   expectedVersion?: number;
-  type: "play" | "pause" | "step" | "seek" | "restart" | "close" | "set_speed" | "set_replay_interval";
+  type: "play" | "pause" | "step" | "seek" | "restart" | "close" | "set_speed" | "set_replay_interval" |
+    "place_order" | "cancel_order" | "close_position" | "update_order" | "reset_trading";
   payload?: Record<string, unknown>;
 }
 
@@ -96,6 +163,26 @@ export interface CreateReplaySessionInput {
     symbol: string;
     chartTimeframe: string;
   }>;
+  trading?: {
+    enabled: boolean;
+    startingEquity?: string;
+    baseCurrency?: string;
+    commission?: { kind: "per_unit"; value: string };
+    barPathModel?: "conservative_ohlc";
+  };
+}
+
+export function getReplayReport(sessionId: string): Promise<ReplayReport> {
+  return getJson(`replay/sessions/${encodeURIComponent(sessionId)}/report`);
+}
+
+export function forkReplaySession(
+  sessionId: string,
+  time: string,
+): Promise<ReplaySessionSnapshot> {
+  return postJson(`replay/sessions/${encodeURIComponent(sessionId)}/fork`, { time }, {
+    retry: { limit: 0 },
+  });
 }
 
 export function createReplaySession(
