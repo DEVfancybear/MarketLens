@@ -66,6 +66,7 @@ type TrackSnapshot struct {
 	Slot           int             `json:"slot"`
 	Symbol         string          `json:"symbol"`
 	Provider       string          `json:"provider"`
+	MarketCalendar string          `json:"marketCalendar"`
 	ChartTimeframe string          `json:"chartTimeframe"`
 	CursorSeq      int64           `json:"cursorSeq"`
 	VisibleThrough time.Time       `json:"visibleThrough"`
@@ -221,6 +222,7 @@ type PreparedTrack struct {
 	Slot            int
 	Symbol          string
 	Provider        string
+	MarketCalendar  string
 	ChartTimeframe  string
 	SourceTimeframe string
 	IntervalSeconds int

@@ -27,24 +27,36 @@ type SessionStore interface {
 }
 
 type Service struct {
-	store   SessionStore
-	history HistorySource
-	maxBars int
+	store     SessionStore
+	history   HistorySource
+	maxBars   int
+	maxTracks int
 }
 
-func NewService(store SessionStore, history HistorySource, maxBars int) *Service {
+type normalizedTrackInput struct {
+	input           TrackInput
+	chartSeconds    int
+	sourceTimeframe string
+	sourceSeconds   int
+}
+
+func NewService(store SessionStore, history HistorySource, maxBars int, configuredMaxTracks ...int) *Service {
 	if maxBars <= 0 || maxBars > 5000 {
 		maxBars = 5000
 	}
-	return &Service{store: store, history: history, maxBars: maxBars}
+	maxTracks := 4
+	if len(configuredMaxTracks) > 0 && configuredMaxTracks[0] > 0 && configuredMaxTracks[0] <= 4 {
+		maxTracks = configuredMaxTracks[0]
+	}
+	return &Service{store: store, history: history, maxBars: maxBars, maxTracks: maxTracks}
 }
 
 func (s *Service) Create(ctx context.Context, userID string, input CreateSessionInput) (SessionSnapshot, error) {
 	if input.Mode == "" {
 		input.Mode = "single_chart"
 	}
-	if input.Mode != "single_chart" {
-		return SessionSnapshot{}, fmt.Errorf("%w: Phase 3 supports single_chart mode only", ErrBadRequest)
+	if input.Mode != "single_chart" && input.Mode != "all_charts" {
+		return SessionSnapshot{}, fmt.Errorf("%w: mode must be single_chart or all_charts", ErrBadRequest)
 	}
 	if input.Start.Kind == "" {
 		input.Start.Kind = "time"
@@ -61,84 +73,159 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 	if !finite(input.Speed) || input.Speed <= 0 || input.Speed > 100 {
 		return SessionSnapshot{}, fmt.Errorf("%w: speed must be between 0 and 100", ErrBadRequest)
 	}
-	if len(input.Tracks) != 1 || input.Tracks[0].Slot != 0 {
-		return SessionSnapshot{}, fmt.Errorf("%w: Phase 3 requires exactly one track in slot 0", ErrBadRequest)
+	trackCount := len(input.Tracks)
+	if trackCount < 1 || trackCount > s.maxTracks {
+		return SessionSnapshot{}, fmt.Errorf("%w: tracks must contain between 1 and %d entries", ErrBadRequest, s.maxTracks)
 	}
-	track := input.Tracks[0]
-	track.Symbol = strings.ToUpper(strings.TrimSpace(track.Symbol))
-	tf, chartInterval, ok := normalizeTimeframe(track.ChartTimeframe)
-	if track.Symbol == "" || !ok {
-		return SessionSnapshot{}, fmt.Errorf("%w: valid symbol and chartTimeframe are required", ErrBadRequest)
+	if input.Mode == "single_chart" && trackCount != 1 {
+		return SessionSnapshot{}, fmt.Errorf("%w: single_chart mode requires exactly one track", ErrBadRequest)
 	}
-	if !catalogHasSymbol(s.history.Snapshot(), track.Symbol) {
-		return SessionSnapshot{}, fmt.Errorf("%w: unsupported symbol %s", ErrBadRequest, track.Symbol)
+	if input.Mode == "all_charts" && trackCount < 2 {
+		return SessionSnapshot{}, fmt.Errorf("%w: all_charts mode requires at least two tracks", ErrBadRequest)
 	}
 	if input.EndTime != nil && input.EndTime.Before(input.Start.Time) {
 		return SessionSnapshot{}, fmt.Errorf("%w: endTime precedes start time", ErrBadRequest)
 	}
-	sourceTimeframe, sourceInterval := phase3SourceTimeframe(tf)
-	replayInterval, err := resolveReplayInterval(input.ReplayInterval, tf, chartInterval, sourceInterval)
+
+	normalized := make([]normalizedTrackInput, 0, trackCount)
+	catalog := s.history.Snapshot()
+	for i, raw := range input.Tracks {
+		if raw.Slot != i {
+			return SessionSnapshot{}, fmt.Errorf("%w: track slots must be unique and contiguous from 0", ErrBadRequest)
+		}
+		raw.Symbol = strings.ToUpper(strings.TrimSpace(raw.Symbol))
+		tf, chartSeconds, ok := normalizeTimeframe(raw.ChartTimeframe)
+		if raw.Symbol == "" || !ok {
+			return SessionSnapshot{}, fmt.Errorf("%w: valid symbol and chartTimeframe are required for slot %d", ErrBadRequest, raw.Slot)
+		}
+		if !catalogHasSymbol(catalog, raw.Symbol) {
+			return SessionSnapshot{}, fmt.Errorf("%w: unsupported symbol %s", ErrBadRequest, raw.Symbol)
+		}
+		raw.ChartTimeframe = tf
+		sourceTimeframe, sourceSeconds := phase3SourceTimeframe(tf)
+		normalized = append(normalized, normalizedTrackInput{input: raw, chartSeconds: chartSeconds, sourceTimeframe: sourceTimeframe, sourceSeconds: sourceSeconds})
+	}
+	replayInterval, err := resolveReplayIntervalForTracks(input.ReplayInterval, normalized)
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
 
-	// Put the requested point around 70%% through the immutable window, leaving
-	// both historical context and future rows without exposing them to the client.
-	before := input.Start.Time.Unix() + int64(float64(s.maxBars*sourceInterval)*0.30)
-	history := s.history.History(ctx, track.Symbol, sourceTimeframe, s.maxBars, before, false)
-	bars, err := normalizeCandles(history.Candles)
-	if err != nil {
-		return SessionSnapshot{}, err
-	}
-	if len(bars) == 0 {
-		if history.LastError != "" {
-			return SessionSnapshot{}, fmt.Errorf("%w: %s", ErrDatasetPreparation, history.LastError)
+	preparedTracks := make([]PreparedTrack, 0, trackCount)
+	sharedStart := input.Start.Time.UTC()
+	calendars := make([]map[string]any, 0, trackCount)
+	for i, track := range normalized {
+		before := input.Start.Time.Unix() + int64(float64(s.maxBars*track.sourceSeconds)*0.30)
+		history := s.history.History(ctx, track.input.Symbol, track.sourceTimeframe, s.maxBars, before, false)
+		bars, normalizeErr := normalizeCandles(history.Candles)
+		if normalizeErr != nil {
+			return SessionSnapshot{}, normalizeErr
 		}
-		return SessionSnapshot{}, fmt.Errorf("%w: no candles returned for the requested time", ErrDataUnavailable)
-	}
-	availableEnd := bars[len(bars)-1].Time.Add(time.Duration(sourceInterval) * time.Second)
-	if input.Start.Time.Before(bars[0].Time) || !input.Start.Time.Before(availableEnd) {
-		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
-	}
-	if input.EndTime != nil && input.EndTime.After(availableEnd) {
-		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
-	}
-	cursor, selected, ok := barAtOrBefore(bars, input.Start.Time.UTC())
-	if !ok {
-		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
-	}
-	meta, _ := json.Marshal(map[string]any{"source": history.Source, "lastError": history.LastError})
-	initialRows := make([]sourceBar, cursor+1)
-	for i := range initialRows {
-		bar := bars[i]
-		initialRows[i] = sourceBar{Seq: int64(i), Time: bar.Time, IntervalSeconds: sourceInterval,
-			Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: bar.Volume}
-	}
-	_, initialAggregate, err := aggregateRevealedBars(tf, initialRows)
-	if err != nil {
-		return SessionSnapshot{}, err
-	}
-	preparedTrack := PreparedTrack{
-		Slot: 0, Symbol: track.Symbol, Provider: "mt5", ChartTimeframe: tf,
-		SourceTimeframe: sourceTimeframe, IntervalSeconds: sourceInterval, RequestedStart: input.Start.Time.UTC(), CursorSeq: cursor,
-		VisibleThrough: selected, Checksum: datasetChecksum("mt5", track.Symbol, sourceTimeframe, sourceInterval, bars),
-		SnapshotAt: history.UpdatedAt.UTC(), SourceMeta: meta, AggregateState: marshalAggregateState(initialAggregate), Bars: bars,
-	}
-	if preparedTrack.SnapshotAt.IsZero() {
-		preparedTrack.SnapshotAt = time.Now().UTC()
+		if len(bars) == 0 {
+			if history.LastError != "" {
+				return SessionSnapshot{}, fmt.Errorf("%w: slot %d: %s", ErrDatasetPreparation, track.input.Slot, history.LastError)
+			}
+			return SessionSnapshot{}, fmt.Errorf("%w: no candles returned for slot %d", ErrDataUnavailable, track.input.Slot)
+		}
+		availableEnd := bars[len(bars)-1].Time.Add(time.Duration(track.sourceSeconds) * time.Second)
+		selectionTime := sharedStart
+		if i == 0 {
+			selectionTime = input.Start.Time.UTC()
+		}
+		if selectionTime.Before(bars[0].Time) || !selectionTime.Before(availableEnd) {
+			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
+		}
+		if input.EndTime != nil && input.EndTime.After(availableEnd) {
+			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
+		}
+		cursor, selected, found := barAtOrBefore(bars, selectionTime)
+		if !found {
+			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
+		}
+		if i == 0 {
+			sharedStart = selected
+		}
+		calendar := marketCalendarFor("mt5", track.input.Symbol)
+		meta, _ := json.Marshal(map[string]any{"source": history.Source, "lastError": history.LastError, "marketCalendar": calendar})
+		initialRows := make([]sourceBar, cursor+1)
+		for rowIndex := range initialRows {
+			bar := bars[rowIndex]
+			initialRows[rowIndex] = sourceBar{Seq: int64(rowIndex), Time: bar.Time, IntervalSeconds: track.sourceSeconds,
+				Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: bar.Volume}
+		}
+		_, initialAggregate, aggregateErr := aggregateRevealedBars(track.input.ChartTimeframe, initialRows)
+		if aggregateErr != nil {
+			return SessionSnapshot{}, aggregateErr
+		}
+		prepared := PreparedTrack{
+			Slot: track.input.Slot, Symbol: track.input.Symbol, Provider: "mt5", MarketCalendar: calendar,
+			ChartTimeframe: track.input.ChartTimeframe, SourceTimeframe: track.sourceTimeframe, IntervalSeconds: track.sourceSeconds,
+			RequestedStart: selectionTime, CursorSeq: cursor, VisibleThrough: selected,
+			Checksum:   datasetChecksum("mt5", track.input.Symbol, track.sourceTimeframe, track.sourceSeconds, bars),
+			SnapshotAt: history.UpdatedAt.UTC(), SourceMeta: meta, AggregateState: marshalAggregateState(initialAggregate), Bars: bars,
+		}
+		if prepared.SnapshotAt.IsZero() {
+			prepared.SnapshotAt = time.Now().UTC()
+		}
+		preparedTracks = append(preparedTracks, prepared)
+		calendars = append(calendars, map[string]any{"slot": track.input.Slot, "calendar": calendar})
 	}
 	preparedTrading, err := validateTradingInput(input.Trading)
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
 	config, _ := json.Marshal(map[string]any{
-		"phase": 4, "requestedStartTime": input.Start.Time.UTC(), "calendar": "UTC",
+		"phase": 5, "requestedStartTime": input.Start.Time.UTC(), "marketCalendars": calendars,
 		"barPathModel": "conservative_ohlc", "tradingEnabled": preparedTrading != nil,
 	})
 	return s.store.Prepare(ctx, userID, PreparedSession{
 		Mode: input.Mode, Speed: input.Speed, ReplayIntervalSeconds: replayInterval,
-		StartTime: selected, EndTime: input.EndTime, Config: config, Tracks: []PreparedTrack{preparedTrack}, Trading: preparedTrading,
+		StartTime: sharedStart, EndTime: input.EndTime, Config: config, Tracks: preparedTracks, Trading: preparedTrading,
 	})
+}
+
+func resolveReplayIntervalForTracks(requested string, tracks []normalizedTrackInput) (int, error) {
+	requested = strings.TrimSpace(requested)
+	if requested != "" && !strings.EqualFold(requested, "auto") {
+		var resolved int
+		for _, track := range tracks {
+			interval, err := resolveReplayInterval(requested, track.input.ChartTimeframe, track.chartSeconds, track.sourceSeconds)
+			if err != nil {
+				return 0, err
+			}
+			if resolved != 0 && resolved != interval {
+				return 0, fmt.Errorf("%w: %q does not resolve consistently across tracks", ErrUnsupportedReplayInterval, requested)
+			}
+			resolved = interval
+		}
+		return resolved, nil
+	}
+
+	// Pick the largest supported interval that can be built from every pinned
+	// source dataset and divides every chart timeframe. Calendar months are the
+	// only non-fixed bucket and intentionally synchronize at one day.
+	candidates := []int{86400, 14400, 7200, 3600, 1800, 900, 300, 180, 60}
+	for _, candidate := range candidates {
+		valid := true
+		for _, track := range tracks {
+			if candidate < track.sourceSeconds || (track.input.ChartTimeframe == "1M" && candidate != 86400) ||
+				(track.input.ChartTimeframe != "1M" && track.chartSeconds%candidate != 0) {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return candidate, nil
+		}
+	}
+	return 0, fmt.Errorf("%w: tracks do not share a replay interval", ErrUnsupportedReplayInterval)
+}
+
+func marketCalendarFor(provider, symbol string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "mt5" {
+		return "mt5:" + strings.ToUpper(strings.TrimSpace(symbol)) + ":UTC"
+	}
+	return provider + ":UTC"
 }
 
 func validateTradingInput(input *TradingInput) (*PreparedTrading, error) {

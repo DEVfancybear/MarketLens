@@ -38,6 +38,7 @@ type Config struct {
 
 	ReplayEngineEnabled    bool
 	ReplayMaxBars          int
+	ReplayMaxTracks        int
 	ReplayCleanupInterval  time.Duration
 	ReplaySessionRetention time.Duration
 	ReplayDatasetRetention time.Duration
@@ -86,6 +87,7 @@ func Load() (Config, error) {
 		MT5BridgeReconnectMax:   getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
 		ReplayEngineEnabled:     getEnvBool("REPLAY_ENGINE_ENABLED", false),
 		ReplayMaxBars:           getEnvInt("REPLAY_MAX_BARS_PER_TRACK", 5000),
+		ReplayMaxTracks:         getEnvInt("REPLAY_MAX_TRACKS_PER_SESSION", 4),
 		ReplayCleanupInterval:   getEnvDuration("REPLAY_CLEANUP_INTERVAL", time.Hour),
 		ReplaySessionRetention:  getEnvDuration("REPLAY_SESSION_RETENTION", 720*time.Hour),
 		ReplayDatasetRetention:  getEnvDuration("REPLAY_DATASET_RETENTION", 168*time.Hour),

@@ -78,6 +78,52 @@ func TestServiceCreatePinsPausedSingleChartDataset(t *testing.T) {
 	}
 }
 
+func TestServiceCreatePinsSynchronizedLayoutAndResolvesSharedAutoInterval(t *testing.T) {
+	start := time.Unix(1_700_000_100, 0).UTC().Truncate(time.Minute)
+	history := &fakeHistory{
+		snapshot: mt5stream.Snapshot{Symbols: []mt5stream.Symbol{{Name: "EURUSD"}, {Name: "GBPUSD"}}},
+		result: mt5stream.HistorySnapshot{Source: "mt5", UpdatedAt: start, Candles: []mt5stream.Candle{
+			{Time: start.Add(-time.Minute).Unix(), Open: 1, High: 2, Low: .5, Close: 1.2, Volume: 10},
+			{Time: start.Unix(), Open: 1.2, High: 2, Low: 1, Close: 1.5, Volume: 11},
+			{Time: start.Add(time.Minute).Unix(), Open: 1.5, High: 2, Low: 1, Close: 1.8, Volume: 12},
+		}},
+	}
+	store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
+	_, err := NewService(store, history, 100, 4).Create(context.Background(), "user", CreateSessionInput{
+		Mode: "all_charts", Start: StartInput{Kind: "time", Time: start}, ReplayInterval: "auto",
+		Tracks: []TrackInput{
+			{Slot: 0, Symbol: "EURUSD", ChartTimeframe: "15m"},
+			{Slot: 1, Symbol: "GBPUSD", ChartTimeframe: "1H"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.prepared.Tracks) != 2 || store.prepared.Mode != "all_charts" || store.prepared.ReplayIntervalSeconds != 900 {
+		t.Fatalf("unexpected synchronized session: %#v", store.prepared)
+	}
+	for slot, track := range store.prepared.Tracks {
+		if track.Slot != slot || track.MarketCalendar == "" || !track.VisibleThrough.Equal(start) {
+			t.Fatalf("track %d is not aligned: %#v", slot, track)
+		}
+	}
+}
+
+func TestServiceCreateRejectsInvalidSynchronizedSlotsAndQuota(t *testing.T) {
+	service := NewService(&fakeStore{}, &fakeHistory{}, 100, 2)
+	input := CreateSessionInput{Mode: "all_charts", Start: StartInput{Kind: "time", Time: time.Now().UTC()}, Tracks: []TrackInput{
+		{Slot: 0, Symbol: "EURUSD", ChartTimeframe: "1m"},
+		{Slot: 2, Symbol: "GBPUSD", ChartTimeframe: "1m"},
+	}}
+	if _, err := service.Create(context.Background(), "user", input); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("expected slot validation error, got %v", err)
+	}
+	input.Tracks = append(input.Tracks, TrackInput{Slot: 2, Symbol: "USDJPY", ChartTimeframe: "1m"})
+	if _, err := service.Create(context.Background(), "user", input); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("expected quota error, got %v", err)
+	}
+}
+
 func TestServiceCreateSelectsTheRevealedBarAtOrBeforeRequestedTime(t *testing.T) {
 	first := time.Unix(1_700_000_040, 0).UTC()
 	requested := first.Add(59 * time.Second)

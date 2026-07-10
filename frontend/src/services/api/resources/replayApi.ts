@@ -18,6 +18,7 @@ export interface ReplayTrackSnapshot {
   slot: number;
   symbol: string;
   provider: string;
+  marketCalendar: string;
   chartTimeframe: string;
   cursorSeq: number;
   visibleThrough: string;
@@ -153,13 +154,13 @@ export interface ReplayEventEnvelope {
 }
 
 export interface CreateReplaySessionInput {
-  mode?: "single_chart";
+  mode?: "single_chart" | "all_charts";
   start: { kind: "time"; time: string };
   endTime?: string | null;
   replayInterval?: "auto" | "1m" | "3m" | "5m" | "15m" | "30m" | "1H" | "2H" | "4H" | "1D" | "1W";
   speed?: number;
   tracks: Array<{
-    slot: 0;
+    slot: number;
     symbol: string;
     chartTimeframe: string;
   }>;

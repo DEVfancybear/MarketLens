@@ -83,8 +83,14 @@ export function useReplayTrading() {
         });
       },
       cancel: (orderId: string) => enqueueTradingCommand("cancel_order", { orderId }),
-      close: (positionId: string, fraction = 1) =>
-        enqueueTradingCommand("close_position", { positionId, fraction }),
+      close: (positionId: string, fraction = 1) => {
+        const position = trading?.positions.find((item) => item.id === positionId);
+        return enqueueTradingCommand("close_position", {
+          positionId,
+          trackId: position?.trackId,
+          fraction,
+        });
+      },
       updateBracket: (orderId: string, stopLoss?: number, takeProfit?: number) =>
         enqueueTradingCommand("update_order", { orderId, stopLoss, takeProfit }),
       reset: () => enqueueTradingCommand("reset_trading"),
@@ -93,6 +99,7 @@ export function useReplayTrading() {
           if (Math.abs(position.netQuantity) > 1e-12) {
             await enqueueTradingCommand("close_position", {
               positionId: position.id,
+              trackId: position.trackId,
               fraction: 1,
             });
           }

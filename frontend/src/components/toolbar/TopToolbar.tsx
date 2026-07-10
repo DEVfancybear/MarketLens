@@ -45,6 +45,13 @@ import {
 } from "@/store/uiStore";
 import { cn } from "@/utils/cn";
 import { captureChart } from "@/components/chart/chartRegistry";
+import {
+  chartLayoutPresetAtom,
+  replayLayoutModeAtom,
+  setChartLayoutPresetAtom,
+  setReplayLayoutModeAtom,
+  type ChartLayoutPreset,
+} from "@/store/replayLayoutStore";
 
 export function TopToolbar() {
   // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
@@ -65,6 +72,10 @@ export function TopToolbar() {
   const doLog = useSetAtom(logAtom);
   const toggleAlertCenter = useSetAtom(toggleAlertCenterAtom);
   const alertCount = useAlertStore((s) => s.alerts.length);
+  const chartLayoutPreset = useAtomValue(chartLayoutPresetAtom);
+  const replayLayoutMode = useAtomValue(replayLayoutModeAtom);
+  const setChartLayoutPreset = useSetAtom(setChartLayoutPresetAtom);
+  const setReplayLayoutMode = useSetAtom(setReplayLayoutModeAtom);
 
   const toggleReplay = () => {
     if (replay.active && replay.reSelecting) {
@@ -210,11 +221,43 @@ export function TopToolbar() {
       >
         {(close) => (
           <div>
-            {["Single", "2 Horizontal", "2 Vertical", "Grid 2×2"].map((l) => (
-              <MenuItem key={l} onClick={close}>
-                {l}
+            {([
+              ["single", "Single"],
+              ["two_horizontal", "2 Horizontal"],
+              ["two_vertical", "2 Vertical"],
+              ["grid_2x2", "Grid 2×2"],
+            ] as const).map(([preset, label]) => (
+              <MenuItem
+                key={preset}
+                active={chartLayoutPreset === preset}
+                onClick={() => {
+                  setChartLayoutPreset(preset as ChartLayoutPreset);
+                  close();
+                }}
+              >
+                <span className="flex-1">{label}</span>
+                {chartLayoutPreset === preset && <span>✓</span>}
               </MenuItem>
             ))}
+            <div className="my-1 border-t border-terminal-border" />
+            <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+              Replay scope
+            </div>
+            <MenuItem
+              active={replayLayoutMode === "single_chart"}
+              onClick={() => setReplayLayoutMode("single_chart")}
+            >
+              <span className="flex-1">Current chart</span>
+              {replayLayoutMode === "single_chart" && <span>✓</span>}
+            </MenuItem>
+            <MenuItem
+              active={replayLayoutMode === "all_charts"}
+              className={chartLayoutPreset === "single" ? "cursor-not-allowed opacity-40" : undefined}
+              onClick={chartLayoutPreset === "single" ? undefined : () => setReplayLayoutMode("all_charts")}
+            >
+              <span className="flex-1">All charts</span>
+              {replayLayoutMode === "all_charts" && <span>✓</span>}
+            </MenuItem>
           </div>
         )}
       </Dropdown>

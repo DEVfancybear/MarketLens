@@ -92,6 +92,71 @@ func TestRuntimeOneReplayIntervalProcessesEveryBaseRow(t *testing.T) {
 	}
 }
 
+func TestRuntimeSynchronizedStepAdvancesEveryTrackAtOneBarrier(t *testing.T) {
+	bars, session, first := runtimeFixture()
+	second := first
+	first.ID = pgtype.UUID{Bytes: [16]byte{11}, Valid: true}
+	second.ID = pgtype.UUID{Bytes: [16]byte{12}, Valid: true}
+	second.ChartTimeframe = "5m"
+	tracks := []gen.ListReplayTracksForSessionForUpdateRow{first, second}
+	drafts, changed, err := applyRuntimeTransitionTracks(context.Background(), bars, &session, tracks, CommandInput{
+		Type: "step", Payload: []byte(`{"count":2}`),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || tracks[0].CursorSeq != 3 || tracks[1].CursorSeq != 3 || !session.SimulatedTime.Time.Equal(bars.bars[3].OpenTime.Time) {
+		t.Fatalf("session=%#v tracks=%#v", session, tracks)
+	}
+	cursorEvents := 0
+	for _, draft := range drafts {
+		if draft.typ == "cursor.advanced" {
+			cursorEvents++
+		}
+	}
+	if cursorEvents != 2 {
+		t.Fatalf("expected a cursor event per track, got %#v", drafts)
+	}
+}
+
+func TestRuntimeSynchronizedAutoIntervalUsesEveryTrack(t *testing.T) {
+	_, session, first := runtimeFixture()
+	first.ChartTimeframe = "15m"
+	second := first
+	second.ChartTimeframe = "1H"
+	tracks := []gen.ListReplayTracksForSessionForUpdateRow{first, second}
+	_, changed, err := applySynchronizedReplayInterval(&session, tracks, CommandInput{
+		Type: "set_replay_interval", Payload: []byte(`{"replayInterval":"auto"}`),
+	})
+	if err != nil || !changed || session.ReplayIntervalSeconds != 900 {
+		t.Fatalf("interval=%d changed=%t err=%v", session.ReplayIntervalSeconds, changed, err)
+	}
+}
+
+func TestRuntimeSynchronizedBarrierDoesNotFabricateBarsAcrossMarketGap(t *testing.T) {
+	bars, session, first := runtimeFixture()
+	for i := 2; i < len(bars.bars); i++ {
+		bars.bars[i].OpenTime = timestamp(session.SimulatedTime.Time.Add(time.Duration(i+3) * time.Minute))
+	}
+	first.LastTime = bars.bars[len(bars.bars)-1].OpenTime
+	second := first
+	first.ID = pgtype.UUID{Bytes: [16]byte{21}, Valid: true}
+	second.ID = pgtype.UUID{Bytes: [16]byte{22}, Valid: true}
+	tracks := []gen.ListReplayTracksForSessionForUpdateRow{first, second}
+	drafts, changed, err := applyRuntimeTransitionTracks(context.Background(), bars, &session, tracks, CommandInput{
+		Type: "step", Payload: []byte(`{"count":1}`),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || tracks[0].CursorSeq != 1 || tracks[1].CursorSeq != 1 {
+		t.Fatalf("market gap fabricated a cursor: %#v", tracks)
+	}
+	if len(drafts) != 1 || drafts[0].typ != "state.changed" {
+		t.Fatalf("market gap emitted candle events: %#v", drafts)
+	}
+}
+
 func TestRuntimeSetReplayIntervalValidatesChartDivisibility(t *testing.T) {
 	bars, session, track := runtimeFixture()
 	track.ChartTimeframe = "15m"

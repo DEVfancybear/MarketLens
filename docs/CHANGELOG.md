@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Replay Phase 5 synchronized layouts (2026-07-10)
+- Added `single_chart`/`all_charts` session validation with up to four ordered
+  tracks and configurable `REPLAY_MAX_TRACKS_PER_SESSION` quota.
+- Added a shared simulated-time barrier that advances and persists every track,
+  progressive aggregate, and replay ledger in one command transaction without
+  fabricating candles across sparse MT5 calendar gaps.
+- Added shared auto-interval resolution, multi-track seek/restart/fork, per-track
+  market calendar metadata, and track-scoped replay trading commands.
+- Added Layout-menu replay scope controls and typed frontend session creation for
+  one-, two-, and four-slot layouts.
+- Verified all Go tests/vet, 20 frontend replay tests, TypeScript, lint (zero
+  errors), and the production frontend build.
+
 ### Added - Backend Replay Phase 4 isolated trading (2026-07-10)
 - Added migration `0014_replay_trading` with session-scoped accounts, orders,
   fills, net positions, equity points, ownership constraints, and audit fields.

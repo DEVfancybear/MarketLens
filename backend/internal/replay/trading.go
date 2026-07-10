@@ -289,6 +289,7 @@ func (l *ledgerRuntime) updateBracket(ctx context.Context, payload json.RawMessa
 func (l *ledgerRuntime) closePosition(ctx context.Context, track *gen.ListReplayTracksForSessionForUpdateRow, session *gen.ReplaySession, bar gen.ReplayDatasetBar, payload json.RawMessage) ([]eventDraft, error) {
 	var body struct {
 		PositionID string   `json:"positionId"`
+		TrackID    string   `json:"trackId"`
 		Fraction   float64  `json:"fraction"`
 		Quantity   *float64 `json:"quantity"`
 	}
@@ -302,6 +303,9 @@ func (l *ledgerRuntime) closePosition(ctx context.Context, track *gen.ListReplay
 	}
 	if err != nil {
 		return nil, err
+	}
+	if p.TrackID != track.ID || (body.TrackID != "" && body.TrackID != uuidString(track.ID)) {
+		return nil, fmt.Errorf("%w: position track does not belong to the selected chart", ErrBadRequest)
 	}
 	if math.Abs(p.Net) < 1e-12 {
 		return nil, fmt.Errorf("%w: position is already flat", ErrBadRequest)

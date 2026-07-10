@@ -109,14 +109,14 @@ func main() {
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, requireAuth)
 		if cfg.ReplayEngineEnabled {
 			replayStore := replay.NewRepo(pool.Pool)
-			replayService := replay.NewService(replayStore, mt5Service, cfg.ReplayMaxBars)
+			replayService := replay.NewService(replayStore, mt5Service, cfg.ReplayMaxBars, cfg.ReplayMaxTracks)
 			replayEngine := replay.NewEngine(replayStore, cfg.ReplayDisconnectGrace, cfg.ReplayActorLeaseTTL)
 			if err := replayEngine.Start(ctx); err != nil {
 				stdlog.Fatalf("replay engine init error: %v", err)
 			}
 			replayHandler = replay.NewHandler(replayService, requireAuth, replayEngine)
 			replay.NewCleaner(replayStore, cfg.ReplayCleanupInterval, cfg.ReplaySessionRetention, cfg.ReplayDatasetRetention).Start(ctx)
-			log.Info().Int("max_bars", cfg.ReplayMaxBars).Msg("backend replay Phase 3 enabled")
+			log.Info().Int("max_bars", cfg.ReplayMaxBars).Int("max_tracks", cfg.ReplayMaxTracks).Msg("backend replay Phase 5 enabled")
 		}
 		log.Info().Msg("protected api routes enabled")
 	}

@@ -235,35 +235,45 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
-	if len(tracks) != 1 {
-		return SessionSnapshot{}, fmt.Errorf("%w: Phase 4 fork requires one track", ErrBadRequest)
+	if len(tracks) < 1 || len(tracks) > 4 {
+		return SessionSnapshot{}, fmt.Errorf("%w: fork requires between one and four tracks", ErrBadRequest)
 	}
-	track := tracks[0]
-	if target.Before(track.FirstTime.Time) || target.After(source.SimulatedTime.Time) {
-		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+	if target.After(source.SimulatedTime.Time) {
+		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: source.StartTime.Time, LastAvailable: source.SimulatedTime.Time}
 	}
-	selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+	type forkTrackState struct {
+		selected  gen.ReplayDatasetBar
+		aggregate aggregateState
 	}
-	if err != nil {
-		return SessionSnapshot{}, err
-	}
-	rows, err := q.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{DatasetID: track.DatasetID, Seq: selected.Seq})
-	if err != nil {
-		return SessionSnapshot{}, err
-	}
-	bars := make([]sourceBar, 0, len(rows))
-	for _, row := range rows {
-		bars = append(bars, sourceBarFromRow(row))
-	}
-	_, aggregate, err := aggregateRevealedBars(track.ChartTimeframe, bars)
-	if err != nil {
-		return SessionSnapshot{}, err
+	states := make([]forkTrackState, len(tracks))
+	for i, track := range tracks {
+		if target.Before(track.FirstTime.Time) {
+			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+		}
+		selected, selectErr := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
+		if errors.Is(selectErr, pgx.ErrNoRows) {
+			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+		}
+		if selectErr != nil {
+			return SessionSnapshot{}, selectErr
+		}
+		rows, rowsErr := q.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{DatasetID: track.DatasetID, Seq: selected.Seq})
+		if rowsErr != nil {
+			return SessionSnapshot{}, rowsErr
+		}
+		bars := make([]sourceBar, 0, len(rows))
+		for _, row := range rows {
+			bars = append(bars, sourceBarFromRow(row))
+		}
+		_, aggregate, aggregateErr := aggregateRevealedBars(track.ChartTimeframe, bars)
+		if aggregateErr != nil {
+			return SessionSnapshot{}, aggregateErr
+		}
+		states[i] = forkTrackState{selected: selected, aggregate: aggregate}
 	}
 	forked, err := q.CreateReplaySession(ctx, gen.CreateReplaySessionParams{
 		UserID: uid, Mode: source.Mode, Speed: source.Speed, ReplayIntervalSeconds: source.ReplayIntervalSeconds,
-		StartTime: selected.OpenTime, EndTime: source.EndTime, Config: source.Config,
+		StartTime: timestamp(target), EndTime: source.EndTime, Config: source.Config,
 	})
 	if err != nil {
 		return SessionSnapshot{}, err
@@ -271,12 +281,14 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	if _, err := tx.Exec(ctx, `UPDATE replay_sessions SET generation=$2 WHERE id=$1`, forked.ID, source.Generation+1); err != nil {
 		return SessionSnapshot{}, err
 	}
-	if _, err := q.CreateReplayTrack(ctx, gen.CreateReplayTrackParams{
-		SessionID: forked.ID, DatasetID: track.DatasetID, Slot: track.Slot, Symbol: track.Symbol,
-		Provider: track.Provider, ChartTimeframe: track.ChartTimeframe, CursorSeq: selected.Seq,
-		VisibleThrough: selected.OpenTime, AggregateState: marshalAggregateState(aggregate),
-	}); err != nil {
-		return SessionSnapshot{}, err
+	for i, track := range tracks {
+		if _, err := q.CreateReplayTrack(ctx, gen.CreateReplayTrackParams{
+			SessionID: forked.ID, DatasetID: track.DatasetID, Slot: track.Slot, Symbol: track.Symbol,
+			Provider: track.Provider, ChartTimeframe: track.ChartTimeframe, CursorSeq: states[i].selected.Seq,
+			VisibleThrough: states[i].selected.OpenTime, AggregateState: marshalAggregateState(states[i].aggregate),
+		}); err != nil {
+			return SessionSnapshot{}, err
+		}
 	}
 	var prepared PreparedTrading
 	var commission []byte
@@ -326,6 +338,7 @@ func snapshotTrack(track gen.ListReplayTracksForSessionRow) TrackSnapshot {
 	}
 	return TrackSnapshot{
 		ID: uuidString(track.ID), Slot: int(track.Slot), Symbol: track.Symbol, Provider: track.Provider,
+		MarketCalendar: marketCalendarFor(track.Provider, track.Symbol),
 		ChartTimeframe: track.ChartTimeframe, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough.Time,
 		Dataset: DatasetSnapshot{ID: uuidString(track.DatasetID), DataKind: string(track.DataKind), SourceTimeframe: track.SourceTimeframe,
 			BaseIntervalSeconds: int(track.BaseIntervalSeconds), FirstAvailableTime: track.FirstTime.Time, LastAvailableTime: track.LastTime.Time,

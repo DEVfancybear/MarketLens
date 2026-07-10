@@ -850,11 +850,16 @@ Phase 4 uses migration `0014_replay_trading` and makes the feature-flagged Trade
 UI consume the isolated server ledger without dual-writing the normal simulator
 or MT5. See `docs/REPLAY_BACKEND_PHASE4.md` for the deployed contract.
 
-### Phase 5 — synchronized layouts
+### Phase 5 — synchronized layouts (completed 2026-07-10)
 
-- Add up to four tracks, one simulated-time barrier, auto replay interval, and
+- [x] Add up to four tracks, one simulated-time barrier, auto replay interval, and
   per-track market calendars.
-- Add single-chart/all-charts mode to layout UI.
+- [x] Add single-chart/all-charts mode to layout UI.
+
+Phase 5 reuses the four-slot schema from migration `0012`. It advances every
+track, progressive aggregate, and isolated trading ledger through one atomic
+barrier and never fabricates candles across sparse provider-calendar gaps. See
+`docs/REPLAY_BACKEND_PHASE5.md` for the deployed contract and verification.
 
 ### Phase 6 — cutover and cleanup
 

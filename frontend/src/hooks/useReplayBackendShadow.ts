@@ -14,6 +14,11 @@ import {
 import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
 import { ReplaySocket } from "@/services/replay/replaySocket";
 import { replayClientStore } from "@/store/replayClientStore";
+import {
+  chartLayoutPresetAtom,
+  replayLayoutModeAtom,
+  replayTracksForLayout,
+} from "@/store/replayLayoutStore";
 
 let shadowCommandSequence = 0;
 function commandKey(type: string): string {
@@ -33,6 +38,8 @@ export function useReplayBackendShadow(): void {
   const cursorTime = useAtomValue(cursorTimeAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const layoutPreset = useAtomValue(chartLayoutPresetAtom);
+  const replayMode = useAtomValue(replayLayoutModeAtom);
   const socketRef = useRef<ReplaySocket | null>(null);
   const sessionRef = useRef<string | null>(null);
   const configurationRef = useRef<string | null>(null);
@@ -53,7 +60,7 @@ export function useReplayBackendShadow(): void {
       if (sessionId) void closeReplaySession(sessionId).catch(() => undefined);
       return;
     }
-    const configuration = `${symbol}:${timeframe}`;
+    const configuration = `${symbol}:${timeframe}:${layoutPreset}:${replayMode}`;
     if (
       sessionRef.current &&
       configurationRef.current !== configuration
@@ -69,11 +76,14 @@ export function useReplayBackendShadow(): void {
     if (sessionRef.current || cursorTime == null) return;
     let cancelled = false;
     void createReplaySession({
-      mode: "single_chart",
+      mode: replayMode,
       start: { kind: "time", time: new Date(cursorTime * 1000).toISOString() },
       replayInterval: "auto",
       speed,
-      tracks: [{ slot: 0, symbol, chartTimeframe: timeframe }],
+      tracks: replayTracksForLayout(replayMode, layoutPreset, {
+        symbol,
+        chartTimeframe: timeframe,
+      }),
       trading: {
         enabled: true,
         startingEquity: "10000",
@@ -109,7 +119,7 @@ export function useReplayBackendShadow(): void {
     // cursorTime/speed are creation values; subsequent changes are mirrored by
     // the command effect below and must not recreate the session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, symbol, timeframe]);
+  }, [active, layoutPreset, replayMode, symbol, timeframe]);
 
   useEffect(() => {
     if (!isReplayBackendV1Enabled() || !active || !sessionRef.current) return;

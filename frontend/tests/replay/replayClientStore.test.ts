@@ -24,6 +24,7 @@ function snapshot(): ReplaySessionSnapshot {
       slot: 0,
       symbol: "EURUSD",
       provider: "mt5",
+      marketCalendar: "mt5:EURUSD:UTC",
       chartTimeframe: "1m",
       cursorSeq: 10,
       visibleThrough: "2026-05-01T10:00:00Z",

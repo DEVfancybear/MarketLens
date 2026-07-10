@@ -122,12 +122,11 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 	if err != nil {
 		return CommandResult{}, nil, err
 	}
-	if len(tracks) != 1 {
-		return CommandResult{}, nil, fmt.Errorf("replay: Phase 3 expected one track, got %d", len(tracks))
+	if len(tracks) < 1 || len(tracks) > 4 {
+		return CommandResult{}, nil, fmt.Errorf("replay: expected between one and four tracks, got %d", len(tracks))
 	}
-	track := tracks[0]
 	ledger := &ledgerRuntime{db: tx, sessionID: sid}
-	drafts, changed, err := applyRuntimeTransition(ctx, q, &session, &track, input, ledger)
+	drafts, changed, err := applyRuntimeTransitionTracks(ctx, q, &session, tracks, input, ledger)
 	if err != nil {
 		return CommandResult{}, nil, err
 	}
@@ -152,10 +151,12 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		session = updated
 	}
 	if changed {
-		if _, err := q.UpdateReplayTrackCursor(ctx, gen.UpdateReplayTrackCursorParams{
-			ID: track.ID, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough, AggregateState: track.AggregateState,
-		}); err != nil {
-			return CommandResult{}, nil, err
+		for _, track := range tracks {
+			if _, err := q.UpdateReplayTrackCursor(ctx, gen.UpdateReplayTrackCursorParams{
+				ID: track.ID, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough, AggregateState: track.AggregateState,
+			}); err != nil {
+				return CommandResult{}, nil, err
+			}
 		}
 	}
 
@@ -266,6 +267,292 @@ func (r *Repo) ReleaseActorLease(ctx context.Context, owner, sessionID string) e
 SET actor_owner = NULL, actor_lease_until = NULL
 WHERE id = $1 AND actor_owner = $2`, sessionID, owner)
 	return err
+}
+
+func applyRuntimeTransitionTracks(
+	ctx context.Context,
+	q runtimeBarQueries,
+	session *gen.ReplaySession,
+	tracks []gen.ListReplayTracksForSessionForUpdateRow,
+	input CommandInput,
+	ledger *ledgerRuntime,
+) ([]eventDraft, bool, error) {
+	if len(tracks) == 1 {
+		return applyRuntimeTransition(ctx, q, session, &tracks[0], input, ledger)
+	}
+	commandType := strings.ToLower(strings.TrimSpace(input.Type))
+	switch commandType {
+	case "step", "__clock_step":
+		return applySynchronizedStep(ctx, q, session, tracks, input, ledger)
+	case "seek", "restart":
+		return applySynchronizedSeek(ctx, q, session, tracks, input, ledger)
+	case "set_replay_interval":
+		return applySynchronizedReplayInterval(session, tracks, input)
+	case "place_order", "close_position":
+		track, err := commandTrack(tracks, input.Payload)
+		if err != nil {
+			return nil, false, err
+		}
+		return applyRuntimeTransition(ctx, q, session, track, input, ledger)
+	default:
+		// Session-wide commands and trade commands that do not read a market bar
+		// can use any track while retaining the single version/event transaction.
+		return applyRuntimeTransition(ctx, q, session, &tracks[0], input, ledger)
+	}
+}
+
+func commandTrack(tracks []gen.ListReplayTracksForSessionForUpdateRow, payload json.RawMessage) (*gen.ListReplayTracksForSessionForUpdateRow, error) {
+	var body struct {
+		TrackID string `json:"trackId"`
+	}
+	if err := json.Unmarshal(normalizedPayload(payload), &body); err != nil {
+		return nil, fmt.Errorf("%w: invalid track payload", ErrBadRequest)
+	}
+	if body.TrackID == "" {
+		return nil, fmt.Errorf("%w: trackId is required for synchronized replay trading", ErrBadRequest)
+	}
+	for i := range tracks {
+		if uuidString(tracks[i].ID) == body.TrackID {
+			return &tracks[i], nil
+		}
+	}
+	return nil, fmt.Errorf("%w: order track does not belong to the session", ErrBadRequest)
+}
+
+func applySynchronizedStep(
+	ctx context.Context,
+	q runtimeBarQueries,
+	session *gen.ReplaySession,
+	tracks []gen.ListReplayTracksForSessionForUpdateRow,
+	input CommandInput,
+	ledger *ledgerRuntime,
+) ([]eventDraft, bool, error) {
+	commandType := strings.ToLower(strings.TrimSpace(input.Type))
+	if commandType == "step" && session.Status != gen.ReplaySessionStatusPaused {
+		return nil, false, fmt.Errorf("%w: step requires a paused session", ErrBadRequest)
+	}
+	if commandType == "__clock_step" && session.Status != gen.ReplaySessionStatusPlaying {
+		return nil, false, nil
+	}
+	count, err := replayStepCount(input, commandType)
+	if err != nil {
+		return nil, false, err
+	}
+	oldStatus := session.Status
+	oldSimulated := session.SimulatedTime.Time
+	targetTime := oldSimulated.Add(time.Duration(int64(session.ReplayIntervalSeconds)*int64(count)) * time.Second)
+	completionTime := tracks[0].LastTime.Time
+	for i := 1; i < len(tracks); i++ {
+		if tracks[i].LastTime.Time.Before(completionTime) {
+			completionTime = tracks[i].LastTime.Time
+		}
+	}
+	if session.EndTime.Valid && session.EndTime.Time.Before(completionTime) {
+		completionTime = session.EndTime.Time
+	}
+	if targetTime.After(completionTime) {
+		targetTime = completionTime
+	}
+
+	drafts := make([]eventDraft, 0, len(tracks)*4)
+	changedTracks := make([]int, 0, len(tracks))
+	tradeChanged := false
+	for i := range tracks {
+		track := &tracks[i]
+		selected, findErr := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
+			DatasetID: track.DatasetID, OpenTime: timestamp(targetTime),
+		})
+		if findErr != nil {
+			if errors.Is(findErr, pgx.ErrNoRows) {
+				return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time}
+			}
+			return nil, false, findErr
+		}
+		if selected.Seq <= track.CursorSeq {
+			// A sparse provider calendar (weekend/session gap) advances the shared
+			// barrier without manufacturing a candle for this track.
+			continue
+		}
+		rows, rowsErr := q.ListReplayDatasetBarsBySeqRange(ctx, gen.ListReplayDatasetBarsBySeqRangeParams{
+			DatasetID: track.DatasetID, Seq: track.CursorSeq, Seq_2: selected.Seq,
+		})
+		if rowsErr != nil {
+			return nil, false, rowsErr
+		}
+		state, stateErr := currentAggregateState(ctx, q, track)
+		if stateErr != nil {
+			return nil, false, stateErr
+		}
+		source := make([]sourceBar, 0, len(rows))
+		for _, row := range rows {
+			source = append(source, sourceBarFromRow(row))
+		}
+		state, upserts, aggregateErr := aggregateSourceBars(state, track.ChartTimeframe, source)
+		if aggregateErr != nil {
+			return nil, false, aggregateErr
+		}
+		track.AggregateState = marshalAggregateState(state)
+		track.CursorSeq = selected.Seq
+		track.VisibleThrough = selected.OpenTime
+		changedTracks = append(changedTracks, i)
+		for _, bar := range coalesceBarUpserts(upserts) {
+			drafts = append(drafts, eventDraft{typ: "track.bar.upsert", payload: map[string]any{
+				"trackId": uuidString(track.ID), "bar": bar,
+			}})
+		}
+		if ledger != nil {
+			trading, tradeErr := ledger.processRows(ctx, track, rows)
+			if tradeErr != nil {
+				return nil, false, tradeErr
+			}
+			if len(trading) > 0 {
+				tradeChanged = true
+				drafts = append(drafts, trading...)
+			}
+		}
+	}
+	session.SimulatedTime = timestamp(targetTime)
+	if !targetTime.Before(completionTime) {
+		session.Status = gen.ReplaySessionStatusCompleted
+		session.PauseReason = nil
+	}
+	for _, index := range changedTracks {
+		track := &tracks[index]
+		drafts = append(drafts, eventDraft{typ: "cursor.advanced", payload: map[string]any{
+			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
+		}})
+	}
+	if oldStatus != session.Status || len(changedTracks) == 0 {
+		speed, _ := session.Speed.Float64Value()
+		drafts = append(drafts, eventDraft{typ: "state.changed", payload: map[string]any{
+			"status": string(session.Status), "speed": speed.Float64, "pauseReason": session.PauseReason,
+			"replayIntervalSeconds": session.ReplayIntervalSeconds,
+		}})
+	}
+	changed := oldStatus != session.Status || !oldSimulated.Equal(targetTime) || len(changedTracks) > 0 || tradeChanged
+	return drafts, changed, nil
+}
+
+func applySynchronizedSeek(
+	ctx context.Context,
+	q runtimeBarQueries,
+	session *gen.ReplaySession,
+	tracks []gen.ListReplayTracksForSessionForUpdateRow,
+	input CommandInput,
+	ledger *ledgerRuntime,
+) ([]eventDraft, bool, error) {
+	commandType := strings.ToLower(strings.TrimSpace(input.Type))
+	target := session.StartTime.Time
+	resetTrading := false
+	if commandType == "seek" {
+		var body struct {
+			Time         time.Time `json:"time"`
+			ResetTrading bool      `json:"resetTrading"`
+		}
+		if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil || body.Time.IsZero() {
+			return nil, false, fmt.Errorf("%w: seek.time is required", ErrBadRequest)
+		}
+		target = body.Time.UTC()
+		resetTrading = body.ResetTrading
+	} else {
+		var body struct {
+			ResetTrading bool `json:"resetTrading"`
+		}
+		_ = json.Unmarshal(normalizedPayload(input.Payload), &body)
+		resetTrading = body.ResetTrading
+	}
+	drafts := make([]eventDraft, 0, len(tracks)*2+2)
+	if ledger != nil && target.Before(session.SimulatedTime.Time) {
+		hasFills, err := ledger.hasFills(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		if hasFills && !resetTrading {
+			return nil, false, ErrRewindRequiresFork
+		}
+		if hasFills {
+			resetEvents, resetErr := ledger.reset(ctx, target)
+			if resetErr != nil {
+				return nil, false, resetErr
+			}
+			drafts = append(drafts, resetEvents...)
+		}
+	}
+	for i := range tracks {
+		track := &tracks[i]
+		lastAvailable := track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)
+		if target.Before(track.FirstTime.Time) || !target.Before(lastAvailable) {
+			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: lastAvailable}
+		}
+		selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: lastAvailable}
+			}
+			return nil, false, err
+		}
+		rows, err := q.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{DatasetID: track.DatasetID, Seq: selected.Seq})
+		if err != nil {
+			return nil, false, err
+		}
+		source := make([]sourceBar, 0, len(rows))
+		for _, row := range rows {
+			source = append(source, sourceBarFromRow(row))
+		}
+		_, state, err := aggregateRevealedBars(track.ChartTimeframe, source)
+		if err != nil {
+			return nil, false, err
+		}
+		track.CursorSeq = selected.Seq
+		track.VisibleThrough = selected.OpenTime
+		track.AggregateState = marshalAggregateState(state)
+		drafts = append(drafts, eventDraft{typ: "track.reset", payload: map[string]any{
+			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
+		}})
+		drafts = append(drafts, eventDraft{typ: "cursor.advanced", payload: map[string]any{
+			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
+		}})
+	}
+	session.SimulatedTime = timestamp(target)
+	session.Status = gen.ReplaySessionStatusPaused
+	reason := commandType
+	session.PauseReason = &reason
+	speed, _ := session.Speed.Float64Value()
+	drafts = append(drafts, eventDraft{typ: "state.changed", payload: map[string]any{
+		"status": string(session.Status), "speed": speed.Float64, "pauseReason": session.PauseReason,
+		"replayIntervalSeconds": session.ReplayIntervalSeconds,
+	}})
+	return drafts, true, nil
+}
+
+func applySynchronizedReplayInterval(session *gen.ReplaySession, tracks []gen.ListReplayTracksForSessionForUpdateRow, input CommandInput) ([]eventDraft, bool, error) {
+	var body struct {
+		ReplayInterval string `json:"replayInterval"`
+	}
+	if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil {
+		return nil, false, fmt.Errorf("%w: invalid replay interval payload", ErrBadRequest)
+	}
+	normalized := make([]normalizedTrackInput, 0, len(tracks))
+	for _, track := range tracks {
+		_, chartSeconds, _ := normalizeTimeframe(track.ChartTimeframe)
+		normalized = append(normalized, normalizedTrackInput{
+			input:        TrackInput{Slot: int(track.Slot), Symbol: track.Symbol, ChartTimeframe: track.ChartTimeframe},
+			chartSeconds: chartSeconds, sourceTimeframe: track.SourceTimeframe, sourceSeconds: int(track.BaseIntervalSeconds),
+		})
+	}
+	interval, err := resolveReplayIntervalForTracks(body.ReplayInterval, normalized)
+	if err != nil {
+		return nil, false, err
+	}
+	if int32(interval) == session.ReplayIntervalSeconds {
+		return nil, false, nil
+	}
+	session.ReplayIntervalSeconds = int32(interval)
+	speed, _ := session.Speed.Float64Value()
+	return []eventDraft{{typ: "state.changed", payload: map[string]any{
+		"status": string(session.Status), "speed": speed.Float64, "pauseReason": session.PauseReason,
+		"replayIntervalSeconds": session.ReplayIntervalSeconds,
+	}}}, true, nil
 }
 
 func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *gen.ReplaySession, track *gen.ListReplayTracksForSessionForUpdateRow, input CommandInput, ledgers ...*ledgerRuntime) ([]eventDraft, bool, error) {
