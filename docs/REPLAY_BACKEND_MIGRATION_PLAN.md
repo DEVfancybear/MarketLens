@@ -822,12 +822,22 @@ Phase 3/5 work. See `docs/REPLAY_BACKEND_PHASE1.md` for the deployed contract.
 
 See `docs/REPLAY_BACKEND_PHASE2.md` for the deployed contract and verification.
 
-### Phase 3 — replay interval and aggregation
+### Phase 3 — replay interval and aggregation (completed 2026-07-10)
 
-- Load base interval data and progressively aggregate chart bars.
-- Move MTF panel to server tracks.
-- Add deep-history/first-available flow and correct timeframe-switch errors.
-- Disable frontend access to full replay history after session creation.
+- [x] Load `1m` base data for intraday charts and `1D` base data for
+  daily/weekly/monthly charts; resolve `auto` and validate explicit replay
+  intervals independently of the chart timeframe.
+- [x] Progressively aggregate UTC intraday/day/week/month chart bars from every
+  revealed source row and emit ordered `track.bar.upsert`/`track.reset` events.
+- [x] Add ownership-scoped revealed-bars recovery with optional server MTF
+  aggregation, explicit availability bounds, and unsupported-interval errors.
+- [x] Make the feature-flagged chart/indicator/SMC/MTF projection consume only
+  server-revealed bars. The full-history legacy path remains only when the
+  rollback flag is off and is deleted during final cutover.
+
+Phase 3 reuses the immutable dataset and `replay_tracks.aggregate_state` schema
+from migration `0012`; no new database migration is required. See
+`docs/REPLAY_BACKEND_PHASE3.md` for the contract and environment verification.
 
 ### Phase 4 — isolated replay trading
 

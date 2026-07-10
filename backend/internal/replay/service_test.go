@@ -38,6 +38,9 @@ func (f *fakeStore) Prepare(_ context.Context, _ string, value PreparedSession) 
 func (f *fakeStore) Get(context.Context, string, string) (SessionSnapshot, error) {
 	return f.snapshot, nil
 }
+func (f *fakeStore) Bars(context.Context, string, string, string, string) (RevealedBarsSnapshot, error) {
+	return RevealedBarsSnapshot{}, nil
+}
 func (f *fakeStore) Close(context.Context, string, string) (SessionSnapshot, error) {
 	return f.snapshot, nil
 }
@@ -86,6 +89,45 @@ func TestServiceCreateSelectsTheRevealedBarAtOrBeforeRequestedTime(t *testing.T)
 	}
 	if store.prepared.StartTime != first || store.prepared.Tracks[0].CursorSeq != 0 {
 		t.Fatalf("selected future candle: %#v", store.prepared)
+	}
+}
+
+func TestServiceCreateLoadsOneMinuteBaseAndResolvesExplicitReplayInterval(t *testing.T) {
+	start := time.Unix(1_700_000_100, 0).UTC().Truncate(time.Minute)
+	history := &fakeHistory{result: mt5stream.HistorySnapshot{Candles: []mt5stream.Candle{
+		{Time: start.Add(-time.Minute).Unix(), Open: 1, High: 2, Low: .5, Close: 1.2, Volume: 10},
+		{Time: start.Unix(), Open: 1.2, High: 2, Low: 1, Close: 1.5, Volume: 11},
+		{Time: start.Add(time.Minute).Unix(), Open: 1.5, High: 2, Low: 1, Close: 1.8, Volume: 12},
+	}}}
+	store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
+	_, err := NewService(store, history, 100).Create(context.Background(), "user", CreateSessionInput{
+		Start: StartInput{Kind: "time", Time: start}, ReplayInterval: "5m",
+		Tracks: []TrackInput{{Slot: 0, Symbol: "EURUSD", ChartTimeframe: "15m"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history.timeframe != "1m" || store.prepared.Tracks[0].SourceTimeframe != "1m" ||
+		store.prepared.Tracks[0].ChartTimeframe != "15m" || store.prepared.ReplayIntervalSeconds != 300 {
+		t.Fatalf("history=%s prepared=%#v", history.timeframe, store.prepared)
+	}
+	state, err := parseAggregateState(store.prepared.Tracks[0].AggregateState)
+	if err != nil || state.LastSourceSeq != store.prepared.Tracks[0].CursorSeq || state.Current == nil {
+		t.Fatalf("initial aggregate state=%#v err=%v", state, err)
+	}
+}
+
+func TestServiceCreateRejectsReplayIntervalThatCannotBuildChart(t *testing.T) {
+	start := time.Unix(1_700_000_100, 0).UTC().Truncate(time.Minute)
+	history := &fakeHistory{result: mt5stream.HistorySnapshot{Candles: []mt5stream.Candle{
+		{Time: start.Unix(), Open: 1, High: 2, Low: .5, Close: 1.2, Volume: 10},
+	}}}
+	_, err := NewService(&fakeStore{}, history, 100).Create(context.Background(), "user", CreateSessionInput{
+		Start: StartInput{Kind: "time", Time: start}, ReplayInterval: "3m",
+		Tracks: []TrackInput{{Slot: 0, Symbol: "EURUSD", ChartTimeframe: "5m"}},
+	})
+	if !errors.Is(err, ErrUnsupportedReplayInterval) {
+		t.Fatalf("expected unsupported replay interval, got %v", err)
 	}
 }
 

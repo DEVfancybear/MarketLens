@@ -16,6 +16,7 @@ import (
 type SessionService interface {
 	Create(context.Context, string, CreateSessionInput) (SessionSnapshot, error)
 	Get(context.Context, string, string) (SessionSnapshot, error)
+	Bars(context.Context, string, string, string, string) (RevealedBarsSnapshot, error)
 	Close(context.Context, string, string) (SessionSnapshot, error)
 }
 
@@ -39,6 +40,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Delete("/:id", h.close)
 	g.Post("/:id/commands", h.command)
 	g.Get("/:id/events", h.events)
+	g.Get("/:id/tracks/:trackId/bars", h.bars)
 	g.Use("/:id/stream", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
@@ -111,6 +113,14 @@ func (h *Handler) events(c *fiber.Ctx) error {
 	return c.JSON(events)
 }
 
+func (h *Handler) bars(c *fiber.Ctx) error {
+	bars, err := h.service.Bars(c.Context(), replayUserID(c), c.Params("id"), c.Params("trackId"), c.Query("timeframe"))
+	if err != nil {
+		return replayAPIError(err)
+	}
+	return c.JSON(bars)
+}
+
 func (h *Handler) stream(c *websocket.Conn) {
 	if h.engine == nil {
 		_ = c.WriteJSON(map[string]any{"type": "error", "payload": map[string]any{"code": "replay_unavailable"}})
@@ -161,11 +171,19 @@ func replayAPIError(err error) error {
 	case errors.Is(err, ErrNotFound):
 		return apierror.New(404, "not_found", "not found")
 	case errors.Is(err, ErrDataUnavailable):
+		var unavailable *DataUnavailableError
+		if errors.As(err, &unavailable) {
+			return apierror.NewWithDetails(422, "data_point_unavailable", "the requested replay data point is unavailable", map[string]any{
+				"firstAvailableTime": unavailable.FirstAvailable, "lastAvailableTime": unavailable.LastAvailable,
+			})
+		}
 		return apierror.New(422, "data_point_unavailable", "the requested replay data point is unavailable")
 	case errors.Is(err, ErrDatasetPreparation):
 		return apierror.New(502, "dataset_preparation_failed", "replay dataset preparation failed")
 	case errors.Is(err, ErrBadRequest):
 		return apierror.New(400, "bad_request", err.Error())
+	case errors.Is(err, ErrUnsupportedReplayInterval):
+		return apierror.New(422, "unsupported_replay_interval", err.Error())
 	case errors.Is(err, ErrVersionConflict):
 		current := int64(0)
 		var conflict *VersionConflictError

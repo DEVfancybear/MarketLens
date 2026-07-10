@@ -24,6 +24,25 @@ export interface ReplayTrackSnapshot {
   dataset: ReplayDatasetSnapshot;
 }
 
+export interface ReplayBar {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  complete: boolean;
+}
+
+export interface ReplayRevealedBarsSnapshot {
+  sessionId: string;
+  trackId: string;
+  chartTimeframe: string;
+  cursorSeq: number;
+  visibleThrough: string;
+  bars: ReplayBar[];
+}
+
 export interface ReplaySessionSnapshot {
   id: string;
   status: "preparing" | "paused" | "playing" | "completed" | "closed" | "failed";
@@ -46,7 +65,7 @@ export interface ReplaySessionSnapshot {
 export interface ReplayCommandInput {
   idempotencyKey: string;
   expectedVersion?: number;
-  type: "play" | "pause" | "step" | "seek" | "restart" | "close" | "set_speed";
+  type: "play" | "pause" | "step" | "seek" | "restart" | "close" | "set_speed" | "set_replay_interval";
   payload?: Record<string, unknown>;
 }
 
@@ -70,7 +89,7 @@ export interface CreateReplaySessionInput {
   mode?: "single_chart";
   start: { kind: "time"; time: string };
   endTime?: string | null;
-  replayInterval?: "auto";
+  replayInterval?: "auto" | "1m" | "3m" | "5m" | "15m" | "30m" | "1H" | "2H" | "4H" | "1D" | "1W";
   speed?: number;
   tracks: Array<{
     slot: 0;
@@ -119,6 +138,18 @@ export function getReplayEvents(
 ): Promise<ReplayEventEnvelope[]> {
   return getJson(
     `replay/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${afterSeq}`,
+    { retry: { limit: 0 } },
+  );
+}
+
+export function getReplayTrackBars(
+  sessionId: string,
+  trackId: string,
+  timeframe?: string,
+): Promise<ReplayRevealedBarsSnapshot> {
+  const query = timeframe ? `?timeframe=${encodeURIComponent(timeframe)}` : "";
+  return getJson(
+    `replay/sessions/${encodeURIComponent(sessionId)}/tracks/${encodeURIComponent(trackId)}/bars${query}`,
     { retry: { limit: 0 } },
   );
 }

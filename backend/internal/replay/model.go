@@ -7,14 +7,15 @@ import (
 )
 
 var (
-	ErrBadRequest         = errors.New("replay: bad request")
-	ErrNotFound           = errors.New("replay: not found")
-	ErrDataUnavailable    = errors.New("replay: data point unavailable")
-	ErrDatasetPreparation = errors.New("replay: dataset preparation failed")
-	ErrVersionConflict    = errors.New("replay: version conflict")
-	ErrSessionBusy        = errors.New("replay: session busy")
-	ErrSessionClosed      = errors.New("replay: session closed")
-	ErrCheckpointCorrupt  = errors.New("replay: checkpoint checksum mismatch")
+	ErrBadRequest                = errors.New("replay: bad request")
+	ErrNotFound                  = errors.New("replay: not found")
+	ErrDataUnavailable           = errors.New("replay: data point unavailable")
+	ErrDatasetPreparation        = errors.New("replay: dataset preparation failed")
+	ErrVersionConflict           = errors.New("replay: version conflict")
+	ErrSessionBusy               = errors.New("replay: session busy")
+	ErrSessionClosed             = errors.New("replay: session closed")
+	ErrCheckpointCorrupt         = errors.New("replay: checkpoint checksum mismatch")
+	ErrUnsupportedReplayInterval = errors.New("replay: unsupported replay interval")
 )
 
 type StartInput struct {
@@ -59,6 +60,15 @@ type TrackSnapshot struct {
 	CursorSeq      int64           `json:"cursorSeq"`
 	VisibleThrough time.Time       `json:"visibleThrough"`
 	Dataset        DatasetSnapshot `json:"dataset"`
+}
+
+type RevealedBarsSnapshot struct {
+	SessionID      string      `json:"sessionId"`
+	TrackID        string      `json:"trackId"`
+	ChartTimeframe string      `json:"chartTimeframe"`
+	CursorSeq      int64       `json:"cursorSeq"`
+	VisibleThrough time.Time   `json:"visibleThrough"`
+	Bars           []ReplayBar `json:"bars"`
 }
 
 type SessionSnapshot struct {
@@ -110,6 +120,14 @@ type VersionConflictError struct{ CurrentVersion int64 }
 func (e *VersionConflictError) Error() string { return ErrVersionConflict.Error() }
 func (e *VersionConflictError) Unwrap() error { return ErrVersionConflict }
 
+type DataUnavailableError struct {
+	FirstAvailable time.Time
+	LastAvailable  time.Time
+}
+
+func (e *DataUnavailableError) Error() string { return ErrDataUnavailable.Error() }
+func (e *DataUnavailableError) Unwrap() error { return ErrDataUnavailable }
+
 type Bar struct {
 	Time   time.Time
 	Open   float64
@@ -124,6 +142,7 @@ type PreparedTrack struct {
 	Symbol          string
 	Provider        string
 	ChartTimeframe  string
+	SourceTimeframe string
 	IntervalSeconds int
 	RequestedStart  time.Time
 	CursorSeq       int64
@@ -131,6 +150,7 @@ type PreparedTrack struct {
 	Checksum        string
 	SnapshotAt      time.Time
 	SourceMeta      []byte
+	AggregateState  []byte
 	Bars            []Bar
 }
 

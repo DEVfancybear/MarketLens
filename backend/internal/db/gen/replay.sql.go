@@ -311,8 +311,8 @@ func (q *Queries) CreateReplaySession(ctx context.Context, arg CreateReplaySessi
 const createReplayTrack = `-- name: CreateReplayTrack :one
 INSERT INTO replay_tracks (
   session_id, dataset_id, slot, symbol, provider, chart_timeframe,
-  cursor_seq, visible_through
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  cursor_seq, visible_through, aggregate_state
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, session_id, dataset_id, slot, symbol, provider, chart_timeframe, cursor_seq, visible_through, aggregate_state, created_at, updated_at
 `
 
@@ -325,6 +325,7 @@ type CreateReplayTrackParams struct {
 	ChartTimeframe string             `json:"chart_timeframe"`
 	CursorSeq      int64              `json:"cursor_seq"`
 	VisibleThrough pgtype.Timestamptz `json:"visible_through"`
+	AggregateState []byte             `json:"aggregate_state"`
 }
 
 func (q *Queries) CreateReplayTrack(ctx context.Context, arg CreateReplayTrackParams) (ReplayTrack, error) {
@@ -337,6 +338,7 @@ func (q *Queries) CreateReplayTrack(ctx context.Context, arg CreateReplayTrackPa
 		arg.ChartTimeframe,
 		arg.CursorSeq,
 		arg.VisibleThrough,
+		arg.AggregateState,
 	)
 	var i ReplayTrack
 	err := row.Scan(
@@ -626,6 +628,75 @@ func (q *Queries) GetReplaySessionForUserForUpdate(ctx context.Context, arg GetR
 	return i, err
 }
 
+const getReplayTrackForUser = `-- name: GetReplayTrackForUser :one
+SELECT t.id, t.session_id, t.dataset_id, t.slot, t.symbol, t.provider, t.chart_timeframe, t.cursor_seq, t.visible_through, t.aggregate_state, t.created_at, t.updated_at, d.data_kind, d.source_timeframe, d.base_interval_seconds,
+       d.first_time, d.last_time, d.snapshot_at, d.row_count,
+       d.checksum_sha256, d.status AS dataset_status
+FROM replay_tracks t
+JOIN replay_sessions s ON s.id = t.session_id
+JOIN replay_datasets d ON d.id = t.dataset_id
+WHERE t.id = $1 AND t.session_id = $2 AND s.user_id = $3
+`
+
+type GetReplayTrackForUserParams struct {
+	ID        pgtype.UUID `json:"id"`
+	SessionID pgtype.UUID `json:"session_id"`
+	UserID    pgtype.UUID `json:"user_id"`
+}
+
+type GetReplayTrackForUserRow struct {
+	ID                  pgtype.UUID         `json:"id"`
+	SessionID           pgtype.UUID         `json:"session_id"`
+	DatasetID           pgtype.UUID         `json:"dataset_id"`
+	Slot                int16               `json:"slot"`
+	Symbol              string              `json:"symbol"`
+	Provider            string              `json:"provider"`
+	ChartTimeframe      string              `json:"chart_timeframe"`
+	CursorSeq           int64               `json:"cursor_seq"`
+	VisibleThrough      pgtype.Timestamptz  `json:"visible_through"`
+	AggregateState      []byte              `json:"aggregate_state"`
+	CreatedAt           pgtype.Timestamptz  `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz  `json:"updated_at"`
+	DataKind            ReplayDataKind      `json:"data_kind"`
+	SourceTimeframe     string              `json:"source_timeframe"`
+	BaseIntervalSeconds int32               `json:"base_interval_seconds"`
+	FirstTime           pgtype.Timestamptz  `json:"first_time"`
+	LastTime            pgtype.Timestamptz  `json:"last_time"`
+	SnapshotAt          pgtype.Timestamptz  `json:"snapshot_at"`
+	RowCount            int32               `json:"row_count"`
+	ChecksumSha256      *string             `json:"checksum_sha256"`
+	DatasetStatus       ReplayDatasetStatus `json:"dataset_status"`
+}
+
+func (q *Queries) GetReplayTrackForUser(ctx context.Context, arg GetReplayTrackForUserParams) (GetReplayTrackForUserRow, error) {
+	row := q.db.QueryRow(ctx, getReplayTrackForUser, arg.ID, arg.SessionID, arg.UserID)
+	var i GetReplayTrackForUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.DatasetID,
+		&i.Slot,
+		&i.Symbol,
+		&i.Provider,
+		&i.ChartTimeframe,
+		&i.CursorSeq,
+		&i.VisibleThrough,
+		&i.AggregateState,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DataKind,
+		&i.SourceTimeframe,
+		&i.BaseIntervalSeconds,
+		&i.FirstTime,
+		&i.LastTime,
+		&i.SnapshotAt,
+		&i.RowCount,
+		&i.ChecksumSha256,
+		&i.DatasetStatus,
+	)
+	return i, err
+}
+
 const listPlayingReplaySessions = `-- name: ListPlayingReplaySessions :many
 SELECT id, user_id FROM replay_sessions WHERE status = 'playing' ORDER BY updated_at
 `
@@ -645,6 +716,91 @@ func (q *Queries) ListPlayingReplaySessions(ctx context.Context) ([]ListPlayingR
 	for rows.Next() {
 		var i ListPlayingReplaySessionsRow
 		if err := rows.Scan(&i.ID, &i.UserID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReplayDatasetBarsBySeqRange = `-- name: ListReplayDatasetBarsBySeqRange :many
+SELECT dataset_id, seq, open_time, interval_seconds, open, high, low, close, volume, complete FROM replay_dataset_bars
+WHERE dataset_id = $1 AND seq > $2 AND seq <= $3
+ORDER BY seq
+`
+
+type ListReplayDatasetBarsBySeqRangeParams struct {
+	DatasetID pgtype.UUID `json:"dataset_id"`
+	Seq       int64       `json:"seq"`
+	Seq_2     int64       `json:"seq_2"`
+}
+
+func (q *Queries) ListReplayDatasetBarsBySeqRange(ctx context.Context, arg ListReplayDatasetBarsBySeqRangeParams) ([]ReplayDatasetBar, error) {
+	rows, err := q.db.Query(ctx, listReplayDatasetBarsBySeqRange, arg.DatasetID, arg.Seq, arg.Seq_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReplayDatasetBar{}
+	for rows.Next() {
+		var i ReplayDatasetBar
+		if err := rows.Scan(
+			&i.DatasetID,
+			&i.Seq,
+			&i.OpenTime,
+			&i.IntervalSeconds,
+			&i.Open,
+			&i.High,
+			&i.Low,
+			&i.Close,
+			&i.Volume,
+			&i.Complete,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReplayDatasetBarsThroughSeq = `-- name: ListReplayDatasetBarsThroughSeq :many
+SELECT dataset_id, seq, open_time, interval_seconds, open, high, low, close, volume, complete FROM replay_dataset_bars
+WHERE dataset_id = $1 AND seq <= $2
+ORDER BY seq
+`
+
+type ListReplayDatasetBarsThroughSeqParams struct {
+	DatasetID pgtype.UUID `json:"dataset_id"`
+	Seq       int64       `json:"seq"`
+}
+
+func (q *Queries) ListReplayDatasetBarsThroughSeq(ctx context.Context, arg ListReplayDatasetBarsThroughSeqParams) ([]ReplayDatasetBar, error) {
+	rows, err := q.db.Query(ctx, listReplayDatasetBarsThroughSeq, arg.DatasetID, arg.Seq)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReplayDatasetBar{}
+	for rows.Next() {
+		var i ReplayDatasetBar
+		if err := rows.Scan(
+			&i.DatasetID,
+			&i.Seq,
+			&i.OpenTime,
+			&i.IntervalSeconds,
+			&i.Open,
+			&i.High,
+			&i.Low,
+			&i.Close,
+			&i.Volume,
+			&i.Complete,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1004,22 +1160,24 @@ UPDATE replay_sessions SET
   pause_reason = $7,
   closed_at = $8,
   actor_owner = $9,
-  actor_lease_until = $10
+  actor_lease_until = $10,
+  replay_interval_seconds = $11
 WHERE id = $1
 RETURNING id, user_id, status, mode, generation, version, next_event_seq, speed, replay_interval_seconds, start_time, simulated_time, end_time, pause_reason, config, last_error, created_at, updated_at, closed_at, actor_owner, actor_lease_until
 `
 
 type UpdateReplayRuntimeSessionParams struct {
-	ID              pgtype.UUID         `json:"id"`
-	Status          ReplaySessionStatus `json:"status"`
-	Version         int64               `json:"version"`
-	NextEventSeq    int64               `json:"next_event_seq"`
-	Speed           pgtype.Numeric      `json:"speed"`
-	SimulatedTime   pgtype.Timestamptz  `json:"simulated_time"`
-	PauseReason     *string             `json:"pause_reason"`
-	ClosedAt        pgtype.Timestamptz  `json:"closed_at"`
-	ActorOwner      *string             `json:"actor_owner"`
-	ActorLeaseUntil pgtype.Timestamptz  `json:"actor_lease_until"`
+	ID                    pgtype.UUID         `json:"id"`
+	Status                ReplaySessionStatus `json:"status"`
+	Version               int64               `json:"version"`
+	NextEventSeq          int64               `json:"next_event_seq"`
+	Speed                 pgtype.Numeric      `json:"speed"`
+	SimulatedTime         pgtype.Timestamptz  `json:"simulated_time"`
+	PauseReason           *string             `json:"pause_reason"`
+	ClosedAt              pgtype.Timestamptz  `json:"closed_at"`
+	ActorOwner            *string             `json:"actor_owner"`
+	ActorLeaseUntil       pgtype.Timestamptz  `json:"actor_lease_until"`
+	ReplayIntervalSeconds int32               `json:"replay_interval_seconds"`
 }
 
 func (q *Queries) UpdateReplayRuntimeSession(ctx context.Context, arg UpdateReplayRuntimeSessionParams) (ReplaySession, error) {
@@ -1034,6 +1192,7 @@ func (q *Queries) UpdateReplayRuntimeSession(ctx context.Context, arg UpdateRepl
 		arg.ClosedAt,
 		arg.ActorOwner,
 		arg.ActorLeaseUntil,
+		arg.ReplayIntervalSeconds,
 	)
 	var i ReplaySession
 	err := row.Scan(
@@ -1062,7 +1221,7 @@ func (q *Queries) UpdateReplayRuntimeSession(ctx context.Context, arg UpdateRepl
 }
 
 const updateReplayTrackCursor = `-- name: UpdateReplayTrackCursor :one
-UPDATE replay_tracks SET cursor_seq = $2, visible_through = $3
+UPDATE replay_tracks SET cursor_seq = $2, visible_through = $3, aggregate_state = $4
 WHERE id = $1
 RETURNING id, session_id, dataset_id, slot, symbol, provider, chart_timeframe, cursor_seq, visible_through, aggregate_state, created_at, updated_at
 `
@@ -1071,10 +1230,16 @@ type UpdateReplayTrackCursorParams struct {
 	ID             pgtype.UUID        `json:"id"`
 	CursorSeq      int64              `json:"cursor_seq"`
 	VisibleThrough pgtype.Timestamptz `json:"visible_through"`
+	AggregateState []byte             `json:"aggregate_state"`
 }
 
 func (q *Queries) UpdateReplayTrackCursor(ctx context.Context, arg UpdateReplayTrackCursorParams) (ReplayTrack, error) {
-	row := q.db.QueryRow(ctx, updateReplayTrackCursor, arg.ID, arg.CursorSeq, arg.VisibleThrough)
+	row := q.db.QueryRow(ctx, updateReplayTrackCursor,
+		arg.ID,
+		arg.CursorSeq,
+		arg.VisibleThrough,
+		arg.AggregateState,
+	)
 	var i ReplayTrack
 	err := row.Scan(
 		&i.ID,

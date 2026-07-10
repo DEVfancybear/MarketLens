@@ -116,7 +116,7 @@ func main() {
 			}
 			replayHandler = replay.NewHandler(replayService, requireAuth, replayEngine)
 			replay.NewCleaner(replayStore, cfg.ReplayCleanupInterval, cfg.ReplaySessionRetention, cfg.ReplayDatasetRetention).Start(ctx)
-			log.Info().Int("max_bars", cfg.ReplayMaxBars).Msg("backend replay Phase 2 enabled")
+			log.Info().Int("max_bars", cfg.ReplayMaxBars).Msg("backend replay Phase 3 enabled")
 		}
 		log.Info().Msg("protected api routes enabled")
 	}

@@ -35,8 +35,8 @@ RETURNING *;
 -- name: CreateReplayTrack :one
 INSERT INTO replay_tracks (
   session_id, dataset_id, slot, symbol, provider, chart_timeframe,
-  cursor_seq, visible_through
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  cursor_seq, visible_through, aggregate_state
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: GetReplaySessionForUser :one
@@ -80,11 +80,30 @@ WHERE d.id IN (
 -- name: GetReplayDatasetBarBySeq :one
 SELECT * FROM replay_dataset_bars WHERE dataset_id = $1 AND seq = $2;
 
+-- name: ListReplayDatasetBarsThroughSeq :many
+SELECT * FROM replay_dataset_bars
+WHERE dataset_id = $1 AND seq <= $2
+ORDER BY seq;
+
+-- name: ListReplayDatasetBarsBySeqRange :many
+SELECT * FROM replay_dataset_bars
+WHERE dataset_id = $1 AND seq > $2 AND seq <= $3
+ORDER BY seq;
+
 -- name: FindReplayDatasetBarAtOrBefore :one
 SELECT * FROM replay_dataset_bars
 WHERE dataset_id = $1 AND open_time <= $2
 ORDER BY open_time DESC
 LIMIT 1;
+
+-- name: GetReplayTrackForUser :one
+SELECT t.*, d.data_kind, d.source_timeframe, d.base_interval_seconds,
+       d.first_time, d.last_time, d.snapshot_at, d.row_count,
+       d.checksum_sha256, d.status AS dataset_status
+FROM replay_tracks t
+JOIN replay_sessions s ON s.id = t.session_id
+JOIN replay_datasets d ON d.id = t.dataset_id
+WHERE t.id = $1 AND t.session_id = $2 AND s.user_id = $3;
 
 -- name: ListReplayEventsForUser :many
 SELECT e.* FROM replay_events e
@@ -153,12 +172,13 @@ UPDATE replay_sessions SET
   pause_reason = $7,
   closed_at = $8,
   actor_owner = $9,
-  actor_lease_until = $10
+  actor_lease_until = $10,
+  replay_interval_seconds = $11
 WHERE id = $1
 RETURNING *;
 
 -- name: UpdateReplayTrackCursor :one
-UPDATE replay_tracks SET cursor_seq = $2, visible_through = $3
+UPDATE replay_tracks SET cursor_seq = $2, visible_through = $3, aggregate_state = $4
 WHERE id = $1
 RETURNING *;
 

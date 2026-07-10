@@ -82,3 +82,38 @@ test("reconnect snapshot replaces stale projection", () => {
   assert.equal(store.getState().snapshot?.version, 8);
   assert.equal(store.getState().snapshot?.tracks[0].cursorSeq, 17);
 });
+
+test("progressive bar upserts replace only the revealed aggregate", () => {
+  const store = new ReplayClientStore();
+  store.replaceSnapshot(snapshot());
+  store.replaceBars("session-1", "track-1", [{
+    time: "2026-05-01T10:00:00Z", open: 1, high: 2, low: 1, close: 1.5, volume: 10, complete: false,
+  }]);
+  const revealedBar = { time: "2026-05-01T10:00:00Z", open: 1, high: 3, low: .5, close: 2, volume: 12, complete: false };
+  const upsert: ReplayEventEnvelope = {
+    sessionId: "session-1",
+    eventSeq: 1,
+    version: 2,
+    simulatedTime: "2026-05-01T10:01:00Z",
+    type: "track.bar.upsert",
+    payload: {
+      trackId: "track-1",
+      bar: revealedBar,
+    },
+  };
+  assert.equal(store.applyEvent(upsert), "applied");
+  assert.deepEqual(store.getState().barsByTrack["track-1"], [revealedBar]);
+});
+
+test("track reset clears revealed bars until HTTP hydration", () => {
+  const store = new ReplayClientStore();
+  store.replaceSnapshot(snapshot());
+  store.replaceBars("session-1", "track-1", [{
+    time: "2026-05-01T10:00:00Z", open: 1, high: 2, low: 1, close: 1.5, volume: 10, complete: true,
+  }]);
+  assert.equal(store.applyEvent({
+    sessionId: "session-1", eventSeq: 1, version: 2,
+    simulatedTime: "2026-05-01T09:30:00Z", type: "track.reset", payload: { trackId: "track-1" },
+  }), "applied");
+  assert.deepEqual(store.getState().barsByTrack["track-1"], []);
+});

@@ -33,19 +33,80 @@ func (f fakeRuntimeBars) FindReplayDatasetBarAtOrBefore(_ context.Context, arg g
 	}
 	return selected, nil
 }
+func (f fakeRuntimeBars) ListReplayDatasetBarsThroughSeq(_ context.Context, arg gen.ListReplayDatasetBarsThroughSeqParams) ([]gen.ReplayDatasetBar, error) {
+	var out []gen.ReplayDatasetBar
+	for _, bar := range f.bars {
+		if bar.Seq <= arg.Seq {
+			out = append(out, bar)
+		}
+	}
+	return out, nil
+}
+func (f fakeRuntimeBars) ListReplayDatasetBarsBySeqRange(_ context.Context, arg gen.ListReplayDatasetBarsBySeqRangeParams) ([]gen.ReplayDatasetBar, error) {
+	var out []gen.ReplayDatasetBar
+	for _, bar := range f.bars {
+		if bar.Seq > arg.Seq && bar.Seq <= arg.Seq_2 {
+			out = append(out, bar)
+		}
+	}
+	return out, nil
+}
 
 func runtimeFixture() (fakeRuntimeBars, gen.ReplaySession, gen.ListReplayTracksForSessionForUpdateRow) {
 	start := time.Unix(1_700_000_000, 0).UTC()
 	bars := make([]gen.ReplayDatasetBar, 6)
 	for i := range bars {
-		bars[i] = gen.ReplayDatasetBar{Seq: int64(i), OpenTime: timestamp(start.Add(time.Duration(i) * time.Minute)), IntervalSeconds: 60}
+		bars[i] = gen.ReplayDatasetBar{Seq: int64(i), OpenTime: timestamp(start.Add(time.Duration(i) * time.Minute)), IntervalSeconds: 60,
+			Open: numeric(float64(i + 1)), High: numeric(float64(i + 2)), Low: numeric(float64(i)),
+			Close: numeric(float64(i) + 1.5), Volume: numeric(10)}
 	}
-	session := gen.ReplaySession{Status: gen.ReplaySessionStatusPaused, Speed: numeric(1), StartTime: bars[1].OpenTime, SimulatedTime: bars[1].OpenTime}
+	session := gen.ReplaySession{Status: gen.ReplaySessionStatusPaused, Speed: numeric(1), ReplayIntervalSeconds: 60,
+		StartTime: bars[1].OpenTime, SimulatedTime: bars[1].OpenTime}
 	track := gen.ListReplayTracksForSessionForUpdateRow{
 		CursorSeq: 1, VisibleThrough: bars[1].OpenTime, RowCount: int32(len(bars)), BaseIntervalSeconds: 60,
-		FirstTime: bars[0].OpenTime, LastTime: bars[len(bars)-1].OpenTime, DatasetID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+		FirstTime: bars[0].OpenTime, LastTime: bars[len(bars)-1].OpenTime, DatasetID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, ChartTimeframe: "1m",
 	}
 	return fakeRuntimeBars{bars: bars}, session, track
+}
+
+func TestRuntimeOneReplayIntervalProcessesEveryBaseRow(t *testing.T) {
+	bars, session, track := runtimeFixture()
+	session.ReplayIntervalSeconds = 180
+	track.ChartTimeframe = "15m"
+	drafts, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{Type: "step", Payload: []byte(`{"count":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || track.CursorSeq != 4 || session.SimulatedTime.Time != bars.bars[4].OpenTime.Time {
+		t.Fatalf("session=%#v track=%#v", session, track)
+	}
+	upserts := 0
+	for _, draft := range drafts {
+		if draft.typ == "track.bar.upsert" {
+			upserts++
+		}
+	}
+	state, err := parseAggregateState(track.AggregateState)
+	if err != nil || state.LastSourceSeq != 4 || upserts != 1 {
+		t.Fatalf("state=%#v upserts=%d drafts=%#v err=%v", state, upserts, drafts, err)
+	}
+}
+
+func TestRuntimeSetReplayIntervalValidatesChartDivisibility(t *testing.T) {
+	bars, session, track := runtimeFixture()
+	track.ChartTimeframe = "15m"
+	_, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{
+		Type: "set_replay_interval", Payload: []byte(`{"replayInterval":"5m"}`),
+	})
+	if err != nil || !changed || session.ReplayIntervalSeconds != 300 {
+		t.Fatalf("interval=%d changed=%t err=%v", session.ReplayIntervalSeconds, changed, err)
+	}
+	_, _, err = applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{
+		Type: "set_replay_interval", Payload: []byte(`{"replayInterval":"4H"}`),
+	})
+	if !errors.Is(err, ErrUnsupportedReplayInterval) {
+		t.Fatalf("expected unsupported interval, got %v", err)
+	}
 }
 
 func TestRuntimeStepProcessesRequestedRowsInOneCommand(t *testing.T) {
@@ -57,7 +118,7 @@ func TestRuntimeStepProcessesRequestedRowsInOneCommand(t *testing.T) {
 	if !changed || track.CursorSeq != 4 || session.SimulatedTime.Time != bars.bars[4].OpenTime.Time {
 		t.Fatalf("session=%#v track=%#v", session, track)
 	}
-	if len(drafts) != 1 || drafts[0].typ != "cursor.advanced" {
+	if len(drafts) != 4 || drafts[len(drafts)-1].typ != "cursor.advanced" {
 		t.Fatalf("events=%#v", drafts)
 	}
 }
@@ -67,6 +128,7 @@ func TestRuntimeClockCompletesAtDatasetEnd(t *testing.T) {
 	session.Status = gen.ReplaySessionStatusPlaying
 	track.CursorSeq = int64(len(bars.bars) - 2)
 	track.VisibleThrough = bars.bars[len(bars.bars)-2].OpenTime
+	session.SimulatedTime = track.VisibleThrough
 	_, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{Type: "__clock_step"})
 	if err != nil {
 		t.Fatal(err)

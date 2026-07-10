@@ -1,5 +1,6 @@
 import {
   getReplaySession,
+  getReplayTrackBars,
   type ReplaySessionSnapshot,
 } from "@/services/api/resources/replayApi";
 import { isReplayBackendV1Enabled } from "./backendReplayFlag";
@@ -14,5 +15,9 @@ export async function inspectReplaySession(
   if (!isReplayBackendV1Enabled()) return null;
   const snapshot = await getReplaySession(sessionId);
   replayClientStore.replaceSnapshot(snapshot);
+  await Promise.all(snapshot.tracks.map(async (track) => {
+    const revealed = await getReplayTrackBars(snapshot.id, track.id);
+    replayClientStore.replaceBars(revealed.sessionId, revealed.trackId, revealed.bars);
+  }));
   return snapshot;
 }

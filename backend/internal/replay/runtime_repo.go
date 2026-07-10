@@ -25,6 +25,8 @@ type eventDraft struct {
 type runtimeBarQueries interface {
 	GetReplayDatasetBarBySeq(context.Context, gen.GetReplayDatasetBarBySeqParams) (gen.ReplayDatasetBar, error)
 	FindReplayDatasetBarAtOrBefore(context.Context, gen.FindReplayDatasetBarAtOrBeforeParams) (gen.ReplayDatasetBar, error)
+	ListReplayDatasetBarsThroughSeq(context.Context, gen.ListReplayDatasetBarsThroughSeqParams) ([]gen.ReplayDatasetBar, error)
+	ListReplayDatasetBarsBySeqRange(context.Context, gen.ListReplayDatasetBarsBySeqRangeParams) ([]gen.ReplayDatasetBar, error)
 }
 
 type commandRejection struct {
@@ -121,7 +123,7 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		return CommandResult{}, nil, err
 	}
 	if len(tracks) != 1 {
-		return CommandResult{}, nil, fmt.Errorf("replay: Phase 2 expected one track, got %d", len(tracks))
+		return CommandResult{}, nil, fmt.Errorf("replay: Phase 3 expected one track, got %d", len(tracks))
 	}
 	track := tracks[0]
 	drafts, changed, err := applyRuntimeTransition(ctx, q, &session, &track, input)
@@ -141,7 +143,7 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		updated, err := q.UpdateReplayRuntimeSession(ctx, gen.UpdateReplayRuntimeSessionParams{
 			ID: session.ID, Status: session.Status, Version: session.Version, NextEventSeq: session.NextEventSeq,
 			Speed: session.Speed, SimulatedTime: session.SimulatedTime, PauseReason: session.PauseReason, ClosedAt: session.ClosedAt,
-			ActorOwner: session.ActorOwner, ActorLeaseUntil: session.ActorLeaseUntil,
+			ActorOwner: session.ActorOwner, ActorLeaseUntil: session.ActorLeaseUntil, ReplayIntervalSeconds: session.ReplayIntervalSeconds,
 		})
 		if err != nil {
 			return CommandResult{}, nil, err
@@ -150,7 +152,7 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 	}
 	if changed {
 		if _, err := q.UpdateReplayTrackCursor(ctx, gen.UpdateReplayTrackCursorParams{
-			ID: track.ID, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough,
+			ID: track.ID, CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough, AggregateState: track.AggregateState,
 		}); err != nil {
 			return CommandResult{}, nil, err
 		}
@@ -248,8 +250,11 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 	oldStatus := session.Status
 	oldSpeed, _ := session.Speed.Float64Value()
 	oldCursor := track.CursorSeq
+	oldSimulated := session.SimulatedTime.Time
+	oldReplayInterval := session.ReplayIntervalSeconds
+	oldAggregate := string(track.AggregateState)
 	commandType := strings.ToLower(strings.TrimSpace(input.Type))
-	var selected *gen.ReplayDatasetBar
+	drafts := make([]eventDraft, 0, 8)
 
 	switch commandType {
 	case "play":
@@ -278,45 +283,54 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 		if commandType == "__clock_step" && session.Status != gen.ReplaySessionStatusPlaying {
 			return nil, false, nil
 		}
-		count := 1
-		if commandType == "step" {
-			var body struct {
-				Count int `json:"count"`
-			}
-			if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil {
-				return nil, false, fmt.Errorf("%w: invalid step payload", ErrBadRequest)
-			}
-			if body.Count != 0 {
-				count = body.Count
-			}
+		count, err := replayStepCount(input, commandType)
+		if err != nil {
+			return nil, false, err
 		}
-		if count < 1 || count > maxStepCount {
-			return nil, false, fmt.Errorf("%w: step.count must be between 1 and %d", ErrBadRequest, maxStepCount)
+		targetTime := session.SimulatedTime.Time.Add(time.Duration(int64(session.ReplayIntervalSeconds)*int64(count)) * time.Second)
+		completionTime := track.LastTime.Time
+		if session.EndTime.Valid && session.EndTime.Time.Before(completionTime) {
+			completionTime = session.EndTime.Time
 		}
-		target := track.CursorSeq + int64(count)
-		lastSeq := int64(track.RowCount) - 1
-		if session.EndTime.Valid {
-			endBar, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
-				DatasetID: track.DatasetID, OpenTime: session.EndTime,
+		if targetTime.After(completionTime) {
+			targetTime = completionTime
+		}
+		selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
+			DatasetID: track.DatasetID, OpenTime: timestamp(targetTime),
+		})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, err
+		}
+		if err == nil && selected.Seq > track.CursorSeq {
+			rows, err := q.ListReplayDatasetBarsBySeqRange(ctx, gen.ListReplayDatasetBarsBySeqRangeParams{
+				DatasetID: track.DatasetID, Seq: track.CursorSeq, Seq_2: selected.Seq,
 			})
 			if err != nil {
 				return nil, false, err
 			}
-			if endBar.Seq < lastSeq {
-				lastSeq = endBar.Seq
-			}
-		}
-		if target > lastSeq {
-			target = lastSeq
-		}
-		if target > track.CursorSeq {
-			bar, err := q.GetReplayDatasetBarBySeq(ctx, gen.GetReplayDatasetBarBySeqParams{DatasetID: track.DatasetID, Seq: target})
+			state, err := currentAggregateState(ctx, q, track)
 			if err != nil {
 				return nil, false, err
 			}
-			selected = &bar
+			source := make([]sourceBar, 0, len(rows))
+			for _, row := range rows {
+				source = append(source, sourceBarFromRow(row))
+			}
+			state, upserts, err := aggregateSourceBars(state, track.ChartTimeframe, source)
+			if err != nil {
+				return nil, false, err
+			}
+			track.AggregateState = marshalAggregateState(state)
+			track.CursorSeq = selected.Seq
+			track.VisibleThrough = selected.OpenTime
+			for _, bar := range coalesceBarUpserts(upserts) {
+				drafts = append(drafts, eventDraft{typ: "track.bar.upsert", payload: map[string]any{
+					"trackId": uuidString(track.ID), "bar": bar,
+				}})
+			}
 		}
-		if target >= lastSeq {
+		session.SimulatedTime = timestamp(targetTime)
+		if !targetTime.Before(completionTime) {
 			session.Status = gen.ReplaySessionStatusCompleted
 			session.PauseReason = nil
 		}
@@ -328,6 +342,19 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 			return nil, false, fmt.Errorf("%w: speed must be between 0 and 100", ErrBadRequest)
 		}
 		session.Speed = numeric(body.Speed)
+	case "set_replay_interval":
+		var body struct {
+			ReplayInterval string `json:"replayInterval"`
+		}
+		if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil {
+			return nil, false, fmt.Errorf("%w: invalid replay interval payload", ErrBadRequest)
+		}
+		_, chartSeconds, _ := normalizeTimeframe(track.ChartTimeframe)
+		interval, err := resolveReplayInterval(body.ReplayInterval, track.ChartTimeframe, chartSeconds, int(track.BaseIntervalSeconds))
+		if err != nil {
+			return nil, false, err
+		}
+		session.ReplayIntervalSeconds = int32(interval)
 	case "seek", "restart":
 		target := session.StartTime.Time
 		if commandType == "seek" {
@@ -340,50 +367,102 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 			target = body.Time.UTC()
 		}
 		if target.Before(track.FirstTime.Time) || !target.Before(track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds)*time.Second)) {
-			return nil, false, ErrDataUnavailable
+			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)}
 		}
-		bar, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
+		selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, ErrDataUnavailable
+			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)}
 		}
 		if err != nil {
 			return nil, false, err
 		}
-		selected = &bar
+		rows, err := q.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{DatasetID: track.DatasetID, Seq: selected.Seq})
+		if err != nil {
+			return nil, false, err
+		}
+		source := make([]sourceBar, 0, len(rows))
+		for _, row := range rows {
+			source = append(source, sourceBarFromRow(row))
+		}
+		_, state, err := aggregateRevealedBars(track.ChartTimeframe, source)
+		if err != nil {
+			return nil, false, err
+		}
+		track.CursorSeq = selected.Seq
+		track.VisibleThrough = selected.OpenTime
+		track.AggregateState = marshalAggregateState(state)
+		session.SimulatedTime = selected.OpenTime
 		session.Status = gen.ReplaySessionStatusPaused
 		reason := commandType
 		session.PauseReason = &reason
+		drafts = append(drafts, eventDraft{typ: "track.reset", payload: map[string]any{
+			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
+		}})
 	case "close":
 		session.Status = gen.ReplaySessionStatusClosed
 		reason := "closed"
 		session.PauseReason = &reason
 		session.ClosedAt = timestamp(time.Now().UTC())
 	default:
-		return nil, false, fmt.Errorf("%w: unsupported Phase 2 command %q", ErrBadRequest, input.Type)
+		return nil, false, fmt.Errorf("%w: unsupported Phase 3 command %q", ErrBadRequest, input.Type)
 	}
 
-	if selected != nil {
-		track.CursorSeq = selected.Seq
-		track.VisibleThrough = selected.OpenTime
-		session.SimulatedTime = selected.OpenTime
-	}
 	newSpeed, _ := session.Speed.Float64Value()
-	changed := oldStatus != session.Status || oldCursor != track.CursorSeq || oldSpeed.Float64 != newSpeed.Float64 || commandType == "close"
+	changed := oldStatus != session.Status || oldCursor != track.CursorSeq || oldSpeed.Float64 != newSpeed.Float64 ||
+		oldReplayInterval != session.ReplayIntervalSeconds || !oldSimulated.Equal(session.SimulatedTime.Time) ||
+		oldAggregate != string(track.AggregateState) || commandType == "close"
 	if !changed {
 		return nil, false, nil
 	}
-	drafts := make([]eventDraft, 0, 2)
 	if oldCursor != track.CursorSeq {
 		drafts = append(drafts, eventDraft{typ: "cursor.advanced", payload: map[string]any{
 			"trackId": uuidString(track.ID), "cursorSeq": track.CursorSeq, "visibleThrough": track.VisibleThrough.Time,
 		}})
 	}
-	if oldStatus != session.Status || oldSpeed.Float64 != newSpeed.Float64 || commandType == "close" {
+	timeChangedWithoutCursor := oldCursor == track.CursorSeq && !oldSimulated.Equal(session.SimulatedTime.Time)
+	if oldStatus != session.Status || oldSpeed.Float64 != newSpeed.Float64 || oldReplayInterval != session.ReplayIntervalSeconds || timeChangedWithoutCursor || commandType == "close" {
 		drafts = append(drafts, eventDraft{typ: "state.changed", payload: map[string]any{
 			"status": string(session.Status), "speed": newSpeed.Float64, "pauseReason": session.PauseReason,
+			"replayIntervalSeconds": session.ReplayIntervalSeconds,
 		}})
 	}
 	return drafts, true, nil
+}
+
+func replayStepCount(input CommandInput, commandType string) (int, error) {
+	count := 1
+	if commandType == "step" {
+		var body struct {
+			Count int `json:"count"`
+		}
+		if err := json.Unmarshal(normalizedPayload(input.Payload), &body); err != nil {
+			return 0, fmt.Errorf("%w: invalid step payload", ErrBadRequest)
+		}
+		if body.Count != 0 {
+			count = body.Count
+		}
+	}
+	if count < 1 || count > maxStepCount {
+		return 0, fmt.Errorf("%w: step.count must be between 1 and %d", ErrBadRequest, maxStepCount)
+	}
+	return count, nil
+}
+
+func currentAggregateState(ctx context.Context, q runtimeBarQueries, track *gen.ListReplayTracksForSessionForUpdateRow) (aggregateState, error) {
+	state, err := parseAggregateState(track.AggregateState)
+	if err == nil && state.LastSourceSeq == track.CursorSeq {
+		return state, nil
+	}
+	rows, err := q.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{DatasetID: track.DatasetID, Seq: track.CursorSeq})
+	if err != nil {
+		return aggregateState{}, err
+	}
+	source := make([]sourceBar, 0, len(rows))
+	for _, row := range rows {
+		source = append(source, sourceBarFromRow(row))
+	}
+	_, state, err = aggregateRevealedBars(track.ChartTimeframe, source)
+	return state, err
 }
 
 func duplicateCommandResult(command gen.ReplayCommand) (CommandResult, []EventEnvelope, error) {

@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Backend Replay Phase 3 intervals and aggregation (2026-07-10)
+- Replay datasets now load `1m` intraday or `1D` calendar source rows and keep
+  replay interval independent from the displayed chart timeframe.
+- Added deterministic progressive intraday/day/week/month aggregation,
+  persisted aggregate state, ordered bar upsert/reset events, and explicit
+  unsupported-interval/availability errors.
+- Added ownership-scoped revealed-bars and server MTF recovery APIs; the
+  feature-flagged chart, indicators, SMC, and MTF panel consume only these
+  revealed aggregates.
+- Verified a real FTMO MT5 `EURUSD` flow with 5,000 `1m` rows building a `15m`
+  chart and `4H` MTF series without exposing a future source row.
+
 ### Added - Backend Replay Phase 2 single-chart clock (2026-07-10)
 - Added PostgreSQL command, ordered event, and checkpoint persistence in
   migration `0013_replay_clock`, including optimistic versions and idempotency.

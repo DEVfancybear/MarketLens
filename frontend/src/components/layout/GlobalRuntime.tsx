@@ -25,7 +25,7 @@ import { useEffect } from "react";
  */
 export function GlobalRuntime() {
   useReplayPlayback();
-  useReplayBackendShadow(); // Phase 2: observes legacy playback; backend never mutates the local cursor
+  useReplayBackendShadow(); // Phase 3: mirrors controls; revealed bars stay in the backend projection
   useHotkeys();
   useSmcEngine();
   useTradeRuntime();

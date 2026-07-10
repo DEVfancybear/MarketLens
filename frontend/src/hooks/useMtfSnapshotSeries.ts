@@ -15,9 +15,12 @@
  * Only runs while replay is active and the symbol is in the registry; otherwise
  * it returns an empty map (the panel hides itself).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { getReplayTrackBars } from "@/services/api/resources/replayApi";
+import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
+import { replayClientStore } from "@/store/replayClientStore";
 import { getDefaultStore } from "jotai";
 import { logAtom } from "@/store/uiStore";
 import type { Candle, Timeframe } from "@/types";
@@ -33,8 +36,53 @@ export function useMtfSnapshotSeries(
   active: boolean,
 ): MtfSeries {
   const [series, setSeries] = useState<MtfSeries>({});
+  const projection = useSyncExternalStore(
+    (listener) => replayClientStore.subscribe(listener),
+    () => replayClientStore.getState(),
+    () => replayClientStore.getState(),
+  );
+  const backendEnabled = isReplayBackendV1Enabled();
+  const backendSnapshot = projection.snapshot;
+  const backendTrack = backendSnapshot?.tracks.find(
+    (candidate) => candidate.symbol.toUpperCase() === symbol.toUpperCase(),
+  );
+  const backendSessionId = backendSnapshot?.id;
+  const backendTrackId = backendTrack?.id;
+  const backendSimulatedTime = backendSnapshot?.simulatedTime;
 
   useEffect(() => {
+    if (backendEnabled) {
+      if (!active || !backendSessionId || !backendTrackId) {
+        setSeries({});
+        return;
+      }
+      let cancelled = false;
+      Promise.all(
+        MTF_TIMEFRAMES.map(async (timeframe) => {
+          const response = await getReplayTrackBars(backendSessionId, backendTrackId, timeframe);
+          const candles: Candle[] = response.bars.map((bar) => ({
+            time: Math.floor(Date.parse(bar.time) / 1000),
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+            volume: bar.volume,
+          }));
+          return [timeframe, candles] as const;
+        }),
+      ).then((entries) => {
+        if (!cancelled) setSeries(Object.fromEntries(entries) as MtfSeries);
+      }).catch((err) => {
+        if (!cancelled) {
+          setSeries({});
+          getDefaultStore().set(logAtom, "warn", `Backend replay MTF failed: ${String(err?.message ?? err)}`);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     // Skip when idle or the symbol has no real provider; clear any stale series.
     if (!active || !getMarketSymbol(symbol)) {
       setSeries({});
@@ -65,7 +113,7 @@ export function useMtfSnapshotSeries(
     return () => {
       cancelled = true;
     };
-  }, [symbol, active]);
+  }, [symbol, active, backendEnabled, backendSessionId, backendTrackId, backendSimulatedTime]);
 
   return series;
 }

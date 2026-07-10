@@ -24,6 +24,9 @@ func (f *fakeSessionService) Create(_ context.Context, userID string, _ CreateSe
 func (f *fakeSessionService) Get(context.Context, string, string) (SessionSnapshot, error) {
 	return SessionSnapshot{}, nil
 }
+func (f *fakeSessionService) Bars(context.Context, string, string, string, string) (RevealedBarsSnapshot, error) {
+	return RevealedBarsSnapshot{}, nil
+}
 func (f *fakeSessionService) Close(context.Context, string, string) (SessionSnapshot, error) {
 	return SessionSnapshot{}, nil
 }

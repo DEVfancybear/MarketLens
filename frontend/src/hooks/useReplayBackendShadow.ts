@@ -7,6 +7,7 @@ import { symbolAtom, timeframeAtom } from "@/store/chartStore";
 import {
   closeReplaySession,
   createReplaySession,
+  getReplayTrackBars,
   sendReplayCommand,
   type ReplayCommandInput,
 } from "@/services/api/resources/replayApi";
@@ -21,9 +22,9 @@ function commandKey(type: string): string {
 }
 
 /**
- * Phase 2 development shadow. The legacy cursor still renders the chart; this
- * hook mirrors controls to the backend and reports time divergence without
- * ever writing server state back into replayStore.
+ * Phase 3 compatibility controller. Legacy controls are mirrored to Go, while
+ * chart consumers read the separate server-revealed projection. Server state
+ * never mutates replayStore, so disabling the flag restores the rollback path.
  */
 export function useReplayBackendShadow(): void {
   const active = useAtomValue(activeAtom);
@@ -117,6 +118,10 @@ export function useReplayBackendShadow(): void {
           payload,
         });
         replayClientStore.replaceSnapshot(result.snapshot);
+        await Promise.all(result.snapshot.tracks.map(async (track) => {
+          const revealed = await getReplayTrackBars(result.snapshot.id, track.id);
+          replayClientStore.replaceBars(revealed.sessionId, revealed.trackId, revealed.bars);
+        }));
       }).catch((error) => {
         if (process.env.NODE_ENV === "development") console.warn("[replay-shadow] command failed", error);
       });

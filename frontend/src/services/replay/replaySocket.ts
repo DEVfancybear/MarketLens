@@ -2,6 +2,7 @@ import { apiWebSocketUrl } from "@/services/api/client";
 import {
   getReplayEvents,
   getReplaySession,
+  getReplayTrackBars,
   type ReplayEventEnvelope,
   type ReplaySessionSnapshot,
 } from "@/services/api/resources/replayApi";
@@ -27,6 +28,7 @@ export class ReplaySocket {
     try {
       const snapshot = await getReplaySession(this.sessionId);
       this.store.replaceSnapshot(snapshot);
+      await this.hydrateBars(snapshot);
       this.open(snapshot);
     } catch (error) {
       this.store.setConnection(
@@ -80,6 +82,7 @@ export class ReplaySocket {
     try {
       const snapshot = await getReplaySession(this.sessionId);
       this.store.replaceSnapshot(snapshot);
+      await this.hydrateBars(snapshot);
       this.open(snapshot);
     } catch (error) {
       this.store.setConnection("error", error instanceof Error ? error.message : "reconnect failed");
@@ -89,23 +92,50 @@ export class ReplaySocket {
 
   private async handle(event: ReplayEventEnvelope): Promise<void> {
     if (event.type === "snapshot") {
-      this.store.replaceSnapshot(event.payload as ReplaySessionSnapshot);
+      const snapshot = event.payload as ReplaySessionSnapshot;
+      this.store.replaceSnapshot(snapshot);
+      await this.hydrateBars(snapshot);
       return;
     }
     const result = this.store.applyEvent(event);
-    if (result !== "gap") return;
+    if (result !== "gap") {
+      if (result === "applied" && event.type === "track.reset") {
+        const trackId = (event.payload as { trackId?: string }).trackId;
+        if (trackId) await this.hydrateTrack(trackId);
+      }
+      return;
+    }
     this.store.setConnection("recovering");
     const after = this.store.getState().snapshot?.lastEventSeq ?? 0;
     const recovered = await getReplayEvents(this.sessionId, after);
     for (const missing of recovered) {
       const applied = this.store.applyEvent(missing);
       if (applied === "gap" || applied === "invalid") {
-        this.store.replaceSnapshot(await getReplaySession(this.sessionId));
+        await this.replaceFromServer();
         break;
+      }
+      if (applied === "applied" && missing.type === "track.reset") {
+        const trackId = (missing.payload as { trackId?: string }).trackId;
+        if (trackId) await this.hydrateTrack(trackId);
       }
     }
     const retry = this.store.applyEvent(event);
-    if (retry === "gap") this.store.replaceSnapshot(await getReplaySession(this.sessionId));
+    if (retry === "gap") await this.replaceFromServer();
     this.store.setConnection("connected");
+  }
+
+  private async replaceFromServer(): Promise<void> {
+    const snapshot = await getReplaySession(this.sessionId);
+    this.store.replaceSnapshot(snapshot);
+    await this.hydrateBars(snapshot);
+  }
+
+  private async hydrateBars(snapshot: ReplaySessionSnapshot): Promise<void> {
+    await Promise.all(snapshot.tracks.map((track) => this.hydrateTrack(track.id)));
+  }
+
+  private async hydrateTrack(trackId: string): Promise<void> {
+    const response = await getReplayTrackBars(this.sessionId, trackId);
+    this.store.replaceBars(response.sessionId, response.trackId, response.bars);
   }
 }

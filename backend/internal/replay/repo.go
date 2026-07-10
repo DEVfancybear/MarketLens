@@ -41,7 +41,7 @@ func (r *Repo) Prepare(ctx context.Context, userID string, prepared PreparedSess
 		dataset, err := q.GetReadyReplayDatasetByChecksum(ctx, &checksum)
 		if errors.Is(err, pgx.ErrNoRows) {
 			dataset, err = q.CreateReplayDataset(ctx, gen.CreateReplayDatasetParams{
-				Provider: track.Provider, Symbol: track.Symbol, SourceTimeframe: track.ChartTimeframe,
+				Provider: track.Provider, Symbol: track.Symbol, SourceTimeframe: track.SourceTimeframe,
 				BaseIntervalSeconds: int32(track.IntervalSeconds), SnapshotAt: timestamp(track.SnapshotAt), SourceMeta: track.SourceMeta,
 			})
 			if err != nil {
@@ -87,7 +87,7 @@ func (r *Repo) Prepare(ctx context.Context, userID string, prepared PreparedSess
 		_, err = q.CreateReplayTrack(ctx, gen.CreateReplayTrackParams{
 			SessionID: session.ID, DatasetID: datasets[i].ID, Slot: int16(track.Slot), Symbol: track.Symbol,
 			Provider: track.Provider, ChartTimeframe: track.ChartTimeframe, CursorSeq: track.CursorSeq,
-			VisibleThrough: timestamp(track.VisibleThrough),
+			VisibleThrough: timestamp(track.VisibleThrough), AggregateState: track.AggregateState,
 		})
 		if err != nil {
 			return SessionSnapshot{}, err
@@ -109,6 +109,64 @@ func (r *Repo) Get(ctx context.Context, userID, sessionID string) (SessionSnapsh
 		return SessionSnapshot{}, ErrNotFound
 	}
 	return r.getByIDs(ctx, uid, sid)
+}
+
+func (r *Repo) Bars(ctx context.Context, userID, sessionID, trackID, requestedTimeframe string) (RevealedBarsSnapshot, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return RevealedBarsSnapshot{}, err
+	}
+	sid, err := parseUUID(sessionID)
+	if err != nil {
+		return RevealedBarsSnapshot{}, ErrNotFound
+	}
+	tid, err := parseUUID(trackID)
+	if err != nil {
+		return RevealedBarsSnapshot{}, ErrNotFound
+	}
+	track, err := r.queries.GetReplayTrackForUser(ctx, gen.GetReplayTrackForUserParams{ID: tid, SessionID: sid, UserID: uid})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RevealedBarsSnapshot{}, ErrNotFound
+	}
+	if err != nil {
+		return RevealedBarsSnapshot{}, err
+	}
+	chartTimeframe := track.ChartTimeframe
+	if strings.TrimSpace(requestedTimeframe) != "" {
+		normalized, seconds, ok := normalizeTimeframe(requestedTimeframe)
+		if !ok || seconds < int(track.BaseIntervalSeconds) {
+			return RevealedBarsSnapshot{}, fmt.Errorf("%w: %q cannot be aggregated from %s", ErrUnsupportedReplayInterval, requestedTimeframe, track.SourceTimeframe)
+		}
+		chartTimeframe = normalized
+	}
+	rows, err := r.queries.ListReplayDatasetBarsThroughSeq(ctx, gen.ListReplayDatasetBarsThroughSeqParams{
+		DatasetID: track.DatasetID, Seq: track.CursorSeq,
+	})
+	if err != nil {
+		return RevealedBarsSnapshot{}, err
+	}
+	source := make([]sourceBar, 0, len(rows))
+	for _, row := range rows {
+		source = append(source, sourceBarFromRow(row))
+	}
+	bars, _, err := aggregateRevealedBars(chartTimeframe, source)
+	if err != nil {
+		return RevealedBarsSnapshot{}, err
+	}
+	return RevealedBarsSnapshot{
+		SessionID: sessionID, TrackID: trackID, ChartTimeframe: chartTimeframe,
+		CursorSeq: track.CursorSeq, VisibleThrough: track.VisibleThrough.Time, Bars: bars,
+	}, nil
+}
+
+func sourceBarFromRow(row gen.ReplayDatasetBar) sourceBar {
+	open, _ := row.Open.Float64Value()
+	high, _ := row.High.Float64Value()
+	low, _ := row.Low.Float64Value()
+	closeValue, _ := row.Close.Float64Value()
+	volume, _ := row.Volume.Float64Value()
+	return sourceBar{Seq: row.Seq, Time: row.OpenTime.Time, IntervalSeconds: int(row.IntervalSeconds),
+		Open: open.Float64, High: high.Float64, Low: low.Float64, Close: closeValue.Float64, Volume: volume.Float64}
 }
 
 func (r *Repo) Close(ctx context.Context, userID, sessionID string) (SessionSnapshot, error) {
