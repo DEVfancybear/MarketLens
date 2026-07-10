@@ -14,8 +14,10 @@ export class PointerFrameCoalescer<T> {
 
   constructor(
     private readonly apply: (value: T) => void,
-    private readonly schedule: ScheduleFrame = requestAnimationFrame,
-    private readonly cancelFrame: CancelFrame = cancelAnimationFrame,
+    private readonly schedule: ScheduleFrame = (callback) =>
+      globalThis.requestAnimationFrame(callback),
+    private readonly cancelFrame: CancelFrame = (handle) =>
+      globalThis.cancelAnimationFrame(handle),
   ) {}
 
   push(value: T): void {

@@ -11,6 +11,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   geometry, avoiding a full adapter bounding-box rebuild for every pointer sample.
 - Added regression coverage for pointer-frame collapse, final-position flushing, and live rectangle
   viewport substitution; manually verified dense automated rectangle drags without console errors.
+- Fixed the coalescer's default browser scheduler to retain the `globalThis` receiver for
+  `requestAnimationFrame`/`cancelAnimationFrame`, preventing an `Illegal invocation` runtime error
+  on the first rectangle drag; added a receiver-sensitive regression test.
 
 ### Fixed - Push notification click opened default EURUSD chart (2026-07-10)
 - Added alert-symbol deep links to Firebase `webpush.fcmOptions.link` and the

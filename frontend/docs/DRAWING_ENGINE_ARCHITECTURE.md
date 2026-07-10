@@ -139,7 +139,10 @@ high-frequency preview data in mutable refs and schedules the canvas render loop
 - Existing-drawing move/resize uses `PointerFrameCoalescer`: the first sample is applied
   immediately, additional samples in the same animation frame collapse to the newest sample, and
   pointerup flushes its exact coordinate before the store/history commit. This bounds geometry and
-  projection work to the display cadence without losing the final drag position.
+  projection work to the display cadence without losing the final drag position. Its default
+  scheduler must invoke `requestAnimationFrame` and `cancelAnimationFrame` through `globalThis`;
+  passing either browser method as a detached callback loses its required receiver and throws
+  `TypeError: Illegal invocation` when the first drag sample is processed.
 - Live drag points reuse one mutable `Map` across pointermoves. The arrays inside it are replaced
   with freshly computed geometry, but the container is not reallocated every event.
 

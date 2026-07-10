@@ -53,3 +53,61 @@ test("pointer-up flush cancels a queued move and commits the exact final sample"
   assert.deepEqual(canceled, [7]);
   assert.equal(frame, null);
 });
+
+test("default frame scheduler keeps the browser global receiver", () => {
+  const rafDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "requestAnimationFrame",
+  );
+  const cancelDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "cancelAnimationFrame",
+  );
+  let frame: FrameRequestCallback | null = null;
+  let canceled = 0;
+
+  Object.defineProperty(globalThis, "requestAnimationFrame", {
+    configurable: true,
+    value: function (this: typeof globalThis, callback: FrameRequestCallback) {
+      assert.equal(this, globalThis);
+      frame = callback;
+      return 9;
+    },
+  });
+  Object.defineProperty(globalThis, "cancelAnimationFrame", {
+    configurable: true,
+    value: function (this: typeof globalThis, handle: number) {
+      assert.equal(this, globalThis);
+      canceled = handle;
+    },
+  });
+
+  try {
+    const applied: number[] = [];
+    const coalescer = new PointerFrameCoalescer<number>((value) =>
+      applied.push(value),
+    );
+
+    coalescer.push(1);
+    coalescer.push(2);
+    assert.deepEqual(applied, [1]);
+    assert.ok(frame);
+    (frame as FrameRequestCallback)(16);
+    assert.deepEqual(applied, [1, 2]);
+
+    coalescer.push(3);
+    coalescer.cancel();
+    assert.equal(canceled, 9);
+  } finally {
+    if (rafDescriptor) {
+      Object.defineProperty(globalThis, "requestAnimationFrame", rafDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+    }
+    if (cancelDescriptor) {
+      Object.defineProperty(globalThis, "cancelAnimationFrame", cancelDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, "cancelAnimationFrame");
+    }
+  }
+});
