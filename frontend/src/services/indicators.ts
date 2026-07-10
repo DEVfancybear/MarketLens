@@ -20,6 +20,7 @@ import {
   getCachedPineIndicatorResult,
   type PineCompileContext,
 } from '@/services/pineRuntimeCache';
+import { measureChartPerformance } from '@/services/chartPerformanceProbe';
 
 function styleFieldKey(
   key: string,
@@ -212,6 +213,18 @@ export function adrLevels(candles: Candle[], length: number) {
 
 /** Compute a configured indicator into the generic IndicatorResult shape. */
 export function computeIndicator(
+  cfg: IndicatorConfig,
+  candles: Candle[],
+  ctx?: PineCompileContext,
+): IndicatorResult {
+  return measureChartPerformance(
+    'indicator.compute',
+    () => computeIndicatorUnmeasured(cfg, candles, ctx),
+    { type: cfg.type, candles: candles.length },
+  );
+}
+
+function computeIndicatorUnmeasured(
   cfg: IndicatorConfig,
   candles: Candle[],
   ctx?: PineCompileContext,

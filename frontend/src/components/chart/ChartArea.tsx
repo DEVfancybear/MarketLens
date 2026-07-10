@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { IChartApi } from "lightweight-charts";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useChartSeries } from "@/hooks/useChartSeries";
@@ -27,6 +27,13 @@ import { TradeLevels } from "@/components/trade/TradeLevels";
 import { RiskPanel } from "@/components/trade/RiskPanel";
 import { Loader2 } from "lucide-react";
 import { fmtPrice } from "@/utils/format";
+import { ChartPerformanceOverlay } from "./ChartPerformanceOverlay";
+import {
+  createChartBenchmarkCandles,
+  isChartBenchmarkSize,
+  setActiveChartBenchmarkCandles,
+} from "@/services/chartBenchmarkFixtures";
+import type { Candle } from "@/types";
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea() {
@@ -42,6 +49,38 @@ export function ChartArea() {
   const indicators = useAtomValue(indicatorsAtom);
   const crosshair = useAtomValue(crosshairAtom);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
+  const [benchmarkCandles, setBenchmarkCandles] = useState<Candle[] | null>(null);
+  const [benchmarkVisibleCount, setBenchmarkVisibleCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    const requested = Number(new URLSearchParams(window.location.search).get("chartFixture"));
+    if (!isChartBenchmarkSize(requested)) return;
+    const fixture = createChartBenchmarkCandles(requested);
+    setActiveChartBenchmarkCandles(fixture);
+    setBenchmarkCandles(fixture);
+    setBenchmarkVisibleCount(fixture.length);
+    const handleReplay = (event: Event) => {
+      const count = (event as CustomEvent<{ count?: number }>).detail?.count;
+      if (Number.isFinite(count)) {
+        const nextCount = Math.max(1, Math.min(fixture.length, Number(count)));
+        setBenchmarkVisibleCount(nextCount);
+        setActiveChartBenchmarkCandles(fixture.slice(0, nextCount));
+      }
+    };
+    window.addEventListener("chart-benchmark-replay", handleReplay);
+    return () => {
+      window.removeEventListener("chart-benchmark-replay", handleReplay);
+      setActiveChartBenchmarkCandles(null);
+    };
+  }, []);
+
+  const displayedCandles = useMemo(
+    () => benchmarkCandles
+      ? benchmarkCandles.slice(0, benchmarkVisibleCount ?? benchmarkCandles.length)
+      : candles,
+    [benchmarkCandles, benchmarkVisibleCount, candles],
+  );
 
   const meta = getMarketSymbol(symbol);
   const precision = meta?.pricePrecision ?? 2;
@@ -53,16 +92,19 @@ export function ChartArea() {
   const replayOwnsChart = Boolean(replay.snapshot) ||
     replay.connection === "connecting" ||
     replay.connection === "recovering";
-  const showLoading = replayOwnsChart
-    ? replay.connection === "connecting" && candles.length === 0
-    : loading;
+  const showLoading = benchmarkCandles
+    ? false
+    : replayOwnsChart
+      ? replay.connection === "connecting" && candles.length === 0
+      : loading;
 
-  const last = candles[candles.length - 1];
+  const last = displayedCandles[displayedCandles.length - 1];
   const legend = crosshair?.candle ?? last;
   const up = legend ? legend.close >= legend.open : true;
 
   return (
     <div className="relative flex h-full w-full flex-col">
+      <ChartPerformanceOverlay />
       {/* Chart header: symbol · exchange · TF + OHLC row */}
       <div className="pointer-events-none absolute left-3 top-1 z-10 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5 text-[11px] leading-none text-ink-muted">
@@ -99,8 +141,8 @@ export function ChartArea() {
 
       <div className="relative min-h-0 flex-1">
         <PriceChart
-          candles={candles}
-          onLoadMoreHistory={loadOlderCandles}
+          candles={displayedCandles}
+          onLoadMoreHistory={benchmarkCandles ? undefined : loadOlderCandles}
           onReady={setMainChart}
         >
           <SmcLayer />
@@ -118,12 +160,12 @@ export function ChartArea() {
         <IndicatorPane
           key={cfg.id}
           cfg={cfg}
-          candles={candles}
+          candles={displayedCandles}
           mainChart={mainChart}
         />
       ))}
 
-      <ChartTimeToolbar chart={mainChart} candles={candles} />
+      <ChartTimeToolbar chart={mainChart} candles={displayedCandles} />
     </div>
   );
 }

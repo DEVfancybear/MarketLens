@@ -75,6 +75,12 @@ import {
   replayCandleAnimationStart,
   replayCandlesEqual,
 } from "./replayCandlePresentation";
+import {
+  incrementChartPerformanceCounter,
+  measureChartPerformance,
+  measureChartSeriesWrite,
+} from "@/services/chartPerformanceProbe";
+import { installChartBenchmarkHarness } from "@/services/chartBenchmarkHarness";
 
 function keepLatestBarInView(chart: IChartApi, dataLength: number) {
   const timeScale = chart.timeScale();
@@ -238,8 +244,13 @@ export function PriceChart({
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
 
   const scheduleVersionBump = useCallback(() => {
-    if (bumpRafRef.current !== null) return;
+    incrementChartPerformanceCounter("viewport.notifications");
+    if (bumpRafRef.current !== null) {
+      incrementChartPerformanceCounter("viewport.coalesced");
+      return;
+    }
     bumpRafRef.current = requestAnimationFrame(() => {
+      incrementChartPerformanceCounter("viewport.frames");
       bumpRafRef.current = null;
       setVersion((v) => v + 1);
     });
@@ -311,6 +322,10 @@ export function PriceChart({
       chart,
       scheduleVersionBump,
     );
+    const uninstallBenchmarkHarness = installChartBenchmarkHarness(
+      chart,
+      () => candlesRef.current.length,
+    );
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
@@ -337,6 +352,7 @@ export function PriceChart({
     const indStore = indSeriesRef.current;
     return () => {
       ro.disconnect();
+      uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
       if (bumpRafRef.current !== null) {
         cancelAnimationFrame(bumpRafRef.current);
@@ -420,6 +436,28 @@ export function PriceChart({
   useEffect(() => {
     const cs = candleSeriesRef.current;
     if (!cs) return;
+    const setCandleData = (source: readonly Candle[]) => {
+      const data = measureChartPerformance(
+        "candle.projection",
+        () => source.map((candle) => ({
+          time: candle.time as UTCTimestamp,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+        })),
+        { candles: source.length },
+      );
+      measureChartSeriesWrite("candle", "setData", data.length, () => cs.setData(data));
+    };
+    const updateCandle = (candle: Candle) =>
+      measureChartSeriesWrite("candle", "update", 1, () => cs.update({
+        time: candle.time as UTCTimestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+      }));
     const animationWasRunning = candleAnimationRafRef.current !== null;
     if (candleAnimationRafRef.current !== null) {
       cancelAnimationFrame(candleAnimationRafRef.current);
@@ -477,39 +515,17 @@ export function PriceChart({
     );
 
     if (replayActive && !replayPlaying && renderedCandleCountRef.current !== candles.length) {
-      cs.setData(
-        candles.map((candle) => ({
-          time: candle.time as UTCTimestamp,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-        })),
-      );
+      setCandleData(candles);
       renderedLatestCandleRef.current = last ?? null;
       renderedCandleCountRef.current = candles.length;
     } else if (replayBurst) {
       // A backend clock commit finalizes the overlapping forming bar, then
       // appends one or more newly revealed bars. Present only those new bars
       // at the selected updates-per-second rate.
-      cs.setData(
-        prev.map((candle) => ({
-          time: candle.time as UTCTimestamp,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-        })),
-      );
+      setCandleData(prev);
       const finalizedPrevious = candles[prev.length - 1];
       if (finalizedPrevious?.time === prev.at(-1)?.time) {
-        cs.update({
-          time: finalizedPrevious.time as UTCTimestamp,
-          open: finalizedPrevious.open,
-          high: finalizedPrevious.high,
-          low: finalizedPrevious.low,
-          close: finalizedPrevious.close,
-        });
+        updateCandle(finalizedPrevious);
         renderedLatestCandleRef.current = finalizedPrevious;
       }
       renderedCandleCountRef.current = prev.length;
@@ -519,13 +535,7 @@ export function PriceChart({
       let start = replayCandleAnimationStart(null, target);
       let startedAt: number | null = null;
       const updateRendered = (candle: Candle) => {
-        cs.update({
-          time: candle.time as UTCTimestamp,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-        });
+        updateCandle(candle);
         renderedLatestCandleRef.current = candle;
       };
       const renderBurstFrame = (now: number) => {
@@ -557,13 +567,7 @@ export function PriceChart({
       // On append, finalize the previously-forming (now penultimate) bar first.
       if (updatePlan === "append") {
         const penult = candles[candles.length - 2];
-        cs.update({
-          time: penult.time as UTCTimestamp,
-          open: penult.open,
-          high: penult.high,
-          low: penult.low,
-          close: penult.close,
-        });
+        updateCandle(penult);
       }
       const target = last!;
       const start = replayCandleAnimationStart(renderedLatestCandleRef.current, target);
@@ -573,13 +577,7 @@ export function PriceChart({
         const renderFrame = (now: number) => {
           if (startedAt == null) startedAt = now;
           const rendered = interpolateReplayCandle(start, target, (now - startedAt) / duration);
-          cs.update({
-            time: rendered.time as UTCTimestamp,
-            open: rendered.open,
-            high: rendered.high,
-            low: rendered.low,
-            close: rendered.close,
-          });
+          updateCandle(rendered);
           renderedLatestCandleRef.current = rendered;
           scheduleVersionBump();
           if (!replayCandlesEqual(rendered, target)) {
@@ -588,36 +586,16 @@ export function PriceChart({
             candleAnimationRafRef.current = null;
           }
         };
-        cs.update({
-          time: start.time as UTCTimestamp,
-          open: start.open,
-          high: start.high,
-          low: start.low,
-          close: start.close,
-        });
+        updateCandle(start);
         renderedLatestCandleRef.current = start;
         candleAnimationRafRef.current = requestAnimationFrame(renderFrame);
       } else {
-        cs.update({
-          time: target.time as UTCTimestamp,
-          open: target.open,
-          high: target.high,
-          low: target.low,
-          close: target.close,
-        });
+        updateCandle(target);
         renderedLatestCandleRef.current = target;
       }
       renderedCandleCountRef.current = candles.length;
     } else {
-      cs.setData(
-        candles.map((k) => ({
-          time: k.time as UTCTimestamp,
-          open: k.open,
-          high: k.high,
-          low: k.low,
-          close: k.close,
-        })),
-      );
+      setCandleData(candles);
       renderedLatestCandleRef.current = last ?? null;
       renderedCandleCountRef.current = candles.length;
       const restoredRange = logicalRangeAfterDataReplacement(
@@ -806,12 +784,17 @@ export function PriceChart({
                 }),
           });
         }
-        series![idx].setData(
-          indicatorSeriesDataForCandles(s, candles).map((p) => ({
+        const projected = measureChartPerformance(
+          "indicator.projection",
+          () => indicatorSeriesDataForCandles(s, candles).map((p) => ({
             time: p.time as UTCTimestamp,
             value: p.value,
             ...(p.color ? { color: p.color } : {}),
           })),
+          { candles: candles.length, indicator: cfg.type },
+        );
+        measureChartSeriesWrite("indicator", "setData", projected.length, () =>
+          series![idx].setData(projected),
         );
       });
     }

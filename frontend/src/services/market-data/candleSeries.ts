@@ -1,4 +1,5 @@
 import type { MarketCandle } from "@/types";
+import { beginChartPerformanceMeasure } from "../chartPerformanceProbe";
 
 export type RealtimeSeriesUpdatePlan = "replace" | "update-latest" | "append";
 
@@ -43,16 +44,23 @@ export function normalizeMarketCandleSeries(
   candles: readonly MarketCandle[],
   maxCandles?: number,
 ): MarketCandle[] {
-  const byTime = new Map<number, MarketCandle>();
-  for (const candle of candles) {
-    const normalized = normalizeMarketCandle(candle);
-    if (normalized) byTime.set(normalized.time, normalized);
-  }
+  const endMeasure = beginChartPerformanceMeasure("history.normalize", {
+    inputCandles: candles.length,
+  });
+  try {
+    const byTime = new Map<number, MarketCandle>();
+    for (const candle of candles) {
+      const normalized = normalizeMarketCandle(candle);
+      if (normalized) byTime.set(normalized.time, normalized);
+    }
 
-  const sorted = [...byTime.values()].sort((a, b) => a.time - b.time);
-  return maxCandles && sorted.length > maxCandles
-    ? sorted.slice(sorted.length - maxCandles)
-    : sorted;
+    const sorted = [...byTime.values()].sort((a, b) => a.time - b.time);
+    return maxCandles && sorted.length > maxCandles
+      ? sorted.slice(sorted.length - maxCandles)
+      : sorted;
+  } finally {
+    endMeasure();
+  }
 }
 
 function candlesEqual(a: MarketCandle, b: MarketCandle): boolean {
@@ -153,34 +161,42 @@ export function mergeHistoryWithLiveCandles(
   live: readonly MarketCandle[],
   maxCandles?: number,
 ): MarketCandle[] {
-  const normalizedHistory = normalizeMarketCandleSeries(history);
-  const normalizedLive = normalizeMarketCandleSeries(live);
-  if (normalizedLive.length === 0) {
-    return normalizeMarketCandleSeries(normalizedHistory, maxCandles);
-  }
-  if (normalizedHistory.length === 0) {
-    return normalizeMarketCandleSeries(normalizedLive, maxCandles);
-  }
-
-  const historyFirstTime = normalizedHistory[0].time;
-  const historyLastTime = normalizedHistory.at(-1)?.time ?? -Infinity;
-  const byTime = new Map<number, MarketCandle>(
-    normalizedHistory.map((candle) => [candle.time, candle]),
-  );
-
-  for (const candle of normalizedLive) {
-    const liveFormingBar = candle.closed === false;
-    const outsideHistoryWindow =
-      candle.time < historyFirstTime || candle.time > historyLastTime;
-    if (
-      outsideHistoryWindow ||
-      (liveFormingBar && candle.time >= historyLastTime)
-    ) {
-      byTime.set(candle.time, candle);
+  const endMeasure = beginChartPerformanceMeasure("history.merge", {
+    historyCandles: history.length,
+    liveCandles: live.length,
+  });
+  try {
+    const normalizedHistory = normalizeMarketCandleSeries(history);
+    const normalizedLive = normalizeMarketCandleSeries(live);
+    if (normalizedLive.length === 0) {
+      return normalizeMarketCandleSeries(normalizedHistory, maxCandles);
     }
-  }
+    if (normalizedHistory.length === 0) {
+      return normalizeMarketCandleSeries(normalizedLive, maxCandles);
+    }
 
-  return normalizeMarketCandleSeries([...byTime.values()], maxCandles);
+    const historyFirstTime = normalizedHistory[0].time;
+    const historyLastTime = normalizedHistory.at(-1)?.time ?? -Infinity;
+    const byTime = new Map<number, MarketCandle>(
+      normalizedHistory.map((candle) => [candle.time, candle]),
+    );
+
+    for (const candle of normalizedLive) {
+      const liveFormingBar = candle.closed === false;
+      const outsideHistoryWindow =
+        candle.time < historyFirstTime || candle.time > historyLastTime;
+      if (
+        outsideHistoryWindow ||
+        (liveFormingBar && candle.time >= historyLastTime)
+      ) {
+        byTime.set(candle.time, candle);
+      }
+    }
+
+    return normalizeMarketCandleSeries([...byTime.values()], maxCandles);
+  } finally {
+    endMeasure();
+  }
 }
 
 function prefixReferencesMatch<T>(

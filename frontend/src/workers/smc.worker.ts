@@ -15,8 +15,13 @@ export interface SmcRequest {
 self.onmessage = (e: MessageEvent<SmcRequest>) => {
   const { reqId, candles, options } = e.data;
   try {
+    const startedAt = performance.now();
     const snapshot = computeSmc(candles, options);
-    (self as unknown as Worker).postMessage({ reqId, snapshot });
+    (self as unknown as Worker).postMessage({
+      reqId,
+      snapshot,
+      computeMs: performance.now() - startedAt,
+    });
   } catch (err) {
     (self as unknown as Worker).postMessage({ reqId, error: String(err) });
   }

@@ -1,0 +1,48 @@
+{
+  "scenario": "5000 bars, pane/custom indicators, SMC, scripted pan/zoom/300-bar replay",
+  "capturedAt": "2026-07-10T20:34:47.504Z",
+  "environment": {
+    "browser": "Edge 150",
+    "os": "Windows 10",
+    "viewport": "838x794",
+    "devicePixelRatio": 1.25,
+    "hardwareConcurrency": 12
+  },
+  "elapsedMs": 42186.7,
+  "heapUsedBytes": 838947283,
+  "counters": {
+    "frame.count": 1459,
+    "frame.missed-vsync": 324,
+    "frame.over33_4ms": 319,
+    "main.long-task.count": 310,
+    "react.commit.count": 933,
+    "series.indicator.setData.calls": 9077,
+    "series.indicator.setData.points": 2999891,
+    "series.pane-anchor.setData.calls": 807,
+    "series.pane-anchor.setData.points": 4056427,
+    "smc.worker.post.calls": 218,
+    "smc.worker.post.candles": 1057698,
+    "smc.worker.post.estimatedBytes": 59231088,
+    "series.candle.setData.calls": 1,
+    "series.candle.update.calls": 612,
+    "viewport.notifications": 807,
+    "viewport.coalesced": 521
+  },
+  "metrics": {
+    "frame.interval": { "totalMs": 42197.5, "p50Ms": 16.7, "p95Ms": 66.7, "p99Ms": 83.4, "maxMs": 383.4 },
+    "main.long-task": { "totalMs": 20059.0, "p95Ms": 83.0, "p99Ms": 114.0, "maxMs": 129.0 },
+    "series.indicator.setData": { "totalMs": 7556.7, "p95Ms": 3.5, "p99Ms": 6.4, "maxMs": 30.5 },
+    "react.commit": { "totalMs": 5881.8, "p95Ms": 12.3, "p99Ms": 14.8, "maxMs": 26.0 },
+    "series.pane-anchor.setData": { "totalMs": 2699.1, "p95Ms": 6.8, "p99Ms": 8.9, "maxMs": 9.6 },
+    "smc.worker.round-trip": { "totalMs": 13631.8, "p95Ms": 86.0, "p99Ms": 101.6, "maxMs": 133.8 },
+    "smc.worker.transfer-and-queue": { "totalMs": 12573.4, "p95Ms": 80.6, "p99Ms": 93.1, "maxMs": 129.0 },
+    "smc.worker.compute": { "totalMs": 1058.4, "p95Ms": 7.2, "p99Ms": 9.0, "maxMs": 9.1 },
+    "indicator.compute": { "totalMs": 920.4, "p95Ms": 2.8, "p99Ms": 4.8, "maxMs": 40.6 },
+    "series.candle.setData": { "totalMs": 5.3, "p95Ms": 5.3, "p99Ms": 5.3, "maxMs": 5.3 },
+    "series.candle.update": { "totalMs": 35.3, "p95Ms": 0.2, "p99Ms": 0.3, "maxMs": 0.3 }
+  },
+  "notes": [
+    "Heap is a point-in-time value, not a retained-heap or leak measurement.",
+    "Aggregate worker round-trip timings overlap wall time and are used for per-request latency ranking."
+  ]
+}

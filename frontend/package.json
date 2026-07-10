@@ -26,6 +26,7 @@
     "check:pine-indicator": "node scripts/check-pine-indicator.mjs",
     "check:fibonacci-tools": "node scripts/check-fibonacci-tools-parity.mjs",
     "check:path-tool": "node scripts/check-path-tool-parity.mjs",
+    "benchmark:candle-virtualization": "node scripts/candle-virtualization-baseline.mjs",
     "test:replay": "node scripts/clean-test-build.mjs && tsc -p tsconfig.test.json && node --test .test-build/tests/replay/*.test.js .test-build/tests/chart/replayViewport.test.js",
     "test:position": "tsc -p tsconfig.test.json && node --test .test-build/tests/position/*.test.js",
     "test:trade": "tsc -p tsconfig.test.json && node --test .test-build/tests/trade/*.test.js",

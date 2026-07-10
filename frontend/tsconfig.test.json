@@ -28,6 +28,7 @@
     "src/components/chart/indicatorPaneTimeScale.ts",
     "src/services/indicatorStyle.ts",
     "src/services/indicatorSeriesProjection.ts",
+    "src/services/chartBenchmarkFixtures.ts",
     "src/services/pineRuntimeCachePolicy.ts",
     "src/components/chart/drawing/tools/plugins/lineGeometry.ts",
     "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",

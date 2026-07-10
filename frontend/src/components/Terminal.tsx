@@ -16,6 +16,7 @@ import { AlertCenter } from "@/components/alerts/AlertCenter";
 import { AlertEditDialog } from "@/components/alerts/AlertEditDialog";
 import { useStoreHydration } from "@/hooks/useStoreHydration";
 import { useHotkeys } from "@/hooks/useHotkeys";
+import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 
 /**
  * The full client-only trading terminal. Imported via `dynamic(..., {ssr:false})`
@@ -35,7 +36,7 @@ export function Terminal() {
       <TerminalLayout
         toolbar={<TopToolbar />}
         leftRail={<DrawingToolbar />}
-        chart={<ChartArea />}
+        chart={<ChartPerformanceProfiler><ChartArea /></ChartPerformanceProfiler>}
         watchlist={<Watchlist />}
         bottom={<BottomPanel />}
       />

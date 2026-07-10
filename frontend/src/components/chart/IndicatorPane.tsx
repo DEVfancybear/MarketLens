@@ -46,6 +46,10 @@ import {
 } from "@/services/pineRuntimeCache";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { indicatorPaneTimeAnchorData } from "./indicatorPaneTimeScale";
+import {
+  measureChartPerformance,
+  measureChartSeriesWrite,
+} from "@/services/chartPerformanceProbe";
 
 type PaneSeriesApi =
   | ISeriesApi<"Line">
@@ -122,22 +126,30 @@ export function IndicatorPane({
     if (!result) return;
     const visibleRange = visibleLogicalRangeRef.current;
 
-    anchorSeriesRef.current?.setData(
-      indicatorPaneTimeAnchorData(sourceCandles, result, visibleRange).map(
+    const anchorData = measureChartPerformance(
+      "indicator.pane-anchor-projection",
+      () => indicatorPaneTimeAnchorData(sourceCandles, result, visibleRange).map(
         (point) => ({
           time: point.time as UTCTimestamp,
           value: point.value,
         }),
       ),
+      { candles: sourceCandles.length },
     );
+    if (anchorSeriesRef.current) {
+      measureChartSeriesWrite("pane-anchor", "setData", anchorData.length, () =>
+        anchorSeriesRef.current!.setData(anchorData),
+      );
+    }
 
     result.series.forEach((s, index) => {
       if (onlyExtended && !s.extendToVisibleRange) return;
       const series = seriesRef.current[index];
       if (!series) return;
       const isHist = s.type === "histogram" || s.key === "hist";
-      series.setData(
-        indicatorSeriesDataForCandles(s, sourceCandles, visibleRange).map((p) => ({
+      const projected = measureChartPerformance(
+        "indicator.projection",
+        () => indicatorSeriesDataForCandles(s, sourceCandles, visibleRange).map((p) => ({
           time: p.time as UTCTimestamp,
           value: p.value,
           ...(p.color
@@ -151,6 +163,10 @@ export function IndicatorPane({
                 }
               : {}),
         })),
+        { candles: sourceCandles.length, indicator: cfg.type },
+      );
+      measureChartSeriesWrite("indicator", "setData", projected.length, () =>
+        series.setData(projected),
       );
     });
   };
