@@ -141,8 +141,40 @@ Two newly isolated costs remained:
 The second correction pins the invisible anchor value for each
 `indicator:symbol:timeframe` context and throttles legend text publication to
 2Hz while indicator math and chart writes remain immediate. One final focused
-browser capture is required before the overall Phase 1 performance gate can be
-declared passed.
+browser capture was then used to evaluate the completed counter gates below.
+
+### Final Phase 1 capture
+
+The final capture passed every counter-level Phase 1 invariant:
+
+- pane-anchor structural replacements fell to 2, with 295 incremental updates
+  and 194 unchanged writes skipped;
+- SMC posted exactly 128 × 1,500 candles, avoided 429,064 candles, and reduced
+  estimated payload to 10.75MB (81.8% below Phase 0);
+- 9,134 indicator writes and 10,904 style applications were skipped;
+- 564 indicator latest/append writes used `update`;
+- primary candles performed one intentional Replay-prefix `setData` and 600
+  incremental updates;
+- legend publication produced 44 updates and nested commits fell to 59.
+
+Compared with Phase 0, indicator replacement time fell from 7,556.7ms to
+2,055.3ms (-72.8%), pane-anchor replacement time fell from 2,699.1ms to 11.2ms
+(-99.6%), and aggregate SMC round-trip time fell from 13,631.8ms to 8,987ms
+(-34.1%).
+
+The general interaction target did not pass: frame p95 was 116.8ms, React
+commit p95 was 17.5ms, and 301 long tasks totaled 24,264ms. The capture again
+contains a 15.76-second background-tab frame, so max/wall-clock values are
+invalid. Unlike the counter gates, it also ran with the live MT5 bridge active,
+whereas the original Phase 0 capture did not; global quote/runtime activity
+makes whole-app frame comparison non-isolated.
+
+Phase 1 is complete because its incremental-write and transfer gates passed.
+The remaining long task—one on approximately every scripted Replay reveal—is
+derived/custom computation and React/runtime work rather than primary candle
+canvas writes. It becomes the measured input for Phase 2. A future benchmark
+route should isolate the chart fixture from live market runtimes before using
+whole-app frame percentiles as an acceptance comparison.
 
 ## Deferred item
 

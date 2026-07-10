@@ -1,0 +1,58 @@
+{
+  "scenario": "Phase 1 final: 5000 bars, stable pane anchor, throttled legend, 5Hz single-in-flight SMC",
+  "capturedAt": "2026-07-10T21:08:51.050Z",
+  "environment": {
+    "browser": "Edge 150",
+    "os": "Windows 10",
+    "viewport": "838x794",
+    "devicePixelRatio": 1.25,
+    "hardwareConcurrency": 12,
+    "liveMt5Bridge": true
+  },
+  "elapsedMs": 57950.0,
+  "heapUsedBytes": 730072854,
+  "knownInvalidSample": {
+    "metric": "frame.interval.maxMs",
+    "value": 15755.5,
+    "reason": "benchmark tab was backgrounded"
+  },
+  "counters": {
+    "frame.count": 937,
+    "frame.missed-vsync": 310,
+    "frame.over33_4ms": 308,
+    "main.long-task.count": 301,
+    "react.commit.count": 996,
+    "react.ChartArea.nested-update.commits": 59,
+    "indicator.legend.updates": 44,
+    "indicator.legend.skipped": 82,
+    "series.indicator.setData.calls": 1206,
+    "series.indicator.setData.points": 100039,
+    "series.indicator.update.calls": 564,
+    "series.indicator.skipped": 9134,
+    "series.indicator.applyOptions.skipped": 10904,
+    "series.pane-anchor.setData.calls": 2,
+    "series.pane-anchor.setData.points": 9705,
+    "series.pane-anchor.update.calls": 295,
+    "series.pane-anchor.skipped": 194,
+    "smc.worker.post.calls": 128,
+    "smc.worker.post.candles": 192000,
+    "smc.worker.post.candlesAvoided": 429064,
+    "smc.worker.post.estimatedBytes": 10752000,
+    "series.candle.setData.calls": 1,
+    "series.candle.update.calls": 600
+  },
+  "metrics": {
+    "frame.interval": { "p50Ms": 16.7, "p95Ms": 116.8, "p99Ms": 133.4, "maxMs": 15755.5 },
+    "main.long-task": { "totalMs": 24264.0, "p95Ms": 95.0, "p99Ms": 113.0, "maxMs": 183.0 },
+    "react.commit": { "totalMs": 9910.5, "p95Ms": 17.5, "p99Ms": 23.2, "maxMs": 42.9 },
+    "series.indicator.setData": { "totalMs": 2055.3, "p95Ms": 3.5, "p99Ms": 7.0, "maxMs": 46.0 },
+    "series.pane-anchor.setData": { "totalMs": 11.2, "p95Ms": 5.7, "p99Ms": 5.7, "maxMs": 5.7 },
+    "smc.worker.round-trip": { "totalMs": 8987.0, "p95Ms": 86.5, "p99Ms": 116.6, "maxMs": 143.0 },
+    "smc.worker.transfer-and-queue": { "totalMs": 8171.9, "p95Ms": 78.9, "p99Ms": 111.3, "maxMs": 133.8 },
+    "smc.worker.compute": { "totalMs": 815.1, "p95Ms": 9.7, "p99Ms": 11.5, "maxMs": 17.9 },
+    "indicator.compute": { "totalMs": 1524.9, "p95Ms": 3.9, "p99Ms": 5.9, "maxMs": 20.4 },
+    "series.candle.setData": { "totalMs": 6.5, "p95Ms": 6.5, "p99Ms": 6.5, "maxMs": 6.5 },
+    "series.candle.update": { "totalMs": 54.0, "p95Ms": 0.2, "p99Ms": 0.2, "maxMs": 0.3 }
+  },
+  "result": "all Phase 1 counter gates passed; whole-app frame gate deferred to isolated Phase 2 benchmark"
+}

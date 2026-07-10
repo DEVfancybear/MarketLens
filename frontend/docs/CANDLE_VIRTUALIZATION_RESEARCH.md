@@ -1,6 +1,6 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phase 1 write/SMC targets achieved; final anchor/legend benchmark pending._
+_Status: Phases 0–1 complete; Phase 2 derived-data work is next._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
