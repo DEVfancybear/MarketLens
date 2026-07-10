@@ -32,13 +32,14 @@ type SymbolCatalog struct {
 // the latest tick per symbol for quotes/watchlist rows. MT5 chart candles come
 // from the history endpoint instead of being synthesized from bid/ask ticks.
 type Tick struct {
-	Type      string  `json:"type,omitempty"`
-	Source    string  `json:"source,omitempty"`
-	Symbol    string  `json:"symbol"`
-	Bid       float64 `json:"bid"`
-	Ask       float64 `json:"ask"`
-	Timestamp int64   `json:"timestamp"`
-	TimeMSC   int64   `json:"time_msc,omitempty"`
+	Type       string  `json:"type,omitempty"`
+	Source     string  `json:"source,omitempty"`
+	Symbol     string  `json:"symbol"`
+	Bid        float64 `json:"bid"`
+	Ask        float64 `json:"ask"`
+	Timestamp  int64   `json:"timestamp"`
+	TimeMSC    int64   `json:"time_msc,omitempty"`
+	ReceivedAt int64   `json:"received_at,omitempty"`
 }
 
 // Snapshot is returned by the HTTP API. It is intentionally status-rich so FE
@@ -55,10 +56,9 @@ type Snapshot struct {
 	LastError     string    `json:"lastError,omitempty"`
 }
 
-// TickSnapshot is returned by GET /api/v1/mt5/ticks. It is intentionally small:
-// the Python bridge streams ticks continuously and the Go service caches only
-// the latest quote per symbol. The chart must use GET /api/v1/mt5/history for
-// real MT5 OHLC bars.
+// TickSnapshot is returned by GET /api/v1/mt5/ticks. Without `since` it contains
+// the latest quote per symbol; with `since=<unix-ms>` it contains the retained
+// ordered ticks after that point for exact closed-browser alert replay.
 type TickSnapshot struct {
 	Connected bool      `json:"connected"`
 	BridgeURL string    `json:"bridgeUrl"`

@@ -54,12 +54,19 @@ if (configured && self.firebase?.messaging) {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const symbol = String(event.notification.data?.symbol || "").trim().toUpperCase();
+  const targetUrl = symbol
+    ? "/?symbol=" + encodeURIComponent(symbol) + "&source=alert"
+    : "/";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
+        if (symbol && "postMessage" in client) {
+          client.postMessage({ type: "OPEN_ALERT_SYMBOL", symbol });
+        }
         if ("focus" in client) return client.focus();
       }
-      if (self.clients.openWindow) return self.clients.openWindow("/");
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
       return undefined;
     })
   );

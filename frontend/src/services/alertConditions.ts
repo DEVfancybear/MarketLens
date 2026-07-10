@@ -84,6 +84,27 @@ export function isPriceConditionMet(
   }
 }
 
+export interface AlertPricePoint {
+  price: number;
+  timestamp: number;
+}
+
+export function findPriceConditionTrigger(
+  condition: PriceAlertCondition,
+  target: number,
+  previousPrice: number | undefined,
+  points: AlertPricePoint[],
+): AlertPricePoint | undefined {
+  let previous = previousPrice;
+  for (const point of points) {
+    if (isPriceConditionMet(condition, target, previous, point.price)) {
+      return point;
+    }
+    previous = point.price;
+  }
+  return undefined;
+}
+
 /** Final persistence guard shared by live and reconciled triggers. */
 export function isTriggerPriceValid(
   condition: PriceAlertCondition,

@@ -26,6 +26,7 @@ const (
 	defaultHistoryRequestTimeout = 60 * time.Second
 	defaultHistoryHTTPTimeout    = 70 * time.Second
 	defaultHistoryConcurrency    = 1
+	maxRetainedTicksPerSymbol    = 512
 )
 
 // Config controls the backend API's connection to the local Python MT5 bridge.
@@ -51,6 +52,7 @@ type Service struct {
 	streamSymbols  []string
 	symbols        []Symbol
 	ticks          map[string]Tick
+	tickHistory    map[string][]Tick
 	history        map[string][]Candle
 	conn           *websocket.Conn
 	writeMu        sync.Mutex
@@ -94,6 +96,7 @@ func NewService(cfg Config) *Service {
 		readLimitBytes: readLimit,
 		source:         "mt5",
 		ticks:          make(map[string]Tick),
+		tickHistory:    make(map[string][]Tick),
 		history:        make(map[string][]Candle),
 		pendingHistory: make(map[string]chan HistoryMessage),
 		historyFlights: make(map[string]*historyFlight),
@@ -154,7 +157,7 @@ func (s *Service) Ticks(symbols []string) TickSnapshot {
 		}
 	}
 
-	sort.Slice(ticks, func(i, j int) bool {
+	sort.SliceStable(ticks, func(i, j int) bool {
 		return ticks[i].Symbol < ticks[j].Symbol
 	})
 
@@ -166,6 +169,56 @@ func (s *Service) Ticks(symbols []string) TickSnapshot {
 		UpdatedAt: s.updatedAt,
 		LastError: s.lastErr,
 	}
+}
+
+func (s *Service) TicksSince(symbols []string, sinceMS int64) TickSnapshot {
+	s.ensureStreamSymbols(symbols)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	requested := make(map[string]struct{}, len(symbols))
+	for _, symbol := range symbols {
+		requested[normalizeSymbol(symbol)] = struct{}{}
+	}
+	ticks := make([]Tick, 0)
+	for symbol, history := range s.tickHistory {
+		if len(requested) > 0 {
+			if _, ok := requested[symbol]; !ok {
+				continue
+			}
+		}
+		for _, tick := range history {
+			if tickCursorMS(tick) > sinceMS {
+				ticks = append(ticks, tick)
+			}
+		}
+	}
+	sort.Slice(ticks, func(i, j int) bool {
+		left, right := tickCursorMS(ticks[i]), tickCursorMS(ticks[j])
+		if left == right {
+			return ticks[i].Symbol < ticks[j].Symbol
+		}
+		return left < right
+	})
+	return TickSnapshot{
+		Connected: s.connected,
+		BridgeURL: s.cfg.BridgeURL,
+		Source:    s.source,
+		Ticks:     ticks,
+		UpdatedAt: s.updatedAt,
+		LastError: s.lastErr,
+	}
+}
+
+func tickCursorMS(tick Tick) int64 {
+	if tick.ReceivedAt > 0 {
+		return tick.ReceivedAt
+	}
+	if tick.TimeMSC > 0 {
+		return tick.TimeMSC
+	}
+	return tick.Timestamp * 1000
 }
 
 func (s *Service) ensureStreamSymbols(symbols []string) {
@@ -431,12 +484,20 @@ func (s *Service) applyTick(tick Tick) {
 		tick.Source = "mt5"
 	}
 	tick.Symbol = key
+	if tick.ReceivedAt <= 0 {
+		tick.ReceivedAt = time.Now().UTC().UnixMilli()
+	}
 
 	s.mu.Lock()
 	s.connected = true
 	s.lastErr = ""
 	s.source = tick.Source
 	s.ticks[key] = tick
+	history := append(s.tickHistory[key], tick)
+	if len(history) > maxRetainedTicksPerSymbol {
+		history = append([]Tick(nil), history[len(history)-maxRetainedTicksPerSymbol:]...)
+	}
+	s.tickHistory[key] = history
 	s.updatedAt = time.Now().UTC()
 
 	subscribers := make([]*TickSubscriber, 0, len(s.subscribers))

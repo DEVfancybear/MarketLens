@@ -20,6 +20,21 @@ type historyBridgeHarness struct {
 	replies  chan HistoryMessage
 }
 
+func TestTicksSinceReturnsOrderedRetainedTicks(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.applyTick(Tick{Symbol: "EURUSD", Bid: 1.14380, Ask: 1.14382, TimeMSC: 9000, ReceivedAt: 1000})
+	service.applyTick(Tick{Symbol: "EURUSD", Bid: 1.14393, Ask: 1.14395, TimeMSC: 7000, ReceivedAt: 3000})
+	service.applyTick(Tick{Symbol: "EURUSD", Bid: 1.14388, Ask: 1.14390, TimeMSC: 8000, ReceivedAt: 2000})
+
+	snapshot := service.TicksSince([]string{"EURUSD"}, 1000)
+	if len(snapshot.Ticks) != 2 {
+		t.Fatalf("ticks since = %d, want 2", len(snapshot.Ticks))
+	}
+	if snapshot.Ticks[0].ReceivedAt != 2000 || snapshot.Ticks[1].ReceivedAt != 3000 {
+		t.Fatalf("ticks not ordered: %+v", snapshot.Ticks)
+	}
+}
+
 func newHistoryBridgeHarness(t *testing.T) *historyBridgeHarness {
 	t.Helper()
 

@@ -4,6 +4,31 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Push notification click opened default EURUSD chart (2026-07-10)
+- Added alert-symbol deep links to Firebase `webpush.fcmOptions.link` and the
+  generated messaging service worker.
+- Notification clicks now post `OPEN_ALERT_SYMBOL` to and focus an existing app
+  window, or open `/?symbol=<id>&source=alert` when no window exists.
+- Added a client deep-link runtime that validates the symbol, waits for MT5
+  catalog hydration, changes the chart, and removes consumed query parameters.
+- Added regression coverage for query/message normalization and invalid symbol
+  payloads; the app also requests a service-worker update on runtime mount.
+
+### Fixed - Closed-browser wick crossings missed between worker polls (2026-07-10)
+- Added a bounded 512-tick ring per MT5 symbol in the Go stream service and
+  extended `/api/v1/mt5/ticks` with `since=<unix-ms>` ordered replay reads.
+- Added backend `received_at` cursors so broker timestamps several hours ahead
+  of the API clock cannot make valid MT5 prices look unavailable or leak
+  pre-arm ticks into an alert's replay window.
+- Changed the Next alert worker from latest-snapshot comparison to sequential
+  replay after each alert's evaluation cursor, preserving the exact first tick,
+  price, and timestamp that satisfies the condition.
+- Closed-browser alerts now catch a price that crosses an alert line and returns
+  before the next 15-second worker run, without reintroducing candle high/low
+  ambiguity or pre-arm wick false positives.
+- Added backend ordering/retention coverage and a frontend regression for
+  `1.14388 -> 1.14393 -> 1.14388` crossing a `1.14392` alert line.
+
 ### Fixed - Alert line lifecycle audit hardening (2026-07-10)
 - Added arming revisions so create/edit/drag/enable/re-arm operations cannot
   reuse a market tick observed before the current alert definition existed.
@@ -51,7 +76,7 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   restored through push reconciliation.
 - Added regression tests for all four price conditions, first-observation
   crossing behavior, MT5 Bid normalization, and frontend/backend trigger-price
-  validation; documented the snapshot-polling tradeoff for brief crossings.
+  validation.
 
 ### Added - Phase 10 alert and push-token API sync (2026-07-10)
 - Added PostgreSQL alert/event migration and protected Go CRUD, trigger,

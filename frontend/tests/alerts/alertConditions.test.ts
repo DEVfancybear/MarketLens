@@ -4,6 +4,7 @@ import {
   alertArmingRevision,
   alertLineRenderKey,
   conditionForTargetSide,
+  findPriceConditionTrigger,
   hasAlertArmingChange,
   isPriceConditionMet,
   isTriggerPriceValid,
@@ -27,6 +28,15 @@ test("crossDown cannot trigger while current price remains above the line", () =
   assert.equal(isPriceConditionMet("crossDown", 1.14372, undefined, 1.1437), false);
   assert.equal(isPriceConditionMet("crossDown", 1.14372, 1.14416, 1.14412), false);
   assert.equal(isPriceConditionMet("crossDown", 1.14372, 1.1437, 1.1436), false);
+});
+
+test("closed-browser replay catches a wick that returns before the next poll", () => {
+  const trigger = findPriceConditionTrigger("crossUp", 1.14392, 1.14388, [
+    { price: 1.14389, timestamp: 1000 },
+    { price: 1.14393, timestamp: 1100 },
+    { price: 1.14388, timestamp: 1200 },
+  ]);
+  assert.deepEqual(trigger, { price: 1.14393, timestamp: 1100 });
 });
 
 test("level conditions use current price only", () => {

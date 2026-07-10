@@ -19,6 +19,10 @@ type TickStreamSource interface {
 	RegisterTickSubscriber() *TickSubscriber
 }
 
+type TickHistorySource interface {
+	TicksSince(symbols []string, sinceMS int64) TickSnapshot
+}
+
 type Handler struct {
 	source SymbolSource
 }
@@ -69,7 +73,14 @@ func (h *Handler) ticks(c *fiber.Ctx) error {
 			LastError: "MT5 stream service is not configured",
 		})
 	}
-	snapshot := h.source.Ticks(parseSymbolsQuery(c.Query("symbols")))
+	symbols := parseSymbolsQuery(c.Query("symbols"))
+	since := parseInt64Query(c.Query("since"), 0)
+	snapshot := h.source.Ticks(symbols)
+	if since > 0 {
+		if historySource, ok := h.source.(TickHistorySource); ok {
+			snapshot = historySource.TicksSince(symbols, since)
+		}
+	}
 	if snapshot.Ticks == nil {
 		snapshot.Ticks = []Tick{}
 	}

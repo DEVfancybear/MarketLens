@@ -83,10 +83,18 @@ Correctness is enforced at three layers:
 3. the Go repository locks the alert and validates condition, target, and
    trigger price before updating state or inserting `alert_events`.
 
-The closed-browser worker polls snapshots, so a crossing that moves through and
-back across the line entirely between polls can be missed. This is preferred to
-creating a false trigger from ambiguous candle history. A future durable MT5
-tick stream can remove that sampling limitation without changing alert rules.
+The closed-browser worker still wakes on an interval, but the Go MT5 service
+retains the latest 512 ticks per symbol. `/api/v1/mt5/ticks?since=<unix-ms>`
+returns those ticks in timestamp order, and the worker replays every observation
+after the alert's `lastEvaluatedAt` (or `updatedAt` for a new revision). A wick
+that crosses and returns entirely between two worker runs is therefore retained
+without relying on ambiguous candle OHLC.
+
+Replay cursors use backend `received_at`, not MT5 `time_msc`. Some brokers expose
+server-clock tick timestamps several hours ahead of the API host; comparing
+those directly with browser `updatedAt` previously made every worker evaluation
+return `price unavailable` or could include pre-arm ticks. Go stamps each tick
+with UTC receive time while preserving the original MT5 timestamps for charting.
 
 ### Arming revisions and data quality
 
@@ -103,9 +111,11 @@ unsubscribe a chart that still owns the same symbol.
 
 Only live MT5 quotes are evaluated in-browser; historical candle close is not a
 fallback. The MT5 adapter rejects invalid Bid/Ask and out-of-order timestamps.
-The closed-browser worker rejects snapshots older than 60 seconds or more than
-5 seconds in the future. All alerts for one symbol in one worker pass read the
-same frozen previous/current pair, avoiding loop-order-dependent crossings.
+The closed-browser worker requires the newest backend receive timestamp to be
+live (at most 60 seconds old or 5 seconds in the future), then evaluates the
+ordered retained ticks. All alerts for one symbol in one worker pass read the
+same frozen tick sequence and previous baseline, avoiding loop-order-dependent
+crossings.
 
 Recurring browser-open triggers sync their trigger timestamp and price into the
 worker state. This prevents the worker from delivering the same crossing again
@@ -136,6 +146,20 @@ backend login exchange or workspace request is in flight, preventing an early
 local reconcile from being overwritten by a later `active` bootstrap snapshot.
 Reconciliation also reruns whenever the active alert snapshot changes, so it
 does not wait for the normal 60-second status poll after bootstrap.
+
+### Notification click navigation
+
+FCM alert payloads include the MT5 symbol. The Firebase web link carries
+`?symbol=<id>&source=alert`, and the service worker notification click handler:
+
+1. posts `OPEN_ALERT_SYMBOL` to an existing app window and focuses it; or
+2. opens a new app window with the symbol deep link.
+
+`useNotificationDeepLink` validates and normalizes the symbol, waits until the
+MT5 catalog contains it, then dispatches `setSymbolAtom`. This prevents the
+startup default (`EURUSD`) or asynchronous catalog hydration from overwriting
+the clicked alert symbol. The consumed query parameters are removed with
+`history.replaceState` after capture.
 
 History survives alert deletion. `alert_events.alert_id` uses `ON DELETE SET
 NULL`, while `alert_ref` stores the stable client ID/UUID returned to the UI.
@@ -232,15 +256,17 @@ wrong side of its alert line.
 | `src/services/market-data/mt5Price.ts` | Bid-based MT5 chart/alert price normalization |
 | `src/services/market-data/subscriptionRegistry.ts` | Independent ticker/kline ownership per MT5 symbol |
 | `src/hooks/useAlertEngine.ts` | Consecutive-tick live alert evaluation |
-| `src/server/pushAlertEvaluator.ts` | Closed-browser MT5 tick polling and evaluation |
+| `src/server/pushAlertEvaluator.ts` | Closed-browser ordered MT5 tick replay and evaluation |
 | `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot, then opens the push runtime gate |
 | `src/services/notifications/push.ts` | Dual token registration/unregistration |
 | `src/hooks/usePushNotifications.ts` | Enables Go token sync only for backend sessions |
 | `src/hooks/usePushTriggerReconcile.ts` | Post-bootstrap closed-browser lifecycle reconciliation |
+| `src/hooks/useNotificationDeepLink.ts` | Routes FCM notification clicks to the MT5 chart symbol |
 | `tests/alerts/alertsApi.test.ts` | Adapter and method/path/body contract tests |
 | `tests/alerts/alertConditions.test.ts` | Crossing, level, wrong-side, and MT5 Bid regression tests |
 | `tests/alerts/pushWorkspaceGate.test.ts` | Identity/bootstrap ordering gate regression test |
 | `tests/alerts/mt5AlertSubscription.test.ts` | Alert ticker/chart kline ownership regression test |
+| `tests/alerts/notificationDeepLink.test.ts` | Symbol query/message validation regression test |
 
 Backend implementation lives in `backend/internal/alerts`; schema migration is
 `backend/migrations/0011_alerts`.

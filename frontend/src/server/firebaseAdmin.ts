@@ -37,12 +37,18 @@ export function getFirebaseFirestore() {
   return getFirestore();
 }
 
-function appUrl(): string {
+function appUrl(symbol?: string): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL;
-  if (explicit) return explicit;
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${vercelUrl}`;
-  return "http://localhost:3000";
+  const base = explicit
+    ? explicit
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
+  if (!symbol) return base;
+  const url = new URL(base);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("source", "alert");
+  return url.toString();
 }
 
 export async function sendFirebasePush(
@@ -66,7 +72,7 @@ export async function sendFirebasePush(
         Urgency: "high",
       },
       fcmOptions: {
-        link: appUrl(),
+        link: appUrl(message.data?.symbol),
       },
     },
   });
