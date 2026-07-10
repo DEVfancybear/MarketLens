@@ -25,6 +25,7 @@ import {
   type BackendAlertSnapshot,
 } from "@/services/api/resources/alertsApi";
 import { patchSettings } from "@/services/api/resources/settingsApi";
+import { isTriggerPriceValid } from "@/services/alertConditions";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -316,6 +317,9 @@ export const triggerAlertAtom = atom(
   (get, set, id: string, triggerPrice: number): Alert | undefined => {
     const alert = get(alertsAtom).find((a) => a.id === id);
     if (!alert) return undefined;
+    if (!isTriggerPriceValid(alert.condition, alert.price, triggerPrice)) {
+      return undefined;
+    }
     const now = Date.now() / 1000;
     const fired: Alert = {
       ...alert,

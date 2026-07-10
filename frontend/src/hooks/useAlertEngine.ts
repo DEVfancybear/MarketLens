@@ -1,20 +1,5 @@
 "use client";
-/**
- * useAlertEngine (Phase 2) — drives the Alert Engine from realtime prices.
- *
- * Mounted once (in `GlobalRuntime`). Two responsibilities:
- *
- *  1. **Subscriptions** — ensures every active-alert symbol has a `ticker`
- *     subscription on the shared `marketDataStore` feed (refcounted, so it never
- *     tears down a watchlist subscription and never opens a new socket). Alerts
- *     therefore work for symbols that aren't currently charted or watch-listed.
- *
- *  2. **Evaluation** — subscribes to `marketDataStore` changes (NO polling) and,
- *     on each price update, evaluates active alerts via the pure engine. On a
- *     match it fires the store's `triggerAlert` (once-only / re-arm gating here)
- *     and dispatches notifications. Previous prices are remembered per symbol so
- *     `crossUp`/`crossDown` edges are detected.
- */
+
 import { useEffect, useRef } from "react";
 import { getDefaultStore, useAtomValue } from "jotai";
 import {
@@ -27,306 +12,126 @@ import {
   useAlertStore,
   getAlertState,
   RECURRING_REARM_MS,
-  type Alert,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import {
-  isAlertTriggered,
-  type AlertPriceSnapshot,
-} from "@/services/alertEngine";
+import { isAlertTriggered } from "@/services/alertEngine";
 import { deliverAlert } from "@/services/notifications/notify";
-import { subscriptionKey, type MarketCandle } from "@/types";
+import { subscriptionKey } from "@/types";
 
-interface ObservedAlertRange {
-  signature: string;
-  symbol: string;
-  /** Cutoff to rescan from next time. Tracked explicitly (not re-derived from
-   *  `candleTime`) so a tick where candle history hadn't loaded yet can't
-   *  collapse this to epoch 0 and turn the next scan into a full-history
-   *  rescan (which would fold in a long-past dip as if it just happened). */
-  sinceMs: number;
-  candleTime?: number;
-  candleHigh?: number;
-  candleLow?: number;
-  high: number;
-  low: number;
-}
-
-function alertSignature(alert: Alert): string {
-  return [
-    alert.condition,
-    alert.symbol,
-    alert.price,
-    alert.recurring,
-    alert.updatedAt,
-  ].join(":");
-}
-
-/** Latest realtime price for a symbol plus raw active-candle bounds. The raw
- * bounds are not used directly; each alert tracks only the portion observed
- * after it was armed. Also returns the loaded candle series so a freshly
- * (re)mounted engine can recover the full high/low range spanned while the
- * browser was closed, not just the currently-forming candle. */
-function latestPriceSnapshot(
+function latestPrice(
   md: MarketDataStoreInterface,
   symbol: string,
-): { snapshot: AlertPriceSnapshot; series?: MarketCandle[] } | undefined {
-  const q = md.quotes[symbol];
+): number | undefined {
+  const quote = md.quotes[symbol];
+  if (quote && Number.isFinite(quote.last)) return quote.last;
+
   const series = md.candles[subscriptionKey(symbol, md.selectedTimeframe)];
-  const last = series?.[series.length - 1];
-  const current =
-    q && Number.isFinite(q.last)
-      ? q.last
-      : last && Number.isFinite(last.close)
-        ? last.close
-        : undefined;
-  if (current === undefined) return undefined;
-  return {
-    snapshot: {
-      current,
-      open: current,
-      high: current,
-      low: current,
-      candleTime: last?.time,
-      candleHigh: last?.high,
-      candleLow: last?.low,
-    },
-    series,
-  };
+  const close = series?.[series.length - 1]?.close;
+  return Number.isFinite(close) ? close : undefined;
 }
 
+/** Evaluates line alerts only from consecutive live MT5 prices. */
 export function useAlertEngine() {
-  // Stable key over the distinct active-alert symbols → effect runs only when
-  // the symbol set actually changes (not on every alert edit).
-  const alertSymbolsKey = useAlertStore((s) => {
-    const set = new Set(s.alerts.map((a) => a.symbol));
-    return [...set].sort().join(",");
+  const alertSymbolsKey = useAlertStore((state) => {
+    const symbols = new Set(state.alerts.map((alert) => alert.symbol));
+    return [...symbols].sort().join(",");
   });
   const selectedTimeframe = useAtomValue(selectedTimeframeAtom);
-
   const subscribedRef = useRef<Set<string>>(new Set());
-  const prevPriceRef = useRef<Map<string, number>>(new Map());
-  const observedRangeRef = useRef<Map<string, ObservedAlertRange>>(new Map());
-  const mountedAtRef = useRef<number>(Date.now());
-  /** Alert IDs that have been evaluated at least once. New alerts skip cross
-   *  detection on their first evaluation to prevent a stale `prev` price
-   *  (recorded before the alert existed) from causing an immediate trigger. */
-  const seenAlertIds = useRef<Set<string>>(new Set());
+  const previousPriceRef = useRef<Map<string, number>>(new Map());
+  const seenAlertIdsRef = useRef<Set<string>>(new Set());
 
-  // ---- 1. keep alert-symbol tickers subscribed (refcounted) ----
   useEffect(() => {
     const symbols = alertSymbolsKey ? alertSymbolsKey.split(",") : [];
-    const desired = new Set(symbols.map((sym) => `${sym}:${selectedTimeframe}`));
-    const subbed = subscribedRef.current;
+    const desired = new Set(symbols.map((symbol) => `${symbol}:${selectedTimeframe}`));
+    const subscribed = subscribedRef.current;
 
-    for (const sym of symbols) {
-      const key = `${sym}:${selectedTimeframe}`;
-      const meta = getMarketSymbol(sym);
-      if (!subbed.has(key) && meta && meta.provider !== "mt5") {
+    for (const symbol of symbols) {
+      const key = `${symbol}:${selectedTimeframe}`;
+      const meta = getMarketSymbol(symbol);
+      if (!subscribed.has(key) && meta && meta.provider !== "mt5") {
+        getMarketDataState().subscribe({ symbol, channels: ["ticker"] });
         getMarketDataState().subscribe({
-          symbol: sym,
-          channels: ["ticker"],
-        });
-        getMarketDataState().subscribe({
-          symbol: sym,
+          symbol,
           channels: ["kline"],
           timeframe: selectedTimeframe,
         });
-        subbed.add(key);
+        subscribed.add(key);
       }
     }
-    for (const key of [...subbed]) {
-      if (!desired.has(key)) {
-        const [sym, timeframe] = key.split(":");
-        getMarketDataState().unsubscribe(sym);
-        getMarketDataState().unsubscribe(
-          sym,
-          timeframe as typeof selectedTimeframe,
-        );
-        subbed.delete(key);
-      }
+
+    for (const key of [...subscribed]) {
+      if (desired.has(key)) continue;
+      const [symbol, timeframe] = key.split(":");
+      getMarketDataState().unsubscribe(symbol);
+      getMarketDataState().unsubscribe(
+        symbol,
+        timeframe as typeof selectedTimeframe,
+      );
+      subscribed.delete(key);
     }
   }, [alertSymbolsKey, selectedTimeframe]);
 
-  // Drop all alert subscriptions on unmount.
   useEffect(() => {
-    const subbed = subscribedRef.current;
+    const subscribed = subscribedRef.current;
     return () => {
-      for (const key of subbed) {
-        const [sym, timeframe] = key.split(":");
-        getMarketDataState().unsubscribe(sym);
+      for (const key of subscribed) {
+        const [symbol, timeframe] = key.split(":");
+        getMarketDataState().unsubscribe(symbol);
         getMarketDataState().unsubscribe(
-          sym,
+          symbol,
           timeframe as typeof selectedTimeframe,
         );
       }
-      subbed.clear();
+      subscribed.clear();
     };
   }, []);
 
-  // ---- 2. evaluate on every price update (no polling) ----
   useEffect(() => {
     const evaluate = () => {
-      const md = getMarketDataState();
+      const marketData = getMarketDataState();
       const { alerts, triggerAlert, settings } = getAlertState();
       if (alerts.length === 0) return;
-      const now = Date.now();
 
-      // One price lookup per distinct symbol.
-      const priceBySym = new Map<string, AlertPriceSnapshot>();
-      const seriesBySym = new Map<string, MarketCandle[] | undefined>();
-      for (const a of alerts) {
-        if (!priceBySym.has(a.symbol)) {
-          const p = latestPriceSnapshot(md, a.symbol);
-          if (p !== undefined) {
-            priceBySym.set(a.symbol, p.snapshot);
-            seriesBySym.set(a.symbol, p.series);
-          }
-        }
+      const now = Date.now();
+      const prices = new Map<string, number>();
+      for (const alert of alerts) {
+        if (prices.has(alert.symbol)) continue;
+        const price = latestPrice(marketData, alert.symbol);
+        if (price !== undefined) prices.set(alert.symbol, price);
       }
 
       for (const alert of alerts) {
-        if (!alert.enabled) continue; // disabled alerts are not evaluated
-        const curr = priceBySym.get(alert.symbol);
-        if (curr === undefined) continue;
-        const series = seriesBySym.get(alert.symbol);
-        // An alert that predates this browser session needs its candle history
-        // loaded before its first observation is locked in — otherwise the
-        // recovered range would collapse to a single point (the live price)
-        // and a touch that happened while the browser was closed gets missed
-        // permanently (the range only widens forward from here on).
-        const isFirstObservation = !observedRangeRef.current.has(alert.id);
-        const existedBeforeThisBrowserSession =
-          alert.createdAt * 1000 < mountedAtRef.current;
-        if (isFirstObservation && existedBeforeThisBrowserSession && !series?.length) {
-          continue;
-        }
-        // First-time evaluation: ignore stale prev price (recorded before
-        // the alert existed) to prevent spurious crossUp/crossDown triggers.
-        const isNew = !seenAlertIds.current.has(alert.id);
-        const prev = isNew ? undefined : prevPriceRef.current.get(alert.symbol);
-        const observed = observedSinceArm(
-          observedRangeRef.current,
-          alert,
-          curr,
-          series,
-        );
+        if (!alert.enabled) continue;
+        const current = prices.get(alert.symbol);
+        if (current === undefined) continue;
+
+        const firstEvaluation = !seenAlertIdsRef.current.has(alert.id);
+        const previous = firstEvaluation
+          ? undefined
+          : previousPriceRef.current.get(alert.symbol);
         const rearmBlocked =
           alert.recurring &&
           alert.triggeredAt !== undefined &&
           now - alert.triggeredAt * 1000 < RECURRING_REARM_MS;
-        const triggered = isAlertTriggered(alert, prev, observed);
-        if (!rearmBlocked && triggered) {
-          const fired = triggerAlert(alert.id, observed.current);
-          if (fired) deliverAlert(fired, curr.current, settings);
+
+        if (!rearmBlocked && isAlertTriggered(alert, previous, current)) {
+          const fired = triggerAlert(alert.id, current);
+          if (fired) deliverAlert(fired, current, settings);
         }
-        seenAlertIds.current.add(alert.id);
+        seenAlertIdsRef.current.add(alert.id);
       }
 
-      // Clean up seenAlertIds for alerts that no longer exist.
-      if (seenAlertIds.current.size > alerts.length * 2) {
-        const activeIds = new Set(alerts.map((a) => a.id));
-        for (const id of seenAlertIds.current) {
-          if (!activeIds.has(id)) seenAlertIds.current.delete(id);
-        }
-        for (const id of observedRangeRef.current.keys()) {
-          if (!activeIds.has(id)) observedRangeRef.current.delete(id);
-        }
+      const activeIds = new Set(alerts.map((alert) => alert.id));
+      for (const id of seenAlertIdsRef.current) {
+        if (!activeIds.has(id)) seenAlertIdsRef.current.delete(id);
       }
-
-      // Remember prices for next-tick cross detection.
-      for (const [sym, p] of priceBySym) prevPriceRef.current.set(sym, p.current);
+      for (const [symbol, price] of prices) {
+        previousPriceRef.current.set(symbol, price);
+      }
     };
 
-    evaluate(); // catch already-satisfied level alerts immediately
-    const store = getDefaultStore();
-    return store.sub(marketDataTickAtom, evaluate);
+    evaluate();
+    return getDefaultStore().sub(marketDataTickAtom, evaluate);
   }, []);
-}
-
-/**
- * Tracks each alert's observed high/low since it was armed. Rather than only
- * ever widening forward from the single most-recent tick's candle (which
- * silently drops any candle that closed during a missed tick — a websocket
- * reconnect, a backgrounded/throttled tab, or reopening the browser
- * entirely), every call rescans the loaded candle series for anything newer
- * than the last-known point and folds it in. This makes recovery uniform
- * across "just armed", "reopened after being closed", and "gap while still
- * open" — all three are just "rescan the series since X".
- */
-function observedSinceArm(
-  ranges: Map<string, ObservedAlertRange>,
-  alert: Alert,
-  snapshot: AlertPriceSnapshot,
-  series?: MarketCandle[],
-): AlertPriceSnapshot {
-  const signature = alertSignature(alert);
-  const existing = ranges.get(alert.id);
-  const isFirstObservation = !existing || existing.signature !== signature;
-
-  let high: number;
-  let low: number;
-  let sinceMs: number;
-  if (isFirstObservation) {
-    high = snapshot.current;
-    low = snapshot.current;
-    sinceMs = alert.updatedAt * 1000;
-  } else {
-    high = existing.high;
-    low = existing.low;
-    sinceMs = existing.sinceMs;
-  }
-
-  high = Math.max(high, snapshot.current);
-  low = Math.min(low, snapshot.current);
-
-  if (series?.length) {
-    // `series` is time-ascending; walk backward from the newest candle and
-    // stop as soon as we pass the cutoff. In the common "continuing" case
-    // this touches only the current (and maybe the just-closed) candle —
-    // full first-observation recovery scans are the rare case.
-    for (let i = series.length - 1; i >= 0; i--) {
-      const c = series[i];
-      if (c.time * 1000 < sinceMs) break;
-      high = Math.max(high, c.high);
-      low = Math.min(low, c.low);
-    }
-  } else {
-    const candleOpenMs =
-      snapshot.candleTime !== undefined ? snapshot.candleTime * 1000 : undefined;
-    if (
-      candleOpenMs !== undefined &&
-      candleOpenMs >= sinceMs &&
-      snapshot.candleHigh !== undefined &&
-      snapshot.candleLow !== undefined
-    ) {
-      high = Math.max(high, snapshot.candleHigh);
-      low = Math.min(low, snapshot.candleLow);
-    }
-  }
-
-  // Only advance the cutoff when a real candle time is known; otherwise keep
-  // the previous trusted cutoff instead of losing it.
-  const nextSinceMs =
-    snapshot.candleTime !== undefined
-      ? Math.max(sinceMs, snapshot.candleTime * 1000)
-      : sinceMs;
-
-  ranges.set(alert.id, {
-    signature,
-    symbol: alert.symbol,
-    sinceMs: nextSinceMs,
-    candleTime: snapshot.candleTime,
-    candleHigh: snapshot.candleHigh,
-    candleLow: snapshot.candleLow,
-    high,
-    low,
-  });
-
-  return {
-    ...snapshot,
-    open: snapshot.current,
-    high,
-    low,
-  };
 }

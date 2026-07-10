@@ -18,6 +18,7 @@ import {
   type MarketSubscription,
   type Timeframe,
 } from "@/types";
+import { mt5ChartPrice } from "@/services/market-data/mt5Price";
 import type { MarketDataServiceBinding } from "@/store/marketDataStore";
 
 type StatusValue = Extract<MarketDataEvent, { type: "status" }>["status"];
@@ -184,9 +185,7 @@ export class Mt5Provider implements MarketDataServiceBinding {
     const symbol = tick.symbol.trim().toUpperCase();
     const bid = Number(tick.bid);
     const ask = Number(tick.ask);
-    const last = Number.isFinite(bid + ask) && bid > 0 && ask > 0
-      ? (bid + ask) / 2
-      : bid || ask || 0;
+    const last = mt5ChartPrice(bid, ask) ?? 0;
     const previous = this.previousBySymbol.get(symbol) ?? last;
     this.previousBySymbol.set(symbol, last);
 

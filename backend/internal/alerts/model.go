@@ -209,3 +209,16 @@ func validCondition(condition string) bool {
 func validPrice(price float64) bool {
 	return price > 0 && !math.IsNaN(price) && !math.IsInf(price, 0)
 }
+
+func validTriggerPrice(condition string, target, trigger float64) bool {
+	if !validPrice(target) || !validPrice(trigger) {
+		return false
+	}
+	if condition == "above" || condition == "crossUp" {
+		return trigger >= target
+	}
+	if condition == "below" || condition == "crossDown" {
+		return trigger <= target
+	}
+	return false
+}

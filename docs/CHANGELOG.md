@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Alert lines triggering before MT5 price crossed (2026-07-10)
+- Replaced candle high/low range recovery with strict consecutive-tick rules:
+  `crossUp` requires `previous < target && current >= target`, while `crossDown`
+  requires `previous > target && current <= target`.
+- Standardized MT5 historical candles, realtime chart quotes, and closed-browser
+  alert evaluation on Bid instead of mixing Bid candles with Bid/Ask midpoint or
+  fallback OANDA/TwelveData prices.
+- Made the push evaluator skip unavailable MT5 ticks instead of switching market
+  data providers, preventing cross-feed spread differences from firing alerts.
+- Added final wrong-side trigger guards in the Jotai store and Go repository, so
+  invalid records such as `crossDown 1.14372 @ 1.14412` cannot be persisted or
+  restored through push reconciliation.
+- Added regression tests for all four price conditions, first-observation
+  crossing behavior, MT5 Bid normalization, and frontend/backend trigger-price
+  validation; documented the snapshot-polling tradeoff for brief crossings.
+
 ### Added - Phase 10 alert and push-token API sync (2026-07-10)
 - Added PostgreSQL alert/event migration and protected Go CRUD, trigger,
   history, and FCM token endpoints with user ownership and validation.

@@ -43,6 +43,26 @@ func TestNormalizePatchRequiresTriggerEndpointForTriggeredStatus(t *testing.T) {
 	}
 }
 
+func TestValidTriggerPriceRequiresCorrectSideOfTarget(t *testing.T) {
+	tests := []struct {
+		condition string
+		target    float64
+		trigger   float64
+		want      bool
+	}{
+		{condition: "crossUp", target: 1.14420, trigger: 1.14420, want: true},
+		{condition: "crossUp", target: 1.14420, trigger: 1.14412, want: false},
+		{condition: "crossDown", target: 1.14372, trigger: 1.14372, want: true},
+		{condition: "crossDown", target: 1.14372, trigger: 1.14412, want: false},
+	}
+
+	for _, tc := range tests {
+		if got := validTriggerPrice(tc.condition, tc.target, tc.trigger); got != tc.want {
+			t.Fatalf("validTriggerPrice(%q, %v, %v) = %v, want %v", tc.condition, tc.target, tc.trigger, got, tc.want)
+		}
+	}
+}
+
 func TestNormalizePushToken(t *testing.T) {
 	input, err := normalizePushToken(PushTokenInput{
 		FCMToken:   " token-1 ",

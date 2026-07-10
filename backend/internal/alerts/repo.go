@@ -208,18 +208,39 @@ func (r *Repo) Trigger(ctx context.Context, userID, ref string, triggerPrice flo
 	}
 	defer tx.Rollback(ctx)
 
+	var selectedAlertID pgtype.UUID
+	var condition string
+	var targetPrice float64
+	err = tx.QueryRow(ctx, `
+SELECT id, condition::text, price
+FROM alerts
+WHERE user_id = $1
+  AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
+FOR UPDATE`, uid, refUUID, refClientID).Scan(&selectedAlertID, &condition, &targetPrice)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Alert{}, Event{}, ErrNotFound
+	}
+	if err != nil {
+		return Alert{}, Event{}, err
+	}
+	if !validTriggerPrice(condition, targetPrice, triggerPrice) {
+		return Alert{}, Event{}, fmt.Errorf(
+			"%w: triggerPrice is on the wrong side of the alert target",
+			ErrBadRequest,
+		)
+	}
+
 	item, alertID, err := scanAlert(tx.QueryRow(ctx, `
 UPDATE alerts SET
   status = CASE WHEN recurring THEN 'active'::alert_status ELSE 'triggered'::alert_status END,
-  trigger_price = $4,
+  trigger_price = $3,
   triggered_at = now(),
   updated_at = now()
-WHERE user_id = $1
-  AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
+WHERE user_id = $1 AND id = $2
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
           trigger_price, triggered_at, created_at, updated_at`,
-		uid, refUUID, refClientID, triggerPrice))
+		uid, selectedAlertID, triggerPrice))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Alert{}, Event{}, ErrNotFound
 	}

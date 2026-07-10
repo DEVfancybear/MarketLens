@@ -12,6 +12,7 @@
  *  crossDown  → previous > target AND current ≤ target
  */
 import type { Alert, AlertCondition } from '@/store/alertStore';
+import { isPriceConditionMet } from "@/services/alertConditions";
 
 export interface AlertPriceSnapshot {
   current: number;
@@ -29,36 +30,8 @@ export function conditionMet(
   prev: number | undefined,
   price: number | AlertPriceSnapshot,
 ): boolean {
-  const snapshot =
-    typeof price === "number"
-      ? { current: price, high: price, low: price }
-      : price;
-  const current = snapshot.current;
-  const open = snapshot.open;
-  const high = snapshot.high ?? current;
-  const low = snapshot.low ?? current;
-  switch (condition) {
-    case 'above':
-      return high >= target;
-    case 'below':
-      return low <= target;
-    case 'crossUp':
-      return (
-        high >= target &&
-        (low <= target ||
-          (prev !== undefined && prev <= target) ||
-          (open !== undefined && open <= target))
-      );
-    case 'crossDown':
-      return (
-        low <= target &&
-        (high >= target ||
-          (prev !== undefined && prev >= target) ||
-          (open !== undefined && open >= target))
-      );
-    default:
-      return false;
-  }
+  const current = typeof price === "number" ? price : price.current;
+  return isPriceConditionMet(condition, target, prev, current);
 }
 
 export function isAlertTriggered(

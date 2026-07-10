@@ -52,6 +52,42 @@ repository transaction:
 One-time alerts become `triggered`. Recurring alerts stay `active` and update
 their last trigger values so the existing one-minute re-arm gate still works.
 
+### Line-trigger correctness
+
+All open-browser and closed-browser evaluation now shares these exact rules:
+
+| Condition | Trigger rule |
+| --- | --- |
+| `above` | `current >= target` |
+| `below` | `current <= target` |
+| `crossUp` | `previous < target && current >= target` |
+| `crossDown` | `previous > target && current <= target` |
+
+`previous` and `current` are consecutive observations after the alert is armed.
+A crossing alert never fires on its first observation. Candle OHLC, historical
+wicks, and accumulated high/low ranges are deliberately excluded: they cannot
+prove that a wick happened after the alert was armed and previously produced
+records such as `crossDown 1.14372 @ 1.14412`.
+
+MT5 Bid is the canonical alert price. MT5 historical OHLC is Bid-based, so the
+realtime chart provider and Next push evaluator also use Bid instead of the
+Bid/Ask midpoint. Ask is only a fallback when Bid is invalid. The push worker
+reads `/api/v1/mt5/ticks`; it skips evaluation when MT5 is unavailable and never
+silently switches an MT5 alert to OANDA, TwelveData, or Binance.
+
+Correctness is enforced at three layers:
+
+1. the shared frontend predicate evaluates the tick-to-tick edge;
+2. `triggerAlertAtom` rejects trigger prices on the wrong side of the target,
+   including stale push reconciliation data;
+3. the Go repository locks the alert and validates condition, target, and
+   trigger price before updating state or inserting `alert_events`.
+
+The closed-browser worker polls snapshots, so a crossing that moves through and
+back across the line entirely between polls can be missed. This is preferred to
+creating a false trigger from ambiguous candle history. A future durable MT5
+tick stream can remove that sampling limitation without changing alert rules.
+
 History survives alert deletion. `alert_events.alert_id` uses `ON DELETE SET
 NULL`, while `alert_ref` stores the stable client ID/UUID returned to the UI.
 This matches Alert Center: clearing Triggered does not clear History.
@@ -134,7 +170,8 @@ can reference the same service account in both runtime files, but must never be 
 `usePushAlertSync` and `usePushTriggerReconcile` continue to use the Next worker
 routes. Reconciled closed-browser triggers call the normal `triggerAlertAtom`,
 which now records the trigger in PostgreSQL without sending the notification a
-second time.
+second time. Reconciliation cannot apply a stored trigger whose price is on the
+wrong side of its alert line.
 
 ## Files
 
@@ -142,10 +179,15 @@ second time.
 | --- | --- |
 | `src/services/api/resources/alertsApi.ts` | DTOs, adapters, alert/history/token resource calls |
 | `src/store/alertStore.ts` | Optimistic state, per-alert queues, migration, settings sync |
+| `src/services/alertConditions.ts` | Shared level/cross predicates and final trigger-price guard |
+| `src/services/market-data/mt5Price.ts` | Bid-based MT5 chart/alert price normalization |
+| `src/hooks/useAlertEngine.ts` | Consecutive-tick live alert evaluation |
+| `src/server/pushAlertEvaluator.ts` | Closed-browser MT5 tick polling and evaluation |
 | `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot |
 | `src/services/notifications/push.ts` | Dual token registration/unregistration |
 | `src/hooks/usePushNotifications.ts` | Enables Go token sync only for backend sessions |
 | `tests/alerts/alertsApi.test.ts` | Adapter and method/path/body contract tests |
+| `tests/alerts/alertConditions.test.ts` | Crossing, level, wrong-side, and MT5 Bid regression tests |
 
 Backend implementation lives in `backend/internal/alerts`; schema migration is
 `backend/migrations/0011_alerts`.
