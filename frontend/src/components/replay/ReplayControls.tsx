@@ -17,7 +17,8 @@ import { backendSessionAtom } from "@/store/authStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   exitReplaySession,
-  runReplayCommand,
+  restartActiveReplay,
+  setActiveReplayPlaying,
   setActiveReplaySpeed,
   stepActiveReplay,
 } from "@/services/replay/replaySocket";
@@ -98,7 +99,7 @@ export function ReplayControls() {
 
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <IconButton label="Restart (R)" onClick={() => fire(runReplayCommand("restart"))}>
+      <IconButton label="Restart (R)" onClick={() => fire(restartActiveReplay())}>
         <RotateCcw size={15} />
       </IconButton>
       <IconButton label="Rewind 10 bars" onClick={() => fire(stepActiveReplay(-10))}>
@@ -108,7 +109,7 @@ export function ReplayControls() {
         <ChevronLeft size={16} />
       </IconButton>
       <button
-        onClick={() => fire(runReplayCommand(playing ? "pause" : "play"))}
+        onClick={() => fire(setActiveReplayPlaying(!playing))}
         disabled={atEnd || projection.connection === "connecting"}
         className={cn(
           "mx-1 flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors disabled:opacity-40",
@@ -152,7 +153,7 @@ export function ReplayControls() {
       <div className="mx-2 h-5 w-px bg-terminal-border" />
       <button
         onClick={() => {
-          if (playing) fire(runReplayCommand("pause"));
+          if (playing) fire(setActiveReplayPlaying(false));
           beginReselect();
         }}
         className="flex items-center gap-1.5 rounded px-2 py-1 text-2xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch"

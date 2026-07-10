@@ -4,6 +4,25 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay Pause race and responsive controls (2026-07-11)
+- Made Pause an idempotent safety command that can apply to the latest backend
+  session state when a clock transaction advances beyond the request's
+  `expectedVersion`; cursor-dependent and trading commands retain strict
+  optimistic-version validation.
+- Pausing during a high-speed candle burst now freezes the exact rendered frame
+  instead of canceling animation and then revealing the remainder with a full
+  authoritative `setData()` replacement.
+- Added narrow optimistic status/speed overrides with acknowledgment, stale
+  response protection, failure refresh, lifecycle cancellation, and inactive
+  session response guards.
+- Added a 300 ms trailing input window across floating controls, the Replay
+  panel, and hotkeys: speed/playback use the final value, Step counts accumulate,
+  repeated Restart clicks coalesce, and Exit remains immediate.
+- Added detailed incident and maintenance documentation in
+  `frontend/docs/REPLAY_CONTROL_INCIDENTS.md` plus regression tests for stale
+  Pause versions, optimistic reconciliation, final-value debounce, and Step
+  accumulation.
+
 ### Fixed - TradingView-style Replay pacing and timeframe lifecycle (2026-07-11)
 - Changed fast playback to one elapsed-time-aware batch transaction per second,
   with an immediate first tick and bounded catch-up instead of one database

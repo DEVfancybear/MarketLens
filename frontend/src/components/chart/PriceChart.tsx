@@ -420,9 +420,27 @@ export function PriceChart({
   useEffect(() => {
     const cs = candleSeriesRef.current;
     if (!cs) return;
+    const animationWasRunning = candleAnimationRafRef.current !== null;
     if (candleAnimationRafRef.current !== null) {
       cancelAnimationFrame(candleAnimationRafRef.current);
       candleAnimationRafRef.current = null;
+    }
+
+    // Pause means freeze the candle exactly where the user pressed the button.
+    // The authoritative candle batch is already in `candles`, so applying it
+    // here would make the remaining candles appear after playback was paused.
+    if (replayActive && !replayPlaying && animationWasRunning) {
+      const renderedCount = Math.min(renderedCandleCountRef.current, candles.length);
+      const renderedLatest = renderedLatestCandleRef.current;
+      if (renderedCount > 0 && renderedLatest) {
+        prevCandlesRef.current = [
+          ...candles.slice(0, renderedCount - 1),
+          renderedLatest,
+        ];
+      }
+      prevThemeRef.current = theme;
+      scheduleVersionBump();
+      return;
     }
     // Empty series => symbol/timeframe just changed; re-fit on next load.
     if (candles.length === 0) {

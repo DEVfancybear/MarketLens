@@ -18,6 +18,7 @@ import {
   type ReplayClientStore,
 } from "@/store/replayClientStore";
 import { withReplayVersionRetry } from "./replayCommandRetry";
+import { TrailingReplayCommand } from "./trailingReplayCommand";
 
 export class ReplaySocket {
   private socket: WebSocket | null = null;
@@ -155,8 +156,7 @@ let activeSocket: ReplaySocket | null = null;
 let lifecycleVersion = 0;
 let commandSequence = 0;
 let commandQueue = Promise.resolve<unknown>(undefined);
-let desiredSpeed: { sessionId: string; speed: number } | null = null;
-let speedFlush: Promise<void> | null = null;
+const REPLAY_CONTROL_IDLE_MS = 300;
 
 function commandKey(type: string): string {
   commandSequence += 1;
@@ -215,6 +215,7 @@ export async function startReplaySession(
   input: CreateReplaySessionInput,
 ): Promise<void> {
   const expectedLifecycle = ++lifecycleVersion;
+  cancelPendingReplayControls();
   const previousId = replayClientStore.getState().snapshot?.id;
   activeSocket?.stop();
   activeSocket = null;
@@ -238,6 +239,7 @@ export async function startReplaySession(
 /** Stop transport, clear the projection, and close the server session. */
 export async function exitReplaySession(): Promise<void> {
   lifecycleVersion += 1;
+  cancelPendingReplayControls();
   const sessionId = replayClientStore.getState().snapshot?.id;
   activeSocket?.stop();
   activeSocket = null;
@@ -259,6 +261,7 @@ export function runReplayCommand(
       throw new Error("Replay session is unavailable");
     }
     const result = await sendVersionedReplayCommand(snapshot.id, type, payload);
+    if (replayClientStore.getState().snapshot?.id !== requestedSessionId) return;
     replayClientStore.replaceSnapshot(result.snapshot);
     if (type === "step" || type === "seek" || type === "restart") {
       await hydrateSnapshotBars(result.snapshot);
@@ -275,34 +278,84 @@ export function runReplayCommand(
   return next;
 }
 
+/** Freeze the client immediately, then confirm the pause with the backend. */
+async function refreshAfterOptimisticControlFailure(
+  sessionId: string,
+  ...keys: Array<"status" | "speed">
+): Promise<void> {
+  replayClientStore.clearOptimisticControls(...keys);
+  if (replayClientStore.getState().snapshot?.id !== sessionId) return;
+  replayClientStore.replaceSnapshot(await getReplaySession(sessionId));
+}
+
+const playbackCommand = new TrailingReplayCommand<boolean>(
+  REPLAY_CONTROL_IDLE_MS,
+  (_current, incoming) => incoming,
+  async (playing) => {
+    const sessionId = replayClientStore.getState().snapshot?.id;
+    if (!sessionId) return;
+    try {
+      await runReplayCommand(playing ? "play" : "pause");
+    } catch (error) {
+      await refreshAfterOptimisticControlFailure(sessionId, "status").catch(() => undefined);
+      throw error;
+    }
+  },
+);
+
+export function setActiveReplayPlaying(playing: boolean): Promise<void> {
+  const snapshot = replayClientStore.getState().snapshot;
+  if (!snapshot) return Promise.reject(new Error("Replay session is unavailable"));
+  replayClientStore.setOptimisticControls({ status: playing ? "playing" : "paused" });
+  return playbackCommand.schedule(playing);
+}
+
+export function pauseActiveReplay(): Promise<void> {
+  return setActiveReplayPlaying(false);
+}
+
 /** Coalesce noisy range-input events so Play never waits behind stale speed commands. */
+const speedCommand = new TrailingReplayCommand<{ sessionId: string; speed: number }>(
+  REPLAY_CONTROL_IDLE_MS,
+  (_current, incoming) => incoming,
+  async ({ sessionId, speed }) => {
+    if (replayClientStore.getState().snapshot?.id !== sessionId) return;
+    try {
+      await runReplayCommand("set_speed", { speed });
+    } catch (error) {
+      await refreshAfterOptimisticControlFailure(sessionId, "speed").catch(() => undefined);
+      throw error;
+    }
+  },
+);
+
 export function setActiveReplaySpeed(speed: number): Promise<void> {
   const snapshot = replayClientStore.getState().snapshot;
   if (!snapshot) return Promise.reject(new Error("Replay session is unavailable"));
   if (!Number.isFinite(speed) || speed <= 0 || speed > 100) {
     return Promise.reject(new Error("Replay speed must be between 0 and 100"));
   }
-  if (!speedFlush && snapshot.speed === speed) return Promise.resolve();
-
-  desiredSpeed = { sessionId: snapshot.id, speed };
-  if (!speedFlush) {
-    speedFlush = flushReplaySpeed().finally(() => {
-      speedFlush = null;
-      desiredSpeed = null;
-    });
-  }
-  return speedFlush;
+  replayClientStore.setOptimisticControls({ speed });
+  return speedCommand.schedule({ sessionId: snapshot.id, speed });
 }
 
-async function flushReplaySpeed(): Promise<void> {
-  while (desiredSpeed) {
-    const request = desiredSpeed;
-    desiredSpeed = null;
-    const snapshot = replayClientStore.getState().snapshot;
-    if (!snapshot || snapshot.id !== request.sessionId) continue;
-    if (snapshot.speed === request.speed) continue;
-    await runReplayCommand("set_speed", { speed: request.speed });
-  }
+const restartCommand = new TrailingReplayCommand<string>(
+  REPLAY_CONTROL_IDLE_MS,
+  (_current, incoming) => incoming,
+  async (sessionId) => {
+    if (replayClientStore.getState().snapshot?.id === sessionId) {
+      await runReplayCommand("restart");
+    }
+  },
+);
+
+export function restartActiveReplay(): Promise<void> {
+  const snapshot = replayClientStore.getState().snapshot;
+  if (!snapshot) return Promise.reject(new Error("Replay session is unavailable"));
+  playbackCommand.cancel();
+  stepCommand.cancel();
+  replayClientStore.setOptimisticControls({ status: "paused" });
+  return restartCommand.schedule(snapshot.id);
 }
 
 /** Fork at a new UTC time; backward movement never restores a local clock. */
@@ -328,7 +381,7 @@ export async function forkActiveReplay(time: string): Promise<void> {
   }
 }
 
-export function stepActiveReplay(count: number): Promise<void> {
+async function executeReplayStep(count: number): Promise<void> {
   if (count > 0) return runReplayCommand("step", { count });
   const projection = replayClientStore.getState();
   const track = projection.snapshot?.tracks[0];
@@ -348,6 +401,34 @@ export function stepActiveReplay(count: number): Promise<void> {
   return hasTradingState
     ? forkActiveReplay(target.time)
     : runReplayCommand("seek", { time: target.time });
+}
+
+const stepCommand = new TrailingReplayCommand<{ count: number; pauseFirst: boolean }>(
+  REPLAY_CONTROL_IDLE_MS,
+  (current, incoming) => ({
+    count: (current?.count ?? 0) + incoming.count,
+    pauseFirst: Boolean(current?.pauseFirst || incoming.pauseFirst),
+  }),
+  async ({ count, pauseFirst }) => {
+    if (pauseFirst) await runReplayCommand("pause");
+    if (count !== 0) await executeReplayStep(count);
+  },
+);
+
+export function stepActiveReplay(count: number): Promise<void> {
+  const snapshot = replayClientStore.getState().snapshot;
+  if (!snapshot) return Promise.reject(new Error("Replay session is unavailable"));
+  const wasPlaying = snapshot.status === "playing";
+  playbackCommand.cancel();
+  replayClientStore.setOptimisticControls({ status: "paused" });
+  return stepCommand.schedule({ count, pauseFirst: wasPlaying });
+}
+
+function cancelPendingReplayControls(): void {
+  playbackCommand.cancel();
+  speedCommand.cancel();
+  restartCommand.cancel();
+  stepCommand.cancel();
 }
 
 function isTradingEvent(type: string): boolean {

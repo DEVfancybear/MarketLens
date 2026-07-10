@@ -34,6 +34,10 @@ const removedIdentifiers = [
   "reconcileReplayToCandlesAtom",
   "mtfSnapshot",
 ];
+const replayTimerModules = new Set([
+  "src/services/replay/replaySocket.ts",
+  "src/services/replay/trailingReplayCommand.ts",
+]);
 
 for (const file of sourceFiles) {
   const rel = relative(root, file).replaceAll("\\", "/");
@@ -49,8 +53,8 @@ for (const file of sourceFiles) {
   if (/from\s+["'][^"']*(HistoricalDataService|tradeEngine)[^"']*["']/.test(source)) {
     failures.push(`${rel}: Replay client imports live history or simulation ownership`);
   }
-  if (/\b(setInterval|setTimeout)\s*\(/.test(source) && !rel.endsWith("services/replay/replaySocket.ts")) {
-    failures.push(`${rel}: Replay timers are allowed only for socket reconnect transport`);
+  if (/\b(setInterval|setTimeout)\s*\(/.test(source) && !replayTimerModules.has(rel)) {
+    failures.push(`${rel}: Replay timers are allowed only for transport and input debounce`);
   }
   if (/\brequestAnimationFrame\s*\(/.test(source) &&
       !rel.endsWith("components/replay/ReplaySelectionLayer.tsx") &&

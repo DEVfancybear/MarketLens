@@ -25,6 +25,7 @@ export interface ReplayClientProjection {
 }
 
 type Listener = (projection: ReplayClientProjection) => void;
+type ReplayControlOverrides = Partial<Pick<ReplaySessionSnapshot, "status" | "speed">>;
 
 export class ReplayClientStore {
   private projection: ReplayClientProjection = {
@@ -34,6 +35,7 @@ export class ReplayClientStore {
     error: null,
   };
   private listeners = new Set<Listener>();
+  private controlOverrides: ReplayControlOverrides = {};
 
   getState(): ReplayClientProjection {
     return this.projection;
@@ -61,8 +63,25 @@ export class ReplayClientStore {
     const barsByTrack = Object.fromEntries(
       Object.entries(this.projection.barsByTrack).filter(([trackId]) => trackIds.has(trackId)),
     );
-    this.projection = { ...this.projection, snapshot, barsByTrack, error: null };
+    this.projection = {
+      ...this.projection,
+      snapshot: this.applyControlOverrides(snapshot),
+      barsByTrack,
+      error: null,
+    };
     this.emit();
+  }
+
+  setOptimisticControls(controls: ReplayControlOverrides): void {
+    const snapshot = this.projection.snapshot;
+    if (!snapshot) return;
+    this.controlOverrides = { ...this.controlOverrides, ...controls };
+    this.projection = { ...this.projection, snapshot: { ...snapshot, ...controls }, error: null };
+    this.emit();
+  }
+
+  clearOptimisticControls(...keys: Array<keyof ReplayControlOverrides>): void {
+    for (const key of keys) delete this.controlOverrides[key];
   }
 
   replaceBars(sessionId: string, trackId: string, bars: ReplayBar[]): boolean {
@@ -77,6 +96,7 @@ export class ReplayClientStore {
   }
 
   clear(): void {
+    this.controlOverrides = {};
     this.projection = { snapshot: null, barsByTrack: {}, connection: "idle", error: null };
     this.emit();
   }
@@ -152,6 +172,7 @@ export class ReplayClientStore {
         pauseReason: payload.pauseReason ?? undefined,
         replayIntervalSeconds: payload.replayIntervalSeconds ?? next.replayIntervalSeconds,
       };
+      next = this.applyControlOverrides(next);
     }
     this.projection = { ...this.projection, snapshot: next, error: null };
     this.emit();
@@ -160,6 +181,13 @@ export class ReplayClientStore {
 
   private emit(): void {
     for (const listener of this.listeners) listener(this.projection);
+  }
+
+  private applyControlOverrides(snapshot: ReplaySessionSnapshot): ReplaySessionSnapshot {
+    const controls = { ...this.controlOverrides };
+    if (controls.status === snapshot.status) delete this.controlOverrides.status;
+    if (controls.speed === snapshot.speed) delete this.controlOverrides.speed;
+    return { ...snapshot, ...this.controlOverrides };
   }
 }
 

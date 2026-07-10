@@ -107,6 +107,17 @@ func TestEngineSerializesAndDeduplicatesCommands(t *testing.T) {
 	}
 }
 
+func TestPauseAllowsAStaleExpectedVersion(t *testing.T) {
+	if !allowsStaleExpectedVersion(" pause ") {
+		t.Fatal("pause must not lose a race with the replay clock")
+	}
+	for _, commandType := range []string{"play", "step", "seek", "set_speed"} {
+		if allowsStaleExpectedVersion(commandType) {
+			t.Fatalf("%s must retain optimistic version validation", commandType)
+		}
+	}
+}
+
 func TestEngineNormalizesCommandEnvelope(t *testing.T) {
 	store := newFakeRuntimeStore()
 	engine := NewEngine(store, time.Hour)

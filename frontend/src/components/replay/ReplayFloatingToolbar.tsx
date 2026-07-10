@@ -13,7 +13,8 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   exitReplaySession,
-  runReplayCommand,
+  restartActiveReplay,
+  setActiveReplayPlaying,
   setActiveReplaySpeed,
   stepActiveReplay,
 } from "@/services/replay/replaySocket";
@@ -68,14 +69,14 @@ export function ReplayFloatingToolbar() {
           </div>
         ) : snapshot ? (
           <>
-            <ToolbarButton label="Restart" onClick={() => fire(runReplayCommand("restart"))}>
+            <ToolbarButton label="Restart" onClick={() => fire(restartActiveReplay())}>
               <RotateCcw size={15} />
             </ToolbarButton>
             <ToolbarButton
               label="Play / pause"
               disabled={atEnd}
               active={playing}
-              onClick={() => fire(runReplayCommand(playing ? "pause" : "play"))}
+              onClick={() => fire(setActiveReplayPlaying(!playing))}
             >
               {playing ? <Pause size={16} /> : <Play size={16} />}
             </ToolbarButton>

@@ -14,6 +14,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `INDICATOR_ARCHITECTURE.md` | Pine indicator runtime and renderer |
 | `../../docs/PINE_RUNTIME_GO_MIGRATION.md` | Cross-package migration plan for moving Pine compile/runtime ownership to Go |
 | `REPLAY_ARCHITECTURE.md` | Replay mode engine |
+| `REPLAY_CONTROL_INCIDENTS.md` | Pause race and debounced Replay control incident analysis |
 | `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md` | Target architecture and phased migration from frontend-owned replay to Go/PostgreSQL |
 | `RESPONSIVE_ARCHITECTURE.md` | Responsive layout system |
 | `SETTTING_ARCHITECTURE.md` | Settings dialog architecture |

@@ -96,6 +96,29 @@ test("an older command response cannot regress an event-updated projection", () 
   assert.equal(store.getState().snapshot?.tracks[0].cursorSeq, 11);
 });
 
+test("optimistic controls survive stale server state until acknowledged", () => {
+  const store = new ReplayClientStore();
+  const initial = snapshot();
+  initial.status = "playing";
+  store.replaceSnapshot(initial);
+  store.setOptimisticControls({ status: "paused", speed: 3 });
+
+  const stale = snapshot();
+  stale.status = "playing";
+  stale.speed = 1;
+  store.replaceSnapshot(stale);
+  assert.equal(store.getState().snapshot?.status, "paused");
+  assert.equal(store.getState().snapshot?.speed, 3);
+
+  const acknowledged = snapshot();
+  acknowledged.version = 2;
+  acknowledged.status = "paused";
+  acknowledged.speed = 3;
+  store.replaceSnapshot(acknowledged);
+  assert.equal(store.getState().snapshot?.status, "paused");
+  assert.equal(store.getState().snapshot?.speed, 3);
+});
+
 test("progressive bar upserts replace only the revealed aggregate", () => {
   const store = new ReplayClientStore();
   store.replaceSnapshot(snapshot());

@@ -93,7 +93,8 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 	if err != nil {
 		return CommandResult{}, nil, err
 	}
-	if input.ExpectedVersion != nil && *input.ExpectedVersion != session.Version {
+	if input.ExpectedVersion != nil && *input.ExpectedVersion != session.Version &&
+		!allowsStaleExpectedVersion(input.Type) {
 		rejection, _ := json.Marshal(commandRejection{Code: "version_conflict", CurrentVersion: session.Version})
 		if _, err := q.MarkReplayCommandRejected(ctx, gen.MarkReplayCommandRejectedParams{ID: command.ID, Result: rejection}); err != nil {
 			return CommandResult{}, nil, err
@@ -213,6 +214,13 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		return CommandResult{}, nil, err
 	}
 	return result, events, nil
+}
+
+// Pause is an idempotent safety control. The playback clock can advance the
+// version while a pause request is in flight, but that must never prevent the
+// latest session state from being paused.
+func allowsStaleExpectedVersion(commandType string) bool {
+	return strings.EqualFold(strings.TrimSpace(commandType), "pause")
 }
 
 func tradeChangedInDrafts(drafts []eventDraft) bool {

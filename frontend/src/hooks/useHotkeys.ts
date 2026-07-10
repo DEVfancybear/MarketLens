@@ -2,7 +2,11 @@
 import { useEffect } from "react";
 import { getDefaultStore } from "jotai";
 import { replayClientStore } from "@/store/replayClientStore";
-import { runReplayCommand, stepActiveReplay } from "@/services/replay/replaySocket";
+import {
+  restartActiveReplay,
+  setActiveReplayPlaying,
+  stepActiveReplay,
+} from "@/services/replay/replaySocket";
 import {
   cancelReplaySelectionAtom,
   replaySelectionModeAtom,
@@ -154,13 +158,13 @@ export function useHotkeys() {
         case " ":
           if (replay && !replaySelecting) {
             e.preventDefault();
-            fire(runReplayCommand(replay.status === "playing" ? "pause" : "play"));
+            fire(setActiveReplayPlaying(replay.status !== "playing"));
           }
           return;
         case "ArrowDown":
           if (replay && e.shiftKey && !replaySelecting) {
             e.preventDefault();
-            fire(runReplayCommand(replay.status === "playing" ? "pause" : "play"));
+            fire(setActiveReplayPlaying(replay.status !== "playing"));
           }
           return;
         case "ArrowRight":
@@ -177,7 +181,7 @@ export function useHotkeys() {
           return;
         case "r":
         case "R":
-          if (replay && !replaySelecting) fire(runReplayCommand("restart"));
+          if (replay && !replaySelecting) fire(restartActiveReplay());
           return;
         case "a":
         case "A":

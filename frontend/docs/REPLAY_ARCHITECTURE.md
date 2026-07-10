@@ -32,6 +32,7 @@ Replay controls / UTC selection candidate
 | `components/replay/*` | Presentation controls, UTC candidate selection, dashboard, and lifecycle gate |
 | `components/chart/replayViewport.ts` | Presentation-only viewport and coordinate geometry |
 | `components/chart/replayCandlePresentation.ts` | Identity-preserving projection and frame-by-frame OHLC interpolation |
+| `services/replay/trailingReplayCommand.ts` | Presentation-input debounce/coalescing; never advances market time |
 
 `ReplayClientRuntime` closes the session on logout or kill-switch activation and
 recreates it when synchronized layout configuration changes. It never schedules
@@ -50,6 +51,13 @@ responses cannot replace a projection that has already applied a newer event.
 If the actor clock advances before a command arrives, the client retries a
 `version_conflict` with the returned current version and a new idempotency key.
 Backward movement with trading state uses a backend fork.
+
+Pause is the deliberate exception to strict expected-version rejection. It is
+an idempotent safety command and applies to the latest session state even if a
+clock step committed after the client snapshot. Status and speed may be shown
+optimistically, but no cursor, bar, simulated time, or trading value is locally
+projected. See `REPLAY_CONTROL_INCIDENTS.md` for the incident timeline and
+reconciliation rules.
 
 ## Interval and clock semantics
 
@@ -89,8 +97,10 @@ finalizes it; this overlap must not turn a valid append into a full `setData()`.
 3. append each genuinely new candle with `series.update()`;
 4. interpolate OHLC and volume on `requestAnimationFrame`, starting flat at the
    candle open and finishing at the authoritative values;
-5. snap to the authoritative series if playback pauses, completes, reconnects,
-   or a structural dataset replacement occurs.
+5. if Pause interrupts an animation, freeze the exact rendered frame and candle
+   count instead of revealing the unpresented remainder of the received batch;
+6. snap to authoritative data on completion, reconnect, seek/restart, or a
+   structural dataset replacement.
 
 Animation duration is `clamp(920 / speed, 90, 850)` milliseconds per newly
 revealed candle. At 10x, a normal ten-candle server batch is presented in about
@@ -122,10 +132,14 @@ This is critical because one 10x `15m` clock batch can reveal roughly 150 source
 `1m` rows. Active orders or positions still use deterministic row-by-row ledger
 processing so fills and brackets cannot skip intermediate prices.
 
-Speed slider commands are latest-wins/coalesced, while all other Replay commands
-remain serialized and versioned. `step`, `seek`, and `restart` explicitly
-rehydrate bars; ordinary Play ticks rely on ordered socket events and do not
-issue a full bars request per update.
+Interactive controls use a 300 ms trailing idle window. Speed and Play/Pause are
+latest-wins, rapid Step counts are summed, and repeated Restart clicks are
+coalesced. Status/speed update immediately through narrow optimistic overrides;
+commands remain serialized and versioned after the idle window. Pending input
+is canceled on replacement/Exit, and responses for inactive sessions are
+ignored. `step`, `seek`, and `restart` explicitly rehydrate bars; ordinary Play
+ticks rely on ordered socket events and do not issue a full bars request per
+update.
 
 ## Market and trading isolation
 
