@@ -1,6 +1,6 @@
 # Candle Virtualization — Phase 5 Rollout and Rollback
 
-_Implemented: 2026-07-11. Deterministic optimized/legacy A/B capture pending._
+_Implemented and benchmarked: 2026-07-11._
 
 ## Phase 4 decision
 
@@ -108,3 +108,40 @@ Acceptance requirements:
 The legacy path must remain in the repository through multiple stable releases.
 Its removal is explicitly outside this phase and requires retained production
 telemetry plus a separate reviewed change.
+
+## Final optimized versus legacy capture
+
+Fresh-tab captures used the same 5,000-candle Phase 2 workload and explicit
+query overrides. Telemetry confirmed every requested/effective flag.
+
+| Metric | Optimized | Legacy | Change |
+| --- | ---: | ---: | ---: |
+| Indicator compute (full + incremental) | 59.3ms | 1,909.2ms | -96.9% |
+| Indicator projection | 872.8ms | 473.1ms | +84.5% |
+| Indicator writes (`setData` + `update`) | 611.7ms | 93.4ms | +554.9% |
+| Total derived pipeline | 1,543.8ms | 2,475.7ms | -37.6% |
+| React commit p95 | 15.4ms | 20.1ms | -23.4% |
+| Long-task count | 97 | 158 | -38.6% |
+| Long-task total | 5,517ms | 8,806ms | -37.3% |
+| Used heap | 77.9MB | 117.1MB | -33.5% |
+| Frame p95 | 66.8ms | 66.8ms | unchanged |
+
+Optimized mode recorded exactly 1,500 incremental appends and avoided
+publishing 1,578,234 offscreen indicator points. Legacy mode recorded 1,505
+full indicator computations, zero points avoided, and no incremental cache
+counter. Both modes retained one intentional 4,700-point primary prefix
+replacement followed by 600 candle updates.
+
+Viewport shifts intentionally increased indicator structural replacements from
+7 in legacy mode to 350 in optimized mode. Their extra projection/write cost is
+included in the table; the 96.9% compute reduction still lowered the complete
+derived pipeline by 37.6%. This is the measured trade-off, not an omitted cost.
+
+The legacy capture contains an 8.4-second background-tab frame, so elapsed time
+and max frame are invalid. Distribution metrics, operation counters, CPU
+durations, and heap remain the acceptance evidence. Frame p95 was identical.
+
+Phase 5 is complete with `auto` as the default policy. Explicit optimized and
+legacy overrides, the deployment kill switch, and both implementation paths
+remain available. Legacy removal is deferred until multiple stable releases
+provide retained production evidence.

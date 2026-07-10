@@ -1,6 +1,6 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phases 0–3 complete; Phase 4 skipped by trace evidence; Phase 5 rollout implemented with deterministic A/B gate pending._
+_Status: Phases 0–3 and 5 complete; Phase 4 intentionally skipped; `auto` rollout active with legacy rollback retained._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
