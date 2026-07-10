@@ -52,14 +52,20 @@ export function ChartArea() {
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
   const [benchmarkCandles, setBenchmarkCandles] = useState<Candle[] | null>(null);
   const [benchmarkVisibleCount, setBenchmarkVisibleCount] = useState<number | null>(null);
-  const [phase2BenchmarkProfile, setPhase2BenchmarkProfile] = useState(false);
+  const [benchmarkProfile, setBenchmarkProfile] = useState<
+    "workspace" | "phase2" | "phase3"
+  >("workspace");
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const requested = Number(new URLSearchParams(window.location.search).get("chartFixture"));
     if (!isChartBenchmarkSize(requested)) return;
-    setPhase2BenchmarkProfile(
-      new URLSearchParams(window.location.search).get("chartBenchmarkProfile") === "phase2",
+    const requestedProfile = new URLSearchParams(window.location.search)
+      .get("chartBenchmarkProfile");
+    setBenchmarkProfile(
+      requestedProfile === "phase2" || requestedProfile === "phase3"
+        ? requestedProfile
+        : "workspace",
     );
     const fixture = createChartBenchmarkCandles(requested);
     setActiveChartBenchmarkCandles(fixture);
@@ -91,8 +97,12 @@ export function ChartArea() {
   const precision = meta?.pricePrecision ?? 2;
   const exchange = meta?.exchange ?? "";
   const displayedIndicators = useMemo(
-    () => phase2BenchmarkProfile ? createPhase2BenchmarkIndicators() : indicators,
-    [indicators, phase2BenchmarkProfile],
+    () => benchmarkProfile === "phase2"
+      ? createPhase2BenchmarkIndicators()
+      : benchmarkProfile === "phase3"
+        ? []
+        : indicators,
+    [benchmarkProfile, indicators],
   );
   const paneIndicators = useMemo(
     () => displayedIndicators.filter((i) => i.separatePane),

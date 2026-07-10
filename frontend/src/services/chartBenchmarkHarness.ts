@@ -4,6 +4,8 @@ import {
   incrementChartPerformanceCounter,
   resetChartPerformanceProbe,
 } from "@/services/chartPerformanceProbe";
+import { getActiveChartBenchmarkCandles } from "@/services/chartBenchmarkFixtures";
+import { runCandleRepositoryBenchmark } from "@/services/market-data/candleRepositoryBenchmark";
 
 export interface ChartBenchmarkOptions {
   panFrames?: number;
@@ -34,6 +36,18 @@ export function installChartBenchmarkHarness(
       const replayBars = Math.min(options.replayBars ?? 300, totalCandles);
       resetChartPerformanceProbe();
       incrementChartPerformanceCounter("benchmark.candles", totalCandles);
+      const profile = new URLSearchParams(window.location.search).get("chartBenchmarkProfile");
+      incrementChartPerformanceCounter(
+        profile === "phase3"
+          ? "benchmark.profile.phase3"
+          : profile === "phase2"
+            ? "benchmark.profile.phase2"
+            : "benchmark.profile.workspace",
+      );
+      if (profile === "phase3") {
+        const fixture = getActiveChartBenchmarkCandles();
+        if (fixture) runCandleRepositoryBenchmark(fixture);
+      }
 
       const end = Math.max(1, totalCandles - 1);
       const baseSpan = Math.min(180, end);

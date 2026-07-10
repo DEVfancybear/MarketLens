@@ -45,6 +45,7 @@
     "src/services/market-data/symbols.ts",
     "src/services/market-data/mt5Price.ts",
     "src/services/market-data/historyPolicy.ts",
+    "src/services/market-data/candleRepository.ts",
     "src/services/market-data/subscriptionRegistry.ts",
     "src/services/alertConditions.ts",
     "src/services/notifications/deepLink.ts",

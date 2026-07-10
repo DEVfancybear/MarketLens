@@ -1,6 +1,6 @@
 # Candle Virtualization Research and Rendering Optimization Plan
 
-_Status: Phases 0–2 complete; Phase 3 chunked canonical storage is next._
+_Status: Phases 0–2 complete; Phase 3 implemented with focused allocation/heap gate pending._
 _Last updated: 2026-07-11._
 
 Phase 0 implementation and capture instructions are recorded in
@@ -10,6 +10,8 @@ Phase 1 incremental optimizations and validation gates are recorded in
 Phase 2 viewport-aware derived-data implementation and its capture gate are
 recorded in
 [`CANDLE_VIRTUALIZATION_PHASE2.md`](./CANDLE_VIRTUALIZATION_PHASE2.md).
+Phase 3 chunked canonical storage and its allocation benchmark are recorded in
+[`CANDLE_VIRTUALIZATION_PHASE3.md`](./CANDLE_VIRTUALIZATION_PHASE3.md).
 
 ## 1. Executive decision
 

@@ -22,14 +22,25 @@ import {
 } from "@/types";
 import {
   marketCandleSeriesEqual,
-  mergeHistoryWithLiveCandles,
   normalizeMarketCandle,
-  normalizeMarketCandleSeries,
-  upsertMarketCandleIntoSeries,
 } from "@/services/market-data/candleSeries";
+import {
+  createCandleRepository,
+  findCandleIndexByTime,
+  evictCandleRepositories,
+  materializeCandleRepository,
+  mergeHistoryIntoCandleRepository,
+  upsertCandleRepository,
+  type CandleRepository,
+} from "@/services/market-data/candleRepository";
+import {
+  beginChartPerformanceMeasure,
+  incrementChartPerformanceCounter,
+} from "@/services/chartPerformanceProbe";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 const MAX_CANDLES = 5000;
+const CANDLE_CACHE_BUDGET = { maxRepositories: 10, maxCandles: 50_000 } as const;
 
 const DEFAULT_SYMBOL = "";
 const DEFAULT_TIMEFRAME: Timeframe = "1m";
@@ -56,6 +67,7 @@ export function attachMarketDataService(svc: MarketDataServiceBinding | null) {
 // ── State atoms ──────────────────────────────────────────────────────────────
 export const quotesAtom = atom<Record<string, MarketQuote>>({});
 export const candlesAtom = atom<Record<SubscriptionKey, MarketCandle[]>>({});
+export const candleRepositoriesAtom = atom<Record<SubscriptionKey, CandleRepository>>({});
 export const selectedSymbolAtom = atom<string>(DEFAULT_SYMBOL);
 export const selectedTimeframeAtom = atom<Timeframe>(DEFAULT_TIMEFRAME);
 export const connectionStatusAtom = atom<ConnectionStatus>("disconnected");
@@ -67,6 +79,50 @@ export const lastUpdateAtom = atom<number>(0);
 
 /** Incremented on every data mutation so external subscribers can react. */
 export const marketDataTickAtom = atom<number>(0);
+
+function countSharedChunks(
+  previous: CandleRepository | undefined,
+  next: CandleRepository,
+) {
+  if (!previous) return 0;
+  const previousChunks = new Set(previous.chunks);
+  return next.chunks.filter((chunk) => previousChunks.has(chunk)).length;
+}
+
+function commitCandleRepository(
+  repositories: Record<SubscriptionKey, CandleRepository>,
+  flatSeries: Record<SubscriptionKey, MarketCandle[]>,
+  key: SubscriptionKey,
+  repository: CandleRepository,
+  protectedKeys: ReadonlySet<string>,
+  preparedFlat?: MarketCandle[],
+) {
+  const withRepository = { ...repositories, [key]: repository };
+  const budgeted = evictCandleRepositories(
+    withRepository,
+    protectedKeys,
+    CANDLE_CACHE_BUDGET,
+  ) as Record<SubscriptionKey, CandleRepository>;
+  let materialized = preparedFlat;
+  if (!materialized) {
+    const endMaterialize = beginChartPerformanceMeasure("candle.repository.materialize", {
+      candles: repository.length,
+      chunks: repository.chunks.length,
+    });
+    materialized = materializeCandleRepository(repository);
+    endMaterialize();
+  }
+  const nextFlat = { ...flatSeries, [key]: materialized };
+  let evictions = 0;
+  for (const existingKey of Object.keys(nextFlat) as SubscriptionKey[]) {
+    if (!budgeted[existingKey]) {
+      delete nextFlat[existingKey];
+      evictions += 1;
+    }
+  }
+  if (evictions > 0) incrementChartPerformanceCounter("candle.repository.evictions", evictions);
+  return { repositories: budgeted, flatSeries: nextFlat };
+}
 
 // ── Write atoms: intents (UI → service) ──────────────────────────────────────
 
@@ -161,15 +217,31 @@ export const updateCandleAtom = atom(
 
     const key = subscriptionKey(symbol, timeframe);
     const all = get(candlesAtom);
-    const series = all[key] ?? [];
-    const next = upsertMarketCandleIntoSeries(series, normalized, MAX_CANDLES);
-    if (
-      next.length === series.length &&
-      next.every((item, index) => item === series[index])
-    ) {
-      return;
-    }
-    set(candlesAtom, { ...all, [key]: next });
+    const repositories = get(candleRepositoriesAtom);
+    const previous = repositories[key] ?? createCandleRepository(all[key] ?? [], MAX_CANDLES);
+    const endUpsert = beginChartPerformanceMeasure("candle.repository.upsert", {
+      candles: previous.length,
+      chunks: previous.chunks.length,
+    });
+    const next = upsertCandleRepository(previous, normalized, MAX_CANDLES);
+    endUpsert();
+    if (next === previous) return;
+    const shared = countSharedChunks(previous, next);
+    incrementChartPerformanceCounter("candle.repository.chunksReused", shared);
+    incrementChartPerformanceCounter(
+      "candle.repository.chunksCreated",
+      Math.max(0, next.chunks.length - shared),
+    );
+    const activeKey = subscriptionKey(get(selectedSymbolAtom), get(selectedTimeframeAtom));
+    const committed = commitCandleRepository(
+      repositories,
+      all,
+      key,
+      next,
+      new Set([key, activeKey]),
+    );
+    set(candleRepositoriesAtom, committed.repositories);
+    set(candlesAtom, committed.flatSeries);
     set(lastUpdateAtom, Date.now());
     set(marketDataTickAtom, get(marketDataTickAtom) + 1);
   },
@@ -179,13 +251,44 @@ export const setCandlesAtom = atom(
   null,
   (get, set, symbol: string, timeframe: Timeframe, candles: MarketCandle[]) => {
     const key = subscriptionKey(symbol, timeframe);
-    const existing = get(candlesAtom)[key] ?? [];
-    const trimmed =
-      existing.length > 0
-        ? mergeHistoryWithLiveCandles(candles, existing, MAX_CANDLES)
-        : normalizeMarketCandleSeries(candles, MAX_CANDLES);
-    if (marketCandleSeriesEqual(existing, trimmed)) return;
-    set(candlesAtom, { ...get(candlesAtom), [key]: trimmed });
+    const all = get(candlesAtom);
+    const existing = all[key] ?? [];
+    const repositories = get(candleRepositoriesAtom);
+    const previous = repositories[key] ?? createCandleRepository(existing, MAX_CANDLES);
+    const endMerge = beginChartPerformanceMeasure("candle.repository.merge", {
+      historyCandles: candles.length,
+      existingCandles: previous.length,
+      chunks: previous.chunks.length,
+    });
+    const next = existing.length > 0
+      ? mergeHistoryIntoCandleRepository(previous, candles, MAX_CANDLES)
+      : createCandleRepository(candles, MAX_CANDLES);
+    endMerge();
+    if (next === previous) return;
+    const endMaterialize = beginChartPerformanceMeasure("candle.repository.materialize", {
+      candles: next.length,
+      chunks: next.chunks.length,
+    });
+    const materialized = materializeCandleRepository(next);
+    endMaterialize();
+    if (marketCandleSeriesEqual(existing, materialized) && repositories[key]) return;
+    const shared = countSharedChunks(previous, next);
+    incrementChartPerformanceCounter("candle.repository.chunksReused", shared);
+    incrementChartPerformanceCounter(
+      "candle.repository.chunksCreated",
+      Math.max(0, next.chunks.length - shared),
+    );
+    const activeKey = subscriptionKey(get(selectedSymbolAtom), get(selectedTimeframeAtom));
+    const committed = commitCandleRepository(
+      repositories,
+      all,
+      key,
+      next,
+      new Set([key, activeKey]),
+      materialized,
+    );
+    set(candleRepositoriesAtom, committed.repositories);
+    set(candlesAtom, committed.flatSeries);
     set(lastUpdateAtom, Date.now());
     set(marketDataTickAtom, get(marketDataTickAtom) + 1);
   },
@@ -201,6 +304,7 @@ export const setConnectionStatusAtom = atom(
 export const resetAtom = atom(null, (_get, set) => {
   set(quotesAtom, {});
   set(candlesAtom, {});
+  set(candleRepositoriesAtom, {});
   set(subscriptionsAtom, {});
   set(subRefsAtom, {});
   set(connectionStatusAtom, "disconnected");
@@ -307,4 +411,25 @@ export function useMarketDataStore<T>(
 // Static getState() for non-React code.
 export function getMarketDataState(): MarketDataStoreInterface {
   return getDefaultStore().get(marketDataCombinedAtom);
+}
+
+/** Phase 3 canonical access for range-aware consumers migrating off flat arrays. */
+export function getMarketCandleRepository(
+  symbol?: string,
+  timeframe?: Timeframe,
+): CandleRepository | undefined {
+  const store = getDefaultStore();
+  const selectedSymbol = symbol ?? store.get(selectedSymbolAtom);
+  const selectedTimeframe = timeframe ?? store.get(selectedTimeframeAtom);
+  return store.get(candleRepositoriesAtom)[subscriptionKey(selectedSymbol, selectedTimeframe)];
+}
+
+/** Exact timestamp lookup without flattening or scanning the compatibility view. */
+export function findMarketCandleIndexByTime(
+  time: number,
+  symbol?: string,
+  timeframe?: Timeframe,
+) {
+  const repository = getMarketCandleRepository(symbol, timeframe);
+  return repository ? findCandleIndexByTime(repository, time) : -1;
 }
