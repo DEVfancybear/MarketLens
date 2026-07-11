@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { Drawing, Point, DrawingTool } from "@/types";
+import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
 import { getTool, defaultMove, defaultMoveAnchor } from "../tools/ToolRegistry";
@@ -26,7 +27,7 @@ export {
 } from "./machine";
 
 function minPoints(t: DrawingTool): number {
-  return getTool(t)?.minPoints ?? 2;
+  return getDrawingToolManifestEntry(t).minPoints;
 }
 
 function shouldRecordContinuousPoint(
@@ -241,7 +242,7 @@ export function useDrawingInteractionManager(
       pointerClaimedRef.current = true;
       const cur = getState();
       const n = minPoints(cur.activeTool);
-      const adapter = getTool(cur.activeTool);
+      const creation = getDrawingToolManifestEntry(cur.activeTool);
       if (cur.activeTool === "text") {
         if (onTextPlace) {
           onTextPlace(p, cur.drawColor);
@@ -255,7 +256,7 @@ export function useDrawingInteractionManager(
               id: uid("dw"),
               tool: "text",
               color: cur.drawColor,
-              lineWidth: 1.5,
+              lineWidth: creation.defaultProperties.lineWidth,
               points: [p],
               text: t,
             });
@@ -267,7 +268,7 @@ export function useDrawingInteractionManager(
         }
         return;
       }
-      if (adapter?.continuous) {
+      if (creation.creationMode === "pointer-continuous") {
         committedRef.current = [p];
         dragActiveRef.current = true;
         freezeChartRef.current?.(true);
@@ -283,24 +284,25 @@ export function useDrawingInteractionManager(
           id: uid("dw"),
           tool: cur.activeTool,
           color: cur.drawColor,
-          lineWidth: 1.5,
+          lineWidth: creation.defaultProperties.lineWidth,
           points: [p],
         });
         return;
       }
 
       // ---- Multi-point tools (triangle, arc, double-curve, polyline, …) ----
-      // Opt-in via the plugin's `freeform`/`maxPoints` flags; 1-/2-point tools
-      // skip this entirely and keep their original path below.
-      const maxPts = adapter?.maxPoints;
-      const isMulti = !!adapter?.freeform || (maxPts ?? 0) > 2 || n > 2;
+      // The manifest selects the multi-point creation contract; 1-/2-point
+      // tools skip this entirely and keep their original path below.
+      const maxPts = creation.maxPoints;
+      const isFreeform = creation.creationMode === "click-freeform";
+      const isMulti = isFreeform || creation.creationMode === "fixed-multi-point";
       if (isMulti) {
         const commit = (pts: Point[]) => {
           addDrawing({
             id: uid("dw"),
             tool: cur.activeTool,
             color: cur.drawColor,
-            lineWidth: 1.5,
+            lineWidth: creation.defaultProperties.lineWidth,
             points: pts.map((q) => ({ ...q })),
           });
           committedRef.current = [];
@@ -325,7 +327,7 @@ export function useDrawingInteractionManager(
           e.timeStamp - prev.t < 350 &&
           Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6;
         lastDownRef.current = { x: e.clientX, y: e.clientY, t: e.timeStamp };
-        if (adapter?.freeform && isDouble) {
+        if (isFreeform && isDouble) {
           if (committedRef.current.length >= n) commit(committedRef.current);
           else reset();
           return;
@@ -342,7 +344,7 @@ export function useDrawingInteractionManager(
           id: uid("dw"),
           tool: cur.activeTool,
           color: cur.drawColor,
-          lineWidth: 1.5,
+          lineWidth: creation.defaultProperties.lineWidth,
           points: [m.anchors[0], p],
         });
         reset();
@@ -361,8 +363,8 @@ export function useDrawingInteractionManager(
       const p = fromEvent(e);
       if (!p) return;
       const tool = m.drawingTool ?? getState().activeTool;
-      const adapter = getTool(tool);
-      if (adapter?.continuous) {
+      const creation = getDrawingToolManifestEntry(tool);
+      if (creation.creationMode === "pointer-continuous") {
         e.preventDefault();
         e.stopPropagation();
         const committed = committedRef.current;
@@ -387,8 +389,8 @@ export function useDrawingInteractionManager(
       const m = machineRef.current;
       if (m.state !== "Drawing") return;
       const tool = m.drawingTool ?? getState().activeTool;
-      const adapter = getTool(tool);
-      if (!adapter?.continuous) return;
+      const creation = getDrawingToolManifestEntry(tool);
+      if (creation.creationMode !== "pointer-continuous") return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -398,12 +400,12 @@ export function useDrawingInteractionManager(
       if (p && shouldRecordContinuousPoint(last, p, toX, toY)) {
         pts = [...pts, p];
       }
-      if (pts.length >= adapter.minPoints) {
+      if (pts.length >= creation.minPoints) {
         addDrawing({
           id: uid("dw"),
           tool,
           color: getState().drawColor,
-          lineWidth: 1.5,
+          lineWidth: creation.defaultProperties.lineWidth,
           points: pts.map((q) => ({ ...q })),
         });
       }
@@ -412,8 +414,8 @@ export function useDrawingInteractionManager(
     const hCancel = () => {
       const m = machineRef.current;
       const tool = m.drawingTool ?? getState().activeTool;
-      const adapter = getTool(tool);
-      if (m.state === "Drawing" && adapter?.continuous) reset();
+      const creation = getDrawingToolManifestEntry(tool);
+      if (m.state === "Drawing" && creation.creationMode === "pointer-continuous") reset();
     };
     document.addEventListener("pointerdown", hD, true);
     document.addEventListener("pointermove", hM, true);
@@ -671,14 +673,14 @@ export function useDrawingInteractionManager(
         e.preventDefault();
         // Right-click finishes an in-progress freeform draw (else cancels).
         const tool = m.drawingTool ?? cur.activeTool;
-        const adapter = getTool(tool);
+        const creation = getDrawingToolManifestEntry(tool);
         const pts = committedRef.current;
-        if (adapter?.freeform && pts.length >= adapter.minPoints) {
+        if (creation.creationMode === "click-freeform" && pts.length >= creation.minPoints) {
           addDrawing({
             id: uid("dw"),
             tool,
             color: cur.drawColor,
-            lineWidth: 1.5,
+            lineWidth: creation.defaultProperties.lineWidth,
             points: pts.map((q) => ({ ...q })),
           });
         }
@@ -778,14 +780,14 @@ export function useDrawingInteractionManager(
         if (m.state === "Drawing") {
           const cur = getState();
           const tool = m.drawingTool ?? cur.activeTool;
-          const adapter = getTool(tool);
+          const creation = getDrawingToolManifestEntry(tool);
           const pts = committedRef.current;
-          if (adapter?.freeform && pts.length >= adapter.minPoints) {
+          if (creation.creationMode === "click-freeform" && pts.length >= creation.minPoints) {
             addDrawing({
               id: uid("dw"),
               tool,
               color: cur.drawColor,
-              lineWidth: 1.5,
+              lineWidth: creation.defaultProperties.lineWidth,
               points: pts.map((q) => ({ ...q })),
             });
           }

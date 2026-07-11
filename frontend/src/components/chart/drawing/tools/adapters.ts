@@ -47,3 +47,9 @@ import "./plugins/BrushTool";
 import "./plugins/ArrowTools";
 import "./plugins/TextTool";
 import "./plugins/EmojiTool";
+
+import { assertDrawingToolRegistryComplete } from "./ToolRegistry";
+
+if (process.env.NODE_ENV !== "production") {
+  assertDrawingToolRegistryComplete();
+}

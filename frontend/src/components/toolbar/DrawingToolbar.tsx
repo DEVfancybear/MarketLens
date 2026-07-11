@@ -55,6 +55,12 @@ import {
 import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
 import type { DrawingTool } from "@/types";
+import {
+  DRAWING_TOOL_GROUPS,
+  DRAWING_TOOL_MANIFEST,
+  normalizeFavoriteDrawingTools,
+  type DrawingIconKey,
+} from "@/types/drawingToolManifest";
 
 // ---- Tool groups (TradingView pattern) ----
 
@@ -75,193 +81,54 @@ interface ToolGroup {
   tools: ToolItem[];
 }
 
-const GROUPS: ToolGroup[] = [
-  // --- Mode tools ---
-  {
-    id: "cursor",
-    icon: <MousePointer2 size={18} />,
-    label: "Cursor",
-    defaultTool: "cursor",
-    tools: [
-      { tool: "cursor", icon: <MousePointer2 size={14} />, label: "Cursor" },
-      { tool: "crosshair", icon: <Target size={14} />, label: "Crosshair" },
-      { tool: "eraser", icon: <Eraser size={14} />, label: "Eraser" },
-    ],
-  },
-  // --- Lines (matches TradingView "LINES" menu) ---
-  {
-    id: "lines",
-    icon: <TrendingUp size={18} />,
-    label: "Trend line",
-    defaultTool: "trendline",
-    tools: [
-      {
-        tool: "trendline",
-        icon: <TrendingUp size={14} />,
-        label: "Trendline",
-        hotkey: "Alt + T",
-        section: "LINES",
-      },
-      { tool: "ray", icon: <ArrowUpRight size={14} />, label: "Ray" },
-      { tool: "infoLine", icon: <Ruler size={14} />, label: "Info line" },
-      {
-        tool: "extendedLine",
-        icon: <GitBranch size={14} />,
-        label: "Extended line",
-      },
-      {
-        tool: "trendAngle",
-        icon: <Triangle size={14} />,
-        label: "Trend angle",
-      },
-      {
-        tool: "horizontal",
-        icon: <Minus size={14} />,
-        label: "Horizontal line",
-        hotkey: "Alt + H",
-      },
-      {
-        tool: "horizRay",
-        icon: <Minus size={14} />,
-        label: "Horizontal ray",
-        hotkey: "Alt + J",
-      },
-      {
-        tool: "vertical",
-        icon: <MoveVertical size={14} />,
-        label: "Vertical line",
-        hotkey: "Alt + V",
-      },
-      {
-        tool: "crossLine",
-        icon: <Crosshair size={14} />,
-        label: "Crossline",
-        hotkey: "Alt + C",
-      },
-    ],
-  },
-  // --- Brushes / arrows / shapes (matches TradingView's combined geometry menu) ---
-  {
-    id: "shapes",
-    icon: <Square size={18} />,
-    label: "Rectangle",
-    defaultTool: "rectangle",
-    tools: [
-      {
-        tool: "brush",
-        icon: <Paintbrush size={14} />,
-        label: "Brush",
-        section: "BRUSHES",
-      },
-      {
-        tool: "highlighter",
-        icon: <Highlighter size={14} />,
-        label: "Highlighter",
-      },
-      {
-        tool: "arrowMarker",
-        icon: <ArrowUpRight size={14} />,
-        label: "Arrow marker",
-        section: "ARROWS",
-      },
-      {
-        tool: "arrow",
-        icon: <ArrowUpRight size={14} />,
-        label: "Arrow",
-      },
-      {
-        tool: "arrowMarkUp",
-        icon: <ArrowUp size={14} />,
-        label: "Arrow mark up",
-      },
-      {
-        tool: "arrowMarkDown",
-        icon: <ArrowDown size={14} />,
-        label: "Arrow mark down",
-      },
-      {
-        tool: "arrowMarkLeft",
-        icon: <ArrowLeft size={14} />,
-        label: "Arrow mark left",
-      },
-      {
-        tool: "arrowMarkRight",
-        icon: <ArrowRight size={14} />,
-        label: "Arrow mark right",
-      },
-      {
-        tool: "rectangle",
-        icon: <Square size={14} />,
-        label: "Rectangle",
-        hotkey: "Alt+Shift+R",
-        section: "SHAPES",
-      },
-      {
-        tool: "rotatedRect",
-        icon: <Square size={14} className="rotate-12" />,
-        label: "Rotated rectangle",
-      },
-      { tool: "path", icon: <Waypoints size={14} />, label: "Path" },
-      { tool: "circle", icon: <Circle size={14} />, label: "Circle" },
-      { tool: "ellipse", icon: <Circle size={14} />, label: "Ellipse" },
-      { tool: "polyline", icon: <PenTool size={14} />, label: "Polyline" },
-      { tool: "triangle", icon: <Triangle size={14} />, label: "Triangle" },
-      { tool: "arc", icon: <Spline size={14} />, label: "Arc" },
-      { tool: "curve", icon: <Spline size={14} />, label: "Curve" },
-      { tool: "doubleCurve", icon: <PenLine size={14} />, label: "Double curve" },
-    ],
-  },
-  // --- Fibonacci ---
-  {
-    id: "fibonacci",
-    icon: <GitFork size={18} />,
-    label: "Fib Retracement",
-    defaultTool: "fibRetracement",
-    tools: [
-      {
-        tool: "fibRetracement",
-        icon: <GitFork size={14} />,
-        label: "Fib Retracement",
-      },
-      {
-        tool: "fibExtension",
-        icon: <ArrowBigUp size={14} />,
-        label: "Trend-Based Fib Extension",
-      },
-      { tool: "fib", icon: <GitFork size={14} />, label: "Fib (legacy)" },
-    ],
-  },
-  // --- Positions ---
-  {
-    id: "positions",
-    icon: <ChartCandlestick size={18} />,
-    label: "Long position",
-    defaultTool: "long",
-    tools: [
-      {
-        tool: "long",
-        icon: <ChartCandlestick size={14} />,
-        label: "Long position",
-      },
-      {
-        tool: "short",
-        icon: <ChartNoAxesColumn size={14} />,
-        label: "Short position",
-      },
-    ],
-  },
-  // --- Annotations ---
-  {
-    id: "annotations",
-    icon: <Type size={18} />,
-    label: "Text",
-    defaultTool: "text",
-    tools: [
-      { tool: "text", icon: <Type size={14} />, label: "Text" },
-      { tool: "emoji", icon: <Smile size={14} />, label: "Emoji" },
-    ],
-  },
-];
+function toolIcon(key: DrawingIconKey, size: number): React.ReactNode {
+  const props = { size };
+  switch (key) {
+    case "cursor": return <MousePointer2 {...props} />;
+    case "target": return <Target {...props} />;
+    case "eraser": return <Eraser {...props} />;
+    case "ruler": return <Ruler {...props} />;
+    case "trend": return <TrendingUp {...props} />;
+    case "ray": case "arrowUpRight": return <ArrowUpRight {...props} />;
+    case "branch": return <GitBranch {...props} />;
+    case "triangle": return <Triangle {...props} />;
+    case "horizontal": return <Minus {...props} />;
+    case "vertical": return <MoveVertical {...props} />;
+    case "crosshair": return <Crosshair {...props} />;
+    case "square": return <Square {...props} />;
+    case "circle": return <Circle {...props} />;
+    case "pen": return <PenTool {...props} />;
+    case "spline": return <Spline {...props} />;
+    case "path": return <Waypoints {...props} />;
+    case "doubleCurve": return <PenLine {...props} />;
+    case "fib": return <GitFork {...props} />;
+    case "fibExtension": return <ArrowBigUp {...props} />;
+    case "long": return <ChartCandlestick {...props} />;
+    case "short": return <ChartNoAxesColumn {...props} />;
+    case "brush": return <Paintbrush {...props} />;
+    case "highlighter": return <Highlighter {...props} />;
+    case "arrowUp": return <ArrowUp {...props} />;
+    case "arrowDown": return <ArrowDown {...props} />;
+    case "arrowLeft": return <ArrowLeft {...props} />;
+    case "arrowRight": return <ArrowRight {...props} />;
+    case "text": return <Type {...props} />;
+    case "emoji": return <Smile {...props} />;
+  }
+}
+
+const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
+  ...group,
+  icon: toolIcon(group.iconKey, 18),
+  tools: DRAWING_TOOL_MANIFEST.filter((entry) => entry.group === group.id).map(
+    (entry) => ({
+      tool: entry.id,
+      icon: toolIcon(entry.iconKey, 14),
+      label: entry.displayName,
+      hotkey: entry.hotkey,
+      section: entry.section,
+    }),
+  ),
+}));
 
 /** Flat tool lookup (first occurrence wins) for the floating favorites toolbar. */
 const TOOL_BY_ID = new Map<DrawingTool, ToolItem>();
@@ -331,16 +198,7 @@ function clearLocalFavorites() {
   }
 }
 
-function normalizeFavoriteTools(tools: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const tool of tools) {
-    if (!TOOL_BY_ID.has(tool as DrawingTool) || seen.has(tool)) continue;
-    seen.add(tool);
-    out.push(tool);
-  }
-  return out;
-}
+const normalizeFavoriteTools = normalizeFavoriteDrawingTools;
 
 function apiMessage(error: unknown): string {
   return userFacingErrorMessage(error, "unknown error");

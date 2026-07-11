@@ -262,6 +262,8 @@ Exit gate:
 
 ### Phase 1 — Consolidate registry and catalog metadata
 
+Status: implemented on 2026-07-11.
+
 Purpose: remove duplicated tool knowledge without changing visuals.
 
 Tasks:
@@ -278,6 +280,28 @@ Exit gate:
 - Pixel/gesture snapshots unchanged.
 - No standalone hard-coded list of persistent tools outside the manifest and migration fixtures.
 - Adding a fixture-only test tool demonstrates registration without shared UI edits.
+
+Delivered:
+
+- `types/drawingToolManifest.ts` is the single catalog for stable ids, display metadata, toolbar
+  groups, icon keys, hotkeys, creation contracts, style families, defaults, favorite eligibility,
+  and legacy/preferred creation state.
+- `DRAWING_TOOLS`, `MODE_TOOLS`, `SHAPE_TOOLS`, `styleFamily`, favorite validation, and toolbar
+  lookup/groups are derived from the manifest; compatibility exports remain in `types/drawing.ts`.
+- Runtime registrations produce a typed `DrawingToolDefinition` combining manifest metadata with
+  the adapter. Duplicate ids fail loudly, creation-contract drift is rejected, and the development
+  adapter bootstrap asserts completeness.
+- Shared creation interaction reads manifest creation modes rather than adapter-specific flags.
+- Executable manifest and registry tests cover completeness, groups/defaults, creation modes,
+  style families, favorite validation, definition registration, and duplicate rejection.
+
+Verification on 2026-07-11:
+
+- `npm run typecheck`: passing.
+- `npm run test:drawing`: 33/33 passing.
+- `npm run check:drawing-viewport`: 7/7 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 2/2 passing in 15.4 seconds,
+  including three consecutive adapter-audit and gesture-transaction iterations.
 
 ### Phase 2 — Split interaction and DrawingLayer orchestration
 

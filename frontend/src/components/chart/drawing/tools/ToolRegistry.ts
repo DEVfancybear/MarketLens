@@ -9,6 +9,11 @@
  */
 import type { Drawing, Point } from "@/types";
 import type { DrawingTool } from "@/types";
+import {
+  DRAWING_TOOLS,
+  getDrawingToolManifestEntry,
+  type DrawingToolManifestEntry,
+} from "../../../../types/drawingToolManifest";
 import type { HitResult, HitTestProjector } from "../hittest/HitTestEngine";
 import type { Projector } from "../drawingRenderer";
 import {
@@ -95,6 +100,12 @@ export interface DrawingAdapter {
     toX: HitTestProjector,
     toY: HitTestProjector,
   ): Anchor[];
+}
+
+/** Runtime registration record: catalog metadata plus the geometry adapter. */
+export interface DrawingToolDefinition<TProps = Record<string, unknown>>
+  extends DrawingToolManifestEntry<TProps> {
+  readonly adapter: DrawingAdapter;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,21 +204,52 @@ export function createAdapter(t: SimpleTool): DrawingAdapter {
 // Registry
 // ---------------------------------------------------------------------------
 
-const registry = new Map<DrawingTool, DrawingAdapter>();
+const registry = new Map<DrawingTool, DrawingToolDefinition>();
 
 /** Register a tool. Automatically wraps simple tools with defaults. */
 export function registerTool(t: DrawingAdapter | SimpleTool): void {
   const adapter: DrawingAdapter = 'move' in t && 'moveAnchor' in t && 'getAnchors' in t
     ? t as DrawingAdapter
     : createAdapter(t as SimpleTool);
-  registry.set(adapter.tool, adapter);
+  if (registry.has(adapter.tool)) {
+    throw new Error(`Duplicate drawing adapter registration: ${adapter.tool}`);
+  }
+  const metadata = getDrawingToolManifestEntry(adapter.tool);
+  const expectedFreeform = metadata.creationMode === "click-freeform";
+  const expectedContinuous = metadata.creationMode === "pointer-continuous";
+  if (
+    !metadata.persistent ||
+    metadata.minPoints !== adapter.minPoints ||
+    metadata.maxPoints !== adapter.maxPoints ||
+    expectedFreeform !== !!adapter.freeform ||
+    expectedContinuous !== !!adapter.continuous
+  ) {
+    throw new Error(`Drawing adapter creation contract disagrees with manifest: ${adapter.tool}`);
+  }
+  registry.set(adapter.tool, { ...metadata, adapter });
 }
 export function getTool(tool: DrawingTool): DrawingAdapter | undefined {
-  return registry.get(tool);
+  return registry.get(tool)?.adapter;
 }
 
 export function allTools(): DrawingAdapter[] {
+  return [...registry.values()].map((definition) => definition.adapter);
+}
+
+export function getToolDefinition(tool: DrawingTool): DrawingToolDefinition | undefined {
+  return registry.get(tool);
+}
+
+export function allToolDefinitions(): DrawingToolDefinition[] {
   return [...registry.values()];
+}
+
+/** Development/test bootstrap gate. Call after adapters.ts has loaded. */
+export function assertDrawingToolRegistryComplete(): void {
+  const missing = DRAWING_TOOLS.filter((tool) => !registry.has(tool));
+  if (missing.length > 0) {
+    throw new Error(`Missing drawing adapter registrations: ${missing.join(", ")}`);
+  }
 }
 
 // Backward-compat alias.

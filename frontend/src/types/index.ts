@@ -1,5 +1,6 @@
 export * from './market';
 export * from './drawing';
+export * from './drawingToolManifest';
 export * from './indicators';
 export * from './smc';
 export * from './trade';

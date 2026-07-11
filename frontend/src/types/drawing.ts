@@ -1,91 +1,7 @@
 /** User drawing primitives rendered on the chart overlay canvas. */
-
-export type DrawingTool =
-  // modes (do not create a drawing)
-  | "cursor"
-  | "crosshair"
-  | "eraser"
-  | "measure"
-  // line tools
-  | "trendline"
-  | "ray"
-  | "extendedLine"
-  | "trendAngle"
-  | "horizontal"
-  | "horizRay"
-  | "vertical"
-  | "crossLine"
-  | "infoLine"
-  | "channel"
-  // shape tools
-  | "rectangle"
-  | "rotatedRect"
-  | "circle"
-  | "ellipse"
-  | "triangle"
-  | "polyline"
-  | "curve"
-  | "doubleCurve"
-  | "arc"
-  | "path"
-  | "fib"
-  | "fibRetracement"
-  | "fibExtension"
-  // annotations
-  | "text"
-  | "emoji"
-  // positions
-  | "long"
-  | "short"
-  // freehand
-  | "brush"
-  | "highlighter"
-  // arrows / markers
-  | "arrowMarker"
-  | "arrow"
-  | "arrowMarkUp"
-  | "arrowMarkDown"
-  | "arrowMarkLeft"
-  | "arrowMarkRight";
-
-/** Tools that actually persist a drawing object (vs. interaction modes). */
-export const DRAWING_TOOLS: DrawingTool[] = [
-  "trendline",
-  "ray",
-  "extendedLine",
-  "trendAngle",
-  "horizontal",
-  "horizRay",
-  "vertical",
-  "crossLine",
-  "infoLine",
-  "channel",
-  "rectangle",
-  "rotatedRect",
-  "circle",
-  "ellipse",
-  "triangle",
-  "polyline",
-  "curve",
-  "doubleCurve",
-  "arc",
-  "path",
-  "fib",
-  "fibRetracement",
-  "fibExtension",
-  "text",
-  "emoji",
-  "long",
-  "short",
-  "brush",
-  "highlighter",
-  "arrowMarker",
-  "arrow",
-  "arrowMarkUp",
-  "arrowMarkDown",
-  "arrowMarkLeft",
-  "arrowMarkRight",
-];
+import type { DrawingTool } from "./drawingToolManifest";
+export type { DrawingTool } from "./drawingToolManifest";
+export { ALL_DRAWING_TOOL_IDS } from "./drawingToolManifest";
 
 export type LineStyle = "solid" | "dashed" | "dotted";
 
@@ -244,22 +160,6 @@ export type Drawing = BaseDrawing;
  */
 export type StyleFamily = "line" | "shape" | "text";
 
-/** Tools that carry a fill (shapes) → the "shape" style family. */
-export const SHAPE_TOOLS: DrawingTool[] = [
-  "rectangle",
-  "rotatedRect",
-  "circle",
-  "ellipse",
-  "triangle",
-];
-
-/** Map a tool to its style family for settings/templates. */
-export function styleFamily(tool: DrawingTool): StyleFamily {
-  if (tool === "text" || tool === "emoji") return "text";
-  if (SHAPE_TOOLS.includes(tool)) return "shape";
-  return "line";
-}
-
 /**
  * A reusable style preset ("template") the user can save from one object and
  * apply to another of the same family. Style-only — never points / id — so a
@@ -398,10 +298,10 @@ export const FIB_EXT_LEVELS = [
   4.236,
 ] as const;
 
-/** Tools whose icon should look "pressed" but that don't add a persistent object. */
-export const MODE_TOOLS: DrawingTool[] = [
-  "cursor",
-  "crosshair",
-  "eraser",
-  "measure",
-];
+// Compatibility exports. The manifest is now the only metadata source.
+export {
+  DRAWING_TOOLS,
+  MODE_TOOLS,
+  SHAPE_TOOLS,
+  styleFamily,
+} from "./drawingToolManifest";

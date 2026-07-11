@@ -12,15 +12,15 @@ statements** anywhere in the engine.
 
 | Concern | Location |
 |---|---|
-| Tool identifiers (union type) | `types/drawing.ts` → `DrawingTool` |
-| Tool list (for toolbar) | `types/drawing.ts` → `DRAWING_TOOLS` + `MODE_TOOLS` |
-| Adapter interface + registry | `drawing/tools/ToolRegistry.ts` → `DrawingAdapter`, `registerTool`, `getTool` |
+| Tool catalog and identifiers | `types/drawingToolManifest.ts` → `DRAWING_TOOL_MANIFEST`, `DrawingTool` |
+| Compatibility lists | Derived manifest exports `DRAWING_TOOLS`, `MODE_TOOLS`, and `SHAPE_TOOLS` |
+| Adapter interface + registry | `drawing/tools/ToolRegistry.ts` → `DrawingAdapter`, `DrawingToolDefinition`, `registerTool`, `getTool` |
 | Per-tool implementation | `drawing/tools/plugins/*Tool.ts` (one file per tool) |
 | Registration | `drawing/tools/adapters.ts` (side-effect `import`s) |
 | Rendering per tool | `drawingRenderer.ts` → `getTool(d.tool).render()` |
 | Hit-test per tool | `hittest/HitTestEngine.ts` → `getTool(d.tool).hitTest()` |
 | Creation/move/resize | `interaction/DrawingInteractionManager.ts` → `getTool(...).move()/moveAnchor()` |
-| Toolbar icons per tool | `DrawingToolbar.tsx` → `TOOLS` array |
+| Toolbar groups/icons | Manifest group and `iconKey` metadata; `DrawingToolbar.tsx` only maps icon keys to React icons |
 
 ## The `DrawingAdapter` interface
 
@@ -36,9 +36,10 @@ Each plugin implements (see `ToolRegistry.ts` for the full signature):
 | `getAnchors(d, toX, toY)` | handle positions (defaults to one per point) |
 
 `registerTool()` accepts either a full adapter or a "simple" plugin and auto-wraps the
-latter with default `move` / `moveAnchor` / `getAnchors`, so most tools implement only the
-core methods. Adding a tool therefore means writing one plugin file and importing it in
-`adapters.ts` — no engine file changes. See `DRAWING_ENGINE_ARCHITECTURE.md` → Extensibility.
+latter with default `move` / `moveAnchor` / `getAnchors`. Registration combines the adapter
+with its manifest entry into one `DrawingToolDefinition`; duplicate ids and creation-contract
+drift fail at bootstrap. Adding a persistent tool requires one manifest entry, its adapter,
+fixture, and tests, without edits to shared toolbar or interaction metadata.
 
 ## Tool categories (for toolbar grouping)
 
