@@ -95,12 +95,13 @@ FIREBASE_CLIENT_EMAIL=...
 FIREBASE_PRIVATE_KEY=... # PEM with escaped \n newlines
 PUSH_WORKER_SECRET=...
 PUSH_WORKER_INTERVAL_MS=15000
+DISABLE_PUSH_WORKER=true
 ```
 
 Never prefix Firebase Admin credentials with `NEXT_PUBLIC_`. The Go API uses Admin credentials in
 `backend/.env` for authentication, while Next uses them to send FCM. Go stores Phase 10 alert and
-device-token ownership data but does not deliver push notifications. See `.env.example` for all
-optional quote-provider, external-notification, and MT5 values.
+device-token ownership data and schedules the Next evaluator via `ALERT_EVALUATOR_*`. See
+`.env.example` for all optional quote-provider, external-notification, and MT5 values.
 
 ## Project Structure
 

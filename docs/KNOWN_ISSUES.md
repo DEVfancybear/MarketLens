@@ -27,6 +27,8 @@ sends, real Telegram test send) rather than guessing. Found and fixed, in order:
    (`npm run push-worker` or an external cron hitting `/api/push/evaluate`); neither was running.
    Fixed by starting the evaluator in-process on server boot (`src/instrumentation.ts`), skipped on
    Vercel (`process.env.VERCEL`) or with `DISABLE_PUSH_WORKER=true`.
+   **Current monorepo behavior:** the persistent Go API is the default scheduler; the Next loop is
+   disabled unless `DISABLE_PUSH_WORKER=false` is explicitly configured.
 2. **FCM push TTL was 300s (5 min).** If the browser didn't reconnect to the push service within
    that window, the message was dropped even though the server-side send reported success. Bumped
    to 86400s (24h) in `src/server/firebaseAdmin.ts`.

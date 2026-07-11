@@ -207,6 +207,17 @@ func (h *Handler) putIntegrations(c *fiber.Ctx) error {
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(400, "invalid request body")
 	}
+	chatID := strings.TrimSpace(req.Telegram.ChatID)
+	botToken := strings.TrimSpace(req.Telegram.BotToken)
+	if looksLikeTelegramBotToken(chatID) {
+		return fiber.NewError(400, "Telegram Chat ID contains a bot token; enter the numeric chat ID instead")
+	}
+	if chatID != "" && !validTelegramChatID(chatID) {
+		return fiber.NewError(400, "Telegram Chat ID must be numeric or a public @channel username")
+	}
+	if botToken != "" && !looksLikeTelegramBotToken(botToken) {
+		return fiber.NewError(400, "Telegram bot token has an invalid format")
+	}
 	if req.Discord.WebhookURL != "" && !validDiscordWebhook(req.Discord.WebhookURL) {
 		return fiber.NewError(400, "Discord webhook must be an official HTTPS webhook URL")
 	}
@@ -216,7 +227,7 @@ func (h *Handler) putIntegrations(c *fiber.Ctx) error {
 	}
 	v.MT5Login = strings.TrimSpace(req.MT5.Login)
 	v.MT5Server = strings.TrimSpace(req.MT5.Server)
-	v.TelegramChatID = strings.TrimSpace(req.Telegram.ChatID)
+	v.TelegramChatID = chatID
 	v.TelegramEnabled = req.Telegram.Enabled
 	v.DiscordEnabled = req.Discord.Enabled
 	if req.MT5.ClearPassword {
@@ -226,8 +237,8 @@ func (h *Handler) putIntegrations(c *fiber.Ctx) error {
 	}
 	if req.Telegram.ClearBotToken {
 		v.TelegramBotToken = nil
-	} else if req.Telegram.BotToken != "" {
-		v.TelegramBotToken, err = h.secretBox.Seal(req.Telegram.BotToken)
+	} else if botToken != "" {
+		v.TelegramBotToken, err = h.secretBox.Seal(botToken)
 	}
 	if req.Discord.ClearWebhook {
 		v.DiscordWebhook = nil
@@ -242,6 +253,50 @@ func (h *Handler) putIntegrations(c *fiber.Ctx) error {
 		return fiber.ErrInternalServerError
 	}
 	return c.JSON(integrationView(v, userID(c), h.secretBox))
+}
+
+func looksLikeTelegramBotToken(value string) bool {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 2 || len(parts[0]) < 6 || len(parts[1]) < 20 {
+		return false
+	}
+	for _, char := range parts[0] {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	for _, char := range parts[1] {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' || char == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func validTelegramChatID(value string) bool {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "@") {
+		name := value[1:]
+		if len(name) < 5 || len(name) > 32 {
+			return false
+		}
+		for _, char := range name {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_') {
+				return false
+			}
+		}
+		return true
+	}
+	digits := strings.TrimPrefix(value, "-")
+	if digits == "" {
+		return false
+	}
+	for _, char := range digits {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func validDiscordWebhook(raw string) bool {
@@ -379,7 +434,15 @@ func (h *Handler) sendConfigured(v IntegrationRecord, channel, text string) erro
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.New("delivery rejected")
+		if channel == "telegram" {
+			var telegramError struct {
+				Description string `json:"description"`
+			}
+			if json.NewDecoder(io.LimitReader(resp.Body, 8*1024)).Decode(&telegramError) == nil && telegramError.Description != "" {
+				return fmt.Errorf("Telegram rejected request: %s", telegramError.Description)
+			}
+		}
+		return fmt.Errorf("%s delivery rejected with HTTP %d", strings.Title(channel), resp.StatusCode)
 	}
 	return nil
 }

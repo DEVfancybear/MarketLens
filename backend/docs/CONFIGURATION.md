@@ -47,6 +47,19 @@ The Next server evaluates closed-browser alerts and sends FCM. Configure it from
 `frontend/.env.example`. The same Firebase project/service account can be used in both env files,
 but server credentials must never use a `NEXT_PUBLIC_` prefix.
 
+## Closed-browser alert scheduler
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ALERT_EVALUATOR_ENABLED` | `true` | Run the scheduler inside the persistent Go API process |
+| `ALERT_EVALUATOR_URL` | `http://localhost:3000/api/push/evaluate` | Next evaluator endpoint; set to the production frontend URL when deployed |
+| `ALERT_EVALUATOR_INTERVAL` | `15s` | Delay between sequential evaluation calls |
+| `ALERT_EVALUATOR_TIMEOUT` | `30s` | HTTP timeout for one evaluation |
+| `PUSH_WORKER_SECRET` | empty in dev | Shared evaluator/service authentication; required in production |
+
+The scheduler runs one immediate tick, never overlaps its own calls, and stops
+with the API context. External cron providers are fallback-only.
+
 ## MT5 Tick Stream
 
 These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-stream`.

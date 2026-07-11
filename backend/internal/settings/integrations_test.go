@@ -53,7 +53,7 @@ func TestIntegrationHandlerMasksAndPreservesSecrets(t *testing.T) {
 	store := &fakeIntegrationStore{}
 	app := fiber.New()
 	NewHandler(newFakeSettingsStore(), fakeRequireAuth).WithIntegrations(store, box, "worker-secret").Register(app.Group("/api/v1"))
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/integrations", strings.NewReader(`{"mt5":{"login":"123","server":"Demo","password":"mt5-secret"},"telegram":{"chatId":"42","botToken":"bot-secret","enabled":true},"discord":{"webhookUrl":"https://discord.com/api/webhooks/1/token","enabled":true}}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/integrations", strings.NewReader(`{"mt5":{"login":"123","server":"Demo","password":"mt5-secret"},"telegram":{"chatId":"42","botToken":"123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef","enabled":true},"discord":{"webhookUrl":"https://discord.com/api/webhooks/1/token","enabled":true}}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
 	if err != nil || resp.StatusCode != 200 {
@@ -78,6 +78,33 @@ func TestIntegrationHandlerMasksAndPreservesSecrets(t *testing.T) {
 	plain, _ := box.Open(store.row.MT5Password)
 	if plain != "mt5-secret" {
 		t.Fatalf("blank secret should preserve existing, got %q", plain)
+	}
+}
+
+func TestIntegrationHandlerRejectsTelegramTokenInChatID(t *testing.T) {
+	box, _ := NewSecretBox("test-secret")
+	store := &fakeIntegrationStore{}
+	app := fiber.New()
+	NewHandler(newFakeSettingsStore(), fakeRequireAuth).WithIntegrations(store, box, "worker-secret").Register(app.Group("/api/v1"))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/integrations", strings.NewReader(`{"telegram":{"chatId":"123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef","botToken":"123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef","enabled":true}}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("put status=%d err=%v", resp.StatusCode, err)
+	}
+}
+
+func TestTelegramCredentialValidation(t *testing.T) {
+	if !looksLikeTelegramBotToken("123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef") {
+		t.Fatal("valid Telegram bot token rejected")
+	}
+	for _, chatID := range []string{"123456789", "-100123456789", "@public_channel"} {
+		if !validTelegramChatID(chatID) {
+			t.Fatalf("valid chat ID rejected: %s", chatID)
+		}
+	}
+	if validTelegramChatID("123:bot-token") {
+		t.Fatal("bot token accepted as chat ID")
 	}
 }
 

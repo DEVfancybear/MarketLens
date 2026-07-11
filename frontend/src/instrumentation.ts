@@ -1,12 +1,12 @@
-// Starts the closed-browser push alert evaluator in-process so `npm run dev` /
-// `npm run start` alone is enough to deliver alerts while the browser is closed.
+// Optional closed-browser evaluator fallback for deployments without the Go scheduler.
 // Skipped on Vercel (serverless functions can't host a long-lived interval there —
 // use an external scheduler hitting /api/push/evaluate instead, per PHASE6A docs)
-// and can be opted out of with DISABLE_PUSH_WORKER=true.
+// Opt in with DISABLE_PUSH_WORKER=false.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.VERCEL) return;
-  if (process.env.DISABLE_PUSH_WORKER === "true") return;
+  // The Go API owns scheduling by default. Explicitly opt into this fallback.
+  if (process.env.DISABLE_PUSH_WORKER !== "false") return;
 
   const { evaluatePushAlerts } = await import("@/server/pushAlertEvaluator");
   const intervalMs = Number(process.env.PUSH_WORKER_INTERVAL_MS ?? "15000");

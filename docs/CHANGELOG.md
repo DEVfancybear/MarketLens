@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Integration credential testing (2026-07-11)
+- Changed Telegram and Discord test actions to save the current draft before
+  delivery, preventing tests from using stale stored credentials.
+- Added distinct Telegram bot-token/chat-ID validation, rejected swapped fields,
+  improved field guidance, and surfaced safe provider rejection descriptions.
+
+### Added - Backend closed-browser scheduler (2026-07-11)
+- Added a persistent Go scheduler that invokes the Next alert evaluator at boot
+  and on a configurable interval with shared-secret authentication, bounded
+  timeout, sequential execution, and failure logging.
+- Made cron-job.org and Vercel Cron optional fallbacks instead of required
+  production infrastructure when the Go backend remains online.
+
 ### Added - Private integration settings screen (2026-07-11)
 - Added a Connections & notifications dialog for MT5 account provisioning and
   per-user Telegram/Discord credentials, enable flags, and test sends.

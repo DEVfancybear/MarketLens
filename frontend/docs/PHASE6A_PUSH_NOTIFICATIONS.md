@@ -97,7 +97,7 @@ PUSH_WORKER_URL=http://localhost:3000
 PUSH_WORKER_INTERVAL_MS=15000
 PUSH_WORKER_SECRET=
 CRON_SECRET=
-DISABLE_PUSH_WORKER=false
+DISABLE_PUSH_WORKER=true
 ```
 
 Optional server-side market data values:
@@ -114,16 +114,20 @@ OANDA when configured and fall back to TwelveData when available.
 
 ## Closed-Browser Worker
 
-**Local / self-hosted (default):** `src/instrumentation.ts` starts the same evaluator in-process
-when the Next server boots (`register()` hook, `setInterval` on `PUSH_WORKER_INTERVAL_MS`), so a
-single process is enough:
+**Local / self-hosted (default):** the persistent Go API calls
+`/api/push/evaluate` immediately at boot and then every
+`ALERT_EVALUATOR_INTERVAL`. Keep `DISABLE_PUSH_WORKER=true` so Next does not
+evaluate the same alert in parallel.
+
+If the Go scheduler is unavailable, `src/instrumentation.ts` can start the same
+evaluator inside a persistent Next process:
 
 ```bash
 npm run start   # or npm run dev
 ```
 
-Look for `[push-worker] in-process closed-browser evaluation started` in the server log. Set
-`DISABLE_PUSH_WORKER=true` to opt out (e.g. to run the standalone worker instead).
+Set `DISABLE_PUSH_WORKER=false`, restart Next, and look for
+`[push-worker] in-process closed-browser evaluation started` in the server log.
 
 The standalone worker script still exists for cases where the in-process loop isn't wanted (e.g.
 running the evaluator on a separate box from the web process):
@@ -210,9 +214,9 @@ losing pushes for any realistically long closed-browser window.
   after redeploy. The app now waits for `/firebase-messaging-sw.js` to activate before requesting
   an FCM token, and the worker calls `skipWaiting()`/`clients.claim()` on install/activate.
 - Worker not running: browser-open push still works, but closed-browser alert evaluation does not.
-  As of the in-process worker, this only applies on Vercel/serverless (or with
-  `DISABLE_PUSH_WORKER=true`) where nothing is calling `/api/push/evaluate` on a schedule — check
-  for the `[push-worker] in-process closed-browser evaluation started` boot log otherwise.
+  Check the Go log for `backend alert evaluator scheduler started` and the Next
+  access log for successful `POST /api/push/evaluate`. If using the Next fallback,
+  check for `[push-worker] in-process closed-browser evaluation started` instead.
 - Missing server-side market data credentials: Binance crypto alerts still work; OANDA/TwelveData
   symbols are skipped until server credentials are configured.
 

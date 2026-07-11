@@ -19,10 +19,14 @@ type Config struct {
 
 	DatabaseURL string
 
-	AuthJWTSecret    string
-	PushWorkerSecret string
-	AuthAccessTTL    time.Duration
-	AuthRefreshTTL   time.Duration
+	AuthJWTSecret          string
+	PushWorkerSecret       string
+	AlertEvaluatorEnabled  bool
+	AlertEvaluatorURL      string
+	AlertEvaluatorInterval time.Duration
+	AlertEvaluatorTimeout  time.Duration
+	AuthAccessTTL          time.Duration
+	AuthRefreshTTL         time.Duration
 
 	FirebaseProjectID   string
 	FirebaseClientEmail string
@@ -78,17 +82,25 @@ func (c Config) ObjectStorageConfigured() bool {
 func Load() (Config, error) {
 	// Best-effort: a missing .env is fine (production injects real env vars).
 	_ = godotenv.Load()
+	// Local monorepo development keeps shared worker secrets in the root env.
+	// godotenv does not overwrite values already loaded from backend/.env.
+	_ = godotenv.Load("../.env.local")
+	_ = godotenv.Load("../.env")
 
 	cfg := Config{
-		Port:                getEnvInt("PORT", 8080),
-		Env:                 getEnv("APP_ENV", "development"),
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		AuthJWTSecret:       os.Getenv("AUTH_JWT_SECRET"),
-		PushWorkerSecret:    os.Getenv("PUSH_WORKER_SECRET"),
-		AuthAccessTTL:       getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
-		AuthRefreshTTL:      getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
-		FirebaseProjectID:   os.Getenv("FIREBASE_PROJECT_ID"),
-		FirebaseClientEmail: os.Getenv("FIREBASE_CLIENT_EMAIL"),
+		Port:                   getEnvInt("PORT", 8080),
+		Env:                    getEnv("APP_ENV", "development"),
+		DatabaseURL:            os.Getenv("DATABASE_URL"),
+		AuthJWTSecret:          os.Getenv("AUTH_JWT_SECRET"),
+		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
+		AlertEvaluatorEnabled:  getEnvBool("ALERT_EVALUATOR_ENABLED", true),
+		AlertEvaluatorURL:      getEnv("ALERT_EVALUATOR_URL", "http://localhost:3000/api/push/evaluate"),
+		AlertEvaluatorInterval: getEnvDuration("ALERT_EVALUATOR_INTERVAL", 15*time.Second),
+		AlertEvaluatorTimeout:  getEnvDuration("ALERT_EVALUATOR_TIMEOUT", 30*time.Second),
+		AuthAccessTTL:          getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
+		AuthRefreshTTL:         getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
+		FirebaseProjectID:      os.Getenv("FIREBASE_PROJECT_ID"),
+		FirebaseClientEmail:    os.Getenv("FIREBASE_CLIENT_EMAIL"),
 		// The private key is stored \n-escaped (same as the frontend push key);
 		// restore the real newlines so it parses as PEM.
 		FirebasePrivateKey:        strings.ReplaceAll(os.Getenv("FIREBASE_PRIVATE_KEY"), `\n`, "\n"),

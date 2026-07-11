@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/smc-trading-terminal/backend/internal/alerts"
+	"github.com/smc-trading-terminal/backend/internal/alertworker"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
 	"github.com/smc-trading-terminal/backend/internal/db"
@@ -39,6 +40,12 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	alertworker.New(alertworker.Config{
+		Enabled: cfg.AlertEvaluatorEnabled, URL: cfg.AlertEvaluatorURL,
+		Secret: cfg.PushWorkerSecret, Interval: cfg.AlertEvaluatorInterval,
+		Timeout: cfg.AlertEvaluatorTimeout,
+	}).Start(ctx)
 
 	mt5Service := mt5stream.NewService(mt5stream.Config{
 		Enabled:        cfg.MT5StreamAPIEnabled,
