@@ -424,6 +424,8 @@ Verification on 2026-07-11:
 
 ### Phase 4 — Normalize geometry families
 
+Status: implemented on 2026-07-12.
+
 Purpose: reduce duplication and fix parity depth for the current catalog.
 
 Tasks:
@@ -442,6 +444,41 @@ Exit gate:
 - Current tools preserve stored coordinates and visuals within snapshot tolerance.
 - No family duplicates calculation formulas across plugins.
 - Hit-test geometry matches rendered geometry for every adapter.
+
+Delivered:
+
+- Linear tools use the shared `lineGeometry` projection, finite/ray/extended/axis hit-test,
+  anchor, move, and bounds contracts; arrow endpoints continue through the shared decoration
+  primitive. Parallel channel now has an explicit three-anchor creation contract. Its third anchor
+  defines a signed normal offset, both rendered sides participate in hit-test and exact bounds, and
+  historical two-point payloads retain their prior projected secondary-line formula.
+- Legacy `fib` and preferred `fibRetracement` are thin registrations over one retracement family.
+  Retracement and trend-based extension share level resolution, linear/log price calculation,
+  formatting, projection, right-price-scale guard, and deterministic offscreen/collision label
+  layout. Render, hit-test, and bounds consume the same projected level geometry.
+- Position is split into tick/projection calculations, data-space move/resize geometry, projected
+  geometry and hit-test, label layout, renderer/adapter assembly, TP/SL resolution, and
+  trade-prefill modules. The stable `plugins/PositionTool` path remains a registration shim.
+- Quadratic, cubic, smooth, arc, and double-curve hit geometry now uses adaptive sampling in CSS
+  pixels. Device-pixel ratio remains a canvas transform concern, stroke tolerance scales for wide
+  lines, and sampled bounds include the visible stroke radius.
+- The stale source-regex Fib and Position gates were replaced by imported executable contracts for
+  calculations, historical compatibility, six-handle geometry, body hit-test, drag width, TP/SL
+  chronology, label collision, and persisted-hit fallback.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
+- `npm run test:drawing`: 59/59 passing.
+- `npm run test:position`: 26/26 passing.
+- `npm run check:drawing-viewport`: 7/7 passing.
+- `npm run check:fibonacci-tools`: 3/3 passing.
+- `npm run check:position-hit`: 2/2 passing.
+- `npm run check:position-drag`: 6/6 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 7/7 passing in 35.5 seconds.
+- `npm run benchmark:drawing`: at 5,000 drawings rebuild median is 1.585 ms and visible-query
+  median is 0.130 ms, comparable to the Phase 0 values of 1.592 ms and 0.134 ms.
 
 ### Phase 5 — Versioned model and persistence hardening
 

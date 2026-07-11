@@ -47,7 +47,7 @@ import { getTool } from "./drawing/tools/ToolRegistry";
 import {
   positionHitDataCoversEntry,
   resolvePositionHit,
-} from "./drawing/tools/plugins/PositionTool";
+} from "./drawing/tools/positionHitResolution";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
 import { uid } from "@/utils/id";
 import { runDrawingAdapterContractAudit } from "./drawing/testing/adapterContractAudit";

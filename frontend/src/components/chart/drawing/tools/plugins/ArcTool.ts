@@ -23,6 +23,7 @@ import {
   projectPoints,
   quadControlThroughPoint,
   sampleQuadratic,
+  strokeHitTolerance,
   type XY,
 } from "./shapeGeometry";
 
@@ -78,7 +79,7 @@ const plugin: DrawingToolPlugin = {
     const samples = arcSamples(projected);
     return [
       ...anchorHits(d, projected, px, py),
-      ...curveBodyHits(d, samples, px, py),
+      ...curveBodyHits(d, samples, px, py, strokeHitTolerance(d.lineWidth)),
     ];
   },
   movePoints: defaultMovePoints,
@@ -86,7 +87,10 @@ const plugin: DrawingToolPlugin = {
     return anchorsFromProjected(projectPoints(d.points, toX, toY));
   },
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    return boundsFromPoints(arcSamples(projectPoints(d.points, toX, toY)));
+    return boundsFromPoints(
+      arcSamples(projectPoints(d.points, toX, toY)),
+      Math.max(1, (d.lineWidth ?? 1.5) / 2),
+    );
   },
 };
 

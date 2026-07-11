@@ -22,6 +22,7 @@ import {
   curveBodyHits,
   projectPoints,
   sampleCubic,
+  strokeHitTolerance,
   visiblePoints,
   type XY,
 } from "./shapeGeometry";
@@ -65,7 +66,7 @@ const plugin: DrawingToolPlugin = {
     const curve = doubleCurveSamples(visiblePoints(projected));
     return [
       ...anchorHits(d, projected, px, py),
-      ...curveBodyHits(d, curve, px, py),
+      ...curveBodyHits(d, curve, px, py, strokeHitTolerance(d.lineWidth)),
     ];
   },
   movePoints: defaultMovePoints,
@@ -73,7 +74,10 @@ const plugin: DrawingToolPlugin = {
     return anchorsFromProjected(projectPoints(d.points, toX, toY));
   },
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    return boundsFromPoints(doubleCurveSamples(visiblePoints(projectPoints(d.points, toX, toY))));
+    return boundsFromPoints(
+      doubleCurveSamples(visiblePoints(projectPoints(d.points, toX, toY))),
+      Math.max(1, (d.lineWidth ?? 1.5) / 2),
+    );
   },
 };
 

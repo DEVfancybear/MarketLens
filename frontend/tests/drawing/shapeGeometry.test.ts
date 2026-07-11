@@ -10,6 +10,8 @@ import {
   polygonBodyHits,
   quadControlThroughPoint,
   sampleQuadratic,
+  sampleCubic,
+  strokeHitTolerance,
   type XY,
 } from "../../src/components/chart/drawing/tools/plugins/shapeGeometry";
 
@@ -33,6 +35,24 @@ test("anchor hits preserve explicit anchor index for middle vertices", () => {
 
   assert.ok(middle);
   assert.equal(middle.target, "p0");
+});
+
+test("curve sampling adapts in CSS-pixel space and stroke tolerance scales", () => {
+  const short = sampleCubic(
+    { x: 0, y: 0 },
+    { x: 10, y: 10 },
+    { x: 20, y: 10 },
+    { x: 30, y: 0 },
+  );
+  const long = sampleCubic(
+    { x: 0, y: 0 },
+    { x: 300, y: 300 },
+    { x: 600, y: 300 },
+    { x: 900, y: 0 },
+  );
+  assert.ok(long.length > short.length);
+  assert.equal(strokeHitTolerance(1), 20);
+  assert.equal(strokeHitTolerance(40), 26);
 });
 
 test("ellipse body hit-test follows the ellipse, not the bounding rectangle", () => {

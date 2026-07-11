@@ -169,10 +169,34 @@ export function quadControlThroughPoint(a: XY, b: XY, peak: XY): XY {
   };
 }
 
-export function sampleQuadratic(a: XY, c: XY, b: XY, n = 32): XY[] {
+const CURVE_SAMPLE_STEP_CSS_PX = 8;
+const MIN_CURVE_SAMPLES = 12;
+const MAX_CURVE_SAMPLES = 128;
+
+function adaptiveSampleCount(points: readonly XY[]): number {
+  let controlNetLength = 0;
+  for (let index = 0; index < points.length - 1; index++) {
+    controlNetLength += Math.hypot(
+      points[index + 1].x - points[index].x,
+      points[index + 1].y - points[index].y,
+    );
+  }
+  return Math.max(
+    MIN_CURVE_SAMPLES,
+    Math.min(MAX_CURVE_SAMPLES, Math.ceil(controlNetLength / CURVE_SAMPLE_STEP_CSS_PX)),
+  );
+}
+
+/**
+ * CanvasRenderer works in CSS pixels and applies DPR only through the context
+ * transform. Sampling therefore stays DPR-independent and produces identical
+ * render/hit geometry on standard and high-density displays.
+ */
+export function sampleQuadratic(a: XY, c: XY, b: XY, n?: number): XY[] {
+  const count = n ?? adaptiveSampleCount([a, c, b]);
   const out: XY[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
+  for (let i = 0; i <= count; i++) {
+    const t = i / count;
     const mt = 1 - t;
     out.push({
       x: mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x,
@@ -182,10 +206,11 @@ export function sampleQuadratic(a: XY, c: XY, b: XY, n = 32): XY[] {
   return out;
 }
 
-export function sampleCubic(p0: XY, p1: XY, p2: XY, p3: XY, n = 36): XY[] {
+export function sampleCubic(p0: XY, p1: XY, p2: XY, p3: XY, n?: number): XY[] {
+  const count = n ?? adaptiveSampleCount([p0, p1, p2, p3]);
   const out: XY[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
+  for (let i = 0; i <= count; i++) {
+    const t = i / count;
     const mt = 1 - t;
     const a = mt * mt * mt;
     const b = 3 * mt * mt * t;
@@ -197,6 +222,25 @@ export function sampleCubic(p0: XY, p1: XY, p2: XY, p3: XY, n = 36): XY[] {
     });
   }
   return out;
+}
+
+export function sampleSmoothCurve(points: XY[]): XY[] {
+  if (points.length < 3) return points;
+  const out: XY[] = [points[0]];
+  for (let index = 1; index < points.length - 1; index++) {
+    const end = {
+      x: (points[index].x + points[index + 1].x) / 2,
+      y: (points[index].y + points[index + 1].y) / 2,
+    };
+    out.push(
+      ...sampleQuadratic(out[out.length - 1], points[index], end).slice(1),
+    );
+  }
+  return out;
+}
+
+export function strokeHitTolerance(lineWidth = 1.5): number {
+  return Math.max(TOL, Math.max(0, lineWidth) / 2 + 6);
 }
 
 export function curveBodyHits(
@@ -225,4 +269,3 @@ export function projectedBounds(
 ) {
   return boundsFromPoints(visiblePoints(projectPoints(points, toX, toY)), pad);
 }
-

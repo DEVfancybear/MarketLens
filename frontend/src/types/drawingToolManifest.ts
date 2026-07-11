@@ -133,7 +133,7 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + J" }),
   tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { hotkey: "Alt + V" }),
   tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { hotkey: "Alt + C" }),
-  tool("channel", "Parallel channel", null, "trend", "two-point", 2),
+  tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3 }),
 
   tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES" }),
   tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2),

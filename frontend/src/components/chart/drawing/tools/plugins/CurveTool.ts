@@ -14,23 +14,10 @@ import {
   boundsFromPoints,
   curveBodyHits,
   projectPoints,
-  sampleQuadratic,
+  sampleSmoothCurve,
+  strokeHitTolerance,
   visiblePoints,
-  type XY,
 } from "./shapeGeometry";
-
-function curveSamples(points: XY[]): XY[] {
-  if (points.length < 3) return points;
-  const out: XY[] = [points[0]];
-  for (let i = 1; i < points.length - 1; i++) {
-    const end = {
-      x: (points[i].x + points[i + 1].x) / 2,
-      y: (points[i].y + points[i + 1].y) / 2,
-    };
-    out.push(...sampleQuadratic(out[out.length - 1], points[i], end, 12).slice(1));
-  }
-  return out;
-}
 
 const plugin: DrawingToolPlugin = {
   tool: "curve",
@@ -53,10 +40,10 @@ const plugin: DrawingToolPlugin = {
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
     const projected = projectPoints(d.points, toX, toY);
-    const samples = curveSamples(visiblePoints(projected));
+    const samples = sampleSmoothCurve(visiblePoints(projected));
     return [
       ...anchorHits(d, projected, px, py),
-      ...curveBodyHits(d, samples, px, py),
+      ...curveBodyHits(d, samples, px, py, strokeHitTolerance(d.lineWidth)),
     ];
   },
   getAnchors(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
@@ -64,7 +51,10 @@ const plugin: DrawingToolPlugin = {
   },
   movePoints: defaultMovePoints,
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    return boundsFromPoints(curveSamples(visiblePoints(projectPoints(d.points, toX, toY))));
+    return boundsFromPoints(
+      sampleSmoothCurve(visiblePoints(projectPoints(d.points, toX, toY))),
+      Math.max(1, (d.lineWidth ?? 1.5) / 2),
+    );
   },
 };
 

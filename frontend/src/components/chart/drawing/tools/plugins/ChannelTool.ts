@@ -8,39 +8,34 @@ import {
   type DrawingToolPlugin,
   registerTool,
   defaultMovePoints,
-  HANDLE_RADIUS,
-  TOL,
-  pointDist,
-  distToSegment,
 } from "../ToolRegistry";
 import { line, handle } from "./shared";
+import {
+  channelAnchorHits,
+  channelBodyHits,
+  channelBounds,
+  projectChannel,
+} from "./channelGeometry";
 const plugin: DrawingToolPlugin = {
   tool: "channel",
   minPoints: 2,
+  maxPoints: 3,
   render(
     g: CanvasRenderingContext2D,
     d: Drawing,
     proj: Projector,
     selected: boolean,
   ) {
-    const x1 = proj.toX(d.points[0].time),
-      y1 = proj.toY(d.points[0].price);
-    const x2 = proj.toX(d.points[1].time),
-      y2 = proj.toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return;
-    const dx = x2 - x1,
-      dy = y2 - y1;
-    const span =
-      d.points.length >= 3 ? d.points[2].price - d.points[0].price : 50;
-    const t = span / Math.hypot(dx, dy);
-    const off = t * Math.hypot(dy, dx);
-    const y1b = y2 + off,
-      y2b = y1 + off;
-    line(g, x1, y1, x2, y2);
-    line(g, x1, y1b, x2, y2b);
+    const geometry = projectChannel(d, proj.toX, proj.toY);
+    if (!geometry) return;
+    line(g, geometry.baseline.a.x, geometry.baseline.a.y, geometry.baseline.b.x, geometry.baseline.b.y);
+    line(g, geometry.parallel.a.x, geometry.parallel.a.y, geometry.parallel.b.x, geometry.parallel.b.y);
     if (selected) {
-      handle(g, x1, y1, d.color);
-      handle(g, x2, y2, d.color);
+      handle(g, geometry.baseline.a.x, geometry.baseline.a.y, d.color);
+      handle(g, geometry.baseline.b.x, geometry.baseline.b.y, d.color);
+      if (geometry.offsetAnchor) {
+        handle(g, geometry.offsetAnchor.x, geometry.offsetAnchor.y, d.color);
+      }
     }
   },
   hitTest(
@@ -50,35 +45,26 @@ const plugin: DrawingToolPlugin = {
     toX: HitTestProjector,
     toY: HitTestProjector,
   ): HitResult[] {
-    const results: HitResult[] = [];
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    const x2 = toX(d.points[1].time),
-      y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p1",
-        distance: pointDist(px, py, x1, y1),
-      });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS)
-      results.push({
-        drawing: d,
-        target: "p2",
-        distance: pointDist(px, py, x2, y2),
-      });
-    const segDist = distToSegment(px, py, x1, y1, x2, y2);
-    if (segDist < TOL)
-      results.push({ drawing: d, target: "body", distance: segDist });
-    return results;
+    const geometry = projectChannel(d, toX, toY);
+    return [
+      ...channelAnchorHits(d, geometry, px, py),
+      ...channelBodyHits(d, geometry, px, py),
+    ];
   },
   movePoints: defaultMovePoints,
+  getAnchors(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
+    const geometry = projectChannel(d, toX, toY);
+    if (!geometry) return [];
+    return [
+      { index: 0, x: geometry.baseline.a.x, y: geometry.baseline.a.y, target: "p1" },
+      { index: 1, x: geometry.baseline.b.x, y: geometry.baseline.b.y, target: "p2" },
+      ...(geometry.offsetAnchor
+        ? [{ index: 2, x: geometry.offsetAnchor.x, y: geometry.offsetAnchor.y, target: "p3" as const }]
+        : []),
+    ];
+  },
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
-    const x1 = toX(d.points[0].time),
-      y1 = toY(d.points[0].price);
-    if (x1 == null || y1 == null) return null;
-    return { x: x1 - 10, y: 0, w: 9999, h: 9999 };
+    return channelBounds(projectChannel(d, toX, toY));
   },
 };
 registerTool(plugin);
