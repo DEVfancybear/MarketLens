@@ -366,6 +366,8 @@ Verification on 2026-07-11:
 
 ### Phase 3 — Schema-driven settings and templates
 
+Status: implemented on 2026-07-11.
+
 Purpose: remove the largest UI hotspot and make tool properties maintainable.
 
 Tasks:
@@ -384,6 +386,41 @@ Exit gate:
 - No tool-specific settings branches in the dialog shell.
 - Settings round-trip tests cover every current tool family.
 - Templates cannot apply invalid fields or geometry across incompatible tools.
+
+Delivered:
+
+- The tool manifest now declares a settings profile and capability sections for line, fill, text,
+  Fib levels, position stats, coordinates, visibility, and templates. `drawingSettingsSchema`
+  derives tabs, field descriptors, template keys, and family metadata from that contract.
+- Reusable field widgets moved out of `ObjectSettingsDialog`; the object dialog, position dialog,
+  and floating toolbar select controls from the same schema instead of maintaining tool-id lists.
+  The shared dialog shells contain no concrete persistent-tool equality branches.
+- The global `TEMPLATE_STYLE_KEYS` allowlist was removed. Template save/apply now picks only fields
+  supported by the source/target capability schema, rejects incompatible style families, and never
+  applies geometry, ids, text content, visibility, or position account/risk inputs.
+- Object and position dialogs capture one immutable open snapshot. Live edits remain previews,
+  Cancel restores every original field (including clearing fields introduced during preview), and
+  OK records one preview-aware command in the same history used by drawing gestures. Undo/redo
+  round-trips the complete settings transaction without an extra mutation on OK.
+- Both dialog variants expose labelled modal/dialog and tab semantics, focus the dialog on open,
+  restore focus to the opener on close, label icon-only controls, and route Escape through Cancel.
+  The browser smoke suite now checks dialog focus, tab roles/selection, Escape, and focus return.
+- Contract tests cover all five current settings profiles (`line`, `shape`, `text`, `fib`, and
+  `position`), transaction snapshot/commit behavior, single-entry undo/redo, and capability-scoped
+  template validation.
+
+Verification on 2026-07-11:
+
+- `npm run typecheck`: passing.
+- `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
+- `npm run test:drawing`: 53/53 passing.
+- `npm run test:position`: 22/22 passing.
+- `npm run check:drawing-viewport`: 7/7 passing.
+- `npm run check:template-save-dialog`: 6/6 passing.
+- `npm run benchmark:drawing`: no material regression; at 5,000 drawings rebuild median is 1.360 ms
+  and visible-query median is 0.120 ms versus the Phase 2 values of 1.285 ms and 0.121 ms.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 7/7 passing in 31.6 seconds,
+  including dialog focus, tab roles/selection, Escape, focus return, and the existing gesture suite.
 
 ### Phase 4 — Normalize geometry families
 

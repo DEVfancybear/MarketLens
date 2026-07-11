@@ -33,6 +33,11 @@ export type DrawingIconKey =
 export type DrawingToolGroupId =
   | "cursor" | "lines" | "shapes" | "fibonacci" | "positions" | "annotations";
 
+export type DrawingSettingsProfile = "mode" | "line" | "shape" | "text" | "fib" | "position";
+export type DrawingSettingsFeature =
+  | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
+  | "coordinates" | "visibility" | "templates";
+
 export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly id: DrawingTool;
   readonly schemaVersion: number;
@@ -54,6 +59,9 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly settingsOverlay?: "position-dialog";
   readonly lifecycleExtension?: "position-resolution";
   readonly modeInteraction?: "selection" | "pass-through" | "erase";
+  readonly settingsProfile: DrawingSettingsProfile;
+  readonly settingsFeatures: readonly DrawingSettingsFeature[];
+  readonly positionSide?: "long" | "short";
 }
 
 export interface DrawingToolGroupDefinition {
@@ -75,6 +83,21 @@ function tool(
   options: Partial<Omit<DrawingToolManifestEntry, "id" | "displayName" | "group" | "iconKey" | "creationMode" | "minPoints">> = {},
 ): DrawingToolManifestEntry {
   const persistent = creationMode !== "mode";
+  const styleFamily = options.styleFamily ?? "line";
+  const settingsProfile = options.settingsProfile ?? (
+    !persistent ? "mode" : styleFamily === "shape" ? "shape" : styleFamily === "text" ? "text" : "line"
+  );
+  const settingsFeatures = options.settingsFeatures ?? (
+    settingsProfile === "mode" ? [] : settingsProfile === "position"
+      ? ["stats", "line", "visibility", "templates"]
+      : settingsProfile === "fib"
+        ? ["line", "fill", "fib-levels", "coordinates", "visibility", "templates"]
+        : settingsProfile === "text"
+          ? ["text", "visibility", "templates"]
+          : settingsProfile === "shape"
+            ? ["line", "fill", "text", "coordinates", "visibility", "templates"]
+            : ["line", ...(options.selectionTextEditor ? ["text" as const] : []), "coordinates", "visibility", "templates"]
+  );
   return Object.freeze({
     id,
     schemaVersion: 1,
@@ -86,7 +109,9 @@ function tool(
     persistent,
     favoriteEligible: persistent,
     preferredForCreation: persistent,
-    styleFamily: "line",
+    styleFamily,
+    settingsProfile,
+    settingsFeatures,
     defaultProperties: COMMON_DEFAULTS,
     ...options,
   });
@@ -118,7 +143,7 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("arrowMarkDown", "Arrow mark down", "shapes", "arrowDown", "one-point", 1),
   tool("arrowMarkLeft", "Arrow mark left", "shapes", "arrowLeft", "one-point", 1),
   tool("arrowMarkRight", "Arrow mark right", "shapes", "arrowRight", "one-point", 1),
-  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center" }),
+  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"] }),
   tool("rotatedRect", "Rotated rectangle", "shapes", "square", "fixed-multi-point", 2, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("path", "Path", "shapes", "path", "click-freeform", 2),
   tool("circle", "Circle", "shapes", "circle", "two-point", 2, { styleFamily: "shape", selectionTextEditor: "shape-center" }),
@@ -129,11 +154,11 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("curve", "Curve", "shapes", "spline", "click-freeform", 3),
   tool("doubleCurve", "Double curve", "shapes", "doubleCurve", "fixed-multi-point", 2, { maxPoints: 4 }),
 
-  tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2),
-  tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3 }),
-  tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false }),
-  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution" }),
-  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution" }),
+  tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib" }),
+  tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib" }),
+  tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib" }),
+  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long" }),
+  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short" }),
   tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "annotations", "emoji", "one-point", 1, { styleFamily: "text" }),
 ] satisfies readonly DrawingToolManifestEntry[]);

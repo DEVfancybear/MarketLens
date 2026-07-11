@@ -171,3 +171,31 @@ export class PropertyChangeCommand implements Command {
     this.updateFn({ id: this.drawingId, patch: this.oldProps });
   }
 }
+
+/**
+ * Records a property edit that has already been previewed in the store.
+ * The first execute is intentionally a no-op; redo applies the committed state.
+ */
+export class PreviewedPropertyChangeCommand implements Command {
+  readonly label = "Change Properties";
+  private recorded = false;
+  constructor(
+    private updateFn: (arg: { id: string; patch: Partial<Drawing> }) => void,
+    private drawingId: string,
+    private newProps: Partial<Drawing>,
+    private oldProps: Partial<Drawing>,
+  ) {}
+  execute() {
+    if (!this.recorded) {
+      this.recorded = true;
+      return;
+    }
+    this.updateFn({ id: this.drawingId, patch: this.newProps });
+  }
+  undo() {
+    this.updateFn({ id: this.drawingId, patch: this.oldProps });
+  }
+}
+
+/** One history shared by chart interactions and settings transactions. */
+export const drawingCommandManager = new CommandManager();

@@ -9,6 +9,7 @@ import {
   DuplicateDrawingCommand,
   MoveDrawingCommand,
   PropertyChangeCommand,
+  PreviewedPropertyChangeCommand,
 } from "../../src/components/chart/drawing/history/CommandManager";
 
 function fixture(id = "drawing-1"): Drawing {
@@ -100,4 +101,31 @@ test("history enforces its maximum size and invalidates redo on a new command", 
   assert.equal(history.undo(), false);
   history.execute(new CreateDrawingCommand(state.add, state.remove, fixture("d")));
   assert.equal(history.redo(), false);
+});
+
+test("a previewed settings transaction records once, then undo and redo round-trip", () => {
+  const state = drawingState();
+  const history = new CommandManager();
+  const drawing = fixture();
+  state.add(drawing);
+  state.update({ id: drawing.id, patch: { color: "#f23645", lineWidth: 4 } });
+
+  let mutations = 0;
+  const update = (arg: { id: string; patch: Partial<Drawing> }) => {
+    mutations += 1;
+    state.update(arg);
+  };
+  history.execute(new PreviewedPropertyChangeCommand(
+    update,
+    drawing.id,
+    { color: "#f23645", lineWidth: 4 },
+    { color: drawing.color, lineWidth: drawing.lineWidth },
+  ));
+
+  assert.equal(mutations, 0, "OK records the existing preview without mutating again");
+  assert.equal(history.undo(), true);
+  assert.equal(state.drawings.get(drawing.id)?.color, drawing.color);
+  assert.equal(history.redo(), true);
+  assert.equal(state.drawings.get(drawing.id)?.lineWidth, 4);
+  assert.equal(mutations, 2);
 });

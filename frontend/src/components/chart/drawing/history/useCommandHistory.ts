@@ -1,7 +1,8 @@
 "use client";
-import { useRef, useMemo } from "react";
+import { useMemo } from "react";
 import {
-  CommandManager,
+  drawingCommandManager,
+  type CommandManager,
   MoveDrawingCommand,
   DeleteDrawingCommand,
   type Command,
@@ -25,34 +26,32 @@ export function useCommandHistory(
   removeDrawing: (id: string) => void,
   updateDrawing: (arg: { id: string; patch: Partial<Drawing> }) => void,
 ): UseCommandHistory {
-  const managerRef = useRef(new CommandManager());
-
   const commitMove = (id: string, newPoints: Point[], oldPoints: Point[]) => {
-    managerRef.current.execute(
+    drawingCommandManager.execute(
       new MoveDrawingCommand(updateDrawing, id, newPoints, oldPoints),
     );
   };
 
   const commitDelete = (drawing: Drawing, addFn: (d: Drawing) => void) => {
-    managerRef.current.execute(
+    drawingCommandManager.execute(
       new DeleteDrawingCommand(addFn, removeDrawing, drawing),
     );
   };
 
   const execute = (cmd: Command) => {
-    managerRef.current.execute(cmd);
+    drawingCommandManager.execute(cmd);
   };
 
   return useMemo(
     () => ({
-      manager: managerRef.current,
+      manager: drawingCommandManager,
       commitMove,
       commitDelete,
       execute,
-      undo: () => managerRef.current.undo(),
-      redo: () => managerRef.current.redo(),
+      undo: () => drawingCommandManager.undo(),
+      redo: () => drawingCommandManager.redo(),
     }),
-    // commitMove and commitDelete are stable (managerRef never changes).
+    // The shared manager is stable for the lifetime of the chart application.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );

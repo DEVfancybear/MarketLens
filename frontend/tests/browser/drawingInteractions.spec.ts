@@ -41,6 +41,41 @@ test("all persistent tools register and satisfy the executable adapter contract"
   }
 });
 
+test("settings dialog exposes keyboard semantics and returns focus on Escape", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.3, y: pane.y + pane.height * 0.65 };
+  const end = { x: pane.x + pane.width * 0.62, y: pane.y + pane.height * 0.35 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  const created = await drawingSnapshot(page);
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    created.drawings[0].id,
+  );
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click(
+    projected![0].x + (projected![1].x - projected![0].x) * 0.75,
+    projected![0].y + (projected![1].y - projected![0].y) * 0.75,
+  );
+
+  const settingsButton = page.getByRole("button", { name: "Settings", exact: true });
+  await settingsButton.focus();
+  await settingsButton.click();
+  const dialog = page.getByRole("dialog", { name: "Trendline settings" });
+  await expect(dialog).toBeFocused();
+  await expect(dialog.getByRole("tab", { name: "style", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(dialog.getByRole("tablist", { name: "Drawing settings sections" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(settingsButton).toBeFocused();
+});
+
 async function exerciseTrendlineTransaction(page: Page) {
   await page.evaluate(() => window.__drawingInteractionTest!.clear());
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());

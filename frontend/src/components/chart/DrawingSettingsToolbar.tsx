@@ -33,7 +33,8 @@ import {
 import { useChartCtx } from "./ChartContext";
 import { useDrawingActions } from "./drawing/useDrawingActions";
 import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
-import { SHAPE_TOOLS, styleFamily, type Drawing, type LineStyle } from "@/types";
+import { type Drawing, type LineStyle } from "@/types";
+import { getDrawingSettingsSchema } from "./drawing/settings/drawingSettingsSchema";
 import { cn } from "@/utils/cn";
 
 const COLORS = [
@@ -53,11 +54,6 @@ const STYLES: { value: LineStyle; label: string; dash: string }[] = [
   { value: "dashed", label: "Dashed", dash: "6 4" },
   { value: "dotted", label: "Dotted", dash: "2 4" },
 ];
-
-/** Tools that carry a fill (shapes). */
-const FILL_TOOLS = new Set<Drawing["tool"]>(SHAPE_TOOLS);
-/** Tools that have no stroke width / style controls. */
-const NO_LINE_TOOLS = new Set<Drawing["tool"]>(["text", "emoji"]);
 
 type Menu =
   | "color"
@@ -186,12 +182,13 @@ export function DrawingSettingsToolbar() {
   const patch = (p: Partial<Drawing>) =>
     updateDrawing({ id: drawing.id, patch: p });
 
-  const showLine = !NO_LINE_TOOLS.has(drawing.tool);
-  const showFill = FILL_TOOLS.has(drawing.tool);
-  const isTextTool = drawing.tool === "text" || drawing.tool === "emoji";
+  const settings = getDrawingSettingsSchema(drawing.tool);
+  const showLine = settings.hasFeature("line");
+  const showFill = settings.hasFeature("fill");
+  const isTextTool = settings.profile === "text";
   // Templates are scoped to the selected object's style family (TradingView
   // won't offer a text preset for a trendline).
-  const family = styleFamily(drawing.tool);
+  const family = settings.templateFamily;
   const familyTemplates = templates.filter((t) => t.family === family);
   const onSaveTemplate = () => {
     setMenu(null);

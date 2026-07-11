@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Bold, Italic, ChevronDown, Pencil, X } from "lucide-react";
+import { Bold, Italic, ChevronDown, Pencil, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   editingDrawingIdAtom,
@@ -30,31 +30,28 @@ import {
 } from "@/store/chartStore";
 import {
   DEFAULT_FIB_LEVELS,
-  styleFamily,
   type Drawing,
   type FibAlignH,
   type FibAlignV,
   type FibLevelConfig,
   type FibTextMode,
-  type LineStyle,
 } from "@/types";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import { NumberField, Row, SectionTitle } from "./PositionSettingsDialog";
 import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
+import { getDrawingSettingsSchema } from "./drawing/settings/drawingSettingsSchema";
+import {
+  drawingCommandManager,
+  PreviewedPropertyChangeCommand,
+} from "./drawing/history/CommandManager";
+import {
+  buildDrawingSettingsCommit,
+  buildDrawingSettingsRevert,
+} from "./drawing/settings/drawingSettingsTransaction";
+import { CheckBox, ColorPopover, LineWidget, Select, Swatch } from "./drawing/settings/DrawingSettingsFields";
 
-// A TradingView-like colour palette (two rows of brand-ish swatches).
-const COLORS = [
-  "#ffffff", "#d1d4dc", "#9598a1", "#5d606b", "#363a45", "#000000",
-  "#f23645", "#ff9800", "#ffeb3b", "#26a69a", "#2962ff", "#ab47bc",
-  "#e91e63", "#ff5722", "#cddc39", "#089981", "#0c3299", "#673ab7",
-];
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40];
-const LINE_STYLES: { value: LineStyle; dash: string }[] = [
-  { value: "solid", dash: "" },
-  { value: "dashed", dash: "6 4" },
-  { value: "dotted", dash: "2 4" },
-];
 const EXTEND_OPTS: { value: NonNullable<Drawing["extend"]>; label: string }[] = [
   { value: "none", label: "Don't extend" },
   { value: "left", label: "Extend left" },
@@ -100,15 +97,6 @@ function fromLocalInput(s: string): number | null {
   return Number.isFinite(ms) ? Math.round(ms / 1000) : null;
 }
 
-function isFibTool(tool: Drawing["tool"]): boolean {
-  return tool === "fib" || tool === "fibRetracement" || tool === "fibExtension";
-}
-
-function fibTitle(tool: Drawing["tool"]): string {
-  if (tool === "fibExtension") return "Trend-Based Fib Extension";
-  return "Fib retracement";
-}
-
 function normalizedFibLevels(d: Drawing): FibLevelConfig[] {
   return DEFAULT_FIB_LEVELS.map((base, i) => {
     const custom = d.fibLevels?.[i];
@@ -120,249 +108,6 @@ function normalizedFibLevels(d: Drawing): FibLevelConfig[] {
       enabled: custom?.enabled ?? base.enabled,
     };
   });
-}
-
-// ---- small presentational helpers --------------------------------------
-
-/** Checkbox that matches the dialog look. */
-function CheckBox({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      role="checkbox"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "flex h-4 w-4 items-center justify-center rounded-[3px] border transition-colors",
-        checked
-          ? "border-white bg-white text-[#1e1e1e]"
-          : "border-[#8a8d93] bg-transparent hover:border-ink",
-      )}
-    >
-      {checked && <Check size={11} strokeWidth={3} />}
-    </button>
-  );
-}
-
-/** A colour swatch button. Shows a checkerboard behind translucent fills. */
-function Swatch({
-  color,
-  opacity,
-  onClick,
-}: {
-  color: string | undefined;
-  opacity?: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className="relative h-[34px] w-[34px] shrink-0 overflow-hidden rounded-md border border-[#50535a]"
-      style={{
-        backgroundImage:
-          "linear-gradient(45deg,#555 25%,transparent 25%,transparent 75%,#555 75%,#555),linear-gradient(45deg,#555 25%,transparent 25%,transparent 75%,#555 75%,#555)",
-        backgroundSize: "8px 8px",
-        backgroundPosition: "0 0,4px 4px",
-      }}
-    >
-      <span
-        className="absolute inset-0"
-        style={{
-          background: color && color !== "none" ? color : "transparent",
-          opacity: opacity ?? 1,
-        }}
-      />
-    </button>
-  );
-}
-
-/** Popover with a colour grid, custom picker, optional opacity + "No color". */
-function ColorPopover({
-  value,
-  opacity,
-  onPick,
-  onOpacity,
-  allowNone,
-  onClose,
-}: {
-  value: string | undefined;
-  opacity?: number;
-  onPick: (c: string | null) => void;
-  onOpacity?: (o: number) => void;
-  allowNone?: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="absolute right-0 top-full z-30 mt-1 w-[184px] rounded-md border border-[#50535a] bg-[#242424] p-2 shadow-2xl shadow-black/60"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="grid grid-cols-6 gap-1.5">
-        {COLORS.map((c) => (
-          <button
-            key={c}
-            onClick={() => {
-              onPick(c);
-              onClose();
-            }}
-            className="relative h-5 w-5 rounded border border-[#50535a]"
-            style={{ background: c }}
-          >
-            {value?.toLowerCase() === c.toLowerCase() && (
-              <Check size={11} className="absolute inset-0 m-auto text-black/70" />
-            )}
-          </button>
-        ))}
-      </div>
-      {onOpacity && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-2xs text-[#a0a3aa]">Opacity</span>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round((opacity ?? 1) * 100)}
-            onChange={(e) => onOpacity(Number(e.target.value) / 100)}
-            className="flex-1 accent-brand"
-          />
-          <span className="w-8 text-right text-2xs text-[#d1d4dc]">
-            {Math.round((opacity ?? 1) * 100)}%
-          </span>
-        </div>
-      )}
-      <div className="mt-2 flex items-center gap-2 border-t border-[#50535a] pt-2">
-        <label className="flex items-center gap-1.5 text-2xs text-[#a0a3aa]">
-          <input
-            type="color"
-            value={/^#[0-9a-f]{6}$/i.test(value ?? "") ? value : "#2962ff"}
-            onChange={(e) => onPick(e.target.value)}
-            className="h-5 w-6 cursor-pointer rounded border border-[#50535a] bg-transparent p-0"
-          />
-          Custom
-        </label>
-        {allowNone && (
-          <button
-            onClick={() => {
-              onPick(null);
-              onClose();
-            }}
-            className="ml-auto rounded px-1.5 py-0.5 text-2xs text-[#a0a3aa] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
-          >
-            No color
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** A line preview button (shows current width + style) that opens a popover. */
-function LineWidget({
-  color,
-  width,
-  style,
-  open,
-  onToggle,
-  onWidth,
-  onStyle,
-  onClose,
-}: {
-  color: string;
-  width: number;
-  style: LineStyle;
-  open: boolean;
-  onToggle: () => void;
-  onWidth: (w: number) => void;
-  onStyle: (s: LineStyle) => void;
-  onClose: () => void;
-}) {
-  const dash = LINE_STYLES.find((s) => s.value === style)?.dash || undefined;
-  return (
-    <div className="relative">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-        className="flex h-[34px] items-center gap-1.5 rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 hover:border-[#6a6d75] hover:bg-[#2a2a2a]"
-      >
-        <svg width="32" height="12" className="text-[#f0f0f0]" style={{ color }}>
-          <line x1="1" y1="6" x2="31" y2="6" stroke="currentColor" strokeWidth={width} strokeDasharray={dash} strokeLinecap="round" />
-        </svg>
-        <ChevronDown size={12} className="text-[#a0a3aa]" />
-      </button>
-      {open && (
-        <div
-          className="absolute right-0 top-full z-30 mt-1 w-[160px] rounded-md border border-[#50535a] bg-[#242424] p-2 shadow-2xl shadow-black/60"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-2xs text-[#a0a3aa]">Width</span>
-            <input
-              type="range"
-              min={1}
-              max={10}
-              value={width}
-              onChange={(e) => onWidth(Number(e.target.value))}
-              className="flex-1 accent-brand"
-            />
-            <span className="w-7 text-right text-2xs text-[#d1d4dc]">{width}px</span>
-          </div>
-          {LINE_STYLES.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => {
-                onStyle(s.value);
-                onClose();
-              }}
-              className="flex w-full items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-[#2a2a2a]"
-            >
-              <svg width="80" height="10" className="text-[#f0f0f0]">
-                <line x1="1" y1="5" x2="79" y2="5" stroke="currentColor" strokeWidth="2" strokeDasharray={s.dash || undefined} />
-              </svg>
-              {style === s.value && <Check size={12} className="text-[#2962ff]" />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Select<T extends string | number>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => {
-        const v = e.target.value;
-        const match = options.find((o) => String(o.value) === v);
-        if (match) onChange(match.value);
-      }}
-      className="h-[34px] rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
-    >
-      {options.map((o) => (
-        <option key={String(o.value)} value={String(o.value)}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
 }
 
 // ---- dialog -------------------------------------------------------------
@@ -384,6 +129,7 @@ export function ObjectSettingsDialog() {
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   // Snapshot of the object as it was when the dialog opened (for Cancel).
   const snapshot = useRef<Drawing | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   // Latest cancel handler, so the keydown effect can call it without TDZ.
   const cancelRef = useRef<() => void>(() => {});
   const templateDialogOpenRef = useRef(false);
@@ -392,20 +138,30 @@ export function ObjectSettingsDialog() {
     useDraggableDialog();
 
   const drawing = drawings.find((d) => d.id === editingId) ?? null;
-  const isPosition = drawing?.tool === "long" || drawing?.tool === "short";
+  const settings = drawing ? getDrawingSettingsSchema(drawing.tool) : null;
+  const isPosition = settings?.profile === "position";
 
   // Capture the original style once per opened object.
   useEffect(() => {
     if (editingId && drawing && snapshot.current?.id !== editingId) {
       snapshot.current = JSON.parse(JSON.stringify(drawing));
+      returnFocus.current = document.activeElement as HTMLElement | null;
     }
     if (!editingId) snapshot.current = null;
-    setTab(drawing?.tool === "text" ? "text" : "style");
+    setTab((settings?.tabs[0] ?? "style") as Tab);
     setPop(null);
     setTplOpen(false);
     setTemplateDialogOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
+
+  useEffect(() => {
+    if (!editingId) returnFocus.current?.focus();
+  }, [editingId]);
+
+  useEffect(() => {
+    if (editingId && !isPosition) dialogRef.current?.focus();
+  }, [dialogRef, editingId, isPosition]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -417,16 +173,15 @@ export function ObjectSettingsDialog() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editingId]);
 
-  if (typeof document === "undefined" || !drawing || isPosition) return null;
+  if (typeof document === "undefined" || !drawing || !settings || isPosition) return null;
 
-  const family = styleFamily(drawing.tool);
-  const isFib = isFibTool(drawing.tool);
-  const isText = family === "text";
-  const isPlainText = drawing.tool === "text";
-  const isShape = family === "shape";
-  // Extend / Middle line / inner text are wired only for the plain rectangle.
-  const isRect = drawing.tool === "rectangle";
-  const hasTextTab = !isFib && (isRect || isText);
+  const family = settings.templateFamily;
+  const isFib = settings.profile === "fib";
+  const isText = settings.profile === "text";
+  const isPlainText = settings.profile === "text";
+  const isShape = settings.profile === "shape";
+  const isRect = settings.hasFeature("middle-line");
+  const hasTextTab = settings.tabs.includes("text");
 
   const patch = (p: Partial<Drawing>) =>
     updateDrawing({ id: drawing.id, patch: p });
@@ -437,17 +192,25 @@ export function ObjectSettingsDialog() {
       // Full revert: cover every key in either the current or the snapshot
       // object so fields ADDED during editing (e.g. bold) are cleared too —
       // a plain `{...d, ...snap}` merge would keep them (JSON drops undefined).
-      const revert: Record<string, unknown> = {};
-      for (const k of new Set([
-        ...Object.keys(drawing),
-        ...Object.keys(snap),
-      ]))
-        revert[k] = (snap as unknown as Record<string, unknown>)[k];
-      updateDrawing({ id: drawing.id, patch: revert as Partial<Drawing> });
+      updateDrawing({ id: drawing.id, patch: buildDrawingSettingsRevert(drawing, snap) });
     }
     setEditing(null);
   };
-  const ok = () => setEditing(null);
+  const ok = () => {
+    const snap = snapshot.current;
+    if (snap && snap.id === drawing.id) {
+      const change = buildDrawingSettingsCommit(drawing, snap);
+      if (change) {
+        drawingCommandManager.execute(new PreviewedPropertyChangeCommand(
+          updateDrawing,
+          drawing.id,
+          change.after,
+          change.before,
+        ));
+      }
+    }
+    setEditing(null);
+  };
   cancelRef.current = cancel;
 
   const setPoint = (idx: number, p: Partial<{ time: number; price: number }>) => {
@@ -494,6 +257,8 @@ export function ObjectSettingsDialog() {
     const textTabBtn = (id: "text" | "visibility") => (
       <button
         key={id}
+        role="tab"
+        aria-selected={tab === id}
         onClick={() => {
           setTab(id);
           setPop(null);
@@ -521,6 +286,10 @@ export function ObjectSettingsDialog() {
         >
           <div
             ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${settings.title} settings`}
+            tabIndex={-1}
             style={dialogStyle}
             className="flex max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),380px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
             onClick={() => {
@@ -543,14 +312,15 @@ export function ObjectSettingsDialog() {
               </div>
               <button
                 onClick={cancel}
+                aria-label="Close settings"
                 className="rounded-sm p-1 text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
               >
                 <X size={24} strokeWidth={1.5} />
               </button>
             </div>
 
-            <div className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
-              {(["text", "visibility"] as const).map(textTabBtn)}
+            <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
+              {(settings.tabs as readonly ("text" | "visibility")[]).map(textTabBtn)}
             </div>
 
             <div className="min-h-[420px] flex-1 overflow-y-auto px-5 py-5">
@@ -813,18 +583,13 @@ export function ObjectSettingsDialog() {
     );
   }
 
-  const tabs: Tab[] = isFib
-    ? ["style", "coordinates", "visibility"]
-    : [
-        "style",
-        ...(hasTextTab ? (["text"] as Tab[]) : []),
-        "coordinates",
-        "visibility",
-      ];
+  const tabs = settings.tabs as readonly Tab[];
 
   const tabBtn = (id: Tab) => (
     <button
       key={id}
+      role="tab"
+      aria-selected={tab === id}
       onClick={() => {
         setTab(id);
         setPop(null);
@@ -858,6 +623,10 @@ export function ObjectSettingsDialog() {
     >
       <div
         ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${settings.title} settings`}
+        tabIndex={-1}
         style={dialogStyle}
         className={cn(
           isFib
@@ -879,12 +648,13 @@ export function ObjectSettingsDialog() {
           >
             <div className="flex items-center gap-2">
               <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
-                {fibTitle(drawing.tool)}
+                {settings.title}
               </span>
               <Pencil size={16} className="text-[#d1d4dc]" />
             </div>
             <button
               onClick={cancel}
+              aria-label="Close settings"
               className="rounded-sm p-1 text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
             >
               <X size={24} strokeWidth={1.5} />
@@ -893,6 +663,8 @@ export function ObjectSettingsDialog() {
         )}
         {/* Tabs */}
         <div
+          role="tablist"
+          aria-label="Drawing settings sections"
           {...(!isFib ? dragHandleProps : {})}
           className={cn(
             isFib

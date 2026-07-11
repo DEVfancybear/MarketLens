@@ -13,9 +13,12 @@ import type {
 } from "@/types";
 import {
   DEFAULT_POSITION_STATS,
-  TEMPLATE_STYLE_KEYS,
   styleFamily,
 } from "@/types";
+import {
+  applyDrawingTemplateStyle,
+  pickDrawingTemplateStyle,
+} from "@/components/chart/drawing/settings/drawingSettingsSchema";
 import type { Mt5SymbolInfo } from "@/types/mt5";
 import { localStore } from "@/services/storage";
 import {
@@ -1020,16 +1023,6 @@ export const setEditingDrawingAtom = atom(
 // Drawing style templates (global, style-only presets)
 // ---------------------------------------------------------------------------
 
-/** Extract the style-only subset from a drawing. */
-function styleSubset(d: Drawing): Partial<Drawing> {
-  const out: Partial<Drawing> = {};
-  for (const k of TEMPLATE_STYLE_KEYS) {
-    const v = d[k];
-    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
-  }
-  return out;
-}
-
 /** Save the selected drawing's style as a named, family-scoped template. */
 export const saveTemplateAtom = atom(
   null,
@@ -1042,7 +1035,7 @@ export const saveTemplateAtom = atom(
       name,
       family: styleFamily(d.tool),
       color: d.color,
-      ...styleSubset(d),
+      ...pickDrawingTemplateStyle(d),
     };
     // Replace any existing template with the same name + family.
     const next = [
@@ -1079,11 +1072,9 @@ export const applyTemplateAtom = atom(
   null,
   (_get, set, arg: { id: string; template: DrawingTemplate }) => {
     const { id, template } = arg;
-    const patch: Partial<Drawing> = { color: template.color };
-    for (const k of TEMPLATE_STYLE_KEYS) {
-      const v = template[k as keyof DrawingTemplate];
-      if (v !== undefined) (patch as Record<string, unknown>)[k] = v;
-    }
+    const drawing = _get(drawingsAtom).find((candidate) => candidate.id === id);
+    if (!drawing || template.family !== styleFamily(drawing.tool)) return;
+    const patch = applyDrawingTemplateStyle(drawing.tool, template);
     set(updateDrawingAtom, { id, patch });
   },
 );

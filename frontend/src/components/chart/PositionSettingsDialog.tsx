@@ -4,7 +4,7 @@
  * position tool. Tabs: Inputs (account / risk / entry / profit / stop),
  * Style (line width, zone opacity), Visibility (labels). Changes apply live.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Pencil, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -33,6 +33,15 @@ import {
   ticksBetween,
 } from "./drawing/tools/positionMetrics";
 import { parseNumberDraft } from "./drawing/tools/positionInput";
+import { getDrawingSettingsSchema } from "./drawing/settings/drawingSettingsSchema";
+import {
+  drawingCommandManager,
+  PreviewedPropertyChangeCommand,
+} from "./drawing/history/CommandManager";
+import {
+  buildDrawingSettingsCommit,
+  buildDrawingSettingsRevert,
+} from "./drawing/settings/drawingSettingsTransaction";
 
 const COLORS = [
   "#ffffff",
@@ -427,27 +436,69 @@ export function PositionSettingsDialog() {
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const [tab, setTab] = useState<Tab>("inputs");
   const [pop, setPop] = useState<string | null>(null);
+  const snapshot = useRef<Drawing | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const cancelRef = useRef<() => void>(() => {});
   const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
     useDraggableDialog();
 
   const drawing = drawings.find((d) => d.id === editingId) ?? null;
-  const isPosition = drawing?.tool === "long" || drawing?.tool === "short";
+  const settings = drawing ? getDrawingSettingsSchema(drawing.tool) : null;
+  const isPosition = settings?.profile === "position";
+
+  useEffect(() => {
+    if (editingId && drawing && snapshot.current?.id !== editingId) {
+      snapshot.current = structuredClone(drawing);
+      returnFocus.current = document.activeElement as HTMLElement | null;
+      setTab("inputs");
+    }
+    if (!editingId) {
+      snapshot.current = null;
+      returnFocus.current?.focus();
+    }
+    // The immutable snapshot is intentionally captured only when the id opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
+
+  useEffect(() => {
+    if (editingId && isPosition) dialogRef.current?.focus();
+  }, [dialogRef, editingId, isPosition]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && editingId) setEditing(null);
+      if (e.key === "Escape" && editingId) cancelRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [editingId, setEditing]);
 
-  if (typeof document === "undefined" || !drawing || !isPosition) return null;
+  if (typeof document === "undefined" || !drawing || !settings || !isPosition) return null;
 
-  const close = () => setEditing(null);
+  const cancel = () => {
+    const snap = snapshot.current;
+    if (snap?.id === drawing.id) {
+      updateDrawing({ id: drawing.id, patch: buildDrawingSettingsRevert(drawing, snap) });
+    }
+    setEditing(null);
+  };
+  const ok = () => {
+    const snap = snapshot.current;
+    if (snap?.id === drawing.id) {
+      const change = buildDrawingSettingsCommit(drawing, snap);
+      if (change) {
+        drawingCommandManager.execute(new PreviewedPropertyChangeCommand(
+          updateDrawing, drawing.id,
+          change.after, change.before,
+        ));
+      }
+    }
+    setEditing(null);
+  };
+  cancelRef.current = cancel;
   const patch = (p: Partial<Drawing>) =>
     updateDrawing({ id: drawing.id, patch: p });
 
-  const isLong = drawing.tool === "long";
+  const isLong = settings.positionSide === "long";
   const marketSymbol = getMarketSymbol(symbol);
   const tick = safeTickSize(marketSymbol?.tickSize);
   const entry = roundToTick(drawing.points[0]?.price ?? 0, tick);
@@ -516,6 +567,8 @@ export function PositionSettingsDialog() {
   const leverage = drawing.leverage ?? 1;
   const tabBtn = (id: Tab, label: string) => (
     <button
+      role="tab"
+      aria-selected={tab === id}
       onClick={() => setTab(id)}
       className={cn(
         "border-b-[3px] px-0 pb-[9px] text-[16px] font-semibold transition-colors",
@@ -532,12 +585,16 @@ export function PositionSettingsDialog() {
       data-chart-ui
       className="fixed inset-0 z-[110] flex items-start justify-center bg-black/45 pt-10"
       onClick={(e) => {
-        if (e.target === e.currentTarget) close();
+        if (e.target === e.currentTarget) cancel();
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
         ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${settings.title} settings`}
+        tabIndex={-1}
         style={dialogStyle}
         className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
       >
@@ -551,7 +608,7 @@ export function PositionSettingsDialog() {
         >
           <div className="flex items-center gap-2">
             <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
-              {isLong ? "Long position" : "Short position"}
+              {settings.title}
             </span>
             {drawing.tradeStatus === "tp_hit" && (
               <span className="rounded-full bg-bull/20 px-2 py-0.5 text-xs font-medium text-bull">
@@ -566,7 +623,8 @@ export function PositionSettingsDialog() {
             <Pencil size={16} className="text-[#d1d4dc]" />
           </div>
           <button
-            onClick={close}
+            onClick={cancel}
+            aria-label="Close settings"
             className="rounded-sm p-1 text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
           >
             <X size={24} strokeWidth={1.5} />
@@ -574,10 +632,8 @@ export function PositionSettingsDialog() {
         </div>
 
         {/* Tabs */}
-        <div className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
-          {tabBtn("inputs", "Inputs")}
-          {tabBtn("style", "Style")}
-          {tabBtn("visibility", "Visibility")}
+        <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
+          {(settings.tabs as readonly Tab[]).map((id) => tabBtn(id, id[0].toUpperCase() + id.slice(1)))}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -810,14 +866,14 @@ export function PositionSettingsDialog() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={close}
+              onClick={cancel}
               className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] hover:bg-[#2a2a2a]"
             >
               Cancel
             </button>
             <button
               type="button"
-              onClick={close}
+              onClick={ok}
               className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] hover:bg-white"
             >
               Ok
