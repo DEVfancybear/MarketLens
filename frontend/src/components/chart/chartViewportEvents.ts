@@ -21,6 +21,8 @@ const POINTER_EVENTS = [
   "pointercancel",
 ] as const;
 
+export type ChartViewportEventSource = "range" | "size" | "input";
+
 function eventRoot(chart: IChartApi): HTMLElement {
   const chartElement = chart.chartElement();
   return chartElement.parentElement ?? chartElement;
@@ -37,7 +39,7 @@ function eventRoot(chart: IChartApi): HTMLElement {
  */
 export function subscribeChartViewportEvents(
   chart: IChartApi,
-  onViewportChange: () => void,
+  onViewportChange: (source: ChartViewportEventSource) => void,
 ): () => void {
   const timeScale = chart.timeScale();
   const root = eventRoot(chart);
@@ -52,21 +54,22 @@ export function subscribeChartViewportEvents(
     );
   };
 
-  const handleViewportChange = () => onViewportChange();
+  const handleRangeChange = () => onViewportChange("range");
+  const handleSizeChange = () => onViewportChange("size");
   const handleInputEvent = (event: Event) => {
     recordInput(event.type);
-    onViewportChange();
+    onViewportChange("input");
   };
   const handlePointerEvent = (event: Event) => {
     const pointer = event as PointerEvent;
     if (event.type !== "pointermove" || pointer.buttons !== 0) {
       recordInput(event.type);
-      onViewportChange();
+      onViewportChange("input");
     }
   };
 
-  timeScale.subscribeVisibleLogicalRangeChange(handleViewportChange);
-  timeScale.subscribeSizeChange(handleViewportChange);
+  timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
+  timeScale.subscribeSizeChange(handleSizeChange);
 
   for (const type of INPUT_EVENTS) {
     root.addEventListener(type, handleInputEvent, options);
@@ -76,8 +79,8 @@ export function subscribeChartViewportEvents(
   }
 
   return () => {
-    timeScale.unsubscribeVisibleLogicalRangeChange(handleViewportChange);
-    timeScale.unsubscribeSizeChange(handleViewportChange);
+    timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+    timeScale.unsubscribeSizeChange(handleSizeChange);
     for (const type of INPUT_EVENTS) {
       root.removeEventListener(type, handleInputEvent, true);
     }

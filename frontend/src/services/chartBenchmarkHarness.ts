@@ -7,6 +7,7 @@ import {
 import { getActiveChartBenchmarkCandles } from "@/services/chartBenchmarkFixtures";
 import { runCandleRepositoryBenchmark } from "@/services/market-data/candleRepositoryBenchmark";
 import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
+import { getChartViewportController } from "@/components/chart/chartViewportController";
 
 export interface ChartBenchmarkOptions {
   panFrames?: number;
@@ -31,6 +32,8 @@ export function installChartBenchmarkHarness(
   if (process.env.NODE_ENV === "production") return () => {};
   window.__chartBenchmark = {
     run: async (options = {}) => {
+      const viewport = getChartViewportController(chart);
+      if (!viewport) throw new Error("Chart viewport controller is unavailable");
       const totalCandles = candleCount();
       const panFrames = options.panFrames ?? 120;
       const zoomFrames = options.zoomFrames ?? 90;
@@ -70,20 +73,20 @@ export function installChartBenchmarkHarness(
       for (let frame = 0; frame < panFrames; frame += 1) {
         const offset = Math.round(Math.sin((frame / panFrames) * Math.PI * 4) * baseSpan);
         const to = Math.max(baseSpan, Math.min(end, end - baseSpan + offset));
-        chart.timeScale().setVisibleLogicalRange({
+        viewport.setLogicalRange({
           from: (to - baseSpan) as Logical,
           to: to as Logical,
-        });
+        }, "benchmark");
         await nextFrame();
       }
 
       for (let frame = 0; frame < zoomFrames; frame += 1) {
         const phase = (frame / zoomFrames) * Math.PI * 2;
         const span = Math.max(30, Math.round(baseSpan * (1 + 0.55 * Math.sin(phase))));
-        chart.timeScale().setVisibleLogicalRange({
+        viewport.setLogicalRange({
           from: Math.max(0, end - span) as Logical,
           to: end as Logical,
-        });
+        }, "benchmark");
         await nextFrame();
       }
 

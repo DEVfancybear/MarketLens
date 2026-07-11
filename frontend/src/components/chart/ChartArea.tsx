@@ -50,6 +50,7 @@ export function ChartArea() {
   const crosshair = useAtomValue(crosshairAtom);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
   const [benchmarkCandles, setBenchmarkCandles] = useState<Candle[] | null>(null);
+  const [benchmarkStartIndex, setBenchmarkStartIndex] = useState(0);
   const [benchmarkVisibleCount, setBenchmarkVisibleCount] = useState<number | null>(null);
   const [benchmarkProfile, setBenchmarkProfile] = useState<
     "workspace" | "phase2" | "phase3"
@@ -57,39 +58,60 @@ export function ChartArea() {
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
-    const requested = Number(new URLSearchParams(window.location.search).get("chartFixture"));
+    const params = new URLSearchParams(window.location.search);
+    const requested = Number(params.get("chartFixture"));
     if (!isChartBenchmarkSize(requested)) return;
-    const requestedProfile = new URLSearchParams(window.location.search)
-      .get("chartBenchmarkProfile");
+    const requestedProfile = params.get("chartBenchmarkProfile");
     setBenchmarkProfile(
       requestedProfile === "phase2" || requestedProfile === "phase3"
         ? requestedProfile
         : "workspace",
     );
     const fixture = createChartBenchmarkCandles(requested);
-    setActiveChartBenchmarkCandles(fixture);
+    const requestedTail = Number(params.get("chartFixtureTail"));
+    const initialStart = Number.isFinite(requestedTail) && requestedTail > 0
+      ? Math.max(0, fixture.length - Math.floor(requestedTail))
+      : 0;
+    setBenchmarkStartIndex(initialStart);
+    setActiveChartBenchmarkCandles(fixture.slice(initialStart));
     setBenchmarkCandles(fixture);
     setBenchmarkVisibleCount(fixture.length);
     const handleReplay = (event: Event) => {
       const count = (event as CustomEvent<{ count?: number }>).detail?.count;
       if (Number.isFinite(count)) {
-        const nextCount = Math.max(1, Math.min(fixture.length, Number(count)));
+        const nextCount = Math.max(initialStart + 1, Math.min(fixture.length, Number(count)));
         setBenchmarkVisibleCount(nextCount);
-        setActiveChartBenchmarkCandles(fixture.slice(0, nextCount));
+        setActiveChartBenchmarkCandles(fixture.slice(initialStart, nextCount));
       }
     };
+    const handlePrepend = (event: Event) => {
+      const count = Number(
+        (event as CustomEvent<{ count?: number }>).detail?.count ?? 0,
+      );
+      if (!Number.isFinite(count) || count <= 0) return;
+      setBenchmarkStartIndex((current) => {
+        const next = Math.max(0, current - Math.floor(count));
+        setActiveChartBenchmarkCandles(fixture.slice(next));
+        return next;
+      });
+    };
     window.addEventListener("chart-benchmark-replay", handleReplay);
+    window.addEventListener("chart-benchmark-prepend", handlePrepend);
     return () => {
       window.removeEventListener("chart-benchmark-replay", handleReplay);
+      window.removeEventListener("chart-benchmark-prepend", handlePrepend);
       setActiveChartBenchmarkCandles(null);
     };
   }, []);
 
   const displayedCandles = useMemo(
     () => benchmarkCandles
-      ? benchmarkCandles.slice(0, benchmarkVisibleCount ?? benchmarkCandles.length)
+      ? benchmarkCandles.slice(
+          benchmarkStartIndex,
+          benchmarkVisibleCount ?? benchmarkCandles.length,
+        )
       : candles,
-    [benchmarkCandles, benchmarkVisibleCount, candles],
+    [benchmarkCandles, benchmarkStartIndex, benchmarkVisibleCount, candles],
   );
 
   const meta = getMarketSymbol(symbol);

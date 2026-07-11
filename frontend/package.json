@@ -34,7 +34,8 @@
     "test:indicator-catalog": "tsc -p tsconfig.test.json && node --test .test-build/tests/indicatorCatalog/*.test.js",
     "test:watchlist": "tsc -p tsconfig.test.json && node --test .test-build/tests/watchlist/*.test.js",
     "test:alerts": "tsc -p tsconfig.test.json && node --test .test-build/tests/alerts/*.test.js",
-    "test:chart": "tsc -p tsconfig.test.json && node --test .test-build/tests/chart/*.test.js",
+    "test:chart": "node scripts/clean-test-build.mjs && tsc -p tsconfig.test.json && node --test .test-build/tests/chart/*.test.js",
+    "test:chart-browser": "playwright test",
     "test:ui": "tsc -p tsconfig.test.json && node --test .test-build/tests/ui/*.test.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
@@ -57,6 +58,7 @@
     "tailwind-merge": "3.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/node": "22.13.0",
     "@types/react": "19.0.8",
     "@types/react-dom": "19.0.3",

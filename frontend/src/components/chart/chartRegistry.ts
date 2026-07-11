@@ -1,4 +1,5 @@
 import type { IChartApi } from 'lightweight-charts';
+import { getChartViewportController } from "./chartViewportController";
 
 /**
  * Module-level handle to the main chart instance so toolbar actions
@@ -33,12 +34,7 @@ export function getMainChart(): IChartApi | null {
  */
 export function resetChartView(): boolean {
   if (!mainChart) return false;
-  const timeScale = mainChart.timeScale();
-  timeScale.applyOptions(defaultViewport);
-  timeScale.resetTimeScale();
-  timeScale.scrollToRealTime();
-  mainChart.priceScale("right").applyOptions({ autoScale: true });
-  return true;
+  return getChartViewportController(mainChart)?.reset(defaultViewport) ?? false;
 }
 
 /**

@@ -39,7 +39,7 @@ Implemented on 2026-07-09:
 | Built-in indicator calculations | `frontend/src/services/indicators.ts` |
 | Active indicator dispatch | `frontend/src/services/indicators.ts` |
 | Overlay rendering | `frontend/src/components/chart/PriceChart.tsx` |
-| Separate pane rendering | `frontend/src/components/chart/IndicatorPane.tsx` |
+| Separate pane rendering | Native LWC panes in `frontend/src/components/chart/PriceChart.tsx` |
 | Script persistence | Backend Phase 9 `/api/v1/pine-scripts` |
 
 Frontend chart rendering now uses `frontend/src/services/pineRuntimeCache.ts`.
@@ -318,7 +318,7 @@ Then migrate call sites:
 | `IndicatorSettingsDialog.tsx` | Hydrate input/style schemas from backend and cache by `scriptId/sourceHash` |
 | `IndicatorLegend.tsx` status inputs | Use cached backend input schema |
 | `services/indicators.ts` CUSTOM dispatch | Read cached backend `IndicatorResult`; do not synchronously compile |
-| `PriceChart.tsx` / `IndicatorPane.tsx` | Trigger async compile cache refresh when visible candles/source/overrides change |
+| `PriceChart.tsx` | Trigger async compile cache refresh when visible candles/source/overrides change |
 
 The chart render path must not block on an HTTP request. It should:
 
@@ -379,7 +379,7 @@ Status: implemented for compile result cache.
 1. Added `src/services/api/resources/pineRuntimeApi.ts`.
 2. Added `src/services/pineRuntimeCache.ts`.
 3. Wired Pine Editor preview/add-to-chart validation to backend compile.
-4. `PriceChart` and `IndicatorPane` request backend compile asynchronously and render cached results.
+4. `PriceChart` requests backend compile asynchronously and renders cached results into overlay or native-pane series.
 5. `IndicatorSettingsDialog` and legend status-line input summaries request backend schemas.
 6. `request.security()` scripts request extra historical candles and use a window-based cache key so
    MT5 same-window OHLC refreshes do not temporarily blank overlay output.

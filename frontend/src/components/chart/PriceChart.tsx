@@ -73,6 +73,10 @@ import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
 import {
+  installChartViewportController,
+  type ChartViewportController,
+} from "./chartViewportController";
+import {
   latestReplayLogicalRange,
   shouldRealignReplayViewport,
 } from "./replayViewport";
@@ -90,6 +94,9 @@ import {
   measureChartSeriesWrite,
 } from "@/services/chartPerformanceProbe";
 import { installChartBenchmarkHarness } from "@/services/chartBenchmarkHarness";
+import { installChartInteractionTestHarness } from "./chartInteractionTestHarness";
+import { measureChartPaneMetrics } from "./chartPaneMetrics";
+import { crosshairTimeToTimestamp } from "./crosshairSynchronization";
 import {
   resolveIndicatorSeriesWritePlan,
   type IndicatorWritePoint,
@@ -100,14 +107,18 @@ import {
   type CandleViewport,
 } from "@/services/candleViewport";
 
-function keepLatestBarInView(chart: IChartApi, dataLength: number) {
+function keepLatestBarInView(
+  chart: IChartApi,
+  viewport: ChartViewportController,
+  dataLength: number,
+) {
   const timeScale = chart.timeScale();
   const next = latestReplayLogicalRange(
     dataLength,
     timeScale.getVisibleLogicalRange(),
     RIGHT_OFFSET_BARS,
   );
-  if (next) timeScale.setVisibleLogicalRange(next);
+  if (next) viewport.setLogicalRange(next, "replay-realign");
 }
 
 const LEFT_HISTORY_PREFETCH_BARS = 120;
@@ -225,6 +236,7 @@ export function PriceChart({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const viewportControllerRef = useRef<ChartViewportController | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const indSeriesRef = useRef<Map<string, IndicatorSeriesApi[]>>(new Map());
   const indStructureRef = useRef<Map<string, string>>(new Map());
@@ -250,6 +262,7 @@ export function PriceChart({
   const indicatorViewportRef = useRef<CandleViewport | null>(null);
   const visibleLogicalRangeRef = useRef<LogicalRange | null>(null);
   const derivedDataEnabledRef = useRef(true);
+  const lastCrosshairTimeRef = useRef<number | null>(null);
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
@@ -302,6 +315,14 @@ export function PriceChart({
       bumpRafRef.current = null;
       const range = chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
       visibleLogicalRangeRef.current = range;
+      const activeChart = chartRef.current;
+      if (activeChart) {
+        const paneMetrics = measureChartPaneMetrics(activeChart);
+        incrementChartPerformanceCounter("pane.width.samples");
+        if (paneMetrics.widthDrift > 1) {
+          incrementChartPerformanceCounter("pane.width.mismatches");
+        }
+      }
       if (derivedDataEnabledRef.current) {
         const previousViewport = indicatorViewportRef.current;
         const nextViewport = resolveCandleViewport(
@@ -389,6 +410,8 @@ export function PriceChart({
     );
 
     chartRef.current = chart;
+    const viewportController = installChartViewportController(chart);
+    viewportControllerRef.current = viewportController;
     candleSeriesRef.current = candleSeries;
     setReady(true);
     setMainChart(chart);
@@ -396,22 +419,34 @@ export function PriceChart({
 
     const unsubscribeViewportEvents = subscribeChartViewportEvents(
       chart,
-      scheduleVersionBump,
+      (source) => {
+        if (source === "input") viewportController.beginUserInteraction();
+        scheduleVersionBump();
+      },
     );
     const uninstallBenchmarkHarness = installChartBenchmarkHarness(
       chart,
       () => candlesRef.current.length,
     );
+    const uninstallInteractionHarness = installChartInteractionTestHarness({
+      chart,
+      viewport: viewportController,
+      candleCount: () => candlesRef.current.length,
+      firstCandleTime: () => candlesRef.current[0]?.time ?? null,
+      lastCrosshairTime: () => lastCrosshairTimeRef.current,
+    });
 
     chart.subscribeCrosshairMove((param) => {
-      if (!param.time) {
+      const timestamp = crosshairTimeToTimestamp(param.time);
+      lastCrosshairTimeRef.current = timestamp;
+      if (timestamp == null) {
         setCrosshair(null);
         return;
       }
       const data = param.seriesData.get(candleSeries) as Candle | undefined;
-      const sourceCandle = candleByTimeRef.current.get(Number(param.time));
+      const sourceCandle = candleByTimeRef.current.get(timestamp);
       setCrosshair({
-        time: param.time as number,
+        time: timestamp,
         candle: data
           ? {
               ...(sourceCandle ?? data),
@@ -431,6 +466,7 @@ export function PriceChart({
     const indDataStore = indDataRef.current;
     return () => {
       ro.disconnect();
+      uninstallInteractionHarness();
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
       if (bumpRafRef.current !== null) {
@@ -442,6 +478,8 @@ export function PriceChart({
         candleAnimationRafRef.current = null;
       }
       setMainChart(null);
+      viewportController.destroy();
+      viewportControllerRef.current = null;
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -694,7 +732,10 @@ export function PriceChart({
       );
       if (restoredRange) {
         requestAnimationFrame(() => {
-          chartRef.current?.timeScale().setVisibleLogicalRange(restoredRange);
+          viewportControllerRef.current?.setLogicalRange(
+            restoredRange,
+            "history-prepend",
+          );
         });
       }
     }
@@ -719,7 +760,7 @@ export function PriceChart({
     });
 
     if (autoFit.fitContent) {
-      chartRef.current?.timeScale().fitContent();
+      viewportControllerRef.current?.fitContent("initial-fit");
       lastAutoFitLengthRef.current = candles.length;
       fittedRef.current = autoFit.markComplete;
     } else if (
@@ -740,7 +781,8 @@ export function PriceChart({
             dataLength,
           )
         ) {
-          keepLatestBarInView(chart, dataLength);
+          const viewport = viewportControllerRef.current;
+          if (viewport) keepLatestBarInView(chart, viewport, dataLength);
         }
       });
     }
@@ -1200,7 +1242,11 @@ export function PriceChart({
   };
 
   return (
-    <div className="relative h-full w-full" onContextMenu={onContextMenu}>
+    <div
+      data-testid="price-chart-root"
+      className="relative h-full w-full"
+      onContextMenu={onContextMenu}
+    >
       <div ref={containerRef} className="h-full w-full" />
       {ctx && (
         <ChartContextObj.Provider value={ctx}>

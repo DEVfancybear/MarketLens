@@ -46,7 +46,10 @@ candles/grid move first and drawings/labels follow later.
 | Area | File | Responsibility |
 |---|---|---|
 | Main chart setup | `src/components/chart/PriceChart.tsx` | Creates Lightweight Chart, owns `ChartContext.version`, projects Pine labels/dashboards |
+| Viewport controller | `src/components/chart/chartViewportController.ts` | Single programmatic viewport writer with cause/revision attribution |
 | Shared viewport events | `src/components/chart/chartViewportEvents.ts` | Single invalidation contract for chart zoom/pan/scale/resize input |
+| Crosshair normalization | `src/components/chart/crosshairSynchronization.ts` | Converts LWC time values to UTC timestamps before store publication |
+| Pane width metrics | `src/components/chart/chartPaneMetrics.ts` | Measures native pane plot widths after autoscale/resize |
 | Drawing overlay | `src/components/chart/DrawingLayer.tsx` | Projects drawings and starts drawing render loop |
 | Drawing renderer | `src/components/chart/drawing/renderer/CanvasRenderer.ts` | Dirty-driven rAF loop, viewport follow-window, memo guard |
 | Coordinate cache | `src/components/chart/drawing/renderer/CoordinateCache.ts` | Frame-local `(time,price) -> pixel` cache |
@@ -55,7 +58,7 @@ candles/grid move first and drawings/labels follow later.
 | SMC overlay | `src/components/smc/SmcLayer.tsx` | Repaints from `ChartContext.version` |
 | Indicator panes | `src/components/chart/PriceChart.tsx` | Owns native LWC panes and their series |
 | Replay viewport | `src/components/chart/replayViewport.ts`, `src/components/chart/PriceChart.tsx` | Presentation-only realignment after server reset/upsert windows |
-| Guard | `scripts/check-drawing-viewport-repaint.mjs` | Static regression guard for the viewport repaint contract |
+| Browser guard | `tests/browser/chartViewportSync.spec.ts` | Crosshair, zoom, pane-width, resize, and prepend interactions |
 
 ## 4. Source Of Truth
 
@@ -90,7 +93,7 @@ File:
 src/components/chart/chartViewportEvents.ts
 ```
 
-This helper listens to:
+This helper reports `range`, `size`, or `input` and listens to:
 
 - `timeScale().subscribeVisibleLogicalRangeChange`
 - `timeScale().subscribeSizeChange`
@@ -108,6 +111,9 @@ Why both LWC subscriptions and DOM input events are needed:
 - DOM input events catch interaction paths where LWC's internal canvas updates
   before the logical-range callback or where price-scale projection changes
   without horizontal range movement.
+- Only `input` may call `viewportController.beginUserInteraction()`. A delayed
+  LWC range callback after a programmatic write must not steal viewport
+  ownership by being mislabeled as user input.
 
 ## 6. PriceChart Contract
 
@@ -126,15 +132,19 @@ repaint or recompute when `version` changes.
 Do not add one-off wheel/pointer subscriptions inside individual overlays if
 the interaction changes chart projection. Add it to `chartViewportEvents.ts`.
 
-Time navigation behavior:
+Programmatic viewport behavior:
 
-- Shortcut ranges and custom date ranges must call
-  `chart.timeScale().setVisibleRange`.
-- `All` must call `chart.timeScale().fitContent`.
-- Single-date `Go to` must call `setVisibleLogicalRange` after centering the
-  nearest loaded candle, so the user's current zoom span is preserved.
+- Install one `ChartViewportController` when the main chart is created.
+- Shortcut, custom range, auto-fit, history restore, replay recovery, reset, and
+  benchmark writes must call controller methods instead of `ITimeScaleApi`
+  mutation methods directly.
+- The controller records `revision`, `programmaticWrites`, `cause`, and the
+  current logical range. Equal targets are acknowledged without incrementing
+  the write count.
+- Programmatic writes retain their cause during LWC settling callbacks. A real
+  wheel/pointer/touch input immediately cancels that settling ownership.
 - Keep all range/date math in `chartTimeNavigation.ts`; the toolbar is only an
-  adapter from UI events to the public time-scale API.
+  adapter from UI events to the controller.
 
 Desktop pan behavior:
 
@@ -281,8 +291,18 @@ Pane ownership rules:
 - every separate pane applies the shared price-scale visual profile and fixed
   initial height, while the LWC separator remains user-resizable.
 
-The old `IndicatorPane` separate-chart implementation is retained temporarily
-as migration reference but is not mounted by `ChartArea`.
+The old separate-chart `IndicatorPane` and transparent time-anchor bridge were
+deleted after the native-pane browser regression suite passed. Do not restore
+them as a fallback.
+
+Crosshair events are normalized to UTC seconds before updating
+`crosshairAtom`. Moving across panes at the same x coordinate must publish the
+same timestamp; indicator price values remain pane-local.
+
+`measureChartPaneMetrics()` reads each pane element's rendered plot width. The
+width drift must remain at most one CSS pixel after price autoscale, window
+resize, or pane resize. A larger drift increments the
+`pane.width.mismatches` performance counter and fails the browser guard.
 
 ## 12. Replay Data-Window Replacement
 
@@ -311,6 +331,8 @@ Do not call `fitContent()` from individual replay controls.
 ## 13. Maintenance Rules
 
 - Store domain coordinates, never pixels.
+- Route every application-driven main-chart viewport mutation through
+  `ChartViewportController`.
 - Route projection-changing events through `chartViewportEvents.ts`.
 - Use `ChartContext.version` for DOM/canvas overlay recomputation.
 - Use `markDirty(true, true)` for chart viewport changes.
@@ -349,6 +371,8 @@ Run these before committing viewport or drawing renderer changes:
 npm run check:drawing-viewport
 npm run check:fibonacci-tools
 npm run check:position-hit
+npm run test:chart
+npm run test:chart-browser
 npm run typecheck
 npm run lint
 npm run build

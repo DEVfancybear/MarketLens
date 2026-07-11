@@ -10,7 +10,6 @@ const files = {
   priceChart: "src/components/chart/PriceChart.tsx",
   indicatorLegend: "src/components/chart/IndicatorLegend.tsx",
   indicatorMenu: "src/components/toolbar/IndicatorMenu.tsx",
-  indicatorPane: "src/components/chart/IndicatorPane.tsx",
   indicatorSettings: "src/components/toolbar/IndicatorSettingsDialog.tsx",
   indicatorStyle: "src/services/indicatorStyle.ts",
   settingsArchitecture: "docs/SETTTING_ARCHITECTURE.md",
@@ -91,25 +90,23 @@ const checks = [
   {
     name: "Indicator renderers support histogram series and per-bar colors",
     ok:
-      source.indicatorPane.includes('s.type === "histogram"') &&
-      source.indicatorPane.includes("p.color") &&
-      source.indicatorPane.includes("p.value >= 0") &&
-      source.priceChart.includes('s.type === "histogram"'),
+      source.priceChart.includes('s.type === "histogram"') &&
+      source.priceChart.includes("HistogramSeries") &&
+      source.priceChart.includes("p.color"),
   },
   {
     name: "Separate-pane histograms preserve Pine per-bar colors before fallback",
     ok:
-      source.indicatorPane.includes("color: p.color") &&
-      source.indicatorPane.includes("p.value >= 0") &&
-      !source.indicatorPane.includes("p.color ??"),
+      source.priceChart.includes("...(p.color ? { color: p.color } : {})") &&
+      !source.priceChart.includes("p.color ??"),
   },
   {
-    name: "Separate-pane indicators reuse series instead of recreating on every candle",
+    name: "Native-pane indicators reuse series instead of recreating on every candle",
     ok:
-      source.indicatorPane.includes("seriesRef") &&
-      source.indicatorPane.includes("seriesSignature") &&
-      source.indicatorPane.includes("chart.removeSeries(series)") &&
-      source.indicatorPane.includes("series.setData("),
+      source.priceChart.includes("indSeriesRef") &&
+      source.priceChart.includes("indicatorStructureSignature") &&
+      source.priceChart.includes("chartIndicatorResults") &&
+      source.priceChart.includes("measureChartSeriesWrite"),
   },
   {
     name: "Pine compiler supports Better RSI v3 hlines, fills, and block if expressions",
@@ -127,8 +124,8 @@ const checks = [
       source.pineScript.includes("FLAT_LINE_RIGHT_EXTENSION_BARS") &&
       source.pineScript.includes("candleStepSeconds") &&
       source.pineScript.includes("topLevelEquals") &&
-      source.indicatorPane.includes("addBaselineSeries") &&
-      source.indicatorPane.includes("color: p.color"),
+      source.priceChart.includes("BaselineSeries") &&
+      source.priceChart.includes("color: p.color"),
   },
   {
     name: "CUSTOM indicator settings use the shared Pine input schema dialog",
@@ -159,10 +156,9 @@ const checks = [
       source.indicatorLegend.includes("valuesInStatusLine") &&
       source.priceChart.includes("setEditingIndicator(indicator.id)") &&
       source.priceChart.includes("seriesPriceFormatOptions") &&
-      source.indicatorPane.includes("setEditingIndicator(cfg.id)") &&
-      source.indicatorPane.includes("seriesPriceFormatOptions") &&
-      source.indicatorPane.includes("onSource={openSource}") &&
-      source.indicatorPane.includes('setBottomTab("pine")') &&
+      source.priceChart.includes("paneIndicators.map") &&
+      source.priceChart.includes("onSource={openIndicatorSource}") &&
+      source.priceChart.includes('setBottomTab("pine")') &&
       !source.indicatorSettings.includes('if (indicator?.type === "CUSTOM") setEditingIndicator(null)') &&
       source.settingsArchitecture.includes("Do not build one settings dialog per indicator") &&
       source.settingsArchitecture.includes("IndicatorConfig.inputValues") &&
@@ -235,7 +231,7 @@ const checks = [
       source.priceChart.includes("removeIndicatorAtom") &&
       source.priceChart.includes("loadPineScriptAtom") &&
       source.priceChart.includes("<IndicatorLegend") &&
-      source.indicatorPane.includes("<IndicatorLegend") &&
+      source.priceChart.includes("paneIndicators.map") &&
       source.indicatorLegend.includes("onToggleVisibility") &&
       source.indicatorLegend.includes("onRemove(indicator.id)"),
   },

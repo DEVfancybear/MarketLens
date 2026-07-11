@@ -21,6 +21,18 @@ Current coverage:
 - custom Pine `request.security()` cache-key policy for MT5 same-window OHLC refreshes,
 - local date/time draft parsing,
 - fixed Monday-first calendar grid generation.
+- viewport-controller write attribution and no-op dedupe,
+- crosshair time normalization to UTC timestamps.
 
 Keep browser/visual assertions out of this folder. Pure chart math belongs here;
 DOM rendering and pointer interaction should use a separate browser test suite.
+
+The browser suite is `tests/browser/chartViewportSync.spec.ts`:
+
+```bash
+npm run test:chart-browser
+```
+
+It runs one deterministic chart fixture through four interaction steps:
+crosshair movement across native panes, wheel zoom, autoscale plus viewport
+resize, and history prepend with visible timestamp-range preservation.

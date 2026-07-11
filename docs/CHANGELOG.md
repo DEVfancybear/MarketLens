@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Viewport controller and browser synchronization guard (2026-07-11)
+- Centralized main-chart auto-fit, navigation, replay, prepend restore, reset,
+  and benchmark viewport mutations behind one controller with revision, cause,
+  settling ownership, no-op attribution, and programmatic write counters.
+- Normalized native-pane crosshair events to UTC timestamps before publishing
+  chart store state.
+- Added pane plot-width measurement after autoscale/resize with performance
+  mismatch counters and a development semantic test harness.
+- Added Edge/Playwright interaction coverage for cross-pane crosshair time,
+  wheel zoom ownership, pane widths after autoscale/resize, and history prepend
+  timestamp/zoom preservation.
+- Deleted the unmounted per-indicator chart bridge, transparent time-anchor
+  utility, and their stale regression tests; chart tests now clean compiled
+  output before running so removed cases cannot survive as artifacts.
+
 ### Changed - Lightweight Charts 5 native indicator panes (2026-07-11)
 - Upgraded Lightweight Charts from 4.2.3 to 5.2.0 and migrated built-in series
   creation to the unified `addSeries()` API.

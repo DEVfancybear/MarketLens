@@ -30,7 +30,7 @@ Indicator legend gear
      -> local draft values
      -> updateIndicatorAtom({ inputValues, styleValues / built-in fields })
   -> indicatorsAtom persisted to backend/local anonymous cache
-  -> PriceChart / IndicatorPane invalidates pineRuntimeCache
+  -> PriceChart invalidates pineRuntimeCache for overlay and native-pane series
   -> POST /api/v1/pine-runtime/compile with inputValues/styleValues
      -> EvalContext.inputOverrides
      -> style overrides applied to visual declarations
@@ -49,7 +49,7 @@ Indicator legend gear
 | Pine runtime shared types/default source | `src/services/pineRuntimeTypes.ts` |
 | Shared output/status style keys | `src/services/indicatorStyle.ts` |
 | Built-in indicator defaults | `src/services/indicators.ts` |
-| Overlay/separate-pane settings entry points | `src/components/chart/PriceChart.tsx`, `src/components/chart/IndicatorPane.tsx` |
+| Overlay/separate-pane settings entry point | `src/components/chart/PriceChart.tsx` |
 | Shared legend controls | `src/components/chart/IndicatorLegend.tsx` |
 | Regression guard | `scripts/check-pine-indicator.mjs` |
 

@@ -46,6 +46,7 @@ import {
   type ChartTimeZoneOption,
   type ElementAnchor,
 } from "./chartTimeNavigation";
+import { getChartViewportController } from "./chartViewportController";
 import { RIGHT_OFFSET_BARS } from "./chartVisualProfile";
 
 type GoToTab = "date" | "range";
@@ -273,16 +274,17 @@ export function ChartTimeToolbar({
   const applyShortcutViewport = useCallback(
     (shortcut: TimeRangeShortcut) => {
       if (!chart) return false;
+      const viewport = getChartViewportController(chart);
+      if (!viewport) return false;
       const range = shortcutLogicalRange(shortcut, candles, RIGHT_OFFSET_BARS);
       if (!range) return false;
-      const timeScale = chart.timeScale();
       if (range === "all") {
-        timeScale.fitContent();
+        viewport.fitContent("time-navigation");
         setActiveShortcut(shortcut);
         clearChartCrosshair(chart, () => setCrosshair(null));
         return true;
       }
-      timeScale.setVisibleLogicalRange(range);
+      viewport.setLogicalRange(range, "time-navigation");
       setActiveShortcut(shortcut);
       clearChartCrosshair(chart, () => setCrosshair(null));
       return true;
@@ -533,7 +535,10 @@ function GoToDialog({
         index,
         chart.timeScale().getVisibleLogicalRange(),
       );
-      chart.timeScale().setVisibleLogicalRange(range);
+      getChartViewportController(chart)?.setLogicalRange(
+        range,
+        "time-navigation",
+      );
       onJump(candles[index].time);
       onNavigationApplied();
       onManualNavigation();
@@ -544,10 +549,13 @@ function GoToDialog({
     const from = parseLocalDateTime(fromDate, fromTime, timeZone);
     const to = parseLocalDateTime(toDate, toTime, timeZone);
     if (from == null || to == null) return;
-    chart.timeScale().setVisibleRange({
-      from: Math.min(from, to) as UTCTimestamp,
-      to: Math.max(from, to) as UTCTimestamp,
-    });
+    getChartViewportController(chart)?.setTimeRange(
+      {
+        from: Math.min(from, to) as UTCTimestamp,
+        to: Math.max(from, to) as UTCTimestamp,
+      },
+      "time-navigation",
+    );
     onNavigationApplied();
     onManualNavigation();
     onClose();

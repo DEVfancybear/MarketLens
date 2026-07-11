@@ -7,6 +7,8 @@ out/
 
 # Test build output
 .test-build/
+test-results/
+playwright-report/
 *.tsbuildinfo
 
 # Data directory
