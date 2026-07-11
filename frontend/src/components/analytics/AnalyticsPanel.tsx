@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { journalEntriesAtom, loadJournalAtom } from "@/store/journalStore";
 import { useAtomValue, useSetAtom } from "jotai";
 import { startingEquityAtom } from "@/store/analyticsStore";
@@ -8,25 +8,46 @@ import { EquityChart } from "./EquityChart";
 import { fmtMoney, fmtPct } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import { backendSessionAtom } from "@/store/authStore";
+import { activeSimAccountAtom, simMutationVersionAtom } from "@/store/tradeStore";
+import { getSimAnalytics } from "@/services/api/resources/simTradingApi";
+import type { AnalyticsReport } from "@/services/analyticsEngine";
+import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
 
 /** Performance analytics dashboard: KPIs, equity curve, distributions. */
 export function AnalyticsPanel() {
+  useSimTradingPersistence();
   const entries = useAtomValue(journalEntriesAtom);
   const startingEquity = useAtomValue(startingEquityAtom);
   const backendSession = useAtomValue(backendSessionAtom);
   const loadJournal = useSetAtom(loadJournalAtom);
+  const simAccount = useAtomValue(activeSimAccountAtom);
+  const mutationVersion = useAtomValue(simMutationVersionAtom);
+  const [remoteReport, setRemoteReport] = useState<AnalyticsReport | null>(null);
 
   useEffect(() => {
     void loadJournal();
   }, [backendSession, loadJournal]);
 
-  const report = useMemo(
+  useEffect(() => {
+    if (!backendSession || !simAccount) {
+      setRemoteReport(null);
+      return;
+    }
+    let cancelled = false;
+    void getSimAnalytics(simAccount.id)
+      .then((value) => { if (!cancelled) setRemoteReport(value); })
+      .catch(() => { if (!cancelled) setRemoteReport(null); });
+    return () => { cancelled = true; };
+  }, [backendSession, mutationVersion, simAccount]);
+
+  const localReport = useMemo(
     () => computeAnalytics(entries, startingEquity),
     [entries, startingEquity],
   );
+  const report = remoteReport ?? localReport;
   const s = report.summary;
 
-  if (entries.length === 0) {
+  if (report.summary.totalTrades === 0) {
     return (
       <div className="flex h-full items-center justify-center text-2xs text-ink-faint">
         No closed trades yet — analytics populate automatically as you trade in

@@ -772,16 +772,19 @@ drawing and indicator resources.
 ## Simulated trading  🔒
 
 Backed by `sim_accounts` + `sim_positions` (one self-contained table; a pending order is a position
-with `status=pending`, fills embedded). Optional / later phase — the replay simulator can stay
-client-side until durable backtests are needed.
+with `status=pending`, fills embedded). The frontend remains the fill/SL/TP engine and writes each
+complete position snapshot through to this durable store.
 
 | Method | Path                                    | Purpose                                |
 | ------ | --------------------------------------- | -------------------------------------- |
 | GET    | `/api/v1/sim/accounts`                  | List accounts                          |
 | POST   | `/api/v1/sim/accounts`                  | Create `{ name, startingEquity }`      |
+| PUT    | `/api/v1/sim/accounts/:id`              | Update account name/equity/currency    |
+| DELETE | `/api/v1/sim/accounts/:id`              | Delete account and its positions       |
+| POST   | `/api/v1/sim/accounts/:id/reset`        | Clear positions and reset equity       |
 | GET    | `/api/v1/sim/accounts/:id/positions`    | Positions (filter `?status=open`)      |
-| POST   | `/api/v1/sim/accounts/:id/orders`       | Place `{ symbol, side, type, qty, price?, sl?, tp? }` (`side`: long \| short) → creates a `sim_positions` row |
-| POST   | `/api/v1/sim/positions/:id/close`       | Close a position                       |
+| POST   | `/api/v1/sim/accounts/:id/orders`       | Upsert a complete position snapshot by `clientId` |
+| POST   | `/api/v1/sim/positions/:id/close`       | Upsert a closed snapshot (`accountId` + position body) |
 | GET    | `/api/v1/sim/accounts/:id/analytics`    | Win rate, PF, expectancy, DD, R-dist   |
 
 ---

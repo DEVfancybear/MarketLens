@@ -5,7 +5,7 @@ import {
   equityAtom,
   startingEquityAtom,
   positionsAtom,
-  resetTradeAtom,
+  resetPersistedTradeAtom,
 } from "@/store/tradeStore";
 import {
   executionModeAtom,
@@ -19,16 +19,18 @@ import { ExecutionModeSwitch } from "./ExecutionModeSwitch";
 import { Mt5ConnectionPanel } from "./Mt5ConnectionPanel";
 import { Mt5CommandLog } from "./Mt5CommandLog";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
+import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
 
 /** Trade simulator tab: order ticket + live positions, with account header. */
 export function TradePanel() {
+  useSimTradingPersistence();
   const equity = useAtomValue(equityAtom);
   const startingEquity = useAtomValue(startingEquityAtom);
   const positions = useAtomValue(positionsAtom);
   const executionMode = useAtomValue(executionModeAtom);
   const mt5Account = useAtomValue(mt5AccountAtom);
   const mt5Positions = useAtomValue(mt5PositionsAtom);
-  const reset = useSetAtom(resetTradeAtom);
+  const reset = useSetAtom(resetPersistedTradeAtom);
   const replayTrading = useReplayTrading();
   const replayMode = replayTrading.active && executionMode === "simulator";
 
@@ -76,7 +78,7 @@ export function TradePanel() {
                 accent={activeReturn >= 0 ? "var(--bull)" : "var(--bear)"}
               />
               <button
-                onClick={() => replayMode ? void replayTrading.reset() : reset()}
+                onClick={() => replayMode ? void replayTrading.reset() : void reset()}
                 className="ml-auto flex items-center gap-1 rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
               >
                 <RotateCcw size={12} /> Reset account

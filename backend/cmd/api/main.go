@@ -24,6 +24,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/replay"
 	"github.com/smc-trading-terminal/backend/internal/settings"
+	"github.com/smc-trading-terminal/backend/internal/simtrading"
 	objectstorage "github.com/smc-trading-terminal/backend/internal/storage"
 	"github.com/smc-trading-terminal/backend/internal/users"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
@@ -79,6 +80,7 @@ func main() {
 	var workspaceHandler *workspace.Handler
 	var replayHandler *replay.Handler
 	var journalHandler *journal.Handler
+	var simTradingHandler *simtrading.Handler
 	var pineScriptsStore *pinescripts.Repo
 	var screenshotSigner objectstorage.Signer
 	if cfg.ObjectStorageConfigured() {
@@ -128,6 +130,7 @@ func main() {
 		layoutsHandler = layouts.NewHandler(layoutsStore, requireAuth)
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, layoutsStore, requireAuth)
 		journalHandler = journal.NewHandler(journal.NewRepo(pool.Pool), screenshotSigner, requireAuth)
+		simTradingHandler = simtrading.NewHandler(simtrading.NewRepo(pool.Pool), requireAuth)
 		if cfg.ReplayEngineEnabled {
 			replayStore := replay.NewRepo(pool.Pool)
 			replayService := replay.NewService(replayStore, mt5Service, cfg.ReplayMaxBars, cfg.ReplayMaxTracks)
@@ -155,6 +158,7 @@ func main() {
 		layoutsHandler,
 		workspaceHandler,
 		journalHandler,
+		simTradingHandler,
 		replayHandler,
 		mt5Handler,
 		pineRuntimeHandler,

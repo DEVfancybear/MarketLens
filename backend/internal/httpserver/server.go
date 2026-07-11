@@ -26,6 +26,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/replay"
 	"github.com/smc-trading-terminal/backend/internal/settings"
+	"github.com/smc-trading-terminal/backend/internal/simtrading"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
@@ -52,6 +53,7 @@ func New(
 	layoutsHandler *layouts.Handler,
 	workspaceHandler *workspace.Handler,
 	journalHandler *journal.Handler,
+	simTradingHandler *simtrading.Handler,
 	replayHandler *replay.Handler,
 	mt5Handler *mt5stream.Handler,
 	pineRuntimeHandler *pineruntime.Handler,
@@ -115,6 +117,9 @@ func New(
 	}
 	if journalHandler != nil {
 		journalHandler.Register(api)
+	}
+	if simTradingHandler != nil {
+		simTradingHandler.Register(api)
 	}
 	if replayHandler != nil {
 		replayHandler.Register(api)

@@ -1,6 +1,7 @@
 # Backend Implementation Plan (phased)
 
-> Status: Phases 0-12 are implemented. Phase 13 remains as the per-resource persistence roadmap.
+> Status: Phases 0-13 are implemented. Simulated trading is persisted lazily per account and the
+> frontend remains the fill/SL/TP engine.
 > Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow), and `API.md` (endpoint contract). Each
 > phase is independently shippable and has explicit acceptance criteria so progress is unambiguous.
 
@@ -576,6 +577,11 @@ row with `status='pending'`; fills are an embedded `fills jsonb` array (`Fill[]`
   trade set.
 
 **Complexity:** Medium–High (analytics parity with the client is the tricky part).
+
+**Verification:** `internal/simtrading` covers lifecycle validation and analytics parity metrics;
+the frontend trade suite covers the client-id and epoch/timestamptz adapters. The Trade and
+Analytics panels lazily hydrate the default account, mutations are serialized and written through
+to the API, and account reset clears durable positions.
 
 ---
 

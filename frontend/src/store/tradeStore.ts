@@ -14,6 +14,13 @@ import {
 import { uid } from "@/utils/id";
 import { addJournalEntryAtom } from "./journalStore";
 import { logAtom } from "./uiStore";
+import {
+  positionToWrite,
+  resetSimAccount,
+  upsertSimPosition,
+  type SimAccount,
+} from "@/services/api/resources/simTradingApi";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 
 const STARTING_EQUITY = 10_000;
 
@@ -21,12 +28,59 @@ const STARTING_EQUITY = 10_000;
 export const equityAtom = atom(STARTING_EQUITY);
 export const startingEquityAtom = atom(STARTING_EQUITY);
 export const positionsAtom = atom<Position[]>([]);
+export const activeSimAccountAtom = atom<SimAccount | null>(null);
+export const activeSimOwnerAtom = atom<string | null>(null);
+export const simTradingHydratedAtom = atom(false);
+export const simMutationVersionAtom = atom(0);
 export const priceAtom = atom(0);
 export const timeAtom = atom(0);
 export const tradeSymbolAtom = atom("");
 const orderPrefillVersionAtom = atom(0);
 export type OrderPrefillState = OrderPrefill & { version: number };
 export const orderPrefillAtom = atom<OrderPrefillState | null>(null);
+
+const pendingRemoteSync = new Map<string, ReturnType<typeof setTimeout>>();
+const remoteSyncQueues = new Map<string, Promise<void>>();
+
+function enqueueRemote(accountId: string, task: () => Promise<void>): Promise<void> {
+  const previous = remoteSyncQueues.get(accountId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  remoteSyncQueues.set(accountId, next);
+  void next.then(
+    () => { if (remoteSyncQueues.get(accountId) === next) remoteSyncQueues.delete(accountId); },
+    () => { if (remoteSyncQueues.get(accountId) === next) remoteSyncQueues.delete(accountId); },
+  );
+  return next;
+}
+
+function cancelDebouncedSync(accountId: string) {
+  for (const [key, timer] of pendingRemoteSync) {
+    if (!key.startsWith(`${accountId}:`)) continue;
+    clearTimeout(timer);
+    pendingRemoteSync.delete(key);
+  }
+}
+
+function syncPosition(accountId: string | undefined, position: Position, immediate = false) {
+  if (!accountId || typeof window === "undefined") return;
+  const key = `${accountId}:${position.id}`;
+  const existing = pendingRemoteSync.get(key);
+  if (existing) clearTimeout(existing);
+  const run = () => {
+    pendingRemoteSync.delete(key);
+    void enqueueRemote(accountId, async () => {
+      try {
+        await upsertSimPosition(accountId, positionToWrite(position));
+        const store = getDefaultStore();
+        store.set(simMutationVersionAtom, store.get(simMutationVersionAtom) + 1);
+      } catch (error) {
+        reportFrontendError(error, { title: "Trade sync failed", logPrefix: "Sim position sync failed" });
+      }
+    });
+  };
+  if (immediate) run();
+  else pendingRemoteSync.set(key, setTimeout(run, 500));
+}
 
 // ── Write atoms (actions) ────────────────────────────────────────────────────
 
@@ -95,6 +149,12 @@ export const setTradeMarketAtom = atom(
     set(timeAtom, candle.time);
     set(positionsAtom, positions);
     set(equityAtom, get(equityAtom) + equityDelta);
+    const accountId = get(activeSimAccountAtom)?.id;
+    for (const position of positions) {
+      if (position.status === "open" || position.status === "pending" || justClosed.includes(position)) {
+        syncPosition(accountId, position, position.status === "closed");
+      }
+    }
   },
 );
 
@@ -131,6 +191,7 @@ export const placeOrderAtom = atom(null, (get, set, order: OrderRequest) => {
   };
 
   set(positionsAtom, [pos, ...get(positionsAtom)]);
+  syncPosition(get(activeSimAccountAtom)?.id, pos, true);
   getDefaultStore().set(
     logAtom,
     "info",
@@ -172,6 +233,7 @@ export const closePositionAtom = atom(
 
     set(positionsAtom, positions);
     set(equityAtom, get(equityAtom) + equityDelta);
+    syncPosition(get(activeSimAccountAtom)?.id, p, true);
     getDefaultStore().set(
       logAtom,
       "info",
@@ -181,14 +243,16 @@ export const closePositionAtom = atom(
 );
 
 export const cancelPendingAtom = atom(null, (get, set, id: string) => {
+  let cancelled: Position | undefined;
   set(
     positionsAtom,
-    get(positionsAtom).map((p) =>
-      p.id === id && p.status === "pending"
-        ? { ...p, status: "cancelled" as const }
-        : p,
-    ),
+    get(positionsAtom).map((p) => {
+      if (p.id !== id || p.status !== "pending") return p;
+      cancelled = { ...p, status: "cancelled" as const };
+      return cancelled;
+    }),
   );
+  if (cancelled) syncPosition(get(activeSimAccountAtom)?.id, cancelled, true);
 });
 
 export const closeAllAtom = atom(null, (get, set) => {
@@ -206,6 +270,42 @@ export const resetTradeAtom = atom(null, (get, set) => {
   set(tradeSymbolAtom, "");
   set(orderPrefillAtom, null);
   set(orderPrefillVersionAtom, get(orderPrefillVersionAtom) + 1);
+});
+
+export const resetPersistedTradeAtom = atom(null, async (get, set) => {
+  const account = get(activeSimAccountAtom);
+  set(resetTradeAtom);
+  if (!account) return;
+  try {
+    cancelDebouncedSync(account.id);
+    let updated: SimAccount | undefined;
+    await enqueueRemote(account.id, async () => { updated = await resetSimAccount(account.id); });
+    if (!updated) return;
+    set(activeSimAccountAtom, updated);
+    set(simMutationVersionAtom, get(simMutationVersionAtom) + 1);
+  } catch (error) {
+    reportFrontendError(error, { title: "Account reset failed", logPrefix: "Sim account reset failed" });
+  }
+});
+
+export const applyRemoteSimTradingAtom = atom(
+  null,
+  (_get, set, payload: { ownerId: string; account: SimAccount; positions: Position[] }) => {
+    set(activeSimOwnerAtom, payload.ownerId);
+    set(activeSimAccountAtom, payload.account);
+    set(startingEquityAtom, payload.account.startingEquity);
+    set(equityAtom, payload.account.equity);
+    set(positionsAtom, payload.positions);
+    set(simTradingHydratedAtom, true);
+  },
+);
+
+export const clearRemoteSimTradingAtom = atom(null, (_get, set) => {
+  const account = _get(activeSimAccountAtom);
+  if (account) cancelDebouncedSync(account.id);
+  set(activeSimAccountAtom, null);
+  set(activeSimOwnerAtom, null);
+  set(simTradingHydratedAtom, false);
 });
 
 export const setOrderPrefillAtom = atom(

@@ -660,12 +660,13 @@ Server authoritative, client cache — so auth can ship before every feature is 
 0013_replay_clock.sql            replay actor clock state
 0014_replay_trading.sql          replay accounts, orders, fills and positions
 0015_journal.sql                 journal entries, screenshots, blob deletion queue
+0016_simulated_trading.sql       simulator accounts + snapshot positions, journal position FK
 ```
 
-`0015_journal` leaves `journal_entries.position_id` nullable without a foreign key because the
-separate `sim_positions` table has not shipped (`replay_positions` belongs to replay sessions and
-is not interchangeable). Phase 13 must add the FK after creating `sim_positions`. Applied
-development schema after Phase 11 is version `15`.
+`0015_journal` initially leaves `journal_entries.position_id` nullable without a foreign key because
+`replay_positions` is not interchangeable with simulator positions. `0016_simulated_trading`
+creates `sim_positions` and adds the deferred FK. Applied development schema after Phase 13 is
+version `16`.
 
 ---
 
