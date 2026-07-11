@@ -4,7 +4,6 @@ import type { Drawing, Point, DrawingTool } from "@/types";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
-import { getTool, defaultMove, defaultMoveAnchor } from "../tools/ToolRegistry";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
 import type { Command } from "../history/CommandManager";
 import {
@@ -18,6 +17,13 @@ import {
   type Machine,
 } from "./machine";
 import { PointerFrameCoalescer } from "./PointerFrameCoalescer";
+import {
+  CreationSession,
+  type CreationSessionOutcome,
+} from "./CreationSession";
+import { TransformSession } from "./TransformSession";
+import { EraseSession } from "./EraseSession";
+import { SelectionSession } from "./SelectionSession";
 
 export {
   createInitialMachine,
@@ -25,10 +31,6 @@ export {
   type InteractionState,
   type Machine,
 } from "./machine";
-
-function minPoints(t: DrawingTool): number {
-  return getDrawingToolManifestEntry(t).minPoints;
-}
 
 function shouldRecordContinuousPoint(
   prev: Point | undefined,
@@ -74,7 +76,9 @@ export interface DrawingInteractionManagerOpts {
   duplicateDrawing?: (id: string) => void;
   openDrawingSettings?: (id: string) => void;
   /** Called when Text tool is used. If provided, replaces window.prompt. */
-  onTextPlace?: (point: Point, color: string) => void;
+  onTextPlace?: (tool: DrawingTool, point: Point, color: string) => void;
+  /** Changing this value cancels any in-flight interaction synchronously. */
+  cancellationKey?: string;
   /**
    * Synchronously freeze (busy=true) / restore (busy=false) the chart's pan &
    * zoom. Invoked the instant a drag or draw begins — inside the pointerdown
@@ -121,6 +125,7 @@ export function useDrawingInteractionManager(
     openDrawingSettings,
     onTextPlace,
     freezeChart,
+    cancellationKey,
   } = opts;
   const freezeChartRef = useRef(freezeChart);
   freezeChartRef.current = freezeChart;
@@ -139,9 +144,14 @@ export function useDrawingInteractionManager(
   const dragMoveCoalescerRef = useRef<PointerFrameCoalescer<PointerEvent> | null>(
     null,
   );
-  // Confirmed click points for an in-progress multi-point draw (polyline, path,
-  // curve, triangle, arc, double-curve). Empty for 1-/2-point tools.
-  const committedRef = useRef<Point[]>([]);
+  const creationSessionRef = useRef<CreationSession | null>(null);
+  const transformSessionRef = useRef<TransformSession | null>(null);
+  const eraseSessionRef = useRef(
+    new EraseSession(
+      (drawings, point) => hitTest(drawings as Drawing[], point, toX, toY)?.drawing ?? null,
+    ),
+  );
+  const selectionSessionRef = useRef(new SelectionSession());
   const drawingIdRef = useRef<string | null>(null);
   const hoveredIdRef = useRef<string | null>(null);
   const clipboardRef = useRef<Drawing | null>(null);
@@ -157,13 +167,6 @@ export function useDrawingInteractionManager(
   // Manual double-click detection for finishing freeform draws (Path, Polyline…).
   // `PointerEvent.detail` is unreliable on `pointerdown` (0 in many browsers), so
   // we track the previous down's time + screen position instead.
-  const lastDownRef = useRef<{ x: number; y: number; t: number } | null>(null);
-  const lastCursorDownRef = useRef<{
-    id: string | null;
-    x: number;
-    y: number;
-    t: number;
-  } | null>(null);
   const patchMachine = useCallback((next: Partial<Machine>, publish = true) => {
     const updated = { ...machineRef.current, ...next };
     machineRef.current = updated;
@@ -172,10 +175,6 @@ export function useDrawingInteractionManager(
   }, []);
   const transition = useCallback(
     (next: Partial<Machine>) => patchMachine(next, true),
-    [patchMachine],
-  );
-  const previewTransition = useCallback(
-    (next: Partial<Machine>) => patchMachine(next, false),
     [patchMachine],
   );
   const cancelHoverFrame = useCallback(() => {
@@ -209,226 +208,171 @@ export function useDrawingInteractionManager(
     livePointsWorkRef.current.clear();
     drawingIdRef.current = null;
     cancelHoverFrame();
-    committedRef.current = [];
+    creationSessionRef.current = null;
+    transformSessionRef.current = null;
     // Restore chart pan/zoom synchronously when the interaction ends.
     freezeChartRef.current?.(false);
     scheduleRedrawRef.current();
   }, [cancelHoverFrame, releaseCapture]);
 
+  const applyCreationOutcome = useCallback(
+    (outcome: CreationSessionOutcome) => {
+      const session = creationSessionRef.current;
+      if (!session) return;
+      if (outcome.kind === "preview") {
+        transition({
+          state: "Drawing",
+          anchors: outcome.points,
+          drawingTool: session.tool,
+        });
+        return;
+      }
+      if (outcome.kind === "commit") {
+        const cur = getState();
+        addDrawing({
+          id: uid("dw"),
+          tool: session.tool,
+          color: cur.drawColor,
+          lineWidth: session.definition.defaultProperties.lineWidth,
+          points: outcome.points,
+        });
+      }
+      reset();
+    },
+    [addDrawing, getState, reset, transition],
+  );
+  const previousCancellationKeyRef = useRef(cancellationKey);
+  useEffect(() => {
+    if (
+      previousCancellationKeyRef.current !== undefined &&
+      previousCancellationKeyRef.current !== cancellationKey
+    ) {
+      reset();
+      setActiveTool("cursor");
+    }
+    previousCancellationKeyRef.current = cancellationKey;
+  }, [cancellationKey, reset, setActiveTool]);
+  const activeTool = getState().activeTool;
+  const previousActiveToolRef = useRef(activeTool);
+  useEffect(() => {
+    if (
+      previousActiveToolRef.current !== activeTool &&
+      machineRef.current.state !== "Idle"
+    ) {
+      reset();
+    }
+    previousActiveToolRef.current = activeTool;
+  }, [activeTool, reset]);
+
   // ---- Drawing mode ----
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // Any tool change cancels an in-progress multi-point draw so a half-placed
-    // anchor can't bleed into the newly selected tool.
     if (machineRef.current.state === "Drawing") reset();
-    const s = getState();
-    if (s.activeTool === "cursor") return;
-    const hD = (e: PointerEvent) => {
-      if (isOverDrawingUI(e)) return;
-      if (!canvas || !isOverCanvas(e, canvas)) return;
-      // Only the primary (left / touch / pen) button draws. Right / middle
-      // clicks are left to the contextmenu handler, which finishes a freeform
-      // draw — otherwise a right-click would also drop a stray point first.
-      if (e.button > 0) return;
-      const m = machineRef.current;
-      if (m.state !== "Idle" && m.state !== "Drawing") return;
-      const p = fromEvent(e);
-      if (!p || !getState().ctxReady) return;
-      e.preventDefault();
-      e.stopPropagation();
-      canvas.setPointerCapture(e.pointerId);
-      activePointerIdRef.current = e.pointerId;
+    if (!getDrawingToolManifestEntry(getState().activeTool).persistent) return;
+
+    const handleDown = (event: PointerEvent) => {
+      if (isOverDrawingUI(event) || !isOverCanvas(event, canvas) || event.button > 0) return;
+      const currentMachine = machineRef.current;
+      if (currentMachine.state !== "Idle" && currentMachine.state !== "Drawing") return;
+      const point = fromEvent(event);
+      const current = getState();
+      if (!point || !current.ctxReady) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      canvas.setPointerCapture(event.pointerId);
+      activePointerIdRef.current = event.pointerId;
       pointerClaimedRef.current = true;
-      const cur = getState();
-      const n = minPoints(cur.activeTool);
-      const creation = getDrawingToolManifestEntry(cur.activeTool);
-      if (cur.activeTool === "text") {
+
+      const definition = getDrawingToolManifestEntry(current.activeTool);
+      if (definition.overlayExtension === "text-editor") {
         if (onTextPlace) {
-          onTextPlace(p, cur.drawColor);
-          releaseCapture();
-          pointerClaimedRef.current = false;
-          setActiveTool("cursor");
+          onTextPlace(current.activeTool, point, current.drawColor);
         } else {
-          const t = window.prompt("Text:") || "";
-          if (t)
+          const text = window.prompt("Text:") || "";
+          if (text) {
             addDrawing({
               id: uid("dw"),
-              tool: "text",
-              color: cur.drawColor,
-              lineWidth: creation.defaultProperties.lineWidth,
-              points: [p],
-              text: t,
+              tool: current.activeTool,
+              color: current.drawColor,
+              lineWidth: definition.defaultProperties.lineWidth,
+              points: [point],
+              text,
             });
-          else {
-            setActiveTool("cursor");
-            releaseCapture();
-            pointerClaimedRef.current = false;
           }
         }
+        reset();
+        setActiveTool("cursor");
         return;
       }
-      if (creation.creationMode === "pointer-continuous") {
-        committedRef.current = [p];
+
+      let session = creationSessionRef.current;
+      if (!session || session.tool !== current.activeTool) {
+        session = new CreationSession(current.activeTool);
+        creationSessionRef.current = session;
+      }
+      if (definition.creationMode === "pointer-continuous") {
         dragActiveRef.current = true;
         freezeChartRef.current?.(true);
-        transition({
-          state: "Drawing",
-          anchors: [p],
-          drawingTool: cur.activeTool,
-        });
-        return;
       }
-      if (n === 1) {
-        addDrawing({
-          id: uid("dw"),
-          tool: cur.activeTool,
-          color: cur.drawColor,
-          lineWidth: creation.defaultProperties.lineWidth,
-          points: [p],
-        });
-        return;
-      }
+      applyCreationOutcome(session.pointerDown({
+        point,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        timeStamp: event.timeStamp,
+      }));
+    };
 
-      // ---- Multi-point tools (triangle, arc, double-curve, polyline, …) ----
-      // The manifest selects the multi-point creation contract; 1-/2-point
-      // tools skip this entirely and keep their original path below.
-      const maxPts = creation.maxPoints;
-      const isFreeform = creation.creationMode === "click-freeform";
-      const isMulti = isFreeform || creation.creationMode === "fixed-multi-point";
-      if (isMulti) {
-        const commit = (pts: Point[]) => {
-          addDrawing({
-            id: uid("dw"),
-            tool: cur.activeTool,
-            color: cur.drawColor,
-            lineWidth: creation.defaultProperties.lineWidth,
-            points: pts.map((q) => ({ ...q })),
-          });
-          committedRef.current = [];
-          reset();
-        };
-        if (m.state !== "Drawing") {
-          committedRef.current = [p];
-          lastDownRef.current = { x: e.clientX, y: e.clientY, t: e.timeStamp };
-          transition({
-            state: "Drawing",
-            anchors: [p],
-            drawingTool: cur.activeTool,
-          });
-          return;
-        }
-        // A double-click finishes a freeform draw: a second press at (almost) the
-        // same spot within 350ms. The first press of the double already committed
-        // its point, so we finish with the points we have (no duplicate added).
-        const prev = lastDownRef.current;
-        const isDouble =
-          !!prev &&
-          e.timeStamp - prev.t < 350 &&
-          Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6;
-        lastDownRef.current = { x: e.clientX, y: e.clientY, t: e.timeStamp };
-        if (isFreeform && isDouble) {
-          if (committedRef.current.length >= n) commit(committedRef.current);
-          else reset();
-          return;
-        }
-        const next = [...committedRef.current, p];
-        committedRef.current = next;
-        if (maxPts != null && next.length >= maxPts) commit(next);
-        else transition({ anchors: next });
-        return;
+    const handleMove = (event: PointerEvent) => {
+      if (!isOverCanvas(event, canvas) || machineRef.current.state !== "Drawing") return;
+      const session = creationSessionRef.current;
+      const point = fromEvent(event);
+      if (!session || !point) return;
+      if (session.definition.creationMode === "pointer-continuous") {
+        event.preventDefault();
+        event.stopPropagation();
+        const previous = session.points[session.points.length - 1];
+        if (!shouldRecordContinuousPoint(previous, point, toX, toY)) return;
       }
+      applyCreationOutcome(session.pointerMove(point));
+    };
 
-      if (m.state === "Drawing") {
-        addDrawing({
-          id: uid("dw"),
-          tool: cur.activeTool,
-          color: cur.drawColor,
-          lineWidth: creation.defaultProperties.lineWidth,
-          points: [m.anchors[0], p],
-        });
-        reset();
-      } else {
-        transition({
-          state: "Drawing",
-          anchors: [p],
-          drawingTool: cur.activeTool,
-        });
-      }
+    const handleUp = (event: PointerEvent) => {
+      if (machineRef.current.state !== "Drawing") return;
+      const session = creationSessionRef.current;
+      if (!session || session.definition.creationMode !== "pointer-continuous") return;
+      event.preventDefault();
+      event.stopPropagation();
+      const point = fromEvent(event);
+      const previous = session.points[session.points.length - 1];
+      const accept = !!point && shouldRecordContinuousPoint(previous, point, toX, toY);
+      applyCreationOutcome(session.pointerUp(point ?? undefined, accept));
     };
-    const hM = (e: PointerEvent) => {
-      if (!canvas || !isOverCanvas(e, canvas)) return;
-      const m = machineRef.current;
-      if (m.state !== "Drawing") return;
-      const p = fromEvent(e);
-      if (!p) return;
-      const tool = m.drawingTool ?? getState().activeTool;
-      const creation = getDrawingToolManifestEntry(tool);
-      if (creation.creationMode === "pointer-continuous") {
-        e.preventDefault();
-        e.stopPropagation();
-        const committed = committedRef.current;
-        const last = committed[committed.length - 1];
-        if (shouldRecordContinuousPoint(last, p, toX, toY)) {
-          const next = [...committed, p];
-          committedRef.current = next;
-          previewTransition({ anchors: next });
-        }
-        return;
-      }
-      // Multi-point draw: preview the already-committed points plus the live
-      // cursor as the next vertex. 2-point tools keep [start, cursor].
-      const committed = committedRef.current;
-      if (committed.length > 0) {
-        previewTransition({ anchors: [...committed, p] });
-      } else {
-        previewTransition({ anchors: [m.anchors[0], p] });
-      }
-    };
-    const hU = (e: PointerEvent) => {
-      const m = machineRef.current;
-      if (m.state !== "Drawing") return;
-      const tool = m.drawingTool ?? getState().activeTool;
-      const creation = getDrawingToolManifestEntry(tool);
-      if (creation.creationMode !== "pointer-continuous") return;
-      e.preventDefault();
-      e.stopPropagation();
 
-      let pts = committedRef.current;
-      const p = fromEvent(e);
-      const last = pts[pts.length - 1];
-      if (p && shouldRecordContinuousPoint(last, p, toX, toY)) {
-        pts = [...pts, p];
-      }
-      if (pts.length >= creation.minPoints) {
-        addDrawing({
-          id: uid("dw"),
-          tool,
-          color: getState().drawColor,
-          lineWidth: creation.defaultProperties.lineWidth,
-          points: pts.map((q) => ({ ...q })),
-        });
-      }
-      reset();
+    const handleCancel = () => {
+      if (machineRef.current.state !== "Drawing") return;
+      const session = creationSessionRef.current;
+      if (session) applyCreationOutcome(session.cancel());
+      else reset();
     };
-    const hCancel = () => {
-      const m = machineRef.current;
-      const tool = m.drawingTool ?? getState().activeTool;
-      const creation = getDrawingToolManifestEntry(tool);
-      if (m.state === "Drawing" && creation.creationMode === "pointer-continuous") reset();
-    };
-    document.addEventListener("pointerdown", hD, true);
-    document.addEventListener("pointermove", hM, true);
-    document.addEventListener("pointerup", hU, true);
-    document.addEventListener("pointercancel", hCancel, true);
+
+    document.addEventListener("pointerdown", handleDown, true);
+    document.addEventListener("pointermove", handleMove, true);
+    document.addEventListener("pointerup", handleUp, true);
+    document.addEventListener("pointercancel", handleCancel, true);
     return () => {
-      document.removeEventListener("pointerdown", hD, true);
-      document.removeEventListener("pointermove", hM, true);
-      document.removeEventListener("pointerup", hU, true);
-      document.removeEventListener("pointercancel", hCancel, true);
+      document.removeEventListener("pointerdown", handleDown, true);
+      document.removeEventListener("pointermove", handleMove, true);
+      document.removeEventListener("pointerup", handleUp, true);
+      document.removeEventListener("pointercancel", handleCancel, true);
+      if (machineRef.current.state === "Drawing") {
+        creationSessionRef.current?.cancel();
+        reset();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getState().activeTool]);
+  }, [activeTool]);
 
   // ---- Cursor mode ----
   useEffect(() => {
@@ -437,94 +381,86 @@ export function useDrawingInteractionManager(
 
     const handleDown = (e: PointerEvent) => {
       const cur = getState();
-      if (cur.activeTool !== "cursor") return;
+      const modeInteraction = getDrawingToolManifestEntry(
+        cur.activeTool,
+      ).modeInteraction;
+      if (!modeInteraction || modeInteraction === "pass-through") return;
       // Ignore clicks that land on the floating drawing settings toolbar /
       // its popovers — they must not deselect the drawing or start a drag.
       if (isOverDrawingUI(e)) return;
       if (!canvas || !isOverCanvas(e, canvas)) return;
       const p = fromEvent(e);
       if (!p || !cur.ctxReady) return;
-      const hit = hitTest(cur.drawings, p, toX, toY);
-
-      // Shift-click → multi-select toggle.
-      if (e.shiftKey && hit) {
-        toggleSelectDrawing(hit.drawing.id);
-        return;
-      }
-      selectDrawing(hit?.drawing.id ?? null);
-
-      if (hit && e.button === 0) {
-        const prev = lastCursorDownRef.current;
-        const isDouble =
-          !!prev &&
-          prev.id === hit.drawing.id &&
-          e.timeStamp - prev.t < 350 &&
-          Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6;
-        lastCursorDownRef.current = {
-          id: hit.drawing.id,
-          x: e.clientX,
-          y: e.clientY,
-          t: e.timeStamp,
-        };
-        if (isDouble && openDrawingSettingsRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          openDrawingSettingsRef.current(hit.drawing.id);
-          return;
-        }
-      } else {
-        lastCursorDownRef.current = {
-          id: null,
-          x: e.clientX,
-          y: e.clientY,
-          t: e.timeStamp,
-        };
-      }
-
-      if (hit && !cur.drawingsLocked && e.button === 0) {
+      if (modeInteraction === "erase") {
+        if (cur.drawingsLocked || e.button !== 0) return;
+        const drawing = eraseSessionRef.current.pick(cur.drawings, p);
+        if (!drawing || drawing.locked) return;
         e.preventDefault();
         e.stopPropagation();
-        // setPointerCapture is NOT used because canvas has pointerEvents:"none"
-        // which prevents captured events from reaching ANY listener.
-        // Instead, document-level capture-phase listeners catch all events.
+        if (executeCommand) {
+          executeCommand(new DeleteDrawingCommand(addDrawing, removeDrawing, drawing));
+        } else {
+          removeDrawing(drawing.id);
+        }
+        selectDrawing(null);
+        scheduleRedrawRef.current();
+        return;
+      }
+      const hit = hitTest(cur.drawings, p, toX, toY);
+      const outcomes = selectionSessionRef.current.pointerDown({
+        hit,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        timeStamp: e.timeStamp,
+        button: e.button,
+        shiftKey: e.shiftKey,
+        drawingsLocked: cur.drawingsLocked,
+        selectedDrawingIds: cur.selectedDrawingIds,
+        drawings: cur.drawings,
+      });
+
+      for (const outcome of outcomes) {
+        if (outcome.kind === "toggle") {
+          toggleSelectDrawing(outcome.drawingId);
+          continue;
+        }
+        if (outcome.kind === "select") {
+          selectDrawing(outcome.drawingId);
+          continue;
+        }
+        if (outcome.kind === "open-settings") {
+          e.preventDefault();
+          e.stopPropagation();
+          openDrawingSettingsRef.current?.(outcome.drawingId);
+          return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
-        // Block LWC's mouse handlers for the whole drag (see dragActiveRef) and
-        // freeze pan/zoom as a second line of defence. Both are applied
-        // synchronously here, before the first move can fire.
         dragActiveRef.current = true;
         freezeChartRef.current?.(true);
 
-        const selIds = cur.selectedDrawingIds;
-        const isMulti = selIds.size > 1 && selIds.has(hit.drawing.id);
-        const multiDragOrig = new Map<string, Point[]>();
-        if (isMulti) {
-          for (const sid of selIds) {
-            const sd = cur.drawings.find((x) => x.id === sid);
-            if (sd)
-              multiDragOrig.set(
-                sid,
-                sd.points.map((pt: Point) => ({ ...pt })),
-              );
-          }
-        }
-
-        const isBody = hit.anchorIndex != null ? hit.anchorIndex < 0 : true;
-        const anchorIndex = hit.anchorIndex ?? -1;
-        const orig = hit.drawing.points.map((pt: Point) => ({ ...pt }));
-        drawingIdRef.current = hit.drawing.id;
+        const transformSession = new TransformSession({
+          drawing: outcome.drawing,
+          dragStart: p,
+          anchorIndex: outcome.anchorIndex,
+          mode: outcome.mode,
+          selectedDrawings: outcome.selectedDrawings,
+        });
+        transformSessionRef.current = transformSession;
+        drawingIdRef.current = outcome.drawing.id;
         livePointsWorkRef.current.clear();
         livePointsRef.current = null;
         cancelHoverFrame();
-        // Clear TP/SL hit status when the user starts dragging.  Clearing
-        // hitTime too lets the renderer fresh-detect with live points during
-        // the drag so the highlight updates in real-time (no delay).
+
         if (
-          hit.drawing.tradeStatus === "tp_hit" ||
-          hit.drawing.tradeStatus === "sl_hit"
+          outcome.drawing.tradeStatus === "tp_hit" ||
+          outcome.drawing.tradeStatus === "sl_hit"
         ) {
           updateDrawing({
-            id: hit.drawing.id,
+            id: outcome.drawing.id,
             patch: {
               tradeStatus: undefined,
               hitTime: undefined,
@@ -533,13 +469,13 @@ export function useDrawingInteractionManager(
           });
         }
         transition({
-          state: isBody ? "MovingDrawing" : "ResizingHandle",
-          drawingId: hit.drawing.id,
-          drawingTool: hit.drawing.tool,
-          dragAnchor: isMulti ? -1 : anchorIndex,
+          state: outcome.mode === "move" ? "MovingDrawing" : "ResizingHandle",
+          drawingId: outcome.drawing.id,
+          drawingTool: outcome.drawing.tool,
+          dragAnchor: outcome.anchorIndex,
           dragStart: p,
-          dragOrig: orig,
-          multiDragOrig,
+          dragOrig: transformSession.primaryOriginal,
+          multiDragOrig: new Map(transformSession.multiOriginals),
         });
       }
     };
@@ -548,37 +484,16 @@ export function useDrawingInteractionManager(
       const m = machineRef.current;
       if (
         (m.state !== "MovingDrawing" && m.state !== "ResizingHandle") ||
-        !m.dragStart ||
-        !m.drawingTool
+        !transformSessionRef.current
       ) {
         return;
       }
       const p = fromEvent(e);
       if (!p) return;
-      const dt = p.time - m.dragStart.time,
-        dp = p.price - m.dragStart.price;
       const multiMap = livePointsWorkRef.current;
       multiMap.clear();
-      if (m.multiDragOrig.size > 0) {
-        for (const [id, origPts] of m.multiDragOrig)
-          multiMap.set(
-            id,
-            origPts.map((pt) => ({
-              time: pt.time + dt,
-              price: pt.price + dp,
-            })),
-          );
-      } else {
-        const adapter = getTool(m.drawingTool);
-        const next =
-          m.dragAnchor >= 0
-            ? adapter
-              ? adapter.moveAnchor(m.dragOrig!, m.dragAnchor, p)
-              : defaultMoveAnchor(m.dragOrig!, m.dragAnchor, p)
-            : adapter
-              ? adapter.move(m.dragOrig!, p, m.dragStart)
-              : defaultMove(m.dragOrig!, p, m.dragStart);
-        multiMap.set(m.drawingId!, next);
+      for (const [id, points] of transformSessionRef.current.update(p)) {
+        multiMap.set(id, points);
       }
       livePointsRef.current = multiMap;
       scheduleRedrawRef.current();
@@ -596,7 +511,10 @@ export function useDrawingInteractionManager(
       }
       // Hover
       const cur = getState();
-      if (cur.activeTool !== "cursor") return;
+      if (
+        getDrawingToolManifestEntry(cur.activeTool).modeInteraction !==
+        "selection"
+      ) return;
       if (!canvas || !isOverCanvas(e, canvas)) {
         cancelHoverFrame();
         if (hoveredIdRef.current !== null) {
@@ -615,7 +533,8 @@ export function useDrawingInteractionManager(
           if (
             !event ||
             machineRef.current.state !== "Idle" ||
-            state.activeTool !== "cursor"
+            getDrawingToolManifestEntry(state.activeTool).modeInteraction !==
+              "selection"
           ) {
             return;
           }
@@ -649,10 +568,12 @@ export function useDrawingInteractionManager(
         dragMoves.flush(e);
         const multiMap = livePointsRef.current;
         if (multiMap && multiMap.size > 0) {
+          const session = transformSessionRef.current;
           for (const [id, pts] of multiMap) {
+            if (!session?.hasChanged(id, pts)) continue;
             updateDrawing({ id, patch: { points: pts } });
             if (commitMove) {
-              const orig = m.multiDragOrig.get(id) ?? m.dragOrig;
+              const orig = session?.originalPointsFor(id);
               if (orig) commitMove(id, pts, orig);
             }
           }
@@ -665,6 +586,15 @@ export function useDrawingInteractionManager(
       }
     };
 
+    const handlePointerCancel = (e: PointerEvent) => {
+      const state = machineRef.current.state;
+      if (state !== "MovingDrawing" && state !== "ResizingHandle") return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragMoves.cancel();
+      reset();
+    };
+
     const handleCtx = (e: MouseEvent) => {
       const m = machineRef.current;
       const cur = getState();
@@ -672,19 +602,9 @@ export function useDrawingInteractionManager(
       if (m.state === "Drawing") {
         e.preventDefault();
         // Right-click finishes an in-progress freeform draw (else cancels).
-        const tool = m.drawingTool ?? cur.activeTool;
-        const creation = getDrawingToolManifestEntry(tool);
-        const pts = committedRef.current;
-        if (creation.creationMode === "click-freeform" && pts.length >= creation.minPoints) {
-          addDrawing({
-            id: uid("dw"),
-            tool,
-            color: cur.drawColor,
-            lineWidth: creation.defaultProperties.lineWidth,
-            points: pts.map((q) => ({ ...q })),
-          });
-        }
-        reset();
+        const session = creationSessionRef.current;
+        if (session) applyCreationOutcome(session.finish());
+        else reset();
         return;
       }
       const p = fromEvent(e as unknown as PointerEvent);
@@ -712,6 +632,7 @@ export function useDrawingInteractionManager(
     document.addEventListener("pointerdown", handleDown, true);
     document.addEventListener("pointermove", handleMove, true);
     document.addEventListener("pointerup", handleUp, true);
+    document.addEventListener("pointercancel", handlePointerCancel, true);
     document.addEventListener("pointerleave", handleUp, true);
     document.addEventListener("contextmenu", handleCtx, true);
     document.addEventListener("mousedown", blockChartEvent, true);
@@ -723,6 +644,7 @@ export function useDrawingInteractionManager(
       document.removeEventListener("pointerdown", handleDown, true);
       document.removeEventListener("pointermove", handleMove, true);
       document.removeEventListener("pointerup", handleUp, true);
+      document.removeEventListener("pointercancel", handlePointerCancel, true);
       document.removeEventListener("pointerleave", handleUp, true);
       document.removeEventListener("contextmenu", handleCtx, true);
       document.removeEventListener("mousedown", blockChartEvent, true);
@@ -735,6 +657,8 @@ export function useDrawingInteractionManager(
         dragMoveCoalescerRef.current = null;
       }
       cancelHoverFrame();
+      const state = machineRef.current.state;
+      if (state === "MovingDrawing" || state === "ResizingHandle") reset();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -776,23 +700,12 @@ export function useDrawingInteractionManager(
         return;
       }
       if (e.key === "Escape") {
-        const m = machineRef.current;
-        if (m.state === "Drawing") {
-          const cur = getState();
-          const tool = m.drawingTool ?? cur.activeTool;
-          const creation = getDrawingToolManifestEntry(tool);
-          const pts = committedRef.current;
-          if (creation.creationMode === "click-freeform" && pts.length >= creation.minPoints) {
-            addDrawing({
-              id: uid("dw"),
-              tool,
-              color: cur.drawColor,
-              lineWidth: creation.defaultProperties.lineWidth,
-              points: pts.map((q) => ({ ...q })),
-            });
-          }
+        const session = creationSessionRef.current;
+        if (machineRef.current.state === "Drawing" && session) {
+          applyCreationOutcome(session.cancel());
+        } else {
+          reset();
         }
-        reset();
         setActiveTool("cursor");
         return;
       }
@@ -846,9 +759,11 @@ export function useDrawingInteractionManager(
     executeCommand,
     selectDrawing,
     getState,
+    applyCreationOutcome,
   ]);
 
-  const dm = getState().activeTool !== "cursor";
+  const activeDefinition = getDrawingToolManifestEntry(getState().activeTool);
+  const dm = activeDefinition.persistent || activeDefinition.modeInteraction === "erase";
   let cs = "default";
   if (dm) cs = "crosshair";
   if (machine.state === "MovingDrawing" || machine.state === "ResizingHandle")

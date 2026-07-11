@@ -42,6 +42,14 @@ test("creation and style families are derived from the manifest", () => {
   assert.equal(styleFamily("rectangle"), "shape");
   assert.equal(styleFamily("emoji"), "text");
   assert.equal(styleFamily("trendline"), "line");
+  assert.equal(getDrawingToolManifestEntry("text").overlayExtension, "text-editor");
+  assert.equal(getDrawingToolManifestEntry("trendline").selectionTextEditor, "line-midpoint");
+  assert.equal(getDrawingToolManifestEntry("rectangle").selectionTextEditor, "shape-center");
+  assert.equal(getDrawingToolManifestEntry("long").settingsOverlay, "position-dialog");
+  assert.equal(getDrawingToolManifestEntry("short").lifecycleExtension, "position-resolution");
+  assert.equal(getDrawingToolManifestEntry("cursor").modeInteraction, "selection");
+  assert.equal(getDrawingToolManifestEntry("eraser").modeInteraction, "erase");
+  assert.equal(getDrawingToolManifestEntry("crosshair").modeInteraction, "pass-through");
 });
 
 test("favorite validation rejects unknown and ineligible ids and keeps order", () => {

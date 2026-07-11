@@ -19,7 +19,7 @@ statements** anywhere in the engine.
 | Registration | `drawing/tools/adapters.ts` (side-effect `import`s) |
 | Rendering per tool | `drawingRenderer.ts` → `getTool(d.tool).render()` |
 | Hit-test per tool | `hittest/HitTestEngine.ts` → `getTool(d.tool).hitTest()` |
-| Creation/move/resize | `interaction/DrawingInteractionManager.ts` → `getTool(...).move()/moveAnchor()` |
+| Creation/move/resize | `interaction/CreationSession.ts`, `TransformSession.ts`; manager dispatches outcomes |
 | Toolbar groups/icons | Manifest group and `iconKey` metadata; `DrawingToolbar.tsx` only maps icon keys to React icons |
 
 ## The `DrawingAdapter` interface
@@ -40,6 +40,13 @@ latter with default `move` / `moveAnchor` / `getAnchors`. Registration combines 
 with its manifest entry into one `DrawingToolDefinition`; duplicate ids and creation-contract
 drift fail at bootstrap. Adding a persistent tool requires one manifest entry, its adapter,
 fixture, and tests, without edits to shared toolbar or interaction metadata.
+
+Creation, selection, transform, erase, and text-edit gesture state live in the corresponding
+modules under `interaction/`. The manager owns DOM listeners, pointer capture, chart arbitration,
+frame coalescing, and transaction dispatch; sessions own gesture-local state and produce explicit
+preview, commit, update, or cancel outcomes. Capability-driven overlay projection and candle
+lifecycle reconciliation live under `drawing/overlays` and `drawing/lifecycle` rather than in the
+`DrawingLayer` composition root.
 
 ## Tool categories (for toolbar grouping)
 

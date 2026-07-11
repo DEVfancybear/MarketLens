@@ -131,3 +131,177 @@ test("trendline transaction is stable and preserves chart interaction", async ({
     page.evaluate(() => window.__chartInteractionTest!.snapshot().viewport.revision),
   ).toBeGreaterThan(beforeZoom);
 });
+
+test("creation cancellation and explicit freeform completion are transactional", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = { x: pane.x + pane.width * 0.25, y: pane.y + pane.height * 0.6 };
+  const second = { x: pane.x + pane.width * 0.55, y: pane.y + pane.height * 0.35 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(first.x, first.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
+  expect((await drawingSnapshot(page)).activeTool).toBe("cursor");
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Path\b/ }).click();
+  await page.mouse.click(first.x, first.y);
+  await page.mouse.click(second.x, second.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
+  await page.mouse.click(second.x + 20, second.y + 20, { button: "right" });
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  expect((await drawingSnapshot(page)).drawings[0].tool).toBe("path");
+
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  await page.evaluate(() => window.__drawingInteractionTest!.clear());
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Triangle\b/ }).click();
+  await page.mouse.click(first.x, first.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
+});
+
+test("eraser is undoable and pass-through modes never start creation", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.28, y: pane.y + pane.height * 0.62 };
+  const end = { x: pane.x + pane.width * 0.58, y: pane.y + pane.height * 0.32 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Eraser\b/ }).click();
+  await page.mouse.click(
+    start.x + (end.x - start.x) * 0.75,
+    start.y + (end.y - start.y) * 0.75,
+  );
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Crosshair\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  const snapshot = await drawingSnapshot(page);
+  expect(snapshot.machineState).toBe("Idle");
+  expect(snapshot.drawings).toHaveLength(1);
+});
+
+test("resize, pointer cancellation, and symbol cancellation preserve transaction boundaries", async ({ page }) => {
+  test.setTimeout(120_000);
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.3, y: pane.y + pane.height * 0.65 };
+  const end = { x: pane.x + pane.width * 0.62, y: pane.y + pane.height * 0.35 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  const created = await drawingSnapshot(page);
+  const original = created.drawings[0].points;
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    created.drawings[0].id,
+  );
+  expect(projected).not.toBeNull();
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.move(projected![1].x, projected![1].y);
+  await page.mouse.down();
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("ResizingHandle");
+  await page.mouse.move(projected![1].x + 40, projected![1].y - 20, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points).not.toEqual(original);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points).toEqual(original);
+
+  const body = {
+    x: projected![0].x + (projected![1].x - projected![0].x) * 0.75,
+    y: projected![0].y + (projected![1].y - projected![0].y) * 0.75,
+  };
+  await page.mouse.move(body.x, body.y);
+  await page.mouse.down();
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("MovingDrawing");
+  await page.mouse.move(body.x + 30, body.y + 20);
+  await page.evaluate(() =>
+    document.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1 })),
+  );
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  expect((await drawingSnapshot(page)).drawings[0].points).toEqual(original);
+  await page.mouse.up();
+
+  await page.evaluate(() => window.__drawingInteractionTest!.clear());
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Brush\b/ }).click();
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 30, start.y + 20);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
+  await page.evaluate(() =>
+    document.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1 })),
+  );
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
+  await page.mouse.up();
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
+  await page.evaluate(() => window.__drawingInteractionTest!.changeSymbol("PHASE2_CANCEL_TEST"));
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  expect((await drawingSnapshot(page)).activeTool).toBe("cursor");
+  expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
+});
+
+test("standalone and attached text edits each produce one undoable command", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.25, y: pane.y + pane.height * 0.6 };
+  const end = { x: pane.x + pane.width * 0.52, y: pane.y + pane.height * 0.35 };
+
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  await page.getByRole("button", { name: /^Text\b/ }).last().click();
+  await page.mouse.click(start.x, start.y);
+  const editor = page.getByPlaceholder("Enter text...");
+  await editor.fill("Standalone note");
+  await editor.press("Enter");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text).toBe("Standalone note");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  await page.evaluate(() => window.__drawingInteractionTest!.clear());
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click((start.x + end.x) / 2, (start.y + end.y) / 2);
+  await page.getByPlaceholder("Enter text...").fill("Attached label");
+  await page.getByPlaceholder("Enter text...").press("Enter");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text).toBe("Attached label");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text ?? "").toBe("");
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text).toBe("Attached label");
+});

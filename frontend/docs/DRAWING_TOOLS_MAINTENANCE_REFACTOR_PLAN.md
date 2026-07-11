@@ -305,6 +305,8 @@ Verification on 2026-07-11:
 
 ### Phase 2 — Split interaction and DrawingLayer orchestration
 
+Status: implemented on 2026-07-11.
+
 Purpose: lower regression risk in pointer behavior.
 
 Tasks:
@@ -322,6 +324,45 @@ Exit gate:
 - `DrawingInteractionManager` is an orchestrator, not a tool dispatcher.
 - No concrete persistent tool id checks in shared pointer code.
 - Browser gesture suite and performance baselines do not regress beyond the agreed budget.
+
+Delivered:
+
+- `CreationSession` owns one-point, two-point, fixed multi-point, click-freeform, and continuous
+  creation state and completion rules. `DrawingInteractionManager` now translates pointer events
+  into session outcomes instead of dispatching those gesture families itself.
+- `TransformSession` owns immutable pointer-down snapshots and live move, resize, and multi-move
+  geometry. Pointer-frame coalescing stays in the manager and pointer-up commits each affected
+  drawing once against its original snapshot.
+- Text placement, shape/trendline text editors, position settings, and position candle lifecycle
+  are selected through manifest capabilities instead of concrete persistent tool-id checks in the
+  shared manager/Layer orchestration.
+- Escape, pointer cancellation, tool change, and unmount cancel creation; right-click explicitly
+  finishes eligible freeform sessions. Transform pointer cancellation discards transient geometry.
+- `EraseSession` resolves eraser targets through the shared hit-test service and dispatches one
+  undoable delete. Manifest mode capabilities keep cursor selection, eraser capture, and
+  crosshair/measure chart pass-through separate from persistent creation.
+- `SelectionSession` owns shift-toggle, select/deselect, double-click settings, and transform-start
+  decisions. Shared pointer wiring consumes outcomes and contains no concrete persistent tool ids.
+- `TextEditSession` unifies standalone and attached text creation/update/cancel behavior. Attached
+  edits use one reversible `PropertyChangeCommand`; no-op selection clicks no longer create move
+  history entries.
+- `drawingLifecycle` reconciles capability-eligible candle-driven state outside `DrawingLayer`, and
+  `drawingOverlayTargets` projects capability-contributed shape/line text overlays outside the
+  component composition root.
+- Tool changes, symbol changes, Escape, pointer cancellation, and unmount release session state,
+  pointer ownership, transient geometry, and chart pan/zoom arbitration consistently.
+- Browser coverage verifies Escape cancellation, tool-change cancellation, right-click freeform
+  completion, single undo/redo transaction behavior, movement, and restored chart interaction.
+
+Verification on 2026-07-11:
+
+- `npm run typecheck`: passing.
+- `npm run test:drawing`: 49/49 passing.
+- `npm run test:position`: 22/22 passing.
+- `npm run check:drawing-viewport`: 7/7 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 6/6 passing in 33.1 seconds.
+- `npm run benchmark:drawing`: no median regression; at 5,000 drawings rebuild median is 1.285 ms
+  and visible-query median is 0.121 ms versus the Phase 0 values of 1.592 ms and 0.134 ms.
 
 ### Phase 3 — Schema-driven settings and templates
 

@@ -49,6 +49,11 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly maxPoints?: number;
   readonly styleFamily: StyleFamily;
   readonly defaultProperties: Readonly<{ lineWidth: number } & Partial<TProps>>;
+  readonly overlayExtension?: "text-editor";
+  readonly selectionTextEditor?: "shape-center" | "line-midpoint";
+  readonly settingsOverlay?: "position-dialog";
+  readonly lifecycleExtension?: "position-resolution";
+  readonly modeInteraction?: "selection" | "pass-through" | "erase";
 }
 
 export interface DrawingToolGroupDefinition {
@@ -89,12 +94,12 @@ function tool(
 
 /** Single metadata catalog. Ordering is toolbar ordering within each group. */
 export const DRAWING_TOOL_MANIFEST = Object.freeze([
-  tool("cursor", "Cursor", "cursor", "cursor", "mode", 0, { favoriteEligible: true }),
-  tool("crosshair", "Crosshair", "cursor", "target", "mode", 0, { favoriteEligible: true }),
-  tool("eraser", "Eraser", "cursor", "eraser", "mode", 0, { favoriteEligible: true }),
-  tool("measure", "Measure", null, "ruler", "mode", 0, { favoriteEligible: false }),
+  tool("cursor", "Cursor", "cursor", "cursor", "mode", 0, { favoriteEligible: true, modeInteraction: "selection" }),
+  tool("crosshair", "Crosshair", "cursor", "target", "mode", 0, { favoriteEligible: true, modeInteraction: "pass-through" }),
+  tool("eraser", "Eraser", "cursor", "eraser", "mode", 0, { favoriteEligible: true, modeInteraction: "erase" }),
+  tool("measure", "Measure", null, "ruler", "mode", 0, { favoriteEligible: false, modeInteraction: "pass-through" }),
 
-  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { hotkey: "Alt + T", section: "LINES" }),
+  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { hotkey: "Alt + T", section: "LINES", selectionTextEditor: "line-midpoint" }),
   tool("ray", "Ray", "lines", "ray", "two-point", 2),
   tool("infoLine", "Info line", "lines", "ruler", "two-point", 2),
   tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2),
@@ -113,13 +118,13 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("arrowMarkDown", "Arrow mark down", "shapes", "arrowDown", "one-point", 1),
   tool("arrowMarkLeft", "Arrow mark left", "shapes", "arrowLeft", "one-point", 1),
   tool("arrowMarkRight", "Arrow mark right", "shapes", "arrowRight", "one-point", 1),
-  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape" }),
-  tool("rotatedRect", "Rotated rectangle", "shapes", "square", "fixed-multi-point", 2, { maxPoints: 3, styleFamily: "shape" }),
+  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center" }),
+  tool("rotatedRect", "Rotated rectangle", "shapes", "square", "fixed-multi-point", 2, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("path", "Path", "shapes", "path", "click-freeform", 2),
-  tool("circle", "Circle", "shapes", "circle", "two-point", 2, { styleFamily: "shape" }),
-  tool("ellipse", "Ellipse", "shapes", "circle", "two-point", 2, { styleFamily: "shape" }),
+  tool("circle", "Circle", "shapes", "circle", "two-point", 2, { styleFamily: "shape", selectionTextEditor: "shape-center" }),
+  tool("ellipse", "Ellipse", "shapes", "circle", "two-point", 2, { styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("polyline", "Polyline", "shapes", "pen", "click-freeform", 2),
-  tool("triangle", "Triangle", "shapes", "triangle", "fixed-multi-point", 3, { maxPoints: 3, styleFamily: "shape" }),
+  tool("triangle", "Triangle", "shapes", "triangle", "fixed-multi-point", 3, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("arc", "Arc", "shapes", "spline", "fixed-multi-point", 2, { maxPoints: 3 }),
   tool("curve", "Curve", "shapes", "spline", "click-freeform", 3),
   tool("doubleCurve", "Double curve", "shapes", "doubleCurve", "fixed-multi-point", 2, { maxPoints: 4 }),
@@ -127,9 +132,9 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2),
   tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3 }),
   tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false }),
-  tool("long", "Long position", "positions", "long", "one-point", 1),
-  tool("short", "Short position", "positions", "short", "one-point", 1),
-  tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text" }),
+  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution" }),
+  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution" }),
+  tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "annotations", "emoji", "one-point", 1, { styleFamily: "text" }),
 ] satisfies readonly DrawingToolManifestEntry[]);
 

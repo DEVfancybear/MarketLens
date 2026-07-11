@@ -22,8 +22,11 @@ import {
   setActiveToolAtom,
   setEditingDrawingAtom,
   selectAllAtom,
+  symbolAtom,
+  setSymbolAtom,
 } from "@/store/chartStore";
-import { SHAPE_TOOLS, type Drawing, type Point } from "@/types";
+import { type Drawing, type Point } from "@/types";
+import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
 import {
@@ -31,8 +34,15 @@ import {
   createRenderLoop,
 } from "./drawing/engine/DrawingEngine";
 import { useCommandHistory } from "./drawing/history/useCommandHistory";
-import { CreateDrawingCommand } from "./drawing/history/CommandManager";
+import {
+  CreateDrawingCommand,
+  PropertyChangeCommand,
+} from "./drawing/history/CommandManager";
 import { TextEditor } from "./drawing/TextEditor";
+import {
+  TextEditSession,
+  type TextEditOutcome,
+} from "./drawing/interaction/TextEditSession";
 import { getTool } from "./drawing/tools/ToolRegistry";
 import {
   positionHitDataCoversEntry,
@@ -42,6 +52,8 @@ import { subscribeChartViewportEvents } from "./chartViewportEvents";
 import { uid } from "@/utils/id";
 import { runDrawingAdapterContractAudit } from "./drawing/testing/adapterContractAudit";
 import type { DrawingInteractionTestHarness } from "./drawing/testing/testHarnessTypes";
+import { reconcileDrawingLifecycle } from "./drawing/lifecycle/drawingLifecycle";
+import { resolveSelectionTextOverlay } from "./drawing/overlays/drawingOverlayTargets";
 
 declare global {
   interface Window {
@@ -59,6 +71,7 @@ export function DrawingLayer() {
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const drawingsLocked = useAtomValue(drawingsLockedAtom);
   const drawingsHidden = useAtomValue(drawingsHiddenAtom);
+  const symbol = useAtomValue(symbolAtom);
   const addDrawing = useSetAtom(addDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const selectDrawing = useSetAtom(selectDrawingAtom);
@@ -66,30 +79,11 @@ export function DrawingLayer() {
   const removeDrawing = useSetAtom(removeDrawingAtom);
   const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
+  const setSymbol = useSetAtom(setSymbolAtom);
   const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
   const selectAll = useSetAtom(selectAllAtom);
 
-  const [textEdit, setTextEdit] = useState<{
-    drawingId: string;
-    x: number;
-    y: number;
-    color: string;
-    point: Point;
-  } | null>(null);
-  // "+ Add text" (TradingView-style inner label) for the selected fillable
-  // shape (rectangle/rotatedRect/circle/ellipse/triangle) — edits the
-  // existing drawing's `text` in place, unlike `textEdit` above which creates
-  // a brand-new standalone Text drawing.
-  const [shapeTextEdit, setShapeTextEdit] = useState<{
-    drawingId: string;
-    initialText: string;
-    draftText: string;
-  } | null>(null);
-  const [trendLineTextEdit, setTrendLineTextEdit] = useState<{
-    drawingId: string;
-    initialText: string;
-    draftText: string;
-  } | null>(null);
+  const [textEditSession, setTextEditSession] = useState<TextEditSession | null>(null);
 
   const { commitMove, undo, redo, execute } = useCommandHistory(
     addDrawing,
@@ -254,36 +248,56 @@ export function DrawingLayer() {
   const scheduleRedraw = useCallback(() => {
     markDirtyRef.current();
   }, []);
-  const shapeTextEditRef = useRef(shapeTextEdit);
-  shapeTextEditRef.current = shapeTextEdit;
-  const trendLineTextEditRef = useRef(trendLineTextEdit);
-  trendLineTextEditRef.current = trendLineTextEdit;
-  const commitShapeTextEdit = useCallback(() => {
-    const edit = shapeTextEditRef.current;
-    if (!edit) return false;
-    const text = edit.draftText.trim();
-    if (text) updateDrawing({ id: edit.drawingId, patch: { text } });
-    setShapeTextEdit(null);
-    scheduleRedraw();
+  const textEditSessionRef = useRef(textEditSession);
+  textEditSessionRef.current = textEditSession;
+  const applyTextEditOutcome = useCallback(
+    (outcome: TextEditOutcome) => {
+      if (outcome.kind === "create") {
+        removeDrawing(outcome.placeholderId);
+        execute(new CreateDrawingCommand(addDrawing, removeDrawing, outcome.drawing));
+      } else if (outcome.kind === "update") {
+        execute(
+          new PropertyChangeCommand(
+            updateDrawing,
+            outcome.drawingId,
+            { text: outcome.newText },
+            { text: outcome.oldText },
+          ),
+        );
+      } else if (outcome.kind === "cancel-create") {
+        removeDrawing(outcome.placeholderId);
+      }
+      setTextEditSession(null);
+      scheduleRedraw();
+    },
+    [addDrawing, execute, removeDrawing, scheduleRedraw, updateDrawing],
+  );
+  const commitTextEdit = useCallback(() => {
+    const session = textEditSessionRef.current;
+    if (!session) return false;
+    applyTextEditOutcome(session.finish(session.draftText, false));
     return true;
-  }, [scheduleRedraw, updateDrawing]);
-  const commitShapeTextEditRef = useRef(commitShapeTextEdit);
-  commitShapeTextEditRef.current = commitShapeTextEdit;
-  const commitTrendLineTextEdit = useCallback(() => {
-    const edit = trendLineTextEditRef.current;
-    if (!edit) return false;
-    const text = edit.draftText.trim();
-    if (text) updateDrawing({ id: edit.drawingId, patch: { text } });
-    setTrendLineTextEdit(null);
-    scheduleRedraw();
-    return true;
-  }, [scheduleRedraw, updateDrawing]);
-  const commitTrendLineTextEditRef = useRef(commitTrendLineTextEdit);
-  commitTrendLineTextEditRef.current = commitTrendLineTextEdit;
+  }, [applyTextEditOutcome]);
+  const commitTextEditRef = useRef(commitTextEdit);
+  commitTextEditRef.current = commitTextEdit;
+  const previousSymbolRef = useRef(symbol);
+  useEffect(() => {
+    if (previousSymbolRef.current !== symbol && textEditSessionRef.current) {
+      applyTextEditOutcome(textEditSessionRef.current.cancel());
+    }
+    previousSymbolRef.current = symbol;
+  }, [applyTextEditOutcome, symbol]);
+  useEffect(
+    () => () => {
+      const session = textEditSessionRef.current;
+      if (session?.editorKind === "standalone") removeDrawing(session.drawingId);
+    },
+    [removeDrawing],
+  );
 
   // Handle Text tool placement: create an empty drawing and show inline editor.
   const handleTextPlace = useCallback(
-    (point: Point, color: string) => {
+    (tool: Drawing["tool"], point: Point, color: string) => {
       const canvas = canvasRef.current;
       if (!canvas || !ctx) return;
       const id = uid("dw");
@@ -292,14 +306,14 @@ export function DrawingLayer() {
       const y = ctx.candleSeries.priceToCoordinate(point.price) ?? 0;
       const drawing: Drawing = {
         id,
-        tool: "text",
+        tool,
         color,
-        lineWidth: 1.5,
+        lineWidth: getDrawingToolManifestEntry(tool).defaultProperties.lineWidth,
         points: [point],
         text: "",
       };
       addDrawing(drawing);
-      setTextEdit({ drawingId: id, x, y, color, point });
+      setTextEditSession(TextEditSession.standalone(drawing, { x, y }));
     },
     [ctx, addDrawing],
   );
@@ -318,11 +332,12 @@ export function DrawingLayer() {
     drawingsHidden,
     drawColor,
     activeTool,
+    symbol,
   ]);
 
   useEffect(() => {
     const handleShapeEditorCanvasPointerDown = (event: PointerEvent) => {
-      if (!shapeTextEditRef.current && !trendLineTextEditRef.current) return;
+      if (!textEditSessionRef.current) return;
       const target = event.target as Element | null;
       if (target?.closest?.("[data-inline-text-editor]")) return;
       if (target?.closest?.("[data-chart-ui],[data-drawing-toolbar]")) return;
@@ -340,10 +355,7 @@ export function DrawingLayer() {
       // TradingView treats attached text editing as an edit state of the drawing.
       // The first chart click/drag outside the input completes editing; it must
       // not also start a body drag that leaves the editor visually detached.
-      if (
-        commitShapeTextEditRef.current() ||
-        commitTrendLineTextEditRef.current()
-      ) {
+      if (commitTextEditRef.current()) {
         event.preventDefault();
         event.stopImmediatePropagation();
         event.stopPropagation();
@@ -394,12 +406,16 @@ export function DrawingLayer() {
     duplicateDrawing,
     openDrawingSettings: (id) => {
       const drawing = stateRef.current.drawings.find((d) => d.id === id);
-      if (drawing?.tool === "long" || drawing?.tool === "short") {
+      if (
+        drawing &&
+        getDrawingToolManifestEntry(drawing.tool).settingsOverlay === "position-dialog"
+      ) {
         setEditingDrawing(id);
       }
     },
     onTextPlace: handleTextPlace,
     freezeChart,
+    cancellationKey: symbol,
   });
 
   useEffect(() => {
@@ -483,11 +499,12 @@ export function DrawingLayer() {
         reset();
         setActiveTool("cursor");
       },
+      changeSymbol: (nextSymbol) => setSymbol(nextSymbol),
     };
     return () => {
       delete window.__drawingInteractionTest;
     };
-  }, [machineRef, removeDrawing, reset, selectDrawing, setActiveTool, toX, toY]);
+  }, [machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, toX, toY]);
 
   // While a drawing is being created or dragged/resized, freeze the chart's
   // pan & zoom. Otherwise a fast pointer move leaks through to the chart's
@@ -545,69 +562,20 @@ export function DrawingLayer() {
     // This subscription is non-React.
     const store = getDefaultStore();
     const unsubPrice = store.sub(candlesAtom, () => {
-      const ds = stateRef.current.drawings;
-      let hasPosition = false;
-      for (const d of ds) {
-        if (d.tool === "long" || d.tool === "short") {
-          hasPosition = true;
-          // Skip while the user is dragging this drawing — its store points
-          // are stale and hit detection would use the wrong geometry.
-          if (drawingIdRef.current === d.id) continue;
-          // Use the SAME resolver as the renderer. It keeps persisted hits when
-          // a hard refresh initially loads candles that start after entry time,
-          // but still lets complete history correct older stale persisted data.
-          if (d.points.length >= 3) {
-            const entryTime = d.points[0].time;
-            const candles = store.get(candlesAtom);
-            const found = resolvePositionHit(d, candles);
-            // hitTime is persisted as an OFFSET from entry so the hit label
-            // follows the position when it is dragged.
-            const hit = found
-              ? {
-                  status: found.status,
-                  time: found.time - entryTime,
-                  price: found.price,
-                }
-              : null;
-            // Write only when the resolved hit actually differs from what is
-            // already stored — otherwise this per-tick subscription would loop
-            // updating the store with identical values.
-            if (hit) {
-              if (
-                d.tradeStatus !== hit.status ||
-                d.hitTime !== hit.time ||
-                d.hitPrice !== hit.price
-              ) {
-                updateDrawing({
-                  id: d.id,
-                  patch: {
-                    tradeStatus: hit.status,
-                    hitTime: hit.time,
-                    hitPrice: hit.price,
-                  },
-                });
-              }
-            } else if (
-              positionHitDataCoversEntry(d, candles) &&
-              (d.tradeStatus === "tp_hit" || d.tradeStatus === "sl_hit")
-            ) {
-              // Previously resolved but no longer hits anything (e.g. levels
-              // edited, or still pending fill) — clear the stale status.
-              updateDrawing({
-                id: d.id,
-                patch: {
-                  tradeStatus: undefined,
-                  hitTime: undefined,
-                  hitPrice: undefined,
-                },
-              });
-            }
-          }
-        }
-      }
-      if (hasPosition) {
-        loop.markDirty(true);
-      }
+      const drawings = stateRef.current.drawings;
+      const candles = store.get(candlesAtom);
+      const lifecycle = reconcileDrawingLifecycle({
+        drawings,
+        samples: candles,
+        draggingId: drawingIdRef.current,
+        isEligible: (drawing) =>
+          getDrawingToolManifestEntry(drawing.tool).lifecycleExtension ===
+          "position-resolution",
+        resolveHit: resolvePositionHit,
+        samplesCoverEntry: positionHitDataCoversEntry,
+      });
+      for (const update of lifecycle.updates) updateDrawing(update);
+      if (lifecycle.hasEligible) loop.markDirty(true);
     });
     return () => {
       unsubPrice();
@@ -616,64 +584,46 @@ export function DrawingLayer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!ctx]);
 
-  // "+ Add text" affordance for the selected fillable shape (TradingView
-  // shows this centered inside Rectangle/Ellipse/etc. once selected). Hidden
-  // mid-drag/resize — the live preview position and this projection would
-  // otherwise disagree until the drag commits.
-  const selectedShape =
-    machine.state === "Idle"
-      ? (drawings.find(
-          (d) => d.id === selectedDrawingId && SHAPE_TOOLS.includes(d.tool),
-        ) ?? null)
-      : null;
-  const shapeLabelBox = selectedShape
-    ? (getTool(selectedShape.tool)?.boundingBox(selectedShape, toX, toY) ?? null)
-    : null;
-  const shapeLabelTarget =
-    selectedShape && shapeLabelBox
-      ? {
-          drawing: selectedShape,
-          cx: shapeLabelBox.x + shapeLabelBox.w / 2,
-          cy: shapeLabelBox.y + shapeLabelBox.h / 2,
-          w: shapeLabelBox.w,
-        }
-      : null;
-  const editedShape = shapeTextEdit
-    ? (drawings.find(
-        (d) => d.id === shapeTextEdit.drawingId && SHAPE_TOOLS.includes(d.tool),
-      ) ?? null)
-    : null;
-  const editedShapeBox = editedShape
-    ? (getTool(editedShape.tool)?.boundingBox(editedShape, toX, toY) ?? null)
+  // Capability-contributed selection text overlays. Hidden while geometry is
+  // transient so the editor never detaches from the committed drawing.
+  const shapeLabelTarget = machine.state === "Idle"
+    ? resolveSelectionTextOverlay(
+        drawings,
+        selectedDrawingId,
+        "shape-center",
+        toX,
+        toY,
+      )
     : null;
   const shapeTextEditorTarget =
-    editedShape && editedShapeBox
-      ? {
-          x: editedShapeBox.x + editedShapeBox.w / 2,
-          y: editedShapeBox.y + editedShapeBox.h / 2,
-        }
+    textEditSession?.editorKind === "shape-center"
+      ? resolveSelectionTextOverlay(
+          drawings,
+          textEditSession.drawingId,
+          "shape-center",
+          toX,
+          toY,
+        )
       : null;
-  const selectedTrendLine =
-    machine.state === "Idle"
-      ? (drawings.find(
-          (d) => d.id === selectedDrawingId && d.tool === "trendline",
-        ) ?? null)
+  const trendLineTextTarget = machine.state === "Idle"
+    ? resolveSelectionTextOverlay(
+        drawings,
+        selectedDrawingId,
+        "line-midpoint",
+        toX,
+        toY,
+      )
+    : null;
+  const trendLineTextEditorTarget =
+    textEditSession?.editorKind === "line-midpoint"
+      ? resolveSelectionTextOverlay(
+          drawings,
+          textEditSession.drawingId,
+          "line-midpoint",
+          toX,
+          toY,
+        )
       : null;
-  const trendLineTextBox = selectedTrendLine
-    ? projectTrendLineTextTarget(selectedTrendLine, toX, toY)
-    : null;
-  const trendLineTextTarget =
-    selectedTrendLine && trendLineTextBox
-      ? { drawing: selectedTrendLine, ...trendLineTextBox }
-      : null;
-  const editedTrendLine = trendLineTextEdit
-    ? (drawings.find(
-        (d) => d.id === trendLineTextEdit.drawingId && d.tool === "trendline",
-      ) ?? null)
-    : null;
-  const trendLineTextEditorTarget = editedTrendLine
-    ? projectTrendLineTextTarget(editedTrendLine, toX, toY)
-    : null;
 
   return (
     <>
@@ -687,7 +637,7 @@ export function DrawingLayer() {
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
       )}
-      {shapeLabelTarget && !shapeTextEdit && (
+      {shapeLabelTarget && textEditSession?.editorKind !== "shape-center" && (
         <button
           type="button"
           data-chart-ui
@@ -695,11 +645,9 @@ export function DrawingLayer() {
           title={shapeLabelTarget.drawing.text ? "Edit text" : "Add text"}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() =>
-            setShapeTextEdit({
-              drawingId: shapeLabelTarget.drawing.id,
-              initialText: shapeLabelTarget.drawing.text ?? "",
-              draftText: shapeLabelTarget.drawing.text ?? "",
-            })
+            setTextEditSession(
+              TextEditSession.attached(shapeLabelTarget.drawing, "shape-center"),
+            )
           }
           className={
             shapeLabelTarget.drawing.text
@@ -707,10 +655,10 @@ export function DrawingLayer() {
               : "absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[12px] text-ink-muted hover:bg-terminal-hover/70 hover:text-ink"
           }
           style={{
-            left: shapeLabelTarget.cx,
-            top: shapeLabelTarget.cy,
+            left: shapeLabelTarget.x,
+            top: shapeLabelTarget.y,
             width: shapeLabelTarget.drawing.text
-              ? Math.min(shapeLabelTarget.w, 160)
+              ? Math.min(shapeLabelTarget.width, 160)
               : undefined,
             height: shapeLabelTarget.drawing.text ? 22 : undefined,
             pointerEvents: "auto",
@@ -723,7 +671,7 @@ export function DrawingLayer() {
           )}
         </button>
       )}
-      {trendLineTextTarget && !trendLineTextEdit && (
+      {trendLineTextTarget && textEditSession?.editorKind !== "line-midpoint" && (
         <button
           type="button"
           data-chart-ui
@@ -733,11 +681,12 @@ export function DrawingLayer() {
           title={trendLineTextTarget.drawing.text ? "Edit text" : "Add text"}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() =>
-            setTrendLineTextEdit({
-              drawingId: trendLineTextTarget.drawing.id,
-              initialText: trendLineTextTarget.drawing.text ?? "",
-              draftText: trendLineTextTarget.drawing.text ?? "",
-            })
+            setTextEditSession(
+              TextEditSession.attached(
+                trendLineTextTarget.drawing,
+                "line-midpoint",
+              ),
+            )
           }
           className="absolute z-10 cursor-text"
           style={{
@@ -756,105 +705,54 @@ export function DrawingLayer() {
           }}
         />
       )}
-      {shapeTextEdit && shapeTextEditorTarget && (
+      {textEditSession?.editorKind === "shape-center" && shapeTextEditorTarget && (
         <TextEditor
-          key={shapeTextEdit.drawingId}
-          initialText={shapeTextEdit.initialText}
+          key={textEditSession.drawingId}
+          initialText={textEditSession.initialText}
           x={shapeTextEditorTarget.x}
           y={shapeTextEditorTarget.y}
           onDraftChangeAction={(text) => {
-            setShapeTextEdit((current) =>
-              current?.drawingId === shapeTextEdit.drawingId
-                ? { ...current, draftText: text }
-                : current,
-            );
+            setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}
           onSaveAction={(text) => {
-            updateDrawing({ id: shapeTextEdit.drawingId, patch: { text } });
-            setShapeTextEdit(null);
-            scheduleRedraw();
+            applyTextEditOutcome(textEditSession.finish(text));
           }}
           onCancelAction={() => {
-            setShapeTextEdit(null);
-            scheduleRedraw();
+            applyTextEditOutcome(textEditSession.cancel());
           }}
         />
       )}
-      {trendLineTextEdit && trendLineTextEditorTarget && (
+      {textEditSession?.editorKind === "line-midpoint" && trendLineTextEditorTarget && (
         <TextEditor
-          key={trendLineTextEdit.drawingId}
-          initialText={trendLineTextEdit.initialText}
+          key={textEditSession.drawingId}
+          initialText={textEditSession.initialText}
           x={trendLineTextEditorTarget.x}
           y={trendLineTextEditorTarget.y}
           onDraftChangeAction={(text) => {
-            setTrendLineTextEdit((current) =>
-              current?.drawingId === trendLineTextEdit.drawingId
-                ? { ...current, draftText: text }
-                : current,
-            );
+            setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}
           onSaveAction={(text) => {
-            updateDrawing({ id: trendLineTextEdit.drawingId, patch: { text } });
-            setTrendLineTextEdit(null);
-            scheduleRedraw();
+            applyTextEditOutcome(textEditSession.finish(text));
           }}
           onCancelAction={() => {
-            setTrendLineTextEdit(null);
-            scheduleRedraw();
+            applyTextEditOutcome(textEditSession.cancel());
           }}
         />
       )}
-      {textEdit && (
+      {textEditSession?.editorKind === "standalone" && textEditSession.screenPoint && (
         <TextEditor
-          key={textEdit.drawingId}
+          key={textEditSession.drawingId}
           initialText=""
-          x={textEdit.x}
-          y={textEdit.y}
+          x={textEditSession.screenPoint.x}
+          y={textEditSession.screenPoint.y}
           onSaveAction={(text) => {
-            // Remove the empty placeholder and create a fresh drawing with text.
-            removeDrawing(textEdit.drawingId);
-            const fresh: Drawing = {
-              id: textEdit.drawingId,
-              tool: "text",
-              color: textEdit.color,
-              lineWidth: 1.5,
-              points: [textEdit.point],
-              text,
-            };
-            execute(new CreateDrawingCommand(addDrawing, removeDrawing, fresh));
-            setTextEdit(null);
-            scheduleRedraw();
+            applyTextEditOutcome(textEditSession.finish(text));
           }}
           onCancelAction={() => {
-            removeDrawing(textEdit.drawingId);
-            setTextEdit(null);
-            scheduleRedraw();
+            applyTextEditOutcome(textEditSession.cancel());
           }}
         />
       )}
     </>
   );
-}
-
-function projectTrendLineTextTarget(
-  drawing: Drawing,
-  toX: (time: number) => number | null,
-  toY: (price: number) => number | null,
-): { x: number; y: number; angle: number; width: number } | null {
-  const p0 = drawing.points[0];
-  const p1 = drawing.points[1];
-  if (!p0 || !p1) return null;
-  const x1 = toX(p0.time);
-  const y1 = toY(p0.price);
-  const x2 = toX(p1.time);
-  const y2 = toY(p1.price);
-  if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
-  let angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-  if (angle > 90 || angle < -90) angle += 180;
-  return {
-    x: (x1 + x2) / 2,
-    y: (y1 + y2) / 2,
-    angle,
-    width: Math.hypot(x2 - x1, y2 - y1),
-  };
 }

@@ -21,4 +21,5 @@ export interface DrawingInteractionTestHarness {
     hits: Array<{ id: string; target: string; distance: number }>;
   };
   clear: () => void;
+  changeSymbol: (symbol: string) => void;
 }
