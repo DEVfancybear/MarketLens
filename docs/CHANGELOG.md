@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Lightweight Charts 5 native indicator panes (2026-07-11)
+- Upgraded Lightweight Charts from 4.2.3 to 5.2.0 and migrated built-in series
+  creation to the unified `addSeries()` API.
+- Moved trade execution markers to the v5 `createSeriesMarkers()` plugin with
+  lifecycle cleanup when the active chart changes.
+- Replaced mounted per-indicator chart instances with native panes in
+  `PriceChart`, giving candles and separate indicators one time scale,
+  crosshair, viewport, resize transaction, and right-whitespace projection.
+- Preserved empty hidden-indicator panes and stable store ordering so visibility
+  toggles do not reorder neighboring panes.
+- Kept pure viewport/profile regression helpers runtime-independent from the
+  ESM-only v5 package so the existing CommonJS Node test harness remains usable.
+- Expanded the zoom/viewport, indicator, and visual-profile documentation with
+  v5 ownership rules, synchronization policy, failure modes, and primary
+  references.
+
 ### Added - TradingView-style current-candle countdown (2026-07-11)
 - Rendered the existing candle-close countdown as visible text in the current
   price marker instead of exposing it only through the marker tooltip.

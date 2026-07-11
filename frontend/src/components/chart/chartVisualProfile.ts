@@ -1,15 +1,24 @@
 import {
-  ColorType,
-  CrosshairMode,
-  LineStyle,
+  type ColorType,
+  type CrosshairMode,
   type DeepPartial,
   type GridOptions,
+  type LineStyle,
   type PriceScaleOptions,
   type TimeScaleOptions,
 } from "lightweight-charts";
 import type { Theme } from "@/store/uiStore";
 import type { Timeframe } from "@/types";
 import { BAR_SPACING, chartColors } from "./chartTheme";
+
+// Keep this policy module runtime-independent from Lightweight Charts. Version
+// 5 is ESM-only, while the pure Node regression suite compiles these helpers to
+// CommonJS. These are the documented stable enum wire values.
+const COLOR_TYPE_SOLID = "solid" as ColorType.Solid;
+const CROSSHAIR_MODE_NORMAL = 0 as CrosshairMode.Normal;
+const LINE_STYLE_SOLID = 0 as LineStyle.Solid;
+const LINE_STYLE_DOTTED = 1 as LineStyle.Dotted;
+const LINE_STYLE_DASHED = 2 as LineStyle.Dashed;
 
 export const RIGHT_OFFSET_BARS = 8;
 export const MIN_BAR_SPACING = 1.5;
@@ -82,15 +91,15 @@ export function gridOptions(
   const colors = chartColors(theme);
   const color = visible ? colors.grid : "rgba(0,0,0,0)";
   return {
-    vertLines: { color, style: LineStyle.Solid },
-    horzLines: { color, style: LineStyle.Solid },
+    vertLines: { color, style: LINE_STYLE_SOLID },
+    horzLines: { color, style: LINE_STYLE_SOLID },
   };
 }
 
 export function layoutOptions(theme: Theme, fontSize = 12) {
   const colors = chartColors(theme);
   return {
-    background: { type: ColorType.Solid, color: colors.background },
+    background: { type: COLOR_TYPE_SOLID, color: colors.background },
     textColor: colors.text,
     fontFamily: "var(--font-sans)",
     fontSize,
@@ -101,7 +110,7 @@ export function layoutOptions(theme: Theme, fontSize = 12) {
 export function transparentLayoutOptions(theme: Theme, fontSize = 10) {
   const colors = chartColors(theme);
   return {
-    background: { type: ColorType.Solid, color: "transparent" },
+    background: { type: COLOR_TYPE_SOLID, color: "transparent" },
     textColor: colors.text,
     fontFamily: "var(--font-sans)",
     fontSize,
@@ -112,17 +121,17 @@ export function transparentLayoutOptions(theme: Theme, fontSize = 10) {
 export function crosshairOptions(theme: Theme) {
   const colors = chartColors(theme);
   return {
-    mode: CrosshairMode.Normal,
+    mode: CROSSHAIR_MODE_NORMAL,
     vertLine: {
       color: colors.crosshair,
       width: 1 as const,
-      style: LineStyle.Dashed,
+      style: LINE_STYLE_DASHED,
       labelBackgroundColor: colors.crosshairLabelBg,
     },
     horzLine: {
       color: colors.crosshair,
       width: 1 as const,
-      style: LineStyle.Dashed,
+      style: LINE_STYLE_DASHED,
       labelBackgroundColor: colors.crosshairLabelBg,
     },
   };
@@ -142,7 +151,7 @@ export function candlestickOptions(theme: Theme, precision: number) {
     priceFormat: { type: "price" as const, precision, minMove: 1 / 10 ** precision },
     priceLineVisible: true,
     priceLineWidth: 1 as const,
-    priceLineStyle: LineStyle.Dotted,
+    priceLineStyle: LINE_STYLE_DOTTED,
     lastValueVisible: false,
   };
 }

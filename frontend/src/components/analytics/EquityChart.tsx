@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import {
+  AreaSeries,
   createChart,
   ColorType,
   type IChartApi,
@@ -36,13 +37,13 @@ export function EquityChart({ equity }: { equity: EquityPoint[] }) {
     });
     chartRef.current = chart;
 
-    const area = chart.addAreaSeries({
+    const area = chart.addSeries(AreaSeries, {
       lineColor: c.bull,
       topColor: "rgba(38,166,154,0.25)",
       bottomColor: "rgba(38,166,154,0.02)",
       lineWidth: 2,
     });
-    const dd = chart.addAreaSeries({
+    const dd = chart.addSeries(AreaSeries, {
       lineColor: c.bear,
       topColor: "rgba(239,83,80,0.02)",
       bottomColor: "rgba(239,83,80,0.20)",

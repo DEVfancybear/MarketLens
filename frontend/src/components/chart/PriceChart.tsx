@@ -1,7 +1,12 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
+  BaselineSeries,
+  CandlestickSeries,
   createChart,
+  HistogramSeries,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type Logical,
@@ -37,12 +42,14 @@ import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { indicatorSeriesDataForCandles } from "@/services/indicatorSeriesProjection";
 import { chartColors, makeTimeFormatter } from "./chartTheme";
 import {
+  INDICATOR_PANE_HEIGHT,
   RIGHT_OFFSET_BARS,
   candlestickOptions,
   crosshairOptions,
   gridOptions,
   layoutOptions,
   mainPriceScaleOptions,
+  panePriceScaleOptions,
   timeScaleDefaults,
   timeScaleOptions,
 } from "./chartVisualProfile";
@@ -223,6 +230,7 @@ export function PriceChart({
   const indStructureRef = useRef<Map<string, string>>(new Map());
   const indStyleRef = useRef<Map<string, string>>(new Map());
   const indDataRef = useRef<Map<string, IndicatorWritePoint[]>>(new Map());
+  const paneLayoutSignatureRef = useRef("");
   const fittedRef = useRef(false);
   const lastAutoFitLengthRef = useRef(0);
   const prevCandlesRef = useRef<Candle[]>([]);
@@ -338,7 +346,14 @@ export function PriceChart({
     appliedTimeframeRef.current = timeframe;
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: layoutOptions(theme),
+      layout: {
+        ...layoutOptions(theme),
+        panes: {
+          separatorColor: chartColors(theme).border,
+          separatorHoverColor: chartColors(theme).crosshair,
+          enableResize: true,
+        },
+      },
       grid: gridOptions(theme, gridVisible),
       rightPriceScale: mainPriceScaleOptions(theme),
       leftPriceScale: { visible: false },
@@ -368,7 +383,8 @@ export function PriceChart({
       },
     });
 
-    const candleSeries = chart.addCandlestickSeries(
+    const candleSeries = chart.addSeries(
+      CandlestickSeries,
       candlestickOptions(theme, precision),
     );
 
@@ -480,7 +496,14 @@ export function PriceChart({
       appliedTimeframeRef.current = timeframe;
     }
     chart.applyOptions({
-      layout: layoutOptions(theme),
+      layout: {
+        ...layoutOptions(theme),
+        panes: {
+          separatorColor: c.border,
+          separatorHoverColor: c.crosshair,
+          enableResize: true,
+        },
+      },
       grid: gridOptions(theme, gridVisible),
       rightPriceScale: mainPriceScaleOptions(theme),
       timeScale: {
@@ -736,6 +759,14 @@ export function PriceChart({
     () => indicators.filter((i) => i.visible !== false && !i.separatePane),
     [indicators],
   );
+  const paneIndicators = useMemo(
+    () => indicators.filter((i) => i.separatePane),
+    [indicators],
+  );
+  const visiblePaneIndicators = useMemo(
+    () => paneIndicators.filter((i) => i.visible !== false),
+    [paneIndicators],
+  );
   const overlayLegendIndicators = useMemo(
     () => indicators.filter((i) => !i.separatePane),
     [indicators],
@@ -745,12 +776,12 @@ export function PriceChart({
     [],
   );
   useEffect(() => {
-    overlayIndicators.forEach((cfg) => {
+    [...overlayIndicators, ...visiblePaneIndicators].forEach((cfg) => {
       if (cfg.type === "CUSTOM") {
         ensurePineIndicatorResult(cfg, candles, { symbol, timeframe });
       }
     });
-  }, [overlayIndicators, candles, symbol, timeframe]);
+  }, [overlayIndicators, visiblePaneIndicators, candles, symbol, timeframe]);
   const overlayResults = useMemo(
     () => {
       void pineRuntimeVersion;
@@ -775,6 +806,33 @@ export function PriceChart({
       timeframe,
     ],
   );
+  const paneResults = useMemo(
+    () => {
+      void pineRuntimeVersion;
+      return visiblePaneIndicators.map((cfg) => ({
+        cfg,
+        result: optimizationDecision.derivedData
+          ? computeCachedIndicator(
+              cfg,
+              candles,
+              { symbol, timeframe },
+              pineRuntimeVersion,
+            )
+          : computeIndicator(cfg, candles, { symbol, timeframe }),
+      }));
+    }, [
+      visiblePaneIndicators,
+      candles,
+      optimizationDecision.derivedData,
+      pineRuntimeVersion,
+      symbol,
+      timeframe,
+    ],
+  );
+  const chartIndicatorResults = useMemo(
+    () => [...overlayResults, ...paneResults],
+    [overlayResults, paneResults],
+  );
   const overlayLegendValueText = useMemo(
     () =>
       Object.fromEntries(
@@ -785,12 +843,47 @@ export function PriceChart({
       ),
     [overlayResults],
   );
+  const paneLegendValueText = useMemo(
+    () =>
+      Object.fromEntries(
+        paneResults.map(({ cfg, result }) => [
+          cfg.id,
+          indicatorResultValueText(result),
+        ]),
+      ),
+    [paneResults],
+  );
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !ready) return;
     const store = indSeriesRef.current;
-    const activeIds = new Set(overlayResults.map((item) => item.cfg.id));
+    const paneLayoutSignature = paneIndicators.map((item) => item.id).join("|");
+    if (paneLayoutSignatureRef.current !== paneLayoutSignature) {
+      for (const series of store.values()) {
+        series.forEach((item) => chart.removeSeries(item));
+      }
+      store.clear();
+      indStructureRef.current.clear();
+      indStyleRef.current.clear();
+      indDataRef.current.clear();
+      while (chart.panes().length > 1) {
+        chart.removePane(chart.panes().length - 1);
+      }
+      paneIndicators.forEach(() => chart.addPane(true));
+      chart.panes().slice(1).forEach((pane) => {
+        pane.setPreserveEmptyPane(true);
+        pane.setHeight(INDICATOR_PANE_HEIGHT);
+      });
+      paneLayoutSignatureRef.current = paneLayoutSignature;
+      setVersion((value) => value + 1);
+    }
+    chart.panes().slice(1).forEach((pane, index) => {
+      pane.setPreserveEmptyPane(true);
+      chart.priceScale("right", index + 1).applyOptions(panePriceScaleOptions(theme));
+    });
+
+    const activeIds = new Set(chartIndicatorResults.map((item) => item.cfg.id));
 
     // Remove series for indicators no longer present.
     for (const [id, series] of store) {
@@ -807,16 +900,19 @@ export function PriceChart({
       }
     }
 
-    for (const { cfg, result } of overlayResults) {
+    for (const { cfg, result } of chartIndicatorResults) {
       let series = store.get(cfg.id);
-      const structureSignature = indicatorStructureSignature(result.series);
+      const paneIndex = cfg.separatePane
+        ? paneIndicators.findIndex((item) => item.id === cfg.id) + 1
+        : 0;
+      const structureSignature = `${paneIndex}:${indicatorStructureSignature(result.series)}`;
       const structureChanged = indStructureRef.current.get(cfg.id) !== structureSignature;
       if (!series || structureChanged) {
         incrementChartPerformanceCounter("series.indicator.created", result.series.length);
         series?.forEach((s) => chart.removeSeries(s));
         series = result.series.map((s) => {
           if (s.type === "baselineFill") {
-            return chart.addBaselineSeries({
+            return chart.addSeries(BaselineSeries, {
               baseValue: { type: "price", price: s.baseValue ?? 0 },
               topFillColor1: s.color,
               topFillColor2: s.color,
@@ -826,27 +922,27 @@ export function PriceChart({
               bottomLineColor: "rgba(0, 0, 0, 0)",
               lineVisible: s.lineVisible ?? false,
               priceLineVisible: false,
-              lastValueVisible: s.lastValueVisible ?? false,
+              lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
               ...seriesPriceFormatOptions(s),
-            });
+            }, paneIndex);
           }
 
           return s.type === "histogram"
-            ? chart.addHistogramSeries({
+            ? chart.addSeries(HistogramSeries, {
                 color: s.color,
                 priceLineVisible: false,
-                lastValueVisible: s.lastValueVisible ?? false,
+                lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
                 ...seriesPriceFormatOptions(s),
-              })
-            : chart.addLineSeries({
+              }, paneIndex)
+            : chart.addSeries(LineSeries, {
                 color: s.color,
                 lineWidth: s.lineWidth ?? 2,
                 lineStyle: s.lineStyle ?? 0,
                 priceLineVisible: false,
-                lastValueVisible: s.lastValueVisible ?? false,
-                crosshairMarkerVisible: false,
+                lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
+                crosshairMarkerVisible: cfg.separatePane,
                 ...seriesPriceFormatOptions(s),
-              });
+              }, paneIndex);
         });
         store.set(cfg.id, series);
         indStructureRef.current.set(cfg.id, structureSignature);
@@ -868,7 +964,7 @@ export function PriceChart({
               topFillColor1: s.color,
               topFillColor2: s.color,
               lineVisible: s.lineVisible ?? false,
-              lastValueVisible: s.lastValueVisible ?? false,
+              lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
               ...seriesPriceFormatOptions(s),
             });
           } else {
@@ -876,13 +972,13 @@ export function PriceChart({
               color: s.color,
               ...(s.type === "histogram"
                 ? {
-                    lastValueVisible: s.lastValueVisible ?? false,
+                    lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
                     ...seriesPriceFormatOptions(s),
                   }
                 : {
                     lineWidth: s.lineWidth ?? 2,
                     lineStyle: s.lineStyle ?? 0,
-                    lastValueVisible: s.lastValueVisible ?? false,
+                    lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
                     ...seriesPriceFormatOptions(s),
                   }),
             });
@@ -938,8 +1034,9 @@ export function PriceChart({
   }, [
     candles,
     indicatorViewport,
+    chartIndicatorResults,
     optimizationDecision.derivedData,
-    overlayResults,
+    paneIndicators,
     ready,
     theme,
   ]);
@@ -1052,7 +1149,8 @@ export function PriceChart({
     // The price row is centered on the series coordinate; reserve extra room
     // below it for the TradingView-style candle-close countdown row.
     const minY = 10;
-    const maxY = Math.max(minY, container.clientHeight - 25);
+    const mainPaneHeight = chart.panes()[0]?.getHeight() ?? container.clientHeight;
+    const maxY = Math.max(minY, mainPaneHeight - 25);
     setPriceMarker({
       y: Math.min(Math.max(coordinate, minY), maxY),
       price,
@@ -1122,6 +1220,25 @@ export function PriceChart({
         onRemove={(id) => removeIndicator(id)}
         valueTextById={overlayLegendValueText}
       />
+      {paneIndicators.map((indicator, index) => {
+        const paneElement = chartRef.current?.panes()[index + 1]?.getHTMLElement();
+        return paneElement
+          ? createPortal(
+              <div className="absolute left-1 top-1 z-30 max-w-[calc(100%-96px)]">
+                <IndicatorLegend
+                  indicators={[indicator]}
+                  onToggleVisibility={toggleIndicatorVisibility}
+                  onSettings={openIndicatorSettings}
+                  onSource={openIndicatorSource}
+                  onRemove={(id) => removeIndicator(id)}
+                  valueTextById={paneLegendValueText}
+                />
+              </div>,
+              paneElement,
+              indicator.id,
+            )
+          : null;
+      })}
       {priceMarker && (
         <CurrentPriceMarker
           marker={priceMarker}

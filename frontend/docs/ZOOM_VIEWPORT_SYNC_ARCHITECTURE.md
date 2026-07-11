@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-08_
+_Last updated: 2026-07-11_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -9,9 +9,10 @@ behavior, or any code that projects `(time, price)` into pixels.
 
 ## 1. Problem
 
-Lightweight Charts renders candles, axes, and native series internally. Our
-drawings, SMC objects, alert overlays, Pine object labels, and dashboards are
-rendered outside that internal renderer as React DOM or separate canvas layers.
+Lightweight Charts 5.2 renders candles, axes, overlay indicators, and separate
+indicator panes inside one chart instance. Drawings, SMC objects, alert
+overlays, Pine object labels, and dashboards are still rendered outside that
+internal renderer as React DOM or separate canvas layers.
 
 That means every overlay must manually stay synchronized with the chart's
 current projection:
@@ -52,7 +53,7 @@ candles/grid move first and drawings/labels follow later.
 | Chart context | `src/components/chart/ChartContext.tsx` | Exposes `chart`, `candleSeries`, visible candles, and `version` |
 | Time navigation | `src/components/chart/ChartTimeToolbar.tsx`, `src/components/chart/chartTimeNavigation.ts` | Applies shortcut/date/range navigation through the chart time scale |
 | SMC overlay | `src/components/smc/SmcLayer.tsx` | Repaints from `ChartContext.version` |
-| Indicator panes | `src/components/chart/IndicatorPane.tsx` | Mirrors main chart logical range |
+| Indicator panes | `src/components/chart/PriceChart.tsx` | Owns native LWC panes and their series |
 | Replay viewport | `src/components/chart/replayViewport.ts`, `src/components/chart/PriceChart.tsx` | Presentation-only realignment after server reset/upsert windows |
 | Guard | `scripts/check-drawing-viewport-repaint.mjs` | Static regression guard for the viewport repaint contract |
 
@@ -254,18 +255,34 @@ If a plugin's rendered geometry extends beyond its anchors, update that
 plugin's `boundingBox()` and `hitTest()` together. Otherwise pan/zoom can cull a
 visible drawing or make the extended portion impossible to select.
 
-## 11. Indicator Panes
+## 11. Native Indicator Panes
 
-Separate indicator panes mirror the main chart's logical range:
+Separate indicators use Lightweight Charts 5 native panes inside the main
+chart. `PriceChart` creates preserved panes with `chart.addPane(true)` and adds
+each indicator series with its pane index:
 
 ```ts
-mainChart.timeScale().subscribeVisibleLogicalRangeChange(handler)
-target.setVisibleLogicalRange(range)
+chart.addSeries(LineSeries, options, paneIndex)
 ```
 
-This is correct for pane time-axis sync because the pane chart is itself a
-Lightweight Chart. It does not replace `chartViewportEvents.ts` for custom
-canvas/DOM overlays on the main chart.
+All panes therefore share one time scale, crosshair lifecycle, resize
+transaction, logical range, and right-side whitespace projection. Do not
+reintroduce a second chart instance or copy ranges with
+`setVisibleLogicalRange()`.
+
+Pane ownership rules:
+
+- pane `0` contains candles and overlay indicators;
+- separate indicators occupy stable panes `1..n` in store order;
+- empty panes are preserved while an indicator is hidden so toggling visibility
+  does not reorder the remaining panes;
+- changing pane membership rebuilds indicator series before panes are removed,
+  preventing stale series handles;
+- every separate pane applies the shared price-scale visual profile and fixed
+  initial height, while the LWC separator remains user-resizable.
+
+The old `IndicatorPane` separate-chart implementation is retained temporarily
+as migration reference but is not mounted by `ChartArea`.
 
 ## 12. Replay Data-Window Replacement
 
@@ -343,11 +360,50 @@ For replay-related viewport changes, also run:
 npm run check:replay-logic
 ```
 
-## 16. Sources Used For The Current Contract
+## 16. Lightweight Charts 5 Migration Contract
 
-- Lightweight Charts 4.2 `HandleScaleOptions`: mouse wheel, pinch, axis drag
-  scaling, and axis double-click reset.
-- Lightweight Charts 4.2 `ITimeScaleApi`: visible logical range, time-scale
-  size subscriptions, coordinate conversion, and cleanup methods.
-- Lightweight Charts 4.2 `TimeScaleOptions`: right offset, bar spacing,
-  min bar spacing, edge behavior, right-bar behavior, and new-bar shifting.
+The application is pinned to Lightweight Charts `5.2.0`.
+
+Required v5 API forms:
+
+- create built-in series with `chart.addSeries(SeriesDefinition, options,
+  paneIndex?)`;
+- render trade execution markers through `createSeriesMarkers()` and detach the
+  plugin on chart-context teardown;
+- create separate indicator areas with native pane APIs;
+- keep policy-only modules free of runtime LWC imports because v5 is ESM-only
+  and the pure regression suite currently emits CommonJS.
+
+Do not restore v4 calls such as `addLineSeries`, `addCandlestickSeries`, or
+`series.setMarkers`.
+
+## 17. Synchronization Policy
+
+Use the representation that matches the relationship being synchronized:
+
+| Relationship | Synchronization key |
+|---|---|
+| Candles and native indicator panes | Shared chart time scale; no bridge |
+| Main-chart canvas/DOM overlays | Live chart projection plus viewport version |
+| Same-timeline auxiliary views | Logical range |
+| Different symbol or timeframe charts | Absolute UTC time range |
+| Cross-chart crosshair | UTC timestamp, snapped locally to the nearest bar |
+| Price axes | Independent unless an explicit ratio-lock feature is enabled |
+
+Logical indices must not be copied between charts with different candle
+calendars. Index `100` is only meaningful inside the timeline that created it.
+
+## 18. External References
+
+- Lightweight Charts 5 time scale:
+  <https://tradingview.github.io/lightweight-charts/docs/5.1/time-scale>
+- Lightweight Charts native panes:
+  <https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes>
+- Lightweight Charts v4 to v5 migration:
+  <https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5>
+- TradingView multi-chart synchronization:
+  <https://www.tradingview.com/support/solutions/43000629992-how-to-sync-the-charts-of-my-layout/>
+- TradingView date-range synchronization:
+  <https://www.tradingview.com/support/solutions/43000670346-how-to-synchronize-the-date-range-on-multichart/>
+- Highcharts Stock `afterSetExtremes` reference:
+  <https://api.highcharts.com/highstock/navigator.xAxis.events.setExtremes>

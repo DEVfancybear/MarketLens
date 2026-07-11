@@ -16,7 +16,6 @@ import {
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { PriceChart } from "./PriceChart";
 import { ChartTimeToolbar } from "./ChartTimeToolbar";
-import { IndicatorPane } from "./IndicatorPane";
 import { DrawingLayer } from "./DrawingLayer";
 import { AlertOverlay } from "./AlertOverlay";
 import { AlertLines } from "./AlertLines";
@@ -104,10 +103,6 @@ export function ChartArea() {
         : indicators,
     [benchmarkProfile, indicators],
   );
-  const paneIndicators = useMemo(
-    () => displayedIndicators.filter((i) => i.separatePane),
-    [displayedIndicators],
-  );
   const replayOwnsChart = Boolean(replay.snapshot) ||
     replay.connection === "connecting" ||
     replay.connection === "recovering";
@@ -175,15 +170,6 @@ export function ChartArea() {
         <ReplayFloatingToolbar />
         <RiskPanel />
       </div>
-
-      {paneIndicators.map((cfg) => (
-        <IndicatorPane
-          key={cfg.id}
-          cfg={cfg}
-          candles={displayedCandles}
-          mainChart={mainChart}
-        />
-      ))}
 
       <ChartTimeToolbar chart={mainChart} candles={displayedCandles} />
     </div>

@@ -1,7 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  BaselineSeries,
   createChart,
+  HistogramSeries,
+  LineSeries,
   type IChartApi,
   type ISeriesApi,
   type UTCTimestamp,
@@ -283,7 +286,7 @@ export function IndicatorPane({
       handleScale: false,
     });
     chartRef.current = chart;
-    anchorSeriesRef.current = chart.addLineSeries({
+    anchorSeriesRef.current = chart.addSeries(LineSeries, {
       color: "rgba(0, 0, 0, 0)",
       priceLineVisible: false,
       lastValueVisible: false,
@@ -445,7 +448,7 @@ export function IndicatorPane({
       seriesRef.current = result.series.map((s) => {
         const isHist = s.type === "histogram" || s.key === "hist";
         if (s.type === "baselineFill") {
-          return chart.addBaselineSeries({
+          return chart.addSeries(BaselineSeries, {
             baseValue: { type: "price", price: s.baseValue ?? 0 },
             topFillColor1: s.color,
             topFillColor2: s.color,
@@ -460,13 +463,13 @@ export function IndicatorPane({
           });
         }
         return isHist
-          ? chart.addHistogramSeries({
+          ? chart.addSeries(HistogramSeries, {
               color: s.color,
               priceLineVisible: false,
               lastValueVisible: s.lastValueVisible ?? true,
               ...seriesPriceFormatOptions(s),
             })
-          : chart.addLineSeries({
+          : chart.addSeries(LineSeries, {
               color: s.color,
               lineWidth: s.lineWidth ?? 2,
               lineStyle: s.lineStyle ?? 0,

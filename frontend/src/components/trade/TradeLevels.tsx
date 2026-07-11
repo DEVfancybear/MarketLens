@@ -1,6 +1,12 @@
 "use client";
 import { useEffect, useRef } from "react";
-import type { IPriceLine, SeriesMarker, Time } from "lightweight-charts";
+import {
+  createSeriesMarkers,
+  type IPriceLine,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
+  type Time,
+} from "lightweight-charts";
 import { useChartCtx } from "@/components/chart/ChartContext";
 import { positionsAtom } from "@/store/tradeStore";
 import { executionModeAtom, mt5PositionsAtom } from "@/store/mt5Store";
@@ -20,14 +26,27 @@ export function TradeLevels() {
   const symbol = useAtomValue(symbolAtom);
   const replayTrading = useReplayTrading();
   const linesRef = useRef<IPriceLine[]>([]);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+
+  useEffect(() => {
+    if (!ctx) return;
+    const markers = createSeriesMarkers(ctx.candleSeries, []);
+    markersRef.current = markers;
+    return () => {
+      markers.detach();
+      if (markersRef.current === markers) markersRef.current = null;
+    };
+  }, [ctx]);
 
   useEffect(() => {
     if (!ctx) return;
     const series = ctx.candleSeries;
+    const seriesMarkers = markersRef.current;
+    if (!seriesMarkers) return;
     // Clear previous lines.
     linesRef.current.forEach((l) => series.removePriceLine(l));
     linesRef.current = [];
-    series.setMarkers([]);
+    seriesMarkers.setMarkers([]);
 
     if (executionMode === "mt5") {
       const liveMt5 = mt5Positions.filter((p) => p.symbol === symbol);
@@ -87,7 +106,7 @@ export function TradeLevels() {
           text: `${buy ? "B" : "S"} ${fill.quantity.toFixed(2)} @ ${fill.price}`,
         };
       });
-      series.setMarkers(markers);
+      seriesMarkers.setMarkers(markers);
       for (const position of replayTrading.positions.filter((item) =>
         item.symbol === symbol && Math.abs(item.netQuantity) > 1e-12
       )) {
@@ -108,7 +127,7 @@ export function TradeLevels() {
       return () => {
         linesRef.current.forEach((line) => series.removePriceLine(line));
         linesRef.current = [];
-        series.setMarkers([]);
+        seriesMarkers.setMarkers([]);
       };
     }
 

@@ -44,7 +44,7 @@ IndicatorResult { id, series[] }
         |
         +-- PriceChart overlay line series
         |
-        +-- IndicatorPane separate lightweight chart
+        +-- PriceChart native Lightweight Charts pane
 ```
 
 ## Key files
@@ -63,7 +63,7 @@ IndicatorResult { id, series[] }
 | Shared settings dialog | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
 | Settings architecture guide | `SETTTING_ARCHITECTURE.md` |
 | Overlay rendering on price chart | `src/components/chart/PriceChart.tsx` |
-| Separate pane rendering | `src/components/chart/IndicatorPane.tsx` |
+| Overlay and native pane rendering | `src/components/chart/PriceChart.tsx` |
 | Bottom tab mounting | `src/components/layout/BottomPanel.tsx` |
 
 ## Data model
@@ -173,7 +173,7 @@ IndicatorMenu click SMA/EMA/etc.
   -> indicatorsAtom update + localStorage/cache write
   -> authenticated mode queues POST/DELETE /api/v1/indicators by clientId
   -> ChartArea sees indicatorsAtom
-  -> PriceChart or IndicatorPane calls computeIndicator(config, visibleCandles)
+  -> PriceChart calls computeIndicator(config, visibleCandles)
   -> Lightweight Charts series receives calculated LinePoint[]
 ```
 
@@ -211,14 +211,14 @@ PineEditor Play or My scripts Add
   -> if savedScript is metadata-only, GET /api/v1/pine-scripts/:id first
   -> indicatorsAtom gets type: "CUSTOM"
   -> authenticated mode POST /api/v1/indicators with clientId
-  -> PriceChart / IndicatorPane requests backend compile through pineRuntimeCache
+  -> PriceChart requests backend compile through pineRuntimeCache
   -> computeIndicator() reads cached IndicatorResult without synchronous Pine compile
 ```
 
 Custom indicator rendering is now asynchronous:
 
 ```
-PriceChart / IndicatorPane
+PriceChart native series/panes
   -> ensurePineIndicatorResult(config, visibleCandles)
   -> POST /api/v1/pine-runtime/compile
   -> cache IndicatorResult by source hash + candle range + inputs + styles
@@ -461,24 +461,20 @@ Overlay indicators render in `PriceChart`:
   historical off-screen labels to the left edge, or ADR labels will stack over the chart.
 - Series are keyed by indicator id and recreated only when series count changes.
 
-Separate-pane indicators render in `IndicatorPane`:
+Separate-pane indicators render in native Lightweight Charts 5 panes owned by
+`PriceChart`:
 
 - `indicators.filter(i => i.visible && i.separatePane)`
-- Each pane owns its own lightweight chart.
-- Time scale is synchronized to the main chart logical range.
-- `IndicatorPane` always adds a transparent time-anchor line from
-  `indicatorPaneTimeScale.ts` before user-visible series. The anchor has one
-  point per candle and extends with synthetic right-offset slots when the main
-  chart viewport reaches beyond the latest candle. This is required because
-  Lightweight Charts synchronizes panes by logical index, while Pine plots can
-  omit `na` points and TradingView leaves whitespace to the right of the latest
-  bar. Without the anchor, scripts such as Better RSI can show hline price
-  labels while the RSI plot/fill is clipped before the pane's right edge.
+- `PriceChart` creates stable preserved panes in indicator-store order.
+- Every pane shares the candle chart's time scale, logical range, crosshair, and
+  right-side whitespace projection without an event bridge.
+- Hidden indicators keep an empty preserved pane so toggling visibility does
+  not reorder neighboring panes.
 - `linebr` output is already split by the backend runtime. The pane renderer
   should render those returned segments as independent line series and must not
   merge them back together.
 - Series marked `extendToVisibleRange` are normalized through
-  `indicatorSeriesProjection.ts` in both `PriceChart` and `IndicatorPane`, so
+  `indicatorSeriesProjection.ts` in `PriceChart`, so
   hlines and filled bands track the visible logical viewport for every
   indicator, including the right-offset whitespace area.
 - Histogram and line points preserve per-bar `data[].color` before applying fallback colors.
