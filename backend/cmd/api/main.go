@@ -18,6 +18,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/journal"
+	"github.com/smc-trading-terminal/backend/internal/layouts"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
@@ -74,6 +75,7 @@ func main() {
 	var indicatorsHandler *indicators.Handler
 	var pineScriptsHandler *pinescripts.Handler
 	var alertsHandler *alerts.Handler
+	var layoutsHandler *layouts.Handler
 	var workspaceHandler *workspace.Handler
 	var replayHandler *replay.Handler
 	var journalHandler *journal.Handler
@@ -122,7 +124,9 @@ func main() {
 		pineScriptsHandler = pinescripts.NewHandler(pineScriptsStore, requireAuth)
 		alertsStore := alerts.NewRepo(pool.Pool)
 		alertsHandler = alerts.NewHandler(alertsStore, requireAuth)
-		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, requireAuth)
+		layoutsStore := layouts.NewRepo(pool.Pool)
+		layoutsHandler = layouts.NewHandler(layoutsStore, requireAuth)
+		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, layoutsStore, requireAuth)
 		journalHandler = journal.NewHandler(journal.NewRepo(pool.Pool), screenshotSigner, requireAuth)
 		if cfg.ReplayEngineEnabled {
 			replayStore := replay.NewRepo(pool.Pool)
@@ -148,6 +152,7 @@ func main() {
 		indicatorsHandler,
 		pineScriptsHandler,
 		alertsHandler,
+		layoutsHandler,
 		workspaceHandler,
 		journalHandler,
 		replayHandler,

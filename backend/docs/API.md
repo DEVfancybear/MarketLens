@@ -4,8 +4,8 @@ Base URL (dev): `http://localhost:8080`
 API prefix: `/api/v1` (except `/health`).
 
 > Status: health, auth, settings/bootstrap, watchlists, drawings, indicators,
-> Pine scripts/runtime, MT5, and Phase 10 alerts/push tokens are implemented.
-> Later-phase resources remain planned contracts. See `AUTH.md` for auth and
+> Pine scripts/runtime, MT5, Phase 10 alerts/push tokens, and Phase 12 layouts are implemented.
+> Phase 13 resources remain planned contracts. See `AUTH.md` for auth and
 > `DATABASE.md` for persistence details.
 >
 > Backend-owned replay endpoints are design-only. The complete planned REST,
@@ -115,6 +115,9 @@ One call that returns the user's workspace for hydrating local stores on sign-in
 ```
 Loaded lazily by their own endpoints (larger / scoped payloads), **not** in bootstrap: per-symbol
 `drawings`, `journal`, `screenshots`, and sim-trading.
+
+`layouts` includes complete small layout rows with their opaque `state`
+snapshots, allowing the frontend to restore the default layout without a second request.
 
 ---
 
@@ -724,14 +727,45 @@ or the idempotent journal `clientId`.
 
 ## Layouts  🔒
 
-Backed by `layouts`.
+Backed by `layouts` (implemented). The backend treats `state` as opaque JSON and
+guarantees at most one `isDefault: true` row per authenticated user. Creating or
+updating a default layout clears the previous default in the same transaction.
 
-| Method | Path                       | Purpose                                  |
-| ------ | -------------------------- | ---------------------------------------- |
-| GET    | `/api/v1/layouts`          | List saved layouts                       |
-| POST   | `/api/v1/layouts`          | Save `{ name, symbol, timeframe, state }`|
-| PUT    | `/api/v1/layouts/:id`      | Update                                    |
-| DELETE | `/api/v1/layouts/:id`      | Delete                                    |
+| Method | Path                  | Purpose                           |
+| ------ | --------------------- | --------------------------------- |
+| GET    | `/api/v1/layouts`     | List layouts, default first       |
+| POST   | `/api/v1/layouts`     | Create a saved layout             |
+| PUT    | `/api/v1/layouts/:id` | Replace metadata and snapshot     |
+| DELETE | `/api/v1/layouts/:id` | Delete an owned layout            |
+
+Create and replace requests use the same shape:
+
+```json
+{
+  "name": "London scalping",
+  "symbol": "EURUSD",
+  "timeframe": "15m",
+  "isDefault": true,
+  "state": {
+    "version": 1,
+    "chartLayoutPreset": "single",
+    "replayLayoutMode": "single_chart",
+    "indicators": [],
+    "drawings": [],
+    "panels": {
+      "sizes": { "left": 36, "right": 300, "bottom": 240 },
+      "rightOpen": true,
+      "bottomOpen": false,
+      "bottomTab": "replay"
+    }
+  }
+}
+```
+
+Responses add `id`, `createdAt`, and `updatedAt`. `PUT` is a full replacement,
+so clients resend the existing snapshot when only changing the default flag.
+Loading a snapshot restores the frontend view without rewriting the independent
+drawing and indicator resources.
 
 ---
 

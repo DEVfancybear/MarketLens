@@ -307,7 +307,7 @@ Responsibilities:
 | Alerts and history | `alerts` | `/api/v1/alerts*` backed by `alerts` + retained `alert_events` |
 | Journal entries | IndexedDB `journal` | `journal_entries` |
 | Screenshots | IndexedDB `screenshots` | `screenshots` metadata + object storage |
-| Layouts | not fully centralized today | `layouts.state` |
+| Layouts | in-memory Jotai projection | `layouts.state` through `/api/v1/layouts` |
 | Sim positions/accounts | `tradeStore` runtime today | `sim_accounts` + `sim_positions` |
 
 ## Applying Backend JSON
@@ -349,6 +349,7 @@ Do not write to backend on every render or pointer move.
 | Drawing tool favorites | replace whole ordered list on star toggle |
 | Indicators | add/remove/toggle immediately; style/settings on OK |
 | Pine scripts | explicit Save |
+| Layouts | explicit save/overwrite/default/delete from the top toolbar |
 | Alerts | create/update/delete/trigger action; serialize by optimistic client ID |
 | Journal | create/update/delete action; fetch paginated |
 | Screenshots | upload URL -> direct PUT -> register metadata |
@@ -440,13 +441,14 @@ Frontend remote mode should not be enabled globally until each required slice ex
   optimistic add/update/delete sync wired
 - `GET/POST/PUT/DELETE /api/v1/pine-scripts` - backend implemented; frontend metadata bootstrap,
   full-source lazy load, save, favorite, and delete wired
+- `GET/POST/PUT/DELETE /api/v1/layouts` - backend implemented; frontend bootstrap, automatic
+  default restore, save/load/overwrite/default/delete paths wired
 
 Everything else can remain lazy or phased:
 
 - alerts,
 - journal,
 - screenshots,
-- layouts,
 - simulated trading.
 
 ## Rollout Plan
@@ -509,7 +511,8 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
 - Move alerts and alert history to `/api/v1/alerts`.
 - Load journal lazily from `/api/v1/journal`.
 - Use screenshot upload URL flow.
-- Save/load layouts through `/api/v1/layouts`.
+- Save/load layouts through `/api/v1/layouts`. **Implemented**, including versioned snapshots,
+  bootstrap hydration, automatic default restore, overwrite, default switching, and delete.
 - Move simulated positions only after backend Phase 13 exists.
 
 ### Phase FE-5: Remove Authenticated Local Persistence

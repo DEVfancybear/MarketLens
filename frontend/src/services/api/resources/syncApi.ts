@@ -5,6 +5,7 @@ import type { BackendDrawingTemplate } from "./drawingsApi";
 import type { BackendIndicatorPreset } from "./indicatorsApi";
 import type { BackendPineScript } from "./pineScriptsApi";
 import type { BackendAlert, BackendAlertEvent } from "./alertsApi";
+import type { BackendLayout } from "./layoutsApi";
 
 export interface WorkspaceBootstrap {
   settings: SettingsDocument;
@@ -15,7 +16,7 @@ export interface WorkspaceBootstrap {
   alerts: BackendAlert[];
   triggeredAlerts: BackendAlert[];
   history: BackendAlertEvent[];
-  layouts: unknown[];
+  layouts: BackendLayout[];
 }
 
 export async function getWorkspaceBootstrap(): Promise<WorkspaceBootstrap> {

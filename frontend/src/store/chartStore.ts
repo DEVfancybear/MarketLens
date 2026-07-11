@@ -381,6 +381,40 @@ export const applyRemoteIndicatorsAtom = atom(
   },
 );
 
+// Applies the opaque chart slice stored inside a Phase 12 layout. This is a
+// view restore, so it deliberately does not rewrite the standalone drawing and
+// indicator resources on the backend.
+export const applySavedChartLayoutAtom = atom(
+  null,
+  (
+    get,
+    set,
+    snapshot: {
+      symbol?: string;
+      timeframe?: Timeframe;
+      drawings: Drawing[];
+      indicators: IndicatorConfig[];
+    },
+  ) => {
+    const symbol = snapshot.symbol?.trim() || get(symbolAtom);
+    const timeframe = snapshot.timeframe ?? get(timeframeAtom);
+    const marketChanged = symbol !== get(symbolAtom) || timeframe !== get(timeframeAtom);
+    set(symbolAtom, symbol);
+    set(timeframeAtom, timeframe);
+    set(drawingsAtom, structuredClone(snapshot.drawings ?? []));
+    set(indicatorsAtom, structuredClone(snapshot.indicators ?? []));
+    persistLocalDrawings(symbol, snapshot.drawings ?? []);
+    localStore.set("indicators", snapshot.indicators ?? []);
+    set(selectedDrawingIdAtom, null);
+    set(selectedDrawingIdsAtom, new Set());
+    set(editingIndicatorIdAtom, null);
+    if (marketChanged) {
+      set(candlesAtom, []);
+      set(loadingAtom, true);
+    }
+  },
+);
+
 export const applyRemotePineScriptsAtom = atom(
   null,
   (_get, set, rows: BackendPineScript[]) => {

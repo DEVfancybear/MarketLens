@@ -13,6 +13,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
+	"github.com/smc-trading-terminal/backend/internal/layouts"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
@@ -62,6 +63,14 @@ type fakePineScriptLister struct {
 type fakeAlertSnapshotReader struct {
 	snapshot alertspkg.Snapshot
 	lastUser string
+}
+
+type fakeLayoutLister struct {
+	items []layouts.Layout
+}
+
+func (f *fakeLayoutLister) List(_ context.Context, _ string) ([]layouts.Layout, error) {
+	return f.items, nil
 }
 
 func (f *fakeAlertSnapshotReader) Snapshot(_ context.Context, userID string) (alertspkg.Snapshot, error) {
@@ -114,7 +123,8 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	}}
 
 	app := fiber.New()
-	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, pineScriptLister, alertReader, fakeRequireAuth).Register(app.Group("/api/v1"))
+	layoutLister := &fakeLayoutLister{items: []layouts.Layout{{ID: "layout-1", Name: "Scalping", State: json.RawMessage(`{"version":1}`)}}}
+	NewHandler(reader, &fakeWatchlistLister{}, templateLister, indicatorLister, pineScriptLister, alertReader, layoutLister, fakeRequireAuth).Register(app.Group("/api/v1"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/bootstrap", nil)
 	resp, err := app.Test(req)
@@ -149,7 +159,7 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 		Alerts           []alertspkg.Alert            `json:"alerts"`
 		TriggeredAlerts  []alertspkg.Alert            `json:"triggeredAlerts"`
 		History          []alertspkg.Event            `json:"history"`
-		Layouts          []any                        `json:"layouts"`
+		Layouts          []layouts.Layout             `json:"layouts"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode bootstrap response: %v", err)
@@ -170,6 +180,9 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	}
 	if len(body.Alerts) != 1 || body.Alerts[0].ClientID != "alert-1" {
 		t.Fatalf("bootstrap should include alerts, got %+v", body.Alerts)
+	}
+	if len(body.Layouts) != 1 || body.Layouts[0].Name != "Scalping" {
+		t.Fatalf("bootstrap should include layouts, got %+v", body.Layouts)
 	}
 	if string(body.Settings.UI) != `{"theme":"dark"}` {
 		t.Fatalf("unexpected settings ui: %s", body.Settings.UI)

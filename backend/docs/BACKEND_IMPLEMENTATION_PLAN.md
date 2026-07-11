@@ -1,6 +1,6 @@
 # Backend Implementation Plan (phased)
 
-> Status: Phases 0-11 are implemented. Phase 12+ remains as the per-resource persistence roadmap.
+> Status: Phases 0-12 are implemented. Phase 13 remains as the per-resource persistence roadmap.
 > Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow), and `API.md` (endpoint contract). Each
 > phase is independently shippable and has explicit acceptance criteria so progress is unambiguous.
 

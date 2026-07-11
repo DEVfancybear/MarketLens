@@ -9,6 +9,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
+	"github.com/smc-trading-terminal/backend/internal/layouts"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
@@ -50,6 +51,10 @@ type AlertSnapshotReader interface {
 	Snapshot(ctx context.Context, userID string) (alerts.Snapshot, error)
 }
 
+type LayoutLister interface {
+	List(ctx context.Context, userID string) ([]layouts.Layout, error)
+}
+
 type Handler struct {
 	settings         SettingsReader
 	watchlists       WatchlistLister
@@ -57,6 +62,7 @@ type Handler struct {
 	indicators       IndicatorLister
 	pineScripts      PineScriptLister
 	alerts           AlertSnapshotReader
+	layouts          LayoutLister
 	requireAuth      fiber.Handler
 }
 
@@ -67,6 +73,7 @@ func NewHandler(
 	indicators IndicatorLister,
 	pineScripts PineScriptLister,
 	alertSnapshots AlertSnapshotReader,
+	layouts LayoutLister,
 	requireAuth fiber.Handler,
 ) *Handler {
 	return &Handler{
@@ -76,6 +83,7 @@ func NewHandler(
 		indicators:       indicators,
 		pineScripts:      pineScripts,
 		alerts:           alertSnapshots,
+		layouts:          layouts,
 		requireAuth:      requireAuth,
 	}
 }
@@ -93,7 +101,7 @@ type bootstrapResponse struct {
 	Alerts           []alerts.Alert               `json:"alerts"`
 	TriggeredAlerts  []alerts.Alert               `json:"triggeredAlerts"`
 	History          []alerts.Event               `json:"history"`
-	Layouts          []any                        `json:"layouts"`
+	Layouts          []layouts.Layout             `json:"layouts"`
 }
 
 func (h *Handler) bootstrap(c *fiber.Ctx) error {
@@ -148,7 +156,14 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		}
 	}
 
-	empty := []any{}
+	layoutRows := []layouts.Layout{}
+	if h.layouts != nil {
+		layoutRows, err = h.layouts.List(c.Context(), userID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
+		}
+	}
+
 	return c.JSON(bootstrapResponse{
 		Settings:         doc,
 		Watchlists:       lists,
@@ -158,6 +173,6 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		Alerts:           alertSnapshot.Alerts,
 		TriggeredAlerts:  alertSnapshot.TriggeredAlerts,
 		History:          alertSnapshot.History,
-		Layouts:          empty,
+		Layouts:          layoutRows,
 	})
 }

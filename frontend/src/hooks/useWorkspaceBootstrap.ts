@@ -32,6 +32,10 @@ import {
 } from "@/store/chartStore";
 import { resetTradeAtom } from "@/store/tradeStore";
 import { resetNotificationsToDefaultsAtom } from "@/store/notificationStore";
+import {
+  applyRemoteLayoutsAtom,
+  loadDefaultLayoutAtom,
+} from "@/store/layoutStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
 import { createWatchlist as createRemoteWatchlist } from "@/services/api/resources/watchlistsApi";
 import {
@@ -67,6 +71,8 @@ export function useWorkspaceBootstrap(): void {
   const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
   const resetTrade = useSetAtom(resetTradeAtom);
   const resetPushNotifications = useSetAtom(resetNotificationsToDefaultsAtom);
+  const applyLayouts = useSetAtom(applyRemoteLayoutsAtom);
+  const loadDefaultLayout = useSetAtom(loadDefaultLayoutAtom);
   const setWorkspaceReady = useSetAtom(setWorkspaceReadyAtom);
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
@@ -81,6 +87,7 @@ export function useWorkspaceBootstrap(): void {
         resetSmc();
         resetAlerts();
         applyWatchlists([]);
+        applyLayouts([]);
         resetChartWorkspace();
         resetTrade();
         resetPushNotifications();
@@ -136,7 +143,8 @@ export function useWorkspaceBootstrap(): void {
         applyDrawingTemplates(bootstrap.drawingTemplates);
         applyPineScripts(bootstrap.pineScripts);
         applyIndicators(bootstrap.indicators);
-        loadActiveDrawings();
+        applyLayouts(bootstrap.layouts);
+        if (!loadDefaultLayout()) loadActiveDrawings();
         setWorkspaceReady(true);
         log("info", "Workspace synced from backend");
       })
@@ -160,7 +168,9 @@ export function useWorkspaceBootstrap(): void {
     applyDrawingTemplates,
     applyPineScripts,
     applyIndicators,
+    applyLayouts,
     loadActiveDrawings,
+    loadDefaultLayout,
     applySmc,
     applyUI,
     applyWatchlists,

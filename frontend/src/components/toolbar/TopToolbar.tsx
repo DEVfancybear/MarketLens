@@ -13,6 +13,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Bell,
+  Star,
 } from "lucide-react";
 import { SymbolSearch } from "./SymbolSearch";
 import { useAlertStore } from "@/store/alertStore";
@@ -59,6 +60,16 @@ import {
   setReplayLayoutModeAtom,
   type ChartLayoutPreset,
 } from "@/store/replayLayoutStore";
+import {
+  activeLayoutIdAtom,
+  createCurrentLayoutAtom,
+  deleteActiveLayoutAtom,
+  layoutsAtom,
+  loadLayoutAtom,
+  makeActiveLayoutDefaultAtom,
+  overwriteActiveLayoutAtom,
+} from "@/store/layoutStore";
+import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 
 export function TopToolbar() {
   // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
@@ -86,6 +97,26 @@ export function TopToolbar() {
   const replayLayoutMode = useAtomValue(replayLayoutModeAtom);
   const setChartLayoutPreset = useSetAtom(setChartLayoutPresetAtom);
   const setReplayLayoutMode = useSetAtom(setReplayLayoutModeAtom);
+  const layouts = useAtomValue(layoutsAtom);
+  const activeLayoutId = useAtomValue(activeLayoutIdAtom);
+  const loadLayout = useSetAtom(loadLayoutAtom);
+  const createCurrentLayout = useSetAtom(createCurrentLayoutAtom);
+  const overwriteActiveLayout = useSetAtom(overwriteActiveLayoutAtom);
+  const makeActiveLayoutDefault = useSetAtom(makeActiveLayoutDefaultAtom);
+  const deleteActiveLayout = useSetAtom(deleteActiveLayoutAtom);
+  const activeLayout = layouts.find((layout) => layout.id === activeLayoutId);
+
+  const runLayoutAction = useCallback(
+    async (action: () => Promise<unknown>, success: string) => {
+      try {
+        await action();
+        doLog("info", success);
+      } catch (error) {
+        doLog("error", `Layout action failed: ${userFacingErrorMessage(error, "request failed")}`);
+      }
+    },
+    [doLog],
+  );
 
   const toggleReplay = () => {
     if (replaySelection !== "idle") {
@@ -215,18 +246,97 @@ export function TopToolbar() {
         {replaySelection !== "idle" ? "Cancel select" : "Replay"}
       </button>
 
-      {/* Layout selector (visual presets) */}
+      {/* Persisted layouts plus visual chart presets. */}
       <Dropdown
-        width={160}
+        width={230}
         trigger={() => (
           <button className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
             <LayoutIcon size={14} />
-            Layout
+            {activeLayout?.name ?? "Layout"}
           </button>
         )}
       >
         {(close) => (
           <div>
+            {backendSession && (
+              <>
+                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                  Saved layouts
+                </div>
+                {layouts.length === 0 && (
+                  <div className="px-3 py-1.5 text-[11px] text-ink-faint">No saved layouts</div>
+                )}
+                {layouts.map((layout) => (
+                  <MenuItem
+                    key={layout.id}
+                    active={layout.id === activeLayoutId}
+                    onClick={() => {
+                      try {
+                        loadLayout(layout);
+                        doLog("info", `Layout loaded: ${layout.name}`);
+                        close();
+                      } catch (error) {
+                        doLog("error", `Layout load failed: ${userFacingErrorMessage(error, "invalid snapshot")}`);
+                      }
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{layout.name}</span>
+                    {layout.isDefault && <Star size={11} className="fill-current" />}
+                  </MenuItem>
+                ))}
+                <div className="my-1 border-t border-terminal-border" />
+                <MenuItem
+                  onClick={() => {
+                    const name = window.prompt("Layout name", activeLayout?.name ?? "My layout")?.trim();
+                    if (!name) return;
+                    void runLayoutAction(
+                      () => createCurrentLayout({ name, isDefault: layouts.length === 0 }),
+                      `Layout saved: ${name}`,
+                    );
+                    close();
+                  }}
+                >
+                  Save current as…
+                </MenuItem>
+                <MenuItem
+                  className={!activeLayout ? "cursor-not-allowed opacity-40" : undefined}
+                  onClick={activeLayout ? () => {
+                    void runLayoutAction(overwriteActiveLayout, `Layout updated: ${activeLayout.name}`);
+                    close();
+                  } : undefined}
+                >
+                  Update selected
+                </MenuItem>
+                <MenuItem
+                  className={!activeLayout || activeLayout.isDefault ? "cursor-not-allowed opacity-40" : undefined}
+                  onClick={activeLayout && !activeLayout.isDefault ? () => {
+                    void runLayoutAction(makeActiveLayoutDefault, `Default layout: ${activeLayout.name}`);
+                    close();
+                  } : undefined}
+                >
+                  Make selected default
+                </MenuItem>
+                <MenuItem
+                  className={!activeLayout ? "cursor-not-allowed opacity-40 text-red-400" : "text-red-400"}
+                  onClick={activeLayout ? () => {
+                    if (!window.confirm(`Delete layout “${activeLayout.name}”?`)) return;
+                    void runLayoutAction(deleteActiveLayout, `Layout deleted: ${activeLayout.name}`);
+                    close();
+                  } : undefined}
+                >
+                  Delete selected
+                </MenuItem>
+                <div className="my-1 border-t border-terminal-border" />
+              </>
+            )}
+            {!backendSession && (
+              <div className="px-3 py-1.5 text-[11px] text-ink-faint">
+                Sign in to save layouts
+              </div>
+            )}
+            <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+              Chart arrangement
+            </div>
             {([
               ["single", "Single"],
               ["two_horizontal", "2 Horizontal"],

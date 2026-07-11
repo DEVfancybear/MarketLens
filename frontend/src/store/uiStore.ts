@@ -14,7 +14,7 @@ export type BottomTab =
   | "pine"
   | "logs";
 
-interface PanelSizes {
+export interface PanelSizes {
   /** Right watchlist width (px). */
   right: number;
   /** Bottom panel height (px). */
@@ -235,6 +235,37 @@ export const applyRemoteUISettingsAtom = atom(
     if (typeof document !== "undefined") {
       document.documentElement.className = `theme-${theme}`;
     }
+  },
+);
+
+export interface SavedPanelLayout {
+  sizes: PanelSizes;
+  rightOpen: boolean;
+  bottomOpen: boolean;
+  bottomTab: BottomTab;
+}
+
+export const applySavedPanelLayoutAtom = atom(
+  null,
+  (get, set, snapshot: SavedPanelLayout) => {
+    const panels = sanitizePanels(snapshot?.sizes, get(panelsAtom));
+    const bottomTab: BottomTab = [
+      "replay",
+      "trade",
+      "journal",
+      "analytics",
+      "pine",
+      "logs",
+    ].includes(snapshot?.bottomTab)
+      ? snapshot.bottomTab
+      : get(bottomTabAtom);
+    const rightOpen = normalizeBoolean(snapshot?.rightOpen, get(rightOpenAtom));
+    const bottomOpen = normalizeBoolean(snapshot?.bottomOpen, get(bottomOpenAtom));
+    set(panelsAtom, panels);
+    set(rightOpenAtom, rightOpen);
+    set(bottomOpenAtom, bottomOpen);
+    set(bottomTabAtom, bottomTab);
+    persistUI(get, { panels, bottomOpen });
   },
 );
 
