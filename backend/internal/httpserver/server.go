@@ -27,6 +27,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/replay"
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/simtrading"
+	"github.com/smc-trading-terminal/backend/internal/timenavigation"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
@@ -88,6 +89,7 @@ func New(
 	health.RegisterRoutes(app, pinger)
 
 	api := app.Group("/api/v1")
+	timenavigation.RegisterRoutes(api)
 	if authHandler != nil {
 		authHandler.Register(api)
 	}

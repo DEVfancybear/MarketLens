@@ -14,10 +14,6 @@ import {
   goToDialogPosition,
   nearestCandleIndex,
   parseLocalDateTime,
-  shortcutLogicalRange,
-  shortcutRange,
-  shortcutTargetTimeframe,
-  shortcutTooltip,
 } from "../../src/components/chart/chartTimeNavigation";
 
 function candles(count: number, start = 1000, step = 60): Candle[] {
@@ -33,60 +29,6 @@ function candles(count: number, start = 1000, step = 60): Candle[] {
     };
   });
 }
-
-test("range shortcuts anchor to the latest candle", () => {
-  const data = candles(5, 1_000_000, 60);
-  const oneDay = shortcutRange("1D", data);
-  const fiveDays = shortcutRange("5D", data);
-
-  assert.ok(oneDay && oneDay !== "all");
-  assert.ok(fiveDays && fiveDays !== "all");
-  assert.equal(oneDay.to, data.at(-1)!.time);
-  assert.equal(oneDay.from, data.at(-1)!.time - 24 * 60 * 60);
-  assert.equal(fiveDays.from, data.at(-1)!.time - 5 * 24 * 60 * 60);
-});
-
-test("all shortcut requests fitContent behavior", () => {
-  assert.equal(shortcutRange("All", candles(3)), "all");
-  assert.equal(shortcutLogicalRange("All", candles(3), 8), "all");
-});
-
-test("range shortcuts choose TradingView-style target timeframes", () => {
-  assert.equal(shortcutTargetTimeframe("1D"), "1m");
-  assert.equal(shortcutTargetTimeframe("5D"), "5m");
-  assert.equal(shortcutTargetTimeframe("1M"), "30m");
-  assert.equal(shortcutTargetTimeframe("3M"), "1H");
-  assert.equal(shortcutTargetTimeframe("6M"), "2H");
-  assert.equal(shortcutTargetTimeframe("YTD"), "1D");
-  assert.equal(shortcutTargetTimeframe("1Y"), "1D");
-  assert.equal(shortcutTargetTimeframe("5Y"), "1W");
-  assert.equal(shortcutTargetTimeframe("All"), "1M");
-});
-
-test("range shortcuts expose TradingView-style tooltip labels", () => {
-  assert.equal(shortcutTooltip("1D"), "1 day in 1 minute intervals");
-  assert.equal(shortcutTooltip("5D"), "5 days in 5 minutes intervals");
-  assert.equal(shortcutTooltip("1M"), "1 month in 30 minutes intervals");
-  assert.equal(shortcutTooltip("3M"), "3 months in 1 hour intervals");
-  assert.equal(shortcutTooltip("6M"), "6 months in 2 hours intervals");
-  assert.equal(shortcutTooltip("YTD"), "Year to day in 1 day intervals");
-  assert.equal(shortcutTooltip("1Y"), "1 year in 1 day intervals");
-  assert.equal(shortcutTooltip("5Y"), "5 years in 1 week intervals");
-  assert.equal(shortcutTooltip("All"), "All data in 1 month intervals");
-});
-
-test("range shortcuts convert to logical ranges anchored to latest candle", () => {
-  const data = candles(8, 1_000_000, 24 * 60 * 60);
-
-  assert.deepEqual(shortcutLogicalRange("5D", data, 8), {
-    from: 2,
-    to: 15,
-  });
-  assert.deepEqual(shortcutLogicalRange("1Y", data, 8), {
-    from: 0,
-    to: 15,
-  });
-});
 
 test("nearest candle search clamps and chooses the closest candle", () => {
   const data = candles(4, 1000, 60);

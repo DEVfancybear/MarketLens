@@ -1,6 +1,6 @@
 # Chart Time Navigation Architecture
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-11_
 
 This document explains the TradingView-style bottom time toolbar and the `Go to`
 date/range dialog. Read this before changing chart range shortcut behavior,
@@ -48,9 +48,11 @@ as a range selector with preconfigured buttons plus min/max date inputs.
 | Toolbar UI | `src/components/chart/ChartTimeToolbar.tsx` | Renders shortcut strip, current clock, and `Go to` dialog |
 | Top interval UI | `src/components/toolbar/TimeframeSelector.tsx` | Renders favorite intervals on the top bar and the scrollable interval popup |
 | Interval selector model | `src/components/toolbar/timeframeSelectorModel.ts` | Pure catalog/favorite normalization logic for the top interval popup |
-| Pure navigation logic | `src/components/chart/chartTimeNavigation.ts` | Calculates shortcut ranges, timezone conversion, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
+| Backend shortcut policy | `backend/internal/timenavigation` | Owns shortcut order, target timeframe, tooltip, and UTC range calculation |
+| Shortcut API adapter | `src/services/api/resources/timeNavigationApi.ts` | Fetches the catalog and resolves a click through the backend API |
+| Pure local UI logic | `src/components/chart/chartTimeNavigation.ts` | Timezone conversion, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
 | Chart placement | `src/components/chart/ChartArea.tsx` | Mounts the toolbar below all chart panes and above the bottom dock |
-| Tests | `tests/chart/chartTimeNavigation.test.ts`, `tests/ui/timeframeSelectorModel.test.ts` | Locks range shortcuts, nearest-candle jump, parser, calendar behavior, and top interval favorite behavior |
+| Tests | `backend/internal/timenavigation/service_test.go`, `tests/chart/chartTimeNavigation.test.ts`, `tests/ui/timeframeSelectorModel.test.ts` | Locks the backend shortcut/API contract plus local date, calendar, and top interval behavior |
 | Test script | `package.json` | `npm run test:chart`, `npm run test:ui` |
 
 ## 4. Source Of Truth
@@ -80,9 +82,11 @@ a stale floating time label over the newly visible candles.
 
 ## 5. Shortcut Contract
 
-`shortcutRange(shortcut, candles)`,
-`shortcutLogicalRange(shortcut, candles, rightOffsetBars)`, and
-`shortcutTargetTimeframe(shortcut)` are intentionally pure and tested.
+The backend is the source of truth. `GET
+/api/v1/chart/time-navigation/shortcuts` returns the ordered labels, target
+timeframes, and tooltips. `POST /api/v1/chart/time-navigation/resolve` accepts a
+shortcut plus the latest candle's Unix timestamp and returns `mode`, timeframe,
+and an absolute UTC `from/to` range.
 
 - The anchor is the latest available candle, not wall-clock time.
 - Every shortcut owns a target chart timeframe, matching TradingView's
@@ -110,18 +114,17 @@ a stale floating time label over the newly visible candles.
   | `1M` | `1 month in 30 minutes intervals` |
   | `3M` | `3 months in 1 hour intervals` |
   | `6M` | `6 months in 2 hours intervals` |
-  | `YTD` | `Year to day in 1 day intervals` |
+  | `YTD` | `Year to date in 1 day intervals` |
   | `1Y` | `1 year in 1 day intervals` |
   | `5Y` | `5 years in 1 week intervals` |
   | `All` | `All data in 1 month intervals` |
 
-- `1D` and `5D` subtract exact day durations.
-- `1M`, `3M`, `6M`, `1Y`, and `5Y` use local calendar month/year arithmetic.
-- `YTD` starts at local January 1 of the latest candle's year.
-- `All` returns the sentinel `"all"` and the UI calls `fitContent()`.
-- Non-`All` shortcuts resolve the requested start time to the first loaded
-  candle at or after that time, then apply `{ from: startIndex, to:
-  lastIndex + RIGHT_OFFSET_BARS }` via `setVisibleLogicalRange`.
+- `1D` and `5D` use backend calendar-day arithmetic anchored to the latest candle.
+- `1M`, `3M`, `6M`, `1Y`, and `5Y` use UTC calendar month/year arithmetic.
+- `YTD` starts at UTC January 1 of the latest candle's year.
+- `All` returns `mode: "all"` and the UI calls `fitContent()`.
+- Non-`All` shortcuts return absolute Unix-second bounds and the UI passes them
+  to the viewport controller's `setTimeRange` adapter.
 - `ChartTimeToolbar` stores the active shortcut locally so `All`, `5Y`, `1Y`,
   etc. visibly highlight like TradingView after the user clicks them.
 - If the shortcut's target timeframe differs from the current chart timeframe,
@@ -133,11 +136,9 @@ a stale floating time label over the newly visible candles.
   particular, `3M` on `1H` and `6M` on `2H` need more than the old fixed 1500
   bars; keep `historyBarsForTimeframe()` in sync if shortcut intervals change.
 
-Using logical range for shortcuts avoids timestamp-clamping edge cases and keeps
-the normal right-side whitespace stable. The official Lightweight Charts API
-notes that `setVisibleRange()` is clamped to existing time data, while
-`setVisibleLogicalRange()` is the correct primitive when the app can approximate
-indexes directly.
+Do not restore a frontend fallback table for this policy. A failed catalog call
+leaves the shortcut strip unavailable, making backend/API failures visible
+instead of silently allowing client and server rules to drift.
 
 ## 6. Top Interval Selector Contract
 
@@ -270,8 +271,10 @@ time-axis transformation layer is added.
 
 ## 13. Maintenance Rules
 
-- Keep date/range math in `chartTimeNavigation.ts`; the React component should
-  remain a thin adapter around chart APIs.
+- Keep shortcut catalog/range math in `backend/internal/timenavigation`; the
+  React component should remain a thin API and chart-viewport adapter.
+- Keep Go-to dialog parsing and timezone presentation helpers in
+  `chartTimeNavigation.ts`; these are local input/display concerns.
 - Add TypeScript tests for every new shortcut, parser behavior, or popup
   placement rule.
 - Do not add drawing-overlay invalidation here. Viewport repaint remains owned

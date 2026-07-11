@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import type { Candle, Timeframe } from "@/types";
+import type { Candle } from "@/types";
 import {
   loadingAtom,
   setCrosshairAtom,
@@ -26,7 +26,6 @@ import { cn } from "@/utils/cn";
 import {
   CHART_TIME_ZONE_OPTIONS,
   EXCHANGE_TIME_ZONE_ID,
-  TIME_RANGE_SHORTCUTS,
   calendarCells,
   chartTimeZoneToIntlTimeZone,
   firstCandleIndexAtOrAfter,
@@ -38,16 +37,18 @@ import {
   goToDialogPosition,
   isSupportedChartTimeZone,
   parseLocalDateTime,
-  shortcutLogicalRange,
-  shortcutTargetTimeframe,
-  shortcutTooltip,
-  type TimeRangeShortcut,
   type ChartTimeZoneId,
   type ChartTimeZoneOption,
   type ElementAnchor,
 } from "./chartTimeNavigation";
 import { getChartViewportController } from "./chartViewportController";
-import { RIGHT_OFFSET_BARS } from "./chartVisualProfile";
+import {
+  getTimeNavigationShortcuts,
+  resolveTimeNavigationShortcut,
+  type TimeNavigationResolution,
+  type TimeNavigationShortcut,
+  type TimeRangeShortcut,
+} from "@/services/api/resources/timeNavigationApi";
 
 type GoToTab = "date" | "range";
 type RangeField = "from" | "to";
@@ -57,8 +58,7 @@ type GoToMarkerState = {
   label: string;
 };
 type PendingShortcutState = {
-  shortcut: TimeRangeShortcut;
-  timeframe: Timeframe;
+  resolution: TimeNavigationResolution;
   requestId: number;
 };
 type ShortcutTooltipState = {
@@ -244,6 +244,7 @@ export function ChartTimeToolbar({
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
   const [activeShortcut, setActiveShortcut] =
     useState<TimeRangeShortcut | null>(null);
+  const [shortcuts, setShortcuts] = useState<TimeNavigationShortcut[]>([]);
   const [pendingShortcut, setPendingShortcut] =
     useState<PendingShortcutState | null>(null);
   const [tooltipState, setTooltipState] =
@@ -255,6 +256,20 @@ export function ChartTimeToolbar({
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
   const activeTimeZone = chartTimeZoneToIntlTimeZone(timeZoneId);
+
+  useEffect(() => {
+    let cancelled = false;
+    getTimeNavigationShortcuts()
+      .then((items) => {
+        if (!cancelled) setShortcuts(items);
+      })
+      .catch(() => {
+        if (!cancelled) setShortcuts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
@@ -272,31 +287,36 @@ export function ChartTimeToolbar({
   }, [authStatus]);
 
   const applyShortcutViewport = useCallback(
-    (shortcut: TimeRangeShortcut) => {
+    (resolution: TimeNavigationResolution) => {
       if (!chart) return false;
       const viewport = getChartViewportController(chart);
       if (!viewport) return false;
-      const range = shortcutLogicalRange(shortcut, candles, RIGHT_OFFSET_BARS);
-      if (!range) return false;
-      if (range === "all") {
+      if (resolution.mode === "all") {
         viewport.fitContent("time-navigation");
-        setActiveShortcut(shortcut);
+        setActiveShortcut(resolution.shortcut);
         clearChartCrosshair(chart, () => setCrosshair(null));
         return true;
       }
-      viewport.setLogicalRange(range, "time-navigation");
-      setActiveShortcut(shortcut);
+      if (resolution.from == null || resolution.to == null) return false;
+      viewport.setTimeRange(
+        {
+          from: resolution.from as UTCTimestamp,
+          to: resolution.to as UTCTimestamp,
+        },
+        "time-navigation",
+      );
+      setActiveShortcut(resolution.shortcut);
       clearChartCrosshair(chart, () => setCrosshair(null));
       return true;
     },
-    [candles, chart, setCrosshair],
+    [chart, setCrosshair],
   );
 
   useEffect(() => {
     if (
       !pendingShortcut ||
       !chart ||
-      pendingShortcut.timeframe !== timeframe ||
+      pendingShortcut.resolution.timeframe !== timeframe ||
       loading ||
       candles.length === 0
     ) {
@@ -308,7 +328,7 @@ export function ChartTimeToolbar({
     // range on the next frame so Lightweight Charts has the new series data.
     const request = pendingShortcut;
     const frame = window.requestAnimationFrame(() => {
-      const applied = applyShortcutViewport(request.shortcut);
+      const applied = applyShortcutViewport(request.resolution);
       if (!applied) return;
       setPendingShortcut((current) =>
         current?.requestId === request.requestId ? null : current,
@@ -325,36 +345,43 @@ export function ChartTimeToolbar({
     timeframe,
   ]);
 
-  const jumpShortcut = (shortcut: TimeRangeShortcut) => {
+  const jumpShortcut = async (shortcut: TimeRangeShortcut) => {
     if (!chart) return;
-
-    const targetTimeframe = shortcutTargetTimeframe(shortcut);
+    const anchorTime = candles[candles.length - 1]?.time;
+    if (!anchorTime) return;
+    pendingShortcutId.current += 1;
+    const requestId = pendingShortcutId.current;
+    let resolution: TimeNavigationResolution;
+    try {
+      resolution = await resolveTimeNavigationShortcut(shortcut, anchorTime);
+    } catch {
+      return;
+    }
+    if (requestId !== pendingShortcutId.current) return;
     setActiveShortcut(shortcut);
 
-    if (targetTimeframe !== timeframe) {
-      pendingShortcutId.current += 1;
+    if (resolution.timeframe !== timeframe) {
       setPendingShortcut({
-        shortcut,
-        timeframe: targetTimeframe,
-        requestId: pendingShortcutId.current,
+        resolution,
+        requestId,
       });
-      setTimeframe(targetTimeframe);
+      setTimeframe(resolution.timeframe);
       return;
     }
 
     setPendingShortcut(null);
-    applyShortcutViewport(shortcut);
+    applyShortcutViewport(resolution);
   };
 
   const showShortcutTooltip = (
     event:
       | MouseEvent<HTMLButtonElement>
       | FocusEvent<HTMLButtonElement>,
-    shortcut: TimeRangeShortcut,
+    shortcut: TimeNavigationShortcut,
   ) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setTooltipState({
-      text: shortcutTooltip(shortcut),
+      text: shortcut.tooltip,
       left: rect.left + rect.width / 2,
       top: rect.top - 8,
     });
@@ -374,24 +401,24 @@ export function ChartTimeToolbar({
     <>
       <div className="flex h-8 shrink-0 items-center border-t border-terminal-border bg-[#0f0f0f] px-1 text-[12px] text-[#d1d4dc]">
         <div className="flex min-w-0 items-center overflow-x-auto">
-          {TIME_RANGE_SHORTCUTS.map((shortcut) => (
+          {shortcuts.map((shortcut) => (
             <button
-              key={shortcut}
+              key={shortcut.id}
               type="button"
               disabled={!chart || loading || candles.length === 0}
-              onClick={() => jumpShortcut(shortcut)}
+              onClick={() => void jumpShortcut(shortcut.id)}
               onMouseEnter={(event) => showShortcutTooltip(event, shortcut)}
               onMouseLeave={() => setTooltipState(null)}
               onFocus={(event) => showShortcutTooltip(event, shortcut)}
               onBlur={() => setTooltipState(null)}
               className={cn(
                 "h-7 shrink-0 rounded-sm px-1.5 font-semibold transition-colors disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent",
-                activeShortcut === shortcut
+                activeShortcut === shortcut.id
                   ? "bg-[#4a4a4a] text-[#f0f3fa]"
                   : "text-[#f0f3fa] hover:bg-[#2a2a2a]",
               )}
             >
-              {shortcut}
+              {shortcut.id}
             </button>
           ))}
           <div className="mx-1 h-5 w-px shrink-0 bg-[#2a2e39]" />

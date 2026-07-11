@@ -42,6 +42,54 @@ API prefix: `/api/v1` (except `/health`).
 
 ---
 
+## Chart time navigation
+
+These public endpoints own the bottom chart shortcut catalog and range policy.
+The browser supplies the latest loaded candle as the anchor and applies the
+returned viewport; it must not duplicate shortcut-to-timeframe or date math.
+
+### `GET /api/v1/chart/time-navigation/shortcuts`
+
+Returns the ordered toolbar catalog:
+
+```json
+{
+  "shortcuts": [
+    {
+      "id": "1D",
+      "timeframe": "1m",
+      "tooltip": "1 day in 1 minute intervals"
+    }
+  ]
+}
+```
+
+### `POST /api/v1/chart/time-navigation/resolve`
+
+Request timestamps are Unix seconds. Calendar shortcuts are resolved in UTC.
+
+```json
+{ "shortcut": "YTD", "anchorTime": 1783756800 }
+```
+
+Range response:
+
+```json
+{
+  "shortcut": "YTD",
+  "timeframe": "1D",
+  "tooltip": "Year to date in 1 day intervals",
+  "mode": "range",
+  "from": 1767225600,
+  "to": 1783756800
+}
+```
+
+`All` returns `mode: "all"` without `from`/`to`; the frontend then calls
+`fitContent()`. Invalid shortcuts or non-positive anchors return `400`.
+
+---
+
 ## Auth
 
 See `AUTH.md` for the full flow and token model.

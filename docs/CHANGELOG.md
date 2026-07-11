@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Backend-owned chart time shortcuts (2026-07-11)
+- Added public chart time-navigation catalog and resolve APIs; the Go backend
+  now owns shortcut order, tooltip, target timeframe, and UTC range math.
+- Rewired the bottom chart toolbar to fetch and apply backend responses after
+  asynchronous timeframe changes, removing the duplicated frontend policy.
+- Added Go unit and HTTP contract tests and updated the API and chart navigation
+  architecture documentation.
+
 ### Fixed - Native pane legend hydration (2026-07-11)
 - Stopped portaling React legend `<div>` elements into Lightweight Charts'
   internal pane `<tr>` nodes; legends now remain in the `PriceChart` overlay
