@@ -10,6 +10,16 @@ async function snapshot(page: Page) {
 }
 
 test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) => {
+  const hydrationErrors: string[] = [];
+  page.on("console", (message) => {
+    const text = message.text();
+    if (
+      message.type() === "error" &&
+      (text.includes("cannot be a child of <tr>") || text.includes("hydration error"))
+    ) {
+      hydrationErrors.push(text);
+    }
+  });
   await page.goto(FIXTURE_URL, {
     waitUntil: "domcontentloaded",
     timeout: 90_000,
@@ -17,6 +27,7 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
   await page.waitForFunction(() =>
     window.__chartInteractionTest?.snapshot().paneMetrics.paneCount === 3
   );
+  expect(hydrationErrors).toEqual([]);
 
   await test.step("crosshair keeps one UTC timestamp across native panes", async () => {
     const initial = await snapshot(page);

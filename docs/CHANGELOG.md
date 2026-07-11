@@ -4,6 +4,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Native pane legend hydration (2026-07-11)
+- Stopped portaling React legend `<div>` elements into Lightweight Charts'
+  internal pane `<tr>` nodes; legends now remain in the `PriceChart` overlay
+  root and follow measured pane coordinates without invalid table markup.
+- Extended the browser synchronization guard to fail on the corresponding
+  invalid-nesting or hydration console error.
+
 ### Added - Viewport controller and browser synchronization guard (2026-07-11)
 - Centralized main-chart auto-fit, navigation, replay, prepend restore, reset,
   and benchmark viewport mutations behind one controller with revision, cause,

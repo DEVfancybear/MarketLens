@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   BaselineSeries,
   CandlestickSeries,
@@ -1268,22 +1267,26 @@ export function PriceChart({
       />
       {paneIndicators.map((indicator, index) => {
         const paneElement = chartRef.current?.panes()[index + 1]?.getHTMLElement();
-        return paneElement
-          ? createPortal(
-              <div className="absolute left-1 top-1 z-30 max-w-[calc(100%-96px)]">
-                <IndicatorLegend
-                  indicators={[indicator]}
-                  onToggleVisibility={toggleIndicatorVisibility}
-                  onSettings={openIndicatorSettings}
-                  onSource={openIndicatorSource}
-                  onRemove={(id) => removeIndicator(id)}
-                  valueTextById={paneLegendValueText}
-                />
-              </div>,
-              paneElement,
-              indicator.id,
-            )
-          : null;
+        const chartElement = containerRef.current;
+        if (!paneElement || !chartElement) return null;
+        const paneRect = paneElement.getBoundingClientRect();
+        const chartRect = chartElement.getBoundingClientRect();
+        return (
+          <div
+            key={indicator.id}
+            className="absolute left-1 z-30 max-w-[calc(100%-96px)]"
+            style={{ top: Math.max(0, paneRect.top - chartRect.top + 4) }}
+          >
+            <IndicatorLegend
+              indicators={[indicator]}
+              onToggleVisibility={toggleIndicatorVisibility}
+              onSettings={openIndicatorSettings}
+              onSource={openIndicatorSource}
+              onRemove={(id) => removeIndicator(id)}
+              valueTextById={paneLegendValueText}
+            />
+          </div>
+        );
       })}
       {priceMarker && (
         <CurrentPriceMarker
