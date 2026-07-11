@@ -10,7 +10,7 @@ type resolveRequest struct {
 func RegisterRoutes(router fiber.Router) {
 	group := router.Group("/chart/time-navigation")
 	group.Get("/shortcuts", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"shortcuts": Shortcuts()})
+		return c.JSON(Catalog())
 	})
 	group.Post("/resolve", func(c *fiber.Ctx) error {
 		var request resolveRequest

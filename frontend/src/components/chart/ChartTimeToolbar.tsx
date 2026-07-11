@@ -27,12 +27,14 @@ import {
   CHART_TIME_ZONE_OPTIONS,
   EXCHANGE_TIME_ZONE_ID,
   calendarCells,
+  canSelectGoToTime,
   chartTimeZoneToIntlTimeZone,
   firstCandleIndexAtOrAfter,
   formatDateInput,
   formatGoToMarkerLabel,
   formatTimeInput,
   formatUtcOffset,
+  goToSelectionDraft,
   goToDateLogicalRange,
   goToDialogPosition,
   isSupportedChartTimeZone,
@@ -40,11 +42,13 @@ import {
   type ChartTimeZoneId,
   type ChartTimeZoneOption,
   type ElementAnchor,
+  type GoToSelection,
 } from "./chartTimeNavigation";
 import { getChartViewportController } from "./chartViewportController";
 import {
-  getTimeNavigationShortcuts,
+  getTimeNavigationCatalog,
   resolveTimeNavigationShortcut,
+  type TimeNavigationCatalog,
   type TimeNavigationResolution,
   type TimeNavigationShortcut,
   type TimeRangeShortcut,
@@ -242,9 +246,12 @@ export function ChartTimeToolbar({
   const [timeZoneAnchor, setTimeZoneAnchor] = useState<ElementAnchor | null>(null);
   const [timeZoneId, setTimeZoneId] = useState<ChartTimeZoneId>(readInitialTimeZone);
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
+  const [lastGoToSelection, setLastGoToSelection] =
+    useState<GoToSelection | null>(null);
   const [activeShortcut, setActiveShortcut] =
     useState<TimeRangeShortcut | null>(null);
-  const [shortcuts, setShortcuts] = useState<TimeNavigationShortcut[]>([]);
+  const [navigationCatalog, setNavigationCatalog] =
+    useState<TimeNavigationCatalog | null>(null);
   const [pendingShortcut, setPendingShortcut] =
     useState<PendingShortcutState | null>(null);
   const [tooltipState, setTooltipState] =
@@ -259,17 +266,38 @@ export function ChartTimeToolbar({
 
   useEffect(() => {
     let cancelled = false;
-    getTimeNavigationShortcuts()
-      .then((items) => {
-        if (!cancelled) setShortcuts(items);
+    getTimeNavigationCatalog()
+      .then((catalog) => {
+        if (!cancelled) setNavigationCatalog(catalog);
       })
       .catch(() => {
-        if (!cancelled) setShortcuts([]);
+        if (!cancelled) setNavigationCatalog(null);
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const hotkey = navigationCatalog?.goTo.hotkey;
+    if (!hotkey) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== hotkey.key.toLowerCase() ||
+        event.altKey !== hotkey.altKey ||
+        !chart ||
+        loading ||
+        candles.length === 0
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setGoToAnchor(null);
+      setGoToOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [candles.length, chart, loading, navigationCatalog]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
@@ -401,7 +429,7 @@ export function ChartTimeToolbar({
     <>
       <div className="flex h-8 shrink-0 items-center border-t border-terminal-border bg-[#0f0f0f] px-1 text-[12px] text-[#d1d4dc]">
         <div className="flex min-w-0 items-center overflow-x-auto">
-          {shortcuts.map((shortcut) => (
+          {(navigationCatalog?.shortcuts ?? []).map((shortcut) => (
             <button
               key={shortcut.id}
               type="button"
@@ -426,7 +454,7 @@ export function ChartTimeToolbar({
             type="button"
             disabled={!chart || loading || candles.length === 0}
             aria-label="Go to"
-            title="Go to"
+            title={`Go to${navigationCatalog ? ` (${navigationCatalog.goTo.hotkey.label})` : ""}`}
             onClick={openGoTo}
             className="flex h-7 w-8 shrink-0 items-center justify-center rounded-sm text-[#f0f3fa] transition-colors hover:bg-[#2a2a2a] disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent"
           >
@@ -460,6 +488,11 @@ export function ChartTimeToolbar({
           chart={chart}
           candles={candles}
           timeZone={activeTimeZone}
+          allowSpecificTime={canSelectGoToTime(
+            timeframe,
+            navigationCatalog?.goTo.specificTimeTimeframes ?? [],
+          )}
+          initialSelection={lastGoToSelection}
           anchor={goToAnchor}
           onJump={(time) =>
             setGoToMarker({
@@ -471,6 +504,7 @@ export function ChartTimeToolbar({
           onNavigationApplied={() =>
             clearChartCrosshair(chart, () => setCrosshair(null))
           }
+          onSelectionApplied={setLastGoToSelection}
           onManualNavigation={() => setActiveShortcut(null)}
           onClose={() => setGoToOpen(false)}
         />
@@ -502,26 +536,45 @@ function GoToDialog({
   chart,
   candles,
   timeZone,
+  allowSpecificTime,
+  initialSelection,
   anchor,
   onJump,
   onNavigationApplied,
+  onSelectionApplied,
   onManualNavigation,
   onClose,
 }: {
   chart: IChartApi;
   candles: Candle[];
   timeZone?: string;
+  allowSpecificTime: boolean;
+  initialSelection: GoToSelection | null;
   anchor: ElementAnchor | null;
   onJump: (time: number) => void;
   onNavigationApplied: () => void;
+  onSelectionApplied: (selection: GoToSelection) => void;
   onManualNavigation: () => void;
   onClose: () => void;
 }) {
-  const defaults = useMemo(() => defaultRange(candles, timeZone), [
-    candles,
-    timeZone,
-  ]);
-  const [tab, setTab] = useState<GoToTab>("date");
+  const defaults = useMemo(() => {
+    const base = defaultRange(candles, timeZone);
+    if (!initialSelection) return { ...base, tab: "date" as const };
+    const remembered = goToSelectionDraft(initialSelection, timeZone);
+    if (remembered.tab === "date") {
+      return {
+        ...base,
+        ...remembered,
+        month: monthFromDateInput(remembered.singleDate),
+      };
+    }
+    return {
+      ...base,
+      ...remembered,
+      month: monthFromDateInput(remembered.fromDate),
+    };
+  }, [candles, initialSelection, timeZone]);
+  const [tab, setTab] = useState<GoToTab>(defaults.tab);
   const [singleDate, setSingleDate] = useState(defaults.singleDate);
   const [singleTime, setSingleTime] = useState(defaults.singleTime);
   const [fromDate, setFromDate] = useState(defaults.fromDate);
@@ -554,7 +607,11 @@ function GoToDialog({
 
   const apply = () => {
     if (tab === "date") {
-      const targetTime = parseLocalDateTime(singleDate, singleTime, timeZone);
+      const targetTime = parseLocalDateTime(
+        singleDate,
+        allowSpecificTime ? singleTime : "00:00",
+        timeZone,
+      );
       if (targetTime == null) return;
       const index = firstCandleIndexAtOrAfter(candles, targetTime);
       if (index == null) return;
@@ -567,14 +624,23 @@ function GoToDialog({
         "time-navigation",
       );
       onJump(candles[index].time);
+      onSelectionApplied({ tab: "date", time: targetTime });
       onNavigationApplied();
       onManualNavigation();
       onClose();
       return;
     }
 
-    const from = parseLocalDateTime(fromDate, fromTime, timeZone);
-    const to = parseLocalDateTime(toDate, toTime, timeZone);
+    const from = parseLocalDateTime(
+      fromDate,
+      allowSpecificTime ? fromTime : "00:00",
+      timeZone,
+    );
+    const to = parseLocalDateTime(
+      toDate,
+      allowSpecificTime ? toTime : "00:00",
+      timeZone,
+    );
     if (from == null || to == null) return;
     getChartViewportController(chart)?.setTimeRange(
       {
@@ -583,6 +649,7 @@ function GoToDialog({
       },
       "time-navigation",
     );
+    onSelectionApplied({ tab: "range", from, to });
     onNavigationApplied();
     onManualNavigation();
     onClose();
@@ -674,7 +741,11 @@ function GoToDialog({
                   setMonthFromDateDraft(value);
                 }}
               />
-              <TimeInput value={singleTime} onChange={setSingleTime} />
+              <TimeInput
+                value={allowSpecificTime ? singleTime : "00:00"}
+                onChange={setSingleTime}
+                disabled={!allowSpecificTime}
+              />
             </div>
           ) : (
             <div className="mb-4 space-y-3">
@@ -687,7 +758,11 @@ function GoToDialog({
                     setMonthFromDateDraft(value);
                   }}
                 />
-                <TimeInput value={fromTime} onChange={setFromTime} />
+                <TimeInput
+                  value={allowSpecificTime ? fromTime : "00:00"}
+                  onChange={setFromTime}
+                  disabled={!allowSpecificTime}
+                />
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
                 <DateInput
@@ -698,7 +773,11 @@ function GoToDialog({
                     setMonthFromDateDraft(value);
                   }}
                 />
-                <TimeInput value={toTime} onChange={setToTime} />
+                <TimeInput
+                  value={allowSpecificTime ? toTime : "00:00"}
+                  onChange={setToTime}
+                  disabled={!allowSpecificTime}
+                />
               </div>
             </div>
           )}
@@ -803,16 +882,19 @@ function DateInput({
 function TimeInput({
   value,
   onChange,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
-    <label className={inputShell()}>
+    <label className={inputShell(disabled ? "opacity-50" : undefined)}>
       <input
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none"
+        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none disabled:cursor-not-allowed"
       />
       <Clock3 size={16} className="shrink-0 text-[#b2b5be]" />
     </label>

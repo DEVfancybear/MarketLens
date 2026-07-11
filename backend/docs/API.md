@@ -50,7 +50,7 @@ returned viewport; it must not duplicate shortcut-to-timeframe or date math.
 
 ### `GET /api/v1/chart/time-navigation/shortcuts`
 
-Returns the ordered toolbar catalog:
+Returns the ordered toolbar catalog plus backend-owned Go-to capabilities:
 
 ```json
 {
@@ -60,9 +60,19 @@ Returns the ordered toolbar catalog:
       "timeframe": "1m",
       "tooltip": "1 day in 1 minute intervals"
     }
-  ]
+  ],
+  "goTo": {
+    "hotkey": { "label": "Alt+G", "key": "g", "altKey": true },
+    "specificTimeTimeframes": [
+      "1m", "3m", "5m", "15m", "30m", "1H", "2H"
+    ]
+  }
 }
 ```
+
+The time field is enabled only when the active chart timeframe appears in
+`specificTimeTimeframes`. Longer intervals navigate by calendar date at
+`00:00` in the selected chart timezone.
 
 ### `POST /api/v1/chart/time-navigation/resolve`
 

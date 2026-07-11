@@ -24,7 +24,7 @@ func TestResolveOwnsShortcutPolicy(t *testing.T) {
 		{"3M", "1H", time.Date(2026, time.April, 11, 8, 0, 0, 0, time.UTC).Unix()},
 		{"6M", "2H", time.Date(2026, time.January, 11, 8, 0, 0, 0, time.UTC).Unix()},
 		{"YTD", "1D", time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).Unix()},
-		{"1Y", "1D", time.Date(2025, time.July, 11, 8, 0, 0, 0, time.UTC).Unix()},
+		{"1Y", "1W", time.Date(2025, time.July, 11, 8, 0, 0, 0, time.UTC).Unix()},
 		{"5Y", "1W", time.Date(2021, time.July, 11, 8, 0, 0, 0, time.UTC).Unix()},
 	}
 	for _, test := range tests {
@@ -65,14 +65,18 @@ func TestHTTPContract(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
-	var catalog struct {
-		Shortcuts []Shortcut `json:"shortcuts"`
-	}
+	var catalog CatalogResponse
 	if err := json.NewDecoder(response.Body).Decode(&catalog); err != nil {
 		t.Fatal(err)
 	}
 	if len(catalog.Shortcuts) != 9 || catalog.Shortcuts[0].ID != "1D" || catalog.Shortcuts[8].ID != "All" {
 		t.Fatalf("unexpected catalog: %+v", catalog.Shortcuts)
+	}
+	if catalog.GoTo.Hotkey.Label != "Alt+G" || !catalog.GoTo.Hotkey.AltKey {
+		t.Fatalf("unexpected Go-to hotkey: %+v", catalog.GoTo.Hotkey)
+	}
+	if len(catalog.GoTo.SpecificTimeTimeframes) != 7 || catalog.GoTo.SpecificTimeTimeframes[6] != "2H" {
+		t.Fatalf("unexpected specific-time policy: %+v", catalog.GoTo.SpecificTimeTimeframes)
 	}
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/chart/time-navigation/resolve", strings.NewReader(`{"shortcut":"YTD","anchorTime":1783756800}`))

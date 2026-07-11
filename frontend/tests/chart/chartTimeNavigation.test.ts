@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { Candle } from "../../src/types/market";
 import {
   calendarCells,
+  canSelectGoToTime,
   centeredLogicalRange,
   firstCandleIndexAtOrAfter,
   formatDateInput,
@@ -12,6 +13,7 @@ import {
   formatUtcOffset,
   goToDateLogicalRange,
   goToDialogPosition,
+  goToSelectionDraft,
   nearestCandleIndex,
   parseLocalDateTime,
 } from "../../src/components/chart/chartTimeNavigation";
@@ -98,6 +100,44 @@ test("date time formatting follows the selected chart time zone", () => {
   assert.equal(formatTimeInput(timeMs, "America/New_York"), "00:00");
   assert.equal(formatUtcOffset(new Date(timeMs), "America/New_York"), "UTC-4");
   assert.equal(formatUtcOffset(new Date(timeMs), "UTC"), "UTC");
+});
+
+test("go-to selection draft restores the last applied date and range", () => {
+  const selected = parseLocalDateTime(
+    "2026-07-02",
+    "00:00",
+    "Asia/Ho_Chi_Minh",
+  );
+  assert.notEqual(selected, null);
+  assert.deepEqual(
+    goToSelectionDraft(
+      { tab: "date", time: selected! },
+      "Asia/Ho_Chi_Minh",
+    ),
+    { tab: "date", singleDate: "2026-07-02", singleTime: "00:00" },
+  );
+
+  assert.deepEqual(
+    goToSelectionDraft(
+      { tab: "range", from: selected!, to: selected! + 3600 },
+      "Asia/Ho_Chi_Minh",
+    ),
+    {
+      tab: "range",
+      fromDate: "2026-07-02",
+      fromTime: "00:00",
+      toDate: "2026-07-02",
+      toTime: "01:00",
+    },
+  );
+});
+
+test("specific Go-to time follows backend timeframe capabilities", () => {
+  const allowed = ["1m", "5m", "1H", "2H"];
+  assert.equal(canSelectGoToTime("1m", allowed), true);
+  assert.equal(canSelectGoToTime("2H", allowed), true);
+  assert.equal(canSelectGoToTime("4H", allowed), false);
+  assert.equal(canSelectGoToTime("1D", allowed), false);
 });
 
 test("calendar grid always returns six weeks", () => {

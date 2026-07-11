@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Researched time-navigation parity (2026-07-11)
+- Extended the backend navigation catalog with the `Alt+G` Go-to hotkey and
+  backend-owned specific-time timeframe capabilities.
+- Aligned `1Y` with TradingView's documented weekly resolution and limited
+  clock-time selection to supported intraday intervals below four hours.
+- Documented the Zerodha, TradingView Help, Advanced Charts, Lightweight Charts,
+  timezone, and user-provided video references that govern future maintenance.
+
+### Fixed - Go-to selection persistence (2026-07-11)
+- Preserved the last successfully applied Date or Custom range when reopening
+  the chart Go-to dialog, matching TradingView instead of resetting to the
+  latest candle on every open.
+- Added regression coverage for restoring remembered values in the selected
+  chart timezone.
+
 ### Changed - Backend-owned chart time shortcuts (2026-07-11)
 - Added public chart time-navigation catalog and resolve APIs; the Go backend
   now owns shortcut order, tooltip, target timeframe, and UTC range math.

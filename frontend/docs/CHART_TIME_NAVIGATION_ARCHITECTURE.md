@@ -17,6 +17,8 @@ The desktop reference is TradingView's lower chart time strip:
 - a `Go to` dialog with `Date` and `Custom range` tabs,
 - Date mode jumps to the requested date/time and zooms into a readable
   TradingView-like candle window,
+- reopening `Go to` restores the last successfully applied Date or Custom range
+  instead of resetting to the latest candle,
 - Custom range mode applies an explicit start/end visible range.
 
 Similar charting products use the same split: quick range buttons for common
@@ -26,6 +28,21 @@ as a range selector with preconfigured buttons plus min/max date inputs.
 ## 2. Research Sources
 
 - User-provided TradingView screenshots in the 2026-07-04 task thread.
+- User-provided behavior clip: [YouTube `6FqnMwsiXq4`](https://www.youtube.com/watch?v=6FqnMwsiXq4).
+- [TradingView Help: go to a specific date](https://vn.tradingview.com/support/solutions/43000482911/):
+  the bottom toolbar supports both a desired date and a custom date range.
+- [Zerodha/Kite TradingView guide](https://support.zerodha.com/category/trading-and-markets/charts-and-orders/charts/articles/go-to-specific-date-on-chart):
+  `Alt+G` opens Go-to and specific clock times are available only for intraday
+  candles from one minute through three hours.
+- [TradingView Advanced Charts time-scale docs](https://www.tradingview.com/charting-library-docs/latest/ui_elements/Time-Scale/):
+  a timeframe button changes both chart resolution and visible range; the
+  documented default for `1Y` is weekly resolution.
+- [Lightweight Charts 5.1 time-scale guide](https://tradingview.github.io/lightweight-charts/docs/5.1/time-scale):
+  absolute visible ranges clamp to loaded data, while logical ranges can extend
+  beyond it and are appropriate for centering Go-to results.
+- [TradingView timezone docs](https://www.tradingview.com/charting-library-docs/latest/ui_elements/timezones/):
+  chart and symbol timezone are distinct contracts and timezone affects time
+  scale display and alignment.
 - TradingView Lightweight Charts `ITimeScaleApi` docs:
   `setVisibleRange`, `setVisibleLogicalRange`, `fitContent`,
   `getVisibleLogicalRange`, `timeToCoordinate`, and related time-scale methods.
@@ -101,8 +118,8 @@ and an absolute UTC `from/to` range.
   | `1M` | `30m` |
   | `3M` | `1H` |
   | `6M` | `2H` |
-  | `YTD`, `1Y` | `1D` |
-  | `5Y` | `1W` |
+  | `YTD` | `1D` |
+  | `1Y`, `5Y` | `1W` |
   | `All` | `1M` |
 
 - Tooltip policy:
@@ -115,7 +132,7 @@ and an absolute UTC `from/to` range.
   | `3M` | `3 months in 1 hour intervals` |
   | `6M` | `6 months in 2 hours intervals` |
   | `YTD` | `Year to date in 1 day intervals` |
-  | `1Y` | `1 year in 1 day intervals` |
+  | `1Y` | `1 year in 1 week intervals` |
   | `5Y` | `5 years in 1 week intervals` |
   | `All` | `All data in 1 month intervals` |
 
@@ -139,6 +156,20 @@ and an absolute UTC `from/to` range.
 Do not restore a frontend fallback table for this policy. A failed catalog call
 leaves the shortcut strip unavailable, making backend/API failures visible
 instead of silently allowing client and server rules to drift.
+
+## 5.1 Go-to Capability Contract
+
+- The same catalog response owns the `Alt+G` hotkey and the list of timeframes
+  that permit a specific clock time.
+- With the currently supported intervals, time input is enabled for `1m`, `3m`,
+  `5m`, `15m`, `30m`, `1H`, and `2H`. `4H` and slower intervals navigate by
+  date at `00:00` in the selected chart timezone.
+- The frontend must not infer this boundary from timeframe strings; it consumes
+  `goTo.specificTimeTimeframes` so adding `3H` later requires only backend
+  catalog support plus the normal timeframe implementation.
+- Go-to Date resolves to the first loaded candle at or after the requested
+  instant and applies a centered logical range. Custom range applies absolute
+  bounds because its purpose is to show the requested interval.
 
 ## 6. Top Interval Selector Contract
 
@@ -297,6 +328,7 @@ npm run build
 Manual checks:
 
 - click each shortcut and confirm the chart range changes,
+- press `Alt+G` and confirm it opens the same dialog as the calendar button,
 - open `Go to`, pick a single date, and confirm the chart zooms into a readable
   candle window around the target,
 - enter a date such as `2026-07-01` / `00:00` and confirm the chart centers the
@@ -306,6 +338,10 @@ Manual checks:
 - click, drag, wheel, or touch the chart and confirm the temporary marker/chip
   disappears immediately,
 - switch to `Custom range`, enter start/end values, and confirm range applies,
+- close and reopen `Go to` after applying Date and Custom range; confirm the
+  last applied tab and values are restored,
+- confirm the time fields are enabled through `2H` and disabled/reset to
+  `00:00` on `4H`, `1D`, `1W`, and `1M`,
 - verify current clock displays the local time and UTC offset,
 - click the clock, choose `UTC` and `America/New_York`, then confirm the clock,
   offset, Go-to defaults, and marker chip follow the selected timezone,

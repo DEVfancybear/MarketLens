@@ -11,6 +11,22 @@ type Shortcut struct {
 	Tooltip   string `json:"tooltip"`
 }
 
+type Hotkey struct {
+	Label  string `json:"label"`
+	Key    string `json:"key"`
+	AltKey bool   `json:"altKey"`
+}
+
+type GoToCapabilities struct {
+	Hotkey                 Hotkey   `json:"hotkey"`
+	SpecificTimeTimeframes []string `json:"specificTimeTimeframes"`
+}
+
+type CatalogResponse struct {
+	Shortcuts []Shortcut       `json:"shortcuts"`
+	GoTo      GoToCapabilities `json:"goTo"`
+}
+
 type Resolution struct {
 	Shortcut  string `json:"shortcut"`
 	Timeframe string `json:"timeframe"`
@@ -27,7 +43,7 @@ var shortcuts = []Shortcut{
 	{ID: "3M", Timeframe: "1H", Tooltip: "3 months in 1 hour intervals"},
 	{ID: "6M", Timeframe: "2H", Tooltip: "6 months in 2 hours intervals"},
 	{ID: "YTD", Timeframe: "1D", Tooltip: "Year to date in 1 day intervals"},
-	{ID: "1Y", Timeframe: "1D", Tooltip: "1 year in 1 day intervals"},
+	{ID: "1Y", Timeframe: "1W", Tooltip: "1 year in 1 week intervals"},
 	{ID: "5Y", Timeframe: "1W", Tooltip: "5 years in 1 week intervals"},
 	{ID: "All", Timeframe: "1M", Tooltip: "All data in 1 month intervals"},
 }
@@ -36,6 +52,18 @@ func Shortcuts() []Shortcut {
 	result := make([]Shortcut, len(shortcuts))
 	copy(result, shortcuts)
 	return result
+}
+
+func Catalog() CatalogResponse {
+	return CatalogResponse{
+		Shortcuts: Shortcuts(),
+		GoTo: GoToCapabilities{
+			Hotkey: Hotkey{Label: "Alt+G", Key: "g", AltKey: true},
+			SpecificTimeTimeframes: []string{
+				"1m", "3m", "5m", "15m", "30m", "1H", "2H",
+			},
+		},
+	}
 }
 
 func Resolve(id string, anchorUnix int64) (Resolution, error) {

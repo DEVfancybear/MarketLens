@@ -18,6 +18,14 @@ export type TimeNavigationShortcut = {
   tooltip: string;
 };
 
+export type TimeNavigationCatalog = {
+  shortcuts: TimeNavigationShortcut[];
+  goTo: {
+    hotkey: { label: string; key: string; altKey: boolean };
+    specificTimeTimeframes: string[];
+  };
+};
+
 export type TimeNavigationResolution = {
   shortcut: TimeRangeShortcut;
   timeframe: Timeframe;
@@ -27,13 +35,8 @@ export type TimeNavigationResolution = {
   to?: number;
 };
 
-export async function getTimeNavigationShortcuts(): Promise<
-  TimeNavigationShortcut[]
-> {
-  const response = await getJson<{ shortcuts: TimeNavigationShortcut[] }>(
-    "chart/time-navigation/shortcuts",
-  );
-  return response.shortcuts;
+export function getTimeNavigationCatalog(): Promise<TimeNavigationCatalog> {
+  return getJson<TimeNavigationCatalog>("chart/time-navigation/shortcuts");
 }
 
 export function resolveTimeNavigationShortcut(
