@@ -108,3 +108,13 @@ test("position prefill includes lot quantity from account risk and SL distance",
     },
   );
 });
+
+test("position prefill applies the same TradingView leverage cap as chart labels", () => {
+  const drawing = position("long");
+  drawing.riskValue = 100;
+  drawing.leverage = 1;
+  assert.equal(
+    buildOrderPrefillFromPositionDrawing(drawing, 101, { symbolInfo })?.quantity,
+    10,
+  );
+});

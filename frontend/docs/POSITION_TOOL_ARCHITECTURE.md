@@ -1,18 +1,20 @@
 # Long / Short Position Tool Architecture
 
-Last updated: 2026-07-05
+Last updated: 2026-07-11
 
 This document defines the shared contract for the TradingView-style Long and
 Short Position drawing tools.
 
 ## Research Sources
 
-Researched on 2026-07-04.  These sources define the behavior this tool should
+Researched on 2026-07-11. These sources define the behavior this tool should
 track.  When a source describes product behavior but not an implementation
 detail, the implementation rule below is marked as an inference.
 
 | Source | What it confirms | Implementation decision |
 | --- | --- | --- |
+| TradingView Help Center, Long/Short calculation guide: https://www.tradingview.com/support/solutions/43000475660-how-to-use-long-and-short-position-drawing-tools/ | Position size is `min(QtyRisk, QtyLvg)`. Risk quantity divides risk money by stop distance, point value, and lot size; leverage quantity uses account size, leverage, entry price, point value, and lot size. Target/stop balances and PnL multiply price offset by quantity, point value, and lot size. Historical drawings use the close at the right edge for open PnL; future drawings use the latest price. | Keep this complete calculation in `positionMetrics.ts`. Renderer labels must use the leverage-capped quantity and actual projected loss, rather than assuming the configured risk is always fully deployable. Resolve historical mark price from the drawing's right edge. |
+| TradingView Help Center, Long Position drawing tool: https://www.tradingview.com/support/solutions/43000517002-long-position-drawing-tool/ | Inputs include account size, lot size, risk, entry, leverage, target/stop ticks and prices, and quantity precision. Style includes price labels, selectable stats, compact stats, and always-show stats; visibility is timeframe-aware. | Preserve the existing Inputs/Style fields and compact/selection behavior. Timeframe-specific visibility remains a follow-up because the current generic drawing visibility model only stores one `visible` flag. |
 | TradingView Advanced Charts Symbology: https://www.tradingview.com/charting-library-docs/latest/connecting_data/Symbology/ | Price display is driven by symbol metadata. In decimal format, tick size is calculated from `minmov / pricescale`; examples include `0.01`, `0.0125`, and `0.20` ticks. It also documents variable tick sizes by price band. | Position `Ticks`, `Price`, and label formatting must read the active symbol's `tickSize`. Do not infer ticks from price magnitude. Future variable tick support should belong in market-symbol metadata, not in `PositionTool.ts`. |
 | EBC Financial Group walkthrough: https://www.ebc.com/forex/mastering-tradingview-tools-to-predict-market-moves.html | Places Long/Short under TradingView projection tools. Long Position is selected for bullish planning, one click sets the prospective entry, and the chart shows take-profit and stop-loss. Short Position works in the opposite direction. Settings are opened from the generated red/green zone. | A new Long/Short drawing is a projection object, not an order. One click creates entry + default TP/SL. Long clamps target above entry and stop below entry; Short clamps target below entry and stop above entry. |
 | H2S Media risk-settings walkthrough: https://www.how2shout.com/how-to/change-risk-settings-long-position-tradingview.html | Long/Short is opened from Forecasting & Measurement / Projection tools. After selecting it, the cursor becomes a crosshair; a click sets the entry and creates default stop-loss/take-profit. Double-click opens settings. Account size and risk are inputs. Stop-loss/take-profit can be adjusted by typing exact prices or dragging chart lines. TradingView automatically recalculates position size and risk/reward ratio. | The dialog keeps account size, risk, entry, stop, target, ticks, quantity precision, and stats. Position inputs must be editable by typed price and chart dragging. Movement updates labels immediately and preserves the three-point persisted model. |
@@ -47,7 +49,8 @@ handles, but they are virtual handles derived from this three-point model.
 
 ## Shared Helpers
 
-- `positionMetrics.ts`: tick/price math and formatting.
+- `positionMetrics.ts`: tick/price math, historical mark resolution, and the
+  official TradingView quantity/PnL/account-balance projection formulas.
 - `positionInput.ts`: numeric draft parsing for settings inputs.
 - `positionGeometry.ts`: six virtual handles, body move, handle resize, side
   inference, tick snapping, and long/short level clamping.
@@ -113,9 +116,9 @@ Prefill mapping:
 - `points[2].price` -> stop loss.
 - `riskValue` -> risk percent when `riskUnit` is `%`.
 - `accountSize`, `riskValue`, `riskUnit`, `entry`, and `stop` -> `quantity`
-  when symbol lot metadata is available. The formula is:
-  `risk money / (abs(stop - entry) / tickSize * tickValue)`, normalized to the
-  symbol lot step and clamped to min/max lot.
+  when symbol lot metadata is available. It uses the same
+  `min(QtyRisk, QtyLvg)` projection as the chart label, then normalizes to the
+  broker symbol lot step and clamps to min/max lot.
 - `drawing.id` -> ticket source `drawingId`.
 - Long/Short side sets the planned Buy/Sell side in the ticket.
 - Order type is inferred from entry versus current market price:
@@ -154,6 +157,13 @@ Default labels follow the TradingView risk/reward visual model:
   projected account amount are appended when stats are enabled.
 - Entry label displays open P&L, quantity, and Risk/Reward Ratio when account
   and risk settings are available.
+- Quantity is `min(QtyRisk, QtyLvg)`, so low leverage can make the realized stop
+  loss smaller than the configured risk budget. Target/stop balances use that
+  actual quantity, point value, and lot size.
+- Target/stop amount stats include both projected Profit/Loss and closing
+  account balance. Open P&L uses the close at the drawing's right edge for
+  historical drawings and the latest close when the right edge is in the
+  future.
 - Target/Stop labels sit inside the box near the left edge.
 - Entry label is centered on the entry line.
 - If an older saved drawing does not have position stats or account/risk fields,
@@ -188,3 +198,5 @@ The TypeScript suite under `tests/position/` verifies:
 - target/stop clamping to the correct side,
 - Trade ticket prefill payloads for Long and Short positions,
 - lot sizing from SL-entry distance, risk money, tick value, and lot step.
+- official risk-vs-leverage quantity cap, point-value/lot-size PnL, account
+  balances, and historical right-edge mark price.

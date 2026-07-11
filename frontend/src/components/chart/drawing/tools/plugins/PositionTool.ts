@@ -30,7 +30,9 @@ import {
   pointDist,
 } from "../ToolRegistry";
 import {
+  calculatePositionProjection,
   formatPriceByTick,
+  positionMarkPrice,
   safeTickSize,
   ticksBetween,
 } from "../positionMetrics";
@@ -40,6 +42,7 @@ import {
   POSITION_ANCHORS,
 } from "../positionGeometry";
 import { PRICE_SCALE_MIN_WIDTH } from "@/components/chart/chartVisualProfile";
+import { mt5SymbolInfoAtom } from "@/store/mt5Store";
 import { line, chip, canvasFont, applyStyle } from "./shared";
 
 /**
@@ -75,11 +78,13 @@ const LABEL_HIT_PAD = 20;
 const DEFAULT_ACCOUNT_SIZE = 1000;
 const DEFAULT_RISK_VALUE = 25;
 
-/** Latest traded price from the chart's master candle series, or null. */
-function currentPrice(): number | null {
+/** TradingView mark: right-edge close for history, latest close in the future. */
+function currentPrice(drawing: Drawing): number | null {
   const candles = getDefaultStore().get(candlesAtom);
-  const last = candles[candles.length - 1];
-  return last ? last.close : null;
+  const rightEdgeTime = drawing.points[1]?.time ?? drawing.points[0]?.time;
+  return rightEdgeTime == null
+    ? (candles[candles.length - 1]?.close ?? null)
+    : positionMarkPrice(candles, rightEdgeTime);
 }
 
 function activeMarketMeta() {
@@ -89,6 +94,17 @@ function activeMarketMeta() {
 
 function activeTickSize(): number {
   return safeTickSize(activeMarketMeta()?.tickSize);
+}
+
+function activePointValue(): number {
+  const store = getDefaultStore();
+  const symbol = store.get(symbolAtom);
+  const info = store.get(mt5SymbolInfoAtom)[symbol];
+  const tickSize = info?.tickSize ?? info?.point;
+  return Number.isFinite(info?.tickValue) && Number(info?.tickValue) > 0 &&
+    Number.isFinite(tickSize) && Number(tickSize) > 0
+    ? Number(info?.tickValue) / Number(tickSize)
+    : 1;
 }
 
 function fmtPrice(p: number): string {
@@ -466,7 +482,7 @@ function render(
   // Has price reached the target / stop? (direction-agnostic — works for both
   // Long and Short.) When it has, TradingView brightens that zone so the trader
   // sees the outcome of the position at a glance.
-  const price = currentPrice();
+  const price = currentPrice(d);
   const reachedTarget =
     price != null && (target >= entry ? price >= target : price <= target);
   const reachedStop =
@@ -618,11 +634,26 @@ function render(
   // in-box Target/Stop chips stay focused on distance, percent, ticks, amount.
   // We pre-measure every label so x-offsets are exact — no magic constants.
   if (d.showLabels !== false) {
-    const risk = Math.abs(entry - stop);
-    const reward = Math.abs(target - entry);
-    const rr = risk > 0 ? reward / risk : 0;
-    const tPct = entry ? (reward / Math.abs(entry)) * 100 : 0;
-    const sPct = entry ? (risk / Math.abs(entry)) * 100 : 0;
+    const accountSize = d.accountSize ?? DEFAULT_ACCOUNT_SIZE;
+    const riskValue = d.riskValue ?? DEFAULT_RISK_VALUE;
+    const projection = calculatePositionProjection({
+      side: d.tool === "long" ? "long" : "short",
+      entryPrice: entry,
+      targetPrice: target,
+      stopPrice: stop,
+      accountSize,
+      riskValue,
+      riskUnit: d.riskUnit ?? "%",
+      lotSize: d.lotSize ?? 1,
+      leverage: d.leverage ?? 1,
+      pointValue: activePointValue(),
+      markPrice: price,
+    });
+    const risk = projection.stopOffset;
+    const reward = projection.targetOffset;
+    const rr = projection.riskReward;
+    const tPct = projection.targetPercent;
+    const sPct = projection.stopPercent;
     const tickSize = activeTickSize();
     const tTicks = ticksBetween(entry, target, tickSize);
     const sTicks = ticksBetween(entry, stop, tickSize);
@@ -644,31 +675,21 @@ function render(
     let stopAmountTxt = "";
     let entryStatsTxt = "";
     {
-      const accountSize = d.accountSize ?? DEFAULT_ACCOUNT_SIZE;
-      const riskValue = d.riskValue ?? DEFAULT_RISK_VALUE;
-      const riskAmount =
-        (d.riskUnit ?? "%") === "%"
-          ? accountSize * (riskValue / 100)
-          : riskValue;
-      qty = risk > 0 ? (riskAmount / risk) * (d.lotSize ?? 1) : 0;
-      const profitAmount = qty * reward;
+      qty = projection.quantity;
       const cur = d.accountCurrency ?? "USD";
       const prec = d.qtyPrecision ?? 2;
-      const openPnl =
-        price == null
-          ? 0
-          : (d.tool === "long" ? price - entry : entry - price) * qty;
       if (showStats && stats.has("amount")) {
-        targetAmountTxt = `Amount: ${fmtCurrency(
-          accountSize + profitAmount,
-          cur,
-        )}`;
-        stopAmountTxt = `Amount: ${fmtCurrency(accountSize - riskAmount, cur)}`;
+        targetAmountTxt = compact
+          ? `+${fmtCurrency(projection.profitPnl, cur)}  ${fmtCurrency(projection.targetBalance, cur)}`
+          : `Profit: ${fmtCurrency(projection.profitPnl, cur)}, Amount: ${fmtCurrency(projection.targetBalance, cur)}`;
+        stopAmountTxt = compact
+          ? `${fmtCurrency(projection.lossPnl, cur)}  ${fmtCurrency(projection.stopBalance, cur)}`
+          : `Loss: ${fmtCurrency(projection.lossPnl, cur)}, Amount: ${fmtCurrency(projection.stopBalance, cur)}`;
         const resolvedPnl = isTpHit
-          ? profitAmount
+          ? projection.profitPnl
           : isSlHit
-            ? -riskAmount
-            : openPnl;
+            ? projection.lossPnl
+            : projection.openPnl;
         const pnlLabel = isTpHit || isSlHit ? "Closed PnL" : "Open P&L";
         entryStatsTxt = compact
           ? `P&L ${fmtCurrency(resolvedPnl, cur)}  Qty ${qty.toFixed(prec)}`

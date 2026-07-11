@@ -1,9 +1,11 @@
 import type { Drawing, OrderPrefill, OrderType, Side } from "@/types";
 import {
-  calculatePositionVolumeFromRisk,
-  positionRiskAmount,
+  normalizePositionVolume,
+  positionTickSize,
+  positionTickValue,
   type PositionLotSymbolInfo,
 } from "../../../../services/positionLotSizing";
+import { calculatePositionProjection } from "./positionMetrics";
 
 export function inferPositionOrderType(
   side: Side,
@@ -40,20 +42,31 @@ export function buildOrderPrefillFromPositionDrawing(
   if (drawing.riskUnit === "%" && Number.isFinite(drawing.riskValue)) {
     prefill.riskPct = Number(drawing.riskValue);
   }
-  if (context.symbolInfo && Number.isFinite(stop)) {
-    const riskAmount = positionRiskAmount(
-      drawing.accountSize,
-      drawing.riskValue,
-      drawing.riskUnit,
-    );
-    if (riskAmount != null) {
-      const volume = calculatePositionVolumeFromRisk({
-        entryPrice: Number(entry),
-        stopPrice: Number(stop),
-        riskAmount,
-        symbolInfo: context.symbolInfo,
-      });
-      if (volume != null) prefill.quantity = volume;
+  if (
+    context.symbolInfo &&
+    Number.isFinite(stop) &&
+    Number.isFinite(drawing.accountSize) &&
+    Number.isFinite(drawing.riskValue)
+  ) {
+    const projection = calculatePositionProjection({
+      side,
+      entryPrice: Number(entry),
+      targetPrice: Number.isFinite(target) ? Number(target) : Number(entry),
+      stopPrice: Number(stop),
+      accountSize: Number(drawing.accountSize),
+      riskValue: Number(drawing.riskValue),
+      riskUnit: drawing.riskUnit ?? "%",
+      lotSize: drawing.lotSize ?? 1,
+      leverage: drawing.leverage ?? 1,
+      pointValue:
+        positionTickValue(context.symbolInfo) /
+        positionTickSize(context.symbolInfo),
+    });
+    if (projection.quantity > 0) {
+      prefill.quantity = normalizePositionVolume(
+        projection.quantity,
+        context.symbolInfo,
+      );
     }
   }
   return prefill;

@@ -15,6 +15,10 @@ TradingView-style contract:
 - Long and Short use the same math, with opposite profit/stop directions.
 - Lot sizing is derived from Long/Short `SL-entry` distance, account risk,
   symbol tick value, and broker lot step/min/max.
+- Drawing projection quantity follows TradingView's `min(QtyRisk, QtyLvg)`
+  contract and its PnL/balance calculations include point value and lot size.
+- Historical open PnL uses the candle close at the drawing's right edge; a
+  drawing extending into the future uses the latest close.
 - Numeric inputs must allow temporary drafts like empty text, `-`, or `.`
   without committing them as zero.
 
@@ -44,6 +48,7 @@ Add tests here when changing:
 - Position handle movement, resize behavior, or body dragging
 - Position drawing to Trade ticket prefill behavior
 - Position drawing to Trade ticket lot/quantity prefill behavior
+- Leverage-capped drawing quantity parity between chart labels and Trade ticket
 - Symbol metadata that changes tick size or price formatting
 
 Prefer testing the shared math helpers instead of duplicating component-level

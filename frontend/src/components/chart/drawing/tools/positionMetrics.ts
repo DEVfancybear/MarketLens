@@ -112,3 +112,122 @@ export function formatPriceByTick(
   const fixed = roundToTick(price, tick).toFixed(precision);
   return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
 }
+
+export interface PositionProjectionInput {
+  side: "long" | "short";
+  entryPrice: number;
+  targetPrice: number;
+  stopPrice: number;
+  accountSize: number;
+  riskValue: number;
+  riskUnit: "%" | "amount";
+  lotSize: number;
+  leverage: number;
+  /** Monetary value of a one-price-unit move for one lot/contract. */
+  pointValue?: number;
+  markPrice?: number | null;
+}
+
+export interface PositionProjectionMetrics {
+  riskSize: number;
+  quantityByRisk: number;
+  quantityByLeverage: number;
+  quantity: number;
+  targetOffset: number;
+  stopOffset: number;
+  targetPercent: number;
+  stopPercent: number;
+  riskReward: number;
+  profitPnl: number;
+  lossPnl: number;
+  openPnl: number;
+  targetBalance: number;
+  stopBalance: number;
+}
+
+function positive(value: number | null | undefined, fallback: number): number {
+  return Number.isFinite(value) && Number(value) > 0 ? Number(value) : fallback;
+}
+
+/**
+ * TradingView Long/Short Position projection math.
+ *
+ * QtyRisk = (RiskSize / (StopOffset * PointValue)) / LotSize
+ * QtyLvg  = (AccountSize * Leverage / EntryPrice) * PointValue / LotSize
+ * Qty     = min(QtyRisk, QtyLvg)
+ */
+export function calculatePositionProjection(
+  input: PositionProjectionInput,
+): PositionProjectionMetrics {
+  const accountSize = positive(input.accountSize, 0);
+  const entry = positive(Math.abs(input.entryPrice), 0);
+  const lotSize = positive(input.lotSize, 1);
+  const leverage = positive(input.leverage, 1);
+  const pointValue = positive(input.pointValue, 1);
+  const targetOffset = Math.abs(input.targetPrice - input.entryPrice);
+  const stopOffset = Math.abs(input.entryPrice - input.stopPrice);
+  const riskValue = Number.isFinite(input.riskValue)
+    ? Math.max(0, input.riskValue)
+    : 0;
+  const riskSize =
+    input.riskUnit === "%" ? accountSize * (riskValue / 100) : riskValue;
+  const quantityByRisk =
+    stopOffset > 0
+      ? riskSize / (stopOffset * pointValue) / lotSize
+      : 0;
+  const quantityByLeverage =
+    entry > 0 ? ((accountSize * leverage) / entry) * pointValue / lotSize : 0;
+  const quantity = Math.max(
+    0,
+    Math.min(quantityByRisk, quantityByLeverage),
+  );
+  const valueMultiplier = quantity * pointValue * lotSize;
+  const profitPnl = targetOffset * valueMultiplier;
+  const lossPnl = -stopOffset * valueMultiplier;
+  const mark = Number.isFinite(input.markPrice)
+    ? Number(input.markPrice)
+    : input.entryPrice;
+  const openOffset =
+    input.side === "long" ? mark - input.entryPrice : input.entryPrice - mark;
+  const openPnl = openOffset * valueMultiplier;
+
+  return {
+    riskSize,
+    quantityByRisk,
+    quantityByLeverage,
+    quantity,
+    targetOffset,
+    stopOffset,
+    targetPercent: entry > 0 ? (targetOffset / entry) * 100 : 0,
+    stopPercent: entry > 0 ? (stopOffset / entry) * 100 : 0,
+    riskReward: stopOffset > 0 ? targetOffset / stopOffset : 0,
+    profitPnl,
+    lossPnl,
+    openPnl,
+    targetBalance: accountSize + profitPnl,
+    stopBalance: accountSize + lossPnl,
+  };
+}
+
+export interface PositionCloseCandle {
+  time: number;
+  close: number;
+}
+
+/**
+ * TradingView uses the close at the drawing's right edge for historical
+ * projections, and the latest close when the drawing extends into the future.
+ */
+export function positionMarkPrice(
+  candles: readonly PositionCloseCandle[],
+  rightEdgeTime: number,
+): number | null {
+  const last = candles[candles.length - 1];
+  if (!last) return null;
+  if (rightEdgeTime >= last.time) return last.close;
+  for (let i = candles.length - 1; i >= 0; i -= 1) {
+    const candle = candles[i];
+    if (candle.time <= rightEdgeTime) return candle.close;
+  }
+  return last.close;
+}
