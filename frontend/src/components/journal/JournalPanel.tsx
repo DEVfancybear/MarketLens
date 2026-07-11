@@ -1,10 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   journalEntriesAtom,
   removeJournalEntryAtom,
   updateJournalEntryAtom,
   attachScreenshotAtom,
+  loadJournalAtom,
+  journalLoadingAtom,
+  journalErrorAtom,
 } from "@/store/journalStore";
 import { useAtomValue, useSetAtom } from "jotai";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -24,6 +27,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import type { ScreenshotPhase } from "@/types";
+import { backendSessionAtom } from "@/store/authStore";
 
 const PHASES: { phase: ScreenshotPhase; label: string }[] = [
   { phase: "before", label: "Before" },
@@ -37,8 +41,16 @@ export function JournalPanel() {
   const remove = useSetAtom(removeJournalEntryAtom);
   const update = useSetAtom(updateJournalEntryAtom);
   const attach = useSetAtom(attachScreenshotAtom);
+  const load = useSetAtom(loadJournalAtom);
+  const loading = useAtomValue(journalLoadingAtom);
+  const error = useAtomValue(journalErrorAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
   const log = useSetAtom(logAtom);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    void load();
+  }, [backendSession, load]);
 
   const capture = async (entryId: string, phase: ScreenshotPhase) => {
     const blob = await captureChart();
@@ -89,7 +101,17 @@ export function JournalPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {entries.length === 0 && (
+        {loading && entries.length === 0 && (
+          <div className="px-3 py-6 text-center text-2xs text-ink-faint">
+            Loading journal…
+          </div>
+        )}
+        {error && (
+          <div className="border-b border-terminal-border px-3 py-1.5 text-2xs text-choch">
+            Backend sync unavailable. Showing the local journal cache.
+          </div>
+        )}
+        {!loading && entries.length === 0 && (
           <div className="px-3 py-6 text-center text-2xs text-ink-faint">
             No trades yet. Closed simulated trades are journaled automatically.
           </div>
@@ -179,16 +201,22 @@ export function JournalPanel() {
                       {e.screenshots.map((s) => (
                         <a
                           key={s.id}
-                          href={s.thumb}
-                          target="_blank"
-                          rel="noreferrer"
+                          href={s.thumb || undefined}
+                          target={s.thumb ? "_blank" : undefined}
+                          rel={s.thumb ? "noreferrer" : undefined}
                           className="group relative"
                         >
-                          <img
-                            src={s.thumb}
-                            alt={s.phase}
-                            className="h-16 w-28 rounded border border-terminal-border object-cover"
-                          />
+                          {s.thumb ? (
+                            <img
+                              src={s.thumb}
+                              alt={s.phase}
+                              className="h-16 w-28 rounded border border-terminal-border object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-16 w-28 items-center justify-center rounded border border-terminal-border text-[9px] text-ink-faint">
+                              Preview unavailable
+                            </span>
+                          )}
                           <span
                             className={cn(
                               "absolute bottom-0 left-0 rounded-tr bg-black/60 px-1 text-[8px] uppercase text-white",

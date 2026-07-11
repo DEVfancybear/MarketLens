@@ -12,7 +12,6 @@ import { useMt5Bridge } from "@/hooks/useMt5Bridge";
 import { useAuthSession } from "@/hooks/useAuthSession";
 import { useWorkspaceBootstrap } from "@/hooks/useWorkspaceBootstrap";
 import { useNotificationDeepLink } from "@/hooks/useNotificationDeepLink";
-import { loadJournalAtom } from "@/store/journalStore";
 import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
 import { hydratePushAtom } from "@/store/notificationStore";
@@ -36,15 +35,14 @@ export function GlobalRuntime() {
   useWorkspaceBootstrap(); // applies backend settings/watchlists after backend auth
   useNotificationDeepLink(); // routes notification clicks to the alert symbol
 
-  // Hydrate journal + alerts from persisted storage (IndexedDB / localStorage).
-  const loadJournal = useSetAtom(loadJournalAtom);
+  // Journal is intentionally lazy-loaded by its panel (Phase 11 can include
+  // screenshot metadata); the small alert stores still hydrate globally.
   const hydrateAlerts = useSetAtom(hydrateAlertsAtom);
   const hydratePush = useSetAtom(hydratePushAtom);
   useEffect(() => {
-    void loadJournal();
     hydrateAlerts();
     hydratePush();
-  }, [loadJournal, hydrateAlerts, hydratePush]);
+  }, [hydrateAlerts, hydratePush]);
 
   return <ReplayClientRuntime />;
 }

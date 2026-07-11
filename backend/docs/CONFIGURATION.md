@@ -18,6 +18,24 @@ Copy `backend/.env.example` to `backend/.env` for local development.
 | `FIREBASE_CLIENT_EMAIL` | string | empty | Firebase Admin service-account email |
 | `FIREBASE_PRIVATE_KEY` | string | empty | Firebase Admin PEM; escaped `\n` newlines are supported |
 | `CORS_ALLOWED_ORIGINS` | CSV | `http://localhost:3000` | Credentialed browser origins; wildcard is unsupported |
+| `OBJECT_STORAGE_ENDPOINT` | URL | AWS regional S3 endpoint | Optional S3-compatible endpoint for R2/MinIO |
+| `OBJECT_STORAGE_BUCKET` | string | empty | Screenshot bucket; required with access/secret keys |
+| `OBJECT_STORAGE_REGION` | string | `us-east-1` | SigV4 signing region (`auto` for Cloudflare R2) |
+| `OBJECT_STORAGE_ACCESS_KEY` | string | empty | S3-compatible access key (server only) |
+| `OBJECT_STORAGE_SECRET_KEY` | string | empty | S3-compatible secret key (server only) |
+| `OBJECT_STORAGE_SESSION_TOKEN` | string | empty | Optional temporary credential session token |
+| `OBJECT_STORAGE_PATH_STYLE` | boolean | `false` | Use `/bucket/key` URLs; normally true for local MinIO |
+
+### Phase 11 screenshot storage
+
+Journal CRUD only needs the database and normal authenticated API configuration. Screenshot bytes
+use a two-step direct-browser upload and require all three of `OBJECT_STORAGE_BUCKET`,
+`OBJECT_STORAGE_ACCESS_KEY`, and `OBJECT_STORAGE_SECRET_KEY`; partial credential configuration is
+rejected at startup. With all three empty, journal CRUD remains available and screenshot upload
+returns HTTP 503 so the frontend can retain its IndexedDB fallback.
+
+The bucket CORS policy must allow `PUT` and `GET` from the frontend origin and allow the
+`Content-Type` request header. Credentials never belong in frontend environment variables.
 
 ### Phase 10 push responsibility
 

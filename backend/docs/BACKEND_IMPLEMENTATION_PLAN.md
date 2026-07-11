@@ -1,6 +1,6 @@
 # Backend Implementation Plan (phased)
 
-> Status: Phases 0-5 are implemented. Phases 6+ remain as the per-resource persistence roadmap.
+> Status: Phases 0-11 are implemented. Phase 12+ remains as the per-resource persistence roadmap.
 > Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow), and `API.md` (endpoint contract). Each
 > phase is independently shippable and has explicit acceptance criteria so progress is unambiguous.
 
@@ -473,6 +473,12 @@ Implementation notes discovered during the frontend audit:
 
 ### Phase 11 — Journal + screenshots
 
+> **Implemented (2026-07-11).** Migration `0015_journal`, `internal/journal`, the S3-compatible
+> SigV4 signer in `internal/storage`, and the frontend lazy/local-first sync are live. Because the
+> planned `sim_positions` table does not exist yet, `position_id` is nullable without an FK; Phase
+> 13 must add that constraint. Screenshot upload remains locally buffered when object storage is
+> not configured.
+
 **Goal:** Persist trade journal entries and their screenshots. The heaviest phase — introduces
 **object storage** (image bytes never touch the DB or the API body).
 
@@ -483,14 +489,14 @@ Implementation notes discovered during the frontend audit:
 + screenshot blobs (IndexedDB `{ id, blob }`).
 
 **Steps**
-1. Migration `0007_journal` — requires `sim_positions` (`0006_trading`) first for the `position_id`
+1. Migration `0015_journal` — requires `sim_positions` (future Phase 13) for the `position_id`
    FK. If Phase 13 hasn't run, make `position_id` nullable-without-FK and add the FK later.
-2. Add an object-storage client (`internal/storage`, S3/R2 via `aws-sdk-go-v2` or MinIO). Config:
-   bucket, region, credentials, public/base URL.
+2. Add an object-storage client (`internal/storage`, dependency-free AWS SigV4 compatible with
+   S3/R2/MinIO). Config: endpoint, bucket, region, credentials, session token, path-style mode.
 3. Queries: journal CRUD with the trade fields above + filters (`symbol`, `tag` via the `gin(tags)`
    index, pagination by `entry_time`); insert/list/delete screenshot metadata by entry + `phase`.
 4. Handler:
-   - Journal: `GET /api/v1/journal?symbol=&tag=&limit=`, `POST` (body = trade fields), `GET/PUT/DELETE
+   - Journal: `GET /api/v1/journal?symbol=&tag=&limit=&before=`, `POST` (body = trade fields), `GET/PUT/DELETE
      /api/v1/journal/:id`.
    - Screenshots (two-step upload — bytes go straight to storage): `POST
      /api/v1/screenshots/upload-url` (returns a pre-signed PUT URL + `storageKey`), `POST
@@ -506,6 +512,11 @@ Implementation notes discovered during the frontend audit:
 - Deleting the entry removes its screenshot rows and schedules blob deletion.
 
 **Complexity:** High (object storage + pre-signed URLs + cleanup).
+
+**Verification:** `internal/journal` includes model/handler unit tests plus an opt-in PostgreSQL
+lifecycle test (`JOURNAL_INTEGRATION_DATABASE_URL`). The integration test covers idempotent
+`clientId` upsert, symbol/tag filtering, update, screenshot registration, FK cascade, and durable
+`object_deletion_queue` enqueueing.
 
 ---
 

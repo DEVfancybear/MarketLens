@@ -70,6 +70,10 @@ It never connects to the Python bridge directly.
 | `PORT` | `8080` | HTTP listen port |
 | `APP_ENV` | `development` | Runtime environment |
 
+Database, authentication, replay, MT5, and Phase 11 object-storage variables are documented in
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Journal CRUD works without object storage;
+screenshot uploads require an S3/R2/MinIO bucket with browser CORS enabled.
+
 ### Python MT5 Bridge
 
 See `bridge/ftmo_mt5/README.md` for full configuration reference.
@@ -88,6 +92,8 @@ backend/
     httpserver/server.go       # HTTP app and server setup
     health/handler.go          # Health-check endpoint
     middleware/                # Shared HTTP middleware
+    journal/                   # Phase 11 journal + screenshot API/repository
+    storage/                   # S3-compatible pre-signed URL signer
   bridge/                      # Python MT5 WebSocket bridge (sidecar)
     ftmo_mt5/                  # FTMO broker integration
     mt5_stream/                # Local MT5 tick streaming bridge

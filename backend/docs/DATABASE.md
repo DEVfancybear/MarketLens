@@ -656,11 +656,16 @@ Server authoritative, client cache — so auth can ship before every feature is 
 0009_indicator_presets.sql       pine scripts + indicator presets
 0010_public_pine_scripts.sql     published public indicator Store
 0011_alerts.sql                  alerts + retained alert events (+ enums)
+0012_replay_backend.sql          replay sessions, tracks, datasets and chunks
+0013_replay_clock.sql            replay actor clock state
+0014_replay_trading.sql          replay accounts, orders, fills and positions
+0015_journal.sql                 journal entries, screenshots, blob deletion queue
 ```
 
-Future trading/journal migrations must still create `sim_positions` before a
-`journal_entries.position_id` foreign key. Applied development schema after
-Phase 10 is version `11`.
+`0015_journal` leaves `journal_entries.position_id` nullable without a foreign key because the
+separate `sim_positions` table has not shipped (`replay_positions` belongs to replay sessions and
+is not interchangeable). Phase 13 must add the FK after creating `sim_positions`. Applied
+development schema after Phase 11 is version `15`.
 
 ---
 
@@ -669,6 +674,7 @@ Phase 10 is version `11`.
 - **Account deletion** cascades through every `user_id` FK — one `DELETE FROM users` wipes the user.
 - `sessions.revoked_at` + short access-token TTL bound the blast radius of a stolen token.
 - `raw_profile` stores only what Google returns (name, email, picture) — no extra scopes requested.
-- Object-storage blobs (screenshots) are deleted out-of-band by a worker reacting to `screenshots`
-  row deletes (storage keys logged before cascade).
+- A `BEFORE DELETE` trigger on `screenshots` writes `storage_key`/`thumbnail_key` into
+  `object_deletion_queue`, including deletes caused by journal/account cascades. API deletes log
+  the storage key before the cascade. A future worker consumes the durable queue out-of-band.
 - `alert_events` are pruned to the newest ~200 per user (matches the frontend cap).

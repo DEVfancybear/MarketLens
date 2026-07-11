@@ -677,13 +677,13 @@ Events retain their stable `alertId` after an alert is deleted.
 
 ---
 
-## Journal  🔒
+## Journal  protected, implemented
 
 Backed by `journal_entries` + `screenshots`.
 
 | Method | Path                                   | Purpose                                   |
 | ------ | -------------------------------------- | ----------------------------------------- |
-| GET    | `/api/v1/journal?symbol=&tag=&limit=`  | List (paginated by `entryTime`, filterable) |
+| GET    | `/api/v1/journal?symbol=&tag=&limit=&before=` | List; `before` is an RFC3339 entry-time cursor, max limit 100 |
 | POST   | `/api/v1/journal`                      | Create (trade-centric body below)         |
 | GET    | `/api/v1/journal/:id`                  | Get one with its screenshots              |
 | PUT    | `/api/v1/journal/:id`                  | Update                                    |
@@ -692,6 +692,7 @@ Backed by `journal_entries` + `screenshots`.
 **Create/update body** (matches frontend `JournalEntry`)
 ```json
 {
+  "clientId": "jrn_local_123",
   "symbol": "BTCUSDT",
   "side": "long",                    // long | short
   "entryTime": "2026-07-06T10:00:00Z",
@@ -709,10 +710,15 @@ Two-step upload so bytes go straight to object storage, not through the API.
 
 | Method | Path                                    | Purpose                                        |
 | ------ | --------------------------------------- | ---------------------------------------------- |
-| POST   | `/api/v1/screenshots/upload-url`        | Get a pre-signed PUT URL + `storageKey`        |
-| POST   | `/api/v1/screenshots`                   | Register `{ storageKey, journalEntryId?, phase, width, height }` (`phase`: before \| after-entry \| after-exit) |
+| POST   | `/api/v1/screenshots/upload-url`        | Send `{ contentType }`; get `uploadUrl`, `storageKey`, `expiresIn` |
+| POST   | `/api/v1/screenshots`                   | Register `{ storageKey, journalEntryId, phase, width?, height?, sizeBytes?, contentType }` |
 | GET    | `/api/v1/screenshots/:id`               | Get a (short-lived signed) view URL            |
 | DELETE | `/api/v1/screenshots/:id`               | Delete metadata + schedule blob removal        |
+
+Supported upload content types are `image/png`, `image/jpeg`, and `image/webp`. The browser must
+`PUT` the bytes directly to `uploadUrl` before registering metadata. Upload URLs expire after 10
+minutes; signed view URLs expire after 15 minutes. `journalEntryId` accepts either the server UUID
+or the idempotent journal `clientId`.
 
 ---
 

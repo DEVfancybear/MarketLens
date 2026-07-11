@@ -29,6 +29,14 @@ type Config struct {
 
 	CORSAllowedOrigins []string
 
+	ObjectStorageEndpoint     string
+	ObjectStorageBucket       string
+	ObjectStorageRegion       string
+	ObjectStorageAccessKey    string
+	ObjectStorageSecretKey    string
+	ObjectStorageSessionToken string
+	ObjectStoragePathStyle    bool
+
 	MT5StreamAPIEnabled     bool
 	MT5BridgeWSURL          string
 	MT5BridgeDialTimeout    time.Duration
@@ -58,6 +66,10 @@ func (c Config) FirebaseConfigured() bool {
 	return c.FirebaseProjectID != "" && c.FirebaseClientEmail != "" && c.FirebasePrivateKey != ""
 }
 
+func (c Config) ObjectStorageConfigured() bool {
+	return c.ObjectStorageBucket != "" && c.ObjectStorageAccessKey != "" && c.ObjectStorageSecretKey != ""
+}
+
 // Load reads configuration from the environment. In development it best-effort
 // loads a local .env file first. It returns an error (rather than exiting) when
 // a required secret is missing outside development, so the caller controls the
@@ -77,22 +89,29 @@ func Load() (Config, error) {
 		FirebaseClientEmail: os.Getenv("FIREBASE_CLIENT_EMAIL"),
 		// The private key is stored \n-escaped (same as the frontend push key);
 		// restore the real newlines so it parses as PEM.
-		FirebasePrivateKey:      strings.ReplaceAll(os.Getenv("FIREBASE_PRIVATE_KEY"), `\n`, "\n"),
-		CORSAllowedOrigins:      splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
-		MT5StreamAPIEnabled:     getEnvBool("MT5_STREAM_API_ENABLED", true),
-		MT5BridgeWSURL:          getEnv("MT5_BRIDGE_WS_URL", "ws://localhost:8765"),
-		MT5BridgeDialTimeout:    getEnvDurationOrSeconds("MT5_BRIDGE_DIAL_TIMEOUT_SECONDS", 10*time.Second),
-		MT5BridgeReadLimitBytes: getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
-		MT5BridgeReconnectMin:   getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
-		MT5BridgeReconnectMax:   getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
-		ReplayEngineEnabled:     getEnvBool("REPLAY_ENGINE_ENABLED", false),
-		ReplayMaxBars:           getEnvInt("REPLAY_MAX_BARS_PER_TRACK", 5000),
-		ReplayMaxTracks:         getEnvInt("REPLAY_MAX_TRACKS_PER_SESSION", 4),
-		ReplayCleanupInterval:   getEnvDuration("REPLAY_CLEANUP_INTERVAL", time.Hour),
-		ReplaySessionRetention:  getEnvDuration("REPLAY_SESSION_RETENTION", 720*time.Hour),
-		ReplayDatasetRetention:  getEnvDuration("REPLAY_DATASET_RETENTION", 168*time.Hour),
-		ReplayDisconnectGrace:   getEnvDuration("REPLAY_DISCONNECT_GRACE", 5*time.Second),
-		ReplayActorLeaseTTL:     getEnvDuration("REPLAY_ACTOR_LEASE_TTL", 5*time.Second),
+		FirebasePrivateKey:        strings.ReplaceAll(os.Getenv("FIREBASE_PRIVATE_KEY"), `\n`, "\n"),
+		CORSAllowedOrigins:        splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		ObjectStorageEndpoint:     os.Getenv("OBJECT_STORAGE_ENDPOINT"),
+		ObjectStorageBucket:       os.Getenv("OBJECT_STORAGE_BUCKET"),
+		ObjectStorageRegion:       getEnv("OBJECT_STORAGE_REGION", "us-east-1"),
+		ObjectStorageAccessKey:    os.Getenv("OBJECT_STORAGE_ACCESS_KEY"),
+		ObjectStorageSecretKey:    os.Getenv("OBJECT_STORAGE_SECRET_KEY"),
+		ObjectStorageSessionToken: os.Getenv("OBJECT_STORAGE_SESSION_TOKEN"),
+		ObjectStoragePathStyle:    getEnvBool("OBJECT_STORAGE_PATH_STYLE", false),
+		MT5StreamAPIEnabled:       getEnvBool("MT5_STREAM_API_ENABLED", true),
+		MT5BridgeWSURL:            getEnv("MT5_BRIDGE_WS_URL", "ws://localhost:8765"),
+		MT5BridgeDialTimeout:      getEnvDurationOrSeconds("MT5_BRIDGE_DIAL_TIMEOUT_SECONDS", 10*time.Second),
+		MT5BridgeReadLimitBytes:   getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
+		MT5BridgeReconnectMin:     getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
+		MT5BridgeReconnectMax:     getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
+		ReplayEngineEnabled:       getEnvBool("REPLAY_ENGINE_ENABLED", false),
+		ReplayMaxBars:             getEnvInt("REPLAY_MAX_BARS_PER_TRACK", 5000),
+		ReplayMaxTracks:           getEnvInt("REPLAY_MAX_TRACKS_PER_SESSION", 4),
+		ReplayCleanupInterval:     getEnvDuration("REPLAY_CLEANUP_INTERVAL", time.Hour),
+		ReplaySessionRetention:    getEnvDuration("REPLAY_SESSION_RETENTION", 720*time.Hour),
+		ReplayDatasetRetention:    getEnvDuration("REPLAY_DATASET_RETENTION", 168*time.Hour),
+		ReplayDisconnectGrace:     getEnvDuration("REPLAY_DISCONNECT_GRACE", 5*time.Second),
+		ReplayActorLeaseTTL:       getEnvDuration("REPLAY_ACTOR_LEASE_TTL", 5*time.Second),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -104,6 +123,16 @@ func Load() (Config, error) {
 // validate fails fast when required secrets are absent in a non-development
 // environment. Development stays permissive so `go run` works with no setup.
 func (c Config) validate() error {
+	storageValues := []string{c.ObjectStorageBucket, c.ObjectStorageAccessKey, c.ObjectStorageSecretKey}
+	storageSet := 0
+	for _, value := range storageValues {
+		if strings.TrimSpace(value) != "" {
+			storageSet++
+		}
+	}
+	if storageSet != 0 && storageSet != len(storageValues) {
+		return fmt.Errorf("OBJECT_STORAGE_BUCKET, OBJECT_STORAGE_ACCESS_KEY and OBJECT_STORAGE_SECRET_KEY must be configured together")
+	}
 	if !c.IsProduction() {
 		return nil
 	}

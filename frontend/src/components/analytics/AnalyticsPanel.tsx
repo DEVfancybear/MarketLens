@@ -1,17 +1,24 @@
 "use client";
-import { useMemo } from "react";
-import { journalEntriesAtom } from "@/store/journalStore";
-import { useAtomValue } from "jotai";
+import { useEffect, useMemo } from "react";
+import { journalEntriesAtom, loadJournalAtom } from "@/store/journalStore";
+import { useAtomValue, useSetAtom } from "jotai";
 import { startingEquityAtom } from "@/store/analyticsStore";
 import { computeAnalytics } from "@/services/analyticsEngine";
 import { EquityChart } from "./EquityChart";
 import { fmtMoney, fmtPct } from "@/utils/format";
 import { cn } from "@/utils/cn";
+import { backendSessionAtom } from "@/store/authStore";
 
 /** Performance analytics dashboard: KPIs, equity curve, distributions. */
 export function AnalyticsPanel() {
   const entries = useAtomValue(journalEntriesAtom);
   const startingEquity = useAtomValue(startingEquityAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
+  const loadJournal = useSetAtom(loadJournalAtom);
+
+  useEffect(() => {
+    void loadJournal();
+  }, [backendSession, loadJournal]);
 
   const report = useMemo(
     () => computeAnalytics(entries, startingEquity),

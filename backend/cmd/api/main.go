@@ -17,11 +17,13 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/drawings"
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
+	"github.com/smc-trading-terminal/backend/internal/journal"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
 	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/replay"
 	"github.com/smc-trading-terminal/backend/internal/settings"
+	objectstorage "github.com/smc-trading-terminal/backend/internal/storage"
 	"github.com/smc-trading-terminal/backend/internal/users"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
@@ -74,7 +76,21 @@ func main() {
 	var alertsHandler *alerts.Handler
 	var workspaceHandler *workspace.Handler
 	var replayHandler *replay.Handler
+	var journalHandler *journal.Handler
 	var pineScriptsStore *pinescripts.Repo
+	var screenshotSigner objectstorage.Signer
+	if cfg.ObjectStorageConfigured() {
+		signer, storageErr := objectstorage.NewS3Signer(objectstorage.Config{
+			Endpoint: cfg.ObjectStorageEndpoint, Bucket: cfg.ObjectStorageBucket,
+			Region: cfg.ObjectStorageRegion, AccessKey: cfg.ObjectStorageAccessKey,
+			SecretKey: cfg.ObjectStorageSecretKey, SessionToken: cfg.ObjectStorageSessionToken,
+			PathStyle: cfg.ObjectStoragePathStyle,
+		})
+		if storageErr != nil {
+			stdlog.Fatalf("object storage init error: %v", storageErr)
+		}
+		screenshotSigner = signer
+	}
 	if pool != nil {
 		pineScriptsStore = pinescripts.NewRepo(pool.Pool)
 		pineScriptsHandler = pinescripts.NewHandler(pineScriptsStore, nil)
@@ -107,6 +123,7 @@ func main() {
 		alertsStore := alerts.NewRepo(pool.Pool)
 		alertsHandler = alerts.NewHandler(alertsStore, requireAuth)
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, requireAuth)
+		journalHandler = journal.NewHandler(journal.NewRepo(pool.Pool), screenshotSigner, requireAuth)
 		if cfg.ReplayEngineEnabled {
 			replayStore := replay.NewRepo(pool.Pool)
 			replayService := replay.NewService(replayStore, mt5Service, cfg.ReplayMaxBars, cfg.ReplayMaxTracks)
@@ -132,6 +149,7 @@ func main() {
 		pineScriptsHandler,
 		alertsHandler,
 		workspaceHandler,
+		journalHandler,
 		replayHandler,
 		mt5Handler,
 		pineRuntimeHandler,
