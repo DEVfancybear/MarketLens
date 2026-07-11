@@ -2,8 +2,7 @@
 
 This folder contains TypeScript tests for shared drawing-tool behavior.
 
-The current suite focuses on `shapeGeometry.ts`, the common helper layer used by
-shape-like TradingView tools:
+The current suite covers shared geometry plus Phase 0 characterization contracts:
 
 - Anchor hit results must carry an explicit `anchorIndex`, including middle
   vertices that all share the generic `p0` target label.
@@ -24,6 +23,16 @@ shape-like TradingView tools:
   rAF-based live previews and multi-drag state cannot leak between gestures.
 - Hit-testing must preserve TradingView priority while avoiding unnecessary
   candidate sorting in the hot path.
+- Command history round-trips create, move, property, duplicate, delete,
+  undo, and redo transactions.
+- The shared viewport subscription observes range/size/input changes and
+  removes every listener cleanly.
+- Real Brush, Path, Vertical Line, and Rectangle adapters are exercised by
+  behavior tests instead of source-text regex checks.
+- Browser tests audit registration, fixtures, render/hit/move/bounds, and JSON
+  round-trips for all 35 persistent tool ids.
+- Browser gesture smoke tests cover create, select, move, undo, redo, delete,
+  and restoration of chart zoom interaction.
 
 ## Run
 
@@ -53,3 +62,15 @@ Add tests here when changing:
 - Common pointer-frame coalescing, including immediate feedback, latest-sample collapse, and exact
   pointerup flush behavior
 - Hit-test priority, especially anchor-vs-body and z-index ordering
+- The command transaction boundary or viewport event subscription contract
+
+## Browser contracts
+
+Run the drawing browser suite with:
+
+```bash
+npm run test:chart-browser -- drawingInteractions.spec.ts
+```
+
+The suite uses semantic development-only harnesses; it does not inspect source
+text or depend on canvas screenshots for state assertions.

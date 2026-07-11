@@ -8,7 +8,7 @@
  * Snapshots are NOT used — each command stores only the delta.
  */
 import type { Drawing, Point } from "@/types";
-import { uid } from "@/utils/id";
+import { uid } from "../../../../utils/id";
 
 export interface Command {
   /** Human-readable label (for UI display). */

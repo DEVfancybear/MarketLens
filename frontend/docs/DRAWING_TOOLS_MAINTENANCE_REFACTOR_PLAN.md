@@ -234,6 +234,10 @@ require atomic operation batches.
 
 ### Phase 0 — Freeze behavior and repair quality gates
 
+Status: implemented on 2026-07-11. See
+`DRAWING_PHASE0_CHARACTERIZATION.md` for the executable gates and recorded
+baseline.
+
 Purpose: establish evidence before structural changes.
 
 Tasks:

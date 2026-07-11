@@ -40,6 +40,14 @@ import {
 } from "./drawing/tools/plugins/PositionTool";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
 import { uid } from "@/utils/id";
+import { runDrawingAdapterContractAudit } from "./drawing/testing/adapterContractAudit";
+import type { DrawingInteractionTestHarness } from "./drawing/testing/testHarnessTypes";
+
+declare global {
+  interface Window {
+    __drawingInteractionTest?: DrawingInteractionTestHarness;
+  }
+}
 
 export function DrawingLayer() {
   const ctx = useChartCtx();
@@ -394,6 +402,93 @@ export function DrawingLayer() {
     freezeChart,
   });
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    window.__drawingInteractionTest = {
+      snapshot: () => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        return {
+          drawings: structuredClone(stateRef.current.drawings),
+          activeTool: stateRef.current.activeTool,
+          selectedDrawingId: stateRef.current.selectedDrawingId,
+          selectedDrawingIds: [...stateRef.current.selectedDrawingIds],
+          machineState: machineRef.current?.state ?? "Idle",
+          canvas: rect
+            ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+            : { x: 0, y: 0, width: 0, height: 0 },
+        };
+      },
+      auditAdapters: () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 800;
+        canvas.height = 600;
+        return runDrawingAdapterContractAudit(canvas);
+      },
+      projectDrawing: (id) => {
+        const drawing = stateRef.current.drawings.find((item) => item.id === id);
+        if (!drawing) return null;
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect) return null;
+        const projected = drawing.points.map((point) => ({
+          x: toX(point.time),
+          y: toY(point.price),
+        }));
+        if (projected.some((point) => point.x == null || point.y == null)) return null;
+        return projected.map((point) => ({
+          x: point.x! + rect.left,
+          y: point.y! + rect.top,
+        }));
+      },
+      inspectClientPoint: (x, y) => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        const element = document.elementFromPoint(x, y) as HTMLElement | null;
+        if (!rect) {
+          return {
+            insideCanvas: false,
+            overDrawingUi: false,
+            target: element?.tagName ?? null,
+            hits: [],
+          };
+        }
+        const localX = x - rect.left;
+        const localY = y - rect.top;
+        const hits = stateRef.current.drawings.flatMap((drawing) =>
+          (getTool(drawing.tool)?.hitTest(
+            drawing,
+            localX,
+            localY,
+            toX,
+            toY,
+          ) ?? []).map((hit) => ({
+            id: drawing.id,
+            target: hit.target,
+            distance: hit.distance,
+          })),
+        );
+        return {
+          insideCanvas:
+            x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
+          overDrawingUi: Boolean(
+            element?.closest?.("[data-drawing-toolbar],[data-chart-ui]"),
+          ),
+          target: element
+            ? `${element.tagName.toLowerCase()}.${element.className}`
+            : null,
+          hits,
+        };
+      },
+      clear: () => {
+        for (const drawing of stateRef.current.drawings) removeDrawing(drawing.id);
+        selectDrawing(null);
+        reset();
+        setActiveTool("cursor");
+      },
+    };
+    return () => {
+      delete window.__drawingInteractionTest;
+    };
+  }, [machineRef, removeDrawing, reset, selectDrawing, setActiveTool, toX, toY]);
+
   // While a drawing is being created or dragged/resized, freeze the chart's
   // pan & zoom. Otherwise a fast pointer move leaks through to the chart's
   // pressedMouseMove handler and scrolls the view ("view jump"). The freeze is
@@ -584,6 +679,7 @@ export function DrawingLayer() {
     <>
       <canvas
         ref={canvasRef}
+        data-drawing-canvas
         className="absolute inset-0 h-full w-full"
         style={{ cursor: cursorStyle, pointerEvents: "none", zIndex: 5 }}
       />

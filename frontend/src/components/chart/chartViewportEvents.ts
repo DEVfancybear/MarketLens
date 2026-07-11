@@ -3,7 +3,7 @@ import {
   incrementChartPerformanceCounter,
   isChartPerformanceProbeEnabled,
   recordChartPerformanceDuration,
-} from "@/services/chartPerformanceProbe";
+} from "../../services/chartPerformanceProbe";
 
 const INPUT_EVENTS = [
   "wheel",
@@ -82,10 +82,10 @@ export function subscribeChartViewportEvents(
     timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
     timeScale.unsubscribeSizeChange(handleSizeChange);
     for (const type of INPUT_EVENTS) {
-      root.removeEventListener(type, handleInputEvent, true);
+      root.removeEventListener(type, handleInputEvent, options);
     }
     for (const type of POINTER_EVENTS) {
-      root.removeEventListener(type, handlePointerEvent, true);
+      root.removeEventListener(type, handlePointerEvent, options);
     }
   };
 }
