@@ -134,6 +134,7 @@ function stripUndefined<T>(value: T): T {
 function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
   return {
     token: String(data.token),
+    deliveryToken: typeof data.deliveryToken === "string" ? data.deliveryToken : undefined,
     alerts: Array.isArray(data.alerts) ? (data.alerts as ServerPushAlert[]) : [],
     settingsPush: Boolean(data.settingsPush),
     settingsTelegram: Boolean(data.settingsTelegram),
@@ -175,6 +176,7 @@ export async function registerPushDevice(token: string): Promise<void> {
     const existing = await getFirestoreDevice(token);
     await setFirestoreDevice({
       token,
+      deliveryToken: existing?.deliveryToken,
       alerts: existing?.alerts ?? [],
       settingsPush: existing?.settingsPush ?? false,
       settingsTelegram: existing?.settingsTelegram ?? false,
@@ -192,6 +194,7 @@ export async function registerPushDevice(token: string): Promise<void> {
   const existing = db.devices[token];
   db.devices[token] = {
     token,
+    deliveryToken: existing?.deliveryToken,
     alerts: existing?.alerts ?? [],
     settingsPush: existing?.settingsPush ?? false,
     settingsTelegram: existing?.settingsTelegram ?? false,
@@ -235,6 +238,7 @@ export async function syncPushAlerts(
       : [];
     const device = pruneState({
       token: request.token,
+      deliveryToken: request.deliveryToken,
       alerts,
       settingsPush: Boolean(request.settingsPush),
       settingsTelegram: Boolean(request.settingsTelegram),
@@ -263,6 +267,7 @@ export async function syncPushAlerts(
 
   const device: PushDeviceRecord = pruneState({
     token: request.token,
+    deliveryToken: request.deliveryToken,
     alerts,
     settingsPush: Boolean(request.settingsPush),
     settingsTelegram: Boolean(request.settingsTelegram),

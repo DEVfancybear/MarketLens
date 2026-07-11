@@ -19,9 +19,10 @@ type Config struct {
 
 	DatabaseURL string
 
-	AuthJWTSecret  string
-	AuthAccessTTL  time.Duration
-	AuthRefreshTTL time.Duration
+	AuthJWTSecret    string
+	PushWorkerSecret string
+	AuthAccessTTL    time.Duration
+	AuthRefreshTTL   time.Duration
 
 	FirebaseProjectID   string
 	FirebaseClientEmail string
@@ -83,6 +84,7 @@ func Load() (Config, error) {
 		Env:                 getEnv("APP_ENV", "development"),
 		DatabaseURL:         os.Getenv("DATABASE_URL"),
 		AuthJWTSecret:       os.Getenv("AUTH_JWT_SECRET"),
+		PushWorkerSecret:    os.Getenv("PUSH_WORKER_SECRET"),
 		AuthAccessTTL:       getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
 		AuthRefreshTTL:      getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
 		FirebaseProjectID:   os.Getenv("FIREBASE_PROJECT_ID"),
@@ -143,6 +145,7 @@ func (c Config) validate() error {
 		"FIREBASE_PROJECT_ID":   c.FirebaseProjectID,
 		"FIREBASE_CLIENT_EMAIL": c.FirebaseClientEmail,
 		"FIREBASE_PRIVATE_KEY":  c.FirebasePrivateKey,
+		"PUSH_WORKER_SECRET":    c.PushWorkerSecret,
 	}
 
 	var missing []string

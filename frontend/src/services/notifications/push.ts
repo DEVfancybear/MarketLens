@@ -225,12 +225,14 @@ export async function unregisterServerPushToken(
 
 export async function syncServerPushAlerts({
   token,
+  deliveryToken,
   settingsPush,
   settingsTelegram,
   settingsDiscord,
   alerts,
 }: {
   token: string;
+  deliveryToken?: string;
   settingsPush: boolean;
   settingsTelegram?: boolean;
   settingsDiscord?: boolean;
@@ -257,6 +259,7 @@ export async function syncServerPushAlerts({
     "/api/push/alerts/sync",
     {
       token,
+      deliveryToken,
       settingsPush,
       settingsTelegram,
       settingsDiscord,

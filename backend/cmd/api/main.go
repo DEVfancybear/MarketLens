@@ -116,7 +116,13 @@ func main() {
 
 		requireAuth := auth.RequireAuth(tokens)
 		settingsStore := settings.NewRepo(pool.Pool)
-		settingsHandler = settings.NewHandler(settingsStore, requireAuth)
+		secretBox, secretErr := settings.NewSecretBox(cfg.AuthJWTSecret)
+		if secretErr != nil {
+			stdlog.Fatalf("integration settings encryption init error: %v", secretErr)
+		}
+		settingsHandler = settings.NewHandler(settingsStore, requireAuth).WithIntegrations(
+			settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret,
+		)
 		watchlistsStore := watchlists.NewRepo(pool.Pool)
 		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)
 		drawingsStore := drawings.NewRepo(pool.Pool)

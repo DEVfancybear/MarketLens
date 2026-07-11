@@ -171,3 +171,16 @@ export async function sendExternalAlertNotifications(
 
   return Promise.all(jobs);
 }
+
+export async function sendUserIntegrationNotifications(
+  deliveryToken: string | undefined,
+  message: ExternalAlertMessage,
+  channels: Partial<Record<ExternalAlertChannel, boolean>>,
+): Promise<ExternalDeliveryResult[]> {
+  if (!channels.telegram && !channels.discord) return [];
+  if (!deliveryToken) return [{ channel: channels.telegram ? "telegram" : "discord", ok: false, error: "Missing user delivery token." }];
+  const base=(process.env.NEXT_PUBLIC_API_BASE_URL?.trim()||"http://localhost:8080").replace(/\/+$/,"");
+  const res=await fetch(`${base}/api/v1/settings/integrations/worker-deliver`,{method:"POST",headers:{"Content-Type":"application/json","x-push-worker-secret":process.env.PUSH_WORKER_SECRET??""},body:JSON.stringify({deliveryToken,message,channels}),cache:"no-store"});
+  if(!res.ok) return [{channel:channels.telegram?"telegram":"discord",ok:false,error:`Backend delivery failed (${res.status}).`}];
+  const body=await res.json() as {results?:ExternalDeliveryResult[]}; return body.results??[];
+}

@@ -1,5 +1,5 @@
 "use client";
-import { Settings, Grid3x3, Maximize, Sun, Moon, Check } from "lucide-react";
+import { Settings, Grid3x3, Maximize, Sun, Moon, Check, Plug } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/store/uiStore";
 import { resetChartView } from "@/components/chart/chartRegistry";
 import { cn } from "@/utils/cn";
+import { integrationSettingsOpenAtom } from "@/store/integrationSettingsStore";
 
 /** TradingView-style chart settings: grid, theme, reset view. */
 export function ChartSettingsMenu() {
@@ -17,6 +18,7 @@ export function ChartSettingsMenu() {
   const toggleGrid = useSetAtom(toggleGridAtom);
   const theme = useAtomValue(themeAtom);
   const toggleTheme = useSetAtom(toggleThemeAtom);
+  const setIntegrationSettingsOpen = useSetAtom(integrationSettingsOpenAtom);
 
   return (
     <Dropdown
@@ -39,6 +41,11 @@ export function ChartSettingsMenu() {
           <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
             Chart settings
           </div>
+          <Row
+            icon={<Plug size={14} />}
+            label="Connections & notifications"
+            onClick={() => { setIntegrationSettingsOpen(true); close(); }}
+          />
           <Row
             icon={<Grid3x3 size={14} />}
             label="Grid lines"

@@ -10,8 +10,11 @@ import (
 )
 
 type Handler struct {
-	store       Store
-	requireAuth fiber.Handler
+	store            Store
+	requireAuth      fiber.Handler
+	integrationStore IntegrationStore
+	secretBox        *SecretBox
+	workerSecret     string
 }
 
 func NewHandler(store Store, requireAuth fiber.Handler) *Handler {
@@ -24,6 +27,9 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Patch("/settings", h.requireAuth, h.patch)
 	router.Get("/settings/chart/favorite-timeframes", h.requireAuth, h.getFavoriteTimeframes)
 	router.Put("/settings/chart/favorite-timeframes", h.requireAuth, h.replaceFavoriteTimeframes)
+	if h.integrationStore != nil && h.secretBox != nil {
+		h.registerIntegrationRoutes(router)
+	}
 }
 
 func (h *Handler) get(c *fiber.Ctx) error {

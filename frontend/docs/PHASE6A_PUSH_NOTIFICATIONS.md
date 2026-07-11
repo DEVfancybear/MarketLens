@@ -96,6 +96,7 @@ Closed-browser worker values:
 PUSH_WORKER_URL=http://localhost:3000
 PUSH_WORKER_INTERVAL_MS=15000
 PUSH_WORKER_SECRET=
+CRON_SECRET=
 DISABLE_PUSH_WORKER=false
 ```
 
@@ -144,7 +145,9 @@ POST /api/push/evaluate
 Header: x-push-worker-secret: <PUSH_WORKER_SECRET>
 ```
 
-If `PUSH_WORKER_SECRET` is empty, the evaluate endpoint is open. Set it in production.
+Production requires either `PUSH_WORKER_SECRET` or official Vercel
+`CRON_SECRET`. Vercel sends `Authorization: Bearer <CRON_SECRET>` automatically.
+The endpoint is open without either secret only in non-production development.
 For troubleshooting, call `/api/push/evaluate?debug=1` with the same secret header. The response
 includes per-alert condition, target, previous price, current/open/high/low window, `met`, and
 blocked/skipped reason without exposing the full FCM token. When a push is accepted by FCM, the

@@ -10,7 +10,7 @@ import {
 } from "@/services/alertConditions";
 import type { PushDeviceRecord, ServerPushAlert } from "@/types/pushAlerts";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
-import { sendExternalAlertNotifications } from "./externalNotifications";
+import { sendUserIntegrationNotifications } from "./externalNotifications";
 import { listPushDevices, updatePushDevice } from "./pushAlertStore";
 
 const RECURRING_REARM_MS = 60_000;
@@ -301,7 +301,8 @@ async function runEvaluation(
           );
         }
 
-        const externalResults = await sendExternalAlertNotifications(
+        const externalResults = await sendUserIntegrationNotifications(
+          device.deliveryToken,
           {
             alertId: alert.id,
             symbol: alert.symbol,

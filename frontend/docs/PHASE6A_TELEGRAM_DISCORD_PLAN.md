@@ -1,6 +1,12 @@
 # PHASE 6A TELEGRAM AND DISCORD ALERT CHANNELS
 
-_Implemented 2026-07-01. Scope: server-side Telegram and Discord delivery for alert notifications._
+_Implemented 2026-07-01; credential architecture replaced 2026-07-11 by
+`INTEGRATION_SETTINGS.md`._
+
+> Current source of truth: credentials are per-user, AES-GCM encrypted in the
+> Go backend, and delivered through signed user tokens. The environment-based
+> credential design below is retained only as historical context and must not
+> be restored.
 
 ## 1. Objective
 
@@ -33,7 +39,7 @@ must not create a second alert engine.
 
 User-facing behavior:
 
-1. User configures Telegram and/or Discord server environment variables.
+1. User configures Telegram and/or Discord in Connections & notifications.
 2. Alert Center shows Telegram and Discord channel toggles only when the related server config is
    available.
 3. New alerts inherit the global Telegram/Discord settings, like existing Push behavior.
@@ -62,36 +68,20 @@ Operational behavior:
 - Do not change alert trigger semantics.
 - Do not replace Firebase push; these are additional channels.
 
-## 5. Environment Variables
+## 5. Service Environment Variables
 
-Server-only values:
-
-```env
-# Telegram alert delivery.
-TELEGRAM_ALERTS_ENABLED=false
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-
-# Discord alert delivery.
-DISCORD_ALERTS_ENABLED=false
-DISCORD_WEBHOOK_URL=
-```
-
-Optional hardening values:
+Only scheduler/service authentication remains in env:
 
 ```env
-ALERT_WEBHOOK_TIMEOUT_MS=5000
-ALERT_WEBHOOK_MAX_RETRIES=1
-ALERT_WEBHOOK_SECRET=
+PUSH_WORKER_SECRET=
+CRON_SECRET=
 ```
 
 Rules:
 
-- Keep all values server-only. Do not prefix with `NEXT_PUBLIC_`.
-- `TELEGRAM_BOT_TOKEN` is the token from BotFather.
-- `TELEGRAM_CHAT_ID` can be a private chat ID, group ID, supergroup ID, or channel username/ID.
-- `DISCORD_WEBHOOK_URL` is the channel webhook URL.
-- `ALERT_WEBHOOK_SECRET` can protect test/send endpoints if they are exposed outside local dev.
+- No user's Telegram or Discord credential belongs in deployment env.
+- `PUSH_WORKER_SECRET` protects scheduler-to-Next and Next-to-Go requests.
+- `CRON_SECRET` is the official Vercel Cron bearer secret.
 
 ## 6. Data Model Changes
 
@@ -181,7 +171,7 @@ Discord formatting:
 
 ## 9. API Design
 
-### `GET /api/notifications/capabilities`
+### Legacy Next notification routes
 
 Returns:
 
@@ -194,12 +184,14 @@ Returns:
 
 No secrets are returned.
 
-### `POST /api/notifications/test`
+The old `/api/notifications/*` env-backed routes are compatibility-only. New UI
+and browser-open delivery use `/api/v1/settings/integrations`; closed-browser
+delivery uses `/api/v1/settings/integrations/worker-deliver`.
 
 Headers:
 
 ```text
-x-alert-webhook-secret: <ALERT_WEBHOOK_SECRET>
+x-push-worker-secret: <PUSH_WORKER_SECRET>
 ```
 
 Body:
@@ -278,7 +270,7 @@ Exit criteria:
 
 - Status: partial.
 - Added short request timeout.
-- Test endpoint can be protected with `ALERT_WEBHOOK_SECRET`.
+- Worker delivery is protected by a signed user token plus the optional service secret.
 - Retry/backoff remains a future hardening step if Telegram/Discord rate limits become noisy.
 
 Exit criteria:

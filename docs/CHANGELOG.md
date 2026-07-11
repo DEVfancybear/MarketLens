@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Private integration settings screen (2026-07-11)
+- Added a Connections & notifications dialog for MT5 account provisioning and
+  per-user Telegram/Discord credentials, enable flags, and test sends.
+- Added authenticated backend integration APIs and migration 0017 with AES-GCM
+  encrypted secret storage; API responses expose configuration flags only.
+- Routed closed-browser Telegram/Discord delivery through signed per-user
+  delivery tokens and the Go backend; deployment env no longer contains any
+  user's bot token, chat ID, or Discord webhook.
+- Hardened the evaluator endpoint with official Vercel `CRON_SECRET` bearer
+  authentication while retaining `PUSH_WORKER_SECRET` for external schedulers.
+- Documented secret replacement/clear semantics and the MT5 bridge reconnect
+  boundary.
+
 ### Changed - Researched time-navigation parity (2026-07-11)
 - Extended the backend navigation catalog with the `Alt+G` Go-to hotkey and
   backend-owned specific-time timeframe capabilities.

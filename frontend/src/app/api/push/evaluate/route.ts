@@ -5,17 +5,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.PUSH_WORKER_SECRET;
-  if (!secret) return true;
-  if (req.headers.get("x-push-worker-secret") === secret) return true;
-
-  // Vercel Cron cannot attach custom headers from vercel.json. Official cron
-  // invocations include this user-agent and schedule header.
-  const userAgent = req.headers.get("user-agent") ?? "";
-  return (
-    userAgent.includes("vercel-cron/1.0") &&
-    Boolean(req.headers.get("x-vercel-cron-schedule"))
-  );
+  const workerSecret = process.env.PUSH_WORKER_SECRET;
+  if (workerSecret && req.headers.get("x-push-worker-secret") === workerSecret) return true;
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get("authorization") === `Bearer ${cronSecret}`) return true;
+  return !workerSecret && !cronSecret && process.env.NODE_ENV !== "production";
 }
 
 async function evaluate(req: NextRequest) {

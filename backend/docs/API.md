@@ -206,6 +206,28 @@ users can remove every favorite. The update patches only
 
 ---
 
+## Private integration settings 🔒
+
+MT5, Telegram, and Discord credentials are stored per user in
+`user_integrations`. Secret fields are encrypted at rest and are never returned
+by GET/PUT responses; responses expose only `*Configured` booleans.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/settings/integrations` | Read masked integration status |
+| PUT | `/api/v1/settings/integrations` | Save metadata, enable flags, and optional replacement secrets |
+| POST | `/api/v1/settings/integrations/test/telegram` | Send a Telegram test message |
+| POST | `/api/v1/settings/integrations/test/discord` | Send a Discord test message |
+| POST | `/api/v1/settings/integrations/deliver` | Deliver a browser-open alert through enabled per-user channels |
+| POST | `/api/v1/settings/integrations/worker-deliver` | Service-authenticated closed-browser delivery using a signed user token |
+
+Blank secret strings preserve the existing secret. Set the corresponding
+`clearPassword`, `clearBotToken`, or `clearWebhook` flag to remove one.
+
+MT5 credentials describe the desired local bridge account. Because the Python
+bridge owns the native terminal connection, changing them does not hot-swap a
+running bridge; reconnect/restart the bridge to apply a different account.
+
 ## Watchlists  🔒
 
 Backed by `watchlists`, `watchlist_symbols`, `watchlist_sections`, and

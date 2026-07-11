@@ -1,11 +1,12 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAtomValue } from "jotai";
 import { alertsAtom, settingsAtom } from "@/store/alertStore";
 import { pushRegistrationAtom } from "@/store/notificationStore";
 import { syncServerPushAlerts } from "@/services/notifications/push";
 import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
 import { workspaceReadyAtom } from "@/store/authStore";
+import { getIntegrationSettings } from "@/services/api/resources/integrationsApi";
 
 export function usePushAlertSync() {
   const alerts = useAtomValue(alertsAtom);
@@ -13,6 +14,12 @@ export function usePushAlertSync() {
   const registration = useAtomValue(pushRegistrationAtom);
   const externalSyncToken = useExternalSyncToken();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
+  const [deliveryToken, setDeliveryToken] = useState<string>();
+
+  useEffect(() => {
+    if (!workspaceReady) { setDeliveryToken(undefined); return; }
+    void getIntegrationSettings().then((v)=>setDeliveryToken(v.deliveryToken)).catch(()=>setDeliveryToken(undefined));
+  }, [workspaceReady]);
 
   useEffect(() => {
     if (!workspaceReady) return;
@@ -47,6 +54,7 @@ export function usePushAlertSync() {
       syncServerPushAlerts(
         {
           token: syncToken,
+          deliveryToken,
           settingsPush: canSyncPush,
           settingsTelegram: settings.telegram,
           settingsDiscord: settings.discord,
@@ -77,6 +85,7 @@ export function usePushAlertSync() {
     };
   }, [
     alerts,
+    deliveryToken,
     externalSyncToken,
     registration?.permission,
     registration?.token,

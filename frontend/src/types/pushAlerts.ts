@@ -17,6 +17,7 @@ export interface ServerPushAlert {
 
 export interface PushAlertSyncRequest {
   token: string;
+  deliveryToken?: string;
   settingsPush: boolean;
   settingsTelegram?: boolean;
   settingsDiscord?: boolean;
@@ -25,6 +26,7 @@ export interface PushAlertSyncRequest {
 
 export interface PushDeviceRecord {
   token: string;
+  deliveryToken?: string;
   alerts: ServerPushAlert[];
   settingsPush: boolean;
   settingsTelegram: boolean;
