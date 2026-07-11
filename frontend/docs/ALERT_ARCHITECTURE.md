@@ -11,6 +11,45 @@ browser notifications, sound, Firebase push, and external Telegram/Discord dispa
 - One-time alerts trigger once; recurring alerts are re-armed through a cooldown.
 - Delivery channels are independent from evaluation logic.
 
+## TradingView Compatibility Contract
+
+The current runtime intentionally implements **price alerts**, not indicator,
+strategy, drawing, watchlist, or other technical alerts. The compatibility
+baseline was checked against TradingView's official alert documentation on
+2026-07-11:
+
+- [Introduction to TradingView alerts](https://www.tradingview.com/support/solutions/43000520149-introduction-to-tradingview-alerts/)
+- [Learn how to configure alerts](https://www.tradingview.com/support/solutions/43000763312-learn-how-to-configure-alerts/)
+- [How to use price alerts](https://www.tradingview.com/support/solutions/43000763313-how-to-use-price-alerts/)
+- [Pine Script alert FAQ](https://www.tradingview.com/pine-script-docs/faq/alerts/)
+
+These are maintenance invariants for the existing implementation:
+
+| TradingView behavior | Current contract |
+| --- | --- |
+| Price alerts are independent of the chart interval. | Evaluate the alert's stored symbol from the shared live MT5 ticker; never read the selected chart timeframe. |
+| Crossing up/down must reach the level from the requested side. | Require two consecutive post-arm prices: `previous < target && current >= target` or `previous > target && current <= target`. |
+| A newly created alert must not infer a historical crossing. | The first live evaluation has no previous price. Closed-browser evaluation only replays MT5 ticks newer than the alert revision. |
+| Running script alerts use a snapshot of their symbol, timeframe, script, and inputs. | Price alerts store their own symbol, condition, target, recurrence, and channel flags. Chart navigation and global notification-setting changes do not mutate an existing alert. Editing an alert creates a new arming revision. |
+| Triggering and notification delivery are separate concerns. | Persist the trigger/history independently; dispatch toast, sound, browser, push, Telegram, and Discord as best-effort channels. |
+| Alerts can be one-time or repeat. | One-time alerts leave the active set after firing. Recurring alerts remain active and use the existing 60-second re-arm guard. |
+
+Two naming differences are deliberate and must not be silently changed:
+
+- Local `above` means **at or above** (`>=`) and local `below` means **at or
+  below** (`<=`). TradingView's “Greater than” and “Less than” operators require
+  one minimum tick beyond the threshold. The local UI displays `>=`/`<=`, so
+  changing these comparisons would be a breaking behavior change.
+- The local recurrence guard is a product rule. It is not an implementation of
+  TradingView's full trigger-frequency matrix (`Every time`, `Once per bar
+  close`, and `Once per minute`). Adding that matrix requires an explicit model
+  and migration rather than overloading the existing `recurring` boolean.
+
+Out of scope for this price-alert runtime: expiration/open-ended alerts,
+minimum-tick metadata, alert names/message placeholders, webhooks, frequency by
+bar, indicator/strategy snapshots, drawing alerts, multi-condition alerts, and
+watchlist alerts.
+
 ## Runtime Flow
 
 ```text
@@ -79,13 +118,15 @@ interface Alert {
 
 | Condition | Fires when |
 | --- | --- |
-| `above` | current price or post-arm observed high is `>= target` |
-| `below` | current price or post-arm observed low is `<= target` |
-| `crossUp` | observed range touches/crosses upward: `low <= target && high >= target` |
-| `crossDown` | observed range touches/crosses downward: `high >= target && low <= target` |
+| `above` | current price is `>= target` |
+| `below` | current price is `<= target` |
+| `crossUp` | consecutive prices satisfy `previous < target && current >= target` |
+| `crossDown` | consecutive prices satisfy `previous > target && current <= target` |
 
-The price source is the live ticker quote, with latest candle close as fallback. Cross detection uses
-per-symbol previous-price memory in the runtime hook, not persisted state.
+The price source is the live MT5 ticker quote. Cross detection uses per-symbol
+previous-price memory in the runtime hook, not persisted state. The server push
+worker persists its own per-device cursor and replays recent MT5 ticks so a
+cross between worker polls is not lost.
 
 New alerts skip cross detection on their first evaluation so stale previous prices cannot trigger an
 immediate false cross. Above/below alerts can trigger immediately if the current price already meets

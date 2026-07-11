@@ -30,6 +30,26 @@ test("crossDown cannot trigger while current price remains above the line", () =
   assert.equal(isPriceConditionMet("crossDown", 1.14372, 1.1437, 1.1436), false);
 });
 
+test("crossUp only fires after price visits the armed side and reaches the target", () => {
+  const trigger = findPriceConditionTrigger("crossUp", 100, undefined, [
+    { price: 105, timestamp: 1000 },
+    { price: 101, timestamp: 1100 },
+    { price: 99, timestamp: 1200 },
+    { price: 100, timestamp: 1300 },
+  ]);
+  assert.deepEqual(trigger, { price: 100, timestamp: 1300 });
+});
+
+test("crossDown only fires after price visits the armed side and reaches the target", () => {
+  const trigger = findPriceConditionTrigger("crossDown", 100, undefined, [
+    { price: 95, timestamp: 1000 },
+    { price: 99, timestamp: 1100 },
+    { price: 101, timestamp: 1200 },
+    { price: 100, timestamp: 1300 },
+  ]);
+  assert.deepEqual(trigger, { price: 100, timestamp: 1300 });
+});
+
 test("closed-browser replay catches a wick that returns before the next poll", () => {
   const trigger = findPriceConditionTrigger("crossUp", 1.14392, 1.14388, [
     { price: 1.14389, timestamp: 1000 },
@@ -44,6 +64,11 @@ test("level conditions use current price only", () => {
   assert.equal(isPriceConditionMet("above", 100, 101, 99), false);
   assert.equal(isPriceConditionMet("below", 100, undefined, 100), true);
   assert.equal(isPriceConditionMet("below", 100, 99, 101), false);
+});
+
+test("local level operators intentionally include equality", () => {
+  assert.equal(isPriceConditionMet("above", 100, 99, 100), true);
+  assert.equal(isPriceConditionMet("below", 100, 101, 100), true);
 });
 
 test("persistence guard rejects trigger prices on the wrong side", () => {
