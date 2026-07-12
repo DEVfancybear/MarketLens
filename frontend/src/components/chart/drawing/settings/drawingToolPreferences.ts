@@ -11,12 +11,18 @@ export const DRAWING_TOOL_PREFERENCES_VERSION = 1;
 export interface DrawingToolPreferences {
   version: typeof DRAWING_TOOL_PREFERENCES_VERSION;
   keepDrawing: boolean;
+  magnetEnabled: boolean;
+  magnetMode: DrawingMagnetMode;
   toolDefaults: Partial<Record<DrawingTool, Partial<Drawing>>>;
 }
+
+export type DrawingMagnetMode = "weak" | "strong";
 
 export const EMPTY_DRAWING_TOOL_PREFERENCES: DrawingToolPreferences = {
   version: DRAWING_TOOL_PREFERENCES_VERSION,
   keepDrawing: false,
+  magnetEnabled: false,
+  magnetMode: "weak",
   toolDefaults: {},
 };
 
@@ -117,6 +123,8 @@ export function decodeDrawingToolPreferences(value: unknown): DrawingToolPrefere
   return {
     version: DRAWING_TOOL_PREFERENCES_VERSION,
     keepDrawing: value.keepDrawing === true,
+    magnetEnabled: value.magnetEnabled === true,
+    magnetMode: value.magnetMode === "strong" ? "strong" : "weak",
     toolDefaults,
   };
 }

@@ -80,6 +80,7 @@ import {
   EMPTY_DRAWING_TOOL_PREFERENCES,
   pickDrawingToolDefaults,
   type DrawingToolPreferences,
+  type DrawingMagnetMode,
 } from "@/components/chart/drawing/settings/drawingToolPreferences";
 
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
@@ -621,6 +622,22 @@ export const setDrawColorAtom = atom(null, (_get, set, c: string) => {
 
 export const setKeepDrawingModeAtom = atom(null, (_get, set, enabled: boolean) => {
   const next = { ..._get(drawingToolPreferencesAtom), keepDrawing: enabled };
+  set(drawingToolPreferencesAtom, next);
+  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+});
+
+export const setDrawingMagnetEnabledAtom = atom(null, (_get, set, enabled: boolean) => {
+  const next = { ..._get(drawingToolPreferencesAtom), magnetEnabled: enabled };
+  set(drawingToolPreferencesAtom, next);
+  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+});
+
+export const setDrawingMagnetModeAtom = atom(null, (_get, set, mode: DrawingMagnetMode) => {
+  const next = {
+    ..._get(drawingToolPreferencesAtom),
+    magnetEnabled: true,
+    magnetMode: mode,
+  };
   set(drawingToolPreferencesAtom, next);
   localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
 });

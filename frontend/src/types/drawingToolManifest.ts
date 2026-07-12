@@ -58,6 +58,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly selectionTextEditor?: "shape-center" | "line-midpoint";
   readonly settingsOverlay?: "position-dialog";
   readonly lifecycleExtension?: "position-resolution";
+  readonly magnetEligible: boolean;
   readonly modeInteraction?: "selection" | "pass-through" | "erase";
   readonly settingsProfile: DrawingSettingsProfile;
   readonly settingsFeatures: readonly DrawingSettingsFeature[];
@@ -109,6 +110,7 @@ function tool(
     persistent,
     favoriteEligible: persistent,
     preferredForCreation: persistent,
+    magnetEligible: persistent && creationMode !== "pointer-continuous",
     styleFamily,
     settingsProfile,
     settingsFeatures,

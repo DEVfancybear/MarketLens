@@ -55,12 +55,16 @@ test("preference decoder rejects unknown versions, tools, and unsafe fields", ()
   assert.deepEqual(decodeDrawingToolPreferences({ version: 99, keepDrawing: true }), {
     version: 1,
     keepDrawing: false,
+    magnetEnabled: false,
+    magnetMode: "weak",
     toolDefaults: {},
   });
 
   const decoded = decodeDrawingToolPreferences({
     version: 1,
     keepDrawing: true,
+    magnetEnabled: true,
+    magnetMode: "strong",
     toolDefaults: {
       trendline: {
         color: "#00ff00",
@@ -73,6 +77,8 @@ test("preference decoder rejects unknown versions, tools, and unsafe fields", ()
   });
 
   assert.equal(decoded.keepDrawing, true);
+  assert.equal(decoded.magnetEnabled, true);
+  assert.equal(decoded.magnetMode, "strong");
   assert.deepEqual(decoded.toolDefaults.trendline, {
     color: "#00ff00",
     lineWidth: 2,

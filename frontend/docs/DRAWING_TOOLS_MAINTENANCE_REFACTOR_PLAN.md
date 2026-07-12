@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; item 1 implemented on 2026-07-12.
+Status: in progress; items 1-2 implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -576,14 +576,34 @@ Delivered (item 1):
   persistence. Browser tests cover consecutive creation, active-tool retention, reload persistence,
   and Settings-to-next-creation default propagation.
 
+Delivered (item 2):
+
+- The drawing toolbar exposes persisted Off, Weak, and Strong magnet states. Weak/Strong selection
+  survives reload, and Ctrl/Cmd temporarily inverts magnet enablement during both creation and edit
+  gestures, matching the documented TradingView interaction.
+- `snapPointToOhlc` is a pure CSS-pixel service. It selects the closest projected candle on the time
+  axis and then the nearest distinct open, high, low, or close price. Strong mode always accepts the
+  candidate; Weak mode applies a 12 CSS-pixel two-dimensional threshold so zoom and price magnitude
+  do not alter sensitivity.
+- Magnet eligibility is a manifest capability consumed by shared interaction code. All point-based
+  persistent tools participate; pointer-continuous Brush/Highlighter strokes remain unsnapped so
+  sampled freehand geometry is not collapsed onto candle values. Indicator snapping is intentionally
+  deferred to its later subphase.
+- Creation previews/commits and Text anchors use the same resolver. Anchor resize snaps the active
+  handle, while body and multi-object moves translate from a snapped primary reference anchor, so
+  transaction boundaries and undo/redo remain unchanged.
+- Unit tests cover Strong/Weak selection, weak distance rejection, duplicate-price determinism,
+  modifier inversion, capability completeness, and transform reference geometry. Browser coverage
+  verifies Strong creation snapping, Ctrl override, toolbar state, and reload persistence.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 76/76 passing.
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 9/9 passing in 43.9 seconds.
+- `npm run test:drawing`: 81/81 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 10/10 passing in 49.5 seconds.
 
-Remaining: items 2-8 (magnet snapping, interval visibility, shared coordinate controls, object
+Remaining: items 3-8 (interval visibility, shared coordinate controls, object
 tree/grouping/names, sync modes, unified bulk scopes, and drawing alerts).
 
 Exit gate:

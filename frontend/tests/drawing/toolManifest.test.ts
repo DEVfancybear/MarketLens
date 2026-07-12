@@ -50,6 +50,16 @@ test("creation and style families are derived from the manifest", () => {
   assert.equal(getDrawingToolManifestEntry("cursor").modeInteraction, "selection");
   assert.equal(getDrawingToolManifestEntry("eraser").modeInteraction, "erase");
   assert.equal(getDrawingToolManifestEntry("crosshair").modeInteraction, "pass-through");
+  assert.equal(getDrawingToolManifestEntry("trendline").magnetEligible, true);
+  assert.equal(getDrawingToolManifestEntry("text").magnetEligible, true);
+  assert.equal(getDrawingToolManifestEntry("brush").magnetEligible, false);
+  for (const definition of DRAWING_TOOL_MANIFEST.filter((entry) => entry.persistent)) {
+    assert.equal(
+      definition.magnetEligible,
+      definition.creationMode !== "pointer-continuous",
+      `${definition.id} magnet eligibility must follow its creation capability`,
+    );
+  }
 });
 
 test("favorite validation rejects unknown and ineligible ids and keeps order", () => {

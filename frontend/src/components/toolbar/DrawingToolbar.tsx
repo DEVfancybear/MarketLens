@@ -37,6 +37,8 @@ import {
   PenLine,
   GripVertical,
   Repeat2,
+  Magnet,
+  ChevronDown,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
@@ -54,6 +56,9 @@ import {
   clearDrawingsAtom,
   keepDrawingModeAtom,
   setKeepDrawingModeAtom,
+  drawingToolPreferencesAtom,
+  setDrawingMagnetEnabledAtom,
+  setDrawingMagnetModeAtom,
 } from "@/store/chartStore";
 import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
@@ -278,10 +283,14 @@ export function DrawingToolbar() {
   const clearDrawings = useSetAtom(clearDrawingsAtom);
   const keepDrawing = useAtomValue(keepDrawingModeAtom);
   const setKeepDrawing = useSetAtom(setKeepDrawingModeAtom);
+  const drawingPreferences = useAtomValue(drawingToolPreferencesAtom);
+  const setMagnetEnabled = useSetAtom(setDrawingMagnetEnabledAtom);
+  const setMagnetMode = useSetAtom(setDrawingMagnetModeAtom);
   const lastUsed = useLastUsed();
   const [favorites, toggleFavorite] = useFavorites();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [magnetMenuOpen, setMagnetMenuOpen] = useState(false);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Favorited tools (in the order they were starred) for the floating chart
@@ -464,6 +473,52 @@ export function DrawingToolbar() {
       >
         <Repeat2 size={18} />
       </IconButton>
+
+      <div className="relative">
+        <IconButton
+          label={`Magnet: ${drawingPreferences.magnetEnabled ? drawingPreferences.magnetMode : "off"}`}
+          active={drawingPreferences.magnetEnabled}
+          onClick={() => setMagnetEnabled(!drawingPreferences.magnetEnabled)}
+        >
+          <Magnet size={18} />
+        </IconButton>
+        <button
+          type="button"
+          aria-label="Magnet mode menu"
+          onClick={() => setMagnetMenuOpen((open) => !open)}
+          className="absolute bottom-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-sm text-ink-faint hover:bg-terminal-hover hover:text-ink"
+        >
+          <ChevronDown size={10} />
+        </button>
+        {magnetMenuOpen && (
+          <div
+            data-chart-ui
+            className="absolute left-full top-0 z-50 ml-1 w-36 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl shadow-black/50"
+          >
+            {(["weak", "strong"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setMagnetMode(mode);
+                  setMagnetMenuOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center rounded px-2 py-1.5 text-left text-[11px] capitalize hover:bg-terminal-hover",
+                  drawingPreferences.magnetEnabled && drawingPreferences.magnetMode === mode
+                    ? "text-brand"
+                    : "text-ink",
+                )}
+              >
+                {mode === "weak" ? "Weak magnet" : "Strong magnet"}
+              </button>
+            ))}
+            <div className="px-2 pb-1 pt-1.5 text-[9px] text-ink-faint">
+              Ctrl/Cmd temporarily toggles
+            </div>
+          </div>
+        )}
+      </div>
 
       <IconButton label="Clear all drawings" onClick={clearDrawings}>
         <Trash2 size={18} />

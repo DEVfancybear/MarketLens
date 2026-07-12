@@ -1,4 +1,5 @@
 import type { Drawing } from "../../../../types/drawing";
+import type { Point } from "../../../../types/drawing";
 import type { DrawingAdapterContractResult } from "./adapterContractAudit";
 
 export interface DrawingInteractionTestSnapshot {
@@ -19,6 +20,10 @@ export interface DrawingInteractionTestHarness {
     overDrawingUi: boolean;
     target: string | null;
     hits: Array<{ id: string; target: string; distance: number }>;
+  };
+  magnetPointsAtClient: (x: number, y: number) => {
+    raw: Point | null;
+    strong: Point | null;
   };
   clear: () => void;
   changeSymbol: (symbol: string) => void;

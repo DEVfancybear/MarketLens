@@ -64,3 +64,32 @@ test("multi-move translates every selected drawing in one session", () => {
   assert.deepEqual(update.get("b")?.[0], { time: 17, price: 28 });
   assert.deepEqual(session.originalPointsFor("b")?.[0], { time: 15, price: 25 });
 });
+
+test("move snapping aligns the primary reference anchor while resize snaps directly", () => {
+  const subject = drawing("snap", "trendline");
+  const move = new TransformSession({
+    drawing: subject,
+    dragStart: { time: 15, price: 25 },
+    anchorIndex: -1,
+    mode: "move",
+  });
+  const adjusted = move.pointerAdjustedForSnap(
+    { time: 17, price: 28 },
+    () => ({ time: 20, price: 40 }),
+  );
+  assert.deepEqual(adjusted, {
+    time: 15 + 20 - subject.points[0].time,
+    price: 25 + 40 - subject.points[0].price,
+  });
+
+  const resize = new TransformSession({
+    drawing: subject,
+    dragStart: subject.points[0],
+    anchorIndex: 0,
+    mode: "resize",
+  });
+  assert.deepEqual(
+    resize.pointerAdjustedForSnap({ time: 1, price: 2 }, () => ({ time: 100, price: 200 })),
+    { time: 100, price: 200 },
+  );
+});

@@ -147,6 +147,56 @@ test("confirmed settings become the persisted default for the same tool", async 
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.lineWidth).toBe(4);
 });
 
+test("strong OHLC magnet snaps creation and Ctrl temporarily disables it", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = { x: pane.x + pane.width * 0.37, y: pane.y + pane.height * 0.43 };
+  const second = { x: pane.x + pane.width * 0.61, y: pane.y + pane.height * 0.57 };
+
+  await page.getByRole("button", { name: "Magnet mode menu", exact: true }).click();
+  await page.getByRole("button", { name: "Strong magnet", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Magnet: strong", exact: true }))
+    .toHaveClass(/text-brand/);
+
+  const chooseHorizontal = async () => {
+    await page.getByRole("button", { name: "Trend line", exact: true }).click();
+    await page.getByRole("button", { name: /^Horizontal line\b/ }).click();
+  };
+  const expectedStrong = await page.evaluate(
+    ({ x, y }) => window.__drawingInteractionTest!.magnetPointsAtClient(x, y).strong,
+    first,
+  );
+  await chooseHorizontal();
+  await page.mouse.click(first.x, first.y);
+  await expect.poll(async () => {
+    const point = (await drawingSnapshot(page)).drawings[0]?.points[0];
+    return point && expectedStrong
+      ? point.time === expectedStrong.time && Math.abs(point.price - expectedStrong.price) < 0.00001
+      : false;
+  }).toBe(true);
+
+  await page.evaluate(() => window.__drawingInteractionTest!.clear());
+  const expectedRaw = await page.evaluate(
+    ({ x, y }) => window.__drawingInteractionTest!.magnetPointsAtClient(x, y).raw,
+    second,
+  );
+  await chooseHorizontal();
+  await page.keyboard.down("Control");
+  await page.mouse.click(second.x, second.y);
+  await page.keyboard.up("Control");
+  await expect.poll(async () => {
+    const point = (await drawingSnapshot(page)).drawings[0]?.points[0];
+    return point && expectedRaw
+      ? point.time === expectedRaw.time && Math.abs(point.price - expectedRaw.price) < 0.00001
+      : false;
+  }).toBe(true);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
+  await expect(page.getByRole("button", { name: "Magnet: strong", exact: true }))
+    .toHaveClass(/text-brand/);
+});
+
 async function exerciseTrendlineTransaction(page: Page) {
   await page.evaluate(() => window.__drawingInteractionTest!.clear());
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());

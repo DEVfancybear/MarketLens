@@ -29,6 +29,10 @@ import {
 import { type Drawing, type Point } from "@/types";
 import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
 import { resolveDrawingCreationDefaults } from "./drawing/settings/drawingToolPreferences";
+import {
+  effectiveMagnetMode,
+  snapPointToOhlc,
+} from "./drawing/interaction/OhlcMagnetSnap";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
 import {
@@ -70,6 +74,7 @@ export function DrawingLayer() {
   const activeTool = useAtomValue(activeToolAtom);
   const drawColor = useAtomValue(drawColorAtom);
   const drawingToolPreferences = useAtomValue(drawingToolPreferencesAtom);
+  const candles = useAtomValue(candlesAtom);
   const selectedDrawingId = useAtomValue(selectedDrawingIdAtom);
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const drawingsLocked = useAtomValue(drawingsLockedAtom);
@@ -214,12 +219,26 @@ export function DrawingLayer() {
     if (t == null || p == null) return null;
     return { time: t as number, price: p };
   }, []);
+  const snapPoint = useCallback(
+    (point: Point, tool: Drawing["tool"], event: PointerEvent): Point => {
+      if (!getDrawingToolManifestEntry(tool).magnetEligible) return point;
+      const mode = effectiveMagnetMode(
+        drawingToolPreferences.magnetEnabled,
+        drawingToolPreferences.magnetMode,
+        event.ctrlKey || event.metaKey,
+      );
+      if (!mode) return point;
+      return snapPointToOhlc({ point, candles, mode, toX, toY }).point;
+    },
+    [candles, drawingToolPreferences.magnetEnabled, drawingToolPreferences.magnetMode, toX, toY],
+  );
 
   const stateRef = useRef({
     drawings: [] as Drawing[],
     activeTool: "cursor" as Drawing["tool"],
     drawColor: "#2962ff",
     drawingToolPreferences,
+    candles,
     drawingsLocked: false,
     ctxReady: false,
     drawingsHidden: false,
@@ -231,6 +250,7 @@ export function DrawingLayer() {
     activeTool,
     drawColor,
     drawingToolPreferences,
+    candles,
     drawingsLocked,
     ctxReady: !!ctx,
     drawingsHidden,
@@ -422,6 +442,7 @@ export function DrawingLayer() {
       }
     },
     onTextPlace: handleTextPlace,
+    snapPoint,
     freezeChart,
     cancellationKey: symbol,
   });
@@ -501,6 +522,24 @@ export function DrawingLayer() {
           hits,
         };
       },
+      magnetPointsAtClient: (x, y) => {
+        const raw = fromEvent(new PointerEvent("pointermove", {
+          clientX: x,
+          clientY: y,
+        }));
+        return {
+          raw,
+          strong: raw
+            ? snapPointToOhlc({
+              point: raw,
+              candles: stateRef.current.candles,
+              mode: "strong",
+              toX,
+              toY,
+            }).point
+            : null,
+        };
+      },
       clear: () => {
         for (const drawing of stateRef.current.drawings) removeDrawing(drawing.id);
         selectDrawing(null);
@@ -512,7 +551,7 @@ export function DrawingLayer() {
     return () => {
       delete window.__drawingInteractionTest;
     };
-  }, [machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, toX, toY]);
+  }, [fromEvent, machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, toX, toY]);
 
   // While a drawing is being created or dragged/resized, freeze the chart's
   // pan & zoom. Otherwise a fast pointer move leaks through to the chart's

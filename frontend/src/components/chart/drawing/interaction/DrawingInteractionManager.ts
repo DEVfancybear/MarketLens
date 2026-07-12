@@ -82,6 +82,8 @@ export interface DrawingInteractionManagerOpts {
   openDrawingSettings?: (id: string) => void;
   /** Called when Text tool is used. If provided, replaces window.prompt. */
   onTextPlace?: (tool: DrawingTool, point: Point, color: string) => void;
+  /** Capability-aware OHLC snapping supplied by the chart composition root. */
+  snapPoint?: (point: Point, tool: DrawingTool, event: PointerEvent) => Point;
   /** Changing this value cancels any in-flight interaction synchronously. */
   cancellationKey?: string;
   /**
@@ -129,6 +131,7 @@ export function useDrawingInteractionManager(
     selectAll,
     openDrawingSettings,
     onTextPlace,
+    snapPoint,
     freezeChart,
     cancellationKey,
   } = opts;
@@ -136,6 +139,8 @@ export function useDrawingInteractionManager(
   freezeChartRef.current = freezeChart;
   const openDrawingSettingsRef = useRef(openDrawingSettings);
   openDrawingSettingsRef.current = openDrawingSettings;
+  const snapPointRef = useRef(snapPoint);
+  snapPointRef.current = snapPoint;
 
   const [machine, setMachine] = useState<Machine>(() => createInitialMachine());
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
@@ -283,9 +288,9 @@ export function useDrawingInteractionManager(
       if (isOverDrawingUI(event) || !isOverCanvas(event, canvas) || event.button > 0) return;
       const currentMachine = machineRef.current;
       if (currentMachine.state !== "Idle" && currentMachine.state !== "Drawing") return;
-      const point = fromEvent(event);
+      const rawPoint = fromEvent(event);
       const current = getState();
-      if (!point || !current.ctxReady) return;
+      if (!rawPoint || !current.ctxReady) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -294,6 +299,9 @@ export function useDrawingInteractionManager(
       pointerClaimedRef.current = true;
 
       const definition = getDrawingToolManifestEntry(current.activeTool);
+      const point = definition.magnetEligible
+        ? snapPointRef.current?.(rawPoint, current.activeTool, event) ?? rawPoint
+        : rawPoint;
       if (definition.overlayExtension === "text-editor") {
         if (onTextPlace) {
           onTextPlace(current.activeTool, point, current.drawColor);
@@ -338,8 +346,11 @@ export function useDrawingInteractionManager(
     const handleMove = (event: PointerEvent) => {
       if (!isOverCanvas(event, canvas) || machineRef.current.state !== "Drawing") return;
       const session = creationSessionRef.current;
-      const point = fromEvent(event);
-      if (!session || !point) return;
+      const rawPoint = fromEvent(event);
+      if (!session || !rawPoint) return;
+      const point = session.definition.magnetEligible
+        ? snapPointRef.current?.(rawPoint, session.tool, event) ?? rawPoint
+        : rawPoint;
       if (session.definition.creationMode === "pointer-continuous") {
         event.preventDefault();
         event.stopPropagation();
@@ -355,7 +366,10 @@ export function useDrawingInteractionManager(
       if (!session || session.definition.creationMode !== "pointer-continuous") return;
       event.preventDefault();
       event.stopPropagation();
-      const point = fromEvent(event);
+      const rawPoint = fromEvent(event);
+      const point = rawPoint && session.definition.magnetEligible
+        ? snapPointRef.current?.(rawPoint, session.tool, event) ?? rawPoint
+        : rawPoint;
       const previous = session.points[session.points.length - 1];
       const accept = !!point && shouldRecordContinuousPoint(previous, point, toX, toY);
       applyCreationOutcome(session.pointerUp(point ?? undefined, accept));
@@ -499,11 +513,18 @@ export function useDrawingInteractionManager(
       ) {
         return;
       }
-      const p = fromEvent(e);
-      if (!p) return;
+      const rawPoint = fromEvent(e);
+      if (!rawPoint) return;
+      const session = transformSessionRef.current;
+      const definition = getDrawingToolManifestEntry(session.tool);
+      const p = definition.magnetEligible && snapPointRef.current
+        ? session.pointerAdjustedForSnap(rawPoint, (point) =>
+          snapPointRef.current!(point, session.tool, e),
+        )
+        : rawPoint;
       const multiMap = livePointsWorkRef.current;
       multiMap.clear();
-      for (const [id, points] of transformSessionRef.current.update(p)) {
+      for (const [id, points] of session.update(p)) {
         multiMap.set(id, points);
       }
       livePointsRef.current = multiMap;

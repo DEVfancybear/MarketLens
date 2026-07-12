@@ -64,6 +64,22 @@ export class TransformSession {
     );
   }
 
+  /** Convert a snapped primary-anchor target back into the drag pointer space. */
+  pointerAdjustedForSnap(pointer: Point, snap: (point: Point) => Point): Point {
+    if (this.mode === "resize") return snap(pointer);
+    const reference = this.primaryOriginal[0];
+    if (!reference) return pointer;
+    const translatedReference = {
+      time: reference.time + pointer.time - this.dragStart.time,
+      price: reference.price + pointer.price - this.dragStart.price,
+    };
+    const snappedReference = snap(translatedReference);
+    return {
+      time: this.dragStart.time + snappedReference.time - reference.time,
+      price: this.dragStart.price + snappedReference.price - reference.price,
+    };
+  }
+
   update(pointer: Point): Map<string, Point[]> {
     if (this.isMulti) {
       const dt = pointer.time - this.dragStart.time;
