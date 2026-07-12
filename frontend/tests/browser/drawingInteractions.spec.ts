@@ -76,6 +76,47 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
   await expect(settingsButton).toBeFocused();
 });
 
+test("shared coordinate editor updates anchors in one undoable transaction", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.3, y: pane.y + pane.height * 0.65 };
+  const end = { x: pane.x + pane.width * 0.62, y: pane.y + pane.height * 0.35 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  const created = await drawingSnapshot(page);
+  const original = created.drawings[0].points;
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    created.drawings[0].id,
+  );
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click(
+    projected![0].x + (projected![1].x - projected![0].x) * 0.75,
+    projected![0].y + (projected![1].y - projected![0].y) * 0.75,
+  );
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Trendline settings" });
+  await dialog.getByRole("tab", { name: "coordinates", exact: true }).click();
+  const nextPrice = original[0].price + 1.25;
+  const nextTime = original[0].time + 60;
+  await dialog.getByRole("spinbutton", { name: "Point 1 price", exact: true }).fill(String(nextPrice));
+  await dialog.getByRole("spinbutton", { name: "Point 1 price", exact: true }).press("Enter");
+  await dialog.getByRole("spinbutton", { name: "Point 1 Unix time", exact: true }).fill(String(nextTime));
+  await dialog.getByRole("spinbutton", { name: "Point 1 Unix time", exact: true }).press("Enter");
+  await dialog.getByRole("button", { name: "Ok", exact: true }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points[0])
+    .toEqual({ time: nextTime, price: nextPrice });
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points).toEqual(original);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points[0])
+    .toEqual({ time: nextTime, price: nextPrice });
+});
+
 test("keep drawing creates consecutive objects and survives reload", async ({ page }) => {
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];

@@ -11,6 +11,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import {
   editingDrawingIdAtom,
+  candlesAtom,
   drawingsAtom,
   setEditingDrawingAtom,
   symbolAtom,
@@ -45,6 +46,7 @@ import {
   buildDrawingSettingsRevert,
 } from "./drawing/settings/drawingSettingsTransaction";
 import { DrawingIntervalVisibilityFields } from "./drawing/settings/DrawingIntervalVisibilityFields";
+import { DrawingCoordinatesFields } from "./drawing/settings/DrawingCoordinatesFields";
 
 const COLORS = [
   "#ffffff",
@@ -68,7 +70,7 @@ const COLORS = [
 ];
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32];
 
-type Tab = "inputs" | "style" | "visibility";
+type Tab = "inputs" | "style" | "coordinates" | "visibility";
 
 /** A number input that keeps its own text so the user can type freely.
  *
@@ -434,6 +436,7 @@ function StatsSelect({
 export function PositionSettingsDialog() {
   const editingId = useAtomValue(editingDrawingIdAtom);
   const drawings = useAtomValue(drawingsAtom);
+  const candles = useAtomValue(candlesAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
@@ -573,6 +576,7 @@ export function PositionSettingsDialog() {
   const leverage = drawing.leverage ?? 1;
   const tabBtn = (id: Tab, label: string) => (
     <button
+      key={id}
       role="tab"
       aria-selected={tab === id}
       onClick={() => setTab(id)}
@@ -841,6 +845,15 @@ export function PositionSettingsDialog() {
                 />
               </Row>
             </>
+          )}
+
+          {tab === "coordinates" && (
+            <DrawingCoordinatesFields
+              points={drawing.points}
+              candles={candles}
+              labels={settings.coordinateLabels}
+              onChange={(points) => patch({ points })}
+            />
           )}
 
           {tab === "visibility" && (

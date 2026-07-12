@@ -10,10 +10,12 @@ test("settings schema derives family tabs and fields from manifest capabilities"
   assert.equal(getDrawingSettingsSchema("rectangle").hasField("showMiddleLine"), true);
   assert.equal(getDrawingSettingsSchema("circle").hasField("showMiddleLine"), false);
   assert.equal(getDrawingSettingsSchema("fibRetracement").hasFeature("fib-levels"), true);
-  assert.deepEqual(getDrawingSettingsSchema("text").tabs, ["text", "visibility"]);
-  assert.deepEqual(getDrawingSettingsSchema("long").tabs, ["inputs", "style", "visibility"]);
+  assert.deepEqual(getDrawingSettingsSchema("text").tabs, ["text", "coordinates", "visibility"]);
+  assert.deepEqual(getDrawingSettingsSchema("long").tabs, ["inputs", "style", "coordinates", "visibility"]);
   assert.equal(getDrawingSettingsSchema("short").hasField("riskValue"), true);
   assert.equal(getDrawingSettingsSchema("trendline").hasField("intervalVisibility"), true);
+  assert.equal(getDrawingSettingsSchema("text").hasField("points"), true);
+  assert.deepEqual(getDrawingSettingsSchema("long").coordinateLabels, ["Entry", "Target", "Stop"]);
 });
 
 test("settings schemas cover every current family and transactions preserve snapshots", () => {

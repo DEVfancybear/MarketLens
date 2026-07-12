@@ -59,6 +59,11 @@ test("creation and style families are derived from the manifest", () => {
       definition.creationMode !== "pointer-continuous",
       `${definition.id} magnet eligibility must follow its creation capability`,
     );
+    assert.equal(
+      definition.settingsFeatures.includes("coordinates"),
+      true,
+      `${definition.id} must expose precise coordinates`,
+    );
   }
 });
 

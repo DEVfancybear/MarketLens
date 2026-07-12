@@ -23,6 +23,7 @@ export interface DrawingSettingsSchema {
   profile: ReturnType<typeof getDrawingToolManifestEntry>["settingsProfile"];
   templateFamily: ReturnType<typeof getDrawingToolManifestEntry>["styleFamily"];
   positionSide?: "long" | "short";
+  coordinateLabels?: readonly string[];
   features: readonly DrawingSettingsFeature[];
   tabs: readonly DrawingSettingsTab[];
   sections: readonly DrawingSettingsSectionDescriptor[];
@@ -81,6 +82,7 @@ export function getDrawingSettingsSchema(tool: DrawingTool): DrawingSettingsSche
     profile: definition.settingsProfile,
     templateFamily: definition.styleFamily,
     positionSide: definition.positionSide,
+    coordinateLabels: definition.coordinateLabels,
     features: definition.settingsFeatures,
     tabs,
     sections,

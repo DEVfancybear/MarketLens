@@ -59,6 +59,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly settingsOverlay?: "position-dialog";
   readonly lifecycleExtension?: "position-resolution";
   readonly magnetEligible: boolean;
+  readonly coordinateLabels?: readonly string[];
   readonly modeInteraction?: "selection" | "pass-through" | "erase";
   readonly settingsProfile: DrawingSettingsProfile;
   readonly settingsFeatures: readonly DrawingSettingsFeature[];
@@ -90,11 +91,11 @@ function tool(
   );
   const settingsFeatures = options.settingsFeatures ?? (
     settingsProfile === "mode" ? [] : settingsProfile === "position"
-      ? ["stats", "line", "visibility", "templates"]
+      ? ["stats", "line", "coordinates", "visibility", "templates"]
       : settingsProfile === "fib"
         ? ["line", "fill", "fib-levels", "coordinates", "visibility", "templates"]
         : settingsProfile === "text"
-          ? ["text", "visibility", "templates"]
+          ? ["text", "coordinates", "visibility", "templates"]
           : settingsProfile === "shape"
             ? ["line", "fill", "text", "coordinates", "visibility", "templates"]
             : ["line", ...(options.selectionTextEditor ? ["text" as const] : []), "coordinates", "visibility", "templates"]
@@ -159,8 +160,8 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib" }),
   tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib" }),
   tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib" }),
-  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long" }),
-  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short" }),
+  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", coordinateLabels: ["Entry", "Target", "Stop"] }),
+  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", coordinateLabels: ["Entry", "Target", "Stop"] }),
   tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "annotations", "emoji", "one-point", 1, { styleFamily: "text" }),
 ] satisfies readonly DrawingToolManifestEntry[]);

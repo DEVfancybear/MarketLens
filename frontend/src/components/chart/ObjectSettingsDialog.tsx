@@ -53,6 +53,7 @@ import {
 } from "./drawing/settings/drawingSettingsTransaction";
 import { CheckBox, ColorPopover, LineWidget, Select, Swatch } from "./drawing/settings/DrawingSettingsFields";
 import { DrawingIntervalVisibilityFields } from "./drawing/settings/DrawingIntervalVisibilityFields";
+import { DrawingCoordinatesFields } from "./drawing/settings/DrawingCoordinatesFields";
 
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40];
 const EXTEND_OPTS: { value: NonNullable<Drawing["extend"]>; label: string }[] = [
@@ -87,18 +88,6 @@ const FIB_V_ALIGN: { value: FibAlignV; label: string }[] = [
 ];
 
 type Tab = "style" | "text" | "coordinates" | "visibility";
-
-function toLocalInput(unixSec: number): string {
-  const d = new Date(unixSec * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours(),
-  )}:${pad(d.getMinutes())}`;
-}
-function fromLocalInput(s: string): number | null {
-  const ms = new Date(s).getTime();
-  return Number.isFinite(ms) ? Math.round(ms / 1000) : null;
-}
 
 function normalizedFibLevels(d: Drawing): FibLevelConfig[] {
   return DEFAULT_FIB_LEVELS.map((base, i) => {
@@ -219,31 +208,6 @@ export function ObjectSettingsDialog() {
   };
   cancelRef.current = cancel;
 
-  const setPoint = (idx: number, p: Partial<{ time: number; price: number }>) => {
-    const pts = drawing.points.map((q) => ({ ...q }));
-    if (pts[idx]) {
-      pts[idx] = { ...pts[idx], ...p };
-      patch({ points: pts });
-    }
-  };
-  const barForTime = (time: number): number => {
-    if (candles.length === 0) return 0;
-    let best = 0;
-    let bestDist = Math.abs(candles[0].time - time);
-    for (let i = 1; i < candles.length; i++) {
-      const dist = Math.abs(candles[i].time - time);
-      if (dist < bestDist) {
-        best = i;
-        bestDist = dist;
-      }
-    }
-    return best;
-  };
-  const setPointBar = (idx: number, bar: number) => {
-    if (candles.length === 0) return;
-    const safe = Math.max(0, Math.min(candles.length - 1, Math.round(bar)));
-    setPoint(idx, { time: candles[safe].time });
-  };
   const fibLevels = normalizedFibLevels(drawing);
   const patchFibLevel = (idx: number, p: Partial<FibLevelConfig>) => {
     const next = normalizedFibLevels(drawing);
@@ -260,7 +224,7 @@ export function ObjectSettingsDialog() {
   const familyTemplates = templates.filter((t) => t.family === family);
 
   if (isPlainText) {
-    const textTabBtn = (id: "text" | "visibility") => (
+    const textTabBtn = (id: Tab) => (
       <button
         key={id}
         role="tab"
@@ -326,11 +290,11 @@ export function ObjectSettingsDialog() {
             </div>
 
             <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
-              {(settings.tabs as readonly ("text" | "visibility")[]).map(textTabBtn)}
+              {(settings.tabs as readonly Tab[]).map(textTabBtn)}
             </div>
 
             <div className="min-h-[420px] flex-1 overflow-y-auto px-5 py-5">
-              {tab !== "visibility" && (
+              {tab === "text" && (
                 <>
                   <div className="mb-4 flex items-center gap-2">
                     <div className="relative">
@@ -478,6 +442,15 @@ export function ObjectSettingsDialog() {
                     </div>
                   </div>
                 </>
+              )}
+
+              {tab === "coordinates" && (
+                <DrawingCoordinatesFields
+                  points={drawing.points}
+                  candles={candles}
+                  labels={settings.coordinateLabels}
+                  onChange={(points) => patch({ points })}
+                />
               )}
 
               {tab === "visibility" && (
@@ -1117,53 +1090,12 @@ export function ObjectSettingsDialog() {
 
           {/* -------------------------------------------- COORDINATES */}
           {tab === "coordinates" && (
-            <>
-              {isFib ? (
-                <div className="space-y-4 py-2">
-                  {drawing.points.map((pt, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <span className="w-[100px] shrink-0 text-[14px] font-medium text-[#d1d4dc]">
-                        #{i + 1} (price, bar)
-                      </span>
-                      <NumberField
-                        value={Number(pt.price.toFixed(6))}
-                        onCommit={(v) => setPoint(i, { price: v })}
-                        className="w-[100px]"
-                      />
-                      <NumberField
-                        value={barForTime(pt.time)}
-                        onCommit={(v) => setPointBar(i, v)}
-                        className="w-[100px]"
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                drawing.points.map((pt, i) => (
-                  <div key={i}>
-                    <SectionTitle>Point {i + 1}</SectionTitle>
-                    <Row label="Price">
-                      <NumberField
-                        value={Number(pt.price.toFixed(6))}
-                        onCommit={(v) => setPoint(i, { price: v })}
-                        className="flex-1"
-                      />
-                    </Row>
-                    <Row label="Date / time">
-                      <input
-                        type="datetime-local"
-                        value={toLocalInput(pt.time)}
-                        onChange={(e) => {
-                          const t = fromLocalInput(e.target.value);
-                          if (t != null) setPoint(i, { time: t });
-                        }}
-                        className="flex-1 rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 py-1.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
-                      />
-                    </Row>
-                  </div>
-                ))
-              )}
-            </>
+            <DrawingCoordinatesFields
+              points={drawing.points}
+              candles={candles}
+              labels={settings.coordinateLabels}
+              onChange={(points) => patch({ points })}
+            />
           )}
 
           {/* --------------------------------------------- VISIBILITY */}

@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; items 1-3 implemented on 2026-07-12.
+Status: in progress; items 1-4 implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -618,16 +618,37 @@ Delivered (item 3):
   quick-action writes, interval filtering, selection release, and restoration when returning to an
   eligible interval.
 
+Delivered (item 4):
+
+- Every persistent point-based tool now exposes the shared Coordinates capability, including Text,
+  Emoji, and Position profiles that previously lacked a complete coordinate tab. The manifest can
+  contribute semantic stored-anchor labels; Long/Short Position use Entry, Target, and Stop without
+  concrete tool-id checks in the shared editor.
+- `DrawingCoordinatesFields` replaces the separate Fib and generic coordinate implementations. Each
+  stored anchor exposes precise price, local date/time, Unix timestamp, and candle bar-index inputs,
+  with the same layout and behavior across line, shape, level, annotation, freeform, and position
+  families.
+- Pure coordinate helpers clone immutable point arrays, reject non-finite edits, find the nearest bar
+  by binary search, and clamp bar-index edits to available candle history. Date/time conversions are
+  explicit and minute-stable.
+- Coordinate previews continue through the settings transaction path: Cancel restores the immutable
+  open snapshot, OK creates one history entry, and undo/redo round-trips all edited anchors together.
+  Geometry remains in the existing persisted `points` contract, so no payload migration is needed.
+- Contract tests assert Coordinates coverage for every persistent manifest entry, Text/Position tab
+  coverage, semantic Position labels, immutable point updates, bar lookup/clamping, and date/time
+  conversion. Browser coverage verifies precise price/time edits and a single undoable transaction.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 86/86 passing.
+- `npm run test:drawing`: 89/89 passing.
+- `npm run test:position`: 26/26 passing.
 - `npm run test:drawing-persistence`: 14/14 passing.
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 11/11 passing in 57.2 seconds.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 12/12 passing in 54.2 seconds.
 
-Remaining: items 4-8 (shared coordinate controls, object
-tree/grouping/names, sync modes, unified bulk scopes, and drawing alerts).
+Remaining: items 5-8 (object tree/grouping/names, sync modes, unified bulk scopes, and drawing
+alerts).
 
 Exit gate:
 
