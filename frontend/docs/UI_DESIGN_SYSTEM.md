@@ -1,6 +1,6 @@
 # UI Design System
 
-_Last updated: 2026-07-13_
+_Last updated: 2026-07-12_
 
 This document is the source of truth for the terminal's visual language and
 workspace shell. The current direction is **Institutional Pro** with balanced,
@@ -59,15 +59,6 @@ hardcode remains legible in light mode. The compatibility selectors in
 `globals.css` temporarily map legacy TradingView palette utilities to semantic
 tokens; new code must not add more legacy hex utilities.
 
-The active theme is applied to `<html>` before the client application renders
-to avoid a dark-to-light flash. `Providers` keeps the root class, `data-theme`,
-and browser `theme-color` metadata synchronized. The toolbar theme control must
-show the current mode in its accessible name; it must not be an unlabeled icon.
-
-Light mode uses opaque, high-contrast surfaces rather than transparent dark
-cards with inverted text. Borders, dividers, focus, hover, pressed, disabled,
-and modal scrim states must remain distinguishable in both palettes.
-
 ## Typography And Density
 
 - UI: Fira Sans when available, followed by Segoe UI Variable/system fallback.
@@ -111,19 +102,15 @@ the same visual hierarchy; active state is not conveyed by color alone.
 
 ## Responsive Policy
 
-`useViewport` is the responsive policy source. `useViewportMode` is retained
-only as a compatibility wrapper:
+`useViewportMode` is the only viewport classification source:
 
 - Phone: up to 767px.
-- Tablet: 768-1199px, or wider screens with a coarse pointer.
-- Desktop: 1200px and above with a fine pointer.
+- Tablet: 768-1023px.
+- Desktop: 1024px and above.
 
-The persisted desktop right dock and the touch drawer do not share open state.
-Phone/compact-tablet navigation opens the watchlist explicitly; it must never
-inherit a desktop-open dock during hydration. Phone uses a full-screen
-watchlist, tablet uses a drawer, and bottom workspaces use sheets. Pine is
-full-screen on phone. Browser zoom remains enabled, the shell uses `dvh`, safe
-area padding is reserved, and touch targets expand for coarse pointers.
+The right dock closes when entering phone/tablet mode and reopens as an overlay
+drawer only on explicit user action. Browser zoom remains enabled. The shell
+uses `dvh` and touch targets expand for coarse pointers.
 
 ## Motion And Layering
 
@@ -142,11 +129,8 @@ npm run typecheck
 npm run lint
 npm run test:ui
 npm run build
-npm run test:responsive
-npm run test:chart-browser
 ```
 
-Automated coverage currently verifies 390x844, 768x1024, and 1366x768. Also
-manually verify 430x932, 844x390, 1024x768, and 1920x1080 until those viewports
-join the suite. Check both themes, keyboard focus, browser zoom, reduced motion,
-popup clipping, and that each popup exposes only one scrollbar.
+Also verify 390x844, 768x1024, 1024x768, 1366x768, and 1920x1080. Check both
+themes, keyboard focus, browser zoom, reduced motion, popup clipping, and that
+each popup exposes only one scrollbar.

@@ -1,6 +1,6 @@
 # Responsive Architecture
 
-_Last updated: 2026-07-13_
+_Last updated: 2026-07-12_
 
 This document defines the responsive plan for the trading terminal. The goal is
 not to make the desktop layout shrink until it fits. The goal is to provide
@@ -35,21 +35,13 @@ Sources reviewed for this plan:
 
 ## Current State
 
-The responsive shell and its first interaction coverage are implemented:
+The responsive shell foundation is implemented:
 
 - `TerminalLayout` uses an 88px two-tier header, chart-first workspace surfaces,
-  a resizable desktop right dock, a tablet drawer, and a full-screen phone
-  watchlist.
-- `useViewport` is the shared width, height, orientation, pointer, and hover
-  policy source. `useViewportMode` remains as a compatibility wrapper.
-- Desktop classification now starts at `1200px` and requires a fine pointer.
-  A coarse pointer keeps tablet interaction policy even at wider widths.
-- Phone and compact tablet layouts have a five-action workspace bar for Chart,
-  Draw, Watch, Replay, and Pine. The drawing rail becomes an explicit overlay.
-- Touch drawer state is isolated from the persisted desktop dock state so a
-  desktop-open watchlist cannot cover the chart on first phone load.
-- Replay and other bottom workspaces use overlay sheets outside desktop. Pine
-  uses a full-screen phone surface.
+  a resizable desktop right dock, and an overlay right drawer on tablet/phone.
+- `useViewportMode` centralizes phone, tablet, and desktop classification.
+- Entering tablet/phone mode closes the desktop right dock; the toolbar toggle
+  opens it explicitly as a scrim-backed drawer.
 - The command bar stays on one line and scrolls horizontally instead of
   wrapping.
 - Coarse-pointer menu/icon controls expand to at least 44px.
@@ -58,17 +50,10 @@ The responsive shell and its first interaction coverage are implemented:
   and own one internal scroll region.
 - Browser zoom is enabled, the shell uses `dvh`, and global reduced-motion
   handling is active.
-- Dark and light palettes share semantic tokens. Theme state is applied before
-  the application renders, and browser `theme-color` follows the active theme.
-- `tests/browser/responsiveTheme.spec.ts` covers phone, tablet portrait, and
-  desktop interaction. `npm run test:responsive` performs a direct browser
-  smoke test and saves reference screenshots under
-  `.runtime-logs/responsive-ui/`.
 
-Remaining phases include bottom-sheet drawing group presentation, responsive
-variants for every legacy fixed dialog, viewport-specific dock size
-persistence, phone landscape/large-phone coverage, and gesture/hit-target
-tuning.
+Remaining phases include a phone-specific drawing presentation, responsive
+full-screen/bottom-sheet variants for every legacy fixed dialog, and
+viewport-specific dock size persistence.
 
 ## Product Principles
 
@@ -370,19 +355,17 @@ Tasks:
 
 ## Testing Plan
 
-Playwright viewport coverage lives in the existing dedicated test area. Rows
-marked implemented run in the current automated suite; the remaining rows are
-the next coverage targets.
+Add Playwright viewport coverage in the existing dedicated test area:
 
-| Viewport | Purpose | Status |
-| --- | --- | --- |
-| `390x844` | iPhone portrait | Implemented |
-| `430x932` | large phone portrait | Planned |
-| `844x390` | phone landscape | Planned |
-| `768x1024` | tablet portrait | Implemented |
-| `1024x768` | tablet landscape | Planned |
-| `1366x768` | desktop regression | Implemented |
-| `1920x1080` | wide desktop regression | Planned |
+| Viewport | Purpose |
+| --- | --- |
+| `390x844` | iPhone portrait |
+| `430x932` | large phone portrait |
+| `844x390` | phone landscape |
+| `768x1024` | tablet portrait |
+| `1024x768` | tablet landscape |
+| `1366x768` | desktop regression |
+| `1920x1080` | wide desktop regression |
 
 Test cases:
 
@@ -405,20 +388,10 @@ npm run typecheck
 npm run lint
 npm run build
 npm run test:responsive
-npm run test:chart-browser
 ```
 
-`test:responsive` launches a headless Edge/Chromium session directly, checks
-the three implemented viewport modes, toggles light theme on phone, verifies
-that the page does not overflow horizontally, and writes screenshots to
-`.runtime-logs/responsive-ui/`. The same interactions are also part of the main
-Playwright suite through `responsiveTheme.spec.ts`.
-
-Latest verification on 2026-07-13:
-
-- `npm run typecheck`: pass.
-- `npm run test:responsive`: 3/3 pass.
-- `npm run test:chart-browser`: 24/24 pass.
+`test:responsive` does not exist yet. Add it when Playwright coverage is
+introduced.
 
 ## Acceptance Criteria
 
@@ -455,12 +428,11 @@ Desktop:
 - Prefer CSS `dvh/svh` where needed, but centralize browser quirks in layout
   shell components.
 
-## Milestone Status
+## Proposed Milestones
 
-1. Complete: infrastructure and non-regression desktop shell.
-2. Complete: phone-safe initial layout with hidden docks and bottom action bar.
-3. Complete for the shell: tablet drawer/sheet model.
-4. In progress: responsive dialogs and menus.
-5. In progress: gesture/hit-target tuning.
-6. Partially complete: Playwright interaction and screenshot coverage for
-   `390x844`, `768x1024`, and `1366x768`.
+1. Infrastructure and non-regression desktop shell.
+2. Phone-safe initial layout with hidden docks and bottom action bar.
+3. Tablet drawer/sheet model.
+4. Responsive dialogs and menus.
+5. Gesture/hit-target tuning.
+6. Playwright screenshot and interaction coverage.

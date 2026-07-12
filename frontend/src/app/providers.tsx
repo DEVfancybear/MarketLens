@@ -18,19 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   // Sync the persisted theme onto <html> on mount and whenever it changes.
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove("theme-dark", "theme-light");
-    root.classList.add(`theme-${theme}`);
-    root.dataset.theme = theme;
-
-    const themeColor = theme === "dark" ? "#050810" : "#eef2f7";
-    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.name = "theme-color";
-      document.head.appendChild(meta);
-    }
-    meta.content = themeColor;
+    document.documentElement.className = `theme-${theme}`;
   }, [theme]);
 
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;

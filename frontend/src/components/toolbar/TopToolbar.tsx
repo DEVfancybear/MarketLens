@@ -252,16 +252,9 @@ export function TopToolbar() {
               </span>
             )}
           </button>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={`Theme: ${theme}. Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            title={`Theme: ${theme}`}
-            className="flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-2 text-[11px] font-semibold capitalize text-ink-muted transition-colors hover:border-terminal-border-strong hover:bg-terminal-hover hover:text-ink active:bg-terminal-pressed"
-          >
-            {theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}
-            <span className="hidden min-[430px]:inline">{theme}</span>
-          </button>
+          <IconButton label="Theme" onClick={toggleTheme} size="sm">
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          </IconButton>
           <IconButton label="Fullscreen" onClick={toggleFullscreen} size="sm">
             {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </IconButton>
