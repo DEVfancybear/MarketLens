@@ -59,6 +59,21 @@ import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
 import { logAtom, setBottomTabAtom } from "./uiStore";
 import { backendSessionAtom } from "./authStore";
+import {
+  decodeDrawingList,
+  decodeDrawingTemplateList,
+  encodeDrawing,
+  encodeDrawingList,
+  type DrawingDecodeIssue,
+} from "@/components/chart/drawing/persistence/drawingCodec";
+import {
+  DrawingSyncQueue,
+  type DrawingSyncQueueSnapshot,
+} from "@/components/chart/drawing/persistence/DrawingSyncQueue";
+import { DrawingLoadGuard } from "@/components/chart/drawing/persistence/DrawingLoadGuard";
+import { rebaseDrawingBatchForLastWriteWins } from "@/components/chart/drawing/persistence/drawingConflictPolicy";
+import { ApiError } from "@/services/api/errors";
+import { drawingPersistenceMetrics } from "@/components/chart/drawing/persistence/drawingPersistenceMetrics";
 
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
 const DEFAULT_SYMBOL = "";
@@ -107,7 +122,37 @@ function apiMessage(error: unknown): string {
 }
 
 function persistLocalDrawings(symbol: string, drawings: Drawing[]) {
-  localStore.set(drawingsKey(symbol), drawings);
+  localStore.set(drawingsKey(symbol), encodeDrawingList(drawings));
+}
+
+function quarantineKey(symbol: string) {
+  return `drawingQuarantine:${symbol}`;
+}
+
+function decodeDrawingsAtBoundary(
+  symbol: string,
+  value: unknown,
+  source: "local" | "backend" | "layout",
+): Drawing[] {
+  const decoded = decodeDrawingList(value);
+  if (decoded.quarantined.length > 0) {
+    drawingPersistenceMetrics.add("decodeFailures", decoded.quarantined.length);
+    drawingPersistenceMetrics.add("quarantined", decoded.quarantined.length);
+    localStore.set(quarantineKey(symbol), decoded.quarantined);
+    for (const { issue } of decoded.quarantined) {
+      // Metadata only: never log user coordinates, text, or styles.
+      console.warn("[drawing-decode]", {
+        source,
+        symbol,
+        code: issue.code,
+        tool: issue.tool,
+        schemaVersion: issue.schemaVersion,
+      } satisfies { source: string; symbol: string } & Partial<DrawingDecodeIssue>);
+    }
+  }
+  drawingPersistenceMetrics.add("migrated", decoded.migrated);
+  if (decoded.migrated > 0) persistLocalDrawings(symbol, decoded.drawings);
+  return decoded.drawings;
 }
 
 function clearLocalChartWorkspace() {
@@ -122,13 +167,15 @@ function clearLocalChartWorkspace() {
   }
 }
 
-function backendDrawingToLocal(row: BackendDrawing): Drawing {
+function backendDrawingToLocal(row: BackendDrawing): unknown {
   return {
     ...row.payload,
     id: row.clientId || row.payload.id || row.id,
     tool: row.payload.tool || (row.toolType as DrawingTool),
     locked: row.locked,
     visible: !row.hidden,
+    serverRevision: row.revision,
+    clientRevision: row.clientRevision ?? row.payload.clientRevision ?? 0,
   };
 }
 
@@ -136,10 +183,12 @@ function localDrawingToBackend(symbol: string, drawing: Drawing): BackendDrawing
   return {
     symbol,
     toolType: drawing.tool,
-    payload: drawing,
+    payload: encodeDrawing(drawing),
     locked: drawing.locked === true,
     hidden: drawing.visible === false,
     clientId: drawing.id,
+    clientRevision: drawing.clientRevision ?? 0,
+    expectedRevision: drawing.serverRevision,
   };
 }
 
@@ -219,48 +268,101 @@ async function syncPineScriptSave(
   }
 }
 
-const pendingDrawingUpserts = new Map<string, BackendDrawingWrite>();
-const pendingDrawingDeletes = new Map<string, BackendDrawingDelete>();
-let drawingSyncTimer: ReturnType<typeof setTimeout> | null = null;
+const DRAWING_OUTBOX_KEY = "drawingSyncOutbox:v1";
+const drawingLoadGuard = new DrawingLoadGuard();
+let drawingQueueContext: { get: AtomGet; set: AtomSet } | null = null;
+let drawingOutboxHydrated = false;
+
+function acknowledgeDrawingBatch(rows: BackendDrawing[]) {
+  const context = drawingQueueContext;
+  if (!context || rows.length === 0) return;
+  const activeSymbol = context.get(symbolAtom);
+  const byID = new Map(rows.map((row) => [row.clientId || row.payload.id, row]));
+  const current = context.get(drawingsAtom);
+  let changed = false;
+  const next = current.map((drawing) => {
+    const row = byID.get(drawing.id);
+    if (!row || (row.clientRevision ?? 0) < (drawing.clientRevision ?? 0)) return drawing;
+    changed = true;
+    return { ...drawing, serverRevision: row.revision };
+  });
+  if (changed) {
+    context.set(drawingsAtom, next);
+    persistLocalDrawings(activeSymbol, next);
+  }
+}
+
+async function syncDrawingBatchWithConflictResolution(
+  request: Parameters<typeof syncDrawingsBatch>[0],
+) {
+  try {
+    return await syncDrawingsBatch(request);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 409) throw error;
+    const symbols = new Set<string>();
+    request.upserts.forEach((item) => symbols.add(item.symbol));
+    request.deletes.forEach((item) => item.symbol && symbols.add(item.symbol));
+    const remote = (
+      await Promise.all([...symbols].map((symbol) => listDrawings(symbol)))
+    ).flat();
+    console.warn("[drawing-conflict]", {
+      policy: "last-write-wins",
+      objects: request.upserts.length + request.deletes.length,
+    });
+    drawingPersistenceMetrics.add("conflicts");
+    return syncDrawingsBatch(rebaseDrawingBatchForLastWriteWins(request, remote));
+  }
+}
+
+const drawingSyncQueue = new DrawingSyncQueue({
+  send: syncDrawingBatchWithConflictResolution,
+  canSend: () => !!drawingQueueContext?.get(backendSessionAtom),
+  persist: (snapshot) => localStore.set(DRAWING_OUTBOX_KEY, snapshot),
+  onSuccess: (response) => acknowledgeDrawingBatch(response.upserted),
+  onError: (error, retryAttempt) => {
+    drawingPersistenceMetrics.add("retries");
+    drawingQueueContext?.set(
+      logAtom,
+      "error",
+      `Drawing sync failed (retry ${retryAttempt}): ${apiMessage(error)}`,
+    );
+  },
+});
+
+function ensureDrawingOutboxHydrated() {
+  if (drawingOutboxHydrated) return;
+  drawingOutboxHydrated = true;
+  drawingSyncQueue.hydrate(
+    localStore.get<DrawingSyncQueueSnapshot | null>(DRAWING_OUTBOX_KEY, null),
+  );
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    ensureDrawingOutboxHydrated();
+    drawingSyncQueue.preserveAndCancel();
+  });
+}
 
 const pendingIndicatorUpserts = new Map<string, IndicatorConfig>();
 const pendingIndicatorDeletes = new Set<string>();
 let indicatorSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
-function scheduleDrawingBatchSync(get: AtomGet, set: AtomSet) {
-  if (!get(backendSessionAtom)) return;
-  if (drawingSyncTimer) clearTimeout(drawingSyncTimer);
-  drawingSyncTimer = setTimeout(() => {
-    drawingSyncTimer = null;
-    const upserts = [...pendingDrawingUpserts.values()];
-    const deletes = [...pendingDrawingDeletes.values()];
-    if (!upserts.length && !deletes.length) return;
-    pendingDrawingUpserts.clear();
-    pendingDrawingDeletes.clear();
-    void syncDrawingsBatch({ upserts, deletes }).catch((error) => {
-      for (const item of upserts) pendingDrawingUpserts.set(item.clientId || item.payload.id, item);
-      for (const item of deletes) {
-        const key = item.clientId || item.id;
-        if (key) pendingDrawingDeletes.set(key, item);
-      }
-      set(logAtom, "error", `Drawing sync failed: ${apiMessage(error)}`);
-    });
-  }, 800);
-}
-
 function queueDrawingUpsert(get: AtomGet, set: AtomSet, symbol: string, drawing: Drawing) {
-  if (!get(backendSessionAtom)) return;
+  drawingQueueContext = { get, set };
+  ensureDrawingOutboxHydrated();
   const write = localDrawingToBackend(symbol, drawing);
-  pendingDrawingDeletes.delete(drawing.id);
-  pendingDrawingUpserts.set(drawing.id, write);
-  scheduleDrawingBatchSync(get, set);
+  drawingSyncQueue.enqueueUpsert(write);
 }
 
 function queueDrawingDelete(get: AtomGet, set: AtomSet, symbol: string, drawing: Drawing) {
-  if (!get(backendSessionAtom)) return;
-  pendingDrawingUpserts.delete(drawing.id);
-  pendingDrawingDeletes.set(drawing.id, { clientId: drawing.id, symbol });
-  scheduleDrawingBatchSync(get, set);
+  drawingQueueContext = { get, set };
+  ensureDrawingOutboxHydrated();
+  drawingSyncQueue.enqueueDelete({
+    clientId: drawing.id,
+    symbol,
+    expectedRevision: drawing.serverRevision,
+  });
 }
 
 function scheduleIndicatorSync(get: AtomGet, set: AtomSet) {
@@ -343,14 +445,37 @@ export const loadDrawingsForSymbolAtom = atom(
   null,
   async (_get, set, symbol: string) => {
     if (!symbol || !_get(backendSessionAtom)) return;
+    const loadToken = drawingLoadGuard.begin(symbol);
+    drawingQueueContext = { get: _get, set };
+    ensureDrawingOutboxHydrated();
     try {
+      const local = decodeDrawingsAtBoundary(
+        symbol,
+        localStore.get<unknown>(drawingsKey(symbol), []),
+        "local",
+      );
       const rows = await listDrawings(symbol);
-      if (_get(symbolAtom) !== symbol) return;
-      const drawings = rows.map(backendDrawingToLocal);
+      if (!drawingLoadGuard.isCurrent(loadToken, _get(symbolAtom))) return;
+      const remote = decodeDrawingsAtBoundary(
+        symbol,
+        rows.map(backendDrawingToLocal),
+        "backend",
+      );
+      const remoteByID = new Map(remote.map((drawing) => [drawing.id, drawing]));
+      for (const drawing of local) {
+        const server = remoteByID.get(drawing.id);
+        if (!server || (drawing.clientRevision ?? 0) > (server.clientRevision ?? 0)) {
+          remoteByID.set(drawing.id, drawing);
+          queueDrawingUpsert(_get, set, symbol, drawing);
+        }
+      }
+      const drawings = [...remoteByID.values()];
       set(drawingsAtom, drawings);
       persistLocalDrawings(symbol, drawings);
     } catch (error) {
       set(logAtom, "warn", `Drawings loaded from local cache: ${apiMessage(error)}`);
+    } finally {
+      drawingSyncQueue.resume();
     }
   },
 );
@@ -363,7 +488,7 @@ export const loadActiveSymbolDrawingsAtom = atom(null, (_get, set) => {
 export const applyRemoteDrawingTemplatesAtom = atom(
   null,
   (_get, set, rows: BackendDrawingTemplate[]) => {
-    const templates = rows.map(backendTemplateToLocal);
+    const templates = decodeDrawingTemplateList(rows.map(backendTemplateToLocal));
     set(drawingTemplatesAtom, templates);
     localStore.set(TEMPLATES_KEY, templates);
   },
@@ -404,9 +529,10 @@ export const applySavedChartLayoutAtom = atom(
     const marketChanged = symbol !== get(symbolAtom) || timeframe !== get(timeframeAtom);
     set(symbolAtom, symbol);
     set(timeframeAtom, timeframe);
-    set(drawingsAtom, structuredClone(snapshot.drawings ?? []));
+    const drawings = decodeDrawingsAtBoundary(symbol, snapshot.drawings ?? [], "layout");
+    set(drawingsAtom, structuredClone(drawings));
     set(indicatorsAtom, structuredClone(snapshot.indicators ?? []));
-    persistLocalDrawings(symbol, snapshot.drawings ?? []);
+    persistLocalDrawings(symbol, drawings);
     localStore.set("indicators", snapshot.indicators ?? []);
     set(selectedDrawingIdAtom, null);
     set(selectedDrawingIdsAtom, new Set());
@@ -431,10 +557,18 @@ export const applyRemotePineScriptsAtom = atom(
 
 export const setSymbolAtom = atom(null, (_get, set, symbol: string) => {
   if (symbol === _get(symbolAtom)) return;
+  drawingLoadGuard.cancel();
   set(symbolAtom, symbol);
   set(candlesAtom, []);
   set(loadingAtom, true);
-  set(drawingsAtom, localStore.get<Drawing[]>(drawingsKey(symbol), []));
+  set(
+    drawingsAtom,
+    decodeDrawingsAtBoundary(
+      symbol,
+      localStore.get<unknown>(drawingsKey(symbol), []),
+      "local",
+    ),
+  );
   void set(loadDrawingsForSymbolAtom, symbol);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
@@ -483,6 +617,7 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     ...d,
     id: d.id || uid("dw"),
     points: d.points ? d.points.map((p) => ({ ...p })) : [],
+    clientRevision: (d.clientRevision ?? 0) + 1,
   };
   // Long/Short position tools: a single click only gives the entry point.
   // Auto-expand to a TradingView-style 3-point box — points[0]=entry,
@@ -563,7 +698,11 @@ export const updateDrawingAtom = atom(
     let updatedDrawing: Drawing | null = null;
     const drawings = _get(drawingsAtom).map((d) => {
       if (d.id !== id) return d;
-      updatedDrawing = { ...d, ...patch };
+      updatedDrawing = {
+        ...d,
+        ...patch,
+        clientRevision: (d.clientRevision ?? 0) + 1,
+      };
       return updatedDrawing;
     });
     set(drawingsAtom, drawings);
@@ -614,6 +753,8 @@ export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
   const copy: Drawing = {
     ...src,
     id: uid("dw"),
+    serverRevision: undefined,
+    clientRevision: 1,
     zIndex: top + 1,
     points: src.points.map((p) => ({ ...p })),
   };
@@ -628,7 +769,13 @@ export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
 export const lockDrawingAtom = atom(null, (_get, set, id: string) => {
   let updatedDrawing: Drawing | null = null;
   const drawings = _get(drawingsAtom).map((d) =>
-    d.id === id ? (updatedDrawing = { ...d, locked: !d.locked }) : d,
+    d.id === id
+      ? (updatedDrawing = {
+          ...d,
+          locked: !d.locked,
+          clientRevision: (d.clientRevision ?? 0) + 1,
+        })
+      : d,
   );
   set(drawingsAtom, drawings);
   const symbol = _get(symbolAtom);
@@ -639,7 +786,13 @@ export const lockDrawingAtom = atom(null, (_get, set, id: string) => {
 export const hideDrawingAtom = atom(null, (_get, set, id: string) => {
   let updatedDrawing: Drawing | null = null;
   const drawings = _get(drawingsAtom).map((d) =>
-    d.id === id ? (updatedDrawing = { ...d, visible: d.visible === false }) : d,
+    d.id === id
+      ? (updatedDrawing = {
+          ...d,
+          visible: d.visible === false,
+          clientRevision: (d.clientRevision ?? 0) + 1,
+        })
+      : d,
   );
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, null);
@@ -1099,9 +1252,14 @@ export const deleteTemplateAtom = atom(
 );
 
 export const hydrateAtom = atom(null, (_get, set) => {
+  const symbol = _get(symbolAtom);
   set(
     drawingsAtom,
-    localStore.get<Drawing[]>(drawingsKey(_get(symbolAtom)), []),
+    decodeDrawingsAtBoundary(
+      symbol,
+      localStore.get<unknown>(drawingsKey(symbol), []),
+      "local",
+    ),
   );
   set(indicatorsAtom, localStore.get<IndicatorConfig[]>("indicators", []));
   set(
@@ -1110,21 +1268,20 @@ export const hydrateAtom = atom(null, (_get, set) => {
   );
   set(
     drawingTemplatesAtom,
-    localStore.get<DrawingTemplate[]>(TEMPLATES_KEY, []),
+    decodeDrawingTemplateList(localStore.get<unknown>(TEMPLATES_KEY, [])),
   );
 });
 
 export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
-  if (drawingSyncTimer) {
-    clearTimeout(drawingSyncTimer);
-    drawingSyncTimer = null;
+  const symbol = _get(symbolAtom);
+  for (const drawing of _get(drawingsAtom)) {
+    queueDrawingDelete(_get, set, symbol, drawing);
   }
+  drawingSyncQueue.preserveAndCancel();
   if (indicatorSyncTimer) {
     clearTimeout(indicatorSyncTimer);
     indicatorSyncTimer = null;
   }
-  pendingDrawingUpserts.clear();
-  pendingDrawingDeletes.clear();
   pendingIndicatorUpserts.clear();
   pendingIndicatorDeletes.clear();
 

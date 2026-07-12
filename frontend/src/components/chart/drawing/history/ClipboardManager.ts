@@ -5,13 +5,17 @@
  * Falls back to an in-memory buffer when clipboard API is unavailable.
  */
 import type { Drawing } from "@/types";
+import {
+  decodeDrawingList,
+  encodeDrawingList,
+} from "../persistence/drawingCodec";
 
 export class ClipboardManager {
   private buffer: Drawing[] = [];
 
   /** Copy drawings to clipboard (serialized as JSON). */
   copy(drawings: Drawing[]): void {
-    this.buffer = drawings.map((d) => structuredClone(d));
+    this.buffer = encodeDrawingList(drawings);
     const text = JSON.stringify(this.buffer);
     navigator.clipboard?.writeText(text).catch(() => {});
   }
@@ -28,10 +32,10 @@ export class ClipboardManager {
     try {
       const text = await navigator.clipboard?.readText();
       if (text) {
-        const parsed = JSON.parse(text) as Drawing[];
-        if (Array.isArray(parsed)) {
+        const parsed = decodeDrawingList(JSON.parse(text));
+        if (parsed.drawings.length > 0) {
           // Offset pasted drawings slightly to avoid overlap.
-          return parsed.map((d, i) => ({
+          return parsed.drawings.map((d, i) => ({
             ...d,
             points: d.points.map((pt) => ({
               time: pt.time + (i + 1) * 60, // offset by 1 bar

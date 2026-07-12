@@ -33,6 +33,10 @@ The current suite covers shared geometry plus Phase 0 characterization contracts
   round-trips for all 35 persistent tool ids.
 - Browser gesture smoke tests cover create, select, move, undo, redo, delete,
   and restoration of chart zoom interaction.
+- Phase 5 persistence contracts cover historical flat-payload migration, current-schema
+  round-trips for every persistent tool, transient-field stripping, quarantine of unknown/future
+  payloads, clipboard validation, stale-load cancellation, retrying/persisted outbox behavior,
+  anonymous-to-authenticated migration, and last-write-wins revision rebasing.
 
 ## Run
 
@@ -46,6 +50,12 @@ The script compiles these `.ts` tests with `tsconfig.test.json` into
 `.test-build/`, then runs them with Node's built-in test runner. `.test-build/`
 is ignored because it is generated output; the test source and config are kept
 in git.
+
+Run only the persistence boundary/outbox contracts with:
+
+```bash
+npm run test:drawing-persistence
+```
 
 ## Add Cases
 

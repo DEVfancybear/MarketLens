@@ -210,23 +210,42 @@ func (f *fakeDrawingStore) upsert(userID string, input DrawingWrite) Drawing {
 			f.drawings[userID][i].Payload = input.Payload
 			f.drawings[userID][i].Locked = input.Locked
 			f.drawings[userID][i].Hidden = input.Hidden
+			f.drawings[userID][i].ClientRevision = input.ClientRevision
+			f.drawings[userID][i].Revision++
 			return f.drawings[userID][i]
 		}
 	}
 	f.seq++
 	d := Drawing{
-		ID:        "dw-srv-" + itoa(f.seq),
-		Symbol:    strings.ToUpper(input.Symbol),
-		ToolType:  input.ToolType,
-		Payload:   input.Payload,
-		Locked:    input.Locked,
-		Hidden:    input.Hidden,
-		ClientID:  input.ClientID,
-		CreatedAt: time.Unix(int64(f.seq), 0).UTC(),
-		UpdatedAt: time.Unix(int64(f.seq), 0).UTC(),
+		ID:             "dw-srv-" + itoa(f.seq),
+		Symbol:         strings.ToUpper(input.Symbol),
+		ToolType:       input.ToolType,
+		Payload:        input.Payload,
+		Locked:         input.Locked,
+		Hidden:         input.Hidden,
+		ClientID:       input.ClientID,
+		Revision:       1,
+		ClientRevision: input.ClientRevision,
+		CreatedAt:      time.Unix(int64(f.seq), 0).UTC(),
+		UpdatedAt:      time.Unix(int64(f.seq), 0).UTC(),
 	}
 	f.drawings[userID] = append(f.drawings[userID], d)
 	return d
+}
+
+type conflictDrawingStore struct{ *fakeDrawingStore }
+
+func (f *conflictDrawingStore) Batch(_ context.Context, _ string, _ BatchRequest) (BatchResponse, error) {
+	return BatchResponse{}, ErrConflict
+}
+
+func TestDrawingRevisionConflictReturns409(t *testing.T) {
+	app := newDrawingTestApp(&conflictDrawingStore{newFakeDrawingStore()}, "user-1")
+	body := `{"upserts":[{"symbol":"EURUSD","toolType":"trendline","clientId":"dw-1","clientRevision":2,"expectedRevision":1,"payload":{"id":"dw-1","tool":"trendline","points":[{"time":1,"price":1},{"time":2,"price":2}]}}],"deletes":[]}`
+	resp, text := doDrawing(t, app, http.MethodPost, "/api/v1/drawings/batch", body)
+	if resp.StatusCode != fiber.StatusConflict {
+		t.Fatalf("revision conflict status=%d body=%s", resp.StatusCode, text)
+	}
 }
 
 func TestDrawingBatchSyncDedupesByClientID(t *testing.T) {

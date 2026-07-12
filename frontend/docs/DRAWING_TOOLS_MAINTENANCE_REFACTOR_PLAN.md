@@ -482,6 +482,8 @@ Verification on 2026-07-12:
 
 ### Phase 5 — Versioned model and persistence hardening
 
+Status: implemented on 2026-07-12.
+
 Purpose: make refactors and synchronization safe for user data.
 
 Tasks:
@@ -501,6 +503,41 @@ Exit gate:
 - Interrupted/retried writes are idempotent.
 - A stale symbol response cannot replace the active symbol's drawings.
 - No user drawing is silently discarded on decode failure.
+
+Delivered:
+
+- `drawingCodec` is the sole drawing boundary codec. Historical unversioned flat payloads migrate
+  to schema version 1; current payloads round-trip for every registered persistent tool; malformed,
+  unknown-tool, and future-version payloads are quarantined with metadata-only diagnostics.
+  Transient render state is stripped during encoding.
+- Local drawing cache, saved chart layouts, backend rows, clipboard data, and local/remote drawing
+  templates are validated before entering chart state. Migrated local data is rewritten only after
+  successful decode, while rejected source values remain available under a per-symbol quarantine
+  key.
+- Drawing mutations carry monotonic client revisions. A persisted outbox coalesces writes by
+  client id, survives anonymous sessions, symbol changes, logout, reload, page hide, and workspace
+  reset, retries failures with capped exponential backoff, and merges acknowledgements without
+  allowing stale responses to replace local geometry.
+- Remote loads use a generation guard in addition to symbol matching, so an older same-symbol or
+  previous-symbol response cannot replace newer chart state. Anonymous drawings merge into the
+  authenticated resource set and enter the same idempotent outbox.
+- Backend migration `0018_drawing_revisions` adds server revision, client revision, and delete
+  tombstones. Conditional writes return HTTP 409 on stale revisions. The client resolves conflicts
+  using an explicit last-write-wins rebase against the latest visible server revisions; delete and
+  retry operations remain idempotent by client id.
+- Executable persistence tests cover codec fixtures, every current tool, clipboard rejection,
+  outbox coalescing/retry/hydration, stale load guards, conflict rebasing, persisted-hit-safe local
+  mutation, backend batch idempotency, and HTTP conflict mapping.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
+- `npm run test:drawing`: 72/72 passing.
+- `npm run test:drawing-persistence`: 13/13 passing.
+- `npm run test:position`: 26/26 passing.
+- `go test ./...`: passing, including drawing idempotency and revision-conflict HTTP contracts.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 7/7 passing in 36.0 seconds.
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 

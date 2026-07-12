@@ -333,12 +333,17 @@ CREATE TABLE drawings (
   locked     boolean NOT NULL DEFAULT false,
   hidden     boolean NOT NULL DEFAULT false,
   client_id  text,                          -- frontend Drawing.id (epoch/uid) for sync dedupe
+  revision   bigint NOT NULL DEFAULT 1,     -- monotonic server revision for conditional writes
+  client_revision bigint NOT NULL DEFAULT 0,-- latest acknowledged local mutation counter
+  deleted_at timestamptz,                   -- tombstone; normal list queries exclude deleted rows
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_drawings_user_symbol ON drawings(user_id, symbol);
 CREATE UNIQUE INDEX idx_drawings_client ON drawings(user_id, client_id)
   WHERE client_id IS NOT NULL;
+CREATE INDEX idx_drawings_tombstones ON drawings(user_id, updated_at)
+  WHERE deleted_at IS NOT NULL;
 ```
 
 ### 7.3 `drawing_templates`

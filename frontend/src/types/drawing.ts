@@ -47,6 +47,8 @@ export interface Point {
 }
 
 export interface BaseDrawing {
+  /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
+  schemaVersion?: number;
   id: string;
   tool: DrawingTool;
   color: string;
@@ -65,6 +67,9 @@ export interface BaseDrawing {
   zIndex?: number;
   locked?: boolean;
   visible?: boolean;
+  /** Monotonic local mutation counter and last acknowledged server revision. */
+  clientRevision?: number;
+  serverRevision?: number;
   /** Position tools (long/short): stop-loss & take-profit price levels. */
   stop?: number;
   target?: number;

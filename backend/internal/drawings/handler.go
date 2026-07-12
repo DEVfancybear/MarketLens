@@ -176,6 +176,8 @@ func apiError(err error) error {
 		return fiber.NewError(fiber.StatusNotFound, "not found")
 	case errors.Is(err, ErrBadRequest):
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrConflict):
+		return fiber.NewError(fiber.StatusConflict, err.Error())
 	default:
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
 	}

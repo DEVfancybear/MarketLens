@@ -51,9 +51,9 @@ func (r *Repo) List(ctx context.Context, userID, symbol string) ([]Drawing, erro
 	}
 
 	rows, err := r.pool.Query(ctx, `
-SELECT id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), created_at, updated_at
+SELECT id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), revision, client_revision, deleted_at, created_at, updated_at
 FROM drawings
-WHERE user_id = $1 AND symbol = $2
+WHERE user_id = $1 AND symbol = $2 AND deleted_at IS NULL
 ORDER BY created_at, id`, uid, symbol)
 	if err != nil {
 		return nil, err
@@ -96,10 +96,14 @@ func (r *Repo) Replace(ctx context.Context, userID, id string, input DrawingWrit
 	d, err := scanDrawing(r.pool.QueryRow(ctx, `
 UPDATE drawings
 SET symbol = $3, tool_type = $4, payload = $5, locked = $6, hidden = $7, client_id = NULLIF($8, ''), updated_at = now()
-WHERE id = $1 AND user_id = $2
-RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), created_at, updated_at`,
-		did, uid, input.Symbol, input.ToolType, input.Payload, input.Locked, input.Hidden, input.ClientID))
+	, client_revision = $9, revision = revision + 1, deleted_at = NULL
+WHERE id = $1 AND user_id = $2 AND ($10::bigint IS NULL OR revision = $10)
+RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), revision, client_revision, deleted_at, created_at, updated_at`,
+		did, uid, input.Symbol, input.ToolType, input.Payload, input.Locked, input.Hidden, input.ClientID, input.ClientRevision, input.ExpectedRevision))
 	if errors.Is(err, pgx.ErrNoRows) {
+		if input.ExpectedRevision != nil {
+			return Drawing{}, ErrConflict
+		}
 		return Drawing{}, ErrNotFound
 	}
 	return d, err
@@ -113,9 +117,16 @@ func (r *Repo) Patch(ctx context.Context, userID, id string, patch DrawingPatch)
 	if patch.Payload != nil && !validJSON(*patch.Payload) {
 		return Drawing{}, fmt.Errorf("%w: payload must be json", ErrBadRequest)
 	}
+	if patch.ClientRevision != nil && *patch.ClientRevision < 0 {
+		return Drawing{}, fmt.Errorf("%w: clientRevision must be non-negative", ErrBadRequest)
+	}
+	if patch.ExpectedRevision != nil && *patch.ExpectedRevision < 1 {
+		return Drawing{}, fmt.Errorf("%w: expectedRevision must be positive", ErrBadRequest)
+	}
 	symbol := trimPtr(patch.Symbol)
 	toolType := trimPtr(patch.ToolType)
 	clientID := trimPtr(patch.ClientID)
+	clientRevision := patch.ClientRevision
 
 	d, err := scanDrawing(r.pool.QueryRow(ctx, `
 UPDATE drawings
@@ -125,11 +136,17 @@ SET symbol = COALESCE(NULLIF($3, ''), symbol),
     locked = COALESCE($6, locked),
     hidden = COALESCE($7, hidden),
     client_id = COALESCE(NULLIF($8, ''), client_id),
+	client_revision = COALESCE($9, client_revision),
+	revision = revision + 1,
+	deleted_at = NULL,
     updated_at = now()
-WHERE id = $1 AND user_id = $2
-RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), created_at, updated_at`,
-		did, uid, symbol, toolType, patch.Payload, patch.Locked, patch.Hidden, clientID))
+WHERE id = $1 AND user_id = $2 AND ($10::bigint IS NULL OR revision = $10)
+RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), revision, client_revision, deleted_at, created_at, updated_at`,
+		did, uid, symbol, toolType, patch.Payload, patch.Locked, patch.Hidden, clientID, clientRevision, patch.ExpectedRevision))
 	if errors.Is(err, pgx.ErrNoRows) {
+		if patch.ExpectedRevision != nil {
+			return Drawing{}, ErrConflict
+		}
 		return Drawing{}, ErrNotFound
 	}
 	return d, err
@@ -140,7 +157,7 @@ func (r *Repo) Delete(ctx context.Context, userID, id string) error {
 	if err != nil {
 		return err
 	}
-	tag, err := r.pool.Exec(ctx, `DELETE FROM drawings WHERE id = $1 AND user_id = $2`, did, uid)
+	tag, err := r.pool.Exec(ctx, `UPDATE drawings SET deleted_at = now(), revision = revision + 1, updated_at = now() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, did, uid)
 	if err != nil {
 		return err
 	}
@@ -307,24 +324,31 @@ type queryer interface {
 func (r *Repo) upsertDrawing(ctx context.Context, q queryer, uid pgtype.UUID, input DrawingWrite) (Drawing, error) {
 	if input.ClientID == "" {
 		return scanDrawing(q.QueryRow(ctx, `
-INSERT INTO drawings (user_id, symbol, tool_type, payload, locked, hidden)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), created_at, updated_at`,
-			uid, input.Symbol, input.ToolType, input.Payload, input.Locked, input.Hidden))
+INSERT INTO drawings (user_id, symbol, tool_type, payload, locked, hidden, client_revision)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), revision, client_revision, deleted_at, created_at, updated_at`,
+			uid, input.Symbol, input.ToolType, input.Payload, input.Locked, input.Hidden, input.ClientRevision))
 	}
 
 	d, err := scanDrawing(q.QueryRow(ctx, `
-INSERT INTO drawings (user_id, symbol, tool_type, payload, locked, hidden, client_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO drawings (user_id, symbol, tool_type, payload, locked, hidden, client_id, client_revision)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO UPDATE
 SET symbol = EXCLUDED.symbol,
     tool_type = EXCLUDED.tool_type,
     payload = EXCLUDED.payload,
     locked = EXCLUDED.locked,
     hidden = EXCLUDED.hidden,
+	client_revision = EXCLUDED.client_revision,
+	revision = drawings.revision + 1,
+	deleted_at = NULL,
     updated_at = now()
-RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), created_at, updated_at`,
-		uid, input.Symbol, input.ToolType, input.Payload, input.Locked, input.Hidden, input.ClientID))
+WHERE $9::bigint IS NULL OR drawings.revision = $9
+RETURNING id, symbol, tool_type, payload, locked, hidden, COALESCE(client_id, ''), revision, client_revision, deleted_at, created_at, updated_at`,
+		uid, input.Symbol, input.ToolType, input.Payload, input.Locked, input.Hidden, input.ClientID, input.ClientRevision, input.ExpectedRevision))
+	if errors.Is(err, pgx.ErrNoRows) && input.ExpectedRevision != nil {
+		return Drawing{}, ErrConflict
+	}
 	if err != nil && isUniqueViolation(err) {
 		return Drawing{}, fmt.Errorf("%w: duplicate drawing id", ErrBadRequest)
 	}
@@ -338,7 +362,7 @@ type scanner interface {
 func scanDrawing(row scanner) (Drawing, error) {
 	var id pgtype.UUID
 	var d Drawing
-	if err := row.Scan(&id, &d.Symbol, &d.ToolType, &d.Payload, &d.Locked, &d.Hidden, &d.ClientID, &d.CreatedAt, &d.UpdatedAt); err != nil {
+	if err := row.Scan(&id, &d.Symbol, &d.ToolType, &d.Payload, &d.Locked, &d.Hidden, &d.ClientID, &d.Revision, &d.ClientRevision, &d.DeletedAt, &d.CreatedAt, &d.UpdatedAt); err != nil {
 		return Drawing{}, err
 	}
 	d.ID = uuidString(id)
@@ -379,19 +403,28 @@ func scanToolFavorites(row scanner) (DrawingToolFavorites, error) {
 }
 
 func deleteByAnyID(ctx context.Context, tx pgx.Tx, uid pgtype.UUID, item DrawingDelete) (int, error) {
+	if item.ExpectedRevision != nil && *item.ExpectedRevision < 1 {
+		return 0, fmt.Errorf("%w: expectedRevision must be positive", ErrBadRequest)
+	}
 	if strings.TrimSpace(item.ID) != "" {
 		id, err := parseUUID(item.ID)
 		if err != nil {
 			return 0, nil
 		}
-		tag, err := tx.Exec(ctx, `DELETE FROM drawings WHERE id = $1 AND user_id = $2`, id, uid)
+		tag, err := tx.Exec(ctx, `UPDATE drawings SET deleted_at = now(), revision = revision + 1, updated_at = now() WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL AND ($3::bigint IS NULL OR revision = $3)`, id, uid, item.ExpectedRevision)
+		if err == nil && tag.RowsAffected() == 0 && item.ExpectedRevision != nil {
+			return 0, ErrConflict
+		}
 		return int(tag.RowsAffected()), err
 	}
 	clientID := strings.TrimSpace(item.ClientID)
 	if clientID == "" {
 		return 0, nil
 	}
-	tag, err := tx.Exec(ctx, `DELETE FROM drawings WHERE user_id = $1 AND client_id = $2`, uid, clientID)
+	tag, err := tx.Exec(ctx, `UPDATE drawings SET deleted_at = now(), revision = revision + 1, updated_at = now() WHERE user_id = $1 AND client_id = $2 AND deleted_at IS NULL AND ($3::bigint IS NULL OR revision = $3)`, uid, clientID, item.ExpectedRevision)
+	if err == nil && tag.RowsAffected() == 0 && item.ExpectedRevision != nil {
+		return 0, ErrConflict
+	}
 	return int(tag.RowsAffected()), err
 }
 
@@ -399,6 +432,12 @@ func normalizeDrawingWrite(input DrawingWrite) (DrawingWrite, error) {
 	input.Symbol = normalizeRequired("symbol", input.Symbol)
 	input.ToolType = strings.TrimSpace(input.ToolType)
 	input.ClientID = strings.TrimSpace(input.ClientID)
+	if input.ClientRevision < 0 {
+		return DrawingWrite{}, fmt.Errorf("%w: clientRevision must be non-negative", ErrBadRequest)
+	}
+	if input.ExpectedRevision != nil && *input.ExpectedRevision < 1 {
+		return DrawingWrite{}, fmt.Errorf("%w: expectedRevision must be positive", ErrBadRequest)
+	}
 	if input.Symbol == "" {
 		return DrawingWrite{}, fmt.Errorf("%w: symbol is required", ErrBadRequest)
 	}

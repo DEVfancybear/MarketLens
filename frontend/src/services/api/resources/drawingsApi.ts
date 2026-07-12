@@ -15,6 +15,9 @@ export interface BackendDrawing {
   locked: boolean;
   hidden: boolean;
   clientId?: string;
+  revision: number;
+  clientRevision?: number;
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,12 +29,15 @@ export interface BackendDrawingWrite {
   locked?: boolean;
   hidden?: boolean;
   clientId?: string;
+  clientRevision?: number;
+  expectedRevision?: number;
 }
 
 export interface BackendDrawingDelete {
   id?: string;
   clientId?: string;
   symbol?: string;
+  expectedRevision?: number;
 }
 
 export interface BackendDrawingBatchRequest {

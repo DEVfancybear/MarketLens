@@ -32,6 +32,7 @@
     "test:position": "tsc -p tsconfig.test.json && node --test .test-build/tests/position/*.test.js",
     "test:trade": "tsc -p tsconfig.test.json && node --test .test-build/tests/trade/*.test.js",
     "test:drawing": "tsc -p tsconfig.test.json && node --test .test-build/tests/drawing/*.test.js",
+    "test:drawing-persistence": "tsc -p tsconfig.test.json && node --test .test-build/tests/drawing/clipboardValidation.test.js .test-build/tests/drawing/drawingCodec.test.js .test-build/tests/drawing/drawingConflictPolicy.test.js .test-build/tests/drawing/drawingLoadGuard.test.js .test-build/tests/drawing/drawingPersistenceMetrics.test.js .test-build/tests/drawing/drawingSyncQueue.test.js",
     "test:indicator-catalog": "tsc -p tsconfig.test.json && node --test .test-build/tests/indicatorCatalog/*.test.js",
     "test:watchlist": "tsc -p tsconfig.test.json && node --test .test-build/tests/watchlist/*.test.js",
     "test:alerts": "tsc -p tsconfig.test.json && node --test .test-build/tests/alerts/*.test.js",
