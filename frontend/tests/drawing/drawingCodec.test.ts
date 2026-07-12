@@ -38,6 +38,19 @@ test("encoder strips transient render fields", () => {
   assert.equal("_dragging" in encoded, false);
 });
 
+test("Wave D snapshots and rich content are bounded and sanitized", () => {
+  const samples = Array.from({ length: 1005 }, (_, time) => ({ time, open: 1, high: 3, low: 0, close: 2, volume: time === 0 ? -1 : 4 }));
+  const table = decodeDrawing({ ...legacy, tool: "table", dataSnapshot: { version: 1, symbol: " TEST ", capturedAt: 10, samples }, content: { kind: "table", cells: Array.from({ length: 25 }, () => Array.from({ length: 15 }, () => "x".repeat(250))) } }).drawing!;
+  assert.equal(table.dataSnapshot?.samples.length, 1000);
+  assert.equal(table.dataSnapshot?.symbol, "TEST");
+  assert.equal(table.content?.kind, "table");
+  if (table.content?.kind === "table") { assert.equal(table.content.cells?.length, 20); assert.equal(table.content.cells?.[0].length, 12); assert.equal(table.content.cells?.[0][0].length, 200); }
+  const unsafe = decodeDrawing({ ...legacy, tool: "image", content: { kind: "image", sourceUrl: "javascript:alert(1)", alt: " safe " } }).drawing!;
+  assert.deepEqual(unsafe.content, { kind: "image", alt: "safe" });
+  const social = decodeDrawing({ ...legacy, tool: "socialEmbed", points: [legacy.points[0]], content: { kind: "social", sourceUrl: "https://evil.example/post" } }).drawing!;
+  assert.deepEqual(social.content, { kind: "social" });
+});
+
 test("pressure-ready freeform points round-trip with normalized pressure", () => {
   const decoded = decodeDrawing({
     ...legacy,

@@ -1,7 +1,7 @@
 # Drawing Tools Maintenance and Refactor Plan
 
 _Date: 2026-07-11_  
-_Status: proposed_  
+_Status: implemented_
 _Scope: frontend drawing engine, drawing UX, persistence contracts, and drawing-specific backend APIs_
 
 ## 1. Objective
@@ -791,9 +791,8 @@ Exit gate:
 
 ### Phase 8 — Expand the catalog in bounded waves
 
-Status: in progress. Waves A, B, and C implemented on 2026-07-12; see
-`DRAWING_PHASE8_WAVE_A.md`, `DRAWING_PHASE8_WAVE_B.md`, and `DRAWING_PHASE8_WAVE_C.md`. Wave D
-remains an independently gated delivery.
+Status: implemented on 2026-07-12. See `DRAWING_PHASE8_WAVE_A.md`,
+`DRAWING_PHASE8_WAVE_B.md`, `DRAWING_PHASE8_WAVE_C.md`, and `DRAWING_PHASE8_WAVE_D.md`.
 
 Do not add every missing tool in one phase. Use dependency-driven waves.
 
@@ -882,6 +881,29 @@ Verification on 2026-07-12:
 - Regression trend.
 - Bars pattern, ghost feed, forecast, sector.
 - Table, image, and external/social embeds.
+
+Delivered:
+
+- Added all 11 Wave D ids through candle-snapshot, projection, and safe canvas-card adapter
+  families. The persistent catalog now covers 84 ids.
+- Added manifest-driven `anchor-to-latest`/`between-anchors` capture at creation commit, capped
+  versioned candle snapshots, pure VWAP/regression/profile calculations, and bounded render/hit
+  geometry that never reads the live candle store.
+- Added discriminated table/image/social content with persistence-boundary limits, HTTPS/data-image
+  validation, social-host allowlisting, and no HTML/script/iframe execution.
+- Added numeric geometry tests, snapshot/codec security tests, all-family adapter contracts,
+  browser creation coverage, rollout flag, official behavior notes, intentional differences, and
+  performance review.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run build`: passing.
+- `npm run lint`: passing with 0 errors and 2 pre-existing Watchlist warnings.
+- `npm run test:drawing`: 128/128 passing.
+- `npm run test:drawing-persistence`: 18/18 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 20/20 passing in 2.7 minutes.
+- `npm run benchmark:drawing`: 5,000-drawing rebuild median 2.414 ms; query median 0.181 ms.
 
 Every wave requires:
 

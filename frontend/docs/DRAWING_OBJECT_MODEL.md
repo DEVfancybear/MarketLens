@@ -29,6 +29,8 @@ interface Drawing {
   points: Point[];     // geometry (1–N points depending on tool)
 
   text?: string;       // annotation content (text/emoji tools)
+  dataSnapshot?: DrawingDataSnapshot; // Wave D immutable OHLCV provenance, max 1,000 samples
+  content?: DrawingRichContent;        // bounded table/image/social canvas content
   zIndex?: number;     // stacking order (higher = on top)
   locked?: boolean;    // cannot be moved or deleted
   visible?: boolean;   // render toggle (false = hidden)
@@ -63,6 +65,16 @@ interface Drawing {
 | trendline, rectangle, fib | 2 | Vector-based |
 | channel | 2–3 | 2 main + optional offset |
 | brush | N | Freehand path, recorded per-pointer-move |
+| anchoredVWAP, anchoredVolumeProfile | 1 | anchor + immutable anchor-to-latest candle snapshot |
+| regressionTrend, fixedVolumeProfile, barsPattern, ghostFeed | 2 | range + immutable between-anchor candle snapshot |
+| forecast, sector | 3 | fixed manual projection geometry |
+| table, image | 2 | bounded rich-content rectangle |
+| socialEmbed | 1 | script-free static card + inline text |
+
+Wave D snapshot samples are copied only when a creation transaction commits. Renderers derive
+their pixels from the stored snapshot and never depend on the current live symbol/candle buffer.
+Rich content is decoded through the same persistence boundary as geometry; executable HTML and
+third-party iframe state are not part of the object model.
 
 ## Ownership
 

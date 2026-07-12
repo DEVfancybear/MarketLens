@@ -34,7 +34,7 @@ test("all persistent tools register and satisfy the executable adapter contract"
     const audit = await page.evaluate(() =>
       window.__drawingInteractionTest!.auditAdapters(),
     );
-    expect(audit.expectedToolIds).toHaveLength(73);
+    expect(audit.expectedToolIds).toHaveLength(84);
     expect(audit.registeredToolIds).toEqual(audit.expectedToolIds);
     expect(audit.fixtureToolIds).toEqual(audit.expectedToolIds);
     expect(audit.errors).toEqual([]);
@@ -105,6 +105,24 @@ test("Phase 8 Wave C harmonic, Elliott, and cycle gestures use fixed manifest to
   await expect.poll(async()=>(await drawingSnapshot(page)).drawings.map((drawing)=>drawing.tool)).toEqual(["abcdPattern","headShouldersPattern","elliottImpulse","timeCycles"]);
   await page.keyboard.press("Control+z");await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(3);
   await page.keyboard.press("Control+Shift+z");await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(4);
+});
+
+test("Phase 8 Wave D data, projection, and rich-content gestures persist their contracts", async ({ page }) => {
+  const chart=await page.evaluate(()=>window.__chartInteractionTest!.snapshot());const pane=chart.paneBoxes[0];
+  const a={x:pane.x+pane.width*.24,y:pane.y+pane.height*.62},b={x:pane.x+pane.width*.62,y:pane.y+pane.height*.36},c={x:pane.x+pane.width*.74,y:pane.y+pane.height*.54};
+  await page.getByRole("button",{name:"Magnet mode menu",exact:true}).click();await page.getByRole("button",{name:"Strong magnet",exact:true}).click();
+  const create=async(group:"Trend line"|"Ranges"|"Text",name:RegExp,points:(typeof a)[])=>{await page.getByRole("button",{name:group,exact:true}).click();await page.getByRole("button",{name}).click();for(const point of points)await page.mouse.click(point.x,point.y);};
+  await create("Trend line",/^Anchored VWAP\b/,[a]);
+  await create("Trend line",/^Regression Trend\b/,[a,b]);
+  await create("Ranges",/^Fixed Range Volume Profile\b/,[a,b]);
+  await create("Ranges",/^Forecast\b/,[a,b,c]);
+  await create("Text",/^Table\b/,[a,b]);
+  await create("Text",/^X post \/ idea\b/,[c]);
+  const editor=page.getByPlaceholder("Enter text...");await editor.fill("https://x.com/openai/status/1");await editor.press("Enter");
+  await expect.poll(async()=>{const drawings=(await drawingSnapshot(page)).drawings;return drawings.map(d=>({tool:d.tool,samples:d.dataSnapshot?.samples.length??0,text:d.text??""}));}).toEqual([
+    {tool:"anchoredVWAP",samples:expect.any(Number),text:""},{tool:"regressionTrend",samples:expect.any(Number),text:""},{tool:"fixedVolumeProfile",samples:expect.any(Number),text:""},{tool:"forecast",samples:0,text:""},{tool:"table",samples:0,text:""},{tool:"socialEmbed",samples:0,text:"https://x.com/openai/status/1"},
+  ]);
+  const drawings=(await drawingSnapshot(page)).drawings;expect(drawings.slice(0,3).every(d=>(d.dataSnapshot?.samples.length??0)>0)).toBe(true);
 });
 
 test("settings dialog exposes keyboard semantics and returns focus on Escape", async ({ page }) => {
@@ -209,7 +227,10 @@ test("object tree groups, renames, locks, hides, and undo-redoes as one group ac
   await expect(rows).toHaveCount(2);
   await rows.nth(0).click({ position: { x: 12, y: 16 } });
   await rows.nth(1).click({ modifiers: ["Control"], position: { x: 12, y: 16 } });
-  await tree.getByRole("button", { name: "Group selected", exact: true }).click();
+  // Runtime connection toasts occupy the same top-right pixels in CI; this
+  // control is already asserted visible/enabled, so dispatch directly.
+  await tree.getByRole("button", { name: "Group selected", exact: true })
+    .evaluate((button: HTMLButtonElement) => button.click());
   await expect(tree.locator("[data-object-group]")).toHaveCount(1);
   await page.keyboard.press("Control+z");
   await expect(tree.locator("[data-object-group]")).toHaveCount(0);
@@ -259,7 +280,8 @@ test("drawing sync defaults persist and a group changes scope in one undoable ac
   const rows = tree.locator("[data-object-id]");
   await rows.nth(0).click({ position: { x: 12, y: 16 } });
   await rows.nth(1).click({ modifiers: ["Control"], position: { x: 12, y: 16 } });
-  await tree.getByRole("button", { name: "Group selected", exact: true }).click();
+  await tree.getByRole("button", { name: "Group selected", exact: true })
+    .evaluate((button: HTMLButtonElement) => button.click());
   const group = tree.locator("[data-object-group]");
   const groupHeader = group.locator(":scope > div").first();
   await groupHeader.getByRole("button", { name: "Sync: chart-only", exact: true }).click();

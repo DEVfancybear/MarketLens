@@ -40,6 +40,8 @@ export interface DrawingListDecodeResult {
 
 type UnknownRecord = Record<string, unknown>;
 const MAX_OBJECT_NAME_LENGTH = 120;
+const MAX_DATA_SAMPLES = 1000;
+const MAX_CONTENT_TEXT = 200;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -78,6 +80,41 @@ function normalizedSync(value: unknown): Drawing["sync"] {
     layoutId,
     chartId: value.chartId.trim().slice(0, MAX_OBJECT_NAME_LENGTH),
   };
+}
+
+function normalizedDataSnapshot(value: unknown): Drawing["dataSnapshot"] {
+  if (!isRecord(value) || value.version !== 1 || typeof value.symbol !== "string" || !finite(value.capturedAt) || !Array.isArray(value.samples)) return undefined;
+  const samples = value.samples.slice(-MAX_DATA_SAMPLES).flatMap((sample) => {
+    if (!isRecord(sample) || !finite(sample.time) || !finite(sample.open) || !finite(sample.high) || !finite(sample.low) || !finite(sample.close) || !finite(sample.volume)) return [];
+    return [{ time: sample.time, open: sample.open, high: sample.high, low: sample.low, close: sample.close, volume: Math.max(0, sample.volume) }];
+  });
+  if (samples.length === 0) return undefined;
+  return { version: 1, symbol: value.symbol.trim().slice(0, MAX_OBJECT_NAME_LENGTH), capturedAt: value.capturedAt, samples };
+}
+
+function safeContentUrl(value: unknown, kind: "image" | "social"): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const source = value.trim();
+  if (kind === "image" && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(source) && source.length <= 2_800_000) return source;
+  if (source.length > 2048) return undefined;
+  try {
+    const url = new URL(source);
+    if (url.protocol !== "https:") return undefined;
+    if (kind === "social" && !["x.com", "twitter.com", "tradingview.com", "www.tradingview.com"].includes(url.hostname.toLowerCase())) return undefined;
+    return url.toString();
+  } catch { return undefined; }
+}
+
+function normalizedContent(value: unknown): Drawing["content"] {
+  if (!isRecord(value) || !["table", "image", "social"].includes(String(value.kind))) return undefined;
+  const kind = value.kind as "table" | "image" | "social";
+  if (kind === "table") {
+    if (!Array.isArray(value.cells)) return { kind, cells: [["Header", "Value"]] };
+    const cells = value.cells.slice(0, 20).map((row) => Array.isArray(row) ? row.slice(0, 12).map((cell) => String(cell).slice(0, MAX_CONTENT_TEXT)) : []);
+    return { kind, cells: cells.filter((row) => row.length > 0) };
+  }
+  const sourceUrl = safeContentUrl(value.sourceUrl, kind);
+  return { kind, ...(sourceUrl ? { sourceUrl } : {}), ...(typeof value.alt === "string" ? { alt: value.alt.trim().slice(0, MAX_CONTENT_TEXT) } : {}) };
 }
 
 function decodePoints(value: unknown): Point[] | null {
@@ -183,6 +220,12 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
   const sync = normalizedSync(value.sync);
   if (sync) drawing.sync = sync;
   else delete drawing.sync;
+  const dataSnapshot = normalizedDataSnapshot(value.dataSnapshot);
+  if (dataSnapshot) drawing.dataSnapshot = dataSnapshot;
+  else delete drawing.dataSnapshot;
+  const content = normalizedContent(value.content);
+  if (content) drawing.content = content;
+  else delete drawing.content;
   delete drawing._dragging;
   return {
     drawing,

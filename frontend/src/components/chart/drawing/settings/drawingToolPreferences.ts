@@ -31,6 +31,8 @@ const NEVER_DEFAULT_FIELDS = new Set<keyof Drawing>([
   "schemaVersion",
   "tool",
   "points",
+  "dataSnapshot",
+  "content",
   "text",
   "visible",
   "intervalVisibility",

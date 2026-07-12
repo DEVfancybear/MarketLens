@@ -77,6 +77,30 @@ export interface DrawingSyncBinding {
   chartId?: string;
 }
 
+export interface DrawingDataSample {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+/** Immutable candle snapshot captured at a data-driven drawing transaction. */
+export interface DrawingDataSnapshot {
+  version: 1;
+  symbol: string;
+  capturedAt: number;
+  samples: DrawingDataSample[];
+}
+
+export interface DrawingRichContent {
+  kind: "table" | "image" | "social";
+  sourceUrl?: string;
+  alt?: string;
+  cells?: string[][];
+}
+
 export interface BaseDrawing {
   /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
   schemaVersion?: number;
@@ -91,6 +115,10 @@ export interface BaseDrawing {
   color: string;
   lineWidth: number;
   points: Point[];
+  /** Bounded immutable source data for Wave D calculations. */
+  dataSnapshot?: DrawingDataSnapshot;
+  /** Sanitized, script-free rich content model. */
+  content?: DrawingRichContent;
   text?: string;
   /** Font size (px) for text / emoji annotations. Defaults to 13. */
   fontSize?: number;

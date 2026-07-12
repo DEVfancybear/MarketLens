@@ -20,6 +20,8 @@ export const ALL_DRAWING_TOOL_IDS = [
   "abcdPattern", "xabcdPattern", "trianglePattern", "threeDrivesPattern",
   "headShouldersPattern", "elliottImpulse", "elliottTriangle",
   "elliottTripleCombo", "elliottCorrection", "elliottDoubleCombo", "timeCycles",
+  "anchoredVWAP", "fixedVolumeProfile", "anchoredVolumeProfile", "regressionTrend",
+  "barsPattern", "ghostFeed", "forecast", "sector", "table", "image", "socialEmbed",
 ] as const;
 
 export type DrawingTool = (typeof ALL_DRAWING_TOOL_IDS)[number];
@@ -67,7 +69,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly persistent: boolean;
   readonly favoriteEligible: boolean;
   readonly preferredForCreation: boolean;
-  readonly rollout?: "phase8-wave-a" | "phase8-wave-b" | "phase8-wave-c";
+  readonly rollout?: "phase8-wave-a" | "phase8-wave-b" | "phase8-wave-c" | "phase8-wave-d";
   readonly creationMode: DrawingCreationMode;
   readonly minPoints: number;
   readonly maxPoints?: number;
@@ -77,6 +79,8 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly selectionTextEditor?: "shape-center" | "line-midpoint";
   readonly settingsOverlay?: "position-dialog";
   readonly lifecycleExtension?: "position-resolution";
+  readonly dataSnapshot?: "anchor-to-latest" | "between-anchors";
+  readonly contentKind?: "table" | "image" | "social";
   readonly magnetEligible: boolean;
   readonly angleConstraint?: "45-degree";
   readonly pointSimplificationTolerance?: number;
@@ -212,6 +216,14 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("elliottCorrection", "Elliott Correction Wave", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", coordinateLabels: ["Start", "A", "B", "C"] }),
   tool("elliottDoubleCombo", "Elliott Double Combo Wave", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", coordinateLabels: ["Start", "W", "X", "Y"] }),
   tool("timeCycles", "Time Cycles", "patterns", "circle", "two-point", 2, { rollout: "phase8-wave-c" }),
+  tool("anchoredVWAP", "Anchored VWAP", "lines", "trend", "one-point", 1, { rollout: "phase8-wave-d", dataSnapshot: "anchor-to-latest" }),
+  tool("regressionTrend", "Regression Trend", "lines", "trend", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("fixedVolumeProfile", "Fixed Range Volume Profile", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("anchoredVolumeProfile", "Anchored Volume Profile", "measurements", "ruler", "one-point", 1, { rollout: "phase8-wave-d", dataSnapshot: "anchor-to-latest", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("barsPattern", "Bars Pattern", "measurements", "path", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors" }),
+  tool("ghostFeed", "Ghost Feed", "measurements", "path", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors" }),
+  tool("forecast", "Forecast", "measurements", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-d", styleFamily: "shape", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("sector", "Sector", "measurements", "spline", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-d", styleFamily: "shape", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("priceRange", "Price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("dateRange", "Date range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("datePriceRange", "Date and price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
@@ -225,6 +237,9 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("priceLabel", "Price label", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor", alertProjection: "point-price" }),
   tool("signpost", "Signpost", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
   tool("flag", "Flag mark", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
+  tool("table", "Table", "annotations", "square", "two-point", 2, { rollout: "phase8-wave-d", contentKind: "table", styleFamily: "shape", defaultProperties: { lineWidth: 1.5, content: { kind: "table", cells: [["Header", "Value"], ["Row", "—"]] } }, settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("image", "Image", "annotations", "square", "two-point", 2, { rollout: "phase8-wave-d", contentKind: "image", styleFamily: "shape", defaultProperties: { lineWidth: 1.5, content: { kind: "image", alt: "Image" } }, settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("socialEmbed", "X post / idea", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-d", contentKind: "social", styleFamily: "text", overlayExtension: "text-editor" }),
 ] satisfies readonly DrawingToolManifestEntry[]);
 
 export const DRAWING_TOOL_GROUPS = Object.freeze([
@@ -259,11 +274,13 @@ export function isDrawingToolCreationEnabled(
   phase8WaveAEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_A !== "false",
   phase8WaveBEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_B !== "false",
   phase8WaveCEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_C !== "false",
+  phase8WaveDEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_D !== "false",
 ): boolean {
   const definition = getDrawingToolManifestEntry(toolId);
   if (definition.rollout === "phase8-wave-a") return phase8WaveAEnabled;
   if (definition.rollout === "phase8-wave-b") return phase8WaveBEnabled;
   if (definition.rollout === "phase8-wave-c") return phase8WaveCEnabled;
+  if (definition.rollout === "phase8-wave-d") return phase8WaveDEnabled;
   return true;
 }
 

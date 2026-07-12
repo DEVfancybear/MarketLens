@@ -87,5 +87,7 @@ test("Wave A rollout disables creation without removing manifest compatibility",
   assert.equal(isDrawingToolCreationEnabled("pitchfork", true, false), false);
   assert.equal(isDrawingToolCreationEnabled("trendline", true, false), true);
   assert.equal(isDrawingToolCreationEnabled("abcdPattern", true, true, false), false);
+  assert.equal(isDrawingToolCreationEnabled("anchoredVWAP", true, true, true, false), false);
+  assert.equal(isDrawingToolCreationEnabled("table", true, true, true, false), false);
   assert.deepEqual(getDrawingToolManifestEntry("elliottImpulse").coordinateLabels, ["Start", "1", "2", "3", "4", "5"]);
 });

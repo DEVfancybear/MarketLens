@@ -75,7 +75,8 @@ export function DrawingLayer() {
   const activeTool = useAtomValue(activeToolAtom);
   const drawColor = useAtomValue(drawColorAtom);
   const drawingToolPreferences = useAtomValue(drawingToolPreferencesAtom);
-  const candles = useAtomValue(candlesAtom);
+  const storeCandles = useAtomValue(candlesAtom);
+  const candles = ctx?.candles ?? storeCandles;
   const selectedDrawingId = useAtomValue(selectedDrawingIdAtom);
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const symbol = useAtomValue(symbolAtom);
@@ -245,6 +246,7 @@ export function DrawingLayer() {
     drawColor: "#2962ff",
     drawingToolPreferences,
     candles,
+    symbol,
     drawingsLocked: false,
     ctxReady: false,
     drawingsHidden: false,
@@ -258,6 +260,7 @@ export function DrawingLayer() {
     drawColor,
     drawingToolPreferences,
     candles,
+    symbol,
     drawingsLocked: false,
     ctxReady: !!ctx,
     drawingsHidden: false,

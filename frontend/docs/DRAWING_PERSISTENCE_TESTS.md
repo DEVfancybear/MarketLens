@@ -9,6 +9,8 @@ _Date: 2026-06-25._
 | Create + refresh | Draw a trendline, refresh page | Trendline reappears |
 | Create + symbol switch | Draw on BTCUSDT, switch to ETHUSDT | ETHUSDT shows its own drawings (or none) |
 | Switch back | Switch back to BTCUSDT | Trendline reappears |
+| Wave D snapshot reload | Create Anchored VWAP/profile, refresh or switch away/back | Stored capped OHLCV snapshot reproduces identical geometry without reading current candles |
+| Rich-content sanitization | Decode oversized table, unsafe image URL, or unapproved social URL | Content is capped/sanitized; scripts, non-HTTPS URLs, and unapproved hosts do not persist |
 | Create + timeframe switch | Draw on 15m, switch to 1H | Drawing still appears (drawings scoped to symbol, not TF) |
 | Modify + refresh | Draw, drag to new position, refresh | New position persists |
 | Delete + refresh | Draw, delete, refresh | Drawing is gone |

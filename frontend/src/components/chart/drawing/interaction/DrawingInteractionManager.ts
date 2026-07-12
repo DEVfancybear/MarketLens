@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState, useCallback, useEffect } from "react";
-import type { Drawing, Point, DrawingTool } from "@/types";
+import type { Candle, Drawing, Point, DrawingTool } from "@/types";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
@@ -31,6 +31,7 @@ import {
   resolveDrawingCreationDefaults,
   type DrawingToolPreferences,
 } from "../settings/drawingToolPreferences";
+import { buildDrawingDataSnapshot } from "../data/drawingDataSnapshot";
 
 export {
   createInitialMachine,
@@ -74,6 +75,8 @@ export interface DrawingInteractionManagerOpts {
     ctxReady: boolean;
     selectedDrawingId: string | null;
     selectedDrawingIds: Set<string>;
+    candles: Candle[];
+    symbol: string;
   };
   addDrawing: (d: Drawing) => void;
   updateDrawing: (arg: { id: string; patch: Partial<Drawing> }) => void;
@@ -252,6 +255,14 @@ export function useDrawingInteractionManager(
         const points = tolerance
           ? simplifyProjectedPoints(outcome.points, toX, toY, tolerance)
           : outcome.points;
+        const dataSnapshot = session.definition.dataSnapshot
+          ? buildDrawingDataSnapshot(
+              session.definition.dataSnapshot,
+              points,
+              cur.candles,
+              cur.symbol,
+            )
+          : undefined;
         addDrawing({
           ...resolveDrawingCreationDefaults(
             session.tool,
@@ -261,6 +272,7 @@ export function useDrawingInteractionManager(
           id: uid("dw"),
           tool: session.tool,
           points,
+          ...(dataSnapshot ? { dataSnapshot } : {}),
         } as Drawing);
       }
       reset();

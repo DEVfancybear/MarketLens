@@ -64,6 +64,10 @@ import "./plugins/PitchforkTools";
 import "./plugins/LabeledPatternTools";
 import "./plugins/TimeCyclesTool";
 
+// Phase 8 Wave D — immutable data snapshots, projections, and safe rich content
+import "./plugins/DataDrivenTools";
+import "./plugins/ProjectionRichTools";
+
 import { assertDrawingToolRegistryComplete } from "./ToolRegistry";
 
 if (process.env.NODE_ENV !== "production") {
