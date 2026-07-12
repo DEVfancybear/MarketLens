@@ -20,6 +20,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import {
   editingDrawingIdAtom,
   candlesAtom,
+  timeframeAtom,
   drawingsAtom,
   setEditingDrawingAtom,
   updateDrawingAtom,
@@ -51,6 +52,7 @@ import {
   buildDrawingSettingsRevert,
 } from "./drawing/settings/drawingSettingsTransaction";
 import { CheckBox, ColorPopover, LineWidget, Select, Swatch } from "./drawing/settings/DrawingSettingsFields";
+import { DrawingIntervalVisibilityFields } from "./drawing/settings/DrawingIntervalVisibilityFields";
 
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40];
 const EXTEND_OPTS: { value: NonNullable<Drawing["extend"]>; label: string }[] = [
@@ -116,6 +118,7 @@ function normalizedFibLevels(d: Drawing): FibLevelConfig[] {
 export function ObjectSettingsDialog() {
   const editingId = useAtomValue(editingDrawingIdAtom);
   const candles = useAtomValue(candlesAtom);
+  const timeframe = useAtomValue(timeframeAtom);
   const drawings = useAtomValue(drawingsAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
@@ -478,21 +481,26 @@ export function ObjectSettingsDialog() {
               )}
 
               {tab === "visibility" && (
-                <Row label="On chart">
-                  <button
-                    onClick={() =>
-                      patch({ visible: drawing.visible === false })
-                    }
-                    className={cn(
-                      "rounded border px-2.5 py-1 text-xs transition-colors",
-                      drawing.visible !== false
-                        ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
-                        : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
-                    )}
-                  >
-                    {drawing.visible !== false ? "Shown" : "Hidden"}
-                  </button>
-                </Row>
+                <>
+                  <Row label="On chart">
+                    <button
+                      onClick={() => patch({ visible: drawing.visible === false })}
+                      className={cn(
+                        "rounded border px-2.5 py-1 text-xs transition-colors",
+                        drawing.visible !== false
+                          ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
+                          : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
+                      )}
+                    >
+                      {drawing.visible !== false ? "Shown" : "Hidden"}
+                    </button>
+                  </Row>
+                  <DrawingIntervalVisibilityFields
+                    value={drawing.intervalVisibility}
+                    currentTimeframe={timeframe}
+                    onChange={(intervalVisibility) => patch({ intervalVisibility })}
+                  />
+                </>
               )}
             </div>
 
@@ -1160,19 +1168,26 @@ export function ObjectSettingsDialog() {
 
           {/* --------------------------------------------- VISIBILITY */}
           {tab === "visibility" && (
-            <Row label="On chart">
-              <button
-                onClick={() => patch({ visible: drawing.visible === false })}
-                className={cn(
-                  "rounded border px-2.5 py-1 text-xs transition-colors",
-                  drawing.visible !== false
-                    ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
-                    : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
-                )}
-              >
-                {drawing.visible !== false ? "Shown" : "Hidden"}
-              </button>
-            </Row>
+            <>
+              <Row label="On chart">
+                <button
+                  onClick={() => patch({ visible: drawing.visible === false })}
+                  className={cn(
+                    "rounded border px-2.5 py-1 text-xs transition-colors",
+                    drawing.visible !== false
+                      ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
+                      : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
+                  )}
+                >
+                  {drawing.visible !== false ? "Shown" : "Hidden"}
+                </button>
+              </Row>
+              <DrawingIntervalVisibilityFields
+                value={drawing.intervalVisibility}
+                currentTimeframe={timeframe}
+                onChange={(intervalVisibility) => patch({ intervalVisibility })}
+              />
+            </>
           )}
         </div>
 

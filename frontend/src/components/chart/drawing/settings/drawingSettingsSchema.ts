@@ -39,7 +39,7 @@ const SECTION_FIELDS: Record<DrawingSettingsSectionId, readonly (keyof Drawing)[
   "fib-levels": ["fibTrendLine", "fibTrendLineColor", "fibTrendLineWidth", "fibTrendLineStyle", "fibLevelsLine", "fibLevelLineColor", "fibLevelLineWidth", "fibLevelLineStyle", "fibLevels", "fibUseOneColor", "fibBackground", "fibReverse", "fibShowPrices", "fibShowLevels", "fibLevelsFormat", "fibLabelsHAlign", "fibLabelsVAlign", "fibShowText", "fibTextHAlign", "fibTextVAlign", "fibLogScale"],
   stats: ["accountSize", "accountCurrency", "lotSize", "riskValue", "riskUnit", "leverage", "qtyPrecision", "positionStats", "compactStats", "alwaysShowStats", "stop", "target"],
   coordinates: ["points"],
-  visibility: ["visible"],
+  visibility: ["visible", "intervalVisibility"],
 };
 
 const SECTION_TABS: Record<DrawingSettingsSectionId, DrawingSettingsTab> = {
@@ -48,7 +48,7 @@ const SECTION_TABS: Record<DrawingSettingsSectionId, DrawingSettingsTab> = {
 };
 
 const NON_TEMPLATE_KEYS = new Set<keyof Drawing>([
-  "text", "points", "visible", "accountSize", "accountCurrency", "lotSize",
+  "text", "points", "visible", "intervalVisibility", "accountSize", "accountCurrency", "lotSize",
   "riskValue", "riskUnit", "leverage", "qtyPrecision", "positionStats",
   "compactStats", "alwaysShowStats", "stop", "target",
 ]);

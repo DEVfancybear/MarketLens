@@ -16,8 +16,9 @@ import {
   ChevronUp,
   ChevronDown,
   Settings,
+  Clock3,
 } from "lucide-react";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   removeDrawingAtom,
   duplicateDrawingAtom,
@@ -26,8 +27,14 @@ import {
   bringToFrontAtom,
   sendToBackAtom,
   setEditingDrawingAtom,
+  timeframeAtom,
+  updateDrawingAtom,
 } from "@/store/chartStore";
 import type { Drawing } from "@/types";
+import {
+  DRAWING_INTERVAL_VISIBILITY_PRESETS,
+  intervalVisibilityForPreset,
+} from "./visibility/drawingIntervalVisibility";
 
 export type DrawingAction =
   | { divider: true }
@@ -54,6 +61,8 @@ export function useDrawingActions(
   const toFront = useSetAtom(bringToFrontAtom);
   const toBack = useSetAtom(sendToBackAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
+  const updateDrawing = useSetAtom(updateDrawingAtom);
+  const timeframe = useAtomValue(timeframeAtom);
 
   if (!drawing) return [];
 
@@ -61,6 +70,21 @@ export function useDrawingActions(
     fn(drawing.id);
     onAfter?.();
   };
+  const intervalActions: DrawingAction[] = DRAWING_INTERVAL_VISIBILITY_PRESETS.map(
+    (preset) => ({
+      icon: <Clock3 size={14} className="text-ink-muted" />,
+      label: `Intervals: ${preset.label}`,
+      onClick: () => {
+        updateDrawing({
+          id: drawing.id,
+          patch: {
+            intervalVisibility: intervalVisibilityForPreset(preset.id, timeframe),
+          },
+        });
+        onAfter?.();
+      },
+    }),
+  );
 
   return [
     {
@@ -99,6 +123,7 @@ export function useDrawingActions(
           label: "Hide",
           onClick: act(hide),
         },
+    ...intervalActions,
     { divider: true },
     {
       icon: <ChevronUp size={14} className="text-ink-muted" />,

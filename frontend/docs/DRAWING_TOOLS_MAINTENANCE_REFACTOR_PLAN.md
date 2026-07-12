@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; items 1-2 implemented on 2026-07-12.
+Status: in progress; items 1-3 implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -596,14 +596,37 @@ Delivered (item 2):
   modifier inversion, capability completeness, and transform reference geometry. Browser coverage
   verifies Strong creation snapping, Ctrl override, toolbar state, and reload persistence.
 
+Delivered (item 3):
+
+- Drawings now carry an optional explicit interval-visibility model. Historical payloads without the
+  field remain visible on every interval, while boundary decoding orders and deduplicates supported
+  intervals and safely drops unknown values.
+- The shared Visibility tab exposes All intervals, Current interval, Current and above, and Current
+  and below presets plus individual toggles for every supported chart timeframe. Object and Position
+  dialogs consume the same field component and retain the existing preview/Cancel/OK transaction
+  behavior.
+- The shared drawing action registry contributes the same four quick presets to both the right-click
+  menu and floating toolbar More menu. Applying a quick preset writes the same model displayed by the
+  Visibility tab.
+- `isDrawingVisibleAtTimeframe` filters the render and interaction inputs before spatial indexing,
+  hit-testing, hover, selection, and overlay projection. Drawings remain in chart state and
+  persistence while hidden by the active interval, and an invalid selection is released when an
+  interval switch hides its drawing.
+- Interval visibility is excluded from style templates and tool defaults, so neither operation can
+  unexpectedly hide future drawings. Unit tests cover defaults, presets, disjoint manual choices,
+  normalization, settings schema, and codec round trips. Browser coverage verifies settings and
+  quick-action writes, interval filtering, selection release, and restoration when returning to an
+  eligible interval.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 81/81 passing.
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 10/10 passing in 49.5 seconds.
+- `npm run test:drawing`: 86/86 passing.
+- `npm run test:drawing-persistence`: 14/14 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 11/11 passing in 57.2 seconds.
 
-Remaining: items 3-8 (interval visibility, shared coordinate controls, object
+Remaining: items 4-8 (shared coordinate controls, object
 tree/grouping/names, sync modes, unified bulk scopes, and drawing alerts).
 
 Exit gate:

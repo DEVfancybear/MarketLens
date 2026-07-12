@@ -197,6 +197,59 @@ test("strong OHLC magnet snaps creation and Ctrl temporarily disables it", async
     .toHaveClass(/text-brand/);
 });
 
+test("interval visibility settings filter drawings and quick presets update the model", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.28, y: pane.y + pane.height * 0.65 };
+  const end = { x: pane.x + pane.width * 0.58, y: pane.y + pane.height * 0.38 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  const created = await drawingSnapshot(page);
+  const id = created.drawings[0].id;
+  const projected = await page.evaluate(
+    (drawingId) => window.__drawingInteractionTest!.projectDrawing(drawingId),
+    id,
+  );
+  const body = {
+    x: projected![0].x + (projected![1].x - projected![0].x) * 0.75,
+    y: projected![0].y + (projected![1].y - projected![0].y) * 0.75,
+  };
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click(body.x, body.y);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Trendline settings" });
+  await dialog.getByRole("tab", { name: "visibility", exact: true }).click();
+  await dialog.getByRole("button", { name: "Current interval", exact: true }).click();
+  await dialog.getByRole("button", { name: "Ok", exact: true }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.intervalVisibility)
+    .toEqual({ timeframes: ["15m"] });
+
+  await page.getByTestId("price-chart-root").getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("button", { name: "Intervals: Current and above", exact: true }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.intervalVisibility)
+    .toEqual({ timeframes: ["15m", "30m", "1H", "2H", "4H", "1D", "1W", "1M"] });
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const reopened = page.getByRole("dialog", { name: "Trendline settings" });
+  await reopened.getByRole("tab", { name: "visibility", exact: true }).click();
+  await reopened.getByRole("button", { name: "Current interval", exact: true }).click();
+  await reopened.getByRole("button", { name: "Ok", exact: true }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.intervalVisibility)
+    .toEqual({ timeframes: ["15m"] });
+
+  await page.evaluate(() => window.__drawingInteractionTest!.changeTimeframe("1H"));
+  await expect.poll(async () => (await drawingSnapshot(page)).visibleDrawingIds).toEqual([]);
+  await expect.poll(async () => (await drawingSnapshot(page)).selectedDrawingId).toBeNull();
+
+  await page.evaluate(() => window.__drawingInteractionTest!.changeTimeframe("15m"));
+  await expect.poll(async () => (await drawingSnapshot(page)).visibleDrawingIds).toEqual([id]);
+});
+
 async function exerciseTrendlineTransaction(page: Page) {
   await page.evaluate(() => window.__drawingInteractionTest!.clear());
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());

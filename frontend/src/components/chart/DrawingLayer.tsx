@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UTCTimestamp } from "lightweight-charts";
 import { Plus } from "lucide-react";
 import { useChartCtx } from "./ChartContext";
@@ -25,6 +25,8 @@ import {
   selectAllAtom,
   symbolAtom,
   setSymbolAtom,
+  timeframeAtom,
+  setTimeframeAtom,
 } from "@/store/chartStore";
 import { type Drawing, type Point } from "@/types";
 import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
@@ -60,6 +62,7 @@ import { runDrawingAdapterContractAudit } from "./drawing/testing/adapterContrac
 import type { DrawingInteractionTestHarness } from "./drawing/testing/testHarnessTypes";
 import { reconcileDrawingLifecycle } from "./drawing/lifecycle/drawingLifecycle";
 import { resolveSelectionTextOverlay } from "./drawing/overlays/drawingOverlayTargets";
+import { isDrawingVisibleAtTimeframe } from "./drawing/visibility/drawingIntervalVisibility";
 
 declare global {
   interface Window {
@@ -80,6 +83,11 @@ export function DrawingLayer() {
   const drawingsLocked = useAtomValue(drawingsLockedAtom);
   const drawingsHidden = useAtomValue(drawingsHiddenAtom);
   const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const visibleDrawings = useMemo(
+    () => drawings.filter((drawing) => isDrawingVisibleAtTimeframe(drawing, timeframe)),
+    [drawings, timeframe],
+  );
   const addDrawing = useSetAtom(addDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const selectDrawing = useSetAtom(selectDrawingAtom);
@@ -88,6 +96,7 @@ export function DrawingLayer() {
   const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
   const setSymbol = useSetAtom(setSymbolAtom);
+  const setTimeframe = useSetAtom(setTimeframeAtom);
   const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
   const selectAll = useSetAtom(selectAllAtom);
 
@@ -235,6 +244,7 @@ export function DrawingLayer() {
 
   const stateRef = useRef({
     drawings: [] as Drawing[],
+    visibleDrawings: [] as Drawing[],
     activeTool: "cursor" as Drawing["tool"],
     drawColor: "#2962ff",
     drawingToolPreferences,
@@ -247,6 +257,7 @@ export function DrawingLayer() {
   });
   stateRef.current = {
     drawings,
+    visibleDrawings,
     activeTool,
     drawColor,
     drawingToolPreferences,
@@ -257,6 +268,12 @@ export function DrawingLayer() {
     selectedDrawingId,
     selectedDrawingIds,
   };
+
+  useEffect(() => {
+    if (selectedDrawingId && !visibleDrawings.some((drawing) => drawing.id === selectedDrawingId)) {
+      selectDrawing(null);
+    }
+  }, [selectDrawing, selectedDrawingId, visibleDrawings]);
 
   const markDirtyRef = useRef<() => void>(() => {});
   const addDrawingWithHistory = useCallback(
@@ -355,6 +372,7 @@ export function DrawingLayer() {
     markDirtyRef.current();
   }, [
     drawings,
+    visibleDrawings,
     selectedDrawingId,
     selectedDrawingIds,
     drawingsHidden,
@@ -418,7 +436,10 @@ export function DrawingLayer() {
     fromEvent,
     toX,
     toY,
-    getState: () => stateRef.current,
+    getState: () => ({
+      ...stateRef.current,
+      drawings: stateRef.current.visibleDrawings,
+    }),
     addDrawing: addDrawingWithHistory,
     updateDrawing,
     removeDrawing,
@@ -457,6 +478,7 @@ export function DrawingLayer() {
           activeTool: stateRef.current.activeTool,
           selectedDrawingId: stateRef.current.selectedDrawingId,
           selectedDrawingIds: [...stateRef.current.selectedDrawingIds],
+          visibleDrawingIds: stateRef.current.visibleDrawings.map((drawing) => drawing.id),
           machineState: machineRef.current?.state ?? "Idle",
           canvas: rect
             ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
@@ -497,7 +519,7 @@ export function DrawingLayer() {
         }
         const localX = x - rect.left;
         const localY = y - rect.top;
-        const hits = stateRef.current.drawings.flatMap((drawing) =>
+        const hits = stateRef.current.visibleDrawings.flatMap((drawing) =>
           (getTool(drawing.tool)?.hitTest(
             drawing,
             localX,
@@ -547,11 +569,12 @@ export function DrawingLayer() {
         setActiveTool("cursor");
       },
       changeSymbol: (nextSymbol) => setSymbol(nextSymbol),
+      changeTimeframe: (nextTimeframe) => setTimeframe(nextTimeframe),
     };
     return () => {
       delete window.__drawingInteractionTest;
     };
-  }, [fromEvent, machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, toX, toY]);
+  }, [fromEvent, machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, setTimeframe, toX, toY]);
 
   // While a drawing is being created or dragged/resized, freeze the chart's
   // pan & zoom. Otherwise a fast pointer move leaks through to the chart's
@@ -574,7 +597,7 @@ export function DrawingLayer() {
       toX,
       toY,
       getData: () => ({
-        drawings: stateRef.current.drawings,
+        drawings: stateRef.current.visibleDrawings,
         drawingsHidden: stateRef.current.drawingsHidden,
         selectedDrawingId: stateRef.current.selectedDrawingId,
         selectedDrawingIds: stateRef.current.selectedDrawingIds,
@@ -635,7 +658,7 @@ export function DrawingLayer() {
   // transient so the editor never detaches from the committed drawing.
   const shapeLabelTarget = machine.state === "Idle"
     ? resolveSelectionTextOverlay(
-        drawings,
+        visibleDrawings,
         selectedDrawingId,
         "shape-center",
         toX,
@@ -645,7 +668,7 @@ export function DrawingLayer() {
   const shapeTextEditorTarget =
     textEditSession?.editorKind === "shape-center"
       ? resolveSelectionTextOverlay(
-          drawings,
+          visibleDrawings,
           textEditSession.drawingId,
           "shape-center",
           toX,
@@ -654,7 +677,7 @@ export function DrawingLayer() {
       : null;
   const trendLineTextTarget = machine.state === "Idle"
     ? resolveSelectionTextOverlay(
-        drawings,
+        visibleDrawings,
         selectedDrawingId,
         "line-midpoint",
         toX,
@@ -664,7 +687,7 @@ export function DrawingLayer() {
   const trendLineTextEditorTarget =
     textEditSession?.editorKind === "line-midpoint"
       ? resolveSelectionTextOverlay(
-          drawings,
+          visibleDrawings,
           textEditSession.drawingId,
           "line-midpoint",
           toX,

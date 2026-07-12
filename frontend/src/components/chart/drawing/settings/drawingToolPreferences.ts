@@ -33,6 +33,7 @@ const NEVER_DEFAULT_FIELDS = new Set<keyof Drawing>([
   "points",
   "text",
   "visible",
+  "intervalVisibility",
   "locked",
   "zIndex",
   "clientRevision",

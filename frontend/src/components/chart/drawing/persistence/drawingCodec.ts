@@ -1,4 +1,5 @@
 import type { Drawing, DrawingTemplate, Point } from "@/types";
+import { normalizeDrawingIntervalVisibility } from "../visibility/drawingIntervalVisibility";
 import {
   DRAWING_TOOLS,
   getDrawingToolManifestEntry,
@@ -131,6 +132,9 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
         : metadata.defaultProperties.lineWidth,
     points,
   } as Drawing;
+  const intervalVisibility = normalizeDrawingIntervalVisibility(value.intervalVisibility);
+  if (intervalVisibility) drawing.intervalVisibility = intervalVisibility;
+  else delete drawing.intervalVisibility;
   delete drawing._dragging;
   return {
     drawing,

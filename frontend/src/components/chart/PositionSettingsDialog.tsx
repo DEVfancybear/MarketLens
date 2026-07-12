@@ -14,6 +14,7 @@ import {
   drawingsAtom,
   setEditingDrawingAtom,
   symbolAtom,
+  timeframeAtom,
   updateDrawingAtom,
   saveDrawingToolDefaultsAtom,
 } from "@/store/chartStore";
@@ -43,6 +44,7 @@ import {
   buildDrawingSettingsCommit,
   buildDrawingSettingsRevert,
 } from "./drawing/settings/drawingSettingsTransaction";
+import { DrawingIntervalVisibilityFields } from "./drawing/settings/DrawingIntervalVisibilityFields";
 
 const COLORS = [
   "#ffffff",
@@ -433,6 +435,7 @@ export function PositionSettingsDialog() {
   const editingId = useAtomValue(editingDrawingIdAtom);
   const drawings = useAtomValue(drawingsAtom);
   const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const saveToolDefaults = useSetAtom(saveDrawingToolDefaultsAtom);
@@ -841,21 +844,26 @@ export function PositionSettingsDialog() {
           )}
 
           {tab === "visibility" && (
-            <Row label="Labels">
-              <button
-                onClick={() =>
-                  patch({ showLabels: drawing.showLabels === false })
-                }
-                className={cn(
-                  "rounded border px-2.5 py-1 text-xs transition-colors",
-                  drawing.showLabels !== false
-                    ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
-                    : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
-                )}
-              >
-                {drawing.showLabels !== false ? "Shown" : "Hidden"}
-              </button>
-            </Row>
+            <>
+              <Row label="Labels">
+                <button
+                  onClick={() => patch({ showLabels: drawing.showLabels === false })}
+                  className={cn(
+                    "rounded border px-2.5 py-1 text-xs transition-colors",
+                    drawing.showLabels !== false
+                      ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
+                      : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
+                  )}
+                >
+                  {drawing.showLabels !== false ? "Shown" : "Hidden"}
+                </button>
+              </Row>
+              <DrawingIntervalVisibilityFields
+                value={drawing.intervalVisibility}
+                currentTimeframe={timeframe}
+                onChange={(intervalVisibility) => patch({ intervalVisibility })}
+              />
+            </>
           )}
         </div>
         <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-[#3a3a3a] px-5">

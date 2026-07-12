@@ -38,6 +38,19 @@ test("encoder strips transient render fields", () => {
   assert.equal("_dragging" in encoded, false);
 });
 
+test("interval visibility is normalized at persistence boundaries", () => {
+  const decoded = decodeDrawing({
+    ...legacy,
+    intervalVisibility: { timeframes: ["1D", "15m", "15m", "future"] },
+  });
+  assert.deepEqual(decoded.drawing?.intervalVisibility, {
+    timeframes: ["15m", "1D"],
+  });
+  assert.deepEqual(encodeDrawing(decoded.drawing!).intervalVisibility, {
+    timeframes: ["15m", "1D"],
+  });
+});
+
 test("unknown tools and malformed coordinates are quarantined, not silently loaded", () => {
   const result = decodeDrawingList([
     legacy,

@@ -1,5 +1,6 @@
 import type { Drawing } from "../../../../types/drawing";
 import type { Point } from "../../../../types/drawing";
+import type { Timeframe } from "../../../../types";
 import type { DrawingAdapterContractResult } from "./adapterContractAudit";
 
 export interface DrawingInteractionTestSnapshot {
@@ -7,6 +8,7 @@ export interface DrawingInteractionTestSnapshot {
   activeTool: string;
   selectedDrawingId: string | null;
   selectedDrawingIds: string[];
+  visibleDrawingIds: string[];
   machineState: string;
   canvas: { x: number; y: number; width: number; height: number };
 }
@@ -27,4 +29,5 @@ export interface DrawingInteractionTestHarness {
   };
   clear: () => void;
   changeSymbol: (symbol: string) => void;
+  changeTimeframe: (timeframe: Timeframe) => void;
 }

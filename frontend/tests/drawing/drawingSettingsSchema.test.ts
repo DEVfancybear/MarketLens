@@ -13,6 +13,7 @@ test("settings schema derives family tabs and fields from manifest capabilities"
   assert.deepEqual(getDrawingSettingsSchema("text").tabs, ["text", "visibility"]);
   assert.deepEqual(getDrawingSettingsSchema("long").tabs, ["inputs", "style", "visibility"]);
   assert.equal(getDrawingSettingsSchema("short").hasField("riskValue"), true);
+  assert.equal(getDrawingSettingsSchema("trendline").hasField("intervalVisibility"), true);
 });
 
 test("settings schemas cover every current family and transactions preserve snapshots", () => {
@@ -34,6 +35,7 @@ test("template pick/apply is capability scoped and never carries geometry", () =
   const picked = pickDrawingTemplateStyle(rectangle);
   assert.equal(picked.fillColor, "#000");
   assert.equal(picked.points, undefined);
+  assert.equal(picked.intervalVisibility, undefined);
   assert.equal(picked.fibLevels, undefined);
   const linePatch = applyDrawingTemplateStyle("trendline", picked);
   assert.equal(linePatch.fillColor, undefined);

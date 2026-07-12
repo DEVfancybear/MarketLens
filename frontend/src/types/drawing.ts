@@ -1,5 +1,6 @@
 /** User drawing primitives rendered on the chart overlay canvas. */
 import type { DrawingTool } from "./drawingToolManifest";
+import type { Timeframe } from "./market";
 export type { DrawingTool } from "./drawingToolManifest";
 export { ALL_DRAWING_TOOL_IDS } from "./drawingToolManifest";
 
@@ -46,6 +47,11 @@ export interface Point {
   price: number;
 }
 
+export interface DrawingIntervalVisibility {
+  /** Explicit supported intervals. Omitted on a drawing means all intervals. */
+  timeframes: Timeframe[];
+}
+
 export interface BaseDrawing {
   /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
   schemaVersion?: number;
@@ -67,6 +73,8 @@ export interface BaseDrawing {
   zIndex?: number;
   locked?: boolean;
   visible?: boolean;
+  /** Per-interval visibility. Undefined preserves historical all-interval behavior. */
+  intervalVisibility?: DrawingIntervalVisibility;
   /** Monotonic local mutation counter and last acknowledged server revision. */
   clientRevision?: number;
   serverRevision?: number;
