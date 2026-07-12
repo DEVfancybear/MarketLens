@@ -17,6 +17,12 @@ older references:
 
 Recent post-split work:
 
+- **Drawing maintenance Phase 8 Wave C complete (2026-07-12):** 11 harmonic/Elliott/time-cycle
+  tools added through a manifest-labeled pattern framework, taking the persistent catalog to 73.
+  `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_C=false` disables creation while preserving saved-object decode.
+  All gates pass, including 19/19 Playwright tests. Continue with data-contract-first Wave D; read
+  `frontend/docs/DRAWING_PHASE8_WAVE_C.md`.
+
 - **Drawing maintenance Phase 8 Wave B complete (2026-07-12):** 14 Fib/Gann/fan/radial/Pitchfork
   tools added through shared geometry families, taking the persistent manifest to 62 tools. The
   `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_B=false` creation kill switch preserves saved-object decoding.

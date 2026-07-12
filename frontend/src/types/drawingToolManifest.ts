@@ -17,6 +17,9 @@ export const ALL_DRAWING_TOOL_IDS = [
   "fibChannel", "fibSpeedFan", "fibSpeedArcs", "fibCircles", "fibWedge",
   "trendFibTime", "pitchfan", "gannFan", "gannSquare", "gannBox",
   "pitchfork", "insidePitchfork", "schiffPitchfork", "modifiedSchiffPitchfork",
+  "abcdPattern", "xabcdPattern", "trianglePattern", "threeDrivesPattern",
+  "headShouldersPattern", "elliottImpulse", "elliottTriangle",
+  "elliottTripleCombo", "elliottCorrection", "elliottDoubleCombo", "timeCycles",
 ] as const;
 
 export type DrawingTool = (typeof ALL_DRAWING_TOOL_IDS)[number];
@@ -64,7 +67,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly persistent: boolean;
   readonly favoriteEligible: boolean;
   readonly preferredForCreation: boolean;
-  readonly rollout?: "phase8-wave-a" | "phase8-wave-b";
+  readonly rollout?: "phase8-wave-a" | "phase8-wave-b" | "phase8-wave-c";
   readonly creationMode: DrawingCreationMode;
   readonly minPoints: number;
   readonly maxPoints?: number;
@@ -198,6 +201,17 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("modifiedSchiffPitchfork", "Modified Schiff Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
   tool("cyclicLines", "Cyclic lines", "patterns", "vertical", "two-point", 2, { rollout: "phase8-wave-a" }),
+  tool("abcdPattern", "ABCD Pattern", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", styleFamily: "shape", coordinateLabels: ["A", "B", "C", "D"], settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("xabcdPattern", "XABCD Pattern", "patterns", "path", "fixed-multi-point", 5, { maxPoints: 5, rollout: "phase8-wave-c", styleFamily: "shape", coordinateLabels: ["X", "A", "B", "C", "D"], settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("trianglePattern", "Triangle Pattern", "patterns", "triangle", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", styleFamily: "shape", coordinateLabels: ["1", "2", "3", "4"], settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("threeDrivesPattern", "Three Drives Pattern", "patterns", "path", "fixed-multi-point", 7, { maxPoints: 7, rollout: "phase8-wave-c", styleFamily: "shape", coordinateLabels: ["X", "1", "A", "2", "B", "3", "C"], settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("headShouldersPattern", "Head and Shoulders", "patterns", "branch", "fixed-multi-point", 7, { maxPoints: 7, rollout: "phase8-wave-c", styleFamily: "shape", coordinateLabels: ["Start", "Left shoulder", "Neck 1", "Head", "Neck 2", "Right shoulder", "End"], settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("elliottImpulse", "Elliott Impulse Wave", "patterns", "path", "fixed-multi-point", 6, { maxPoints: 6, rollout: "phase8-wave-c", coordinateLabels: ["Start", "1", "2", "3", "4", "5"] }),
+  tool("elliottTriangle", "Elliott Triangle Wave", "patterns", "triangle", "fixed-multi-point", 6, { maxPoints: 6, rollout: "phase8-wave-c", coordinateLabels: ["Start", "A", "B", "C", "D", "E"] }),
+  tool("elliottTripleCombo", "Elliott Triple Combo Wave", "patterns", "path", "fixed-multi-point", 6, { maxPoints: 6, rollout: "phase8-wave-c", coordinateLabels: ["Start", "W", "X", "Y", "X", "Z"] }),
+  tool("elliottCorrection", "Elliott Correction Wave", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", coordinateLabels: ["Start", "A", "B", "C"] }),
+  tool("elliottDoubleCombo", "Elliott Double Combo Wave", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", coordinateLabels: ["Start", "W", "X", "Y"] }),
+  tool("timeCycles", "Time Cycles", "patterns", "circle", "two-point", 2, { rollout: "phase8-wave-c" }),
   tool("priceRange", "Price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("dateRange", "Date range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("datePriceRange", "Date and price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
@@ -244,10 +258,12 @@ export function isDrawingToolCreationEnabled(
   toolId: DrawingTool,
   phase8WaveAEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_A !== "false",
   phase8WaveBEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_B !== "false",
+  phase8WaveCEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_C !== "false",
 ): boolean {
   const definition = getDrawingToolManifestEntry(toolId);
   if (definition.rollout === "phase8-wave-a") return phase8WaveAEnabled;
   if (definition.rollout === "phase8-wave-b") return phase8WaveBEnabled;
+  if (definition.rollout === "phase8-wave-c") return phase8WaveCEnabled;
   return true;
 }
 

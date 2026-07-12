@@ -791,9 +791,9 @@ Exit gate:
 
 ### Phase 8 — Expand the catalog in bounded waves
 
-Status: in progress. Waves A and B implemented on 2026-07-12; see
-`DRAWING_PHASE8_WAVE_A.md` and `DRAWING_PHASE8_WAVE_B.md`. Waves C-D remain independently gated
-deliveries.
+Status: in progress. Waves A, B, and C implemented on 2026-07-12; see
+`DRAWING_PHASE8_WAVE_A.md`, `DRAWING_PHASE8_WAVE_B.md`, and `DRAWING_PHASE8_WAVE_C.md`. Wave D
+remains an independently gated delivery.
 
 Do not add every missing tool in one phase. Use dependency-driven waves.
 
@@ -853,6 +853,27 @@ Verification on 2026-07-12:
 
 - ABCD, XABCD, triangle, three drives, head and shoulders.
 - Elliott-wave variants and time cycles.
+
+Delivered:
+
+- Added five harmonic/chart patterns, five Elliott variants, and Time Cycles through one
+  manifest-labeled pattern framework plus a bounded cycle adapter. The persistent catalog now
+  covers 73 ids.
+- Manifest point labels/counts drive creation, coordinate settings, fixtures, render labels, and
+  browser gestures. Pure validators contribute ratio/structure feedback without store writes.
+- Added 7-anchor fixtures, all-family render/hit/move/resize/bounds contracts, codec coverage,
+  browser creation/undo coverage, rollout flag, official behavior notes, intentional differences,
+  and performance review.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run build`: passing.
+- `npm run lint`: passing with 0 errors and 2 pre-existing Watchlist warnings.
+- `npm run test:drawing`: 121/121 passing.
+- `npm run test:drawing-persistence`: 17/17 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 19/19 passing.
+- `npm run benchmark:drawing`: 5,000-drawing rebuild median 1.993 ms; query median 0.146 ms.
 
 #### Wave D: data-dependent and rich-content tools
 

@@ -4,12 +4,12 @@ _Post-monorepo update 2026-07-06._
 
 ## Drawing maintenance refactor
 
-- Phase 8 Waves A and B are complete; do not reopen their shared interaction/persistence boundaries to add
+- Phase 8 Waves A-C are complete; do not reopen their shared interaction/persistence boundaries to add
   tool-specific branches.
-- Next drawing catalog delivery is Wave C from
-  `frontend/docs/DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`: the reusable labeled-anchor pattern
-  framework for ABCD/XABCD/triangle/three-drives/head-and-shoulders/Elliott/time-cycle tools. Keep
-  it independently gated from data-dependent Wave D.
+- Next drawing catalog delivery is Wave D from
+  `frontend/docs/DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`: data-dependent projections/profiles
+  and rich content. Define candle/volume/data-source and content-sandbox contracts before adding
+  those tools; do not implement them as coordinate-only approximations.
 
 ## Approved backend replay initiative (design first)
 

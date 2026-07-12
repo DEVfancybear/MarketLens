@@ -19,6 +19,8 @@ const BASE_POINTS: Point[] = [
   { time: 320, price: 145 },
   { time: 410, price: 105 },
   { time: 500, price: 165 },
+  { time: 590, price: 95 },
+  { time: 680, price: 150 },
 ];
 
 export function fixturePointCount(

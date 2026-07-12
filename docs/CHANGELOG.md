@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Drawing maintenance Phase 8 Wave C (2026-07-12)
+- Added ABCD, XABCD, Triangle, Three Drives, Head and Shoulders, five Elliott wave variants, and
+  Time Cycles.
+- Added a shared manifest-labeled pattern renderer with price-leg ratios, topology validation,
+  seven-anchor support, exact hit/bounds behavior, and bounded repeating time cycles.
+- Added `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_C=false` as a creation-only rollback while retaining
+  adapter/codec compatibility for saved patterns.
+- Expanded catalog/codec/browser coverage to 73 persistent tools and documented official behavior,
+  model compatibility, intentional differences, and performance findings.
+
 ### Added - Drawing maintenance Phase 8 Wave B (2026-07-12)
 - Added Fib Channel, Fib Speed Resistance Fan/Arcs, Fib Circles, Fib Wedge, Trend-Based Fib Time,
   Pitchfan, Gann Fan/Square/Box, and all four Pitchfork variants.

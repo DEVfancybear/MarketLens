@@ -34,7 +34,7 @@ test("all persistent tools register and satisfy the executable adapter contract"
     const audit = await page.evaluate(() =>
       window.__drawingInteractionTest!.auditAdapters(),
     );
-    expect(audit.expectedToolIds).toHaveLength(62);
+    expect(audit.expectedToolIds).toHaveLength(73);
     expect(audit.registeredToolIds).toEqual(audit.expectedToolIds);
     expect(audit.fixtureToolIds).toEqual(audit.expectedToolIds);
     expect(audit.errors).toEqual([]);
@@ -92,6 +92,19 @@ test("Phase 8 Wave B level, radial, grid, and pitchfork gestures use manifest co
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(4);
   await page.keyboard.press("Control+Shift+z");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(5);
+});
+
+test("Phase 8 Wave C harmonic, Elliott, and cycle gestures use fixed manifest topologies", async ({ page }) => {
+  const chart=await page.evaluate(()=>window.__chartInteractionTest!.snapshot());const pane=chart.paneBoxes[0];
+  const points=Array.from({length:7},(_,index)=>({x:pane.x+pane.width*(.18+index*.09),y:pane.y+pane.height*(index%2===0?.65:.35)}));
+  const create=async(name:RegExp,count:number)=>{await page.getByRole("button",{name:"Patterns",exact:true}).click();await page.getByRole("button",{name}).click();for(const point of points.slice(0,count))await page.mouse.click(point.x,point.y);};
+  await create(/^ABCD Pattern\b/,4);
+  await create(/^Head and Shoulders\b/,7);
+  await create(/^Elliott Impulse Wave\b/,6);
+  await create(/^Time Cycles\b/,2);
+  await expect.poll(async()=>(await drawingSnapshot(page)).drawings.map((drawing)=>drawing.tool)).toEqual(["abcdPattern","headShouldersPattern","elliottImpulse","timeCycles"]);
+  await page.keyboard.press("Control+z");await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(3);
+  await page.keyboard.press("Control+Shift+z");await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(4);
 });
 
 test("settings dialog exposes keyboard semantics and returns focus on Escape", async ({ page }) => {

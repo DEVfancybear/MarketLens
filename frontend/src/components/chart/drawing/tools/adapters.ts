@@ -60,6 +60,10 @@ import "./plugins/RadialLevelTools";
 import "./plugins/GannGridTools";
 import "./plugins/PitchforkTools";
 
+// Phase 8 Wave C — shared labeled patterns and time cycles
+import "./plugins/LabeledPatternTools";
+import "./plugins/TimeCyclesTool";
+
 import { assertDrawingToolRegistryComplete } from "./ToolRegistry";
 
 if (process.env.NODE_ENV !== "production") {
