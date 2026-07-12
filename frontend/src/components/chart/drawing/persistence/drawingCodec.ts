@@ -1,5 +1,6 @@
 import type { Drawing, DrawingTemplate, Point } from "@/types";
 import { normalizeDrawingIntervalVisibility } from "../visibility/drawingIntervalVisibility";
+import { normalizeDrawingSyncMode } from "./drawingSyncScope";
 import {
   DRAWING_TOOLS,
   getDrawingToolManifestEntry,
@@ -59,6 +60,24 @@ function normalizedGroup(value: unknown): Drawing["group"] {
   const id = value.id.trim().slice(0, MAX_OBJECT_NAME_LENGTH);
   if (!id) return undefined;
   return { id, name: normalizedName(value.name) ?? "Group" };
+}
+
+function normalizedSync(value: unknown): Drawing["sync"] {
+  if (!isRecord(value) || typeof value.symbol !== "string") return undefined;
+  const symbol = value.symbol.trim().slice(0, MAX_OBJECT_NAME_LENGTH);
+  if (!symbol) return undefined;
+  const mode = normalizeDrawingSyncMode(value.mode);
+  if (mode === "global") return { mode, symbol };
+  if (typeof value.layoutId !== "string" || !value.layoutId.trim()) return undefined;
+  const layoutId = value.layoutId.trim().slice(0, MAX_OBJECT_NAME_LENGTH);
+  if (mode === "layout-symbol") return { mode, symbol, layoutId };
+  if (typeof value.chartId !== "string" || !value.chartId.trim()) return undefined;
+  return {
+    mode,
+    symbol,
+    layoutId,
+    chartId: value.chartId.trim().slice(0, MAX_OBJECT_NAME_LENGTH),
+  };
 }
 
 function decodePoints(value: unknown): Point[] | null {
@@ -155,6 +174,9 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
   const group = normalizedGroup(value.group);
   if (group) drawing.group = group;
   else delete drawing.group;
+  const sync = normalizedSync(value.sync);
+  if (sync) drawing.sync = sync;
+  else delete drawing.sync;
   delete drawing._dragging;
   return {
     drawing,

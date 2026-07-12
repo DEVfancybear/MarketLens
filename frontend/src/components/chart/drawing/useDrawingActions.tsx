@@ -17,6 +17,9 @@ import {
   ChevronDown,
   Settings,
   Clock3,
+  Globe2,
+  PanelsTopLeft,
+  Monitor,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -29,12 +32,22 @@ import {
   setEditingDrawingAtom,
   timeframeAtom,
   updateDrawingAtom,
+  drawingsAtom,
+  drawingLayoutIdAtom,
+  drawingChartIdAtom,
+  symbolAtom,
 } from "@/store/chartStore";
 import type { Drawing } from "@/types";
 import {
   DRAWING_INTERVAL_VISIBILITY_PRESETS,
   intervalVisibilityForPreset,
 } from "./visibility/drawingIntervalVisibility";
+import {
+  DRAWING_SYNC_MODE_OPTIONS,
+  drawingSyncBinding,
+  drawingSyncMode,
+} from "./persistence/drawingSyncScope";
+import { BatchPropertyChangeCommand, drawingCommandManager } from "./history/CommandManager";
 
 export type DrawingAction =
   | { divider: true }
@@ -63,6 +76,10 @@ export function useDrawingActions(
   const setEditing = useSetAtom(setEditingDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const drawings = useAtomValue(drawingsAtom);
+  const layoutId = useAtomValue(drawingLayoutIdAtom);
+  const chartId = useAtomValue(drawingChartIdAtom);
+  const symbol = useAtomValue(symbolAtom);
 
   if (!drawing) return [];
 
@@ -85,6 +102,31 @@ export function useDrawingActions(
       },
     }),
   );
+  const syncTargets = drawing.group
+    ? drawings.filter((candidate) => candidate.group?.id === drawing.group?.id)
+    : [drawing];
+  const syncIcons = {
+    "chart-only": <Monitor size={14} className="text-ink-muted" />,
+    "layout-symbol": <PanelsTopLeft size={14} className="text-ink-muted" />,
+    global: <Globe2 size={14} className="text-ink-muted" />,
+  };
+  const syncActions: DrawingAction[] = DRAWING_SYNC_MODE_OPTIONS.map((option) => ({
+    icon: syncIcons[option.id],
+    label: `${drawingSyncMode(drawing) === option.id ? "✓ " : ""}${option.label}`,
+    onClick: () => {
+      const binding = drawingSyncBinding(option.id, { symbol, layoutId, chartId });
+      drawingCommandManager.execute(new BatchPropertyChangeCommand(
+        updateDrawing,
+        syncTargets.map((candidate) => ({
+          id: candidate.id,
+          newProps: { sync: binding },
+          oldProps: { sync: candidate.sync },
+        })),
+        "Change Drawing Sync",
+      ));
+      onAfter?.();
+    },
+  }));
 
   return [
     {
@@ -124,6 +166,8 @@ export function useDrawingActions(
           onClick: act(hide),
         },
     ...intervalActions,
+    { divider: true },
+    ...syncActions,
     { divider: true },
     {
       icon: <ChevronUp size={14} className="text-ink-muted" />,

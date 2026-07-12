@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; items 1-5 implemented on 2026-07-12.
+Status: in progress; items 1-6 implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -657,18 +657,38 @@ Delivered (item 5):
   Unit tests cover tree construction/order, labels, contiguous group moves, batch history, and codec
   round trips. Browser coverage exercises grouping, undo/redo, rename, hide, and lock on the real UI.
 
+Delivered (item 6):
+
+- Every drawing can now carry an explicit `chart-only`, `layout-symbol`, or `global` sync binding.
+  The binding stores the symbol plus only the layout/chart identity required by its mode. Historical
+  payloads without sync metadata retain the previous globally synchronized same-symbol behavior.
+- A pure synchronization policy owns binding construction, context membership, layout projection,
+  registry merging, and save-as rebinding. The per-symbol local/backend registry preserves objects
+  owned by inactive layouts/charts while `drawingsAtom` exposes only the current context slice, so a
+  scoped save or deletion cannot erase another layout's objects.
+- Saved layouts persist a stable drawing-context identity. Loading a layout projects its scoped
+  objects and the latest same-symbol global objects; saving as a new layout rebinds chart/layout
+  objects to the new identity while global objects keep their shared identity.
+- The left drawing toolbar exposes the persisted default mode for newly created objects. Individual
+  objects can change mode from the shared context menu or Object Tree, and group mode changes apply
+  to every member as one batch history transaction. Group creation is disabled for mixed sync modes,
+  matching TradingView's group synchronization contract.
+- Mode changes reuse the revision-aware drawing queue and last-write-wins conflict policy; they do
+  not introduce a parallel sync channel. Codec normalization drops malformed optional bindings while
+  retaining otherwise valid drawings. Tests cover all scope membership combinations, registry
+  replacement, save-as rebinding, group compatibility, codec round trips, persisted creation defaults,
+  group propagation, undo, and reload behavior.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 94/94 passing.
+- `npm run test:drawing`: 100/100 passing.
 - `npm run test:position`: 26/26 passing.
-- `npm run test:drawing-persistence`: 15/15 passing.
-- `npm run test:chart-browser -- --grep "object tree"`: 1/1 passing in 6.4 seconds.
-- `drawingInteractions.spec.ts`: all 13 tests passing across two server runs (the combined run's dev
-  server exited after 6 passing tests; the remaining 7 were rerun against a fresh server and passed).
+- `npm run test:drawing-persistence`: 16/16 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 14/14 passing in 70.8 seconds.
 
-Remaining: items 6-8 (sync modes, unified bulk scopes, and drawing alerts).
+Remaining: items 7-8 (unified bulk scopes and drawing alerts).
 
 Exit gate:
 

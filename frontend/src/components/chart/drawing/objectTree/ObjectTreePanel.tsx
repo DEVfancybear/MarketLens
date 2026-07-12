@@ -15,13 +15,17 @@ import {
   MoveDown,
   MoveUp,
   Pencil,
+  Globe2,
 } from "lucide-react";
-import type { Drawing } from "@/types";
+import type { Drawing, DrawingSyncMode } from "@/types";
 import {
   drawingsAtom,
   selectedDrawingIdsAtom,
   setSelectedDrawingIdsAtom,
   updateDrawingAtom,
+  drawingLayoutIdAtom,
+  drawingChartIdAtom,
+  symbolAtom,
 } from "@/store/chartStore";
 import { cn } from "@/utils/cn";
 import {
@@ -36,6 +40,12 @@ import {
   normalizeDrawingObjectName,
   reorderDrawingObjectTree,
 } from "./drawingObjectTree";
+import {
+  DRAWING_SYNC_MODE_OPTIONS,
+  canGroupDrawingsBySyncMode,
+  drawingSyncBinding,
+  drawingSyncMode,
+} from "../persistence/drawingSyncScope";
 
 type RenameTarget = { kind: "drawing" | "group"; id: string; value: string };
 
@@ -44,8 +54,12 @@ export function ObjectTreePanel() {
   const selected = useAtomValue(selectedDrawingIdsAtom);
   const setSelected = useSetAtom(setSelectedDrawingIdsAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
+  const layoutId = useAtomValue(drawingLayoutIdAtom);
+  const chartId = useAtomValue(drawingChartIdAtom);
+  const symbol = useAtomValue(symbolAtom);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [rename, setRename] = useState<RenameTarget | null>(null);
+  const [syncMenu, setSyncMenu] = useState<string | null>(null);
   const tree = useMemo(() => buildDrawingObjectTree(drawings), [drawings]);
 
   const executeBatch = (
@@ -97,9 +111,24 @@ export function ObjectTreePanel() {
 
   const groupSelected = () => {
     const members = drawings.filter((drawing) => selected.has(drawing.id));
-    if (members.length < 2) return;
+    if (!canGroupDrawingsBySyncMode(members)) return;
     const group = createDrawingGroup(drawings);
     executeBatch(members, () => ({ group }), (drawing) => ({ group: drawing.group }), "Group Objects");
+  };
+
+  const setSyncMode = (members: readonly Drawing[], mode: DrawingSyncMode) => {
+    const groupId = members[0]?.group?.id;
+    const targets = groupId
+      ? drawings.filter((drawing) => drawing.group?.id === groupId)
+      : members;
+    const context = { symbol, layoutId, chartId };
+    executeBatch(
+      targets,
+      () => ({ sync: drawingSyncBinding(mode, context) }),
+      (drawing) => ({ sync: drawing.sync }),
+      "Change Drawing Sync",
+    );
+    setSyncMenu(null);
   };
 
   const ungroupSelected = () => {
@@ -141,11 +170,22 @@ export function ObjectTreePanel() {
   ) => {
     const visible = members.some((drawing) => drawing.visible !== false);
     const locked = members.length > 0 && members.every((drawing) => drawing.locked);
+    const mode = drawingSyncMode(members[0]);
     return (
       <div className="ml-auto flex shrink-0 items-center">
         <TreeButton label="Rename" onClick={startRename}><Pencil size={12} /></TreeButton>
         <TreeButton label={visible ? "Hide" : "Show"} onClick={() => executeBatch(members, () => ({ visible: !visible }), (drawing) => ({ visible: drawing.visible }), visible ? "Hide Objects" : "Show Objects")}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</TreeButton>
         <TreeButton label={locked ? "Unlock" : "Lock"} onClick={() => executeBatch(members, () => ({ locked: !locked }), (drawing) => ({ locked: drawing.locked }), locked ? "Unlock Objects" : "Lock Objects")}>{locked ? <Lock size={12} /> : <LockOpen size={12} />}</TreeButton>
+        <div className="relative">
+          <TreeButton label={`Sync: ${mode}`} onClick={() => setSyncMenu(syncMenu === nodeId ? null : nodeId)}><Globe2 size={12} /></TreeButton>
+          {syncMenu === nodeId && (
+            <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded border border-terminal-border bg-terminal-panel-2 p-1 shadow-xl">
+              {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
+                <button key={option.id} type="button" aria-label={`${option.label} ${nodeId}`} onClick={(event) => { event.stopPropagation(); setSyncMode(members, option.id); }} className={cn("w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-terminal-hover", mode === option.id ? "text-brand" : "text-ink")}>{option.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
         <TreeButton label="Move up" onClick={() => moveNode(nodeId, "up")}><MoveUp size={12} /></TreeButton>
         <TreeButton label="Move down" onClick={() => moveNode(nodeId, "down")}><MoveDown size={12} /></TreeButton>
       </div>
@@ -156,7 +196,7 @@ export function ObjectTreePanel() {
     <div className="flex h-full min-h-0 flex-col bg-terminal-panel" data-object-tree>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-terminal-border px-2">
         <span className="mr-auto text-sm font-semibold text-ink">Drawings</span>
-        <TreeButton label="Group selected" disabled={selected.size < 2} onClick={groupSelected}><FolderPlus size={15} /></TreeButton>
+        <TreeButton label="Group selected" disabled={!canGroupDrawingsBySyncMode(drawings.filter((drawing) => selected.has(drawing.id)))} onClick={groupSelected}><FolderPlus size={15} /></TreeButton>
         <TreeButton label="Ungroup selected" disabled={!drawings.some((drawing) => selected.has(drawing.id) && drawing.group)} onClick={ungroupSelected}><FolderMinus size={15} /></TreeButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-1">

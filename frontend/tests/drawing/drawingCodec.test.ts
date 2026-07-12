@@ -66,6 +66,27 @@ test("object names and group metadata are normalized and persisted", () => {
   assert.equal(malformed.drawing?.group, undefined);
 });
 
+test("drawing sync scopes are normalized and historical payloads stay global", () => {
+  assert.equal(decodeDrawing(legacy).drawing?.sync, undefined);
+  const global = decodeDrawing({ ...legacy, sync: { mode: "global", symbol: " EURUSD " } });
+  assert.deepEqual(global.drawing?.sync, { mode: "global", symbol: "EURUSD" });
+  const layout = decodeDrawing({
+    ...legacy,
+    sync: { mode: "layout-symbol", symbol: "EURUSD", layoutId: " layout-a " },
+  });
+  assert.deepEqual(layout.drawing?.sync, {
+    mode: "layout-symbol",
+    symbol: "EURUSD",
+    layoutId: "layout-a",
+  });
+  const chart = decodeDrawing({
+    ...legacy,
+    sync: { mode: "chart-only", symbol: "EURUSD", layoutId: "layout-a", chartId: "main" },
+  });
+  assert.deepEqual(encodeDrawing(chart.drawing!).sync, chart.drawing?.sync);
+  assert.equal(decodeDrawing({ ...legacy, sync: { mode: "chart-only", symbol: "EURUSD" } }).drawing?.sync, undefined);
+});
+
 test("unknown tools and malformed coordinates are quarantined, not silently loaded", () => {
   const result = decodeDrawingList([
     legacy,

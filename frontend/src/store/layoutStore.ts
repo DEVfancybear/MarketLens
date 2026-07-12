@@ -4,10 +4,14 @@ import { atom, type Getter } from "jotai";
 import { TIMEFRAMES, type Timeframe } from "@/types";
 import {
   applySavedChartLayoutAtom,
+  adoptDrawingLayoutContextAtom,
+  drawingChartIdAtom,
+  drawingLayoutIdAtom,
   drawingsAtom,
   indicatorsAtom,
   symbolAtom,
   timeframeAtom,
+  setDrawingLayoutContextAtom,
 } from "./chartStore";
 import {
   applySavedPanelLayoutAtom,
@@ -30,6 +34,8 @@ import {
   type LayoutWrite,
   type SavedLayoutState,
 } from "@/services/api/resources/layoutsApi";
+import { rebindDrawingsToSyncContext } from "@/components/chart/drawing/persistence/drawingSyncScope";
+import { uid } from "@/utils/id";
 
 export const layoutsAtom = atom<BackendLayout[]>([]);
 export const activeLayoutIdAtom = atom<string | null>(null);
@@ -45,13 +51,22 @@ function validTimeframe(value: string | undefined): value is Timeframe {
   return TIMEFRAMES.includes(value as Timeframe);
 }
 
-function capture(get: Getter): SavedLayoutState {
+function capture(get: Getter, drawingContextId = get(drawingLayoutIdAtom)): SavedLayoutState {
+  const chartId = get(drawingChartIdAtom);
+  const symbol = get(symbolAtom);
   return {
     version: 1,
+    drawingContextId,
     chartLayoutPreset: get(chartLayoutPresetAtom),
     replayLayoutMode: get(replayLayoutModeAtom),
     indicators: structuredClone(get(indicatorsAtom)),
-    drawings: structuredClone(get(drawingsAtom)),
+    drawings: structuredClone(
+      rebindDrawingsToSyncContext(get(drawingsAtom), {
+        symbol,
+        layoutId: drawingContextId,
+        chartId,
+      }),
+    ),
     panels: {
       sizes: { ...get(panelsAtom) },
       rightOpen: get(rightOpenAtom),
@@ -61,12 +76,17 @@ function capture(get: Getter): SavedLayoutState {
   };
 }
 
-function writeFor(get: Getter, name: string, isDefault: boolean): LayoutWrite {
+function writeFor(
+  get: Getter,
+  name: string,
+  isDefault: boolean,
+  drawingContextId = get(drawingLayoutIdAtom),
+): LayoutWrite {
   return {
     name,
     symbol: get(symbolAtom),
     timeframe: get(timeframeAtom),
-    state: capture(get),
+    state: capture(get, drawingContextId),
     isDefault,
   };
 }
@@ -94,6 +114,9 @@ export const loadLayoutAtom = atom(null, (_get, set, layout: BackendLayout) => {
   set(setChartLayoutPresetAtom, state.chartLayoutPreset);
   set(setReplayLayoutModeAtom, state.replayLayoutMode);
   set(applySavedPanelLayoutAtom, state.panels);
+  set(setDrawingLayoutContextAtom, {
+    layoutId: state.drawingContextId || layout.id,
+  });
   set(applySavedChartLayoutAtom, {
     symbol: layout.symbol,
     timeframe: validTimeframe(layout.timeframe) ? layout.timeframe : undefined,
@@ -112,12 +135,16 @@ export const loadDefaultLayoutAtom = atom(null, (get, set) => {
 export const createCurrentLayoutAtom = atom(
   null,
   async (get, set, input: { name: string; isDefault?: boolean }) => {
-    const item = await createLayout(writeFor(get, input.name, input.isDefault === true));
+    const drawingContextId = uid("layout-scope");
+    const item = await createLayout(
+      writeFor(get, input.name, input.isDefault === true, drawingContextId),
+    );
     const current = input.isDefault
       ? get(layoutsAtom).map((row) => ({ ...row, isDefault: false }))
       : get(layoutsAtom);
     set(layoutsAtom, sortLayouts([...current, item]));
     set(activeLayoutIdAtom, item.id);
+    set(adoptDrawingLayoutContextAtom, { layoutId: drawingContextId });
     return item;
   },
 );

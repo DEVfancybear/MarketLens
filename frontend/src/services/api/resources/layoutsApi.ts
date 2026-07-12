@@ -8,6 +8,8 @@ import type { BottomTab } from "@/store/uiStore";
 
 export interface SavedLayoutState {
   version: 1;
+  /** Stable drawing scope identity; legacy layouts fall back to backend layout id. */
+  drawingContextId?: string;
   chartLayoutPreset: ChartLayoutPreset;
   replayLayoutMode: ReplayLayoutMode;
   indicators: IndicatorConfig[];

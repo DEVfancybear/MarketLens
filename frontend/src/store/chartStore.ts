@@ -8,6 +8,7 @@ import type {
   Drawing,
   DrawingTemplate,
   DrawingTool,
+  DrawingSyncMode,
   IndicatorConfig,
   Timeframe,
 } from "@/types";
@@ -82,6 +83,16 @@ import {
   type DrawingToolPreferences,
   type DrawingMagnetMode,
 } from "@/components/chart/drawing/settings/drawingToolPreferences";
+import {
+  DEFAULT_DRAWING_CHART_ID,
+  DEFAULT_DRAWING_LAYOUT_ID,
+  DEFAULT_DRAWING_SYNC_MODE,
+  drawingSyncBinding,
+  drawingSyncMode,
+  mergeDrawingSyncRegistry,
+  selectDrawingsForSyncContext,
+  type DrawingSyncContext,
+} from "@/components/chart/drawing/persistence/drawingSyncScope";
 
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
 const DEFAULT_SYMBOL = "";
@@ -122,6 +133,7 @@ function positionLotSymbolInfo(
 const TEMPLATES_KEY = "drawingTemplates";
 const PINE_SCRIPTS_KEY = "pineScripts";
 const DRAWING_TOOL_PREFERENCES_KEY = "drawingToolPreferences";
+const DRAWING_SYNC_MODE_KEY = "drawingSyncMode";
 
 type AtomGet = Getter;
 type AtomSet = Setter;
@@ -130,8 +142,29 @@ function apiMessage(error: unknown): string {
   return userFacingErrorMessage(error, "unknown error");
 }
 
-function persistLocalDrawings(symbol: string, drawings: Drawing[]) {
-  localStore.set(drawingsKey(symbol), encodeDrawingList(drawings));
+function syncContext(get: AtomGet, symbol = get(symbolAtom)): DrawingSyncContext {
+  return {
+    symbol,
+    layoutId: get(drawingLayoutIdAtom),
+    chartId: get(drawingChartIdAtom),
+  };
+}
+
+function readDrawingRegistry(symbol: string): Drawing[] {
+  return decodeDrawingList(localStore.get<unknown>(drawingsKey(symbol), [])).drawings;
+}
+
+function persistDrawingRegistry(symbol: string, registry: Drawing[]) {
+  localStore.set(drawingsKey(symbol), encodeDrawingList(registry));
+}
+
+function persistLocalDrawings(get: AtomGet, symbol: string, drawings: Drawing[]) {
+  const registry = mergeDrawingSyncRegistry(
+    readDrawingRegistry(symbol),
+    drawings,
+    syncContext(get, symbol),
+  );
+  persistDrawingRegistry(symbol, registry);
 }
 
 function quarantineKey(symbol: string) {
@@ -160,7 +193,7 @@ function decodeDrawingsAtBoundary(
     }
   }
   drawingPersistenceMetrics.add("migrated", decoded.migrated);
-  if (decoded.migrated > 0) persistLocalDrawings(symbol, decoded.drawings);
+  if (decoded.migrated > 0) persistDrawingRegistry(symbol, decoded.drawings);
   return decoded.drawings;
 }
 
@@ -168,6 +201,7 @@ function clearLocalChartWorkspace() {
   localStore.remove("indicators");
   localStore.remove(PINE_SCRIPTS_KEY);
   localStore.remove(TEMPLATES_KEY);
+  localStore.remove(DRAWING_SYNC_MODE_KEY);
   if (typeof window === "undefined") return;
   for (const key of Object.keys(window.localStorage)) {
     if (key.startsWith("drawings:")) {
@@ -297,7 +331,7 @@ function acknowledgeDrawingBatch(rows: BackendDrawing[]) {
   });
   if (changed) {
     context.set(drawingsAtom, next);
-    persistLocalDrawings(activeSymbol, next);
+    persistLocalDrawings(context.get, activeSymbol, next);
   }
 }
 
@@ -432,6 +466,9 @@ export const timeframeAtom = atom<Timeframe>(DEFAULT_TF);
 export const candlesAtom = atom<Candle[]>([]);
 export const loadingAtom = atom<boolean>(false);
 export const drawingsAtom = atom<Drawing[]>([]);
+export const drawingLayoutIdAtom = atom<string>(DEFAULT_DRAWING_LAYOUT_ID);
+export const drawingChartIdAtom = atom<string>(DEFAULT_DRAWING_CHART_ID);
+export const newDrawingSyncModeAtom = atom<DrawingSyncMode>(DEFAULT_DRAWING_SYNC_MODE);
 export const drawingTemplatesAtom = atom<DrawingTemplate[]>([]);
 export const indicatorsAtom = atom<IndicatorConfig[]>([]);
 export const pineScriptsAtom = atom<CustomIndicatorScript[]>([]);
@@ -455,6 +492,50 @@ export const crosshairAtom = atom<{
   time: number;
   candle: Candle | null;
 } | null>(null);
+
+export const setDrawingLayoutContextAtom = atom(
+  null,
+  (_get, set, context: { layoutId: string; chartId?: string }) => {
+    set(drawingLayoutIdAtom, context.layoutId || DEFAULT_DRAWING_LAYOUT_ID);
+    set(drawingChartIdAtom, context.chartId || DEFAULT_DRAWING_CHART_ID);
+  },
+);
+
+export const adoptDrawingLayoutContextAtom = atom(
+  null,
+  (_get, set, context: { layoutId: string; chartId?: string }) => {
+    const layoutId = context.layoutId || DEFAULT_DRAWING_LAYOUT_ID;
+    const chartId = context.chartId || DEFAULT_DRAWING_CHART_ID;
+    set(drawingLayoutIdAtom, layoutId);
+    set(drawingChartIdAtom, chartId);
+    const nextContext = { symbol: _get(symbolAtom), layoutId, chartId };
+    const changed: Drawing[] = [];
+    const drawings = _get(drawingsAtom).map((drawing) => {
+      const mode = drawingSyncMode(drawing);
+      if (mode === "global") return drawing;
+      const next = {
+        ...drawing,
+        sync: drawingSyncBinding(mode, nextContext),
+        clientRevision: (drawing.clientRevision ?? 0) + 1,
+      };
+      changed.push(next);
+      return next;
+    });
+    set(drawingsAtom, drawings);
+    persistLocalDrawings(_get, nextContext.symbol, drawings);
+    for (const drawing of changed) {
+      queueDrawingUpsert(_get, set, nextContext.symbol, drawing);
+    }
+  },
+);
+
+export const setNewDrawingSyncModeAtom = atom(
+  null,
+  (_get, set, mode: DrawingSyncMode) => {
+    set(newDrawingSyncModeAtom, mode);
+    localStore.set(DRAWING_SYNC_MODE_KEY, mode);
+  },
+);
 
 export const loadDrawingsForSymbolAtom = atom(
   null,
@@ -484,9 +565,10 @@ export const loadDrawingsForSymbolAtom = atom(
           queueDrawingUpsert(_get, set, symbol, drawing);
         }
       }
-      const drawings = [...remoteByID.values()];
+      const registry = [...remoteByID.values()];
+      const drawings = selectDrawingsForSyncContext(registry, syncContext(_get, symbol));
       set(drawingsAtom, drawings);
-      persistLocalDrawings(symbol, drawings);
+      persistDrawingRegistry(symbol, registry);
     } catch (error) {
       set(logAtom, "warn", `Drawings loaded from local cache: ${apiMessage(error)}`);
     } finally {
@@ -544,10 +626,17 @@ export const applySavedChartLayoutAtom = atom(
     const marketChanged = symbol !== get(symbolAtom) || timeframe !== get(timeframeAtom);
     set(symbolAtom, symbol);
     set(timeframeAtom, timeframe);
-    const drawings = decodeDrawingsAtBoundary(symbol, snapshot.drawings ?? [], "layout");
+    const snapshotDrawings = decodeDrawingsAtBoundary(symbol, snapshot.drawings ?? [], "layout");
+    const context = syncContext(get, symbol);
+    const localGlobal = readDrawingRegistry(symbol).filter(
+      (drawing) => !drawing.sync || drawing.sync.mode === "global",
+    );
+    const byId = new Map(snapshotDrawings.map((drawing) => [drawing.id, drawing]));
+    for (const drawing of localGlobal) byId.set(drawing.id, drawing);
+    const drawings = selectDrawingsForSyncContext([...byId.values()], context);
     set(drawingsAtom, structuredClone(drawings));
     set(indicatorsAtom, structuredClone(snapshot.indicators ?? []));
-    persistLocalDrawings(symbol, drawings);
+    persistLocalDrawings(get, symbol, drawings);
     localStore.set("indicators", snapshot.indicators ?? []);
     set(selectedDrawingIdAtom, null);
     set(selectedDrawingIdsAtom, new Set());
@@ -576,14 +665,12 @@ export const setSymbolAtom = atom(null, (_get, set, symbol: string) => {
   set(symbolAtom, symbol);
   set(candlesAtom, []);
   set(loadingAtom, true);
-  set(
-    drawingsAtom,
-    decodeDrawingsAtBoundary(
-      symbol,
-      localStore.get<unknown>(drawingsKey(symbol), []),
-      "local",
-    ),
+  const registry = decodeDrawingsAtBoundary(
+    symbol,
+    localStore.get<unknown>(drawingsKey(symbol), []),
+    "local",
   );
+  set(drawingsAtom, selectDrawingsForSyncContext(registry, syncContext(_get, symbol)));
   void set(loadDrawingsForSymbolAtom, symbol);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
@@ -670,6 +757,7 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
     id: d.id || uid("dw"),
     points: d.points ? d.points.map((p) => ({ ...p })) : [],
     clientRevision: (d.clientRevision ?? 0) + 1,
+    sync: d.sync ?? drawingSyncBinding(_get(newDrawingSyncModeAtom), syncContext(_get)),
   };
   // Long/Short position tools: a single click only gives the entry point.
   // Auto-expand to a TradingView-style 3-point box — points[0]=entry,
@@ -738,7 +826,7 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
   if (!_get(drawingToolPreferencesAtom).keepDrawing) set(activeToolAtom, "cursor");
   set(selectedDrawingIdAtom, drawing.id);
   const symbol = _get(symbolAtom);
-  persistLocalDrawings(symbol, drawings);
+  persistLocalDrawings(_get, symbol, drawings);
   queueDrawingUpsert(_get, set, symbol, drawing);
 });
 
@@ -758,7 +846,7 @@ export const updateDrawingAtom = atom(
     });
     set(drawingsAtom, drawings);
     const symbol = _get(symbolAtom);
-    persistLocalDrawings(symbol, drawings);
+    persistLocalDrawings(_get, symbol, drawings);
     if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 
     if (isPositionDrawing(updatedDrawing) && touchesPositionTradePlan(patch)) {
@@ -790,7 +878,7 @@ export const removeDrawingAtom = atom(null, (_get, set, id: string) => {
   const drawings = _get(drawingsAtom).filter((d) => d.id !== id);
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, null);
-  persistLocalDrawings(symbol, drawings);
+  persistLocalDrawings(_get, symbol, drawings);
   if (removed) queueDrawingDelete(_get, set, symbol, removed);
 });
 
@@ -813,7 +901,7 @@ export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, copy.id);
   const symbol = _get(symbolAtom);
-  persistLocalDrawings(symbol, drawings);
+  persistLocalDrawings(_get, symbol, drawings);
   queueDrawingUpsert(_get, set, symbol, copy);
 });
 
@@ -830,7 +918,7 @@ export const lockDrawingAtom = atom(null, (_get, set, id: string) => {
   );
   set(drawingsAtom, drawings);
   const symbol = _get(symbolAtom);
-  persistLocalDrawings(symbol, drawings);
+  persistLocalDrawings(_get, symbol, drawings);
   if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 });
 
@@ -848,7 +936,7 @@ export const hideDrawingAtom = atom(null, (_get, set, id: string) => {
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, null);
   const symbol = _get(symbolAtom);
-  persistLocalDrawings(symbol, drawings);
+  persistLocalDrawings(_get, symbol, drawings);
   if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 });
 
@@ -956,7 +1044,7 @@ export const clearDrawingsAtom = atom(null, (_get, set) => {
   set(drawingsAtom, []);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
-  persistLocalDrawings(symbol, []);
+  persistLocalDrawings(_get, symbol, []);
 });
 
 export const addIndicatorAtom = atom(null, (_get, set, type: BuiltInIndicatorType) => {
@@ -1313,13 +1401,14 @@ export const deleteTemplateAtom = atom(
 
 export const hydrateAtom = atom(null, (_get, set) => {
   const symbol = _get(symbolAtom);
+  const registry = decodeDrawingsAtBoundary(
+    symbol,
+    localStore.get<unknown>(drawingsKey(symbol), []),
+    "local",
+  );
   set(
     drawingsAtom,
-    decodeDrawingsAtBoundary(
-      symbol,
-      localStore.get<unknown>(drawingsKey(symbol), []),
-      "local",
-    ),
+    selectDrawingsForSyncContext(registry, syncContext(_get, symbol)),
   );
   set(indicatorsAtom, localStore.get<IndicatorConfig[]>("indicators", []));
   set(
@@ -1335,6 +1424,13 @@ export const hydrateAtom = atom(null, (_get, set) => {
     decodeDrawingToolPreferences(
       localStore.get<unknown>(DRAWING_TOOL_PREFERENCES_KEY, null),
     ),
+  );
+  const syncMode = localStore.get<unknown>(DRAWING_SYNC_MODE_KEY, DEFAULT_DRAWING_SYNC_MODE);
+  set(
+    newDrawingSyncModeAtom,
+    syncMode === "chart-only" || syncMode === "layout-symbol" || syncMode === "global"
+      ? syncMode
+      : DEFAULT_DRAWING_SYNC_MODE,
   );
 });
 
@@ -1360,6 +1456,7 @@ export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
   set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
   set(activeToolAtom, "cursor");
   set(drawColorAtom, "#2962ff");
+  set(newDrawingSyncModeAtom, DEFAULT_DRAWING_SYNC_MODE);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
   set(drawingsLockedAtom, false);

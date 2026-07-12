@@ -123,6 +123,45 @@ test("object tree groups, renames, locks, hides, and undo-redoes as one group ac
   }).toBe(true);
 });
 
+test("drawing sync defaults persist and a group changes scope in one undoable action", async ({ page }) => {
+  const syncDefault = page.getByRole("button", { name: "New drawings: Sync globally", exact: true });
+  await syncDefault.click();
+  await page.getByRole("button", { name: "No sync", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New drawings: No sync", exact: true })).toBeVisible();
+
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const points = [
+    { x: pane.x + pane.width * 0.24, y: pane.y + pane.height * 0.67 },
+    { x: pane.x + pane.width * 0.43, y: pane.y + pane.height * 0.43 },
+    { x: pane.x + pane.width * 0.53, y: pane.y + pane.height * 0.64 },
+    { x: pane.x + pane.width * 0.72, y: pane.y + pane.height * 0.38 },
+  ];
+  await page.getByRole("button", { name: "Keep drawing", exact: true }).click();
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  for (const point of points) await page.mouse.click(point.x, point.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((drawing) => drawing.sync?.mode)).toEqual(["chart-only", "chart-only"]);
+
+  await page.getByRole("button", { name: "Object tree", exact: true }).click();
+  const tree = page.locator("[data-object-tree]");
+  const rows = tree.locator("[data-object-id]");
+  await rows.nth(0).click();
+  await rows.nth(1).click({ modifiers: ["Control"] });
+  await tree.getByRole("button", { name: "Group selected", exact: true }).click();
+  const group = tree.locator("[data-object-group]");
+  const groupHeader = group.locator(":scope > div").first();
+  await groupHeader.getByRole("button", { name: "Sync: chart-only", exact: true }).click();
+  await groupHeader.getByRole("button", { name: /^Sync globally / }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.sync?.mode === "global")).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.sync?.mode === "chart-only")).toBe(true);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
+  await expect(page.getByRole("button", { name: "New drawings: No sync", exact: true })).toBeVisible();
+});
+
 test("shared coordinate editor updates anchors in one undoable transaction", async ({ page }) => {
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];

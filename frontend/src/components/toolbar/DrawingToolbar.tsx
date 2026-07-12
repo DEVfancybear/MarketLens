@@ -39,6 +39,7 @@ import {
   Repeat2,
   Magnet,
   ChevronDown,
+  Globe2,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
@@ -59,10 +60,13 @@ import {
   drawingToolPreferencesAtom,
   setDrawingMagnetEnabledAtom,
   setDrawingMagnetModeAtom,
+  newDrawingSyncModeAtom,
+  setNewDrawingSyncModeAtom,
 } from "@/store/chartStore";
 import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
 import type { DrawingTool } from "@/types";
+import { DRAWING_SYNC_MODE_OPTIONS } from "@/components/chart/drawing/persistence/drawingSyncScope";
 import {
   DRAWING_TOOL_GROUPS,
   DRAWING_TOOL_MANIFEST,
@@ -286,11 +290,14 @@ export function DrawingToolbar() {
   const drawingPreferences = useAtomValue(drawingToolPreferencesAtom);
   const setMagnetEnabled = useSetAtom(setDrawingMagnetEnabledAtom);
   const setMagnetMode = useSetAtom(setDrawingMagnetModeAtom);
+  const newDrawingSyncMode = useAtomValue(newDrawingSyncModeAtom);
+  const setNewDrawingSyncMode = useSetAtom(setNewDrawingSyncModeAtom);
   const lastUsed = useLastUsed();
   const [favorites, toggleFavorite] = useFavorites();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [magnetMenuOpen, setMagnetMenuOpen] = useState(false);
+  const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Favorited tools (in the order they were starred) for the floating chart
@@ -516,6 +523,36 @@ export function DrawingToolbar() {
             <div className="px-2 pb-1 pt-1.5 text-[9px] text-ink-faint">
               Ctrl/Cmd temporarily toggles
             </div>
+          </div>
+        )}
+      </div>
+
+      <div className="relative">
+        <IconButton
+          label={`New drawings: ${DRAWING_SYNC_MODE_OPTIONS.find((option) => option.id === newDrawingSyncMode)?.label}`}
+          active={newDrawingSyncMode !== "chart-only"}
+          onClick={() => setSyncMenuOpen((open) => !open)}
+        >
+          <Globe2 size={18} />
+        </IconButton>
+        {syncMenuOpen && (
+          <div data-chart-ui className="absolute left-full top-0 z-50 ml-1 w-48 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl shadow-black/50">
+            <div className="px-2 pb-1 pt-1 text-[9px] font-semibold uppercase tracking-wide text-ink-faint">New drawings</div>
+            {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-label={option.label}
+                onClick={() => {
+                  setNewDrawingSyncMode(option.id);
+                  setSyncMenuOpen(false);
+                }}
+                className={cn("flex w-full flex-col rounded px-2 py-1.5 text-left hover:bg-terminal-hover", newDrawingSyncMode === option.id ? "text-brand" : "text-ink")}
+              >
+                <span className="text-[11px] font-semibold">{option.label}</span>
+                <span className="text-[9px] text-ink-faint">{option.description}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>

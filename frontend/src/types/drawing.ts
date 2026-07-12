@@ -58,6 +58,16 @@ export interface DrawingGroup {
   name: string;
 }
 
+export type DrawingSyncMode = "chart-only" | "layout-symbol" | "global";
+
+/** Scope binding used to project a flat persisted object into a layout/chart. */
+export interface DrawingSyncBinding {
+  mode: DrawingSyncMode;
+  symbol: string;
+  layoutId?: string;
+  chartId?: string;
+}
+
 export interface BaseDrawing {
   /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
   schemaVersion?: number;
@@ -67,6 +77,8 @@ export interface BaseDrawing {
   name?: string;
   /** Group metadata is repeated on members so it survives the flat drawing API. */
   group?: DrawingGroup;
+  /** Historical drawings without this field decode as globally synchronized. */
+  sync?: DrawingSyncBinding;
   color: string;
   lineWidth: number;
   points: Point[];
