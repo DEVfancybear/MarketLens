@@ -15,6 +15,7 @@ import {
   DEFAULT_POSITION_STATS,
   styleFamily,
 } from "@/types";
+import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
 import {
   applyDrawingTemplateStyle,
   pickDrawingTemplateStyle,
@@ -74,6 +75,12 @@ import { DrawingLoadGuard } from "@/components/chart/drawing/persistence/Drawing
 import { rebaseDrawingBatchForLastWriteWins } from "@/components/chart/drawing/persistence/drawingConflictPolicy";
 import { ApiError } from "@/services/api/errors";
 import { drawingPersistenceMetrics } from "@/components/chart/drawing/persistence/drawingPersistenceMetrics";
+import {
+  decodeDrawingToolPreferences,
+  EMPTY_DRAWING_TOOL_PREFERENCES,
+  pickDrawingToolDefaults,
+  type DrawingToolPreferences,
+} from "@/components/chart/drawing/settings/drawingToolPreferences";
 
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
 const DEFAULT_SYMBOL = "";
@@ -113,6 +120,7 @@ function positionLotSymbolInfo(
 // any chart, mirroring TradingView's template list.
 const TEMPLATES_KEY = "drawingTemplates";
 const PINE_SCRIPTS_KEY = "pineScripts";
+const DRAWING_TOOL_PREFERENCES_KEY = "drawingToolPreferences";
 
 type AtomGet = Getter;
 type AtomSet = Setter;
@@ -431,6 +439,12 @@ export const pineEditorTitleAtom = atom<string>("Untitled script");
 export const pineEditorSourceAtom = atom<string>(DEFAULT_PINE_SOURCE);
 export const activeToolAtom = atom<DrawingTool>("cursor");
 export const drawColorAtom = atom<string>("#2962ff");
+export const drawingToolPreferencesAtom = atom<DrawingToolPreferences>(
+  EMPTY_DRAWING_TOOL_PREFERENCES,
+);
+export const keepDrawingModeAtom = atom((get) =>
+  get(drawingToolPreferencesAtom).keepDrawing,
+);
 export const selectedDrawingIdAtom = atom<string | null>(null);
 export const selectedDrawingIdsAtom = atom<Set<string>>(new Set<string>());
 export const drawingsLockedAtom = atom<boolean>(false);
@@ -605,6 +619,27 @@ export const setDrawColorAtom = atom(null, (_get, set, c: string) => {
   set(drawColorAtom, c);
 });
 
+export const setKeepDrawingModeAtom = atom(null, (_get, set, enabled: boolean) => {
+  const next = { ..._get(drawingToolPreferencesAtom), keepDrawing: enabled };
+  set(drawingToolPreferencesAtom, next);
+  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+});
+
+export const saveDrawingToolDefaultsAtom = atom(null, (_get, set, drawing: Drawing) => {
+  const definition = getDrawingToolManifestEntry(drawing.tool);
+  if (!definition.persistent) return;
+  const current = _get(drawingToolPreferencesAtom);
+  const next: DrawingToolPreferences = {
+    ...current,
+    toolDefaults: {
+      ...current.toolDefaults,
+      [drawing.tool]: pickDrawingToolDefaults(drawing),
+    },
+  };
+  set(drawingToolPreferencesAtom, next);
+  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+});
+
 export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
   const top = _get(drawingsAtom).reduce(
     (m, x) => Math.max(m, x.zIndex ?? 0),
@@ -681,10 +716,9 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
   }
   const drawings = [..._get(drawingsAtom), drawing];
   set(drawingsAtom, drawings);
-  // TradingView behaviour: after a drawing is placed, return to the cursor so
-  // the new object can immediately be selected and dragged — clicking it again
-  // must not keep spawning duplicates.
-  set(activeToolAtom, "cursor");
+  // Keep Drawing is a global creation preference. When disabled, retain the
+  // established one-shot behavior and return to Cursor after placement.
+  if (!_get(drawingToolPreferencesAtom).keepDrawing) set(activeToolAtom, "cursor");
   set(selectedDrawingIdAtom, drawing.id);
   const symbol = _get(symbolAtom);
   persistLocalDrawings(symbol, drawings);
@@ -1269,6 +1303,12 @@ export const hydrateAtom = atom(null, (_get, set) => {
   set(
     drawingTemplatesAtom,
     decodeDrawingTemplateList(localStore.get<unknown>(TEMPLATES_KEY, [])),
+  );
+  set(
+    drawingToolPreferencesAtom,
+    decodeDrawingToolPreferences(
+      localStore.get<unknown>(DRAWING_TOOL_PREFERENCES_KEY, null),
+    ),
   );
 });
 

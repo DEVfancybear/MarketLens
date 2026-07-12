@@ -27,6 +27,7 @@ import {
   saveTemplateAtom,
   applyTemplateAtom,
   deleteTemplateAtom,
+  saveDrawingToolDefaultsAtom,
 } from "@/store/chartStore";
 import {
   DEFAULT_FIB_LEVELS,
@@ -122,6 +123,7 @@ export function ObjectSettingsDialog() {
   const saveTemplate = useSetAtom(saveTemplateAtom);
   const applyTemplate = useSetAtom(applyTemplateAtom);
   const deleteTemplate = useSetAtom(deleteTemplateAtom);
+  const saveToolDefaults = useSetAtom(saveDrawingToolDefaultsAtom);
 
   const [tab, setTab] = useState<Tab>("style");
   const [pop, setPop] = useState<string | null>(null);
@@ -209,6 +211,7 @@ export function ObjectSettingsDialog() {
         ));
       }
     }
+    saveToolDefaults(drawing);
     setEditing(null);
   };
   cancelRef.current = cancel;

@@ -36,6 +36,7 @@ import {
   Waypoints,
   PenLine,
   GripVertical,
+  Repeat2,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
@@ -51,6 +52,8 @@ import {
   setActiveToolAtom,
   setDrawColorAtom,
   clearDrawingsAtom,
+  keepDrawingModeAtom,
+  setKeepDrawingModeAtom,
 } from "@/store/chartStore";
 import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
@@ -273,6 +276,8 @@ export function DrawingToolbar() {
   const drawColor = useAtomValue(drawColorAtom);
   const setDrawColor = useSetAtom(setDrawColorAtom);
   const clearDrawings = useSetAtom(clearDrawingsAtom);
+  const keepDrawing = useAtomValue(keepDrawingModeAtom);
+  const setKeepDrawing = useSetAtom(setKeepDrawingModeAtom);
   const lastUsed = useLastUsed();
   const [favorites, toggleFavorite] = useFavorites();
 
@@ -451,6 +456,14 @@ export function DrawingToolbar() {
           ))}
         </div>
       </div>
+
+      <IconButton
+        label="Keep drawing"
+        active={keepDrawing}
+        onClick={() => setKeepDrawing(!keepDrawing)}
+      >
+        <Repeat2 size={18} />
+      </IconButton>
 
       <IconButton label="Clear all drawings" onClick={clearDrawings}>
         <Trash2 size={18} />

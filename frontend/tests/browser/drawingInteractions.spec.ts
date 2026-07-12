@@ -76,6 +76,77 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
   await expect(settingsButton).toBeFocused();
 });
 
+test("keep drawing creates consecutive objects and survives reload", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const points = [
+    { x: pane.x + pane.width * 0.2, y: pane.y + pane.height * 0.7 },
+    { x: pane.x + pane.width * 0.4, y: pane.y + pane.height * 0.45 },
+    { x: pane.x + pane.width * 0.5, y: pane.y + pane.height * 0.65 },
+    { x: pane.x + pane.width * 0.7, y: pane.y + pane.height * 0.35 },
+  ];
+
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  await keepDrawing.click();
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  for (const point of points) await page.mouse.click(point.x, point.y);
+
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
+  expect((await drawingSnapshot(page)).activeTool).toBe("trendline");
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
+  await expect(page.getByRole("button", { name: "Keep drawing", exact: true }))
+    .toHaveClass(/text-brand/);
+});
+
+test("confirmed settings become the persisted default for the same tool", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.25, y: pane.y + pane.height * 0.65 };
+  const end = { x: pane.x + pane.width * 0.55, y: pane.y + pane.height * 0.4 };
+
+  const selectTrendline = async () => {
+    await page.getByRole("button", { name: "Trend line", exact: true }).click();
+    await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  };
+  await selectTrendline();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  const created = await drawingSnapshot(page);
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    created.drawings[0].id,
+  );
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click(
+    projected![0].x + (projected![1].x - projected![0].x) * 0.75,
+    projected![0].y + (projected![1].y - projected![0].y) * 0.75,
+  );
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Trendline settings" });
+  await dialog.getByRole("button", { name: "Line style", exact: true }).click();
+  const width = dialog.getByRole("slider", { name: "Line width", exact: true });
+  await width.fill("4");
+  await dialog.getByRole("button", { name: "Ok", exact: true }).click();
+
+  await page.evaluate(() => window.__drawingInteractionTest!.clear());
+  await selectTrendline();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.lineWidth).toBe(4);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
+  await page.evaluate(() => window.__drawingInteractionTest!.clear());
+  await selectTrendline();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.lineWidth).toBe(4);
+});
+
 async function exerciseTrendlineTransaction(page: Page) {
   await page.evaluate(() => window.__drawingInteractionTest!.clear());
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());

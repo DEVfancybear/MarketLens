@@ -24,6 +24,10 @@ import {
 import { TransformSession } from "./TransformSession";
 import { EraseSession } from "./EraseSession";
 import { SelectionSession } from "./SelectionSession";
+import {
+  resolveDrawingCreationDefaults,
+  type DrawingToolPreferences,
+} from "../settings/drawingToolPreferences";
 
 export {
   createInitialMachine,
@@ -56,6 +60,7 @@ export interface DrawingInteractionManagerOpts {
     drawings: Drawing[];
     activeTool: DrawingTool;
     drawColor: string;
+    drawingToolPreferences: DrawingToolPreferences;
     drawingsLocked: boolean;
     ctxReady: boolean;
     selectedDrawingId: string | null;
@@ -230,12 +235,15 @@ export function useDrawingInteractionManager(
       if (outcome.kind === "commit") {
         const cur = getState();
         addDrawing({
+          ...resolveDrawingCreationDefaults(
+            session.tool,
+            cur.drawingToolPreferences.toolDefaults[session.tool],
+            cur.drawColor,
+          ),
           id: uid("dw"),
           tool: session.tool,
-          color: cur.drawColor,
-          lineWidth: session.definition.defaultProperties.lineWidth,
           points: outcome.points,
-        });
+        } as Drawing);
       }
       reset();
     },
@@ -293,17 +301,20 @@ export function useDrawingInteractionManager(
           const text = window.prompt("Text:") || "";
           if (text) {
             addDrawing({
+              ...resolveDrawingCreationDefaults(
+                current.activeTool,
+                current.drawingToolPreferences.toolDefaults[current.activeTool],
+                current.drawColor,
+              ),
               id: uid("dw"),
               tool: current.activeTool,
-              color: current.drawColor,
-              lineWidth: definition.defaultProperties.lineWidth,
               points: [point],
               text,
-            });
+            } as Drawing);
           }
         }
         reset();
-        setActiveTool("cursor");
+        if (!current.drawingToolPreferences.keepDrawing) setActiveTool("cursor");
         return;
       }
 

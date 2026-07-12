@@ -15,6 +15,7 @@ import {
   setEditingDrawingAtom,
   symbolAtom,
   updateDrawingAtom,
+  saveDrawingToolDefaultsAtom,
 } from "@/store/chartStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import {
@@ -434,6 +435,7 @@ export function PositionSettingsDialog() {
   const symbol = useAtomValue(symbolAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
+  const saveToolDefaults = useSetAtom(saveDrawingToolDefaultsAtom);
   const [tab, setTab] = useState<Tab>("inputs");
   const [pop, setPop] = useState<string | null>(null);
   const snapshot = useRef<Drawing | null>(null);
@@ -492,6 +494,7 @@ export function PositionSettingsDialog() {
         ));
       }
     }
+    saveToolDefaults(drawing);
     setEditing(null);
   };
   cancelRef.current = cancel;

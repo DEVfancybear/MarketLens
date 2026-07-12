@@ -541,6 +541,8 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
+Status: in progress; item 1 implemented on 2026-07-12.
+
 Purpose: finish shared behavior before catalog expansion.
 
 Suggested order:
@@ -554,6 +556,35 @@ Suggested order:
 7. Unified remove/hide/lock scopes and undoable bulk operations.
 8. Drawing-alert capability contract, implemented only after drawing geometry and alert snapshot
    semantics are agreed.
+
+Delivered (item 1):
+
+- Keep Drawing is a persisted global preference exposed in the drawing toolbar. Completed
+  creations retain the active persistent tool when enabled, while cancellation, symbol changes,
+  and explicit Escape behavior still return interaction ownership safely to Cursor.
+- Tool defaults are stored per stable manifest id and applied through one creation-default resolver
+  for regular, continuous/freeform, position, and Text creation paths. Manifest defaults remain the
+  base layer; confirmed user defaults override them without introducing tool-id branches.
+- Confirming either drawing settings dialog saves future defaults for that tool. Only fields
+  contributed by the tool's settings schema are eligible; object identity, points, text content,
+  visibility/lock/z-order, revisions, projected TP/SL prices, lifecycle state, and transient render
+  fields are excluded.
+- The versioned local preference decoder ignores unknown versions, unknown tool ids, and fields
+  outside each tool's capability schema. Keep Drawing and per-tool defaults survive reload without
+  changing drawing payloads or backend persistence contracts.
+- Contract tests cover default field scoping, precedence, preference decoding, and position-input
+  persistence. Browser tests cover consecutive creation, active-tool retention, reload persistence,
+  and Settings-to-next-creation default propagation.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
+- `npm run test:drawing`: 76/76 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 9/9 passing in 43.9 seconds.
+
+Remaining: items 2-8 (magnet snapping, interval visibility, shared coordinate controls, object
+tree/grouping/names, sync modes, unified bulk scopes, and drawing alerts).
 
 Exit gate:
 

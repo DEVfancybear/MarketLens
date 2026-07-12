@@ -9,6 +9,7 @@ import {
   drawingsAtom,
   activeToolAtom,
   drawColorAtom,
+  drawingToolPreferencesAtom,
   selectedDrawingIdAtom,
   selectedDrawingIdsAtom,
   drawingsLockedAtom,
@@ -27,6 +28,7 @@ import {
 } from "@/store/chartStore";
 import { type Drawing, type Point } from "@/types";
 import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
+import { resolveDrawingCreationDefaults } from "./drawing/settings/drawingToolPreferences";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
 import {
@@ -67,6 +69,7 @@ export function DrawingLayer() {
   const drawings = useAtomValue(drawingsAtom);
   const activeTool = useAtomValue(activeToolAtom);
   const drawColor = useAtomValue(drawColorAtom);
+  const drawingToolPreferences = useAtomValue(drawingToolPreferencesAtom);
   const selectedDrawingId = useAtomValue(selectedDrawingIdAtom);
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const drawingsLocked = useAtomValue(drawingsLockedAtom);
@@ -216,6 +219,7 @@ export function DrawingLayer() {
     drawings: [] as Drawing[],
     activeTool: "cursor" as Drawing["tool"],
     drawColor: "#2962ff",
+    drawingToolPreferences,
     drawingsLocked: false,
     ctxReady: false,
     drawingsHidden: false,
@@ -226,6 +230,7 @@ export function DrawingLayer() {
     drawings,
     activeTool,
     drawColor,
+    drawingToolPreferences,
     drawingsLocked,
     ctxReady: !!ctx,
     drawingsHidden,
@@ -305,17 +310,20 @@ export function DrawingLayer() {
         ctx.chart.timeScale().timeToCoordinate(point.time as UTCTimestamp) ?? 0;
       const y = ctx.candleSeries.priceToCoordinate(point.price) ?? 0;
       const drawing: Drawing = {
+        ...resolveDrawingCreationDefaults(
+          tool,
+          drawingToolPreferences.toolDefaults[tool],
+          color,
+        ),
         id,
         tool,
-        color,
-        lineWidth: getDrawingToolManifestEntry(tool).defaultProperties.lineWidth,
         points: [point],
         text: "",
-      };
+      } as Drawing;
       addDrawing(drawing);
       setTextEditSession(TextEditSession.standalone(drawing, { x, y }));
     },
-    [ctx, addDrawing],
+    [ctx, addDrawing, drawingToolPreferences.toolDefaults],
   );
 
   // The render loop is dirty-driven: it only repaints when markDirty() is called.
