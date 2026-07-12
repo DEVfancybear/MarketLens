@@ -1,5 +1,4 @@
 "use client";
-import { useEffect } from "react";
 import { cn } from "@/utils/cn";
 import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -9,10 +8,8 @@ import {
   bottomOpenAtom,
   setPanelAtom,
   setBottomOpenAtom,
-  setRightOpenAtom,
 } from "@/store/uiStore";
 import { Resizer } from "@/components/ui/Resizer";
-import { useViewportMode } from "@/hooks/useViewportMode";
 
 /**
  * Full-screen trading terminal frame:
@@ -44,39 +41,32 @@ export function TerminalLayout({
   const bottomOpen = useAtomValue(bottomOpenAtom);
   const setPanel = useSetAtom(setPanelAtom);
   const setBottomOpen = useSetAtom(setBottomOpenAtom);
-  const setRightOpen = useSetAtom(setRightOpenAtom);
-  const viewportMode = useViewportMode();
-
-  useEffect(() => {
-    if (viewportMode !== "desktop") setRightOpen(false);
-  }, [setRightOpen, viewportMode]);
 
   return (
-    <div className="terminal-shell flex h-dvh w-full flex-col overflow-hidden">
-      <header className="app-bar-glass z-20 h-[5.5rem] shrink-0 border-b border-terminal-border shadow-[0_8px_32px_var(--shadow-color)]">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg">
+      {/* Top toolbar — Tight: TradingView = 36px */}
+      <div className="h-9 shrink-0 border-b border-terminal-border bg-terminal-panel">
         {toolbar}
-      </header>
+      </div>
 
       {/* Body: left rail | center+bottom | right watchlist */}
-      <main className="relative flex min-h-0 flex-1 gap-2 p-2">
+      <div className="flex min-h-0 flex-1">
         {/* Left drawing rail (fixed width) */}
         <div
-          className="workspace-surface shrink-0 overflow-hidden rounded-panel"
+          className="shrink-0 border-r border-terminal-border bg-terminal-panel overflow-hidden"
           style={{ width: panels.left }}
         >
           {leftRail}
         </div>
 
         {/* Center column = chart (+ bottom dock) */}
-        <div className="relative flex min-w-0 flex-1 flex-col gap-2">
-          <section aria-label="Chart workspace" className="workspace-surface min-h-0 flex-1 overflow-hidden rounded-panel">
-            {chart}
-          </section>
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1">{chart}</div>
 
           {bottomOpen && (
             <>
               <div
-                className="relative -my-1 shrink-0"
+                className="relative shrink-0"
                 onDoubleClick={() => setBottomOpen(false)}
               >
                 <Resizer
@@ -93,13 +83,13 @@ export function TerminalLayout({
                   title="Collapse bottom panel"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => setBottomOpen(false)}
-                  className="absolute left-1/2 top-1/2 z-30 flex h-6 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-terminal-border-strong bg-terminal-elevated text-ink-muted shadow-panel transition-colors hover:border-brand/50 hover:bg-terminal-hover hover:text-ink"
+                  className="absolute left-1/2 top-1/2 z-30 flex h-6 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border border-terminal-border bg-terminal-panel-2 text-ink-muted shadow-lg shadow-black/30 hover:bg-terminal-hover hover:text-ink"
                 >
                   <ChevronDown size={15} />
                 </button>
               </div>
               <div
-                className="workspace-surface shrink-0 overflow-hidden rounded-panel"
+                className="shrink-0 border-t border-terminal-border bg-terminal-panel"
                 style={{ height: panels.bottom }}
               >
                 {bottom}
@@ -112,7 +102,7 @@ export function TerminalLayout({
               aria-label="Show bottom panel"
               title="Show bottom panel"
               onClick={() => setBottomOpen(true)}
-              className="absolute bottom-3 left-1/2 z-30 flex h-8 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-terminal-border-strong bg-terminal-elevated text-ink-muted shadow-panel transition-colors hover:border-brand/50 hover:bg-terminal-hover hover:text-ink"
+              className="absolute bottom-2 left-1/2 z-30 flex h-7 w-10 -translate-x-1/2 items-center justify-center rounded-sm border border-terminal-border bg-terminal-panel-2 text-ink-muted shadow-lg shadow-black/40 hover:bg-terminal-hover hover:text-ink"
             >
               <ChevronUp size={16} />
             </button>
@@ -122,38 +112,25 @@ export function TerminalLayout({
         {/* Right watchlist dock */}
         {rightOpen && (
           <>
-            {viewportMode !== "desktop" && (
-              <button
-                type="button"
-                aria-label="Close right panel"
-                className="absolute inset-0 z-30 bg-[var(--scrim)]"
-                onClick={() => setRightOpen(false)}
-              />
-            )}
-            {viewportMode === "desktop" && (
-              <Resizer
-                axis="col"
-                edge="right"
-                min={240}
-                max={480}
-                value={panels.right}
-                onChange={(v) => setPanel("right", v)}
-              />
-            )}
+            <Resizer
+              axis="col"
+              edge="right"
+              min={220}
+              max={460}
+              value={panels.right}
+              onChange={(v) => setPanel("right", v)}
+            />
             <div
               className={cn(
-                "workspace-surface overflow-hidden rounded-panel",
-                viewportMode === "desktop"
-                  ? "relative shrink-0"
-                  : "absolute inset-y-2 right-2 z-40 w-[min(88vw,380px)] shadow-float",
+                "shrink-0 border-l border-terminal-border bg-terminal-panel",
               )}
-              style={viewportMode === "desktop" ? { width: panels.right } : undefined}
+              style={{ width: panels.right }}
             >
               {watchlist}
             </div>
           </>
         )}
-      </main>
+      </div>
     </div>
   );
 }

@@ -224,46 +224,7 @@ export function TopToolbar() {
   };
 
   return (
-    <div className="grid h-full min-w-0 grid-rows-2">
-      <div className="flex h-11 min-w-0 items-center border-b border-terminal-border/80 px-3">
-        <div className="flex shrink-0 items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-signal text-[11px] font-black tracking-tight text-white shadow-[0_6px_18px_var(--shell-glow)]">
-            S
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-[13px] font-bold tracking-[-0.01em] text-ink">Trading Terminal</span>
-            <span className="hidden text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint sm:inline">Institutional workspace</span>
-          </div>
-        </div>
-
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <ConnectionBadge />
-          <div className="mx-1 h-5 w-px bg-terminal-border" />
-          <button
-            onClick={toggleAlertCenter}
-            className="relative flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink active:bg-terminal-pressed"
-            title="Alerts"
-            aria-label="Alerts"
-          >
-            <Bell size={15} />
-            {alertCount > 0 && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-warning px-0.5 text-[9px] font-bold text-ink-inverse">
-                {alertCount}
-              </span>
-            )}
-          </button>
-          <IconButton label="Theme" onClick={toggleTheme} size="sm">
-            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-          </IconButton>
-          <IconButton label="Fullscreen" onClick={toggleFullscreen} size="sm">
-            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </IconButton>
-          <div className="mx-1 h-5 w-px bg-terminal-border" />
-          <AuthControl />
-        </div>
-      </div>
-
-      <div className="flex h-11 min-w-0 items-center gap-0 overflow-x-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex h-full items-center gap-0 px-2">
       <SymbolSearch />
 
       <div className="mx-1 h-5 w-px bg-terminal-border" />
@@ -280,7 +241,7 @@ export function TopToolbar() {
       <button
         onClick={toggleReplay}
         className={cn(
-          "flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors",
+          "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
           replay.snapshot || replaySelection !== "idle"
             ? "bg-brand/15 text-brand"
             : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
@@ -294,7 +255,7 @@ export function TopToolbar() {
       <Dropdown
         width={230}
         trigger={() => (
-          <button className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
+          <button className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
             <LayoutIcon size={14} />
             {activeLayout?.name ?? "Layout"}
           </button>
@@ -422,7 +383,22 @@ export function TopToolbar() {
         )}
       </Dropdown>
 
-      <div className="ml-auto flex shrink-0 items-center gap-0">
+      <div className="ml-auto flex items-center gap-0">
+        <ConnectionBadge />
+        <div className="mx-1 h-5 w-px bg-terminal-border" />
+        <button
+          onClick={toggleAlertCenter}
+          className="relative flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+          title="Alerts"
+          aria-label="Alerts"
+        >
+          <Bell size={15} />
+          {alertCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-choch px-0.5 text-[9px] font-bold text-black">
+              {alertCount}
+            </span>
+          )}
+        </button>
         <Dropdown
           align="right"
           width={238}
@@ -488,7 +464,14 @@ export function TopToolbar() {
         >
           <ListTree size={15} />
         </IconButton>
-      </div>
+        <IconButton label="Theme" onClick={toggleTheme}>
+          {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+        </IconButton>
+        <IconButton label="Fullscreen" onClick={toggleFullscreen}>
+          {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+        </IconButton>
+        <div className="mx-1 h-5 w-px bg-terminal-border" />
+        <AuthControl />
       </div>
     </div>
   );

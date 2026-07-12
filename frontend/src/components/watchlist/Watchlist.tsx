@@ -719,8 +719,8 @@ export function Watchlist() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-transparent">
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-terminal-border/70 bg-terminal-panel-2/20 pl-3.5 pr-2">
+    <div className="flex h-full flex-col bg-terminal-panel">
+      <div className="flex h-[38px] shrink-0 items-center justify-between pl-3 pr-1.5">
         {renaming ? (
           <div className="-ml-1.5 mr-2 flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-brand bg-terminal-hover px-2 shadow-[0_0_0_1px_rgba(41,98,255,0.28)]">
             <Smile size={15} className="shrink-0 text-ink-muted" />
@@ -781,7 +781,7 @@ export function Watchlist() {
       <div
         className={cn(
           GRID,
-          "h-8 shrink-0 border-b border-terminal-border bg-terminal-input/45 px-2.5",
+          "h-7 shrink-0 border-b border-terminal-border px-2",
           dragState?.active && "bg-terminal-panel/95",
         )}
         data-watchlist-drop="unsectioned"
@@ -821,7 +821,7 @@ export function Watchlist() {
 
       <div
         ref={watchlistBodyRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-1.5"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5"
       >
         {dragState?.active && sections.length > 0 && (
           <div
@@ -906,7 +906,6 @@ function WatchlistTitleMenu({
   return (
     <Dropdown
       width={216}
-      scrollMode="content"
       trigger={(open) => (
         <button
           className={cn(
@@ -924,8 +923,8 @@ function WatchlistTitleMenu({
       )}
     >
       {(close) => (
-        <div className="flex max-h-[min(70dvh,420px)] flex-col py-0.5">
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-0.5 [scrollbar-gutter:stable]">
+        <div className="py-0.5">
+          <div className="max-h-36 overflow-y-auto py-0.5">
             {lists.map((list) => (
               <WatchlistListMenuRow
                 key={list.id}
@@ -1383,8 +1382,8 @@ const WatchRow = memo(function WatchRow({
       onPointerDown={onPointerDown}
       className={cn(
         GRID,
-        "group relative h-9 cursor-pointer select-none rounded-lg px-2 transition-[background-color,box-shadow,opacity] duration-150 hover:bg-terminal-hover",
-        active && "bg-brand-soft shadow-[inset_3px_0_0_var(--accent),inset_0_0_0_1px_var(--accent-soft)]",
+        "group relative h-[30px] cursor-pointer select-none px-2 transition-[background-color,box-shadow,opacity] duration-100 hover:bg-terminal-hover",
+        active && "rounded-md shadow-[inset_0_0_0_1px_var(--text-faint)]",
         dragging && "opacity-45",
       )}
       data-watchlist-symbol={ticker}
@@ -1400,7 +1399,7 @@ const WatchRow = memo(function WatchRow({
       />
       <div className="flex min-w-0 items-center gap-1.5">
         <SymbolLogo id={ticker} />
-        <span className="truncate text-[12px] font-semibold leading-none text-ink">
+        <span className="truncate text-[13px] font-semibold leading-none text-ink">
           {ticker}
         </span>
       </div>
@@ -1409,7 +1408,7 @@ const WatchRow = memo(function WatchRow({
         <span
           key={flash?.seq ?? 0}
           className={cn(
-            "tnum wl-last-price inline-flex items-baseline justify-end px-[3px] py-px text-[12px] font-medium leading-none text-ink",
+            "tnum wl-last-price inline-flex items-baseline justify-end px-[3px] py-px text-[13px] leading-none text-ink",
             flash?.dir === "up" && "wl-flash-up",
             flash?.dir === "down" && "wl-flash-down",
           )}
@@ -1422,14 +1421,14 @@ const WatchRow = memo(function WatchRow({
       </div>
 
       <div
-        className="tnum truncate text-right text-[12px] leading-none"
+        className="tnum truncate text-right text-[13px] leading-none"
         style={{ color: quote ? chgColor : "var(--text-faint)" }}
       >
         {fmtChg(quote?.change, prec)}
       </div>
 
       <div
-        className="tnum relative text-right text-[12px] leading-none"
+        className="tnum relative text-right text-[13px] leading-none"
         style={{ color: quote ? chgColor : "var(--text-faint)" }}
       >
         {fmtChgPct(quote?.changePct)}
@@ -1526,7 +1525,6 @@ function AddSymbol({
     <Dropdown
       align="right"
       width={300}
-      scrollMode="content"
       trigger={() => (
         <IconButton size="sm" label="Add symbol">
           <Plus size={16} />
@@ -1534,8 +1532,8 @@ function AddSymbol({
       )}
     >
       {(close) => (
-        <div className="flex max-h-[min(70dvh,520px)] flex-col">
-          <div className="flex shrink-0 items-center gap-1.5 border-b border-terminal-border px-3 pb-2 pt-1 focus-within:border-brand">
+        <div>
+          <div className="flex items-center gap-1.5 border-b border-terminal-border px-3 pb-2 pt-1">
             <Search size={13} className="text-ink-faint" />
             <input
               autoFocus
@@ -1545,7 +1543,7 @@ function AddSymbol({
               className="w-full bg-transparent text-xs text-ink outline-none placeholder:text-ink-faint"
             />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 [scrollbar-gutter:stable]">
+          <div className="max-h-64 overflow-auto py-1">
             {filtered.map((s) => (
               <button
                 key={s.id}

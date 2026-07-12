@@ -18,7 +18,6 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `REPLAY_CONTROL_INCIDENTS.md` | Pause race and debounced Replay control incident analysis |
 | `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md` | Target architecture and phased migration from frontend-owned replay to Go/PostgreSQL |
 | `RESPONSIVE_ARCHITECTURE.md` | Responsive layout system |
-| `UI_DESIGN_SYSTEM.md` | Institutional Pro theme, shell, tokens, components, focus, and popup scrolling rules |
 | `SETTTING_ARCHITECTURE.md` | Settings dialog architecture |
 | `WATCHLIST_ARCHITECTURE.md` | Watchlist lists, sections, and persistence |
 | `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md` | Zoom / viewport synchronization |

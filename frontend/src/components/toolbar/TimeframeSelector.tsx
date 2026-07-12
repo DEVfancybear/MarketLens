@@ -123,17 +123,17 @@ export function TimeframeSelector({
   );
 
   return (
-    <div className="flex items-center gap-0.5 rounded-lg border border-terminal-border bg-terminal-input p-0.5">
+    <div className="flex items-center gap-0.5">
       {visible.map((tf) => (
         <button
           key={tf}
           type="button"
           onClick={() => onChange(tf)}
           className={cn(
-            "h-8 min-w-8 rounded-md border px-2 text-[11px] font-semibold transition-all",
+            "h-7 min-w-[28px] rounded px-1.5 text-[11px] font-semibold transition-colors",
             tf === timeframe
-              ? "border-brand/25 bg-brand-soft text-brand shadow-[inset_0_1px_0_var(--panel-highlight)]"
-              : "border-transparent text-ink-muted hover:bg-terminal-hover hover:text-ink",
+              ? "bg-terminal-hover text-ink"
+              : "text-ink hover:bg-terminal-hover",
           )}
         >
           {timeframeShortLabel(tf)}
@@ -142,15 +142,14 @@ export function TimeframeSelector({
 
       <Dropdown
         width={236}
-        scrollMode="content"
         trigger={(open) => (
           <button
             type="button"
             aria-label="Select interval"
             title="Select interval"
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink active:bg-terminal-pressed",
-              open && "border-brand/25 bg-brand-soft text-brand",
+              "flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+              open && "bg-terminal-hover text-ink",
             )}
           >
             <ChevronDown size={14} />
@@ -158,7 +157,7 @@ export function TimeframeSelector({
         )}
       >
         {(close) => (
-          <div className="max-h-[min(70dvh,640px)] overflow-y-auto overscroll-contain py-1 text-[13px] font-semibold text-ink [scrollbar-gutter:stable]">
+          <div className="max-h-[min(640px,calc(100vh-56px))] overflow-y-auto bg-[#1f1f1f] py-1 text-[13px] font-semibold text-[#d1d4dc]">
             <button
               type="button"
               onClick={() => {

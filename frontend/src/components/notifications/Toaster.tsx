@@ -47,7 +47,7 @@ function ToastCard({ toast }: { toast: Toast }) {
   return (
     <div
       role="status"
-      className="pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-terminal-border-strong bg-terminal-elevated p-3.5 shadow-float ring-1 ring-white/[0.03] animate-[toastIn_180ms_ease-out]"
+      className="pointer-events-auto flex w-full items-start gap-2.5 rounded-md border border-terminal-border bg-terminal-panel-2 p-3 shadow-lg animate-[toastIn_160ms_ease-out]"
       style={{ borderLeftColor: meta.accent, borderLeftWidth: 3 }}
     >
       <span className="mt-0.5 shrink-0" style={{ color: meta.accent }}>
@@ -79,7 +79,7 @@ export function Toaster() {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed right-4 top-4 z-[100] flex w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-2.5",
+        "pointer-events-none fixed right-3 top-3 z-[100] flex w-[320px] max-w-[calc(100vw-1.5rem)] flex-col gap-2",
       )}
     >
       {toasts.map((t) => (

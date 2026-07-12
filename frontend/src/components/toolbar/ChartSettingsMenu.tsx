@@ -27,8 +27,8 @@ export function ChartSettingsMenu() {
       trigger={(open) => (
         <button
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
-            open && "border-brand/25 bg-brand-soft text-brand",
+            "flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+            open && "bg-terminal-hover text-ink",
           )}
           title="Chart settings"
         >

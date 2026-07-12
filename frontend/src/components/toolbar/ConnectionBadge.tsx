@@ -17,15 +17,15 @@ export function ConnectionBadge() {
 
   return (
     <div
-      className="flex h-8 items-center gap-2 rounded-full border border-terminal-border bg-terminal-input px-2.5 text-[10px] text-ink-muted shadow-[inset_0_1px_0_var(--panel-highlight)]"
+      className="flex h-7 items-center gap-1.5 rounded px-2 text-2xs text-ink-muted"
       title={`Market data: ${label}`}
       aria-label={`Market data ${label}`}
     >
       <span
-        className={cn('h-2 w-2 rounded-full shadow-[0_0_0_3px_color-mix(in_srgb,currentColor_12%,transparent)]', pulsing && 'animate-pulse')}
+        className={cn('h-2 w-2 rounded-full', pulsing && 'animate-pulse')}
         style={{ backgroundColor: color }}
       />
-      <span className="hidden font-semibold md:inline">{label}</span>
+      <span className="hidden font-medium md:inline">{label}</span>
     </div>
   );
 }

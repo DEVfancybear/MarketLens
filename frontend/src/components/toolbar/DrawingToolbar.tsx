@@ -153,12 +153,12 @@ for (const g of GROUPS)
   for (const t of g.tools) if (!TOOL_BY_ID.has(t.tool)) TOOL_BY_ID.set(t.tool, t);
 
 const COLORS = [
-  "#7392ff",
+  "#2962ff",
   "#26a69a",
-  "#ef5b68",
-  "#e9ad45",
-  "#a78bfa",
-  "#f1f5fb",
+  "#ef5350",
+  "#ff9800",
+  "#ab47bc",
+  "#ffffff",
 ];
 
 /** Track which tool is "last used" per group for the visible icon. */
@@ -320,7 +320,7 @@ export function DrawingToolbar() {
   };
 
   return (
-    <div className="flex h-full flex-col items-center gap-1 overflow-y-auto bg-terminal-panel-2/20 px-1.5 py-2">
+    <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
       <FavoriteToolsPopup
         tools={favList.map((tool) => TOOL_BY_ID.get(tool)!)}
         activeTool={activeTool}
@@ -341,7 +341,7 @@ export function DrawingToolbar() {
         return (
           <div key={group.id} className="relative">
             {/* Separator between groups */}
-            {gi > 0 && <div className="my-1.5 h-px w-7 bg-terminal-border" />}
+            {gi > 0 && <div className="my-1 h-px w-6 bg-terminal-border" />}
 
             {/* Group button */}
             <div
@@ -459,7 +459,7 @@ export function DrawingToolbar() {
         );
       })}
 
-      <div className="my-1.5 h-px w-7 bg-terminal-border" />
+      <div className="my-1 h-px w-6 bg-terminal-border" />
 
       {/* Colour picker */}
       <div className="group relative">
@@ -601,7 +601,7 @@ function FavoriteToolsPopup({
   // Keep this callback stable. `useDraggableDialog` remeasures when
   // `initialPosition` changes; an inline function here causes a render/effect
   // loop as soon as the first favorite makes the portal mount.
-  const initialPosition = useCallback(() => ({ left: 72, top: 166 }), []);
+  const initialPosition = useCallback(() => ({ left: 64, top: 76 }), []);
   const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
     useDraggableDialog({
       initialPosition,
@@ -615,8 +615,8 @@ function FavoriteToolsPopup({
       ref={dialogRef}
       data-chart-ui
       data-drawing-toolbar
-      style={{ left: 72, top: 166, ...dialogStyle }}
-      className="fixed z-[45] flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-xl border border-terminal-border-strong bg-terminal-elevated px-2 py-1.5 shadow-float ring-1 ring-white/[0.03]"
+      style={{ left: 64, top: 76, ...dialogStyle }}
+      className="fixed z-[45] flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 px-1.5 py-1 shadow-2xl shadow-black/50"
       onContextMenu={(event) => event.preventDefault()}
     >
       <div

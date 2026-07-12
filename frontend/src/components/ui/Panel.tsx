@@ -18,8 +18,8 @@ export function Panel({
   return (
     <div className={cn("flex h-full flex-col bg-terminal-panel", className)}>
       {(title || actions) && (
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-terminal-border bg-terminal-panel-2/45 px-3.5">
-          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">
+        <div className="flex h-8 shrink-0 items-center justify-between border-b border-terminal-border px-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
             {title}
           </span>
           <div className="flex items-center gap-1">{actions}</div>

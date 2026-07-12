@@ -127,10 +127,6 @@ export const toggleRightAtom = atom(null, (get, set) => {
   set(rightOpenAtom, (prev) => !prev);
 });
 
-export const setRightOpenAtom = atom(null, (_get, set, open: boolean) => {
-  set(rightOpenAtom, open);
-});
-
 export const showRightPanelTabAtom = atom(
   null,
   (_get, set, tab: RightPanelTab) => {
