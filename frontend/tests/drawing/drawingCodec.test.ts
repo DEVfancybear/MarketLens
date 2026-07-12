@@ -38,6 +38,19 @@ test("encoder strips transient render fields", () => {
   assert.equal("_dragging" in encoded, false);
 });
 
+test("pressure-ready freeform points round-trip with normalized pressure", () => {
+  const decoded = decodeDrawing({
+    ...legacy,
+    tool: "brush",
+    points: [
+      { time: 1, price: 2, pressure: -1 },
+      { time: 2, price: 3, pressure: 0.75 },
+      { time: 3, price: 4, pressure: 2 },
+    ],
+  });
+  assert.deepEqual(decoded.drawing?.points.map((point) => point.pressure), [0, 0.75, 1]);
+});
+
 test("interval visibility is normalized at persistence boundaries", () => {
   const decoded = decodeDrawing({
     ...legacy,

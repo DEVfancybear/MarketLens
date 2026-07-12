@@ -44,6 +44,9 @@ test("creation and style families are derived from the manifest", () => {
   assert.equal(styleFamily("trendline"), "line");
   assert.equal(getDrawingToolManifestEntry("text").overlayExtension, "text-editor");
   assert.equal(getDrawingToolManifestEntry("trendline").selectionTextEditor, "line-midpoint");
+  assert.equal(getDrawingToolManifestEntry("trendline").angleConstraint, "45-degree");
+  assert.equal(getDrawingToolManifestEntry("channel").selectionTextEditor, "line-midpoint");
+  assert.equal(getDrawingToolManifestEntry("brush").pointSimplificationTolerance, 0.75);
   assert.equal(getDrawingToolManifestEntry("rectangle").selectionTextEditor, "shape-center");
   assert.equal(getDrawingToolManifestEntry("long").settingsOverlay, "position-dialog");
   assert.equal(getDrawingToolManifestEntry("short").lifecycleExtension, "position-resolution");

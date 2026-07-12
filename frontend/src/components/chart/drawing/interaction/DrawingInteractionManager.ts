@@ -25,6 +25,8 @@ import {
 import { TransformSession } from "./TransformSession";
 import { EraseSession } from "./EraseSession";
 import { SelectionSession } from "./SelectionSession";
+import { simplifyProjectedPoints } from "./FreeformSimplification";
+import { constrainPointTo45Degrees } from "../tools/plugins/lineGeometry";
 import {
   resolveDrawingCreationDefaults,
   type DrawingToolPreferences,
@@ -50,6 +52,12 @@ function shouldRecordContinuousPoint(
   const y1 = toY(next.price);
   if (x0 == null || y0 == null || x1 == null || y1 == null) return true;
   return Math.hypot(x1 - x0, y1 - y0) >= 2;
+}
+
+function withPointerPressure(point: Point, event: PointerEvent): Point {
+  return event.pointerType === "pen" && Number.isFinite(event.pressure)
+    ? { ...point, pressure: Math.max(0, Math.min(1, event.pressure)) }
+    : point;
 }
 
 export interface DrawingInteractionManagerOpts {
@@ -240,6 +248,10 @@ export function useDrawingInteractionManager(
       }
       if (outcome.kind === "commit") {
         const cur = getState();
+        const tolerance = session.definition.pointSimplificationTolerance;
+        const points = tolerance
+          ? simplifyProjectedPoints(outcome.points, toX, toY, tolerance)
+          : outcome.points;
         addDrawing({
           ...resolveDrawingCreationDefaults(
             session.tool,
@@ -248,12 +260,12 @@ export function useDrawingInteractionManager(
           ),
           id: uid("dw"),
           tool: session.tool,
-          points: outcome.points,
+          points,
         } as Drawing);
       }
       reset();
     },
-    [addDrawing, getState, reset, transition],
+    [addDrawing, getState, reset, toX, toY, transition],
   );
   const previousCancellationKeyRef = useRef(cancellationKey);
   useEffect(() => {
@@ -289,7 +301,8 @@ export function useDrawingInteractionManager(
       if (isOverDrawingUI(event) || !isOverCanvas(event, canvas) || event.button > 0) return;
       const currentMachine = machineRef.current;
       if (currentMachine.state !== "Idle" && currentMachine.state !== "Drawing") return;
-      const rawPoint = fromEvent(event);
+      const raw = fromEvent(event);
+      const rawPoint = raw ? withPointerPressure(raw, event) : null;
       const current = getState();
       if (!rawPoint || !current.ctxReady) return;
 
@@ -300,7 +313,7 @@ export function useDrawingInteractionManager(
       pointerClaimedRef.current = true;
 
       const definition = getDrawingToolManifestEntry(current.activeTool);
-      const point = definition.magnetEligible
+      let point = definition.magnetEligible
         ? snapPointRef.current?.(rawPoint, current.activeTool, event) ?? rawPoint
         : rawPoint;
       if (definition.overlayExtension === "text-editor") {
@@ -332,6 +345,9 @@ export function useDrawingInteractionManager(
         session = new CreationSession(current.activeTool);
         creationSessionRef.current = session;
       }
+      if (event.shiftKey && definition.angleConstraint === "45-degree" && session.points[0]) {
+        point = constrainPointTo45Degrees(session.points[0], point, toX, toY);
+      }
       if (definition.creationMode === "pointer-continuous") {
         dragActiveRef.current = true;
         freezeChartRef.current?.(true);
@@ -347,11 +363,15 @@ export function useDrawingInteractionManager(
     const handleMove = (event: PointerEvent) => {
       if (!isOverCanvas(event, canvas) || machineRef.current.state !== "Drawing") return;
       const session = creationSessionRef.current;
-      const rawPoint = fromEvent(event);
+      const raw = fromEvent(event);
+      const rawPoint = raw ? withPointerPressure(raw, event) : null;
       if (!session || !rawPoint) return;
-      const point = session.definition.magnetEligible
+      let point = session.definition.magnetEligible
         ? snapPointRef.current?.(rawPoint, session.tool, event) ?? rawPoint
         : rawPoint;
+      if (event.shiftKey && session.definition.angleConstraint === "45-degree" && session.points[0]) {
+        point = constrainPointTo45Degrees(session.points[0], point, toX, toY);
+      }
       if (session.definition.creationMode === "pointer-continuous") {
         event.preventDefault();
         event.stopPropagation();
@@ -367,7 +387,8 @@ export function useDrawingInteractionManager(
       if (!session || session.definition.creationMode !== "pointer-continuous") return;
       event.preventDefault();
       event.stopPropagation();
-      const rawPoint = fromEvent(event);
+      const raw = fromEvent(event);
+      const rawPoint = raw ? withPointerPressure(raw, event) : null;
       const point = rawPoint && session.definition.magnetEligible
         ? snapPointRef.current?.(rawPoint, session.tool, event) ?? rawPoint
         : rawPoint;
@@ -518,11 +539,20 @@ export function useDrawingInteractionManager(
       if (!rawPoint) return;
       const session = transformSessionRef.current;
       const definition = getDrawingToolManifestEntry(session.tool);
-      const p = definition.magnetEligible && snapPointRef.current
+      let p = definition.magnetEligible && snapPointRef.current
         ? session.pointerAdjustedForSnap(rawPoint, (point) =>
           snapPointRef.current!(point, session.tool, e),
         )
         : rawPoint;
+      if (
+        e.shiftKey &&
+        definition.angleConstraint === "45-degree" &&
+        session.mode === "resize" &&
+        session.primaryOriginal.length === 2
+      ) {
+        const opposite = session.primaryOriginal[session.anchorIndex === 0 ? 1 : 0];
+        if (opposite) p = constrainPointTo45Degrees(opposite, p, toX, toY);
+      }
       const multiMap = livePointsWorkRef.current;
       multiMap.clear();
       for (const [id, points] of session.update(p)) {

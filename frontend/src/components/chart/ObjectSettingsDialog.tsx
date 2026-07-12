@@ -31,7 +31,9 @@ import {
   saveDrawingToolDefaultsAtom,
 } from "@/store/chartStore";
 import {
+  DEFAULT_CHANNEL_LEVELS,
   DEFAULT_FIB_LEVELS,
+  type ChannelLevelConfig,
   type Drawing,
   type FibAlignH,
   type FibAlignV,
@@ -61,6 +63,10 @@ const EXTEND_OPTS: { value: NonNullable<Drawing["extend"]>; label: string }[] = 
   { value: "left", label: "Extend left" },
   { value: "right", label: "Extend right" },
   { value: "both", label: "Extend both" },
+];
+const LINE_END_OPTS: { value: NonNullable<Drawing["lineEnd"]>; label: string }[] = [
+  { value: "normal", label: "Normal" },
+  { value: "arrow", label: "Arrow" },
 ];
 const V_ALIGN: { value: NonNullable<Drawing["textVAlign"]>; label: string }[] = [
   { value: "top", label: "Top" },
@@ -100,6 +106,13 @@ function normalizedFibLevels(d: Drawing): FibLevelConfig[] {
       enabled: custom?.enabled ?? base.enabled,
     };
   });
+}
+
+function normalizedChannelLevels(d: Drawing): ChannelLevelConfig[] {
+  const source = d.channelLevels?.length ? d.channelLevels : DEFAULT_CHANNEL_LEVELS;
+  return source
+    .filter((level) => Number.isFinite(level.value))
+    .map((level) => ({ ...level, enabled: level.enabled !== false }));
 }
 
 // ---- dialog -------------------------------------------------------------
@@ -175,6 +188,8 @@ export function ObjectSettingsDialog() {
   const isPlainText = settings.profile === "text";
   const isShape = settings.profile === "shape";
   const isRect = settings.hasFeature("middle-line");
+  const isTrendline = settings.hasFeature("trendline-parity");
+  const isChannel = settings.hasFeature("channel-levels");
   const hasTextTab = settings.tabs.includes("text");
 
   const patch = (p: Partial<Drawing>) =>
@@ -209,11 +224,18 @@ export function ObjectSettingsDialog() {
   cancelRef.current = cancel;
 
   const fibLevels = normalizedFibLevels(drawing);
+  const channelLevels = normalizedChannelLevels(drawing);
   const patchFibLevel = (idx: number, p: Partial<FibLevelConfig>) => {
     const next = normalizedFibLevels(drawing);
     if (!next[idx]) return;
     next[idx] = { ...next[idx], ...p };
     patch({ fibLevels: next });
+  };
+  const patchChannelLevel = (idx: number, p: Partial<ChannelLevelConfig>) => {
+    const next = normalizedChannelLevels(drawing);
+    if (!next[idx]) return;
+    next[idx] = { ...next[idx], ...p };
+    patch({ channelLevels: next });
   };
 
   const onSaveTemplate = () => {
@@ -731,7 +753,7 @@ export function ObjectSettingsDialog() {
                       />
                     </Row>
 
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 py-2">
+                    <div className="grid grid-cols-1 gap-y-2 py-2">
                       {fibLevels.map((level, index) => (
                         <div key={`${index}-${level.value}`} className="flex items-center gap-2">
                           <CheckBox
@@ -761,6 +783,13 @@ export function ObjectSettingsDialog() {
                               />
                             )}
                           </div>
+                          <input
+                            aria-label={`Fib level ${index + 1} text`}
+                            value={level.text ?? ""}
+                            onChange={(event) => patchFibLevel(index, { text: event.target.value })}
+                            placeholder="Level text"
+                            className="h-[34px] min-w-0 flex-1 rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none focus:border-[#2962ff]"
+                          />
                         </div>
                       ))}
                     </div>
@@ -979,6 +1008,7 @@ export function ObjectSettingsDialog() {
               )}
 
               {!isFib && !isShape && !isText && (
+                <>
                 <Row label="Line">
                   <div className="relative flex items-center gap-2">
                     <Swatch
@@ -1008,6 +1038,31 @@ export function ObjectSettingsDialog() {
                     />
                   </div>
                 </Row>
+                {isTrendline && (
+                  <div className="mt-4 space-y-3 border-t border-[#3a3a3a] pt-4">
+                    <Row label="Start"><Select value={drawing.lineStart ?? "normal"} options={LINE_END_OPTS} onChange={(lineStart) => patch({ lineStart })} /></Row>
+                    <Row label="End"><Select value={drawing.lineEnd ?? "normal"} options={LINE_END_OPTS} onChange={(lineEnd) => patch({ lineEnd })} /></Row>
+                    <Row label="Midpoint"><CheckBox checked={drawing.showMidpoint !== false} onChange={(showMidpoint) => patch({ showMidpoint })} /></Row>
+                    <Row label="Price labels"><CheckBox checked={!!drawing.showPriceLabels} onChange={(showPriceLabels) => patch({ showPriceLabels })} /></Row>
+                    <Row label="Stats"><CheckBox checked={!!drawing.showStats} onChange={(showStats) => patch({ showStats })} /></Row>
+                  </div>
+                )}
+                {isChannel && (
+                  <div className="mt-4 space-y-3 border-t border-[#3a3a3a] pt-4">
+                    <Row label="Extend"><Select value={drawing.extend ?? "none"} options={EXTEND_OPTS} onChange={(extend) => patch({ extend })} /></Row>
+                    <Row label="Background"><CheckBox checked={drawing.channelBackground !== false} onChange={(channelBackground) => patch({ channelBackground })} /></Row>
+                    <SectionTitle>Levels</SectionTitle>
+                    {channelLevels.map((level, index) => (
+                      <div key={`${index}-${level.value}`} className="flex items-center gap-2">
+                        <CheckBox checked={level.enabled} onChange={(enabled) => patchChannelLevel(index, { enabled })} />
+                        <NumberField value={level.value} onCommit={(value) => patchChannelLevel(index, { value })} className="h-[34px] flex-1" />
+                        <button aria-label={`Remove channel level ${index + 1}`} onClick={() => patch({ channelLevels: channelLevels.filter((_, itemIndex) => itemIndex !== index) })} className="rounded px-2 py-1 text-xs text-[#a0a3aa] hover:bg-[#2a2a2a] hover:text-[#f23645]">Remove</button>
+                      </div>
+                    ))}
+                    <button onClick={() => patch({ channelLevels: [...channelLevels, { value: 0.25, enabled: true }] })} className="rounded border border-[#50535a] px-2.5 py-1.5 text-xs text-[#d1d4dc] hover:bg-[#2a2a2a]">Add level</button>
+                  </div>
+                )}
+                </>
               )}
 
               {!isFib && isText && (

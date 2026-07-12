@@ -742,6 +742,9 @@ Exit gate:
 
 ### Phase 7 — Close parity gaps in existing tools
 
+Status: implemented on 2026-07-12. See `DRAWING_PHASE7_PARITY.md` for the
+per-family checklist and intentional differences.
+
 Purpose: improve depth before breadth.
 
 Priority examples:
@@ -756,6 +759,30 @@ Priority examples:
   resolution, future placement, trade-prefill isolation.
 - Freeform/curves: simplification policy, smoothing, pressure-ready model, predictable completion and
   editing.
+
+Delivered:
+
+- Trendline adds endpoint arrows, a selected midpoint, optional endpoint prices and stats, plus a
+  manifest-owned visual 45-degree Shift constraint during creation and endpoint resizing.
+- Parallel Channel uses its third anchor for price offset and supports editable ratio levels,
+  left/right extension, background bands, direct text, and capability-scoped settings/defaults.
+- Fib exposes all 24 rows with per-level text in addition to the existing one-color, extension, log,
+  label, background, and fixed-level alert behavior.
+- Text and Position parity items retain the direct-edit, interval/coordinate, symbol-aware formula,
+  lifecycle, compact-label, and isolated trade-prefill contracts delivered in earlier phases.
+- Brush/Highlighter commits use deterministic CSS-pixel simplification while retaining smoothed
+  rendering. Optional normalized pen pressure now round-trips for future variable-width rendering.
+- Dynamic sloped line/channel alerts remain deferred to `DYNAMIC_DRAWING_ALERTS_PLAN.md`; the
+  current evaluator safely supports fixed-price snapshots only.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
+- `npm run test:drawing`: 111/111 passing.
+- `npm run test:drawing-persistence`: 17/17 passing.
+- `npm run test:position`: 26/26 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 16/16 passing in 107.5 seconds.
 
 Exit gate:
 

@@ -6,6 +6,7 @@ import {
   channelBodyHits,
   channelBounds,
   projectChannel,
+  projectChannelLevels,
 } from "../../src/components/chart/drawing/tools/plugins/channelGeometry";
 
 const project = (value: number) => value;
@@ -45,6 +46,31 @@ test("three-anchor channel sides are parallel and the second side is hittable", 
     y: (geometry.parallel.a.y + geometry.parallel.b.y) / 2,
   };
   assert.equal(channelBodyHits(drawing, geometry, middle.x, middle.y).length, 1);
+});
+
+test("custom channel levels interpolate, extend, and participate in bounds", () => {
+  const drawing: Drawing = {
+    ...channel([
+      { time: 10, price: 10 },
+      { time: 110, price: 10 },
+      { time: 10, price: 110 },
+    ]),
+    extend: "both",
+    channelLevels: [
+      { value: 0, enabled: true },
+      { value: 0.25, enabled: true, color: "#f00" },
+      { value: 1, enabled: false },
+    ],
+  };
+  const geometry = projectChannel(drawing, project, project);
+  const levels = projectChannelLevels(drawing, geometry);
+  assert.equal(levels.length, 2);
+  assert.equal(levels[1].value, 0.25);
+  assert.equal(levels[1].color, "#f00");
+  assert.equal(levels[1].segment.a.y, 35);
+  assert.ok(levels[1].segment.a.x < -1000);
+  const bounds = channelBounds(geometry, undefined, drawing);
+  assert.ok(bounds && bounds.w > 100000);
 });
 
 test("legacy two-point channel keeps its historical projected secondary line", () => {

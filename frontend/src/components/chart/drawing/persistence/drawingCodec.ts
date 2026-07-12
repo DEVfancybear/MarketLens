@@ -87,7 +87,13 @@ function decodePoints(value: unknown): Point[] | null {
     if (!isRecord(point) || !finite(point.time) || !finite(point.price)) {
       return null;
     }
-    points.push({ time: point.time, price: point.price });
+    points.push({
+      time: point.time,
+      price: point.price,
+      ...(finite(point.pressure)
+        ? { pressure: Math.max(0, Math.min(1, point.pressure)) }
+        : {}),
+    });
   }
   return points;
 }

@@ -3,7 +3,8 @@ import { getDrawingToolManifestEntry, type DrawingSettingsFeature, type DrawingT
 
 export type DrawingSettingsTab = "inputs" | "style" | "text" | "coordinates" | "visibility";
 export type DrawingSettingsSectionId =
-  | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats" | "coordinates" | "visibility";
+  | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
+  | "trendline-parity" | "channel-levels" | "coordinates" | "visibility";
 
 export interface DrawingSettingsFieldDescriptor {
   key: keyof Drawing;
@@ -39,13 +40,16 @@ const SECTION_FIELDS: Record<DrawingSettingsSectionId, readonly (keyof Drawing)[
   "middle-line": ["showMiddleLine", "middleLineColor", "middleLineStyle"],
   "fib-levels": ["fibTrendLine", "fibTrendLineColor", "fibTrendLineWidth", "fibTrendLineStyle", "fibLevelsLine", "fibLevelLineColor", "fibLevelLineWidth", "fibLevelLineStyle", "fibLevels", "fibUseOneColor", "fibBackground", "fibReverse", "fibShowPrices", "fibShowLevels", "fibLevelsFormat", "fibLabelsHAlign", "fibLabelsVAlign", "fibShowText", "fibTextHAlign", "fibTextVAlign", "fibLogScale"],
   stats: ["accountSize", "accountCurrency", "lotSize", "riskValue", "riskUnit", "leverage", "qtyPrecision", "positionStats", "compactStats", "alwaysShowStats", "stop", "target"],
+  "trendline-parity": ["lineStart", "lineEnd", "showMidpoint", "showPriceLabels", "showStats"],
+  "channel-levels": ["channelLevels", "channelBackground"],
   coordinates: ["points"],
   visibility: ["visible", "intervalVisibility"],
 };
 
 const SECTION_TABS: Record<DrawingSettingsSectionId, DrawingSettingsTab> = {
   line: "style", fill: "style", text: "text", "middle-line": "style",
-  "fib-levels": "style", stats: "inputs", coordinates: "coordinates", visibility: "visibility",
+  "fib-levels": "style", stats: "inputs", "trendline-parity": "style",
+  "channel-levels": "style", coordinates: "coordinates", visibility: "visibility",
 };
 
 const NON_TEMPLATE_KEYS = new Set<keyof Drawing>([

@@ -5,6 +5,13 @@ export type { DrawingTool } from "./drawingToolManifest";
 export { ALL_DRAWING_TOOL_IDS } from "./drawingToolManifest";
 
 export type LineStyle = "solid" | "dashed" | "dotted";
+export type LineEnd = "normal" | "arrow";
+
+export interface ChannelLevelConfig {
+  value: number;
+  enabled: boolean;
+  color?: string;
+}
 
 /**
  * Optional metrics the Long/Short position tool can append to its on-chart
@@ -45,6 +52,8 @@ export interface Point {
   /** UTC timestamp (seconds). */
   time: number;
   price: number;
+  /** Optional normalized pointer pressure reserved for pressure-aware strokes. */
+  pressure?: number;
 }
 
 export interface DrawingIntervalVisibility {
@@ -87,6 +96,13 @@ export interface BaseDrawing {
   fontSize?: number;
   /** Line style: solid (default), dashed, or dotted. */
   lineStyle?: LineStyle;
+  /** Optional endpoint decorations for finite two-point line tools. */
+  lineStart?: LineEnd;
+  lineEnd?: LineEnd;
+  /** Trendline parity controls. */
+  showMidpoint?: boolean;
+  showPriceLabels?: boolean;
+  showStats?: boolean;
   /** Fill color for shapes (rectangle, circle, etc.). */
   fillColor?: string;
   /** Fill opacity (0–1). */
@@ -147,6 +163,9 @@ export interface BaseDrawing {
   fibTextHAlign?: FibAlignH;
   fibTextVAlign?: FibAlignV;
   fibLogScale?: boolean;
+  /** Parallel-channel ratios, where 0 is the baseline and 1 the offset side. */
+  channelLevels?: ChannelLevelConfig[];
+  channelBackground?: boolean;
   // --- TradingView object-settings parity (shapes & text) ---
   /** Bold / italic for text (text tool + text inside a shape). */
   bold?: boolean;
@@ -208,6 +227,11 @@ export interface DrawingTemplate {
   color: string;
   lineWidth?: number;
   lineStyle?: LineStyle;
+  lineStart?: LineEnd;
+  lineEnd?: LineEnd;
+  showMidpoint?: boolean;
+  showPriceLabels?: boolean;
+  showStats?: boolean;
   fillColor?: string;
   opacity?: number;
   fontSize?: number;
@@ -247,6 +271,8 @@ export interface DrawingTemplate {
   fibTextHAlign?: FibAlignH;
   fibTextVAlign?: FibAlignV;
   fibLogScale?: boolean;
+  channelLevels?: ChannelLevelConfig[];
+  channelBackground?: boolean;
 }
 
 export const DEFAULT_FIB_LEVELS: readonly FibLevelConfig[] = [
@@ -285,6 +311,12 @@ export const FIB_LEVELS = DEFAULT_FIB_LEVELS.filter((level) => level.enabled).ma
 export const FIB_EXT_LEVELS = [
   0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618,
   4.236,
+] as const;
+
+export const DEFAULT_CHANNEL_LEVELS: readonly ChannelLevelConfig[] = [
+  { value: 0, enabled: true },
+  { value: 0.5, enabled: true },
+  { value: 1, enabled: true },
 ] as const;
 
 // Compatibility exports. The manifest is now the only metadata source.

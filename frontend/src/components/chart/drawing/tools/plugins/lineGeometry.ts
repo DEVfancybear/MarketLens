@@ -27,6 +27,35 @@ export type Segment = { a: XY; b: XY };
 
 const HUGE_SPAN = 100000;
 
+/** Snap a data-space endpoint to the nearest visual 45-degree increment. */
+export function constrainPointTo45Degrees(
+  anchor: Point,
+  point: Point,
+  toX: (time: number) => number | null,
+  toY: (price: number) => number | null,
+): Point {
+  const ax = toX(anchor.time);
+  const ay = toY(anchor.price);
+  const px = toX(point.time);
+  const py = toY(point.price);
+  if (ax == null || ay == null || px == null || py == null) return point;
+  const dx = px - ax;
+  const dy = py - ay;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 0.0001) return point;
+  const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  const sx = ax + Math.cos(angle) * distance;
+  const sy = ay + Math.sin(angle) * distance;
+  return {
+    time: Math.abs(dx) < 0.0001
+      ? anchor.time
+      : anchor.time + (point.time - anchor.time) * ((sx - ax) / dx),
+    price: Math.abs(dy) < 0.0001
+      ? anchor.price
+      : anchor.price + (point.price - anchor.price) * ((sy - ay) / dy),
+  };
+}
+
 export function projectPoint(
   pt: Point,
   toX: (time: number) => number | null,

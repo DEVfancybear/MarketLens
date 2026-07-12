@@ -36,6 +36,7 @@ export type DrawingToolGroupId =
 export type DrawingSettingsProfile = "mode" | "line" | "shape" | "text" | "fib" | "position";
 export type DrawingSettingsFeature =
   | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
+  | "trendline-parity" | "channel-levels"
   | "coordinates" | "visibility" | "templates";
 export type DrawingAlertProjection =
   | "point-price"
@@ -65,6 +66,8 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly settingsOverlay?: "position-dialog";
   readonly lifecycleExtension?: "position-resolution";
   readonly magnetEligible: boolean;
+  readonly angleConstraint?: "45-degree";
+  readonly pointSimplificationTolerance?: number;
   readonly coordinateLabels?: readonly string[];
   readonly modeInteraction?: "selection" | "pass-through" | "erase";
   readonly settingsProfile: DrawingSettingsProfile;
@@ -135,7 +138,7 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("eraser", "Eraser", "cursor", "eraser", "mode", 0, { favoriteEligible: true, modeInteraction: "erase" }),
   tool("measure", "Measure", null, "ruler", "mode", 0, { favoriteEligible: false, modeInteraction: "pass-through" }),
 
-  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { hotkey: "Alt + T", section: "LINES", selectionTextEditor: "line-midpoint" }),
+  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { hotkey: "Alt + T", section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
   tool("ray", "Ray", "lines", "ray", "two-point", 2),
   tool("infoLine", "Info line", "lines", "ruler", "two-point", 2),
   tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2),
@@ -144,10 +147,10 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + J", alertProjection: "point-price" }),
   tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { hotkey: "Alt + V" }),
   tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { hotkey: "Alt + C", alertProjection: "point-price" }),
-  tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3 }),
+  tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3, selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
 
-  tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES" }),
-  tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2),
+  tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES", pointSimplificationTolerance: 0.75 }),
+  tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { pointSimplificationTolerance: 0.75 }),
   tool("arrowMarker", "Arrow marker", "shapes", "arrowUpRight", "two-point", 2, { section: "ARROWS" }),
   tool("arrow", "Arrow", "shapes", "arrowUpRight", "two-point", 2),
   tool("arrowMarkUp", "Arrow mark up", "shapes", "arrowUp", "one-point", 1),

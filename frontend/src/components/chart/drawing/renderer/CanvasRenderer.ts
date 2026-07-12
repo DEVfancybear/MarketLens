@@ -151,6 +151,21 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         "," +
         (d.textVAlign ?? "");
       h +=
+        ":parity=" +
+        (d.lineStart ?? "") +
+        "," +
+        (d.lineEnd ?? "") +
+        "," +
+        (d.showMidpoint === false ? "0" : "1") +
+        "," +
+        (d.showPriceLabels ? "1" : "0") +
+        "," +
+        (d.showStats ? "1" : "0") +
+        "," +
+        (d.channelBackground === false ? "0" : "1") +
+        "," +
+        JSON.stringify(d.channelLevels ?? []);
+      h +=
         ":fib=" +
         (d.fibTrendLine === false ? "0" : "1") +
         "," +

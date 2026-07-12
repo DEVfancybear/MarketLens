@@ -1,4 +1,4 @@
-import type { Drawing } from "@/types";
+import { DEFAULT_CHANNEL_LEVELS, type Drawing } from "../../../../../types/drawing";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import {
   TOL,
@@ -10,6 +10,8 @@ import {
   twoPointAnchorHits,
   type Segment,
   type XY,
+  extendedLineSegment,
+  raySegment,
 } from "./lineGeometry";
 
 export interface ChannelGeometry {
@@ -18,6 +20,47 @@ export interface ChannelGeometry {
   /** Real third anchor for current payloads; absent for legacy two-point data. */
   offsetAnchor: XY | null;
   legacy: boolean;
+}
+
+export interface ProjectedChannelLevel {
+  value: number;
+  color: string;
+  segment: Segment;
+}
+
+function extendChannelSegment(segment: Segment, extend: Drawing["extend"]): Segment {
+  if (extend === "both") return extendedLineSegment(segment);
+  if (extend === "right") return raySegment(segment);
+  if (extend === "left") {
+    const reversed = raySegment({ a: segment.b, b: segment.a });
+    return { a: reversed.b, b: reversed.a };
+  }
+  return segment;
+}
+
+export function projectChannelLevels(
+  drawing: Drawing,
+  geometry: ChannelGeometry | null,
+): ProjectedChannelLevel[] {
+  if (!geometry) return [];
+  const levels = drawing.channelLevels?.length
+    ? drawing.channelLevels
+    : DEFAULT_CHANNEL_LEVELS;
+  return levels.flatMap((level) => {
+    if (!level.enabled || !Number.isFinite(level.value)) return [];
+    const ratio = level.value;
+    const segment = {
+      a: {
+        x: geometry.baseline.a.x + (geometry.parallel.a.x - geometry.baseline.a.x) * ratio,
+        y: geometry.baseline.a.y + (geometry.parallel.a.y - geometry.baseline.a.y) * ratio,
+      },
+      b: {
+        x: geometry.baseline.b.x + (geometry.parallel.b.x - geometry.baseline.b.x) * ratio,
+        y: geometry.baseline.b.y + (geometry.parallel.b.y - geometry.baseline.b.y) * ratio,
+      },
+    };
+    return [{ value: ratio, color: level.color || drawing.color, segment: extendChannelSegment(segment, drawing.extend) }];
+  });
 }
 
 /**
@@ -116,7 +159,7 @@ export function channelBodyHits(
   py: number,
 ): HitResult[] {
   if (!geometry) return [];
-  const distances = [geometry.baseline, geometry.parallel].map((segment) =>
+  const distances = projectChannelLevels(drawing, geometry).map(({ segment }) =>
     distToSegment(
       px,
       py,
@@ -130,13 +173,12 @@ export function channelBodyHits(
   return distance < TOL ? [{ drawing, target: "body", distance }] : [];
 }
 
-export function channelBounds(geometry: ChannelGeometry | null, pad = TOL) {
+export function channelBounds(geometry: ChannelGeometry | null, pad = TOL, drawing?: Drawing) {
   if (!geometry) return null;
+  const levelSegments = drawing ? projectChannelLevels(drawing, geometry) : [];
   const points = [
-    geometry.baseline.a,
-    geometry.baseline.b,
-    geometry.parallel.a,
-    geometry.parallel.b,
+    ...levelSegments.flatMap(({ segment }) => [segment.a, segment.b]),
+    ...(!drawing ? [geometry.baseline.a, geometry.baseline.b, geometry.parallel.a, geometry.parallel.b] : []),
     ...(geometry.offsetAnchor ? [geometry.offsetAnchor] : []),
   ];
   const xs = points.map((point) => point.x);

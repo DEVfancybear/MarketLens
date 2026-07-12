@@ -104,7 +104,10 @@ test("fixed drawing targets create independent price-alert snapshots", async ({ 
 
   const center = page.getByRole("dialog", { name: "Alert Center" });
   await expect(center.getByText("Drawing · Price level", { exact: true })).toBeVisible();
-  await center.getByRole("button", { name: "Close", exact: true }).click();
+  // Close through the backdrop. Alert evaluation may legitimately add a
+  // top-right toast over the drawer's Close button in this same frame.
+  await page.mouse.click(20, page.viewportSize()!.height / 2);
+  await expect(center).toHaveCount(0);
 
   await page.mouse.click(pane.x + pane.width * 0.64, projected![0].y);
   await page.keyboard.press("Delete");

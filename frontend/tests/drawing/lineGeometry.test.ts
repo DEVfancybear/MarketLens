@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import type { Drawing, Point } from "../../src/types/drawing";
 import {
+  constrainPointTo45Degrees,
   extendedLineBodyHits,
   horizontalRayBodyHits,
   moveHorizontalLine,
@@ -71,4 +72,13 @@ test("horizontal and vertical line moves are axis constrained", () => {
   assert.deepEqual(moveVerticalLine(points, { time: 2000, price: 120 }), [
     { time: 2000, price: 100 },
   ]);
+});
+
+test("Shift constraint snaps trendline endpoints to visual 45-degree increments", () => {
+  const anchor = { time: 0, price: 0 };
+  const constrained = constrainPointTo45Degrees(anchor, { time: 10, price: 7 }, (value) => value, (value) => value);
+  assert.ok(Math.abs(Math.abs(constrained.time) - Math.abs(constrained.price)) < 1e-10);
+  const vertical = constrainPointTo45Degrees(anchor, { time: 1, price: 10 }, (value) => value, (value) => value);
+  assert.ok(Math.abs(vertical.time) < 1e-10);
+  assert.ok(Math.abs(vertical.price - Math.hypot(1, 10)) < 1e-10);
 });

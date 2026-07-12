@@ -14,6 +14,10 @@ test("settings schema derives family tabs and fields from manifest capabilities"
   assert.deepEqual(getDrawingSettingsSchema("long").tabs, ["inputs", "style", "coordinates", "visibility"]);
   assert.equal(getDrawingSettingsSchema("short").hasField("riskValue"), true);
   assert.equal(getDrawingSettingsSchema("trendline").hasField("intervalVisibility"), true);
+  assert.equal(getDrawingSettingsSchema("trendline").hasField("lineEnd"), true);
+  assert.equal(getDrawingSettingsSchema("trendline").hasField("showStats"), true);
+  assert.equal(getDrawingSettingsSchema("channel").hasField("channelLevels"), true);
+  assert.equal(getDrawingSettingsSchema("channel").hasField("channelBackground"), true);
   assert.equal(getDrawingSettingsSchema("text").hasField("points"), true);
   assert.deepEqual(getDrawingSettingsSchema("long").coordinateLabels, ["Entry", "Target", "Stop"]);
 });
