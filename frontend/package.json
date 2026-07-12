@@ -38,6 +38,7 @@
     "test:alerts": "tsc -p tsconfig.test.json && node --test .test-build/tests/alerts/*.test.js",
     "test:chart": "node scripts/clean-test-build.mjs && tsc -p tsconfig.test.json && node --test .test-build/tests/chart/*.test.js",
     "test:chart-browser": "playwright test",
+    "test:responsive": "node scripts/check-responsive-theme.mjs",
     "test:ui": "tsc -p tsconfig.test.json && node --test .test-build/tests/ui/*.test.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

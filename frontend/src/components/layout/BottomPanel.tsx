@@ -50,7 +50,7 @@ export function BottomPanel() {
   return (
     <div className="flex h-full flex-col">
       {/* Tab strip */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-terminal-border bg-terminal-panel-2/35 px-2.5" role="tablist" aria-label="Terminal panels">
+      <div className="flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b border-terminal-border bg-terminal-panel-2/35 px-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Terminal panels">
         {visibleTabs.map((t) => (
           <button
             key={t.key}
@@ -59,7 +59,7 @@ export function BottomPanel() {
             aria-selected={effectiveTab === t.key}
             onClick={() => setBottomTab(t.key)}
             className={cn(
-              "relative h-8 rounded-lg border px-3 text-[11px] font-semibold transition-all",
+              "relative h-8 shrink-0 rounded-lg border px-3 text-[11px] font-semibold transition-all",
               effectiveTab === t.key
                 ? "border-terminal-border-strong bg-terminal-elevated text-ink shadow-[0_3px_10px_var(--shadow-color)]"
                 : "border-transparent text-ink-muted hover:bg-terminal-hover hover:text-ink",

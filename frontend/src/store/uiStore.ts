@@ -42,12 +42,32 @@ export interface UIState {
   }[];
 }
 
+function initialTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  try {
+    const persisted = JSON.parse(window.localStorage.getItem("ui") ?? "null") as
+      | { theme?: unknown }
+      | null;
+    return persisted?.theme === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function applyThemeToDocument(theme: Theme): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.classList.remove("theme-dark", "theme-light");
+  root.classList.add(`theme-${theme}`);
+  root.dataset.theme = theme;
+}
+
 // SSR-safe deterministic defaults live in workspaceDefaults.ts so tests and
 // backend sync docs can assert the same first-load behavior.
 // ---------------------------------------------------------------------------
 // Individual state atoms
 // ---------------------------------------------------------------------------
-export const themeAtom = atom<Theme>("dark");
+export const themeAtom = atom<Theme>(initialTheme());
 export const panelsAtom = atom<PanelSizes>({ ...DEFAULT_PANELS });
 export const bottomTabAtom = atom<BottomTab>("replay");
 export const rightOpenAtom = atom<boolean>(true);
@@ -85,9 +105,7 @@ export const uiStateAtom = atom<UIState>((get) => ({
 export const setThemeAtom = atom(null, (get, set, theme: Theme) => {
   set(themeAtom, theme);
   persistUI(get, { theme });
-  if (typeof document !== "undefined") {
-    document.documentElement.className = `theme-${theme}`;
-  }
+  applyThemeToDocument(theme);
 });
 
 export const toggleGridAtom = atom(null, (get, set) => {
@@ -179,15 +197,14 @@ export const hydrateAtom = atom(null, (get, set) => {
     panels: get(panelsAtom),
     bottomOpen: DEFAULT_UI_SETTINGS.bottomOpen,
   });
-  set(themeAtom, persisted.theme);
+  const theme: Theme = persisted.theme === "light" ? "light" : "dark";
+  set(themeAtom, theme);
   set(panelsAtom, sanitizePanels(persisted.panels, get(panelsAtom)));
   set(
     bottomOpenAtom,
     normalizeBoolean(persisted.bottomOpen, DEFAULT_UI_SETTINGS.bottomOpen),
   );
-  if (typeof document !== "undefined") {
-    document.documentElement.className = `theme-${persisted.theme}`;
-  }
+  applyThemeToDocument(theme);
 });
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -246,9 +263,7 @@ export const applyRemoteUISettingsAtom = atom(
     set(panelsAtom, panels);
     set(bottomOpenAtom, bottomOpen);
     localStore.set("ui", { theme, panels, bottomOpen });
-    if (typeof document !== "undefined") {
-      document.documentElement.className = `theme-${theme}`;
-    }
+    applyThemeToDocument(theme);
   },
 );
 
@@ -297,9 +312,7 @@ export const resetUIToDefaultsAtom = atom(null, (_get, set) => {
   set(alertCenterOpenAtom, false);
   set(gridVisibleAtom, true);
   localStore.remove("ui");
-  if (typeof document !== "undefined") {
-    document.documentElement.className = "theme-dark";
-  }
+  applyThemeToDocument("dark");
 });
 
 export function getUIState() {

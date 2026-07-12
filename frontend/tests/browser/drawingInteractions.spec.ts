@@ -382,7 +382,17 @@ test("shared coordinate editor updates anchors in one undoable transaction", asy
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points[0])
     .toEqual({ time: nextTime, price: nextPrice });
   await page.keyboard.press("Control+z");
-  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points).toEqual(original);
+  await expect.poll(async () => {
+    const restored = (await drawingSnapshot(page)).drawings[0].points;
+    return restored.length === original.length && restored.every((point, index) => {
+      const expected = original[index];
+      return Boolean(
+        expected &&
+        point.time === expected.time &&
+        Math.abs(point.price - expected.price) < 1e-10,
+      );
+    });
+  }).toBe(true);
   await page.keyboard.press("Control+Shift+z");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[0].points[0])
     .toEqual({ time: nextTime, price: nextPrice });

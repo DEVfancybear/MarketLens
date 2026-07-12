@@ -1,27 +1,14 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useViewport, viewportModeFor, type ViewportMode } from "./useViewport";
 
-export type ViewportMode = "phone" | "tablet" | "desktop";
+export type { ViewportMode } from "./useViewport";
 
-const PHONE_MAX = 767;
-const DESKTOP_MIN = 1024;
-
-function subscribe(onStoreChange: () => void) {
-  window.addEventListener("resize", onStoreChange, { passive: true });
-  return () => window.removeEventListener("resize", onStoreChange);
-}
-
+/** Width-only helper retained for tests and non-DOM callers. */
 export function viewportModeForWidth(width: number): ViewportMode {
-  if (width <= PHONE_MAX) return "phone";
-  if (width < DESKTOP_MIN) return "tablet";
-  return "desktop";
-}
-
-function getSnapshot(): ViewportMode {
-  return viewportModeForWidth(window.innerWidth);
+  return viewportModeFor(width, "fine");
 }
 
 export function useViewportMode(): ViewportMode {
-  return useSyncExternalStore(subscribe, getSnapshot, () => "desktop");
+  return useViewport().mode;
 }
