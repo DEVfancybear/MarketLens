@@ -28,19 +28,20 @@ export function SymbolSearch() {
   return (
     <Dropdown
       width={300}
+      scrollMode="content"
       trigger={(open) => (
         <button
           className={cn(
-            "flex h-8 items-center gap-2 rounded px-2 text-ink transition-colors hover:bg-terminal-hover",
-            open && "bg-terminal-hover",
+            "flex h-9 min-w-[150px] items-center gap-2 rounded-lg border border-terminal-border bg-terminal-input px-2.5 text-ink shadow-[inset_0_1px_0_var(--panel-highlight)] transition-all hover:border-terminal-border-strong hover:bg-terminal-hover",
+            open && "border-brand/45 bg-brand-soft",
           )}
         >
           <Search size={14} className="text-ink-muted" />
-          <span className="text-sm font-bold leading-none tracking-tight text-ink">
+          <span className="text-[13px] font-bold leading-none tracking-tight text-ink">
             {symbol || "Symbol"}
           </span>
           {meta && (
-            <span className="rounded bg-terminal-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+            <span className="rounded-md border border-terminal-border bg-terminal-panel-2 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-muted">
               {contractTagOf(meta.assetClass)}
             </span>
           )}
@@ -51,17 +52,17 @@ export function SymbolSearch() {
       )}
     >
       {(close) => (
-        <div>
-          <div className="px-2 pb-2 pt-1">
+        <div className="flex max-h-[min(70dvh,640px)] flex-col">
+          <div className="px-2.5 pb-2 pt-1.5">
             <input
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search symbol…"
-              className="w-full rounded border border-terminal-border bg-terminal-bg px-2 py-1.5 text-xs text-ink outline-none focus:border-brand"
+              className="h-9 w-full rounded-lg border border-terminal-border bg-terminal-input px-3 text-xs text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </div>
-          <div className="max-h-72 overflow-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
             {results.map((s) => (
               <button
                 key={s.id}
@@ -71,8 +72,8 @@ export function SymbolSearch() {
                   close();
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-terminal-hover",
-                  s.id === symbol && "bg-brand/10",
+                  "mx-1 flex min-h-9 w-[calc(100%_-_8px)] items-center justify-between rounded-lg px-3 py-2 text-left transition-colors hover:bg-terminal-hover",
+                  s.id === symbol && "bg-brand-soft",
                 )}
               >
                 <span className="text-xs font-semibold text-ink">{s.id}</span>

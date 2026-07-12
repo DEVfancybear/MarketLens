@@ -17,13 +17,16 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(
     return (
       <button
         ref={ref}
+        type={rest.type ?? "button"}
         title={label}
         aria-label={label}
+        aria-pressed={active === undefined ? undefined : active}
+        data-ui="icon-button"
         className={cn(
-          "inline-flex items-center justify-center rounded text-ink-muted transition-colors focus-ring",
-          "hover:bg-terminal-hover hover:text-ink",
-          size === "sm" ? "h-7 w-7" : "h-9 w-9",
-          active && "bg-brand/15 text-brand hover:bg-brand/20 hover:text-brand",
+          "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent text-ink-muted transition-[color,background-color,border-color,box-shadow] focus-ring",
+          "hover:bg-terminal-hover hover:text-ink active:bg-terminal-pressed disabled:pointer-events-none",
+          size === "sm" ? "h-8 w-8" : "h-9 w-9",
+          active && "border-brand/30 bg-brand-soft text-brand shadow-[inset_0_1px_0_var(--panel-highlight)] hover:border-brand/45 hover:bg-brand/20 hover:text-brand",
           className,
         )}
         {...rest}

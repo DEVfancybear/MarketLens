@@ -38,10 +38,10 @@ export function SmcMenu() {
       trigger={(open) => (
         <button
           className={cn(
-            "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
+            "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
             open
-              ? "bg-terminal-hover text-ink"
-              : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
+              ? "border-brand/25 bg-brand-soft text-brand"
+              : "border-transparent text-ink-muted hover:bg-terminal-hover hover:text-ink",
           )}
         >
           <Boxes size={14} />

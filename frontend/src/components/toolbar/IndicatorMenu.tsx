@@ -222,10 +222,10 @@ export function IndicatorMenu() {
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
+          "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors",
           open
-            ? "bg-terminal-hover text-ink"
-            : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
+            ? "border-brand/25 bg-brand-soft text-brand"
+            : "border-transparent text-ink-muted hover:bg-terminal-hover hover:text-ink",
         )}
       >
         <ChartNoAxesCombined size={15} />
@@ -248,7 +248,7 @@ export function IndicatorMenu() {
               role="dialog"
               aria-modal="true"
               aria-label="Indicators, metrics, and strategies"
-              className="mx-auto flex h-[600px] w-[min(calc(100vw-24px),840px)] flex-col overflow-hidden rounded-lg border border-[#242424] bg-[#1f1f1f] shadow-2xl shadow-black/60"
+              className="mx-auto flex h-[600px] w-[min(calc(100vw-24px),840px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-elevated shadow-float ring-1 ring-white/[0.03]"
             >
               <header
                 {...indicatorDialogDrag.dragHandleProps}
@@ -272,7 +272,7 @@ export function IndicatorMenu() {
               </header>
 
               <div className="px-5">
-                <div className="flex h-10 items-center gap-2 rounded-md border border-[#4b4b4b] bg-[#202020] px-3">
+                <div className="flex h-10 items-center gap-2 rounded-lg border border-terminal-border-strong bg-terminal-input px-3 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15">
                   <Search size={21} className="shrink-0 text-ink-muted" />
                   <input
                     ref={searchRef}
@@ -399,7 +399,7 @@ export function IndicatorMenu() {
                   role="alertdialog"
                   aria-modal="true"
                   aria-label="Delete this script?"
-                  className="w-[440px] rounded-md border border-[#242424] bg-[#171717] px-8 pb-6 pt-5 shadow-2xl shadow-black/70"
+                  className="w-[440px] rounded-2xl border border-terminal-border-strong bg-terminal-elevated px-8 pb-6 pt-5 shadow-float ring-1 ring-white/[0.03]"
                 >
                   <div
                     {...deleteDialogDrag.dragHandleProps}
@@ -430,14 +430,14 @@ export function IndicatorMenu() {
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(null)}
-                      className="h-9 rounded-md border border-[#4b4b4b] px-4 text-[15px] font-medium text-ink transition-colors hover:bg-terminal-hover"
+                      className="h-9 rounded-lg border border-terminal-border-strong px-4 text-[14px] font-medium text-ink transition-colors hover:bg-terminal-hover"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={confirmDeleteScript}
-                      className="h-9 rounded-md bg-[#f23645] px-4 text-[15px] font-semibold text-white transition-colors hover:bg-[#ff4d5b]"
+                      className="h-9 rounded-lg bg-bear px-4 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
                     >
                       Delete
                     </button>

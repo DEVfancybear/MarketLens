@@ -1,6 +1,6 @@
 # Responsive Architecture
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-07-12_
 
 This document defines the responsive plan for the trading terminal. The goal is
 not to make the desktop layout shrink until it fits. The goal is to provide
@@ -35,22 +35,25 @@ Sources reviewed for this plan:
 
 ## Current State
 
-The current terminal is desktop-first:
+The responsive shell foundation is implemented:
 
-- `TerminalLayout` uses one fixed frame: top toolbar, left rail, center chart,
-  right watchlist dock, and bottom dock.
-- `panelsAtom` persists only one `left/right/bottom` size set, regardless of
-  viewport.
-- The left drawing toolbar is always rendered as a vertical rail.
-- The right watchlist is always a dock when open.
-- The bottom panel always consumes persisted pixel height when open.
-- Toolbar controls are rendered as a single desktop row with no priority or
-  overflow model.
-- Dialogs are mostly fixed-width desktop modals.
+- `TerminalLayout` uses an 88px two-tier header, chart-first workspace surfaces,
+  a resizable desktop right dock, and an overlay right drawer on tablet/phone.
+- `useViewportMode` centralizes phone, tablet, and desktop classification.
+- Entering tablet/phone mode closes the desktop right dock; the toolbar toggle
+  opens it explicitly as a scrim-backed drawer.
+- The command bar stays on one line and scrolls horizontally instead of
+  wrapping.
+- Coarse-pointer menu/icon controls expand to at least 44px.
+- Dropdowns render through a body portal so toolbar/panel overflow cannot clip
+  them. Features with fixed search/header content use `scrollMode="content"`
+  and own one internal scroll region.
+- Browser zoom is enabled, the shell uses `dvh`, and global reduced-motion
+  handling is active.
 
-This breaks down on mobile/tablet because small screens need different surfaces:
-drawers, bottom sheets, overflow menus, compact toolbars, larger hit targets,
-safe-area spacing, and viewport-specific persistence.
+Remaining phases include a phone-specific drawing presentation, responsive
+full-screen/bottom-sheet variants for every legacy fixed dialog, and
+viewport-specific dock size persistence.
 
 ## Product Principles
 
@@ -433,4 +436,3 @@ Desktop:
 4. Responsive dialogs and menus.
 5. Gesture/hit-target tuning.
 6. Playwright screenshot and interaction coverage.
-

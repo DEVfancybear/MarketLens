@@ -142,9 +142,9 @@ export function ChartArea() {
     <div className="relative flex h-full w-full flex-col">
       <ChartPerformanceOverlay />
       {/* Chart header: symbol · exchange · TF + OHLC row */}
-      <div className="pointer-events-none absolute left-3 top-1 z-10 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5 text-[11px] leading-none text-ink-muted">
-          <span className="font-bold text-ink">{symbol}</span>
+      <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-xl border border-terminal-border/80 bg-terminal-panel/80 px-3 py-2 shadow-[0_8px_24px_var(--shadow-color)] backdrop-blur-md">
+        <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-ink-muted">
+          <span className="text-[12px] font-bold normal-case tracking-normal text-ink">{symbol}</span>
           {exchange && <span>·</span>}
           {exchange && <span>{exchange}</span>}
           <span>·</span>
@@ -152,7 +152,7 @@ export function ChartArea() {
         </div>
         {legend && (
           <div
-            className="flex items-center gap-1.5 text-[11px] leading-none"
+            className="flex items-center gap-1.5 text-[10px] leading-none"
             style={{ color: up ? "var(--bull)" : "var(--bear)" }}
           >
             <span className="font-medium">O</span>
@@ -170,8 +170,11 @@ export function ChartArea() {
       {/* Current-price marker is rendered inside PriceChart so it can track the price scale. */}
 
       {showLoading && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-terminal-bg/40">
-          <Loader2 className="animate-spin text-brand" size={24} />
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-terminal-bg/55 backdrop-blur-[2px]">
+          <div className="flex items-center gap-2.5 rounded-xl border border-terminal-border bg-terminal-elevated px-4 py-3 text-xs font-semibold text-ink-muted shadow-float">
+            <Loader2 className="animate-spin text-brand" size={18} />
+            Loading market data
+          </div>
         </div>
       )}
 

@@ -50,22 +50,23 @@ export function BottomPanel() {
   return (
     <div className="flex h-full flex-col">
       {/* Tab strip */}
-      <div className="flex h-8 shrink-0 items-end border-b border-terminal-border px-2">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-terminal-border bg-terminal-panel-2/35 px-2.5" role="tablist" aria-label="Terminal panels">
         {visibleTabs.map((t) => (
           <button
             key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={effectiveTab === t.key}
             onClick={() => setBottomTab(t.key)}
             className={cn(
-              "relative px-3 pb-1.5 pt-1 text-2xs font-medium transition-colors",
+              "relative h-8 rounded-lg border px-3 text-[11px] font-semibold transition-all",
               effectiveTab === t.key
-                ? "text-ink"
-                : "text-ink-muted hover:text-ink",
+                ? "border-terminal-border-strong bg-terminal-elevated text-ink shadow-[0_3px_10px_var(--shadow-color)]"
+                : "border-transparent text-ink-muted hover:bg-terminal-hover hover:text-ink",
             )}
           >
             {t.label}
-            {effectiveTab === t.key && (
-              <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t bg-brand" />
-            )}
+            {effectiveTab === t.key && <span aria-hidden="true" className="absolute inset-x-3 -bottom-[9px] h-0.5 rounded-full bg-brand" />}
           </button>
         ))}
       </div>

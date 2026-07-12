@@ -258,12 +258,12 @@ export function PineEditor() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-[280px] shrink-0 flex-col border-r border-terminal-border bg-[#111]">
+        <aside className="flex w-[280px] shrink-0 flex-col border-r border-terminal-border bg-terminal-panel">
           <div className="flex h-9 shrink-0 items-center border-b border-terminal-border px-3 text-xs font-semibold text-ink">
             My scripts
           </div>
           <div className="border-b border-terminal-border p-2">
-            <div className="flex h-8 items-center gap-2 rounded border border-terminal-border bg-[#070707] px-2">
+            <div className="flex h-8 items-center gap-2 rounded-lg border border-terminal-border bg-terminal-input px-2 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15">
               <Search size={14} className="text-ink-faint" />
               <input
                 value={query}

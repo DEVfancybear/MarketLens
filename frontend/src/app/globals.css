@@ -7,21 +7,35 @@
    ========================================================= */
 :root,
 .theme-dark {
-    --bg: #0b0e11;
-    --panel: #131722;
-    --panel-2: #1a1f2c;
-    --border: #2a2e39;
-    --hover: #222631;
+    color-scheme: dark;
+    --bg: #050810;
+    --panel: #090e18;
+    --panel-2: #0f1623;
+    --surface-elevated: #151f30;
+    --input: #080d16;
+    --border: #1e2a3c;
+    --border-strong: #34445e;
+    --hover: #172236;
+    --pressed: #21304a;
 
-    --text: #d1d4dc;
-    --text-muted: #868993;
-    --text-faint: #5d606b;
+    --text: #f1f5fb;
+    --text-muted: #9aa9be;
+    --text-faint: #637188;
+    --text-inverse: #07101f;
 
-    --accent: #2962ff;
-    --accent-hover: #1e53e5;
+    --accent: #7392ff;
+    --accent-hover: #8da6ff;
+    --accent-soft: rgb(115 146 255 / 0.15);
+    --accent-2: #2dd4bf;
+    --focus: #9bb0ff;
 
-    --bull: #089981;
-    --bear: #f23645;
+    --bull: #26a69a;
+    --bear: #ef5b68;
+    --warning: #e9ad45;
+    --scrim: rgb(1 4 10 / 0.72);
+    --shadow-color: rgb(0 0 0 / 0.52);
+    --shell-glow: rgb(75 105 210 / 0.15);
+    --panel-highlight: rgb(255 255 255 / 0.035);
 
     --bos: #2962ff;
     --choch: #ff9800;
@@ -29,26 +43,40 @@
     --ob: #9c27b0;
     --liquidity: #f06292;
 
-    --font-sans: "Inter", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --font-sans: "Fira Sans", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Fira Code", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
 }
 
 .theme-light {
-    --bg: #ffffff;
-    --panel: #f8f9fd;
-    --panel-2: #eef1f6;
-    --border: #e0e3eb;
-    --hover: #eef0f4;
+    color-scheme: light;
+    --bg: #e8edf4;
+    --panel: #f6f8fb;
+    --panel-2: #ffffff;
+    --surface-elevated: #ffffff;
+    --input: #eef2f7;
+    --border: #d1d9e6;
+    --border-strong: #aebbd0;
+    --hover: #e5ebf4;
+    --pressed: #d7e1ee;
 
-    --text: #131722;
-    --text-muted: #5d606b;
-    --text-faint: #9598a1;
+    --text: #152033;
+    --text-muted: #52627a;
+    --text-faint: #77859a;
+    --text-inverse: #ffffff;
 
-    --accent: #2962ff;
-    --accent-hover: #1e53e5;
+    --accent: #365fd9;
+    --accent-hover: #294db9;
+    --accent-soft: rgb(54 95 217 / 0.11);
+    --accent-2: #087f73;
+    --focus: #294db9;
 
-    --bull: #089981;
-    --bear: #f23645;
+    --bull: #087f68;
+    --bear: #d83a4e;
+    --warning: #a86405;
+    --scrim: rgb(16 24 40 / 0.48);
+    --shadow-color: rgb(34 48 73 / 0.16);
+    --shell-glow: rgb(54 95 217 / 0.08);
+    --panel-highlight: rgb(255 255 255 / 0.8);
 
     --bos: #2962ff;
     --choch: #ff9800;
@@ -69,12 +97,112 @@ body {
 }
 
 body {
-    background: var(--bg);
+    background:
+        radial-gradient(circle at 48% -20%, var(--shell-glow), transparent 42%),
+        var(--bg);
     color: var(--text);
     font-family: var(--font-sans);
-    font-size: 12px;
+    font-size: 13px;
     -webkit-font-smoothing: antialiased;
     overflow: hidden; /* full-screen terminal, panels scroll internally */
+}
+
+.terminal-shell {
+    background:
+        radial-gradient(circle at 50% -18%, var(--shell-glow), transparent 38%),
+        var(--bg);
+}
+
+.workspace-surface {
+    background: linear-gradient(180deg, var(--panel-highlight), transparent 72px), var(--panel);
+    border: 1px solid var(--border);
+    box-shadow: 0 18px 52px var(--shadow-color), inset 0 1px 0 var(--panel-highlight);
+}
+
+.app-bar-glass {
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(18px) saturate(125%);
+}
+
+/* Theme compatibility for legacy tool dialogs that still carry TradingView
+   palette utilities. This keeps every surface aligned in both themes while
+   those feature-heavy dialogs are migrated to semantic tokens incrementally. */
+[class*="bg-[#1f1f1f]"],
+[class*="bg-[#171717]"],
+[class*="bg-[#111]"],
+[class*="bg-[#050505]"] {
+    background-color: var(--panel) !important;
+}
+
+[class*="bg-[#2a2a2a]"],
+[class*="bg-[#242424]"],
+[class*="bg-[#202020]"],
+[class*="bg-[#3a3a3a]"],
+[class*="bg-[#4a4a4a]"] {
+    background-color: var(--surface-elevated) !important;
+}
+
+[class*="border-[#50535a]"],
+[class*="border-[#6a6d75]"],
+[class*="border-[#5a5a5a]"],
+[class*="border-[#3a3a3a]"],
+[class*="border-[#343434]"] {
+    border-color: var(--border-strong) !important;
+}
+
+[class*="text-[#d1d4dc]"],
+[class*="text-[#f0f0f0]"],
+[class*="text-[#f0f3fa]"] {
+    color: var(--text) !important;
+}
+
+[class*="text-[#a0a3aa]"],
+[class*="text-[#b2b5be]"],
+[class*="text-[#9aa0aa]"],
+[class*="text-[#96a0bd]"] {
+    color: var(--text-muted) !important;
+}
+
+[class*="text-[#8a8d93]"],
+[class*="text-[#5d606b]"] {
+    color: var(--text-faint) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--text-faint);
+    opacity: 1;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+}
+
+button,
+[role="button"] {
+    touch-action: manipulation;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.46;
+}
+
+:where(button, input, select, textarea, a, [role="button"], [role="tab"], [role="menuitem"], [role="separator"]):focus-visible:not(.outline-none) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+::selection {
+    background: var(--accent-soft);
+    color: var(--text);
 }
 
 /* Thin TradingView-style scrollbars */
@@ -86,7 +214,7 @@ body {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: var(--border-strong);
     border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -101,8 +229,8 @@ body {
 
 /* Reusable focus ring */
 .focus-ring:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
 }
 
 /* Chart right-click context menu pop-in */
@@ -190,9 +318,26 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
     .wl-flash-up,
     .wl-flash-down {
         animation-duration: 1ms;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-ui="icon-button"],
+    [data-ui="menu-item"] {
+        min-height: 44px;
+        min-width: 44px;
     }
 }
 
@@ -204,13 +349,14 @@ body {
 }
 .resizer-col {
     cursor: col-resize;
-    width: 5px;
+    width: 6px;
 }
 .resizer-row {
     cursor: row-resize;
-    height: 5px;
+    height: 6px;
 }
 .resizer:hover,
-.resizer-active {
+.resizer-active,
+.resizer:focus-visible {
     background: var(--accent);
 }
