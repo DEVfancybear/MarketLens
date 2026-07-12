@@ -14,6 +14,9 @@ export const ALL_DRAWING_TOOL_IDS = [
   "flatTopBottom", "disjointChannel",
   "note", "callout", "comment", "priceLabel", "signpost", "flag",
   "cyclicLines", "fibTimeZone",
+  "fibChannel", "fibSpeedFan", "fibSpeedArcs", "fibCircles", "fibWedge",
+  "trendFibTime", "pitchfan", "gannFan", "gannSquare", "gannBox",
+  "pitchfork", "insidePitchfork", "schiffPitchfork", "modifiedSchiffPitchfork",
 ] as const;
 
 export type DrawingTool = (typeof ALL_DRAWING_TOOL_IDS)[number];
@@ -61,7 +64,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly persistent: boolean;
   readonly favoriteEligible: boolean;
   readonly preferredForCreation: boolean;
-  readonly rollout?: "phase8-wave-a";
+  readonly rollout?: "phase8-wave-a" | "phase8-wave-b";
   readonly creationMode: DrawingCreationMode;
   readonly minPoints: number;
   readonly maxPoints?: number;
@@ -179,6 +182,20 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
   tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib", alertProjection: "fib-extension-levels" }),
   tool("fibTimeZone", "Fib Time Zone", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-a" }),
+  tool("fibChannel", "Fib Channel", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("fibSpeedFan", "Fib Speed Resistance Fan", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("fibSpeedArcs", "Fib Speed Resistance Arcs", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("fibCircles", "Fib Circles", "fibonacci", "circle", "two-point", 2, { rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("fibWedge", "Fib Wedge", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("trendFibTime", "Trend-Based Fib Time", "fibonacci", "fibExtension", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("pitchfan", "Pitchfan", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("gannFan", "Gann Fan", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("gannSquare", "Gann Square", "fibonacci", "square", "two-point", 2, { rollout: "phase8-wave-b", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("gannBox", "Gann Box", "fibonacci", "square", "two-point", 2, { rollout: "phase8-wave-b", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("pitchfork", "Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
+  tool("insidePitchfork", "Inside Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
+  tool("schiffPitchfork", "Schiff Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
+  tool("modifiedSchiffPitchfork", "Modified Schiff Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
   tool("cyclicLines", "Cyclic lines", "patterns", "vertical", "two-point", 2, { rollout: "phase8-wave-a" }),
   tool("priceRange", "Price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
@@ -226,9 +243,12 @@ export function getDrawingToolManifestEntry(toolId: DrawingTool): DrawingToolMan
 export function isDrawingToolCreationEnabled(
   toolId: DrawingTool,
   phase8WaveAEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_A !== "false",
+  phase8WaveBEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_B !== "false",
 ): boolean {
   const definition = getDrawingToolManifestEntry(toolId);
-  return definition.rollout !== "phase8-wave-a" || phase8WaveAEnabled;
+  if (definition.rollout === "phase8-wave-a") return phase8WaveAEnabled;
+  if (definition.rollout === "phase8-wave-b") return phase8WaveBEnabled;
+  return true;
 }
 
 export const DRAWING_TOOLS: DrawingTool[] = DRAWING_TOOL_MANIFEST.filter((entry) => entry.persistent).map((entry) => entry.id);

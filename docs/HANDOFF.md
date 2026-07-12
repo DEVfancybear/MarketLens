@@ -17,6 +17,12 @@ older references:
 
 Recent post-split work:
 
+- **Drawing maintenance Phase 8 Wave B complete (2026-07-12):** 14 Fib/Gann/fan/radial/Pitchfork
+  tools added through shared geometry families, taking the persistent manifest to 62 tools. The
+  `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_B=false` creation kill switch preserves saved-object decoding.
+  All gates pass, including 18/18 Playwright tests. Continue with independently gated Wave C; read
+  `frontend/docs/DRAWING_PHASE8_WAVE_B.md`.
+
 - **Drawing maintenance Phase 8 Wave A complete (2026-07-12):** 13 tools added through four
   reusable families (`RangeTools`, `ChannelVariantsTool`, `AnnotationTools`,
   `TimeProjectionTools`), taking the persistent manifest to 48 tools without shared interaction or

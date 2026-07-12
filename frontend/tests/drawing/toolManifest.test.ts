@@ -83,4 +83,7 @@ test("Wave A rollout disables creation without removing manifest compatibility",
   assert.equal(isDrawingToolCreationEnabled("note", false), false);
   assert.equal(isDrawingToolCreationEnabled("trendline", false), true);
   assert.equal(getDrawingToolManifestEntry("datePriceRange").persistent, true);
+  assert.equal(isDrawingToolCreationEnabled("gannFan", true, false), false);
+  assert.equal(isDrawingToolCreationEnabled("pitchfork", true, false), false);
+  assert.equal(isDrawingToolCreationEnabled("trendline", true, false), true);
 });

@@ -54,6 +54,12 @@ import "./plugins/ChannelVariantsTool";
 import "./plugins/AnnotationTools";
 import "./plugins/TimeProjectionTools";
 
+// Phase 8 Wave B — shared level, fan, radial, Gann, and pitchfork geometry
+import "./plugins/LevelFanTools";
+import "./plugins/RadialLevelTools";
+import "./plugins/GannGridTools";
+import "./plugins/PitchforkTools";
+
 import { assertDrawingToolRegistryComplete } from "./ToolRegistry";
 
 if (process.env.NODE_ENV !== "production") {

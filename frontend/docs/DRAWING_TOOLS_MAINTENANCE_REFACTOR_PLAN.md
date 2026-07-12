@@ -791,8 +791,9 @@ Exit gate:
 
 ### Phase 8 — Expand the catalog in bounded waves
 
-Status: in progress. Wave A implemented on 2026-07-12; see `DRAWING_PHASE8_WAVE_A.md`.
-Waves B-D remain independently gated deliveries.
+Status: in progress. Waves A and B implemented on 2026-07-12; see
+`DRAWING_PHASE8_WAVE_A.md` and `DRAWING_PHASE8_WAVE_B.md`. Waves C-D remain independently gated
+deliveries.
 
 Do not add every missing tool in one phase. Use dependency-driven waves.
 
@@ -827,6 +828,26 @@ Verification on 2026-07-12:
 - Fib channel, speed resistance fan/arcs, circles, wedge, trend-based Fib time, pitchfan.
 - Gann fan, square, and box.
 - Pitchfork, inside pitchfork, Schiff, and modified Schiff.
+
+Delivered:
+
+- Added all 14 Wave B ids through shared parallel-level, fan/time, radial, Gann-grid, and
+  median-line adapters. The persistent manifest now covers 62 tools.
+- Reused the existing Fib/channel level models and every cross-tool capability without adding
+  concrete Wave B ids to interaction, settings, or persistence orchestration.
+- Added a creation-only rollout flag, all-family render/hit/move/anchor/bounds contracts, external
+  Fib Channel culling coverage, all-id codec fixtures, browser gesture coverage, official behavior
+  notes, intentional differences, and performance review.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run build`: passing.
+- `npm run lint`: passing with 0 errors and 2 pre-existing Watchlist warnings.
+- `npm run test:drawing`: 117/117 passing.
+- `npm run test:drawing-persistence`: 17/17 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 18/18 passing.
+- `npm run benchmark:drawing`: 5,000-drawing rebuild median 1.921 ms; query median 0.152 ms.
 
 #### Wave C: pattern framework
 

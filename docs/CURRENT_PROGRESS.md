@@ -8,10 +8,10 @@ Backend persistence and Google authentication.
 
 ## Status
 
-- Drawing maintenance Phase 8 is in progress: Wave A is complete with 13 new catalog tools across
-  ranges, channel variants, annotations, and time projections. The manifest now covers 48 persistent
-  tools; typecheck, 114 drawing tests, 17 persistence tests, 17 browser gesture tests, lint, and the
-  drawing benchmark pass. See `frontend/docs/DRAWING_PHASE8_WAVE_A.md`.
+- Drawing maintenance Phase 8 is in progress: Waves A and B are complete. Wave B adds 14 Fib, Gann,
+  fan, radial, and Pitchfork tools through shared geometry families. The manifest now covers 62
+  persistent tools; 117 drawing tests, 17 persistence tests, 18 browser gesture tests, typecheck,
+  lint, and the benchmark pass. See `frontend/docs/DRAWING_PHASE8_WAVE_B.md`.
 
 - Replay backend migration: **Phases 0-6 complete** - deterministic Go/PostgreSQL clock,
   aggregation, isolated trading, synchronized layouts, frontend cutover, mandatory legacy deletion,

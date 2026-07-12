@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Drawing maintenance Phase 8 Wave B (2026-07-12)
+- Added Fib Channel, Fib Speed Resistance Fan/Arcs, Fib Circles, Fib Wedge, Trend-Based Fib Time,
+  Pitchfan, Gann Fan/Square/Box, and all four Pitchfork variants.
+- Implemented shared level/fan, radial, grid, and median-line geometry with manifest-driven settings,
+  persistence, coordinates, visibility, templates, synchronization, and undo/redo behavior.
+- Added the `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_B=false` creation rollback switch while retaining
+  adapter/decoder compatibility for saved drawings.
+- Expanded adapter/codec/browser contracts to 62 persistent tools and documented official behavior,
+  intentional differences, model compatibility, and performance findings.
+
 ### Added - Drawing maintenance Phase 8 Wave A (2026-07-12)
 - Added Price Range, Date Range, Date and Price Range, Flat Top/Bottom, Disjoint Channel, Note,
   Callout, Comment, Price Label, Signpost, Flag Mark, Cyclic Lines, and Fib Time Zone.

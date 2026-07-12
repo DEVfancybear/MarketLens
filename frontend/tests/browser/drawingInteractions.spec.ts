@@ -34,7 +34,7 @@ test("all persistent tools register and satisfy the executable adapter contract"
     const audit = await page.evaluate(() =>
       window.__drawingInteractionTest!.auditAdapters(),
     );
-    expect(audit.expectedToolIds).toHaveLength(48);
+    expect(audit.expectedToolIds).toHaveLength(62);
     expect(audit.registeredToolIds).toEqual(audit.expectedToolIds);
     expect(audit.fixtureToolIds).toEqual(audit.expectedToolIds);
     expect(audit.errors).toEqual([]);
@@ -68,6 +68,30 @@ test("Phase 8 Wave A range, cycle, and inline-note gestures commit transactional
     .toEqual(["datePriceRange", "cyclicLines"]);
   await page.keyboard.press("Control+Shift+z");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[2]?.text).toBe("Wave A note");
+});
+
+test("Phase 8 Wave B level, radial, grid, and pitchfork gestures use manifest contracts", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const a = { x: pane.x + pane.width * 0.24, y: pane.y + pane.height * 0.66 };
+  const b = { x: pane.x + pane.width * 0.48, y: pane.y + pane.height * 0.36 };
+  const c = { x: pane.x + pane.width * 0.64, y: pane.y + pane.height * 0.56 };
+  const create = async (name: RegExp, points: typeof a[]) => {
+    await page.getByRole("button", { name: "Fib Retracement", exact: true }).click();
+    await page.getByRole("button", { name }).click();
+    for (const point of points) await page.mouse.click(point.x, point.y);
+  };
+  await create(/^Fib Channel\b/, [a,b,c]);
+  await create(/^Fib Speed Resistance Fan\b/, [a,b]);
+  await create(/^Fib Circles\b/, [a,b]);
+  await create(/^Gann Square\b/, [a,b]);
+  await create(/^Pitchfork\b/, [a,b,c]);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((drawing) => drawing.tool))
+    .toEqual(["fibChannel","fibSpeedFan","fibCircles","gannSquare","pitchfork"]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(4);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(5);
 });
 
 test("settings dialog exposes keyboard semantics and returns focus on Escape", async ({ page }) => {
