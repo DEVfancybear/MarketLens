@@ -72,6 +72,7 @@ import { useDrawingBulkActions } from "@/components/chart/drawing/bulk/useDrawin
 import {
   DRAWING_TOOL_GROUPS,
   DRAWING_TOOL_MANIFEST,
+  isDrawingToolCreationEnabled,
   normalizeFavoriteDrawingTools,
   type DrawingIconKey,
 } from "@/types/drawingToolManifest";
@@ -133,7 +134,9 @@ function toolIcon(key: DrawingIconKey, size: number): React.ReactNode {
 const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
   ...group,
   icon: toolIcon(group.iconKey, 18),
-  tools: DRAWING_TOOL_MANIFEST.filter((entry) => entry.group === group.id).map(
+  tools: DRAWING_TOOL_MANIFEST.filter(
+    (entry) => entry.group === group.id && isDrawingToolCreationEnabled(entry.id),
+  ).map(
     (entry) => ({
       tool: entry.id,
       icon: toolIcon(entry.iconKey, 14),
@@ -142,7 +145,7 @@ const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
       section: entry.section,
     }),
   ),
-}));
+})).filter((group) => group.tools.length > 0);
 
 /** Flat tool lookup (first occurrence wins) for the floating favorites toolbar. */
 const TOOL_BY_ID = new Map<DrawingTool, ToolItem>();

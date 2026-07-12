@@ -34,11 +34,40 @@ test("all persistent tools register and satisfy the executable adapter contract"
     const audit = await page.evaluate(() =>
       window.__drawingInteractionTest!.auditAdapters(),
     );
-    expect(audit.expectedToolIds).toHaveLength(35);
+    expect(audit.expectedToolIds).toHaveLength(48);
     expect(audit.registeredToolIds).toEqual(audit.expectedToolIds);
     expect(audit.fixtureToolIds).toEqual(audit.expectedToolIds);
     expect(audit.errors).toEqual([]);
   }
+});
+
+test("Phase 8 Wave A range, cycle, and inline-note gestures commit transactionally", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const a = { x: pane.x + pane.width * 0.28, y: pane.y + pane.height * 0.66 };
+  const b = { x: pane.x + pane.width * 0.58, y: pane.y + pane.height * 0.36 };
+
+  await page.getByRole("button", { name: "Ranges", exact: true }).click();
+  await page.getByRole("button", { name: /^Date and price range\b/ }).click();
+  await page.mouse.click(a.x, a.y); await page.mouse.click(b.x, b.y);
+
+  await page.getByRole("button", { name: "Patterns", exact: true }).click();
+  await page.getByRole("button", { name: /^Cyclic lines\b/ }).click();
+  await page.mouse.click(a.x + 40, a.y); await page.mouse.click(b.x + 40, b.y);
+
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  await page.getByRole("button", { name: /^Note\b/ }).click();
+  await page.mouse.click(a.x, b.y);
+  const editor = page.getByPlaceholder("Enter text...");
+  await editor.fill("Wave A note"); await editor.press("Enter");
+
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((drawing) => drawing.tool))
+    .toEqual(["datePriceRange", "cyclicLines", "note"]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((drawing) => drawing.tool))
+    .toEqual(["datePriceRange", "cyclicLines"]);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[2]?.text).toBe("Wave A note");
 });
 
 test("settings dialog exposes keyboard semantics and returns focus on Escape", async ({ page }) => {
@@ -112,7 +141,12 @@ test("fixed drawing targets create independent price-alert snapshots", async ({ 
   await page.mouse.click(pane.x + pane.width * 0.64, projected![0].y);
   await page.keyboard.press("Delete");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
-  await page.getByRole("button", { name: /^Alerts\b/ }).click();
+  // A just-triggered alert toast can overlap this top-right toolbar button.
+  // Dispatch through the element so the snapshot contract is not coupled to
+  // the toast's dismissal timer.
+  await page.getByRole("button", { name: /^Alerts\b/ }).evaluate(
+    (button: HTMLButtonElement) => button.click(),
+  );
   await expect(page.getByRole("dialog", { name: "Alert Center" }).getByText("Drawing · Price level", { exact: true })).toBeVisible();
 });
 

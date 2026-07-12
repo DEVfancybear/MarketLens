@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Drawing maintenance Phase 8 Wave A (2026-07-12)
+- Added Price Range, Date Range, Date and Price Range, Flat Top/Bottom, Disjoint Channel, Note,
+  Callout, Comment, Price Label, Signpost, Flag Mark, Cyclic Lines, and Fib Time Zone.
+- Implemented the catalog through four reusable manifest-backed adapter families with shared
+  settings, coordinates, visibility, history, sync, persistence, object-tree, and template behavior.
+- Added Wave A geometry/adapter/codec/browser tests and official behavior/intentional-difference
+  documentation; the catalog audit now covers 48 persistent tools.
+- Added the creation-only `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_A=false` rollback switch while retaining
+  adapter/decoder compatibility for saved Wave A drawings.
+
 ### Fixed - Integration credential testing (2026-07-11)
 - Changed Telegram and Discord test actions to save the current draft before
   delivery, preventing tests from using stale stored credentials.

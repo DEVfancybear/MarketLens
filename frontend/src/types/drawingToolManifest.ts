@@ -10,6 +10,10 @@ export const ALL_DRAWING_TOOL_IDS = [
   "fibRetracement", "fibExtension", "text", "emoji", "long", "short",
   "brush", "highlighter", "arrowMarker", "arrow", "arrowMarkUp",
   "arrowMarkDown", "arrowMarkLeft", "arrowMarkRight",
+  "priceRange", "dateRange", "datePriceRange",
+  "flatTopBottom", "disjointChannel",
+  "note", "callout", "comment", "priceLabel", "signpost", "flag",
+  "cyclicLines", "fibTimeZone",
 ] as const;
 
 export type DrawingTool = (typeof ALL_DRAWING_TOOL_IDS)[number];
@@ -31,7 +35,8 @@ export type DrawingIconKey =
   | "arrowLeft" | "arrowRight" | "text" | "emoji";
 
 export type DrawingToolGroupId =
-  | "cursor" | "lines" | "shapes" | "fibonacci" | "positions" | "annotations";
+  | "cursor" | "lines" | "shapes" | "fibonacci" | "patterns"
+  | "measurements" | "positions" | "annotations";
 
 export type DrawingSettingsProfile = "mode" | "line" | "shape" | "text" | "fib" | "position";
 export type DrawingSettingsFeature =
@@ -56,6 +61,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly persistent: boolean;
   readonly favoriteEligible: boolean;
   readonly preferredForCreation: boolean;
+  readonly rollout?: "phase8-wave-a";
   readonly creationMode: DrawingCreationMode;
   readonly minPoints: number;
   readonly maxPoints?: number;
@@ -148,6 +154,8 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { hotkey: "Alt + V" }),
   tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { hotkey: "Alt + C", alertProjection: "point-price" }),
   tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3, selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
+  tool("flatTopBottom", "Flat top/bottom", "lines", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("disjointChannel", "Disjoint channel", "lines", "trend", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
 
   tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES", pointSimplificationTolerance: 0.75 }),
   tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { pointSimplificationTolerance: 0.75 }),
@@ -170,11 +178,22 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
 
   tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
   tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib", alertProjection: "fib-extension-levels" }),
+  tool("fibTimeZone", "Fib Time Zone", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-a" }),
   tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
+  tool("cyclicLines", "Cyclic lines", "patterns", "vertical", "two-point", 2, { rollout: "phase8-wave-a" }),
+  tool("priceRange", "Price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("dateRange", "Date range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("datePriceRange", "Date and price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
   tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
   tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "annotations", "emoji", "one-point", 1, { styleFamily: "text" }),
+  tool("note", "Note", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
+  tool("callout", "Callout", "annotations", "text", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center" }),
+  tool("comment", "Comment", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
+  tool("priceLabel", "Price label", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor", alertProjection: "point-price" }),
+  tool("signpost", "Signpost", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
+  tool("flag", "Flag mark", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
 ] satisfies readonly DrawingToolManifestEntry[]);
 
 export const DRAWING_TOOL_GROUPS = Object.freeze([
@@ -182,6 +201,8 @@ export const DRAWING_TOOL_GROUPS = Object.freeze([
   { id: "lines", label: "Trend line", iconKey: "trend", defaultTool: "trendline" },
   { id: "shapes", label: "Rectangle", iconKey: "square", defaultTool: "rectangle" },
   { id: "fibonacci", label: "Fib Retracement", iconKey: "fib", defaultTool: "fibRetracement" },
+  { id: "patterns", label: "Patterns", iconKey: "vertical", defaultTool: "cyclicLines" },
+  { id: "measurements", label: "Ranges", iconKey: "ruler", defaultTool: "datePriceRange" },
   { id: "positions", label: "Long position", iconKey: "long", defaultTool: "long" },
   { id: "annotations", label: "Text", iconKey: "text", defaultTool: "text" },
 ] satisfies readonly DrawingToolGroupDefinition[]);
@@ -199,6 +220,15 @@ export function getDrawingToolManifestEntry(toolId: DrawingTool): DrawingToolMan
   const definition = manifestById.get(toolId);
   if (!definition) throw new Error(`Unknown drawing tool: ${toolId}`);
   return definition;
+}
+
+/** Creation-only kill switch. Adapters/codecs remain active for saved drawings. */
+export function isDrawingToolCreationEnabled(
+  toolId: DrawingTool,
+  phase8WaveAEnabled = process.env.NEXT_PUBLIC_DRAWING_PHASE8_WAVE_A !== "false",
+): boolean {
+  const definition = getDrawingToolManifestEntry(toolId);
+  return definition.rollout !== "phase8-wave-a" || phase8WaveAEnabled;
 }
 
 export const DRAWING_TOOLS: DrawingTool[] = DRAWING_TOOL_MANIFEST.filter((entry) => entry.persistent).map((entry) => entry.id);

@@ -17,6 +17,13 @@ older references:
 
 Recent post-split work:
 
+- **Drawing maintenance Phase 8 Wave A complete (2026-07-12):** 13 tools added through four
+  reusable families (`RangeTools`, `ChannelVariantsTool`, `AnnotationTools`,
+  `TimeProjectionTools`), taking the persistent manifest to 48 tools without shared interaction or
+  persistence dispatch. Full gates pass, including 17/17 Playwright drawing tests. Continue with
+  Wave B only; read `frontend/docs/DRAWING_PHASE8_WAVE_A.md` and
+  `frontend/docs/DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`.
+
 - **Replay backend Phase 6 complete:** backend Replay is default for authenticated users; the old
   frontend clock, cursor store, engine, provider-history/MTF Replay logic, and Replay trade feed are
   deleted. `NEXT_PUBLIC_REPLAY_BACKEND_V1=false` now disables Replay UI only. CI runs

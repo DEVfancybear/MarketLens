@@ -8,6 +8,7 @@ import {
   DRAWING_TOOL_MANIFEST,
   MODE_TOOLS,
   getDrawingToolManifestEntry,
+  isDrawingToolCreationEnabled,
   normalizeFavoriteDrawingTools,
   styleFamily,
 } from "../../src/types/drawingToolManifest";
@@ -75,4 +76,11 @@ test("favorite validation rejects unknown and ineligible ids and keeps order", (
     normalizeFavoriteDrawingTools(["trendline", "unknown", "measure", "trendline", "cursor"]),
     ["trendline", "cursor"],
   );
+});
+
+test("Wave A rollout disables creation without removing manifest compatibility", () => {
+  assert.equal(isDrawingToolCreationEnabled("datePriceRange", false), false);
+  assert.equal(isDrawingToolCreationEnabled("note", false), false);
+  assert.equal(isDrawingToolCreationEnabled("trendline", false), true);
+  assert.equal(getDrawingToolManifestEntry("datePriceRange").persistent, true);
 });

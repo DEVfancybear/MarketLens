@@ -48,6 +48,12 @@ import "./plugins/ArrowTools";
 import "./plugins/TextTool";
 import "./plugins/EmojiTool";
 
+// Phase 8 Wave A — bounded catalog expansion through reusable families
+import "./plugins/RangeTools";
+import "./plugins/ChannelVariantsTool";
+import "./plugins/AnnotationTools";
+import "./plugins/TimeProjectionTools";
+
 import { assertDrawingToolRegistryComplete } from "./ToolRegistry";
 
 if (process.env.NODE_ENV !== "production") {

@@ -2,6 +2,14 @@
 
 _Post-monorepo update 2026-07-06._
 
+## Drawing maintenance refactor
+
+- Phase 8 Wave A is complete; do not reopen its shared interaction/persistence boundaries to add
+  tool-specific branches.
+- Next drawing catalog delivery is Wave B from
+  `frontend/docs/DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`: shared level/fan geometry for Fib,
+  Gann, pitchfan, and pitchfork families. Keep it independently gated from Waves C and D.
+
 ## Approved backend replay initiative (design first)
 
 Replay will migrate from a frontend-owned candle cursor to a deterministic Go/PostgreSQL session

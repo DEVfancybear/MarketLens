@@ -1,12 +1,17 @@
 # Current Progress
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 ## Current Milestone
 
 Backend persistence and Google authentication.
 
 ## Status
+
+- Drawing maintenance Phase 8 is in progress: Wave A is complete with 13 new catalog tools across
+  ranges, channel variants, annotations, and time projections. The manifest now covers 48 persistent
+  tools; typecheck, 114 drawing tests, 17 persistence tests, 17 browser gesture tests, lint, and the
+  drawing benchmark pass. See `frontend/docs/DRAWING_PHASE8_WAVE_A.md`.
 
 - Replay backend migration: **Phases 0-6 complete** - deterministic Go/PostgreSQL clock,
   aggregation, isolated trading, synchronized layouts, frontend cutover, mandatory legacy deletion,

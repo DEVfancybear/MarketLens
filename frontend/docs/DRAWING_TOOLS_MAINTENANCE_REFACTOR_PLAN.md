@@ -791,6 +791,9 @@ Exit gate:
 
 ### Phase 8 — Expand the catalog in bounded waves
 
+Status: in progress. Wave A implemented on 2026-07-12; see `DRAWING_PHASE8_WAVE_A.md`.
+Waves B-D remain independently gated deliveries.
+
 Do not add every missing tool in one phase. Use dependency-driven waves.
 
 #### Wave A: low-cost reuse of stable families
@@ -799,6 +802,25 @@ Do not add every missing tool in one phase. Use dependency-driven waves.
 - Flat top/bottom and disjoint channels.
 - Notes, callouts, comments, price labels, signposts, and flags.
 - Cyclic lines and Fib time zone.
+
+Delivered:
+
+- Added all 13 Wave A stable ids through the typed manifest and four reusable adapter families:
+  measurement ranges, channel variants, annotations, and time projections.
+- Reused shared creation sessions, settings schemas, text editing, coordinate/visibility controls,
+  defaults, templates, sync scopes, object tree, history, codec, and persistence boundaries without
+  adding tool-id dispatch to shared interaction code.
+- Added family contract tests, all-tool codec fixtures, browser creation/undo coverage, official
+  behavior notes, model/migration decisions, intentional differences, and a performance review.
+
+Verification on 2026-07-12:
+
+- `npm run typecheck`: passing.
+- `npm run lint`: passing with 0 errors and 2 pre-existing Watchlist warnings.
+- `npm run test:drawing`: 114/114 passing.
+- `npm run test:drawing-persistence`: 17/17 passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 17/17 passing.
+- `npm run benchmark:drawing`: 5,000-drawing rebuild median 1.800 ms; query median 0.117 ms.
 
 #### Wave B: shared level/fan geometry
 
