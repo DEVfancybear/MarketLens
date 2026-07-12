@@ -13,14 +13,16 @@ browser notifications, sound, Firebase push, and external Telegram/Discord dispa
 
 ## TradingView Compatibility Contract
 
-The current runtime intentionally implements **price alerts**, not indicator,
-strategy, drawing, watchlist, or other technical alerts. The compatibility
+The current runtime intentionally implements **price alerts**, including fixed-price
+snapshots created from eligible drawings, not indicator, strategy, watchlist, or
+other technical alerts. The compatibility
 baseline was checked against TradingView's official alert documentation on
 2026-07-11:
 
 - [Introduction to TradingView alerts](https://www.tradingview.com/support/solutions/43000520149-introduction-to-tradingview-alerts/)
 - [Learn how to configure alerts](https://www.tradingview.com/support/solutions/43000763312-learn-how-to-configure-alerts/)
 - [How to use price alerts](https://www.tradingview.com/support/solutions/43000763313-how-to-use-price-alerts/)
+- [Getting started with technical alerts](https://www.tradingview.com/support/solutions/43000763315-getting-started-with-technical-alerts/)
 - [Pine Script alert FAQ](https://www.tradingview.com/pine-script-docs/faq/alerts/)
 
 These are maintenance invariants for the existing implementation:
@@ -33,6 +35,28 @@ These are maintenance invariants for the existing implementation:
 | Running script alerts use a snapshot of their symbol, timeframe, script, and inputs. | Price alerts store their own symbol, condition, target, recurrence, and channel flags. Chart navigation and global notification-setting changes do not mutate an existing alert. Editing an alert creates a new arming revision. |
 | Triggering and notification delivery are separate concerns. | Persist the trigger/history independently; dispatch toast, sound, browser, push, Telegram, and Discord as best-effort channels. |
 | Alerts can be one-time or repeat. | One-time alerts leave the active set after firing. Recurring alerts remain active and use the existing 60-second re-arm guard. |
+
+### Drawing alert snapshots
+
+The drawing manifest declares an optional alert-projection capability. Horizontal
+levels, horizontal rays, cross lines, rectangle boundaries, enabled Fibonacci
+levels, and Long/Short Position entry/target/stop levels project one or more fixed
+price targets. The shared drawing action registry exposes **Add alert** only when
+that projection returns at least one valid positive price.
+
+Creation copies the selected target into the ordinary price-alert contract and
+stores immutable provenance in `source`: drawing id/tool, target id/label, and the
+snapshot timestamp. The alert therefore continues to evaluate the same price if
+the source drawing is moved, edited, hidden, synchronized elsewhere, or deleted.
+The provenance is persisted locally and in PostgreSQL and is visible in Alert
+Center, but it does not participate in evaluation or re-arming.
+
+Sloped lines, rays, channels, and other time-varying geometry intentionally do not
+declare this capability. Supporting them requires a time-indexed geometry evaluator
+in both the browser and closed-browser worker; silently freezing their current
+intersection would misrepresent a dynamic technical alert. The deferred contract,
+data model, rollout, and test gates are specified in
+[`DYNAMIC_DRAWING_ALERTS_PLAN.md`](./DYNAMIC_DRAWING_ALERTS_PLAN.md).
 
 Two naming differences are deliberate and must not be silently changed:
 
@@ -47,8 +71,8 @@ Two naming differences are deliberate and must not be silently changed:
 
 Out of scope for this price-alert runtime: expiration/open-ended alerts,
 minimum-tick metadata, alert names/message placeholders, webhooks, frequency by
-bar, indicator/strategy snapshots, drawing alerts, multi-condition alerts, and
-watchlist alerts.
+bar, indicator/strategy snapshots, dynamic drawing-geometry alerts,
+multi-condition alerts, and watchlist alerts.
 
 ## Runtime Flow
 

@@ -43,6 +43,29 @@ func TestNormalizePatchRequiresTriggerEndpointForTriggeredStatus(t *testing.T) {
 	}
 }
 
+func TestDrawingAlertSourceValidation(t *testing.T) {
+	source := &AlertSource{
+		Kind: "drawing", DrawingID: " dw-1 ", DrawingTool: "horizontal",
+		TargetID: "point:0", TargetLabel: " Price level ", SnapshotAt: 1750000000000,
+	}
+	input, err := normalizeCreate(CreateInput{
+		Symbol: "EURUSD", Condition: "crossUp", Price: 1.125, Source: source,
+	})
+	if err != nil {
+		t.Fatalf("normalizeCreate drawing source: %v", err)
+	}
+	if input.Source.DrawingID != "dw-1" || input.Source.TargetLabel != "Price level" {
+		t.Fatalf("source was not normalized: %+v", input.Source)
+	}
+	_, err = normalizeCreate(CreateInput{
+		Symbol: "EURUSD", Condition: "crossUp", Price: 1.125,
+		Source: &AlertSource{Kind: "drawing"},
+	})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("invalid source error = %v, want ErrBadRequest", err)
+	}
+}
+
 func TestValidTriggerPriceRequiresCorrectSideOfTarget(t *testing.T) {
 	tests := []struct {
 		condition string

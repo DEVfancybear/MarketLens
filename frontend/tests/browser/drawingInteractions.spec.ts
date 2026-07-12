@@ -76,6 +76,43 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
   await expect(settingsButton).toBeFocused();
 });
 
+test("fixed drawing targets create independent price-alert snapshots", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const anchor = { x: pane.x + pane.width * 0.42, y: pane.y + pane.height * 0.46 };
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Horizontal line\b/ }).click();
+  await page.mouse.click(anchor.x, anchor.y);
+  const created = await drawingSnapshot(page);
+  const id = created.drawings[0].id;
+  const projected = await page.evaluate(
+    (drawingId) => window.__drawingInteractionTest!.projectDrawing(drawingId),
+    id,
+  );
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click(pane.x + pane.width * 0.64, projected![0].y);
+  await page.getByTestId("price-chart-root").getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("button", { name: "Add alert", exact: true }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Create drawing alert" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "Drawing alert target" })).toContainText("Price level");
+  await dialog.getByRole("button", { name: "Create alert", exact: true }).click();
+
+  const center = page.getByRole("dialog", { name: "Alert Center" });
+  await expect(center.getByText("Drawing · Price level", { exact: true })).toBeVisible();
+  await center.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.mouse.click(pane.x + pane.width * 0.64, projected![0].y);
+  await page.keyboard.press("Delete");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
+  await page.getByRole("button", { name: /^Alerts\b/ }).click();
+  await expect(page.getByRole("dialog", { name: "Alert Center" }).getByText("Drawing · Price level", { exact: true })).toBeVisible();
+});
+
 test("object tree groups, renames, locks, hides, and undo-redoes as one group action", async ({ page }) => {
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];

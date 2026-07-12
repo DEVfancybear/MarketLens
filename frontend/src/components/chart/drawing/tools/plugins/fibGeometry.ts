@@ -3,7 +3,7 @@ import type {
   FibAlignH,
   FibAlignV,
   FibLevelConfig,
-} from "@/types";
+} from "../../../../../types";
 import { DEFAULT_FIB_LEVELS, FIB_EXT_LEVELS } from "../../../../../types";
 import type { HitTestProjector } from "../../hittest/HitTestEngine";
 

@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; items 1-7 implemented on 2026-07-12.
+Status: implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -699,16 +699,40 @@ Delivered (item 7):
   multi-delete undo/redo. Browser coverage exercises selected and all-drawing lock/hide/remove with
   one Undo per operation, alongside the complete drawing interaction regression suite.
 
+Delivered (item 8):
+
+- The drawing manifest now owns an optional alert-projection capability. Eligible fixed geometry
+  includes horizontal levels/rays/cross lines, rectangle boundaries, enabled Fib retracement and
+  extension levels, and Long/Short Position entry, target, and stop levels. Shared actions expose
+  Add alert only when a drawing projects at least one finite positive target.
+- The drawing-alert dialog selects the projected target and reuses the existing above, below,
+  cross-up, cross-down, recurrence, message, notification, and evaluation pipeline. It infers a
+  safe initial crossing direction from the current quote without adding a parallel alert engine.
+- Creation snapshots the target price plus immutable source provenance (drawing id/tool, target
+  id/label, and timestamp). Moving, editing, synchronizing, hiding, or deleting the drawing cannot
+  mutate the armed alert. Alert Center identifies drawing-created alerts and the Go API persists the
+  optional source metadata through migration `0019_alert_source`.
+- Sloped and time-varying geometry deliberately does not advertise alert capability because the
+  existing open/closed-browser evaluator accepts fixed prices only. Dynamic line/channel alerts
+  require a future time-indexed geometry contract rather than freezing a misleading intersection;
+  the deferred implementation contract is recorded in `DYNAMIC_DRAWING_ALERTS_PLAN.md`.
+- Unit coverage verifies all projector families, unsupported tools, provenance immutability, and
+  frontend API round trips. Go tests verify source validation and handler propagation; browser
+  coverage creates an alert from a horizontal drawing, deletes the drawing, and proves the alert
+  snapshot remains active.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 103/103 passing.
+- `npm run test:drawing`: 106/106 passing.
 - `npm run test:position`: 26/26 passing.
 - `npm run test:drawing-persistence`: 16/16 passing.
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 15/15 passing in 74.1 seconds.
+- `npm run test:alerts`: 22/22 passing.
+- `go test ./...`: passing.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 16/16 passing in 84.8 seconds.
 
-Remaining: item 8 (drawing alerts).
+Remaining: none for Phase 6.
 
 Exit gate:
 

@@ -9,6 +9,7 @@ import type {
   AlertCondition,
   AlertHistoryEntry,
 } from "../../../store/alertStore";
+import type { DrawingAlertSnapshot } from "../../../components/chart/drawing/alerts/drawingAlertCapabilities";
 
 export interface BackendAlertChannels {
   sound: boolean;
@@ -34,6 +35,7 @@ export interface BackendAlert {
   triggeredAt?: string;
   createdAt: string;
   updatedAt: string;
+  source?: DrawingAlertSnapshot;
 }
 
 export interface BackendAlertEvent {
@@ -63,6 +65,7 @@ export interface BackendAlertCreate {
   enabled: boolean;
   locked: boolean;
   channels: BackendAlertChannels;
+  source?: DrawingAlertSnapshot;
 }
 
 export interface BackendAlertPatch {
@@ -122,6 +125,7 @@ export function backendAlertToLocal(row: BackendAlert): Alert {
     push: row.channels.push,
     telegram: row.channels.telegram,
     discord: row.channels.discord,
+    source: row.source,
   };
 }
 
@@ -160,6 +164,7 @@ export function localAlertToCreate(alert: Alert): BackendAlertCreate {
     enabled: alert.enabled,
     locked: alert.locked,
     channels: channels(alert),
+    ...(alert.source ? { source: alert.source } : {}),
   };
 }
 

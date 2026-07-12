@@ -67,6 +67,7 @@ func (f *fakeStore) Create(_ context.Context, userID string, input CreateInput) 
 		Locked:    normalized.Locked,
 		Recurring: normalized.Recurring,
 		Channels:  *normalized.Channels,
+		Source:    normalized.Source,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

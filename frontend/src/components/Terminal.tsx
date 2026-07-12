@@ -18,6 +18,7 @@ import { useStoreHydration } from "@/hooks/useStoreHydration";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 import { AppSettingsDialog } from "@/components/settings/AppSettingsDialog";
+import { DrawingAlertDialog } from "@/components/chart/drawing/alerts/DrawingAlertDialog";
 
 /**
  * The full client-only trading terminal. Imported via `dynamic(..., {ssr:false})`
@@ -47,6 +48,7 @@ export function Terminal() {
       <PositionSettingsDialog />
       <ObjectSettingsDialog />
       <AppSettingsDialog />
+      <DrawingAlertDialog />
       <Toaster />
     </>
   );

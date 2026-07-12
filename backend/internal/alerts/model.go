@@ -35,22 +35,32 @@ type ChannelPatch struct {
 	Discord  *bool `json:"discord"`
 }
 
+type AlertSource struct {
+	Kind        string `json:"kind"`
+	DrawingID   string `json:"drawingId"`
+	DrawingTool string `json:"drawingTool"`
+	TargetID    string `json:"targetId"`
+	TargetLabel string `json:"targetLabel"`
+	SnapshotAt  int64  `json:"snapshotAt"`
+}
+
 type Alert struct {
-	ID           string     `json:"id"`
-	ClientID     string     `json:"clientId,omitempty"`
-	Symbol       string     `json:"symbol"`
-	Condition    string     `json:"condition"`
-	Price        float64    `json:"price"`
-	Note         string     `json:"note,omitempty"`
-	Status       string     `json:"status"`
-	Enabled      bool       `json:"enabled"`
-	Locked       bool       `json:"locked"`
-	Recurring    bool       `json:"recurring"`
-	Channels     Channels   `json:"channels"`
-	TriggerPrice *float64   `json:"triggerPrice,omitempty"`
-	TriggeredAt  *time.Time `json:"triggeredAt,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	ID           string       `json:"id"`
+	ClientID     string       `json:"clientId,omitempty"`
+	Symbol       string       `json:"symbol"`
+	Condition    string       `json:"condition"`
+	Price        float64      `json:"price"`
+	Note         string       `json:"note,omitempty"`
+	Status       string       `json:"status"`
+	Enabled      bool         `json:"enabled"`
+	Locked       bool         `json:"locked"`
+	Recurring    bool         `json:"recurring"`
+	Channels     Channels     `json:"channels"`
+	TriggerPrice *float64     `json:"triggerPrice,omitempty"`
+	TriggeredAt  *time.Time   `json:"triggeredAt,omitempty"`
+	CreatedAt    time.Time    `json:"createdAt"`
+	UpdatedAt    time.Time    `json:"updatedAt"`
+	Source       *AlertSource `json:"source,omitempty"`
 }
 
 type Event struct {
@@ -71,15 +81,16 @@ type Snapshot struct {
 }
 
 type CreateInput struct {
-	ClientID  string    `json:"clientId"`
-	Symbol    string    `json:"symbol"`
-	Condition string    `json:"condition"`
-	Price     float64   `json:"price"`
-	Note      string    `json:"note"`
-	Recurring bool      `json:"recurring"`
-	Enabled   *bool     `json:"enabled"`
-	Locked    bool      `json:"locked"`
-	Channels  *Channels `json:"channels"`
+	ClientID  string       `json:"clientId"`
+	Symbol    string       `json:"symbol"`
+	Condition string       `json:"condition"`
+	Price     float64      `json:"price"`
+	Note      string       `json:"note"`
+	Recurring bool         `json:"recurring"`
+	Enabled   *bool        `json:"enabled"`
+	Locked    bool         `json:"locked"`
+	Channels  *Channels    `json:"channels"`
+	Source    *AlertSource `json:"source"`
 }
 
 type PatchInput struct {
@@ -137,6 +148,9 @@ func normalizeCreate(input CreateInput) (CreateInput, error) {
 	if input.Channels == nil {
 		input.Channels = &Channels{Sound: true}
 	}
+	if err := validateAlertSource(input.Source); err != nil {
+		return CreateInput{}, err
+	}
 	return input, nil
 }
 
@@ -173,6 +187,22 @@ func normalizePatch(input PatchInput) (PatchInput, error) {
 		input.Status = &value
 	}
 	return input, nil
+}
+
+func validateAlertSource(source *AlertSource) error {
+	if source == nil {
+		return nil
+	}
+	source.Kind = strings.TrimSpace(source.Kind)
+	source.DrawingID = strings.TrimSpace(source.DrawingID)
+	source.DrawingTool = strings.TrimSpace(source.DrawingTool)
+	source.TargetID = strings.TrimSpace(source.TargetID)
+	source.TargetLabel = strings.TrimSpace(source.TargetLabel)
+	if source.Kind != "drawing" || source.DrawingID == "" || source.DrawingTool == "" ||
+		source.TargetID == "" || source.TargetLabel == "" || source.SnapshotAt <= 0 {
+		return fmt.Errorf("%w: drawing alert source is invalid", ErrBadRequest)
+	}
+	return nil
 }
 
 func normalizePushToken(input PushTokenInput) (PushTokenInput, error) {

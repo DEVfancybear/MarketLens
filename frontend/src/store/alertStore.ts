@@ -29,6 +29,7 @@ import {
   hasAlertArmingChange,
   isTriggerPriceValid,
 } from "@/services/alertConditions";
+import type { DrawingAlertSnapshot } from "@/components/chart/drawing/alerts/drawingAlertCapabilities";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -55,6 +56,8 @@ export interface Alert {
   push: boolean;
   telegram: boolean;
   discord: boolean;
+  /** Immutable provenance; evaluation continues against the snapshotted `price`. */
+  source?: DrawingAlertSnapshot;
 }
 
 export interface AlertHistoryEntry {
@@ -82,6 +85,7 @@ export interface CreateAlertInput {
   price: number;
   note?: string;
   recurring?: boolean;
+  source?: DrawingAlertSnapshot;
 }
 
 /** Human-readable operator for a condition. */
@@ -225,6 +229,7 @@ export const createAlertAtom = atom(
       push: settings.push,
       telegram: settings.telegram,
       discord: settings.discord,
+      source: input.source,
     };
     set(alertsAtom, [alert, ...get(alertsAtom)]);
     persist();

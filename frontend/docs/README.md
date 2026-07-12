@@ -53,6 +53,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | File | Topic |
 | --- | --- |
 | `ALERT_ARCHITECTURE.md` | Alert engine and notification channels |
+| `DYNAMIC_DRAWING_ALERTS_PLAN.md` | Deferred sloped-line and channel alert contract |
 | `FOREX_DATA_ANALYSIS.md` | Forex data provider notes |
 | `OANDA_INTEGRATION.md` | OANDA integration notes |
 | `OANDA_DEBUG_REPORT.md` | OANDA debugging notes |

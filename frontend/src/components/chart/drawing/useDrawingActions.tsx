@@ -20,6 +20,7 @@ import {
   Globe2,
   PanelsTopLeft,
   Monitor,
+  Bell,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -47,6 +48,8 @@ import {
 import { BatchPropertyChangeCommand, drawingCommandManager } from "./history/CommandManager";
 import { useDrawingBulkActions } from "./bulk/useDrawingBulkActions";
 import type { DrawingBulkScope } from "./bulk/drawingBulkOperations";
+import { drawingAlertTargets } from "./alerts/drawingAlertCapabilities";
+import { setDrawingAlertDrawingIdAtom } from "./alerts/drawingAlertUiState";
 
 export type DrawingAction =
   | { divider: true }
@@ -77,6 +80,7 @@ export function useDrawingActions(
   const chartId = useAtomValue(drawingChartIdAtom);
   const symbol = useAtomValue(symbolAtom);
   const bulk = useDrawingBulkActions();
+  const setDrawingAlert = useSetAtom(setDrawingAlertDrawingIdAtom);
 
   if (!drawing) return [];
 
@@ -132,6 +136,13 @@ export function useDrawingActions(
       onAfter?.();
     },
   }));
+  const alertActions: DrawingAction[] = drawingAlertTargets(drawing).length > 0
+    ? [{
+        icon: <Bell size={14} className="text-ink-muted" />,
+        label: "Add alert",
+        onClick: () => { setDrawingAlert(drawing.id); onAfter?.(); },
+      }]
+    : [];
 
   return [
     {
@@ -142,6 +153,7 @@ export function useDrawingActions(
         onAfter?.();
       },
     },
+    ...alertActions,
     { divider: true },
     {
       icon: <Copy size={14} className="text-ink-muted" />,

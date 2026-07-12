@@ -47,7 +47,7 @@ func (r *Repo) List(ctx context.Context, userID, status string) ([]Alert, error)
 	rows, err := r.pool.Query(ctx, `
 SELECT id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
        status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-       trigger_price, triggered_at, created_at, updated_at
+       trigger_price, triggered_at, created_at, updated_at, source
 FROM alerts
 WHERE user_id = $1 AND ($2::text = '' OR status::text = $2::text)
 ORDER BY created_at DESC, id`, uid, status)
@@ -81,9 +81,9 @@ func (r *Repo) Create(ctx context.Context, userID string, input CreateInput) (Al
 		item, _, err := scanAlert(r.pool.QueryRow(ctx, `
 INSERT INTO alerts (
   user_id, client_id, symbol, condition, price, note, enabled, locked, recurring,
-  sound, browser, push, telegram, discord
+  sound, browser, push, telegram, discord, source
 )
-VALUES ($1, NULLIF($2, ''), $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14)
+VALUES ($1, NULLIF($2, ''), $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14, $15)
 ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
   symbol = EXCLUDED.symbol,
   condition = EXCLUDED.condition,
@@ -97,28 +97,29 @@ ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
   push = EXCLUDED.push,
   telegram = EXCLUDED.telegram,
   discord = EXCLUDED.discord,
+  source = COALESCE(alerts.source, EXCLUDED.source),
   updated_at = now()
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at`,
+          trigger_price, triggered_at, created_at, updated_at, source`,
 			uid, input.ClientID, input.Symbol, input.Condition, input.Price, input.Note,
 			*input.Enabled, input.Locked, input.Recurring, channels.Sound, channels.Browser,
-			channels.Push, channels.Telegram, channels.Discord))
+			channels.Push, channels.Telegram, channels.Discord, input.Source))
 		return item, err
 	}
 
 	item, _, err := scanAlert(r.pool.QueryRow(ctx, `
 INSERT INTO alerts (
   user_id, symbol, condition, price, note, enabled, locked, recurring,
-  sound, browser, push, telegram, discord
+  sound, browser, push, telegram, discord, source
 )
-VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at`,
+          trigger_price, triggered_at, created_at, updated_at, source`,
 		uid, input.Symbol, input.Condition, input.Price, input.Note, *input.Enabled,
 		input.Locked, input.Recurring, channels.Sound, channels.Browser, channels.Push,
-		channels.Telegram, channels.Discord))
+		channels.Telegram, channels.Discord, input.Source))
 	return item, err
 }
 
@@ -163,7 +164,7 @@ WHERE user_id = $1
   AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at`,
+          trigger_price, triggered_at, created_at, updated_at, source`,
 		uid, refUUID, refClientID, input.Symbol, input.Condition, input.Price, noteSet, note,
 		input.Status, input.Enabled, input.Locked, input.Recurring, channels.Sound,
 		channels.Browser, channels.Push, channels.Telegram, channels.Discord))
@@ -252,7 +253,7 @@ UPDATE alerts SET
 WHERE user_id = $1 AND id = $2
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at`,
+          trigger_price, triggered_at, created_at, updated_at, source`,
 		uid, selectedAlertID, triggerPrice))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Alert{}, Event{}, ErrNotFound
@@ -411,7 +412,7 @@ func scanAlert(row rowScanner) (Alert, pgtype.UUID, error) {
 		&item.Status, &item.Enabled, &item.Locked, &item.Recurring,
 		&item.Channels.Sound, &item.Channels.Browser, &item.Channels.Push,
 		&item.Channels.Telegram, &item.Channels.Discord, &item.TriggerPrice,
-		&item.TriggeredAt, &item.CreatedAt, &item.UpdatedAt,
+		&item.TriggeredAt, &item.CreatedAt, &item.UpdatedAt, &item.Source,
 	)
 	if err != nil {
 		return Alert{}, pgtype.UUID{}, err

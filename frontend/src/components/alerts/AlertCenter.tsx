@@ -441,6 +441,14 @@ export function AlertCenter() {
                     repeat
                   </span>
                 )}
+                {a.source?.kind === "drawing" && (
+                  <span
+                    className="max-w-24 truncate rounded bg-brand/10 px-1 text-[9px] text-brand"
+                    title={`${a.source.drawingTool}: ${a.source.targetLabel}`}
+                  >
+                    Drawing · {a.source.targetLabel}
+                  </span>
+                )}
                 <button
                   onClick={() => deleteAlert(a.id)}
                   className="ml-auto rounded p-1 text-ink-faint hover:bg-terminal-hover hover:text-bear"

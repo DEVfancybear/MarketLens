@@ -37,6 +37,12 @@ export type DrawingSettingsProfile = "mode" | "line" | "shape" | "text" | "fib" 
 export type DrawingSettingsFeature =
   | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
   | "coordinates" | "visibility" | "templates";
+export type DrawingAlertProjection =
+  | "point-price"
+  | "range-boundaries"
+  | "fib-retracement-levels"
+  | "fib-extension-levels"
+  | "position-levels";
 
 export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly id: DrawingTool;
@@ -64,6 +70,8 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly settingsProfile: DrawingSettingsProfile;
   readonly settingsFeatures: readonly DrawingSettingsFeature[];
   readonly positionSide?: "long" | "short";
+  /** Fixed-price targets that can be snapshotted into the current alert runtime. */
+  readonly alertProjection?: DrawingAlertProjection;
 }
 
 export interface DrawingToolGroupDefinition {
@@ -132,10 +140,10 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("infoLine", "Info line", "lines", "ruler", "two-point", 2),
   tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2),
   tool("trendAngle", "Trend angle", "lines", "triangle", "two-point", 2),
-  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + H" }),
-  tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + J" }),
+  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + H", alertProjection: "point-price" }),
+  tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + J", alertProjection: "point-price" }),
   tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { hotkey: "Alt + V" }),
-  tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { hotkey: "Alt + C" }),
+  tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { hotkey: "Alt + C", alertProjection: "point-price" }),
   tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3 }),
 
   tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES" }),
@@ -146,7 +154,7 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("arrowMarkDown", "Arrow mark down", "shapes", "arrowDown", "one-point", 1),
   tool("arrowMarkLeft", "Arrow mark left", "shapes", "arrowLeft", "one-point", 1),
   tool("arrowMarkRight", "Arrow mark right", "shapes", "arrowRight", "one-point", 1),
-  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"] }),
+  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"], alertProjection: "range-boundaries" }),
   tool("rotatedRect", "Rotated rectangle", "shapes", "square", "fixed-multi-point", 2, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("path", "Path", "shapes", "path", "click-freeform", 2),
   tool("circle", "Circle", "shapes", "circle", "two-point", 2, { styleFamily: "shape", selectionTextEditor: "shape-center" }),
@@ -157,11 +165,11 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("curve", "Curve", "shapes", "spline", "click-freeform", 3),
   tool("doubleCurve", "Double curve", "shapes", "doubleCurve", "fixed-multi-point", 2, { maxPoints: 4 }),
 
-  tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib" }),
-  tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib" }),
-  tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib" }),
-  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", coordinateLabels: ["Entry", "Target", "Stop"] }),
-  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", coordinateLabels: ["Entry", "Target", "Stop"] }),
+  tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
+  tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib", alertProjection: "fib-extension-levels" }),
+  tool("fib", "Fib (legacy)", "fibonacci", "fib", "two-point", 2, { preferredForCreation: false, settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
+  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
+  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
   tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "annotations", "emoji", "one-point", 1, { styleFamily: "text" }),
 ] satisfies readonly DrawingToolManifestEntry[]);

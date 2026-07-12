@@ -36,6 +36,15 @@ function backendAlert(): Awaited<ReturnType<AlertsApiModule["createAlert"]>> {
   };
 }
 
+const drawingSource = {
+  kind: "drawing" as const,
+  drawingId: "dw-1",
+  drawingTool: "horizontal" as const,
+  targetId: "point:0",
+  targetLabel: "Price level",
+  snapshotAt: 1_750_000_000_000,
+};
+
 test("backend alert adapters preserve the optimistic client id and channels", async () => {
   const {
     backendAlertEventToLocal,
@@ -150,4 +159,12 @@ test("alert and push resource methods use the Phase 10 API routes", async (t) =>
     platform: "web",
     permission: "granted",
   });
+});
+
+test("drawing alert provenance round-trips on create and stays immutable on patch", async () => {
+  const { backendAlertToLocal, localAlertToCreate, localAlertToPatch } = await loadApi();
+  const local = backendAlertToLocal({ ...backendAlert(), source: drawingSource });
+  assert.deepEqual(local.source, drawingSource);
+  assert.deepEqual(localAlertToCreate(local).source, drawingSource);
+  assert.equal("source" in localAlertToPatch(local), false);
 });

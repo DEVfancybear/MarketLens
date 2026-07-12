@@ -41,6 +41,13 @@ uses a UUID primary key, but creates upsert on `(user_id, client_id)` and all
 resource routes accept UUID or client ID. This keeps chart overlay references
 stable while requests are in flight and makes retries idempotent.
 
+Alerts may also carry an optional immutable `source` JSON object. Drawing-created
+alerts persist `{kind, drawingId, drawingTool, targetId, targetLabel, snapshotAt}`
+through create, list, and bootstrap adapters. Patch payloads intentionally omit
+`source`, making provenance immutable after creation. The backend validates this
+metadata as provenance only; evaluation continues to use the snapshotted `price`,
+so editing or deleting a drawing cannot alter an armed alert.
+
 `POST /alerts/:id/trigger` is deliberately separate from generic PATCH. The
 repository transaction:
 
