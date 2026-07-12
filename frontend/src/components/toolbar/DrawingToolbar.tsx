@@ -40,6 +40,8 @@ import {
   Magnet,
   ChevronDown,
   Globe2,
+  Lock,
+  EyeOff,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/IconButton";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
@@ -54,7 +56,6 @@ import {
   drawColorAtom,
   setActiveToolAtom,
   setDrawColorAtom,
-  clearDrawingsAtom,
   keepDrawingModeAtom,
   setKeepDrawingModeAtom,
   drawingToolPreferencesAtom,
@@ -67,6 +68,7 @@ import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
 import type { DrawingTool } from "@/types";
 import { DRAWING_SYNC_MODE_OPTIONS } from "@/components/chart/drawing/persistence/drawingSyncScope";
+import { useDrawingBulkActions } from "@/components/chart/drawing/bulk/useDrawingBulkActions";
 import {
   DRAWING_TOOL_GROUPS,
   DRAWING_TOOL_MANIFEST,
@@ -284,7 +286,7 @@ export function DrawingToolbar() {
   const setActiveTool = useSetAtom(setActiveToolAtom);
   const drawColor = useAtomValue(drawColorAtom);
   const setDrawColor = useSetAtom(setDrawColorAtom);
-  const clearDrawings = useSetAtom(clearDrawingsAtom);
+  const bulk = useDrawingBulkActions();
   const keepDrawing = useAtomValue(keepDrawingModeAtom);
   const setKeepDrawing = useSetAtom(setKeepDrawingModeAtom);
   const drawingPreferences = useAtomValue(drawingToolPreferencesAtom);
@@ -557,7 +559,25 @@ export function DrawingToolbar() {
         )}
       </div>
 
-      <IconButton label="Clear all drawings" onClick={clearDrawings}>
+      <IconButton
+        label="Lock all drawings"
+        active={bulk.drawings.length > 0 && bulk.drawings.every((drawing) => drawing.locked)}
+        disabled={bulk.drawings.length === 0}
+        onClick={() => bulk.toggleLock({ kind: "all" })}
+      >
+        <Lock size={18} />
+      </IconButton>
+
+      <IconButton
+        label="Hide all drawings"
+        active={bulk.drawings.length > 0 && bulk.drawings.every((drawing) => drawing.visible === false)}
+        disabled={bulk.drawings.length === 0}
+        onClick={() => bulk.toggleVisibility({ kind: "all" })}
+      >
+        <EyeOff size={18} />
+      </IconButton>
+
+      <IconButton label="Remove all drawings" disabled={bulk.drawings.length === 0} onClick={() => bulk.remove({ kind: "all" })}>
         <Trash2 size={18} />
       </IconButton>
     </div>

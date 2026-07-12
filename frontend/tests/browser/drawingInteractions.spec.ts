@@ -96,8 +96,8 @@ test("object tree groups, renames, locks, hides, and undo-redoes as one group ac
   await expect(tree).toBeVisible();
   const rows = tree.locator("[data-object-id]");
   await expect(rows).toHaveCount(2);
-  await rows.nth(0).click();
-  await rows.nth(1).click({ modifiers: ["Control"] });
+  await rows.nth(0).click({ position: { x: 12, y: 16 } });
+  await rows.nth(1).click({ modifiers: ["Control"], position: { x: 12, y: 16 } });
   await tree.getByRole("button", { name: "Group selected", exact: true }).click();
   await expect(tree.locator("[data-object-group]")).toHaveCount(1);
   await page.keyboard.press("Control+z");
@@ -146,8 +146,8 @@ test("drawing sync defaults persist and a group changes scope in one undoable ac
   await page.getByRole("button", { name: "Object tree", exact: true }).click();
   const tree = page.locator("[data-object-tree]");
   const rows = tree.locator("[data-object-id]");
-  await rows.nth(0).click();
-  await rows.nth(1).click({ modifiers: ["Control"] });
+  await rows.nth(0).click({ position: { x: 12, y: 16 } });
+  await rows.nth(1).click({ modifiers: ["Control"], position: { x: 12, y: 16 } });
   await tree.getByRole("button", { name: "Group selected", exact: true }).click();
   const group = tree.locator("[data-object-group]");
   const groupHeader = group.locator(":scope > div").first();
@@ -160,6 +160,58 @@ test("drawing sync defaults persist and a group changes scope in one undoable ac
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
   await expect(page.getByRole("button", { name: "New drawings: No sync", exact: true })).toBeVisible();
+});
+
+test("selected and all drawing bulk actions are single undoable transactions", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const points = [
+    { x: pane.x + pane.width * 0.23, y: pane.y + pane.height * 0.68 },
+    { x: pane.x + pane.width * 0.43, y: pane.y + pane.height * 0.42 },
+    { x: pane.x + pane.width * 0.53, y: pane.y + pane.height * 0.64 },
+    { x: pane.x + pane.width * 0.73, y: pane.y + pane.height * 0.37 },
+  ];
+  await page.getByRole("button", { name: "Keep drawing", exact: true }).click();
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  for (const point of points) await page.mouse.click(point.x, point.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
+
+  await page.getByRole("button", { name: "Object tree", exact: true }).click();
+  const tree = page.locator("[data-object-tree]");
+  const selectBoth = async () => {
+    const rows = tree.locator("[data-object-id]");
+    await rows.nth(0).click({ position: { x: 12, y: 16 } });
+    await rows.nth(1).click({ modifiers: ["Control"], position: { x: 12, y: 16 } });
+    await expect(tree.getByRole("button", { name: "Lock selected", exact: true })).toBeEnabled();
+  };
+  await selectBoth();
+  await tree.getByRole("button", { name: "Lock selected", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.locked)).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => !drawing.locked)).toBe(true);
+
+  await tree.getByRole("button", { name: "Hide selected", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.visible === false)).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.visible !== false)).toBe(true);
+
+  await selectBoth();
+  await tree.getByRole("button", { name: "Delete selected", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
+
+  await page.getByRole("button", { name: "Lock all drawings", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.locked)).toBe(true);
+  await page.keyboard.press("Control+z");
+  await page.getByRole("button", { name: "Hide all drawings", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.visible === false)).toBe(true);
+  await page.keyboard.press("Control+z");
+  await page.getByRole("button", { name: "Remove all drawings", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
 });
 
 test("shared coordinate editor updates anchors in one undoable transaction", async ({ page }) => {

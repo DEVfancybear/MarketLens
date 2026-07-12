@@ -16,6 +16,7 @@ import {
   MoveUp,
   Pencil,
   Globe2,
+  Trash2,
 } from "lucide-react";
 import type { Drawing, DrawingSyncMode } from "@/types";
 import {
@@ -46,6 +47,8 @@ import {
   drawingSyncBinding,
   drawingSyncMode,
 } from "../persistence/drawingSyncScope";
+import { useDrawingBulkActions } from "../bulk/useDrawingBulkActions";
+import type { DrawingBulkScope } from "../bulk/drawingBulkOperations";
 
 type RenameTarget = { kind: "drawing" | "group"; id: string; value: string };
 
@@ -57,6 +60,7 @@ export function ObjectTreePanel() {
   const layoutId = useAtomValue(drawingLayoutIdAtom);
   const chartId = useAtomValue(drawingChartIdAtom);
   const symbol = useAtomValue(symbolAtom);
+  const bulk = useDrawingBulkActions();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [rename, setRename] = useState<RenameTarget | null>(null);
   const [syncMenu, setSyncMenu] = useState<string | null>(null);
@@ -171,11 +175,15 @@ export function ObjectTreePanel() {
     const visible = members.some((drawing) => drawing.visible !== false);
     const locked = members.length > 0 && members.every((drawing) => drawing.locked);
     const mode = drawingSyncMode(members[0]);
+    const scope: DrawingBulkScope =
+      members.length > 1 && members[0]?.group
+        ? { kind: "group", groupId: members[0].group.id }
+        : { kind: "object", drawingId: members[0].id };
     return (
       <div className="ml-auto flex shrink-0 items-center">
         <TreeButton label="Rename" onClick={startRename}><Pencil size={12} /></TreeButton>
-        <TreeButton label={visible ? "Hide" : "Show"} onClick={() => executeBatch(members, () => ({ visible: !visible }), (drawing) => ({ visible: drawing.visible }), visible ? "Hide Objects" : "Show Objects")}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</TreeButton>
-        <TreeButton label={locked ? "Unlock" : "Lock"} onClick={() => executeBatch(members, () => ({ locked: !locked }), (drawing) => ({ locked: drawing.locked }), locked ? "Unlock Objects" : "Lock Objects")}>{locked ? <Lock size={12} /> : <LockOpen size={12} />}</TreeButton>
+        <TreeButton label={visible ? "Hide" : "Show"} onClick={() => bulk.toggleVisibility(scope)}>{visible ? <Eye size={13} /> : <EyeOff size={13} />}</TreeButton>
+        <TreeButton label={locked ? "Unlock" : "Lock"} onClick={() => bulk.toggleLock(scope)}>{locked ? <Lock size={12} /> : <LockOpen size={12} />}</TreeButton>
         <div className="relative">
           <TreeButton label={`Sync: ${mode}`} onClick={() => setSyncMenu(syncMenu === nodeId ? null : nodeId)}><Globe2 size={12} /></TreeButton>
           {syncMenu === nodeId && (
@@ -188,6 +196,7 @@ export function ObjectTreePanel() {
         </div>
         <TreeButton label="Move up" onClick={() => moveNode(nodeId, "up")}><MoveUp size={12} /></TreeButton>
         <TreeButton label="Move down" onClick={() => moveNode(nodeId, "down")}><MoveDown size={12} /></TreeButton>
+        <TreeButton label={members.length > 1 ? "Delete group" : "Delete"} onClick={() => bulk.remove(scope)}><Trash2 size={12} /></TreeButton>
       </div>
     );
   };
@@ -196,6 +205,9 @@ export function ObjectTreePanel() {
     <div className="flex h-full min-h-0 flex-col bg-terminal-panel" data-object-tree>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-terminal-border px-2">
         <span className="mr-auto text-sm font-semibold text-ink">Drawings</span>
+        <TreeButton label="Lock selected" disabled={selected.size === 0} onClick={() => bulk.toggleLock({ kind: "selected" })}><Lock size={14} /></TreeButton>
+        <TreeButton label="Hide selected" disabled={selected.size === 0} onClick={() => bulk.toggleVisibility({ kind: "selected" })}><EyeOff size={14} /></TreeButton>
+        <TreeButton label="Delete selected" disabled={selected.size === 0} onClick={() => bulk.remove({ kind: "selected" })}><Trash2 size={14} /></TreeButton>
         <TreeButton label="Group selected" disabled={!canGroupDrawingsBySyncMode(drawings.filter((drawing) => selected.has(drawing.id)))} onClick={groupSelected}><FolderPlus size={15} /></TreeButton>
         <TreeButton label="Ungroup selected" disabled={!drawings.some((drawing) => selected.has(drawing.id) && drawing.group)} onClick={ungroupSelected}><FolderMinus size={15} /></TreeButton>
       </div>

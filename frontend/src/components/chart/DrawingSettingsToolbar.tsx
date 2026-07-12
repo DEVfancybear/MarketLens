@@ -21,9 +21,7 @@ import {
   drawingsAtom,
   selectedDrawingIdAtom,
   updateDrawingAtom,
-  removeDrawingAtom,
   duplicateDrawingAtom,
-  lockDrawingAtom,
   setEditingDrawingAtom,
   drawingTemplatesAtom,
   saveTemplateAtom,
@@ -36,6 +34,7 @@ import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
 import { type Drawing, type LineStyle } from "@/types";
 import { getDrawingSettingsSchema } from "./drawing/settings/drawingSettingsSchema";
 import { cn } from "@/utils/cn";
+import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
 
 const COLORS = [
   "#2962ff",
@@ -75,9 +74,8 @@ export function DrawingSettingsToolbar() {
   const drawings = useAtomValue(drawingsAtom);
   const selectedId = useAtomValue(selectedDrawingIdAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
-  const removeDrawing = useSetAtom(removeDrawingAtom);
   const duplicateDrawing = useSetAtom(duplicateDrawingAtom);
-  const lockDrawing = useSetAtom(lockDrawingAtom);
+  const bulk = useDrawingBulkActions();
   const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
   const templates = useAtomValue(drawingTemplatesAtom);
   const saveTemplate = useSetAtom(saveTemplateAtom);
@@ -491,7 +489,7 @@ export function DrawingSettingsToolbar() {
       <ToolbarButton
         label={drawing.locked ? "Unlock" : "Lock"}
         active={!!drawing.locked}
-        onClick={() => lockDrawing(drawing.id)}
+        onClick={() => bulk.toggleLock({ kind: "object", drawingId: drawing.id })}
       >
         {drawing.locked ? <Unlock size={15} /> : <Lock size={15} />}
       </ToolbarButton>
@@ -499,7 +497,7 @@ export function DrawingSettingsToolbar() {
       <ToolbarButton
         label="Delete"
         danger
-        onClick={() => removeDrawing(drawing.id)}
+        onClick={() => bulk.remove({ kind: "object", drawingId: drawing.id })}
       >
         <Trash2 size={15} />
       </ToolbarButton>

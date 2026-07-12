@@ -12,8 +12,6 @@ import {
   drawingToolPreferencesAtom,
   selectedDrawingIdAtom,
   selectedDrawingIdsAtom,
-  drawingsLockedAtom,
-  drawingsHiddenAtom,
   addDrawingAtom,
   updateDrawingAtom,
   selectDrawingAtom,
@@ -80,8 +78,6 @@ export function DrawingLayer() {
   const candles = useAtomValue(candlesAtom);
   const selectedDrawingId = useAtomValue(selectedDrawingIdAtom);
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
-  const drawingsLocked = useAtomValue(drawingsLockedAtom);
-  const drawingsHidden = useAtomValue(drawingsHiddenAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const visibleDrawings = useMemo(
@@ -262,9 +258,9 @@ export function DrawingLayer() {
     drawColor,
     drawingToolPreferences,
     candles,
-    drawingsLocked,
+    drawingsLocked: false,
     ctxReady: !!ctx,
-    drawingsHidden,
+    drawingsHidden: false,
     selectedDrawingId,
     selectedDrawingIds,
   };
@@ -375,7 +371,6 @@ export function DrawingLayer() {
     visibleDrawings,
     selectedDrawingId,
     selectedDrawingIds,
-    drawingsHidden,
     drawColor,
     activeTool,
     symbol,

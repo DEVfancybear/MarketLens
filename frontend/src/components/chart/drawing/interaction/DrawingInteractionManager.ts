@@ -8,6 +8,7 @@ import type { DrawingMenuState } from "../../DrawingContextMenu";
 import type { Command } from "../history/CommandManager";
 import {
   DeleteDrawingCommand,
+  DeleteDrawingsCommand,
   DuplicateDrawingCommand,
 } from "../history/CommandManager";
 import {
@@ -750,12 +751,16 @@ export function useDrawingInteractionManager(
       // Multi-delete
       if ((e.key === "Delete" || e.key === "Backspace") && executeCommand) {
         const selIds = getState().selectedDrawingIds;
-        for (const id of selIds) {
-          const d = getState().drawings.find((x) => x.id === id);
-          if (d)
-            executeCommand(
-              new DeleteDrawingCommand(addDrawing, removeDrawing, d),
-            );
+        const selected = getState().drawings.filter((drawing) => selIds.has(drawing.id));
+        if (selected.length > 0) {
+          e.preventDefault();
+          executeCommand(new DeleteDrawingsCommand(
+            addDrawing,
+            removeDrawing,
+            selected,
+            () => selectDrawing(null),
+            () => undefined,
+          ));
         }
       }
       if (e.key === "d" && (e.ctrlKey || e.metaKey)) {

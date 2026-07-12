@@ -111,6 +111,30 @@ export class DeleteDrawingCommand implements Command {
   }
 }
 
+/** Deletes several drawings as one undo/redo transaction. */
+export class DeleteDrawingsCommand implements Command {
+  readonly label = "Delete Drawings";
+  constructor(
+    private addFn: (drawing: Drawing) => void,
+    private removeFn: (id: string) => void,
+    private drawings: readonly Drawing[],
+    private onExecute?: () => void,
+    private onUndo?: () => void,
+  ) {}
+  execute() {
+    for (const drawing of this.drawings) this.removeFn(drawing.id);
+    this.onExecute?.();
+  }
+  undo() {
+    for (const drawing of [...this.drawings].sort(
+      (a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0),
+    )) {
+      this.addFn(drawing);
+    }
+    this.onUndo?.();
+  }
+}
+
 /** Moves/resizes a drawing (point change). Undo restores original points. */
 export class MoveDrawingCommand implements Command {
   readonly label = "Move Drawing";

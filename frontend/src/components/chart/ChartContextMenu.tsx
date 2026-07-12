@@ -24,7 +24,6 @@ import {
   drawingsAtom,
   indicatorsAtom,
   addDrawingAtom,
-  clearDrawingsAtom,
   clearIndicatorsAtom,
 } from "@/store/chartStore";
 import { placeOrderAtom, setOrderPrefillAtom } from "@/store/tradeStore";
@@ -42,6 +41,7 @@ import { fmtPrice } from "@/utils/format";
 import { uid } from "@/utils/id";
 import { cn } from "@/utils/cn";
 import { useReplayClientProjection } from "@/store/replayClientStore";
+import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
 
 /** Right-click chart context-menu state (per the spec). */
 export interface ContextMenuState {
@@ -86,7 +86,7 @@ export function ChartContextMenu({
   const drawingsCount = drawings.length;
   const indicators = useAtomValue(indicatorsAtom);
   const indicatorsCount = indicators.length;
-  const clearDrawings = useSetAtom(clearDrawingsAtom);
+  const bulk = useDrawingBulkActions();
   const clearIndicators = useSetAtom(clearIndicatorsAtom);
   const place = useSetAtom(placeOrderAtom);
   const setOrderPrefill = useSetAtom(setOrderPrefillAtom);
@@ -268,7 +268,7 @@ export function ChartContextMenu({
       label: "Remove drawings",
       disabled: drawingsCount === 0,
       onClick: act(() => {
-        clearDrawings();
+        bulk.remove({ kind: "all" });
         log("info", `Removed ${drawingsCount} drawing(s)`);
       }),
     },

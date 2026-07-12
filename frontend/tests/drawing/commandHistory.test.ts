@@ -11,6 +11,7 @@ import {
   PropertyChangeCommand,
   PreviewedPropertyChangeCommand,
   BatchPropertyChangeCommand,
+  DeleteDrawingsCommand,
 } from "../../src/components/chart/drawing/history/CommandManager";
 
 function fixture(id = "drawing-1"): Drawing {
@@ -108,6 +109,28 @@ test("a batch property command groups several drawing changes into one history e
   assert.equal(state.drawings.get("b")?.group, undefined);
   assert.equal(history.redo(), true);
   assert.deepEqual(state.drawings.get("b")?.group, group);
+});
+
+test("bulk delete removes and restores several drawings with one undo", () => {
+  const state = drawingState();
+  const history = new CommandManager();
+  const drawings = [fixture("a"), { ...fixture("b"), zIndex: 2 }];
+  drawings.forEach(state.add);
+  let phase = "";
+  history.execute(new DeleteDrawingsCommand(
+    state.add,
+    state.remove,
+    drawings,
+    () => { phase = "deleted"; },
+    () => { phase = "restored"; },
+  ));
+  assert.equal(state.drawings.size, 0);
+  assert.equal(phase, "deleted");
+  assert.equal(history.undo(), true);
+  assert.deepEqual(new Set(state.drawings.keys()), new Set(["a", "b"]));
+  assert.equal(phase, "restored");
+  assert.equal(history.redo(), true);
+  assert.equal(state.drawings.size, 0);
 });
 
 test("history enforces its maximum size and invalidates redo on a new command", () => {

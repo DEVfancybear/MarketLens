@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; items 1-6 implemented on 2026-07-12.
+Status: in progress; items 1-7 implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -679,16 +679,36 @@ Delivered (item 6):
   replacement, save-as rebinding, group compatibility, codec round trips, persisted creation defaults,
   group propagation, undo, and reload behavior.
 
+Delivered (item 7):
+
+- A pure bulk-scope resolver now defines object, selected, group, and all-drawings targets in one
+  place. Lock and visibility use deterministic mixed-state convergence: mixed sets first become
+  uniformly locked/hidden, and a second action toggles the uniform state back.
+- `useDrawingBulkActions` is the shared mutation boundary for the left toolbar, chart context menu,
+  floating drawing actions, and Object Tree. The Object Tree exposes selected-scope controls and
+  group rows use the same resolver; the left rail exposes persisted Lock all, Hide all, and Remove
+  all operations for the active chart/sync context.
+- The former render-only `drawingsLocked` and `drawingsHidden` global flags were removed. All bulk
+  lock/hide actions update actual drawing properties through the revision-aware store, so canvas,
+  local/backend persistence, saved layouts, and Phase 6.6 sync projection observe identical state.
+- `DeleteDrawingsCommand` removes or restores an ordered drawing set as one history entry. Object
+  Tree bulk delete, toolbar remove-all, chart remove-all, floating actions, and keyboard multi-delete
+  now share one transaction instead of pushing one command per drawing. Undo restores full drawing
+  payloads and selection-aware UI actions keep selected-id state consistent.
+- Pure tests cover every target scope, mixed/uniform lock and visibility transitions, labels, and
+  multi-delete undo/redo. Browser coverage exercises selected and all-drawing lock/hide/remove with
+  one Undo per operation, alongside the complete drawing interaction regression suite.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 100/100 passing.
+- `npm run test:drawing`: 103/103 passing.
 - `npm run test:position`: 26/26 passing.
 - `npm run test:drawing-persistence`: 16/16 passing.
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 14/14 passing in 70.8 seconds.
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 15/15 passing in 74.1 seconds.
 
-Remaining: items 7-8 (unified bulk scopes and drawing alerts).
+Remaining: item 8 (drawing alerts).
 
 Exit gate:
 

@@ -23,10 +23,7 @@ import {
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
-  removeDrawingAtom,
   duplicateDrawingAtom,
-  lockDrawingAtom,
-  hideDrawingAtom,
   bringToFrontAtom,
   sendToBackAtom,
   setEditingDrawingAtom,
@@ -48,6 +45,8 @@ import {
   drawingSyncMode,
 } from "./persistence/drawingSyncScope";
 import { BatchPropertyChangeCommand, drawingCommandManager } from "./history/CommandManager";
+import { useDrawingBulkActions } from "./bulk/useDrawingBulkActions";
+import type { DrawingBulkScope } from "./bulk/drawingBulkOperations";
 
 export type DrawingAction =
   | { divider: true }
@@ -67,10 +66,7 @@ export function useDrawingActions(
   drawing: Drawing | null,
   onAfter?: () => void,
 ): DrawingAction[] {
-  const remove = useSetAtom(removeDrawingAtom);
   const duplicate = useSetAtom(duplicateDrawingAtom);
-  const lock = useSetAtom(lockDrawingAtom);
-  const hide = useSetAtom(hideDrawingAtom);
   const toFront = useSetAtom(bringToFrontAtom);
   const toBack = useSetAtom(sendToBackAtom);
   const setEditing = useSetAtom(setEditingDrawingAtom);
@@ -80,8 +76,17 @@ export function useDrawingActions(
   const layoutId = useAtomValue(drawingLayoutIdAtom);
   const chartId = useAtomValue(drawingChartIdAtom);
   const symbol = useAtomValue(symbolAtom);
+  const bulk = useDrawingBulkActions();
 
   if (!drawing) return [];
+
+  const actionScope: DrawingBulkScope =
+    bulk.selectedIds.size > 1 && bulk.selectedIds.has(drawing.id)
+      ? { kind: "selected" }
+      : { kind: "object", drawingId: drawing.id };
+  const actionTargets = bulk.targets(actionScope);
+  const allLocked = actionTargets.length > 0 && actionTargets.every((item) => item.locked);
+  const allHidden = actionTargets.length > 0 && actionTargets.every((item) => item.visible === false);
 
   const act = (fn: (id: string) => void) => () => {
     fn(drawing.id);
@@ -143,27 +148,27 @@ export function useDrawingActions(
       label: "Clone",
       onClick: act(duplicate),
     },
-    drawing.locked
+    allLocked
       ? {
           icon: <Unlock size={14} className="text-choch" />,
-          label: "Unlock",
-          onClick: act(lock),
+          label: actionTargets.length > 1 ? "Unlock selected" : "Unlock",
+          onClick: () => { bulk.toggleLock(actionScope); onAfter?.(); },
         }
       : {
           icon: <Lock size={14} className="text-ink-muted" />,
-          label: "Lock",
-          onClick: act(lock),
+          label: actionTargets.length > 1 ? "Lock selected" : "Lock",
+          onClick: () => { bulk.toggleLock(actionScope); onAfter?.(); },
         },
-    drawing.visible === false
+    allHidden
       ? {
           icon: <Eye size={14} className="text-bull" />,
-          label: "Show",
-          onClick: act(hide),
+          label: actionTargets.length > 1 ? "Show selected" : "Show",
+          onClick: () => { bulk.toggleVisibility(actionScope); onAfter?.(); },
         }
       : {
           icon: <EyeOff size={14} className="text-ink-muted" />,
-          label: "Hide",
-          onClick: act(hide),
+          label: actionTargets.length > 1 ? "Hide selected" : "Hide",
+          onClick: () => { bulk.toggleVisibility(actionScope); onAfter?.(); },
         },
     ...intervalActions,
     { divider: true },
@@ -182,8 +187,8 @@ export function useDrawingActions(
     { divider: true },
     {
       icon: <Trash2 size={14} className="text-bear" />,
-      label: "Delete",
-      onClick: act(remove),
+      label: actionTargets.length > 1 ? "Delete selected" : "Delete",
+      onClick: () => { bulk.remove(actionScope); onAfter?.(); },
       danger: true,
     },
   ];

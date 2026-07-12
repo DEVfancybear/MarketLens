@@ -485,8 +485,6 @@ export const keepDrawingModeAtom = atom((get) =>
 );
 export const selectedDrawingIdAtom = atom<string | null>(null);
 export const selectedDrawingIdsAtom = atom<Set<string>>(new Set<string>());
-export const drawingsLockedAtom = atom<boolean>(false);
-export const drawingsHiddenAtom = atom<boolean>(false);
 export const editingIndicatorIdAtom = atom<string | null>(null);
 export const crosshairAtom = atom<{
   time: number;
@@ -825,6 +823,7 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
   // established one-shot behavior and return to Cursor after placement.
   if (!_get(drawingToolPreferencesAtom).keepDrawing) set(activeToolAtom, "cursor");
   set(selectedDrawingIdAtom, drawing.id);
+  set(selectedDrawingIdsAtom, new Set([drawing.id]));
   const symbol = _get(symbolAtom);
   persistLocalDrawings(_get, symbol, drawings);
   queueDrawingUpsert(_get, set, symbol, drawing);
@@ -877,7 +876,10 @@ export const removeDrawingAtom = atom(null, (_get, set, id: string) => {
   const removed = _get(drawingsAtom).find((d) => d.id === id);
   const drawings = _get(drawingsAtom).filter((d) => d.id !== id);
   set(drawingsAtom, drawings);
-  set(selectedDrawingIdAtom, null);
+  const selectedIds = new Set(_get(selectedDrawingIdsAtom));
+  selectedIds.delete(id);
+  set(selectedDrawingIdsAtom, selectedIds);
+  set(selectedDrawingIdAtom, selectedIds.size === 1 ? [...selectedIds][0] : null);
   persistLocalDrawings(_get, symbol, drawings);
   if (removed) queueDrawingDelete(_get, set, symbol, removed);
 });
@@ -900,44 +902,10 @@ export const duplicateDrawingAtom = atom(null, (_get, set, id: string) => {
   const drawings = [..._get(drawingsAtom), copy];
   set(drawingsAtom, drawings);
   set(selectedDrawingIdAtom, copy.id);
+  set(selectedDrawingIdsAtom, new Set([copy.id]));
   const symbol = _get(symbolAtom);
   persistLocalDrawings(_get, symbol, drawings);
   queueDrawingUpsert(_get, set, symbol, copy);
-});
-
-export const lockDrawingAtom = atom(null, (_get, set, id: string) => {
-  let updatedDrawing: Drawing | null = null;
-  const drawings = _get(drawingsAtom).map((d) =>
-    d.id === id
-      ? (updatedDrawing = {
-          ...d,
-          locked: !d.locked,
-          clientRevision: (d.clientRevision ?? 0) + 1,
-        })
-      : d,
-  );
-  set(drawingsAtom, drawings);
-  const symbol = _get(symbolAtom);
-  persistLocalDrawings(_get, symbol, drawings);
-  if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
-});
-
-export const hideDrawingAtom = atom(null, (_get, set, id: string) => {
-  let updatedDrawing: Drawing | null = null;
-  const drawings = _get(drawingsAtom).map((d) =>
-    d.id === id
-      ? (updatedDrawing = {
-          ...d,
-          visible: d.visible === false,
-          clientRevision: (d.clientRevision ?? 0) + 1,
-        })
-      : d,
-  );
-  set(drawingsAtom, drawings);
-  set(selectedDrawingIdAtom, null);
-  const symbol = _get(symbolAtom);
-  persistLocalDrawings(_get, symbol, drawings);
-  if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
 });
 
 export const bringToFrontAtom = atom(null, (_get, set, id: string) => {
@@ -954,14 +922,6 @@ export const sendToBackAtom = atom(null, (_get, set, id: string) => {
     0,
   );
   set(updateDrawingAtom, { id, patch: { zIndex: bottom - 1 } });
-});
-
-export const toggleLockAllAtom = atom(null, (_get, set) => {
-  set(drawingsLockedAtom, !_get(drawingsLockedAtom));
-});
-
-export const toggleHideAllAtom = atom(null, (_get, set) => {
-  set(drawingsHiddenAtom, !_get(drawingsHiddenAtom));
 });
 
 export const selectDrawingAtom = atom(
@@ -1034,17 +994,6 @@ export const selectAllAtom = atom(null, (_get, set) => {
   );
   set(selectedDrawingIdsAtom, ids);
   set(selectedDrawingIdAtom, null);
-});
-
-export const clearDrawingsAtom = atom(null, (_get, set) => {
-  const symbol = _get(symbolAtom);
-  for (const drawing of _get(drawingsAtom)) {
-    queueDrawingDelete(_get, set, symbol, drawing);
-  }
-  set(drawingsAtom, []);
-  set(selectedDrawingIdAtom, null);
-  set(selectedDrawingIdsAtom, new Set());
-  persistLocalDrawings(_get, symbol, []);
 });
 
 export const addIndicatorAtom = atom(null, (_get, set, type: BuiltInIndicatorType) => {
@@ -1459,8 +1408,6 @@ export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
   set(newDrawingSyncModeAtom, DEFAULT_DRAWING_SYNC_MODE);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
-  set(drawingsLockedAtom, false);
-  set(drawingsHiddenAtom, false);
   set(editingIndicatorIdAtom, null);
   set(editingDrawingIdAtom, null);
   set(crosshairAtom, null);
@@ -1487,8 +1434,6 @@ export const chartStateAtom = atom((get) => ({
   drawColor: get(drawColorAtom),
   selectedDrawingId: get(selectedDrawingIdAtom),
   selectedDrawingIds: get(selectedDrawingIdsAtom),
-  drawingsLocked: get(drawingsLockedAtom),
-  drawingsHidden: get(drawingsHiddenAtom),
   editingIndicatorId: get(editingIndicatorIdAtom),
   crosshair: get(crosshairAtom),
 }));
