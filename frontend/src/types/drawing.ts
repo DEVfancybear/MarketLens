@@ -52,11 +52,21 @@ export interface DrawingIntervalVisibility {
   timeframes: Timeframe[];
 }
 
+/** Persisted group identity shared by every drawing in the same object-tree group. */
+export interface DrawingGroup {
+  id: string;
+  name: string;
+}
+
 export interface BaseDrawing {
   /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
   schemaVersion?: number;
   id: string;
   tool: DrawingTool;
+  /** Optional user-facing label shown in settings and the Object Tree. */
+  name?: string;
+  /** Group metadata is repeated on members so it survives the flat drawing API. */
+  group?: DrawingGroup;
   color: string;
   lineWidth: number;
   points: Point[];

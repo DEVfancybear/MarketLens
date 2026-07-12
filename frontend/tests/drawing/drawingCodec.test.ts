@@ -51,6 +51,21 @@ test("interval visibility is normalized at persistence boundaries", () => {
   });
 });
 
+test("object names and group metadata are normalized and persisted", () => {
+  const decoded = decodeDrawing({
+    ...legacy,
+    name: "  Breakout line  ",
+    group: { id: "  group-1  ", name: "  Setups  " },
+  });
+  assert.equal(decoded.drawing?.name, "Breakout line");
+  assert.deepEqual(decoded.drawing?.group, { id: "group-1", name: "Setups" });
+  assert.deepEqual(encodeDrawing(decoded.drawing!).group, { id: "group-1", name: "Setups" });
+
+  const malformed = decodeDrawing({ ...legacy, name: 42, group: { id: "" } });
+  assert.equal(malformed.drawing?.name, undefined);
+  assert.equal(malformed.drawing?.group, undefined);
+});
+
 test("unknown tools and malformed coordinates are quarantined, not silently loaded", () => {
   const result = decodeDrawingList([
     legacy,

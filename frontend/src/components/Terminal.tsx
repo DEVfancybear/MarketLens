@@ -7,7 +7,7 @@ import { IndicatorSettingsDialog } from "@/components/toolbar/IndicatorSettingsD
 import { PositionSettingsDialog } from "@/components/chart/PositionSettingsDialog";
 import { ObjectSettingsDialog } from "@/components/chart/ObjectSettingsDialog";
 import { ChartArea } from "@/components/chart/ChartArea";
-import { Watchlist } from "@/components/watchlist/Watchlist";
+import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { GlobalRuntime } from "@/components/layout/GlobalRuntime";
 import { Splash } from "@/components/layout/Splash";
@@ -38,7 +38,7 @@ export function Terminal() {
         toolbar={<TopToolbar />}
         leftRail={<DrawingToolbar />}
         chart={<ChartPerformanceProfiler><ChartArea /></ChartPerformanceProfiler>}
-        watchlist={<Watchlist />}
+        watchlist={<RightSidebar />}
         bottom={<BottomPanel />}
       />
       <AlertCenter />

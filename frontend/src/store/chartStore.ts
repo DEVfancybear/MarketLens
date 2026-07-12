@@ -929,6 +929,15 @@ export const toggleSelectDrawingAtom = atom(null, (_get, set, id: string) => {
   }
 });
 
+export const setSelectedDrawingIdsAtom = atom(
+  null,
+  (_get, set, ids: Iterable<string>) => {
+    const selected = new Set(ids);
+    set(selectedDrawingIdsAtom, selected);
+    set(selectedDrawingIdAtom, selected.size === 1 ? [...selected][0] : null);
+  },
+);
+
 export const selectAllAtom = atom(null, (_get, set) => {
   const ids = new Set(
     _get(drawingsAtom)

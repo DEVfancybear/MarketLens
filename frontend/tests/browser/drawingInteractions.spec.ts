@@ -76,6 +76,53 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
   await expect(settingsButton).toBeFocused();
 });
 
+test("object tree groups, renames, locks, hides, and undo-redoes as one group action", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const points = [
+    { x: pane.x + pane.width * 0.22, y: pane.y + pane.height * 0.68 },
+    { x: pane.x + pane.width * 0.43, y: pane.y + pane.height * 0.42 },
+    { x: pane.x + pane.width * 0.51, y: pane.y + pane.height * 0.65 },
+    { x: pane.x + pane.width * 0.72, y: pane.y + pane.height * 0.37 },
+  ];
+  await page.getByRole("button", { name: "Keep drawing", exact: true }).click();
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  for (const point of points) await page.mouse.click(point.x, point.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
+
+  await page.getByRole("button", { name: "Object tree", exact: true }).click();
+  const tree = page.locator("[data-object-tree]");
+  await expect(tree).toBeVisible();
+  const rows = tree.locator("[data-object-id]");
+  await expect(rows).toHaveCount(2);
+  await rows.nth(0).click();
+  await rows.nth(1).click({ modifiers: ["Control"] });
+  await tree.getByRole("button", { name: "Group selected", exact: true }).click();
+  await expect(tree.locator("[data-object-group]")).toHaveCount(1);
+  await page.keyboard.press("Control+z");
+  await expect(tree.locator("[data-object-group]")).toHaveCount(0);
+  await page.keyboard.press("Control+Shift+z");
+  const group = tree.locator("[data-object-group]");
+  await expect(group).toHaveCount(1);
+
+  await group.getByRole("button", { name: "Rename", exact: true }).first().click();
+  const rename = group.getByRole("textbox", { name: "Rename group", exact: true });
+  await rename.fill("Breakout setup");
+  await rename.press("Enter");
+  await expect(group).toContainText("Breakout setup");
+  await group.getByRole("button", { name: "Hide", exact: true }).first().click();
+  await group.getByRole("button", { name: "Lock", exact: true }).first().click();
+  await expect.poll(async () => {
+    const drawings = (await drawingSnapshot(page)).drawings;
+    return drawings.every((drawing) =>
+      drawing.group?.name === "Breakout setup" &&
+      drawing.visible === false &&
+      drawing.locked === true
+    );
+  }).toBe(true);
+});
+
 test("shared coordinate editor updates anchors in one undoable transaction", async ({ page }) => {
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];

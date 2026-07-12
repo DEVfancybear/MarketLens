@@ -38,6 +38,7 @@ export interface DrawingListDecodeResult {
 }
 
 type UnknownRecord = Record<string, unknown>;
+const MAX_OBJECT_NAME_LENGTH = 120;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,6 +46,19 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizedName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const name = value.trim().slice(0, MAX_OBJECT_NAME_LENGTH);
+  return name || undefined;
+}
+
+function normalizedGroup(value: unknown): Drawing["group"] {
+  if (!isRecord(value) || typeof value.id !== "string") return undefined;
+  const id = value.id.trim().slice(0, MAX_OBJECT_NAME_LENGTH);
+  if (!id) return undefined;
+  return { id, name: normalizedName(value.name) ?? "Group" };
 }
 
 function decodePoints(value: unknown): Point[] | null {
@@ -135,6 +149,12 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
   const intervalVisibility = normalizeDrawingIntervalVisibility(value.intervalVisibility);
   if (intervalVisibility) drawing.intervalVisibility = intervalVisibility;
   else delete drawing.intervalVisibility;
+  const name = normalizedName(value.name);
+  if (name) drawing.name = name;
+  else delete drawing.name;
+  const group = normalizedGroup(value.group);
+  if (group) drawing.group = group;
+  else delete drawing.group;
   delete drawing._dragging;
   return {
     drawing,

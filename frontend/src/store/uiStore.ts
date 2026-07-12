@@ -4,6 +4,7 @@ import { localStore } from "@/services/storage";
 import { DEFAULT_PANELS, DEFAULT_UI_SETTINGS } from "./workspaceDefaults";
 
 export type Theme = "dark" | "light";
+export type RightPanelTab = "watchlist" | "objects";
 
 /** Which bottom-panel tab is active. */
 export type BottomTab =
@@ -50,6 +51,7 @@ export const themeAtom = atom<Theme>("dark");
 export const panelsAtom = atom<PanelSizes>({ ...DEFAULT_PANELS });
 export const bottomTabAtom = atom<BottomTab>("replay");
 export const rightOpenAtom = atom<boolean>(true);
+export const rightPanelTabAtom = atom<RightPanelTab>("watchlist");
 export const bottomOpenAtom = atom<boolean>(DEFAULT_UI_SETTINGS.bottomOpen);
 export const fullscreenAtom = atom<boolean>(false);
 export const alertCenterOpenAtom = atom<boolean>(false);
@@ -124,6 +126,14 @@ export const setBottomTabAtom = atom(null, (get, set, tab: BottomTab) => {
 export const toggleRightAtom = atom(null, (get, set) => {
   set(rightOpenAtom, (prev) => !prev);
 });
+
+export const showRightPanelTabAtom = atom(
+  null,
+  (_get, set, tab: RightPanelTab) => {
+    set(rightPanelTabAtom, tab);
+    set(rightOpenAtom, true);
+  },
+);
 
 export const toggleBottomAtom = atom(null, (get, set) => {
   const open = !get(bottomOpenAtom);

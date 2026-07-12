@@ -10,6 +10,7 @@ import {
   MoveDrawingCommand,
   PropertyChangeCommand,
   PreviewedPropertyChangeCommand,
+  BatchPropertyChangeCommand,
 } from "../../src/components/chart/drawing/history/CommandManager";
 
 function fixture(id = "drawing-1"): Drawing {
@@ -88,6 +89,25 @@ test("create, move, property, delete, and duplicate commands round-trip", () => 
   assert.equal(state.drawings.has(original.id), false);
   assert.equal(history.undo(), true);
   assert.equal(state.drawings.has(original.id), true);
+});
+
+test("a batch property command groups several drawing changes into one history entry", () => {
+  const state = drawingState();
+  const history = new CommandManager();
+  state.add(fixture("a"));
+  state.add(fixture("b"));
+  const group = { id: "group-1", name: "Analysis" };
+  history.execute(new BatchPropertyChangeCommand(state.update, [
+    { id: "a", newProps: { group }, oldProps: { group: undefined } },
+    { id: "b", newProps: { group }, oldProps: { group: undefined } },
+  ], "Group Objects"));
+  assert.deepEqual(state.drawings.get("a")?.group, group);
+  assert.deepEqual(state.drawings.get("b")?.group, group);
+  assert.equal(history.undo(), true);
+  assert.equal(state.drawings.get("a")?.group, undefined);
+  assert.equal(state.drawings.get("b")?.group, undefined);
+  assert.equal(history.redo(), true);
+  assert.deepEqual(state.drawings.get("b")?.group, group);
 });
 
 test("history enforces its maximum size and invalidates redo on a new command", () => {

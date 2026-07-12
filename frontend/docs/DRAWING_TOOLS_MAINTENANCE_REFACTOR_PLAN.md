@@ -541,7 +541,7 @@ Verification on 2026-07-12:
 
 ### Phase 6 — Complete cross-tool TradingView behavior
 
-Status: in progress; items 1-4 implemented on 2026-07-12.
+Status: in progress; items 1-5 implemented on 2026-07-12.
 
 Purpose: finish shared behavior before catalog expansion.
 
@@ -638,17 +638,37 @@ Delivered (item 4):
   coverage, semantic Position labels, immutable point updates, bar lookup/clamping, and date/time
   conversion. Browser coverage verifies precise price/time edits and a single undoable transaction.
 
+Delivered (item 5):
+
+- Drawings now carry optional normalized object names and flat, codec-safe group metadata. Group
+  identity and name are repeated on members so the existing per-drawing local/backend persistence
+  contract can round-trip groups without a new endpoint or a separate failure-prone workspace row.
+- The right dock now hosts Watchlist and Object Tree tabs, with a top-toolbar shortcut to open the
+  tree. The tree presents ungrouped drawings and contiguous group nodes in visual z-order, with
+  manifest display names as the fallback for unnamed objects.
+- Object rows support single/Ctrl multi-selection, inline rename, visibility, lock, and layer-order
+  controls. Selected drawings can be grouped or ungrouped; group rows select and operate on all
+  members, collapse independently as UI state, and move as a contiguous z-order block.
+- A shared batch-property command makes group/ungroup, group rename, group visibility/locking, and
+  layer moves one undo/redo transaction. Individual renames use the existing property command, so
+  Object Tree changes share chart/settings history instead of maintaining a second undo stack.
+- Boundary decoding trims names and group ids, caps user labels, supplies a safe fallback group name,
+  and drops malformed optional metadata without quarantining otherwise valid historical drawings.
+  Unit tests cover tree construction/order, labels, contiguous group moves, batch history, and codec
+  round trips. Browser coverage exercises grouping, undo/redo, rename, hide, and lock on the real UI.
+
 Verification on 2026-07-12:
 
 - `npm run typecheck`: passing.
 - `npm run lint`: passing with 0 errors and the same 2 pre-existing Watchlist hook warnings.
-- `npm run test:drawing`: 89/89 passing.
+- `npm run test:drawing`: 94/94 passing.
 - `npm run test:position`: 26/26 passing.
-- `npm run test:drawing-persistence`: 14/14 passing.
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 12/12 passing in 54.2 seconds.
+- `npm run test:drawing-persistence`: 15/15 passing.
+- `npm run test:chart-browser -- --grep "object tree"`: 1/1 passing in 6.4 seconds.
+- `drawingInteractions.spec.ts`: all 13 tests passing across two server runs (the combined run's dev
+  server exited after 6 passing tests; the remaining 7 were rerun against a fresh server and passed).
 
-Remaining: items 5-8 (object tree/grouping/names, sync modes, unified bulk scopes, and drawing
-alerts).
+Remaining: items 6-8 (sync modes, unified bulk scopes, and drawing alerts).
 
 Exit gate:
 

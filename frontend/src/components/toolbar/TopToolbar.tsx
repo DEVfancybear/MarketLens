@@ -14,6 +14,7 @@ import {
   PanelRightOpen,
   Bell,
   Star,
+  ListTree,
 } from "lucide-react";
 import { SymbolSearch } from "./SymbolSearch";
 import { useAlertStore } from "@/store/alertStore";
@@ -50,6 +51,8 @@ import {
   setBottomTabAtom,
   logAtom,
   toggleAlertCenterAtom,
+  rightPanelTabAtom,
+  showRightPanelTabAtom,
 } from "@/store/uiStore";
 import { cn } from "@/utils/cn";
 import { captureChart } from "@/components/chart/chartRegistry";
@@ -85,9 +88,11 @@ export function TopToolbar() {
   const cancelReplaySelection = useSetAtom(cancelReplaySelectionAtom);
   const theme = useAtomValue(themeAtom);
   const rightOpen = useAtomValue(rightOpenAtom);
+  const rightPanelTab = useAtomValue(rightPanelTabAtom);
   const fullscreen = useAtomValue(fullscreenAtom);
   const toggleTheme = useSetAtom(toggleThemeAtom);
   const toggleRight = useSetAtom(toggleRightAtom);
+  const showRightPanelTab = useSetAtom(showRightPanelTabAtom);
   const setFullscreen = useSetAtom(setFullscreenAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const doLog = useSetAtom(logAtom);
@@ -451,6 +456,13 @@ export function TopToolbar() {
           ) : (
             <PanelRightOpen size={15} />
           )}
+        </IconButton>
+        <IconButton
+          label="Object tree"
+          onClick={() => showRightPanelTab("objects")}
+          active={rightOpen && rightPanelTab === "objects"}
+        >
+          <ListTree size={15} />
         </IconButton>
         <IconButton label="Theme" onClick={toggleTheme}>
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}

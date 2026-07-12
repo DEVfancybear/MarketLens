@@ -172,6 +172,31 @@ export class PropertyChangeCommand implements Command {
   }
 }
 
+export interface DrawingPropertyChange {
+  id: string;
+  newProps: Partial<Drawing>;
+  oldProps: Partial<Drawing>;
+}
+
+/** Applies a multi-object mutation as one undo/redo history entry. */
+export class BatchPropertyChangeCommand implements Command {
+  constructor(
+    private updateFn: (arg: { id: string; patch: Partial<Drawing> }) => void,
+    private changes: readonly DrawingPropertyChange[],
+    readonly label = "Change Objects",
+  ) {}
+  execute() {
+    for (const change of this.changes) {
+      this.updateFn({ id: change.id, patch: change.newProps });
+    }
+  }
+  undo() {
+    for (const change of [...this.changes].reverse()) {
+      this.updateFn({ id: change.id, patch: change.oldProps });
+    }
+  }
+}
+
 /**
  * Records a property edit that has already been previewed in the store.
  * The first execute is intentionally a no-op; redo applies the committed state.
