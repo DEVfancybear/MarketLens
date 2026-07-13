@@ -21,7 +21,7 @@ export function DrawingIntervalVisibilityFields({
   return (
     <div className="space-y-5" data-interval-visibility>
       <section>
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#a0a3aa]">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
           Quick presets
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -36,8 +36,8 @@ export function DrawingIntervalVisibilityFields({
                 className={cn(
                   "rounded border px-2 py-1.5 text-left text-[11px] transition-colors",
                   active
-                    ? "border-[#2962ff] bg-[#2962ff]/15 text-[#f0f0f0]"
-                    : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a]",
+                    ? "border-[#2962ff] bg-[#2962ff]/15 text-ink"
+                    : "border-terminal-border-strong text-ink-muted hover:bg-terminal-hover",
                 )}
               >
                 {preset.label}
@@ -47,7 +47,7 @@ export function DrawingIntervalVisibilityFields({
         </div>
       </section>
       <section>
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#a0a3aa]">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
           Show on intervals
         </div>
         <div className="grid grid-cols-4 gap-2">
@@ -64,7 +64,7 @@ export function DrawingIntervalVisibilityFields({
                 className={cn(
                   "flex h-8 items-center justify-center gap-1 rounded border text-[11px]",
                   checked
-                    ? "border-[#6a6d75] bg-[#2a2a2a] text-[#f0f0f0]"
+                    ? "border-[#6a6d75] bg-terminal-hover text-ink"
                     : "border-[#3f4248] text-[#737780]",
                 )}
               >

@@ -216,8 +216,8 @@ export function PineEditor() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#050505]">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-terminal-border bg-black px-3">
+    <div className="flex h-full min-h-0 flex-col bg-terminal-bg">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-terminal-border bg-terminal-panel-2 px-3">
         <div className="mr-2 text-xs font-semibold text-ink">Pine Editor</div>
         <div className="min-w-0 max-w-[280px] truncate rounded px-2 py-1 text-sm font-semibold text-ink">
           {dirtyTitle}
@@ -258,12 +258,12 @@ export function PineEditor() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-[280px] shrink-0 flex-col border-r border-terminal-border bg-[#111]">
+        <aside className="flex w-[280px] shrink-0 flex-col border-r border-terminal-border bg-terminal-panel">
           <div className="flex h-9 shrink-0 items-center border-b border-terminal-border px-3 text-xs font-semibold text-ink">
             My scripts
           </div>
           <div className="border-b border-terminal-border p-2">
-            <div className="flex h-8 items-center gap-2 rounded border border-terminal-border bg-[#070707] px-2">
+            <div className="flex h-9 items-center gap-2 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5">
               <Search size={14} className="text-ink-faint" />
               <input
                 value={query}
@@ -341,7 +341,7 @@ export function PineEditor() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-terminal-border bg-[#070707] px-3">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-terminal-border bg-terminal-panel px-3">
             <label className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">
               Script name
             </label>
@@ -369,7 +369,7 @@ export function PineEditor() {
           <div className="grid min-h-0 flex-1 grid-cols-[56px_1fr] overflow-hidden font-mono text-[12px] leading-5">
             <div
               ref={gutterRef}
-              className="overflow-hidden border-r border-terminal-border bg-[#050505] py-2 text-right text-ink-faint"
+              className="overflow-hidden border-r border-terminal-border bg-terminal-bg py-2 text-right text-ink-faint"
             >
               {lineNumbers.map((line) => (
                 <div key={line} className="h-5 pr-3 tabular-nums">
@@ -387,7 +387,7 @@ export function PineEditor() {
               onScroll={syncScroll}
               spellCheck={false}
               aria-label="Pine source code"
-              className="h-full w-full resize-none overflow-auto bg-[#050505] px-3 py-2 font-mono text-[12px] leading-5 text-ink outline-none selection:bg-brand/30"
+              className="h-full w-full resize-none overflow-auto bg-terminal-bg px-3 py-2 font-mono text-[12px] leading-5 text-ink outline-none selection:bg-brand/30"
             />
           </div>
         </div>

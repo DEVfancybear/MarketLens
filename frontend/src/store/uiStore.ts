@@ -4,6 +4,14 @@ import { localStore } from "@/services/storage";
 import { DEFAULT_PANELS, DEFAULT_UI_SETTINGS } from "./workspaceDefaults";
 
 export type Theme = "dark" | "light";
+
+export function applyThemeToDocument(theme: Theme): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.classList.toggle("theme-dark", theme === "dark");
+  root.classList.toggle("theme-light", theme === "light");
+  root.dataset.theme = theme;
+}
 export type RightPanelTab = "watchlist" | "objects";
 
 /** Which bottom-panel tab is active. */
@@ -85,9 +93,7 @@ export const uiStateAtom = atom<UIState>((get) => ({
 export const setThemeAtom = atom(null, (get, set, theme: Theme) => {
   set(themeAtom, theme);
   persistUI(get, { theme });
-  if (typeof document !== "undefined") {
-    document.documentElement.className = `theme-${theme}`;
-  }
+  applyThemeToDocument(theme);
 });
 
 export const toggleGridAtom = atom(null, (get, set) => {
@@ -181,9 +187,7 @@ export const hydrateAtom = atom(null, (get, set) => {
     bottomOpenAtom,
     normalizeBoolean(persisted.bottomOpen, DEFAULT_UI_SETTINGS.bottomOpen),
   );
-  if (typeof document !== "undefined") {
-    document.documentElement.className = `theme-${persisted.theme}`;
-  }
+  applyThemeToDocument(persisted.theme);
 });
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -242,9 +246,7 @@ export const applyRemoteUISettingsAtom = atom(
     set(panelsAtom, panels);
     set(bottomOpenAtom, bottomOpen);
     localStore.set("ui", { theme, panels, bottomOpen });
-    if (typeof document !== "undefined") {
-      document.documentElement.className = `theme-${theme}`;
-    }
+    applyThemeToDocument(theme);
   },
 );
 
@@ -293,9 +295,7 @@ export const resetUIToDefaultsAtom = atom(null, (_get, set) => {
   set(alertCenterOpenAtom, false);
   set(gridVisibleAtom, true);
   localStore.remove("ui");
-  if (typeof document !== "undefined") {
-    document.documentElement.className = "theme-dark";
-  }
+  applyThemeToDocument("dark");
 });
 
 export function getUIState() {

@@ -31,16 +31,16 @@ export function SymbolSearch() {
       trigger={(open) => (
         <button
           className={cn(
-            "flex h-8 items-center gap-2 rounded px-2 text-ink transition-colors hover:bg-terminal-hover",
-            open && "bg-terminal-hover",
+            "flex h-8 items-center gap-2 rounded-lg px-2.5 text-ink transition-colors hover:bg-terminal-hover",
+            open && "bg-brand/10 text-brand",
           )}
         >
           <Search size={14} className="text-ink-muted" />
-          <span className="text-sm font-bold leading-none tracking-tight text-ink">
+          <span className="text-[13px] font-bold leading-none tracking-[-0.02em] text-ink">
             {symbol || "Symbol"}
           </span>
           {meta && (
-            <span className="rounded bg-terminal-hover px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+            <span className="rounded-md border border-terminal-border bg-terminal-panel-3 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-ink-muted">
               {contractTagOf(meta.assetClass)}
             </span>
           )}
@@ -52,13 +52,13 @@ export function SymbolSearch() {
     >
       {(close) => (
         <div>
-          <div className="px-2 pb-2 pt-1">
+          <div className="border-b border-terminal-border px-2.5 pb-2.5 pt-1">
             <input
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search symbol…"
-              className="w-full rounded border border-terminal-border bg-terminal-bg px-2 py-1.5 text-xs text-ink outline-none focus:border-brand"
+              className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-panel px-3 text-xs text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </div>
           <div className="max-h-72 overflow-auto">
@@ -71,7 +71,7 @@ export function SymbolSearch() {
                   close();
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-terminal-hover",
+                  "flex min-h-10 w-full items-center justify-between px-3 text-left transition-colors hover:bg-terminal-hover",
                   s.id === symbol && "bg-brand/10",
                 )}
               >

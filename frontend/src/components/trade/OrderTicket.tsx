@@ -44,7 +44,7 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
 
 /** Order ticket: type, entry/SL/TP, risk%, with live position sizing. */
-export function OrderTicket() {
+export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
   const symbol = useAtomValue(symbolAtom);
   const price = useAtomValue(priceAtom);
   const equity = useAtomValue(equityAtom);
@@ -278,8 +278,11 @@ export function OrderTicket() {
   }, []);
 
   return (
-    <div className="flex w-[252px] shrink-0 flex-col border-r border-terminal-border bg-terminal-panel">
-      <div className="flex h-9 items-center justify-between border-b border-terminal-border px-3">
+    <div className={cn(
+      "flex shrink-0 flex-col bg-terminal-panel",
+      variant === "desktop" ? "w-[272px] border-r border-terminal-border" : "mobile-order-ticket w-full",
+    )}>
+      <div className="flex h-11 items-center justify-between border-b border-terminal-border bg-terminal-panel-2/60 px-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-ink">{symbol}</span>
           {plannedSide && (
@@ -307,16 +310,16 @@ export function OrderTicket() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 p-3">
-        <div className="grid grid-cols-3 rounded-sm border border-terminal-border bg-terminal-bg p-0.5">
+      <div className="flex flex-col gap-3 p-3">
+        <div className="grid grid-cols-3 rounded-xl border border-terminal-border bg-terminal-bg p-1">
           {ORDER_TYPES.map((t) => (
             <button
               key={t}
               onClick={() => setType(t)}
               className={cn(
-                "h-7 rounded-sm px-2 text-2xs font-semibold capitalize transition-colors",
+                "h-8 rounded-lg px-2 text-2xs font-semibold capitalize transition-colors",
                 type === t
-                  ? "bg-brand text-white"
+                  ? "bg-brand text-[var(--accent-contrast)] shadow-sm"
                   : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
               )}
             >
@@ -347,7 +350,7 @@ export function OrderTicket() {
           />
         )}
 
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-terminal-border bg-terminal-border text-2xs">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-terminal-border bg-terminal-border text-2xs">
           <Metric
             label="Size"
             value={formatTicketSize(metrics.positionSize)}
@@ -366,7 +369,7 @@ export function OrderTicket() {
           <Metric
             label="R:R"
             value={formatTicketRatio(metrics.riskReward)}
-            accent="var(--brand)"
+            accent="var(--accent)"
           />
         </div>
 
@@ -375,8 +378,8 @@ export function OrderTicket() {
             onClick={() => submit("long")}
             disabled={replayPreparing}
             className={cn(
-              "h-10 rounded-sm bg-[#089981] text-xs font-semibold text-white hover:bg-[#0aa987]",
-              plannedSide === "long" && "ring-2 ring-[#089981]/50 ring-offset-1 ring-offset-terminal-panel",
+              "h-11 rounded-xl bg-bull text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-45",
+              plannedSide === "long" && "ring-2 ring-bull/45 ring-offset-2 ring-offset-terminal-panel",
             )}
           >
             Buy
@@ -385,8 +388,8 @@ export function OrderTicket() {
             onClick={() => submit("short")}
             disabled={replayPreparing}
             className={cn(
-              "h-10 rounded-sm bg-[#f23645] text-xs font-semibold text-white hover:bg-[#ff4d5b]",
-              plannedSide === "short" && "ring-2 ring-[#f23645]/50 ring-offset-1 ring-offset-terminal-panel",
+              "h-11 rounded-xl bg-bear text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-45",
+              plannedSide === "short" && "ring-2 ring-bear/45 ring-offset-2 ring-offset-terminal-panel",
             )}
           >
             Sell
@@ -395,7 +398,7 @@ export function OrderTicket() {
         <button
           onClick={requestCloseAll}
           disabled={replayPreparing}
-          className="h-7 rounded-sm border border-terminal-border text-2xs font-medium text-ink-muted hover:bg-terminal-hover hover:text-ink"
+          className="h-9 rounded-xl border border-terminal-border-strong text-2xs font-semibold text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:opacity-45"
         >
           Close All
         </button>
@@ -431,7 +434,7 @@ function TradeInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-8 w-full rounded-sm border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand"
+        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
       />
     </label>
   );
@@ -449,7 +452,7 @@ function Metric({
   title?: string;
 }) {
   return (
-    <div className="flex min-h-7 items-center justify-between bg-terminal-panel-2 px-2" title={title}>
+    <div className="flex min-h-8 items-center justify-between bg-terminal-panel-2 px-2.5" title={title}>
       <span className="text-ink-faint">{label}</span>
       <span className="tabular font-semibold" style={{ color: accent }}>
         {value}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { themeAtom } from "@/store/uiStore";
+import { applyThemeToDocument, themeAtom } from "@/store/uiStore";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -18,7 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   // Sync the persisted theme onto <html> on mount and whenever it changes.
   useEffect(() => {
-    document.documentElement.className = `theme-${theme}`;
+    applyThemeToDocument(theme);
   }, [theme]);
 
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;

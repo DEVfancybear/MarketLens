@@ -25,7 +25,7 @@ export function RiskPanel() {
     : 0;
 
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-44 rounded-md border border-terminal-border bg-terminal-panel/95 p-2.5 shadow-lg shadow-black/40 backdrop-blur">
+    <div className="pointer-events-none absolute bottom-3 right-3 z-10 w-44 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 p-3 shadow-floating backdrop-blur-xl">
       <div className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-faint">
         Risk monitor
       </div>

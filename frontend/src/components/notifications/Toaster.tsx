@@ -46,24 +46,26 @@ function ToastCard({ toast }: { toast: Toast }) {
 
   return (
     <div
-      role="status"
-      className="pointer-events-auto flex w-full items-start gap-2.5 rounded-md border border-terminal-border bg-terminal-panel-2 p-3 shadow-lg animate-[toastIn_160ms_ease-out]"
+      role={toast.variant === "error" ? "alert" : "status"}
+      data-chart-ui
+      className="pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-terminal-border bg-terminal-raised/95 p-3.5 shadow-floating backdrop-blur-xl animate-[toastIn_160ms_ease-out]"
       style={{ borderLeftColor: meta.accent, borderLeftWidth: 3 }}
     >
       <span className="mt-0.5 shrink-0" style={{ color: meta.accent }}>
         {meta.icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-semibold text-ink">{toast.title}</div>
+        <div className="text-[13px] font-semibold text-ink">{toast.title}</div>
         {toast.message && (
-          <div className="mt-0.5 break-words text-2xs text-ink-muted">
+          <div className="mt-1 break-words text-xs leading-5 text-ink-muted">
             {toast.message}
           </div>
         )}
       </div>
       <button
+        type="button"
         onClick={() => dismiss(toast.id)}
-        className="shrink-0 rounded p-0.5 text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink"
+        className="toast-close shrink-0 rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         aria-label="Dismiss"
       >
         <X size={14} />
@@ -79,7 +81,7 @@ export function Toaster() {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed right-3 top-3 z-[100] flex w-[320px] max-w-[calc(100vw-1.5rem)] flex-col gap-2",
+        "toast-stack pointer-events-none fixed z-[1400] flex w-[356px] max-w-[calc(100vw-1.5rem)] flex-col gap-2.5",
       )}
     >
       {toasts.map((t) => (

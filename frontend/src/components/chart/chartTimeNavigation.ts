@@ -1,18 +1,11 @@
 import type { Candle, Timeframe } from "@/types";
 
 export type TimeRange = { from: number; to: number };
-export type GoToSelection =
-  | { tab: "date"; time: number }
-  | { tab: "range"; from: number; to: number };
-export type GoToSelectionDraft =
-  | { tab: "date"; singleDate: string; singleTime: string }
-  | {
-      tab: "range";
-      fromDate: string;
-      fromTime: string;
-      toDate: string;
-      toTime: string;
-    };
+export type GoToSelection = { time: number };
+export type GoToSelectionDraft = {
+  singleDate: string;
+  singleTime: string;
+};
 
 export function canSelectGoToTime(
   timeframe: Timeframe,
@@ -300,20 +293,10 @@ export function goToSelectionDraft(
   selection: GoToSelection,
   timeZone?: string,
 ): GoToSelectionDraft {
-  if (selection.tab === "date") {
-    const timeMs = selection.time * 1000;
-    return {
-      tab: "date",
-      singleDate: formatDateInput(timeMs, timeZone),
-      singleTime: formatTimeInput(timeMs, timeZone),
-    };
-  }
+  const timeMs = selection.time * 1000;
   return {
-    tab: "range",
-    fromDate: formatDateInput(selection.from * 1000, timeZone),
-    fromTime: formatTimeInput(selection.from * 1000, timeZone),
-    toDate: formatDateInput(selection.to * 1000, timeZone),
-    toTime: formatTimeInput(selection.to * 1000, timeZone),
+    singleDate: formatDateInput(timeMs, timeZone),
+    singleTime: formatTimeInput(timeMs, timeZone),
   };
 }
 

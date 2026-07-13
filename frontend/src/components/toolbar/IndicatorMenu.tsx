@@ -41,6 +41,7 @@ import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { CustomIndicatorScript } from "@/types";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
+import { trapFocusWithin } from "@/utils/focusManagement";
 
 function SidebarButton({
   active,
@@ -60,7 +61,7 @@ function SidebarButton({
       className={cn(
         "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-[14px] font-semibold transition-colors",
         active
-          ? "bg-[#3f3f3f] text-ink"
+          ? "bg-brand/12 text-brand"
           : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
       )}
     >
@@ -72,7 +73,7 @@ function SidebarButton({
 
 function EmptyState({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-[#3b3b3b] px-4 py-8 text-center text-xs leading-5 text-ink-muted">
+    <div className="rounded-xl border border-dashed border-terminal-border-strong bg-terminal-panel/40 px-4 py-10 text-center text-xs leading-5 text-ink-muted">
       {children}
     </div>
   );
@@ -97,6 +98,8 @@ export function IndicatorMenu() {
   const [storeError, setStoreError] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const wasOpenRef = useRef(false);
   const storeRequestRef = useRef(0);
   const indicatorDialogDrag = useDraggableDialog();
   const deleteDialogDrag = useDraggableDialog();
@@ -114,7 +117,19 @@ export function IndicatorMenu() {
 
   useEffect(() => {
     if (!open) return;
-    window.setTimeout(() => searchRef.current?.focus(), 0);
+    const timeout = window.setTimeout(() => searchRef.current?.focus(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      return;
+    }
+    if (!wasOpenRef.current) return;
+    wasOpenRef.current = false;
+    const frame = window.requestAnimationFrame(() => triggerRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
   useEffect(() => {
@@ -132,6 +147,7 @@ export function IndicatorMenu() {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       if (deleteTarget) setDeleteTarget(null);
       else setOpen(false);
     };
@@ -219,10 +235,11 @@ export function IndicatorMenu() {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
+          "flex h-8 items-center gap-1.5 rounded-lg border border-transparent px-2.5 text-[11px] font-semibold transition-colors",
           open
             ? "bg-terminal-hover text-ink"
             : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
@@ -236,7 +253,7 @@ export function IndicatorMenu() {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[1000] bg-black/25 pt-9"
+            className="fixed inset-0 z-[1000] bg-[var(--scrim)] px-3 pt-14 backdrop-blur-sm"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) setOpen(false);
             }}
@@ -248,22 +265,24 @@ export function IndicatorMenu() {
               role="dialog"
               aria-modal="true"
               aria-label="Indicators, metrics, and strategies"
-              className="mx-auto flex h-[600px] w-[min(calc(100vw-24px),840px)] flex-col overflow-hidden rounded-lg border border-[#242424] bg-[#1f1f1f] shadow-2xl shadow-black/60"
+              tabIndex={-1}
+              onKeyDown={trapFocusWithin}
+              className="mx-auto flex h-[min(680px,calc(100dvh-72px))] w-[min(calc(100vw-24px),900px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
             >
               <header
                 {...indicatorDialogDrag.dragHandleProps}
                 className={cn(
-                  "flex h-14 shrink-0 items-center justify-between px-5",
+                  "flex h-16 shrink-0 items-center justify-between border-b border-terminal-border px-5",
                   indicatorDialogDrag.dragHandleClassName,
                 )}
               >
-                <h2 className="text-[21px] font-semibold leading-none text-ink">
+                <h2 className="text-xl font-semibold leading-none tracking-[-0.02em] text-ink">
                   Indicators, metrics, and strategies
                 </h2>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
                   aria-label="Close"
                   title="Close"
                 >
@@ -272,19 +291,23 @@ export function IndicatorMenu() {
               </header>
 
               <div className="px-5">
-                <div className="flex h-10 items-center gap-2 rounded-md border border-[#4b4b4b] bg-[#202020] px-3">
+                <div
+                  data-testid="indicator-search-control"
+                  className="mt-4 flex h-11 items-center gap-2 rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 shadow-inner transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20"
+                >
                   <Search size={21} className="shrink-0 text-ink-muted" />
                   <input
                     ref={searchRef}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
+                    aria-label="Search indicators"
                     placeholder="Search"
-                    className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted"
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted focus-visible:!outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] gap-5 px-5 pb-4 pt-4">
+              <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] gap-5 px-5 pb-5 pt-4">
                 <aside className="min-h-0 space-y-5 overflow-auto pr-1">
                   <div>
                     <div className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
@@ -387,7 +410,7 @@ export function IndicatorMenu() {
 
             {deleteTarget && (
               <div
-                className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/35"
+                className="fixed inset-0 z-[1001] flex items-center justify-center bg-[var(--scrim)] px-4 backdrop-blur-sm"
                 onMouseDown={(event) => {
                   if (event.target === event.currentTarget)
                     setDeleteTarget(null);
@@ -399,7 +422,9 @@ export function IndicatorMenu() {
                   role="alertdialog"
                   aria-modal="true"
                   aria-label="Delete this script?"
-                  className="w-[440px] rounded-md border border-[#242424] bg-[#171717] px-8 pb-6 pt-5 shadow-2xl shadow-black/70"
+                  tabIndex={-1}
+                  onKeyDown={trapFocusWithin}
+                  className="w-full max-w-[440px] rounded-2xl border border-terminal-border-strong bg-terminal-raised px-7 pb-6 pt-5 shadow-floating"
                 >
                   <div
                     {...deleteDialogDrag.dragHandleProps}
@@ -414,7 +439,7 @@ export function IndicatorMenu() {
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(null)}
-                      className="flex h-8 w-8 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
                       aria-label="Cancel delete"
                       title="Cancel"
                     >
@@ -430,14 +455,14 @@ export function IndicatorMenu() {
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(null)}
-                      className="h-9 rounded-md border border-[#4b4b4b] px-4 text-[15px] font-medium text-ink transition-colors hover:bg-terminal-hover"
+                      className="min-h-11 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink transition-colors hover:bg-terminal-hover"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       onClick={confirmDeleteScript}
-                      className="h-9 rounded-md bg-[#f23645] px-4 text-[15px] font-semibold text-white transition-colors hover:bg-[#ff4d5b]"
+                      className="min-h-11 rounded-xl bg-bear px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
                     >
                       Delete
                     </button>

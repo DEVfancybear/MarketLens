@@ -1,4 +1,5 @@
 "use client";
+import { useId } from "react";
 import { Settings, Grid3x3, Maximize, Sun, Moon, Check, Plug } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -19,6 +20,7 @@ export function ChartSettingsMenu() {
   const theme = useAtomValue(themeAtom);
   const toggleTheme = useSetAtom(toggleThemeAtom);
   const setIntegrationSettingsOpen = useSetAtom(integrationSettingsOpenAtom);
+  const menuId = useId();
 
   return (
     <Dropdown
@@ -26,6 +28,11 @@ export function ChartSettingsMenu() {
       width={210}
       trigger={(open) => (
         <button
+          type="button"
+          aria-label="Chart settings"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={menuId}
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
             open && "bg-terminal-hover text-ink",
@@ -37,7 +44,12 @@ export function ChartSettingsMenu() {
       )}
     >
       {(close) => (
-        <div className="py-0.5">
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Chart settings"
+          className="py-0.5"
+        >
           <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
             Chart settings
           </div>
@@ -84,6 +96,9 @@ function Row({
 }) {
   return (
     <button
+      type="button"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked === undefined ? undefined : checked}
       onClick={onClick}
       className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs text-ink hover:bg-terminal-hover"
     >

@@ -136,7 +136,7 @@ export function NumberField({
         }
       }}
       className={cn(
-        "h-[34px] rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
+        "h-[34px] rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
         className,
       )}
     />
@@ -152,7 +152,7 @@ export function Row({
 }) {
   return (
     <div className="flex items-center gap-3 py-[7px]">
-      <span className="w-[110px] shrink-0 text-[14px] font-medium text-[#d1d4dc]">
+      <span className="w-[110px] shrink-0 text-[14px] font-medium text-ink-muted">
         {label}
       </span>
       <div className="flex flex-1 items-center gap-2">{children}</div>
@@ -162,7 +162,7 @@ export function Row({
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-2 mt-6 text-[10px] font-medium uppercase tracking-normal text-[#8a8d93]">
+    <div className="mb-2 mt-6 text-[10px] font-medium uppercase tracking-normal text-ink-faint">
       {children}
     </div>
   );
@@ -183,8 +183,8 @@ function CheckBox({
       className={cn(
         "flex h-[18px] w-[18px] items-center justify-center rounded-[3px] border transition-colors",
         checked
-          ? "border-white bg-white text-[#1e1e1e]"
-          : "border-[#8a8d93] bg-transparent hover:border-[#f0f0f0]",
+          ? "border-brand bg-brand text-[var(--accent-contrast)]"
+          : "border-terminal-border-strong bg-transparent hover:border-brand",
       )}
     >
       {checked && <Check size={13} strokeWidth={3} />}
@@ -211,7 +211,7 @@ function Select<T extends string | number>({
         if (match) onChange(match.value);
       }}
       className={cn(
-        "h-[34px] rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]",
+        "h-[34px] rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
         className,
       )}
     >
@@ -242,7 +242,7 @@ function ColorButton({
           e.stopPropagation();
           onToggle();
         }}
-        className="relative h-[34px] w-[34px] overflow-hidden rounded-md border border-[#50535a]"
+        className="relative h-[34px] w-[34px] overflow-hidden rounded-md border border-terminal-border-strong"
         style={{
           backgroundImage:
             "linear-gradient(45deg,#343434 25%,transparent 25%,transparent 75%,#343434 75%,#343434),linear-gradient(45deg,#343434 25%,transparent 25%,transparent 75%,#343434 75%,#343434)",
@@ -254,7 +254,7 @@ function ColorButton({
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-30 mt-1 w-[184px] rounded-md border border-[#50535a] bg-[#242424] p-2 shadow-2xl shadow-black/60"
+          className="absolute left-0 top-full z-30 mt-1 w-[184px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="grid grid-cols-6 gap-1.5">
@@ -262,7 +262,7 @@ function ColorButton({
               <button
                 key={c}
                 onClick={() => onPick(c)}
-                className="relative h-5 w-5 rounded border border-[#50535a]"
+                className="relative h-5 w-5 rounded border border-terminal-border-strong"
                 style={{ background: c }}
               >
                 {color.toLowerCase() === c.toLowerCase() && (
@@ -271,12 +271,12 @@ function ColorButton({
               </button>
             ))}
           </div>
-          <label className="mt-2 flex items-center gap-2 border-t border-[#50535a] pt-2 text-[11px] text-[#a0a3aa]">
+          <label className="mt-2 flex items-center gap-2 border-t border-terminal-border-strong pt-2 text-[11px] text-ink-faint">
             <input
               type="color"
               value={/^#[0-9a-f]{6}$/i.test(color) ? color : "#089981"}
               onChange={(e) => onPick(e.target.value)}
-              className="h-6 w-8 cursor-pointer rounded border border-[#50535a] bg-transparent p-0"
+              className="h-6 w-8 cursor-pointer rounded border border-terminal-border-strong bg-transparent p-0"
             />
             Custom
           </label>
@@ -311,10 +311,10 @@ function LineButton({
           e.stopPropagation();
           onToggle();
         }}
-        className="flex h-[34px] items-center gap-2 rounded-md border border-[#50535a] bg-[#1f1f1f] px-2 hover:border-[#6a6d75]"
+        className="flex h-[34px] items-center gap-2 rounded-md border border-terminal-border-strong bg-terminal-raised px-2 hover:border-brand"
       >
-        <span className="h-6 w-6 rounded bg-[#8f9297]" />
-        <svg width="31" height="14" className="text-[#f0f0f0]" style={{ color }}>
+        <span className="h-6 w-6 rounded bg-terminal-border-strong" />
+        <svg width="31" height="14" className="text-ink" style={{ color }}>
           <line
             x1="1"
             y1="7"
@@ -329,11 +329,11 @@ function LineButton({
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-30 mt-1 w-[170px] rounded-md border border-[#50535a] bg-[#242424] p-2 shadow-2xl shadow-black/60"
+          className="absolute left-0 top-full z-30 mt-1 w-[170px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-[11px] text-[#a0a3aa]">Width</span>
+            <span className="text-[11px] text-ink-faint">Width</span>
             <input
               type="range"
               min={1}
@@ -342,15 +342,15 @@ function LineButton({
               onChange={(e) => onWidth(Number(e.target.value))}
               className="flex-1 accent-brand"
             />
-            <span className="w-6 text-right text-[11px] text-[#d1d4dc]">{width}</span>
+            <span className="w-6 text-right text-[11px] text-ink-muted">{width}</span>
           </div>
           {(["solid", "dashed", "dotted"] as LineStyle[]).map((s) => (
             <button
               key={s}
               onClick={() => onStyle(s)}
-              className="flex w-full items-center justify-between rounded px-2 py-1.5 hover:bg-[#2a2a2a]"
+              className="flex w-full items-center justify-between rounded px-2 py-1.5 hover:bg-terminal-hover"
             >
-              <svg width="82" height="12" className="text-[#f0f0f0]">
+              <svg width="82" height="12" className="text-ink">
                 <line
                   x1="1"
                   y1="6"
@@ -363,7 +363,7 @@ function LineButton({
                   strokeWidth="2"
                 />
               </svg>
-              {style === s && <Check size={13} className="text-[#2962ff]" />}
+              {style === s && <Check size={13} className="text-brand" />}
             </button>
           ))}
         </div>
@@ -398,28 +398,28 @@ function StatsSelect({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="flex h-[34px] w-[180px] items-center justify-between rounded-md border border-[#50535a] bg-[#1f1f1f] px-2.5 text-left text-[13px] text-[#d1d4dc] hover:border-[#6a6d75]"
+        className="flex h-[34px] w-[180px] items-center justify-between rounded-md border border-terminal-border-strong bg-terminal-raised px-2.5 text-left text-[13px] text-ink-muted hover:border-brand"
       >
         <span className="truncate">{label}</span>
-        <ChevronDown size={14} className="text-[#a0a3aa]" />
+        <ChevronDown size={14} className="text-ink-faint" />
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-30 mt-1 w-[230px] rounded-md border border-[#50535a] bg-[#242424] p-1 shadow-2xl shadow-black/60"
+          className="absolute left-0 top-full z-30 mt-1 w-[230px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
           onClick={(e) => e.stopPropagation()}
         >
           {POSITION_STATS.map((s) => (
             <button
               key={s.id}
               onClick={() => toggle(s.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-[#f0f0f0] hover:bg-[#2a2a2a]"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-ink hover:bg-terminal-hover"
             >
               <span
                 className={cn(
                   "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[3px] border",
                   active.includes(s.id)
-                    ? "border-white bg-white text-[#1e1e1e]"
-                    : "border-[#8a8d93] bg-transparent",
+                    ? "border-brand bg-brand text-[var(--accent-contrast)]"
+                    : "border-terminal-border-strong bg-transparent",
                 )}
               >
                 {active.includes(s.id) && <Check size={13} strokeWidth={3} />}
@@ -583,8 +583,8 @@ export function PositionSettingsDialog() {
       className={cn(
         "border-b-[3px] px-0 pb-[9px] text-[16px] font-semibold transition-colors",
         tab === id
-          ? "border-[#f0f0f0] text-[#f0f0f0]"
-          : "border-transparent text-[#d1d4dc] hover:text-[#f0f0f0]",
+          ? "border-terminal-border-strong text-ink"
+          : "border-transparent text-ink-muted hover:text-ink",
       )}
     >
       {label}
@@ -593,7 +593,7 @@ export function PositionSettingsDialog() {
   return createPortal(
     <div
       data-chart-ui
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-black/45 pt-10"
+      className="fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm pt-10"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -606,7 +606,7 @@ export function PositionSettingsDialog() {
         aria-label={`${settings.title} settings`}
         tabIndex={-1}
         style={dialogStyle}
-        className="flex max-h-[calc(100vh-32px)] w-[380px] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] shadow-2xl shadow-black/70"
+        className="platform-dialog flex max-h-[calc(100dvh-32px)] w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
       >
         {/* Header */}
         <div
@@ -617,7 +617,7 @@ export function PositionSettingsDialog() {
           )}
         >
           <div className="flex items-center gap-2">
-            <span className="text-[20px] font-semibold leading-7 text-[#f0f0f0]">
+            <span className="text-[20px] font-semibold leading-7 text-ink">
               {settings.title}
             </span>
             {drawing.tradeStatus === "tp_hit" && (
@@ -630,19 +630,19 @@ export function PositionSettingsDialog() {
                 SL Hit
               </span>
             )}
-            <Pencil size={16} className="text-[#d1d4dc]" />
+            <Pencil size={16} className="text-ink-muted" />
           </div>
           <button
             onClick={cancel}
             aria-label="Close settings"
-            className="rounded-sm p-1 text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]"
+            className="rounded-sm p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
           >
             <X size={24} strokeWidth={1.5} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-[#5a5a5a] pt-3">
+        <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-terminal-border pt-3">
           {(settings.tabs as readonly Tab[]).map((id) => tabBtn(id, id[0].toUpperCase() + id.slice(1)))}
         </div>
 
@@ -864,8 +864,8 @@ export function PositionSettingsDialog() {
                   className={cn(
                     "rounded border px-2.5 py-1 text-xs transition-colors",
                     drawing.showLabels !== false
-                      ? "border-[#f0f0f0] bg-[#f0f0f0] text-[#1f1f1f]"
-                      : "border-[#50535a] text-[#d1d4dc] hover:bg-[#2a2a2a] hover:text-[#f0f0f0]",
+                      ? "border-terminal-border-strong bg-brand text-[var(--accent-contrast)]"
+                      : "border-terminal-border-strong text-ink-muted hover:bg-terminal-hover hover:text-ink",
                   )}
                 >
                   {drawing.showLabels !== false ? "Shown" : "Hidden"}
@@ -879,26 +879,26 @@ export function PositionSettingsDialog() {
             </>
           )}
         </div>
-        <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-[#3a3a3a] px-5">
+        <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
           <button
             type="button"
-            className="flex h-[34px] min-w-[104px] items-center justify-between rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[13px] font-medium text-[#f0f0f0] hover:border-[#6a6d75]"
+            className="flex h-[34px] min-w-[104px] items-center justify-between rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] font-medium text-ink hover:border-brand"
           >
             <span>Template</span>
-            <ChevronDown size={15} className="text-[#a0a3aa]" />
+            <ChevronDown size={15} className="text-ink-faint" />
           </button>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={cancel}
-              className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] hover:bg-[#2a2a2a]"
+              className="h-[34px] rounded-[5px] border border-terminal-border-strong bg-transparent px-3.5 text-[14px] font-semibold text-ink hover:bg-terminal-hover"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={ok}
-              className="h-[34px] rounded-[5px] border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] hover:bg-white"
+              className="h-[34px] rounded-[5px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover"
             >
               Ok
             </button>

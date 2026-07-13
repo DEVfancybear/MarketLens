@@ -16,32 +16,36 @@ const config: Config = {
       colors: {
         // Surfaces
         terminal: {
-          bg: 'var(--bg)',
-          panel: 'var(--panel)',
-          'panel-2': 'var(--panel-2)',
-          border: 'var(--border)',
-          hover: 'var(--hover)',
+          bg: 'rgb(var(--bg-rgb) / <alpha-value>)',
+          panel: 'rgb(var(--panel-rgb) / <alpha-value>)',
+          'panel-2': 'rgb(var(--panel-2-rgb) / <alpha-value>)',
+          'panel-3': 'rgb(var(--panel-3-rgb) / <alpha-value>)',
+          raised: 'rgb(var(--surface-raised-rgb) / <alpha-value>)',
+          border: 'rgb(var(--border-rgb) / <alpha-value>)',
+          'border-strong': 'rgb(var(--border-strong-rgb) / <alpha-value>)',
+          hover: 'rgb(var(--hover-rgb) / <alpha-value>)',
+          pressed: 'rgb(var(--pressed-rgb) / <alpha-value>)',
         },
         // Text
         ink: {
-          DEFAULT: 'var(--text)',
-          muted: 'var(--text-muted)',
-          faint: 'var(--text-faint)',
+          DEFAULT: 'rgb(var(--text-rgb) / <alpha-value>)',
+          muted: 'rgb(var(--text-muted-rgb) / <alpha-value>)',
+          faint: 'rgb(var(--text-faint-rgb) / <alpha-value>)',
         },
         // Brand / accent
         brand: {
-          DEFAULT: 'var(--accent)',
+          DEFAULT: 'rgb(var(--accent-rgb) / <alpha-value>)',
           hover: 'var(--accent-hover)',
         },
         // Market
-        bull: 'var(--bull)',
-        bear: 'var(--bear)',
+        bull: 'rgb(var(--bull-rgb) / <alpha-value>)',
+        bear: 'rgb(var(--bear-rgb) / <alpha-value>)',
         // SMC semantic
-        bos: 'var(--bos)',
-        choch: 'var(--choch)',
-        fvg: 'var(--fvg)',
-        ob: 'var(--ob)',
-        liquidity: 'var(--liquidity)',
+        bos: 'rgb(var(--bos-rgb) / <alpha-value>)',
+        choch: 'rgb(var(--choch-rgb) / <alpha-value>)',
+        fvg: 'rgb(var(--fvg-rgb) / <alpha-value>)',
+        ob: 'rgb(var(--ob-rgb) / <alpha-value>)',
+        liquidity: 'rgb(var(--liquidity-rgb) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
@@ -51,7 +55,16 @@ const config: Config = {
         '2xs': ['0.6875rem', { lineHeight: '1rem' }],
       },
       transitionDuration: {
-        DEFAULT: '120ms',
+        DEFAULT: '160ms',
+      },
+      borderRadius: {
+        terminal: '10px',
+      },
+      boxShadow: {
+        terminal: 'var(--shadow-panel)',
+        accent: 'var(--glow-accent)',
+        floating: 'var(--shadow-panel)',
+        glow: 'var(--glow-accent)',
       },
     },
   },

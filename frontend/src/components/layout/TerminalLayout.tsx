@@ -43,25 +43,25 @@ export function TerminalLayout({
   const setBottomOpen = useSetAtom(setBottomOpenAtom);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-terminal-bg">
+    <div className="desktop-terminal flex h-dvh w-screen flex-col overflow-hidden bg-terminal-bg">
       {/* Top toolbar — Tight: TradingView = 36px */}
-      <div className="h-9 shrink-0 border-b border-terminal-border bg-terminal-panel">
+      <div className="h-14 shrink-0 border-b border-terminal-border bg-terminal-panel/95 shadow-[0_1px_0_rgba(255,255,255,.025)] backdrop-blur-xl">
         {toolbar}
       </div>
 
       {/* Body: left rail | center+bottom | right watchlist */}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-2 p-2">
         {/* Left drawing rail (fixed width) */}
         <div
-          className="shrink-0 border-r border-terminal-border bg-terminal-panel overflow-hidden"
+          className="surface-panel shrink-0 overflow-hidden"
           style={{ width: panels.left }}
         >
           {leftRail}
         </div>
 
         {/* Center column = chart (+ bottom dock) */}
-        <div className="relative flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1">{chart}</div>
+        <div className="surface-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 bg-[var(--chart-bg)]">{chart}</div>
 
           {bottomOpen && (
             <>
@@ -83,7 +83,7 @@ export function TerminalLayout({
                   title="Collapse bottom panel"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => setBottomOpen(false)}
-                  className="absolute left-1/2 top-1/2 z-30 flex h-6 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border border-terminal-border bg-terminal-panel-2 text-ink-muted shadow-lg shadow-black/30 hover:bg-terminal-hover hover:text-ink"
+                  className="absolute left-1/2 top-1/2 z-30 flex h-7 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-terminal-border-strong bg-terminal-raised text-ink-muted shadow-terminal hover:bg-terminal-hover hover:text-ink"
                 >
                   <ChevronDown size={15} />
                 </button>
@@ -102,7 +102,7 @@ export function TerminalLayout({
               aria-label="Show bottom panel"
               title="Show bottom panel"
               onClick={() => setBottomOpen(true)}
-              className="absolute bottom-2 left-1/2 z-30 flex h-7 w-10 -translate-x-1/2 items-center justify-center rounded-sm border border-terminal-border bg-terminal-panel-2 text-ink-muted shadow-lg shadow-black/40 hover:bg-terminal-hover hover:text-ink"
+              className="absolute bottom-10 left-1/2 z-30 flex h-8 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-terminal-border-strong bg-terminal-raised/95 text-ink-muted shadow-terminal backdrop-blur hover:bg-terminal-hover hover:text-ink"
             >
               <ChevronUp size={16} />
             </button>
@@ -120,14 +120,13 @@ export function TerminalLayout({
               value={panels.right}
               onChange={(v) => setPanel("right", v)}
             />
-            <div
-              className={cn(
-                "shrink-0 border-l border-terminal-border bg-terminal-panel",
-              )}
+            <aside
+              aria-label="Market sidebar"
+              className={cn("surface-panel shrink-0 overflow-hidden")}
               style={{ width: panels.right }}
             >
               {watchlist}
-            </div>
+            </aside>
           </>
         )}
       </div>

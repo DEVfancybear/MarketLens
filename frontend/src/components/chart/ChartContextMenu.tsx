@@ -292,7 +292,7 @@ export function ChartContextMenu({
       aria-label="Chart actions"
       onKeyDown={onMenuKeyDown}
       style={{ left: pos.x, top: pos.y, transformOrigin: "top left" }}
-      className="context-menu-pop fixed z-[1000] min-w-[260px] overflow-hidden rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
+      className="context-menu-pop fixed z-[1000] min-w-[260px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating"
     >
       <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
         {symbol} · {priceStr}

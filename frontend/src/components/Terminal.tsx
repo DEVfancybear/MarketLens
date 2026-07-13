@@ -1,14 +1,9 @@
 "use client";
 
-import { TerminalLayout } from "@/components/layout/TerminalLayout";
-import { TopToolbar } from "@/components/toolbar/TopToolbar";
-import { DrawingToolbar } from "@/components/toolbar/DrawingToolbar";
+import dynamic from "next/dynamic";
 import { IndicatorSettingsDialog } from "@/components/toolbar/IndicatorSettingsDialog";
 import { PositionSettingsDialog } from "@/components/chart/PositionSettingsDialog";
 import { ObjectSettingsDialog } from "@/components/chart/ObjectSettingsDialog";
-import { ChartArea } from "@/components/chart/ChartArea";
-import { RightSidebar } from "@/components/layout/RightSidebar";
-import { BottomPanel } from "@/components/layout/BottomPanel";
 import { GlobalRuntime } from "@/components/layout/GlobalRuntime";
 import { Splash } from "@/components/layout/Splash";
 import { Toaster } from "@/components/notifications/Toaster";
@@ -16,9 +11,19 @@ import { AlertCenter } from "@/components/alerts/AlertCenter";
 import { AlertEditDialog } from "@/components/alerts/AlertEditDialog";
 import { useStoreHydration } from "@/hooks/useStoreHydration";
 import { useHotkeys } from "@/hooks/useHotkeys";
-import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 import { AppSettingsDialog } from "@/components/settings/AppSettingsDialog";
 import { DrawingAlertDialog } from "@/components/chart/drawing/alerts/DrawingAlertDialog";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+
+const DesktopTerminal = dynamic(
+  () => import("@/components/desktop/DesktopTerminal").then((module) => module.DesktopTerminal),
+  { ssr: false, loading: () => <Splash /> },
+);
+
+const MobileTerminal = dynamic(
+  () => import("@/components/mobile/MobileTerminal").then((module) => module.MobileTerminal),
+  { ssr: false, loading: () => <Splash /> },
+);
 
 /**
  * The full client-only trading terminal. Imported via `dynamic(..., {ssr:false})`
@@ -28,6 +33,7 @@ import { DrawingAlertDialog } from "@/components/chart/drawing/alerts/DrawingAle
  */
 export function Terminal() {
   const hydrated = useStoreHydration();
+  const platform = useTerminalPlatform();
   useHotkeys();
 
   if (!hydrated) return <Splash />;
@@ -35,13 +41,7 @@ export function Terminal() {
   return (
     <>
       <GlobalRuntime />
-      <TerminalLayout
-        toolbar={<TopToolbar />}
-        leftRail={<DrawingToolbar />}
-        chart={<ChartPerformanceProfiler><ChartArea /></ChartPerformanceProfiler>}
-        watchlist={<RightSidebar />}
-        bottom={<BottomPanel />}
-      />
+      {platform === "desktop" ? <DesktopTerminal /> : <MobileTerminal />}
       <AlertCenter />
       <AlertEditDialog />
       <IndicatorSettingsDialog />

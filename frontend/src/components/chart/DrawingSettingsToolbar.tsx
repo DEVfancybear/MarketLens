@@ -200,7 +200,7 @@ export function DrawingSettingsToolbar() {
       <div
       ref={rootRef}
       data-drawing-toolbar
-      className="absolute z-20 flex items-center gap-0.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-1.5 py-1 shadow-2xl shadow-black/50"
+      className="absolute z-20 flex items-center gap-0.5 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 px-1.5 py-1 shadow-floating backdrop-blur-xl"
       style={{
         left: pos?.left ?? -9999,
         top: pos?.top ?? -9999,

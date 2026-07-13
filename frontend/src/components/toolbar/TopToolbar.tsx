@@ -15,6 +15,7 @@ import {
   Bell,
   Star,
   ListTree,
+  ChartCandlestick,
 } from "lucide-react";
 import { SymbolSearch } from "./SymbolSearch";
 import { useAlertStore } from "@/store/alertStore";
@@ -40,7 +41,7 @@ import {
   beginReplaySelectionAtom,
   cancelReplaySelectionAtom,
   replaySelectionModeAtom,
-} from "@/components/replay/replayUiState";
+} from "@/store/replayUiState";
 import {
   themeAtom,
   rightOpenAtom,
@@ -224,7 +225,18 @@ export function TopToolbar() {
   };
 
   return (
-    <div className="flex h-full items-center gap-0 px-2">
+    <div className="flex h-full items-center gap-2 px-3">
+      <div className="mr-1 flex h-10 shrink-0 items-center gap-2.5 pr-3 xl:min-w-[154px]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-[var(--accent-contrast)] shadow-accent">
+          <ChartCandlestick size={19} strokeWidth={2.2} />
+        </div>
+        <div className="hidden min-w-0 xl:block">
+          <div className="text-[13px] font-bold leading-4 tracking-[-0.02em] text-ink">SMC Terminal</div>
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-faint">Live workspace</div>
+        </div>
+      </div>
+
+      <div className="flex h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">
       <SymbolSearch />
 
       <div className="mx-1 h-5 w-px bg-terminal-border" />
@@ -232,8 +244,9 @@ export function TopToolbar() {
       {/* Timeframes — TradingView segmented control */}
       <TimeframeSelector timeframe={timeframe} onChange={setTimeframe} />
 
-      <div className="mx-1 h-5 w-px bg-terminal-border" />
+      </div>
 
+      <div className="flex h-10 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/55 p-1">
       <IndicatorMenu />
       <SmcMenu />
       <ChartSettingsMenu />
@@ -241,7 +254,7 @@ export function TopToolbar() {
       <button
         onClick={toggleReplay}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] transition-colors",
+          "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors",
           replay.snapshot || replaySelection !== "idle"
             ? "bg-brand/15 text-brand"
             : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
@@ -255,7 +268,7 @@ export function TopToolbar() {
       <Dropdown
         width={230}
         trigger={() => (
-          <button className="flex h-7 items-center gap-1.5 rounded px-2 text-[11px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
+          <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
             <LayoutIcon size={14} />
             {activeLayout?.name ?? "Layout"}
           </button>
@@ -382,13 +395,14 @@ export function TopToolbar() {
           </div>
         )}
       </Dropdown>
+      </div>
 
-      <div className="ml-auto flex items-center gap-0">
+      <div className="ml-auto flex h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/45 p-1">
         <ConnectionBadge />
-        <div className="mx-1 h-5 w-px bg-terminal-border" />
+        <div className="h-5 w-px bg-terminal-border" />
         <button
           onClick={toggleAlertCenter}
-          className="relative flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+          className="relative flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
           title="Alerts"
           aria-label="Alerts"
         >
@@ -470,7 +484,7 @@ export function TopToolbar() {
         <IconButton label="Fullscreen" onClick={toggleFullscreen}>
           {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </IconButton>
-        <div className="mx-1 h-5 w-px bg-terminal-border" />
+        <div className="h-5 w-px bg-terminal-border" />
         <AuthControl />
       </div>
     </div>

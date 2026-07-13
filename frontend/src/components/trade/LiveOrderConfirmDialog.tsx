@@ -28,25 +28,30 @@ export function LiveOrderConfirmDialog({
   const title = isOrder ? "Confirm MT5 order" : "Confirm MT5 close all";
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/55">
+    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" data-chart-ui>
       <div
         ref={dialogRef}
         style={dialogStyle}
-        className="w-[360px] max-w-[calc(100vw-24px)] rounded-md border border-terminal-border bg-terminal-panel shadow-2xl"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="live-order-confirm-title"
+        className="w-full max-w-[400px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
       >
         <div
           {...dragHandleProps}
-          className={`flex h-10 items-center justify-between border-b border-terminal-border px-3 ${dragHandleClassName}`}
+          className={`flex min-h-14 items-center justify-between border-b border-terminal-border px-4 ${dragHandleClassName}`}
         >
-          <div className="text-sm font-semibold text-ink">{title}</div>
+          <div id="live-order-confirm-title" className="text-base font-semibold tracking-[-0.02em] text-ink">{title}</div>
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink"
+            aria-label="Cancel live order"
           >
             <X size={15} />
           </button>
         </div>
-        <div className="space-y-3 p-3 text-xs text-ink-muted">
+        <div className="space-y-4 p-4 text-sm leading-6 text-ink-muted">
           {isOrder ? (
             <OrderSummary order={payload.order} precision={precision} />
           ) : (
@@ -55,21 +60,23 @@ export function LiveOrderConfirmDialog({
               {payload.request.chartSymbol ? ` for ${payload.request.chartSymbol}` : ""}.
             </div>
           )}
-          <div className="rounded border border-bear/30 bg-bear/10 px-2 py-1.5 text-[11px] text-bear">
+          <div className="rounded-xl border border-bear/30 bg-bear/10 px-3 py-2.5 text-xs leading-5 text-bear">
             MT5 bridge state is authoritative. The app will wait for bridge events before updating
             live positions.
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-terminal-border p-3">
+        <div className="flex justify-end gap-2 border-t border-terminal-border p-4 pb-[max(16px,env(safe-area-inset-bottom))]">
           <button
+            type="button"
             onClick={onCancel}
-            className="rounded border border-terminal-border px-3 py-1.5 text-xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
+            className="min-h-11 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink-muted hover:bg-terminal-hover hover:text-ink"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={onConfirm}
-            className="rounded bg-bear px-3 py-1.5 text-xs font-semibold text-white hover:bg-bear/90"
+            className="min-h-11 rounded-xl bg-bear px-4 text-sm font-semibold text-white hover:opacity-90"
           >
             Send live command
           </button>

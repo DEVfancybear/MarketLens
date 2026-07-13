@@ -5,14 +5,16 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   title: 'SMC Trading Terminal',
   description:
-    'Professional TradingView-style terminal with Replay Mode, Smart Money Concepts, backtesting and analytics.',
+    'Institutional charting and execution workspace with replay, Smart Money Concepts, journaling and analytics.',
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  themeColor: '#0b0e11',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#070a12' },
+    { media: '(prefers-color-scheme: light)', color: '#eef2f8' },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

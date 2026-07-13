@@ -17,7 +17,10 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `REPLAY_ARCHITECTURE.md` | Replay mode engine |
 | `REPLAY_CONTROL_INCIDENTS.md` | Pause race and debounced Replay control incident analysis |
 | `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md` | Target architecture and phased migration from frontend-owned replay to Go/PostgreSQL |
-| `RESPONSIVE_ARCHITECTURE.md` | Responsive layout system |
+| `RESPONSIVE_ARCHITECTURE.md` | Implemented two-platform responsive boundary |
+| `PLATFORM_UI_ARCHITECTURE.md` | Desktop/mobile ownership, lazy chunks and accessibility contract |
+| `MOBILE_TOUCH_GESTURES.md` | Pointer Events, drag alternatives, sheet state machine and test matrix |
+| `../design-system/smc-trading-terminal/MASTER.md` | Canonical Institutional Command Center design system |
 | `SETTTING_ARCHITECTURE.md` | Settings dialog architecture |
 | `WATCHLIST_ARCHITECTURE.md` | Watchlist lists, sections, and persistence |
 | `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md` | Zoom / viewport synchronization |

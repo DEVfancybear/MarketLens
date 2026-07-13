@@ -130,10 +130,10 @@ export function TimeframeSelector({
           type="button"
           onClick={() => onChange(tf)}
           className={cn(
-            "h-7 min-w-[28px] rounded px-1.5 text-[11px] font-semibold transition-colors",
+            "h-8 min-w-[30px] rounded-lg px-2 text-[11px] font-semibold transition-colors",
             tf === timeframe
-              ? "bg-terminal-hover text-ink"
-              : "text-ink hover:bg-terminal-hover",
+              ? "bg-brand/15 text-brand shadow-[inset_0_0_0_1px_rgb(var(--accent-rgb)/.18)]"
+              : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
           )}
         >
           {timeframeShortLabel(tf)}
@@ -148,8 +148,8 @@ export function TimeframeSelector({
             aria-label="Select interval"
             title="Select interval"
             className={cn(
-              "flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
-              open && "bg-terminal-hover text-ink",
+              "flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+              open && "bg-brand/10 text-brand",
             )}
           >
             <ChevronDown size={14} />
@@ -157,22 +157,22 @@ export function TimeframeSelector({
         )}
       >
         {(close) => (
-          <div className="max-h-[min(640px,calc(100vh-56px))] overflow-y-auto bg-[#1f1f1f] py-1 text-[13px] font-semibold text-[#d1d4dc]">
+          <div className="max-h-[min(640px,calc(100vh-72px))] overflow-y-auto bg-terminal-raised py-1 text-[13px] font-semibold text-ink">
             <button
               type="button"
               onClick={() => {
                 close();
                 setCustomOpen(true);
               }}
-              className="flex h-10 w-full items-center gap-2 border-b border-[#343434] px-3 text-left text-[#d1d4dc] transition-colors hover:bg-[#2a2a2a] hover:text-[#f0f3fa]"
+              className="flex h-11 w-full items-center gap-2 border-b border-terminal-border px-3 text-left text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
             >
-              <Plus size={18} className="text-[#b2b5be]" />
+              <Plus size={18} className="text-brand" />
               <span>Add custom interval...</span>
             </button>
 
             {TIMEFRAME_MENU_GROUPS.map((group) => (
-              <div key={group.label} className="border-b border-[#343434] py-2">
-                <div className="mb-1 flex h-6 items-center justify-between px-3 text-[11px] font-semibold uppercase text-[#8a8f98]">
+              <div key={group.label} className="border-b border-terminal-border py-2">
+                <div className="mb-1 flex h-6 items-center justify-between px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
                   <span>{group.label}</span>
                   <ChevronUp size={14} />
                 </div>
@@ -197,10 +197,10 @@ export function TimeframeSelector({
                         className={cn(
                           "group flex h-8 w-full items-center gap-2 px-3 text-left transition-colors",
                           active
-                            ? "bg-[#f0f3fa] text-[#131722]"
+                            ? "bg-brand/15 text-brand"
                             : supported
-                              ? "text-[#d1d4dc] hover:bg-[#2f2f2f] hover:text-[#f0f3fa]"
-                              : "cursor-default text-[#666a73]",
+                              ? "text-ink-muted hover:bg-terminal-hover hover:text-ink"
+                              : "cursor-default text-ink-faint opacity-55",
                         )}
                       >
                         <span className="min-w-0 flex-1 truncate">
@@ -237,11 +237,11 @@ export function TimeframeSelector({
                               "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm",
                               active
                                 ? favorite
-                                  ? "text-[#131722]"
-                                  : "text-[#70757f]"
+                                  ? "text-[var(--accent-contrast)]"
+                                  : "text-[var(--accent-contrast)]/60"
                                 : favorite
-                                  ? "text-[#f0f3fa]"
-                                  : "text-[#8a8f98] opacity-0 transition-opacity group-hover:opacity-100",
+                                  ? "text-ink"
+                                  : "text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
                             )}
                           >
                             <Star
@@ -319,30 +319,33 @@ function CustomIntervalDialog({
   return createPortal(
     <div
       data-chart-ui
-      className="fixed inset-0 z-[90] bg-black/10"
+      className="fixed inset-0 z-[900] bg-[var(--scrim)] backdrop-blur-sm"
       onMouseDown={onClose}
     >
       <div
         ref={dialogRef}
-        className="fixed w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-md border border-[#2f2f2f] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="custom-interval-title"
+        className="fixed w-[420px] max-w-[calc(100vw-24px)] overflow-visible rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
         style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div
           {...dragHandleProps}
           className={cn(
-            "flex h-[68px] items-center justify-between border-b border-[#343434] px-5",
+            "flex h-16 items-center justify-between border-b border-terminal-border px-5",
             dragHandleClassName,
           )}
         >
-          <div className="text-[22px] font-semibold text-[#d1d4dc]">
+          <div id="custom-interval-title" className="text-xl font-semibold tracking-[-0.02em] text-ink">
             Add custom interval
           </div>
           <button
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded text-[#d1d4dc] hover:bg-[#2a2a2a]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
           >
             <X size={22} />
           </button>
@@ -350,7 +353,7 @@ function CustomIntervalDialog({
 
         <div className="space-y-3 px-5 py-5">
           <div className="grid grid-cols-[96px_minmax(0,180px)] items-center gap-3">
-            <label className="text-[14px] font-semibold text-[#d1d4dc]">
+            <label className="text-sm font-semibold text-ink">
               Type
             </label>
             <div className="relative">
@@ -358,8 +361,8 @@ function CustomIntervalDialog({
                 type="button"
                 onClick={() => setTypeOpen((open) => !open)}
                 className={cn(
-                  "flex h-[36px] w-full items-center justify-between rounded-md border border-[#5d606b] bg-[#202020] px-2 text-left text-[14px] font-semibold text-[#f0f3fa]",
-                  typeOpen && "border-[#2962ff]",
+                  "flex h-10 w-full items-center justify-between rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-left text-sm font-semibold text-ink",
+                  typeOpen && "border-brand ring-2 ring-brand/15",
                 )}
               >
                 <span>{type}</span>
@@ -369,7 +372,7 @@ function CustomIntervalDialog({
                 />
               </button>
               {typeOpen && (
-                <div className="absolute left-0 top-[38px] z-[95] w-[76px] overflow-hidden rounded-sm border border-[#252525] bg-[#111] py-1 shadow-2xl shadow-black/60">
+                <div className="absolute left-0 top-[44px] z-[95] min-w-[132px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
                   {CUSTOM_INTERVAL_TYPES.map((item) => (
                     <button
                       key={item}
@@ -379,10 +382,10 @@ function CustomIntervalDialog({
                         setTypeOpen(false);
                       }}
                       className={cn(
-                        "h-8 w-full px-3 text-left text-[14px] font-semibold transition-colors hover:bg-[#2a2a2a]",
+                        "h-9 w-full rounded-lg px-3 text-left text-sm font-semibold transition-colors hover:bg-terminal-hover",
                         item === type
-                          ? "bg-[#f0f3fa] text-[#131722]"
-                          : "text-[#d1d4dc]",
+                          ? "bg-brand text-[var(--accent-contrast)]"
+                          : "text-ink-muted",
                       )}
                     >
                       {item}
@@ -396,7 +399,7 @@ function CustomIntervalDialog({
           <div className="grid grid-cols-[96px_minmax(0,180px)] items-center gap-3">
             <label
               htmlFor="custom-interval-value"
-              className="text-[14px] font-semibold text-[#d1d4dc]"
+              className="text-sm font-semibold text-ink"
             >
               Interval
             </label>
@@ -412,16 +415,16 @@ function CustomIntervalDialog({
               onKeyDown={(event) => {
                 if (event.key === "Enter") add();
               }}
-              className="h-[36px] rounded-md border border-[#5d606b] bg-[#202020] px-2 text-[14px] font-semibold text-[#f0f3fa] outline-none focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+              className="h-10 rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-semibold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </div>
         </div>
 
-        <div className="flex h-[66px] items-center justify-end gap-3 border-t border-[#343434] px-5">
+        <div className="flex min-h-16 items-center justify-end gap-3 border-t border-terminal-border px-5 py-2">
           <button
             type="button"
             onClick={onClose}
-            className="h-9 rounded-md border border-[#f0f3fa] px-4 text-[14px] font-semibold text-[#f0f3fa] hover:bg-[#2a2a2a]"
+            className="min-h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover"
           >
             Cancel
           </button>
@@ -429,7 +432,7 @@ function CustomIntervalDialog({
             type="button"
             disabled={!resolved}
             onClick={add}
-            className="h-9 rounded-md bg-[#f0f3fa] px-4 text-[14px] font-semibold text-[#131722] hover:bg-white disabled:cursor-default disabled:bg-[#4a4a4a] disabled:text-[#666a73] disabled:hover:bg-[#4a4a4a]"
+            className="min-h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-default disabled:opacity-40"
           >
             Add
           </button>

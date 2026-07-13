@@ -19,14 +19,15 @@ import { TradePanel } from "@/components/trade/TradePanel";
 import { JournalPanel } from "@/components/journal/JournalPanel";
 import { AnalyticsPanel } from "@/components/analytics/AnalyticsPanel";
 import { PineEditor } from "@/components/pine/PineEditor";
+import { Activity, BookOpen, Bot, ChartNoAxesCombined, ScrollText, WalletCards, type LucideIcon } from "lucide-react";
 
-const TABS: { key: BottomTab; label: string }[] = [
-  { key: "replay", label: "Replay" },
-  { key: "trade", label: "Trade" },
-  { key: "journal", label: "Journal" },
-  { key: "analytics", label: "Analytics" },
-  { key: "pine", label: "Pine Editor" },
-  { key: "logs", label: "Logs" },
+const TABS: { key: BottomTab; label: string; icon: LucideIcon }[] = [
+  { key: "replay", label: "Replay", icon: Activity },
+  { key: "trade", label: "Trade", icon: WalletCards },
+  { key: "journal", label: "Journal", icon: BookOpen },
+  { key: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
+  { key: "pine", label: "Pine Editor", icon: Bot },
+  { key: "logs", label: "Logs", icon: ScrollText },
 ];
 
 /**
@@ -50,24 +51,28 @@ export function BottomPanel() {
   return (
     <div className="flex h-full flex-col">
       {/* Tab strip */}
-      <div className="flex h-8 shrink-0 items-end border-b border-terminal-border px-2">
-        {visibleTabs.map((t) => (
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-terminal-border bg-terminal-panel-2/45 px-2.5">
+        {visibleTabs.map((t) => {
+          const Icon = TABS.find((item) => item.key === t.key)?.icon ?? Activity;
+          return (
           <button
             key={t.key}
             onClick={() => setBottomTab(t.key)}
+            aria-current={effectiveTab === t.key ? "page" : undefined}
             className={cn(
-              "relative px-3 pb-1.5 pt-1 text-2xs font-medium transition-colors",
+              "relative flex h-8 items-center gap-2 rounded-lg px-3 text-[11px] font-semibold transition-colors",
               effectiveTab === t.key
-                ? "text-ink"
-                : "text-ink-muted hover:text-ink",
+                ? "bg-terminal-raised text-ink shadow-sm"
+                : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
             )}
           >
+            <Icon size={14} />
             {t.label}
             {effectiveTab === t.key && (
-              <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t bg-brand" />
+              <span className="absolute -bottom-[9px] left-3 right-3 h-0.5 rounded-t bg-brand" />
             )}
           </button>
-        ))}
+        )})}
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">

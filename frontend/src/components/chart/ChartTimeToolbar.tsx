@@ -23,6 +23,7 @@ import {
 import { authStatusAtom } from "@/store/authStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
+import { focusFirstWithin, trapFocusWithin } from "@/utils/focusManagement";
 import {
   CHART_TIME_ZONE_OPTIONS,
   EXCHANGE_TIME_ZONE_ID,
@@ -32,7 +33,6 @@ import {
   firstCandleIndexAtOrAfter,
   formatDateInput,
   formatGoToMarkerLabel,
-  formatTimeInput,
   formatUtcOffset,
   goToSelectionDraft,
   goToDateLogicalRange,
@@ -54,8 +54,6 @@ import {
   type TimeRangeShortcut,
 } from "@/services/api/resources/timeNavigationApi";
 
-type GoToTab = "date" | "range";
-type RangeField = "from" | "to";
 type GoToMarkerState = {
   id: number;
   time: number;
@@ -101,26 +99,21 @@ function monthFromDateInput(value: string): Date {
     : new Date();
 }
 
-function defaultRange(candles: Candle[], timeZone?: string) {
+function defaultGoToDraft(candles: Candle[], timeZone?: string) {
   const fallback = Date.now();
   const endMs = (candles[candles.length - 1]?.time ?? Math.floor(fallback / 1000)) * 1000;
-  const startMs = endMs - 24 * 60 * 60 * 1000;
   const singleDate = formatDateInput(endMs, timeZone);
   return {
     singleDate,
     singleTime: "00:00",
-    fromDate: formatDateInput(startMs, timeZone),
-    fromTime: formatTimeInput(startMs, timeZone),
-    toDate: formatDateInput(endMs, timeZone),
-    toTime: formatTimeInput(endMs, timeZone),
     month: monthFromDateInput(singleDate),
   };
 }
 
 function inputShell(className?: string) {
   return cn(
-    "flex h-[34px] min-w-0 items-center rounded-md border border-[#5d606b] bg-[#202020] px-2 text-[13px] font-semibold text-[#f0f3fa]",
-    "focus-within:border-[#9aa4b2]",
+    "flex h-9 min-w-0 items-center rounded-xl border border-terminal-border-strong bg-terminal-panel px-2.5 text-[13px] font-semibold text-ink",
+    "focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/15",
     className,
   );
 }
@@ -203,7 +196,7 @@ function TimeZoneMenu({
   return createPortal(
     <div data-chart-ui className="fixed inset-0 z-[85]" onMouseDown={onClose}>
       <div
-        className="fixed max-h-[min(520px,calc(100vh-48px))] w-[232px] overflow-y-auto rounded-sm border border-[#2b2b2b] bg-[#1f1f1f] py-1 text-[13px] font-semibold text-[#d1d4dc] shadow-2xl shadow-black/60"
+        className="fixed max-h-[min(520px,calc(100vh-48px))] w-[250px] overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 text-[13px] font-semibold text-ink shadow-floating"
         style={{ left: position.left, top: position.top }}
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -216,13 +209,13 @@ function TimeZoneMenu({
                 type="button"
                 onClick={() => onSelect(option.id)}
                 className={cn(
-                  "flex h-8 w-full items-center justify-between px-10 text-left transition-colors hover:bg-[#2a2a2a]",
-                  active ? "bg-[#2f2f2f] text-[#f0f3fa]" : "text-[#d1d4dc]",
+                  "flex h-9 w-full items-center justify-between rounded-lg px-3 text-left transition-colors hover:bg-terminal-hover",
+                  active ? "bg-brand/12 text-brand" : "text-ink-muted",
                 )}
               >
                 <span className="truncate">{timeZoneOptionText(option, now)}</span>
               </button>
-              {afterPinned && <div className="my-1 h-px bg-[#2b2b2b]" />}
+              {afterPinned && <div className="my-1 h-px bg-terminal-border" />}
             </div>
           );
         })}
@@ -257,6 +250,7 @@ export function ChartTimeToolbar({
   const [tooltipState, setTooltipState] =
     useState<ShortcutTooltipState | null>(null);
   const pendingShortcutId = useRef(0);
+  const goToTriggerRef = useRef<HTMLButtonElement>(null);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
   const authStatus = useAtomValue(authStatusAtom);
@@ -420,6 +414,11 @@ export function ChartTimeToolbar({
     setGoToOpen(true);
   };
 
+  const closeGoTo = useCallback(() => {
+    setGoToOpen(false);
+    window.requestAnimationFrame(() => goToTriggerRef.current?.focus());
+  }, []);
+
   const openTimeZoneMenu = (event: MouseEvent<HTMLButtonElement>) => {
     setTimeZoneAnchor(elementAnchorFromRect(event.currentTarget.getBoundingClientRect()));
     setTimeZoneOpen(true);
@@ -427,7 +426,7 @@ export function ChartTimeToolbar({
 
   return (
     <>
-      <div className="flex h-8 shrink-0 items-center border-t border-terminal-border bg-[#0f0f0f] px-1 text-[12px] text-[#d1d4dc]">
+      <div className="chart-time-toolbar flex h-9 shrink-0 items-center border-t border-terminal-border bg-terminal-panel-2/75 px-1.5 text-xs text-ink-muted">
         <div className="flex min-w-0 items-center overflow-x-auto">
           {(navigationCatalog?.shortcuts ?? []).map((shortcut) => (
             <button
@@ -440,23 +439,24 @@ export function ChartTimeToolbar({
               onFocus={(event) => showShortcutTooltip(event, shortcut)}
               onBlur={() => setTooltipState(null)}
               className={cn(
-                "h-7 shrink-0 rounded-sm px-1.5 font-semibold transition-colors disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent",
+                "h-7 shrink-0 rounded-md px-2 font-semibold transition-colors disabled:cursor-default disabled:text-ink-faint disabled:opacity-50 disabled:hover:bg-transparent",
                 activeShortcut === shortcut.id
-                  ? "bg-[#4a4a4a] text-[#f0f3fa]"
-                  : "text-[#f0f3fa] hover:bg-[#2a2a2a]",
+                  ? "bg-brand/12 text-brand"
+                  : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
               )}
             >
               {shortcut.id}
             </button>
           ))}
-          <div className="mx-1 h-5 w-px shrink-0 bg-[#2a2e39]" />
+          <div className="mx-1 h-5 w-px shrink-0 bg-terminal-border" />
           <button
+            ref={goToTriggerRef}
             type="button"
             disabled={!chart || loading || candles.length === 0}
             aria-label="Go to"
             title={`Go to${navigationCatalog ? ` (${navigationCatalog.goTo.hotkey.label})` : ""}`}
             onClick={openGoTo}
-            className="flex h-7 w-8 shrink-0 items-center justify-center rounded-sm text-[#f0f3fa] transition-colors hover:bg-[#2a2a2a] disabled:cursor-default disabled:text-[#5d606b] disabled:hover:bg-transparent"
+            className="flex h-7 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink disabled:cursor-default disabled:text-ink-faint disabled:opacity-50 disabled:hover:bg-transparent"
           >
             <CalendarDays size={16} />
           </button>
@@ -466,7 +466,7 @@ export function ChartTimeToolbar({
           aria-label="Select time zone"
           title="Time zone"
           onClick={openTimeZoneMenu}
-          className="ml-auto hidden h-7 shrink-0 rounded-sm px-2 font-semibold text-[#f0f3fa] transition-colors hover:bg-[#2a2a2a] sm:block"
+          className="ml-auto hidden h-7 shrink-0 rounded-md px-2 font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink sm:block"
         >
           {formatClock(now, activeTimeZone)} {formatUtcOffset(now, activeTimeZone)}
         </button>
@@ -506,7 +506,7 @@ export function ChartTimeToolbar({
           }
           onSelectionApplied={setLastGoToSelection}
           onManualNavigation={() => setActiveShortcut(null)}
-          onClose={() => setGoToOpen(false)}
+          onClose={closeGoTo}
         />
       )}
       {chart && goToMarker && (
@@ -521,7 +521,7 @@ export function ChartTimeToolbar({
         createPortal(
           <div
             data-chart-ui
-            className="pointer-events-none fixed z-[95] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-sm bg-[#4a4a4a] px-2 py-1 text-[12px] font-semibold text-[#f0f3fa] shadow-lg shadow-black/50"
+            className="pointer-events-none fixed z-[95] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-terminal-border-strong bg-terminal-raised px-2.5 py-1.5 text-xs font-semibold text-ink shadow-terminal"
             style={{ left: tooltipState.left, top: tooltipState.top }}
           >
             {tooltipState.text}
@@ -558,35 +558,21 @@ function GoToDialog({
   onClose: () => void;
 }) {
   const defaults = useMemo(() => {
-    const base = defaultRange(candles, timeZone);
-    if (!initialSelection) return { ...base, tab: "date" as const };
+    const base = defaultGoToDraft(candles, timeZone);
+    if (!initialSelection) return base;
     const remembered = goToSelectionDraft(initialSelection, timeZone);
-    if (remembered.tab === "date") {
-      return {
-        ...base,
-        ...remembered,
-        month: monthFromDateInput(remembered.singleDate),
-      };
-    }
     return {
       ...base,
       ...remembered,
-      month: monthFromDateInput(remembered.fromDate),
+      month: monthFromDateInput(remembered.singleDate),
     };
   }, [candles, initialSelection, timeZone]);
-  const [tab, setTab] = useState<GoToTab>(defaults.tab);
   const [singleDate, setSingleDate] = useState(defaults.singleDate);
   const [singleTime, setSingleTime] = useState(defaults.singleTime);
-  const [fromDate, setFromDate] = useState(defaults.fromDate);
-  const [fromTime, setFromTime] = useState(defaults.fromTime);
-  const [toDate, setToDate] = useState(defaults.toDate);
-  const [toTime, setToTime] = useState(defaults.toTime);
-  const [activeRangeField, setActiveRangeField] = useState<RangeField>("from");
   const [month, setMonth] = useState(defaults.month);
 
   const cells = calendarCells(month.getFullYear(), month.getMonth());
-  const selectedDate =
-    tab === "date" ? singleDate : activeRangeField === "from" ? fromDate : toDate;
+  const selectedDate = singleDate;
   const todayDate = formatDateInput(Date.now(), timeZone);
 
   const setMonthFromDateDraft = (value: string) => {
@@ -596,60 +582,28 @@ function GoToDialog({
   };
 
   const pickDate = (date: string) => {
-    if (tab === "date") {
-      setSingleDate(date);
-    } else if (activeRangeField === "from") {
-      setFromDate(date);
-    } else {
-      setToDate(date);
-    }
+    setSingleDate(date);
   };
 
   const apply = () => {
-    if (tab === "date") {
-      const targetTime = parseLocalDateTime(
-        singleDate,
-        allowSpecificTime ? singleTime : "00:00",
-        timeZone,
-      );
-      if (targetTime == null) return;
-      const index = firstCandleIndexAtOrAfter(candles, targetTime);
-      if (index == null) return;
-      const range = goToDateLogicalRange(
-        index,
-        chart.timeScale().getVisibleLogicalRange(),
-      );
-      getChartViewportController(chart)?.setLogicalRange(
-        range,
-        "time-navigation",
-      );
-      onJump(candles[index].time);
-      onSelectionApplied({ tab: "date", time: targetTime });
-      onNavigationApplied();
-      onManualNavigation();
-      onClose();
-      return;
-    }
-
-    const from = parseLocalDateTime(
-      fromDate,
-      allowSpecificTime ? fromTime : "00:00",
+    const targetTime = parseLocalDateTime(
+      singleDate,
+      allowSpecificTime ? singleTime : "00:00",
       timeZone,
     );
-    const to = parseLocalDateTime(
-      toDate,
-      allowSpecificTime ? toTime : "00:00",
-      timeZone,
+    if (targetTime == null) return;
+    const index = firstCandleIndexAtOrAfter(candles, targetTime);
+    if (index == null) return;
+    const range = goToDateLogicalRange(
+      index,
+      chart.timeScale().getVisibleLogicalRange(),
     );
-    if (from == null || to == null) return;
-    getChartViewportController(chart)?.setTimeRange(
-      {
-        from: Math.min(from, to) as UTCTimestamp,
-        to: Math.max(from, to) as UTCTimestamp,
-      },
+    getChartViewportController(chart)?.setLogicalRange(
+      range,
       "time-navigation",
     );
-    onSelectionApplied({ tab: "range", from, to });
+    onJump(candles[index].time);
+    onSelectionApplied({ time: targetTime });
     onNavigationApplied();
     onManualNavigation();
     onClose();
@@ -676,135 +630,90 @@ function GoToDialog({
   const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
     useDraggableDialog({ initialPosition });
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() =>
+      focusFirstWithin(dialogRef.current, '[aria-label="Date"]'),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [dialogRef]);
+
   const dialog = (
-    <div data-chart-ui className="fixed inset-0 z-[90]" onMouseDown={onClose}>
+    <div data-chart-ui className="fixed inset-0 z-[900] bg-[var(--scrim)]/70 backdrop-blur-[2px]" onMouseDown={onClose}>
       <div
         ref={dialogRef}
-        className="fixed w-[302px] overflow-hidden rounded-md border border-[#2b2b2b] bg-[#1f1f1f] text-[#d1d4dc] shadow-2xl shadow-black/60"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="go-to-dialog-title"
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+            return;
+          }
+          trapFocusWithin(event);
+        }}
+        className="fixed w-[326px] overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
         style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div
           {...dragHandleProps}
           className={cn(
-            "flex h-[56px] items-center justify-between px-5",
+            "flex h-14 items-center justify-between border-b border-terminal-border px-5",
             dragHandleClassName,
           )}
         >
-          <div className="text-[20px] font-semibold text-[#d1d4dc]">Go to</div>
+          <div id="go-to-dialog-title" className="text-lg font-semibold tracking-[-0.02em] text-ink">Go to</div>
           <button
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded text-[#d1d4dc] hover:bg-[#2a2a2a]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
           >
             <X size={20} />
           </button>
         </div>
 
-        <div className="px-5">
-          <div className="relative mb-4 flex h-10 items-end gap-5 border-b-4 border-[#55575f]">
-            <button
-              type="button"
-              onClick={() => setTab("date")}
-              className={cn(
-                "relative h-8 text-[14px] font-semibold",
-                tab === "date" ? "text-[#f0f3fa]" : "text-[#b2b5be]",
-              )}
-            >
-              Date
-              {tab === "date" && (
-                <span className="absolute -bottom-1 left-0 h-1 w-full rounded bg-[#f0f3fa]" />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab("range")}
-              className={cn(
-                "relative h-8 text-[14px] font-semibold",
-                tab === "range" ? "text-[#f0f3fa]" : "text-[#b2b5be]",
-              )}
-            >
-              Custom range
-              {tab === "range" && (
-                <span className="absolute -bottom-1 left-0 h-1 w-full rounded bg-[#f0f3fa]" />
-              )}
-            </button>
+        <div className="px-5 pt-4">
+          <div className="mb-4 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+            <DateInput
+              value={singleDate}
+              onChange={(value) => {
+                setSingleDate(value);
+                setMonthFromDateDraft(value);
+              }}
+            />
+            <TimeInput
+              value={allowSpecificTime ? singleTime : "00:00"}
+              onChange={setSingleTime}
+              disabled={!allowSpecificTime}
+            />
           </div>
-
-          {tab === "date" ? (
-            <div className="mb-4 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-              <DateInput
-                value={singleDate}
-                onChange={(value) => {
-                  setSingleDate(value);
-                  setMonthFromDateDraft(value);
-                }}
-              />
-              <TimeInput
-                value={allowSpecificTime ? singleTime : "00:00"}
-                onChange={setSingleTime}
-                disabled={!allowSpecificTime}
-              />
-            </div>
-          ) : (
-            <div className="mb-4 space-y-3">
-              <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-                <DateInput
-                  value={fromDate}
-                  onFocus={() => setActiveRangeField("from")}
-                  onChange={(value) => {
-                    setFromDate(value);
-                    setMonthFromDateDraft(value);
-                  }}
-                />
-                <TimeInput
-                  value={allowSpecificTime ? fromTime : "00:00"}
-                  onChange={setFromTime}
-                  disabled={!allowSpecificTime}
-                />
-              </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-                <DateInput
-                  value={toDate}
-                  onFocus={() => setActiveRangeField("to")}
-                  onChange={(value) => {
-                    setToDate(value);
-                    setMonthFromDateDraft(value);
-                  }}
-                />
-                <TimeInput
-                  value={allowSpecificTime ? toTime : "00:00"}
-                  onChange={setToTime}
-                  disabled={!allowSpecificTime}
-                />
-              </div>
-            </div>
-          )}
 
           <div className="mb-3 flex h-8 items-center justify-between">
             <button
               type="button"
               aria-label="Previous month"
               onClick={() => shiftMonth(-1)}
-              className="flex h-8 w-8 items-center justify-center rounded text-[#b2b5be] hover:bg-[#2a2a2a] hover:text-[#f0f3fa]"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink"
             >
               <ChevronLeft size={20} />
             </button>
-            <div className="text-[14px] font-semibold text-[#d1d4dc]">
+            <div className="text-sm font-semibold text-ink">
               {monthTitle(month)}
             </div>
             <button
               type="button"
               aria-label="Next month"
               onClick={() => shiftMonth(1)}
-              className="flex h-8 w-8 items-center justify-center rounded text-[#55575f] hover:bg-[#2a2a2a] hover:text-[#f0f3fa]"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink"
             >
               <ChevronRight size={20} />
             </button>
           </div>
 
-          <div className="mb-2 grid grid-cols-7 rounded-md bg-[#2a2a2a] py-1 text-center text-[13px] italic text-[#a4a7ad]">
+          <div className="mb-2 grid grid-cols-7 rounded-xl bg-terminal-panel-2 py-1.5 text-center text-[12px] font-semibold text-ink-faint">
             {WEEKDAYS.map((day) => (
               <div key={day}>{day}</div>
             ))}
@@ -821,10 +730,10 @@ function GoToDialog({
                   onClick={() => pickDate(cell.date)}
                   className={cn(
                     "mx-auto flex h-9 w-9 items-center justify-center rounded-md border-b-4 border-transparent",
-                    cell.inMonth ? "text-[#f0f3fa]" : "text-[#55575f]",
-                    selected && "bg-[#f0f3fa] font-bold text-[#131722]",
-                    !selected && today && "border-[#d1d4dc]",
-                    !selected && "hover:bg-[#2a2a2a]",
+                    cell.inMonth ? "text-ink" : "text-ink-faint",
+                    selected && "bg-brand font-bold text-[var(--accent-contrast)]",
+                    !selected && today && "border-brand",
+                    !selected && "hover:bg-terminal-hover",
                   )}
                 >
                   {cell.day}
@@ -834,18 +743,18 @@ function GoToDialog({
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 flex h-[66px] items-center justify-end gap-3 border-t border-[#434651] bg-[#1f1f1f] px-5">
+        <div className="absolute bottom-0 left-0 right-0 flex h-16 items-center justify-end gap-3 border-t border-terminal-border bg-terminal-raised px-5">
           <button
             type="button"
             onClick={onClose}
-            className="h-9 rounded-md border border-[#f0f3fa] px-4 text-[14px] font-semibold text-[#f0f3fa] hover:bg-[#2a2a2a]"
+            className="h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={apply}
-            className="h-9 rounded-md bg-[#f0f3fa] px-4 text-[14px] font-semibold text-[#131722] hover:bg-white"
+            className="h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover"
           >
             Go to
           </button>
@@ -860,21 +769,19 @@ function GoToDialog({
 function DateInput({
   value,
   onChange,
-  onFocus,
 }: {
   value: string;
   onChange: (value: string) => void;
-  onFocus?: () => void;
 }) {
   return (
     <label className={inputShell()}>
       <input
+        aria-label="Date"
         value={value}
-        onFocus={onFocus}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none"
+        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none focus-visible:!outline-none"
       />
-      <CalendarDays size={16} className="shrink-0 text-[#b2b5be]" />
+      <CalendarDays size={16} className="shrink-0 text-ink-faint" />
     </label>
   );
 }
@@ -891,12 +798,13 @@ function TimeInput({
   return (
     <label className={inputShell(disabled ? "opacity-50" : undefined)}>
       <input
+        aria-label="Time"
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none disabled:cursor-not-allowed"
+        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none focus-visible:!outline-none disabled:cursor-not-allowed"
       />
-      <Clock3 size={16} className="shrink-0 text-[#b2b5be]" />
+      <Clock3 size={16} className="shrink-0 text-ink-faint" />
     </label>
   );
 }
@@ -999,13 +907,13 @@ function GoToJumpMarker({
         height: Math.max(0, position.bottom - position.top),
       }}
     >
-      <div className="h-full border-l border-dashed border-[#8a8d93]/80" />
+      <div className="h-full border-l border-dashed border-terminal-border-strong/80" />
       <div
-        className="absolute left-0 -translate-x-1/2 whitespace-pre rounded-sm bg-[#5c5c5c] px-2.5 py-1.5 text-center text-[12px] font-semibold leading-[16px] text-white shadow-lg shadow-black/40"
+        className="absolute left-0 -translate-x-1/2 whitespace-pre rounded-lg border border-terminal-border-strong bg-terminal-raised px-2.5 py-1.5 text-center text-[12px] font-semibold leading-[16px] text-ink shadow-floating"
         style={{ top: position.chipTop }}
       >
         {marker.label}
-        <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[5px] border-x-transparent border-t-[#5c5c5c]" />
+        <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[5px] border-x-transparent border-t-terminal-border-strong" />
       </div>
     </div>,
     document.body,

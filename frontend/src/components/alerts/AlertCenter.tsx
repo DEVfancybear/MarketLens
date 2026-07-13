@@ -244,17 +244,19 @@ export function AlertCenter() {
     <>
       {/* Backdrop (mobile) */}
       <div
-        className="fixed inset-0 z-[90] bg-black/40 sm:bg-transparent"
+        className="fixed inset-0 z-[900] bg-[var(--scrim)] backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none"
         onClick={() => setOpen(false)}
         aria-hidden
       />
       <aside
-        className="fixed right-0 top-0 z-[91] flex h-full w-full flex-col border-l border-terminal-border bg-terminal-panel shadow-2xl sm:w-[380px]"
+        data-chart-ui
+        className="platform-drawer fixed right-0 top-0 z-[901] flex h-full w-full flex-col border-l border-terminal-border-strong bg-terminal-raised shadow-floating sm:w-[400px]"
         role="dialog"
+        aria-modal="true"
         aria-label="Alert Center"
       >
         {/* Header */}
-        <div className="flex h-10 shrink-0 items-center justify-between border-b border-terminal-border px-3">
+        <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-terminal-border px-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-ink">
             <Bell size={15} className="text-choch" />
             Alerts
@@ -266,7 +268,7 @@ export function AlertCenter() {
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink"
             aria-label="Close"
           >
             <X size={16} />
@@ -344,7 +346,7 @@ export function AlertCenter() {
           </div>
 
           {/* Create form */}
-          <div className="space-y-2 rounded-md border border-terminal-border bg-terminal-panel-2 p-3">
+          <div className="space-y-3 rounded-xl border border-terminal-border bg-terminal-panel-2 p-3.5">
             <div className="text-2xs font-semibold uppercase tracking-wide text-ink-faint">
               New alert
             </div>
@@ -355,7 +357,7 @@ export function AlertCenter() {
                 <select
                   value={symbol}
                   onChange={(e) => setSymbol(e.target.value)}
-                  className="h-8 rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand"
+                  className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
                 >
                   {sortedSymbols.map((id) => (
                     <option key={id} value={id}>
@@ -377,7 +379,7 @@ export function AlertCenter() {
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submit()}
-                  className="h-8 rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand"
+                  className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
                 />
               </label>
             </div>
@@ -411,7 +413,7 @@ export function AlertCenter() {
                 onClick={submit}
                 disabled={replayActive}
                 title={replayActive ? "Alert creation is disabled during Replay" : undefined}
-                className="rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand/85 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-10 rounded-xl bg-brand px-3.5 text-xs font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {replayActive ? "Disabled in Replay" : "Create alert"}
               </button>

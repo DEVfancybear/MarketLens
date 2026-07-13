@@ -325,7 +325,7 @@ export function DrawingToolbar() {
   };
 
   return (
-    <div className="flex h-full flex-col items-center gap-0.5 overflow-y-auto py-2">
+    <div data-drawing-toolbar className="flex h-full flex-col items-center gap-1 overflow-y-auto bg-terminal-panel px-1.5 py-2">
       <FavoriteToolsPopup
         tools={favList.map((tool) => TOOL_BY_ID.get(tool)!)}
         activeTool={activeTool}
@@ -346,7 +346,7 @@ export function DrawingToolbar() {
         return (
           <div key={group.id} className="relative">
             {/* Separator between groups */}
-            {gi > 0 && <div className="my-1 h-px w-6 bg-terminal-border" />}
+            {gi > 0 && <div className="my-1.5 h-px w-7 bg-terminal-border" />}
 
             {/* Group button */}
             <div
@@ -396,7 +396,7 @@ export function DrawingToolbar() {
                     />
                     <div
                       data-chart-ui
-                      className="fixed z-50 w-44 overflow-y-auto rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl shadow-black/50"
+                       className="fixed z-50 w-52 overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised py-1.5 shadow-terminal backdrop-blur-xl"
                       style={{ left: rect.right + 4, top, maxHeight }}
                     >
                       {group.tools.map((t, ti) => {
@@ -417,8 +417,8 @@ export function DrawingToolbar() {
                                 setOpenGroup(null);
                               }}
                               className={cn(
-                                "group/item flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover",
-                                activeTool === t.tool ? "text-brand" : "text-ink",
+                                 "group/item flex min-h-9 w-full items-center gap-2.5 px-3 text-left text-xs font-medium transition-colors hover:bg-terminal-hover",
+                                 activeTool === t.tool ? "bg-brand/10 text-brand" : "text-ink-muted hover:text-ink",
                               )}
                             >
                               <span className="shrink-0 text-ink-muted">
@@ -464,19 +464,19 @@ export function DrawingToolbar() {
         );
       })}
 
-      <div className="my-1 h-px w-6 bg-terminal-border" />
+      <div className="my-1.5 h-px w-7 bg-terminal-border" />
 
       {/* Colour picker */}
       <div className="group relative">
         <IconButton label="Colour">
           <Palette size={18} style={{ color: drawColor }} />
         </IconButton>
-        <div className="pointer-events-none absolute left-full top-0 z-50 ml-1 hidden grid-cols-3 gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 p-1.5 group-hover:pointer-events-auto group-hover:grid opacity-0 group-hover:opacity-100">
+        <div className="pointer-events-none absolute left-full top-0 z-50 ml-2 hidden grid-cols-3 gap-2 rounded-xl border border-terminal-border-strong bg-terminal-raised p-2.5 opacity-0 shadow-terminal group-hover:pointer-events-auto group-hover:grid group-hover:opacity-100">
           {COLORS.map((c) => (
             <button
               key={c}
               onClick={() => setDrawColor(c)}
-              className="h-5 w-5 rounded-full border border-terminal-border"
+              className="h-7 w-7 rounded-full border-2 border-terminal-border transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-brand"
               style={{ background: c }}
             />
           ))}
@@ -503,14 +503,14 @@ export function DrawingToolbar() {
           type="button"
           aria-label="Magnet mode menu"
           onClick={() => setMagnetMenuOpen((open) => !open)}
-          className="absolute bottom-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-sm text-ink-faint hover:bg-terminal-hover hover:text-ink"
+          className="absolute bottom-0 right-0 flex h-4 w-4 items-center justify-center rounded-full border border-terminal-border bg-terminal-panel-2 text-ink-faint hover:bg-terminal-hover hover:text-ink"
         >
           <ChevronDown size={10} />
         </button>
         {magnetMenuOpen && (
           <div
             data-chart-ui
-            className="absolute left-full top-0 z-50 ml-1 w-36 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl shadow-black/50"
+            className="absolute left-full top-0 z-50 ml-2 w-40 rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-terminal"
           >
             {(["weak", "strong"] as const).map((mode) => (
               <button
@@ -546,7 +546,7 @@ export function DrawingToolbar() {
           <Globe2 size={18} />
         </IconButton>
         {syncMenuOpen && (
-          <div data-chart-ui className="absolute left-full top-0 z-50 ml-1 w-48 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl shadow-black/50">
+          <div data-chart-ui className="absolute left-full top-0 z-50 ml-2 w-52 rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-terminal">
             <div className="px-2 pb-1 pt-1 text-[9px] font-semibold uppercase tracking-wide text-ink-faint">New drawings</div>
             {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
               <button
@@ -621,7 +621,7 @@ function FavoriteToolsPopup({
       data-chart-ui
       data-drawing-toolbar
       style={{ left: 64, top: 76, ...dialogStyle }}
-      className="fixed z-[45] flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-md border border-terminal-border bg-terminal-panel-2 px-1.5 py-1 shadow-2xl shadow-black/50"
+      className="fixed z-[45] flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 px-1.5 py-1 shadow-floating backdrop-blur-xl"
       onContextMenu={(event) => event.preventDefault()}
     >
       <div

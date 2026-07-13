@@ -10,7 +10,7 @@ import {
 import {
   cancelReplaySelectionAtom,
   replaySelectionModeAtom,
-} from "@/components/replay/replayUiState";
+} from "@/store/replayUiState";
 import { toggleAlertCenterAtom } from "@/store/uiStore";
 import {
   setActiveToolAtom,

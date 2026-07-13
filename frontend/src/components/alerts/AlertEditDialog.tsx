@@ -102,24 +102,25 @@ export function AlertEditDialog() {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-4" onClick={close}>
+    <div data-chart-ui className="fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={close}>
       <div
         ref={dialogRef}
         style={dialogStyle}
-        className="w-full max-w-[360px] rounded-lg border border-terminal-border bg-terminal-panel shadow-2xl"
+        className="platform-dialog w-full max-w-[400px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Edit alert"
       >
         <div
           {...dragHandleProps}
           className={cn(
-            "flex h-10 items-center justify-between border-b border-terminal-border px-3",
+            "flex min-h-14 items-center justify-between border-b border-terminal-border px-4",
             dragHandleClassName,
           )}
         >
           <span className="text-sm font-semibold text-ink">Edit alert · {alert.symbol}</span>
-          <button onClick={close} className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink" aria-label="Close">
+          <button type="button" onClick={close} className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink" aria-label="Close">
             <X size={16} />
           </button>
         </div>
@@ -149,7 +150,7 @@ export function AlertEditDialog() {
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
-              className="h-8 rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand"
+              className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </label>
 
@@ -159,7 +160,7 @@ export function AlertEditDialog() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Shown in the notification"
-              className="h-8 rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand"
+              className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </label>
 
@@ -177,13 +178,13 @@ export function AlertEditDialog() {
         <div className="flex items-center justify-between border-t border-terminal-border px-3 py-2">
           <button
             onClick={() => { deleteAlert(alert.id); close(); }}
-            className="rounded px-2 py-1.5 text-xs text-bear hover:bg-terminal-hover"
+            className="min-h-10 rounded-xl px-3 text-xs font-semibold text-bear hover:bg-bear/10"
           >
             Delete
           </button>
           <div className="flex gap-2">
-            <button onClick={close} className="rounded px-3 py-1.5 text-xs text-ink-muted hover:bg-terminal-hover">Cancel</button>
-            <button onClick={save} className="rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/85">Save</button>
+            <button type="button" onClick={close} className="min-h-10 rounded-xl border border-terminal-border-strong px-3 text-xs font-semibold text-ink-muted hover:bg-terminal-hover">Cancel</button>
+            <button type="button" onClick={save} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover">Save</button>
           </div>
         </div>
       </div>

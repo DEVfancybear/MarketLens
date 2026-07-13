@@ -76,17 +76,17 @@ export function DrawingAlertDialog() {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[135] flex items-center justify-center bg-black/50 p-4" onClick={() => close(null)}>
-      <div role="dialog" aria-label="Create drawing alert" className="w-full max-w-[390px] rounded-lg border border-terminal-border bg-terminal-panel shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex h-11 items-center gap-2 border-b border-terminal-border px-3">
+    <div data-chart-ui className="fixed inset-0 z-[1350] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={() => close(null)}>
+      <div role="dialog" aria-modal="true" aria-label="Create drawing alert" className="platform-dialog w-full max-w-[420px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating" onClick={(event) => event.stopPropagation()}>
+        <div className="flex min-h-14 items-center gap-2 border-b border-terminal-border px-4">
           <Bell size={16} className="text-brand" />
           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">Alert on {drawing.name ?? drawing.tool}</span>
-          <button type="button" aria-label="Close drawing alert" onClick={() => close(null)} className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"><X size={16} /></button>
+          <button type="button" aria-label="Close drawing alert" onClick={() => close(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink"><X size={18} /></button>
         </div>
         <div className="space-y-3 p-3">
           <label className="flex flex-col gap-1">
             <span className="text-2xs text-ink-faint">Drawing target</span>
-            <select aria-label="Drawing alert target" value={target.id} onChange={(event) => { const next = targets.find((candidate) => candidate.id === event.target.value); setTargetId(event.target.value); if (next) setCondition(inferCondition(next.price, quote?.last)); }} className="h-9 rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand">
+            <select aria-label="Drawing alert target" value={target.id} onChange={(event) => { const next = targets.find((candidate) => candidate.id === event.target.value); setTargetId(event.target.value); if (next) setCondition(inferCondition(next.price, quote?.last)); }} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15">
               {targets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label} · {candidate.price}</option>)}
             </select>
           </label>
@@ -99,14 +99,14 @@ export function DrawingAlertDialog() {
           </div>
           <label className="flex flex-col gap-1">
             <span className="text-2xs text-ink-faint">Message (optional)</span>
-            <input aria-label="Drawing alert message" value={note} onChange={(event) => setNote(event.target.value)} className="h-9 rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand" />
+            <input aria-label="Drawing alert message" value={note} onChange={(event) => setNote(event.target.value)} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
           <button type="button" aria-pressed={recurring} onClick={() => setRecurring((value) => !value)} className={cn("rounded border px-2 py-1.5 text-2xs", recurring ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted")}>{recurring ? "Every time" : "Only once"}</button>
           <p className="text-[10px] leading-4 text-ink-faint">The target price is snapshotted now. Moving or deleting the drawing will not change this alert.</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-terminal-border px-3 py-2">
-          <button type="button" onClick={() => close(null)} className="rounded px-3 py-1.5 text-xs text-ink-muted hover:bg-terminal-hover">Cancel</button>
-          <button type="button" onClick={submit} className="rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/85">Create alert</button>
+          <button type="button" onClick={() => close(null)} className="min-h-10 rounded-xl border border-terminal-border-strong px-3 text-xs font-semibold text-ink-muted hover:bg-terminal-hover">Cancel</button>
+          <button type="button" onClick={submit} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover">Create alert</button>
         </div>
       </div>
     </div>,

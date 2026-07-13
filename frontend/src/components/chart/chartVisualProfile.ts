@@ -101,7 +101,7 @@ export function layoutOptions(theme: Theme, fontSize = 12) {
   return {
     background: { type: COLOR_TYPE_SOLID, color: colors.background },
     textColor: colors.text,
-    fontFamily: "var(--font-sans)",
+    fontFamily: "Inter, Segoe UI, system-ui, sans-serif",
     fontSize,
     attributionLogo: false,
   };
@@ -112,7 +112,7 @@ export function transparentLayoutOptions(theme: Theme, fontSize = 10) {
   return {
     background: { type: COLOR_TYPE_SOLID, color: "transparent" },
     textColor: colors.text,
-    fontFamily: "var(--font-sans)",
+    fontFamily: "Inter, Segoe UI, system-ui, sans-serif",
     fontSize,
     attributionLogo: false,
   };

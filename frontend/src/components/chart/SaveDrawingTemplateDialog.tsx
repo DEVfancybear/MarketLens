@@ -70,7 +70,7 @@ export function SaveDrawingTemplateDialog({
   return createPortal(
     <div
       data-chart-ui
-      className="fixed inset-0 z-[1300] flex items-start justify-center bg-black/20 pt-8"
+      className="fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onCloseAction();
       }}
@@ -82,7 +82,7 @@ export function SaveDrawingTemplateDialog({
         aria-labelledby="save-drawing-template-title"
         ref={dialogRef}
         style={dialogStyle}
-        className="relative w-[480px] max-w-[calc(100vw-32px)] rounded-md bg-[#1f1f1f] px-10 pb-9 pt-10 text-ink shadow-2xl shadow-black/60"
+        className="platform-dialog relative w-[480px] max-w-[calc(100vw-24px)] rounded-2xl border border-terminal-border-strong bg-terminal-raised px-8 pb-8 pt-9 text-ink shadow-floating"
         onPointerDown={(event) => event.stopPropagation()}
       >
         <button
@@ -90,7 +90,7 @@ export function SaveDrawingTemplateDialog({
           aria-label="Close"
           title="Close"
           onClick={onCloseAction}
-          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded text-[#b2b5be] hover:bg-white/10 hover:text-white"
+          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink"
         >
           <X size={22} strokeWidth={1.7} />
         </button>
@@ -99,7 +99,7 @@ export function SaveDrawingTemplateDialog({
           id="save-drawing-template-title"
           {...dragHandleProps}
           className={cn(
-            "mb-5 text-xl font-semibold text-[#f0f3fa]",
+            "mb-5 text-xl font-semibold tracking-[-0.02em] text-ink",
             dragHandleClassName,
           )}
         >
@@ -108,7 +108,7 @@ export function SaveDrawingTemplateDialog({
 
         <label
           htmlFor="save-drawing-template-name"
-          className="mb-1.5 block text-sm text-[#9aa0aa]"
+          className="mb-1.5 block text-sm font-medium text-ink-muted"
         >
           New template name
         </label>
@@ -118,7 +118,7 @@ export function SaveDrawingTemplateDialog({
             ref={inputRef}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="h-8 w-full rounded border border-[#2962ff] bg-transparent px-2.5 pr-9 text-sm text-[#f0f3fa] outline-none placeholder:text-[#5d606b]"
+            className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 pr-11 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
             spellCheck={false}
           />
           <button
@@ -126,7 +126,7 @@ export function SaveDrawingTemplateDialog({
             aria-label="Show saved templates"
             title="Show saved templates"
             onClick={() => setListOpen((value) => !value)}
-            className="absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-r text-[#9aa0aa] hover:text-white"
+            className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-r-xl text-ink-muted hover:text-ink"
           >
             <ChevronDown
               size={16}
@@ -138,9 +138,9 @@ export function SaveDrawingTemplateDialog({
           </button>
 
           {listOpen && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-44 overflow-y-auto rounded-md border border-[#4b4f58] bg-[#2a2a2a] py-1 shadow-2xl shadow-black/60">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-44 overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
               {templateNames.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-[#787b86]">
+                <div className="px-3 py-2 text-xs text-ink-faint">
                   No saved templates
                 </div>
               ) : (
@@ -154,10 +154,10 @@ export function SaveDrawingTemplateDialog({
                       inputRef.current?.focus();
                     }}
                     className={cn(
-                      "flex w-full items-center px-3 py-1.5 text-left text-sm hover:bg-[#3a3a3a]",
+                      "flex min-h-10 w-full items-center rounded-lg px-3 py-1.5 text-left text-sm hover:bg-terminal-hover",
                       templateName === trimmed
-                        ? "text-[#2962ff]"
-                        : "text-[#f0f3fa]",
+                        ? "bg-brand/10 text-brand"
+                        : "text-ink",
                     )}
                   >
                     <span className="truncate">{templateName}</span>
@@ -172,7 +172,7 @@ export function SaveDrawingTemplateDialog({
           <button
             type="button"
             onClick={onCloseAction}
-            className="h-9 rounded border border-[#5d606b] px-4 text-sm font-medium text-[#f0f3fa] hover:bg-white/10"
+            className="min-h-11 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover"
           >
             Cancel
           </button>
@@ -181,10 +181,10 @@ export function SaveDrawingTemplateDialog({
             disabled={!trimmed}
             onClick={save}
             className={cn(
-              "h-9 rounded px-4 text-sm font-medium",
+              "min-h-11 rounded-xl px-4 text-sm font-semibold",
               trimmed
-                ? "bg-[#2962ff] text-white hover:bg-[#1e53e5]"
-                : "cursor-default bg-[#3a3a3a] text-[#5d606b]",
+                ? "bg-brand text-[var(--accent-contrast)] hover:bg-brand-hover"
+                : "cursor-default bg-terminal-hover text-ink-faint",
             )}
           >
             Save

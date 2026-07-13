@@ -16,10 +16,10 @@ export function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("flex h-full flex-col bg-terminal-panel", className)}>
+    <section className={cn("flex h-full flex-col bg-terminal-panel", className)}>
       {(title || actions) && (
-        <div className="flex h-8 shrink-0 items-center justify-between border-b border-terminal-border px-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-terminal-border px-4">
+          <span className="text-xs font-semibold tracking-[-0.01em] text-ink">
             {title}
           </span>
           <div className="flex items-center gap-1">{actions}</div>
@@ -28,6 +28,6 @@ export function Panel({
       <div className={cn("min-h-0 flex-1 overflow-auto", bodyClassName)}>
         {children}
       </div>
-    </div>
+    </section>
   );
 }

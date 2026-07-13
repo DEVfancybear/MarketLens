@@ -42,7 +42,7 @@ function ExactNumberField({
           event.currentTarget.blur();
         }
       }}
-      className="h-[34px] min-w-0 rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2.5 text-[12px] text-[#d1d4dc] outline-none transition-colors focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff] disabled:cursor-not-allowed disabled:opacity-40"
+      className="h-[34px] min-w-0 rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[12px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand disabled:cursor-not-allowed disabled:opacity-40"
     />
   );
 }
@@ -68,11 +68,11 @@ export function DrawingCoordinatesFields({
         const barIndex = nearestCandleIndex(candles, point.time);
         return (
           <section key={index} aria-label={`${title} coordinates`}>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#a0a3aa]">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
               {title}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1 text-[10px] text-[#a0a3aa]">
+              <label className="space-y-1 text-[10px] text-ink-faint">
                 <span>Price</span>
                 <ExactNumberField
                   label={`${title} price`}
@@ -80,7 +80,7 @@ export function DrawingCoordinatesFields({
                   onCommit={(price) => patchPoint(index, { price })}
                 />
               </label>
-              <label className="space-y-1 text-[10px] text-[#a0a3aa]">
+              <label className="space-y-1 text-[10px] text-ink-faint">
                 <span>Unix time</span>
                 <ExactNumberField
                   label={`${title} Unix time`}
@@ -88,7 +88,7 @@ export function DrawingCoordinatesFields({
                   onCommit={(time) => patchPoint(index, { time: Math.round(time) })}
                 />
               </label>
-              <label className="space-y-1 text-[10px] text-[#a0a3aa]">
+              <label className="space-y-1 text-[10px] text-ink-faint">
                 <span>Date / time</span>
                 <input
                   type="datetime-local"
@@ -98,10 +98,10 @@ export function DrawingCoordinatesFields({
                     const time = fromLocalDateTimeInput(event.target.value);
                     if (time != null) patchPoint(index, { time });
                   }}
-                  className="h-[34px] w-full rounded-[5px] border border-[#50535a] bg-[#1f1f1f] px-2 text-[11px] text-[#d1d4dc] outline-none focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+                  className="h-[34px] w-full rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2 text-[11px] text-ink-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"
                 />
               </label>
-              <label className="space-y-1 text-[10px] text-[#a0a3aa]">
+              <label className="space-y-1 text-[10px] text-ink-faint">
                 <span>Bar index</span>
                 <ExactNumberField
                   label={`${title} bar index`}

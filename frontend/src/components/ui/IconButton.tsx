@@ -8,7 +8,7 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "sm" | "md";
 }
 
-/** Square toolbar button with active state and tooltip-on-title. */
+/** Token-driven icon control shared by every desktop terminal surface. */
 export const IconButton = forwardRef<HTMLButtonElement, Props>(
   function IconButton(
     { active, label, size = "md", className, children, ...rest },
@@ -20,10 +20,10 @@ export const IconButton = forwardRef<HTMLButtonElement, Props>(
         title={label}
         aria-label={label}
         className={cn(
-          "inline-flex items-center justify-center rounded text-ink-muted transition-colors focus-ring",
-          "hover:bg-terminal-hover hover:text-ink",
-          size === "sm" ? "h-7 w-7" : "h-9 w-9",
-          active && "bg-brand/15 text-brand hover:bg-brand/20 hover:text-brand",
+          "inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent text-ink-muted transition-[background-color,color,border-color,box-shadow] focus-ring",
+          "hover:border-terminal-border hover:bg-terminal-hover hover:text-ink active:bg-terminal-pressed",
+          size === "sm" ? "h-8 w-8" : "h-9 w-9",
+          active && "border-brand/25 bg-brand/10 text-brand hover:border-brand/35 hover:bg-brand/15 hover:text-brand",
           className,
         )}
         {...rest}

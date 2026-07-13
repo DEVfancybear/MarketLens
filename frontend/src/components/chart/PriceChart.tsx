@@ -361,11 +361,15 @@ export function PriceChart({
   // ---- Create chart once ----
   useEffect(() => {
     if (!containerRef.current) return;
+    const chartContainer = containerRef.current;
+    const initialBounds = chartContainer.getBoundingClientRect();
     const defaultViewport = timeScaleDefaults(timeframe);
     setMainChartDefaultViewport(defaultViewport);
     appliedTimeframeRef.current = timeframe;
-    const chart = createChart(containerRef.current, {
-      autoSize: true,
+    const chart = createChart(chartContainer, {
+      autoSize: false,
+      width: Math.max(1, Math.floor(initialBounds.width)),
+      height: Math.max(1, Math.floor(initialBounds.height)),
       layout: {
         ...layoutOptions(theme),
         panes: {
@@ -456,14 +460,22 @@ export function PriceChart({
       });
     });
 
-    const ro = new ResizeObserver(scheduleVersionBump);
-    ro.observe(containerRef.current);
+    let disposed = false;
+    const ro = new ResizeObserver((entries) => {
+      if (disposed) return;
+      const bounds = entries[0]?.contentRect;
+      if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+      chart.resize(Math.floor(bounds.width), Math.floor(bounds.height));
+      scheduleVersionBump();
+    });
+    ro.observe(chartContainer);
 
     const indStore = indSeriesRef.current;
     const indStructureStore = indStructureRef.current;
     const indStyleStore = indStyleRef.current;
     const indDataStore = indDataRef.current;
     return () => {
+      disposed = true;
       ro.disconnect();
       uninstallInteractionHarness();
       uninstallBenchmarkHarness();
@@ -1187,6 +1199,11 @@ export function PriceChart({
     const colors = chartColors(theme);
     const markerColor = up ? colors.bull : colors.bear;
     series.applyOptions({ priceLineColor: markerColor });
+    const priceScaleWidth = chart.priceScale("right").width();
+    if (!Number.isFinite(priceScaleWidth) || priceScaleWidth <= 0) {
+      setPriceMarker(null);
+      return;
+    }
     // The price row is centered on the series coordinate; reserve extra room
     // below it for the TradingView-style candle-close countdown row.
     const minY = 10;
@@ -1197,6 +1214,7 @@ export function PriceChart({
       price,
       color: markerColor,
       countdown,
+      priceScaleWidth,
     });
   }, [candles, countdown, lastQuote?.last, ready, replayActive, theme, version]);
 
@@ -1243,7 +1261,7 @@ export function PriceChart({
   return (
     <div
       data-testid="price-chart-root"
-      className="relative h-full w-full"
+      className="relative h-full min-w-0 w-full overflow-hidden"
       onContextMenu={onContextMenu}
     >
       <div ref={containerRef} className="h-full w-full" />
@@ -1305,6 +1323,7 @@ type CurrentPriceMarkerState = {
   price: number;
   color: string;
   countdown: string;
+  priceScaleWidth: number;
 };
 
 function IndicatorOverlay({
@@ -1338,7 +1357,7 @@ function IndicatorOverlay({
       {dashboards.map((dashboard, index) => (
         <div
           key={dashboard.key}
-          className="pointer-events-none absolute right-16 z-20 w-[150px] overflow-hidden border border-gray-500/70 bg-black/70 font-mono text-[10px] leading-[15px] text-white shadow-xl"
+          className="pointer-events-none absolute right-16 z-20 w-[150px] overflow-hidden rounded-lg border border-terminal-border-strong bg-terminal-raised/85 font-mono text-[10px] leading-[15px] text-ink shadow-floating backdrop-blur"
           style={{ top: 12 + index * 136 }}
         >
           <div className="grid grid-cols-[1fr_auto] border-b border-gray-500/60">
@@ -1376,40 +1395,40 @@ function CurrentPriceMarker({
   precision: number;
   symbol: string;
 }) {
+  const formattedPrice = fmtPrice(marker.price, precision);
+
   return (
     <div
       data-testid="current-price-marker"
-      className="pointer-events-none absolute right-0 z-30 flex items-start font-mono font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
-      style={{ top: marker.y, transform: "translateY(-9.5px)" }}
-      title={`Next bar: ${marker.countdown}`}
+      data-price-scale-width={marker.priceScaleWidth}
+      data-symbol={symbol}
+      role="group"
+      aria-label={`${symbol} current price ${formattedPrice}. Next bar in ${marker.countdown}.`}
+      className="pointer-events-none absolute right-0 z-30 flex flex-col overflow-hidden rounded-l-[3px] border-l border-white/30 font-mono font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
+      style={{
+        top: marker.y,
+        transform: "translateY(-9.5px)",
+        width: marker.priceScaleWidth,
+      }}
+      title={`${symbol} · ${formattedPrice} · Next bar: ${marker.countdown}`}
     >
       <div
-        className="relative flex h-[19px] items-center rounded-l-[2px] pl-1.5 pr-1 text-[11px]"
+        data-testid="current-price-value"
+        className="flex h-[19px] items-center justify-end whitespace-nowrap px-1.5 text-[11px] tabular-nums"
         style={{ backgroundColor: marker.color }}
       >
-        <span>{symbol}</span>
-        <span
-          className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
-          style={{ borderRightColor: marker.color }}
-        />
+        {formattedPrice}
       </div>
-      <div className="flex flex-col items-stretch">
-        <div
-          className="flex h-[19px] items-center justify-end whitespace-nowrap pl-1 pr-1.5 text-[11px] tabular-nums"
-          style={{ backgroundColor: marker.color }}
-        >
-          {fmtPrice(marker.price, precision)}
-        </div>
-        <div
-          data-countdown={marker.countdown}
-          className="flex h-[15px] items-center justify-center px-1.5 text-[10px] tabular-nums"
-          style={{
-            backgroundColor: marker.color,
-            boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",
-          }}
-        >
-          {marker.countdown}
-        </div>
+      <div
+        data-testid="current-price-countdown"
+        data-countdown={marker.countdown}
+        className="flex h-[15px] items-center justify-end px-1.5 text-[10px] tabular-nums"
+        style={{
+          backgroundColor: marker.color,
+          boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",
+        }}
+      >
+        {marker.countdown}
       </div>
     </div>
   );

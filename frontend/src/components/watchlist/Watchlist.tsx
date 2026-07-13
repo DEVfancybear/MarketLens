@@ -222,7 +222,7 @@ export function Watchlist() {
     const quoteSnapshot =
       sortKey === "symbol" ? {} : getMarketDataState().quotes;
     return sortWatchlistEntries(list, sortKey, sortDir, quoteSnapshot);
-  }, [activeListId, symbols, sortKey, sortDir]);
+  }, [symbols, sortKey, sortDir]);
 
   const displayRows = useMemo<DisplayRow[]>(() => {
     if (!sections.length) {
@@ -256,7 +256,7 @@ export function Watchlist() {
     }
     pushSymbols(cursor, symbols.length);
     return rows;
-  }, [activeListId, ordered, sections, sortDir, sortKey, symbols]);
+  }, [ordered, sections, sortDir, sortKey, symbols]);
 
   const commitRename = useCallback(() => {
     renameWatchlist(renameDraft);
@@ -720,9 +720,9 @@ export function Watchlist() {
 
   return (
     <div className="flex h-full flex-col bg-terminal-panel">
-      <div className="flex h-[38px] shrink-0 items-center justify-between pl-3 pr-1.5">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b border-terminal-border px-3">
         {renaming ? (
-          <div className="-ml-1.5 mr-2 flex h-[28px] min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-brand bg-terminal-hover px-2 shadow-[0_0_0_1px_rgba(41,98,255,0.28)]">
+          <div className="mr-2 flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-brand bg-brand/10 px-2 shadow-[0_0_0_3px_rgb(var(--accent-rgb)/.08)]">
             <Smile size={15} className="shrink-0 text-ink-muted" />
             <input
               ref={renameInputRef}
@@ -781,7 +781,7 @@ export function Watchlist() {
       <div
         className={cn(
           GRID,
-          "h-7 shrink-0 border-b border-terminal-border px-2",
+          "h-8 shrink-0 border-b border-terminal-border bg-terminal-panel-2/55 px-2",
           dragState?.active && "bg-terminal-panel/95",
         )}
         data-watchlist-drop="unsectioned"
@@ -821,7 +821,7 @@ export function Watchlist() {
 
       <div
         ref={watchlistBodyRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-0.5"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1"
       >
         {dragState?.active && sections.length > 0 && (
           <div
@@ -836,7 +836,7 @@ export function Watchlist() {
           >
             <span
               className={cn(
-                "pointer-events-none absolute left-0 right-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-[#6d8cff] shadow-[0_0_0_1px_rgba(109,140,255,0.24),0_0_8px_rgba(109,140,255,0.35)] transition-opacity duration-75",
+                "pointer-events-none absolute left-0 right-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-brand shadow-accent transition-opacity duration-75",
                 dropTarget?.key === "unsectioned-start"
                   ? "opacity-100"
                   : "opacity-0",
@@ -850,7 +850,7 @@ export function Watchlist() {
       {dragState?.active && (
         <div
           ref={dragGhostRef}
-          className="pointer-events-none fixed left-0 top-0 z-[9999] rounded bg-[#2a2e39]/95 px-2 py-1 text-[11px] font-semibold text-white shadow-lg ring-1 ring-white/10 will-change-transform"
+          className="pointer-events-none fixed left-0 top-0 z-[9999] rounded-lg bg-terminal-raised/95 px-2.5 py-1.5 text-xs font-semibold text-ink shadow-terminal ring-1 ring-terminal-border-strong will-change-transform"
           style={{
             transform: `translate3d(${dragState.x + 12}px, ${dragState.y + 12}px, 0)`,
           }}
@@ -1058,7 +1058,7 @@ function CreateWatchlistDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-start justify-center bg-black/20 pt-[15vh]"
+      className="fixed inset-0 z-[1000] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
       data-chart-ui
       role="presentation"
       onMouseDown={(e) => {
@@ -1066,22 +1066,22 @@ function CreateWatchlistDialog({
       }}
     >
       <div
-        className="flex w-[380px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-md border border-[#3a3a3a] bg-[#1f1f1f] text-[#f0f0f0] shadow-2xl shadow-black/70"
+        className="platform-dialog flex w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-watchlist-title"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pb-3 pt-5">
+        <div className="flex min-h-16 items-center justify-between border-b border-terminal-border px-5">
           <h3
             id="create-watchlist-title"
-            className="text-[20px] font-semibold leading-none text-[#f0f0f0]"
+            className="text-xl font-semibold leading-none tracking-[-0.02em] text-ink"
           >
             Create new list
           </h3>
           <button
             type="button"
-            className="rounded p-1 text-[#b8bcc6] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] focus-ring"
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink focus-ring"
             onClick={onCancel}
             aria-label="Close"
           >
@@ -1091,7 +1091,7 @@ function CreateWatchlistDialog({
         <div className="min-h-[120px] space-y-3 px-5 py-5">
           <label
             htmlFor="new-watchlist-name"
-            className="block text-[13px] font-semibold text-[#d1d4dc]"
+            className="block text-[13px] font-semibold text-ink-muted"
           >
             List name
           </label>
@@ -1104,21 +1104,21 @@ function CreateWatchlistDialog({
               if (e.key === "Enter") commit();
               if (e.key === "Escape") onCancel();
             }}
-            className="h-[36px] w-full rounded-md border border-[#2962ff] bg-[#1f1f1f] px-3 text-[14px] font-medium text-[#f0f0f0] outline-none selection:bg-[#2962ff] selection:text-white focus:border-[#2962ff] focus:ring-1 focus:ring-[#2962ff]"
+            className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-medium text-ink outline-none selection:bg-brand selection:text-[var(--accent-contrast)] focus:border-brand focus:ring-2 focus:ring-brand/15"
           />
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#3a3a3a] px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-terminal-border px-5 py-3">
           <button
             type="button"
             onClick={onCancel}
-            className="h-[34px] rounded-md border border-[#f0f0f0] bg-transparent px-3.5 text-[14px] font-semibold text-[#f0f0f0] transition-colors hover:bg-[#2a2a2a] focus-ring"
+            className="min-h-10 rounded-xl border border-terminal-border-strong bg-transparent px-3.5 text-sm font-semibold text-ink transition-colors hover:bg-terminal-hover focus-ring"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={commit}
-            className="h-[34px] rounded-md border border-[#f0f0f0] bg-[#f0f0f0] px-4 text-[14px] font-semibold text-[#1f1f1f] transition-colors hover:bg-white focus-ring"
+            className="min-h-10 rounded-xl border border-brand bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover focus-ring"
           >
             Ok
           </button>
@@ -1241,15 +1241,15 @@ function SectionRow({
     <div
       onPointerDown={onPointerDown}
       className={cn(
-        "group relative flex h-[26px] w-full cursor-grab select-none items-center gap-1 border-y border-[#32467e] bg-[#22356d] px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-[#96a0bd] transition-colors duration-100 hover:bg-[#27407f] active:cursor-grabbing",
-        dropPlacement && "bg-[#29417f]",
+        "group relative flex h-8 w-full cursor-grab select-none items-center gap-1 border-y border-brand/20 bg-brand/10 px-3 text-left text-[10px] font-semibold uppercase tracking-wide text-brand transition-colors duration-100 hover:bg-brand/15 active:cursor-grabbing",
+        dropPlacement && "bg-brand/20",
         dragging && "opacity-45",
       )}
       data-watchlist-section-id={section.id}
     >
       <span
         className={cn(
-          "pointer-events-none absolute left-3 right-3 z-20 h-[2px] rounded-full bg-[#7a98ff] shadow-[0_0_0_1px_rgba(122,152,255,0.24),0_0_8px_rgba(122,152,255,0.38)] transition-opacity duration-75",
+          "pointer-events-none absolute left-3 right-3 z-20 h-[2px] rounded-full bg-brand shadow-accent transition-opacity duration-75",
           dropPlacement === "before" && "top-0 -translate-y-1/2 opacity-100",
           (dropPlacement === "after" || dropPlacement === "inside") &&
             "bottom-[-1px] opacity-100",
@@ -1269,7 +1269,7 @@ function SectionRow({
         <ChevronDown
           size={13}
           className={cn(
-            "shrink-0 text-[#96a0bd] transition-transform",
+            "shrink-0 text-brand transition-transform",
             collapsed && "-rotate-90",
           )}
         />
@@ -1288,7 +1288,7 @@ function SectionRow({
             if (e.key === "Enter") onCommitRename();
             if (e.key === "Escape") onCancelRename();
           }}
-          className="h-[20px] min-w-0 flex-1 rounded-sm border border-brand bg-[#2d3569] px-1 text-[10px] font-semibold uppercase tracking-wide text-white outline-none selection:bg-brand"
+          className="h-6 min-w-0 flex-1 rounded-md border border-brand bg-terminal-panel px-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink outline-none selection:bg-brand"
           aria-label={`Rename ${section.title}`}
         />
       ) : (
@@ -1316,7 +1316,7 @@ function SectionRow({
           onRemove();
         }}
         data-watchlist-no-drag
-        className="ml-auto hidden h-[20px] w-[20px] shrink-0 items-center justify-center rounded-sm text-[#96a0bd] hover:bg-[#31498f] hover:text-bear group-hover:flex"
+        className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-brand/70 hover:bg-bear/10 hover:text-bear"
         aria-label={`Delete ${section.title}`}
         title="Delete section"
       >
@@ -1382,8 +1382,8 @@ const WatchRow = memo(function WatchRow({
       onPointerDown={onPointerDown}
       className={cn(
         GRID,
-        "group relative h-[30px] cursor-pointer select-none px-2 transition-[background-color,box-shadow,opacity] duration-100 hover:bg-terminal-hover",
-        active && "rounded-md shadow-[inset_0_0_0_1px_var(--text-faint)]",
+        "group relative mx-1 h-9 cursor-pointer select-none rounded-lg px-2 transition-[background-color,box-shadow,opacity] duration-100 hover:bg-terminal-hover",
+        active && "bg-brand/10 shadow-[inset_0_0_0_1px_rgb(var(--accent-rgb)/.3)]",
         dragging && "opacity-45",
       )}
       data-watchlist-symbol={ticker}
@@ -1391,7 +1391,7 @@ const WatchRow = memo(function WatchRow({
     >
       <span
         className={cn(
-          "pointer-events-none absolute left-2 right-2 z-20 h-[2px] rounded-full bg-[#7a98ff] shadow-[0_0_0_1px_rgba(122,152,255,0.24),0_0_8px_rgba(122,152,255,0.38)] transition-opacity duration-75",
+          "pointer-events-none absolute left-2 right-2 z-20 h-[2px] rounded-full bg-brand shadow-[0_0_8px_rgb(var(--accent-rgb)/.4)] transition-opacity duration-75",
           dropEdge === "before" && "top-0 -translate-y-1/2 opacity-100",
           dropEdge === "after" && "bottom-0 translate-y-1/2 opacity-100",
           !dropEdge && "top-0 opacity-0",
@@ -1438,7 +1438,7 @@ const WatchRow = memo(function WatchRow({
             onRemove(ticker);
           }}
           data-watchlist-no-drag
-          className="absolute -right-1 top-1/2 hidden h-[18px] w-[18px] -translate-y-1/2 items-center justify-center rounded-sm text-ink-faint hover:text-bear group-hover:flex"
+          className="absolute -right-1 top-1/2 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-faint hover:bg-bear/10 hover:text-bear group-hover:flex"
           style={{ background: "var(--hover)" }}
           title="Remove"
           aria-label={`Remove ${ticker}`}

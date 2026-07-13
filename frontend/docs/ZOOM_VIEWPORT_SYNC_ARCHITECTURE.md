@@ -135,7 +135,7 @@ the interaction changes chart projection. Add it to `chartViewportEvents.ts`.
 Programmatic viewport behavior:
 
 - Install one `ChartViewportController` when the main chart is created.
-- Shortcut, custom range, auto-fit, history restore, replay recovery, reset, and
+- Shortcut, Go-to date, auto-fit, history restore, replay recovery, reset, and
   benchmark writes must call controller methods instead of `ITimeScaleApi`
   mutation methods directly.
 - The controller records `revision`, `programmaticWrites`, `cause`, and the

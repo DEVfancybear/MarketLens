@@ -1,9 +1,9 @@
 # Chart Time Navigation Architecture
 
-_Last updated: 2026-07-11_
+_Last updated: 2026-07-13_
 
 This document explains the TradingView-style bottom time toolbar and the `Go to`
-date/range dialog. Read this before changing chart range shortcut behavior,
+single-date dialog. Read this before changing chart range shortcut behavior,
 date navigation, replay viewport interaction, or the bottom chart chrome.
 
 ## 1. Behavior To Match
@@ -14,23 +14,24 @@ The desktop reference is TradingView's lower chart time strip:
 - a small `Go to` calendar button next to the shortcuts,
 - a current clock with UTC offset on the right; clicking it opens a
   TradingView-style timezone selector,
-- a `Go to` dialog with `Date` and `Custom range` tabs,
-- Date mode jumps to the requested date/time and zooms into a readable
+- a compact `Go to` dialog for one date and optional intraday time,
+- Go To jumps to the requested date/time and zooms into a readable
   TradingView-like candle window,
-- reopening `Go to` restores the last successfully applied Date or Custom range
-  instead of resetting to the latest candle,
-- Custom range mode applies an explicit start/end visible range.
+- reopening `Go to` restores the last successfully applied date/time instead of
+  resetting to the latest candle,
+- Custom range is intentionally not exposed by this product flow.
 
 Similar charting products use the same split: quick range buttons for common
-windows and date inputs for precise navigation. Highcharts Stock documents this
-as a range selector with preconfigured buttons plus min/max date inputs.
+windows and a date input for precise navigation. This product keeps that precise
+flow single-date-only.
 
 ## 2. Research Sources
 
 - User-provided TradingView screenshots in the 2026-07-04 task thread.
 - User-provided behavior clip: [YouTube `6FqnMwsiXq4`](https://www.youtube.com/watch?v=6FqnMwsiXq4).
 - [TradingView Help: go to a specific date](https://vn.tradingview.com/support/solutions/43000482911/):
-  the bottom toolbar supports both a desired date and a custom date range.
+  TradingView documents desired-date and custom-range navigation. This product
+  intentionally implements only the compact desired-date flow.
 - [Zerodha/Kite TradingView guide](https://support.zerodha.com/category/trading-and-markets/charts-and-orders/charts/articles/go-to-specific-date-on-chart):
   `Alt+G` opens Go-to and specific clock times are available only for intraday
   candles from one minute through three hours.
@@ -53,8 +54,8 @@ as a range selector with preconfigured buttons plus min/max date inputs.
 - TradingView Lightweight Charts time-scale guide for time-axis behavior.
 - TradingView Lightweight Charts time-zone docs: Lightweight Charts processes
   time values in UTC and leaves timezone conversion to the app.
-- Highcharts Stock `rangeSelector` docs for the common market-chart pattern:
-  preconfigured buttons plus editable min/max date inputs.
+- Highcharts Stock `rangeSelector` docs for the common market-chart pattern of
+  preconfigured range buttons.
 - Highcharts `time.timezone` docs for the comparable charting-product pattern:
   named browser-supported timezones affect time display and tick placement.
 
@@ -168,8 +169,7 @@ instead of silently allowing client and server rules to drift.
   `goTo.specificTimeTimeframes` so adding `3H` later requires only backend
   catalog support plus the normal timeframe implementation.
 - Go-to Date resolves to the first loaded candle at or after the requested
-  instant and applies a centered logical range. Custom range applies absolute
-  bounds because its purpose is to show the requested interval.
+  instant and applies a centered logical range.
 
 ## 6. Top Interval Selector Contract
 
@@ -232,29 +232,18 @@ chart wrapper in capture phase rather than only to the Lightweight Charts
 element, because drawing canvases and app overlays can sit above the native
 chart element while still being part of the chart interaction surface.
 
-## 8. Custom Range Contract
-
-Custom range mode is an explicit visible time window.
-
-1. Parse both local date/time pairs.
-2. Sort them so `from <= to`.
-3. Apply the window through `setVisibleRange`.
-
-Do not preserve the previous zoom in this mode; the user has supplied the target
-window directly.
-
-## 9. Calendar Contract
+## 8. Calendar Contract
 
 The calendar grid is generated in `calendarCells`:
 
 - Monday-first headers: `Mo Tu We Th Fr Sa Su`,
 - six fixed weeks, 42 cells,
 - out-of-month cells stay visible but muted,
-- the active tab/field owns the selected date.
+- the single date field owns the selected date.
 
 The fixed 42-cell grid prevents footer/layout jumps when switching months.
 
-## 10. Dialog Placement Contract
+## 9. Dialog Placement Contract
 
 The `Go to` popup must be anchored to the toolbar calendar button, not to a
 global right edge. Desktop layouts can include a right watchlist/details panel;
@@ -268,7 +257,7 @@ chart time strip.
 - clamp left/top to the viewport,
 - fall back below the button only when there is not enough room above.
 
-## 11. Replay And Data Replacement
+## 10. Replay And Data Replacement
 
 Replay can replace the visible candle slice. Time navigation must tolerate that:
 
@@ -279,7 +268,7 @@ Replay can replace the visible candle slice. Time navigation must tolerate that:
 Do not jump to hidden future candles during replay. If a future date is typed,
 `nearestCandleIndex` resolves to the last currently loaded candle.
 
-## 12. Timezone Selector Contract
+## 11. Timezone Selector Contract
 
 The bottom-right clock opens a TradingView-style timezone menu. The selector is
 persisted in `localStorage` under `chartTimeZone`.
@@ -289,8 +278,8 @@ Supported behavior:
 - `Exchange` means the browser/default chart timezone. This preserves the
   existing local-time behavior until symbol-level exchange timezones are added.
 - `UTC` and named IANA zones such as `America/New_York` use browser `Intl`.
-- The toolbar clock, UTC offset text, `Go to` dialog defaults, Date/Custom Range
-  parsing, and temporary Go-to marker label all use the selected timezone.
+- The toolbar clock, UTC offset text, `Go to` date/time parsing and defaults, and
+  the temporary Go-to marker label all use the selected timezone.
 - Candle timestamps remain unchanged. Lightweight Charts itself receives UTC
   timestamps; the app converts user-entered wall time to UTC seconds before
   calling `setVisibleRange` / `setVisibleLogicalRange`.
@@ -300,7 +289,7 @@ That would also move drawings, replay boundaries, indicators, and trade levels.
 Timezone selection is a presentation/input contract until a future dedicated
 time-axis transformation layer is added.
 
-## 13. Maintenance Rules
+## 12. Maintenance Rules
 
 - Keep shortcut catalog/range math in `backend/internal/timenavigation`; the
   React component should remain a thin API and chart-viewport adapter.
@@ -314,7 +303,7 @@ time-axis transformation layer is added.
   `Exchange` resolver first, then the toolbar. Do not add per-component
   timezone conversion.
 
-## 14. Verification
+## 13. Verification
 
 Run:
 
@@ -322,6 +311,7 @@ Run:
 npm run test:chart
 npm run typecheck
 npm run lint
+npx playwright test tests/browser/desktopOverlayRegression.spec.ts
 npm run build
 ```
 
@@ -337,9 +327,9 @@ Manual checks:
   jump,
 - click, drag, wheel, or touch the chart and confirm the temporary marker/chip
   disappears immediately,
-- switch to `Custom range`, enter start/end values, and confirm range applies,
-- close and reopen `Go to` after applying Date and Custom range; confirm the
-  last applied tab and values are restored,
+- confirm the dialog has no `Custom range` tab or second date/time pair,
+- close and reopen `Go to` after applying a date; confirm the last applied date
+  and time are restored,
 - confirm the time fields are enabled through `2H` and disabled/reset to
   `00:00` on `4H`, `1D`, `1W`, and `1M`,
 - verify current clock displays the local time and UTC offset,

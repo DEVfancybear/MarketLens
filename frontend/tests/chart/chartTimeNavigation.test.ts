@@ -102,7 +102,7 @@ test("date time formatting follows the selected chart time zone", () => {
   assert.equal(formatUtcOffset(new Date(timeMs), "UTC"), "UTC");
 });
 
-test("go-to selection draft restores the last applied date and range", () => {
+test("go-to selection draft restores the last applied date and time", () => {
   const selected = parseLocalDateTime(
     "2026-07-02",
     "00:00",
@@ -111,24 +111,10 @@ test("go-to selection draft restores the last applied date and range", () => {
   assert.notEqual(selected, null);
   assert.deepEqual(
     goToSelectionDraft(
-      { tab: "date", time: selected! },
+      { time: selected! },
       "Asia/Ho_Chi_Minh",
     ),
-    { tab: "date", singleDate: "2026-07-02", singleTime: "00:00" },
-  );
-
-  assert.deepEqual(
-    goToSelectionDraft(
-      { tab: "range", from: selected!, to: selected! + 3600 },
-      "Asia/Ho_Chi_Minh",
-    ),
-    {
-      tab: "range",
-      fromDate: "2026-07-02",
-      fromTime: "00:00",
-      toDate: "2026-07-02",
-      toTime: "01:00",
-    },
+    { singleDate: "2026-07-02", singleTime: "00:00" },
   );
 });
 
