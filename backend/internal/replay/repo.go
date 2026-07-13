@@ -241,16 +241,21 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	if target.After(source.SimulatedTime.Time) {
 		return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: source.StartTime.Time, LastAvailable: source.SimulatedTime.Time}
 	}
+	trackWindows := make([]forkTrackWindow, len(tracks))
+	for i, track := range tracks {
+		trackWindows[i] = forkTrackWindow{FirstAvailable: track.FirstTime.Time, ChartTimeframe: track.ChartTimeframe}
+	}
+	resolvedTarget, err := resolveForkTarget(target, source.SimulatedTime.Time, trackWindows)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
 	type forkTrackState struct {
 		selected  gen.ReplayDatasetBar
 		aggregate aggregateState
 	}
 	states := make([]forkTrackState, len(tracks))
 	for i, track := range tracks {
-		if target.Before(track.FirstTime.Time) {
-			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
-		}
-		selected, selectErr := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
+		selected, selectErr := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(resolvedTarget)})
 		if errors.Is(selectErr, pgx.ErrNoRows) {
 			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
 		}
@@ -273,7 +278,7 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	}
 	forked, err := q.CreateReplaySession(ctx, gen.CreateReplaySessionParams{
 		UserID: uid, Mode: source.Mode, Speed: source.Speed, ReplayIntervalSeconds: source.ReplayIntervalSeconds,
-		StartTime: timestamp(target), EndTime: source.EndTime, Config: source.Config,
+		StartTime: timestamp(resolvedTarget), EndTime: source.EndTime, Config: source.Config,
 	})
 	if err != nil {
 		return SessionSnapshot{}, err
@@ -305,6 +310,46 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 		return SessionSnapshot{}, err
 	}
 	return r.getByIDs(ctx, uid, forked.ID)
+}
+
+type forkTrackWindow struct {
+	FirstAvailable time.Time
+	ChartTimeframe string
+}
+
+// resolveForkTarget maps a chart bucket timestamp back to the first source row
+// that can represent it. A prepared dataset may begin part-way through its
+// first chart bucket (for example, 08:12 source data renders as the 08:00 15m
+// candle). That candle is selectable in the client, so a fork at its bucket
+// timestamp must start at 08:12 instead of rejecting a visible data point.
+// Targets in an earlier bucket remain unavailable.
+func resolveForkTarget(target, lastAvailable time.Time, tracks []forkTrackWindow) (time.Time, error) {
+	target = target.UTC()
+	resolved := target
+	for _, track := range tracks {
+		first := track.FirstAvailable.UTC()
+		if !target.Before(first) {
+			continue
+		}
+		targetBucket, _, err := replayBucket(target, track.ChartTimeframe)
+		if err != nil {
+			return time.Time{}, err
+		}
+		firstBucket, _, err := replayBucket(first, track.ChartTimeframe)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if !targetBucket.Equal(firstBucket) {
+			return time.Time{}, &DataUnavailableError{FirstAvailable: first, LastAvailable: lastAvailable.UTC()}
+		}
+		if first.After(resolved) {
+			resolved = first
+		}
+	}
+	if resolved.After(lastAvailable) {
+		return time.Time{}, &DataUnavailableError{FirstAvailable: target, LastAvailable: lastAvailable.UTC()}
+	}
+	return resolved, nil
 }
 
 func (r *Repo) getByIDs(ctx context.Context, uid, sid pgtype.UUID) (SessionSnapshot, error) {

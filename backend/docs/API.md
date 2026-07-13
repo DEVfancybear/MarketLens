@@ -312,7 +312,10 @@ History scheduling:
   cached, the endpoint returns cached candles immediately and refreshes stale/latest windows in the
   background so timeframe changes do not block on MT5 warm-up.
 - Older pagination requests (`before > 0`) still wait for MT5 history because they extend the left
-  side of the visible chart and cannot be served from a latest-window fallback.
+  side of the visible chart. A cached slice is eligible only when its oldest candle reaches or
+  crosses the requested `before` cursor; a newer, unrelated cached tail must go back through the
+  MT5 bridge instead of returning a misleading partial page. This coverage rule is also what makes
+  Replay `Select date -> First day` resolve against the requested historical window.
 - Identical history requests are single-flighted in Go: only one payload is sent to the Python MT5
   bridge and concurrent callers share the result. Each caller waits with its own context, so one
   canceled browser effect does not cancel another active waiter for the same history window.

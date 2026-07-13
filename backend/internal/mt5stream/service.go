@@ -320,7 +320,10 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 	// the current viewport instead of extending the left edge.
 	candles := s.cachedHistory(symbol, timeframe, limit, before)
 	if len(candles) > 0 {
-		if before > 0 || (!refresh && s.historyIsFresh(symbol, timeframe, candles)) {
+		if before > 0 && s.historyCacheCoversBefore(symbol, timeframe, before) {
+			return s.historySnapshot(symbol, timeframe, candles, "")
+		}
+		if before == 0 && !refresh && s.historyIsFresh(symbol, timeframe, candles) {
 			return s.historySnapshot(symbol, timeframe, candles, "")
 		}
 		if before == 0 {
@@ -586,6 +589,20 @@ func (s *Service) cachedHistory(symbol, timeframe string, limit int, before int6
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return limitCandles(s.history[historyKey(symbol, timeframe)], limit, before)
+}
+
+// historyCacheCoversBefore distinguishes a real cached page from an unrelated,
+// stale tail. A candle at or beyond the requested boundary proves the cache was
+// populated across that boundary; otherwise a synchronous bridge request is
+// required before Replay can decide that a selected UTC time is unavailable.
+func (s *Service) historyCacheCoversBefore(symbol, timeframe string, before int64) bool {
+	if before <= 0 {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	candles := s.history[historyKey(symbol, timeframe)]
+	return len(candles) > 0 && candles[len(candles)-1].Time >= before
 }
 
 // historyIsFresh reports whether the cached candles reach the current bar,

@@ -2,14 +2,18 @@
 
 import {
   ChevronsRight,
+  Gauge,
   GripVertical,
+  LoaderCircle,
   Pause,
   Play,
   RotateCcw,
   StepForward,
   X,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   exitReplaySession,
@@ -22,6 +26,7 @@ import { cn } from "@/utils/cn";
 import { ReplayTimingMenu } from "./ReplayTimingMenu";
 import {
   cancelReplaySelectionAtom,
+  requestReplayWorkspaceAtom,
   replaySelectionModeAtom,
   REPLAY_SPEEDS,
   replaySpeedDescription,
@@ -33,12 +38,28 @@ function fire(command: Promise<void>): void {
 }
 
 export function ReplayFloatingToolbar() {
+  const platform = useTerminalPlatform();
   const projection = useReplayClientProjection();
   const selection = useAtomValue(replaySelectionModeAtom);
   const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
   const snapshot = projection.snapshot;
-  const visible = Boolean(snapshot) || selection !== "idle" || projection.connection === "connecting";
+  const visible = Boolean(snapshot) ||
+    selection !== "idle" ||
+    projection.connection === "connecting" ||
+    projection.connection === "recovering";
   if (!visible) return null;
+
+  if (platform === "mobile") {
+    // ReplaySelectionLayer owns the mobile selection HUD because it also owns
+    // the current candidate and the visible confirm/cancel alternatives.
+    if (selection !== "idle") return null;
+    return (
+      <MobileReplayDock
+        snapshot={snapshot}
+        connection={projection.connection}
+      />
+    );
+  }
 
   const playing = snapshot?.status === "playing";
   const atEnd = snapshot?.status === "completed";
@@ -116,6 +137,122 @@ export function ReplayFloatingToolbar() {
         )}
       </div>
     </div>
+  );
+}
+
+function MobileReplayDock({
+  snapshot,
+  connection,
+}: {
+  snapshot: ReturnType<typeof useReplayClientProjection>["snapshot"];
+  connection: string;
+}) {
+  const requestWorkspace = useSetAtom(requestReplayWorkspaceAtom);
+  const connecting = connection === "connecting" || connection === "recovering";
+
+  if (!snapshot) {
+    return (
+      <div data-chart-ui className="pointer-events-none absolute inset-x-2 bottom-2 z-50 flex justify-center">
+        <button
+          type="button"
+          onClick={() => requestWorkspace()}
+          className="pointer-events-auto flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 px-4 text-xs font-semibold text-ink shadow-floating backdrop-blur-xl active:bg-terminal-pressed"
+        >
+          <LoaderCircle size={17} className="animate-spin text-brand motion-reduce:animate-none" />
+          {connecting ? "Preparing Replay..." : "Open Replay status"}
+        </button>
+      </div>
+    );
+  }
+
+  const playing = snapshot.status === "playing";
+  const atEnd = snapshot.status === "completed";
+  const atStart = snapshot.tracks.every((track) => track.cursorSeq <= 0);
+  const terminal = snapshot.status === "closed" || snapshot.status === "failed";
+  const disabled = connecting || terminal || snapshot.status === "preparing";
+  const speedIndex = Math.max(0, REPLAY_SPEEDS.findIndex((speed) => speed === snapshot.speed));
+  const nextSpeed = REPLAY_SPEEDS[(speedIndex + 1) % REPLAY_SPEEDS.length] ?? 1;
+
+  return (
+    <div data-chart-ui className="pointer-events-none absolute inset-x-2 bottom-2 z-50 flex justify-center">
+      <div
+        role="toolbar"
+        aria-label="Replay controls"
+        className="pointer-events-auto grid min-h-14 w-full max-w-sm grid-cols-[48px_56px_48px_minmax(64px,1fr)_48px] items-center gap-1 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 p-1 shadow-floating backdrop-blur-xl"
+      >
+        <MobileDockButton
+          label="Previous Replay bar"
+          disabled={disabled || atStart}
+          onClick={() => fire(stepActiveReplay(-1))}
+        >
+          <StepForward size={19} className="rotate-180" />
+        </MobileDockButton>
+        <MobileDockButton
+          label={playing ? "Pause Replay" : "Play Replay"}
+          primary
+          disabled={disabled || atEnd}
+          onClick={() => fire(setActiveReplayPlaying(!playing))}
+        >
+          {playing ? (
+            <Pause size={20} />
+          ) : (
+            <Play size={20} fill="currentColor" />
+          )}
+        </MobileDockButton>
+        <MobileDockButton
+          label="Next Replay bar"
+          disabled={disabled || atEnd}
+          onClick={() => fire(stepActiveReplay(1))}
+        >
+          <StepForward size={19} />
+        </MobileDockButton>
+        <button
+          type="button"
+          aria-label={`Replay speed ${replaySpeedLabel(snapshot.speed)}. Set ${replaySpeedLabel(nextSpeed)}`}
+          disabled={disabled}
+          onClick={() => fire(setActiveReplaySpeed(nextSpeed))}
+          className="flex h-12 min-w-0 flex-col items-center justify-center rounded-xl px-2 text-ink-muted transition-colors active:bg-terminal-pressed disabled:opacity-45"
+        >
+          <span className="text-xs font-bold tabular text-ink">{replaySpeedLabel(snapshot.speed)}</span>
+          <span className="truncate text-[9px] font-semibold uppercase tracking-wide">Speed</span>
+        </button>
+        <MobileDockButton label="Open Replay controls" onClick={() => requestWorkspace()}>
+          <Gauge size={20} />
+        </MobileDockButton>
+      </div>
+    </div>
+  );
+}
+
+function MobileDockButton({
+  label,
+  primary = false,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  primary?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex h-12 min-w-11 items-center justify-center rounded-xl transition-colors disabled:opacity-45",
+        primary
+          ? "bg-brand text-[var(--accent-contrast)] shadow-accent active:bg-brand-hover"
+          : "text-ink-muted active:bg-terminal-pressed active:text-ink",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -405,6 +405,7 @@ body {
 .mobile-terminal .chart-hud { left: 10px; top: 10px; max-width: calc(100vw - 82px); gap: 4px; border-radius: 10px; padding: 7px 9px; }
 .mobile-terminal .chart-hud > div:last-child { max-width: 260px; gap: 5px; overflow: hidden; white-space: nowrap; font-size: 9px; }
 .mobile-chart-actions { position: absolute; right: 10px; bottom: 10px; z-index: 35; display: flex; gap: 8px; }
+.mobile-chart-actions--replay { bottom: 74px; }
 .mobile-chart-actions button { display: flex; min-height: 44px; align-items: center; gap: 7px; border: 1px solid var(--border-strong); border-radius: 12px; background: rgb(var(--panel-rgb)/.90); padding: 0 12px; color: var(--text); font-size: 12px; font-weight: 700; box-shadow: var(--shadow-panel); backdrop-filter: blur(14px); touch-action: manipulation; }
 .mobile-chart-actions button:active { background: var(--pressed); }
 .mobile-bottom-nav { min-height: 62px; padding: 5px max(7px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(7px, env(safe-area-inset-left)); background: rgb(var(--panel-rgb)/.96); box-shadow: 0 -8px 28px rgb(0 0 0/.12); backdrop-filter: blur(18px); }

@@ -22,6 +22,7 @@ import {
   setActiveReplaySpeed,
   stepActiveReplay,
 } from "@/services/replay/replaySocket";
+import { replayErrorMessage } from "@/services/replay/replayErrorMessage";
 import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
 import {
   beginReplayReselectionAtom,
@@ -44,11 +45,7 @@ export interface MobileReplayWorkspaceProps {
 }
 
 type PendingAction =
-  | "playback"
-  | "step-back"
-  | "step-forward"
   | "restart"
-  | "speed"
   | "exit";
 
 /** Mobile-native Replay presentation backed only by shared Replay state/services. */
@@ -82,12 +79,17 @@ export function MobileReplayWorkspace({
       await command();
       onSuccess?.();
     } catch (error) {
-      setCommandError(
-        error instanceof Error ? error.message : "Replay command failed",
-      );
+      setCommandError(replayErrorMessage(error, "Replay command failed"));
     } finally {
       setPending(null);
     }
+  };
+
+  const runControl = (command: () => Promise<void>) => {
+    setCommandError(null);
+    void command().catch((error) => {
+      setCommandError(replayErrorMessage(error, "Replay command failed"));
+    });
   };
 
   const startFromChart = () => {
@@ -268,8 +270,8 @@ export function MobileReplayWorkspace({
           className="h-2 overflow-hidden rounded-full bg-terminal-panel-3"
         >
           <div
-            className="h-full rounded-full bg-brand transition-[width] motion-reduce:transition-none"
-            style={{ width: `${progress}%` }}
+            className="h-full origin-left rounded-full bg-brand transition-transform duration-[160ms] motion-reduce:transition-none"
+            style={{ transform: `scaleX(${progress / 100})` }}
           />
         </div>
       </div>
@@ -296,23 +298,21 @@ export function MobileReplayWorkspace({
             detail="-1"
             icon={<ChevronLeft size={20} />}
             disabled={controlsDisabled}
-            onClick={() => void runAction("step-back", () => stepActiveReplay(-1))}
+            onClick={() => runControl(() => stepActiveReplay(-1))}
           />
           <TransportButton
             label={playing ? "Pause" : "Play"}
             icon={playing ? <Pause size={20} /> : <Play size={20} fill="currentColor" />}
             primary
             disabled={controlsDisabled || completed}
-            onClick={() =>
-              void runAction("playback", () => setActiveReplayPlaying(!playing))
-            }
+            onClick={() => runControl(() => setActiveReplayPlaying(!playing))}
           />
           <TransportButton
             label="Next bar"
             detail="+1"
             icon={<ChevronRight size={20} />}
             disabled={controlsDisabled || completed}
-            onClick={() => void runAction("step-forward", () => stepActiveReplay(1))}
+            onClick={() => runControl(() => stepActiveReplay(1))}
           />
         </div>
       </section>
@@ -331,9 +331,7 @@ export function MobileReplayWorkspace({
                 aria-pressed={active}
                 aria-label={`Set Replay speed to ${replaySpeedLabel(speed)}`}
                 disabled={controlsDisabled}
-                onClick={() =>
-                  void runAction("speed", () => setActiveReplaySpeed(speed))
-                }
+                onClick={() => runControl(() => setActiveReplaySpeed(speed))}
                 className={cn(
                   "min-h-11 rounded-xl border px-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45",
                   active

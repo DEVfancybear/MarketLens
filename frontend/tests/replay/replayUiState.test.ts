@@ -5,7 +5,7 @@ import {
   replayAutoIntervalSeconds,
   replayControlMessage,
   replaySessionInputAt,
-} from "../../src/components/replay/replayUiState";
+} from "../../src/store/replayUiState";
 
 test("Replay controls expose kill-switch, auth, loading, and server error states", () => {
   assert.match(replayControlMessage({ enabled: false, authenticated: true, connection: "idle", error: null }) ?? "", /disabled/);

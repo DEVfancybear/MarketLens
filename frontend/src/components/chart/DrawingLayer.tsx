@@ -55,6 +55,7 @@ import {
   resolvePositionHit,
 } from "./drawing/tools/positionHitResolution";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
+import { setChartInteractionLocked } from "./chartInteractionLock";
 import { uid } from "@/utils/id";
 import { runDrawingAdapterContractAudit } from "./drawing/testing/adapterContractAudit";
 import type { DrawingInteractionTestHarness } from "./drawing/testing/testHarnessTypes";
@@ -248,10 +249,8 @@ export function DrawingLayer() {
   // pointermove of a *fast* drag can't leak through to the chart's
   // pressedMouseMove handler before React has a chance to run the effect below.
   const freezeChart = useCallback((busy: boolean) => {
-    ctxRef.current?.chart?.applyOptions({
-      handleScroll: !busy,
-      handleScale: !busy,
-    });
+    const chart = ctxRef.current?.chart;
+    if (chart) setChartInteractionLocked(chart, "drawing-imperative", busy);
   }, []);
   const fromEvent = useCallback((e: PointerEvent): Point | null => {
     const c = ctxRef.current;
@@ -841,7 +840,8 @@ export function DrawingLayer() {
     const chart = ctxRef.current?.chart;
     if (!chart) return;
     const busy = machine.state !== "Idle";
-    chart.applyOptions({ handleScroll: !busy, handleScale: !busy });
+    setChartInteractionLocked(chart, "drawing-state", busy);
+    return () => setChartInteractionLocked(chart, "drawing-state", false);
   }, [machine.state]);
 
   useEffect(() => {

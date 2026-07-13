@@ -49,6 +49,31 @@ typecheck, and production build.
 
 ## Verification
 
+### Selection, First-day viewport, and lifecycle hardening (2026-07-13)
+
+The backend-authority boundary remains unchanged. The follow-up closes the full
+`Select bar -> Select date -> First day` path on desktop and mobile:
+
+- MT5 history pagination reuses a cache entry only when the cached range covers
+  the requested `before` cursor. A newer cached tail triggers a bridge fetch.
+- Replay forks may clamp the visible partial bucket only to the first available
+  source row. Requests before the dataset, or synchronized tracks that do not
+  cover the selected time, remain validation errors.
+- API errors that expose an HTTP status are logged with that status, so a typed
+  Replay validation response remains `422` in both the response and request log.
+- The frontend gives every hydrated session and reset a deterministic 120-bar
+  logical range. A one-bar First-day result therefore remains a narrow candle
+  instead of being expanded by `fitContent()`.
+- Selection owns chart input through the shared interaction lock. Mobile gets a
+  center-seeded selector, pointer-capture fallbacks, confirm/cancel controls, and
+  an accessible keyboard slider.
+- Chart callbacks, queued animation frames, and deferred `chart.remove()` calls
+  are generation-guarded to prevent stale work from touching a disposed canvas.
+
+Regression coverage includes backend cache/fork/logging tests, frontend Replay
+state/viewport/lifecycle tests, and browser flows for desktop First day plus
+mobile selection, confirm, cancel, and chart navigation.
+
 ### Replay timing and rendering follow-up (2026-07-11)
 
 The Phase 6 authority boundary is unchanged, but playback delivery and chart

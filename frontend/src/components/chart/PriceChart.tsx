@@ -76,7 +76,9 @@ import {
   type ChartViewportController,
 } from "./chartViewportController";
 import {
+  initialReplayLogicalRange,
   latestReplayLogicalRange,
+  shouldInitializeReplayViewport,
   shouldRealignReplayViewport,
 } from "./replayViewport";
 import { decideAutoFitCandleWindow } from "./chartAutoFitPolicy";
@@ -96,6 +98,7 @@ import { installChartBenchmarkHarness } from "@/services/chartBenchmarkHarness";
 import { installChartInteractionTestHarness } from "./chartInteractionTestHarness";
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
 import { crosshairTimeToTimestamp } from "./crosshairSynchronization";
+import { removeChartAfterCurrentStack } from "./chartLifecycle";
 import {
   resolveIndicatorSeriesWritePlan,
   type IndicatorWritePoint,
@@ -117,6 +120,14 @@ function keepLatestBarInView(
     timeScale.getVisibleLogicalRange(),
     RIGHT_OFFSET_BARS,
   );
+  if (next) viewport.setLogicalRange(next, "replay-realign");
+}
+
+function initializeReplaySessionViewport(
+  viewport: ChartViewportController,
+  dataLength: number,
+) {
+  const next = initialReplayLogicalRange(dataLength, RIGHT_OFFSET_BARS);
   if (next) viewport.setLogicalRange(next, "replay-realign");
 }
 
@@ -231,7 +242,7 @@ export function PriceChart({
   indicatorsOverride?: IndicatorConfig[];
   children?: React.ReactNode;
   onLoadMoreHistory?: () => Promise<void> | void;
-  onReady?: (chart: IChartApi) => void;
+  onReady?: (chart: IChartApi | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -244,12 +255,15 @@ export function PriceChart({
   const paneLayoutSignatureRef = useRef("");
   const fittedRef = useRef(false);
   const lastAutoFitLengthRef = useRef(0);
+  const initializedReplaySessionRef = useRef<string | null>(null);
+  const activeReplaySessionRef = useRef<string | null>(null);
   const prevCandlesRef = useRef<Candle[]>([]);
   const candleByTimeRef = useRef<Map<number, Candle>>(new Map());
   const prevThemeRef = useRef<string>("");
   const appliedTimeframeRef = useRef<Timeframe | null>(null);
   const bumpRafRef = useRef<number | null>(null);
   const candleAnimationRafRef = useRef<number | null>(null);
+  const replayViewportInitRafRef = useRef<number | null>(null);
   const renderedLatestCandleRef = useRef<Candle | null>(null);
   const renderedCandleCountRef = useRef(0);
   const prevMarkerPriceRef = useRef<number | null>(null);
@@ -267,6 +281,8 @@ export function PriceChart({
   const gridVisible = useAtomValue(gridVisibleAtom);
   const replayProjection = useReplayClientProjection();
   const replaySnapshot = replayProjection.snapshot;
+  const replaySessionId = replaySnapshot?.id ?? null;
+  activeReplaySessionRef.current = replaySessionId;
   const replayActive = Boolean(replaySnapshot);
   const replayPlaying = replaySnapshot?.status === "playing";
   const replaySpeed = replaySnapshot?.speed ?? 1;
@@ -420,9 +436,11 @@ export function PriceChart({
     setMainChart(chart);
     onReady?.(chart);
 
+    let disposed = false;
     const unsubscribeViewportEvents = subscribeChartViewportEvents(
       chart,
       (source) => {
+        if (disposed) return;
         if (source === "input") viewportController.beginUserInteraction();
         scheduleVersionBump();
       },
@@ -439,7 +457,10 @@ export function PriceChart({
       lastCrosshairTime: () => lastCrosshairTimeRef.current,
     });
 
-    chart.subscribeCrosshairMove((param) => {
+    const handleCrosshairMove: Parameters<
+      IChartApi["subscribeCrosshairMove"]
+    >[0] = (param) => {
+      if (disposed) return;
       const timestamp = crosshairTimeToTimestamp(param.time);
       lastCrosshairTimeRef.current = timestamp;
       if (timestamp == null) {
@@ -458,16 +479,16 @@ export function PriceChart({
             }
           : null,
       });
-    });
+    };
 
-    let disposed = false;
     const ro = new ResizeObserver((entries) => {
-      if (disposed) return;
+      if (disposed || chartRef.current !== chart) return;
       const bounds = entries[0]?.contentRect;
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
       chart.resize(Math.floor(bounds.width), Math.floor(bounds.height));
       scheduleVersionBump();
     });
+    chart.subscribeCrosshairMove(handleCrosshairMove);
     ro.observe(chartContainer);
 
     const indStore = indSeriesRef.current;
@@ -480,6 +501,7 @@ export function PriceChart({
       uninstallInteractionHarness();
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       if (bumpRafRef.current !== null) {
         cancelAnimationFrame(bumpRafRef.current);
         bumpRafRef.current = null;
@@ -488,17 +510,22 @@ export function PriceChart({
         cancelAnimationFrame(candleAnimationRafRef.current);
         candleAnimationRafRef.current = null;
       }
-      setMainChart(null);
-      viewportController.destroy();
-      viewportControllerRef.current = null;
-      chart.remove();
+      if (replayViewportInitRafRef.current !== null) {
+        cancelAnimationFrame(replayViewportInitRafRef.current);
+        replayViewportInitRafRef.current = null;
+      }
       chartRef.current = null;
       candleSeriesRef.current = null;
+      setMainChart(null);
+      onReady?.(null);
+      viewportController.destroy();
+      viewportControllerRef.current = null;
       indStore.clear();
       indStructureStore.clear();
       indStyleStore.clear();
       indDataStore.clear();
       setReady(false);
+      removeChartAfterCurrentStack(chart);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -618,10 +645,17 @@ export function PriceChart({
       scheduleVersionBump();
       return;
     }
-    // Empty series => symbol/timeframe just changed; re-fit on next load.
+    // Empty series => symbol/timeframe changed or a Replay track is between its
+    // reset and hydration events. The next non-empty Replay window must get its
+    // stable logical span again, even when the backend keeps the same session id.
     if (candles.length === 0) {
       fittedRef.current = false;
       lastAutoFitLengthRef.current = 0;
+      initializedReplaySessionRef.current = null;
+      if (replayViewportInitRafRef.current !== null) {
+        cancelAnimationFrame(replayViewportInitRafRef.current);
+        replayViewportInitRafRef.current = null;
+      }
     }
     const c = chartColors(theme);
 
@@ -770,7 +804,33 @@ export function PriceChart({
       replayActive,
     });
 
-    if (autoFit.fitContent) {
+    const initializeReplayViewport = shouldInitializeReplayViewport(
+      replaySessionId,
+      initializedReplaySessionRef.current,
+      candles.length,
+    );
+
+    if (initializeReplayViewport && replaySessionId) {
+      initializedReplaySessionRef.current = replaySessionId;
+      lastAutoFitLengthRef.current = candles.length;
+      fittedRef.current = true;
+      const viewport = viewportControllerRef.current;
+      if (replayViewportInitRafRef.current !== null) {
+        cancelAnimationFrame(replayViewportInitRafRef.current);
+      }
+      const frame = requestAnimationFrame(() => {
+        if (replayViewportInitRafRef.current !== frame) return;
+        replayViewportInitRafRef.current = null;
+        if (
+          activeReplaySessionRef.current !== replaySessionId ||
+          viewportControllerRef.current !== viewport
+        ) return;
+        if (viewport) {
+          initializeReplaySessionViewport(viewport, candlesRef.current.length);
+        }
+      });
+      replayViewportInitRafRef.current = frame;
+    } else if (autoFit.fitContent) {
       viewportControllerRef.current?.fitContent("initial-fit");
       lastAutoFitLengthRef.current = candles.length;
       fittedRef.current = autoFit.markComplete;
@@ -802,6 +862,7 @@ export function PriceChart({
     candles,
     theme,
     replayActive,
+    replaySessionId,
     replayPlaying,
     replaySpeed,
     scheduleVersionBump,

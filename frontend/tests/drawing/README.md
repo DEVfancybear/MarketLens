@@ -46,6 +46,10 @@ The current suite covers shared geometry plus Phase 0 characterization contracts
   candle-index session-gap handling, and logical-width body movement; and
   axis-constrained movement tests assert Horizontal/Vertical Line grab-offset
   preservation.
+- Body movement for every drawing adapter uses logical candle-index deltas, so
+  rectangles and other multi-anchor tools preserve their width across weekend,
+  market-session, and unloaded-data gaps. Touch resize owns the gesture through
+  the shared chart-interaction lock and blocks the underlying chart pan/zoom.
 - Phase 5 persistence contracts cover historical flat-payload migration, current-schema
   round-trips for every persistent tool, transient-field stripping, quarantine of unknown/future
   payloads, clipboard validation, stale-load cancellation, retrying/persisted outbox behavior,
@@ -106,11 +110,20 @@ npm run test:chart-browser -- drawingInteractions.spec.ts
 The suite uses semantic development-only harnesses; it does not inspect source
 text or depend on canvas screenshots for state assertions.
 
+The focused mobile rectangle contract can be run with:
+
+```bash
+npx playwright test tests/browser/mobileDrawing.spec.ts
+```
+
+It creates, moves, and resizes a rectangle through touch input and verifies that
+the chart viewport does not move while the drawing owns the gesture.
+
 ## Last verified gates (2026-07-13)
 
 - `npm run typecheck`: pass
 - `npm run lint`: 0 errors; two pre-existing Watchlist hook warnings
-- `npm run test:drawing`: 151/151 pass
+- `npm run test:drawing`: 153/153 pass
 - `npm run test:drawing-persistence`: 18/18 pass
 - `npm run test:position`: 41/41 pass
 - `npm run check:drawing-viewport`: 7/7 pass

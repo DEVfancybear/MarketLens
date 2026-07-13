@@ -18,14 +18,7 @@ func Logging() fiber.Handler {
 
 		// On error the central ErrorHandler runs after this middleware unwinds,
 		// so the response status isn't set yet — derive it from the error.
-		status := c.Response().StatusCode()
-		if err != nil {
-			if fe, ok := err.(*fiber.Error); ok {
-				status = fe.Code
-			} else {
-				status = fiber.StatusInternalServerError
-			}
-		}
+		status := requestStatus(c.Response().StatusCode(), err)
 
 		event := log.Info()
 		if id, ok := c.Locals("requestid").(string); ok && id != "" {
@@ -40,4 +33,17 @@ func Logging() fiber.Handler {
 
 		return err
 	}
+}
+
+func requestStatus(responseStatus int, err error) int {
+	if err == nil {
+		return responseStatus
+	}
+	if apiErr, ok := err.(interface{ HTTPStatus() int }); ok {
+		return apiErr.HTTPStatus()
+	}
+	if fe, ok := err.(*fiber.Error); ok {
+		return fe.Code
+	}
+	return fiber.StatusInternalServerError
 }

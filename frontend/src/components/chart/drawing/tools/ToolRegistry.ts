@@ -135,10 +135,60 @@ export function defaultMove(
   origPoints: Point[],
   pointer: Point,
   dragStart: Point,
+  context?: DrawingAdapterInteractionContext,
 ): Point[] {
   const dt = pointer.time - dragStart.time;
   const dp = pointer.price - dragStart.price;
-  return origPoints.map((pt) => ({ time: pt.time + dt, price: pt.price + dp }));
+  const candles = context?.candles ?? [];
+  const interval = context?.barIntervalSeconds;
+  if (
+    candles.length < 2 ||
+    !Number.isFinite(interval) ||
+    Number(interval) <= 0
+  ) {
+    return origPoints.map((pt) => ({ time: pt.time + dt, price: pt.price + dp }));
+  }
+
+  const step = Number(interval);
+  const logicalIndex = (time: number): number => {
+    const first = candles[0].time;
+    const lastIndex = candles.length - 1;
+    const last = candles[lastIndex].time;
+    if (time <= first) return (time - first) / step;
+    if (time >= last) return lastIndex + (time - last) / step;
+
+    let low = 0;
+    let high = lastIndex;
+    while (low + 1 < high) {
+      const mid = (low + high) >>> 1;
+      if (candles[mid].time <= time) low = mid;
+      else high = mid;
+    }
+    const span = candles[high].time - candles[low].time;
+    return span > 0
+      ? low + (time - candles[low].time) / span
+      : low;
+  };
+  const timeAtLogicalIndex = (logical: number): number => {
+    if (logical <= 0) return candles[0].time + logical * step;
+    const lastIndex = candles.length - 1;
+    if (logical >= lastIndex) {
+      return candles[lastIndex].time + (logical - lastIndex) * step;
+    }
+    const left = Math.floor(logical);
+    const fraction = logical - left;
+    return candles[left].time +
+      fraction * (candles[left + 1].time - candles[left].time);
+  };
+
+  // Translate in logical-bar space. Timestamp addition changes an object's
+  // screen width when it crosses a session/weekend/data gap; applying one
+  // logical delta to every anchor preserves its rendered geometry.
+  const logicalDelta = logicalIndex(pointer.time) - logicalIndex(dragStart.time);
+  return origPoints.map((pt) => ({
+    time: timeAtLogicalIndex(logicalIndex(pt.time) + logicalDelta),
+    price: pt.price + dp,
+  }));
 }
 
 export function defaultMoveAnchor(
@@ -219,7 +269,8 @@ export interface SimpleTool {
 export function createAdapter(t: SimpleTool): DrawingAdapter {
   return {
     ...t,
-    move: t.move ?? ((orig, ptr, start) => defaultMove(orig, ptr, start)),
+    move: t.move ?? ((orig, ptr, start, context) =>
+      defaultMove(orig, ptr, start, context)),
     moveAnchor:
       t.moveAnchor ?? ((orig, idx, ptr) => defaultMoveAnchor(orig, idx, ptr)),
     getAnchors:

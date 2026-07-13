@@ -7,6 +7,7 @@ import {
   type ReplayReport,
 } from "@/services/api/resources/replayApi";
 import { sendVersionedReplayCommand } from "@/services/replay/replaySocket";
+import { replayErrorMessage } from "@/services/replay/replayErrorMessage";
 import { replayClientStore } from "@/store/replayClientStore";
 import type { OrderRequest } from "@/types";
 
@@ -38,7 +39,7 @@ function enqueueTradingCommand(
     const current = replayClientStore.getState();
     replayClientStore.setConnection(
       current.connection,
-      error instanceof Error ? error.message : "Replay trading command failed",
+      replayErrorMessage(error, "Replay trading command failed"),
     );
   });
   commandQueue = safe;

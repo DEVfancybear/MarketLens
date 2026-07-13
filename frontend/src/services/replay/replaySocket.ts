@@ -18,6 +18,7 @@ import {
   type ReplayClientStore,
 } from "@/store/replayClientStore";
 import { withReplayVersionRetry } from "./replayCommandRetry";
+import { replayErrorMessage } from "./replayErrorMessage";
 import { TrailingReplayCommand } from "./trailingReplayCommand";
 
 export class ReplaySocket {
@@ -42,7 +43,7 @@ export class ReplaySocket {
     } catch (error) {
       this.store.setConnection(
         "error",
-        error instanceof Error ? error.message : "replay connection failed",
+        replayErrorMessage(error, "Replay connection failed"),
       );
       throw error;
     }
@@ -71,7 +72,7 @@ export class ReplaySocket {
       ).catch((error) => {
         this.store.setConnection(
           "error",
-          error instanceof Error ? error.message : "invalid replay event",
+          replayErrorMessage(error, "Invalid Replay event"),
         );
         socket.close();
       });
@@ -94,7 +95,7 @@ export class ReplaySocket {
       await this.hydrateBars(snapshot);
       this.open(snapshot);
     } catch (error) {
-      this.store.setConnection("error", error instanceof Error ? error.message : "reconnect failed");
+      this.store.setConnection("error", replayErrorMessage(error, "Replay reconnect failed"));
       this.reconnectTimer = setTimeout(() => void this.reconnect(), 3000);
     }
   }
@@ -230,7 +231,7 @@ export async function startReplaySession(
     if (expectedLifecycle !== lifecycleVersion) return;
     replayClientStore.setConnection(
       "error",
-      error instanceof Error ? error.message : "Replay session could not be created",
+      replayErrorMessage(error, "Replay session could not be created"),
     );
     throw error;
   }
@@ -272,7 +273,7 @@ export function runReplayCommand(
     const current = replayClientStore.getState();
     replayClientStore.setConnection(
       current.connection,
-      error instanceof Error ? error.message : "Replay command failed",
+      replayErrorMessage(error, "Replay command failed"),
     );
   });
   return next;
@@ -374,7 +375,7 @@ export async function forkActiveReplay(time: string): Promise<void> {
     if (expectedLifecycle === lifecycleVersion) {
       replayClientStore.setConnection(
         activeSocket ? "connected" : "error",
-        error instanceof Error ? error.message : "Replay fork failed",
+        replayErrorMessage(error, "Replay fork failed"),
       );
     }
     throw error;

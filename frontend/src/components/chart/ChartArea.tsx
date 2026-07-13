@@ -8,7 +8,6 @@ import { useAtomValue } from "jotai";
 import {
   symbolAtom,
   timeframeAtom,
-  candlesAtom,
   loadingAtom,
   indicatorsAtom,
   crosshairAtom,
@@ -42,7 +41,6 @@ export function ChartArea() {
     enabled: !replay.snapshot && replay.connection !== "connecting",
   });
   const candles = useChartSeries();
-  const replaySelectionCandidates = useAtomValue(candlesAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
@@ -77,9 +75,14 @@ export function ChartArea() {
     setBenchmarkCandles(fixture);
     setBenchmarkVisibleCount(fixture.length);
     const handleReplay = (event: Event) => {
-      const count = (event as CustomEvent<{ count?: number }>).detail?.count;
+      const detail = (event as CustomEvent<{
+        count?: number;
+        allowEmpty?: boolean;
+      }>).detail;
+      const count = detail?.count;
       if (Number.isFinite(count)) {
-        const nextCount = Math.max(initialStart + 1, Math.min(fixture.length, Number(count)));
+        const minimumCount = detail?.allowEmpty ? initialStart : initialStart + 1;
+        const nextCount = Math.max(minimumCount, Math.min(fixture.length, Number(count)));
         setBenchmarkVisibleCount(nextCount);
         setActiveChartBenchmarkCandles(fixture.slice(initialStart, nextCount));
       }
@@ -187,7 +190,7 @@ export function ChartArea() {
           <AlertLines />
           <AlertOverlay />
           <DrawingLayer />
-          <ReplaySelectionLayer candidates={replaySelectionCandidates} />
+          <ReplaySelectionLayer candidates={displayedCandles} />
         </PriceChart>
         <ReplayFloatingToolbar />
         <RiskPanel />

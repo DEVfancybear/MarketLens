@@ -4,6 +4,45 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay selection, data availability, and one-bar viewport (2026-07-13)
+- Required paginated MT5 history cache entries to cover the requested `before`
+  boundary before Replay may reuse them. An unrelated stale tail now triggers a
+  synchronous bridge refresh instead of producing a false 422 response.
+- Allowed a visible partial first chart bucket to fork at its first available
+  source row, while continuing to reject targets from an earlier bucket or an
+  uncovered synchronized track.
+- Preserved transport-aware API status codes in request logs and translated
+  `data_point_unavailable` details into an actionable UTC availability range on
+  create, reconnect, fork, control, and trading failures.
+- Rebuilt Replay bar selection as a primary-pointer, pointer-captured and
+  keyboard-accessible slider. Mobile now receives an immediate selection line,
+  explicit confirm/cancel controls, a compact in-chart transport dock, and a
+  direct route to the full Replay workspace.
+- Initialized every hydrated Replay session/reset with a deterministic
+  history-sized logical range. `Select bar -> Select date -> First day` no
+  longer lets `fitContent()` stretch the single first candle across the chart.
+- Guarded ResizeObserver, viewport, crosshair, and delayed Replay viewport work
+  during teardown; chart removal now waits for the active Lightweight Charts
+  paint stack to unwind, preventing the `Object is disposed` canvas race.
+- Added Go, Node, and Playwright regressions for stale history coverage, partial
+  first buckets, UTC error copy, mobile Replay touch/landscape behavior, and the
+  full active-Replay First day transition.
+
+### Fixed - Drawing transforms and mobile touch ownership (2026-07-13)
+- Moved default and multi-selection drawing translation into logical-bar space
+  when chart context is available. Rectangles and other tools now preserve
+  their rendered width while crossing weekends, session gaps, and Replay data
+  gaps instead of shrinking after a move.
+- Added reference-counted chart interaction ownership shared by drawings,
+  alerts, and Replay selection, so one overlay cannot re-enable chart pan/zoom
+  while another gesture is still active.
+- Made captured touch blockers non-passive and cancelable during transforms,
+  preventing the underlying chart from stealing Rectangle move/resize input on
+  mobile browsers.
+- Added transform-session and real mobile-touch browser regressions that verify
+  geometry preservation, Rectangle handle resize, and an unchanged chart
+  viewport.
+
 ### Added - Drawing maintenance Phase 8 Wave C (2026-07-12)
 - Added ABCD, XABCD, Triangle, Three Drives, Head and Shoulders, five Elliott wave variants, and
   Time Cycles.

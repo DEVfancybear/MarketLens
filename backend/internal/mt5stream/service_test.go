@@ -166,6 +166,65 @@ func TestHistoryRequestsAreCoalesced(t *testing.T) {
 	}
 }
 
+func TestHistoryRefreshesPaginatedCacheThatDoesNotReachBefore(t *testing.T) {
+	bridge := newHistoryBridgeHarness(t)
+	service := NewService(Config{
+		Enabled:     true,
+		BridgeURL:   bridge.url,
+		DialTimeout: time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(ctx)
+	waitForServiceConnection(t, service)
+
+	const staleTime int64 = 1_800_000_000
+	const before int64 = staleTime + 6*60*60
+	service.applyHistory(HistoryMessage{
+		Source:    "mt5",
+		Symbol:    "EURUSD",
+		Timeframe: "1m",
+		Candles: []Candle{
+			{Time: staleTime, Open: 1.1, High: 1.2, Low: 1.0, Close: 1.15, Volume: 10},
+		},
+	})
+
+	resultDone := make(chan HistorySnapshot, 1)
+	go func() {
+		resultDone <- service.History(context.Background(), "EURUSD", "1m", 5000, before, false)
+	}()
+
+	var request map[string]any
+	select {
+	case request = <-bridge.requests:
+	case <-time.After(time.Second):
+		t.Fatal("stale paginated cache was returned without refreshing the bridge")
+	}
+	if request["symbol"] != "EURUSD" || request["timeframe"] != "1m" {
+		t.Fatalf("unexpected bridge request: %+v", request)
+	}
+	if got := int64(request["before"].(float64)); got != before {
+		t.Fatalf("before = %d, want %d", got, before)
+	}
+
+	freshTime := before - 60
+	bridge.replies <- HistoryMessage{
+		Type:      "history",
+		Source:    "mt5",
+		RequestID: fmt.Sprint(request["id"]),
+		Symbol:    "EURUSD",
+		Timeframe: "1m",
+		Candles: []Candle{
+			{Time: freshTime, Open: 1.2, High: 1.3, Low: 1.1, Close: 1.25, Volume: 20},
+		},
+	}
+
+	result := <-resultDone
+	if result.LastError != "" || len(result.Candles) != 1 || result.Candles[0].Time != freshTime {
+		t.Fatalf("unexpected refreshed result: %+v", result)
+	}
+}
+
 func TestCanceledCoalescedWaiterDoesNotCancelActiveWaiter(t *testing.T) {
 	bridge := newHistoryBridgeHarness(t)
 	service := NewService(Config{

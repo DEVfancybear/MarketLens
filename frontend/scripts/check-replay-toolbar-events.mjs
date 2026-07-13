@@ -17,13 +17,11 @@ const checks = [
   },
   {
     name: "Dropdown root is marked as chart UI",
-    ok:
-      dropdown.includes('data-chart-ui ref={ref}') ||
-      dropdown.includes("data-chart-ui\n      ref={ref}"),
+    ok: /<div\b(?=[^>]*\bdata-chart-ui\b)(?=[^>]*ref=\{ref\})[^>]*>/s.test(dropdown),
   },
   {
     name: "Dropdown menu is marked as chart UI",
-    ok: dropdown.includes("<div\n          data-chart-ui"),
+    ok: /<div\b(?=[^>]*\bdata-chart-ui\b)(?=[^>]*\bdata-dropdown-portal=)[^>]*>/s.test(dropdown),
   },
 ];
 

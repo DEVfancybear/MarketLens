@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
 import { BarChart3, Brush, ChartCandlestick, List, Menu, Play, WalletCards } from "lucide-react";
 import { ChartArea } from "@/components/chart/ChartArea";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
@@ -16,6 +17,12 @@ import { MobileReplayWorkspace } from "./MobileReplayWorkspace";
 import { MobileJournalWorkspace } from "./MobileJournalWorkspace";
 import { MobileAnalyticsWorkspace } from "./MobileAnalyticsWorkspace";
 import { MobilePineWorkspace } from "./MobilePineWorkspace";
+import { useReplayClientProjection } from "@/store/replayClientStore";
+import {
+  cancelReplaySelectionAtom,
+  replaySelectionModeAtom,
+  replayWorkspaceRequestAtom,
+} from "@/store/replayUiState";
 
 type MobileScreen = "chart" | "markets" | "trade" | "portfolio" | "menu";
 type Surface = "draw" | MobileWorkspace | null;
@@ -24,6 +31,9 @@ export function MobileTerminal() {
   const [screen, setScreen] = useState<MobileScreen>("chart");
   const [surface, setSurface] = useState<Surface>(null);
   const surfaceRef = useRef<Surface>(null);
+  const replayWorkspaceRequest = useAtomValue(replayWorkspaceRequestAtom);
+  const observedReplayRequestRef = useRef(replayWorkspaceRequest);
+  const cancelReplaySelection = useSetAtom(cancelReplaySelectionAtom);
 
   useEffect(() => {
     surfaceRef.current = surface;
@@ -47,6 +57,17 @@ export function MobileTerminal() {
     else setSurface(null);
   }, []);
 
+  useEffect(() => {
+    if (observedReplayRequestRef.current === replayWorkspaceRequest) return;
+    observedReplayRequestRef.current = replayWorkspaceRequest;
+    if (surfaceRef.current !== "replay") openSurface("replay");
+  }, [openSurface, replayWorkspaceRequest]);
+
+  const navigateTo = useCallback((next: MobileScreen) => {
+    if (next !== "chart") cancelReplaySelection();
+    setScreen(next);
+  }, [cancelReplaySelection]);
+
   return (
     <main className="mobile-terminal" data-platform="mobile">
       <div className="mobile-app-content" data-mobile-app-content aria-hidden={surface ? true : undefined}>
@@ -60,10 +81,10 @@ export function MobileTerminal() {
             <MobileTimeframeBar />
             <div className="mobile-chart" aria-label="Interactive price chart">
               <ChartPerformanceProfiler><ChartArea /></ChartPerformanceProfiler>
-              <div className="mobile-chart-actions">
-                <button type="button" onClick={() => openSurface("draw")}><Brush size={18} />Draw</button>
-                <button type="button" onClick={() => openSurface("replay")}><Play size={18} />Replay</button>
-              </div>
+              <MobileChartActions
+                openDrawing={() => openSurface("draw")}
+                openReplay={() => openSurface("replay")}
+              />
             </div>
           </div>
         )}
@@ -72,11 +93,11 @@ export function MobileTerminal() {
         {screen === "portfolio" && <MobilePortfolioScreen />}
         {screen === "menu" && <MobileMenuScreen onOpen={openSurface} />}
         <nav className="mobile-bottom-nav" aria-label="Trading workspace">
-          <NavButton label="Chart" icon={<BarChart3 />} active={screen === "chart"} onClick={() => setScreen("chart")} />
-          <NavButton label="Markets" icon={<List />} active={screen === "markets"} onClick={() => setScreen("markets")} />
-          <NavButton label="Trade" icon={<WalletCards />} active={screen === "trade"} onClick={() => setScreen("trade")} />
-          <NavButton label="Portfolio" icon={<ChartCandlestick />} active={screen === "portfolio"} onClick={() => setScreen("portfolio")} />
-          <NavButton label="Menu" icon={<Menu />} active={screen === "menu"} onClick={() => setScreen("menu")} />
+          <NavButton label="Chart" icon={<BarChart3 />} active={screen === "chart"} onClick={() => navigateTo("chart")} />
+          <NavButton label="Markets" icon={<List />} active={screen === "markets"} onClick={() => navigateTo("markets")} />
+          <NavButton label="Trade" icon={<WalletCards />} active={screen === "trade"} onClick={() => navigateTo("trade")} />
+          <NavButton label="Portfolio" icon={<ChartCandlestick />} active={screen === "portfolio"} onClick={() => navigateTo("portfolio")} />
+          <NavButton label="Menu" icon={<Menu />} active={screen === "menu"} onClick={() => navigateTo("menu")} />
         </nav>
       </div>
 
@@ -98,6 +119,30 @@ export function MobileTerminal() {
         </MobileSheet>
       )}
     </main>
+  );
+}
+
+function MobileChartActions({
+  openDrawing,
+  openReplay,
+}: {
+  openDrawing: () => void;
+  openReplay: () => void;
+}) {
+  const replay = useReplayClientProjection();
+  const selection = useAtomValue(replaySelectionModeAtom);
+  const replayBusy = Boolean(replay.snapshot) ||
+    replay.connection === "connecting" ||
+    replay.connection === "recovering";
+
+  if (selection !== "idle") return null;
+  return (
+    <div className={replayBusy ? "mobile-chart-actions mobile-chart-actions--replay" : "mobile-chart-actions"}>
+      <button type="button" onClick={openDrawing}><Brush size={18} />Draw</button>
+      {!replayBusy && (
+        <button type="button" onClick={openReplay}><Play size={18} />Replay</button>
+      )}
+    </div>
   );
 }
 

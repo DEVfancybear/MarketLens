@@ -35,6 +35,38 @@ test("move session translates from its immutable pointer-down snapshot", () => {
   assert.equal(session.hasChanged("a", session.update({ time: 15, price: 27 }).get("a")!), true);
 });
 
+test("move preserves every anchor span when crossing a market data gap", () => {
+  const subject = drawing("gap", "trendline");
+  subject.points = [
+    { time: 20, price: 20 },
+    { time: 40, price: 40 },
+  ];
+  const session = new TransformSession({
+    drawing: subject,
+    dragStart: { time: 20, price: 30 },
+    anchorIndex: -1,
+    mode: "move",
+    adapterContext: {
+      barIntervalSeconds: 10,
+      candles: [
+        { time: 10 },
+        { time: 20 },
+        { time: 30 },
+        { time: 40 },
+        // Weekend/session gap: the next logical bar is not time + 10.
+        { time: 100 },
+        { time: 110 },
+        { time: 120 },
+      ],
+    },
+  });
+
+  assert.deepEqual(session.update({ time: 100, price: 35 }).get("gap"), [
+    { time: 100, price: 25 },
+    { time: 120, price: 45 },
+  ]);
+});
+
 test("resize session delegates anchor constraints to the adapter", () => {
   const vertical = drawing("v", "vertical");
   vertical.points = vertical.points.slice(0, 1);
@@ -63,6 +95,33 @@ test("multi-move translates every selected drawing in one session", () => {
   assert.deepEqual(update.get("a")?.[0], { time: 12, price: 23 });
   assert.deepEqual(update.get("b")?.[0], { time: 17, price: 28 });
   assert.deepEqual(session.originalPointsFor("b")?.[0], { time: 15, price: 25 });
+});
+
+test("multi-move uses the same logical-bar translation for every drawing", () => {
+  const first = drawing("a", "trendline");
+  const second = drawing("b", "trendline", 10);
+  second.points = [
+    { time: 20, price: 30 },
+    { time: 100, price: 50 },
+  ];
+  const session = new TransformSession({
+    drawing: first,
+    dragStart: { time: 10, price: 20 },
+    anchorIndex: -1,
+    mode: "move",
+    selectedDrawings: [first, second],
+    adapterContext: {
+      barIntervalSeconds: 10,
+      candles: [
+        { time: 10 }, { time: 20 }, { time: 30 }, { time: 100 },
+        { time: 110 }, { time: 120 }, { time: 130 },
+      ],
+    },
+  });
+
+  const update = session.update({ time: 100, price: 22 });
+  assert.deepEqual(update.get("a")?.map((point) => point.time), [100, 120]);
+  assert.deepEqual(update.get("b")?.map((point) => point.time), [110, 130]);
 });
 
 test("move snapping aligns the primary reference anchor while resize snaps directly", () => {

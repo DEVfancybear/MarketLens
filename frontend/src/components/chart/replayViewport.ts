@@ -7,6 +7,14 @@ export type LogicalRangeLike = {
 
 export const REPLAY_VIEWPORT_FALLBACK_SPAN_BARS = 120;
 
+export function shouldInitializeReplayViewport(
+  activeSessionId: string | null | undefined,
+  initializedSessionId: string | null | undefined,
+  dataLength: number,
+): boolean {
+  return dataLength > 0 && !!activeSessionId && activeSessionId !== initializedSessionId;
+}
+
 function isFiniteLogicalRange(
   range: LogicalRangeLike | null | undefined,
 ): range is LogicalRangeLike {
@@ -52,6 +60,21 @@ export function nearestReplayCandidateIndex(times: number[], requestedTime: numb
     : low;
 }
 
+/** Keep a Replay selector attached to the same UTC area when its candle series changes. */
+export function reconcileReplayPreviewIndex(
+  times: number[],
+  previousTime: number | null,
+  previousIndex: number | null,
+): number | null {
+  if (times.length === 0) return null;
+  if (previousTime != null && Number.isFinite(previousTime)) {
+    const nearest = nearestReplayCandidateIndex(times, previousTime);
+    return nearest >= 0 ? nearest : null;
+  }
+  if (previousIndex == null) return null;
+  return Math.max(0, Math.min(times.length - 1, previousIndex));
+}
+
 export function latestReplayLogicalRange(
   dataLength: number,
   currentRange: LogicalRangeLike | null | undefined,
@@ -64,4 +87,20 @@ export function latestReplayLogicalRange(
   const span = Math.max(10, currentSpan);
   const to = dataLength - 1 + rightOffset;
   return { from: to - span, to };
+}
+
+/**
+ * Give a newly activated Replay session a stable candle width even when its
+ * first hydrated window contains only one bar. `fitContent()` makes that lone
+ * bar fill most of the chart, while reusing the post-reset range preserves the
+ * same collapsed spacing. New sessions therefore start from a deterministic
+ * history-sized logical span; subsequent seeks may preserve the user's zoom.
+ */
+export function initialReplayLogicalRange(
+  dataLength: number,
+  rightOffset = RIGHT_OFFSET_BARS,
+): LogicalRangeLike | null {
+  if (dataLength <= 0) return null;
+  const to = dataLength - 1 + rightOffset;
+  return { from: to - REPLAY_VIEWPORT_FALLBACK_SPAN_BARS, to };
 }

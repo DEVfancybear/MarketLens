@@ -217,6 +217,17 @@ visible handle and its exact `anchorIndex` for deterministic selected resizing.
   a tool commits and synchronously returns to cursor mode, that same DOM event
   cannot fall through into the cursor listener and create a phantom Move/Resize
   command.
+- Default body movement and multi-selection movement use one logical candle
+  delta when chart context is available. Every anchor is projected through the
+  same candle-index mapping, so moving a Rectangle or other default adapter
+  across a weekend/session/Replay gap preserves its rendered bar span instead
+  of shrinking through raw timestamp addition.
+- Drawing, alert, and Replay layers share a reference-counted chart interaction
+  lock. Releasing one pointer owner cannot restore chart pan/zoom while another
+  transform remains active.
+- Captured touch blockers are explicitly non-passive and prevent default before
+  stopping propagation. Real mobile touch can resize selected Rectangle handles
+  without leaking a simultaneous pan/scale gesture into Lightweight Charts.
 
 ## Tests added or strengthened
 
@@ -245,7 +256,9 @@ Focused family regression coverage lives in:
   move versus precise-handle resize; and
 - the browser drawing suite: compact Position move/resize, creation-history
   boundaries, cancellation, touch/mouse gestures, the Phase 8 wave flows, and
-  immediate Long Position visibility at 1.5 CSS pixels per bar.
+  immediate Long Position visibility at 1.5 CSS pixels per bar; and
+- `mobileDrawing.spec.ts`: real touch Rectangle creation/handle resize with an
+  unchanged main-chart logical range.
 
 Run the integrated maintenance gates from `frontend/`:
 
@@ -257,6 +270,7 @@ npm run test:drawing-persistence
 npm run test:position
 npm run check:drawing-viewport
 npm run test:chart-browser -- drawingInteractions.spec.ts
+npx playwright test tests/browser/mobileDrawing.spec.ts
 npm run benchmark:drawing
 ```
 
@@ -270,7 +284,7 @@ The final maintenance verification completed with:
 
 - `npm run typecheck`: pass;
 - `npm run lint`: 0 errors, with two pre-existing Watchlist hook warnings;
-- `npm run test:drawing`: 151/151 pass;
+- `npm run test:drawing`: 153/153 pass;
 - `npm run test:drawing-persistence`: 18/18 pass;
 - `npm run test:position`: 41/41 pass;
 - `npm run check:drawing-viewport`: 7/7 pass; and
@@ -279,6 +293,8 @@ The final maintenance verification completed with:
   (full suite, approximately 3.7 minutes); and
 - focused browser regressions for dense zoom and right/top-edge placement: 2/2
   pass after the viewport/session-gap fix; and
+- mobile Rectangle create/resize regression: 1/1 pass with touch input and no
+  chart viewport drift; and
 - `npm run benchmark:drawing`: pass through the 5,000-drawing workload, with
   median spatial-index rebuild below 2 ms and median query below 0.2 ms.
 

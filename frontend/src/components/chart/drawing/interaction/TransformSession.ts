@@ -86,17 +86,14 @@ export class TransformSession {
 
   update(pointer: Point): Map<string, Point[]> {
     if (this.isMulti) {
-      const dt = pointer.time - this.dragStart.time;
-      const dp = pointer.price - this.dragStart.price;
       const result = new Map<string, Point[]>();
       for (const [id, points] of this.originals) {
-        result.set(
-          id,
-          points.map((point) => ({
-            time: point.time + dt,
-            price: point.price + dp,
-          })),
-        );
+        result.set(id, defaultMove(
+          points,
+          pointer,
+          this.dragStart,
+          this.adapterContext,
+        ));
       }
       return result;
     }
@@ -118,7 +115,12 @@ export class TransformSession {
             this.dragStart,
             this.adapterContext,
           )
-        : defaultMove(this.primaryOriginal, pointer, this.dragStart);
+        : defaultMove(
+            this.primaryOriginal,
+            pointer,
+            this.dragStart,
+            this.adapterContext,
+          );
     return new Map([[this.drawingId, points]]);
   }
 }

@@ -33,6 +33,7 @@ import { fmtPrice } from "@/utils/format";
 import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
 import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
 import { conditionForTargetSide } from "@/services/alertConditions";
+import { setChartInteractionLocked } from "./chartInteractionLock";
 
 const HIT_PX = 12; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
@@ -336,7 +337,7 @@ export function AlertOverlay() {
     // moves). The prior autoScale mode is restored on pointer-up.
     const priceScale = ctx.chart.priceScale("right");
     const prevAutoScale = priceScale.options().autoScale ?? true;
-    ctx.chart.applyOptions({ handleScroll: false, handleScale: false });
+    setChartInteractionLocked(ctx.chart, "alert-drag", true);
     priceScale.applyOptions({ autoScale: false });
 
     // `chart.applyOptions` alone isn't enough: the hit strip's canvas sibling
@@ -414,7 +415,7 @@ export function AlertOverlay() {
       document.removeEventListener("touchmove", blockChartEvent, true);
       // Re-enable chart pan/zoom and restore the prior auto-scale mode now the
       // drag is over. Restoring to the same range doesn't move the view.
-      ctx.chart.applyOptions({ handleScroll: true, handleScale: true });
+      setChartInteractionLocked(ctx.chart, "alert-drag", false);
       priceScale.applyOptions({ autoScale: prevAutoScale });
       if (moved && lastPrice !== origPrice) {
         const condition = conditionForTargetSide(

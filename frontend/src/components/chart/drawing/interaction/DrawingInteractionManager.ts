@@ -734,6 +734,7 @@ export function useDrawingInteractionManager(
     // otherwise flow straight to the chart underneath.
     const blockChartEvent = (e: Event) => {
       if (!dragActiveRef.current) return;
+      if (e.cancelable) e.preventDefault();
       e.stopImmediatePropagation();
       e.stopPropagation();
     };
@@ -747,8 +748,14 @@ export function useDrawingInteractionManager(
     document.addEventListener("mousedown", blockChartEvent, true);
     document.addEventListener("mousemove", blockChartEvent, true);
     document.addEventListener("wheel", blockChartEvent, true);
-    document.addEventListener("touchstart", blockChartEvent, true);
-    document.addEventListener("touchmove", blockChartEvent, true);
+    document.addEventListener("touchstart", blockChartEvent, {
+      capture: true,
+      passive: false,
+    });
+    document.addEventListener("touchmove", blockChartEvent, {
+      capture: true,
+      passive: false,
+    });
     return () => {
       document.removeEventListener("pointerdown", handleDown, true);
       document.removeEventListener("pointermove", handleMove, true);

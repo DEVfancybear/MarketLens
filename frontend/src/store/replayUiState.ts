@@ -6,8 +6,8 @@ import {
   replayTracksForLayout,
   type ChartLayoutPreset,
   type ReplayLayoutMode,
-} from "@/store/replayLayoutStore";
-import { TF_SECONDS, type Timeframe } from "@/types";
+} from "./replayLayoutStore";
+import { TF_SECONDS, type Timeframe } from "../types";
 
 export type ReplaySelectionMode = "idle" | "selecting" | "reselecting";
 export type ReplaySpeed = 0.1 | 0.3 | 0.5 | 1 | 3 | 10;
@@ -15,6 +15,8 @@ export type ReplaySpeed = 0.1 | 0.3 | 0.5 | 1 | 3 | 10;
 export const REPLAY_SPEEDS: ReplaySpeed[] = [0.1, 0.3, 0.5, 1, 3, 10];
 const REPLAY_INTERVAL_CANDIDATES = [86400, 14400, 7200, 3600, 1800, 900, 300, 180, 60];
 export const replaySelectionModeAtom = atom<ReplaySelectionMode>("idle");
+/** Monotonic request consumed by the mobile shell to open its Replay workspace. */
+export const replayWorkspaceRequestAtom = atom(0);
 
 export const beginReplaySelectionAtom = atom(null, (_get, set) => {
   set(replaySelectionModeAtom, "selecting");
@@ -26,6 +28,10 @@ export const beginReplayReselectionAtom = atom(null, (_get, set) => {
 
 export const cancelReplaySelectionAtom = atom(null, (_get, set) => {
   set(replaySelectionModeAtom, "idle");
+});
+
+export const requestReplayWorkspaceAtom = atom(null, (get, set) => {
+  set(replayWorkspaceRequestAtom, get(replayWorkspaceRequestAtom) + 1);
 });
 
 export function replaySpeedLabel(speed: number): string {

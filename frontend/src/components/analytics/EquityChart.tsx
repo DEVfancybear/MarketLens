@@ -11,6 +11,7 @@ import type { EquityPoint } from "@/types";
 import { useAtomValue } from "jotai";
 import { themeAtom } from "@/store/uiStore";
 import { chartColors } from "@/components/chart/chartTheme";
+import { removeChartAfterCurrentStack } from "@/components/chart/chartLifecycle";
 
 /** Equity curve (area) with the drawdown curve underneath. */
 export function EquityChart({ equity }: { equity: EquityPoint[] }) {
@@ -68,8 +69,8 @@ export function EquityChart({ equity }: { equity: EquityPoint[] }) {
     chart.timeScale().fitContent();
 
     return () => {
-      chart.remove();
       chartRef.current = null;
+      removeChartAfterCurrentStack(chart);
     };
   }, [equity, theme]);
 
