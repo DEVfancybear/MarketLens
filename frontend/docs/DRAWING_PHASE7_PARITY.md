@@ -3,6 +3,10 @@
 _Date: 2026-07-12_  
 _Status: implemented_
 
+> Historical Phase 7 verification snapshot. For the current 84-adapter catalog
+> and the post-Phase 8 geometry/purity audit, see
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+
 This is the executable-scope checklist for Phase 7 of
 `DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`. Historical payloads keep their
 defaults; new optional fields are capability-scoped and pass through the versioned codec.

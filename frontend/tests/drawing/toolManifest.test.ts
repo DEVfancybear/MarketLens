@@ -7,6 +7,8 @@ import {
   DRAWING_TOOL_GROUPS,
   DRAWING_TOOL_MANIFEST,
   MODE_TOOLS,
+  formatDrawingToolShortcut,
+  getDrawingToolForShortcut,
   getDrawingToolManifestEntry,
   isDrawingToolCreationEnabled,
   normalizeFavoriteDrawingTools,
@@ -48,12 +50,19 @@ test("creation and style families are derived from the manifest", () => {
   assert.equal(getDrawingToolManifestEntry("trendline").angleConstraint, "45-degree");
   assert.equal(getDrawingToolManifestEntry("channel").selectionTextEditor, "line-midpoint");
   assert.equal(getDrawingToolManifestEntry("brush").pointSimplificationTolerance, 0.75);
+  assert.deepEqual(getDrawingToolManifestEntry("highlighter").defaultProperties, {
+    lineWidth: 8,
+    opacity: 0.35,
+  });
   assert.equal(getDrawingToolManifestEntry("rectangle").selectionTextEditor, "shape-center");
   assert.equal(getDrawingToolManifestEntry("long").settingsOverlay, "position-dialog");
   assert.equal(getDrawingToolManifestEntry("short").lifecycleExtension, "position-resolution");
   assert.equal(getDrawingToolManifestEntry("cursor").modeInteraction, "selection");
   assert.equal(getDrawingToolManifestEntry("eraser").modeInteraction, "erase");
   assert.equal(getDrawingToolManifestEntry("crosshair").modeInteraction, "pass-through");
+  assert.equal(getDrawingToolManifestEntry("long").viewportCulling, "always-render");
+  assert.equal(getDrawingToolManifestEntry("short").viewportCulling, "always-render");
+  assert.equal(getDrawingToolManifestEntry("trendline").viewportCulling, "spatial");
   assert.equal(getDrawingToolManifestEntry("trendline").magnetEligible, true);
   assert.equal(getDrawingToolManifestEntry("text").magnetEligible, true);
   assert.equal(getDrawingToolManifestEntry("brush").magnetEligible, false);
@@ -69,6 +78,29 @@ test("creation and style families are derived from the manifest", () => {
       `${definition.id} must expose precise coordinates`,
     );
   }
+});
+
+test("numeric and modifier drawing shortcuts are derived from manifest chords", () => {
+  assert.equal(getDrawingToolForShortcut({ key: "1" }), "cursor");
+  assert.equal(getDrawingToolForShortcut({ key: "7" }), "fibRetracement");
+  assert.equal(getDrawingToolForShortcut({ key: "T", altKey: true }), "trendline");
+  assert.equal(getDrawingToolForShortcut({ key: "h", altKey: true }), "horizontal");
+  assert.equal(
+    getDrawingToolForShortcut({ key: "R", altKey: true, shiftKey: true }),
+    "rectangle",
+  );
+  assert.equal(getDrawingToolForShortcut({ key: "t" }), undefined);
+  assert.equal(getDrawingToolForShortcut({ key: "1", shiftKey: true }), undefined);
+  assert.equal(getDrawingToolForShortcut({ key: "1", ctrlKey: true }), undefined);
+  assert.equal(
+    formatDrawingToolShortcut({ key: "r", altKey: true, shiftKey: true }),
+    "Alt + Shift + R",
+  );
+
+  const signatures = DRAWING_TOOL_MANIFEST.flatMap((entry) =>
+    entry.shortcuts.map((shortcut) => formatDrawingToolShortcut(shortcut)),
+  );
+  assert.equal(new Set(signatures).size, signatures.length);
 });
 
 test("favorite validation rejects unknown and ineligible ids and keeps order", () => {

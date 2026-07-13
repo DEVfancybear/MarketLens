@@ -26,7 +26,7 @@ import {
   timeframeAtom,
   setTimeframeAtom,
 } from "@/store/chartStore";
-import { type Drawing, type Point } from "@/types";
+import { TF_SECONDS, type Drawing, type Point } from "@/types";
 import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
 import { resolveDrawingCreationDefaults } from "./drawing/settings/drawingToolPreferences";
 import {
@@ -61,6 +61,22 @@ import type { DrawingInteractionTestHarness } from "./drawing/testing/testHarnes
 import { reconcileDrawingLifecycle } from "./drawing/lifecycle/drawingLifecycle";
 import { resolveSelectionTextOverlay } from "./drawing/overlays/drawingOverlayTargets";
 import { isDrawingVisibleAtTimeframe } from "./drawing/visibility/drawingIntervalVisibility";
+import {
+  candleIndexAtOrBefore,
+  extrapolateTimeCoordinate,
+  resolveCandleBarIntervalSeconds,
+} from "./drawing/coordinates/drawingCoordinates";
+import { mt5SymbolInfoAtom } from "@/store/mt5Store";
+import { getMarketSymbol } from "@/services/market-data/symbols";
+import { workspaceReadyAtom } from "@/store/authStore";
+import {
+  POSITION_DEFAULT_RISK_HEIGHT_PX,
+  POSITION_DEFAULT_MIN_WIDTH_PX,
+  positionBarCountForViewport,
+  positionRiskDistanceForViewport,
+  resolvePositionCreationTimeline,
+  type PositionDrawingCreationOptions,
+} from "./drawing/tools/positionCreation";
 
 declare global {
   interface Window {
@@ -81,6 +97,28 @@ export function DrawingLayer() {
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const barIntervalSeconds = useMemo(
+    () => resolveCandleBarIntervalSeconds(candles, TF_SECONDS[timeframe], 60),
+    [candles, timeframe],
+  );
+  const mt5SymbolInfo = useAtomValue(mt5SymbolInfoAtom)[symbol];
+  const marketContext = useMemo(() => {
+    const catalog = getMarketSymbol(symbol);
+    const tickSize = mt5SymbolInfo?.tickSize ?? mt5SymbolInfo?.point ?? catalog?.tickSize;
+    const tickValue = mt5SymbolInfo?.tickValue;
+    const pointValue =
+      Number.isFinite(tickValue) && Number(tickValue) > 0 &&
+      Number.isFinite(tickSize) && Number(tickSize) > 0
+        ? Number(tickValue) / Number(tickSize)
+        : 1;
+    return {
+      symbol,
+      candles,
+      tickSize,
+      pricePrecision: catalog?.pricePrecision ?? 2,
+      pointValue,
+    };
+  }, [candles, mt5SymbolInfo, symbol]);
   const visibleDrawings = useMemo(
     () => drawings.filter((drawing) => isDrawingVisibleAtTimeframe(drawing, timeframe)),
     [drawings, timeframe],
@@ -99,84 +137,106 @@ export function DrawingLayer() {
 
   const [textEditSession, setTextEditSession] = useState<TextEditSession | null>(null);
 
-  const { commitMove, undo, redo, execute } = useCommandHistory(
+  const { manager: commandManager, commitMove, undo, redo, execute } = useCommandHistory(
     addDrawing,
     removeDrawing,
     updateDrawing,
   );
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
-  const xFallbackRef = useRef<{
-    version: number;
-    candleCount: number;
-    anchorIndex: number;
-    anchorTime: number;
-    anchorX: number;
-    refIndex: number;
-    refTime: number;
-    secondsPerBar: number;
-    pxPerBar: number;
-  } | null>(null);
   const toX = useCallback((time: number) => {
     const chart = ctxRef.current?.chart;
     if (!chart) return null;
     const ts = chart.timeScale();
-    const x = ts.timeToCoordinate(time as UTCTimestamp);
-    if (x != null) return x;
-    // Whitespace fallback: the time lies past the last bar (or before the
-    // first), where timeToCoordinate() returns null. Extrapolate linearly from
-    // the uniform bar spacing of two anchor candles that DO project, so the
-    // right edge of a position box keeps tracking instead of collapsing onto
-    // the last candle.
-    const candles = getDefaultStore().get(candlesAtom);
-    if (candles.length < 2) return null;
-    const version = ctxRef.current?.version ?? 0;
-    const cached = xFallbackRef.current;
+    const rawX = ts.timeToCoordinate(time as UTCTimestamp);
+    const candles = ctxRef.current?.candles ?? getDefaultStore().get(candlesAtom);
+    const firstTime = candles[0]?.time;
+    const lastTime = candles[candles.length - 1]?.time;
+    // In-range drawing anchors may be intentionally between bars; retain the
+    // chart's direct coordinate. Position creation stores its right edge on an
+    // actual candle, so session gaps do not rely on the misleading gap mapping.
     if (
-      cached &&
-      cached.version === version &&
-      cached.candleCount === candles.length &&
-      cached.anchorIndex < candles.length &&
-      cached.refIndex < candles.length &&
-      candles[cached.anchorIndex]?.time === cached.anchorTime &&
-      candles[cached.refIndex]?.time === cached.refTime
+      rawX != null &&
+      firstTime != null &&
+      lastTime != null &&
+      time >= firstTime &&
+      time <= lastTime
     ) {
-      return (
-        cached.anchorX +
-        ((time - cached.anchorTime) / cached.secondsPerBar) * cached.pxPerBar
-      );
+      return rawX;
     }
-    // Anchor = nearest candle (scanning back from the last) that still projects.
-    let i = candles.length - 1;
+    if (candles.length < 2) return rawX;
+    const floorIndex = candleIndexAtOrBefore(candles, time);
+    const configuredInterval = resolveCandleBarIntervalSeconds(
+      candles,
+      TF_SECONDS[getDefaultStore().get(timeframeAtom)],
+      60,
+    );
+    // Outside the loaded series, anchor at the nearest known candle and extend
+    // using logical bar spacing rather than wall-clock candle gaps.
+    let i = Math.min(
+      candles.length - 1,
+      Math.max(0, floorIndex ?? candles.length - 1),
+    );
     let cx: number | null = null;
-    for (; i >= 1; i--) {
+    for (; i >= 0; i--) {
       cx = ts.timeToCoordinate(candles[i].time as UTCTimestamp);
       if (cx != null) break;
     }
+    if (cx == null) {
+      for (
+        i = Math.min(candles.length - 1, (floorIndex ?? 0) + 1);
+        i < candles.length;
+        i++
+      ) {
+        cx = ts.timeToCoordinate(candles[i].time as UTCTimestamp);
+        if (cx != null) break;
+      }
+    }
     if (cx == null) return null;
-    // Reference = an earlier candle that also projects, to measure bar width.
+    // Reference = another projected candle, used only for logical pixel width.
     let px: number | null = null;
     let j = i - 1;
     for (; j >= 0; j--) {
       px = ts.timeToCoordinate(candles[j].time as UTCTimestamp);
       if (px != null) break;
     }
-    if (px == null) return cx;
+    if (px == null) {
+      for (j = i + 1; j < candles.length; j++) {
+        px = ts.timeToCoordinate(candles[j].time as UTCTimestamp);
+        if (px != null) break;
+      }
+    }
+    if (px == null) {
+      const barSpacing = ts.options().barSpacing;
+      return extrapolateTimeCoordinate({
+        time,
+        anchorTime: candles[i].time,
+        anchorX: cx,
+        referenceTime: candles[i].time - configuredInterval,
+        referenceX: cx - barSpacing,
+        indexSpan: 1,
+        barIntervalSeconds: configuredInterval,
+      }) ?? cx;
+    }
+    // Normalize the pair so the anchor is the later logical candle.
+    if (j > i) {
+      [i, j] = [j, i];
+      [cx, px] = [px, cx];
+    }
     const span = i - j;
-    const barW = (cx - px) / span; // pixels per bar
-    const iv = (candles[i].time - candles[j].time) / span || 1; // seconds per bar
-    xFallbackRef.current = {
-      version,
-      candleCount: candles.length,
-      anchorIndex: i,
+    const observedInterval = (candles[i].time - candles[j].time) / span || 1;
+    const iv = Number.isFinite(configuredInterval) && configuredInterval > 0
+      ? configuredInterval
+      : observedInterval;
+    return extrapolateTimeCoordinate({
+      time,
       anchorTime: candles[i].time,
       anchorX: cx,
-      refIndex: j,
-      refTime: candles[j].time,
-      secondsPerBar: iv,
-      pxPerBar: barW,
-    };
-    return cx + ((time - candles[i].time) / iv) * barW;
+      referenceTime: candles[j].time,
+      referenceX: px,
+      indexSpan: span,
+      barIntervalSeconds: iv,
+    });
   }, []);
   const toY = useCallback(
     (price: number) =>
@@ -208,17 +268,42 @@ export function DrawingLayer() {
     const ly = e.clientY - r.top;
     const ts = c.chart.timeScale();
     let t = ts.coordinateToTime(lx) as number | null;
-    if (t == null) {
-      // Whitespace past the last bar: coordinateToTime returns null.
-      // Extrapolate using bar-aligned times so timeToCoordinate can map
-      // them back.  Non-integer times can produce null projections.
+    const candles = ctxRef.current?.candles ?? getDefaultStore().get(candlesAtom);
+    const firstTime = candles[0]?.time;
+    const lastTime = candles[candles.length - 1]?.time;
+    if (
+      t == null ||
+      (firstTime != null && lastTime != null && (t < firstTime || t > lastTime))
+    ) {
+      // Lightweight Charts may return either null or a wall-clock timestamp in
+      // whitespace. Canonicalize both forms to timeframe-aligned logical bars
+      // so time -> pixel is the exact inverse of this pointer projection.
       const logical = ts.coordinateToLogical(lx);
-      const candles = getDefaultStore().get(candlesAtom);
       if (logical != null && candles.length >= 2) {
         const lastIdx = candles.length - 1;
-        const interval = candles[lastIdx].time - candles[lastIdx - 1].time;
-        const idx = Math.round(logical);
-        t = candles[lastIdx].time + (idx - lastIdx) * interval;
+        const configuredInterval = resolveCandleBarIntervalSeconds(
+          candles,
+          TF_SECONDS[getDefaultStore().get(timeframeAtom)],
+          60,
+        );
+        const observedInterval = candles[lastIdx].time - candles[lastIdx - 1].time;
+        const interval = Number.isFinite(configuredInterval) && configuredInterval > 0
+          ? configuredInterval
+          : observedInterval;
+        // Lightweight Charts logical indices are not guaranteed to start at
+        // zero for our active candle slice. Anchor the inverse projection to a
+        // candle's actual logical coordinate instead of assuming array index
+        // === logical index; otherwise pre-history clicks can reproject far to
+        // the left after creation.
+        for (let index = lastIdx; index >= 0; index--) {
+          const anchorX = ts.timeToCoordinate(candles[index].time as UTCTimestamp);
+          if (anchorX == null) continue;
+          const anchorLogical = ts.coordinateToLogical(anchorX);
+          if (anchorLogical == null) continue;
+          const barDelta = Math.round(logical - anchorLogical);
+          t = candles[index].time + barDelta * interval;
+          break;
+        }
       }
     }
     const p = c.candleSeries.coordinateToPrice(ly);
@@ -247,6 +332,15 @@ export function DrawingLayer() {
     drawingToolPreferences,
     candles,
     symbol,
+    timeframe,
+    barIntervalSeconds,
+    marketContext,
+    adapterContext: {
+      tickSize: marketContext.tickSize,
+      barIntervalSeconds,
+      barSpacing: ctx?.chart.timeScale().options().barSpacing,
+      candles: marketContext.candles,
+    },
     drawingsLocked: false,
     ctxReady: false,
     drawingsHidden: false,
@@ -261,6 +355,15 @@ export function DrawingLayer() {
     drawingToolPreferences,
     candles,
     symbol,
+    timeframe,
+    barIntervalSeconds,
+    marketContext,
+    adapterContext: {
+      tickSize: marketContext.tickSize,
+      barIntervalSeconds,
+      barSpacing: ctx?.chart.timeScale().options().barSpacing,
+      candles: marketContext.candles,
+    },
     drawingsLocked: false,
     ctxReady: !!ctx,
     drawingsHidden: false,
@@ -282,9 +385,73 @@ export function DrawingLayer() {
       // addDrawing(d) directly here, or every new drawing gets inserted twice
       // under the same id (confirmed via a real repro: two identical entries
       // with an identical id in the persisted drawings array).
-      execute(new CreateDrawingCommand(addDrawing, removeDrawing, d));
+      let positionCreation: PositionDrawingCreationOptions | undefined;
+      if (
+        getDrawingToolManifestEntry(d.tool).positionSide &&
+        d.points.length === 1 &&
+        d.points[0]
+      ) {
+        const chartContext = ctxRef.current;
+        const canvasRect = canvasRef.current?.getBoundingClientRect();
+        const entry = d.points[0].price;
+        const entryY = chartContext?.candleSeries.priceToCoordinate(entry);
+        const barSpacing = chartContext?.chart.timeScale().options().barSpacing;
+        const entryX = toX(d.points[0].time);
+        const availableRightWidth = canvasRect && entryX != null
+          ? Math.max(1, canvasRect.width - entryX - 12)
+          : undefined;
+        const barCount = positionBarCountForViewport(
+          barSpacing,
+          POSITION_DEFAULT_MIN_WIDTH_PX,
+          availableRightWidth,
+        );
+        const creationBarIntervalSeconds = resolveCandleBarIntervalSeconds(
+          chartContext?.candles ?? [],
+          TF_SECONDS[getDefaultStore().get(timeframeAtom)],
+          60,
+        );
+        const timeline = resolvePositionCreationTimeline(
+          d.points[0].time,
+          creationBarIntervalSeconds,
+          barCount,
+          chartContext?.candles ?? [],
+        );
+        let riskPriceDistance: number | undefined;
+        if (
+          chartContext &&
+          canvasRect &&
+          entryY != null &&
+          Number.isFinite(entryY)
+        ) {
+          const symmetricRoom = Math.max(
+            0,
+            Math.min(entryY, canvasRect.height - entryY),
+          );
+          if (symmetricRoom > 0) {
+            const riskHeightPx = Math.max(
+              1,
+              Math.min(POSITION_DEFAULT_RISK_HEIGHT_PX, symmetricRoom * 0.55),
+            );
+            riskPriceDistance = positionRiskDistanceForViewport(
+              entry,
+              chartContext.candleSeries.coordinateToPrice(entryY - riskHeightPx),
+              chartContext.candleSeries.coordinateToPrice(entryY + riskHeightPx),
+            );
+          }
+        }
+        positionCreation = {
+          barCount,
+          riskPriceDistance,
+          entryTime: timeline.entryTime,
+          rightEdgeTime: timeline.rightEdgeTime,
+        };
+      }
+      const addForCommand = (drawing: Drawing) => addDrawing(
+        positionCreation ? { drawing, positionCreation } : drawing,
+      );
+      execute(new CreateDrawingCommand(addForCommand, removeDrawing, d));
     },
-    [addDrawing, removeDrawing, execute],
+    [addDrawing, removeDrawing, execute, toX],
   );
   const scheduleRedraw = useCallback(() => {
     markDirtyRef.current();
@@ -377,6 +544,8 @@ export function DrawingLayer() {
     drawColor,
     activeTool,
     symbol,
+    timeframe,
+    marketContext,
   ]);
 
   useEffect(() => {
@@ -434,10 +603,41 @@ export function DrawingLayer() {
     fromEvent,
     toX,
     toY,
-    getState: () => ({
-      ...stateRef.current,
-      drawings: stateRef.current.visibleDrawings,
-    }),
+    getState: () => {
+      // Toolbar/Jotai writes are synchronous, while the React render that
+      // refreshes stateRef may be deferred until after a fast mouse/touch tap.
+      // Read creation inputs directly at the pointer boundary so the first
+      // chart event after selecting a tool cannot observe the previous tool.
+      const store = getDefaultStore();
+      const currentTimeframe = store.get(timeframeAtom);
+      const currentDrawings = store.get(drawingsAtom);
+      const currentVisibleDrawings = currentDrawings.filter((drawing) =>
+        isDrawingVisibleAtTimeframe(drawing, currentTimeframe),
+      );
+      return {
+        ...stateRef.current,
+        activeTool: store.get(activeToolAtom),
+        drawColor: store.get(drawColorAtom),
+        drawingToolPreferences: store.get(drawingToolPreferencesAtom),
+        drawings: currentVisibleDrawings,
+        visibleDrawings: currentVisibleDrawings,
+        selectedDrawingId: store.get(selectedDrawingIdAtom),
+        selectedDrawingIds: store.get(selectedDrawingIdsAtom),
+        candles: ctxRef.current?.candles ?? store.get(candlesAtom),
+        symbol: store.get(symbolAtom),
+        timeframe: currentTimeframe,
+        adapterContext: {
+          tickSize: stateRef.current.marketContext.tickSize,
+          barIntervalSeconds: resolveCandleBarIntervalSeconds(
+            ctxRef.current?.candles ?? store.get(candlesAtom),
+            TF_SECONDS[currentTimeframe],
+            60,
+          ),
+          barSpacing: ctxRef.current?.chart.timeScale().options().barSpacing,
+          candles: ctxRef.current?.candles ?? store.get(candlesAtom),
+        },
+      };
+    },
     addDrawing: addDrawingWithHistory,
     updateDrawing,
     removeDrawing,
@@ -471,13 +671,24 @@ export function DrawingLayer() {
     window.__drawingInteractionTest = {
       snapshot: () => {
         const rect = canvasRef.current?.getBoundingClientRect();
+        const store = getDefaultStore();
+        const currentDrawings = store.get(drawingsAtom);
+        const currentTimeframe = store.get(timeframeAtom);
+        const currentVisibleDrawings = currentDrawings.filter((drawing) =>
+          isDrawingVisibleAtTimeframe(drawing, currentTimeframe),
+        );
         return {
-          drawings: structuredClone(stateRef.current.drawings),
-          activeTool: stateRef.current.activeTool,
-          selectedDrawingId: stateRef.current.selectedDrawingId,
-          selectedDrawingIds: [...stateRef.current.selectedDrawingIds],
-          visibleDrawingIds: stateRef.current.visibleDrawings.map((drawing) => drawing.id),
+          drawings: structuredClone(currentDrawings),
+          activeTool: store.get(activeToolAtom),
+          selectedDrawingId: store.get(selectedDrawingIdAtom),
+          selectedDrawingIds: [...store.get(selectedDrawingIdsAtom)],
+          visibleDrawingIds: currentVisibleDrawings.map((drawing) => drawing.id),
           machineState: machineRef.current?.state ?? "Idle",
+          history: {
+            canUndo: commandManager.canUndo,
+            canRedo: commandManager.canRedo,
+            lastUndoLabel: commandManager.lastUndoLabel,
+          },
           canvas: rect
             ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
             : { x: 0, y: 0, width: 0, height: 0 },
@@ -490,7 +701,9 @@ export function DrawingLayer() {
         return runDrawingAdapterContractAudit(canvas);
       },
       projectDrawing: (id) => {
-        const drawing = stateRef.current.drawings.find((item) => item.id === id);
+        const drawing = getDefaultStore()
+          .get(drawingsAtom)
+          .find((item) => item.id === id);
         if (!drawing) return null;
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return null;
@@ -527,6 +740,7 @@ export function DrawingLayer() {
           ) ?? []).map((hit) => ({
             id: drawing.id,
             target: hit.target,
+            anchorIndex: hit.anchorIndex,
             distance: hit.distance,
           })),
         );
@@ -560,11 +774,53 @@ export function DrawingLayer() {
             : null,
         };
       },
-      clear: () => {
-        for (const drawing of stateRef.current.drawings) removeDrawing(drawing.id);
+      clear: async () => {
+        for (const drawing of getDefaultStore().get(drawingsAtom)) {
+          removeDrawing(drawing.id);
+        }
         selectDrawing(null);
         reset();
         setActiveTool("cursor");
+        // The harness is a transactional test boundary. Its globals can mount
+        // before fixture candles have reached the chart/time scale; clicks in
+        // that window project to null and snapshot tools capture empty data.
+        // Font/sidebar layout can also shift the canvas after candle hydration,
+        // so require a short run of identical paintable frames rather than a
+        // fixed sleep.
+        await document.fonts?.ready;
+        const deadline = performance.now() + 5_000;
+        let previousFrameSignature = "";
+        let stableFrames = 0;
+        while (performance.now() < deadline && stableFrames < 8) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          const candles =
+            ctxRef.current?.candles ?? getDefaultStore().get(candlesAtom);
+          const rect = canvasRef.current?.getBoundingClientRect();
+          const candleSignature = candles.length >= 2
+            ? `${candles.length}:${candles[0].time}:${candles[candles.length - 1].time}`
+            : "";
+          const ready =
+            getDefaultStore().get(workspaceReadyAtom) &&
+            !!ctxRef.current &&
+            !!rect &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            candleSignature.length > 0;
+          const frameSignature = ready
+            ? [
+                candleSignature,
+                rect.x.toFixed(1),
+                rect.y.toFixed(1),
+                rect.width.toFixed(1),
+                rect.height.toFixed(1),
+                ctxRef.current?.version ?? 0,
+              ].join(":")
+            : "";
+          stableFrames = ready && frameSignature === previousFrameSignature
+            ? stableFrames + 1
+            : 0;
+          previousFrameSignature = frameSignature;
+        }
       },
       changeSymbol: (nextSymbol) => setSymbol(nextSymbol),
       changeTimeframe: (nextTimeframe) => setTimeframe(nextTimeframe),
@@ -572,7 +828,7 @@ export function DrawingLayer() {
     return () => {
       delete window.__drawingInteractionTest;
     };
-  }, [fromEvent, machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, setTimeframe, toX, toY]);
+  }, [commandManager, fromEvent, machineRef, removeDrawing, reset, selectDrawing, setActiveTool, setSymbol, setTimeframe, toX, toY]);
 
   // While a drawing is being created or dragged/resized, freeze the chart's
   // pan & zoom. Otherwise a fast pointer move leaks through to the chart's
@@ -606,6 +862,8 @@ export function DrawingLayer() {
         livePoints: livePointsRef.current,
         draggingId: drawingIdRef.current,
         hoveredId: hoveredIdRef.current,
+        barIntervalSeconds: stateRef.current.barIntervalSeconds,
+        marketContext: stateRef.current.marketContext,
       }),
       onVersionChange: (cb) => {
         const c = ctxRef.current?.chart;

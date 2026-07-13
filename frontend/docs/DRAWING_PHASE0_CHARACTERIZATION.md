@@ -3,6 +3,10 @@
 _Date: 2026-07-11_  
 _Status: implemented_
 
+> Historical milestone snapshot. The catalog has since expanded from 35 to 84
+> persistent adapters. Current contracts and verification guidance live in
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+
 This document records the safety net established before the drawing tool
 maintenance refactor. Phase 0 changes test and diagnostic contracts; it does not
 change drawing geometry or persisted payload shape.
@@ -81,3 +85,7 @@ The following belongs to later phases rather than characterization:
   and serialization metadata.
 - Visual snapshots for every tool and measured browser frame-time budgets.
 - Magnet, keep-drawing, interval visibility, object tree, grouping, and sync.
+
+These bullets record what remained on 2026-07-11. Phases 1-8 subsequently
+implemented the manifest, versioned persistence, and most listed cross-tool
+behavior; consult the maintenance plan and post-Phase 8 record for current gaps.

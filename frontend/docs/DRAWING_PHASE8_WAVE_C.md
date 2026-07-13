@@ -4,6 +4,10 @@ _Date: 2026-07-12_
 _Status: implemented_  
 _Scope: reusable labeled-anchor pattern framework and time cycles_
 
+> Historical Wave C delivery/verification snapshot. Current catalog-wide
+> contracts and the Time Cycles handle/hit audit are recorded in
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+
 ## Delivered catalog
 
 | Family | Stable tool ids | Stored anchors |
@@ -64,7 +68,10 @@ Tool-specific validators remain geometry-only:
 
 - Two points define the first diameter and baseline.
 - Semicircular cycles repeat at equal CSS-pixel spacing across the viewport.
-- Rendering and hit testing are capped, preventing tiny/corrupt spacing from creating unbounded work.
+- Rendering and hit testing share the same 256-cycle cap, preventing tiny/corrupt spacing from
+  creating unbounded work or leaving rendered late cycles unselectable.
+- The second selected handle is projected onto the rendered baseline and retains its stored-point
+  identity during resize.
 - Both stored anchors remain available for precise coordinates, magnets, movement, and resize.
 
 ## Model and migration
@@ -91,7 +98,7 @@ and adapter audit. Older clients quarantine unknown Wave C ids without affecting
 - Pattern render/hit complexity is linear in a maximum of seven anchors.
 - Validation and ratios are computed only during dirty-driven render/hit calls and perform no store
   writes or candle scans.
-- Time Cycles caps render work at 256 cycles and hit work at 128 cycles.
+- Time Cycles caps both render and hit work at 256 cycles.
 - The shared 5,000-object spatial benchmark remains rectangle-based; Wave C adds no new global index
   work and all family adapters have finite or explicit viewport bounds.
 

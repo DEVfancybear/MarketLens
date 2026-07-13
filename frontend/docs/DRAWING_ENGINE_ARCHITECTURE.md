@@ -1,6 +1,11 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-10 to reflect the current Jotai/plugin drawing engine, render loop, repaint contract, canonical drag-target contract, viewport invalidation rules, adapter-owned viewport culling, and frame-coalesced mutable interaction previews._
+_Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog, capability-driven cross-cutting behavior, pure adapters with explicit runtime context, and the executable all-adapter contract._
+
+The current post-Phase 8 maintenance record is
+`DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. Older dated counts in
+feature-specific sections below are historical implementation notes, not the
+current registry size or test total.
 
 ## Architecture rule (read before touching drawing/chart interaction)
 
@@ -18,7 +23,11 @@ still work, not just the one you were fixing.
 
 ## Overview
 
-The Drawing Engine is a canvas-based overlay system that renders user drawings (trendlines, horizontal/vertical lines, rectangles, fib retracements, text, channels, brush, positions) on top of the Lightweight Charts price chart. All geometry is stored in `(time, price)` data space and projected to pixel coordinates each frame, so drawings remain pinned to data through zoom, pan, and resize.
+The Drawing Engine is a canvas-based overlay system that renders 84 persistent
+drawing tools on top of the Lightweight Charts price chart. All geometry is
+stored in `(time, price)` data space and projected to pixel coordinates each
+frame, so drawings remain pinned to data through zoom, pan, and resize. Four
+additional manifest entries describe non-persistent interaction modes.
 
 For the shared chart zoom/pan/viewport invalidation contract, see
 `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
@@ -26,9 +35,11 @@ For the shared chart zoom/pan/viewport invalidation contract, see
 ## Architecture layers
 
 > The engine is **plugin/adapter based** — there is no giant `switch` and no
-> `drawingHitTest.ts`. Every tool is a self-registering plugin under
+> `drawingHitTest.ts`. Every tool is provided by a self-registering plugin under
 > `drawing/tools/plugins/`, and the renderer / hit-tester / interaction manager delegate
-> to it polymorphically via `ToolRegistry.getTool(tool)`.
+> to it polymorphically via `ToolRegistry.getTool(tool)`. A family plugin may
+> register several related ids; the contract is one adapter per persistent id,
+> not one physical file per id.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -63,9 +74,9 @@ For the shared chart zoom/pan/viewport invalidation contract, see
 │  drawingRenderer.ts           ← renderDrawing(): delegates to       │
 │                                  adapter.render()                   │
 │  hittest/HitTestEngine.ts     ← hitTest(): delegates to             │
-│                                  adapter.hitTest() (anchor > body)   │
+│                                  adapter.hitTest() + drag policy     │
 │  tools/ToolRegistry.ts        ← DrawingAdapter interface + registry │
-│  tools/plugins/*Tool.ts       ← one plugin per tool (render +       │
+│  tools/plugins/*Tool.ts       ← tool/family plugins (render +       │
 │                                  hitTest + move/anchor + bbox)      │
 │  tools/adapters.ts            ← side-effect imports = registration  │
 │  geometry/helpers.ts          ← HANDLE_RADIUS, TOL, distances       │
@@ -110,6 +121,12 @@ the memo guard decides whether a frame is actually painted.
 - **chartStore.activeTool** determines the current creation mode
 - **drawingRenderer.ts** (`renderDrawing`) and **hittest/HitTestEngine.ts** (`hitTest`) are
   pure — they read the Drawing model and delegate to the tool adapter, never mutating state
+- **Tool adapters are store-independent.** Runtime read-only inputs are supplied by the composition
+  root through `Projector.barIntervalSeconds`, `Projector.market`, and the optional
+  `DrawingAdapterInteractionContext`; adapters do not import chart/Jotai stores.
+- **drawingToolManifest.ts** is the SSOT for catalog metadata and cross-cutting capabilities,
+  including creation topology, defaults, settings, shortcuts, overlays/lifecycle, position side,
+  snapshot/content requirements, alerts, magnets, and viewport culling.
 - **Persistence** is co-located with state mutations in chartStore: authenticated users lazy-load
   drawings by symbol from backend Phase 7 and flush create/update/delete through a debounced batch
   queue keyed by frontend `Drawing.id` (`clientId` server-side); anonymous users keep the existing
@@ -198,6 +215,8 @@ the previous frame's. The key currently covers:
 | `activeTool`, `drawColor` | store | pending preview styling |
 | `liveHash` | live drag points `(time,price)` | drag-in-progress preview |
 | `cw`, `ch` | canvas pixel size | resize |
+| `barIntervalSeconds` | active timeframe | interval-derived labels such as Info Line |
+| `marketContext` | referential market-context revision | Position marks, precision, ticks, and stats |
 | `forceNext` | viewport subscription | **see below** |
 
 The comparison lives in `renderer/renderMemo.ts` so Node tests can lock the
@@ -242,6 +261,13 @@ Projection is `(time,price) → pixel` via `timeScale().timeToCoordinate()` /
 only to dedupe repeated conversions **within a single frame** (the spatial-index rebuild +
 the draw pass both convert the same points).
 
+The frame `Projector` also carries explicit read-only context when pixels depend on more than
+coordinates: `barIntervalSeconds` and optional market candles/symbol metadata. Those values are part
+of the render memo contract. Transform sessions receive a separate, deliberately small interaction
+context containing `tickSize`, `barIntervalSeconds`, and the active chart candle slice for constraints
+such as Position handle snapping and logical-width movement. Do not recover any of these inputs by
+reading a store from a plugin.
+
 > ⚠️ `CoordinateCache.nextFrame()` MUST clear the cache every frame. It is keyed by
 > `(time)` / `(price)` only — NOT by viewport — so a cached pixel is valid for one frame
 > only. A previous version only cleared at >100 entries and otherwise bumped an unused
@@ -274,64 +300,94 @@ so **local X maps 1:1 to a time-scale coordinate**: `coordinateToTime(clientX - 
 
 ## Extensibility
 
-New tools are **plugins**, not `switch` cases. Adding one touches 2–3 files and nothing
-in the render loop, store, interaction machine, or persistence:
+New tools are **plugins**, not `switch` cases. Adding one normally touches the
+manifest, a plugin/family adapter, a fixture, and focused tests; it does not add
+tool-id branches to the render loop, store, interaction machine, or persistence:
 
 | File | Change |
 |---|---|
-| `tools/plugins/MyNewTool.ts` | Implement the plugin: `tool`, `minPoints`, `render()`, `hitTest()`, `movePoints()`, `boundingBox()` (and optional `move`/`moveAnchor`/`getAnchors`); call `registerTool(plugin)`. Reuse `geometry/helpers.ts` (`HANDLE_RADIUS`, `TOL`, `distToSegment`, …) and `plugins/shared.ts` (`line`, `handle`). |
+| `types/drawingToolManifest.ts` | Add the stable id and one manifest entry with creation topology, defaults, settings, and every cross-cutting capability. `DrawingTool` and derived compatibility lists come from this catalog. |
+| `tools/plugins/MyNewTool.ts` | Implement/register the adapter. A family file may register related ids. Reuse shared projected geometry so render, hit, bounds, and handles cannot drift. |
 | `tools/adapters.ts` | Add `import "./plugins/MyNewTool";` (side-effect registration). |
-| `types/drawing.ts` | Add the tool id to the `DrawingTool` union + `DRAWING_TOOLS` (only if it's a new id, so the toolbar/types know it). |
+| `drawing/testing/toolFixtures.ts` | Supply finite points and capability-required snapshots/content. |
+| `tests/drawing/*` | Add a focused family regression; the all-adapter contract automatically covers the new persistent id. |
 
 `registerTool` auto-wraps a simple plugin with default `move` / `moveAnchor` / `getAnchors`
 (translate-all / move-one-anchor / point-anchors), so most tools only implement the four
 core methods. `getTool(tool)` returns the registered adapter; renderer, hit-tester, and
 interaction manager all go through it — no tool-specific branching anywhere else.
 
-> When adding a tool, make sure its `hitTest()` returns anchor candidates (`p1`/`p2`/…)
-> as well as a `body` candidate — `HitTestEngine` prioritises anchors over body so endpoint
-> grabs work (see the `fromEvent` note in the render contract for the coordinate pitfall).
+> When a tool exposes selected handles, `hitTest()` must return a non-body candidate with an
+> explicit `anchorIndex` for every handle returned by `getAnchors()`. Body-only tools explicitly
+> return no anchors. Candidate availability is separate from interaction resolution: the first
+> drag of an unselected drawing is body movement, while a selected drawing can resize only from an
+> unambiguous handle inside the pointer-aware radius.
 
 ## Canonical drag-target contract
 
 ```ts
 // HitResult.target (hittest/HitTestEngine.ts)
-type HitTarget = "body" | "p0" | "p1" | "p2" | "p3";
-// DrawingAdapter.movePoints()'s dragTarget (ToolRegistry.ts) — the *generic*
-// 2-anchor fallback path only, see below.
-type DragTarget = "body" | "p1" | "p2";
+type HitTarget = "body" | "p0" | "p1" | "p2" | "p3" | "p4" | "p5";
 ```
 
-No OTHER targets are allowed — `"segment"` and `"label"` were deprecated and removed (all 25 tools
-migrated 2026-06-26; `HitTestEngine`'s type + `TARGET_PRIORITY` no longer accept them). Two
-resolution paths exist depending on how many anchors a tool has:
+`target` is a visual/priority label, not a point index. The stable resize identity is
+`HitResult.anchorIndex`, which must match the corresponding `Anchor.index` from `getAnchors()`.
+Stored points 0 and 1 normally use `p1`/`p2`; later vertices can share `p0`, and tools such as
+Position use virtual indices. `TransformSession` calls `moveAnchor(origPoints, anchorIndex, pointer,
+context)` for resize and `move(origPoints, pointer, dragStart, context)` for body movement.
 
-- **2-anchor tools** (most of them) resolve drags through the generic string-based
-  `movePoints(origPoints, pointer, dragTarget, dragStart)`, `dragTarget` restricted to
-  `"p1"|"p2"|"body"`, with no silent fallback remapping:
-  ```
-  hitTest → "p1" | "p2" | "body"  →  InteractionManager (pass-through)  →  defaultMovePoints(...)
-      "p1"   → next[0] = pointer (resize endpoint A)
-      "p2"   → next[1] = pointer (resize endpoint B)
-      "body" → both += delta (move entire drawing)
-  ```
-- **3+-anchor tools** (RotatedRect, Triangle, Position tools) instead resolve drags through the
-  **index-based** `moveAnchor(origPoints, anchorIndex: number, pointer)` — `HitTestEngine` resolves
-  `hit.target` (`"p0"`/`"p1"`/`"p2"`/`"p3"`) to a numeric `anchorIndex` via the adapter's
-  `getAnchors()`, and `DrawingInteractionManager` drags by index, not by the `dragTarget` string.
-  This is how `"p0"`/`"p3"` exist at all despite `movePoints`'s narrower type — they never flow
-  through that string-based path.
+Interaction resolution is deliberately selection- and pointer-aware:
 
-All 25 registered tools return only canonical `HitTarget` values: TrendLine/Ray/ExtendedLine/
-InfoLine/Channel/Polyline/Triangle/Rectangle/RotatedRect/Circle/Ellipse/Fib(legacy+Retracement+
-Extension)/Curve/Path have resizable anchors (`p0`-`p3` per tool, see each plugin's `getAnchors()`);
-Brush/Text/Emoji/Horizontal/HorizRay/Vertical/CrossLine/LongPosition/ShortPosition are `body`-only
-(no resizable endpoints).
+1. The first pointer drag on an unselected drawing resolves to `body`, even if an endpoint is
+   nearby. The same gesture selects and moves the object without changing its compact width.
+2. When the drawing is already selected, a handle is eligible only inside the precise radius for
+   the current pointer type. Mouse uses a tight target; touch uses a larger physical target.
+3. If two or more projected anchors overlap inside that radius and no single anchor is
+   unambiguous, resolve to `body` instead of choosing an arbitrary `anchorIndex`.
+4. An unambiguous selected handle preserves the adapter-supplied `anchorIndex` exactly.
+
+This policy applies equally to mouse and touch entry points. Adapters describe selectable
+geometry; the interaction manager decides whether the current gesture is a body move or a handle
+resize.
+
+Position creation must snap entry, target, and stop values to the symbol tick before the initial
+drawing is persisted. The first render and the post-move render must therefore have identical
+width/level semantics. Horizontal and Vertical Line body transforms preserve the initial
+pointer-to-line grab offset, preventing the axis-constrained line from jumping on the first move
+sample.
+
+Position creation captures the active `ChartContext` candle slice and viewport scale in the same
+command request that persists the drawing. Its right edge advances by candle index, skipping closed
+sessions, and uses 20 bars or enough bars to cover 160 CSS pixels at the current zoom when room is
+available. Near the latest/right-edge bar, creation reduces the span to the available canvas width.
+Target and stop defaults are sampled symmetrically from the active price scale up to 96 CSS pixels,
+then snapped to the symbol tick. This keeps the first render visible even for dense bar spacing and
+high-precision FX prices.
+
+Outside the loaded series, X projection uses logical bar spacing and the median positive cadence of
+the active candle slice. The median rejects isolated market/session gaps while supporting replay and
+test slices whose actual cadence differs from the toolbar timeframe; with fewer than three deltas,
+the configured timeframe remains authoritative. Pointer inversion anchors to an actual Lightweight
+Charts logical coordinate, not an assumed zero-based candle-array index. Position body movement uses
+the same context to preserve logical span across gaps, and crossed resize handles retain a 12 CSS-pixel
+minimum. Rendering, pointer inversion, and transforms must all consume the same active chart context.
+
+Creation and cursor listeners share the document capture phase. The completing creation
+`pointerdown` must call `stopImmediatePropagation()` after committing: tool commit can
+synchronously switch back to cursor mode, and without this event boundary the cursor listener can
+interpret the same physical press as a new Move/Resize gesture. Browser history assertions keep
+the last command at `Create Drawing` after a completed click-sequence tool.
+
+The old `movePoints(..., "p1" | "p2" | "body", ...)` surface remains a simple-adapter compatibility
+method, but new multi-point logic must not infer identity from its target string. The executable
+all-adapter contract probes every unambiguous projected handle and rejects a body result or
+mismatched index.
 
 ## Shape inner text ("+ Add text") — added 2026-07-02
 
-TradingView-style: selecting a fillable shape (Rectangle/RotatedRect/Circle/Ellipse/Triangle —
-`SHAPE_TOOLS` in `types/drawing.ts`) shows a "+ Add text" affordance centered inside it; clicking
+TradingView-style: selecting a drawing with manifest
+`selectionTextEditor: "shape-center"` (Rectangle/RotatedRect/Circle/Ellipse/Triangle) shows a
+"+ Add text" affordance centered inside it; clicking
 opens the same inline `TextEditor` the standalone Text tool uses, and the typed text patches the
 *existing* drawing's `text` field (unlike the Text tool, which creates a brand-new drawing).
 
@@ -444,13 +500,14 @@ text behavior.
   from the TradingView-like minimum width as needed, clamps to the chart viewport, and ellipsizes
   only if the viewport is too narrow. Do not return to a fixed-width-only panel; long
   bars/time/distance rows overflow when the user draws from right to left.
-- **Data sources**: price values come from the drawing points; bars use the active `timeframeAtom`
-  with `TF_SECONDS`; distance and angle come from projected canvas coordinates so they reflect the
-  current chart zoom/pan.
+- **Data sources**: price values come from the drawing points; bars use
+  `Projector.barIntervalSeconds` supplied by the chart composition root; distance and angle come
+  from projected canvas coordinates so they reflect the current chart zoom/pan. The adapter does
+  not read the timeframe/chart store.
 - **Culling**: the adapter `boundingBox()` includes the panel's approximate width/height so the
   spatial index does not cull an info line whose segment is visible but panel extends beyond it.
-- Regression guard: `npm run check:infoline-panel` rejects the old one-line generic chip path and
-  checks the measured-width / text-fit panel path stays in place.
+- Regression guard: executable Info Line adapter tests cover render/hit/bounds and interval-derived
+  output. Source-text regexes are not correctness gates.
 
 ## Long / Short position tick-price contract - updated 2026-07-03
 
@@ -466,8 +523,10 @@ therefore extrapolates from the nearest projected candle pair and caches that fa
 future-time drawings pinned while avoiding a backward candle scan for every point in a frame.
 
 `renderer/SpatialIndex.ts` filters drawings before render/hit-test, but it must never invent
-geometry from raw anchors. It asks each adapter for `boundingBox(d, toX, toY)` and only falls
-back to point bounds if a legacy plugin does not provide one.
+geometry from raw anchors. It asks each adapter for `boundingBox(d, toX, toY)`. Every current
+persistent adapter must return finite fixture bounds; the manifest can declare
+`viewportCulling: "always-render"` for projected geometry that cannot be safely bounded by the
+current time scale.
 
 During an existing-drawing drag, `CanvasRenderer` keeps the last static spatial index when the
 drawings array, canvas dimensions, hidden state, and viewport projection are unchanged. It queries
@@ -503,8 +562,9 @@ price magnitude.
   keystroke. They use `NumberField commitMode="blur"` plus `positionInput.ts`, so drafts like empty
   text, `-`, or a partial replacement are not committed as zero or mirrored around entry before the
   user finishes typing.
-- **Renderer behavior**: `PositionTool.ts` uses the same helpers for label price formatting and
-  tick-count stats. Canvas labels and the settings dialog must never drift.
+- **Renderer behavior**: `positionRenderer.ts` uses the same helpers for label price formatting and
+  tick-count stats. It receives candles, precision, tick size, and point value through explicit
+  projector market context. Canvas labels and the settings dialog must never drift.
 - **Symbol metadata**: crypto is displayed as a TradingView-style perpetual contract in this app.
   BTCUSDT therefore uses `tickSize: 0.1`, matching the TradingView reference where
   `62061.8 - 61915.1 = 146.7` price points equals `1467` ticks.

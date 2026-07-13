@@ -77,6 +77,9 @@ export function SaveDrawingTemplateDialog({
       onContextMenu={(event) => event.preventDefault()}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-drawing-template-title"
         ref={dialogRef}
         style={dialogStyle}
         className="relative w-[480px] max-w-[calc(100vw-32px)] rounded-md bg-[#1f1f1f] px-10 pb-9 pt-10 text-ink shadow-2xl shadow-black/60"
@@ -93,6 +96,7 @@ export function SaveDrawingTemplateDialog({
         </button>
 
         <h2
+          id="save-drawing-template-title"
           {...dragHandleProps}
           className={cn(
             "mb-5 text-xl font-semibold text-[#f0f3fa]",
@@ -102,11 +106,15 @@ export function SaveDrawingTemplateDialog({
           Save drawing template
         </h2>
 
-        <label className="mb-1.5 block text-sm text-[#9aa0aa]">
+        <label
+          htmlFor="save-drawing-template-name"
+          className="mb-1.5 block text-sm text-[#9aa0aa]"
+        >
           New template name
         </label>
         <div className="relative">
           <input
+            id="save-drawing-template-name"
             ref={inputRef}
             value={name}
             onChange={(event) => setName(event.target.value)}

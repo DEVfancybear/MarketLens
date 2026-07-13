@@ -44,3 +44,50 @@ test("Fib Channel bounds include enabled external ratios",()=>{
   const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
   assert.ok(bounds.h>100,"external level must expand beyond the base channel");
 });
+
+test("Fib Wedge hit-testing and bounds follow the point-3 angular sector",()=>{
+  const adapter=getTool("fibWedge")!;
+  const drawing=fixture("fibWedge");
+  drawing.points=[
+    {time:300,price:300},
+    {time:400,price:300},
+    {time:280,price:320},
+  ];
+  drawing.fibLevels=[{value:1,enabled:true,color:"#fff"}];
+
+  const visibleArc={x:300,y:400};
+  const oppositeArc={x:300,y:200};
+  assert.ok(
+    adapter.hitTest(drawing,visibleArc.x,visibleArc.y,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    "the rendered 90-degree point on the outer arc must be selectable",
+  );
+  assert.equal(
+    adapter.hitTest(drawing,oppositeArc.x,oppositeArc.y,projector.toX,projector.toY).length,
+    0,
+    "the same-radius point on the invisible opposite arc must miss",
+  );
+
+  const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
+  const renderedExtrema=[
+    {x:400,y:300},
+    visibleArc,
+    {x:300-Math.SQRT1_2*100,y:300+Math.SQRT1_2*100},
+    {x:280,y:320},
+  ];
+  for(const point of renderedExtrema){
+    assert.ok(
+      point.x>=bounds.x&&point.x<=bounds.x+bounds.w
+        &&point.y>=bounds.y&&point.y<=bounds.y+bounds.h,
+      `bounds contain rendered extremum ${JSON.stringify(point)}`,
+    );
+  }
+  assert.ok(
+    oppositeArc.y<bounds.y,
+    "angular bounds must not retain the discarded opposite semicircle",
+  );
+  assert.deepEqual(
+    adapter.getAnchors(drawing,projector.toX,projector.toY)[2],
+    {index:2,x:280,y:320,target:"p3"},
+  );
+});

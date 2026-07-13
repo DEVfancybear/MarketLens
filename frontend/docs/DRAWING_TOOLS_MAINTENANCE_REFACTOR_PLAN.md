@@ -1,7 +1,7 @@
 # Drawing Tools Maintenance and Refactor Plan
 
-_Date: 2026-07-11_  
-_Status: implemented_
+_Date: 2026-07-11; post-Phase 8 audit updated 2026-07-13_
+_Status: implemented; current maintenance record: `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`_
 _Scope: frontend drawing engine, drawing UX, persistence contracts, and drawing-specific backend APIs_
 
 ## 1. Objective
@@ -66,78 +66,70 @@ The reference behavior has two dimensions.
 These cross-tool behaviors are architecture requirements, not toolbar decorations. New catalog
 coverage should not be added until the corresponding shared contract is stable.
 
-## 3. Current repository baseline
+## 3. Repository baseline and current state
 
-### 3.1 What is already strong
+The original 2026-07-11 baseline motivated this plan; its historical counts are
+kept in `DRAWING_PHASE0_CHARACTERIZATION.md`. The section below now summarizes
+the implemented state after Phases 0-8. The 2026-07-13 post-Phase 8 audit is recorded in
+`DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
 
-- Canvas overlay stores geometry in `(time, price)` data space.
-- `DrawingAdapter` delegates render, hit-test, bounds, move, anchor move, and anchor discovery.
-- Dirty-driven `requestAnimationFrame` rendering avoids React/store writes per pointer move.
-- Coordinate and geometry caches, spatial culling, and hit priority are separated.
-- Creation, move, resize, multi-selection, history, clipboard, templates, favorites, backend batch
-  persistence, per-object lock/hide, z-order, and global lock/hide already exist.
-- Settings expose Style, Text, Coordinates, and Visibility tabs.
-- Existing backend drawing payload is opaque, which permits frontend model evolution when migrations
-  are handled explicitly.
+### 3.1 Current architecture
 
-Baseline verification on 2026-07-11:
+- The typed manifest contains 88 stable entries: four non-persistent interaction modes and 84
+  persistent tools.
+- Every persistent id resolves to exactly one adapter. Family files may register related ids; a
+  one-file-per-tool layout is not required.
+- `DrawingAdapter` owns render, hit-test, bounds, movement, anchor movement, and anchor discovery.
+  Adapters receive runtime read-only data through explicit projector/interaction context and do not
+  read chart/Jotai stores.
+- Creation, settings, defaults, shortcuts, magnets, overlays, lifecycle, alert projection, Position
+  side, and viewport-culling behavior are capability-driven from the manifest.
+- Dirty-driven `requestAnimationFrame` rendering, coordinate caching, spatial culling, hit priority,
+  immutable previews, history, versioned persistence, sync scopes, object groups, and bulk actions
+  are separated into dedicated modules.
+- The executable all-adapter Node contract validates all 84 persistent ids with capability-aware
+  fixtures, finite bounds, render/hit/move/resize behavior, and exact anchor identity.
 
-- `npm run test:drawing`: 20/20 passing.
-- `npm run typecheck`: passing.
-- `go test ./internal/drawings`: passing.
+### 3.2 Implemented catalog
 
-### 3.2 Current implemented catalog
-
-| TradingView group | Current coverage | Main gaps |
+| TradingView group | Current coverage | Intentional/deferred depth |
 | --- | --- | --- |
-| Trend tools | Trendline, ray, info line, extended line, trend angle, horizontal line/ray, vertical line, crossline, parallel channel | Regression trend, flat top/bottom, disjoint channel, all pitchfork variants |
-| Fibonacci/Gann | Fib retracement, trend-based Fib extension, legacy Fib | Fib channel/time/fan/circle/spiral/arc/wedge tools, pitchfan, all Gann tools |
-| Patterns | None | XABCD, ABCD, triangle, three drives, head and shoulders, Elliott waves, cycles, sine line |
-| Forecast/measure | Long and short position; non-persistent measure mode | Forecast, bars pattern, ghost feed, sector, persistent price/date ranges, volume profiles, anchored VWAP |
-| Shapes/freehand | Rectangle, rotated rectangle, path, circle, ellipse, polyline, triangle, arc, curve, double curve, brush, highlighter, arrows/marks | Core catalog substantially covered; parity depth varies by tool |
-| Annotations | Text and emoji | Note, price note, pin, table, callout, comment, price label, signpost, flag, image/social content |
-| Global controls | Cursor, crosshair, eraser, measure, lock all, hide all, clear, favorites, templates | Zoom mode, magnets, keep drawing, interval visibility, object tree/groups/names, layout/global sync |
+| Trend tools | Trendline/ray/Info Line/extended/angle/axis lines, Parallel/Flat/Disjoint channels, Regression Trend, Pitchfork variants | Dynamic alerts for sloped/time-varying targets |
+| Fibonacci/Gann | Legacy Fib, retracement/extension/channel/time/fan/arc/circle/wedge families, Pitchfan, Gann Fan/Square/Box | Exact Gann scale locking and the complete preset catalog |
+| Patterns | ABCD/XABCD/Triangle/Three Drives/Head and Shoulders, Elliott variants, Time Cycles | Automatic detection and full configurable ratio validation |
+| Forecast/measure/data | Long/Short, ranges, Forecast, Sector, Bars Pattern, Ghost Feed, VWAP, profiles | Lower-timeframe/tick reconstruction and complete family settings |
+| Shapes/freehand | Rectangle/Rotated Rectangle, circle/ellipse/triangle, arc/curves/path/polyline, Brush/Highlighter, arrows/marks | Variable-width pressure rendering |
+| Annotations/rich content | Text/Emoji/Note/Callout/Comment/Price Label/Signpost/Flag, Table/Image/Social card | Executable third-party embeds are intentionally unsupported |
+| Global controls | Modes, favorites/templates, keep drawing, OHLC magnets, interval visibility, object tree/groups/names, sync scopes, undoable bulk actions | Indicator-value magnets and broader layout product UX |
 
 `fib` must remain loadable for backward compatibility but should not appear as a preferred new
 creation type after migration to `fibRetracement` is proven.
 
-### 3.3 Structural hotspots
+### 3.3 Historical structural hotspots and resolution
 
-| Area | Current size/risk | Refactor direction |
+| Area | Original risk | Current boundary |
 | --- | --- | --- |
-| `ObjectSettingsDialog.tsx` | ~1,500 lines; tool checks and several dialog variants | Schema-driven sections contributed by tool definitions |
-| `DrawingInteractionManager.ts` | ~900 lines; creation, selection, drag, resize, freeform, eraser, text special cases | Gesture/session controllers behind one state machine |
-| `DrawingLayer.tsx` | ~760 lines; React wiring plus tool-specific position/trendline behavior | Thin composition root with overlay extensions registered by capability |
-| `DrawingToolbar.tsx` | ~670 lines; catalog metadata embedded in JSX | Shared typed tool manifest used by toolbar, favorites, hotkeys, and analytics |
-| `DrawingSettingsToolbar.tsx` | ~640 lines; duplicates settings/action knowledge | Reuse the same settings schema and action registry as the dialog |
-| `PositionTool.ts` | ~900 lines; geometry, rendering, metrics, lifecycle | Split calculation, geometry, label layout, render, and hit-test modules |
-| `BaseDrawing` | Large optional property bag shared by unrelated tools | Versioned base envelope plus tool-specific discriminated properties |
-| Persistence queue | Debounced last-write batch without revision/conflict semantics | Version-aware writes, flush lifecycle, conflict policy, and tests |
+| Settings dialogs/toolbars | Concrete tool checks and duplicated controls | Manifest settings profiles/features plus shared schema/action registry |
+| Interaction manager | Gesture logic mixed with DOM/chart arbitration | Creation/selection/transform/erase/text sessions with explicit outcomes |
+| `DrawingLayer.tsx` | React wiring plus tool-specific runtime reads | Composition root that supplies projector, market, and adapter interaction context |
+| Toolbar/hotkeys | Catalog metadata duplicated across JSX/hooks | Manifest groups/icons/shortcuts/defaults and duplicate validation |
+| Position implementation | Geometry, market reads, formulas, and lifecycle coupled | Pure metrics/geometry/layout/creation/prefill plus explicit runtime context |
+| Persistence queue | Last-write batches without version/conflict semantics | Versioned codec, retrying outbox, revision rebase, metrics, and tested conflicts |
 
-### 3.4 Test gaps
+### 3.4 Current compatibility net
 
-The 20 drawing unit tests currently emphasize shared line/shape geometry, culling, memo invalidation,
-hit priority, the interaction-machine factory, and pointer-frame coalescing. They do not provide a
-complete compatibility net for all persistent tool IDs.
-
-Missing or thin coverage includes:
-
-- Adapter registration and capability completeness for every `DrawingTool`.
-- Render/hit/move/resize invariants for each adapter.
-- Creation gesture contracts for one-point, two-point, fixed multi-point, freeform, and continuous
-  tools.
-- Settings schema, templates, and serialization round trips.
-- Undo/redo for creation, deletion, movement, property updates, lock/hide, and z-order.
-- Anonymous-to-authenticated migration and multi-symbol isolation.
-- Batch retry, unload/flush, stale response, and multi-tab conflict behavior.
-- Browser-level chart pan/zoom versus drawing capture behavior.
-- Touch/pointer capture, double-click completion, Escape cancellation, and context menu interactions.
-- Performance budgets with hundreds/thousands of mixed drawings.
-
-The static `check:drawing-viewport` script currently reports a failure even though `PriceChart`
-uses `subscribeChartViewportEvents`. Its source regex expects an older single-line call shape and
-does not recognize the current multiline callback. This is evidence that source-text parity scripts
-must be replaced with executable contract tests before they are used as refactor gates.
+- `allToolAdapterContract.test.ts` executes production adapters for all 84 persistent ids and checks
+  registration, capability-aware fixtures, render, finite bounds, move, resize, selection, and exact
+  `anchorIndex` identity.
+- Family suites lock shared line/shape/Fib/channel geometry and Phase 8 range, radial, pattern,
+  time-projection, snapshot, projection, and rich-content behavior.
+- Creation modes, transform/selection/erase/text sessions, pointer-frame coalescing, viewport events,
+  culling/memo keys, settings/defaults, coordinates, visibility, alerts, lifecycle, history, object
+  tree, sync, codec, outbox, and conflict policy have executable contracts.
+- Browser gestures remain the integration gate for pointer capture and chart pan/zoom arbitration;
+  the spatial benchmark remains the repeatable performance characterization.
+- Source-text regexes are not accepted as correctness evidence. Static checks that remain as utility
+  diagnostics must not replace executable behavior tests.
 
 ## 4. Target architecture
 
@@ -732,7 +724,8 @@ Verification on 2026-07-12:
 - `go test ./...`: passing.
 - `npm run test:chart-browser -- drawingInteractions.spec.ts`: 16/16 passing in 84.8 seconds.
 
-Remaining: none for Phase 6.
+Remaining: indicator-value magnet snapping is intentionally deferred. OHLC Off/Weak/Strong magnet
+behavior is implemented and complete for this phase's shipped scope.
 
 Exit gate:
 
@@ -965,18 +958,18 @@ The refactor is complete when:
 7. Cross-tool TradingView behavior is implemented through capabilities.
 8. New tool families can be delivered in small, independently testable PRs.
 
-## 10. Recommended immediate milestone
+## 10. Post-Phase 8 maintenance milestone
 
-Start with Phase 0 and Phase 1 only. Do not begin missing Gann, pattern, volume-profile, or rich
-annotation tools until the catalog manifest and characterization suite are complete.
+The original recommended Phase 0/1 milestone is complete. Phase 8 closed with 84 persistent tools,
+and the 2026-07-13 maintenance pass strengthened geometry parity and adapter purity across the full
+catalog. See `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md` for the audited families, fixes,
+contracts, and verification commands.
 
-The first milestone should produce:
+Future drawing work should be delivered as small capability/family changes and must keep:
 
-1. Tool manifest RFC and implementation.
-2. One fixture per current persistent tool id.
-3. Parameterized adapter completeness tests.
-4. Replacement of the stale viewport source-regex check.
-5. A small Playwright drawing/chart interaction smoke suite.
-6. A checked baseline matrix for the 35 current persistent tool ids.
-
-This milestone has the highest maintenance value and the lowest product-behavior risk.
+1. the 88-entry manifest and 84-adapter registry in exact agreement;
+2. one capability-aware fixture for every persistent id;
+3. the executable all-adapter geometry contract green;
+4. adapter store independence through explicit projector/interaction context;
+5. render, hit-test, bounds, and handle geometry derived from the same projection; and
+6. intentional TradingView differences and bounded-work limits documented.

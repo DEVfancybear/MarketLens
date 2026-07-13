@@ -146,6 +146,7 @@ const plugin: DrawingToolPlugin = {
     return [];
   },
   movePoints: defaultMovePoints,
+  getAnchors: () => [],
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
     const x = toX(d.points[0].time);
     const y = toY(d.points[0].price);

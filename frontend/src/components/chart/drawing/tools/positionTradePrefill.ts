@@ -6,6 +6,7 @@ import {
   type PositionLotSymbolInfo,
 } from "../../../../services/positionLotSizing";
 import { calculatePositionProjection } from "./positionMetrics";
+import { getDrawingToolPositionSide } from "../../../../types/drawingToolManifest";
 
 export function inferPositionOrderType(
   side: Side,
@@ -22,13 +23,13 @@ export function buildOrderPrefillFromPositionDrawing(
   marketPrice: number | null | undefined,
   context: { symbolInfo?: PositionLotSymbolInfo } = {},
 ): OrderPrefill | null {
-  if (drawing.tool !== "long" && drawing.tool !== "short") return null;
+  const side: Side | undefined = getDrawingToolPositionSide(drawing.tool);
+  if (!side) return null;
   const entry = drawing.points[0]?.price;
   const target = drawing.points[1]?.price ?? drawing.target;
   const stop = drawing.points[2]?.price ?? drawing.stop;
   if (!Number.isFinite(entry)) return null;
 
-  const side: Side = drawing.tool === "long" ? "long" : "short";
   const prefill: OrderPrefill = {
     source: "position-drawing",
     drawingId: drawing.id,

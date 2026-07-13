@@ -2,7 +2,7 @@
  * DrawingHitTest — TradingView-style pure hit-testing for drawing objects.
  *
  * Priority:
- *   1. Anchor hit (any drawing) — topmost drawing wins, then closest distance.
+ *   1. Deliberate handle hit on an already-selected drawing.
  *   2. Body hit — topmost drawing wins, then closest distance.
  *   3. No hit — returns null.
  *
@@ -36,11 +36,37 @@ export type HitResult = {
   distance: number;
 };
 
+export interface HitTestOptions {
+  /** Anchors are resize affordances only after their drawing is selected. */
+  selectedDrawingIds?: ReadonlySet<string>;
+  /** Pointer-aware precision keeps touch usable without swallowing compact bodies. */
+  pointerType?: string;
+}
+
+const PRECISE_ANCHOR_RADIUS = {
+  mouse: 8,
+  pen: 10,
+  touch: 14,
+} as const;
+
+// Shared handles render as a 4 px radius circle (Position uses a comparable
+// 7 px square). When two expanded hit discs overlap, only a hit this close to
+// one visible handle is unambiguous enough to resize.
+const VISUAL_HANDLE_SLOP = 6;
+const EQUAL_DISTANCE_EPSILON = 2;
+
+function pointerAnchorRadius(pointerType: string | undefined): number {
+  if (pointerType === "touch") return PRECISE_ANCHOR_RADIUS.touch;
+  if (pointerType === "pen") return PRECISE_ANCHOR_RADIUS.pen;
+  return PRECISE_ANCHOR_RADIUS.mouse;
+}
+
 export function hitTest(
   drawings: Drawing[],
   p: Point,
   toX: HitTestProjector,
   toY: HitTestProjector,
+  options?: HitTestOptions,
 ): HitResult | null {
   const px = toX(p.time);
   const py = toY(p.price);
@@ -67,8 +93,7 @@ export function hitTest(
       if (px < left || px > right || py < top || py > bottom) continue;
     }
 
-    const candidates = adapter.hitTest(d, px, py, toX, toY);
-    for (const c of candidates) {
+    const candidates = adapter.hitTest(d, px, py, toX, toY).map((c) => {
       // Resolve anchor index from the adapter.
       const isAnchor = c.target !== "body";
       let anchorIdx = c.anchorIndex ?? -1;
@@ -86,7 +111,49 @@ export function hitTest(
         }
       }
 
-      const hit = { ...c, anchorIndex: anchorIdx };
+      return { ...c, anchorIndex: anchorIdx };
+    });
+
+    let interactionCandidates = candidates;
+    if (options) {
+      const bodyCandidates = candidates.filter(
+        (candidate) => candidate.target === "body",
+      );
+      const anchorCandidates = candidates
+        .filter((candidate) => candidate.target !== "body")
+        .sort((a, b) => a.distance - b.distance);
+      const selected = options.selectedDrawingIds?.has(d.id) ?? false;
+
+      if (!selected) {
+        // The first drag on an unselected object moves the whole object. If an
+        // adapter exposes anchors only, normalize the closest hit to a body hit
+        // instead of unexpectedly resizing before selection is established.
+        interactionCandidates = bodyCandidates.length > 0
+          ? bodyCandidates
+          : anchorCandidates.length > 0
+            ? [{ ...anchorCandidates[0], target: "body", anchorIndex: -1 }]
+            : [];
+      } else if (bodyCandidates.length > 0) {
+        const radius = pointerAnchorRadius(options.pointerType);
+        const closeAnchors = anchorCandidates.filter(
+          (candidate) => candidate.distance <= radius,
+        );
+        const first = closeAnchors[0];
+        const second = closeAnchors[1];
+        const ambiguousOverlap = !!first && !!second &&
+          first.distance > VISUAL_HANDLE_SLOP &&
+          Math.abs(second.distance - first.distance) <= EQUAL_DISTANCE_EPSILON;
+
+        // Adapter radii remain generous for touch discovery, but compact body
+        // interiors stay draggable where left/right or corner discs overlap.
+        // Exact and near-handle hits retain normal resize priority.
+        interactionCandidates = first && !ambiguousOverlap
+          ? [...bodyCandidates, ...closeAnchors]
+          : bodyCandidates;
+      }
+    }
+
+    for (const hit of interactionCandidates) {
       const score = hitPriorityScore(hit, d.zIndex ?? 0);
       if (score > bestScore) {
         best = hit;

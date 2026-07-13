@@ -22,29 +22,7 @@ import {
   editingDrawingIdAtom,
 } from "@/store/chartStore";
 import { emit } from "@/utils/bus";
-import type { DrawingTool } from "@/types";
-
-/** Tool slots numbered 1-9 (TradingView convention). */
-const TOOL_SLOTS: Record<string, DrawingTool> = {
-  "1": "cursor",
-  "2": "trendline",
-  "3": "horizontal",
-  "4": "rectangle",
-  "5": "polyline",
-  "6": "text",
-  "7": "fibRetracement",
-  "8": "long",
-  "9": "short",
-};
-
-/** Alt+key line-tool shortcuts (TradingView LINES menu). */
-const ALT_TOOL_SLOTS: Record<string, DrawingTool> = {
-  t: "trendline",
-  h: "horizontal",
-  j: "horizRay",
-  v: "vertical",
-  c: "crossLine",
-};
+import { getDrawingToolForShortcut } from "@/types/drawingToolManifest";
 
 /**
  * Global keyboard shortcuts:
@@ -52,7 +30,7 @@ const ALT_TOOL_SLOTS: Record<string, DrawingTool> = {
  *   →  / ←       next / prev candle   B / S   buy / sell
  *   Shift+→/←    ±10 candles          X       close position
  *   1–9          switch drawing tools
- *   Alt+T/H/J/V/C trend / horizontal / horiz-ray / vertical / cross line
+ *   Alt+T/H/J/V/C line tools; Alt+Shift+R rectangle
  *   Ctrl/Cmd+Z   undo (prevents browser tab-close)
  *   Ctrl/I       toggle SMA indicator
  *   Escape       deselect / cancel tool
@@ -107,25 +85,17 @@ export function useHotkeys() {
         return;
       }
 
-      // --- Drawing tool hotkeys (1–9) ---
-      if (!mod && !e.shiftKey && !e.altKey && TOOL_SLOTS[e.key]) {
+      // --- Manifest-owned drawing tool shortcuts ---
+      const shortcutTool = getDrawingToolForShortcut({
+        key: e.key,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+      });
+      if (shortcutTool) {
         e.preventDefault();
-        getDefaultStore().set(setActiveToolAtom, TOOL_SLOTS[e.key]);
-        return;
-      }
-
-      // --- Alt+key line-tool shortcuts (Alt+T/H/J/V/C) ---
-      if (
-        e.altKey &&
-        !mod &&
-        !e.shiftKey &&
-        ALT_TOOL_SLOTS[e.key.toLowerCase()]
-      ) {
-        e.preventDefault();
-        getDefaultStore().set(
-          setActiveToolAtom,
-          ALT_TOOL_SLOTS[e.key.toLowerCase()],
-        );
+        store.set(setActiveToolAtom, shortcutTool);
         return;
       }
 

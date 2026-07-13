@@ -52,8 +52,10 @@ handles, but they are virtual handles derived from this three-point model.
 - `positionMetrics.ts`: tick/price math, historical mark resolution, and the
   official TradingView quantity/PnL/account-balance projection formulas.
 - `positionInput.ts`: numeric draft parsing for settings inputs.
+- `positionCreation.ts`: one-click entry expansion, viewport-aware bar/risk
+  defaults, tick snapping, and candle-index timeline resolution across sessions.
 - `positionGeometry.ts`: six virtual handles, body move, handle resize, side
-  inference, tick snapping, and long/short level clamping.
+  inference, tick snapping, long/short level clamping, and logical-width movement.
 - `positionTradePrefill.ts`: converts a completed Long/Short drawing into a
   Trade ticket prefill payload.
 - `src/services/positionLotSizing.ts`: shared risk-to-lot sizing from
@@ -82,7 +84,28 @@ The selected tool renders and hit-tests six handles:
 Left handles resize the left time edge; right handles resize the right time edge.
 Target/entry/stop handles also update their corresponding level price.
 
-Body drag moves all three persisted points and preserves width.
+Body drag moves all three persisted points and preserves width. When the chart
+supplies candles and timeframe context, width means the same logical candle
+count rather than the same wall-clock duration, so dragging across a weekend
+does not stretch or collapse the box.
+
+## One-click Creation Geometry
+
+Creation captures the active chart candle slice instead of consulting a global
+store snapshot. The entry snaps to the nearest active-chart candle and the right
+edge advances by candle index, skipping closed-market gaps. The default is 20
+bars and grows to cover 160 CSS pixels when the chart is densely zoomed, then
+fits the available right-side room when entry is placed near the latest bar.
+
+Target and stop are sampled from symmetric price-scale offsets, capped at 96 CSS
+pixels from entry, and then snapped to symbol tick size. This replaces the old
+fixed one-percent price distance that could place both bands outside a narrow FX
+pane. Persisted geometry remains three points; viewport data is creation-only.
+
+Whitespace coordinates use the median candle cadence plus an actual chart
+logical anchor, so pointer-to-time and time-to-pixel remain inverse across replay
+windows. Handle crossing enforces a 12 CSS-pixel logical-bar minimum instead of
+allowing the box to collapse to a one-second line.
 
 ## Trade Ticket Prefill
 

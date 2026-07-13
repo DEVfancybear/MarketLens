@@ -5,6 +5,8 @@ import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import {
   TOL,
   defaultMovePoints,
+  distToRect,
+  distToSegment,
   registerTool,
   type DrawingToolPlugin,
 } from "../ToolRegistry";
@@ -12,12 +14,27 @@ import { chip, handle, renderShapeText } from "./shared";
 import { projectTwoPoints, twoPointAnchors, twoPointAnchorHits } from "./lineGeometry";
 
 type RangeKind = "price" | "date" | "both";
+const EXTENDED_RANGE_SPAN = 100_000;
 
-function bounds(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
+function bounds(
+  d: Drawing,
+  toX: HitTestProjector,
+  toY: HitTestProjector,
+  kind: RangeKind,
+  viewport?: { left: number; right: number },
+) {
   const segment = projectTwoPoints(d, toX, toY);
   if (!segment) return null;
-  const left = Math.min(segment.a.x, segment.b.x);
-  const right = Math.max(segment.a.x, segment.b.x);
+  let left = Math.min(segment.a.x, segment.b.x);
+  let right = Math.max(segment.a.x, segment.b.x);
+  if (kind === "price") {
+    if (d.extend === "left" || d.extend === "both") {
+      left = viewport?.left ?? -EXTENDED_RANGE_SPAN;
+    }
+    if (d.extend === "right" || d.extend === "both") {
+      right = viewport?.right ?? EXTENDED_RANGE_SPAN;
+    }
+  }
   const top = Math.min(segment.a.y, segment.b.y);
   const bottom = Math.max(segment.a.y, segment.b.y);
   return { segment, left, right, top, bottom, width: right - left, height: bottom - top };
@@ -50,13 +67,12 @@ function createRangeTool(tool: DrawingTool, kind: RangeKind): DrawingToolPlugin 
     tool,
     minPoints: 2,
     render(g: CanvasRenderingContext2D, d: Drawing, proj: Projector, selected: boolean) {
-      const box = bounds(d, proj.toX, proj.toY);
+      const box = bounds(d, proj.toX, proj.toY, kind, {
+        left: 0,
+        right: proj.width,
+      });
       if (!box) return;
-      let { left, right, top, bottom } = box;
-      if (kind === "price") {
-        if (d.extend === "left" || d.extend === "both") left = 0;
-        if (d.extend === "right" || d.extend === "both") right = proj.width;
-      }
+      const { left, right, top, bottom } = box;
       g.save();
       if (d.fillColor !== "transparent") {
         g.fillStyle = d.fillColor || d.color;
@@ -90,16 +106,36 @@ function createRangeTool(tool: DrawingTool, kind: RangeKind): DrawingToolPlugin 
       g.restore();
     },
     hitTest(d, px, py, toX, toY): HitResult[] {
-      const box = bounds(d, toX, toY);
+      const box = bounds(d, toX, toY, kind);
       if (!box) return [];
       const anchors = twoPointAnchorHits(d, box.segment, px, py);
-      const inside = px >= box.left - TOL && px <= box.right + TOL && py >= box.top - TOL && py <= box.bottom + TOL;
-      return inside ? [...anchors, { drawing: d, target: "body", distance: 1 }] : anchors;
+      const filled =
+        d.fillColor !== "transparent" && (d.opacity ?? 0.12) > 0;
+      const inside =
+        px >= box.left - TOL && px <= box.right + TOL &&
+        py >= box.top - TOL && py <= box.bottom + TOL;
+      if (filled && inside) {
+        return [...anchors, { drawing: d, target: "body", distance: 1 }];
+      }
+      const strokeDistance = kind === "price"
+        ? Math.min(
+            distToSegment(px, py, box.left, box.top, box.right, box.top),
+            distToSegment(px, py, box.left, box.bottom, box.right, box.bottom),
+          )
+        : kind === "date"
+          ? Math.min(
+              distToSegment(px, py, box.left, box.top, box.left, box.bottom),
+              distToSegment(px, py, box.right, box.top, box.right, box.bottom),
+            )
+          : distToRect(px, py, box.left, box.top, box.right, box.bottom);
+      return strokeDistance <= TOL
+        ? [...anchors, { drawing: d, target: "body", distance: strokeDistance }]
+        : anchors;
     },
     movePoints: defaultMovePoints,
     getAnchors: twoPointAnchors,
     boundingBox(d, toX, toY) {
-      const box = bounds(d, toX, toY);
+      const box = bounds(d, toX, toY, kind);
       return box ? { x: box.left - 24, y: box.top - 24, w: box.width + 48, h: box.height + 48 } : null;
     },
   };

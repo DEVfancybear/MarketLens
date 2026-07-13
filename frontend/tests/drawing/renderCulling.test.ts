@@ -105,6 +105,8 @@ test("render memo key changes when only hover or multi-select changes", () => {
     hoveredId: null,
     canvasW: 800,
     canvasH: 500,
+    barIntervalSeconds: 60,
+    marketContext: undefined,
   };
 
   assert.equal(sameRenderMemoState(base, { ...base }), true);
@@ -118,6 +120,16 @@ test("render memo key changes when only hover or multi-select changes", () => {
       selectedDrawingIdsHash: selectedIdsHash(new Set(["rect-1"])),
     }),
     false,
+  );
+  assert.equal(
+    sameRenderMemoState(base, { ...base, barIntervalSeconds: 300 }),
+    false,
+    "timeframe-dependent adapters must repaint when bar duration changes",
+  );
+  assert.equal(
+    sameRenderMemoState(base, { ...base, marketContext: {} }),
+    false,
+    "market-dependent adapters must repaint when candle or symbol context changes",
   );
   assert.equal(
     selectedIdsHash(new Set(["z", "a", "z"])),

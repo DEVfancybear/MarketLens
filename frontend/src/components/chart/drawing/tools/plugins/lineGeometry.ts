@@ -312,11 +312,35 @@ export function fullViewportBounds() {
   };
 }
 
-export function moveHorizontalLine(origPoints: Point[], pointer: Point): Point[] {
+export function moveHorizontalLine(
+  origPoints: Point[],
+  pointer: Point,
+  dragStart: Point,
+): Point[] {
+  const priceDelta = pointer.price - dragStart.price;
+  return origPoints.map((pt) => ({ ...pt, price: pt.price + priceDelta }));
+}
+
+export function moveHorizontalLineAnchor(
+  origPoints: Point[],
+  pointer: Point,
+): Point[] {
   return origPoints.map((pt) => ({ ...pt, price: pointer.price }));
 }
 
-export function moveVerticalLine(origPoints: Point[], pointer: Point): Point[] {
+export function moveVerticalLine(
+  origPoints: Point[],
+  pointer: Point,
+  dragStart: Point,
+): Point[] {
+  const timeDelta = pointer.time - dragStart.time;
+  return origPoints.map((pt) => ({ ...pt, time: pt.time + timeDelta }));
+}
+
+export function moveVerticalLineAnchor(
+  origPoints: Point[],
+  pointer: Point,
+): Point[] {
   return origPoints.map((pt) => ({ ...pt, time: pointer.time }));
 }
 

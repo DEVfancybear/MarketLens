@@ -74,3 +74,120 @@ test("range, channel, annotation, and time families expose selectable visible ge
     assert.ok(adapter.hitTest(drawing, hitPoint.x, hitPoint.y, projector.toX, projector.toY).length > 0, tool);
   }
 });
+
+test("callout leader line is selectable outside its text box", () => {
+  const adapter = getTool("callout")!;
+  const drawing = fixture("callout");
+  drawing.points = drawing.points.slice(0, adapter.minPoints);
+  assert.ok(
+    adapter
+      .hitTest(drawing, 150, 100, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+    "the rendered callout connector must share the body hit contract",
+  );
+});
+
+test("channel variant fill and additional anchors share resize geometry", () => {
+  const flat: Drawing = {
+    ...fixture("flatTopBottom"),
+    fillColor: "#2962ff",
+    points: [
+      { time: 100, price: 120 },
+      { time: 220, price: 100 },
+      { time: 160, price: 60 },
+    ],
+  };
+  assert.ok(
+    getTool("flatTopBottom")!
+      .hitTest(flat, 160, 90, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+    "flat channel visible fill must be selectable",
+  );
+  const distantControl: Drawing = {
+    ...flat,
+    points: [flat.points[0], flat.points[1], { time: 300, price: 60 }],
+  };
+  const flatBounds = getTool("flatTopBottom")!.boundingBox(
+    distantControl,
+    projector.toX,
+    projector.toY,
+  )!;
+  assert.ok(
+    flatBounds.x + flatBounds.w >= 300,
+    "the third control handle must participate in spatial culling bounds",
+  );
+
+  const disjoint: Drawing = {
+    ...fixture("disjointChannel"),
+    fillColor: "#2962ff",
+    points: [
+      { time: 100, price: 120 },
+      { time: 220, price: 100 },
+      { time: 100, price: 60 },
+      { time: 220, price: 40 },
+    ],
+  };
+  const adapter = getTool("disjointChannel")!;
+  const thirdHit = adapter.hitTest(
+    disjoint,
+    100,
+    60,
+    projector.toX,
+    projector.toY,
+  ).find((hit) => hit.anchorIndex === 2);
+  assert.ok(thirdHit && thirdHit.target !== "body");
+  const resized = adapter.moveAnchor(disjoint.points, 2, { time: 90, price: 55 });
+  assert.deepEqual(resized[0], disjoint.points[0]);
+  assert.deepEqual(resized[1], disjoint.points[1]);
+  assert.deepEqual(resized[2], { time: 90, price: 55 });
+  assert.ok(
+    adapter
+      .hitTest(disjoint, 160, 80, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+    "disjoint channel visible fill must be selectable",
+  );
+});
+
+test("Price Range extension participates in hit testing and spatial bounds", () => {
+  const adapter = getTool("priceRange")!;
+  const drawing: Drawing = {
+    ...fixture("priceRange"),
+    extend: "right",
+    fillColor: "transparent",
+    points: [
+      { time: 100, price: 120 },
+      { time: 200, price: 40 },
+    ],
+  };
+  assert.ok(
+    adapter
+      .hitTest(drawing, 600, 120, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+    "rendered extended price line must be selectable",
+  );
+  const bounds = adapter.boundingBox(drawing, projector.toX, projector.toY)!;
+  assert.ok(bounds.x + bounds.w > 600, "extended line must survive viewport culling");
+  assert.equal(
+    adapter
+      .hitTest(drawing, 600, 80, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+    false,
+    "transparent range interior must not be selectable",
+  );
+});
+
+test("Cyclic Lines hit testing covers every rendered bounded repetition", () => {
+  const drawing: Drawing = {
+    ...fixture("cyclicLines"),
+    points: [
+      { time: 100, price: 120 },
+      { time: 101, price: 80 },
+    ],
+  };
+  assert.ok(
+    getTool("cyclicLines")!
+      .hitTest(drawing, 300, 200, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+    "a visible repetition after index 128 must remain selectable",
+  );
+});

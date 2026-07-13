@@ -42,3 +42,33 @@ test("position resolution preserves persisted hits when history does not cover e
     { status: "tp_hit", time: 14, price: 120 },
   );
 });
+
+test("short resolution follows the manifest position side", () => {
+  const short: Drawing = {
+    ...drawing,
+    tool: "short",
+    points: [
+      { time: 10, price: 100 },
+      { time: 20, price: 90 },
+      { time: 20, price: 110 },
+    ],
+  };
+  assert.deepEqual(
+    detectPositionHit(short, [
+      { time: 10, low: 99, high: 101 },
+      { time: 11, low: 89, high: 101 },
+    ]),
+    { status: "tp_hit", time: 11, price: 90 },
+  );
+});
+
+test("hit resolution rejects drawings without the position-side capability", () => {
+  const trendline: Drawing = {
+    ...drawing,
+    tool: "trendline",
+    tradeStatus: "tp_hit",
+    hitTime: 4,
+  };
+  assert.equal(detectPositionHit(trendline, [{ time: 10, low: 80, high: 130 }]), null);
+  assert.equal(resolvePositionHit(trendline, []), null);
+});

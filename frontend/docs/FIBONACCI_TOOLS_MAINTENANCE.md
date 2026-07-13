@@ -33,7 +33,7 @@ Files:
 - `src/components/chart/ObjectSettingsDialog.tsx`
 - `src/components/chart/drawing/renderer/CanvasRenderer.ts`
 - `src/components/toolbar/DrawingToolbar.tsx`
-- `scripts/check-fibonacci-tools-parity.mjs`
+- `tests/drawing/fibGeometry.test.ts`
 
 ### Fib Retracement
 
@@ -150,20 +150,21 @@ Run:
 npm run check:fibonacci-tools
 ```
 
-The guard verifies:
+The focused executable suite verifies:
+
 - external fib levels are still present;
-- retracement still draws trend line, background bands, level lines, labels, and per-level hit-test;
-- left labels stay outside the fib body and use `level (price)` formatting;
-- the default fib source trend line remains TradingView-style gray/dashed;
-- extension remains a three-click trend-based tool;
-- extension projection still uses point C plus the A-B impulse;
-- p3 remains a real anchor;
-- legacy `fib` still mirrors modern retracement enough for saved drawings;
-- fib canvas fonts do not regress to invalid CSS-variable font strings.
-- fib labels remain measured/clamped inside the chart viewport;
-- fib renderers reserve/clip away from the right price-scale strip;
-- `ObjectSettingsDialog` keeps the fib Style/Coordinates/Visibility setting surface;
-- double-click still opens settings for drawings.
+- legacy `fib` and modern retracement use the same projected-level formula;
+- linear/log retracement and point-C extension formulas remain explicit;
+- retracement adapters execute price-scale clipping, background, level/guide
+  strokes, labels, per-level hit-testing, and external-level bounds;
+- extension remains a three-click tool whose `p3` handle is independently
+  movable and whose point-C-projected levels are selectable; and
+- canvas fonts remain concrete CSS font strings.
+
+The shared drawing settings, overlay, all-adapter, persistence, and browser
+gesture suites cover the dialog schema, repaint/selection integration,
+round-trip compatibility, and double-click settings flow. This replaces the
+former source-text regex guard with executable behavior contracts.
 
 Run this together with the normal checks before commit:
 

@@ -4,6 +4,10 @@ _Date: 2026-07-12_
 _Status: implemented_  
 _Scope: immutable candle snapshots, analytical projections, and safe rich-content cards_
 
+> Historical Wave D delivery/verification snapshot. Current catalog-wide
+> contracts and Forecast/Sector/Regression/Bars Pattern geometry fixes are
+> recorded in `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+
 ## Delivered catalog
 
 | Family | Stable tool ids | Contract |

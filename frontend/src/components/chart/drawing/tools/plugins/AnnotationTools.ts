@@ -2,7 +2,7 @@
 import type { Drawing, DrawingTool } from "@/types";
 import type { Projector } from "../../drawingRenderer";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
-import { TOL, defaultMovePoints, registerTool, type DrawingToolPlugin } from "../ToolRegistry";
+import { TOL, defaultMovePoints, distToSegment, registerTool, type DrawingToolPlugin } from "../ToolRegistry";
 import { canvasFont, handle, line } from "./shared";
 import { projectOnePoint, projectTwoPoints, twoPointAnchorHits } from "./lineGeometry";
 
@@ -24,6 +24,17 @@ function onePointBox(d: Drawing, x: number, y: number, kind: OnePointAnnotation)
   if (kind === "signpost") return { x: x - w / 2, y: y - h - 14, w, h, text };
   if (kind === "flag") return { x: x + 2, y: y - h - 22, w, h, text };
   return { x: x + 10, y: y - h - 10, w, h, text };
+}
+
+function onePointConnectorEnd(
+  box: ReturnType<typeof onePointBox>,
+  anchor: { x: number; y: number },
+  kind: OnePointAnnotation,
+) {
+  if (kind === "flag") return { x: anchor.x, y: box.y };
+  if (kind === "signpost") return { x: anchor.x, y: box.y + box.h };
+  if (kind === "priceLabel") return { x: box.x, y: anchor.y };
+  return { x: box.x, y: box.y + box.h };
 }
 
 function roundedBox(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius = 4) {
@@ -55,7 +66,7 @@ function createOnePointAnnotation(tool: DrawingTool, kind: OnePointAnnotation): 
       g.fillStyle=d.textColor||"#fff";g.textAlign="center";g.textBaseline="middle";g.fillText(box.text,box.x+box.w/2,box.y+box.h/2,box.w-8);
       if(selected)handle(g,p.x,p.y,d.color); g.restore();
     },
-    hitTest(d,px,py,toX,toY): HitResult[]{const p=projectOnePoint(d,toX,toY);if(!p)return[];const box=onePointBox(d,p.x,p.y,kind);const anchor=Math.hypot(px-p.x,py-p.y);if(anchor<=24)return[{drawing:d,target:"p1",anchorIndex:0,distance:anchor}];return px>=box.x-TOL&&px<=box.x+box.w+TOL&&py>=box.y-TOL&&py<=box.y+box.h+TOL?[{drawing:d,target:"body",distance:1}]:[];},
+    hitTest(d,px,py,toX,toY): HitResult[]{const p=projectOnePoint(d,toX,toY);if(!p)return[];const box=onePointBox(d,p.x,p.y,kind);const anchor=Math.hypot(px-p.x,py-p.y);if(anchor<=24)return[{drawing:d,target:"p1",anchorIndex:0,distance:anchor}];if(px>=box.x-TOL&&px<=box.x+box.w+TOL&&py>=box.y-TOL&&py<=box.y+box.h+TOL)return[{drawing:d,target:"body",distance:1}];const end=onePointConnectorEnd(box,p,kind);const distance=distToSegment(px,py,p.x,p.y,end.x,end.y);return distance<=TOL?[{drawing:d,target:"body",distance}]:[];},
     movePoints:defaultMovePoints,
     boundingBox(d,toX,toY){const p=projectOnePoint(d,toX,toY);if(!p)return null;const box=onePointBox(d,p.x,p.y,kind);return{x:Math.min(p.x,box.x)-TOL,y:Math.min(p.y,box.y)-TOL,w:Math.max(p.x,box.x+box.w)-Math.min(p.x,box.x)+TOL*2,h:Math.max(p.y,box.y+box.h)-Math.min(p.y,box.y)+TOL*2};},
   };
@@ -64,7 +75,7 @@ function createOnePointAnnotation(tool: DrawingTool, kind: OnePointAnnotation): 
 const callout: DrawingToolPlugin = {
   tool:"callout",minPoints:2,
   render(g,d,proj,selected){const s=projectTwoPoints(d,proj.toX,proj.toY);if(!s)return;const text=label(d,"Callout");const w=textWidth(d,text),h=Math.max(26,(d.fontSize??13)+12);const x=s.b.x-w/2,y=s.b.y-h/2;g.save();g.strokeStyle=d.color;g.lineWidth=d.lineWidth;line(g,s.a.x,s.a.y,s.b.x,s.b.y);roundedBox(g,x,y,w,h,6);g.fillStyle=d.fillColor||"#2a2e39";g.globalAlpha=d.opacity??0.92;g.fill();g.globalAlpha=1;g.stroke();g.font=canvasFont(d.fontSize??13,{bold:d.bold,italic:d.italic});g.fillStyle=d.textColor||"#fff";g.textAlign="center";g.textBaseline="middle";g.fillText(text,s.b.x,s.b.y,w-8);if(selected){handle(g,s.a.x,s.a.y,d.color);handle(g,s.b.x,s.b.y,d.color);}g.restore();},
-  hitTest(d,px,py,toX,toY){const s=projectTwoPoints(d,toX,toY);if(!s)return[];const hits=twoPointAnchorHits(d,s,px,py);const w=textWidth(d,label(d,"Callout")),h=Math.max(26,(d.fontSize??13)+12);return px>=s.b.x-w/2-TOL&&px<=s.b.x+w/2+TOL&&py>=s.b.y-h/2-TOL&&py<=s.b.y+h/2+TOL?[...hits,{drawing:d,target:"body",distance:1}]:hits;},
+  hitTest(d,px,py,toX,toY){const s=projectTwoPoints(d,toX,toY);if(!s)return[];const hits=twoPointAnchorHits(d,s,px,py);const w=textWidth(d,label(d,"Callout")),h=Math.max(26,(d.fontSize??13)+12);if(px>=s.b.x-w/2-TOL&&px<=s.b.x+w/2+TOL&&py>=s.b.y-h/2-TOL&&py<=s.b.y+h/2+TOL)return[...hits,{drawing:d,target:"body",distance:1}];const distance=distToSegment(px,py,s.a.x,s.a.y,s.b.x,s.b.y);return distance<=TOL?[...hits,{drawing:d,target:"body",distance}]:hits;},
   movePoints:defaultMovePoints,
   boundingBox(d,toX,toY){const s=projectTwoPoints(d,toX,toY);if(!s)return null;const w=textWidth(d,label(d,"Callout")),h=Math.max(26,(d.fontSize??13)+12);const left=Math.min(s.a.x,s.b.x-w/2),right=Math.max(s.a.x,s.b.x+w/2),top=Math.min(s.a.y,s.b.y-h/2),bottom=Math.max(s.a.y,s.b.y+h/2);return{x:left-TOL,y:top-TOL,w:right-left+TOL*2,h:bottom-top+TOL*2};},
 };

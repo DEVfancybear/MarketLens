@@ -4,6 +4,10 @@ _Date: 2026-07-12_
 _Status: implemented_  
 _Scope: bounded catalog expansion using the stable range, channel, annotation, and time-projection families_
 
+> Historical Wave A delivery/verification snapshot. Current catalog-wide
+> contracts and follow-up range/channel/time fixes are recorded in
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+
 ## Delivered catalog
 
 | Family | Stable tool ids | Creation contract |

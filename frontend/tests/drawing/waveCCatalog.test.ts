@@ -31,3 +31,14 @@ test("pattern bounds reserve validation and ratio labels above anchors",()=>{
   const drawing=fixture("abcdPattern"),bounds=getTool("abcdPattern")!.boundingBox(drawing,projector.toX,projector.toY)!;
   assert.ok(bounds.y<=Math.min(...drawing.points.map((point)=>point.price))-90);
 });
+
+test("Time Cycles uses one baseline for render, handles, and the full hit range",()=>{
+  const adapter=getTool("timeCycles")!;
+  const drawing:Drawing={...fixture("timeCycles"),points:[{time:10,price:100},{time:12,price:180}]};
+  const anchors=adapter.getAnchors(drawing,projector.toX,projector.toY);
+  assert.equal(anchors[1]?.y,100,"second visual handle must sit on the rendered baseline");
+  const lateCenter=10+2*150+1;
+  assert.ok(adapter.hitTest(drawing,lateCenter,99,projector.toX,projector.toY).some((hit)=>hit.target==="body"),"cycle after index 128 must be selectable");
+  const resized=adapter.moveAnchor(drawing.points,1,{time:350,price:999});
+  assert.deepEqual(resized[1],{time:350,price:drawing.points[0].price},"horizontal diameter resize must preserve the rendered baseline");
+});

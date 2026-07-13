@@ -28,3 +28,139 @@ test("Wave D manifest distinguishes data snapshots and safe rich content",()=>{
   assert.equal(getDrawingToolManifestEntry("table").contentKind,"table");
   assert.equal(getDrawingToolManifestEntry("socialEmbed").overlayExtension,"text-editor");
 });
+
+test("Regression hit testing and bounds include both deviation channels",()=>{
+  const regressionSamples:DrawingDataSample[]=[
+    {time:100,open:0,high:1,low:-1,close:0,volume:1},
+    {time:160,open:100,high:101,low:99,close:100,volume:1},
+    {time:220,open:0,high:1,low:-1,close:0,volume:1},
+  ];
+  const drawing:Drawing={...fixture("regressionTrend"),points:[{time:100,price:0},{time:220,price:0}],dataSnapshot:{version:1,symbol:"TEST",capturedAt:1,samples:regressionSamples}};
+  const regression=regressionChannel(regressionSamples);
+  const upperMiddle=regression.values[1]+regression.deviation*2;
+  const adapter=getTool("regressionTrend")!;
+  assert.ok(adapter.hitTest(drawing,160,upperMiddle,projector.toX,projector.toY).some((hit)=>hit.target==="body"),"rendered upper channel must be selectable");
+  const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
+  assert.ok(bounds.y<=Math.min(...regression.values.map((value)=>value-regression.deviation*2)),"bounds must contain lower channel");
+  assert.ok(bounds.y+bounds.h>=Math.max(...regression.values.map((value)=>value+regression.deviation*2)),"bounds must contain upper channel");
+});
+
+test("Bars Pattern hit testing follows rendered wicks and bodies, not an invisible close path",()=>{
+  const barSamples:DrawingDataSample[]=[
+    {time:100,open:2,high:10,low:0,close:8,volume:1},
+    {time:160,open:8,high:10,low:0,close:2,volume:1},
+  ];
+  const drawing:Drawing={...fixture("barsPattern"),points:[{time:100,price:100},{time:200,price:200}],dataSnapshot:{version:1,symbol:"TEST",capturedAt:1,samples:barSamples}};
+  const adapter=getTool("barsPattern")!;
+  assert.ok(adapter.hitTest(drawing,100,150,projector.toX,projector.toY).some((hit)=>hit.target==="body"),"visible wick must be selectable");
+  assert.equal(adapter.hitTest(drawing,150,150,projector.toX,projector.toY).some((hit)=>hit.target==="body"),false,"invisible close-to-close diagonal must not be selectable");
+});
+
+test("Forecast hit-testing and bounds use the rendered projection triangle",()=>{
+  const adapter=getTool("forecast")!;
+  const drawing=fixture("forecast");
+  drawing.points=[
+    {time:100,price:100},
+    {time:300,price:100},
+    {time:300,price:180},
+  ];
+
+  assert.ok(
+    adapter.hitTest(drawing,240,100,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    "a visible point inside the forecast triangle must hit",
+  );
+  assert.equal(
+    adapter.hitTest(drawing,140,180,projector.toX,projector.toY).length,
+    0,
+    "an invisible point inside the old anchor box but outside the triangle must miss",
+  );
+  const transparent={...drawing,fillColor:"transparent"};
+  assert.equal(
+    adapter.hitTest(transparent,240,120,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    false,
+    "a transparent forecast interior must not create invisible body geometry",
+  );
+
+  const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
+  for(const point of [{x:100,y:100},{x:300,y:20},{x:300,y:180}]){
+    assert.ok(
+      point.x>=bounds.x&&point.x<=bounds.x+bounds.w
+        &&point.y>=bounds.y&&point.y<=bounds.y+bounds.h,
+      `bounds contain rendered forecast extremum ${JSON.stringify(point)}`,
+    );
+  }
+  assert.deepEqual(
+    adapter.getAnchors(drawing,projector.toX,projector.toY)[2],
+    {index:2,x:300,y:180,target:"p3"},
+  );
+});
+
+test("Sector hit-testing and bounds follow its rendered angular sweep",()=>{
+  const adapter=getTool("sector")!;
+  const drawing=fixture("sector");
+  drawing.points=[
+    {time:300,price:300},
+    {time:400,price:300},
+    {time:280,price:320},
+  ];
+
+  assert.ok(
+    adapter.hitTest(drawing,300,350,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    "a visible point in the filled sector must hit",
+  );
+  const opposite={x:300,y:250};
+  assert.equal(
+    adapter.hitTest(drawing,opposite.x,opposite.y,projector.toX,projector.toY).length,
+    0,
+    "a same-radius point outside the angular sweep must miss",
+  );
+  const transparent={...drawing,fillColor:"transparent"};
+  assert.equal(
+    adapter.hitTest(transparent,300,350,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    false,
+    "a transparent sector interior must not be selectable away from its outline",
+  );
+
+  const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
+  const renderedExtrema=[
+    {x:400,y:300},
+    {x:300,y:400},
+    {x:300-Math.SQRT1_2*100,y:300+Math.SQRT1_2*100},
+    {x:280,y:320},
+  ];
+  for(const point of renderedExtrema){
+    assert.ok(
+      point.x>=bounds.x&&point.x<=bounds.x+bounds.w
+        &&point.y>=bounds.y&&point.y<=bounds.y+bounds.h,
+      `bounds contain rendered sector extremum ${JSON.stringify(point)}`,
+    );
+  }
+  assert.ok(opposite.y<bounds.y,"sector bounds must exclude the opposite arc");
+  assert.deepEqual(
+    adapter.getAnchors(drawing,projector.toX,projector.toY)[2],
+    {index:2,x:280,y:320,target:"p3"},
+  );
+});
+
+test("Social Embed hit testing and bounds follow the rendered card width",()=>{
+  const adapter=getTool("socialEmbed")!;
+  const drawing:Drawing={...fixture("socialEmbed"),text:"x",points:[{time:100,price:100}]};
+  assert.ok(
+    adapter.hitTest(drawing,200,100,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    "the visible card interior must be selectable",
+  );
+  assert.equal(
+    adapter.hitTest(drawing,320,100,projector.toX,projector.toY)
+      .some((hit)=>hit.target==="body"),
+    false,
+    "space beyond the rendered minimum-width card must not be selectable",
+  );
+  const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
+  assert.ok(bounds.x<=100&&bounds.x+bounds.w>=288,"bounds contain anchor and 180px card");
+  assert.ok(bounds.x+bounds.w<320,"bounds do not retain the old hard-coded 360px hit width");
+});

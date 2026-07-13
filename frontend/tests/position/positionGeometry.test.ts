@@ -49,6 +49,100 @@ test("body drag moves all points and preserves the right-edge width", () => {
   assert.equal(moved[1].time, moved[2].time);
 });
 
+test("body drag preserves logical Position width across a closed-market gap", () => {
+  const friday = 1_783_719_900;
+  const monday = 1_783_912_500;
+  const candles = [
+    { time: friday - 900 },
+    { time: friday },
+    ...Array.from({ length: 30 }, (_, index) => ({
+      time: monday + index * 900,
+    })),
+  ];
+  const original: Point[] = [
+    { time: candles[1].time, price: 1.14 },
+    { time: candles[21].time, price: 1.15 },
+    { time: candles[21].time, price: 1.13 },
+  ];
+  const moved = movePosition(
+    original,
+    { time: candles[2].time, price: 1.141 },
+    { time: candles[1].time, price: 1.14 },
+    { tickSize: 0.00001, barIntervalSeconds: 900, candles },
+  );
+
+  assert.equal(moved[0].time, candles[2].time);
+  assert.equal(moved[1].time, candles[22].time);
+  assert.equal(moved[2].time, candles[22].time);
+});
+
+test("body drag preserves a future right edge across a closed-market gap", () => {
+  const friday = 1_783_719_900;
+  const monday = 1_783_912_500;
+  const candles = [
+    { time: friday - 900 },
+    { time: friday },
+    ...Array.from({ length: 4 }, (_, index) => ({
+      time: monday + index * 900,
+    })),
+  ];
+  const lastIndex = candles.length - 1;
+  const rightLogicalIndex = 21;
+  const futureRight = candles[lastIndex].time +
+    (rightLogicalIndex - lastIndex) * 900;
+  const original: Point[] = [
+    { time: candles[1].time, price: 1.14 },
+    { time: futureRight, price: 1.15 },
+    { time: futureRight, price: 1.13 },
+  ];
+  const moved = movePosition(
+    original,
+    { time: candles[2].time, price: 1.141 },
+    { time: candles[1].time, price: 1.14 },
+    { tickSize: 0.00001, barIntervalSeconds: 900, candles },
+  );
+
+  assert.equal(moved[0].time, candles[2].time);
+  assert.equal(
+    moved[1].time,
+    candles[lastIndex].time + (22 - lastIndex) * 900,
+  );
+  assert.equal(moved[2].time, moved[1].time);
+});
+
+test("crossed Position handles retain a visible logical-bar width", () => {
+  const candles = Array.from({ length: 30 }, (_, index) => ({
+    time: 1_000 + index * 900,
+  }));
+  const points: Point[] = [
+    { time: candles[5].time, price: 100 },
+    { time: candles[20].time, price: 110 },
+    { time: candles[20].time, price: 90 },
+  ];
+  const context = {
+    tickSize: tick,
+    barIntervalSeconds: 900,
+    barSpacing: 1.5,
+    candles,
+  };
+  const rightCrossed = movePositionAnchor(
+    points,
+    POSITION_ANCHORS.ENTRY_RIGHT,
+    { time: candles[1].time, price: 100 },
+    context,
+  );
+  assert.equal(rightCrossed[1].time, candles[13].time);
+  assert.equal(rightCrossed[2].time, candles[13].time);
+
+  const leftCrossed = movePositionAnchor(
+    points,
+    POSITION_ANCHORS.ENTRY_LEFT,
+    { time: candles[29].time, price: 100 },
+    context,
+  );
+  assert.equal(leftCrossed[0].time, candles[12].time);
+});
+
 test("left target handle resizes left edge and target price only", () => {
   const moved = movePositionAnchor(
     longPoints(),

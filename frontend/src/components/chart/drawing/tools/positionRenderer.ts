@@ -10,18 +10,18 @@
  * The green zone is profit (entry→target); the red zone is risk (entry→stop) —
  * direction-agnostic, so the same renderer serves both Long and Short.
  */
-import { getDefaultStore } from "jotai";
-import { getMarketSymbol } from "@/services/market-data/symbols";
+// Runtime values use a relative import so the adapter remains executable in
+// the Node contract suite without a bundler-only path alias.
 import {
   DEFAULT_POSITION_STATS,
   type Drawing,
   type DrawingTool,
   type Point,
-} from "@/types";
+} from "../../../../types";
 import type { HitTestProjector } from "../hittest/HitTestEngine";
 import type { Projector } from "../drawingRenderer";
-import { candlesAtom, symbolAtom } from "@/store/chartStore";
 import {
+  type DrawingAdapterInteractionContext,
   type DrawingAdapter,
   registerTool,
 } from "./ToolRegistry";
@@ -37,8 +37,7 @@ import {
   movePositionAnchor,
   POSITION_ANCHORS,
 } from "./positionGeometry";
-import { PRICE_SCALE_MIN_WIDTH } from "@/components/chart/chartVisualProfile";
-import { mt5SymbolInfoAtom } from "@/store/mt5Store";
+import { PRICE_SCALE_MIN_WIDTH } from "../../chartVisualProfile";
 import { line, chip, canvasFont, applyStyle } from "./plugins/shared";
 import {
   hitTestPositionGeometry,
@@ -86,40 +85,29 @@ const DEFAULT_ACCOUNT_SIZE = 1000;
 const DEFAULT_RISK_VALUE = 25;
 
 /** TradingView mark: right-edge close for history, latest close in the future. */
-function currentPrice(drawing: Drawing): number | null {
-  const candles = getDefaultStore().get(candlesAtom);
+function currentPrice(drawing: Drawing, proj: Projector): number | null {
+  const candles = proj.market?.candles ?? [];
   const rightEdgeTime = drawing.points[1]?.time ?? drawing.points[0]?.time;
   return rightEdgeTime == null
     ? (candles[candles.length - 1]?.close ?? null)
     : positionMarkPrice(candles, rightEdgeTime);
 }
 
-function activeMarketMeta() {
-  const symbol = getDefaultStore().get(symbolAtom);
-  return getMarketSymbol(symbol);
+function activeTickSize(proj: Projector): number {
+  return safeTickSize(proj.market?.tickSize);
 }
 
-function activeTickSize(): number {
-  return safeTickSize(activeMarketMeta()?.tickSize);
-}
-
-function activePointValue(): number {
-  const store = getDefaultStore();
-  const symbol = store.get(symbolAtom);
-  const info = store.get(mt5SymbolInfoAtom)[symbol];
-  const tickSize = info?.tickSize ?? info?.point;
-  return Number.isFinite(info?.tickValue) && Number(info?.tickValue) > 0 &&
-    Number.isFinite(tickSize) && Number(tickSize) > 0
-    ? Number(info?.tickValue) / Number(tickSize)
+function activePointValue(proj: Projector): number {
+  return Number.isFinite(proj.market?.pointValue) && Number(proj.market?.pointValue) > 0
+    ? Number(proj.market?.pointValue)
     : 1;
 }
 
-function fmtPrice(p: number): string {
-  const meta = activeMarketMeta();
+function fmtPrice(p: number, proj: Projector): string {
   return formatPriceByTick(
     p,
-    safeTickSize(meta?.tickSize),
-    meta?.pricePrecision ?? 2,
+    activeTickSize(proj),
+    proj.market?.pricePrecision ?? 2,
   );
 }
 
@@ -334,7 +322,7 @@ function render(
   // While the user is actively dragging this position, skip fresh TP/SL detection
   // so the preview cannot flicker or change hit labels mid-drag.
   if (!d._dragging) {
-    const candles = getDefaultStore().get(candlesAtom);
+    const candles = proj.market?.candles ?? [];
     const fresh = resolvePositionHit(d, candles);
     if (fresh) {
       hit = {
@@ -397,7 +385,7 @@ function render(
   // Has price reached the target / stop? (direction-agnostic — works for both
   // Long and Short.) When it has, TradingView brightens that zone so the trader
   // sees the outcome of the position at a glance.
-  const price = currentPrice(d);
+  const price = currentPrice(d, proj);
   const reachedTarget =
     price != null && (target >= entry ? price >= target : price <= target);
   const reachedStop =
@@ -498,7 +486,7 @@ function render(
   if (d.showLabels !== false) {
     positionPriceScaleLabel(
       g,
-      fmtPrice(target),
+      fmtPrice(target, proj),
       clampToPricePane(yT),
       tpLine,
       proj.width,
@@ -507,7 +495,7 @@ function render(
     );
     positionPriceScaleLabel(
       g,
-      fmtPrice(entry),
+      fmtPrice(entry, proj),
       clampToPricePane(yE),
       "#8a8d93",
       proj.width,
@@ -516,7 +504,7 @@ function render(
     );
     positionPriceScaleLabel(
       g,
-      fmtPrice(stop),
+      fmtPrice(stop, proj),
       clampToPricePane(yS),
       slLine,
       proj.width,
@@ -561,7 +549,7 @@ function render(
       riskUnit: d.riskUnit ?? "%",
       lotSize: d.lotSize ?? 1,
       leverage: d.leverage ?? 1,
-      pointValue: activePointValue(),
+      pointValue: activePointValue(proj),
       markPrice: price,
     });
     const risk = projection.stopOffset;
@@ -569,7 +557,7 @@ function render(
     const rr = projection.riskReward;
     const tPct = projection.targetPercent;
     const sPct = projection.stopPercent;
-    const tickSize = activeTickSize();
+    const tickSize = activeTickSize(proj);
     const tTicks = ticksBetween(entry, target, tickSize);
     const sTicks = ticksBetween(entry, stop, tickSize);
     const stats = new Set(
@@ -636,7 +624,7 @@ function render(
     if (isSlHit) stopParts.push(compact ? "HIT" : "\u2715 HIT");
 
     const entryParts = [
-      entryStatsTxt || `${compact ? "E:" : "Entry:"} ${fmtPrice(entry)}`,
+      entryStatsTxt || `${compact ? "E:" : "Entry:"} ${fmtPrice(entry, proj)}`,
     ];
     if (showStats && stats.has("rr")) {
       entryParts.push(
@@ -749,13 +737,19 @@ function moveAnchor(
   origPoints: Point[],
   index: number,
   pointer: Point,
+  context?: DrawingAdapterInteractionContext,
 ): Point[] {
-  return movePositionAnchor(origPoints, index, pointer, activeTickSize());
+  return movePositionAnchor(origPoints, index, pointer, context ?? {});
 }
 
 /** Move the whole box (translate all points). */
-function move(origPoints: Point[], pointer: Point, dragStart: Point): Point[] {
-  return movePosition(origPoints, pointer, dragStart, activeTickSize());
+function move(
+  origPoints: Point[],
+  pointer: Point,
+  dragStart: Point,
+  context?: DrawingAdapterInteractionContext,
+): Point[] {
+  return movePosition(origPoints, pointer, dragStart, context ?? {});
 }
 
 function boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {

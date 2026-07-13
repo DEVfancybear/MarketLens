@@ -13,11 +13,23 @@ import { getTool } from "./tools/ToolRegistry";
 // Import adapters to trigger registration.
 import "./tools/adapters";
 
+export interface DrawingMarketContext {
+  symbol: string;
+  candles: readonly { time: number; close: number; high: number; low: number }[];
+  tickSize?: number;
+  pricePrecision?: number;
+  pointValue?: number;
+}
+
 export interface Projector {
   toX: (time: number) => number | null;
   toY: (price: number) => number | null;
   width: number;
   height: number;
+  /** Active chart bar duration supplied by the composition root. */
+  barIntervalSeconds?: number;
+  /** Read-only market inputs for adapters whose pixels include live metrics. */
+  market?: DrawingMarketContext;
 }
 
 /** Apply lineStyle to the canvas context before stroking. */

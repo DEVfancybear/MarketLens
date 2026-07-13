@@ -1,5 +1,11 @@
 "use client";
-import { useRef, useState, useCallback, useEffect } from "react";
+import {
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import type { Candle, Drawing, Point, DrawingTool } from "@/types";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 import { uid } from "@/utils/id";
@@ -32,6 +38,7 @@ import {
   type DrawingToolPreferences,
 } from "../settings/drawingToolPreferences";
 import { buildDrawingDataSnapshot } from "../data/drawingDataSnapshot";
+import type { DrawingAdapterInteractionContext } from "../tools/ToolRegistry";
 
 export {
   createInitialMachine,
@@ -77,6 +84,7 @@ export interface DrawingInteractionManagerOpts {
     selectedDrawingIds: Set<string>;
     candles: Candle[];
     symbol: string;
+    adapterContext?: DrawingAdapterInteractionContext;
   };
   addDrawing: (d: Drawing) => void;
   updateDrawing: (arg: { id: string; patch: Partial<Drawing> }) => void;
@@ -279,8 +287,10 @@ export function useDrawingInteractionManager(
     },
     [addDrawing, getState, reset, toX, toY, transition],
   );
+  const cancellationKeyRef = useRef(cancellationKey);
+  cancellationKeyRef.current = cancellationKey;
   const previousCancellationKeyRef = useRef(cancellationKey);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       previousCancellationKeyRef.current !== undefined &&
       previousCancellationKeyRef.current !== cancellationKey
@@ -292,7 +302,7 @@ export function useDrawingInteractionManager(
   }, [cancellationKey, reset, setActiveTool]);
   const activeTool = getState().activeTool;
   const previousActiveToolRef = useRef(activeTool);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       previousActiveToolRef.current !== activeTool &&
       machineRef.current.state !== "Idle"
@@ -306,25 +316,39 @@ export function useDrawingInteractionManager(
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    if (machineRef.current.state === "Drawing") reset();
-    if (!getDrawingToolManifestEntry(getState().activeTool).persistent) return;
 
     const handleDown = (event: PointerEvent) => {
       if (isOverDrawingUI(event) || !isOverCanvas(event, canvas) || event.button > 0) return;
+      // Keep this listener mounted across tool switches. Jotai updates the
+      // active tool synchronously, while a React effect keyed by activeTool can
+      // run one frame later; conditionally attaching here used to drop the
+      // first fast mouse/touch tap after selecting a drawing tool.
+      const current = getState();
+      const definition = getDrawingToolManifestEntry(current.activeTool);
+      if (!definition.persistent) return;
+      // A render caused by the toolbar/symbol update may have committed while
+      // its reconciliation layout effect is still queued. This pointer belongs
+      // to the values visible now, so acknowledge them before transitioning;
+      // later genuine tool/symbol changes still cancel the active session.
+      previousActiveToolRef.current = current.activeTool;
+      previousCancellationKeyRef.current = cancellationKeyRef.current;
       const currentMachine = machineRef.current;
       if (currentMachine.state !== "Idle" && currentMachine.state !== "Drawing") return;
       const raw = fromEvent(event);
       const rawPoint = raw ? withPointerPressure(raw, event) : null;
-      const current = getState();
       if (!rawPoint || !current.ctxReady) return;
 
       event.preventDefault();
       event.stopPropagation();
+      // Drawing and cursor handlers are both capture listeners on `document`.
+      // A commit can synchronously reset to Cursor and add/select the drawing;
+      // without stopping sibling listeners, this same pointerdown immediately
+      // starts a phantom resize/move on the newly-created object.
+      event.stopImmediatePropagation();
       canvas.setPointerCapture(event.pointerId);
       activePointerIdRef.current = event.pointerId;
       pointerClaimedRef.current = true;
 
-      const definition = getDrawingToolManifestEntry(current.activeTool);
       let point = definition.magnetEligible
         ? snapPointRef.current?.(rawPoint, current.activeTool, event) ?? rawPoint
         : rawPoint;
@@ -431,7 +455,7 @@ export function useDrawingInteractionManager(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool]);
+  }, []);
 
   // ---- Cursor mode ----
   useEffect(() => {
@@ -465,7 +489,10 @@ export function useDrawingInteractionManager(
         scheduleRedrawRef.current();
         return;
       }
-      const hit = hitTest(cur.drawings, p, toX, toY);
+      const hit = hitTest(cur.drawings, p, toX, toY, {
+        selectedDrawingIds: cur.selectedDrawingIds,
+        pointerType: e.pointerType,
+      });
       const outcomes = selectionSessionRef.current.pointerDown({
         hit,
         clientX: e.clientX,
@@ -507,6 +534,7 @@ export function useDrawingInteractionManager(
           anchorIndex: outcome.anchorIndex,
           mode: outcome.mode,
           selectedDrawings: outcome.selectedDrawings,
+          adapterContext: cur.adapterContext,
         });
         transformSessionRef.current = transformSession;
         drawingIdRef.current = outcome.drawing.id;
@@ -621,7 +649,10 @@ export function useDrawingInteractionManager(
             }
             return;
           }
-          const hit = hitTest(state.drawings, hp, toX, toY);
+          const hit = hitTest(state.drawings, hp, toX, toY, {
+            selectedDrawingIds: state.selectedDrawingIds,
+            pointerType: event.pointerType,
+          });
           const nextHoveredId = hit?.drawing.id ?? null;
           if (hoveredIdRef.current !== nextHoveredId) {
             hoveredIdRef.current = nextHoveredId;
@@ -684,7 +715,10 @@ export function useDrawingInteractionManager(
       }
       const p = fromEvent(e as unknown as PointerEvent);
       if (!p) return;
-      const hit = hitTest(cur.drawings, p, toX, toY);
+      const hit = hitTest(cur.drawings, p, toX, toY, {
+        selectedDrawingIds: cur.selectedDrawingIds,
+        pointerType: "mouse",
+      });
       if (hit) {
         e.preventDefault();
         e.stopPropagation();

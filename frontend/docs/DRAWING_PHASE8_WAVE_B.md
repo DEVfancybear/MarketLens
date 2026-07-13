@@ -4,6 +4,10 @@ _Date: 2026-07-12_
 _Status: implemented_  
 _Scope: shared level, fan, radial, Gann-grid, and median-line geometry_
 
+> Historical Wave B delivery/verification snapshot. Current catalog-wide
+> contracts and the Fib Wedge angular-sweep audit are recorded in
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+
 ## Delivered catalog
 
 | Family | Stable tool ids | Anchors |

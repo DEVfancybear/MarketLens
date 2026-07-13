@@ -1,4 +1,5 @@
 import type { Drawing } from "@/types";
+import { getDrawingToolPositionSide } from "../../../../types/drawingToolManifest";
 
 export interface PositionHitCandle {
   time: number;
@@ -14,6 +15,7 @@ export interface PositionHit {
 
 function persistedPositionHit(drawing: Drawing): PositionHit | null {
   if (
+    !getDrawingToolPositionSide(drawing.tool) ||
     !drawing.points[0] ||
     (drawing.tradeStatus !== "tp_hit" && drawing.tradeStatus !== "sl_hit") ||
     drawing.hitTime == null
@@ -37,13 +39,19 @@ export function positionHitDataCoversEntry(
   candles: readonly PositionHitCandle[],
 ): boolean {
   const entry = drawing.points[0];
-  return !!entry && candles.length > 0 && candles[0].time <= entry.time;
+  return (
+    !!getDrawingToolPositionSide(drawing.tool) &&
+    !!entry &&
+    candles.length > 0 &&
+    candles[0].time <= entry.time
+  );
 }
 
 export function resolvePositionHit(
   drawing: Drawing,
   candles: readonly PositionHitCandle[],
 ): PositionHit | null {
+  if (!getDrawingToolPositionSide(drawing.tool)) return null;
   const persisted = persistedPositionHit(drawing);
   if (!positionHitDataCoversEntry(drawing, candles)) return persisted;
   return detectPositionHit(drawing, candles);
@@ -53,6 +61,8 @@ export function detectPositionHit(
   drawing: Drawing,
   candles: readonly PositionHitCandle[],
 ): PositionHit | null {
+  const side = getDrawingToolPositionSide(drawing.tool);
+  if (!side) return null;
   const entryPoint = drawing.points[0];
   if (!entryPoint || candles.length === 0) return null;
   const entry = entryPoint.price;
@@ -74,7 +84,7 @@ export function detectPositionHit(
         continue;
       }
     }
-    if (drawing.tool === "long") {
+    if (side === "long") {
       if (candle.low <= stop) return { status: "sl_hit", time: candle.time, price: stop };
       if (candle.high >= target) return { status: "tp_hit", time: candle.time, price: target };
     } else {

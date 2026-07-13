@@ -118,3 +118,11 @@ test("position prefill applies the same TradingView leverage cap as chart labels
     10,
   );
 });
+
+test("position prefill rejects drawings without the manifest position-side capability", () => {
+  const drawing: Drawing = {
+    ...position("long"),
+    tool: "trendline",
+  };
+  assert.equal(buildOrderPrefillFromPositionDrawing(drawing, 101), null);
+});

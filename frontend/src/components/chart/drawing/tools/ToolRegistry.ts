@@ -52,6 +52,15 @@ export interface Anchor {
   target: HitResult["target"];
 }
 
+/** Runtime-only market constraints supplied by the chart interaction root. */
+export interface DrawingAdapterInteractionContext {
+  tickSize?: number;
+  barIntervalSeconds?: number;
+  /** Current logical bar width, used for screen-space minimum resize spans. */
+  barSpacing?: number;
+  candles?: readonly { time: number }[];
+}
+
 export interface DrawingAdapter {
   readonly tool: DrawingTool;
   readonly minPoints: number;
@@ -91,9 +100,19 @@ export interface DrawingAdapter {
   ): { x: number; y: number; w: number; h: number } | null;
 
   /** Translate all points by the delta from dragStart to pointer. */
-  move(origPoints: Point[], pointer: Point, dragStart: Point): Point[];
+  move(
+    origPoints: Point[],
+    pointer: Point,
+    dragStart: Point,
+    context?: DrawingAdapterInteractionContext,
+  ): Point[];
   /** Move a single anchor point to a new position. */
-  moveAnchor(origPoints: Point[], index: number, pointer: Point): Point[];
+  moveAnchor(
+    origPoints: Point[],
+    index: number,
+    pointer: Point,
+    context?: DrawingAdapterInteractionContext,
+  ): Point[];
   /** Return all interactive handle positions. */
   getAnchors(
     d: Drawing,
@@ -142,7 +161,15 @@ export function defaultGetAnchors(
   return d.points.map((pt, i) => {
     const x = toX(pt.time);
     const y = toY(pt.price);
-    return { index: i, x, y, target: i === 0 ? "p1" : i === 1 ? "p2" : "body" };
+    return {
+      index: i,
+      x,
+      y,
+      // `anchorIndex` is authoritative for 3+ point tools; p0 is the shared
+      // visual label for additional vertices and must never be classified as
+      // body movement.
+      target: i === 0 ? "p1" : i === 1 ? "p2" : "p0",
+    };
   });
 }
 

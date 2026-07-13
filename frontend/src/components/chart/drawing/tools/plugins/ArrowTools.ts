@@ -92,8 +92,8 @@ function makeTwoPointArrow(tool: TwoPointArrowTool): DrawingToolPlugin {
       const d1 = pointDist(px, py, x1, y1);
       const d2 = pointDist(px, py, x2, y2);
       const body = distToSegment(px, py, x1, y1, x2, y2);
-      if (d1 <= HANDLE_RADIUS) results.push({ drawing: d, target: "p1", distance: d1 });
-      if (d2 <= HANDLE_RADIUS) results.push({ drawing: d, target: "p2", distance: d2 });
+      if (d1 <= HANDLE_RADIUS) results.push({ drawing: d, target: "p1", anchorIndex: 0, distance: d1 });
+      if (d2 <= HANDLE_RADIUS) results.push({ drawing: d, target: "p2", anchorIndex: 1, distance: d2 });
       if (body < TOL) results.push({ drawing: d, target: "body", distance: body });
       return results;
     },
@@ -143,7 +143,9 @@ function makeArrowMark(tool: ArrowMarkTool): DrawingToolPlugin {
       const y = toY(d.points[0].price);
       if (x == null || y == null) return [];
       const distance = pointDist(px, py, x, y);
-      if (distance <= MARK_HIT_RADIUS) return [{ drawing: d, target: "p1", distance }];
+      if (distance <= MARK_HIT_RADIUS) {
+        return [{ drawing: d, target: "p1", anchorIndex: 0, distance }];
+      }
       return [];
     },
     movePoints: defaultMovePoints,
@@ -167,4 +169,3 @@ registerTool(makeArrowMark("arrowMarkUp"));
 registerTool(makeArrowMark("arrowMarkDown"));
 registerTool(makeArrowMark("arrowMarkLeft"));
 registerTool(makeArrowMark("arrowMarkRight"));
-

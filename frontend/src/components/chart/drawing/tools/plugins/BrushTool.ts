@@ -14,6 +14,7 @@ import {
   type DrawingToolPlugin,
   registerTool,
   defaultMovePoints,
+  HANDLE_RADIUS,
   TOL,
   distToSegment,
 } from "../ToolRegistry";
@@ -89,6 +90,25 @@ function makeBrushTool(
         x: toX(pt.time),
         y: toY(pt.price),
       }));
+      const first = projected[0];
+      const last = projected[projected.length - 1];
+      if (first?.x != null && first.y != null) {
+        const distance = Math.hypot(px - first.x, py - first.y);
+        if (distance <= HANDLE_RADIUS) {
+          results.push({ drawing: d, target: "p1", anchorIndex: 0, distance });
+        }
+      }
+      if (last?.x != null && last.y != null) {
+        const distance = Math.hypot(px - last.x, py - last.y);
+        if (distance <= HANDLE_RADIUS) {
+          results.push({
+            drawing: d,
+            target: "p2",
+            anchorIndex: projected.length - 1,
+            distance,
+          });
+        }
+      }
       for (let j = 0; j < projected.length - 1; j++) {
         const a = projected[j],
           b = projected[j + 1];
@@ -98,6 +118,34 @@ function makeBrushTool(
           results.push({ drawing: d, target: "body", distance: segDist });
       }
       return results;
+    },
+    getAnchors(d, toX, toY) {
+      if (d.points.length === 0) return [];
+      const first = project(d.points[0], toX, toY);
+      const lastIndex = d.points.length - 1;
+      if (lastIndex === 0) {
+        return [{
+          index: 0,
+          x: first?.x ?? null,
+          y: first?.y ?? null,
+          target: "p1" as const,
+        }];
+      }
+      const last = project(d.points[lastIndex], toX, toY);
+      return [
+        {
+          index: 0,
+          x: first?.x ?? null,
+          y: first?.y ?? null,
+          target: "p1" as const,
+        },
+        {
+          index: lastIndex,
+          x: last?.x ?? null,
+          y: last?.y ?? null,
+          target: "p2" as const,
+        },
+      ];
     },
     movePoints: defaultMovePoints,
     boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {

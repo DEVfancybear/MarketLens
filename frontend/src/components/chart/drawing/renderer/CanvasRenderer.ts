@@ -13,6 +13,7 @@ import {
   selectedIdsHash,
   type RenderMemoState,
 } from "./renderMemo";
+import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 
 const VIEWPORT_FOLLOW_MS = 450;
 
@@ -39,6 +40,8 @@ export interface RenderLoopDeps {
     livePoints: Map<string, Point[]> | null;
     draggingId: string | null;
     hoveredId: string | null;
+    barIntervalSeconds?: number;
+    marketContext?: Projector["market"];
   };
   onVersionChange?: (cb: () => void) => () => void;
 }
@@ -302,6 +305,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       hoveredId: data.hoveredId,
       canvasW: cw,
       canvasH: ch,
+      barIntervalSeconds: data.barIntervalSeconds ?? 60,
+      marketContext: data.marketContext,
     };
 
     if (
@@ -337,6 +342,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       toY,
       width: rect.width,
       height: rect.height,
+      barIntervalSeconds: data.barIntervalSeconds,
+      market: data.marketContext,
     };
     const pr =
       m?.state === "Drawing" && m.anchors.length > 0 ? m.anchors : null;
@@ -390,12 +397,12 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       spatialHidden = data.drawingsHidden;
       spatialInvalidated = false;
     }
-    // Long/Short tools must never be culled — their right edge can sit in
-    // whitespace where timeToCoordinate returns null and the bbox collapses.
+    // Projected tools can opt out when future-space coordinates collapse their
+    // spatial bounds because the current time scale cannot represent them.
     for (const d of storeDrawings) {
       if (
         d.visible !== false &&
-        (d.tool === "long" || d.tool === "short") &&
+        getDrawingToolManifestEntry(d.tool).viewportCulling === "always-render" &&
         !viewport.some((v) => v.id === d.id)
       ) {
         viewport.push(d);

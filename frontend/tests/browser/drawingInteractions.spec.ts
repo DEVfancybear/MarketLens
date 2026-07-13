@@ -103,7 +103,11 @@ test("Phase 8 Wave C harmonic, Elliott, and cycle gestures use fixed manifest to
   await create(/^Elliott Impulse Wave\b/,6);
   await create(/^Time Cycles\b/,2);
   await expect.poll(async()=>(await drawingSnapshot(page)).drawings.map((drawing)=>drawing.tool)).toEqual(["abcdPattern","headShouldersPattern","elliottImpulse","timeCycles"]);
-  await page.keyboard.press("Control+z");await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(3);
+  await expect.poll(async()=>(await drawingSnapshot(page)).machineState).toBe("Idle");
+  await expect.poll(async()=>(await drawingSnapshot(page)).activeTool).toBe("cursor");
+  await expect.poll(async()=>(await drawingSnapshot(page)).history.lastUndoLabel).toBe("Create Drawing");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(3);
   await page.keyboard.press("Control+Shift+z");await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(4);
 });
 
@@ -158,6 +162,57 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(settingsButton).toBeFocused();
+});
+
+test("save-template dialog validates, saves, reselects, and deletes a preset", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.3, y: pane.y + pane.height * 0.65 };
+  const end = { x: pane.x + pane.width * 0.62, y: pane.y + pane.height * 0.35 };
+  const presetName = "Browser behavior preset";
+
+  await page.getByRole("button", { name: "Trend line", exact: true }).click();
+  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  const created = await drawingSnapshot(page);
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    created.drawings[0].id,
+  );
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.mouse.click(
+    projected![0].x + (projected![1].x - projected![0].x) * 0.75,
+    projected![0].y + (projected![1].y - projected![0].y) * 0.75,
+  );
+
+  const templates = page.getByRole("button", { name: "Templates", exact: true });
+  await templates.click();
+  await page.getByRole("button", { name: /Save as template/ }).click();
+  let dialog = page.getByRole("dialog", { name: "Save drawing template" });
+  await expect(dialog).toBeVisible();
+  const nameInput = dialog.getByRole("textbox", { name: "New template name" });
+  await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await nameInput.fill(`  ${presetName}  `);
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await templates.click();
+  await expect(page.getByRole("button", { name: presetName, exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Save as template/ }).click();
+  dialog = page.getByRole("dialog", { name: "Save drawing template" });
+  await dialog.getByRole("button", { name: "Show saved templates" }).click();
+  await dialog.getByRole("button", { name: presetName, exact: true }).click();
+  await expect(dialog.getByRole("textbox", { name: "New template name" })).toHaveValue(presetName);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  await templates.click();
+  await page.getByRole("button", { name: `Delete ${presetName}` }).click();
+  await templates.click();
+  await templates.click();
+  await expect(page.getByRole("button", { name: presetName, exact: true })).toHaveCount(0);
 });
 
 test("fixed drawing targets create independent price-alert snapshots", async ({ page }) => {
@@ -560,6 +615,163 @@ test("interval visibility settings filter drawings and quick presets update the 
 
   await page.evaluate(() => window.__drawingInteractionTest!.changeTimeframe("15m"));
   await expect.poll(async () => (await drawingSnapshot(page)).visibleDrawingIds).toEqual([id]);
+});
+
+test("compact one-click Long position moves from the overlapping entry handles without changing its geometry", async ({ page }) => {
+  await page.evaluate(() => window.__chartInteractionTest!.setBarSpacing(1.5));
+  await expect.poll(async () =>
+    (await page.evaluate(() => window.__chartInteractionTest!.snapshot())).barSpacing,
+  ).toBe(1.5);
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const creationPoint = {
+    x: pane.x + pane.width * 0.2,
+    y: pane.y + pane.height * 0.52,
+  };
+
+  const longPositionButtons = page.getByRole("button", {
+    name: "Long position",
+    exact: true,
+  });
+  await longPositionButtons.first().click();
+  await page.getByRole("button", { name: /^Long position\b/ }).last().click();
+  await page.mouse.click(creationPoint.x, creationPoint.y);
+
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  const created = await drawingSnapshot(page);
+  const drawing = created.drawings[0];
+  expect(drawing.tool).toBe("long");
+  expect(drawing.points).toHaveLength(3);
+
+  const projectPosition = () => page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    drawing.id,
+  );
+  let projected = await projectPosition();
+  expect(projected).not.toBeNull();
+  const initialWidth = Math.abs(projected![1].x - projected![0].x);
+  expect(initialWidth).toBeGreaterThanOrEqual(158);
+  expect(projected![1].y).toBeGreaterThan(pane.y);
+  expect(projected![1].y).toBeLessThan(pane.y + pane.height);
+  expect(projected![2].y).toBeGreaterThan(pane.y);
+  expect(projected![2].y).toBeLessThan(pane.y + pane.height);
+
+  if (created.activeTool !== "cursor") {
+    await page.getByRole("button", { name: "Cursor", exact: true }).click();
+    await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  }
+
+  // First use the exact right-entry handle to create a deterministic 40px
+  // compact object, then exercise the ambiguous
+  // midpoint that used to be classified as another resize.
+  projected = await projectPosition();
+  expect(projected).not.toBeNull();
+  const [initialEntryLeft, initialTargetRight] = projected!;
+  const rightEntryHandle = {
+    x: initialTargetRight.x,
+    y: initialEntryLeft.y,
+  };
+  const handleInspection = await page.evaluate(
+    ({ x, y }) => window.__drawingInteractionTest!.inspectClientPoint(x, y),
+    rightEntryHandle,
+  );
+  const interactionSnapshot = await drawingSnapshot(page);
+  expect(
+    handleInspection.insideCanvas,
+    JSON.stringify({
+      rightEntryHandle,
+      projected,
+      canvas: interactionSnapshot.canvas,
+      creationPoint,
+      drawingPoints: drawing.points,
+    }),
+  ).toBe(true);
+  expect(handleInspection.overDrawingUi).toBe(false);
+  expect(handleInspection.hits.some((hit) =>
+    hit.id === drawing.id && hit.anchorIndex === 4
+  )).toBe(true);
+  await page.mouse.move(rightEntryHandle.x, rightEntryHandle.y);
+  await page.mouse.down();
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState)
+    .toBe("ResizingHandle");
+  await page.mouse.move(initialEntryLeft.x + 40, initialEntryLeft.y, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+
+  await expect.poll(async () => {
+    const points = await projectPosition();
+    return points ? Math.abs(points[1].x - points[0].x) : Number.POSITIVE_INFINITY;
+  }).toBeLessThan(52);
+  projected = await projectPosition();
+  expect(projected).not.toBeNull();
+  const [entryLeft, targetRight] = projected!;
+  const compactWidth = Math.abs(targetRight.x - entryLeft.x);
+  expect(compactWidth).toBeGreaterThan(12);
+  const entryCenter = {
+    x: (entryLeft.x + targetRight.x) / 2,
+    y: entryLeft.y,
+  };
+
+  await expect.poll(async () => (await drawingSnapshot(page)).selectedDrawingId)
+    .toBe(drawing.id);
+
+  const before = (await drawingSnapshot(page)).drawings[0].points;
+  const beforeGeometry = {
+    timeWidth: before[1].time - before[0].time,
+    stopTimeWidth: before[2].time - before[0].time,
+    targetOffset: before[1].price - before[0].price,
+    stopOffset: before[2].price - before[0].price,
+  };
+
+  await page.mouse.move(entryCenter.x, entryCenter.y);
+  await page.mouse.down();
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState)
+    .toBe("MovingDrawing");
+  expect((await drawingSnapshot(page)).machineState).not.toBe("ResizingHandle");
+  await page.mouse.move(entryCenter.x + 52, entryCenter.y + 28, { steps: 4 });
+  await page.mouse.up();
+
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  const after = (await drawingSnapshot(page)).drawings[0].points;
+  expect(after).not.toEqual(before);
+  expect(after[1].time - after[0].time).toBe(beforeGeometry.timeWidth);
+  expect(after[2].time - after[0].time).toBe(beforeGeometry.stopTimeWidth);
+  expect(after[1].price - after[0].price).toBeCloseTo(beforeGeometry.targetOffset, 10);
+  expect(after[2].price - after[0].price).toBeCloseTo(beforeGeometry.stopOffset, 10);
+});
+
+test("one-click Long position stays visible near the pane right and top edges", async ({ page }) => {
+  await page.evaluate(() => window.__chartInteractionTest!.setBarSpacing(1.5));
+  await expect.poll(async () =>
+    (await page.evaluate(() => window.__chartInteractionTest!.snapshot())).barSpacing,
+  ).toBe(1.5);
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const creationPoint = {
+    x: pane.x + pane.width * 0.9,
+    y: pane.y + pane.height * 0.08,
+  };
+
+  await page.getByRole("button", { name: "Long position", exact: true }).first().click();
+  await page.getByRole("button", { name: /^Long position\b/ }).last().click();
+  await page.mouse.click(creationPoint.x, creationPoint.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  const created = await drawingSnapshot(page);
+  const drawing = created.drawings[0];
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    drawing.id,
+  );
+  expect(projected).not.toBeNull();
+  const [entry, target, stop] = projected!;
+  const canvasRight = created.canvas.x + created.canvas.width;
+  expect(target.x - entry.x).toBeGreaterThan(12);
+  expect(target.x).toBeLessThanOrEqual(canvasRight - 8);
+  expect(target.y).toBeGreaterThanOrEqual(pane.y);
+  expect(target.y).toBeLessThanOrEqual(pane.y + pane.height);
+  expect(stop.y).toBeGreaterThanOrEqual(pane.y);
+  expect(stop.y).toBeLessThanOrEqual(pane.y + pane.height);
 });
 
 async function exerciseTrendlineTransaction(page: Page) {

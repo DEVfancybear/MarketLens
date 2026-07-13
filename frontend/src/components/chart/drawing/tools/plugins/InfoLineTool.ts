@@ -1,9 +1,7 @@
 /**
  * InfoLineTool - TradingView-style measurement line with a multi-row stats panel.
  */
-import { getDefaultStore } from "jotai";
-import { timeframeAtom } from "@/store/chartStore";
-import { TF_SECONDS, type Drawing } from "@/types";
+import type { Drawing } from "@/types";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
@@ -209,8 +207,7 @@ function renderInfoPanel(
   const pct = d.points[0].price ? (diff / d.points[0].price) * 100 : 0;
   const tickSpan = Math.abs(diff) / inferTick(d.points[0].price);
   const distance = Math.round(Math.hypot(x2 - x1, y2 - y1));
-  const tf = getDefaultStore().get(timeframeAtom);
-  const tfSeconds = TF_SECONDS[tf] || 60;
+  const tfSeconds = Math.max(1, proj.barIntervalSeconds ?? 60);
   const elapsed = Math.abs(d.points[1].time - d.points[0].time);
   const bars = Math.max(1, Math.round(elapsed / tfSeconds));
   const angle = Math.abs(angleDeg(x1, y1, x2, y2));

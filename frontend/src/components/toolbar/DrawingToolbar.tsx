@@ -72,6 +72,7 @@ import { useDrawingBulkActions } from "@/components/chart/drawing/bulk/useDrawin
 import {
   DRAWING_TOOL_GROUPS,
   DRAWING_TOOL_MANIFEST,
+  formatDrawingToolShortcut,
   isDrawingToolCreationEnabled,
   normalizeFavoriteDrawingTools,
   type DrawingIconKey,
@@ -141,7 +142,11 @@ const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
       tool: entry.id,
       icon: toolIcon(entry.iconKey, 14),
       label: entry.displayName,
-      hotkey: entry.hotkey,
+      hotkey: entry.shortcuts.length > 0
+        ? formatDrawingToolShortcut(
+            entry.shortcuts.find((shortcut) => shortcut.altKey) ?? entry.shortcuts[0],
+          )
+        : undefined,
       section: entry.section,
     }),
   ),

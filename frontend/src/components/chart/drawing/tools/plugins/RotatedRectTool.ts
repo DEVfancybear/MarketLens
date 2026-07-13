@@ -143,11 +143,11 @@ const plugin: DrawingToolPlugin = {
     const dB = pointDist(px, py, c.b.x, c.b.y);
     const dC = pointDist(px, py, c.c.x, c.c.y);
     if (dA <= HANDLE_RADIUS)
-      results.push({ drawing: d, target: "p0", distance: dA });
+      results.push({ drawing: d, target: "p0", anchorIndex: 0, distance: dA });
     if (dB <= HANDLE_RADIUS)
-      results.push({ drawing: d, target: "p1", distance: dB });
+      results.push({ drawing: d, target: "p1", anchorIndex: 1, distance: dB });
     if (d.points[2] && dC <= HANDLE_RADIUS)
-      results.push({ drawing: d, target: "p2", distance: dC });
+      results.push({ drawing: d, target: "p2", anchorIndex: 2, distance: dC });
     // Body: inside the quad, or near any edge.
     const quad = [c.a, c.b, c.c, c.e];
     let edge = Infinity;

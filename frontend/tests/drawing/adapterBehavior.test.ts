@@ -6,7 +6,9 @@ import { getTool } from "../../src/components/chart/drawing/tools/ToolRegistry";
 import "../../src/components/chart/drawing/tools/plugins/BrushTool";
 import "../../src/components/chart/drawing/tools/plugins/PathTool";
 import "../../src/components/chart/drawing/tools/plugins/RectangleTool";
+import "../../src/components/chart/drawing/tools/plugins/HorizontalTool";
 import "../../src/components/chart/drawing/tools/plugins/VerticalTool";
+import "../../src/components/chart/drawing/tools/plugins/EmojiTool";
 
 function drawing(tool: Drawing["tool"], points = 4): Drawing {
   return {
@@ -66,7 +68,31 @@ test("brush and highlighter use the continuous stroke contract", () => {
   brush.render(context, drawing("brush"), projector, true);
   assert.ok(calls.includes("quadraticCurveTo"));
   assert.ok(calls.includes("stroke"));
-  assert.equal(brush.getAnchors(drawing("brush"), projector.toX, projector.toY).length, 4);
+  assert.deepEqual(
+    brush
+      .getAnchors(drawing("brush"), projector.toX, projector.toY)
+      .map((anchor) => anchor.index),
+    [0, 3],
+  );
+});
+
+test("emoji hit testing and bounds scale with the rendered font size", () => {
+  const emoji = getTool("emoji");
+  assert.ok(emoji);
+  const fixture = {
+    ...drawing("emoji", 1),
+    text: "🙂",
+    fontSize: 60,
+  };
+  const bounds = emoji.boundingBox(fixture, projector.toX, projector.toY);
+  assert.ok(bounds);
+  assert.equal(bounds.w, 72);
+  assert.equal(bounds.h, 72);
+  assert.ok(
+    emoji
+      .hitTest(fixture, 50, 40, projector.toX, projector.toY)
+      .some((hit) => hit.target === "body"),
+  );
 });
 
 test("path remains an open freeform tool with indexed anchors", () => {
@@ -97,17 +123,36 @@ test("path remains an open freeform tool with indexed anchors", () => {
   );
 });
 
-test("vertical line movement stays time-axis constrained", () => {
+test("horizontal line body move preserves offset while its anchor snaps", () => {
+  const horizontal = getTool("horizontal");
+  assert.ok(horizontal);
+  const fixture = drawing("horizontal", 1);
+  const moved = horizontal.move(
+    fixture.points,
+    { time: 999, price: 65 },
+    { time: 30, price: 25 },
+  );
+  assert.deepEqual(moved[0], { time: 20, price: 60 });
+  assert.deepEqual(
+    horizontal.moveAnchor(fixture.points, 0, { time: 999, price: 65 })[0],
+    { time: 20, price: 65 },
+  );
+});
+
+test("vertical line body move preserves offset while its anchor snaps", () => {
   const vertical = getTool("vertical");
   assert.ok(vertical);
   const fixture = drawing("vertical", 1);
   const moved = vertical.move(
     fixture.points,
     { time: 65, price: 999 },
-    { time: 20, price: 20 },
+    { time: 25, price: 30 },
   );
-  assert.equal(moved[0].time, 65);
-  assert.equal(moved[0].price, 20);
+  assert.deepEqual(moved[0], { time: 60, price: 20 });
+  assert.deepEqual(
+    vertical.moveAnchor(fixture.points, 0, { time: 65, price: 999 })[0],
+    { time: 65, price: 20 },
+  );
 });
 
 test("rectangle renders attached text through its real adapter", () => {

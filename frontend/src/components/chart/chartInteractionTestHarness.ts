@@ -10,6 +10,7 @@ export interface ChartInteractionSnapshot {
   paneMetrics: ReturnType<typeof measureChartPaneMetrics>;
   visibleTimeRange: IRange<Time> | null;
   viewport: ReturnType<ChartViewportController["snapshot"]>;
+  barSpacing: number;
 }
 
 declare global {
@@ -17,6 +18,7 @@ declare global {
     __chartInteractionTest?: {
       snapshot: () => ChartInteractionSnapshot;
       prependHistory: (count: number) => void;
+      setBarSpacing: (barSpacing: number) => void;
     };
   }
 }
@@ -50,11 +52,16 @@ export function installChartInteractionTestHarness({
       paneMetrics: measureChartPaneMetrics(chart),
       visibleTimeRange: chart.timeScale().getVisibleRange(),
       viewport: viewport.snapshot(),
+      barSpacing: chart.timeScale().options().barSpacing,
     }),
     prependHistory: (count) => {
       window.dispatchEvent(new CustomEvent("chart-benchmark-prepend", {
         detail: { count },
       }));
+    },
+    setBarSpacing: (barSpacing) => {
+      if (!Number.isFinite(barSpacing) || barSpacing <= 0) return;
+      chart.timeScale().applyOptions({ barSpacing });
     },
   };
   return () => {

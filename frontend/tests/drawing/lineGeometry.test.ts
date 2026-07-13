@@ -7,7 +7,9 @@ import {
   extendedLineBodyHits,
   horizontalRayBodyHits,
   moveHorizontalLine,
+  moveHorizontalLineAnchor,
   moveVerticalLine,
+  moveVerticalLineAnchor,
   rayBodyHits,
   twoPointAnchorHits,
   type Segment,
@@ -63,13 +65,34 @@ test("line anchor hits preserve explicit endpoint anchor indices", () => {
   assert.equal(second[0].target, "p2");
 });
 
-test("horizontal and vertical line moves are axis constrained", () => {
+test("horizontal and vertical line body moves preserve the grab offset", () => {
   const points: Point[] = [{ time: 1000, price: 100 }];
 
-  assert.deepEqual(moveHorizontalLine(points, { time: 2000, price: 120 }), [
+  assert.deepEqual(
+    moveHorizontalLine(
+      points,
+      { time: 2000, price: 120 },
+      { time: 1500, price: 110 },
+    ),
+    [{ time: 1000, price: 110 }],
+  );
+  assert.deepEqual(
+    moveVerticalLine(
+      points,
+      { time: 2000, price: 120 },
+      { time: 1500, price: 110 },
+    ),
+    [{ time: 1500, price: 100 }],
+  );
+});
+
+test("horizontal and vertical line anchor moves snap to the pointer", () => {
+  const points: Point[] = [{ time: 1000, price: 100 }];
+
+  assert.deepEqual(moveHorizontalLineAnchor(points, { time: 2000, price: 120 }), [
     { time: 1000, price: 120 },
   ]);
-  assert.deepEqual(moveVerticalLine(points, { time: 2000, price: 120 }), [
+  assert.deepEqual(moveVerticalLineAnchor(points, { time: 2000, price: 120 }), [
     { time: 2000, price: 100 },
   ]);
 });

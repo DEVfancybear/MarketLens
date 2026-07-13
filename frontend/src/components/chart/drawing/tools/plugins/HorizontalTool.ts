@@ -14,6 +14,7 @@ import {
   horizontalBounds,
   horizontalLineBodyHits,
   moveHorizontalLine,
+  moveHorizontalLineAnchor,
   onePointAnchors,
   onePointAnchorHits,
   projectOnePoint,
@@ -51,8 +52,10 @@ const plugin: DrawingToolPlugin = {
   },
   getAnchors: onePointAnchors,
   movePoints: defaultMovePoints,
-  move: (orig, pointer) => moveHorizontalLine(orig, pointer),
-  moveAnchor: (orig, _index, pointer) => moveHorizontalLine(orig, pointer),
+  move: (orig, pointer, dragStart) =>
+    moveHorizontalLine(orig, pointer, dragStart),
+  moveAnchor: (orig, _index, pointer) =>
+    moveHorizontalLineAnchor(orig, pointer),
   boundingBox(d: Drawing, _toX: HitTestProjector, toY: HitTestProjector) {
     return horizontalBounds(toY(d.points[0].price));
   },

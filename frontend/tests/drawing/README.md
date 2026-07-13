@@ -1,6 +1,8 @@
 # Drawing Tests
 
-This folder contains TypeScript tests for shared drawing-tool behavior.
+This folder contains TypeScript tests for shared drawing-tool behavior. The
+current production catalog has 84 persistent adapters (plus four non-persistent
+manifest modes).
 
 The current suite covers shared geometry plus Phase 0 characterization contracts:
 
@@ -21,18 +23,29 @@ The current suite covers shared geometry plus Phase 0 characterization contracts
   changes, even when drawing points and the primary selected id are unchanged.
 - The interaction machine factory must return fresh mutable containers so
   rAF-based live previews and multi-drag state cannot leak between gestures.
-- Hit-testing must preserve TradingView priority while avoiding unnecessary
-  candidate sorting in the hot path.
+- Hit-testing must preserve the selection-aware TradingView drag policy while
+  avoiding unnecessary candidate sorting in the hot path: an unselected first
+  drag moves the body, selected handles require the precise pointer-aware radius,
+  and ambiguous overlapping anchors resolve to body.
 - Command history round-trips create, move, property, duplicate, delete,
   undo, and redo transactions.
 - The shared viewport subscription observes range/size/input changes and
   removes every listener cleanly.
 - Real Brush, Path, Vertical Line, and Rectangle adapters are exercised by
   behavior tests instead of source-text regex checks.
-- Browser tests audit registration, fixtures, render/hit/move/bounds, and JSON
-  round-trips for all 35 persistent tool ids.
+- `allToolAdapterContract.test.ts` imports the production registry in Node and
+  audits registration, capability-aware fixtures, selected rendering, finite
+  bounds, body movement, anchor movement, selectable geometry, and exact
+  `anchorIndex` identity for all 84 persistent tool ids.
+- Browser tests retain registration/gesture integration coverage while the Node
+  contract is the fast catalog-wide geometry oracle.
 - Browser gesture smoke tests cover create, select, move, undo, redo, delete,
-  and restoration of chart zoom interaction.
+  and restoration of chart zoom interaction. Mouse and touch cases cover the
+  shared first-drag/selected-handle policy.
+- Position creation tests assert tick-snapped, viewport-visible initial geometry,
+  candle-index session-gap handling, and logical-width body movement; and
+  axis-constrained movement tests assert Horizontal/Vertical Line grab-offset
+  preservation.
 - Phase 5 persistence contracts cover historical flat-payload migration, current-schema
   round-trips for every persistent tool, transient-field stripping, quarantine of unknown/future
   payloads, clipboard validation, stale-load cancellation, retrying/persisted outbox behavior,
@@ -72,6 +85,14 @@ Add tests here when changing:
 - Common pointer-frame coalescing, including immediate feedback, latest-sample collapse, and exact
   pointerup flush behavior
 - Hit-test priority, especially anchor-vs-body and z-index ordering
+- Selection-aware hit resolution for mouse and touch: unselected first drag,
+  selected precise-handle radius, and overlapping-anchor body fallback
+- Any adapter render/hit/bounds divergence, including extensions, fills,
+  repeated projections, radial sweeps, candle wicks/bodies, and leader lines
+- Adapter runtime inputs: pass read-only values through projector/interaction
+  context; add memo-key coverage and never read a store from a plugin
+- Tool manifest shortcuts, viewport-culling policy, position side, snapshots,
+  content, or other shared capabilities
 - The command transaction boundary or viewport event subscription contract
 
 ## Browser contracts
@@ -84,3 +105,20 @@ npm run test:chart-browser -- drawingInteractions.spec.ts
 
 The suite uses semantic development-only harnesses; it does not inspect source
 text or depend on canvas screenshots for state assertions.
+
+## Last verified gates (2026-07-13)
+
+- `npm run typecheck`: pass
+- `npm run lint`: 0 errors; two pre-existing Watchlist hook warnings
+- `npm run test:drawing`: 151/151 pass
+- `npm run test:drawing-persistence`: 18/18 pass
+- `npm run test:position`: 41/41 pass
+- `npm run check:drawing-viewport`: 7/7 pass
+- `npm run build`: pass
+- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 23/23 pass
+  (full suite, approximately 3.7 minutes)
+- Focused dense-zoom regression `compact one-click Long position`: pass; the
+  initial box is at least 158 CSS pixels wide and target/stop stay in the pane
+  before any move or resize
+- Focused right/top-edge creation regression: pass; available width is honored
+  and both target/stop remain inside the pane

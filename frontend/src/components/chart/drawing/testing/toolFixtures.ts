@@ -2,9 +2,11 @@ import {
   DEFAULT_FIB_LEVELS,
   DRAWING_TOOLS,
   type Drawing,
+  type DrawingDataSample,
   type DrawingTool,
   type Point,
 } from "../../../../types/drawing";
+import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 
 export interface FixtureAdapterShape {
   minPoints: number;
@@ -23,6 +25,13 @@ const BASE_POINTS: Point[] = [
   { time: 680, price: 150 },
 ];
 
+const BASE_DATA_SAMPLES: DrawingDataSample[] = [
+  { time: 120, open: 176, high: 184, low: 172, close: 180, volume: 120 },
+  { time: 180, open: 180, high: 188, low: 176, close: 184, volume: 180 },
+  { time: 240, open: 184, high: 190, low: 78, close: 82, volume: 240 },
+  { time: 260, open: 82, high: 88, low: 76, close: 80, volume: 160 },
+];
+
 export function fixturePointCount(
   tool: DrawingTool,
   adapter: FixtureAdapterShape,
@@ -39,6 +48,7 @@ export function drawingFixture(
   tool: DrawingTool,
   adapter: FixtureAdapterShape,
 ): Drawing {
+  const definition = getDrawingToolManifestEntry(tool);
   const count = fixturePointCount(tool, adapter);
   const points = BASE_POINTS.slice(0, count).map((point) => ({ ...point }));
   if (tool === "long") {
@@ -55,7 +65,7 @@ export function drawingFixture(
     );
   }
 
-  return {
+  const drawing: Drawing = {
     id: `fixture-${tool}`,
     tool,
     color: "#2962ff",
@@ -75,6 +85,31 @@ export function drawingFixture(
     lotSize: 1,
     qtyPrecision: 2,
   };
+
+  if (definition.dataSnapshot) {
+    drawing.dataSnapshot = {
+      version: 1,
+      symbol: "FIXTURE",
+      capturedAt: 1,
+      samples: BASE_DATA_SAMPLES.map((sample) => ({ ...sample })),
+    };
+  }
+  if (definition.contentKind === "table") {
+    drawing.content = {
+      kind: "table",
+      cells: [["Header", "Value"], ["Row", "1"]],
+    };
+  } else if (definition.contentKind === "image") {
+    drawing.content = { kind: "image", alt: "Fixture image" };
+  } else if (definition.contentKind === "social") {
+    drawing.content = {
+      kind: "social",
+      sourceUrl: "https://x.com/openai/status/1",
+    };
+    drawing.text = "https://x.com/openai/status/1";
+  }
+
+  return drawing;
 }
 
 export function expectedPersistentToolIds(): DrawingTool[] {

@@ -1,102 +1,101 @@
-# SHAPE TOOLS ARCHITECTURE
+# Shape Tools Architecture
 
-_Date: 2026-06-25. Updated 2026-07-04 for TradingView behavior parity._
+_Date: 2026-06-25. Updated 2026-07-13 for the plugin/family geometry contract._
 
-## Tools implemented
+## Scope
 
-| # | Tool | Type ID | Points | Creation | Fill Support |
-|---|---|---|---|---|---|
-| 1 | Rectangle | `rectangle` | 2 | Two-click opposite corners | Yes: `fillColor` + `opacity` |
-| 2 | Rotated Rectangle | `rotatedRect` | 3 | Base edge + perpendicular width | Yes |
-| 3 | Circle | `circle` | 2 | Center + radius click | Yes |
-| 4 | Ellipse | `ellipse` | 2 | Opposite bounding corners | Yes |
-| 5 | Triangle | `triangle` | 3 | Three-click | Yes |
-| 6 | Polyline | `polyline` | N | Multi-click (open) | No |
-| 7 | Arc | `arc` | 3 | Start + end + peak | No |
-| 8 | Curve | `curve` | N | Multi-click (quadratic) | No |
-| 9 | Double Curve | `doubleCurve` | 4 | Start + 2 controls + end | No |
-| 10 | Path | `path` | N | Multi-click (open + terminal arrowhead) | No |
+The Shapes group includes stable rectangle, rotated rectangle, circle, ellipse,
+triangle, polyline, arc, curve, double-curve, and path tools, alongside marker,
+arrow, Brush, and Highlighter entries owned by adjacent family adapters. The
+manifest is authoritative for the exact current group/order and creation
+topology; this document does not duplicate that catalog as a hand-maintained
+type list.
 
-## TradingView parity update (2026-07-04)
+| Tool family | Creation | Geometry notes |
+| --- | --- | --- |
+| Rectangle | two opposite corners | Closed fill/border; optional extension and inner text |
+| Rotated Rectangle | base plus width handle | Closed oriented polygon; three stored handles |
+| Circle | center plus radius | Circular stroke/fill and center/radius handles |
+| Ellipse | opposite box corners | Ellipse-specific body selection, not box-interior selection |
+| Triangle | three fixed points | Closed edges/fill and three indexed handles |
+| Polyline/Path | click-freeform | Open segments; Path adds a terminal arrowhead |
+| Arc/Curve/Double Curve | fixed/freeform control points | Sampled curves share render/hit/bounds geometry |
 
-Research sources:
+## Plugin architecture
 
-- TradingView rectangle shortcut/list update, confirming Rectangle is a drawing
-  tool in the shapes set and keeps the `Alt+Shift+R` shortcut:
-  https://www.tradingview.com/blog/en/new-shortcuts-rectangle-shortcuts-list-42318/
-- TradingView Arrow Marker and Highlighter blog references used for the adjacent
-  geometry flyout behavior:
-  https://www.tradingview.com/blog/en/arrow-marker-drawing-tool-18467/
-  https://www.tradingview.com/blog/en/brand-new-drawing-tool-highlighter-21947/
+Shape rendering and interaction are adapter-owned:
 
-The shape tools now share `src/components/chart/drawing/tools/plugins/shapeGeometry.ts`.
-That helper owns projection, anchor hits, segment/body hits, polygon inside
-checks, ellipse body checks, sampled quadratic/cubic curves, and sampled curve
-bounding boxes. This keeps selection and dragging behavior consistent across
-plugins instead of each shape carrying a slightly different hit-test
-implementation.
+```text
+drawingToolManifest.ts
+  -> creation/settings/default capabilities
+tools/adapters.ts
+  -> shape plugin registration
+tools/plugins/*Tool.ts
+  -> render + hitTest + boundingBox + anchors + transforms
+tools/plugins/shapeGeometry.ts
+  -> shared projection, curve sampling, polygon/ellipse hits and bounds
+DrawingInteractionManager / TransformSession
+  -> generic pointer arbitration and anchor-index transforms
+```
 
-Behavior fixed in this pass:
+There is no `drawingHitTest.ts`, renderer switch, or shape dispatcher in
+`DrawingLayer`. Adding a shape must not add concrete shape-id branches to the
+shared interaction engine.
 
-- Ellipse body hit-testing now follows the actual ellipse, not the rectangle
-  bounding box.
-- Triangle hit-testing includes all three edges and the filled interior.
-- Polyline and Path share the same vertex/body hit behavior and bounds.
-- Curve can now be selected/dragged from the curve body, not only from control
-  points.
-- Arc and Double Curve bounding boxes are based on sampled curve geometry, so
-  viewport culling does not drop strongly curved drawings.
+## Geometry contract
 
-Verification added in this pass:
+Shapes reuse `shapeGeometry.ts` for projection, explicit anchor hits,
+segment/body hits, polygon-inside checks, ellipse body checks, sampled
+quadratic/cubic curves, and sampled bounds. The central invariant is:
 
-- `tests/drawing/shapeGeometry.test.ts` covers explicit anchor indices, ellipse
-  body hit-testing, polygon interior/edge hit-testing, and sampled quadratic
-  curve hit-testing/bounds.
-- Run with `npm run test:drawing`.
+```text
+rendered outline/fill <-> hit-test outline/fill <-> spatial bounds <-> handles
+```
 
-## Fill system
+- Ellipse body selection follows the actual ellipse.
+- Filled polygons are selectable from both closed edges and their interior.
+- Curves are selectable from sampled curve geometry, and those same samples
+  determine culling bounds.
+- Polyline and Path keep every vertex identity even when later vertices share
+  the visual `p0` target label.
+- Rectangle extensions must be included in hit-test and bounds, not only paint.
+- Every visible shape handle returns an explicit `anchorIndex`; Circle, Ellipse,
+  Rectangle, and Rotated Rectangle are covered by the full adapter contract.
+
+## Fill and inner text
 
 ```ts
 interface Drawing {
-  fillColor?: string;  // fill color (default: uses stroke color at 12% opacity)
-  opacity?: number;     // fill opacity 0-1 (default: 0.15)
+  fillColor?: string;
+  opacity?: number;
 }
 ```
 
-- `fillColor` set -> use that color at `opacity`
-- `fillColor` unset -> use `color` at 12% opacity (legacy behavior preserved)
-- Selection handles always render solid
+- Explicit `fillColor` uses the configured opacity.
+- Without a fill color, legacy stroke-derived low-opacity fill behavior is
+  preserved where the adapter supports fill.
+- Selection handles remain solid.
 
-## Architecture (zero core engine changes)
+Fillable shapes can expose the manifest `selectionTextEditor: "shape-center"`
+capability. `DrawingLayer` projects the adapter bounding-box center for the
+shared inline editor; adapters render stored text through the shared shape text
+helper. This is an overlay capability, not a hard-coded list in the interaction
+manager.
 
-```
-types/drawing.ts         <- 8 new tool types + fillColor/opacity fields
-drawingRenderer.ts       <- 8 new render cases + shape helper functions
-drawingHitTest.ts        <- 8 new hit-test cases
-DrawingLayer.tsx         <- NO CHANGES (generalized creation flow from 4.2 handles it)
-DrawingContextMenu.tsx   <- NO CHANGES
-DrawingToolbar.tsx       <- 8 new shape tools, 4th category (ANNOTATIONS)
-```
+Rectangle remains the primary supply/demand-zone shape. Stroke, fill, opacity,
+line style, optional middle line, extension, and attached text all use the
+shared settings schema and versioned drawing payload.
 
-The `minPoints()` dispatcher in DrawingLayer already supports 2-point creation for the new tools (rectangle, circle, ellipse, rotatedRect) and the pending-preview system shows live previews. Triangle, polyline, curve, and path use the existing multi-point flow. Path is intentionally open with one terminal arrowhead, not a closed filled polygon.
+## Tests
 
-## Rectangle - supply/demand zone workflow
+- `tests/drawing/shapeGeometry.test.ts` covers indexed anchors, ellipse body
+  selection, polygon fill/edge selection, and sampled curve hit/bounds.
+- `tests/drawing/adapterBehavior.test.ts` covers production shape behavior.
+- `tests/drawing/drawingOverlayTargets.test.ts` covers selected shape text
+  projection.
+- `tests/drawing/allToolAdapterContract.test.ts` runs every persistent shape
+  adapter with realistic fixtures and rejects detached handles or invalid bounds.
+- `tests/drawing/drawingCodec.test.ts` and persistence tests cover round trips.
 
-The `rectangle` tool is the most important shape tool. It supports:
-- **Stroke** (`color`) - zone border
-- **Fill** (`fillColor`) - zone body at partial opacity
-- **Opacity** - adjustable transparency for zone marking
-- **Line style** (`lineStyle`) - solid/dashed/dotted borders
-
-This directly supports SMC supply/demand zone marking.
-
-## Files changed
-
-| File | Type | Change |
-|---|---|---|
-| `types/drawing.ts` | Modified | 8 new tools, `fillColor`, `opacity` fields |
-| `drawingRenderer.ts` | Modified | 8 new render cases, shape helper functions |
-| `drawingHitTest.ts` | Modified | 8 new hit-test cases |
-| `DrawingToolbar.tsx` | Modified | 8 new tools, 4th category (ANNOTATIONS) |
-| `DrawingLayer.tsx` | Unchanged | No changes: creation flow is generalized |
-| `DrawingContextMenu.tsx` | Unchanged | No changes: context menu is tool-agnostic |
+Run the integrated suite with `npm run test:drawing`. See
+`DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md` for the catalog-wide audit.

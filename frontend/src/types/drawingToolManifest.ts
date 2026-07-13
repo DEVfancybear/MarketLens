@@ -58,13 +58,22 @@ export type DrawingAlertProjection =
   | "fib-extension-levels"
   | "position-levels";
 
+/** A normalized keyboard chord owned by the tool catalog. */
+export interface DrawingToolShortcut {
+  readonly key: string;
+  readonly altKey?: boolean;
+  readonly shiftKey?: boolean;
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+}
+
 export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly id: DrawingTool;
   readonly schemaVersion: number;
   readonly displayName: string;
   readonly group: DrawingToolGroupId | null;
   readonly iconKey: DrawingIconKey;
-  readonly hotkey?: string;
+  readonly shortcuts: readonly DrawingToolShortcut[];
   readonly section?: string;
   readonly persistent: boolean;
   readonly favoriteEligible: boolean;
@@ -89,6 +98,8 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly settingsProfile: DrawingSettingsProfile;
   readonly settingsFeatures: readonly DrawingSettingsFeature[];
   readonly positionSide?: "long" | "short";
+  /** Some projected tools cannot be bounded reliably by the current time scale. */
+  readonly viewportCulling: "spatial" | "always-render";
   /** Fixed-price targets that can be snapshotted into the current alert runtime. */
   readonly alertProjection?: DrawingAlertProjection;
 }
@@ -139,6 +150,8 @@ function tool(
     favoriteEligible: persistent,
     preferredForCreation: persistent,
     magnetEligible: persistent && creationMode !== "pointer-continuous",
+    shortcuts: [],
+    viewportCulling: "spatial",
     styleFamily,
     settingsProfile,
     settingsFeatures,
@@ -149,44 +162,44 @@ function tool(
 
 /** Single metadata catalog. Ordering is toolbar ordering within each group. */
 export const DRAWING_TOOL_MANIFEST = Object.freeze([
-  tool("cursor", "Cursor", "cursor", "cursor", "mode", 0, { favoriteEligible: true, modeInteraction: "selection" }),
+  tool("cursor", "Cursor", "cursor", "cursor", "mode", 0, { favoriteEligible: true, modeInteraction: "selection", shortcuts: [{ key: "1" }] }),
   tool("crosshair", "Crosshair", "cursor", "target", "mode", 0, { favoriteEligible: true, modeInteraction: "pass-through" }),
   tool("eraser", "Eraser", "cursor", "eraser", "mode", 0, { favoriteEligible: true, modeInteraction: "erase" }),
   tool("measure", "Measure", null, "ruler", "mode", 0, { favoriteEligible: false, modeInteraction: "pass-through" }),
 
-  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { hotkey: "Alt + T", section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
+  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { shortcuts: [{ key: "2" }, { key: "t", altKey: true }], section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
   tool("ray", "Ray", "lines", "ray", "two-point", 2),
   tool("infoLine", "Info line", "lines", "ruler", "two-point", 2),
   tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2),
   tool("trendAngle", "Trend angle", "lines", "triangle", "two-point", 2),
-  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + H", alertProjection: "point-price" }),
-  tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { hotkey: "Alt + J", alertProjection: "point-price" }),
-  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { hotkey: "Alt + V" }),
-  tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { hotkey: "Alt + C", alertProjection: "point-price" }),
+  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { shortcuts: [{ key: "3" }, { key: "h", altKey: true }], alertProjection: "point-price" }),
+  tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { shortcuts: [{ key: "j", altKey: true }], alertProjection: "point-price" }),
+  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { shortcuts: [{ key: "v", altKey: true }] }),
+  tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { shortcuts: [{ key: "c", altKey: true }], alertProjection: "point-price" }),
   tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3, selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("flatTopBottom", "Flat top/bottom", "lines", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("disjointChannel", "Disjoint channel", "lines", "trend", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
 
   tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES", pointSimplificationTolerance: 0.75 }),
-  tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { pointSimplificationTolerance: 0.75 }),
+  tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { pointSimplificationTolerance: 0.75, defaultProperties: { lineWidth: 8, opacity: 0.35 } }),
   tool("arrowMarker", "Arrow marker", "shapes", "arrowUpRight", "two-point", 2, { section: "ARROWS" }),
   tool("arrow", "Arrow", "shapes", "arrowUpRight", "two-point", 2),
   tool("arrowMarkUp", "Arrow mark up", "shapes", "arrowUp", "one-point", 1),
   tool("arrowMarkDown", "Arrow mark down", "shapes", "arrowDown", "one-point", 1),
   tool("arrowMarkLeft", "Arrow mark left", "shapes", "arrowLeft", "one-point", 1),
   tool("arrowMarkRight", "Arrow mark right", "shapes", "arrowRight", "one-point", 1),
-  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { hotkey: "Alt+Shift+R", section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"], alertProjection: "range-boundaries" }),
+  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { shortcuts: [{ key: "4" }, { key: "r", altKey: true, shiftKey: true }], section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"], alertProjection: "range-boundaries" }),
   tool("rotatedRect", "Rotated rectangle", "shapes", "square", "fixed-multi-point", 2, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("path", "Path", "shapes", "path", "click-freeform", 2),
   tool("circle", "Circle", "shapes", "circle", "two-point", 2, { styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("ellipse", "Ellipse", "shapes", "circle", "two-point", 2, { styleFamily: "shape", selectionTextEditor: "shape-center" }),
-  tool("polyline", "Polyline", "shapes", "pen", "click-freeform", 2),
+  tool("polyline", "Polyline", "shapes", "pen", "click-freeform", 2, { shortcuts: [{ key: "5" }] }),
   tool("triangle", "Triangle", "shapes", "triangle", "fixed-multi-point", 3, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("arc", "Arc", "shapes", "spline", "fixed-multi-point", 2, { maxPoints: 3 }),
   tool("curve", "Curve", "shapes", "spline", "click-freeform", 3),
   tool("doubleCurve", "Double curve", "shapes", "doubleCurve", "fixed-multi-point", 2, { maxPoints: 4 }),
 
-  tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
+  tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { shortcuts: [{ key: "7" }], settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
   tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib", alertProjection: "fib-extension-levels" }),
   tool("fibTimeZone", "Fib Time Zone", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-a" }),
   tool("fibChannel", "Fib Channel", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
@@ -227,9 +240,9 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("priceRange", "Price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("dateRange", "Date range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("datePriceRange", "Date and price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
-  tool("long", "Long position", "positions", "long", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
-  tool("short", "Short position", "positions", "short", "one-point", 1, { settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
-  tool("text", "Text", "annotations", "text", "one-point", 1, { styleFamily: "text", overlayExtension: "text-editor" }),
+  tool("long", "Long position", "positions", "long", "one-point", 1, { shortcuts: [{ key: "8" }], settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
+  tool("short", "Short position", "positions", "short", "one-point", 1, { shortcuts: [{ key: "9" }], settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
+  tool("text", "Text", "annotations", "text", "one-point", 1, { shortcuts: [{ key: "6" }], styleFamily: "text", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "annotations", "emoji", "one-point", 1, { styleFamily: "text" }),
   tool("note", "Note", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
   tool("callout", "Callout", "annotations", "text", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center" }),
@@ -254,9 +267,34 @@ export const DRAWING_TOOL_GROUPS = Object.freeze([
 ] satisfies readonly DrawingToolGroupDefinition[]);
 
 const manifestById = new Map<DrawingTool, DrawingToolManifestEntry>();
+const toolByShortcut = new Map<string, DrawingTool>();
+
+function shortcutSignature(shortcut: DrawingToolShortcut): string {
+  const key = shortcut.key.length === 1
+    ? shortcut.key.toLowerCase()
+    : shortcut.key;
+  return [
+    shortcut.ctrlKey === true ? "ctrl" : "",
+    shortcut.metaKey === true ? "meta" : "",
+    shortcut.altKey === true ? "alt" : "",
+    shortcut.shiftKey === true ? "shift" : "",
+    key,
+  ].join("+");
+}
+
 for (const definition of DRAWING_TOOL_MANIFEST) {
   if (manifestById.has(definition.id)) throw new Error(`Duplicate drawing tool id: ${definition.id}`);
   manifestById.set(definition.id, definition);
+  for (const shortcut of definition.shortcuts) {
+    const signature = shortcutSignature(shortcut);
+    const existing = toolByShortcut.get(signature);
+    if (existing) {
+      throw new Error(
+        `Duplicate drawing tool shortcut ${formatDrawingToolShortcut(shortcut)}: ${existing}, ${definition.id}`,
+      );
+    }
+    toolByShortcut.set(signature, definition.id);
+  }
 }
 if (manifestById.size !== ALL_DRAWING_TOOL_IDS.length || ALL_DRAWING_TOOL_IDS.some((id) => !manifestById.has(id))) {
   throw new Error("Drawing tool manifest is incomplete");
@@ -266,6 +304,31 @@ export function getDrawingToolManifestEntry(toolId: DrawingTool): DrawingToolMan
   const definition = manifestById.get(toolId);
   if (!definition) throw new Error(`Unknown drawing tool: ${toolId}`);
   return definition;
+}
+
+/** Resolve a key event shape without duplicating tool knowledge in UI hooks. */
+export function getDrawingToolForShortcut(
+  shortcut: DrawingToolShortcut,
+): DrawingTool | undefined {
+  return toolByShortcut.get(shortcutSignature(shortcut));
+}
+
+export function formatDrawingToolShortcut(
+  shortcut: DrawingToolShortcut,
+): string {
+  const parts: string[] = [];
+  if (shortcut.ctrlKey) parts.push("Ctrl");
+  if (shortcut.metaKey) parts.push("Meta");
+  if (shortcut.altKey) parts.push("Alt");
+  if (shortcut.shiftKey) parts.push("Shift");
+  parts.push(shortcut.key.length === 1 ? shortcut.key.toUpperCase() : shortcut.key);
+  return parts.join(" + ");
+}
+
+export function getDrawingToolPositionSide(
+  toolId: DrawingTool,
+): "long" | "short" | undefined {
+  return getDrawingToolManifestEntry(toolId).positionSide;
 }
 
 /** Creation-only kill switch. Adapters/codecs remain active for saved drawings. */

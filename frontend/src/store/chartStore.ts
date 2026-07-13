@@ -12,11 +12,11 @@ import type {
   IndicatorConfig,
   Timeframe,
 } from "@/types";
+import { TF_SECONDS, styleFamily } from "@/types";
 import {
-  DEFAULT_POSITION_STATS,
-  styleFamily,
-} from "@/types";
-import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
+  getDrawingToolManifestEntry,
+  getDrawingToolPositionSide,
+} from "@/types/drawingToolManifest";
 import {
   applyDrawingTemplateStyle,
   pickDrawingTemplateStyle,
@@ -57,6 +57,12 @@ import {
   type PineScriptMeta,
 } from "@/services/pineRuntimeTypes";
 import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing/tools/positionTradePrefill";
+import {
+  initializePositionDrawing,
+  resolvePositionCreationTimeline,
+  type PositionDrawingCreationOptions,
+} from "@/components/chart/drawing/tools/positionCreation";
+import { resolveCandleBarIntervalSeconds } from "@/components/chart/drawing/coordinates/drawingCoordinates";
 import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
 import { logAtom, setBottomTabAtom } from "./uiStore";
@@ -103,7 +109,7 @@ function drawingsKey(symbol: string) {
 }
 
 function isPositionDrawing(drawing: Drawing | null | undefined): drawing is Drawing {
-  return drawing?.tool === "long" || drawing?.tool === "short";
+  return !!drawing && getDrawingToolPositionSide(drawing.tool) !== undefined;
 }
 
 function touchesPositionTradePlan(patch: Partial<Drawing>) {
@@ -742,12 +748,33 @@ export const saveDrawingToolDefaultsAtom = atom(null, (_get, set, drawing: Drawi
   localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
 });
 
-export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
+export interface AddDrawingRequest {
+  drawing: Drawing;
+  positionCreation?: PositionDrawingCreationOptions;
+}
+
+function isAddDrawingRequest(
+  input: Drawing | AddDrawingRequest,
+): input is AddDrawingRequest {
+  return Object.prototype.hasOwnProperty.call(input, "drawing");
+}
+
+export const addDrawingAtom = atom(
+  null,
+  (_get, set, input: Drawing | AddDrawingRequest) => {
+  let request: AddDrawingRequest | null = null;
+  let d: Drawing;
+  if (isAddDrawingRequest(input)) {
+    request = input;
+    d = input.drawing;
+  } else {
+    d = input;
+  }
   const top = _get(drawingsAtom).reduce(
     (m, x) => Math.max(m, x.zIndex ?? 0),
     0,
   );
-  const drawing: Drawing = {
+  let drawing: Drawing = {
     visible: true,
     locked: false,
     zIndex: top + 1,
@@ -761,47 +788,62 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
   // Auto-expand to a TradingView-style 3-point box — points[0]=entry,
   // points[1]={rightEdgeTime, targetPrice}, points[2]={rightEdgeTime, stopPrice}
   // — so the profit/risk zones are immediately visible and draggable.
-  if (
-    (drawing.tool === "long" || drawing.tool === "short") &&
-    drawing.points.length === 1
-  ) {
-    const entry = drawing.points[0].price;
-    const tEntry = drawing.points[0].time;
+  const positionSide = getDrawingToolPositionSide(drawing.tool);
+  if (positionSide && drawing.points.length === 1) {
     const candles = _get(candlesAtom);
-    const interval =
-      candles.length >= 2
-        ? candles[candles.length - 1].time - candles[candles.length - 2].time
-        : 3600;
-    const tRight = tEntry + interval * 20; // ~20-bar default width
-    const risk = 0.01; // 1% default risk
-    const rr = 1; // TradingView position projection defaults to a symmetric 1:1 box.
-    const isLong = drawing.tool === "long";
-    const target = entry * (1 + (isLong ? risk * rr : -risk * rr));
-    const stop = entry * (1 + (isLong ? -risk : risk));
-    drawing.color = drawing.color || "#089981";
-    drawing.lineWidth = drawing.lineWidth || 1;
-    drawing.accountSize = drawing.accountSize ?? 1000;
-    drawing.accountCurrency = drawing.accountCurrency ?? "Default";
-    drawing.lotSize = drawing.lotSize ?? 1;
-    drawing.riskValue = drawing.riskValue ?? 25;
-    drawing.riskUnit = drawing.riskUnit ?? "%";
-    drawing.leverage = drawing.leverage ?? 10000;
-    drawing.showLabels = drawing.showLabels ?? true;
-    drawing.targetColor = drawing.targetColor ?? "#089981";
-    drawing.stopColor = drawing.stopColor ?? "#f23645";
-    drawing.textColor = drawing.textColor ?? "#ffffff";
-    drawing.fontSize = drawing.fontSize ?? 12;
-    drawing.positionStats = drawing.positionStats ?? [...DEFAULT_POSITION_STATS];
-    drawing.alwaysShowStats = drawing.alwaysShowStats ?? true;
-    drawing.points = [
-      { time: tEntry, price: entry },
-      { time: tRight, price: target },
-      { time: tRight, price: stop },
-    ];
-    const marketPrice = latestMarketPrice(candles);
+    // Width means 20 bars on the active chart. The last two samples may straddle
+    // a market/session gap (or belong to a replay fixture), so their wall-clock
+    // delta is not a reliable bar interval.
+    const timeframeInterval = TF_SECONDS[_get(timeframeAtom)];
+    const observedInterval = candles.length >= 2
+      ? candles[candles.length - 1].time - candles[candles.length - 2].time
+      : 3600;
+    const interval = resolveCandleBarIntervalSeconds(
+      candles,
+      timeframeInterval,
+      observedInterval,
+    );
     const symbol = _get(symbolAtom);
+    const symbolInfo = positionLotSymbolInfo(
+      symbol,
+      _get(mt5SymbolInfoAtom)[symbol],
+    );
+    const requestedCreation = request?.positionCreation;
+    const barCount = requestedCreation?.barCount ?? 20;
+    const hasChartTimeline =
+      Number.isFinite(requestedCreation?.entryTime) &&
+      Number.isFinite(requestedCreation?.rightEdgeTime) &&
+      Number(requestedCreation?.rightEdgeTime) > Number(requestedCreation?.entryTime);
+    const timeline = hasChartTimeline
+      ? {
+          entryTime: Number(requestedCreation?.entryTime),
+          rightEdgeTime: Number(requestedCreation?.rightEdgeTime),
+        }
+      : resolvePositionCreationTimeline(
+          drawing.points[0].time,
+          interval,
+          barCount,
+          candles,
+        );
+    drawing = {
+      ...drawing,
+      points: [{ ...drawing.points[0], time: timeline.entryTime }],
+    };
+    const initialization = initializePositionDrawing(
+      drawing,
+      interval,
+      symbolInfo.tickSize ?? symbolInfo.point,
+      {
+        ...requestedCreation,
+        entryTime: timeline.entryTime,
+        rightEdgeTime: timeline.rightEdgeTime,
+      },
+    );
+    if (!initialization) return;
+    drawing = initialization.drawing;
+    const marketPrice = latestMarketPrice(candles);
     const prefill = buildOrderPrefillFromPositionDrawing(drawing, marketPrice, {
-      symbolInfo: positionLotSymbolInfo(symbol, _get(mt5SymbolInfoAtom)[symbol]),
+      symbolInfo,
     });
     if (prefill) {
       set(setOrderPrefillAtom, prefill);
@@ -809,13 +851,9 @@ export const addDrawingAtom = atom(null, (_get, set, d: Drawing) => {
       set(
         logAtom,
         "info",
-        `Trade ticket filled from ${isLong ? "Long" : "Short"} Position`,
+        `Trade ticket filled from ${positionSide === "long" ? "Long" : "Short"} Position`,
       );
     }
-  }
-  if (drawing.tool === "highlighter") {
-    drawing.lineWidth = drawing.lineWidth || 8;
-    drawing.opacity = drawing.opacity ?? 0.35;
   }
   const drawings = [..._get(drawingsAtom), drawing];
   set(drawingsAtom, drawings);

@@ -11,6 +11,9 @@ export interface RenderMemoState {
   hoveredId: string | null;
   canvasW: number;
   canvasH: number;
+  barIntervalSeconds: number;
+  /** Referential revision supplied by the composition root. */
+  marketContext: object | undefined;
 }
 
 export function selectedIdsHash(ids: Set<string> | undefined): string {
@@ -34,6 +37,8 @@ export function sameRenderMemoState(
     a.liveHash === b.liveHash &&
     a.hoveredId === b.hoveredId &&
     a.canvasW === b.canvasW &&
-    a.canvasH === b.canvasH
+    a.canvasH === b.canvasH &&
+    a.barIntervalSeconds === b.barIntervalSeconds &&
+    a.marketContext === b.marketContext
   );
 }

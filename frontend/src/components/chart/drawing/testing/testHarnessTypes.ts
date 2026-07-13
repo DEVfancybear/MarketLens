@@ -10,6 +10,11 @@ export interface DrawingInteractionTestSnapshot {
   selectedDrawingIds: string[];
   visibleDrawingIds: string[];
   machineState: string;
+  history: {
+    canUndo: boolean;
+    canRedo: boolean;
+    lastUndoLabel: string | null;
+  };
   canvas: { x: number; y: number; width: number; height: number };
 }
 
@@ -21,13 +26,18 @@ export interface DrawingInteractionTestHarness {
     insideCanvas: boolean;
     overDrawingUi: boolean;
     target: string | null;
-    hits: Array<{ id: string; target: string; distance: number }>;
+    hits: Array<{
+      id: string;
+      target: string;
+      anchorIndex?: number;
+      distance: number;
+    }>;
   };
   magnetPointsAtClient: (x: number, y: number) => {
     raw: Point | null;
     strong: Point | null;
   };
-  clear: () => void;
+  clear: () => Promise<void>;
   changeSymbol: (symbol: string) => void;
   changeTimeframe: (timeframe: Timeframe) => void;
 }

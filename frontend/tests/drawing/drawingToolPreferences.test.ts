@@ -49,6 +49,14 @@ test("creation defaults layer manifest, current color, and per-tool user setting
   assert.equal(defaults.lineStyle, "dashed");
   assert.equal(defaults.points, undefined);
   assert.equal(defaults.id, undefined);
+
+  const highlighter = resolveDrawingCreationDefaults(
+    "highlighter",
+    undefined,
+    "#ffd54f",
+  );
+  assert.equal(highlighter.lineWidth, 8);
+  assert.equal(highlighter.opacity, 0.35);
 });
 
 test("preference decoder rejects unknown versions, tools, and unsafe fields", () => {

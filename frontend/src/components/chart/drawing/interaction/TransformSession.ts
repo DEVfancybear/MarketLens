@@ -3,6 +3,7 @@ import {
   defaultMove,
   defaultMoveAnchor,
   getTool,
+  type DrawingAdapterInteractionContext,
 } from "../tools/ToolRegistry";
 
 export type TransformMode = "move" | "resize";
@@ -17,6 +18,7 @@ export interface TransformSessionOptions {
   anchorIndex: number;
   mode: TransformMode;
   selectedDrawings?: readonly Drawing[];
+  adapterContext?: DrawingAdapterInteractionContext;
 }
 
 /** Owns immutable drag snapshots and produces transient geometry per sample. */
@@ -28,6 +30,7 @@ export class TransformSession {
   readonly mode: TransformMode;
   readonly primaryOriginal: Point[];
   private readonly originals = new Map<string, Point[]>();
+  private readonly adapterContext?: DrawingAdapterInteractionContext;
 
   constructor(options: TransformSessionOptions) {
     this.drawingId = options.drawing.id;
@@ -35,6 +38,7 @@ export class TransformSession {
     this.dragStart = { ...options.dragStart };
     this.anchorIndex = options.anchorIndex;
     this.mode = options.mode;
+    this.adapterContext = options.adapterContext;
     this.primaryOriginal = clonePoints(options.drawing.points);
     for (const drawing of options.selectedDrawings ?? []) {
       this.originals.set(drawing.id, clonePoints(drawing.points));
@@ -100,10 +104,20 @@ export class TransformSession {
     const adapter = getTool(this.tool);
     const points = this.mode === "resize" && this.anchorIndex >= 0
       ? adapter
-        ? adapter.moveAnchor(this.primaryOriginal, this.anchorIndex, pointer)
+        ? adapter.moveAnchor(
+            this.primaryOriginal,
+            this.anchorIndex,
+            pointer,
+            this.adapterContext,
+          )
         : defaultMoveAnchor(this.primaryOriginal, this.anchorIndex, pointer)
       : adapter
-        ? adapter.move(this.primaryOriginal, pointer, this.dragStart)
+        ? adapter.move(
+            this.primaryOriginal,
+            pointer,
+            this.dragStart,
+            this.adapterContext,
+          )
         : defaultMove(this.primaryOriginal, pointer, this.dragStart);
     return new Map([[this.drawingId, points]]);
   }

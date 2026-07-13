@@ -12,6 +12,7 @@ import {
 import { canvasFont, line } from "./shared";
 import {
   moveVerticalLine,
+  moveVerticalLineAnchor,
   verticalBounds,
   verticalLineBodyHits,
 } from "./lineGeometry";
@@ -125,9 +126,12 @@ const plugin: DrawingToolPlugin = {
     const x = toX(d.points[0].time);
     return verticalLineBodyHits(d, x, px);
   },
-  move: (orig, pointer) => moveVerticalLine(orig, pointer),
-  moveAnchor: (orig, _index, pointer) => moveVerticalLine(orig, pointer),
+  move: (orig, pointer, dragStart) =>
+    moveVerticalLine(orig, pointer, dragStart),
+  moveAnchor: (orig, _index, pointer) =>
+    moveVerticalLineAnchor(orig, pointer),
   movePoints: defaultMovePoints,
+  getAnchors: () => [],
   boundingBox(d: Drawing, toX: HitTestProjector, _toY: HitTestProjector) {
     return verticalBounds(toX(d.points[0].time));
   },

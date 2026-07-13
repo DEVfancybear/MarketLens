@@ -27,6 +27,8 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | File | Topic |
 | --- | --- |
 | `DRAWING_ENGINE_ARCHITECTURE.md` | Drawing engine overview |
+| `DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md` | Implemented multi-phase drawing refactor plan and current completion state |
+| `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md` | Current 88-manifest/84-adapter audit, invariants, fixes, and test gates |
 | `DRAWING_OBJECT_MODEL.md` | Drawing object data model |
 | `DRAWING_STATE_MACHINE.md` | Drawing interaction state machine |
 | `SELECTION_ENGINE.md` | Hit testing and selection |
@@ -69,6 +71,12 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 
 | File | Topic |
 | --- | --- |
+| `DRAWING_PHASE0_CHARACTERIZATION.md` | Historical 35-tool pre-refactor baseline |
+| `DRAWING_PHASE7_PARITY.md` | Historical Phase 7 parity checkpoint |
+| `DRAWING_PHASE8_WAVE_A.md` | Historical range/channel/annotation/time expansion checkpoint |
+| `DRAWING_PHASE8_WAVE_B.md` | Historical Fib/Gann/pitchfork expansion checkpoint |
+| `DRAWING_PHASE8_WAVE_C.md` | Historical pattern/time-cycle expansion checkpoint |
+| `DRAWING_PHASE8_WAVE_D.md` | Historical data/projection/rich-content completion checkpoint |
 | `DRAWING_ENGINE_ROOT_CAUSE.md` | Drawing root cause analysis |
 | `DRAWING_INTERACTION_ROOT_CAUSE.md` | Interaction bug root cause |
 | `DRAWING_LAYER_DEBUG.md` | Layer debugging notes |

@@ -5,6 +5,7 @@ import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import { TOL, defaultMovePoints, distToSegment, registerTool, type DrawingToolPlugin } from "../ToolRegistry";
 import { handle, line, renderLineText } from "./shared";
 import { projectPoint, type Segment, twoPointAnchorHits } from "./lineGeometry";
+import { polygonBodyHits } from "./shapeGeometry";
 
 function point(d: Drawing, index: number, toX: HitTestProjector, toY: HitTestProjector) {
   return d.points[index] ? projectPoint(d.points[index], toX, toY) : null;
@@ -36,15 +37,15 @@ const flatTopBottom: DrawingToolPlugin = {
     if(selected){ handle(g,a.x,a.y,d.color); handle(g,b.x,b.y,d.color); handle(g,c.x,c.y,d.color); }
     g.restore();
   },
-  hitTest(d,px,py,toX,toY){ const a=point(d,0,toX,toY),b=point(d,1,toX,toY),c=point(d,2,toX,toY); if(!a||!b||!c)return[]; const base={a,b}; const flat={a:{x:a.x,y:c.y},b:{x:b.x,y:c.y}}; const third=Math.hypot(px-c.x,py-c.y); return [...twoPointAnchorHits(d,base,px,py),...(third<=24?[{drawing:d,target:"p3" as const,anchorIndex:2,distance:third}]:[]),...segmentHit(d,[base,flat],px,py)]; },
+  hitTest(d,px,py,toX,toY){ const a=point(d,0,toX,toY),b=point(d,1,toX,toY),c=point(d,2,toX,toY); if(!a||!b||!c)return[]; const base={a,b}; const flat={a:{x:a.x,y:c.y},b:{x:b.x,y:c.y}}; const third=Math.hypot(px-c.x,py-c.y); const filled=d.fillColor!=="transparent"&&(d.opacity??0.12)>0; const body=filled?polygonBodyHits(d,[a,b,flat.b,flat.a],px,py):segmentHit(d,[base,flat],px,py); return [...twoPointAnchorHits(d,base,px,py),...(third<=24?[{drawing:d,target:"p3" as const,anchorIndex:2,distance:third}]:[]),...body]; },
   movePoints: defaultMovePoints,
-  boundingBox(d,toX,toY){ const a=point(d,0,toX,toY),b=point(d,1,toX,toY),c=point(d,2,toX,toY); return a&&b&&c?boxOf([{a,b},{a:{x:a.x,y:c.y},b:{x:b.x,y:c.y}}]):null; },
+  boundingBox(d,toX,toY){ const a=point(d,0,toX,toY),b=point(d,1,toX,toY),c=point(d,2,toX,toY); if(!a||!b||!c)return null; const geometry=boxOf([{a,b},{a:{x:a.x,y:c.y},b:{x:b.x,y:c.y}}]); if(!geometry)return null; const left=Math.min(geometry.x,c.x-TOL),right=Math.max(geometry.x+geometry.w,c.x+TOL),top=Math.min(geometry.y,c.y-TOL),bottom=Math.max(geometry.y+geometry.h,c.y+TOL); return{x:left,y:top,w:right-left,h:bottom-top}; },
 };
 
 const disjointChannel: DrawingToolPlugin = {
   tool: "disjointChannel", minPoints: 4, maxPoints: 4,
   render(g,d,proj,selected){ const p=d.points.map((_,i)=>point(d,i,proj.toX,proj.toY)); if(p.some((v)=>!v))return; const [a,b,c,e]=p as NonNullable<(typeof p)[number]>[]; g.save(); if(d.fillColor!=="transparent"){g.fillStyle=d.fillColor||d.color;g.globalAlpha=d.opacity??0.12;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineTo(e.x,e.y);g.lineTo(c.x,c.y);g.closePath();g.fill();g.globalAlpha=1;} line(g,a.x,a.y,b.x,b.y);line(g,c.x,c.y,e.x,e.y);renderLineText(g,d,a.x,a.y,b.x,b.y,selected);if(selected)[a,b,c,e].forEach((v)=>handle(g,v.x,v.y,d.color));g.restore(); },
-  hitTest(d,px,py,toX,toY){const p=d.points.map((_,i)=>point(d,i,toX,toY));if(p.some((v)=>!v))return[];const [a,b,c,e]=p as NonNullable<(typeof p)[number]>[];const anchors:HitResult[]=d.points.flatMap((_,i)=>{const v=[a,b,c,e][i];const distance=Math.hypot(px-v.x,py-v.y);return distance<=24?[{drawing:d,target:(i===0?"p1":i===1?"p2":"body") as HitResult["target"],anchorIndex:i,distance}]:[];});return [...anchors,...segmentHit(d,[{a,b},{a:c,b:e}],px,py)];},
+  hitTest(d,px,py,toX,toY){const p=d.points.map((_,i)=>point(d,i,toX,toY));if(p.some((v)=>!v))return[];const [a,b,c,e]=p as NonNullable<(typeof p)[number]>[];const anchors:HitResult[]=d.points.flatMap((_,i)=>{const v=[a,b,c,e][i];const distance=Math.hypot(px-v.x,py-v.y);return distance<=24?[{drawing:d,target:(i===0?"p1":i===1?"p2":"p0") as HitResult["target"],anchorIndex:i,distance}]:[];});const filled=d.fillColor!=="transparent"&&(d.opacity??0.12)>0;const body=filled?polygonBodyHits(d,[a,b,e,c],px,py):segmentHit(d,[{a,b},{a:c,b:e}],px,py);return [...anchors,...body];},
   movePoints:defaultMovePoints,
   boundingBox(d,toX,toY){const p=d.points.map((_,i)=>point(d,i,toX,toY));return p.some((v)=>!v)?null:boxOf([{a:p[0]!,b:p[1]!},{a:p[2]!,b:p[3]!}]);},
 };
