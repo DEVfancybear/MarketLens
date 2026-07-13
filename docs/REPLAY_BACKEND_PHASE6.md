@@ -49,6 +49,29 @@ typecheck, and production build.
 
 ## Verification
 
+### Sparse-market playback continuity (2026-07-13)
+
+Replay session preparation retains the normal 70/30 history/future window, but
+probes farther forward when the returned candle tail does not cover the
+requested `before` boundary. A future-row count alone is insufficient: a
+Friday 23:30 selection may still contain a complete 15-minute source interval
+while the page ends inside the weekend. The probe is driven by returned time
+coverage rather than a hard-coded Forex calendar, so it also handles daily
+sources, holidays, broker closures, and 24/7 instruments. Creation rejects a
+dataset with no real row after the selected cursor instead of persisting a
+session that is already effectively complete.
+
+When an actor step lands entirely inside a market gap, the shared simulated
+clock advances to the earliest next stored row across the session tracks. No
+synthetic candles are created. On the exact reported flows, selecting
+`2026-07-10 23:30 UTC` or `23:45 UTC` and pressing Play advances the cursor to
+the real `2026-07-13 00:00 UTC` row while status remains `playing`; Play/Pause
+therefore stays usable on desktop and mobile clients, including at 10x.
+
+Regression coverage includes 1m and 1D history probing across the weekend,
+rejection of a dataset with no playable future row, 1x and 10x
+`play -> __clock_step`, and synchronized sparse-gap barriers.
+
 ### Selection, First-day viewport, and lifecycle hardening (2026-07-13)
 
 The backend-authority boundary remains unchanged. The follow-up closes the full

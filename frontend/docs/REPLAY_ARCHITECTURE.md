@@ -100,6 +100,15 @@ row. The batch contains the finalized version of the previously-forming candle,
 the completed new candles, and the latest forming candle. `cursor.advanced`
 follows it in the same authoritative event order.
 
+Sparse market calendars do not consume hundreds of empty Replay intervals.
+Session preparation compares the returned candle tail with the requested
+history boundary, probes beyond a page that ends inside a closure, and requires
+a real future row. If the next interval still lies wholly in a weekend, holiday,
+or broker closure, the backend advances the shared clock directly to the
+earliest next stored row without inventing candles. The browser receives the
+normal ordered bar/cursor events and keeps the same controls on desktop and
+mobile.
+
 ## Candle presentation
 
 `replayClientStore` merges a batch by timestamp in one projection update.

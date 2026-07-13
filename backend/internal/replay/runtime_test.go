@@ -69,6 +69,39 @@ func runtimeFixture() (fakeRuntimeBars, gen.ReplaySession, gen.ListReplayTracksF
 	return fakeRuntimeBars{bars: bars}, session, track
 }
 
+func runtime2330WeekendFixture() (fakeRuntimeBars, gen.ReplaySession, gen.ListReplayTracksForSessionForUpdateRow) {
+	bars, session, track := runtimeFixture()
+	selected := time.Date(2026, time.July, 10, 23, 30, 0, 0, time.UTC)
+	nextSession := time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC)
+	times := []time.Time{selected.Add(-time.Minute), selected}
+	for i := 1; i <= 24; i++ {
+		times = append(times, selected.Add(time.Duration(i)*time.Minute))
+	}
+	for i := 0; i <= 30; i++ {
+		times = append(times, nextSession.Add(time.Duration(i)*time.Minute))
+	}
+	bars.bars = make([]gen.ReplayDatasetBar, len(times))
+	for i, at := range times {
+		bars.bars[i] = gen.ReplayDatasetBar{
+			Seq: int64(i), OpenTime: timestamp(at), IntervalSeconds: 60,
+			Open: numeric(float64(i + 1)), High: numeric(float64(i + 2)), Low: numeric(float64(i)),
+			Close: numeric(float64(i) + 1.5), Volume: numeric(10),
+		}
+	}
+	session.Status = gen.ReplaySessionStatusPaused
+	session.StartTime = bars.bars[1].OpenTime
+	session.SimulatedTime = bars.bars[1].OpenTime
+	session.ReplayIntervalSeconds = 900
+	track.CursorSeq = 1
+	track.VisibleThrough = bars.bars[1].OpenTime
+	track.RowCount = int32(len(bars.bars))
+	track.BaseIntervalSeconds = 60
+	track.FirstTime = bars.bars[0].OpenTime
+	track.LastTime = bars.bars[len(bars.bars)-1].OpenTime
+	track.ChartTimeframe = "15m"
+	return bars, session, track
+}
+
 func TestRuntimeOneReplayIntervalProcessesEveryBaseRow(t *testing.T) {
 	bars, session, track := runtimeFixture()
 	session.ReplayIntervalSeconds = 180
@@ -89,6 +122,105 @@ func TestRuntimeOneReplayIntervalProcessesEveryBaseRow(t *testing.T) {
 	state, err := parseAggregateState(track.AggregateState)
 	if err != nil || state.LastSourceSeq != 4 || upserts != 1 {
 		t.Fatalf("state=%#v upserts=%d drafts=%#v err=%v", state, upserts, drafts, err)
+	}
+}
+
+func TestRuntimePlayAdvancesAcrossSparseMarketGapWithoutLocking(t *testing.T) {
+	bars, session, track := runtimeFixture()
+	selected := time.Date(2026, time.July, 10, 23, 45, 0, 0, time.UTC)
+	nextSession := time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC)
+	bars.bars[0].OpenTime = timestamp(selected.Add(-time.Minute))
+	bars.bars[1].OpenTime = timestamp(selected)
+	for i := 2; i < len(bars.bars); i++ {
+		bars.bars[i].OpenTime = timestamp(nextSession.Add(time.Duration(i-2) * time.Minute))
+	}
+	session.StartTime = bars.bars[1].OpenTime
+	session.SimulatedTime = bars.bars[1].OpenTime
+	session.ReplayIntervalSeconds = 900
+	track.ChartTimeframe = "15m"
+	track.FirstTime = bars.bars[0].OpenTime
+	track.LastTime = bars.bars[len(bars.bars)-1].OpenTime
+	track.VisibleThrough = bars.bars[1].OpenTime
+
+	_, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{Type: "play"})
+	if err != nil || !changed || session.Status != gen.ReplaySessionStatusPlaying {
+		t.Fatalf("play did not start: changed=%t status=%s err=%v", changed, session.Status, err)
+	}
+	drafts, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{
+		Type: "__clock_step", Payload: []byte(`{"count":1}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || track.CursorSeq != 2 || !session.SimulatedTime.Time.Equal(nextSession) || session.Status != gen.ReplaySessionStatusPlaying {
+		t.Fatalf("weekend playback did not reach the next real bar unlocked: session=%#v track=%#v", session, track)
+	}
+	cursorEvents := 0
+	for _, draft := range drafts {
+		if draft.typ == "cursor.advanced" {
+			cursorEvents++
+		}
+	}
+	if cursorEvents != 1 {
+		t.Fatalf("expected one real cursor advance, drafts=%#v", drafts)
+	}
+}
+
+func TestRuntimePlaybackFrom2330StaysPlayingBeforeAndAfterWeekend(t *testing.T) {
+	bars, session, track := runtime2330WeekendFixture()
+	selected := time.Date(2026, time.July, 10, 23, 30, 0, 0, time.UTC)
+	nextSession := time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC)
+
+	_, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{Type: "play"})
+	if err != nil || !changed || session.Status != gen.ReplaySessionStatusPlaying {
+		t.Fatalf("play did not start: changed=%t status=%s err=%v", changed, session.Status, err)
+	}
+
+	wantTimes := []time.Time{
+		selected.Add(15 * time.Minute),
+		time.Date(2026, time.July, 11, 0, 0, 0, 0, time.UTC),
+		nextSession,
+		nextSession.Add(15 * time.Minute),
+	}
+	wantCursors := []int64{16, 25, 26, 41}
+	for step, wantTime := range wantTimes {
+		drafts, stepChanged, stepErr := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{
+			Type: "__clock_step", Payload: []byte(`{"count":1}`),
+		})
+		if stepErr != nil {
+			t.Fatalf("clock step %d: %v", step+1, stepErr)
+		}
+		if !stepChanged || track.CursorSeq != wantCursors[step] || !session.SimulatedTime.Time.Equal(wantTime) || session.Status != gen.ReplaySessionStatusPlaying {
+			t.Fatalf("clock step %d locked or advanced incorrectly: session=%#v track=%#v", step+1, session, track)
+		}
+		cursorEvents := 0
+		for _, draft := range drafts {
+			if draft.typ == "cursor.advanced" {
+				cursorEvents++
+			}
+		}
+		if cursorEvents != 1 {
+			t.Fatalf("clock step %d cursor events=%d drafts=%#v", step+1, cursorEvents, drafts)
+		}
+	}
+}
+
+func TestRuntimeFastPlaybackFrom2330DoesNotCompleteAtFridayTail(t *testing.T) {
+	bars, session, track := runtime2330WeekendFixture()
+	_, changed, err := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{Type: "play"})
+	if err != nil || !changed || session.Status != gen.ReplaySessionStatusPlaying {
+		t.Fatalf("play did not start: changed=%t status=%s err=%v", changed, session.Status, err)
+	}
+	for tick := 0; tick < 2; tick++ {
+		_, tickChanged, tickErr := applyRuntimeTransition(context.Background(), bars, &session, &track, CommandInput{
+			Type: "__clock_step", Payload: []byte(`{"count":10}`),
+		})
+		if tickErr != nil || !tickChanged || session.Status != gen.ReplaySessionStatusPlaying {
+			t.Fatalf("10x tick %d locked playback: changed=%t status=%s err=%v", tick+1, tickChanged, session.Status, tickErr)
+		}
+	}
+	if track.CursorSeq != 26 || !session.SimulatedTime.Time.Equal(time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("10x playback did not reach Monday open: session=%#v track=%#v", session, track)
 	}
 }
 
@@ -160,7 +292,7 @@ func TestRuntimeSynchronizedAutoIntervalUsesEveryTrack(t *testing.T) {
 	}
 }
 
-func TestRuntimeSynchronizedBarrierDoesNotFabricateBarsAcrossMarketGap(t *testing.T) {
+func TestRuntimeSynchronizedBarrierSkipsToNextRealBarAcrossMarketGap(t *testing.T) {
 	bars, session, first := runtimeFixture()
 	for i := 2; i < len(bars.bars); i++ {
 		bars.bars[i].OpenTime = timestamp(session.SimulatedTime.Time.Add(time.Duration(i+3) * time.Minute))
@@ -176,11 +308,20 @@ func TestRuntimeSynchronizedBarrierDoesNotFabricateBarsAcrossMarketGap(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !changed || tracks[0].CursorSeq != 1 || tracks[1].CursorSeq != 1 {
-		t.Fatalf("market gap fabricated a cursor: %#v", tracks)
+	if !changed || tracks[0].CursorSeq != 2 || tracks[1].CursorSeq != 2 {
+		t.Fatalf("market gap did not advance to the next real row: %#v", tracks)
 	}
-	if len(drafts) != 1 || drafts[0].typ != "state.changed" {
-		t.Fatalf("market gap emitted candle events: %#v", drafts)
+	if !session.SimulatedTime.Time.Equal(bars.bars[2].OpenTime.Time) {
+		t.Fatalf("shared clock did not skip the empty gap: %s", session.SimulatedTime.Time)
+	}
+	cursorEvents := 0
+	for _, draft := range drafts {
+		if draft.typ == "cursor.advanced" {
+			cursorEvents++
+		}
+	}
+	if cursorEvents != 2 {
+		t.Fatalf("expected one real cursor event per track, drafts=%#v", drafts)
 	}
 }
 

@@ -40,6 +40,12 @@ type normalizedTrackInput struct {
 	sourceSeconds   int
 }
 
+const (
+	replayHistoryGapProbe    = 48 * time.Hour
+	replayHistoryMaxAttempts = 3
+	replayHistoryFutureShare = 0.30
+)
+
 func NewService(store SessionStore, history HistorySource, maxBars int, configuredMaxTracks ...int) *Service {
 	if maxBars <= 0 || maxBars > 5000 {
 		maxBars = 5000
@@ -114,9 +120,18 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 	sharedStart := input.Start.Time.UTC()
 	calendars := make([]map[string]any, 0, trackCount)
 	for i, track := range normalized {
-		before := input.Start.Time.Unix() + int64(float64(s.maxBars*track.sourceSeconds)*0.30)
-		history := s.history.History(ctx, track.input.Symbol, track.sourceTimeframe, s.maxBars, before, false)
-		bars, normalizeErr := normalizeCandles(history.Candles)
+		selectionTime := sharedStart
+		if i == 0 {
+			selectionTime = input.Start.Time.UTC()
+		}
+		history, bars, normalizeErr := s.replayHistoryWindow(
+			ctx,
+			track.input.Symbol,
+			track.sourceTimeframe,
+			track.sourceSeconds,
+			replayInterval,
+			selectionTime,
+		)
 		if normalizeErr != nil {
 			return SessionSnapshot{}, normalizeErr
 		}
@@ -127,10 +142,6 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 			return SessionSnapshot{}, fmt.Errorf("%w: no candles returned for slot %d", ErrDataUnavailable, track.input.Slot)
 		}
 		availableEnd := bars[len(bars)-1].Time.Add(time.Duration(track.sourceSeconds) * time.Second)
-		selectionTime := sharedStart
-		if i == 0 {
-			selectionTime = input.Start.Time.UTC()
-		}
 		if selectionTime.Before(bars[0].Time) || !selectionTime.Before(availableEnd) {
 			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
 		}
@@ -181,6 +192,78 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 		Mode: input.Mode, Speed: input.Speed, ReplayIntervalSeconds: replayInterval,
 		StartTime: sharedStart, EndTime: input.EndTime, Config: config, Tracks: preparedTracks, Trading: preparedTrading,
 	})
+}
+
+// replayHistoryWindow keeps the original 70/30 history/future split for normal
+// sessions, but probes farther forward when a sparse market calendar leaves the
+// selected row at the end of the first page. This is data-driven rather than a
+// hard-coded Forex weekend rule, so holidays, broker sessions, and 24/7 symbols
+// retain their own provider calendar.
+func (s *Service) replayHistoryWindow(
+	ctx context.Context,
+	symbol string,
+	sourceTimeframe string,
+	sourceSeconds int,
+	replayInterval int,
+	selectionTime time.Time,
+) (mt5stream.HistorySnapshot, []Bar, error) {
+	lookaheadSeconds := max(int64(float64(s.maxBars*sourceSeconds)*replayHistoryFutureShare), int64(sourceSeconds))
+	before := selectionTime.UTC().Unix() + lookaheadSeconds
+	minimumFutureRows := max(1, (replayInterval+sourceSeconds-1)/sourceSeconds)
+	latestUsefulBefore := time.Now().UTC().Add(time.Duration(sourceSeconds) * time.Second).Unix()
+
+	var history mt5stream.HistorySnapshot
+	var bars []Bar
+	for attempt := 0; attempt < replayHistoryMaxAttempts; attempt++ {
+		history = s.history.History(ctx, symbol, sourceTimeframe, s.maxBars, before, false)
+		var err error
+		bars, err = normalizeCandles(history.Candles)
+		if err != nil || len(bars) == 0 {
+			return history, bars, err
+		}
+
+		cursor, _, found := barAtOrBefore(bars, selectionTime)
+		if !found || selectionTime.Before(bars[0].Time) {
+			break
+		}
+		// A row count alone cannot prove that the requested future window is
+		// covered. For example, a Friday 23:30 selection can still have one full
+		// 15m interval of M1 rows before the close while the page ends inside the
+		// weekend. Keep probing until the returned tail reaches the requested
+		// boundary. coverageEnd already includes the selected source candle's
+		// duration, so adding another interval here would hide daily/weekend gaps.
+		coverageTarget := time.Unix(min(before, latestUsefulBefore), 0).UTC()
+		coverageEnd := bars[len(bars)-1].Time.Add(time.Duration(sourceSeconds) * time.Second)
+		coversRequestedBoundary := !coverageEnd.Before(coverageTarget)
+		if len(bars)-int(cursor)-1 >= minimumFutureRows && coversRequestedBoundary {
+			break
+		}
+		if attempt+1 >= replayHistoryMaxAttempts || before >= latestUsefulBefore {
+			break
+		}
+
+		probeSeconds := int64(replayHistoryGapProbe/time.Second) << attempt
+		nextBefore := min(before+probeSeconds, latestUsefulBefore)
+		if nextBefore <= before {
+			break
+		}
+		before = nextBefore
+	}
+
+	// Never persist a session whose selected row is already the dataset tail.
+	// The extra probe rows above are a buffer for normal interval playback, but
+	// one real future source row is the hard invariant needed to keep Play/Next
+	// usable across sparse calendars (weekends, holidays, and broker closures).
+	if cursor, _, found := barAtOrBefore(bars, selectionTime); found && cursor >= int64(len(bars)-1) {
+		if history.LastError != "" {
+			return history, bars, fmt.Errorf("%w: %s", ErrDatasetPreparation, history.LastError)
+		}
+		return history, bars, &DataUnavailableError{
+			FirstAvailable: bars[0].Time,
+			LastAvailable:  bars[len(bars)-1].Time.Add(time.Duration(sourceSeconds) * time.Second),
+		}
+	}
+	return history, bars, nil
 }
 
 func resolveReplayIntervalForTracks(requested string, tracks []normalizedTrackInput) (int, error) {

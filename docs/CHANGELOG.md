@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay playback across sparse market gaps (2026-07-13)
+- Extended Replay history forward when a selected candle is followed by a
+  weekend, holiday, or broker-session closure. Readiness now checks that the
+  returned candle tail covers the requested history boundary instead of only
+  counting one interval of future rows; session creation also requires at least
+  one real future source row.
+- Made the authoritative Replay clock skip an interval containing no source
+  rows to the next stored market candle. It does not fabricate gap candles and
+  keeps synchronized tracks on one shared simulated-time barrier.
+- Added exact `Jul 10, 23:30/23:45 -> Jul 13, 00:00`, daily-source, and 10x
+  regressions, including `play -> __clock_step`, cursor advancement, and the
+  invariant that playback remains `playing` while crossing the weekend.
+
 ### Fixed - Replay selection, data availability, and one-bar viewport (2026-07-13)
 - Required paginated MT5 history cache entries to cover the requested `before`
   boundary before Replay may reuse them. An unrelated stale tail now triggers a

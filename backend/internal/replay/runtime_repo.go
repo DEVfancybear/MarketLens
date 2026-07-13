@@ -327,6 +327,71 @@ func commandTrack(tracks []gen.ListReplayTracksForSessionForUpdateRow, payload j
 	return nil, fmt.Errorf("%w: order track does not belong to the session", ErrBadRequest)
 }
 
+// resolveReplayStepTarget advances through provider-calendar gaps without
+// inventing candles. The normal interval target remains authoritative whenever
+// at least one track has a real row to reveal. Only an entirely empty interval
+// jumps to the earliest next stored row, keeping synchronized tracks on one
+// shared clock while making weekend/holiday playback responsive.
+func resolveReplayStepTarget(
+	ctx context.Context,
+	q runtimeBarQueries,
+	tracks []gen.ListReplayTracksForSessionForUpdateRow,
+	targetTime time.Time,
+	completionTime time.Time,
+) ([]gen.ReplayDatasetBar, time.Time, error) {
+	selectAtTarget := func(at time.Time) ([]gen.ReplayDatasetBar, bool, error) {
+		selected := make([]gen.ReplayDatasetBar, len(tracks))
+		advanced := false
+		for i, track := range tracks {
+			bar, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
+				DatasetID: track.DatasetID, OpenTime: timestamp(at),
+			})
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time}
+				}
+				return nil, false, err
+			}
+			selected[i] = bar
+			advanced = advanced || bar.Seq > track.CursorSeq
+		}
+		return selected, advanced, nil
+	}
+
+	selected, advanced, err := selectAtTarget(targetTime)
+	if err != nil || advanced || !targetTime.Before(completionTime) {
+		return selected, targetTime, err
+	}
+
+	var nextTime time.Time
+	for _, track := range tracks {
+		if track.RowCount > 0 && track.CursorSeq+1 >= int64(track.RowCount) {
+			continue
+		}
+		next, nextErr := q.GetReplayDatasetBarBySeq(ctx, gen.GetReplayDatasetBarBySeqParams{
+			DatasetID: track.DatasetID, Seq: track.CursorSeq + 1,
+		})
+		if nextErr != nil {
+			if errors.Is(nextErr, pgx.ErrNoRows) {
+				continue
+			}
+			return nil, targetTime, nextErr
+		}
+		candidate := next.OpenTime.Time
+		if !candidate.After(targetTime) || candidate.After(completionTime) {
+			continue
+		}
+		if nextTime.IsZero() || candidate.Before(nextTime) {
+			nextTime = candidate
+		}
+	}
+	if nextTime.IsZero() {
+		return selected, targetTime, nil
+	}
+	selected, _, err = selectAtTarget(nextTime)
+	return selected, nextTime, err
+}
+
 func applySynchronizedStep(
 	ctx context.Context,
 	q runtimeBarQueries,
@@ -361,24 +426,20 @@ func applySynchronizedStep(
 	if targetTime.After(completionTime) {
 		targetTime = completionTime
 	}
+	selectedRows, targetTime, err := resolveReplayStepTarget(ctx, q, tracks, targetTime, completionTime)
+	if err != nil {
+		return nil, false, err
+	}
 
 	drafts := make([]eventDraft, 0, len(tracks)*4)
 	changedTracks := make([]int, 0, len(tracks))
 	tradeChanged := false
 	for i := range tracks {
 		track := &tracks[i]
-		selected, findErr := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
-			DatasetID: track.DatasetID, OpenTime: timestamp(targetTime),
-		})
-		if findErr != nil {
-			if errors.Is(findErr, pgx.ErrNoRows) {
-				return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time}
-			}
-			return nil, false, findErr
-		}
+		selected := selectedRows[i]
 		if selected.Seq <= track.CursorSeq {
-			// A sparse provider calendar (weekend/session gap) advances the shared
-			// barrier without manufacturing a candle for this track.
+			// Another synchronized track may own this shared clock boundary. Keep
+			// this cursor unchanged rather than manufacturing a candle.
 			continue
 		}
 		rows, rowsErr := q.ListReplayDatasetBarsBySeqRange(ctx, gen.ListReplayDatasetBarsBySeqRangeParams{
@@ -616,13 +677,19 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 		if targetTime.After(completionTime) {
 			targetTime = completionTime
 		}
-		selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{
-			DatasetID: track.DatasetID, OpenTime: timestamp(targetTime),
-		})
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		selectedRows, resolvedTarget, err := resolveReplayStepTarget(
+			ctx,
+			q,
+			[]gen.ListReplayTracksForSessionForUpdateRow{*track},
+			targetTime,
+			completionTime,
+		)
+		if err != nil {
 			return nil, false, err
 		}
-		if err == nil && selected.Seq > track.CursorSeq {
+		targetTime = resolvedTarget
+		selected := selectedRows[0]
+		if selected.Seq > track.CursorSeq {
 			rows, err := q.ListReplayDatasetBarsBySeqRange(ctx, gen.ListReplayDatasetBarsBySeqRangeParams{
 				DatasetID: track.DatasetID, Seq: track.CursorSeq, Seq_2: selected.Seq,
 			})
