@@ -244,10 +244,12 @@ export function ChartTimeToolbar({
   chart,
   candles,
   onLoadCandlesAroundTime,
+  onTimeZoneChange,
 }: {
   chart: IChartApi | null;
   candles: Candle[];
   onLoadCandlesAroundTime?: (time: number) => Promise<LoadedGoToHistory>;
+  onTimeZoneChange?: (timeZone: string | undefined) => void;
 }) {
   const [now, setNow] = useState(() => new Date());
   const [goToOpen, setGoToOpen] = useState(false);
@@ -275,7 +277,15 @@ export function ChartTimeToolbar({
   const authStatus = useAtomValue(authStatusAtom);
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
-  const activeTimeZone = chartTimeZoneToIntlTimeZone(timeZoneId);
+  const backendExchangeTimeZone = navigationCatalog?.timeZone?.exchange;
+  const activeTimeZone = chartTimeZoneToIntlTimeZone(
+    timeZoneId,
+    backendExchangeTimeZone,
+  );
+
+  useEffect(() => {
+    onTimeZoneChange?.(activeTimeZone);
+  }, [activeTimeZone, onTimeZoneChange]);
 
   useEffect(() => {
     let cancelled = false;

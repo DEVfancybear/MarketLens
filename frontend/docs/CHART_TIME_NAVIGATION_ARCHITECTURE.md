@@ -102,7 +102,10 @@ a stale floating time label over the newly visible candles.
 
 The backend is the source of truth. `GET
 /api/v1/chart/time-navigation/shortcuts` returns the ordered labels, target
-timeframes, and tooltips. `POST /api/v1/chart/time-navigation/resolve` accepts a
+timeframes, tooltips, and the configured chart timezone contract. Its
+`timeZone.exchange` value is an IANA timezone used for the `Exchange` display
+option; `timeZone.data` is always `UTC` to document the immutable candle/drawing
+coordinate domain. `POST /api/v1/chart/time-navigation/resolve` accepts a
 shortcut plus the latest candle's Unix timestamp and returns `mode`, timeframe,
 and an absolute UTC `from/to` range.
 
@@ -275,24 +278,33 @@ persisted in `localStorage` under `chartTimeZone`.
 
 Supported behavior:
 
-- `Exchange` means the browser/default chart timezone. This preserves the
-  existing local-time behavior until symbol-level exchange timezones are added.
+- `Exchange` resolves to the backend-configured IANA timezone returned by
+  `GET /api/v1/chart/time-navigation/shortcuts`. While that catalog is loading,
+  the UI temporarily falls back to the browser timezone.
 - `UTC` and named IANA zones such as `America/New_York` use browser `Intl`.
-- The toolbar clock, UTC offset text, `Go to` date/time parsing and defaults, and
-  the temporary Go-to marker label all use the selected timezone.
+- The toolbar clock, UTC offset text, `Go to` date/time parsing and defaults,
+  temporary Go-to marker, chart time-axis ticks, and floating crosshair label
+  all use the selected timezone.
 - Candle timestamps remain unchanged. Lightweight Charts itself receives UTC
   timestamps; the app converts user-entered wall time to UTC seconds before
   calling `setVisibleRange` / `setVisibleLogicalRange`.
 
+The toolbar fetches the catalog once, resolves the active IANA zone, and passes
+that zone to `PriceChart`. Lightweight Charts formatter callbacks are
+synchronous, so crosshair movement never calls the backend. The backend owns
+the timezone choice; the frontend only renders an existing Unix timestamp in
+that zone.
+
 Do not shift or rewrite the candle dataset for timezone selection in this app.
 That would also move drawings, replay boundaries, indicators, and trade levels.
-Timezone selection is a presentation/input contract until a future dedicated
-time-axis transformation layer is added.
+Timezone selection is a presentation/input contract: format axis and crosshair
+labels at render time without transforming their underlying UTC coordinates.
 
 ## 12. Maintenance Rules
 
-- Keep shortcut catalog/range math in `backend/internal/timenavigation`; the
-  React component should remain a thin API and chart-viewport adapter.
+- Keep shortcut catalog/range math and the Exchange timezone contract in
+  `backend/internal/timenavigation`; the React component should remain a thin
+  API and chart-viewport adapter.
 - Keep Go-to dialog parsing and timezone presentation helpers in
   `chartTimeNavigation.ts`; these are local input/display concerns.
 - Add TypeScript tests for every new shortcut, parser behavior, or popup
@@ -332,7 +344,9 @@ Manual checks:
   and time are restored,
 - confirm the time fields are enabled through `2H` and disabled/reset to
   `00:00` on `4H`, `1D`, `1W`, and `1M`,
-- verify current clock displays the local time and UTC offset,
+- verify current clock displays the backend-configured Exchange time and UTC
+  offset,
 - click the clock, choose `UTC` and `America/New_York`, then confirm the clock,
-  offset, Go-to defaults, and marker chip follow the selected timezone,
+  offset, Go-to defaults, marker chip, time-axis ticks, and crosshair label all
+  follow the selected timezone,
 - test with Replay loaded so date jumps clamp to replay-visible candles.

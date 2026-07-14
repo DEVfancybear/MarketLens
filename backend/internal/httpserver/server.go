@@ -89,7 +89,7 @@ func New(
 	health.RegisterRoutes(app, pinger)
 
 	api := app.Group("/api/v1")
-	timenavigation.RegisterRoutes(api)
+	timenavigation.RegisterRoutes(api, cfg.ChartTimeZone)
 	if authHandler != nil {
 		authHandler.Register(api)
 	}

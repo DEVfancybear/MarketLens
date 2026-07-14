@@ -1,5 +1,6 @@
 import type { Theme } from "@/store/uiStore";
 import { TF_SECONDS, type Timeframe } from "../../types";
+import type { TickMarkFormatter } from "lightweight-charts";
 
 /**
  * Canvas-safe mirror of the semantic CSS theme. Keep this contract in sync
@@ -28,7 +29,42 @@ export function chartColors(theme: Theme) {
   };
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
+type ZonedTimeParts = {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+  second: string;
+};
+
+function zonedTimeParts(
+  date: Date,
+  timeZone?: string,
+  locale = "en-US",
+): ZonedTimeParts {
+  const options: Intl.DateTimeFormatOptions = {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  };
+  if (timeZone) options.timeZone = timeZone;
+  const parts = new Intl.DateTimeFormat(locale, options).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
 
 /** TradingView-style bar spacing per timeframe — tighter on low TFs. */
 export const BAR_SPACING: Record<Timeframe, number> = {
@@ -47,24 +83,46 @@ export const BAR_SPACING: Record<Timeframe, number> = {
 
 /**
  * Crosshair time-tooltip formatter: HH:mm for intraday, "d MMM 'yy" for daily+,
- * matching TradingView's floating time label.
+ * matching TradingView's floating time label. `timeZone` is the backend-owned
+ * IANA display zone from the time-navigation catalog; the timestamp itself
+ * remains the UTC Unix coordinate supplied by Lightweight Charts.
  */
-export function makeTimeFormatter(tf: Timeframe) {
+export function makeTimeFormatter(tf: Timeframe, timeZone?: string) {
   const intraday = TF_SECONDS[tf] < 86400;
   return (time: number) => {
     const d = new Date(time * 1000);
+    const parts = zonedTimeParts(d, timeZone);
     if (intraday) {
-      const mon = d.toLocaleString("en-US", {
-        month: "short",
-        timeZone: "UTC",
-      });
-      return `${d.getUTCDate()} ${mon}  ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+      return `${parts.day} ${parts.month}  ${parts.hour}:${parts.minute}`;
     }
-    return d.toLocaleDateString("en-US", {
+    const options: Intl.DateTimeFormatOptions = {
       day: "numeric",
       month: "short",
       year: "2-digit",
-      timeZone: "UTC",
-    });
+    };
+    if (timeZone) options.timeZone = timeZone;
+    return d.toLocaleDateString("en-US", options);
+  };
+}
+
+// Lightweight Charts formats its built-in time scale in UTC. Keep the axis in
+// the same selected chart time zone as Go To and the floating crosshair label.
+export function makeTickMarkFormatter(timeZone?: string): TickMarkFormatter {
+  return (time, tickMarkType, locale) => {
+    if (typeof time !== "number") return null;
+    const parts = zonedTimeParts(new Date(time * 1000), timeZone, locale || "en-US");
+    switch (tickMarkType) {
+      case 0: // TickMarkType.Year
+        return parts.year;
+      case 1: // TickMarkType.Month
+        return parts.month;
+      case 2: // TickMarkType.DayOfMonth
+        return `${parts.day} ${parts.month}`;
+      case 4: // TickMarkType.TimeWithSeconds
+        return `${parts.hour}:${parts.minute}:${parts.second}`;
+      case 3: // TickMarkType.Time
+      default:
+        return `${parts.hour}:${parts.minute}`;
+    }
   };
 }

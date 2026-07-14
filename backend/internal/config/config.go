@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/joho/godotenv"
 )
@@ -33,6 +34,7 @@ type Config struct {
 	FirebasePrivateKey  string
 
 	CORSAllowedOrigins []string
+	ChartTimeZone      string
 
 	ObjectStorageEndpoint     string
 	ObjectStorageBucket       string
@@ -105,6 +107,7 @@ func Load() (Config, error) {
 		// restore the real newlines so it parses as PEM.
 		FirebasePrivateKey:        strings.ReplaceAll(os.Getenv("FIREBASE_PRIVATE_KEY"), `\n`, "\n"),
 		CORSAllowedOrigins:        splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		ChartTimeZone:             strings.TrimSpace(getEnv("CHART_TIME_ZONE", "Asia/Ho_Chi_Minh")),
 		ObjectStorageEndpoint:     os.Getenv("OBJECT_STORAGE_ENDPOINT"),
 		ObjectStorageBucket:       os.Getenv("OBJECT_STORAGE_BUCKET"),
 		ObjectStorageRegion:       getEnv("OBJECT_STORAGE_REGION", "us-east-1"),
@@ -137,6 +140,10 @@ func Load() (Config, error) {
 // validate fails fast when required secrets are absent in a non-development
 // environment. Development stays permissive so `go run` works with no setup.
 func (c Config) validate() error {
+	if _, err := time.LoadLocation(c.ChartTimeZone); err != nil {
+		return fmt.Errorf("CHART_TIME_ZONE must be a valid IANA time zone: %q", c.ChartTimeZone)
+	}
+
 	storageValues := []string{c.ObjectStorageBucket, c.ObjectStorageAccessKey, c.ObjectStorageSecretKey}
 	storageSet := 0
 	for _, value := range storageValues {

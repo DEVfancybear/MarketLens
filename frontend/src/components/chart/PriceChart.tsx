@@ -39,7 +39,11 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { indicatorSeriesDataForCandles } from "@/services/indicatorSeriesProjection";
-import { chartColors, makeTimeFormatter } from "./chartTheme";
+import {
+  chartColors,
+  makeTickMarkFormatter,
+  makeTimeFormatter,
+} from "./chartTheme";
 import {
   INDICATOR_PANE_HEIGHT,
   RIGHT_OFFSET_BARS,
@@ -237,12 +241,14 @@ export function PriceChart({
   children,
   onLoadMoreHistory,
   onReady,
+  timeZone,
 }: {
   candles: Candle[];
   indicatorsOverride?: IndicatorConfig[];
   children?: React.ReactNode;
   onLoadMoreHistory?: () => Promise<void> | void;
   onReady?: (chart: IChartApi | null) => void;
+  timeZone?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -397,10 +403,10 @@ export function PriceChart({
       grid: gridOptions(theme, gridVisible),
       rightPriceScale: mainPriceScaleOptions(theme),
       leftPriceScale: { visible: false },
-      timeScale: timeScaleOptions(theme, timeframe),
+      timeScale: timeScaleOptions(theme, timeframe, timeZone),
       localization: {
         // Floating crosshair time tooltip — HH:mm intraday, date for daily.
-        timeFormatter: makeTimeFormatter(timeframe),
+        timeFormatter: makeTimeFormatter(timeframe, timeZone),
       },
       crosshair: crosshairOptions(theme),
       handleScroll: {
@@ -584,18 +590,21 @@ export function PriceChart({
       rightPriceScale: mainPriceScaleOptions(theme),
       timeScale: {
         ...(timeframeChanged
-          ? timeScaleOptions(theme, timeframe)
-          : { borderColor: c.border }),
+          ? timeScaleOptions(theme, timeframe, timeZone)
+          : {
+              borderColor: c.border,
+              tickMarkFormatter: makeTickMarkFormatter(timeZone),
+            }),
         ...(timeframeChanged ? defaultViewport : {}),
         rightBarStaysOnScroll: true,
         shiftVisibleRangeOnNewBar: true,
         allowShiftVisibleRangeOnWhitespaceReplacement: false,
       },
-      localization: { timeFormatter: makeTimeFormatter(timeframe) },
+      localization: { timeFormatter: makeTimeFormatter(timeframe, timeZone) },
       crosshair: crosshairOptions(theme),
     });
     candleSeriesRef.current?.applyOptions(candlestickOptions(theme, precision));
-  }, [theme, gridVisible, timeframe, precision]);
+  }, [theme, gridVisible, timeframe, precision, timeZone]);
 
   // ---- Push candle data ----
   useEffect(() => {

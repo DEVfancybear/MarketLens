@@ -24,6 +24,15 @@ export type TimeNavigationCatalog = {
     hotkey: { label: string; key: string; altKey: boolean };
     specificTimeTimeframes: string[];
   };
+  /**
+   * The backend-owned display timezone for the Exchange option. Candle and
+   * drawing timestamps remain Unix seconds (UTC); this value only controls
+   * how those timestamps are rendered by the chart UI.
+   */
+  timeZone?: {
+    exchange: string;
+    data: "UTC";
+  };
 };
 
 export type TimeNavigationResolution = {

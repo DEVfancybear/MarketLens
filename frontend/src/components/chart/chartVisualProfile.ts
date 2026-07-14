@@ -9,7 +9,7 @@ import {
 } from "lightweight-charts";
 import type { Theme } from "@/store/uiStore";
 import type { Timeframe } from "@/types";
-import { BAR_SPACING, chartColors } from "./chartTheme";
+import { BAR_SPACING, chartColors, makeTickMarkFormatter } from "./chartTheme";
 
 // Keep this policy module runtime-independent from Lightweight Charts. Version
 // 5 is ESM-only, while the pure Node regression suite compiles these helpers to
@@ -66,6 +66,7 @@ export function panePriceScaleOptions(theme: Theme): DeepPartial<PriceScaleOptio
 export function timeScaleOptions(
   theme: Theme,
   timeframe: Timeframe,
+  timeZone?: string,
 ): DeepPartial<TimeScaleOptions> {
   const colors = chartColors(theme);
   return {
@@ -73,6 +74,7 @@ export function timeScaleOptions(
     borderVisible: true,
     timeVisible: true,
     secondsVisible: false,
+    tickMarkFormatter: makeTickMarkFormatter(timeZone),
     ...timeScaleDefaults(timeframe),
     fixLeftEdge: false,
     fixRightEdge: false,

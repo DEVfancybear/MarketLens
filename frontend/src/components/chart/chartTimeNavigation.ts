@@ -220,8 +220,15 @@ function zonedParts(date: Date, timeZone?: string): DateTimeParts {
 
 export function chartTimeZoneToIntlTimeZone(
   timeZoneId: ChartTimeZoneId = EXCHANGE_TIME_ZONE_ID,
+  exchangeTimeZone?: string,
 ): string | undefined {
-  return timeZoneId === EXCHANGE_TIME_ZONE_ID ? undefined : timeZoneId;
+  if (timeZoneId !== EXCHANGE_TIME_ZONE_ID) return timeZoneId;
+  // "Exchange" is resolved by the backend time-navigation contract. Keep a
+  // browser-local fallback while the catalog is loading or if an older
+  // backend does not provide the optional field.
+  return exchangeTimeZone && isSupportedChartTimeZone(exchangeTimeZone)
+    ? exchangeTimeZone
+    : undefined;
 }
 
 export function isSupportedChartTimeZone(value: string): boolean {

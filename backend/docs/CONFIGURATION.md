@@ -18,6 +18,7 @@ Copy `backend/.env.example` to `backend/.env` for local development.
 | `FIREBASE_CLIENT_EMAIL` | string | empty | Firebase Admin service-account email |
 | `FIREBASE_PRIVATE_KEY` | string | empty | Firebase Admin PEM; escaped `\n` newlines are supported |
 | `CORS_ALLOWED_ORIGINS` | CSV | `http://localhost:3000` | Credentialed browser origins; wildcard is unsupported |
+| `CHART_TIME_ZONE` | IANA timezone | `Asia/Ho_Chi_Minh` | Backend-owned display/input timezone for the chart's `Exchange` option; MT5 candle timestamps remain UTC |
 | `OBJECT_STORAGE_ENDPOINT` | URL | AWS regional S3 endpoint | Optional S3-compatible endpoint for R2/MinIO |
 | `OBJECT_STORAGE_BUCKET` | string | empty | Screenshot bucket; required with access/secret keys |
 | `OBJECT_STORAGE_REGION` | string | `us-east-1` | SigV4 signing region (`auto` for Cloudflare R2) |

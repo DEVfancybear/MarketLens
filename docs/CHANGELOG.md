@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Backend-owned chart timezone formatting (2026-07-15)
+- Removed the crosshair formatter's hard-coded UTC rendering and made the
+  toolbar clock, Go-to marker, time-axis ticks, and floating crosshair label use
+  one resolved chart timezone.
+- Extended `GET /api/v1/chart/time-navigation/shortcuts` with the backend-owned
+  `timeZone.exchange` IANA zone and explicit `timeZone.data: "UTC"` coordinate
+  contract. Added validated `CHART_TIME_ZONE` configuration with embedded Go
+  timezone data for consistent Windows/container deployments.
+- Kept MT5 candles, drawings, Replay, indicators, and trade coordinates in Unix
+  UTC; the frontend fetches the timezone catalog once and formats synchronously
+  without issuing requests during pointer movement.
+- Added backend API/config validation and frontend regressions for the exact
+  `2026-07-01 00:15 Asia/Ho_Chi_Minh` / `2026-06-30 17:15 UTC` boundary.
+
 ### Fixed - Go-to navigation outside loaded chart history (2026-07-14)
 - Stopped the chart `Go to` action from silently selecting the first or last
   currently loaded candle when the requested date is outside the client window.

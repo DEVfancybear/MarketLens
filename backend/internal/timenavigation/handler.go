@@ -7,10 +7,10 @@ type resolveRequest struct {
 	AnchorTime int64  `json:"anchorTime"`
 }
 
-func RegisterRoutes(router fiber.Router) {
+func RegisterRoutes(router fiber.Router, exchangeTimeZones ...string) {
 	group := router.Group("/chart/time-navigation")
 	group.Get("/shortcuts", func(c *fiber.Ctx) error {
-		return c.JSON(Catalog())
+		return c.JSON(Catalog(exchangeTimeZones...))
 	})
 	group.Post("/resolve", func(c *fiber.Ctx) error {
 		var request resolveRequest

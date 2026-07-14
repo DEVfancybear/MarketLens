@@ -22,9 +22,18 @@ type GoToCapabilities struct {
 	SpecificTimeTimeframes []string `json:"specificTimeTimeframes"`
 }
 
+// TimeZoneCapabilities separates the immutable MT5 data clock from the chart's
+// backend-owned Exchange display clock. Candle timestamps remain UTC; clients
+// use Exchange as an IANA presentation/input timezone.
+type TimeZoneCapabilities struct {
+	Exchange string `json:"exchange"`
+	Data     string `json:"data"`
+}
+
 type CatalogResponse struct {
-	Shortcuts []Shortcut       `json:"shortcuts"`
-	GoTo      GoToCapabilities `json:"goTo"`
+	Shortcuts []Shortcut           `json:"shortcuts"`
+	GoTo      GoToCapabilities     `json:"goTo"`
+	TimeZone  TimeZoneCapabilities `json:"timeZone"`
 }
 
 type Resolution struct {
@@ -54,7 +63,13 @@ func Shortcuts() []Shortcut {
 	return result
 }
 
-func Catalog() CatalogResponse {
+const defaultExchangeTimeZone = "UTC"
+
+func Catalog(exchangeTimeZones ...string) CatalogResponse {
+	exchangeTimeZone := defaultExchangeTimeZone
+	if len(exchangeTimeZones) > 0 && exchangeTimeZones[0] != "" {
+		exchangeTimeZone = exchangeTimeZones[0]
+	}
 	return CatalogResponse{
 		Shortcuts: Shortcuts(),
 		GoTo: GoToCapabilities{
@@ -62,6 +77,10 @@ func Catalog() CatalogResponse {
 			SpecificTimeTimeframes: []string{
 				"1m", "3m", "5m", "15m", "30m", "1H", "2H",
 			},
+		},
+		TimeZone: TimeZoneCapabilities{
+			Exchange: exchangeTimeZone,
+			Data:     "UTC",
 		},
 	}
 }

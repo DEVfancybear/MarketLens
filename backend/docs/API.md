@@ -66,6 +66,10 @@ Returns the ordered toolbar catalog plus backend-owned Go-to capabilities:
     "specificTimeTimeframes": [
       "1m", "3m", "5m", "15m", "30m", "1H", "2H"
     ]
+  },
+  "timeZone": {
+    "exchange": "Asia/Ho_Chi_Minh",
+    "data": "UTC"
   }
 }
 ```
@@ -73,6 +77,11 @@ Returns the ordered toolbar catalog plus backend-owned Go-to capabilities:
 The time field is enabled only when the active chart timeframe appears in
 `specificTimeTimeframes`. Longer intervals navigate by calendar date at
 `00:00` in the selected chart timezone.
+
+`timeZone.exchange` is the backend-configured IANA timezone used when the chart
+selects `Exchange`. `timeZone.data` documents the immutable MT5 candle timestamp
+domain. The browser formats UTC timestamps in the selected chart timezone; it
+must not shift candle, drawing, replay, or trade coordinates.
 
 ### `POST /api/v1/chart/time-navigation/resolve`
 

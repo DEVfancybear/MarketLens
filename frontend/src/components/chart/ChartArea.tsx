@@ -47,6 +47,7 @@ export function ChartArea() {
   const indicators = useAtomValue(indicatorsAtom);
   const crosshair = useAtomValue(crosshairAtom);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
+  const [chartTimeZone, setChartTimeZone] = useState<string | undefined>();
   const [benchmarkCandles, setBenchmarkCandles] = useState<Candle[] | null>(null);
   const [benchmarkStartIndex, setBenchmarkStartIndex] = useState(0);
   const [benchmarkVisibleCount, setBenchmarkVisibleCount] = useState<number | null>(null);
@@ -184,6 +185,7 @@ export function ChartArea() {
           indicatorsOverride={displayedIndicators}
           onLoadMoreHistory={benchmarkCandles ? undefined : loadOlderCandles}
           onReady={setMainChart}
+          timeZone={chartTimeZone}
         >
           <SmcLayer />
           <TradeLevels />
@@ -202,6 +204,7 @@ export function ChartArea() {
         onLoadCandlesAroundTime={
           benchmarkCandles || replayOwnsChart ? undefined : loadCandlesAroundTime
         }
+        onTimeZoneChange={setChartTimeZone}
       />
     </div>
   );

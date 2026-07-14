@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { UTCTimestamp } from "lightweight-charts";
 
 import type { Candle } from "../../src/types/market";
+import {
+  makeTickMarkFormatter,
+  makeTimeFormatter,
+} from "../../src/components/chart/chartTheme";
 import {
   calendarCells,
   canSelectGoToTime,
   candlesCoverGoToTime,
+  chartTimeZoneToIntlTimeZone,
   centeredLogicalRange,
+  EXCHANGE_TIME_ZONE_ID,
   firstCandleIndexAtOrAfter,
   formatDateInput,
   formatGoToMarkerLabel,
@@ -156,6 +163,44 @@ test("go-to marker label can render in selected time zone", () => {
   assert.equal(
     formatGoToMarkerLabel(time, "America/New_York"),
     "Wed 01 Jul '26\n00:00",
+  );
+});
+
+test("chart crosshair and time-axis labels follow the Go-to time zone", () => {
+  const time = Date.UTC(2026, 5, 30, 17, 15, 0, 0) / 1000;
+  const backendExchangeTimeZone = "Asia/Ho_Chi_Minh";
+  const timeZone = chartTimeZoneToIntlTimeZone(
+    EXCHANGE_TIME_ZONE_ID,
+    backendExchangeTimeZone,
+  );
+  assert.equal(timeZone, backendExchangeTimeZone);
+  const tickFormatter = makeTickMarkFormatter(timeZone);
+
+  assert.equal(parseLocalDateTime("2026-07-01", "00:15", timeZone), time);
+  assert.equal(
+    formatGoToMarkerLabel(time, timeZone),
+    "Wed 01 Jul '26\n00:15",
+  );
+  assert.equal(makeTimeFormatter("15m", timeZone)(time), "1 Jul  00:15");
+  assert.equal(makeTimeFormatter("15m", "UTC")(time), "30 Jun  17:15");
+  assert.equal(
+    tickFormatter(
+      time as UTCTimestamp,
+      3 as Parameters<typeof tickFormatter>[1],
+      "en-US",
+    ),
+    "00:15",
+  );
+});
+
+test("explicit timezone selection overrides the backend Exchange timezone", () => {
+  assert.equal(
+    chartTimeZoneToIntlTimeZone("UTC", "Asia/Ho_Chi_Minh"),
+    "UTC",
+  );
+  assert.equal(
+    chartTimeZoneToIntlTimeZone(EXCHANGE_TIME_ZONE_ID, "not/a-zone"),
+    undefined,
   );
 });
 

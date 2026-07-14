@@ -56,7 +56,7 @@ func TestResolveRejectsInvalidInput(t *testing.T) {
 
 func TestHTTPContract(t *testing.T) {
 	app := fiber.New()
-	RegisterRoutes(app.Group("/api/v1"))
+	RegisterRoutes(app.Group("/api/v1"), "Asia/Ho_Chi_Minh")
 
 	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/chart/time-navigation/shortcuts", nil))
 	if err != nil {
@@ -77,6 +77,9 @@ func TestHTTPContract(t *testing.T) {
 	}
 	if len(catalog.GoTo.SpecificTimeTimeframes) != 7 || catalog.GoTo.SpecificTimeTimeframes[6] != "2H" {
 		t.Fatalf("unexpected specific-time policy: %+v", catalog.GoTo.SpecificTimeTimeframes)
+	}
+	if catalog.TimeZone.Exchange != "Asia/Ho_Chi_Minh" || catalog.TimeZone.Data != "UTC" {
+		t.Fatalf("unexpected time-zone contract: %+v", catalog.TimeZone)
 	}
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/chart/time-navigation/resolve", strings.NewReader(`{"shortcut":"YTD","anchorTime":1783756800}`))
