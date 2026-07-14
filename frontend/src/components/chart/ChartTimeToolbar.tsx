@@ -196,6 +196,7 @@ function TimeZoneMenu({
   return createPortal(
     <div data-chart-ui className="fixed inset-0 z-[85]" onMouseDown={onClose}>
       <div
+        data-chart-time-zone-menu
         className="fixed max-h-[min(520px,calc(100vh-48px))] w-[250px] overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 text-[13px] font-semibold text-ink shadow-floating"
         style={{ left: position.left, top: position.top }}
         onMouseDown={(event) => event.stopPropagation()}
@@ -653,7 +654,7 @@ function GoToDialog({
           }
           trapFocusWithin(event);
         }}
-        className="fixed w-[326px] overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
+        className="platform-dialog fixed w-[326px] overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
         style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
       >

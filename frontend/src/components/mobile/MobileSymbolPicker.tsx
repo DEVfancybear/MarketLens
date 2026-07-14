@@ -29,7 +29,7 @@ export function MobileSymbolPicker() {
       </button>
       {open && (
         <MobileSheet title="Select market" onClose={() => setOpen(false)} fullscreen>
-          <div className="mobile-picker-search"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search symbol or market" inputMode="search" /></div>
+          <div className="mobile-picker-search"><Search size={18} /><input type="search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search symbol or market" inputMode="search" /></div>
           <div className="mobile-symbol-list">
             {results.map((item) => (
               <button key={item.id} type="button" onClick={() => { setSymbol(item.id); setOpen(false); setQuery(""); }}>
@@ -38,6 +38,7 @@ export function MobileSymbolPicker() {
                 {item.id === symbol && <Check size={18} className="text-brand" />}
               </button>
             ))}
+            {results.length === 0 && <div className="mobile-empty-state"><strong>No markets found</strong><span>Check the MT5 catalog connection or try another search.</span></div>}
           </div>
         </MobileSheet>
       )}

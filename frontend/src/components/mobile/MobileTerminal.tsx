@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { BarChart3, Brush, ChartCandlestick, List, Menu, Play, WalletCards } from "lucide-react";
+import { BarChart3, Brush, ChartCandlestick, ChartNoAxesCombined, List, Menu, Play, SlidersHorizontal, WalletCards } from "lucide-react";
 import { ChartArea } from "@/components/chart/ChartArea";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 import { MobileSheet } from "./MobileSheet";
@@ -17,12 +17,18 @@ import { MobileReplayWorkspace } from "./MobileReplayWorkspace";
 import { MobileJournalWorkspace } from "./MobileJournalWorkspace";
 import { MobileAnalyticsWorkspace } from "./MobileAnalyticsWorkspace";
 import { MobilePineWorkspace } from "./MobilePineWorkspace";
+import { MobileChartToolsWorkspace } from "./MobileChartToolsWorkspace";
+import { MobileLogsWorkspace } from "./MobileLogsWorkspace";
+import { MobileAccountAvatar, MobileAccountWorkspace } from "./MobileAccountWorkspace";
+import { MobileObjectTreeWorkspace } from "./MobileObjectTreeWorkspace";
+import { IndicatorMenu } from "@/components/toolbar/IndicatorMenu";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   cancelReplaySelectionAtom,
   replaySelectionModeAtom,
   replayWorkspaceRequestAtom,
 } from "@/store/replayUiState";
+import { setAlertCenterAtom } from "@/store/uiStore";
 
 type MobileScreen = "chart" | "markets" | "trade" | "portfolio" | "menu";
 type Surface = "draw" | MobileWorkspace | null;
@@ -34,6 +40,7 @@ export function MobileTerminal() {
   const replayWorkspaceRequest = useAtomValue(replayWorkspaceRequestAtom);
   const observedReplayRequestRef = useRef(replayWorkspaceRequest);
   const cancelReplaySelection = useSetAtom(cancelReplaySelectionAtom);
+  const setAlertCenter = useSetAtom(setAlertCenterAtom);
 
   useEffect(() => {
     surfaceRef.current = surface;
@@ -76,13 +83,15 @@ export function MobileTerminal() {
             <header className="mobile-topbar">
               <div className="mobile-brand" aria-label="SMC Terminal"><span><ChartCandlestick size={19} /></span></div>
               <MobileSymbolPicker />
-              <button type="button" className="mobile-avatar" aria-label="Account">N</button>
+              <button type="button" className="mobile-avatar" aria-label="Account" onClick={() => openSurface("account")}><MobileAccountAvatar /></button>
             </header>
             <MobileTimeframeBar />
             <div className="mobile-chart" aria-label="Interactive price chart">
               <ChartPerformanceProfiler><ChartArea /></ChartPerformanceProfiler>
               <MobileChartActions
                 openDrawing={() => openSurface("draw")}
+                openIndicators={() => openSurface("indicators")}
+                openTools={() => openSurface("chartTools")}
                 openReplay={() => openSurface("replay")}
               />
             </div>
@@ -102,12 +111,12 @@ export function MobileTerminal() {
       </div>
 
       {surface === "draw" && (
-        <MobileSheet title="Drawing tools" onClose={closeSurface}>
+        <MobileSheet title="Drawing tools" onClose={closeSurface} fullscreen>
           <MobileDrawingPalette onDone={closeSurface} />
         </MobileSheet>
       )}
       {surface && surface !== "draw" && (
-        <MobileSheet title={workspaceTitle(surface)} onClose={closeSurface} fullscreen>
+        <MobileSheet key={surface} title={workspaceTitle(surface)} onClose={closeSurface} fullscreen>
           <div className="mobile-workspace-content">
             {surface === "replay" && (
               <MobileReplayWorkspace returnToChart={() => { closeSurface(); setScreen("chart"); }} />
@@ -115,6 +124,18 @@ export function MobileTerminal() {
             {surface === "journal" && <MobileJournalWorkspace />}
             {surface === "analytics" && <MobileAnalyticsWorkspace />}
             {surface === "pine" && <MobilePineWorkspace />}
+            {surface === "indicators" && <IndicatorMenu presentation="mobile" onRequestClose={closeSurface} onOpenPine={() => setSurface("pine")} />}
+            {surface === "chartTools" && (
+              <MobileChartToolsWorkspace
+                onOpenAlerts={() => { closeSurface(); setAlertCenter(true); }}
+                onOpenObjects={() => setSurface("objects")}
+                onOpenLogs={() => setSurface("logs")}
+                onOpenTrade={() => { closeSurface(); setScreen("trade"); }}
+              />
+            )}
+            {surface === "objects" && <MobileObjectTreeWorkspace />}
+            {surface === "logs" && <MobileLogsWorkspace />}
+            {surface === "account" && <MobileAccountWorkspace />}
           </div>
         </MobileSheet>
       )}
@@ -124,9 +145,13 @@ export function MobileTerminal() {
 
 function MobileChartActions({
   openDrawing,
+  openIndicators,
+  openTools,
   openReplay,
 }: {
   openDrawing: () => void;
+  openIndicators: () => void;
+  openTools: () => void;
   openReplay: () => void;
 }) {
   const replay = useReplayClientProjection();
@@ -139,6 +164,8 @@ function MobileChartActions({
   return (
     <div className={replayBusy ? "mobile-chart-actions mobile-chart-actions--replay" : "mobile-chart-actions"}>
       <button type="button" onClick={openDrawing}><Brush size={18} />Draw</button>
+      <button type="button" onClick={openIndicators}><ChartNoAxesCombined size={18} />Indicators</button>
+      <button type="button" onClick={openTools}><SlidersHorizontal size={18} />Tools</button>
       {!replayBusy && (
         <button type="button" onClick={openReplay}><Play size={18} />Replay</button>
       )}
@@ -151,5 +178,16 @@ function NavButton({ label, icon, active, onClick }: { label: string; icon: Reac
 }
 
 function workspaceTitle(surface: Exclude<Surface, "draw" | null>): string {
-  return surface === "replay" ? "Market replay" : surface === "journal" ? "Trading journal" : surface === "analytics" ? "Performance analytics" : "Pine workspace";
+  const titles: Record<Exclude<Surface, "draw" | null>, string> = {
+    replay: "Market replay",
+    journal: "Trading journal",
+    analytics: "Performance analytics",
+    pine: "Pine workspace",
+    indicators: "Indicators",
+    chartTools: "Chart tools",
+    objects: "Object tree",
+    logs: "Runtime logs",
+    account: "Account",
+  };
+  return titles[surface];
 }

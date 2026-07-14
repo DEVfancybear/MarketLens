@@ -20,6 +20,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `RESPONSIVE_ARCHITECTURE.md` | Implemented two-platform responsive boundary |
 | `PLATFORM_UI_ARCHITECTURE.md` | Desktop/mobile ownership, lazy chunks and accessibility contract |
 | `MOBILE_TOUCH_GESTURES.md` | Pointer Events, drag alternatives, sheet state machine and test matrix |
+| `MOBILE_DESKTOP_FEATURE_PARITY.md` | Maintained desktop-to-mobile capability matrix, shared-code rules and regression gate |
 | `../design-system/smc-trading-terminal/MASTER.md` | Canonical Institutional Command Center design system |
 | `SETTTING_ARCHITECTURE.md` | Settings dialog architecture |
 | `WATCHLIST_ARCHITECTURE.md` | Watchlist lists, sections, and persistence |

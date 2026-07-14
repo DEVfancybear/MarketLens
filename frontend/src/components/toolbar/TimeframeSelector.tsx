@@ -5,30 +5,17 @@ import { ChevronDown, ChevronUp, Plus, Star, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
-import {
-  getFavoriteTimeframes,
-  replaceFavoriteTimeframes,
-} from "@/services/api/resources/settingsApi";
-import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
-import { localStore } from "@/services/storage";
-import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
-import { logAtom } from "@/store/uiStore";
+import { useTimeframeFavorites } from "@/hooks/useTimeframeFavorites";
 import type { Timeframe } from "@/types";
 import { cn } from "@/utils/cn";
 import {
   CUSTOM_INTERVAL_TYPES,
   type CustomIntervalType,
-  DEFAULT_FAVORITE_TIMEFRAMES,
-  TIMEFRAME_FAVORITES_KEY,
   TIMEFRAME_MENU_GROUPS,
-  addFavoriteTimeframe,
   customIntervalToTimeframe,
-  normalizeFavoriteTimeframes,
   timeframeShortLabel,
-  toggleFavoriteTimeframe,
   visibleToolbarTimeframes,
 } from "./timeframeSelectorModel";
-import { useAtomValue, useSetAtom } from "jotai";
 
 export function TimeframeSelector({
   timeframe,
@@ -37,89 +24,12 @@ export function TimeframeSelector({
   timeframe: Timeframe;
   onChange: (timeframe: Timeframe) => void;
 }) {
-  const [favorites, setFavorites] = useState<Timeframe[]>(
-    DEFAULT_FAVORITE_TIMEFRAMES,
-  );
+  const { favorites, toggleFavorite, addFavorite } = useTimeframeFavorites();
   const [customOpen, setCustomOpen] = useState(false);
-  const authStatus = useAtomValue(authStatusAtom);
-  const backendSession = useAtomValue(backendSessionAtom);
-  const log = useSetAtom(logAtom);
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const favoritesRevisionRef = useRef(0);
-
-  useEffect(() => {
-    const saved = localStore.get<string[]>(
-      TIMEFRAME_FAVORITES_KEY,
-      DEFAULT_FAVORITE_TIMEFRAMES,
-    );
-    const next = normalizeFavoriteTimeframes(saved);
-    setFavorites(next.length ? next : DEFAULT_FAVORITE_TIMEFRAMES);
-  }, []);
-
-  useEffect(() => {
-    if (authStatus !== "anonymous") return;
-    localStore.remove(TIMEFRAME_FAVORITES_KEY);
-    setFavorites(DEFAULT_FAVORITE_TIMEFRAMES);
-  }, [authStatus]);
-
-  useEffect(() => {
-    if (authStatus === "anonymous" || !backendSession) return;
-
-    let cancelled = false;
-    const requestRevision = favoritesRevisionRef.current;
-    void getFavoriteTimeframes()
-      .then(({ timeframes }) => {
-        if (cancelled || requestRevision !== favoritesRevisionRef.current) return;
-        const normalized = normalizeFavoriteTimeframes(timeframes);
-        setFavorites(normalized);
-        localStore.set(TIMEFRAME_FAVORITES_KEY, normalized);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        log(
-          "warn",
-          `Timeframe favorites loaded from local cache: ${userFacingErrorMessage(error, "unknown error")}`,
-        );
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authStatus, backendSession, log]);
 
   const visible = useMemo(
     () => visibleToolbarTimeframes(favorites, timeframe),
     [favorites, timeframe],
-  );
-
-  const persistFavorites = useCallback(
-    (next: Timeframe[]) => {
-      const normalized = normalizeFavoriteTimeframes(next);
-      favoritesRevisionRef.current += 1;
-      setFavorites(normalized);
-      localStore.set(TIMEFRAME_FAVORITES_KEY, normalized);
-      if (!backendSession) return;
-
-      // Queue writes so two quick star clicks cannot leave an older list on the server.
-      saveQueueRef.current = saveQueueRef.current
-        .catch(() => undefined)
-        .then(() => replaceFavoriteTimeframes(normalized))
-        .then(() => undefined)
-        .catch((error) => {
-          log(
-            "error",
-            `Timeframe favorites sync failed: ${userFacingErrorMessage(error, "unknown error")}`,
-          );
-        });
-    },
-    [backendSession, log],
-  );
-
-  const toggleFavorite = useCallback(
-    (nextTimeframe: Timeframe) => {
-      persistFavorites(toggleFavoriteTimeframe(favorites, nextTimeframe));
-    },
-    [favorites, persistFavorites],
   );
 
   return (
@@ -264,7 +174,7 @@ export function TimeframeSelector({
         <CustomIntervalDialog
           onClose={() => setCustomOpen(false)}
           onAdd={(nextTimeframe) => {
-            persistFavorites(addFavoriteTimeframe(favorites, nextTimeframe));
+            addFavorite(nextTimeframe);
             onChange(nextTimeframe);
             setCustomOpen(false);
           }}

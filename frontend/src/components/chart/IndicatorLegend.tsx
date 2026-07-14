@@ -122,7 +122,7 @@ export function IndicatorLegend({
   if (indicators.length === 0) return null;
 
   return (
-    <div className={["flex max-w-full flex-col items-start gap-0.5 text-[12px] leading-none text-ink", className].join(" ")}>
+    <div data-indicator-legend className={["flex max-w-full flex-col items-start gap-0.5 text-[12px] leading-none text-ink", className].join(" ")}>
       {indicators.map((indicator) => {
         const visible = indicator.visible !== false;
         const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
@@ -196,6 +196,7 @@ function LegendButton({
 }) {
   return (
     <button
+      data-indicator-action
       type="button"
       title={title}
       disabled={disabled}

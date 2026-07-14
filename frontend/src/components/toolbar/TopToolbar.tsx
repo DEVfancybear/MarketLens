@@ -32,7 +32,6 @@ import {
   timeframeAtom,
   setTimeframeAtom,
   candlesAtom,
-  symbolAtom,
 } from "@/store/chartStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { backendSessionAtom } from "@/store/authStore";
@@ -56,7 +55,7 @@ import {
   showRightPanelTabAtom,
 } from "@/store/uiStore";
 import { cn } from "@/utils/cn";
-import { captureChart } from "@/components/chart/chartRegistry";
+import { useChartSnapshotActions } from "@/hooks/useChartSnapshotActions";
 import {
   chartLayoutPresetAtom,
   replayLayoutModeAtom,
@@ -111,6 +110,7 @@ export function TopToolbar() {
   const makeActiveLayoutDefault = useSetAtom(makeActiveLayoutDefaultAtom);
   const deleteActiveLayout = useSetAtom(deleteActiveLayoutAtom);
   const activeLayout = layouts.find((layout) => layout.id === activeLayoutId);
+  const snapshot = useChartSnapshotActions();
 
   const runLayoutAction = useCallback(
     async (action: () => Promise<unknown>, success: string) => {
@@ -140,62 +140,8 @@ export function TopToolbar() {
     }
   };
 
-  const captureSnapshotBlob = useCallback(async () => {
-    let blob: Blob | null = null;
-    try {
-      blob = await captureChart();
-    } catch (err) {
-      doLog("error", `Screenshot failed: ${(err as Error).message}`);
-      return;
-    }
-    if (!blob) {
-      doLog("warn", "Screenshot failed: chart not ready");
-      return null;
-    }
-    return blob;
-  }, [doLog]);
-
-  const downloadSnapshot = useCallback(async () => {
-    const blob = await captureSnapshotBlob();
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${getDefaultStore().get(symbolAtom)}_${timeframe}_${Date.now()}.png`;
-    // The anchor must be in the document for click() to trigger a download in
-    // Firefox/strict browsers; revoke is deferred so the browser has time to
-    // read the blob (revoking synchronously after click() can abort the save).
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    doLog("info", "Screenshot saved");
-  }, [captureSnapshotBlob, doLog, timeframe]);
-
-  const copySnapshot = useCallback(async () => {
-    const blob = await captureSnapshotBlob();
-    if (!blob) return;
-    const clipboard = navigator.clipboard as unknown as {
-      write?: (items: unknown[]) => Promise<void>;
-    };
-    const ClipboardItemCtor = (
-      globalThis as unknown as {
-        ClipboardItem?: new (items: Record<string, Blob>) => unknown;
-      }
-    ).ClipboardItem;
-    if (!clipboard.write || !ClipboardItemCtor) {
-      doLog("warn", "Copy image is not supported in this browser");
-      return;
-    }
-    try {
-      await clipboard.write([
-        new ClipboardItemCtor({ [blob.type || "image/png"]: blob }),
-      ]);
-      doLog("info", "Screenshot copied");
-    } catch (err) {
-      doLog("error", `Copy image failed: ${(err as Error).message}`);
-    }
-  }, [captureSnapshotBlob, doLog]);
+  const downloadSnapshot = snapshot.download;
+  const copySnapshot = snapshot.copy;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

@@ -2,6 +2,8 @@
 
 > Inherits `../MASTER.md`. This file defines the independent touch presentation rendered under `.mobile-terminal` / `data-platform="mobile"`.
 
+_Updated: 2026-07-14_
+
 ---
 
 ## Product Role
@@ -10,15 +12,17 @@ The mobile terminal is a chart-first trading companion designed for touch, short
 
 Mobile is not the desktop command center scaled down or embedded inside a sheet.
 
+The maintained capability mapping is `../../../docs/MOBILE_DESKTOP_FEATURE_PARITY.md`.
+
 ---
 
 ## Implemented Navigation Model
 
 The persistent bottom navigation contains exactly five labeled destinations:
 
-1. **Chart** - symbol, timeframe, chart, drawing, and replay entry.
-2. **Markets** - touch-friendly market and watchlist cards.
-3. **Trade** - mobile order flow and trade controls.
+1. **Chart** - symbol, shared-favorite timeframe strip, chart, Drawing, Indicators, Chart tools and Replay entry.
+2. **Markets** - touch-friendly market cards plus complete watchlist search and management.
+3. **Trade** - simulator, MT5 and Replay order flow, positions and bridge controls.
 4. **Portfolio** - account balance, positions, and performance summary.
 5. **Menu** - secondary workspaces and settings.
 
@@ -27,10 +31,15 @@ The active destination uses violet text/icon plus a visible top indicator. Prese
 Secondary workspaces open in sheets or full-screen sheets:
 
 - Drawing tools.
+- Indicators.
+- Chart tools.
 - Market replay.
 - Trading journal.
 - Performance analytics.
 - Pine workspace.
+- Object tree.
+- Runtime logs.
+- Account.
 
 ---
 
@@ -55,7 +64,7 @@ Chart Screen
 │  └─ Account action
 ├─ Horizontal timeframe bar (44px region)
 └─ Flexible chart viewport
-   └─ Touch chart actions (Draw, Replay)
+   └─ Touch chart actions (Draw, Indicators, Tools, Replay)
 ```
 
 Use `100dvh`, safe-area insets, and reserved navigation space. No scroll content may be hidden behind the bottom navigation or home indicator.
@@ -86,16 +95,20 @@ A visual glyph may be 18-24px, but its interactive hit area still follows the mi
 
 - The chart consumes all remaining height after top bar, timeframe bar, and bottom navigation.
 - The symbol picker is a dedicated 44px trigger, not a compact desktop combobox.
-- Timeframes scroll horizontally; each option has a 44px minimum width.
-- Draw and Replay are visible touch actions with label and icon.
+- Favorite timeframes scroll horizontally; each option has a 44px minimum width.
+- The interval sheet exposes the shared desktop catalog, cloud-synced favorites and custom interval validation.
+- Draw, Indicators, Tools and Replay are visible touch actions with label and icon.
 - Chart overlays leave room for one-finger pan, pinch zoom, crosshair, and system gestures.
+- The shared bottom chart-time toolbar provides Go to date and time-zone selection.
 
 ### Markets
 
 - Use vertical quote cards or list rows, never a desktop multi-column watchlist table.
 - Each row exposes symbol identity, venue/description, current quote, and signed change.
 - Selected symbol uses accent-soft background plus a visible boundary.
-- Reordering uses a dedicated handle after a movement threshold; ordinary vertical scroll must remain reliable.
+- Search can add/remove symbols from the active shared watchlist.
+- Manage watchlists provides list switching/create/rename/clear/delete, shared sorting, sections, collapse headers and explicit symbol/section move buttons.
+- Reordering never depends on drag; ordinary vertical scroll remains reliable.
 - Context actions have a visible overflow or detail action; long press is optional enhancement.
 
 ### Trade
@@ -105,6 +118,7 @@ A visual glyph may be 18-24px, but its interactive hit area still follows the mi
 - Numeric fields use decimal input mode, 16px text, and clear validation.
 - Critical live orders require a mobile-appropriate confirmation sheet.
 - Positions render as structured cards/lists rather than a ten-column table.
+- Execution mode, MT5 connection state, Replay bracket/close/cancel actions, account reset and Replay report export remain reachable.
 
 ### Portfolio
 
@@ -118,6 +132,7 @@ A visual glyph may be 18-24px, but its interactive hit area still follows the mi
 - Menu groups use full-width rows at least 68px high with icon, title, and supporting copy.
 - Secondary analytical workspaces may use full-screen sheets.
 - The sheet title identifies the current task and always includes a visible close action.
+- Chart tools groups SMC, snapshots, saved layouts, chart/replay arrangements, alerts, Object tree, runtime logs, display settings, connections and destructive chart actions.
 
 ---
 
@@ -154,6 +169,7 @@ Share:
 - Formatting, validation, and calculations.
 - Chart engine and drawing models.
 - Theme semantics and accessibility state naming.
+- Drawing/timeframe/SMC catalogs, favorites synchronization, snapshots, authentication helpers and watchlist sorting.
 
 Render independently:
 
@@ -198,6 +214,7 @@ Do not use CSS to force a desktop rail into a horizontal strip or place a deskto
 ## Mobile-Specific Anti-Patterns
 
 - Desktop toolbar, right sidebar, bottom dock, or multi-column table embedded unchanged.
+- A hard-coded mobile subset of a shared drawing, timeframe or indicator catalog.
 - Touch targets below 44px for primary actions.
 - Hover-only remove, favorite, settings, or context actions.
 - Horizontal swipe on the main content region that competes with navigation.

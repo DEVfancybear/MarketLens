@@ -1,40 +1,11 @@
 "use client";
 import { LogOut } from "lucide-react";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
-import { signOutUser } from "@/services/auth/firebaseAuth";
-import { backendLogout } from "@/services/auth/authClient";
-import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { AuthUser } from "@/store/authStore";
-
-function initials(user: AuthUser): string {
-  const src = user.displayName || user.email || "?";
-  const parts = src.trim().split(/\s+/);
-  const first = parts[0]?.[0] ?? "?";
-  const second = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + second).toUpperCase();
-}
+import { authUserInitials, signOutFromTerminal } from "@/services/auth/terminalAccount";
 
 /** Avatar dropdown shown when signed in: identity + sign out. */
 export function UserMenu({ user }: { user: AuthUser }) {
-  const handleSignOut = async () => {
-    try {
-      try {
-        await backendLogout(); // best-effort backend session revoke
-      } catch (err) {
-        reportFrontendError(err, {
-          title: "Backend sign-out failed",
-          logPrefix: "Backend sign-out failed",
-        });
-      }
-      await signOutUser(); // Firebase sign-out (useAuthSession clears state)
-    } catch (err) {
-      reportFrontendError(err, {
-        title: "Sign-out failed",
-        logPrefix: "Firebase sign-out failed",
-      });
-    }
-  };
-
   const avatar = (
     <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-brand/20 text-[10px] font-semibold text-brand">
       {user.photoUrl ? (
@@ -45,7 +16,7 @@ export function UserMenu({ user }: { user: AuthUser }) {
           referrerPolicy="no-referrer"
         />
       ) : (
-        initials(user)
+        authUserInitials(user)
       )}
     </span>
   );
@@ -83,7 +54,7 @@ export function UserMenu({ user }: { user: AuthUser }) {
           <MenuItem
             onClick={() => {
               close();
-              void handleSignOut();
+              void signOutFromTerminal();
             }}
           >
             <LogOut size={13} />

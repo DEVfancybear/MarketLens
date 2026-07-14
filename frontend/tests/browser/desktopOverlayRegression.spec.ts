@@ -58,8 +58,35 @@ async function expectMarkerInsidePriceScale(page: Page) {
 test.describe("desktop overlay boundaries", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
-    await page.goto("/");
-    await expect(page.locator('[data-platform="desktop"]')).toBeVisible();
+    await page.route("**/api/v1/mt5/symbols", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          connected: true,
+          bridgeUrl: "fixture",
+          source: "playwright",
+          count: 1,
+          streamSymbols: ["EURUSD"],
+          symbols: [{
+            name: "EURUSD",
+            description: "Euro / US Dollar",
+            visible: true,
+            digits: 5,
+            point: 0.00001,
+            spread: 0,
+            trade_mode: 4,
+            currency_base: "EUR",
+            currency_profit: "USD",
+          }],
+        }),
+      });
+    });
+    // This suite verifies overlay geometry, not the availability of an MT5
+    // backend. Use the same deterministic chart fixture as the interaction
+    // suites so cold/offline runs still expose price-dependent controls.
+    await page.goto("/?chartFixture=900&chartFixtureTail=500&chartBenchmarkProfile=phase2");
+    await expect(page.locator('[data-platform="desktop"]')).toBeVisible({ timeout: 45_000 });
   });
 
   test("indicator search uses one focus ring around the complete control", async ({ page }) => {

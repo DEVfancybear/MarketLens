@@ -1,13 +1,13 @@
 # Desktop and Mobile UI Architecture
 
-_Last updated: 2026-07-13_
+_Last updated: 2026-07-14_
 
 ## Outcome
 
 The trading terminal is now composed as two presentation platforms, selected at one boundary in `components/Terminal.tsx` and loaded as separate lazy chunks:
 
 - Desktop: `components/desktop/DesktopTerminal.tsx` owns the command bar, drawing rail, docked chart, market desk and bottom workspaces.
-- Mobile/touch: `components/mobile/MobileTerminal.tsx` owns its chart app bar, timeframe strip, five-screen bottom navigation, touch drawing palette, market cards, trade flow, portfolio and menu.
+- Mobile/touch: `components/mobile/MobileTerminal.tsx` owns its chart app bar, shared-favorite timeframe strip, five-screen bottom navigation, touch drawing catalog, market/watchlist management, trade flow, portfolio and menu workspaces.
 
 Desktop and mobile do not share layout JSX, navigation, watchlist presentation, drawing controls, symbol picker, timeframe picker, order-flow layout or data-list layout. Changing desktop composition therefore cannot silently reflow the mobile application, and vice versa.
 
@@ -20,8 +20,9 @@ Presentation is split; domain behavior is not duplicated. Both platforms use the
 - Chart canvas/series engine and drawing command model.
 - Semantic theme contract and market color meanings.
 - Formatting, validation and catalog data.
+- Feature catalogs and synchronization hooks for drawings, timeframes, SMC, snapshots, authentication and watchlist sorting.
 
-New trading rules belong in stores/services. Platform-specific component composition belongs under `components/desktop` or `components/mobile`. A shared visual component is allowed only when its DOM, density and interaction contract are genuinely identical on both platforms.
+New trading rules belong in stores/services. Platform-specific component composition belongs under `components/desktop` or `components/mobile`. Shared domain and presentation controllers may expose explicit platform presentations; shell composition, density, and interaction details remain platform-owned.
 
 ## Platform selection
 
@@ -37,7 +38,11 @@ The mobile app exposes five real screens:
 4. Portfolio
 5. Menu
 
-Draw and Replay are chart actions. Journal, Analytics, Pine and integration settings live under Menu. Modal content uses `MobileSheet`; the background application is hidden from assistive technology while a sheet is open.
+Draw, Indicators, Chart tools and Replay are chart actions. Journal, Analytics, Pine, Object tree, Logs, Account and integration settings live under Menu. Chart tools also provide SMC, layouts, snapshots, alerts, display settings and connection access. Modal content uses `MobileSheet`; the background application is hidden from assistive technology while a sheet is open.
+
+Markets owns catalog search, list switching, sorting, sections and explicit symbol/section move controls. Trade owns simulator, MT5 and Replay execution presentations while reusing the same ticket, persistence and command stores as desktop.
+
+See `MOBILE_DESKTOP_FEATURE_PARITY.md` for the maintained capability matrix.
 
 ## Touch and drag model
 
@@ -112,19 +117,19 @@ npm run lint
 npm run test:ui
 npx playwright test tests/browser/desktopOverlayRegression.spec.ts
 npx playwright test tests/browser/platformUi.spec.ts
+npx playwright test tests/browser/mobileFeatureParity.spec.ts
 npm run test:chart
 npm run build
 ```
 
-Verified baseline on 2026-07-13:
+Verified parity baseline on 2026-07-14:
 
-- desktop overlay browser regression: 5/5;
-- isolated platform browser regression: 3/3;
+- selected mobile parity/drawing/replay, platform and desktop overlay browser regressions: 18/18;
 - pure UI/model tests: 33/33;
-- chart tests: 90/90;
-- typecheck, targeted lint and production build: pass;
-- manual dark/light inspection: Settings is topmost and the live price marker
-  matches the actual right price-scale width.
+- drawing tests: 153/153;
+- watchlist tests: 18/18;
+- indicator catalog, trade and replay tests: 3/3, 6/6 and 30/30;
+- typecheck, lint and production build: pass.
 
 Viewport matrix:
 
@@ -133,15 +138,16 @@ Viewport matrix:
 - Tablet: 768x1024 and 1024x768.
 - Desktop: 1366x768, 1440x900 and 1920x1080.
 
-At mobile widths verify five-screen navigation, no horizontal page overflow, touch targets, safe areas, light/dark parity, chart pan/pinch, sheet cancel/dismiss and drawing controls. At desktop widths verify docks, keyboard resizers, chart tools, dialog focus behavior and bottom workspaces.
+At mobile widths verify five-screen navigation, the four chart actions, no horizontal page overflow, touch targets, safe areas, light/dark parity, full drawing/timeframe catalogs, chart pan/pinch, sheet cancel/dismiss and secondary workspaces. At desktop widths verify docks, keyboard resizers, chart tools, dialog focus behavior and bottom workspaces.
 
 ## Change checklist
 
 - Desktop presentation imports no mobile presentation outside the `Terminal` boundary.
-- Mobile presentation imports no desktop shell, dock, toolbar, watchlist or data-table component.
+- Mobile presentation imports no desktop shell, dock, watchlist or data-table component. A shared multi-presentation component must expose its platform presentation explicitly and keep mutations common.
 - Mobile styles remain scoped to `.mobile-*`/`.mobile-terminal`.
 - Shared code contains no component-level viewport checks.
 - Shared desktop dropdowns use the portal contract unless a reviewed local
   positioning exception is documented.
 - New gestures have a non-drag alternative and unit tests for cancel/foreign-pointer paths.
 - Every new surface is reviewed in dark and light themes.
+- Every new desktop capability has a tested mobile entry point or an explicit exception in `MOBILE_DESKTOP_FEATURE_PARITY.md`.

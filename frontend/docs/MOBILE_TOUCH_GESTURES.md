@@ -1,6 +1,6 @@
 # Mobile Touch, Pointer and Drag Support
 
-_Reviewed: 2026-07-13_
+_Reviewed: 2026-07-14_
 
 ## Research basis
 
@@ -53,7 +53,7 @@ Rules:
 7. Ignore all events from a foreign pointer.
 8. Keep a Close button and scrim alternative.
 9. Trap focus, close on Escape, return focus to the trigger and lock body scroll.
-10. Push a lightweight history state when a sheet opens so browser Back closes the sheet before navigating away.
+10. Top-level workspace sheets opened by `MobileTerminal` push a lightweight history state so browser Back closes the workspace before navigating away. Screen-local picker/manager sheets always retain visible Close, scrim and Escape paths.
 
 The scrim carries `data-chart-ui`. Chart/drawing capture handlers must ignore any event whose target is inside this boundary, preventing a tap on a sheet control from creating a drawing behind the modal.
 
@@ -94,7 +94,7 @@ the full Replay workspace open.
 
 ## Platform isolation
 
-Mobile navigation, market cards, symbol picker, timeframe strip, drawing palette, trade flow, portfolio, Replay, Journal, Analytics and Pine workspace are mobile-owned presentations. They reuse stores/services, not desktop JSX. Desktop uses its own lazy-loaded command-center chunk.
+Mobile navigation, market cards, symbol picker, full timeframe browser, drawing palette, trade flow, portfolio, Replay, Journal, Analytics, Pine, Chart tools, Object tree, Logs and Account are mobile-owned presentations. They reuse stores/services and shared catalogs rather than desktop shell JSX. Desktop uses its own lazy-loaded command-center chunk.
 
 This boundary prevents a desktop table/toolbar redesign from changing mobile hit targets, overflow or gesture ownership.
 
@@ -116,6 +116,11 @@ cleanup, target sizes, and a real touch commit.
 `tests/browser/mobileDrawing.spec.ts` creates and resizes a Rectangle with touch
 events and asserts that the underlying chart logical range does not move.
 
+`tests/browser/mobileFeatureParity.spec.ts` verifies the complete drawing
+manifest, full timeframe/favorite/custom flow, Indicator and Chart tools,
+watchlist management, secondary workspace entry points, 44px targets and zero
+document overflow in compact portrait and landscape.
+
 Run:
 
 ```bash
@@ -123,6 +128,7 @@ npm run test:ui
 npm run typecheck
 npx playwright test tests/browser/mobileReplay.spec.ts
 npx playwright test tests/browser/mobileDrawing.spec.ts
+npx playwright test tests/browser/mobileFeatureParity.spec.ts
 ```
 
 ## Browser/manual matrix

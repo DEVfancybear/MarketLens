@@ -1,33 +1,185 @@
 "use client";
 
 import { useState } from "react";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
+import { Ban, Download, Pencil, RotateCcw, X } from "lucide-react";
 import { OrderTicket } from "@/components/trade/OrderTicket";
-import { positionsAtom, equityAtom } from "@/store/tradeStore";
+import { ExecutionModeSwitch } from "@/components/trade/ExecutionModeSwitch";
+import { Mt5ConnectionPanel } from "@/components/trade/Mt5ConnectionPanel";
+import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
+import {
+  cancelPendingAtom,
+  closePositionAtom,
+  equityAtom,
+  positionsAtom,
+  resetPersistedTradeAtom,
+  startingEquityAtom,
+} from "@/store/tradeStore";
+import {
+  closeMt5PositionAtom,
+  executionModeAtom,
+  mt5AccountAtom,
+  mt5PendingOrdersAtom,
+  mt5PositionsAtom,
+} from "@/store/mt5Store";
+import { useReplayTrading } from "@/store/replayTradingClientStore";
+import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
+import { makeClientOrderId } from "@/services/mt5/protocol";
+import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import type { Position } from "@/types";
 
+type TradeTab = "ticket" | "positions" | "bridge";
+
 export function MobileTradeScreen() {
-  const [tab, setTab] = useState<"ticket" | "positions">("ticket");
+  useSimTradingPersistence();
+  const [tab, setTab] = useState<TradeTab>("ticket");
   const positions = useAtomValue(positionsAtom);
   const equity = useAtomValue(equityAtom);
-  const open = positions.filter((item) => item.status === "open" || item.status === "pending");
-  const pnl = open.reduce((sum, item) => sum + item.unrealizedPnl, 0);
+  const starting = useAtomValue(startingEquityAtom);
+  const executionMode = useAtomValue(executionModeAtom);
+  const mt5Account = useAtomValue(mt5AccountAtom);
+  const mt5Positions = useAtomValue(mt5PositionsAtom);
+  const mt5Pending = useAtomValue(mt5PendingOrdersAtom);
+  const reset = useSetAtom(resetPersistedTradeAtom);
+  const replay = useReplayTrading();
+  const replayMode = replay.active && executionMode === "simulator";
+  const simulatorOpen = positions.filter((item) => item.status === "open" || item.status === "pending");
+  const activeEquity = replayMode
+    ? replay.account?.equity ?? equity
+    : executionMode === "mt5"
+      ? mt5Account?.equity ?? equity
+      : equity;
+  const openCount = replayMode
+    ? replay.positions.filter((item) => Math.abs(item.netQuantity) > 1e-12).length + replay.orders.filter((item) => item.status === "pending" || item.status === "partially_filled").length
+    : executionMode === "mt5"
+      ? mt5Positions.length + mt5Pending.length
+      : simulatorOpen.length;
+  const pnl = replayMode
+    ? replay.positions.reduce((sum, item) => sum + item.unrealizedPnl, 0)
+    : executionMode === "mt5"
+      ? mt5Positions.reduce((sum, item) => sum + item.profit, 0)
+      : simulatorOpen.reduce((sum, item) => sum + item.unrealizedPnl, 0);
+  const baseline = replayMode ? replay.account?.startingEquity ?? starting : starting;
+  const returnPct = baseline ? ((activeEquity - baseline) / baseline) * 100 : 0;
+
+  const resetAccount = () => {
+    if (!window.confirm("Reset the active trading account and its positions?")) return;
+    if (replayMode) void replay.reset();
+    else void reset();
+  };
+  const exportReplayReport = async () => {
+    const report = await replay.report();
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `replay-report-${report.sessionId}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return <section className="mobile-screen mobile-trade-screen">
-    <header className="mobile-screen-header"><div><small>EXECUTION</small><h1>Trade desk</h1></div><div className="mobile-equity"><small>Equity</small><strong>{fmtMoney(equity)}</strong></div></header>
-    <div className="mobile-kpi-row"><div><small>Open positions</small><strong>{open.length}</strong></div><div><small>Open P/L</small><strong className={pnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(pnl)}</strong></div></div>
-    <div className="mobile-segmented"><button type="button" onClick={() => setTab("ticket")} className={cn(tab === "ticket" && "is-active")}>Order ticket</button><button type="button" onClick={() => setTab("positions")} className={cn(tab === "positions" && "is-active")}>Positions</button></div>
-    <div className="mobile-trade-content">{tab === "ticket" ? <OrderTicket variant="mobile" /> : <MobilePositionList positions={open} />}</div>
+    <header className="mobile-screen-header"><div><small>EXECUTION</small><h1>Trade desk</h1></div><div className="mobile-equity"><small>Equity</small><strong>{fmtMoney(activeEquity)}</strong></div></header>
+    <div className="mobile-execution-bar"><ExecutionModeSwitch />{executionMode === "mt5" && <Mt5ConnectionPanel />}</div>
+    <div className="mobile-kpi-row mobile-kpi-row--trade"><div><small>Open positions</small><strong>{openCount}</strong></div><div><small>Open P/L</small><strong className={pnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(pnl)}</strong></div><div><small>Return</small><strong className={returnPct >= 0 ? "text-bull" : "text-bear"}>{returnPct >= 0 ? "+" : ""}{returnPct.toFixed(2)}%</strong></div></div>
+    <div className="mobile-trade-account-actions">
+      {executionMode === "simulator" && <button type="button" onClick={resetAccount}><RotateCcw size={17} />Reset account</button>}
+      {replayMode && <button type="button" onClick={() => void exportReplayReport()}><Download size={17} />Export replay report</button>}
+    </div>
+    <div className="mobile-segmented mobile-segmented--three"><button type="button" onClick={() => setTab("ticket")} className={cn(tab === "ticket" && "is-active")}>Order ticket</button><button type="button" onClick={() => setTab("positions")} className={cn(tab === "positions" && "is-active")}>Positions</button><button type="button" onClick={() => setTab("bridge")} className={cn(tab === "bridge" && "is-active")}>Bridge</button></div>
+    <div className="mobile-trade-content">
+      {tab === "ticket" && <OrderTicket variant="mobile" />}
+      {tab === "positions" && <MobilePositionList simulatorPositions={simulatorOpen} />}
+      {tab === "bridge" && <div className="mobile-bridge-workspace">{executionMode !== "mt5" && <Mt5ConnectionPanel />}<Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Enable and select MT5 to inspect the execution bridge.</span></div>}</div>}
+    </div>
   </section>;
 }
 
-function MobilePositionList({ positions }: { positions: Position[] }) {
-  if (!positions.length) return <div className="mobile-empty-state"><strong>No open positions</strong><span>Place an order from the ticket to start tracking risk and P/L.</span></div>;
-  return <div className="mobile-position-list">{positions.map((position) => <article key={position.id}>
-    <div><span className={cn("mobile-side", position.side === "long" ? "is-long" : "is-short")}>{position.side}</span><strong>{position.symbol}</strong><small>{position.type}</small></div>
-    <div><small>Entry</small><strong>{fmtPrice(position.entry, 5)}</strong></div>
-    <div><small>Size</small><strong>{position.remaining.toFixed(2)}</strong></div>
-    <div><small>P/L</small><strong className={position.unrealizedPnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(position.unrealizedPnl)}</strong></div>
-  </article>)}</div>;
+function MobilePositionList({ simulatorPositions }: { simulatorPositions: Position[] }) {
+  const executionMode = useAtomValue(executionModeAtom);
+  const mt5Positions = useAtomValue(mt5PositionsAtom);
+  const mt5Pending = useAtomValue(mt5PendingOrdersAtom);
+  const closeSimulator = useSetAtom(closePositionAtom);
+  const cancelSimulator = useSetAtom(cancelPendingAtom);
+  const closeMt5 = useSetAtom(closeMt5PositionAtom);
+  const replay = useReplayTrading();
+
+  if (executionMode === "mt5") {
+    if (!mt5Positions.length && !mt5Pending.length) return <EmptyPositions message="Connect the bridge and send a live order from the ticket." />;
+    return <div className="mobile-position-list">
+      {mt5Positions.map((position) => {
+        const precision = getMarketSymbol(position.symbol)?.pricePrecision ?? 2;
+        return <article key={`mt5-${position.ticket}`} className="mobile-position-card">
+          <PositionIdentity symbol={position.symbol} side={position.side} type="MT5 market" />
+          <Metric label="Entry" value={fmtPrice(position.openPrice, precision)} />
+          <Metric label="Current" value={fmtPrice(position.currentPrice, precision)} />
+          <Metric label="Volume" value={position.volume.toFixed(4)} />
+          <Metric label="Stop / target" value={`${position.sl ? fmtPrice(position.sl, precision) : "—"} / ${position.tp ? fmtPrice(position.tp, precision) : "—"}`} />
+          <Metric label="P/L" value={fmtMoney(position.profit)} tone={position.profit} />
+          <div className="mobile-position-actions"><button type="button" className="is-danger" onClick={() => { if (window.confirm(`Close MT5 ticket ${position.ticket}?`)) closeMt5({ clientOrderId: makeClientOrderId("mt5_close"), ticket: position.ticket }); }}><X size={17} />Close</button></div>
+        </article>;
+      })}
+      {mt5Pending.map((order) => {
+        const precision = getMarketSymbol(order.symbol)?.pricePrecision ?? 2;
+        return <article key={`mt5-order-${order.ticket}`} className="mobile-position-card">
+          <PositionIdentity symbol={order.symbol} side={order.side === "buy" ? "long" : "short"} type={`MT5 ${order.type} pending`} />
+          <Metric label="Entry" value={fmtPrice(order.price, precision)} />
+          <Metric label="Volume" value={order.volume.toFixed(4)} />
+          <Metric label="Stop / target" value={`${order.sl ? fmtPrice(order.sl, precision) : "—"} / ${order.tp ? fmtPrice(order.tp, precision) : "—"}`} />
+        </article>;
+      })}
+    </div>;
+  }
+
+  if (replay.active) {
+    const active = replay.positions.filter((position) => Math.abs(position.netQuantity) > 1e-12);
+    const pending = replay.orders.filter((order) => order.status === "pending" || order.status === "partially_filled");
+    if (!active.length && !pending.length) return <EmptyPositions message="Orders and fills are isolated to this replay session." />;
+    const symbol = replay.symbol ?? "Replay";
+    const precision = getMarketSymbol(symbol)?.pricePrecision ?? 5;
+    return <div className="mobile-position-list">
+      {active.map((position) => {
+        const side = position.netQuantity > 0 ? "long" : "short";
+        const entryOrder = [...replay.orders].reverse().find((order) => order.trackId === position.trackId && order.status === "filled" && ((side === "long" && order.side === "buy") || (side === "short" && order.side === "sell")));
+        const editBracket = () => {
+          if (!entryOrder) return;
+          const stopText = window.prompt("Replay stop loss", position.stopLoss?.toString() ?? "");
+          if (stopText == null) return;
+          const targetText = window.prompt("Replay take profit", position.takeProfit?.toString() ?? "");
+          if (targetText == null) return;
+          const stopLoss = stopText.trim() ? Number(stopText) : undefined;
+          const takeProfit = targetText.trim() ? Number(targetText) : undefined;
+          if ((stopLoss != null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) || (takeProfit != null && (!Number.isFinite(takeProfit) || takeProfit <= 0))) return;
+          void replay.updateBracket(entryOrder.id, stopLoss, takeProfit);
+        };
+        return <article key={position.id} className="mobile-position-card">
+          <PositionIdentity symbol={symbol} side={side} type="Replay market" />
+          <Metric label="Entry" value={fmtPrice(position.averagePrice, precision)} />
+          <Metric label="Quantity" value={Math.abs(position.netQuantity).toFixed(4)} />
+          <Metric label="Stop / target" value={`${position.stopLoss ? fmtPrice(position.stopLoss, precision) : "—"} / ${position.takeProfit ? fmtPrice(position.takeProfit, precision) : "—"}`} />
+          <Metric label="P/L" value={fmtMoney(position.unrealizedPnl)} tone={position.unrealizedPnl} />
+          <div className="mobile-position-actions"><button type="button" disabled={!entryOrder} onClick={editBracket}><Pencil size={17} />Bracket</button><button type="button" onClick={() => void replay.close(position.id, 0.5)}>Close ½</button><button type="button" className="is-danger" onClick={() => void replay.close(position.id)}><X size={17} />Close</button></div>
+        </article>;
+      })}
+      {pending.map((order) => <article key={order.id} className="mobile-position-card"><PositionIdentity symbol={symbol} side={order.side === "buy" ? "long" : "short"} type={`Replay ${order.orderType} pending`} /><Metric label="Remaining" value={(order.quantity - order.filledQuantity).toFixed(4)} /><Metric label="Price" value={fmtPrice(order.limitPrice ?? order.stopPrice ?? 0, precision)} /><div className="mobile-position-actions"><button type="button" className="is-danger" onClick={() => void replay.cancel(order.id)}><Ban size={17} />Cancel order</button></div></article>)}
+    </div>;
+  }
+
+  if (!simulatorPositions.length) return <EmptyPositions message="Place an order from the ticket to start tracking risk and P/L." />;
+  return <div className="mobile-position-list">{simulatorPositions.map((position) => {
+    const precision = getMarketSymbol(position.symbol)?.pricePrecision ?? 5;
+    return <article key={position.id} className="mobile-position-card">
+      <PositionIdentity symbol={position.symbol} side={position.side} type={`${position.type} · ${position.status}`} />
+      <Metric label="Entry" value={fmtPrice(position.entry, precision)} />
+      <Metric label="Size" value={position.remaining.toFixed(4)} />
+      <Metric label="Stop / target" value={`${position.stopLoss ? fmtPrice(position.stopLoss, precision) : "—"} / ${position.takeProfit ? fmtPrice(position.takeProfit, precision) : "—"}`} />
+      <Metric label="P/L" value={fmtMoney(position.unrealizedPnl)} tone={position.unrealizedPnl} />
+      <div className="mobile-position-actions">{position.status === "pending" ? <button type="button" className="is-danger" onClick={() => cancelSimulator(position.id)}><Ban size={17} />Cancel order</button> : <><button type="button" onClick={() => closeSimulator({ id: position.id, fraction: .5 })}>Close ½</button><button type="button" className="is-danger" onClick={() => closeSimulator({ id: position.id })}><X size={17} />Close</button></>}</div>
+    </article>;
+  })}</div>;
 }
+
+function PositionIdentity({ symbol, side, type }: { symbol: string; side: "long" | "short"; type: string }) { return <div className="mobile-position-identity"><span className={cn("mobile-side", side === "long" ? "is-long" : "is-short")}>{side}</span><strong>{symbol}</strong><small>{type}</small></div>; }
+function Metric({ label, value, tone }: { label: string; value: string; tone?: number }) { return <div><small>{label}</small><strong className={tone == null ? undefined : tone >= 0 ? "text-bull" : "text-bear"}>{value}</strong></div>; }
+function EmptyPositions({ message }: { message: string }) { return <div className="mobile-empty-state"><strong>No open positions</strong><span>{message}</span></div>; }

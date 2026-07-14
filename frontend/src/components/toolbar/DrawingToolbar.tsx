@@ -3,38 +3,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils/cn";
 import {
-  MousePointer2,
-  Target,
-  Eraser,
-  TrendingUp,
-  Minus,
-  MoveVertical,
-  ArrowUpRight,
-  ArrowUp,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  GitBranch,
-  Crosshair,
-  Ruler,
-  Square,
-  Circle,
-  Triangle,
-  PenTool,
-  Spline,
-  Type,
-  Smile,
-  GitFork,
-  ArrowBigUp,
-  ChartCandlestick,
-  ChartNoAxesColumn,
-  Paintbrush,
-  Highlighter,
   Trash2,
   Palette,
   Star,
-  Waypoints,
-  PenLine,
   GripVertical,
   Repeat2,
   Magnet,
@@ -46,11 +17,6 @@ import {
 import { IconButton } from "@/components/ui/IconButton";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { useAtomValue, useSetAtom } from "jotai";
-import {
-  getDrawingToolFavorites,
-  replaceDrawingToolFavorites,
-} from "@/services/api/resources/drawingsApi";
-import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import {
   activeToolAtom,
   drawColorAtom,
@@ -64,18 +30,16 @@ import {
   newDrawingSyncModeAtom,
   setNewDrawingSyncModeAtom,
 } from "@/store/chartStore";
-import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
-import { logAtom } from "@/store/uiStore";
 import type { DrawingTool } from "@/types";
 import { DRAWING_SYNC_MODE_OPTIONS } from "@/components/chart/drawing/persistence/drawingSyncScope";
 import { useDrawingBulkActions } from "@/components/chart/drawing/bulk/useDrawingBulkActions";
+import { DrawingToolIcon } from "@/components/chart/drawing/DrawingToolIcon";
+import { useDrawingToolFavorites } from "@/hooks/useDrawingToolFavorites";
 import {
   DRAWING_TOOL_GROUPS,
   DRAWING_TOOL_MANIFEST,
   formatDrawingToolShortcut,
   isDrawingToolCreationEnabled,
-  normalizeFavoriteDrawingTools,
-  type DrawingIconKey,
 } from "@/types/drawingToolManifest";
 
 // ---- Tool groups (TradingView pattern) ----
@@ -97,50 +61,15 @@ interface ToolGroup {
   tools: ToolItem[];
 }
 
-function toolIcon(key: DrawingIconKey, size: number): React.ReactNode {
-  const props = { size };
-  switch (key) {
-    case "cursor": return <MousePointer2 {...props} />;
-    case "target": return <Target {...props} />;
-    case "eraser": return <Eraser {...props} />;
-    case "ruler": return <Ruler {...props} />;
-    case "trend": return <TrendingUp {...props} />;
-    case "ray": case "arrowUpRight": return <ArrowUpRight {...props} />;
-    case "branch": return <GitBranch {...props} />;
-    case "triangle": return <Triangle {...props} />;
-    case "horizontal": return <Minus {...props} />;
-    case "vertical": return <MoveVertical {...props} />;
-    case "crosshair": return <Crosshair {...props} />;
-    case "square": return <Square {...props} />;
-    case "circle": return <Circle {...props} />;
-    case "pen": return <PenTool {...props} />;
-    case "spline": return <Spline {...props} />;
-    case "path": return <Waypoints {...props} />;
-    case "doubleCurve": return <PenLine {...props} />;
-    case "fib": return <GitFork {...props} />;
-    case "fibExtension": return <ArrowBigUp {...props} />;
-    case "long": return <ChartCandlestick {...props} />;
-    case "short": return <ChartNoAxesColumn {...props} />;
-    case "brush": return <Paintbrush {...props} />;
-    case "highlighter": return <Highlighter {...props} />;
-    case "arrowUp": return <ArrowUp {...props} />;
-    case "arrowDown": return <ArrowDown {...props} />;
-    case "arrowLeft": return <ArrowLeft {...props} />;
-    case "arrowRight": return <ArrowRight {...props} />;
-    case "text": return <Type {...props} />;
-    case "emoji": return <Smile {...props} />;
-  }
-}
-
 const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
   ...group,
-  icon: toolIcon(group.iconKey, 18),
+  icon: <DrawingToolIcon iconKey={group.iconKey} size={18} />,
   tools: DRAWING_TOOL_MANIFEST.filter(
     (entry) => entry.group === group.id && isDrawingToolCreationEnabled(entry.id),
   ).map(
     (entry) => ({
       tool: entry.id,
-      icon: toolIcon(entry.iconKey, 14),
+      icon: <DrawingToolIcon iconKey={entry.iconKey} size={14} />,
       label: entry.displayName,
       hotkey: entry.shortcuts.length > 0
         ? formatDrawingToolShortcut(
@@ -191,104 +120,6 @@ function useLastUsed(): Record<string, DrawingTool> {
   return lastUsed;
 }
 
-const FAV_KEY = "tv:favTools";
-
-function readLocalFavorites(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalFavorites(tools: string[]) {
-  try {
-    localStorage.setItem(FAV_KEY, JSON.stringify(tools));
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-function clearLocalFavorites() {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem(FAV_KEY);
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-const normalizeFavoriteTools = normalizeFavoriteDrawingTools;
-
-function apiMessage(error: unknown): string {
-  return userFacingErrorMessage(error, "unknown error");
-}
-
-/** Favorite tools. Remote mode uses Phase 7 API; localStorage is anonymous/cache fallback. */
-function useFavorites(): [Set<string>, (tool: string) => void] {
-  const backendSession = useAtomValue(backendSessionAtom);
-  const authStatus = useAtomValue(authStatusAtom);
-  const log = useSetAtom(logAtom);
-  const [fav, setFav] = useState<Set<string>>(
-    () => new Set(normalizeFavoriteTools(readLocalFavorites())),
-  );
-
-  useEffect(() => {
-    if (authStatus === "anonymous") {
-      clearLocalFavorites();
-      setFav(new Set());
-      return;
-    }
-    if (!backendSession) return;
-    let cancelled = false;
-    void getDrawingToolFavorites()
-      .then((result) => {
-        if (cancelled) return;
-        const tools = normalizeFavoriteTools(result.tools);
-        const next = new Set(tools);
-        setFav(next);
-        writeLocalFavorites(tools);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        log("warn", `Drawing tool favorites loaded from local cache: ${apiMessage(error)}`);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [authStatus, backendSession, log]);
-
-  const persist = useCallback(
-    (tools: string[]) => {
-      const normalized = normalizeFavoriteTools(tools);
-      writeLocalFavorites(normalized);
-      if (!backendSession) return;
-      void replaceDrawingToolFavorites(normalized).catch((error) => {
-        log("error", `Drawing tool favorites sync failed: ${apiMessage(error)}`);
-      });
-    },
-    [backendSession, log],
-  );
-
-  const toggle = useCallback(
-    (tool: string) => {
-      setFav((prev) => {
-        const next = new Set(prev);
-        if (next.has(tool)) next.delete(tool);
-        else next.add(tool);
-        const normalized = normalizeFavoriteTools([...next]);
-        const normalizedSet = new Set(normalized);
-        persist(normalized);
-        return normalizedSet;
-      });
-    },
-    [persist],
-  );
-  return [fav, toggle];
-}
-
 export function DrawingToolbar() {
   const activeTool = useAtomValue(activeToolAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
@@ -303,7 +134,7 @@ export function DrawingToolbar() {
   const newDrawingSyncMode = useAtomValue(newDrawingSyncModeAtom);
   const setNewDrawingSyncMode = useSetAtom(setNewDrawingSyncModeAtom);
   const lastUsed = useLastUsed();
-  const [favorites, toggleFavorite] = useFavorites();
+  const [favorites, toggleFavorite] = useDrawingToolFavorites();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [magnetMenuOpen, setMagnetMenuOpen] = useState(false);

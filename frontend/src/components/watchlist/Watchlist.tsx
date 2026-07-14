@@ -57,7 +57,10 @@ import {
   WatchlistContextMenu,
   type WatchlistMenuState,
 } from "./WatchlistContextMenu";
-import type { MarketQuote } from "@/types";
+import {
+  sortWatchlistSymbols,
+  type SortableWatchlistSymbol,
+} from "@/store/watchlistSort";
 
 const GRID =
   "grid grid-cols-[minmax(0,1fr)_minmax(60px,74px)_minmax(46px,58px)_minmax(46px,56px)] items-center gap-x-1.5";
@@ -113,47 +116,6 @@ function priceParts(
   if (v === undefined || !Number.isFinite(v)) return ["\u2014", ""];
   const s = fmtPrice(v, prec);
   return pip && prec >= 1 ? [s.slice(0, -1), s.slice(-1)] : [s, ""];
-}
-
-type SortableSymbol = { ticker: string; index: number };
-
-function watchlistSortValue(
-  ticker: string,
-  sortKey: SortKey,
-  quotes: Record<string, MarketQuote>,
-): number | undefined {
-  const q = quotes[ticker];
-  if (!q) return undefined;
-  if (sortKey === "price") return q.last;
-  if (sortKey === "change") {
-    return Number.isFinite(q.changePct) ? Number(q.changePct.toFixed(2)) : undefined;
-  }
-  if (sortKey === "changeAbs") return q.change;
-  if (sortKey === "volume") return q.volume;
-  return undefined;
-}
-
-function sortWatchlistEntries(
-  entries: SortableSymbol[],
-  sortKey: SortKey,
-  sortDir: "asc" | "desc",
-  quotes: Record<string, MarketQuote>,
-): SortableSymbol[] {
-  const dir = sortDir === "asc" ? 1 : -1;
-  return [...entries].sort((a, b) => {
-    if (sortKey === "symbol") {
-      return a.ticker.localeCompare(b.ticker) * dir;
-    }
-    const av = watchlistSortValue(a.ticker, sortKey, quotes);
-    const bv = watchlistSortValue(b.ticker, sortKey, quotes);
-    const aMissing = av === undefined || !Number.isFinite(av);
-    const bMissing = bv === undefined || !Number.isFinite(bv);
-    if (aMissing && bMissing) return a.index - b.index;
-    if (aMissing) return 1;
-    if (bMissing) return -1;
-    const delta = (av - bv) * dir;
-    return delta || a.index - b.index;
-  });
 }
 
 export function Watchlist() {
@@ -217,11 +179,11 @@ export function Watchlist() {
     });
   }, [renaming]);
 
-  const ordered = useMemo<SortableSymbol[]>(() => {
+  const ordered = useMemo<SortableWatchlistSymbol[]>(() => {
     const list = symbols.map((ticker, index) => ({ ticker, index }));
     const quoteSnapshot =
       sortKey === "symbol" ? {} : getMarketDataState().quotes;
-    return sortWatchlistEntries(list, sortKey, sortDir, quoteSnapshot);
+    return sortWatchlistSymbols(list, sortKey, sortDir, quoteSnapshot);
   }, [symbols, sortKey, sortDir]);
 
   const displayRows = useMemo<DisplayRow[]>(() => {
@@ -238,12 +200,12 @@ export function Watchlist() {
     const rows: DisplayRow[] = [];
     const sortedSections = [...sections].sort((a, b) => a.index - b.index);
     const pushSymbols = (from: number, to: number) => {
-      const entries: SortableSymbol[] = [];
+      const entries: SortableWatchlistSymbol[] = [];
       const end = Math.min(to, symbols.length);
       for (let index = from; index < end; index += 1) {
         entries.push({ ticker: symbols[index], index });
       }
-      for (const entry of sortWatchlistEntries(entries, sortKey, sortDir, quoteSnapshot)) {
+      for (const entry of sortWatchlistSymbols(entries, sortKey, sortDir, quoteSnapshot)) {
         rows.push({ kind: "symbol", ticker: entry.ticker, index: entry.index });
       }
     };

@@ -5,29 +5,10 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import {
   smcSettingsAtom,
   toggleSmcAtom,
-  type SmcSettings,
 } from "@/store/smcStore";
 import { useAtomValue, useSetAtom } from "jotai";
 import { cn } from "@/utils/cn";
-
-const ITEMS: { key: keyof SmcSettings; label: string; color: string }[] = [
-  {
-    key: "structure",
-    label: "Market Structure (BOS/CHOCH/MSS)",
-    color: "var(--bos)",
-  },
-  {
-    key: "swings",
-    label: "Swing Points (HH/HL/LH/LL)",
-    color: "var(--text-muted)",
-  },
-  { key: "fvg", label: "Fair Value Gaps", color: "var(--fvg)" },
-  { key: "orderBlocks", label: "Order Blocks", color: "var(--ob)" },
-  { key: "liquidity", label: "Liquidity (EQH/EQL)", color: "var(--liquidity)" },
-  { key: "displacement", label: "Displacement", color: "var(--choch)" },
-  { key: "sessions", label: "Sessions", color: "var(--bull)" },
-  { key: "killzones", label: "Kill Zones", color: "var(--choch)" },
-];
+import { SMC_MENU_ITEMS } from "@/components/chart/smcMenuItems";
 
 export function SmcMenu() {
   const settings = useAtomValue(smcSettingsAtom);
@@ -93,7 +74,7 @@ export function SmcMenu() {
           <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
             Smart Money Concepts
           </div>
-          {ITEMS.map((it) => (
+          {SMC_MENU_ITEMS.map((it) => (
             <button
               key={it.key}
               type="button"

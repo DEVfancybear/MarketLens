@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Braces,
@@ -87,8 +87,21 @@ function scriptMatches(script: CustomIndicatorScript, query: string) {
   );
 }
 
-export function IndicatorMenu() {
-  const [open, setOpen] = useState(false);
+export interface IndicatorMenuProps {
+  /** Toolbar keeps the desktop trigger/dialog; mobile renders sheet content. */
+  presentation?: "toolbar" | "mobile";
+  onRequestClose?: () => void;
+  onOpenPine?: () => void;
+}
+
+export function IndicatorMenu({
+  presentation = "toolbar",
+  onRequestClose,
+  onOpenPine,
+}: IndicatorMenuProps = {}) {
+  const mobile = presentation === "mobile";
+  const [toolbarOpen, setToolbarOpen] = useState(false);
+  const open = mobile || toolbarOpen;
   const [tab, setTab] = useState<IndicatorBrowserTab>("store");
   const [query, setQuery] = useState("");
   const [deleteTarget, setDeleteTarget] =
@@ -114,6 +127,10 @@ export function IndicatorMenu() {
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const canUsePrivatePine = canUsePrivatePineWorkspace(authStatus);
   const canShowFavorites = canShowUserFavoriteControls(authStatus);
+  const closeBrowser = useCallback(() => {
+    if (mobile) onRequestClose?.();
+    else setToolbarOpen(false);
+  }, [mobile, onRequestClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,16 +161,19 @@ export function IndicatorMenu() {
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    // MobileSheet owns Escape handling for the mobile presentation. Registering
+    // another window listener here would call history.back() twice and could
+    // navigate away from the terminal.
+    if (!open || mobile) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       if (deleteTarget) setDeleteTarget(null);
-      else setOpen(false);
+      else closeBrowser();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteTarget, open]);
+  }, [closeBrowser, deleteTarget, mobile, open]);
 
   useEffect(() => {
     if (!open || tab !== "store") return;
@@ -200,14 +220,22 @@ export function IndicatorMenu() {
 
   const openPineEditor = () => {
     if (!canUsePrivatePine) return;
-    setOpen(false);
+    if (mobile) {
+      onOpenPine?.();
+      return;
+    }
+    closeBrowser();
     setBottomTab("pine");
   };
 
   const openScriptSource = (script: CustomIndicatorScript) => {
     if (!canUsePrivatePine) return;
     loadPineScript(script.id);
-    setOpen(false);
+    if (mobile) {
+      onOpenPine?.();
+      return;
+    }
+    closeBrowser();
     setBottomTab("pine");
   };
 
@@ -229,15 +257,93 @@ export function IndicatorMenu() {
       sourceCode: script.sourceCode,
       scriptId: publicIndicatorScriptId(script),
     });
-    setOpen(false);
+    closeBrowser();
   };
+
+  if (mobile) {
+    return (
+      <div className="mobile-indicator-browser" data-mobile-indicator-browser>
+        <label className="mobile-workspace-search">
+          <Search size={18} aria-hidden="true" />
+          <input
+            type="search"
+            ref={searchRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search indicators"
+            placeholder="Search indicators and scripts"
+            inputMode="search"
+          />
+        </label>
+
+        <div className="mobile-indicator-tabs" role="tablist" aria-label="Indicator library">
+          <MobileIndicatorTab active={tab === "store"} icon={<ShoppingBag />} label="Store" onClick={() => selectTab("store")} />
+          {canUsePrivatePine && (
+            <>
+              <MobileIndicatorTab active={tab === "favorites"} icon={<Star />} label="Favorites" onClick={() => selectTab("favorites")} />
+              <MobileIndicatorTab active={tab === "myScripts"} icon={<UserRound />} label="My scripts" onClick={() => selectTab("myScripts")} />
+            </>
+          )}
+        </div>
+
+        {canUsePrivatePine && (
+          <button type="button" className="mobile-open-pine" onClick={openPineEditor}>
+            <span><Code2 size={19} /><span><strong>Open Pine workspace</strong><small>Create, compile and manage source code</small></span></span>
+            <Braces size={18} />
+          </button>
+        )}
+
+        <section className="mobile-indicator-results" aria-live="polite">
+          {canUsePrivatePine && (tab === "favorites" || tab === "myScripts") && (
+            <>
+              {filteredScripts.map((script) => (
+                <MobileScriptRow
+                  key={script.id}
+                  script={script}
+                  onAdd={async () => {
+                    await addCustomIndicator(script);
+                    closeBrowser();
+                  }}
+                  onFavorite={() => togglePineFavorite(script.id)}
+                  onSource={() => openScriptSource(script)}
+                  onDelete={() => setDeleteTarget(script)}
+                />
+              ))}
+              {filteredScripts.length === 0 && (
+                <EmptyState>{tab === "favorites" ? "No favorites found." : "No scripts found."}</EmptyState>
+              )}
+            </>
+          )}
+          {tab === "store" && storeLoading && <EmptyState>Loading public indicators...</EmptyState>}
+          {tab === "store" && !storeLoading && storeError && <EmptyState>{storeError}</EmptyState>}
+          {tab === "store" && !storeLoading && !storeError && (
+            <>
+              {storeRows.map((item) => <MobileStoreRow key={item.id} item={item} showFavoriteMarker={canShowFavorites} onAdd={() => void addPublicScript(item)} />)}
+              {storeRows.length === 0 && <EmptyState>No public indicators found.</EmptyState>}
+            </>
+          )}
+        </section>
+
+        {deleteTarget && (
+          <div className="mobile-inline-confirm" role="alertdialog" aria-modal="true" aria-label="Delete this script?">
+            <div>
+              <span className="mobile-confirm-icon"><Trash2 size={21} /></span>
+              <h3>Delete this script?</h3>
+              <p><strong>{deleteTarget.name}</strong> and its source code will be removed permanently.</p>
+              <div><button type="button" onClick={() => setDeleteTarget(null)}>Cancel</button><button type="button" className="is-danger" onClick={confirmDeleteScript}>Delete</button></div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setToolbarOpen(true)}
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-lg border border-transparent px-2.5 text-[11px] font-semibold transition-colors",
           open
@@ -255,7 +361,7 @@ export function IndicatorMenu() {
           <div
             className="fixed inset-0 z-[1000] bg-[var(--scrim)] px-3 pt-14 backdrop-blur-sm"
             onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setOpen(false);
+              if (event.target === event.currentTarget) closeBrowser();
             }}
             onContextMenu={(event) => event.preventDefault()}
           >
@@ -281,7 +387,7 @@ export function IndicatorMenu() {
                 </h2>
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={closeBrowser}
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
                   aria-label="Close"
                   title="Close"
@@ -474,6 +580,77 @@ export function IndicatorMenu() {
           document.body,
         )}
     </>
+  );
+}
+
+function MobileIndicatorTab({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={cn(active && "is-active")}
+      onClick={onClick}
+    >
+      {icon}<span>{label}</span>
+    </button>
+  );
+}
+
+function MobileScriptRow({
+  script,
+  onAdd,
+  onFavorite,
+  onSource,
+  onDelete,
+}: {
+  script: CustomIndicatorScript;
+  onAdd: () => void | Promise<void>;
+  onFavorite: () => void;
+  onSource: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <article className="mobile-indicator-card">
+      <button type="button" className="mobile-indicator-main" onClick={() => void onAdd()}>
+        <span className="mobile-indicator-glyph"><ChartNoAxesCombined size={19} /></span>
+        <span><strong>{script.name}</strong><small>Your Pine script · Tap to add to chart</small></span>
+      </button>
+      <div className="mobile-indicator-actions">
+        <button type="button" aria-label={`${script.favorite ? "Remove" : "Add"} ${script.name} ${script.favorite ? "from" : "to"} favorites`} aria-pressed={script.favorite} className={cn(script.favorite && "is-active")} onClick={onFavorite}><Star size={17} fill={script.favorite ? "currentColor" : "none"} /></button>
+        <button type="button" aria-label={`Open ${script.name} source`} onClick={onSource}><Braces size={17} /></button>
+        <button type="button" aria-label={`Delete ${script.name}`} className="is-danger" onClick={onDelete}><Trash2 size={17} /></button>
+      </div>
+    </article>
+  );
+}
+
+function MobileStoreRow({
+  item,
+  showFavoriteMarker,
+  onAdd,
+}: {
+  item: PublicIndicatorScript;
+  showFavoriteMarker: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <button type="button" className="mobile-store-indicator" onClick={onAdd}>
+      <span className="mobile-indicator-glyph"><ShoppingBag size={19} /></span>
+      <span><strong>{item.name}</strong><small>{item.author} · {formatPublicBoosts(item.boosts)} boosts</small></span>
+      {showFavoriteMarker && <Star size={16} aria-hidden="true" />}
+      <span className="mobile-add-label">Add</span>
+    </button>
   );
 }
 
