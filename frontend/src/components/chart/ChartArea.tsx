@@ -37,7 +37,7 @@ import type { Candle } from "@/types";
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea() {
   const replay = useReplayClientProjection();
-  const { loadOlderCandles } = useMarketData({
+  const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
     enabled: !replay.snapshot && replay.connection !== "connecting",
   });
   const candles = useChartSeries();
@@ -196,7 +196,13 @@ export function ChartArea() {
         <RiskPanel />
       </div>
 
-      <ChartTimeToolbar chart={mainChart} candles={displayedCandles} />
+      <ChartTimeToolbar
+        chart={mainChart}
+        candles={displayedCandles}
+        onLoadCandlesAroundTime={
+          benchmarkCandles || replayOwnsChart ? undefined : loadCandlesAroundTime
+        }
+      />
     </div>
   );
 }

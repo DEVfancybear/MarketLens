@@ -11,7 +11,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Loader2,
+  X,
+} from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import type { Candle } from "@/types";
 import {
@@ -29,6 +36,7 @@ import {
   EXCHANGE_TIME_ZONE_ID,
   calendarCells,
   canSelectGoToTime,
+  candlesCoverGoToTime,
   chartTimeZoneToIntlTimeZone,
   firstCandleIndexAtOrAfter,
   formatDateInput,
@@ -53,6 +61,7 @@ import {
   type TimeNavigationShortcut,
   type TimeRangeShortcut,
 } from "@/services/api/resources/timeNavigationApi";
+import type { LoadedGoToHistory } from "@/hooks/useMarketData";
 
 type GoToMarkerState = {
   id: number;
@@ -62,6 +71,11 @@ type GoToMarkerState = {
 type PendingShortcutState = {
   resolution: TimeNavigationResolution;
   requestId: number;
+};
+type PendingGoToNavigation = {
+  id: number;
+  requestedTime: number;
+  resolvedTime: number;
 };
 type ShortcutTooltipState = {
   text: string;
@@ -229,9 +243,11 @@ function TimeZoneMenu({
 export function ChartTimeToolbar({
   chart,
   candles,
+  onLoadCandlesAroundTime,
 }: {
   chart: IChartApi | null;
   candles: Candle[];
+  onLoadCandlesAroundTime?: (time: number) => Promise<LoadedGoToHistory>;
 }) {
   const [now, setNow] = useState(() => new Date());
   const [goToOpen, setGoToOpen] = useState(false);
@@ -242,6 +258,8 @@ export function ChartTimeToolbar({
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
   const [lastGoToSelection, setLastGoToSelection] =
     useState<GoToSelection | null>(null);
+  const [pendingGoToNavigation, setPendingGoToNavigation] =
+    useState<PendingGoToNavigation | null>(null);
   const [activeShortcut, setActiveShortcut] =
     useState<TimeRangeShortcut | null>(null);
   const [navigationCatalog, setNavigationCatalog] =
@@ -420,6 +438,67 @@ export function ChartTimeToolbar({
     window.requestAnimationFrame(() => goToTriggerRef.current?.focus());
   }, []);
 
+  const requestGoToNavigation = useCallback(async (requestedTime: number) => {
+    let resolvedTime: number | undefined;
+    if (candlesCoverGoToTime(candles, requestedTime)) {
+      const index = firstCandleIndexAtOrAfter(candles, requestedTime);
+      resolvedTime = index == null ? undefined : candles[index]?.time;
+    }
+
+    if (resolvedTime == null) {
+      if (!onLoadCandlesAroundTime) {
+        throw new Error("The selected date is outside the loaded chart history");
+      }
+      const loaded = await onLoadCandlesAroundTime(requestedTime);
+      resolvedTime = loaded.resolvedTime;
+    }
+
+    if (!Number.isFinite(resolvedTime)) {
+      throw new Error("No tradable candle exists at or after the selected time");
+    }
+    setLastGoToSelection({ time: requestedTime });
+    setPendingGoToNavigation({
+      id: Date.now(),
+      requestedTime,
+      resolvedTime,
+    });
+  }, [candles, onLoadCandlesAroundTime]);
+
+  useEffect(() => {
+    if (!chart || !pendingGoToNavigation) return;
+    const index = candles.findIndex(
+      (candle) => candle.time === pendingGoToNavigation.resolvedTime,
+    );
+    if (index < 0) return;
+    const viewport = getChartViewportController(chart);
+    if (!viewport) return;
+
+    viewport.setLogicalRange(
+      goToDateLogicalRange(
+        index,
+        chart.timeScale().getVisibleLogicalRange(),
+      ),
+      "time-navigation",
+    );
+    setGoToMarker({
+      id: pendingGoToNavigation.id,
+      time: pendingGoToNavigation.resolvedTime,
+      label: formatGoToMarkerLabel(
+        pendingGoToNavigation.resolvedTime,
+        activeTimeZone,
+      ),
+    });
+    clearChartCrosshair(chart, () => setCrosshair(null));
+    setActiveShortcut(null);
+    setPendingGoToNavigation(null);
+  }, [
+    activeTimeZone,
+    candles,
+    chart,
+    pendingGoToNavigation,
+    setCrosshair,
+  ]);
+
   const openTimeZoneMenu = (event: MouseEvent<HTMLButtonElement>) => {
     setTimeZoneAnchor(elementAnchorFromRect(event.currentTarget.getBoundingClientRect()));
     setTimeZoneOpen(true);
@@ -486,7 +565,6 @@ export function ChartTimeToolbar({
       )}
       {goToOpen && chart && (
         <GoToDialog
-          chart={chart}
           candles={candles}
           timeZone={activeTimeZone}
           allowSpecificTime={canSelectGoToTime(
@@ -495,18 +573,7 @@ export function ChartTimeToolbar({
           )}
           initialSelection={lastGoToSelection}
           anchor={goToAnchor}
-          onJump={(time) =>
-            setGoToMarker({
-              id: Date.now(),
-              time,
-              label: formatGoToMarkerLabel(time, activeTimeZone),
-            })
-          }
-          onNavigationApplied={() =>
-            clearChartCrosshair(chart, () => setCrosshair(null))
-          }
-          onSelectionApplied={setLastGoToSelection}
-          onManualNavigation={() => setActiveShortcut(null)}
+          onApply={requestGoToNavigation}
           onClose={closeGoTo}
         />
       )}
@@ -534,28 +601,20 @@ export function ChartTimeToolbar({
 }
 
 function GoToDialog({
-  chart,
   candles,
   timeZone,
   allowSpecificTime,
   initialSelection,
   anchor,
-  onJump,
-  onNavigationApplied,
-  onSelectionApplied,
-  onManualNavigation,
+  onApply,
   onClose,
 }: {
-  chart: IChartApi;
   candles: Candle[];
   timeZone?: string;
   allowSpecificTime: boolean;
   initialSelection: GoToSelection | null;
   anchor: ElementAnchor | null;
-  onJump: (time: number) => void;
-  onNavigationApplied: () => void;
-  onSelectionApplied: (selection: GoToSelection) => void;
-  onManualNavigation: () => void;
+  onApply: (time: number) => Promise<void>;
   onClose: () => void;
 }) {
   const defaults = useMemo(() => {
@@ -571,6 +630,8 @@ function GoToDialog({
   const [singleDate, setSingleDate] = useState(defaults.singleDate);
   const [singleTime, setSingleTime] = useState(defaults.singleTime);
   const [month, setMonth] = useState(defaults.month);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   const cells = calendarCells(month.getFullYear(), month.getMonth());
   const selectedDate = singleDate;
@@ -584,30 +645,31 @@ function GoToDialog({
 
   const pickDate = (date: string) => {
     setSingleDate(date);
+    setApplyError(null);
   };
 
-  const apply = () => {
+  const apply = async () => {
     const targetTime = parseLocalDateTime(
       singleDate,
       allowSpecificTime ? singleTime : "00:00",
       timeZone,
     );
-    if (targetTime == null) return;
-    const index = firstCandleIndexAtOrAfter(candles, targetTime);
-    if (index == null) return;
-    const range = goToDateLogicalRange(
-      index,
-      chart.timeScale().getVisibleLogicalRange(),
-    );
-    getChartViewportController(chart)?.setLogicalRange(
-      range,
-      "time-navigation",
-    );
-    onJump(candles[index].time);
-    onSelectionApplied({ time: targetTime });
-    onNavigationApplied();
-    onManualNavigation();
-    onClose();
+    if (targetTime == null) {
+      setApplyError("Enter a valid date and time");
+      return;
+    }
+    setApplyError(null);
+    setIsApplying(true);
+    try {
+      await onApply(targetTime);
+      setIsApplying(false);
+      onClose();
+    } catch (error) {
+      setApplyError(
+        error instanceof Error ? error.message : "Unable to load the selected date",
+      );
+      setIsApplying(false);
+    }
   };
 
   const shiftMonth = (delta: number) => {
@@ -639,15 +701,20 @@ function GoToDialog({
   }, [dialogRef]);
 
   const dialog = (
-    <div data-chart-ui className="fixed inset-0 z-[900] bg-[var(--scrim)]/70 backdrop-blur-[2px]" onMouseDown={onClose}>
+    <div
+      data-chart-ui
+      className="fixed inset-0 z-[900] bg-[var(--scrim)]/70 backdrop-blur-[2px]"
+      onMouseDown={isApplying ? undefined : onClose}
+    >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="go-to-dialog-title"
+        aria-busy={isApplying}
         tabIndex={-1}
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
+          if (event.key === "Escape" && !isApplying) {
             event.preventDefault();
             onClose();
             return;
@@ -669,8 +736,9 @@ function GoToDialog({
           <button
             type="button"
             aria-label="Close"
+            disabled={isApplying}
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-wait disabled:opacity-50"
           >
             <X size={20} />
           </button>
@@ -683,14 +751,24 @@ function GoToDialog({
               onChange={(value) => {
                 setSingleDate(value);
                 setMonthFromDateDraft(value);
+                setApplyError(null);
               }}
             />
             <TimeInput
               value={allowSpecificTime ? singleTime : "00:00"}
-              onChange={setSingleTime}
+              onChange={(value) => {
+                setSingleTime(value);
+                setApplyError(null);
+              }}
               disabled={!allowSpecificTime}
             />
           </div>
+
+          {applyError && (
+            <p role="alert" className="-mt-2 mb-2 text-xs font-medium text-bear">
+              {applyError}
+            </p>
+          )}
 
           <div className="mb-3 flex h-8 items-center justify-between">
             <button
@@ -747,17 +825,20 @@ function GoToDialog({
         <div className="absolute bottom-0 left-0 right-0 flex h-16 items-center justify-end gap-3 border-t border-terminal-border bg-terminal-raised px-5">
           <button
             type="button"
+            disabled={isApplying}
             onClick={onClose}
-            className="h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover"
+            className="h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover disabled:cursor-wait disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={apply}
-            className="h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover"
+            disabled={isApplying}
+            onClick={() => void apply()}
+            className="flex h-10 min-w-[68px] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-wait disabled:opacity-70"
           >
-            Go to
+            {isApplying && <Loader2 size={15} className="animate-spin" />}
+            {isApplying ? "Loading" : "Go to"}
           </button>
         </div>
       </div>

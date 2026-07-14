@@ -66,6 +66,11 @@ export interface Mt5HistorySnapshot {
   lastError?: string;
 }
 
+export interface Mt5HistoryAroundSnapshot extends Mt5HistorySnapshot {
+  requestedTime: number;
+  resolvedTime?: number;
+}
+
 export async function getMt5Symbols(): Promise<Mt5SymbolSnapshot> {
   return getJson<Mt5SymbolSnapshot>("mt5/symbols");
 }
@@ -103,4 +108,26 @@ export async function getMt5History(params: {
     retry: { limit: 0 },
     ...options,
   });
+}
+
+export async function getMt5HistoryAround(params: {
+  symbol: string;
+  timeframe: Timeframe;
+  time: number;
+  limit?: number;
+}, options?: Options): Promise<Mt5HistoryAroundSnapshot> {
+  const query = new URLSearchParams({
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    time: String(params.time),
+    limit: String(params.limit ?? 600),
+  });
+  return getJson<Mt5HistoryAroundSnapshot>(
+    `mt5/history/around?${query.toString()}`,
+    {
+      timeout: 75_000,
+      retry: { limit: 0 },
+      ...options,
+    },
+  );
 }

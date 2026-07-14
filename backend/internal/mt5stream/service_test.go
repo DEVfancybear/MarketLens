@@ -166,6 +166,87 @@ func TestHistoryRequestsAreCoalesced(t *testing.T) {
 	}
 }
 
+func TestHistoryAroundRequestsTargetAndResolvesFirstTradableCandle(t *testing.T) {
+	bridge := newHistoryBridgeHarness(t)
+	service := NewService(Config{
+		Enabled:     true,
+		BridgeURL:   bridge.url,
+		DialTimeout: time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(ctx)
+	waitForServiceConnection(t, service)
+
+	// Reproduces the UI bug: the selected date predates the first locally
+	// loaded candle. HistoryAround must ask MT5 instead of clamping to that bar.
+	const requestedTime int64 = 1782345600 // 2026-06-25 00:00:00 UTC
+	service.applyHistory(HistoryMessage{
+		Source:    "mt5",
+		Symbol:    "EURUSD",
+		Timeframe: "15m",
+		Candles: []Candle{
+			{Time: 1782608400, Open: 1.1, High: 1.2, Low: 1.0, Close: 1.15},
+		},
+	})
+
+	resultDone := make(chan HistorySnapshot, 1)
+	go func() {
+		resultDone <- service.HistoryAround(
+			context.Background(),
+			"EURUSD",
+			"15m",
+			4,
+			requestedTime,
+		)
+	}()
+
+	request := <-bridge.requests
+	if got := int64(request["around"].(float64)); got != requestedTime {
+		t.Fatalf("around = %d, want %d", got, requestedTime)
+	}
+	if _, hasBefore := request["before"]; hasBefore {
+		t.Fatalf("history-around request unexpectedly included before: %+v", request)
+	}
+
+	bridge.replies <- HistoryMessage{
+		Type:          "history",
+		Source:        "mt5",
+		RequestID:     fmt.Sprint(request["id"]),
+		Symbol:        "EURUSD",
+		Timeframe:     "15m",
+		RequestedTime: requestedTime,
+		ResolvedTime:  requestedTime,
+		Candles: []Candle{
+			{Time: requestedTime - 900, Open: 1.0, High: 1.1, Low: 0.9, Close: 1.05},
+			{Time: requestedTime, Open: 1.05, High: 1.2, Low: 1.0, Close: 1.15},
+			{Time: requestedTime + 900, Open: 1.15, High: 1.25, Low: 1.1, Close: 1.2},
+		},
+	}
+
+	result := <-resultDone
+	if result.LastError != "" {
+		t.Fatalf("unexpected history-around error: %s", result.LastError)
+	}
+	if result.RequestedTime != requestedTime || result.ResolvedTime != requestedTime {
+		t.Fatalf("unexpected resolution: %+v", result)
+	}
+	if len(result.Candles) != 3 || result.Candles[1].Time != requestedTime {
+		t.Fatalf("unexpected history-around candles: %+v", result.Candles)
+	}
+}
+
+func TestLimitCandlesAroundDoesNotClampPastTheLoadedTail(t *testing.T) {
+	candles, resolved := limitCandlesAround(
+		[]Candle{{Time: 1000}, {Time: 1060}},
+		10,
+		2000,
+	)
+	if resolved != 0 || len(candles) != 0 {
+		t.Fatalf("resolved=%d candles=%+v, want no resolution", resolved, candles)
+	}
+}
+
 func TestHistoryRefreshesPaginatedCacheThatDoesNotReachBefore(t *testing.T) {
 	bridge := newHistoryBridgeHarness(t)
 	service := NewService(Config{

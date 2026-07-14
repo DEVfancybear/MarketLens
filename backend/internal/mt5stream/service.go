@@ -336,7 +336,7 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		}
 	}
 
-	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before)
+	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0)
 	if err != nil {
 		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
 			return s.historySnapshot(symbol, timeframe, candles, err.Error())
@@ -350,6 +350,58 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		return s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
 	}
 	return s.historySnapshot(symbol, timeframe, limitCandles(msg.Candles, limit, before), "")
+}
+
+func (s *Service) HistoryAround(
+	ctx context.Context,
+	symbol, timeframe string,
+	limit int,
+	requestedTime int64,
+) HistorySnapshot {
+	symbol = normalizeSymbol(symbol)
+	timeframe = normalizeTimeframe(timeframe)
+	limit = clampLimit(limit)
+
+	if symbol == "" || timeframe == "" || requestedTime <= 0 {
+		return HistorySnapshot{
+			Connected:     false,
+			BridgeURL:     s.cfg.BridgeURL,
+			Source:        "mt5",
+			Symbol:        symbol,
+			Timeframe:     timeframe,
+			Candles:       []Candle{},
+			RequestedTime: requestedTime,
+			LastError:     "symbol, timeframe, and a positive time are required",
+		}
+	}
+
+	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, 0, requestedTime)
+	if err != nil {
+		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
+		snapshot.RequestedTime = requestedTime
+		return snapshot
+	}
+	if msg.Error != "" {
+		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
+		snapshot.RequestedTime = requestedTime
+		return snapshot
+	}
+
+	candles, resolvedTime := limitCandlesAround(msg.Candles, limit, requestedTime)
+	if resolvedTime == 0 {
+		snapshot := s.historySnapshot(
+			symbol,
+			timeframe,
+			candles,
+			"MT5 returned no candle at or after the requested time",
+		)
+		snapshot.RequestedTime = requestedTime
+		return snapshot
+	}
+	snapshot := s.historySnapshot(symbol, timeframe, candles, "")
+	snapshot.RequestedTime = requestedTime
+	snapshot.ResolvedTime = resolvedTime
+	return snapshot
 }
 
 func (s *Service) run(ctx context.Context) {
@@ -682,8 +734,13 @@ func (s *Service) historySnapshot(symbol, timeframe string, candles []Candle, er
 	}
 }
 
-func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, limit int, before int64) (HistoryMessage, error) {
-	key := historyRequestKey(symbol, timeframe, limit, before)
+func (s *Service) requestHistory(
+	ctx context.Context,
+	symbol, timeframe string,
+	limit int,
+	before, around int64,
+) (HistoryMessage, error) {
+	key := historyRequestKey(symbol, timeframe, limit, before, around)
 	flight, leader := s.joinHistoryFlight(key)
 	if leader {
 		requestCtx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
@@ -695,7 +752,14 @@ func (s *Service) requestHistory(ctx context.Context, symbol, timeframe string, 
 
 		go func() {
 			defer cancel()
-			msg, err := s.performHistoryRequest(requestCtx, symbol, timeframe, limit, before)
+			msg, err := s.performHistoryRequest(
+				requestCtx,
+				symbol,
+				timeframe,
+				limit,
+				before,
+				around,
+			)
 			s.finishHistoryFlight(key, flight, msg, err)
 		}()
 	}
@@ -761,7 +825,7 @@ func (s *Service) hasHistoryFlight(key string) bool {
 }
 
 func (s *Service) refreshHistoryAsync(symbol, timeframe string, limit int, before int64) {
-	key := historyRequestKey(symbol, timeframe, limit, before)
+	key := historyRequestKey(symbol, timeframe, limit, before, 0)
 	if s.hasHistoryFlight(key) {
 		return
 	}
@@ -769,7 +833,7 @@ func (s *Service) refreshHistoryAsync(symbol, timeframe string, limit int, befor
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
 		defer cancel()
-		if _, err := s.requestHistory(ctx, symbol, timeframe, limit, before); err != nil {
+		if _, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0); err != nil {
 			log.Debug().
 				Err(err).
 				Str("symbol", symbol).
@@ -781,7 +845,12 @@ func (s *Service) refreshHistoryAsync(symbol, timeframe string, limit int, befor
 	}()
 }
 
-func (s *Service) performHistoryRequest(ctx context.Context, symbol, timeframe string, limit int, before int64) (HistoryMessage, error) {
+func (s *Service) performHistoryRequest(
+	ctx context.Context,
+	symbol, timeframe string,
+	limit int,
+	before, around int64,
+) (HistoryMessage, error) {
 	release, err := s.acquireHistorySlot(ctx)
 	if err != nil {
 		return HistoryMessage{}, err
@@ -813,6 +882,9 @@ func (s *Service) performHistoryRequest(ctx context.Context, symbol, timeframe s
 	}
 	if before > 0 {
 		payload["before"] = before
+	}
+	if around > 0 {
+		payload["around"] = around
 	}
 
 	s.writeMu.Lock()
@@ -878,8 +950,9 @@ func historyKey(symbol, timeframe string) string {
 	return normalizeSymbol(symbol) + ":" + normalizeTimeframe(timeframe)
 }
 
-func historyRequestKey(symbol, timeframe string, limit int, before int64) string {
-	return historyKey(symbol, timeframe) + ":" + strconv.Itoa(limit) + ":" + strconv.FormatInt(before, 10)
+func historyRequestKey(symbol, timeframe string, limit int, before, around int64) string {
+	return historyKey(symbol, timeframe) + ":" + strconv.Itoa(limit) + ":" +
+		strconv.FormatInt(before, 10) + ":" + strconv.FormatInt(around, 10)
 }
 
 func normalizeSymbol(symbol string) string {
@@ -942,6 +1015,38 @@ func limitCandles(candles []Candle, limit int, before int64) []Candle {
 		filtered = filtered[len(filtered)-limit:]
 	}
 	return append([]Candle(nil), filtered...)
+}
+
+func limitCandlesAround(
+	candles []Candle,
+	limit int,
+	requestedTime int64,
+) ([]Candle, int64) {
+	if len(candles) == 0 || requestedTime <= 0 {
+		return []Candle{}, 0
+	}
+	sorted := sortCandlesCopy(candles)
+	resolvedIndex := sort.Search(len(sorted), func(index int) bool {
+		return sorted[index].Time >= requestedTime
+	})
+	if resolvedIndex >= len(sorted) {
+		return []Candle{}, 0
+	}
+	limit = clampLimit(limit)
+	leftCount := limit / 2
+	start := resolvedIndex - leftCount
+	if start < 0 {
+		start = 0
+	}
+	end := start + limit
+	if end > len(sorted) {
+		end = len(sorted)
+		start = end - limit
+		if start < 0 {
+			start = 0
+		}
+	}
+	return append([]Candle(nil), sorted[start:end]...), sorted[resolvedIndex].Time
 }
 
 func mergeCandles(existing []Candle, incoming []Candle) []Candle {

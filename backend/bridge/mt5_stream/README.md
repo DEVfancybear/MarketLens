@@ -130,6 +130,12 @@ candles when it has enough current data; otherwise it sends a `history.request`
 message over the existing bridge WebSocket. Latest windows use
 `copy_rates_from_pos`; older pages use `copy_rates_from(..., before - 1s, limit)`
 so infinite-scroll history loads bars strictly before the first loaded candle.
+Date navigation uses
+`GET /api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&time=<unix-seconds>&limit=600`.
+The bridge loads backward context and adaptively expands a forward range until it finds the first
+tradable candle at or after the requested time, including across weekend gaps. The response carries
+both `requestedTime` and `resolvedTime`; an unavailable future date is never clamped to the current
+history tail.
 The frontend uses timeframe-aware progressive window sizes rather than requesting
 1500 bars for every first paint, then loads older pages only as the chart pans left.
 

@@ -15,6 +15,10 @@ type SymbolSource interface {
 	History(ctx context.Context, symbol, timeframe string, limit int, before int64, refresh bool) HistorySnapshot
 }
 
+type HistoryAroundSource interface {
+	HistoryAround(ctx context.Context, symbol, timeframe string, limit int, requestedTime int64) HistorySnapshot
+}
+
 type TickStreamSource interface {
 	RegisterTickSubscriber() *TickSubscriber
 }
@@ -35,6 +39,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g := router.Group("/mt5")
 	g.Get("/symbols", h.symbols)
 	g.Get("/ticks", h.ticks)
+	g.Get("/history/around", h.historyAround)
 	g.Get("/history", h.history)
 	g.Use("/stream", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
@@ -43,6 +48,45 @@ func (h *Handler) Register(router fiber.Router) {
 		return fiber.ErrUpgradeRequired
 	})
 	g.Get("/stream", websocket.New(h.stream))
+}
+
+func (h *Handler) historyAround(c *fiber.Ctx) error {
+	symbol := normalizeSymbol(c.Query("symbol"))
+	timeframe := c.Query("timeframe", "15m")
+	limit := parseIntQuery(c.Query("limit"), 600)
+	requestedTime := parseInt64Query(c.Query("time"), 0)
+
+	if h == nil || h.source == nil {
+		return c.JSON(HistorySnapshot{
+			Connected:     false,
+			Source:        "mt5",
+			Symbol:        symbol,
+			Timeframe:     timeframe,
+			Candles:       []Candle{},
+			RequestedTime: requestedTime,
+			LastError:     "MT5 history-around service is not configured",
+		})
+	}
+	source, ok := h.source.(HistoryAroundSource)
+	if !ok {
+		return c.JSON(HistorySnapshot{
+			Connected:     false,
+			Source:        "mt5",
+			Symbol:        symbol,
+			Timeframe:     timeframe,
+			Candles:       []Candle{},
+			RequestedTime: requestedTime,
+			LastError:     "MT5 history-around service is not configured",
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(c.Context(), defaultHistoryHTTPTimeout)
+	defer cancel()
+	snapshot := source.HistoryAround(ctx, symbol, timeframe, limit, requestedTime)
+	if snapshot.Candles == nil {
+		snapshot.Candles = []Candle{}
+	}
+	return c.JSON(snapshot)
 }
 
 func (h *Handler) symbols(c *fiber.Ctx) error {

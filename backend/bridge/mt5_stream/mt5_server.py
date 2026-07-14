@@ -205,6 +205,67 @@ def copy_rates_synced_blocking(
     return rates
 
 
+def copy_rates_around_blocking(
+    symbol: str,
+    mt5_timeframe: int,
+    timeframe: str,
+    limit: int,
+    requested_time: int,
+) -> list[Any]:
+    """Load deterministic context around a Go-to target.
+
+    `copy_rates_from` is backward-looking, so using a guessed future `before`
+    cursor can skip the target after a weekend. Load left context separately,
+    then expand a forward range until the first tradable bars are available.
+    """
+    requested_time = max(1, int(requested_time))
+    limit = max(1, min(int(limit), 5000))
+    left_count = limit // 2
+    right_count = max(1, limit - left_count)
+    target = datetime.fromtimestamp(requested_time, timezone.utc)
+
+    left_rates = mt5.copy_rates_from(
+        symbol,
+        mt5_timeframe,
+        target,
+        min(5000, left_count + 1),
+    )
+    left_candidates = [
+        row
+        for row in ([] if left_rates is None else left_rates)
+        if int(row["time"]) < requested_time
+    ]
+    left = left_candidates[-left_count:] if left_count > 0 else []
+
+    tf_seconds = max(1, TIMEFRAME_SECONDS.get(timeframe, 60))
+    lookahead = max(tf_seconds * right_count, tf_seconds)
+    max_lookahead = max(14 * 86400, lookahead * 4)
+    right: list[Any] = []
+    while True:
+        range_end = datetime.fromtimestamp(
+            requested_time + lookahead,
+            timezone.utc,
+        )
+        right_rates = mt5.copy_rates_range(
+            symbol,
+            mt5_timeframe,
+            target,
+            range_end,
+        )
+        right = [
+            row
+            for row in ([] if right_rates is None else right_rates)
+            if int(row["time"]) >= requested_time
+        ]
+        if len(right) >= right_count or lookahead >= max_lookahead:
+            break
+        lookahead = min(max_lookahead, lookahead * 2)
+
+    selected = left + right[:right_count]
+    by_time = {int(row["time"]): row for row in selected}
+    return [by_time[key] for key in sorted(by_time)]
+
+
 async def copy_rates_synced_worker(
     symbol: str,
     mt5_timeframe: int,
@@ -230,16 +291,27 @@ def copy_selected_rates_synced_blocking(
     timeframe: str,
     limit: int,
     before: int = 0,
+    around: int = 0,
 ) -> tuple[Any, str]:
     """Select and load one history window on the MT5-affine worker."""
     if not mt5.symbol_select(symbol, True):
         return None, f"symbol_select({symbol}) failed ({last_mt5_error()})"
-    rates = copy_rates_synced_blocking(
-        symbol,
-        mt5_timeframe,
-        timeframe,
-        limit,
-        before,
+    rates = (
+        copy_rates_around_blocking(
+            symbol,
+            mt5_timeframe,
+            timeframe,
+            limit,
+            around,
+        )
+        if around > 0
+        else copy_rates_synced_blocking(
+            symbol,
+            mt5_timeframe,
+            timeframe,
+            limit,
+            before,
+        )
     )
     if rates is None:
         return None, (
@@ -255,6 +327,7 @@ async def copy_selected_rates_synced_worker(
     timeframe: str,
     limit: int,
     before: int = 0,
+    around: int = 0,
 ) -> tuple[Any, str]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
@@ -265,6 +338,7 @@ async def copy_selected_rates_synced_worker(
         timeframe,
         limit,
         before,
+        around,
     )
 
 
@@ -550,12 +624,24 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         before = int(message.get("before") or 0)
     except (TypeError, ValueError):
         before = 0
+    try:
+        around = int(message.get("around") or 0)
+    except (TypeError, ValueError):
+        around = 0
     task_key = (id(websocket), request_id)
     previous = HISTORY_TASKS.pop(task_key, None)
     if previous is not None:
         previous.cancel()
     task = asyncio.create_task(
-        send_history_response(websocket, symbol, timeframe, limit, request_id, before)
+        send_history_response(
+            websocket,
+            symbol,
+            timeframe,
+            limit,
+            request_id,
+            before,
+            around,
+        )
     )
     HISTORY_TASKS[task_key] = task
     task.add_done_callback(lambda _task, key=task_key: HISTORY_TASKS.pop(key, None))
@@ -568,10 +654,18 @@ async def send_history_response(
     limit: int,
     request_id: str,
     before: int = 0,
+    around: int = 0,
 ) -> None:
     try:
         await websocket.send(
-            await load_history_message(symbol, timeframe, limit, request_id, before)
+            await load_history_message(
+                symbol,
+                timeframe,
+                limit,
+                request_id,
+                before,
+                around,
+            )
         )
     except asyncio.CancelledError:
         # The browser changed symbol/timeframe. If this work was still queued in
@@ -773,6 +867,7 @@ async def load_history_message(
     bars: int,
     request_id: str = "",
     before: int = 0,
+    around: int = 0,
 ) -> str:
     limit = max(1, min(int(bars or 1500), 5000))
     mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
@@ -784,11 +879,16 @@ async def load_history_message(
         "timeframe": timeframe,
         "candles": [],
     }
+    if around > 0:
+        payload["requested_time"] = around
     if not symbol:
         payload["error"] = "symbol is required"
         return json.dumps(payload, separators=(",", ":"))
     if mt5_timeframe is None:
         payload["error"] = f"unsupported timeframe: {timeframe}"
+        return json.dumps(payload, separators=(",", ":"))
+    if before > 0 and around > 0:
+        payload["error"] = "before and around cannot be used together"
         return json.dumps(payload, separators=(",", ":"))
     rates, error = await copy_selected_rates_synced_worker(
         symbol,
@@ -796,6 +896,7 @@ async def load_history_message(
         timeframe,
         limit,
         before,
+        around,
     )
     if error:
         payload["error"] = error
@@ -812,6 +913,17 @@ async def load_history_message(
         }
         for row in rates
     ]
+    if around > 0:
+        resolved = next(
+            (
+                int(row["time"])
+                for row in rates
+                if int(row["time"]) >= around
+            ),
+            0,
+        )
+        if resolved > 0:
+            payload["resolved_time"] = resolved
     return json.dumps(payload, separators=(",", ":"))
 
 

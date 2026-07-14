@@ -13,12 +13,16 @@
  * `marketDataStore.setCandles`. CORS-friendly endpoints (client fetch).
  */
 import {
+  TF_SECONDS,
   type HistoryRequest,
   type MarketCandle,
   type Timeframe,
 } from "@/types";
 import { getMarketSymbol, twelveDataSymbol } from "./symbols";
-import { getMt5History } from "@/services/api/resources/mt5Api";
+import {
+  getMt5History,
+  getMt5HistoryAround,
+} from "@/services/api/resources/mt5Api";
 
 const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
 const TWELVEDATA_TS = "https://api.twelvedata.com/time_series";
@@ -84,6 +88,19 @@ export interface LoadHistoryOptions {
   signal?: AbortSignal;
 }
 
+export interface LoadHistoryAroundRequest {
+  symbol: string;
+  timeframe: Timeframe;
+  time: number;
+  limit?: number;
+}
+
+export interface HistoryAroundResult {
+  candles: MarketCandle[];
+  requestedTime: number;
+  resolvedTime: number;
+}
+
 export class HistoricalDataService {
   private readonly tdKey: string;
   private readonly oandaKey: string;
@@ -134,6 +151,68 @@ export class HistoricalDataService {
       return this.loadTwelveData(twelveDataSymbol(symbol), timeframe, capped, before);
     }
     return this.loadBinance(providerSymbol, timeframe, capped, before);
+  }
+
+  /** Load a bounded candle window containing the first tradable bar at/after `time`. */
+  async loadHistoryAround(
+    req: LoadHistoryAroundRequest,
+    options: LoadHistoryOptions = {},
+  ): Promise<HistoryAroundResult> {
+    const { symbol, timeframe, time } = req;
+    const limit = Math.min(Math.max(req.limit ?? 600, 10), MAX_LIMIT);
+    const meta = getMarketSymbol(symbol);
+    const providerSymbol = meta?.providerSymbol ?? symbol;
+
+    if (meta?.provider === "mt5") {
+      const snapshot = await getMt5HistoryAround({
+        symbol: providerSymbol,
+        timeframe,
+        time,
+        limit,
+      }, {
+        signal: options.signal,
+      });
+      const candles = dedupeAscending(
+        snapshot.candles.map((candle) => ({
+          time: candle.time,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: candle.volume,
+          closed: true,
+        })),
+      );
+      const resolvedTime = snapshot.resolvedTime ??
+        candles.find((candle) => candle.time >= time)?.time;
+      if (!resolvedTime) {
+        throw new Error(
+          snapshot.lastError ||
+            `MT5 has no candle at or after the selected time for ${symbol} ${timeframe}`,
+        );
+      }
+      return {
+        candles,
+        requestedTime: snapshot.requestedTime || time,
+        resolvedTime,
+      };
+    }
+
+    // Non-MT5 providers already expose a `before` cursor. Ask for a window
+    // whose right half is after the target, then resolve the first tradable bar.
+    const step = TF_SECONDS[timeframe];
+    const before = time + step * Math.max(2, Math.ceil(limit / 2));
+    const candles = await this.loadHistory({
+      symbol,
+      timeframe,
+      limit,
+      before,
+    }, options);
+    const resolvedTime = candles.find((candle) => candle.time >= time)?.time;
+    if (!resolvedTime) {
+      throw new Error(`No candle exists at or after the selected time for ${symbol} ${timeframe}`);
+    }
+    return { candles, requestedTime: time, resolvedTime };
   }
 
   // ------------------------------------------------------------------ MT5

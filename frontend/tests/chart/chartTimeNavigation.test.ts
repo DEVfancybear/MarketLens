@@ -5,6 +5,7 @@ import type { Candle } from "../../src/types/market";
 import {
   calendarCells,
   canSelectGoToTime,
+  candlesCoverGoToTime,
   centeredLogicalRange,
   firstCandleIndexAtOrAfter,
   formatDateInput,
@@ -47,8 +48,18 @@ test("go-to date selects the first candle at or after the requested time", () =>
   assert.equal(firstCandleIndexAtOrAfter(data, 1000), 0);
   assert.equal(firstCandleIndexAtOrAfter(data, 1001), 1);
   assert.equal(firstCandleIndexAtOrAfter(data, 1120), 2);
-  assert.equal(firstCandleIndexAtOrAfter(data, 9999), 3);
+  assert.equal(firstCandleIndexAtOrAfter(data, 9999), null);
   assert.equal(firstCandleIndexAtOrAfter([], 1000), null);
+});
+
+test("go-to detects when the requested time is outside loaded history", () => {
+  const data = candles(4, 1000, 60);
+
+  assert.equal(candlesCoverGoToTime(data, 999), false);
+  assert.equal(candlesCoverGoToTime(data, 1000), true);
+  assert.equal(candlesCoverGoToTime(data, 1180), true);
+  assert.equal(candlesCoverGoToTime(data, 1181), false);
+  assert.equal(candlesCoverGoToTime([], 1000), false);
 });
 
 test("go-to logical range preserves current zoom span", () => {

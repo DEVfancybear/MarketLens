@@ -45,6 +45,12 @@ import {
 
 const MAX_BACKFILL_MISSING_BARS = 50;
 
+export interface LoadedGoToHistory {
+  candles: Candle[];
+  requestedTime: number;
+  resolvedTime: number;
+}
+
 function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
   if (timeframe === "1D" || timeframe === "1W" || timeframe === "1M") return 5;
   if (timeframe === "1H" || timeframe === "2H" || timeframe === "4H") return 10;
@@ -325,5 +331,34 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     }
   }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);
 
-  return { loadOlderCandles };
+  const loadCandlesAroundTime = useCallback(async (
+    time: number,
+  ): Promise<LoadedGoToHistory> => {
+    if (!enabled || historyReadyKey !== activeKey) {
+      throw new Error("Chart history is not ready yet");
+    }
+    if (!symbol || !Number.isFinite(time) || time <= 0) {
+      throw new Error("A valid symbol and date are required");
+    }
+
+    const result = await getHistoricalDataService().loadHistoryAround({
+      symbol,
+      timeframe,
+      time,
+      limit: historyPageBars(timeframe),
+    });
+    const marketData = getMarketDataState();
+    marketData.setCandles(symbol, timeframe, result.candles);
+    const merged = marketData.getCandles(symbol, timeframe) as Candle[];
+    if (!merged.some((candle) => candle.time === result.resolvedTime)) {
+      throw new Error("The selected candle could not be retained in the chart history window");
+    }
+    return {
+      candles: merged,
+      requestedTime: result.requestedTime,
+      resolvedTime: result.resolvedTime,
+    };
+  }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);
+
+  return { loadOlderCandles, loadCandlesAroundTime };
 }

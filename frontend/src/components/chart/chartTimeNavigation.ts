@@ -102,7 +102,7 @@ export function firstCandleIndexAtOrAfter(
   if (candles.length === 0) return null;
   let lo = 0;
   let hi = candles.length - 1;
-  let result = candles.length - 1;
+  let result = candles.length;
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2);
     if (candles[mid].time >= timeSec) {
@@ -112,7 +112,16 @@ export function firstCandleIndexAtOrAfter(
       lo = mid + 1;
     }
   }
-  return result;
+  return result < candles.length ? result : null;
+}
+
+export function candlesCoverGoToTime(
+  candles: Candle[],
+  timeSec: number,
+): boolean {
+  const first = candles[0];
+  const last = candles[candles.length - 1];
+  return Boolean(first && last && timeSec >= first.time && timeSec <= last.time);
 }
 
 export function centeredLogicalRange(

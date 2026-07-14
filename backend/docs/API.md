@@ -303,6 +303,7 @@ Python sidecar directly.
 | Go API WebSocket | `GET /api/v1/mt5/stream` | Browser-facing realtime quote stream; clients send subscribe messages and receive pushed ticks |
 | Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | One-off latest cached tick snapshot/debug endpoint; also requests on-demand streaming for requested catalog symbols |
 | Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` bypasses the cache for active chart updates |
+| Go API | `GET /api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&time=1782345600&limit=600` | Returns bounded context around a Go-to timestamp plus explicit `requestedTime` and first tradable `resolvedTime` |
 
 History scheduling:
 
@@ -316,6 +317,9 @@ History scheduling:
   crosses the requested `before` cursor; a newer, unrelated cached tail must go back through the
   MT5 bridge instead of returning a misleading partial page. This coverage rule is also what makes
   Replay `Select date -> First day` resolve against the requested historical window.
+- Go-to requests use `/history/around` instead of guessing a pagination cursor. The Python bridge
+  loads left context separately and expands its forward range across weekends/market closures;
+  Go returns no resolution rather than silently clamping to the first or last cached candle.
 - Identical history requests are single-flighted in Go: only one payload is sent to the Python MT5
   bridge and concurrent callers share the result. Each caller waits with its own context, so one
   canceled browser effect does not cancel another active waiter for the same history window.
@@ -340,6 +344,33 @@ History scheduling:
   first paint and is revalidated by later active-chart refreshes; only empty windows consume the
   bounded bridge retry budget. This prevents one cold symbol from holding the single MT5 worker for
   a full chain of freshness retries.
+
+Successful `/history/around` responses identify both sides of the resolution contract:
+
+```json
+{
+  "connected": true,
+  "source": "mt5",
+  "symbol": "EURUSD",
+  "timeframe": "15m",
+  "requestedTime": 1782370800,
+  "resolvedTime": 1782370800,
+  "candles": [
+    {
+      "time": 1782370800,
+      "open": 1.1701,
+      "high": 1.1708,
+      "low": 1.1697,
+      "close": 1.1705,
+      "volume": 842
+    }
+  ]
+}
+```
+
+`resolvedTime` is always the first returned MT5 candle whose open time is greater than or equal to
+`requestedTime`. When no such candle exists, the response omits `resolvedTime`, sets `lastError`,
+and the frontend keeps the Go-to dialog open instead of moving the viewport.
 
 Symbol catalog payload, sent when a Go client connects:
 

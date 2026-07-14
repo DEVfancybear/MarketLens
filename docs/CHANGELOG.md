@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Go-to navigation outside loaded chart history (2026-07-14)
+- Stopped the chart `Go to` action from silently selecting the first or last
+  currently loaded candle when the requested date is outside the client window.
+- Added `GET /api/v1/mt5/history/around` and bridge-side left/right history
+  loading. Forward lookup expands across weekends and market closures and
+  returns explicit `requestedTime` and first-tradable `resolvedTime` values.
+- Made the frontend wait for the resolved candle to enter the shared candle
+  store before moving the viewport and rendering the marker. Missing future
+  data now produces an actionable dialog error instead of a misleading jump.
+- Added Go, Python, and chart-math regressions for out-of-window dates,
+  weekend expansion, exact resolution, and the no-tail-clamping invariant.
+
 ### Fixed - Replay playback across sparse market gaps (2026-07-13)
 - Extended Replay history forward when a selected candle is followed by a
   weekend, holiday, or broker-session closure. Readiness now checks that the

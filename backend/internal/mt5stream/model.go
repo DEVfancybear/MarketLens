@@ -83,25 +83,29 @@ type Candle struct {
 // HistoryMessage is sent by the Python bridge for either an initial preload or
 // a Go-initiated history request.
 type HistoryMessage struct {
-	Type      string   `json:"type"`
-	Source    string   `json:"source,omitempty"`
-	RequestID string   `json:"request_id,omitempty"`
-	Symbol    string   `json:"symbol"`
-	Timeframe string   `json:"timeframe"`
-	Candles   []Candle `json:"candles"`
-	Error     string   `json:"error,omitempty"`
+	Type          string   `json:"type"`
+	Source        string   `json:"source,omitempty"`
+	RequestID     string   `json:"request_id,omitempty"`
+	Symbol        string   `json:"symbol"`
+	Timeframe     string   `json:"timeframe"`
+	Candles       []Candle `json:"candles"`
+	RequestedTime int64    `json:"requested_time,omitempty"`
+	ResolvedTime  int64    `json:"resolved_time,omitempty"`
+	Error         string   `json:"error,omitempty"`
 }
 
 // HistorySnapshot is returned by GET /api/v1/mt5/history.
 type HistorySnapshot struct {
-	Connected bool      `json:"connected"`
-	BridgeURL string    `json:"bridgeUrl"`
-	Source    string    `json:"source"`
-	Symbol    string    `json:"symbol"`
-	Timeframe string    `json:"timeframe"`
-	Candles   []Candle  `json:"candles"`
-	UpdatedAt time.Time `json:"updatedAt,omitempty"`
-	LastError string    `json:"lastError,omitempty"`
+	Connected     bool      `json:"connected"`
+	BridgeURL     string    `json:"bridgeUrl"`
+	Source        string    `json:"source"`
+	Symbol        string    `json:"symbol"`
+	Timeframe     string    `json:"timeframe"`
+	Candles       []Candle  `json:"candles"`
+	RequestedTime int64     `json:"requestedTime,omitempty"`
+	ResolvedTime  int64     `json:"resolvedTime,omitempty"`
+	UpdatedAt     time.Time `json:"updatedAt,omitempty"`
+	LastError     string    `json:"lastError,omitempty"`
 }
 
 type inboundMessage struct {

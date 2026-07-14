@@ -14,6 +14,7 @@ type fakeSymbolSource struct {
 	snapshot Snapshot
 	ticks    TickSnapshot
 	history  HistorySnapshot
+	around   HistorySnapshot
 }
 
 func (f fakeSymbolSource) Snapshot() Snapshot {
@@ -26,6 +27,10 @@ func (f fakeSymbolSource) Ticks(_ []string) TickSnapshot {
 
 func (f fakeSymbolSource) History(_ context.Context, _ string, _ string, _ int, _ int64, _ bool) HistorySnapshot {
 	return f.history
+}
+
+func (f fakeSymbolSource) HistoryAround(_ context.Context, _ string, _ string, _ int, _ int64) HistorySnapshot {
+	return f.around
 }
 
 func TestSymbolsEndpointReturnsCatalogSnapshot(t *testing.T) {
@@ -94,6 +99,43 @@ func TestHistoryEndpointReturnsCandles(t *testing.T) {
 	}
 	if !body.Connected || len(body.Candles) != 1 || body.Candles[0].Close != 1.15 {
 		t.Fatalf("unexpected history snapshot: %+v", body)
+	}
+}
+
+func TestHistoryAroundEndpointReturnsExplicitResolution(t *testing.T) {
+	const requestedTime int64 = 1782345600
+	app := fiber.New()
+	NewHandler(fakeSymbolSource{
+		around: HistorySnapshot{
+			Connected:     true,
+			BridgeURL:     "ws://localhost:8765",
+			Source:        "mt5",
+			Symbol:        "EURUSD",
+			Timeframe:     "15m",
+			RequestedTime: requestedTime,
+			ResolvedTime:  requestedTime,
+			Candles: []Candle{
+				{Time: requestedTime, Open: 1.1, High: 1.2, Low: 1.0, Close: 1.15},
+			},
+		},
+	}).Register(app.Group("/api/v1"))
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&limit=10&time=1782345600",
+		nil,
+	)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+
+	var body HistorySnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.RequestedTime != requestedTime || body.ResolvedTime != requestedTime {
+		t.Fatalf("unexpected history-around resolution: %+v", body)
 	}
 }
 
