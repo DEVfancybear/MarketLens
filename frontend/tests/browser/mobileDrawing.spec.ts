@@ -29,7 +29,8 @@ async function dispatchTouchPointer(
   point: { x: number; y: number },
 ) {
   await page.evaluate(({ eventType, x, y }) => {
-    document.dispatchEvent(new PointerEvent(eventType, {
+    const target = document.elementFromPoint(x, y) ?? document;
+    target.dispatchEvent(new PointerEvent(eventType, {
       bubbles: true,
       cancelable: true,
       clientX: x,
@@ -47,6 +48,30 @@ test("mobile touch creates and resizes a Rectangle without leaking to chart gest
   await page.route("**/api/push/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
+  await page.route("**/api/v1/mt5/symbols", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connected: true,
+        bridgeUrl: "fixture",
+        source: "playwright",
+        count: 1,
+        streamSymbols: ["EURUSD"],
+        symbols: [{
+          name: "EURUSD",
+          description: "Euro / US Dollar",
+          visible: true,
+          digits: 5,
+          point: 0.00001,
+          spread: 0,
+          trade_mode: 4,
+          currency_base: "EUR",
+          currency_profit: "USD",
+        }],
+      }),
+    });
+  });
   await page.goto("/?chartFixture=900&chartFixtureTail=500&chartBenchmarkProfile=phase2", {
     waitUntil: "domcontentloaded",
     timeout: 45_000,
@@ -59,7 +84,9 @@ test("mobile touch creates and resizes a Rectangle without leaking to chart gest
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];
   const start = { x: pane.x + pane.width * 0.24, y: pane.y + pane.height * 0.68 };
-  const end = { x: pane.x + pane.width * 0.68, y: pane.y + pane.height * 0.34 };
+  // Stay below the mobile indicator legend; actionable popup bounds correctly
+  // own their hit area while a drawing tool is armed.
+  const end = { x: pane.x + pane.width * 0.68, y: pane.y + pane.height * 0.48 };
 
   await page.getByRole("button", { name: "Draw", exact: true }).click();
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
@@ -75,6 +102,64 @@ test("mobile touch creates and resizes a Rectangle without leaking to chart gest
     created.drawings[0].id,
   );
   expect(projected).not.toBeNull();
+
+  const toolbar = page.locator("[data-drawing-toolbar][data-chart-popup]");
+  await expect(toolbar).toBeVisible();
+  const dragHandle = toolbar.locator("[data-chart-popup-drag-handle]");
+  await expect(dragHandle).toBeVisible();
+
+  const colorTrigger = toolbar.getByRole("button", { name: "Line color" });
+  await colorTrigger.click();
+  const drawingPopover = toolbar.locator("[data-drawing-toolbar-popover]");
+  await expect(drawingPopover).toBeVisible();
+  await expect(drawingPopover.locator("[data-chart-popup-drag-handle]")).toBeVisible();
+  const popoverGeometry = await drawingPopover.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    return {
+      inViewport:
+        rect.left >= 0 &&
+        rect.top >= 0 &&
+        rect.right <= window.innerWidth &&
+        rect.bottom <= window.innerHeight,
+      topmost: Boolean(hit && element.contains(hit)),
+    };
+  });
+  expect(popoverGeometry).toEqual({ inViewport: true, topmost: true });
+  await drawingPopover.locator("[data-color-option]").first().click();
+  await expect(drawingPopover).toHaveCount(0);
+
+  const toolbarBefore = await toolbar.boundingBox();
+  const dragBox = await dragHandle.boundingBox();
+  expect(toolbarBefore).not.toBeNull();
+  expect(dragBox).not.toBeNull();
+  await dragHandle.dispatchEvent("pointerdown", {
+    pointerId: 92,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: dragBox!.x + dragBox!.width / 2,
+    clientY: dragBox!.y + dragBox!.height / 2,
+  });
+  await dragHandle.dispatchEvent("pointermove", {
+    pointerId: 92,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: dragBox!.x + dragBox!.width / 2,
+    clientY: dragBox!.y + dragBox!.height / 2 + 72,
+  });
+  await dragHandle.dispatchEvent("pointerup", {
+    pointerId: 92,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+  });
+  await expect.poll(async () => (await toolbar.boundingBox())!.y)
+    .toBeGreaterThan(toolbarBefore!.y + 40);
 
   await dispatchTouchPointer(page, "pointerdown", projected![1]);
   await expect.poll(async () => (await drawingSnapshot(page)).machineState)

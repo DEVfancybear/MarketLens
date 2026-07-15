@@ -30,6 +30,7 @@ import {
   timeframeAtom,
 } from "@/store/chartStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
 import { cn } from "@/utils/cn";
 import { focusFirstWithin, trapFocusWithin } from "@/utils/focusManagement";
 import {
@@ -61,6 +62,7 @@ import {
   type TimeRangeShortcut,
 } from "@/services/api/resources/timeNavigationApi";
 import type { LoadedGoToHistory } from "@/hooks/useMarketData";
+import { ChartPopupSurface } from "./ChartPopupSurface";
 
 type GoToMarkerState = {
   id: number;
@@ -177,6 +179,7 @@ function TimeZoneMenu({
   onSelect: (timeZone: ChartTimeZoneId) => void;
   onClose: () => void;
 }) {
+  const mobile = useTerminalPlatform() === "mobile";
   const position = useMemo(
     () =>
       floatingMenuPosition(
@@ -191,20 +194,27 @@ function TimeZoneMenu({
     [anchor],
   );
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return createPortal(
-    <div data-chart-ui className="fixed inset-0 z-[85]" onMouseDown={onClose}>
-      <div
+    <div data-chart-ui className="fixed inset-0 z-[85]">
+      <ChartPopupSurface
+        dragLabel="Move time zone menu"
+        showDragHandle={mobile}
+        dragHandleRole={mobile ? "menuitem" : undefined}
+        resetKey={`${position.left}:${position.top}`}
+        onDismiss={onClose}
+        consumeOutsidePointerDown={mobile}
         data-chart-time-zone-menu
-        className="fixed max-h-[min(520px,calc(100vh-48px))] w-[250px] overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 text-[13px] font-semibold text-ink shadow-floating"
-        style={{ left: position.left, top: position.top }}
+        role="menu"
+        aria-label="Chart time zone"
+        className={cn(
+          "fixed max-h-[min(520px,calc(100vh-48px))] w-[250px] overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 text-[13px] font-semibold text-ink shadow-floating",
+          mobile && "mobile-chart-popup-portal",
+        )}
+        style={{
+          left: position.left,
+          top: position.top,
+          maxHeight: "min(520px, calc(100dvh - 48px))",
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {CHART_TIME_ZONE_OPTIONS.map((option, index) => {
@@ -214,6 +224,8 @@ function TimeZoneMenu({
             <div key={option.id}>
               <button
                 type="button"
+                role="menuitemradio"
+                aria-checked={active}
                 onClick={() => onSelect(option.id)}
                 className={cn(
                   "flex h-9 w-full items-center justify-between rounded-lg px-3 text-left transition-colors hover:bg-terminal-hover",
@@ -226,7 +238,7 @@ function TimeZoneMenu({
             </div>
           );
         })}
-      </div>
+      </ChartPopupSurface>
     </div>,
     document.body,
   );

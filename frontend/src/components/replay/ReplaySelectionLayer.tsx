@@ -21,12 +21,16 @@ import {
   chartLayoutPresetAtom,
   replayLayoutModeAtom,
 } from "@/store/replayLayoutStore";
-import { useReplayClientProjection } from "@/store/replayClientStore";
+import {
+  replayClientStore,
+  useReplayClientProjection,
+} from "@/store/replayClientStore";
 import {
   forkActiveReplay,
   startReplaySession,
 } from "@/services/replay/replaySocket";
 import { fmtDateTime } from "@/utils/time";
+import { ChartPopupSurface } from "@/components/chart/ChartPopupSurface";
 import type { Candle } from "@/types";
 import {
   nearestReplayCandidateIndex,
@@ -47,6 +51,7 @@ declare global {
       begin: (mode?: "selecting" | "reselecting") => void;
       cancel: () => void;
       dropSession: () => void;
+      setConnection: (connection: "idle" | "connecting") => void;
       snapshot: () => {
         active: boolean;
         candidateCount: number;
@@ -357,6 +362,10 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
       dropSession: () => {
         getDefaultStore().set(setBackendSessionAtom, false);
       },
+      setConnection: (connection) => {
+        getDefaultStore().set(setBackendSessionAtom, connection === "connecting");
+        replayClientStore.setConnection(connection);
+      },
       snapshot: () => ({
         active,
         candidateCount: candidateSeries.length,
@@ -505,7 +514,10 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
           data-mobile-replay-selection
           className="pointer-events-none absolute inset-x-2 bottom-2 z-40 flex justify-center"
         >
-          <div className="pointer-events-auto flex min-h-14 w-full max-w-md items-center gap-2 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 p-1.5 pl-3 shadow-floating backdrop-blur-xl">
+          <ChartPopupSurface
+            dragLabel="Move Replay selection controls"
+            className="pointer-events-auto flex min-h-14 w-full max-w-md items-center gap-2 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 p-1.5 shadow-floating backdrop-blur-xl"
+          >
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-brand shadow-accent" aria-hidden="true" />
             <span className="min-w-0 flex-1">
               <strong className="block text-xs font-bold text-ink">Select Replay bar</strong>
@@ -528,7 +540,7 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
             >
               <X size={18} />
             </button>
-          </div>
+          </ChartPopupSurface>
         </div>
       )}
     </>

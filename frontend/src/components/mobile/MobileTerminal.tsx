@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { BarChart3, Brush, ChartCandlestick, ChartNoAxesCombined, List, Menu, Play, SlidersHorizontal, WalletCards } from "lucide-react";
+import { BarChart3, ChartCandlestick, List, Menu, WalletCards } from "lucide-react";
 import { ChartArea } from "@/components/chart/ChartArea";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 import { MobileSheet } from "./MobileSheet";
@@ -21,11 +21,10 @@ import { MobileChartToolsWorkspace } from "./MobileChartToolsWorkspace";
 import { MobileLogsWorkspace } from "./MobileLogsWorkspace";
 import { MobileAccountAvatar, MobileAccountWorkspace } from "./MobileAccountWorkspace";
 import { MobileObjectTreeWorkspace } from "./MobileObjectTreeWorkspace";
+import { MobileChartActions } from "./MobileChartActions";
 import { IndicatorMenu } from "@/components/toolbar/IndicatorMenu";
-import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   cancelReplaySelectionAtom,
-  replaySelectionModeAtom,
   replayWorkspaceRequestAtom,
 } from "@/store/replayUiState";
 import { setAlertCenterAtom } from "@/store/uiStore";
@@ -91,13 +90,18 @@ export function MobileTerminal() {
             </header>
             <MobileTimeframeBar />
             <div className="mobile-chart" aria-label="Interactive price chart">
-              <ChartPerformanceProfiler><ChartArea /></ChartPerformanceProfiler>
-              <MobileChartActions
-                openDrawing={() => openSurface("draw")}
-                openIndicators={() => openSurface("indicators")}
-                openTools={() => openSurface("chartTools")}
-                openReplay={() => openSurface("replay")}
-              />
+              <ChartPerformanceProfiler>
+                <ChartArea
+                  mobileControls={(
+                    <MobileChartActions
+                      openDrawing={() => openSurface("draw")}
+                      openIndicators={() => openSurface("indicators")}
+                      openTools={() => openSurface("chartTools")}
+                      openReplay={() => openSurface("replay")}
+                    />
+                  )}
+                />
+              </ChartPerformanceProfiler>
             </div>
           </div>
         )}
@@ -144,36 +148,6 @@ export function MobileTerminal() {
         </MobileSheet>
       )}
     </main>
-  );
-}
-
-function MobileChartActions({
-  openDrawing,
-  openIndicators,
-  openTools,
-  openReplay,
-}: {
-  openDrawing: () => void;
-  openIndicators: () => void;
-  openTools: () => void;
-  openReplay: () => void;
-}) {
-  const replay = useReplayClientProjection();
-  const selection = useAtomValue(replaySelectionModeAtom);
-  const replayBusy = Boolean(replay.snapshot) ||
-    replay.connection === "connecting" ||
-    replay.connection === "recovering";
-
-  if (selection !== "idle") return null;
-  return (
-    <div className={replayBusy ? "mobile-chart-actions mobile-chart-actions--replay" : "mobile-chart-actions"}>
-      <button type="button" onClick={openDrawing}><Brush size={18} />Draw</button>
-      <button type="button" onClick={openIndicators}><ChartNoAxesCombined size={18} />Indicators</button>
-      <button type="button" onClick={openTools}><SlidersHorizontal size={18} />Tools</button>
-      {!replayBusy && (
-        <button type="button" onClick={openReplay}><Play size={18} />Replay</button>
-      )}
-    </div>
   );
 }
 

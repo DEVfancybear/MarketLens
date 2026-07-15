@@ -16,6 +16,8 @@ import {
   valuesInStatusLine,
 } from "@/services/indicatorStyle";
 import { canShowPineSourceControls } from "@/services/privateWorkspaceAccess";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+import { ChartPopupSurface } from "./ChartPopupSurface";
 
 function pineLegendInputs(
   indicator: IndicatorConfig,
@@ -72,6 +74,8 @@ export function IndicatorLegend({
   onRemove: (id: string) => void;
   valueTextById?: Record<string, string>;
 }) {
+  const platform = useTerminalPlatform();
+  const mobile = platform === "mobile";
   const authStatus = useAtomValue(authStatusAtom);
   const canShowSourceControls = canShowPineSourceControls(authStatus);
   const [inputDefinitionsById, setInputDefinitionsById] = useState<
@@ -122,8 +126,17 @@ export function IndicatorLegend({
   if (indicators.length === 0) return null;
 
   return (
-    <div data-indicator-legend className={["flex max-w-full flex-col items-start gap-0.5 text-[12px] leading-none text-ink", className].join(" ")}>
-      {indicators.map((indicator) => {
+    <ChartPopupSurface
+      dragLabel="Move indicator legend"
+      showDragHandle={mobile}
+      handleClassName="indicator-legend-drag-handle"
+      data-indicator-legend
+      className={[
+        "relative flex max-w-full flex-col items-start gap-0.5 text-[12px] leading-none text-ink",
+        className,
+      ].join(" ")}
+    >
+      {indicators.map((indicator, index) => {
         const visible = indicator.visible !== false;
         const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
         const title = indicatorLegendTitle(
@@ -136,6 +149,7 @@ export function IndicatorLegend({
           <div
             key={indicator.id}
             className="group flex h-6 max-w-full items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-terminal-raised/85 focus-within:bg-terminal-raised/85"
+            style={mobile && index === 0 ? { paddingLeft: 48 } : undefined}
           >
             <span
               className={[
@@ -177,7 +191,7 @@ export function IndicatorLegend({
           </div>
         );
       })}
-    </div>
+    </ChartPopupSurface>
   );
 }
 

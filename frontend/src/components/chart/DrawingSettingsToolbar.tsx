@@ -1,5 +1,5 @@
 "use client";
-import { useLayoutEffect, useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Copy,
   Lock,
@@ -11,7 +11,6 @@ import {
   Check,
   Hexagon,
   LayoutTemplate,
-  GripVertical,
   MoreHorizontal,
   Plus,
   X,
@@ -28,13 +27,14 @@ import {
   applyTemplateAtom,
   deleteTemplateAtom,
 } from "@/store/chartStore";
-import { useChartCtx } from "./ChartContext";
 import { useDrawingActions } from "./drawing/useDrawingActions";
 import { SaveDrawingTemplateDialog } from "./SaveDrawingTemplateDialog";
 import { type Drawing, type LineStyle } from "@/types";
 import { getDrawingSettingsSchema } from "./drawing/settings/drawingSettingsSchema";
 import { cn } from "@/utils/cn";
 import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
+import { ChartPopupSurface } from "./ChartPopupSurface";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
 
 const COLORS = [
   "#2962ff",
@@ -70,7 +70,6 @@ type Menu =
  * clone / lock / delete — without opening a separate dialog.
  */
 export function DrawingSettingsToolbar() {
-  const ctx = useChartCtx();
   const drawings = useAtomValue(drawingsAtom);
   const selectedId = useAtomValue(selectedDrawingIdAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
@@ -82,96 +81,16 @@ export function DrawingSettingsToolbar() {
   const applyTemplate = useSetAtom(applyTemplateAtom);
   const deleteTemplate = useSetAtom(deleteTemplateAtom);
 
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [menu, setMenu] = useState<Menu>(null);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  // Once the user has dragged the toolbar we stop auto-positioning it and only
-  // keep it clamped inside the chart — TradingView keeps it where you put it.
-  const draggedRef = useRef(false);
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    baseLeft: number;
-    baseTop: number;
-  } | null>(null);
 
   const drawing = drawings.find((d) => d.id === selectedId) ?? null;
-  // Re-clamp on pan/zoom/resize: the provider hands a new ctx (and version) then.
-  const ctxVersion = ctx?.version;
-
-  // Default placement: pinned to the TOP-CENTRE of the chart (TradingView's
-  // floating object toolbar), independent of where the drawing sits. After the
-  // user drags it we keep their position and only clamp it into view.
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    if (el == null || drawing == null) {
-      setPos(null);
-      return;
-    }
-    const parent = el.offsetParent as HTMLElement | null;
-    const pw = parent?.clientWidth ?? window.innerWidth;
-    const ph = parent?.clientHeight ?? window.innerHeight;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    const pad = 8;
-    setPos((prev) => {
-      if (!draggedRef.current || !prev) return { left: pw / 2, top: pad };
-      const left = Math.max(pad + w / 2, Math.min(pw - pad - w / 2, prev.left));
-      const top = Math.max(pad, Math.min(ph - pad - h, prev.top));
-      return prev.left === left && prev.top === top ? prev : { left, top };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, ctxVersion, drawing == null]);
 
   // Close any open popover when the selection changes / clears.
   useEffect(() => {
     setMenu(null);
     setTemplateDialogOpen(false);
   }, [selectedId]);
-
-  // --- Drag the toolbar by its grip handle ---
-  const onGripDown = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (!pos) return;
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      baseLeft: pos.left,
-      baseTop: pos.top,
-    };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onGripMove = (e: React.PointerEvent) => {
-    const d = dragRef.current;
-    if (!d) return;
-    draggedRef.current = true;
-    const el = rootRef.current;
-    const parent = el?.offsetParent as HTMLElement | null;
-    const pw = parent?.clientWidth ?? window.innerWidth;
-    const ph = parent?.clientHeight ?? window.innerHeight;
-    const w = el?.offsetWidth ?? 0;
-    const h = el?.offsetHeight ?? 0;
-    const pad = 6;
-    const left = Math.max(
-      pad + w / 2,
-      Math.min(pw - pad - w / 2, d.baseLeft + (e.clientX - d.startX)),
-    );
-    const top = Math.max(
-      pad,
-      Math.min(ph - pad - h, d.baseTop + (e.clientY - d.startY)),
-    );
-    setPos({ left, top });
-  };
-  const onGripUp = (e: React.PointerEvent) => {
-    dragRef.current = null;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* ok */
-    }
-  };
 
   const moreItems = useDrawingActions(drawing, () => setMenu(null));
 
@@ -197,31 +116,21 @@ export function DrawingSettingsToolbar() {
 
   return (
     <>
-      <div
-      ref={rootRef}
-      data-drawing-toolbar
-      className="absolute z-20 flex items-center gap-0.5 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 px-1.5 py-1 shadow-floating backdrop-blur-xl"
-      style={{
-        left: pos?.left ?? -9999,
-        top: pos?.top ?? -9999,
-        transform: "translateX(-50%)",
-        visibility: pos ? "visible" : "hidden",
-        pointerEvents: "auto",
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      {/* Drag handle — move the toolbar anywhere on the chart */}
-      <button
-        aria-label="Move toolbar"
-        title="Drag to move"
-        onPointerDown={onGripDown}
-        onPointerMove={onGripMove}
-        onPointerUp={onGripUp}
-        className="flex h-7 cursor-move items-center justify-center px-0.5 text-ink-muted hover:text-ink"
+      <ChartPopupSurface
+        dragLabel="Move drawing toolbar"
+        handleClassName="drawing-toolbar-drag-handle"
+        data-drawing-toolbar
+        data-popover-open={menu !== null || undefined}
+        className="absolute z-20 flex items-center gap-0.5 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 px-1.5 py-1 shadow-floating backdrop-blur-xl"
+        style={{
+          left: "50%",
+          top: 8,
+          transform: "translateX(-50%)",
+          pointerEvents: "auto",
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
       >
-        <GripVertical size={15} />
-      </button>
-      <Sep />
+        <Sep />
 
       {/* Stroke / text colour — pencil for line & shape tools, "T" for text */}
       <ToolbarButton
@@ -531,7 +440,7 @@ export function DrawingSettingsToolbar() {
           )}
         </Popover>
       )}
-      </div>
+      </ChartPopupSurface>
       <SaveDrawingTemplateDialog
         open={templateDialogOpen}
         templates={familyTemplates}
@@ -577,10 +486,16 @@ function ToolbarButton({
 
 /** A popover anchored below the toolbar. */
 function Popover({ children }: { children: React.ReactNode }) {
+  const mobile = useTerminalPlatform() === "mobile";
   return (
-    <div className="mobile-popover absolute left-1/2 top-full mt-1.5 z-30 min-w-[140px] -translate-x-1/2 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl">
+    <ChartPopupSurface
+      dragLabel="Move drawing options"
+      showDragHandle={mobile}
+      data-drawing-toolbar-popover
+      className="mobile-popover absolute left-1/2 top-full z-30 mt-1.5 min-w-[140px] -translate-x-1/2 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl"
+    >
       {children}
-    </div>
+    </ChartPopupSurface>
   );
 }
 

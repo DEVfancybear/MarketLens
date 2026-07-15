@@ -433,11 +433,69 @@ body {
 .mobile-terminal .chart-time-toolbar > button[aria-label="Select time zone"] { display: flex; max-width: 124px; align-items: center; overflow: hidden; padding-inline: 7px; font-size: 9px; white-space: nowrap; }
 .mobile-terminal .chart-hud { left: 10px; top: 10px; max-width: calc(100vw - 82px); gap: 4px; border-radius: 10px; padding: 7px 9px; }
 .mobile-terminal .chart-hud > div:last-child { max-width: 260px; gap: 5px; overflow: hidden; white-space: nowrap; font-size: 9px; }
-.mobile-chart-actions { position: absolute; right: 8px; bottom: 54px; z-index: 35; display: flex; max-width: calc(100% - 16px); gap: 6px; overflow-x: auto; padding: 2px; scrollbar-width: none; }
+.chart-popup-draggable {
+    translate: var(--chart-popup-drag-x, 0px) var(--chart-popup-drag-y, 0px);
+}
+.mobile-chart-popup-stack {
+    position: absolute;
+    inset: 0;
+    z-index: auto;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px;
+    pointer-events: none;
+}
+.mobile-chart-popup-stack > [data-chart-popup] { pointer-events: auto; }
+.mobile-terminal [data-chart-popup] { z-index: 60 !important; will-change: translate; }
+.mobile-terminal [data-chart-popup]:focus-within,
+.mobile-terminal [data-chart-popup][data-dragging="true"] { z-index: 80 !important; }
+.mobile-terminal [data-mobile-replay-selection] { z-index: 90 !important; }
+.chart-popup-drag-handle {
+    display: flex;
+    min-width: 28px;
+    min-height: 28px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    background: rgb(var(--panel-rgb)/.92);
+    color: var(--text-faint);
+    box-shadow: var(--shadow-panel);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+.mobile-terminal .chart-popup-drag-handle { min-width: 44px; min-height: 44px; }
+.chart-popup-drag-handle:active, .chart-popup-drag-handle.is-dragging { background: var(--pressed); color: var(--text); cursor: grabbing; }
+.drawing-toolbar-drag-handle { border: 0; border-radius: 6px; background: transparent; box-shadow: none; }
+.indicator-legend-drag-handle { position: absolute; top: 0; left: 0; border: 0; border-radius: 6px; background: transparent; box-shadow: none; }
+.risk-panel-drag-handle { position: absolute; top: 2px; right: 2px; border: 0; background: transparent; box-shadow: none; pointer-events: auto; }
+.mobile-chart-actions-surface, .mobile-replay-popup { display: flex; min-width: 0; max-width: 100%; align-items: stretch; gap: 4px; }
+.mobile-chart-actions { display: flex; min-width: 0; max-width: 100%; gap: 6px; overflow-x: auto; padding: 2px; scrollbar-width: none; }
 .mobile-chart-actions::-webkit-scrollbar { display: none; }
-.mobile-chart-actions--replay { bottom: 74px; }
 .mobile-chart-actions button { display: flex; min-width: 44px; min-height: 44px; flex: none; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 12px; background: rgb(var(--panel-rgb)/.90); padding: 0 10px; color: var(--text); font-size: 11px; font-weight: 700; box-shadow: var(--shadow-panel); backdrop-filter: blur(14px); touch-action: manipulation; }
 .mobile-chart-actions button:active { background: var(--pressed); }
+.mobile-replay-controls { grid-template-columns: 44px 48px 44px minmax(44px, 1fr) 44px; }
+.mobile-chart-popup-portal {
+    max-width: calc(100vw - 12px);
+    max-height: calc(100dvh - 12px);
+    overflow-y: auto;
+}
+.mobile-chart-popup-portal > .chart-popup-drag-handle {
+    width: 100%;
+    min-height: 44px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+.mobile-chart-popup-portal button { min-height: 44px; }
 .mobile-bottom-nav { min-height: 62px; padding: 5px max(7px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(7px, env(safe-area-inset-left)); background: rgb(var(--panel-rgb)/.96); box-shadow: 0 -8px 28px rgb(0 0 0/.12); backdrop-filter: blur(18px); }
 .mobile-bottom-nav button { position: relative; min-height: 50px; gap: 3px; border-radius: 12px; color: var(--text-faint); font-size: 10px; }
 .mobile-bottom-nav button.is-active { color: var(--accent); }
@@ -798,9 +856,16 @@ body {
 .mobile-terminal [data-indicator-legend] { max-width: calc(100% - 12px) !important; gap: 3px; }
 .mobile-terminal [data-indicator-legend] > div { min-height: 44px; height: auto; border: 1px solid var(--border); background: rgb(var(--panel-rgb)/.9); padding: 2px 4px 2px 8px; box-shadow: var(--shadow-panel); backdrop-filter: blur(10px); }
 .mobile-terminal [data-indicator-action] { min-width: 44px; min-height: 44px; opacity: 1; }
-.mobile-terminal [data-drawing-toolbar] { max-width: calc(100% - 12px); min-height: 52px; overflow-x: auto; scrollbar-width: none; }
+.mobile-terminal [data-drawing-toolbar] { z-index: 70 !important; max-width: calc(100% - 12px); min-height: 52px; scrollbar-width: none; }
+.mobile-terminal [data-drawing-toolbar]:not([data-popover-open="true"]) { overflow-x: auto; overflow-y: hidden; }
+.mobile-terminal [data-drawing-toolbar][data-popover-open="true"] { overflow: visible; }
 .mobile-terminal [data-drawing-toolbar] button { min-width: 44px; min-height: 44px; }
 .mobile-terminal [data-drawing-toolbar]::-webkit-scrollbar { display: none; }
+
+@media (max-width: 390px) {
+    .mobile-chart-action-label { display: none; }
+    .mobile-chart-actions button { width: 44px; justify-content: center; gap: 0; padding-inline: 0; }
+}
 
 @media (max-width: 360px) {
     .mobile-tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -917,10 +982,10 @@ body {
 
   [data-chart-time-zone-menu] {
     left: max(8px, env(safe-area-inset-left)) !important;
-    right: max(8px, env(safe-area-inset-right));
+    right: auto;
     top: max(8px, env(safe-area-inset-top)) !important;
-    width: auto !important;
-    max-height: calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom))) !important;
+    width: min(250px, calc(100vw - 16px)) !important;
+    max-height: min(520px, calc(100dvh - 16px)) !important;
   }
 
   [data-chart-time-zone-menu] button {

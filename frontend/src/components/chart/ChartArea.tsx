@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import type { IChartApi } from "lightweight-charts";
+import type { ReactNode } from "react";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useChartSeries } from "@/hooks/useChartSeries";
 import { useReplayClientProjection } from "@/store/replayClientStore";
@@ -35,7 +36,7 @@ import {
 import type { Candle } from "@/types";
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
-export function ChartArea() {
+export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {}) {
   const replay = useReplayClientProjection();
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
     enabled: !replay.snapshot && replay.connection !== "connecting",
@@ -179,7 +180,7 @@ export function ChartArea() {
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1">
+      <div data-chart-popup-bounds className="relative min-h-0 flex-1">
         <PriceChart
           candles={displayedCandles}
           indicatorsOverride={displayedIndicators}
@@ -194,7 +195,14 @@ export function ChartArea() {
           <DrawingLayer />
           <ReplaySelectionLayer candidates={displayedCandles} />
         </PriceChart>
-        <ReplayFloatingToolbar />
+        {mobileControls ? (
+          <div data-mobile-chart-popup-stack className="mobile-chart-popup-stack">
+            {mobileControls}
+            <ReplayFloatingToolbar mobileHosted />
+          </div>
+        ) : (
+          <ReplayFloatingToolbar />
+        )}
         <RiskPanel />
       </div>
 

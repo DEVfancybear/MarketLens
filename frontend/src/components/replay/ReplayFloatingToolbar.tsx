@@ -14,6 +14,7 @@ import {
 import type { ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+import { ChartPopupSurface } from "@/components/chart/ChartPopupSurface";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   exitReplaySession,
@@ -37,7 +38,7 @@ function fire(command: Promise<void>): void {
   void command.catch(() => undefined);
 }
 
-export function ReplayFloatingToolbar() {
+export function ReplayFloatingToolbar({ mobileHosted = false }: { mobileHosted?: boolean } = {}) {
   const platform = useTerminalPlatform();
   const projection = useReplayClientProjection();
   const selection = useAtomValue(replaySelectionModeAtom);
@@ -53,11 +54,16 @@ export function ReplayFloatingToolbar() {
     // ReplaySelectionLayer owns the mobile selection HUD because it also owns
     // the current candidate and the visible confirm/cancel alternatives.
     if (selection !== "idle") return null;
-    return (
+    const dock = (
       <MobileReplayDock
         snapshot={snapshot}
         connection={projection.connection}
       />
+    );
+    return mobileHosted ? dock : (
+      <div data-chart-ui className="pointer-events-none absolute inset-x-2 bottom-2 z-50 flex justify-center">
+        {dock}
+      </div>
     );
   }
 
@@ -152,16 +158,21 @@ function MobileReplayDock({
 
   if (!snapshot) {
     return (
-      <div data-chart-ui className="pointer-events-none absolute inset-x-2 bottom-2 z-50 flex justify-center">
+      <ChartPopupSurface
+        dragLabel="Move Replay status"
+        data-chart-ui
+        data-mobile-replay-dock
+        className="mobile-replay-popup w-full max-w-sm"
+      >
         <button
           type="button"
           onClick={() => requestWorkspace()}
-          className="pointer-events-auto flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 px-4 text-xs font-semibold text-ink shadow-floating backdrop-blur-xl active:bg-terminal-pressed"
+          className="flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 px-4 text-xs font-semibold text-ink shadow-floating backdrop-blur-xl active:bg-terminal-pressed"
         >
           <LoaderCircle size={17} className="animate-spin text-brand motion-reduce:animate-none" />
           {connecting ? "Preparing Replay..." : "Open Replay status"}
         </button>
-      </div>
+      </ChartPopupSurface>
     );
   }
 
@@ -174,11 +185,16 @@ function MobileReplayDock({
   const nextSpeed = REPLAY_SPEEDS[(speedIndex + 1) % REPLAY_SPEEDS.length] ?? 1;
 
   return (
-    <div data-chart-ui className="pointer-events-none absolute inset-x-2 bottom-2 z-50 flex justify-center">
+    <ChartPopupSurface
+      dragLabel="Move Replay controls"
+      data-chart-ui
+      data-mobile-replay-dock
+      className="mobile-replay-popup w-full max-w-sm"
+    >
       <div
         role="toolbar"
         aria-label="Replay controls"
-        className="pointer-events-auto grid min-h-14 w-full max-w-sm grid-cols-[48px_56px_48px_minmax(64px,1fr)_48px] items-center gap-1 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 p-1 shadow-floating backdrop-blur-xl"
+        className="mobile-replay-controls grid min-h-14 min-w-0 flex-1 items-center gap-1 rounded-2xl border border-terminal-border-strong bg-terminal-raised/95 p-1 shadow-floating backdrop-blur-xl"
       >
         <MobileDockButton
           label="Previous Replay bar"
@@ -220,7 +236,7 @@ function MobileReplayDock({
           <Gauge size={20} />
         </MobileDockButton>
       </div>
-    </div>
+    </ChartPopupSurface>
   );
 }
 

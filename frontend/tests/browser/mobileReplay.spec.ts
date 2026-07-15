@@ -6,6 +6,7 @@ declare global {
       begin: (mode?: "selecting" | "reselecting") => void;
       cancel: () => void;
       dropSession: () => void;
+      setConnection: (connection: "idle" | "connecting") => void;
       snapshot: () => {
         active: boolean;
         candidateCount: number;
@@ -165,6 +166,74 @@ test("mobile Replay exits selection cleanly when the session expires", async ({ 
   ).toBe("idle");
   await expect(page.locator(".mobile-chart-actions")).toBeVisible();
   await expect(page.locator("[data-mobile-replay-selection]")).toHaveCount(0);
+});
+
+test("mobile chart popups share one non-overlapping draggable stack", async ({ page }) => {
+  await page.evaluate(() => window.__replaySelectionTest!.setConnection("connecting"));
+
+  const actions = page.locator("[data-mobile-chart-actions]");
+  const replay = page.locator("[data-mobile-replay-dock]");
+  await expect(actions).toBeVisible();
+  await expect(replay).toBeVisible();
+  await expect(actions.locator("[data-chart-popup-drag-handle]")).toBeVisible();
+  await expect(replay.locator("[data-chart-popup-drag-handle]")).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const actions = document.querySelector<HTMLElement>("[data-mobile-chart-actions]")!;
+    const replay = document.querySelector<HTMLElement>("[data-mobile-replay-dock]")!;
+    const actionsRect = actions.getBoundingClientRect();
+    const replayRect = replay.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      replayRect.left + replayRect.width / 2,
+      replayRect.top + replayRect.height / 2,
+    );
+    return {
+      gap: replayRect.top - actionsRect.bottom,
+      replayTopmost: Boolean(hit && replay.contains(hit)),
+    };
+  });
+  expect(geometry.gap).toBeGreaterThanOrEqual(7);
+  expect(geometry.replayTopmost).toBe(true);
+
+  const handle = actions.locator("[data-chart-popup-drag-handle]");
+  const before = await actions.boundingBox();
+  const handleBox = await handle.boundingBox();
+  expect(before).not.toBeNull();
+  expect(handleBox).not.toBeNull();
+  await handle.dispatchEvent("pointerdown", {
+    pointerId: 91,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: handleBox!.x + handleBox!.width / 2,
+    clientY: handleBox!.y + handleBox!.height / 2,
+  });
+  await handle.dispatchEvent("pointermove", {
+    pointerId: 91,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    clientX: handleBox!.x + handleBox!.width / 2 - 40,
+    clientY: handleBox!.y + handleBox!.height / 2 - 72,
+  });
+  await handle.dispatchEvent("pointerup", {
+    pointerId: 91,
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+  });
+  await expect.poll(async () => (await actions.boundingBox())!.y).toBeLessThan(before!.y - 40);
+
+  const chartBounds = await page.locator("[data-chart-popup-bounds]").boundingBox();
+  const moved = await actions.boundingBox();
+  expect(chartBounds).not.toBeNull();
+  expect(moved).not.toBeNull();
+  expect(moved!.x).toBeGreaterThanOrEqual(chartBounds!.x);
+  expect(moved!.y).toBeGreaterThanOrEqual(chartBounds!.y);
+  expect(moved!.x + moved!.width).toBeLessThanOrEqual(chartBounds!.x + chartBounds!.width);
+  expect(moved!.y + moved!.height).toBeLessThanOrEqual(chartBounds!.y + chartBounds!.height);
+
+  await page.evaluate(() => window.__replaySelectionTest!.setConnection("idle"));
 });
 
 test("a real mobile touch tap commits one Replay request", async ({ page }) => {

@@ -44,13 +44,32 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function createRectangle(page: Page) {
-  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
-  const pane = chart.paneBoxes[0];
-  const start = { x: pane.x + pane.width * 0.25, y: pane.y + pane.height * 0.68 };
-  const end = { x: pane.x + pane.width * 0.68, y: pane.y + pane.height * 0.34 };
-
   await page.getByRole("button", { name: "Draw", exact: true }).click();
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await expect(page.locator(".mobile-scrim")).toHaveCount(0);
+
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const [start, end] = await page.evaluate((box) => {
+    const ratios = Array.from({ length: 9 }, (_, index) => (index + 1) / 10);
+    const candidates = ratios.flatMap((xRatio) =>
+      ratios.map((yRatio) => ({
+        x: box.x + box.width * xRatio,
+        y: box.y + box.height * yRatio,
+      })),
+    );
+    const safe = candidates.filter(({ x, y }) => {
+      const point = window.__drawingInteractionTest!.inspectClientPoint(x, y);
+      return point.insideCanvas && !point.overDrawingUi;
+    });
+    const first = safe[0];
+    const second = safe.find((point) =>
+      first && Math.hypot(point.x - first.x, point.y - first.y) >= 48,
+    );
+    if (!first || !second) throw new Error("No two clear chart points for rectangle fixture");
+    return [first, second];
+  }, pane);
+
   await page.touchscreen.tap(start.x, start.y);
   await page.touchscreen.tap(end.x, end.y);
   await expect.poll(async () =>
@@ -215,7 +234,10 @@ test("adaptive dialog remains reachable at compact portrait and landscape sizes"
       expect(secondInput).not.toBeNull();
       expect(secondInput!.y).toBeGreaterThan(firstInput!.y + 30);
       await page.screenshot({ path: testInfo.outputPath("drawing-settings-coordinates-compact.png") });
-      await dialog.getByRole("tab", { name: "style", exact: true }).click();
+      const styleTab = dialog.getByRole("tab", { name: "style", exact: true });
+      await styleTab.focus();
+      await styleTab.press("Enter");
+      await expect(styleTab).toHaveAttribute("aria-selected", "true");
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
     await page.screenshot({ path: testInfo.outputPath(`drawing-settings-${viewport.name}.png`) });

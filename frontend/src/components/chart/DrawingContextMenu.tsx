@@ -1,11 +1,12 @@
 "use client";
-import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAtomValue } from "jotai";
 import { drawingsAtom } from "@/store/chartStore";
 import { useDrawingActions } from "./drawing/useDrawingActions";
 import { cn } from "@/utils/cn";
 import { useFloatingSurface } from "@/hooks/useFloatingSurface";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+import { ChartPopupSurface } from "./ChartPopupSurface";
 
 export interface DrawingMenuState {
   id: string;
@@ -23,33 +24,27 @@ export function DrawingContextMenu({ state, onClose }: Props) {
   const drawings = useAtomValue(drawingsAtom);
   const drawing = drawings.find((d) => d.id === state.id) ?? null;
   const items = useDrawingActions(drawing, onClose);
-
-  const { surfaceRef: ref, layout } = useFloatingSurface({
+  const mobile = useTerminalPlatform() === "mobile";
+  const { surfaceRef, layout } = useFloatingSurface({
     x: state.x,
     y: state.y,
   });
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose, ref]);
-
   if (typeof document === "undefined" || !drawing) return null;
 
   return createPortal(
-    <div
-      ref={ref}
-      className="context-menu-pop fixed z-[120] min-w-[190px] rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl"
+    <ChartPopupSurface
+      ref={surfaceRef}
+      dragLabel="Move drawing actions menu"
+      showDragHandle={mobile}
+      dragHandleRole={mobile ? "menuitem" : undefined}
+      resetKey={`${state.id}:${state.x}:${state.y}`}
+      onDismiss={onClose}
+      consumeOutsidePointerDown={mobile}
+      className={cn(
+        "context-menu-pop fixed z-[120] min-w-[190px] overflow-x-hidden overflow-y-auto rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl",
+        mobile && "mobile-chart-popup-portal",
+      )}
       style={{
         left: layout.x,
         top: layout.y,
@@ -80,7 +75,7 @@ export function DrawingContextMenu({ state, onClose }: Props) {
           </button>
         ),
       )}
-    </div>,
+    </ChartPopupSurface>,
     document.body,
   );
 }

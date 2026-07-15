@@ -43,6 +43,8 @@ import { cn } from "@/utils/cn";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
 import { useFloatingSurface } from "@/hooks/useFloatingSurface";
+import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+import { ChartPopupSurface } from "./ChartPopupSurface";
 
 /** Right-click chart context-menu state (per the spec). */
 export interface ContextMenuState {
@@ -98,8 +100,8 @@ export function ChartContextMenu({
   const watchlistSymbols = useAtomValue(watchlistSymbolsAtom);
   const addToWatchlist = useSetAtom(addWatchlistSymbolAtom);
   const removeFromWatchlist = useSetAtom(removeWatchlistSymbolAtom);
-
-  const { surfaceRef: ref, layout } = useFloatingSurface({
+  const mobile = useTerminalPlatform() === "mobile";
+  const { surfaceRef, layout } = useFloatingSurface({
     x: state.x,
     y: state.y,
   });
@@ -107,35 +109,25 @@ export function ChartContextMenu({
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const priceStr = fmtPrice(state.price, prec);
 
-  // ---- Outside click + Esc + initial focus ----
+  // ---- Initial focus ----
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
     const raf = requestAnimationFrame(() =>
-      ref.current
-        ?.querySelector<HTMLButtonElement>('button[role="menuitem"]')
+      surfaceRef.current
+        ?.querySelector<HTMLButtonElement>(
+          'button[role="menuitem"]:not([data-chart-popup-drag-handle])',
+        )
         ?.focus(),
     );
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-      cancelAnimationFrame(raf);
-    };
-  }, [onClose, ref]);
+    return () => cancelAnimationFrame(raf);
+  }, [state.x, state.y, surfaceRef]);
 
   // ---- Arrow-key navigation ----
   const onMenuKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
     const btns = Array.from(
-      ref.current?.querySelectorAll<HTMLButtonElement>(
-        'button[role="menuitem"]',
+      surfaceRef.current?.querySelectorAll<HTMLButtonElement>(
+        'button[role="menuitem"]:not([data-chart-popup-drag-handle])',
       ) ?? [],
     );
     const i = btns.indexOf(document.activeElement as HTMLButtonElement);
@@ -274,8 +266,14 @@ export function ChartContextMenu({
   if (typeof document === "undefined") return null;
 
   return createPortal(
-    <div
-      ref={ref}
+    <ChartPopupSurface
+      ref={surfaceRef}
+      dragLabel="Move chart actions menu"
+      showDragHandle={mobile}
+      dragHandleRole={mobile ? "menuitem" : undefined}
+      resetKey={`${state.x}:${state.y}`}
+      onDismiss={onClose}
+      consumeOutsidePointerDown={mobile}
       role="menu"
       aria-label="Chart actions"
       onKeyDown={onMenuKeyDown}
@@ -286,7 +284,10 @@ export function ChartContextMenu({
         maxHeight: layout.maxHeight || undefined,
         transformOrigin: "top left",
       }}
-      className="context-menu-pop fixed z-[1000] min-w-[260px] overflow-x-hidden overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating"
+      className={cn(
+        "context-menu-pop fixed z-[1000] min-w-[260px] overflow-x-hidden overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating",
+        mobile && "mobile-chart-popup-portal",
+      )}
     >
       <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
         {symbol} · {priceStr}
@@ -316,7 +317,7 @@ export function ChartContextMenu({
           </button>
         ),
       )}
-    </div>,
+    </ChartPopupSurface>,
     document.body,
   );
 }

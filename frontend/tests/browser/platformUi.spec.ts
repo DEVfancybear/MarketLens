@@ -24,6 +24,30 @@ test.describe("isolated terminal platforms", () => {
     expect(undersizedTargets).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
 
+    await mobile.getByRole('button', { name: 'Select time zone' }).click();
+    const timeZoneMenu = page.getByRole('menu', { name: 'Chart time zone' });
+    const timeZoneHandle = timeZoneMenu.locator('[data-chart-popup-drag-handle]');
+    await expect(timeZoneMenu).toBeVisible();
+    await expect(timeZoneHandle).toBeVisible();
+    const timeZoneBefore = await timeZoneMenu.boundingBox();
+    expect(timeZoneBefore).not.toBeNull();
+    const freeBelow = 844 - timeZoneBefore!.y - timeZoneBefore!.height;
+    const moveKey = freeBelow >= 32 ? 'ArrowDown' : 'ArrowUp';
+    await timeZoneHandle.focus();
+    await timeZoneHandle.press(moveKey);
+    await timeZoneHandle.press(moveKey);
+    await expect.poll(async () => {
+      const current = (await timeZoneMenu.boundingBox())!;
+      return Math.abs(current.y - timeZoneBefore!.y);
+    }).toBeGreaterThan(24);
+    expect(await timeZoneMenu.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left >= 0 && rect.top >= 0 &&
+        rect.right <= window.innerWidth && rect.bottom <= window.innerHeight;
+    })).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(timeZoneMenu).toHaveCount(0);
+
     await nav.getByRole('button', { name: 'Menu', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Tools & settings' })).toBeVisible();
 

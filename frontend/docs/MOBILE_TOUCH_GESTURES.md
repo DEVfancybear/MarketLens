@@ -1,6 +1,6 @@
 # Mobile Touch, Pointer and Drag Support
 
-_Reviewed: 2026-07-14_
+_Reviewed: 2026-07-16_
 
 ## Research basis
 
@@ -31,6 +31,7 @@ Reasons:
 | Drawing armed | tap anchors or freehand draw | second pointer is ignored by the single-pointer operation | Cancel, Undo, numeric settings |
 | Drawing selected | select; transform after movement threshold | foreign pointer cannot move/commit selection | coordinates/settings fields |
 | Replay bar selection | scrub one primary captured pointer; tap confirm | foreign pointer is ignored | visible confirm/cancel, Arrow/Home/End, Enter/Space/Escape |
+| Actionable chart popup | move from its dedicated handle | non-primary/foreign pointers are ignored | Arrow keys move, Home resets; popup actions remain tappable |
 | Mobile sheet handle | pull down after 8px threshold | non-primary pointer ignored | Close button, scrim, Escape, browser Back |
 | Sheet content | native vertical scroll | browser zoom where applicable | scrollbar and direct controls |
 | Dialog/popover/toast surface | scrim, sheet footer and explicit close own the surface | underlying chart/list never receives a modal gesture | 44px controls, native scroll, safe-area placement |
@@ -83,10 +84,50 @@ slider semantics and keyboard alternatives. Once a session exists, a compact
 in-chart dock provides previous/play-next/speed/status access without forcing
 the full Replay workspace open.
 
+## Shared chart popup surface
+
+Actionable floating surfaces owned by the mobile chart use one interaction
+contract:
+
+- `src/components/chart/ChartPopupSurface.tsx` provides the popup boundary and
+  the visible `ChartPopupDragHandle`.
+- `src/hooks/useDraggableSurface.ts` owns Pointer Events, pointer capture,
+  cancel/lost-capture rollback, Arrow-key movement, Home reset and clamping.
+- The nearest `data-chart-popup-bounds` element is the preferred movement
+  boundary. Portalled surfaces fall back to the current Visual Viewport through
+  `getViewportRect()`, including its offset during zoom or virtual-keyboard
+  changes. Window resize, `visualViewport` resize/scroll and observed
+  container/surface resizes all re-clamp the popup so it cannot be stranded
+  outside the chart or visible viewport.
+- Mobile chart actions, compact Replay controls, drawing settings and their
+  option popovers, indicator legend, Replay selection HUD, risk controls, time
+  zone menu and chart context menus use this shared behavior instead of
+  implementing local mouse-only drag logic.
+- `ChartArea` hosts mobile chart actions and compact Replay in the same
+  `.mobile-chart-popup-stack`. This gives neighboring surfaces one positioning
+  and stacking context, preserves the configured gap and prevents the Draw
+  popup from covering Replay controls.
+- Pointer-position context menus retain `useFloatingSurface` for anchor-aware
+  placement and available-size calculation; on mobile, `ChartPopupSurface`
+  layers the common drag, Escape/outside dismissal and chart-gesture isolation
+  contract on top of that layout instead of replacing it.
+
+Only the dedicated handle owns the move gesture and uses `touch-action: none`.
+Buttons, inputs and scrollable popup content retain their normal tap, edit and
+scroll behavior. The handle is at least 44x44px on mobile, has an accessible
+label, supports keyboard movement and can reset the current offset.
+
+This contract is intentionally limited to actionable chart-owned floating
+surfaces. Crosshair labels, price markers, drawing previews and other
+non-actionable transient overlays remain pointer-transparent and are not
+draggable. Modal dialogs and `MobileSheet` keep their own focus, dismissal,
+history and vertical-sheet gesture contracts; they are not wrapped in
+`ChartPopupSurface`.
+
 ## CSS ownership
 
 - Tap controls use `touch-action: manipulation`.
-- Only the dedicated sheet drag handle uses `touch-action: none`.
+- Only dedicated sheet and chart-popup drag handles use `touch-action: none`.
 - Scrollable sheet content keeps native `pan-y` behavior.
 - Mobile input text is at least 16px to avoid iOS focus zoom.
 - Touch controls are at least 44x44px, including timeframe buttons and modal actions.
@@ -111,14 +152,19 @@ This boundary prevents a desktop table/toolbar redesign from changing mobile hit
 - cancel rollback.
 - rejection of non-primary and foreign pointers.
 
+`tests/ui/draggableSurface.test.ts` covers chart/viewport clamping, including
+surfaces larger than their bounds.
+
 `tests/ui/platformPolicy.test.ts` covers phone, tablet, fine-pointer desktop and wide coarse-pointer policy.
 
 `tests/browser/mobileReplay.spec.ts` covers the immediate Replay line, touch
 scrubbing, primary-pointer ownership, compact landscape, session-expiry
-cleanup, target sizes, and a real touch commit.
+cleanup, target sizes, a real touch commit, shared popup dragging and the
+Replay/actions non-overlap and hit-test contract.
 
 `tests/browser/mobileDrawing.spec.ts` creates and resizes a Rectangle with touch
-events and asserts that the underlying chart logical range does not move.
+events, moves its settings popup from the shared handle and asserts that the
+underlying chart logical range does not move.
 
 `tests/browser/mobileFeatureParity.spec.ts` verifies the complete drawing
 manifest, full timeframe/favorite/custom flow, Indicator and Chart tools,
@@ -151,6 +197,8 @@ npx playwright test tests/browser/mobileOverlayResponsive.spec.ts
 - Drawing armed while opening a sheet: drawing count must not change after tapping sheet controls.
 - Primary pointer drag plus second pointer: second pointer must not move or finish the object.
 - Replay selection shows a line before the first touch and offers visible confirm/cancel controls.
+- Replay and chart actions keep their configured gap; hit-testing reaches the visible Replay control.
+- Every actionable chart popup stays within chart/viewport bounds after touch drag, rotation and resize.
 - Rectangle move/resize preserves both its logical-bar span and the chart viewport.
 - `pointercancel`/lost capture: state rolls back and the sheet remains open.
 - Browser Back, Escape, Close and scrim each dismiss one open sheet.

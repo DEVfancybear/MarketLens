@@ -4,12 +4,13 @@
  * for a chart alert: Edit · Clone · Disable/Enable · Delete. Rendered via a
  * portal, clamped to the viewport, closes on outside-click / Esc.
  */
-import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Pencil, Copy, BellOff, Bell, Trash2 } from 'lucide-react';
 import { useAlertStore } from '@/store/alertStore';
 import { cn } from '@/utils/cn';
 import { useFloatingSurface } from '@/hooks/useFloatingSurface';
+import { useTerminalPlatform } from '@/hooks/useTerminalPlatform';
+import { ChartPopupSurface } from './ChartPopupSurface';
 
 export interface AlertMenuState {
   id: string;
@@ -33,25 +34,11 @@ export function AlertContextMenu({
   onDelete: (id: string) => void;
 }) {
   const alert = useAlertStore((s) => s.alerts.find((a) => a.id === state.id));
-  const { surfaceRef: ref, layout } = useFloatingSurface({
+  const mobile = useTerminalPlatform() === 'mobile';
+  const { surfaceRef, layout } = useFloatingSurface({
     x: state.x,
     y: state.y,
   });
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [onClose, ref]);
 
   if (typeof document === 'undefined' || !alert) return null;
 
@@ -71,9 +58,18 @@ export function AlertContextMenu({
   ];
 
   return createPortal(
-    <div
-      ref={ref}
-      className="context-menu-pop fixed z-[120] min-w-[170px] rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl"
+    <ChartPopupSurface
+      ref={surfaceRef}
+      dragLabel="Move alert actions menu"
+      showDragHandle={mobile}
+      dragHandleRole={mobile ? 'menuitem' : undefined}
+      resetKey={`${state.id}:${state.x}:${state.y}`}
+      onDismiss={onClose}
+      consumeOutsidePointerDown={mobile}
+      className={cn(
+        'context-menu-pop fixed z-[120] min-w-[170px] overflow-x-hidden overflow-y-auto rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl',
+        mobile && 'mobile-chart-popup-portal',
+      )}
       style={{
         left: layout.x,
         top: layout.y,
@@ -102,7 +98,7 @@ export function AlertContextMenu({
           </button>
         ),
       )}
-    </div>,
+    </ChartPopupSurface>,
     document.body,
   );
 }

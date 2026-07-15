@@ -1,6 +1,6 @@
 # Desktop-Mobile Feature Parity
 
-_Last verified: 2026-07-14_
+_Last verified: 2026-07-16_
 
 The current desktop terminal capabilities have a touch-operable mobile path. Desktop and mobile keep independent presentation shells, while catalogs, state transitions, persistence and API calls stay shared.
 
@@ -24,6 +24,7 @@ The current desktop terminal capabilities have a touch-operable mobile path. Des
 | Watchlist sections and ordering | Markets > Manage watchlists; collapsible headers in the main list | Shared watchlist layout mutations |
 | Object tree | Menu or Chart tools > Object tree | Shared `ObjectTreePanel` and drawing commands |
 | Replay | Replay chart action or Menu | Replay client, mobile Replay workspace and shared session state |
+| Actionable in-chart floating controls | Shared draggable mobile popup stack with visible handles | `ChartPopupSurface` and `useDraggableSurface` |
 | Simulator/MT5 order flow and position actions | Trade screen | Shared tickets, MT5 stores, replay trading client and simulator persistence |
 | Journal, Analytics and Pine | Menu workspaces | Shared APIs, stores, validation and domain calculations |
 | Runtime logs | Menu or Chart tools > Runtime logs | `logsAtom` |
@@ -35,7 +36,8 @@ The current desktop terminal capabilities have a touch-operable mobile path. Des
 The following are input/layout affordances rather than missing product capabilities:
 
 - Desktop dock resizing and panel collapse become focused mobile screens or full-screen sheets.
-- Desktop hover, right-click and draggable floating controls have visible tap buttons on mobile.
+- Desktop hover and right-click actions have visible tap paths on mobile. Actionable floating chart controls also expose a visible touch/keyboard drag handle, remain clamped to chart or current Visual Viewport bounds through rotation, zoom and virtual-keyboard changes, and keep their task actions directly tappable.
+- Modal sheets and dialogs retain their own focus and dismissal behavior; transient non-actionable chart overlays remain pointer-transparent rather than becoming draggable controls.
 - Desktop keyboard shortcuts remain available to hardware keyboards; every task-critical action also has a mobile button.
 - Dense desktop tables become cards or structured lists while using the same data and mutations.
 
@@ -55,6 +57,7 @@ The following are input/layout affordances rather than missing product capabilit
 - full timeframe catalog, favorite and custom-interval behavior;
 - Indicator and Chart tools entry points;
 - secondary workspaces and watchlist management;
+- shared chart-popup touch dragging, chart/Visual Viewport clamping and Replay/action non-overlap;
 - 44px touch targets and zero document overflow at 320x568 and 844x390.
 
 Run the parity and platform suite with:

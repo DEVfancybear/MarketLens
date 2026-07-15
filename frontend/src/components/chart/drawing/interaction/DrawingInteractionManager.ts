@@ -571,7 +571,8 @@ export function useDrawingInteractionManager(
       const m = machineRef.current;
       if (
         (m.state !== "MovingDrawing" && m.state !== "ResizingHandle") ||
-        !transformSessionRef.current
+        !transformSessionRef.current ||
+        (activePointerIdRef.current != null && e.pointerId !== activePointerIdRef.current)
       ) {
         return;
       }
@@ -609,7 +610,9 @@ export function useDrawingInteractionManager(
       if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
         e.preventDefault();
         e.stopPropagation();
-        dragMoves.push(e);
+        if (activePointerIdRef.current == null || e.pointerId === activePointerIdRef.current) {
+          dragMoves.push(e);
+        }
         return;
       }
       // Hover
@@ -664,11 +667,24 @@ export function useDrawingInteractionManager(
 
     const handleUp = (e: PointerEvent) => {
       const m = machineRef.current;
+      const pointerMatches =
+        activePointerIdRef.current == null || e.pointerId === activePointerIdRef.current;
+      if (
+        (m.state === "MovingDrawing" || m.state === "ResizingHandle") &&
+        !pointerMatches
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       // Always release the chart-event block on any pointer release, even if the
       // machine never reached a drag state, so the blocker can never get stuck.
       dragActiveRef.current = false;
 
-      if (m.state === "MovingDrawing" || m.state === "ResizingHandle") {
+      if (
+        (m.state === "MovingDrawing" || m.state === "ResizingHandle") &&
+        pointerMatches
+      ) {
         e.preventDefault();
         e.stopPropagation();
         dragMoves.flush(e);
@@ -695,6 +711,9 @@ export function useDrawingInteractionManager(
     const handlePointerCancel = (e: PointerEvent) => {
       const state = machineRef.current.state;
       if (state !== "MovingDrawing" && state !== "ResizingHandle") return;
+      if (activePointerIdRef.current != null && e.pointerId !== activePointerIdRef.current) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       dragMoves.cancel();

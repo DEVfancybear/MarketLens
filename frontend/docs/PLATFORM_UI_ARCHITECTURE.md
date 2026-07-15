@@ -1,6 +1,6 @@
 # Desktop and Mobile UI Architecture
 
-_Last updated: 2026-07-14_
+_Last updated: 2026-07-16_
 
 ## Outcome
 
@@ -46,7 +46,7 @@ See `MOBILE_DESKTOP_FEATURE_PARITY.md` for the maintained capability matrix.
 
 ## Touch and drag model
 
-Pointer Events are used instead of HTML Drag and Drop. A sheet gesture tracks one primary `pointerId`, begins after 8px, dismisses after 72px of visible downward travel and rolls back on `pointercancel`/lost capture. The handle owns the drag gesture; sheet content keeps native vertical scrolling.
+Pointer Events are used instead of HTML Drag and Drop. A sheet gesture tracks one primary `pointerId`, begins after 8px, dismisses after 72px of visible downward travel and rolls back on `pointercancel`/lost capture. The handle owns the drag gesture; sheet content keeps native vertical scrolling. Actionable chart popups use the same primary-pointer and capture principles through a separate shared surface contract described below.
 
 Rules for new mobile interactions:
 
@@ -59,6 +59,35 @@ Rules for new mobile interactions:
 - Respect `prefers-reduced-motion` and never block browser zoom.
 
 See `design-system/smc-trading-terminal/pages/mobile-terminal.md` for the full mobile contract.
+
+## Mobile chart popup contract
+
+All actionable floating surfaces rendered over the mobile chart use
+`components/chart/ChartPopupSurface.tsx` and
+`hooks/useDraggableSurface.ts`. The surface marks the chart-UI boundary and
+provides a visible 44px `ChartPopupDragHandle`; the hook centralizes primary
+pointer capture, cancel rollback, keyboard Arrow movement, Home reset and
+chart/viewport clamping. A portalled popup clamps against `getViewportRect()`
+and is remeasured on Visual Viewport resize/scroll, so browser zoom and the
+virtual keyboard cannot leave its controls outside the visible area. Popup
+content remains independently tappable, editable and scrollable because only
+the handle owns `touch-action: none`.
+
+`ChartArea` owns the common `data-chart-popup-bounds` region and the
+`.mobile-chart-popup-stack` overlay host. The mobile chart action bar and
+compact Replay controls are siblings in this host, so layout gap, paint order
+and hit testing are deterministic instead of depending on nested stacking
+contexts. Selected-drawing settings, indicator legend, Replay selection HUD,
+risk controls and mobile chart context menus reuse the same drag primitive.
+Context menus still use `useFloatingSurface` for pointer-anchor placement and
+available width/height; the shared popup surface composes mobile drag and
+dismissal behavior with that layout rather than duplicating or discarding it.
+
+The shared surface is not a blanket wrapper for every visual chart overlay.
+Non-actionable transient output such as crosshair labels, price markers and
+drawing previews stays pointer-transparent. Modal dialogs retain the dialog
+contract, while `MobileSheet` retains focus trapping, Back/Escape/scrim/Close
+dismissal and its downward-only handle gesture.
 
 ## Theme contract
 
@@ -101,6 +130,7 @@ stacking context.
 ## Accessibility contract
 
 - Sheets and dialogs have modal semantics, an accessible name, Escape handling, focus trap and focus return.
+- Actionable chart-popup drag handles have an accessible name, 44px mobile target, Arrow-key movement and Home reset.
 - Active navigation uses `aria-current="page"`.
 - Resizers expose separator role, values and arrow-key operation.
 - Text inputs use a 16px font on mobile to avoid iOS auto-zoom.
@@ -138,7 +168,7 @@ Viewport matrix:
 - Tablet: 768x1024 and 1024x768.
 - Desktop: 1366x768, 1440x900 and 1920x1080.
 
-At mobile widths verify five-screen navigation, the four chart actions, no horizontal page overflow, touch targets, safe areas, light/dark parity, full drawing/timeframe catalogs, chart pan/pinch, sheet cancel/dismiss and secondary workspaces. At desktop widths verify docks, keyboard resizers, chart tools, dialog focus behavior and bottom workspaces.
+At mobile widths verify five-screen navigation, the four chart actions, no horizontal page overflow, touch targets, safe areas, light/dark parity, full drawing/timeframe catalogs, chart pan/pinch, chart-popup drag/clamping and Replay/action hit testing, sheet cancel/dismiss and secondary workspaces. At desktop widths verify docks, keyboard resizers, chart tools, dialog focus behavior and bottom workspaces.
 
 ## Change checklist
 
@@ -148,6 +178,9 @@ At mobile widths verify five-screen navigation, the four chart actions, no horiz
 - Shared code contains no component-level viewport checks.
 - Shared desktop dropdowns use the portal contract unless a reviewed local
   positioning exception is documented.
+- Actionable mobile chart overlays use `ChartPopupSurface` and the shared
+  `ChartArea` bounds/stacking contract; transient output and modal surfaces are
+  explicitly excluded.
 - New gestures have a non-drag alternative and unit tests for cancel/foreign-pointer paths.
 - Every new surface is reviewed in dark and light themes.
 - Every new desktop capability has a tested mobile entry point or an explicit exception in `MOBILE_DESKTOP_FEATURE_PARITY.md`.
