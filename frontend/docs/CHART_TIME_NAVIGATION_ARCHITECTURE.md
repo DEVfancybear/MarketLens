@@ -1,6 +1,6 @@
 # Chart Time Navigation Architecture
 
-_Last updated: 2026-07-13_
+_Last updated: 2026-07-15_
 
 This document explains the TradingView-style bottom time toolbar and the `Go to`
 single-date dialog. Read this before changing chart range shortcut behavior,
@@ -70,7 +70,7 @@ flow single-date-only.
 | Shortcut API adapter | `src/services/api/resources/timeNavigationApi.ts` | Fetches the catalog and resolves a click through the backend API |
 | Pure local UI logic | `src/components/chart/chartTimeNavigation.ts` | Timezone conversion, date parsing, calendar grid, nearest candle, logical centering, and dialog placement |
 | Chart placement | `src/components/chart/ChartArea.tsx` | Mounts the toolbar below all chart panes and above the bottom dock |
-| Tests | `backend/internal/timenavigation/service_test.go`, `tests/chart/chartTimeNavigation.test.ts`, `tests/ui/timeframeSelectorModel.test.ts` | Locks the backend shortcut/API contract plus local date, calendar, and top interval behavior |
+| Tests | `backend/internal/timenavigation/service_test.go`, `tests/chart/chartTimeNavigation.test.ts`, `tests/chart/chartViewportController.test.ts`, `tests/ui/timeframeSelectorModel.test.ts` | Locks the backend shortcut/API contract plus local date, calendar, viewport-race, and top interval behavior |
 | Test script | `package.json` | `npm run test:chart`, `npm run test:ui` |
 
 ## 4. Source Of Truth
@@ -172,7 +172,17 @@ instead of silently allowing client and server rules to drift.
   `goTo.specificTimeTimeframes` so adding `3H` later requires only backend
   catalog support plus the normal timeframe implementation.
 - Go-to Date resolves to the first loaded candle at or after the requested
-  instant and applies a centered logical range.
+  instant and applies a centered logical range. If the instant is outside the
+  current client window, `useMarketData().loadCandlesAroundTime()` calls the
+  MT5 `history/around` endpoint, merges the returned window into the shared
+  candle store, and waits for that candle to be rendered before applying the
+  jump.
+- Replacing the series after an around-history load normally schedules a
+  next-frame `history-prepend` restore to preserve a user's pan/zoom. That
+  restore is conditional on the viewport-controller revision captured after
+  `setData()`. A later Go-to write (or user gesture) invalidates the frame, so
+  it cannot move the chart back to the old tail after the requested candle is
+  loaded.
 
 ## 6. Top Interval Selector Contract
 
@@ -218,6 +228,11 @@ bar and show a readable local candle window.
 4. Build a bounded logical range with `goToDateLogicalRange`.
 5. Apply it through `setVisibleLogicalRange`.
 6. Show a temporary vertical marker and date chip at the resolved candle time.
+
+For an out-of-window MT5 date, the series replacement and the logical-range
+write happen in separate React effects. The range restore must therefore be
+revision-guarded; otherwise its animation frame can run after the Go-to effect
+and overwrite the requested location.
 
 Using logical range here matters. If the chart is zoomed very far out, Date mode
 must zoom into `GO_TO_DATE_MAX_SPAN_BARS` around the target. If the user is

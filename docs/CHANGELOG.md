@@ -15,6 +15,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   coverage for all 11 supported chart timeframes, stale candle anchors, weekly
   broker boundaries, and calendar-month rollover.
 
+### Fixed - MT5 Go-to viewport after around-history loads (2026-07-15)
+- Kept the `history/around` response in the shared candle store and verified the
+  resolved candle is present before applying the Go-to logical range.
+- Guarded the deferred viewport-preservation frame used after candle-series
+  replacement with the viewport-controller revision. A newer Go-to jump or
+  user gesture now cancels the stale restore instead of snapping the chart back
+  to the latest loaded bars.
+- Added controller regression coverage for both current and stale deferred
+  ranges, and verified a live EURUSD 15m jump from July 15 to July 2 lands on
+  `Thu 02 Jul '26 00:00`.
+
 ### Fixed - Mobile overlay and toast responsiveness (2026-07-14)
 - Replaced the one-size-fits-all mobile dialog viewport with shared adaptive
   sheets, safe-area-aware headers/footers, scrollable bodies and horizontal

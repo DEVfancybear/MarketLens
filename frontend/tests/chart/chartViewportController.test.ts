@@ -72,6 +72,44 @@ test("viewport controller attributes programmatic and user mutations", () => {
   controller.destroy();
 });
 
+test("viewport controller drops a stale deferred range restore", () => {
+  const fake = fakeChart();
+  const controller = new ChartViewportController(fake.chart);
+  const expectedRevision = controller.snapshot().revision;
+
+  controller.setLogicalRange({ from: 80, to: 110 } as LogicalRange, "time-navigation");
+
+  assert.equal(
+    controller.setLogicalRangeIfRevision(
+      { from: 10, to: 40 } as LogicalRange,
+      "history-prepend",
+      expectedRevision,
+    ),
+    false,
+  );
+  assert.equal(fake.writes(), 1);
+  assert.equal(controller.snapshot().cause, "time-navigation");
+  controller.destroy();
+});
+
+test("viewport controller applies a deferred range when its revision is current", () => {
+  const fake = fakeChart();
+  const controller = new ChartViewportController(fake.chart);
+  const expectedRevision = controller.snapshot().revision;
+
+  assert.equal(
+    controller.setLogicalRangeIfRevision(
+      { from: 20, to: 50 } as LogicalRange,
+      "history-prepend",
+      expectedRevision,
+    ),
+    true,
+  );
+  assert.equal(fake.writes(), 1);
+  assert.equal(controller.snapshot().cause, "history-prepend");
+  controller.destroy();
+});
+
 test("viewport reset is one controller transaction", () => {
   const fake = fakeChart();
   const controller = new ChartViewportController(fake.chart);

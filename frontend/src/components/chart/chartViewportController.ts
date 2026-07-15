@@ -110,6 +110,23 @@ export class ChartViewportController {
     return this.write(cause, () => this.chart.timeScale().setVisibleLogicalRange(logicalRange));
   }
 
+  /**
+   * Apply a deferred range only when no newer viewport mutation has happened.
+   *
+   * Data replacement schedules a next-frame range restore so prepending older
+   * candles does not move a user's current view. A Go-to jump (or a real user
+   * gesture) can happen before that frame runs; in that case the restore is
+   * stale and must not overwrite the newer viewport decision.
+   */
+  setLogicalRangeIfRevision(
+    range: LogicalRangeInput,
+    cause: ChartViewportCause,
+    expectedRevision: number,
+  ): boolean {
+    if (this.snapshotValue.revision !== expectedRevision) return false;
+    return this.setLogicalRange(range, cause);
+  }
+
   setTimeRange(range: IRange<Time>, cause: ChartViewportCause): boolean {
     return this.write(cause, () => this.chart.timeScale().setVisibleRange(range));
   }

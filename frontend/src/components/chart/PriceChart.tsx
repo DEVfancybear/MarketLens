@@ -270,6 +270,7 @@ export function PriceChart({
   const bumpRafRef = useRef<number | null>(null);
   const candleAnimationRafRef = useRef<number | null>(null);
   const replayViewportInitRafRef = useRef<number | null>(null);
+  const historyPrependViewportRafRef = useRef<number | null>(null);
   const renderedLatestCandleRef = useRef<Candle | null>(null);
   const renderedCandleCountRef = useRef(0);
   const prevMarkerPriceRef = useRef<number | null>(null);
@@ -369,6 +370,10 @@ export function PriceChart({
     lastLoadMoreFirstTimeRef.current = null;
     indicatorViewportRef.current = null;
     visibleLogicalRangeRef.current = null;
+    if (historyPrependViewportRafRef.current !== null) {
+      cancelAnimationFrame(historyPrependViewportRafRef.current);
+      historyPrependViewportRafRef.current = null;
+    }
     setIndicatorViewport(null);
   }, [symbol, timeframe]);
 
@@ -519,6 +524,10 @@ export function PriceChart({
       if (replayViewportInitRafRef.current !== null) {
         cancelAnimationFrame(replayViewportInitRafRef.current);
         replayViewportInitRafRef.current = null;
+      }
+      if (historyPrependViewportRafRef.current !== null) {
+        cancelAnimationFrame(historyPrependViewportRafRef.current);
+        historyPrependViewportRafRef.current = null;
       }
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -785,12 +794,27 @@ export function PriceChart({
         candles,
       );
       if (restoredRange) {
-        requestAnimationFrame(() => {
-          viewportControllerRef.current?.setLogicalRange(
-            restoredRange,
-            "history-prepend",
-          );
+        if (historyPrependViewportRafRef.current !== null) {
+          cancelAnimationFrame(historyPrependViewportRafRef.current);
+          historyPrependViewportRafRef.current = null;
+        }
+        const viewport = viewportControllerRef.current;
+        const revision = viewport?.snapshot().revision;
+        const frame = requestAnimationFrame(() => {
+          if (historyPrependViewportRafRef.current !== frame) return;
+          historyPrependViewportRafRef.current = null;
+          if (viewportControllerRef.current !== viewport) return;
+          if (viewport && revision != null) {
+            viewport.setLogicalRangeIfRevision(
+              restoredRange,
+              "history-prepend",
+              revision,
+            );
+            return;
+          }
+          viewport?.setLogicalRange(restoredRange, "history-prepend");
         });
+        historyPrependViewportRafRef.current = frame;
       }
     }
 
