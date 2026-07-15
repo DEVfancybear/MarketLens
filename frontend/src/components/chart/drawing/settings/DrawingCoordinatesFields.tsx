@@ -98,7 +98,7 @@ export function DrawingCoordinatesFields({
                     const time = fromLocalDateTimeInput(event.target.value);
                     if (time != null) patchPoint(index, { time });
                   }}
-                  className="h-[34px] w-full rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2 text-[11px] text-ink-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+                  className="h-[34px] min-w-0 w-full rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2 text-[11px] text-ink-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"
                 />
               </label>
               <label className="space-y-1 text-[10px] text-ink-faint">

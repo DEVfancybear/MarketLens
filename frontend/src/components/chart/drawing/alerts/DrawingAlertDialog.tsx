@@ -76,14 +76,14 @@ export function DrawingAlertDialog() {
   };
 
   return createPortal(
-    <div data-chart-ui className="fixed inset-0 z-[1350] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={() => close(null)}>
+    <div data-chart-ui className="platform-dialog-overlay fixed inset-0 z-[1350] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={() => close(null)}>
       <div role="dialog" aria-modal="true" aria-label="Create drawing alert" className="platform-dialog w-full max-w-[420px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating" onClick={(event) => event.stopPropagation()}>
-        <div className="flex min-h-14 items-center gap-2 border-b border-terminal-border px-4">
+        <div data-dialog-header className="flex min-h-14 items-center gap-2 border-b border-terminal-border px-4">
           <Bell size={16} className="text-brand" />
           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">Alert on {drawing.name ?? drawing.tool}</span>
           <button type="button" aria-label="Close drawing alert" onClick={() => close(null)} className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink"><X size={18} /></button>
         </div>
-        <div className="space-y-3 p-3">
+        <div data-dialog-body className="space-y-3 overflow-y-auto p-3">
           <label className="flex flex-col gap-1">
             <span className="text-2xs text-ink-faint">Drawing target</span>
             <select aria-label="Drawing alert target" value={target.id} onChange={(event) => { const next = targets.find((candidate) => candidate.id === event.target.value); setTargetId(event.target.value); if (next) setCondition(inferCondition(next.price, quote?.last)); }} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15">
@@ -104,7 +104,7 @@ export function DrawingAlertDialog() {
           <button type="button" aria-pressed={recurring} onClick={() => setRecurring((value) => !value)} className={cn("rounded border px-2 py-1.5 text-2xs", recurring ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted")}>{recurring ? "Every time" : "Only once"}</button>
           <p className="text-[10px] leading-4 text-ink-faint">The target price is snapshotted now. Moving or deleting the drawing will not change this alert.</p>
         </div>
-        <div className="flex justify-end gap-2 border-t border-terminal-border px-3 py-2">
+        <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-3 py-2">
           <button type="button" onClick={() => close(null)} className="min-h-10 rounded-xl border border-terminal-border-strong px-3 text-xs font-semibold text-ink-muted hover:bg-terminal-hover">Cancel</button>
           <button type="button" onClick={submit} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover">Create alert</button>
         </div>

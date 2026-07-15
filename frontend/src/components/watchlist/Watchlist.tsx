@@ -1020,7 +1020,7 @@ function CreateWatchlistDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      className="platform-dialog-overlay fixed inset-0 z-[1000] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
       data-chart-ui
       role="presentation"
       onMouseDown={(e) => {
@@ -1034,7 +1034,7 @@ function CreateWatchlistDialog({
         aria-labelledby="create-watchlist-title"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex min-h-16 items-center justify-between border-b border-terminal-border px-5">
+        <div data-dialog-header className="flex min-h-16 items-center justify-between border-b border-terminal-border px-5">
           <h3
             id="create-watchlist-title"
             className="text-xl font-semibold leading-none tracking-[-0.02em] text-ink"
@@ -1050,7 +1050,7 @@ function CreateWatchlistDialog({
             <X size={20} />
           </button>
         </div>
-        <div className="min-h-[120px] space-y-3 px-5 py-5">
+        <div data-dialog-body className="min-h-[120px] space-y-3 overflow-y-auto px-5 py-5">
           <label
             htmlFor="new-watchlist-name"
             className="block text-[13px] font-semibold text-ink-muted"
@@ -1069,7 +1069,7 @@ function CreateWatchlistDialog({
             className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-medium text-ink outline-none selection:bg-brand selection:text-[var(--accent-contrast)] focus:border-brand focus:ring-2 focus:ring-brand/15"
           />
         </div>
-        <div className="flex justify-end gap-2 border-t border-terminal-border px-5 py-3">
+        <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-5 py-3">
           <button
             type="button"
             onClick={onCancel}

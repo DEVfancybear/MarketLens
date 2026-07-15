@@ -2,11 +2,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/utils/cn";
+import { getViewportRect } from "@/utils/viewport";
 
 type PortalPosition = {
   left: number;
   top: number;
   maxHeight: number;
+  maxWidth: number;
 };
 
 /** Click-to-open popover anchored under its trigger. */
@@ -55,27 +57,38 @@ export function Dropdown({
 
     const viewportPadding = 8;
     const gap = 8;
+    const viewport = getViewportRect();
     const triggerRect = triggerRef.current.getBoundingClientRect();
     const panel = popoverRef.current;
-    const panelWidth = width ?? panel.getBoundingClientRect().width;
+    const maxWidth = Math.max(0, viewport.width - viewportPadding * 2);
+    const panelWidth = Math.min(
+      width ?? panel.getBoundingClientRect().width,
+      maxWidth,
+    );
     const naturalHeight = panel.scrollHeight;
-    const spaceBelow = window.innerHeight - triggerRect.bottom - gap - viewportPadding;
-    const spaceAbove = triggerRect.top - gap - viewportPadding;
+    const spaceBelow = viewport.bottom - triggerRect.bottom - gap - viewportPadding;
+    const spaceAbove = triggerRect.top - viewport.top - gap - viewportPadding;
     const openBelow =
       spaceBelow >= Math.min(naturalHeight, 240) || spaceBelow >= spaceAbove;
-    const maxHeight = Math.max(96, openBelow ? spaceBelow : spaceAbove);
+    const maxHeight = Math.max(0, openBelow ? spaceBelow : spaceAbove);
     const visibleHeight = Math.min(naturalHeight, maxHeight);
     const preferredLeft =
       align === "right" ? triggerRect.right - panelWidth : triggerRect.left;
     const left = Math.min(
-      Math.max(viewportPadding, preferredLeft),
-      Math.max(viewportPadding, window.innerWidth - panelWidth - viewportPadding),
+      Math.max(viewport.left + viewportPadding, preferredLeft),
+      Math.max(
+        viewport.left + viewportPadding,
+        viewport.right - panelWidth - viewportPadding,
+      ),
     );
     const top = openBelow
       ? triggerRect.bottom + gap
-      : Math.max(viewportPadding, triggerRect.top - gap - visibleHeight);
+      : Math.max(
+          viewport.top + viewportPadding,
+          triggerRect.top - gap - visibleHeight,
+        );
 
-    setPortalPosition({ left, top, maxHeight });
+    setPortalPosition({ left, top, maxHeight, maxWidth });
   }, [align, open, portal, width]);
 
   useEffect(() => {
@@ -112,13 +125,18 @@ export function Dropdown({
 
     updatePortalPosition();
     const onViewportChange = () => updatePortalPosition();
+    const visualViewport = window.visualViewport;
     window.addEventListener("resize", onViewportChange);
     window.addEventListener("scroll", onViewportChange, true);
+    visualViewport?.addEventListener("resize", onViewportChange);
+    visualViewport?.addEventListener("scroll", onViewportChange);
     const observer = new ResizeObserver(onViewportChange);
     if (popoverRef.current) observer.observe(popoverRef.current);
     return () => {
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
+      visualViewport?.removeEventListener("resize", onViewportChange);
+      visualViewport?.removeEventListener("scroll", onViewportChange);
       observer.disconnect();
     };
   }, [open, portal, updatePortalPosition]);
@@ -139,6 +157,7 @@ export function Dropdown({
               left: portalPosition?.left ?? 0,
               top: portalPosition?.top ?? 0,
               width,
+              maxWidth: portalPosition?.maxWidth,
               maxHeight: portalPosition?.maxHeight,
               visibility: portalPosition ? "visible" : "hidden",
             }

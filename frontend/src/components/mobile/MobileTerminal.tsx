@@ -81,7 +81,11 @@ export function MobileTerminal() {
         {screen === "chart" && (
           <div className="mobile-chart-screen">
             <header className="mobile-topbar">
-              <div className="mobile-brand" aria-label="SMC Terminal"><span><ChartCandlestick size={19} /></span></div>
+              <div className="mobile-brand" aria-label="SMC Terminal">
+                <span className="mobile-brand-mark" aria-hidden="true">
+                  <ChartCandlestick className="mobile-brand-glyph" strokeWidth={2} />
+                </span>
+              </div>
               <MobileSymbolPicker />
               <button type="button" className="mobile-avatar" aria-label="Account" onClick={() => openSurface("account")}><MobileAccountAvatar /></button>
             </header>

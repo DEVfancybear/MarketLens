@@ -48,16 +48,17 @@ function ToastCard({ toast }: { toast: Toast }) {
     <div
       role={toast.variant === "error" ? "alert" : "status"}
       data-chart-ui
-      className="pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-terminal-border bg-terminal-raised/95 p-3.5 shadow-floating backdrop-blur-xl animate-[toastIn_160ms_ease-out]"
+      data-toast
+      className="pointer-events-none flex w-full items-start gap-3 rounded-xl border border-terminal-border bg-terminal-raised/95 p-3.5 shadow-floating backdrop-blur-xl animate-[toastIn_160ms_ease-out]"
       style={{ borderLeftColor: meta.accent, borderLeftWidth: 3 }}
     >
       <span className="mt-0.5 shrink-0" style={{ color: meta.accent }}>
         {meta.icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold text-ink">{toast.title}</div>
+        <div data-toast-title className="text-[13px] font-semibold text-ink">{toast.title}</div>
         {toast.message && (
-          <div className="mt-1 break-words text-xs leading-5 text-ink-muted">
+          <div data-toast-message className="mt-1 break-words text-xs leading-5 text-ink-muted">
             {toast.message}
           </div>
         )}
@@ -65,7 +66,7 @@ function ToastCard({ toast }: { toast: Toast }) {
       <button
         type="button"
         onClick={() => dismiss(toast.id)}
-        className="toast-close shrink-0 rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        className="toast-close pointer-events-auto shrink-0 rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         aria-label="Dismiss"
       >
         <X size={14} />
@@ -80,6 +81,8 @@ export function Toaster() {
 
   return (
     <div
+      role="region"
+      aria-label="Notifications"
       className={cn(
         "toast-stack pointer-events-none fixed z-[1400] flex w-[356px] max-w-[calc(100vw-1.5rem)] flex-col gap-2.5",
       )}

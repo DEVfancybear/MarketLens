@@ -70,7 +70,7 @@ export function SaveDrawingTemplateDialog({
   return createPortal(
     <div
       data-chart-ui
-      className="fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      className="platform-dialog-overlay fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onCloseAction();
       }}
@@ -138,7 +138,7 @@ export function SaveDrawingTemplateDialog({
           </button>
 
           {listOpen && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-44 overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
+            <div className="mobile-popover absolute left-0 right-0 top-full z-10 mt-1 max-h-44 overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
               {templateNames.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-ink-faint">
                   No saved templates

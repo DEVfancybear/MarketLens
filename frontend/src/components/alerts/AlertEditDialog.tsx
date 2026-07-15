@@ -102,7 +102,7 @@ export function AlertEditDialog() {
   };
 
   return createPortal(
-    <div data-chart-ui className="fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={close}>
+    <div data-chart-ui className="platform-dialog-overlay fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={close}>
       <div
         ref={dialogRef}
         style={dialogStyle}
@@ -113,6 +113,7 @@ export function AlertEditDialog() {
         aria-label="Edit alert"
       >
         <div
+          data-dialog-header
           {...dragHandleProps}
           className={cn(
             "flex min-h-14 items-center justify-between border-b border-terminal-border px-4",
@@ -125,7 +126,7 @@ export function AlertEditDialog() {
           </button>
         </div>
 
-        <div className="space-y-3 p-3">
+        <div data-dialog-body className="space-y-3 overflow-y-auto p-3">
           <div className="grid grid-cols-2 gap-1">
             {CONDITIONS.map((c) => (
               <button
@@ -175,7 +176,7 @@ export function AlertEditDialog() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-terminal-border px-3 py-2">
+        <div data-dialog-footer className="flex items-center justify-between border-t border-terminal-border px-3 py-2">
           <button
             onClick={() => { deleteAlert(alert.id); close(); }}
             className="min-h-10 rounded-xl px-3 text-xs font-semibold text-bear hover:bg-bear/10"

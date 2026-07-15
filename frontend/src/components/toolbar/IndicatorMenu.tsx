@@ -359,7 +359,7 @@ export function IndicatorMenu({
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[1000] bg-[var(--scrim)] px-3 pt-14 backdrop-blur-sm"
+            className="platform-dialog-overlay fixed inset-0 z-[1000] bg-[var(--scrim)] px-3 pt-14 backdrop-blur-sm"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) closeBrowser();
             }}
@@ -373,9 +373,10 @@ export function IndicatorMenu({
               aria-label="Indicators, metrics, and strategies"
               tabIndex={-1}
               onKeyDown={trapFocusWithin}
-              className="mx-auto flex h-[min(680px,calc(100dvh-72px))] w-[min(calc(100vw-24px),900px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
+              className="platform-dialog platform-dialog--fullscreen mx-auto flex h-[min(680px,calc(100dvh-72px))] w-[min(calc(100vw-24px),900px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
             >
               <header
+                data-dialog-header
                 {...indicatorDialogDrag.dragHandleProps}
                 className={cn(
                   "flex h-16 shrink-0 items-center justify-between border-b border-terminal-border px-5",
@@ -516,7 +517,7 @@ export function IndicatorMenu({
 
             {deleteTarget && (
               <div
-                className="fixed inset-0 z-[1001] flex items-center justify-center bg-[var(--scrim)] px-4 backdrop-blur-sm"
+                className="platform-dialog-overlay fixed inset-0 z-[1001] flex items-center justify-center bg-[var(--scrim)] px-4 backdrop-blur-sm"
                 onMouseDown={(event) => {
                   if (event.target === event.currentTarget)
                     setDeleteTarget(null);
@@ -530,7 +531,7 @@ export function IndicatorMenu({
                   aria-label="Delete this script?"
                   tabIndex={-1}
                   onKeyDown={trapFocusWithin}
-                  className="w-full max-w-[440px] rounded-2xl border border-terminal-border-strong bg-terminal-raised px-7 pb-6 pt-5 shadow-floating"
+                  className="platform-dialog w-full max-w-[440px] rounded-2xl border border-terminal-border-strong bg-terminal-raised px-7 pb-6 pt-5 shadow-floating"
                 >
                   <div
                     {...deleteDialogDrag.dragHandleProps}

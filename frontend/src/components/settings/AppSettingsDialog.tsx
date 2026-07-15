@@ -208,7 +208,7 @@ export function AppSettingsDialog() {
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-stretch justify-center bg-[var(--scrim)] sm:items-center sm:p-4 sm:backdrop-blur-sm"
+      className="platform-dialog-overlay fixed inset-0 z-[120] flex items-stretch justify-center bg-[var(--scrim)] sm:items-center sm:p-4 sm:backdrop-blur-sm"
       role="presentation"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
@@ -221,10 +221,10 @@ export function AppSettingsDialog() {
         aria-labelledby="integration-settings-title"
         aria-describedby="integration-settings-description"
         aria-busy={busy}
-        className="flex h-dvh w-full flex-col overflow-hidden bg-terminal-panel text-ink shadow-terminal sm:h-auto sm:max-h-[min(90dvh,820px)] sm:max-w-[760px] sm:rounded-2xl sm:border sm:border-terminal-border-strong"
+        className="platform-dialog platform-dialog--fullscreen flex h-dvh w-full flex-col overflow-hidden bg-terminal-panel text-ink shadow-terminal sm:h-auto sm:max-h-[min(90dvh,820px)] sm:max-w-[760px] sm:rounded-2xl sm:border sm:border-terminal-border-strong"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <header className="flex shrink-0 items-start gap-3 border-b border-terminal-border bg-terminal-panel-2/80 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-5">
+        <header data-dialog-header className="flex shrink-0 items-start gap-3 border-b border-terminal-border bg-terminal-panel-2/80 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-5">
           <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand">
             <ShieldCheck size={20} aria-hidden="true" />
           </div>
@@ -254,7 +254,7 @@ export function AppSettingsDialog() {
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+        <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
           {!backendSession ? (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-terminal-border-strong bg-terminal-panel-2 px-6 py-10 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand/10 text-brand">
@@ -450,7 +450,7 @@ export function AppSettingsDialog() {
           )}
         </div>
 
-        <footer className="flex shrink-0 flex-col gap-3 border-t border-terminal-border bg-terminal-panel-2/90 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4">
+        <footer data-dialog-footer className="flex shrink-0 flex-col gap-3 border-t border-terminal-border bg-terminal-panel-2/90 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-4">
           <div
             className={`flex min-h-5 items-start gap-2 text-xs leading-5 ${
               messageTone === "error"

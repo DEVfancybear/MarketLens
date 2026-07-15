@@ -1,8 +1,9 @@
 'use client';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Bell, EyeOff } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { useFloatingSurface } from '@/hooks/useFloatingSurface';
 
 export interface WatchlistMenuState {
   ticker: string;
@@ -20,20 +21,10 @@ interface Props {
 
 /** Right-click context menu for a watchlist row. */
 export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert, disableAlertCreation }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x: state.x, y: state.y });
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const pad = 8;
-    let x = state.x;
-    let y = state.y;
-    if (x + width + pad > window.innerWidth) x = window.innerWidth - width - pad;
-    if (y + height + pad > window.innerHeight) y = window.innerHeight - height - pad;
-    setPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
-  }, [state.x, state.y]);
+  const { surfaceRef: ref, layout } = useFloatingSurface({
+    x: state.x,
+    y: state.y,
+  });
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -48,7 +39,7 @@ export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert, 
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
     };
-  }, [onClose]);
+  }, [onClose, ref]);
 
   if (typeof document === 'undefined') return null;
 
@@ -66,7 +57,12 @@ export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert, 
     <div
       ref={ref}
       className="context-menu-pop fixed z-[120] min-w-[200px] rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl"
-      style={{ left: pos.x, top: pos.y }}
+      style={{
+        left: layout.x,
+        top: layout.y,
+        maxWidth: layout.maxWidth || undefined,
+        maxHeight: layout.maxHeight || undefined,
+      }}
       role="menu"
     >
       <div className="px-3 py-1 text-2xs font-semibold text-ink-faint">{state.ticker}</div>

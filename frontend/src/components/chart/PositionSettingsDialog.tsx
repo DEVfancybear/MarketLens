@@ -151,11 +151,11 @@ export function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 py-[7px]">
+    <div className="dialog-field-row flex items-center gap-3 py-[7px]">
       <span className="w-[110px] shrink-0 text-[14px] font-medium text-ink-muted">
         {label}
       </span>
-      <div className="flex flex-1 items-center gap-2">{children}</div>
+      <div className="dialog-field-controls flex flex-1 items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -238,6 +238,7 @@ function ColorButton({
   return (
     <div className="relative">
       <button
+        aria-label="Choose color"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
@@ -254,12 +255,14 @@ function ColorButton({
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-30 mt-1 w-[184px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
+          className="mobile-popover absolute left-0 top-full z-30 mt-1 w-[184px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="grid grid-cols-6 gap-1.5">
             {COLORS.map((c) => (
               <button
+                data-color-option
+                aria-label={`Use ${c}`}
                 key={c}
                 onClick={() => onPick(c)}
                 className="relative h-5 w-5 rounded border border-terminal-border-strong"
@@ -307,6 +310,7 @@ function LineButton({
   return (
     <div className="relative">
       <button
+        aria-label="Line style"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
@@ -329,7 +333,7 @@ function LineButton({
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-30 mt-1 w-[170px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
+          className="mobile-popover absolute left-0 top-full z-30 mt-1 w-[170px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-2">
@@ -405,7 +409,7 @@ function StatsSelect({
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-30 mt-1 w-[230px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
+          className="mobile-popover absolute left-0 top-full z-30 mt-1 w-[230px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
           onClick={(e) => e.stopPropagation()}
         >
           {POSITION_STATS.map((s) => (
@@ -593,7 +597,7 @@ export function PositionSettingsDialog() {
   return createPortal(
     <div
       data-chart-ui
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm pt-10"
+      className="platform-dialog-overlay fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm pt-10"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -610,6 +614,7 @@ export function PositionSettingsDialog() {
       >
         {/* Header */}
         <div
+          data-dialog-header
           {...dragHandleProps}
           className={cn(
             "flex items-center justify-between px-5 pb-2 pt-4",
@@ -642,11 +647,11 @@ export function PositionSettingsDialog() {
         </div>
 
         {/* Tabs */}
-        <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-terminal-border pt-3">
+        <div data-dialog-tabs role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-terminal-border pt-3">
           {(settings.tabs as readonly Tab[]).map((id) => tabBtn(id, id[0].toUpperCase() + id.slice(1)))}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {tab === "inputs" && (
             <>
               <Row label="Account size">
@@ -879,7 +884,7 @@ export function PositionSettingsDialog() {
             </>
           )}
         </div>
-        <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
+        <div data-dialog-footer className="flex h-[58px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
           <button
             type="button"
             className="flex h-[34px] min-w-[104px] items-center justify-between rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] font-medium text-ink hover:border-brand"

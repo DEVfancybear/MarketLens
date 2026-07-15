@@ -1,6 +1,6 @@
 # Draggable Dialog Architecture
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-14_
 
 This document explains the shared TradingView-style draggable dialog behavior.
 Read this before changing settings popups, modal dialogs, indicator dialogs, or
@@ -46,6 +46,17 @@ const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =
 The hook measures the dialog's current rendered location on mount, converts it
 to a fixed-position surface, then updates `left/top` while the pointer is held
 on the drag handle.
+
+## 2.1 Responsive ownership
+
+Dragging is a desktop/fine-pointer affordance. `useDraggableDialog` enables
+the fixed-position drag state only at the desktop boundary (1100px or wider)
+with a fine primary pointer. On mobile and coarse-pointer devices it returns
+the dialog to its normal layout position so the shared `platform-dialog`
+contract can size a bottom sheet, preserve native scrolling and keep the
+header/tabs/footer reachable. Do not re-enable drag handlers as a workaround
+for mobile placement; add a responsive slot or a viewport-safe surface rule
+instead.
 
 ## 3. Initial Position
 
@@ -107,6 +118,10 @@ File:
 ```txt
 tests/ui/draggableDialog.test.ts
 ```
+
+The coarse-pointer policy is also covered by `tests/ui/platformPolicy.test.ts`,
+while responsive sheet bounds, popovers, controls and toast placement are
+covered by `tests/browser/mobileOverlayResponsive.spec.ts`.
 
 Browser-level drag tests can be added later for pointer capture and visual drag
 behavior. Keep viewport clamp math in the hook so all dialogs share fixes.

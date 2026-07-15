@@ -33,6 +33,7 @@ Reasons:
 | Replay bar selection | scrub one primary captured pointer; tap confirm | foreign pointer is ignored | visible confirm/cancel, Arrow/Home/End, Enter/Space/Escape |
 | Mobile sheet handle | pull down after 8px threshold | non-primary pointer ignored | Close button, scrim, Escape, browser Back |
 | Sheet content | native vertical scroll | browser zoom where applicable | scrollbar and direct controls |
+| Dialog/popover/toast surface | scrim, sheet footer and explicit close own the surface | underlying chart/list never receives a modal gesture | 44px controls, native scroll, safe-area placement |
 | Market/list item | tap opens; explicit action button | native scroll remains owner | visible menu/move actions; no drag-only behavior |
 
 ## Sheet state machine
@@ -90,6 +91,9 @@ the full Replay workspace open.
 - Mobile input text is at least 16px to avoid iOS focus zoom.
 - Touch controls are at least 44x44px, including timeframe buttons and modal actions.
 - Safe-area insets are applied to app bars, bottom navigation, sheets, dialogs and toast placement.
+- Dialogs use the shared `platform-dialog-overlay`/`platform-dialog` slots;
+  anchored popovers use `mobile-popover`, and pointer-position menus clamp to
+  `visualViewport` so a keyboard or pinch viewport cannot hide their actions.
 - `prefers-reduced-motion` disables non-essential animation and transitions.
 
 ## Platform isolation
@@ -121,6 +125,11 @@ manifest, full timeframe/favorite/custom flow, Indicator and Chart tools,
 watchlist management, secondary workspace entry points, 44px targets and zero
 document overflow in compact portrait and landscape.
 
+`tests/browser/mobileOverlayResponsive.spec.ts` verifies the centered
+timeframe chevron, adaptive settings sheet, Style/Text/Coordinates/Visibility
+tabs, compact color/template popovers, native checkbox sizing, context-menu
+bounds and non-blocking toast placement.
+
 Run:
 
 ```bash
@@ -129,6 +138,7 @@ npm run typecheck
 npx playwright test tests/browser/mobileReplay.spec.ts
 npx playwright test tests/browser/mobileDrawing.spec.ts
 npx playwright test tests/browser/mobileFeatureParity.spec.ts
+npx playwright test tests/browser/mobileOverlayResponsive.spec.ts
 ```
 
 ## Browser/manual matrix

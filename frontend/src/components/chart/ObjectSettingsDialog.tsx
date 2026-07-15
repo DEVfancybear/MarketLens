@@ -78,6 +78,7 @@ const H_ALIGN: { value: NonNullable<Drawing["textHAlign"]>; label: string }[] = 
   { value: "center", label: "Center" },
   { value: "right", label: "Right" },
 ];
+
 const FIB_LEVEL_MODES: { value: FibTextMode; label: string }[] = [
   { value: "values", label: "Values" },
   { value: "percent", label: "Percents" },
@@ -272,7 +273,7 @@ export function ObjectSettingsDialog() {
       <>
         <div
           data-chart-ui
-          className="fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm p-4"
+          className="platform-dialog-overlay fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) cancel();
           }}
@@ -292,6 +293,7 @@ export function ObjectSettingsDialog() {
             }}
           >
             <div
+              data-dialog-header
               {...dragHandleProps}
               className={cn(
                 "flex items-center justify-between px-5 pb-2 pt-4",
@@ -313,11 +315,11 @@ export function ObjectSettingsDialog() {
               </button>
             </div>
 
-            <div role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-terminal-border pt-3">
+            <div data-dialog-tabs role="tablist" aria-label="Drawing settings sections" className="mx-5 flex items-center gap-6 border-b border-terminal-border pt-3">
               {(settings.tabs as readonly Tab[]).map(textTabBtn)}
             </div>
 
-            <div className="min-h-[420px] flex-1 overflow-y-auto px-5 py-5">
+            <div data-dialog-body className="min-h-[420px] flex-1 overflow-y-auto px-5 py-5">
               {tab === "text" && (
                 <>
                   <div className="mb-4 flex items-center gap-2">
@@ -501,7 +503,7 @@ export function ObjectSettingsDialog() {
               )}
             </div>
 
-            <div className="flex h-[58px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
+            <div data-dialog-footer className="flex h-[58px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -516,7 +518,7 @@ export function ObjectSettingsDialog() {
                 </button>
                 {tplOpen && (
                   <div
-                    className="absolute bottom-full left-0 z-30 mb-1 w-[180px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
+                    className="mobile-popover absolute bottom-full left-0 z-30 mb-1 w-[180px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
@@ -623,7 +625,7 @@ export function ObjectSettingsDialog() {
     <>
       <div
       data-chart-ui
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm p-4"
+      className="platform-dialog-overlay fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -648,6 +650,7 @@ export function ObjectSettingsDialog() {
       >
         {isFib && (
           <div
+            data-dialog-header
             {...dragHandleProps}
             className={cn(
               "flex items-center justify-between px-5 pb-2 pt-4",
@@ -671,6 +674,7 @@ export function ObjectSettingsDialog() {
         )}
         {/* Tabs */}
         <div
+          data-dialog-tabs
           role="tablist"
           aria-label="Drawing settings sections"
           {...(!isFib ? dragHandleProps : {})}
@@ -685,6 +689,7 @@ export function ObjectSettingsDialog() {
         </div>
 
         <div
+          data-dialog-body
           className={cn(
             isFib
               ? "min-h-0 flex-1 overflow-y-auto px-5 py-4"
@@ -1192,6 +1197,7 @@ export function ObjectSettingsDialog() {
 
         {/* Footer: Template ▼ · Cancel · Ok */}
         <div
+          data-dialog-footer
           className={cn(
             "flex items-center justify-between border-t",
             isFib
@@ -1218,7 +1224,7 @@ export function ObjectSettingsDialog() {
             </button>
             {tplOpen && (
               <div
-                className="absolute bottom-full left-0 z-30 mb-1 w-[180px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
+                className="mobile-popover absolute bottom-full left-0 z-30 mb-1 w-[180px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-1 shadow-floating"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button

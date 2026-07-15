@@ -28,16 +28,17 @@ export function LiveOrderConfirmDialog({
   const title = isOrder ? "Confirm MT5 order" : "Confirm MT5 close all";
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" data-chart-ui>
+    <div className="platform-dialog-overlay fixed inset-0 z-[1200] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" data-chart-ui>
       <div
         ref={dialogRef}
         style={dialogStyle}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="live-order-confirm-title"
-        className="w-full max-w-[400px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
+        className="platform-dialog w-full max-w-[400px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating"
       >
         <div
+          data-dialog-header
           {...dragHandleProps}
           className={`flex min-h-14 items-center justify-between border-b border-terminal-border px-4 ${dragHandleClassName}`}
         >
@@ -51,7 +52,7 @@ export function LiveOrderConfirmDialog({
             <X size={15} />
           </button>
         </div>
-        <div className="space-y-4 p-4 text-sm leading-6 text-ink-muted">
+        <div data-dialog-body className="space-y-4 overflow-y-auto p-4 text-sm leading-6 text-ink-muted">
           {isOrder ? (
             <OrderSummary order={payload.order} precision={precision} />
           ) : (
@@ -65,7 +66,7 @@ export function LiveOrderConfirmDialog({
             live positions.
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-terminal-border p-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+        <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border p-4 pb-[max(16px,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={onCancel}

@@ -578,7 +578,7 @@ function ToolbarButton({
 /** A popover anchored below the toolbar. */
 function Popover({ children }: { children: React.ReactNode }) {
   return (
-    <div className="absolute left-1/2 top-full mt-1.5 z-30 min-w-[140px] -translate-x-1/2 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl">
+    <div className="mobile-popover absolute left-1/2 top-full mt-1.5 z-30 min-w-[140px] -translate-x-1/2 rounded-md border border-terminal-border bg-terminal-panel-2 p-1 shadow-2xl">
       {children}
     </div>
   );
@@ -598,6 +598,7 @@ function ColorPopover({
       <div className="grid grid-cols-4 gap-1.5 p-1">
         {COLORS.map((c) => (
           <button
+            data-color-option
             key={c}
             onClick={() => onPick(c)}
             className="relative h-5 w-5 rounded-full border border-terminal-border"

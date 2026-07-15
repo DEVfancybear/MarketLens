@@ -187,7 +187,7 @@ export function ObjectTreePanel() {
         <div className="relative">
           <TreeButton label={`Sync: ${mode}`} onClick={() => setSyncMenu(syncMenu === nodeId ? null : nodeId)}><Globe2 size={12} /></TreeButton>
           {syncMenu === nodeId && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded border border-terminal-border bg-terminal-panel-2 p-1 shadow-xl">
+            <div className="mobile-popover absolute right-0 top-full z-50 mt-1 w-40 rounded border border-terminal-border bg-terminal-panel-2 p-1 shadow-xl">
               {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
                 <button key={option.id} type="button" aria-label={`${option.label} ${nodeId}`} onClick={(event) => { event.stopPropagation(); setSyncMode(members, option.id); }} className={cn("w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-terminal-hover", mode === option.id ? "text-brand" : "text-ink")}>{option.label}</button>
               ))}

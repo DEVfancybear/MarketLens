@@ -47,6 +47,31 @@ See `MOBILE_TOUCH_GESTURES.md`, `MOBILE_DESKTOP_FEATURE_PARITY.md` and `../desig
 
 Desktop/mobile dimensions are scoped to `.desktop-terminal` and `.mobile-terminal`/`.mobile-*`. Shared primitives may consume semantic colors, typography and focus styles, but must not introduce a shared responsive DOM layout.
 
+## Shared overlay contract
+
+Dialogs and transient surfaces keep their existing feature-specific JSX, but
+share one responsive contract:
+
+- `platform-dialog-overlay` owns the scrim, safe-area padding and mobile
+  bottom-sheet alignment.
+- `platform-dialog` is content-sized on mobile and scrolls through its
+  `data-dialog-body`; use `platform-dialog--fullscreen` only for genuinely
+  long workspaces such as application settings or the indicator browser.
+- `data-dialog-header`, `data-dialog-tabs`, `data-dialog-body` and
+  `data-dialog-footer` are layout slots. Headers/tabs stay fixed, tabs scroll
+  horizontally, and the footer remains reachable above the safe area.
+- Mobile controls use a 44px touch target, 16px form text, and preserve native
+  checkbox dimensions while expanding the surrounding hit area.
+- Anchored color, line, template and object-tree menus use `mobile-popover`;
+  pointer-position menus and dropdown portals clamp against the Visual
+  Viewport through `src/hooks/useFloatingSurface.ts` and
+  `src/utils/viewport.ts`.
+- Mobile toasts render as non-blocking snackbars above bottom navigation. The
+  toast body is click-through; only its dismiss action receives pointer input.
+
+Keep these classes and slots common. A new dialog should add the contract
+markers before introducing a one-off mobile media query.
+
 ## Feature parity rule
 
 Presentation stays platform-specific, while feature catalogs and mutations remain shared. Drawing tools come from `DRAWING_TOOL_MANIFEST`, Indicator desktop/mobile presentations live in `IndicatorMenu`, and favorites/snapshots/watchlist/layout/trade actions use the same hooks, atoms and services. A new desktop feature must either receive a mobile entry point in the same change or be recorded as intentionally desktop-only.
@@ -61,9 +86,12 @@ npm run lint
 npm run test:ui
 npx playwright test tests/browser/platformUi.spec.ts
 npx playwright test tests/browser/mobileFeatureParity.spec.ts
+npx playwright test tests/browser/mobileOverlayResponsive.spec.ts
 npm run build
 ```
 
-Verified parity baseline on 2026-07-14: 18/18 selected mobile/platform/desktop browser tests passed; production build, typecheck and lint passed.
+Verified overlay baseline on 2026-07-14: the dedicated responsive browser
+spec passed 6/6, the mobile/desktop overlay regression set passed 11/11, the
+UI unit set passed 39/39, and production build, typecheck and lint passed.
 
 Required viewport checks: 320x568, 375x812, 390x844, 430x932, 844x390, 768x1024, 1024x768, 1366x768 and 1920x1080.

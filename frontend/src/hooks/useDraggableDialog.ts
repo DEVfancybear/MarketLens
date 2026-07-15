@@ -30,6 +30,11 @@ function viewportBounds(): Bounds {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
+function dragIsEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.innerWidth >= 1100 && !window.matchMedia("(pointer: coarse)").matches;
+}
+
 export function clampDialogPosition(
   position: DialogPosition,
   dialogSize: Size,
@@ -72,6 +77,10 @@ export function useDraggableDialog(options: DraggableDialogOptions = {}) {
   useLayoutEffect(() => {
     const element = dialogRef.current;
     if (!element) return;
+    if (!dragIsEnabled()) {
+      setPosition(null);
+      return;
+    }
     const measured = element.getBoundingClientRect();
     const nextPosition = initialPosition?.() ?? {
       left: measured.left,
@@ -109,7 +118,11 @@ export function useDraggableDialog(options: DraggableDialogOptions = {}) {
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
-      if (event.button !== 0 || isDialogInteractiveTarget(event.target)) return;
+      if (
+        !dragIsEnabled() ||
+        event.button !== 0 ||
+        isDialogInteractiveTarget(event.target)
+      ) return;
       const element = dialogRef.current;
       if (!element) return;
 

@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Mobile overlay and toast responsiveness (2026-07-14)
+- Replaced the one-size-fits-all mobile dialog viewport with shared adaptive
+  sheets, safe-area-aware headers/footers, scrollable bodies and horizontal
+  tab strips across settings, alerts, templates, watchlists and confirmations.
+- Added common mobile popover treatment, Visual Viewport clamping for dropdowns
+  and context menus, and coarse-pointer safeguards that keep native scrolling
+  intact instead of starting desktop dialog drags.
+- Made mobile toasts non-blocking snackbars above bottom navigation, preserved
+  native checkbox dimensions with 44px hit areas, and added responsive browser
+  and viewport unit coverage.
+- Centered the mobile timeframe overflow chevron in its fixed 44x44px touch
+  target and added a render-level regression for the alignment.
+
 ### Fixed - Backend-owned chart timezone formatting (2026-07-15)
 - Removed the crosshair formatter's hard-coded UTC rendering and made the
   toolbar clock, Go-to marker, time-axis ticks, and floating crosshair label use

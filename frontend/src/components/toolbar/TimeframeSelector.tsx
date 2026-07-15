@@ -229,7 +229,7 @@ function CustomIntervalDialog({
   return createPortal(
     <div
       data-chart-ui
-      className="fixed inset-0 z-[900] bg-[var(--scrim)] backdrop-blur-sm"
+      className="platform-dialog-overlay fixed inset-0 z-[900] bg-[var(--scrim)] backdrop-blur-sm"
       onMouseDown={onClose}
     >
       <div
@@ -237,11 +237,12 @@ function CustomIntervalDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="custom-interval-title"
-        className="fixed w-[420px] max-w-[calc(100vw-24px)] overflow-visible rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
+        className="platform-dialog fixed w-[420px] max-w-[calc(100vw-24px)] overflow-visible rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
         style={dialogStyle}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div
+          data-dialog-header
           {...dragHandleProps}
           className={cn(
             "flex h-16 items-center justify-between border-b border-terminal-border px-5",
@@ -261,7 +262,7 @@ function CustomIntervalDialog({
           </button>
         </div>
 
-        <div className="space-y-3 px-5 py-5">
+        <div data-dialog-body className="space-y-3 overflow-y-auto px-5 py-5">
           <div className="grid grid-cols-[96px_minmax(0,180px)] items-center gap-3">
             <label className="text-sm font-semibold text-ink">
               Type
@@ -282,7 +283,7 @@ function CustomIntervalDialog({
                 />
               </button>
               {typeOpen && (
-                <div className="absolute left-0 top-[44px] z-[95] min-w-[132px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
+                <div className="mobile-popover absolute left-0 top-[44px] z-[95] min-w-[132px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
                   {CUSTOM_INTERVAL_TYPES.map((item) => (
                     <button
                       key={item}
@@ -330,7 +331,7 @@ function CustomIntervalDialog({
           </div>
         </div>
 
-        <div className="flex min-h-16 items-center justify-end gap-3 border-t border-terminal-border px-5 py-2">
+        <div data-dialog-footer className="flex min-h-16 items-center justify-end gap-3 border-t border-terminal-border px-5 py-2">
           <button
             type="button"
             onClick={onClose}

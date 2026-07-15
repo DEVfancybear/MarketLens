@@ -513,7 +513,7 @@ export function IndicatorSettingsDialog() {
   };
   return createPortal(
     <div
-      className="fixed inset-0 z-[1100] flex items-center justify-center bg-[var(--scrim)] backdrop-blur-sm"
+      className="platform-dialog-overlay fixed inset-0 z-[1100] flex items-center justify-center bg-[var(--scrim)] backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -528,6 +528,7 @@ export function IndicatorSettingsDialog() {
         className="platform-dialog flex max-h-[min(760px,calc(100dvh-32px))] w-[min(540px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
       >
         <header
+          data-dialog-header
           {...dragHandleProps}
           className={cn(
             "flex h-16 shrink-0 items-center justify-between px-5",
@@ -548,7 +549,7 @@ export function IndicatorSettingsDialog() {
           </button>
         </header>
 
-        <div className="shrink-0 px-5">
+        <div data-dialog-tabs className="shrink-0 px-5">
           <div className="flex border-b-[3px] border-terminal-border">
             {TABS.map((tab) => (
               <button
@@ -569,7 +570,7 @@ export function IndicatorSettingsDialog() {
           </div>
         </div>
 
-        <div className="min-h-[220px] flex-1 overflow-auto px-5 pb-5 pt-5">
+        <div data-dialog-body className="min-h-[220px] flex-1 overflow-auto px-5 pb-5 pt-5">
           {activeTab === "inputs" && (
             <div className="space-y-5">
               {isCustom && pineMeta?.timeframe !== undefined && (
@@ -627,7 +628,7 @@ export function IndicatorSettingsDialog() {
           )}
         </div>
 
-        <footer className="flex h-[54px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
+        <footer data-dialog-footer className="flex h-[54px] shrink-0 items-center justify-between border-t border-terminal-border px-5">
           <button
             type="button"
             onClick={resetDefaults}

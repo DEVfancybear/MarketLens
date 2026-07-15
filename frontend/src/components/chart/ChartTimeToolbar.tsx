@@ -695,7 +695,7 @@ function GoToDialog({
   const dialog = (
     <div
       data-chart-ui
-      className="fixed inset-0 z-[900] bg-[var(--scrim)]/70 backdrop-blur-[2px]"
+      className="platform-dialog-overlay fixed inset-0 z-[900] bg-[var(--scrim)]/70 backdrop-blur-[2px]"
       onMouseDown={isApplying ? undefined : onClose}
     >
       <div
@@ -718,6 +718,7 @@ function GoToDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div
+          data-dialog-header
           {...dragHandleProps}
           className={cn(
             "flex h-14 items-center justify-between border-b border-terminal-border px-5",
@@ -736,7 +737,7 @@ function GoToDialog({
           </button>
         </div>
 
-        <div className="px-5 pt-4">
+        <div data-dialog-body className="overflow-y-auto px-5 pt-4">
           <div className="mb-4 grid grid-cols-[minmax(0,1fr)_88px] gap-2">
             <DateInput
               value={singleDate}
@@ -814,7 +815,7 @@ function GoToDialog({
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 flex h-16 items-center justify-end gap-3 border-t border-terminal-border bg-terminal-raised px-5">
+        <div data-dialog-footer className="absolute bottom-0 left-0 right-0 flex h-16 items-center justify-end gap-3 border-t border-terminal-border bg-terminal-raised px-5">
           <button
             type="button"
             disabled={isApplying}

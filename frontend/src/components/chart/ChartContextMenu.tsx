@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Bell,
@@ -42,6 +42,7 @@ import { uid } from "@/utils/id";
 import { cn } from "@/utils/cn";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
+import { useFloatingSurface } from "@/hooks/useFloatingSurface";
 
 /** Right-click chart context-menu state (per the spec). */
 export interface ContextMenuState {
@@ -98,26 +99,13 @@ export function ChartContextMenu({
   const addToWatchlist = useSetAtom(addWatchlistSymbolAtom);
   const removeFromWatchlist = useSetAtom(removeWatchlistSymbolAtom);
 
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ x: state.x, y: state.y });
+  const { surfaceRef: ref, layout } = useFloatingSurface({
+    x: state.x,
+    y: state.y,
+  });
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const priceStr = fmtPrice(state.price, prec);
-
-  // ---- Clamp to viewport (auto-reposition near edges) ----
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const pad = 8;
-    let x = state.x;
-    let y = state.y;
-    if (x + width + pad > window.innerWidth)
-      x = window.innerWidth - width - pad;
-    if (y + height + pad > window.innerHeight)
-      y = window.innerHeight - height - pad;
-    setPos({ x: Math.max(pad, x), y: Math.max(pad, y) });
-  }, [state.x, state.y]);
 
   // ---- Outside click + Esc + initial focus ----
   useEffect(() => {
@@ -139,7 +127,7 @@ export function ChartContextMenu({
       window.removeEventListener("keydown", onKey);
       cancelAnimationFrame(raf);
     };
-  }, [onClose]);
+  }, [onClose, ref]);
 
   // ---- Arrow-key navigation ----
   const onMenuKeyDown = (e: React.KeyboardEvent) => {
@@ -291,8 +279,14 @@ export function ChartContextMenu({
       role="menu"
       aria-label="Chart actions"
       onKeyDown={onMenuKeyDown}
-      style={{ left: pos.x, top: pos.y, transformOrigin: "top left" }}
-      className="context-menu-pop fixed z-[1000] min-w-[260px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating"
+      style={{
+        left: layout.x,
+        top: layout.y,
+        maxWidth: layout.maxWidth || undefined,
+        maxHeight: layout.maxHeight || undefined,
+        transformOrigin: "top left",
+      }}
+      className="context-menu-pop fixed z-[1000] min-w-[260px] overflow-x-hidden overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating"
     >
       <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wide text-ink-faint">
         {symbol} · {priceStr}
