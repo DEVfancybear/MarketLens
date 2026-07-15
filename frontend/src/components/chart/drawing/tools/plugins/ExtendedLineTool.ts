@@ -9,7 +9,8 @@ import {
   registerTool,
   defaultMovePoints,
 } from "../ToolRegistry";
-import { line, handle } from "./shared";
+import { line } from "./shared";
+import { renderTwoPointLineParity } from "./lineParity";
 import {
   extendedLineBodyHits,
   extendedRenderSegment,
@@ -32,10 +33,7 @@ const plugin: DrawingToolPlugin = {
     if (!segment) return;
     const rendered = extendedRenderSegment(segment, proj);
     line(g, rendered.a.x, rendered.a.y, rendered.b.x, rendered.b.y);
-    if (selected) {
-      handle(g, segment.a.x, segment.a.y, d.color);
-      handle(g, segment.b.x, segment.b.y, d.color);
-    }
+    renderTwoPointLineParity(g, d, segment, rendered, selected);
   },
   hitTest(
     d: Drawing,

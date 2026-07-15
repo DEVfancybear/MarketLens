@@ -161,7 +161,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         "," +
         (d.showMidpoint === false ? "0" : "1") +
         "," +
-        (d.showPriceLabels ? "1" : "0") +
+        (d.showPriceLabels == null ? "u" : d.showPriceLabels ? "1" : "0") +
+        (d.showTimeLabel === false ? "0" : "1") +
         "," +
         (d.showStats ? "1" : "0") +
         "," +

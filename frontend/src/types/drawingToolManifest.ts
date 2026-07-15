@@ -49,7 +49,7 @@ export type DrawingToolGroupId =
 export type DrawingSettingsProfile = "mode" | "line" | "shape" | "text" | "fib" | "position";
 export type DrawingSettingsFeature =
   | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
-  | "trendline-parity" | "channel-levels"
+  | "trendline-parity" | "price-label" | "time-label" | "channel-levels"
   | "coordinates" | "visibility" | "templates";
 export type DrawingAlertProjection =
   | "point-price"
@@ -71,6 +71,8 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly id: DrawingTool;
   readonly schemaVersion: number;
   readonly displayName: string;
+  /** Official TradingView behavior references that must be reviewed before changing the tool. */
+  readonly officialDocs: readonly string[];
   readonly group: DrawingToolGroupId | null;
   readonly iconKey: DrawingIconKey;
   readonly shortcuts: readonly DrawingToolShortcut[];
@@ -112,6 +114,7 @@ export interface DrawingToolGroupDefinition {
 }
 
 const COMMON_DEFAULTS = Object.freeze({ lineWidth: 1.5 });
+const DRAWING_CATALOG_DOC = "https://www.tradingview.com/support/solutions/43000703396-drawing-tools-available-on-tradingview/";
 
 function tool(
   id: DrawingTool,
@@ -142,6 +145,7 @@ function tool(
     id,
     schemaVersion: 1,
     displayName,
+    officialDocs: [DRAWING_CATALOG_DOC],
     group,
     iconKey,
     creationMode,
@@ -167,15 +171,15 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("eraser", "Eraser", "cursor", "eraser", "mode", 0, { favoriteEligible: true, modeInteraction: "erase" }),
   tool("measure", "Measure", null, "ruler", "mode", 0, { favoriteEligible: false, modeInteraction: "pass-through" }),
 
-  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { shortcuts: [{ key: "2" }, { key: "t", altKey: true }], section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
-  tool("ray", "Ray", "lines", "ray", "two-point", 2),
+  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518095-trendline-drawing-tool/"], shortcuts: [{ key: "2" }, { key: "t", altKey: true }], section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
+  tool("ray", "Ray", "lines", "ray", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518113-ray-drawing-tool/"], selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
   tool("infoLine", "Info line", "lines", "ruler", "two-point", 2),
-  tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2),
+  tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518131-extended-line-drawing-tool/"], selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
   tool("trendAngle", "Trend angle", "lines", "triangle", "two-point", 2),
-  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { shortcuts: [{ key: "3" }, { key: "h", altKey: true }], alertProjection: "point-price" }),
-  tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { shortcuts: [{ key: "j", altKey: true }], alertProjection: "point-price" }),
-  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { shortcuts: [{ key: "v", altKey: true }] }),
-  tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { shortcuts: [{ key: "c", altKey: true }], alertProjection: "point-price" }),
+  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518124-horizontal-line-drawing-tool/"], shortcuts: [{ key: "3" }, { key: "h", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
+  tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518121-horizontal-ray-drawing-tool/"], shortcuts: [{ key: "j", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
+  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518093-vertical-line-drawing-tool/"], shortcuts: [{ key: "v", altKey: true }], defaultProperties: { lineWidth: 1.5, showTimeLabel: true }, settingsFeatures: ["line", "text", "time-label", "coordinates", "visibility", "templates"] }),
+  tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000477747-crossline-drawing-tool/"], shortcuts: [{ key: "c", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true, showTimeLabel: true }, settingsFeatures: ["line", "price-label", "time-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
   tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3, selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("flatTopBottom", "Flat top/bottom", "lines", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("disjointChannel", "Disjoint channel", "lines", "trend", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),

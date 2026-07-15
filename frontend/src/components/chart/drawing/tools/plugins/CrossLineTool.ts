@@ -10,6 +10,7 @@ import {
   defaultMovePoints,
 } from "../ToolRegistry";
 import { line, handle } from "./shared";
+import { drawPriceAxisLabel, drawTimeAxisLabel } from "./axisLabels";
 import {
   fullViewportBounds,
   horizontalLineBodyHits,
@@ -32,6 +33,8 @@ const plugin: DrawingToolPlugin = {
     if (!anchor) return;
     line(g, anchor.x, 0, anchor.x, proj.height);
     line(g, 0, anchor.y, proj.width, anchor.y);
+    if (d.showPriceLabels !== false) drawPriceAxisLabel(g, d, proj, anchor.y);
+    if (d.showTimeLabel !== false) drawTimeAxisLabel(g, d, proj, anchor.x);
     if (selected) handle(g, anchor.x, anchor.y, d.color);
   },
   hitTest(

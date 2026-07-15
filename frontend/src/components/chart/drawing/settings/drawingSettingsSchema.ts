@@ -4,7 +4,7 @@ import { getDrawingToolManifestEntry, type DrawingSettingsFeature, type DrawingT
 export type DrawingSettingsTab = "inputs" | "style" | "text" | "coordinates" | "visibility";
 export type DrawingSettingsSectionId =
   | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
-  | "trendline-parity" | "channel-levels" | "coordinates" | "visibility";
+  | "trendline-parity" | "price-label" | "time-label" | "channel-levels" | "coordinates" | "visibility";
 
 export interface DrawingSettingsFieldDescriptor {
   key: keyof Drawing;
@@ -41,6 +41,8 @@ const SECTION_FIELDS: Record<DrawingSettingsSectionId, readonly (keyof Drawing)[
   "fib-levels": ["fibTrendLine", "fibTrendLineColor", "fibTrendLineWidth", "fibTrendLineStyle", "fibLevelsLine", "fibLevelLineColor", "fibLevelLineWidth", "fibLevelLineStyle", "fibLevels", "fibUseOneColor", "fibBackground", "fibReverse", "fibShowPrices", "fibShowLevels", "fibLevelsFormat", "fibLabelsHAlign", "fibLabelsVAlign", "fibShowText", "fibTextHAlign", "fibTextVAlign", "fibLogScale"],
   stats: ["accountSize", "accountCurrency", "lotSize", "riskValue", "riskUnit", "leverage", "qtyPrecision", "positionStats", "compactStats", "alwaysShowStats", "stop", "target"],
   "trendline-parity": ["lineStart", "lineEnd", "showMidpoint", "showPriceLabels", "showStats"],
+  "price-label": ["showPriceLabels"],
+  "time-label": ["showTimeLabel"],
   "channel-levels": ["channelLevels", "channelBackground"],
   coordinates: ["points"],
   visibility: ["visible", "intervalVisibility"],
@@ -49,7 +51,7 @@ const SECTION_FIELDS: Record<DrawingSettingsSectionId, readonly (keyof Drawing)[
 const SECTION_TABS: Record<DrawingSettingsSectionId, DrawingSettingsTab> = {
   line: "style", fill: "style", text: "text", "middle-line": "style",
   "fib-levels": "style", stats: "inputs", "trendline-parity": "style",
-  "channel-levels": "style", coordinates: "coordinates", visibility: "visibility",
+  "price-label": "style", "time-label": "style", "channel-levels": "style", coordinates: "coordinates", visibility: "visibility",
 };
 
 const NON_TEMPLATE_KEYS = new Set<keyof Drawing>([

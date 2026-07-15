@@ -8,6 +8,9 @@ import "../../src/components/chart/drawing/tools/plugins/PathTool";
 import "../../src/components/chart/drawing/tools/plugins/RectangleTool";
 import "../../src/components/chart/drawing/tools/plugins/HorizontalTool";
 import "../../src/components/chart/drawing/tools/plugins/VerticalTool";
+import "../../src/components/chart/drawing/tools/plugins/CrossLineTool";
+import "../../src/components/chart/drawing/tools/plugins/RayTool";
+import "../../src/components/chart/drawing/tools/plugins/ExtendedLineTool";
 import "../../src/components/chart/drawing/tools/plugins/EmojiTool";
 
 function drawing(tool: Drawing["tool"], points = 4): Drawing {
@@ -153,6 +156,40 @@ test("vertical line body move preserves offset while its anchor snaps", () => {
     vertical.moveAnchor(fixture.points, 0, { time: 65, price: 999 })[0],
     { time: 65, price: 20 },
   );
+});
+
+test("axis line labels follow TradingView visibility controls", () => {
+  const horizontal = getTool("horizontal");
+  const vertical = getTool("vertical");
+  const crossLine = getTool("crossLine");
+  assert.ok(horizontal && vertical && crossLine);
+
+  const hiddenHorizontal = { ...drawing("horizontal", 1), text: undefined, showPriceLabels: false };
+  const hiddenContext = recordingContext();
+  horizontal.render(hiddenContext.context, hiddenHorizontal, projector, false);
+  assert.equal(hiddenContext.calls.filter((call) => call === "fillText").length, 0);
+
+  const verticalContext = recordingContext();
+  vertical.render(verticalContext.context, { ...drawing("vertical", 1), showTimeLabel: true }, projector, false);
+  assert.equal(verticalContext.calls.filter((call) => call === "fillText").length, 1, "time label is visible without selecting the line");
+
+  const crossContext = recordingContext();
+  crossLine.render(crossContext.context, { ...drawing("crossLine", 1), showPriceLabels: true, showTimeLabel: true }, projector, false);
+  assert.equal(crossContext.calls.filter((call) => call === "fillText").length, 2, "crossline renders price and time labels");
+
+  const hiddenCrossContext = recordingContext();
+  crossLine.render(hiddenCrossContext.context, { ...drawing("crossLine", 1), showPriceLabels: false, showTimeLabel: false }, projector, false);
+  assert.equal(hiddenCrossContext.calls.filter((call) => call === "fillText").length, 0);
+});
+
+test("ray families share trendline text, labels, and stats rendering", () => {
+  for (const tool of ["ray", "extendedLine"] as const) {
+    const adapter = getTool(tool);
+    assert.ok(adapter);
+    const { context, calls } = recordingContext();
+    adapter.render(context, { ...drawing(tool, 2), showPriceLabels: true, showStats: true }, projector, true);
+    assert.ok(calls.filter((call) => call === "fillText").length >= 4, `${tool} must render text, two prices, and stats`);
+  }
 });
 
 test("rectangle renders attached text through its real adapter", () => {

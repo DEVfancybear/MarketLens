@@ -189,6 +189,8 @@ export function ObjectSettingsDialog() {
   const isShape = settings.profile === "shape";
   const isRect = settings.hasFeature("middle-line");
   const isTrendline = settings.hasFeature("trendline-parity");
+  const hasPriceLabel = settings.hasFeature("price-label");
+  const hasTimeLabel = settings.hasFeature("time-label");
   const isChannel = settings.hasFeature("channel-levels");
   const hasTextTab = settings.tabs.includes("text");
 
@@ -1045,6 +1047,16 @@ export function ObjectSettingsDialog() {
                     <Row label="Midpoint"><CheckBox checked={drawing.showMidpoint !== false} onChange={(showMidpoint) => patch({ showMidpoint })} /></Row>
                     <Row label="Price labels"><CheckBox checked={!!drawing.showPriceLabels} onChange={(showPriceLabels) => patch({ showPriceLabels })} /></Row>
                     <Row label="Stats"><CheckBox checked={!!drawing.showStats} onChange={(showStats) => patch({ showStats })} /></Row>
+                  </div>
+                )}
+                {(hasPriceLabel || hasTimeLabel) && (
+                  <div className="mt-4 space-y-3 border-t border-terminal-border pt-4">
+                    {hasPriceLabel && (
+                      <Row label="Price label"><CheckBox checked={drawing.showPriceLabels !== false} onChange={(showPriceLabels) => patch({ showPriceLabels })} /></Row>
+                    )}
+                    {hasTimeLabel && (
+                      <Row label="Time label"><CheckBox checked={drawing.showTimeLabel !== false} onChange={(showTimeLabel) => patch({ showTimeLabel })} /></Row>
+                    )}
                   </div>
                 )}
                 {isChannel && (

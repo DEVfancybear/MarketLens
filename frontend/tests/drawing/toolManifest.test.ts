@@ -23,7 +23,10 @@ test("manifest has exactly one complete definition for every stable tool id", ()
     [...ALL_DRAWING_TOOL_IDS].sort(),
   );
   for (const id of ALL_DRAWING_TOOL_IDS) {
-    assert.equal(getDrawingToolManifestEntry(id).id, id);
+    const definition = getDrawingToolManifestEntry(id);
+    assert.equal(definition.id, id);
+    assert.ok(definition.officialDocs.length > 0, `${id} must have an official research source`);
+    assert.ok(definition.officialDocs.every((url) => url.startsWith("https://www.tradingview.com/support/")));
   }
 });
 
@@ -47,6 +50,17 @@ test("creation and style families are derived from the manifest", () => {
   assert.equal(styleFamily("trendline"), "line");
   assert.equal(getDrawingToolManifestEntry("text").overlayExtension, "text-editor");
   assert.equal(getDrawingToolManifestEntry("trendline").selectionTextEditor, "line-midpoint");
+  assert.equal(getDrawingToolManifestEntry("ray").selectionTextEditor, "line-midpoint");
+  assert.equal(getDrawingToolManifestEntry("extendedLine").selectionTextEditor, "line-midpoint");
+  assert.equal(getDrawingToolManifestEntry("horizontal").defaultProperties.showPriceLabels, true);
+  assert.equal(getDrawingToolManifestEntry("vertical").defaultProperties.showTimeLabel, true);
+  assert.deepEqual(
+    getDrawingToolManifestEntry("crossLine").settingsFeatures.filter((feature) => feature.endsWith("label")),
+    ["price-label", "time-label"],
+  );
+  assert.deepEqual(getDrawingToolManifestEntry("crossLine").officialDocs, [
+    "https://www.tradingview.com/support/solutions/43000477747-crossline-drawing-tool/",
+  ]);
   assert.equal(getDrawingToolManifestEntry("trendline").angleConstraint, "45-degree");
   assert.equal(getDrawingToolManifestEntry("channel").selectionTextEditor, "line-midpoint");
   assert.equal(getDrawingToolManifestEntry("brush").pointSimplificationTolerance, 0.75);

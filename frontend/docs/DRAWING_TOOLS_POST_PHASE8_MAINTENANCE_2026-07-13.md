@@ -8,6 +8,10 @@ This document is the current maintenance record after Phase 8. The individual
 Phase 0 and Phase 7/8 documents remain useful milestone records, but their tool
 and test counts are historical snapshots.
 
+The official-source parity audit and the latest line-family maintenance are recorded in
+`DRAWING_TOOLS_TRADINGVIEW_PARITY_AUDIT_2026-07-15.md`. New maintenance work must consult each
+manifest entry's `officialDocs` before changing behavior.
+
 ## Outcome
 
 - `DRAWING_TOOL_MANIFEST` contains 88 stable entries: four non-persistent modes

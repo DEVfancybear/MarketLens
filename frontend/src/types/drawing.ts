@@ -130,6 +130,8 @@ export interface BaseDrawing {
   /** Trendline parity controls. */
   showMidpoint?: boolean;
   showPriceLabels?: boolean;
+  /** Axis-time label for vertical/cross-line tools. Historical payloads default to visible. */
+  showTimeLabel?: boolean;
   showStats?: boolean;
   /** Fill color for shapes (rectangle, circle, etc.). */
   fillColor?: string;

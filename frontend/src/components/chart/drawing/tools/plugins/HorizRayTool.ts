@@ -9,7 +9,8 @@ import {
   registerTool,
   defaultMovePoints,
 } from "../ToolRegistry";
-import { line, chip, handle } from "./shared";
+import { line, handle, renderLineText } from "./shared";
+import { drawPriceAxisLabel } from "./axisLabels";
 import {
   horizontalRayBodyHits,
   horizontalRayBounds,
@@ -30,7 +31,8 @@ const plugin: DrawingToolPlugin = {
     const anchor = projectOnePoint(d, proj.toX, proj.toY);
     if (!anchor) return;
     line(g, anchor.x, anchor.y, proj.width, anchor.y);
-    chip(g, d.points[0].price.toFixed(4), 2, anchor.y - 9, d.color);
+    renderLineText(g, d, anchor.x, anchor.y, proj.width, anchor.y, selected);
+    if (d.showPriceLabels !== false) drawPriceAxisLabel(g, d, proj, anchor.y);
     if (selected) handle(g, anchor.x, anchor.y, d.color);
   },
   hitTest(
