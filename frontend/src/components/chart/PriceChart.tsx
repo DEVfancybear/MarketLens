@@ -319,7 +319,7 @@ export function PriceChart({
     IndicatorDashboard[]
   >([]);
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
-  const countdown = useCountdown(timeframe);
+  const countdown = useCountdown(timeframe, candles[candles.length - 1]?.time);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const optimizationDecision = getChartOptimizationDecision(candles.length);
@@ -1492,7 +1492,11 @@ function CurrentPriceMarker({
       <div
         data-testid="current-price-countdown"
         data-countdown={marker.countdown}
-        className="flex h-[15px] items-center justify-end px-1.5 text-[10px] tabular-nums"
+        className={`flex h-[15px] items-center justify-end whitespace-nowrap tabular-nums ${
+          marker.countdown.includes("d ")
+            ? "px-1 text-[9px] tracking-[-0.02em]"
+            : "px-1.5 text-[10px]"
+        }`}
         style={{
           backgroundColor: marker.color,
           boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",

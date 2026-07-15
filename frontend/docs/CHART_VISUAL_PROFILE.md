@@ -1,6 +1,6 @@
 # Chart Visual Profile
 
-_Last updated: 2026-07-13_
+_Last updated: 2026-07-15_
 
 This document is the maintenance guide for the TradingView-like chart visual
 baseline. Read this before changing chart colors, grid density, price scale
@@ -29,6 +29,12 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 - TradingView Lightweight Charts `PriceScaleOptions`: price scale margins,
   border, text color, `minimumWidth`, and `entireTextOnly` control the right
   axis and visible candle area.
+- MetaTrader 5 Python `copy_rates_from`:
+  https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrom_py documents
+  returned candle times as UTC bar-open timestamps.
+- MetaTrader 5 `ENUM_TIMEFRAMES`:
+  https://www.mql5.com/en/docs/constants/chartconstants/enum_timeframes defines
+  W1 as one week and MN1 as one calendar month.
 - TradingView Lightweight Charts `Price and volume on a single chart`
   (https://tradingview.github.io/lightweight-charts/tutorials/how_to/price-and-volume):
   volume is a study added as a separate histogram series. It is not part of the
@@ -43,7 +49,7 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 | Auto-fit policy | `src/components/chart/chartAutoFitPolicy.ts` | Guards the initial viewport against realtime/history races |
 | Palette and time formatting | `src/components/chart/chartTheme.ts` | Theme colors, bar spacing by timeframe, crosshair time formatter |
 | Main chart | `src/components/chart/PriceChart.tsx` | Creates the candlestick chart and applies the shared profile |
-| Candle countdown | `src/hooks/useCountdown.ts`, `src/components/chart/countdownPresentation.ts` | Computes the next wall-clock bar boundary and formats the visible timer |
+| Candle countdown | `src/components/chart/countdownModel.ts`, `src/hooks/useCountdown.ts`, `src/components/chart/countdownPresentation.ts` | Resolves broker-aligned and calendar-month bar boundaries, updates the timer, and formats the visible value |
 | Candle continuity | `src/services/market-data/candleSeries.ts` | Normalizes, merges, upserts, and detects short gaps in candle data before it reaches the chart |
 | Active feed bridge | `src/hooks/useMarketData.ts` | Mirrors active market candles into `chartStore` and backfills short realtime gaps |
 | Market data store | `src/store/marketDataStore.ts` | Runtime source of truth for quote/candle ingress |
@@ -124,13 +130,28 @@ right price scale
   the market sidebar. This is a containment guard, not a replacement for portal
   positioning of interactive menus.
 
-`useCountdown` updates independently of quote arrival every 250ms and targets
-the next boundary from `TF_SECONDS[timeframe]`. `formatCountdown` floors the
-remaining seconds and renders:
+`PriceChart` passes the latest candle's UTC open timestamp into `useCountdown`.
+The hook updates independently of quote arrival every 250ms, while
+`countdownModel` owns boundary calculation:
+
+- `1m` through `1W` advance by their fixed duration from the source candle
+  anchor. This preserves the broker's actual daily and weekly session alignment
+  instead of anchoring W1 to Unix epoch Thursday.
+- `1M` advances from the source candle with UTC calendar arithmetic. Do not use
+  the approximate `TF_SECONDS["1M"]` value for countdowns because months contain
+  28, 29, 30, or 31 days.
+- A stale source candle advances by complete intervals until the first boundary
+  strictly after the current wall clock. The timer never mutates candle data.
+
+`formatCountdown` floors the remaining whole seconds and renders:
 
 - `M:SS` below one hour, for example `2:47` or `13:15`;
 - `H:MM:SS` at one hour or above, for example `4:05:06`;
+- `Dd HH:MM:SS` when at least one day remains, for example `3d 17:10:00`;
 - `0:00` for an unavailable/non-positive value.
+
+Day-bearing labels use a compact, non-wrapping countdown row so they stay
+inside the live price-scale width.
 
 The timer is presentation-only. It does not create candles, advance Replay
 time, or replace server/provider timestamps. Keep price and countdown in visible
@@ -182,6 +203,8 @@ Manual checks:
   price-scale width and never overlaps the market sidebar,
 - countdown visibly changes once per second and is not clipped near the bottom
   chart boundary,
+- W1 follows the latest broker candle open and retains the remaining day count,
+- MN1 closes at the next UTC calendar-month boundary, including leap February,
 - indicator legend does not obscure the symbol/OHLC header,
 - separate RSI/MACD panes visually match the main chart baseline.
 

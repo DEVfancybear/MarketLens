@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Broker-aligned candle countdowns (2026-07-15)
+- Replaced Unix-epoch modulo countdown alignment with the active candle's UTC
+  open timestamp, so intraday, daily, and weekly timers follow the actual MT5
+  broker session instead of anchoring weekly bars to Thursday.
+- Made `1M` advance by UTC calendar month rather than a fixed 30-day duration,
+  including leap years and 28/29/30/31-day months. Long countdowns now retain
+  their day component, for example `3d 17:10:00`.
+- Kept long countdown labels on one compact price-scale row and added regression
+  coverage for all 11 supported chart timeframes, stale candle anchors, weekly
+  broker boundaries, and calendar-month rollover.
+
 ### Fixed - Mobile overlay and toast responsiveness (2026-07-14)
 - Replaced the one-size-fits-all mobile dialog viewport with shared adaptive
   sheets, safe-area-aware headers/footers, scrollable bodies and horizontal

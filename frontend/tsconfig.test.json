@@ -21,6 +21,7 @@
     "src/hooks/useDraggableDialog.ts",
     "src/platform/platformPolicy.ts",
     "src/components/chart/countdownPresentation.ts",
+    "src/components/chart/countdownModel.ts",
     "src/components/chart/chartVisualProfile.ts",
     "src/components/chart/chartAutoFitPolicy.ts",
     "src/components/chart/chartTimeNavigation.ts",
