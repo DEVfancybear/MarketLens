@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { authStatusAtom, backendSessionAtom } from "@/store/authStore";
 import { logAtom } from "@/store/uiStore";
@@ -54,6 +54,7 @@ export function useDrawingToolFavorites(): [
   const backendSession = useAtomValue(backendSessionAtom);
   const authStatus = useAtomValue(authStatusAtom);
   const log = useSetAtom(logAtom);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [favorites, setFavorites] = useState<Set<DrawingTool>>(
     () => new Set(readLocalFavorites()),
   );
@@ -90,12 +91,16 @@ export function useDrawingToolFavorites(): [
       const normalized = normalizeFavoriteDrawingTools(tools);
       writeLocalFavorites(normalized);
       if (!backendSession) return;
-      void replaceDrawingToolFavorites(normalized).catch((error) => {
-        log(
-          "error",
-          `Drawing tool favorites sync failed: ${userFacingErrorMessage(error, "unknown error")}`,
-        );
-      });
+      saveQueueRef.current = saveQueueRef.current
+        .catch(() => undefined)
+        .then(() => replaceDrawingToolFavorites(normalized))
+        .then(() => undefined)
+        .catch((error) => {
+          log(
+            "error",
+            `Drawing tool favorites sync failed: ${userFacingErrorMessage(error, "unknown error")}`,
+          );
+        });
     },
     [backendSession, log],
   );

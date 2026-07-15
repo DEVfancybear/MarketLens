@@ -1,8 +1,11 @@
 "use client";
 import { atom, useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
+import { createSettingsMutationQueue } from "@/services/api/settingsMutationQueue";
 import { localStore } from "@/services/storage";
 import { DEFAULT_SMC_SETTINGS } from "./workspaceDefaults";
+import { backendSessionAtom } from "./authStore";
+import { logAtom } from "./uiStore";
 import type { SmcSnapshot } from "@/types";
 
 /** Toggle visibility of each SMC overlay group. */
@@ -32,6 +35,7 @@ const EMPTY: SmcSnapshot = {
 const SMC_STORAGE_KEY = "smc-settings-v2";
 const LEGACY_SMC_STORAGE_KEY = "smc-settings";
 const DEFAULT_SETTINGS: SmcSettings = { ...DEFAULT_SMC_SETTINGS };
+const smcSettingsSync = createSettingsMutationQueue("smc");
 
 // ── State atoms ────────────────────────────────────────────────────────────
 export const smcSnapshotAtom = atom<SmcSnapshot>(EMPTY);
@@ -51,6 +55,12 @@ export const toggleSmcAtom = atom(null, (get, set, key: keyof SmcSettings) => {
   set(smcSettingsAtom, settings);
   localStore.remove(LEGACY_SMC_STORAGE_KEY);
   localStore.set(SMC_STORAGE_KEY, settings);
+  if (get(backendSessionAtom)) {
+    smcSettingsSync.enqueue(settings, (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      set(logAtom, "error", `SMC settings sync failed: ${message}`);
+    });
+  }
   console.debug("SMC toggle:", { feature: key, enabled });
 });
 
@@ -78,6 +88,7 @@ function normalizeSmcSettings(payload: unknown): SmcSettings {
 export const applyRemoteSmcSettingsAtom = atom(
   null,
   (_get, set, payload: unknown) => {
+    smcSettingsSync.cancelPending();
     const settings = normalizeSmcSettings(payload);
     set(smcSettingsAtom, settings);
     localStore.remove(LEGACY_SMC_STORAGE_KEY);
@@ -87,6 +98,7 @@ export const applyRemoteSmcSettingsAtom = atom(
 
 // ── Combined state + actions (for compatibility hook) ──────────────────────
 export const resetSmcToDefaultsAtom = atom(null, (_get, set) => {
+  smcSettingsSync.cancelPending();
   set(smcSnapshotAtom, EMPTY);
   set(smcSettingsAtom, DEFAULT_SETTINGS);
   localStore.remove(LEGACY_SMC_STORAGE_KEY);

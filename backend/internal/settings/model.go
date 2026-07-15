@@ -11,8 +11,9 @@ var (
 	ErrBadPatch = errors.New("settings: bad patch")
 	emptyJSON   = json.RawMessage(`{}`)
 
-	defaultUIJSON  = json.RawMessage(`{"theme":"dark","panels":{"right":320,"bottom":240,"left":52},"bottomTab":"replay","rightOpen":true,"bottomOpen":false,"fullscreen":false,"alertCenterOpen":false,"gridVisible":true}`)
-	defaultSMCJSON = json.RawMessage(`{"structure":false,"fvg":false,"orderBlocks":false,"liquidity":false,"displacement":false,"sessions":false,"killzones":false,"swings":false}`)
+	defaultUIJSON    = json.RawMessage(`{"theme":"dark","panels":{"right":320,"bottom":240,"left":52},"bottomTab":"replay","rightOpen":true,"rightPanelTab":"watchlist","bottomOpen":false,"fullscreen":false,"alertCenterOpen":false,"gridVisible":true}`)
+	defaultSMCJSON   = json.RawMessage(`{"structure":false,"fvg":false,"orderBlocks":false,"liquidity":false,"displacement":false,"sessions":false,"killzones":false,"swings":false}`)
+	defaultChartJSON = json.RawMessage(`{"timeZone":"exchange","drawingSyncMode":"global","drawingToolPreferences":{"version":1,"keepDrawing":false,"magnetEnabled":false,"magnetMode":"weak","toolDefaults":{}}}`)
 )
 
 const chartFavoriteTimeframesKey = "favoriteTimeframes"
@@ -64,7 +65,7 @@ func EmptyDocument() Document {
 	return Document{
 		UI:            cloneRaw(defaultUIJSON),
 		SMC:           cloneRaw(defaultSMCJSON),
-		Chart:         cloneRaw(emptyJSON),
+		Chart:         cloneRaw(defaultChartJSON),
 		Notifications: cloneRaw(emptyJSON),
 	}
 }
@@ -73,7 +74,7 @@ func NormalizeDocument(doc Document) Document {
 	return Document{
 		UI:            normalizeSectionWithDefaults(doc.UI, defaultUIJSON),
 		SMC:           normalizeSectionWithDefaults(doc.SMC, defaultSMCJSON),
-		Chart:         normalizeSection(doc.Chart),
+		Chart:         normalizeSectionWithDefaults(doc.Chart, defaultChartJSON),
 		Notifications: normalizeSection(doc.Notifications),
 	}
 }

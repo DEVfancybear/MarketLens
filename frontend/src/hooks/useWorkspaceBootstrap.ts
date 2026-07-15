@@ -25,6 +25,7 @@ import {
 import { applyRemoteWatchlistsAtom } from "@/store/watchlistStore";
 import {
   applyRemoteIndicatorsAtom,
+  applyRemoteChartSettingsAtom,
   applyRemoteDrawingTemplatesAtom,
   applyRemotePineScriptsAtom,
   loadActiveSymbolDrawingsAtom,
@@ -67,6 +68,7 @@ export function useWorkspaceBootstrap(): void {
   const applyDrawingTemplates = useSetAtom(applyRemoteDrawingTemplatesAtom);
   const applyPineScripts = useSetAtom(applyRemotePineScriptsAtom);
   const applyIndicators = useSetAtom(applyRemoteIndicatorsAtom);
+  const applyChartSettings = useSetAtom(applyRemoteChartSettingsAtom);
   const loadActiveDrawings = useSetAtom(loadActiveSymbolDrawingsAtom);
   const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
   const resetTrade = useSetAtom(resetTradeAtom);
@@ -133,6 +135,7 @@ export function useWorkspaceBootstrap(): void {
         if (cancelled) return;
         applyUI(bootstrap.settings.ui);
         applySmc(bootstrap.settings.smc);
+        applyChartSettings(bootstrap.settings.chart);
         applyNotifications(bootstrap.settings.notifications);
         applyAlerts({
           alerts: bootstrap.alerts,
@@ -168,6 +171,7 @@ export function useWorkspaceBootstrap(): void {
     applyDrawingTemplates,
     applyPineScripts,
     applyIndicators,
+    applyChartSettings,
     applyLayouts,
     loadActiveDrawings,
     loadDefaultLayout,

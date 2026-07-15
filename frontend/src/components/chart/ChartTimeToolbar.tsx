@@ -22,18 +22,18 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import type { Candle } from "@/types";
 import {
+  chartTimeZoneAtom,
   loadingAtom,
+  setChartTimeZoneAtom,
   setCrosshairAtom,
   setTimeframeAtom,
   timeframeAtom,
 } from "@/store/chartStore";
-import { authStatusAtom } from "@/store/authStore";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import { focusFirstWithin, trapFocusWithin } from "@/utils/focusManagement";
 import {
   CHART_TIME_ZONE_OPTIONS,
-  EXCHANGE_TIME_ZONE_ID,
   calendarCells,
   canSelectGoToTime,
   candlesCoverGoToTime,
@@ -45,7 +45,6 @@ import {
   goToSelectionDraft,
   goToDateLogicalRange,
   goToDialogPosition,
-  isSupportedChartTimeZone,
   parseLocalDateTime,
   type ChartTimeZoneId,
   type ChartTimeZoneOption,
@@ -86,7 +85,6 @@ type ShortcutTooltipState = {
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const GO_TO_DIALOG_SIZE = { width: 302, height: 478 };
 const TIME_ZONE_MENU_SIZE = { width: 232, height: 520 };
-const TIME_ZONE_STORAGE_KEY = "chartTimeZone";
 
 function formatClock(date: Date, timeZone?: string): string {
   const options: Intl.DateTimeFormatOptions = {
@@ -152,12 +150,6 @@ function floatingMenuPosition(anchor: ElementAnchor, size: typeof TIME_ZONE_MENU
       Math.max(gap, maxTop),
     ),
   };
-}
-
-function readInitialTimeZone(): ChartTimeZoneId {
-  if (typeof window === "undefined") return EXCHANGE_TIME_ZONE_ID;
-  const saved = window.localStorage.getItem(TIME_ZONE_STORAGE_KEY);
-  return saved && isSupportedChartTimeZone(saved) ? saved : EXCHANGE_TIME_ZONE_ID;
 }
 
 function timeZoneOptionText(option: ChartTimeZoneOption, date: Date): string {
@@ -256,7 +248,8 @@ export function ChartTimeToolbar({
   const [goToAnchor, setGoToAnchor] = useState<ElementAnchor | null>(null);
   const [timeZoneOpen, setTimeZoneOpen] = useState(false);
   const [timeZoneAnchor, setTimeZoneAnchor] = useState<ElementAnchor | null>(null);
-  const [timeZoneId, setTimeZoneId] = useState<ChartTimeZoneId>(readInitialTimeZone);
+  const timeZoneId = useAtomValue(chartTimeZoneAtom);
+  const setTimeZoneId = useSetAtom(setChartTimeZoneAtom);
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
   const [lastGoToSelection, setLastGoToSelection] =
     useState<GoToSelection | null>(null);
@@ -274,7 +267,6 @@ export function ChartTimeToolbar({
   const goToTriggerRef = useRef<HTMLButtonElement>(null);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
-  const authStatus = useAtomValue(authStatusAtom);
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
   const backendExchangeTimeZone = navigationCatalog?.timeZone?.exchange;
@@ -326,16 +318,6 @@ export function ChartTimeToolbar({
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(TIME_ZONE_STORAGE_KEY, timeZoneId);
-  }, [timeZoneId]);
-
-  useEffect(() => {
-    if (authStatus !== "anonymous") return;
-    window.localStorage.removeItem(TIME_ZONE_STORAGE_KEY);
-    setTimeZoneId(EXCHANGE_TIME_ZONE_ID);
-  }, [authStatus]);
 
   const applyShortcutViewport = useCallback(
     (resolution: TimeNavigationResolution) => {

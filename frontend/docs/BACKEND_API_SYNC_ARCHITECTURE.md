@@ -296,7 +296,7 @@ Responsibilities:
 | --- | --- | --- |
 | UI panels/theme/bottom state | `ui` | `user_settings.ui` through `/api/v1/settings` |
 | SMC toggles | `smc-settings-v2` | `user_settings.smc` through `/api/v1/settings` |
-| Timeframe favorites/timezone/chart prefs | `tv:favoriteTimeframes`, toolbar local state | `user_settings.chart.favoriteTimeframes` through `/api/v1/settings/chart/favorite-timeframes` |
+| Timeframe favorites/timezone/chart prefs | `tv:favoriteTimeframes`, `chartTimeZone`, `drawingSyncMode`, `drawingToolPreferences` | `user_settings.chart`; favorites use `/api/v1/settings/chart/favorite-timeframes`, other preferences use `/api/v1/settings` |
 | Alert global settings | inside `alerts` key | `user_settings.notifications` through `/api/v1/settings` |
 | Watchlist lists/sections/symbols | `watchlist`, `watchlist:lists`, `watchlist:activeId` | `watchlists` + `watchlist_symbols` |
 | Drawings per symbol | `drawings:<symbol>` | `drawings.payload` |
@@ -422,8 +422,8 @@ Frontend remote mode should not be enabled globally until each required slice ex
 - `GET /api/v1/auth/me` - implemented and wired in frontend
 - `POST /api/v1/auth/refresh` - implemented and wired in frontend
 - `GET /api/v1/sync/bootstrap` - backend implemented; frontend read/apply path implemented
-- `GET/PATCH /api/v1/settings` - backend implemented; frontend resource module implemented;
-  write-sync from UI mutations pending
+- `GET/PATCH /api/v1/settings` - implemented and wired for UI shell/grid/theme, SMC toggles,
+  chart timezone/drawing preferences, and notification settings
 - `GET/POST/PATCH/DELETE /api/v1/watchlists` - backend implemented; frontend bootstrap read and
   create/rename/delete mutation paths implemented for authenticated sessions
 - `PUT /api/v1/watchlists/active` - backend implemented; frontend active-list mutation wired
@@ -465,12 +465,11 @@ Everything else can remain lazy or phased:
 ### Phase FE-1: Remote Bootstrap Read Path
 
 - Call `sync/bootstrap` after backend auth. **Implemented via `useWorkspaceBootstrap()`.**
-- Apply backend JSON into atoms. **Implemented for UI settings, SMC settings, notification
-  settings, watchlists, drawing templates, Pine script metadata, and indicators.**
+- Apply backend JSON into atoms. **Implemented for UI, SMC, chart and notification settings,
+  watchlists, drawing templates, Pine script metadata, and indicators.**
 - Keep anonymous mode usable as current-tab memory only; do not persist watchlists to localStorage.
   **Implemented.**
-- Remaining read-path work: chart preferences are still component-local, and future backend slices
-  need resource-specific adapters.
+- Future backend slices still need resource-specific adapters as they land.
 - Add a feature flag:
 
 ```env
@@ -480,7 +479,7 @@ NEXT_PUBLIC_WORKSPACE_DATA_SOURCE=local|remote
 ### Phase FE-2: Settings And Watchlist Writes
 
 - Move `uiStore`, `smcStore`, timeframe favorites, notification settings, and `watchlistStore`
-  mutations to API calls in remote mode.
+  mutations to API calls in remote mode. **Implemented; settings writes are debounced and ordered.**
 - Watchlist write-through is implemented: create, rename, delete, set-active, shared flag,
   add/remove/clear symbol, section edits, and symbol/section reorder call Phase 6 backend APIs after
   optimistic in-memory updates.

@@ -1,4 +1,4 @@
-import { getJson, patchJson, putJson } from "@/services/api/client";
+import { getJson, patchJson, putJson } from "../client";
 
 export type SettingsSection = Record<string, unknown>;
 

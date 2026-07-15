@@ -5,7 +5,7 @@
 > See `AUTH.md` for auth, `API.md` for endpoints, and
 > `BACKEND_IMPLEMENTATION_PLAN.md` for rollout order.
 >
-> **Audited against the frontend 2026-07-06** — every table below is reconciled with the real
+> **Audited against the frontend 2026-07-14** — every table below is reconciled with the real
 > localStorage/IndexedDB shapes and TypeScript types (`frontend/src/types/*`, `store/*`). The jsonb
 > columns intentionally mirror the frontend types so the client model can round-trip untouched.
 >
@@ -18,13 +18,15 @@
 
 ## 1. Goals & context
 
-Today the frontend keeps **all** user data in the browser. Exact keys and shapes (audited):
+The frontend keeps a browser cache for anonymous/offline use and synchronizes implemented
+resources to the backend for authenticated users. Exact local keys and durable mappings (audited):
 
 | Frontend store (exact key → shape)                                   | Where          | DB table(s)                                    |
 | -------------------------------------------------------------------- | -------------- | ---------------------------------------------- |
-| `ui` → `{ theme, panels }` **only**                                  | localStorage   | `user_settings.ui`                             |
-| `smc-settings` → 8 boolean toggles (`SmcSettings`)                   | localStorage   | `user_settings.smc`                            |
+| `ui` → theme, panels, panel visibility/tab, grid                    | localStorage   | `user_settings.ui`                             |
+| `smc-settings-v2` → 8 boolean toggles (`SmcSettings`)                | localStorage   | `user_settings.smc`                            |
 | `tv:favoriteTimeframes` → `string[]`                                 | localStorage   | `user_settings.chart.favoriteTimeframes`       |
+| `chartTimeZone`, `drawingSyncMode`, `drawingToolPreferences`         | localStorage   | `user_settings.chart`                          |
 | `drawings:<symbol>` → `Drawing[]`                                   | localStorage   | `drawings`                                      |
 | `drawingTemplates` → `DrawingTemplate[]` (**global**, style presets) | localStorage   | `drawing_templates`                            |
 | `tv:favTools` → `string[]` (**global**, drawing toolbar stars)       | localStorage   | `drawing_tool_favorites`                       |
@@ -217,17 +219,18 @@ CREATE TABLE user_settings (
   user_id       uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   ui            jsonb NOT NULL DEFAULT '{}',  -- `ui` store: theme, panels, bottomOpen, shell flags
   smc           jsonb NOT NULL DEFAULT '{}',  -- `smc-settings-v2`: 8 overlay toggles (SmcSettings)
-  chart         jsonb NOT NULL DEFAULT '{}',  -- default TF, chart style, `favoriteTimeframes`
+  chart         jsonb NOT NULL DEFAULT '{}',  -- timezone, drawing preferences, `favoriteTimeframes`
   notifications jsonb NOT NULL DEFAULT '{}',  -- global AlertSettings: toast/sound/browser/push/telegram/discord
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 ```
 
 The database defaults stay compact, but the settings repository normalizes `{}` before returning
-API responses. Current normalized defaults are `ui.bottomOpen=false`, every SMC toggle `false`,
-and the chart favorite timeframes `1m`, `5m`, `15m` when the chart field is absent. An explicit
-empty favorite array is preserved. This lets fresh users and old rows receive sensible toolbar
-defaults without a data migration.
+API responses. Current normalized defaults include the UI shell, all SMC toggles disabled, chart
+timezone `exchange`, global drawing scope, empty drawing-tool preferences, and chart favorite
+timeframes `1m`, `5m`, `15m` when that field is absent. An explicit empty favorite array is
+preserved. This lets fresh users and old rows receive sensible toolbar defaults without a data
+migration.
 
 ### 6.2 `layouts` (chart layouts / templates)
 

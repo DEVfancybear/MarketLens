@@ -80,7 +80,7 @@ func (r *Repo) Patch(ctx context.Context, userID string, patch Patch) (Document,
 	}
 	defer tx.Rollback(ctx)
 
-	current, err := ensureAndGet(ctx, tx, uid)
+	current, err := ensureAndGetForUpdate(ctx, tx, uid)
 	if err != nil {
 		return Document{}, err
 	}
@@ -116,6 +116,25 @@ ON CONFLICT (user_id) DO NOTHING
 SELECT ui, smc, chart, notifications
 FROM user_settings
 WHERE user_id = $1
+`, uid))
+}
+
+// Settings patches read and rewrite the complete four-section document. Lock
+// the row so concurrent PATCH requests cannot lose an unrelated section that
+// committed while this transaction was applying its merge.
+func ensureAndGetForUpdate(ctx context.Context, tx pgx.Tx, uid pgtype.UUID) (Document, error) {
+	if _, err := tx.Exec(ctx, `
+INSERT INTO user_settings (user_id)
+VALUES ($1)
+ON CONFLICT (user_id) DO NOTHING
+`, uid); err != nil {
+		return Document{}, err
+	}
+	return scanDocument(tx.QueryRow(ctx, `
+SELECT ui, smc, chart, notifications
+FROM user_settings
+WHERE user_id = $1
+FOR UPDATE
 `, uid))
 }
 

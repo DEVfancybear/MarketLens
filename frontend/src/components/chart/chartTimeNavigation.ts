@@ -33,6 +33,7 @@ export const GO_TO_DATE_MAX_SPAN_BARS = 34;
 export const GO_TO_DATE_MIN_SPAN_BARS = 10;
 export const GO_TO_DATE_TARGET_RATIO = 0.42;
 export const EXCHANGE_TIME_ZONE_ID = "exchange";
+export const CHART_TIME_ZONE_STORAGE_KEY = "chartTimeZone";
 export const CHART_TIME_ZONE_OPTIONS: ChartTimeZoneOption[] = [
   { id: "UTC", label: "UTC", timeZone: "UTC" },
   { id: EXCHANGE_TIME_ZONE_ID, label: "Exchange" },

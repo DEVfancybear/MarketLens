@@ -64,7 +64,9 @@ func TestSettingsHandlerGetPutPatch(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/settings", strings.NewReader(`{
-		"ui":{"panels":{"height":180}},
+		"ui":{"theme":"light","gridVisible":false,"panels":{"height":180}},
+		"smc":{"structure":true},
+		"chart":{"timeZone":"Asia/Ho_Chi_Minh","drawingSyncMode":"layout-symbol"},
 		"notifications":{"sound":true}
 	}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -84,6 +86,20 @@ func TestSettingsHandlerGetPutPatch(t *testing.T) {
 	panels := ui["panels"].(map[string]any)
 	if panels["bottom"] != true || panels["height"] != float64(180) {
 		t.Fatalf("patch should deep-merge panels, got %#v", panels)
+	}
+	if ui["theme"] != "light" || ui["gridVisible"] != false {
+		t.Fatalf("patch should persist UI preferences, got %#v", ui)
+	}
+	smc := object(t, body.SMC)
+	if smc["structure"] != true || smc["liquidity"] != false {
+		t.Fatalf("patch should merge SMC preferences with defaults, got %#v", smc)
+	}
+	chart := object(t, body.Chart)
+	if chart["timeZone"] != "Asia/Ho_Chi_Minh" || chart["drawingSyncMode"] != "layout-symbol" {
+		t.Fatalf("patch should persist chart preferences, got %#v", chart)
+	}
+	if _, ok := chart["favoriteTimeframes"]; !ok {
+		t.Fatalf("chart preference patch should preserve favorite timeframes, got %#v", chart)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)

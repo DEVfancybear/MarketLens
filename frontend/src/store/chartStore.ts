@@ -23,6 +23,7 @@ import {
 } from "@/components/chart/drawing/settings/drawingSettingsSchema";
 import type { Mt5SymbolInfo } from "@/types/mt5";
 import { localStore } from "@/services/storage";
+import { createSettingsMutationQueue } from "@/services/api/settingsMutationQueue";
 import {
   deleteDrawingTemplate,
   listDrawings,
@@ -90,12 +91,19 @@ import {
   type DrawingMagnetMode,
 } from "@/components/chart/drawing/settings/drawingToolPreferences";
 import {
+  CHART_TIME_ZONE_STORAGE_KEY,
+  EXCHANGE_TIME_ZONE_ID,
+  isSupportedChartTimeZone,
+  type ChartTimeZoneId,
+} from "@/components/chart/chartTimeNavigation";
+import {
   DEFAULT_DRAWING_CHART_ID,
   DEFAULT_DRAWING_LAYOUT_ID,
   DEFAULT_DRAWING_SYNC_MODE,
   drawingSyncBinding,
   drawingSyncMode,
   mergeDrawingSyncRegistry,
+  normalizeDrawingSyncMode,
   selectDrawingsForSyncContext,
   type DrawingSyncContext,
 } from "@/components/chart/drawing/persistence/drawingSyncScope";
@@ -103,6 +111,7 @@ import {
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
 const DEFAULT_SYMBOL = "";
 const DEFAULT_TF: Timeframe = "15m";
+const chartSettingsSync = createSettingsMutationQueue("chart");
 
 function drawingsKey(symbol: string) {
   return `drawings:${symbol}`;
@@ -146,6 +155,49 @@ type AtomSet = Setter;
 
 function apiMessage(error: unknown): string {
   return userFacingErrorMessage(error, "unknown error");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeChartTimeZone(value: unknown): ChartTimeZoneId {
+  return typeof value === "string" && isSupportedChartTimeZone(value)
+    ? value
+    : EXCHANGE_TIME_ZONE_ID;
+}
+
+function readStoredChartTimeZone(): ChartTimeZoneId {
+  if (typeof window === "undefined") return EXCHANGE_TIME_ZONE_ID;
+  const raw = window.localStorage.getItem(CHART_TIME_ZONE_STORAGE_KEY);
+  if (!raw) return EXCHANGE_TIME_ZONE_ID;
+  try {
+    return normalizeChartTimeZone(JSON.parse(raw));
+  } catch {
+    // Migrate the legacy value, which was stored as an unquoted raw string.
+    return normalizeChartTimeZone(raw);
+  }
+}
+
+function queueChartSettings(
+  get: AtomGet,
+  set: AtomSet,
+  patch: Record<string, unknown>,
+): void {
+  if (!get(backendSessionAtom)) return;
+  chartSettingsSync.enqueue(patch, (error) => {
+    set(logAtom, "error", `Chart settings sync failed: ${apiMessage(error)}`);
+  });
+}
+
+function commitDrawingToolPreferences(
+  get: AtomGet,
+  set: AtomSet,
+  preferences: DrawingToolPreferences,
+): void {
+  set(drawingToolPreferencesAtom, preferences);
+  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, preferences);
+  queueChartSettings(get, set, { drawingToolPreferences: preferences });
 }
 
 function syncContext(get: AtomGet, symbol = get(symbolAtom)): DrawingSyncContext {
@@ -208,6 +260,8 @@ function clearLocalChartWorkspace() {
   localStore.remove(PINE_SCRIPTS_KEY);
   localStore.remove(TEMPLATES_KEY);
   localStore.remove(DRAWING_SYNC_MODE_KEY);
+  localStore.remove(DRAWING_TOOL_PREFERENCES_KEY);
+  localStore.remove(CHART_TIME_ZONE_STORAGE_KEY);
   if (typeof window === "undefined") return;
   for (const key of Object.keys(window.localStorage)) {
     if (key.startsWith("drawings:")) {
@@ -469,6 +523,7 @@ function commitIndicators(get: AtomGet, set: AtomSet, indicators: IndicatorConfi
 
 export const symbolAtom = atom<string>(DEFAULT_SYMBOL);
 export const timeframeAtom = atom<Timeframe>(DEFAULT_TF);
+export const chartTimeZoneAtom = atom<ChartTimeZoneId>(EXCHANGE_TIME_ZONE_ID);
 export const candlesAtom = atom<Candle[]>([]);
 export const loadingAtom = atom<boolean>(false);
 export const drawingsAtom = atom<Drawing[]>([]);
@@ -538,6 +593,7 @@ export const setNewDrawingSyncModeAtom = atom(
   (_get, set, mode: DrawingSyncMode) => {
     set(newDrawingSyncModeAtom, mode);
     localStore.set(DRAWING_SYNC_MODE_KEY, mode);
+    queueChartSettings(_get, set, { drawingSyncMode: mode });
   },
 );
 
@@ -607,6 +663,26 @@ export const applyRemoteIndicatorsAtom = atom(
     const indicators = rows.map(backendIndicatorToLocal);
     set(indicatorsAtom, indicators);
     localStore.set("indicators", indicators);
+  },
+);
+
+export const applyRemoteChartSettingsAtom = atom(
+  null,
+  (_get, set, payload: unknown) => {
+    chartSettingsSync.cancelPending();
+    const settings = isRecord(payload) ? payload : {};
+    const timeZone = normalizeChartTimeZone(settings.timeZone);
+    const drawingToolPreferences = decodeDrawingToolPreferences(
+      settings.drawingToolPreferences,
+    );
+    const drawingSyncMode = normalizeDrawingSyncMode(settings.drawingSyncMode);
+
+    set(chartTimeZoneAtom, timeZone);
+    set(drawingToolPreferencesAtom, drawingToolPreferences);
+    set(newDrawingSyncModeAtom, drawingSyncMode);
+    localStore.set(CHART_TIME_ZONE_STORAGE_KEY, timeZone);
+    localStore.set(DRAWING_TOOL_PREFERENCES_KEY, drawingToolPreferences);
+    localStore.set(DRAWING_SYNC_MODE_KEY, drawingSyncMode);
   },
 );
 
@@ -690,6 +766,16 @@ export const setTimeframeAtom = atom(
   },
 );
 
+export const setChartTimeZoneAtom = atom(
+  null,
+  (_get, set, value: ChartTimeZoneId) => {
+    const timeZone = normalizeChartTimeZone(value);
+    set(chartTimeZoneAtom, timeZone);
+    localStore.set(CHART_TIME_ZONE_STORAGE_KEY, timeZone);
+    queueChartSettings(_get, set, { timeZone });
+  },
+);
+
 export const setCandlesAtom = atom(null, (_get, set, candles: Candle[]) => {
   if (_get(candlesAtom) === candles) {
     if (_get(loadingAtom)) set(loadingAtom, false);
@@ -713,14 +799,12 @@ export const setDrawColorAtom = atom(null, (_get, set, c: string) => {
 
 export const setKeepDrawingModeAtom = atom(null, (_get, set, enabled: boolean) => {
   const next = { ..._get(drawingToolPreferencesAtom), keepDrawing: enabled };
-  set(drawingToolPreferencesAtom, next);
-  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+  commitDrawingToolPreferences(_get, set, next);
 });
 
 export const setDrawingMagnetEnabledAtom = atom(null, (_get, set, enabled: boolean) => {
   const next = { ..._get(drawingToolPreferencesAtom), magnetEnabled: enabled };
-  set(drawingToolPreferencesAtom, next);
-  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+  commitDrawingToolPreferences(_get, set, next);
 });
 
 export const setDrawingMagnetModeAtom = atom(null, (_get, set, mode: DrawingMagnetMode) => {
@@ -729,8 +813,7 @@ export const setDrawingMagnetModeAtom = atom(null, (_get, set, mode: DrawingMagn
     magnetEnabled: true,
     magnetMode: mode,
   };
-  set(drawingToolPreferencesAtom, next);
-  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+  commitDrawingToolPreferences(_get, set, next);
 });
 
 export const saveDrawingToolDefaultsAtom = atom(null, (_get, set, drawing: Drawing) => {
@@ -744,8 +827,7 @@ export const saveDrawingToolDefaultsAtom = atom(null, (_get, set, drawing: Drawi
       [drawing.tool]: pickDrawingToolDefaults(drawing),
     },
   };
-  set(drawingToolPreferencesAtom, next);
-  localStore.set(DRAWING_TOOL_PREFERENCES_KEY, next);
+  commitDrawingToolPreferences(_get, set, next);
 });
 
 export interface AddDrawingRequest {
@@ -1412,6 +1494,10 @@ export const hydrateAtom = atom(null, (_get, set) => {
       localStore.get<unknown>(DRAWING_TOOL_PREFERENCES_KEY, null),
     ),
   );
+  set(
+    chartTimeZoneAtom,
+    readStoredChartTimeZone(),
+  );
   const syncMode = localStore.get<unknown>(DRAWING_SYNC_MODE_KEY, DEFAULT_DRAWING_SYNC_MODE);
   set(
     newDrawingSyncModeAtom,
@@ -1422,6 +1508,7 @@ export const hydrateAtom = atom(null, (_get, set) => {
 });
 
 export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
+  chartSettingsSync.cancelPending();
   const symbol = _get(symbolAtom);
   for (const drawing of _get(drawingsAtom)) {
     queueDrawingDelete(_get, set, symbol, drawing);
@@ -1443,6 +1530,8 @@ export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
   set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
   set(activeToolAtom, "cursor");
   set(drawColorAtom, "#2962ff");
+  set(chartTimeZoneAtom, EXCHANGE_TIME_ZONE_ID);
+  set(drawingToolPreferencesAtom, structuredClone(EMPTY_DRAWING_TOOL_PREFERENCES));
   set(newDrawingSyncModeAtom, DEFAULT_DRAWING_SYNC_MODE);
   set(selectedDrawingIdAtom, null);
   set(selectedDrawingIdsAtom, new Set());
@@ -1460,6 +1549,7 @@ export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
 export const chartStateAtom = atom((get) => ({
   symbol: get(symbolAtom),
   timeframe: get(timeframeAtom),
+  timeZone: get(chartTimeZoneAtom),
   candles: get(candlesAtom),
   loading: get(loadingAtom),
   drawings: get(drawingsAtom),
@@ -1470,6 +1560,8 @@ export const chartStateAtom = atom((get) => ({
   pineEditorSource: get(pineEditorSourceAtom),
   activeTool: get(activeToolAtom),
   drawColor: get(drawColorAtom),
+  drawingToolPreferences: get(drawingToolPreferencesAtom),
+  drawingSyncMode: get(newDrawingSyncModeAtom),
   selectedDrawingId: get(selectedDrawingIdAtom),
   selectedDrawingIds: get(selectedDrawingIdsAtom),
   editingIndicatorId: get(editingIndicatorIdAtom),

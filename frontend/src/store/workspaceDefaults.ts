@@ -5,6 +5,7 @@ export const DEFAULT_UI_SETTINGS = {
   panels: DEFAULT_PANELS,
   bottomTab: "replay",
   rightOpen: true,
+  rightPanelTab: "watchlist",
   bottomOpen: false,
   fullscreen: false,
   alertCenterOpen: false,

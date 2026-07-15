@@ -54,12 +54,24 @@ func TestEmptyDocumentUsesCollapsedBottomAndDisabledSMC(t *testing.T) {
 	if ui["bottomOpen"] != false {
 		t.Fatalf("bottom panel should default closed, got %v", ui["bottomOpen"])
 	}
+	if ui["rightPanelTab"] != "watchlist" || ui["gridVisible"] != true {
+		t.Fatalf("UI preferences should have stable defaults, got %#v", ui)
+	}
 
 	smc := object(t, doc.SMC)
 	for key, value := range smc {
 		if value != false {
 			t.Fatalf("SMC setting %s should default false, got %v", key, value)
 		}
+	}
+
+	chart := object(t, doc.Chart)
+	if chart["timeZone"] != "exchange" || chart["drawingSyncMode"] != "global" {
+		t.Fatalf("chart preferences should have stable defaults, got %#v", chart)
+	}
+	drawing, ok := chart["drawingToolPreferences"].(map[string]any)
+	if !ok || drawing["magnetEnabled"] != false || drawing["magnetMode"] != "weak" {
+		t.Fatalf("drawing preferences should have stable defaults, got %#v", chart)
 	}
 }
 
@@ -82,6 +94,11 @@ func TestNormalizeDocumentBackfillsDefaultWorkspaceState(t *testing.T) {
 	}
 	if smc["structure"] != false || smc["sessions"] != false {
 		t.Fatalf("missing SMC settings should backfill false, got %#v", smc)
+	}
+
+	chart := object(t, doc.Chart)
+	if chart["timeZone"] != "exchange" || chart["drawingSyncMode"] != "global" {
+		t.Fatalf("missing chart settings should be backfilled, got %#v", chart)
 	}
 }
 

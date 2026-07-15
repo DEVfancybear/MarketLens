@@ -192,6 +192,31 @@ snapshots, allowing the frontend to restore the default layout without a second 
 
 Backed by `user_settings` (1:1). See `DATABASE.md` section 6.1. `GET` auto-creates the row for a
 new authenticated user, `PUT` replaces all four sections, and `PATCH` deep-merges object sections.
+The frontend uses `ui` for theme/shell/grid preferences, `smc` for overlay toggles, `chart` for
+timezone and drawing-tool preferences, and `notifications` for global alert channels. Mutations
+may patch one section without replacing unrelated settings. PATCH transactions lock the user's
+settings row while merging, so concurrent updates to different sections cannot overwrite each
+other.
+
+Example partial update (omitted sections are preserved):
+
+```json
+{
+  "ui": { "theme": "dark", "gridVisible": true },
+  "smc": { "structure": true },
+  "chart": {
+    "timeZone": "exchange",
+    "drawingSyncMode": "global",
+    "drawingToolPreferences": {
+      "version": 1,
+      "keepDrawing": false,
+      "magnetEnabled": false,
+      "magnetMode": "weak",
+      "toolDefaults": {}
+    }
+  }
+}
+```
 
 | Method | Path                                         | Purpose                                          |
 | ------ | -------------------------------------------- | ------------------------------------------------ |
