@@ -86,7 +86,7 @@ type ShortcutTooltipState = {
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const GO_TO_DIALOG_SIZE = { width: 302, height: 478 };
-const TIME_ZONE_MENU_SIZE = { width: 232, height: 520 };
+const TIME_ZONE_MENU_SIZE = { width: 250, height: 520 };
 
 function formatClock(date: Date, timeZone?: string): string {
   const options: Intl.DateTimeFormatOptions = {

@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Mobile chart timezone and settings popup anchoring (2026-07-16)
+- Restored trigger-anchored placement for the chart timezone menu on touch
+  viewports. Mobile CSS now constrains the popup size without overriding the
+  computed `left`/`top`, so it no longer opens at the screen's top-left corner.
+- Matched timezone popup placement math to its 250px surface and added a
+  mobile platform regression that verifies the menu remains anchored and
+  inside the viewport.
+- Kept interval-visibility tiles full-width with 44px touch targets while
+  preserving compact square checkbox controls elsewhere in settings dialogs.
+- Disabled the Next.js development badge so it cannot cover mobile controls
+  during local UI verification.
+
 ### Fixed - Broker-aligned candle countdowns (2026-07-15)
 - Replaced Unix-epoch modulo countdown alignment with the active candle's UTC
   open timestamp, so intraday, daily, and weekly timers follow the actual MT5

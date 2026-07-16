@@ -174,6 +174,13 @@ test("drawing settings tabs keep their fields inside the mobile sheet", async ({
     });
     expect(metrics.overflow).toBeLessThanOrEqual(1);
     expect(metrics.controlsOutside).toBe(0);
+    if (tab === "visibility") {
+      const intervalTile = dialog.locator('[data-interval-visibility] button[role="checkbox"]').first();
+      const intervalTileBox = await intervalTile.boundingBox();
+      expect(intervalTileBox).not.toBeNull();
+      expect(intervalTileBox!.width).toBeGreaterThan(40);
+      expect(intervalTileBox!.height).toBeGreaterThanOrEqual(44);
+    }
     await page.screenshot({ path: testInfo.outputPath(`drawing-settings-${tab}.png`) });
   }
 });

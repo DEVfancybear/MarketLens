@@ -1,6 +1,6 @@
 # Responsive Architecture
 
-_Last updated: 2026-07-14_
+_Last updated: 2026-07-16_
 
 The terminal no longer implements mobile as responsive desktop DOM. It selects one of two isolated presentation platforms:
 
@@ -62,10 +62,17 @@ share one responsive contract:
   horizontally, and the footer remains reachable above the safe area.
 - Mobile controls use a 44px touch target, 16px form text, and preserve native
   checkbox dimensions while expanding the surrounding hit area.
+- Interval-visibility tiles are an explicit exception to the compact checkbox
+  rule: each `role="checkbox"` tile fills its grid cell and remains at least
+  44px tall, while native/compact checkbox controls stay square.
 - Anchored color, line, template and object-tree menus use `mobile-popover`;
   pointer-position menus and dropdown portals clamp against the Visual
   Viewport through `src/hooks/useFloatingSurface.ts` and
   `src/utils/viewport.ts`.
+- The chart timezone menu is a portalled `ChartPopupSurface` anchored from the
+  `Select time zone` trigger. `floatingMenuPosition` computes fixed `left` and
+  `top` coordinates and clamps them to the viewport; mobile media rules may
+  constrain width/height but must not overwrite those coordinates.
 - Mobile toasts render as non-blocking snackbars above bottom navigation. The
   toast body is click-through; only its dismiss action receives pointer input.
 
@@ -93,5 +100,8 @@ npm run build
 Verified overlay baseline on 2026-07-14: the dedicated responsive browser
 spec passed 6/6, the mobile/desktop overlay regression set passed 11/11, the
 UI unit set passed 39/39, and production build, typecheck and lint passed.
+
+Latest mobile popup verification on 2026-07-16: `platformUi` passed 3/3,
+`mobileOverlayResponsive` passed 6/6, and `npm run typecheck` passed.
 
 Required viewport checks: 320x568, 375x812, 390x844, 430x932, 844x390, 768x1024, 1024x768, 1366x768 and 1920x1080.

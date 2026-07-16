@@ -30,7 +30,14 @@ test.describe("isolated terminal platforms", () => {
     await expect(timeZoneMenu).toBeVisible();
     await expect(timeZoneHandle).toBeVisible();
     const timeZoneBefore = await timeZoneMenu.boundingBox();
+    const timeZoneTrigger = await mobile.getByRole('button', { name: 'Select time zone' }).boundingBox();
     expect(timeZoneBefore).not.toBeNull();
+    expect(timeZoneTrigger).not.toBeNull();
+    expect(timeZoneBefore!.x).toBeGreaterThan(8);
+    expect(timeZoneBefore!.x + timeZoneBefore!.width).toBeLessThanOrEqual(382);
+    expect(timeZoneBefore!.x).toBeLessThanOrEqual(
+      timeZoneTrigger!.x + timeZoneTrigger!.width - timeZoneBefore!.width + 1,
+    );
     const freeBelow = 844 - timeZoneBefore!.y - timeZoneBefore!.height;
     const moveKey = freeBelow >= 32 ? 'ArrowDown' : 'ArrowUp';
     await timeZoneHandle.focus();
