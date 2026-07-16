@@ -51,11 +51,14 @@ export function DrawingCoordinatesFields({
   points,
   candles,
   labels,
+  showPrice = true,
   onChange,
 }: {
   points: readonly Point[];
   candles: readonly Candle[];
   labels?: readonly string[];
+  /** Calculated tools such as Regression Trend own their vertical values. */
+  showPrice?: boolean;
   onChange: (points: Point[]) => void;
 }) {
   const patchPoint = (index: number, patch: Partial<Point>) =>
@@ -72,14 +75,16 @@ export function DrawingCoordinatesFields({
               {title}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1 text-[10px] text-ink-faint">
-                <span>Price</span>
-                <ExactNumberField
-                  label={`${title} price`}
-                  value={Number(point.price.toFixed(8))}
-                  onCommit={(price) => patchPoint(index, { price })}
-                />
-              </label>
+              {showPrice && (
+                <label className="space-y-1 text-[10px] text-ink-faint">
+                  <span>Price</span>
+                  <ExactNumberField
+                    label={`${title} price`}
+                    value={Number(point.price.toFixed(8))}
+                    onCommit={(price) => patchPoint(index, { price })}
+                  />
+                </label>
+              )}
               <label className="space-y-1 text-[10px] text-ink-faint">
                 <span>Unix time</span>
                 <ExactNumberField

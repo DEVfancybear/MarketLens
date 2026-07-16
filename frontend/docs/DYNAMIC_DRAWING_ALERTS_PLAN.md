@@ -1,26 +1,27 @@
-# Dynamic Drawing Alerts Plan
+# Dynamic Drawing Alerts Implementation Contract
 
-_Date: 2026-07-12_  
-_Status: deferred design; not implemented_  
-_Scope: sloped lines, rays, extended lines, and parallel channels_
+_Date: 2026-07-12; implemented/hardened 2026-07-16_
+_Status: implemented; immutable targets, open/push parity, server verification, re-arm revisions, and expiration landed_
+_Scope: sloped lines, rays, extended lines, parallel channels, and Fib Channel projections_
 
 ## 1. Purpose
 
-Phase 6.8 supports drawing-created alerts only when geometry resolves to a fixed
-price. Sloped lines and channels are deliberately excluded because their target
-price changes with time and must produce the same result in the open browser and
-the closed-browser evaluator.
+Phase 6.8 originally supported drawing-created alerts only when geometry
+resolved to a fixed price. The 2026-07-16 follow-up delivered the time-indexed
+target contract for sloped lines, channels, and Fib Channel levels, while
+preserving fixed-price compatibility.
 
-This document freezes the intended semantics and implementation gates for that
-future work. Do not add `alertProjection` to a dynamic tool until the shared
-time/geometry evaluator described here exists.
+This document now records the shipped semantics and hardening gates. Dynamic
+capabilities must continue to use the shared data-coordinate evaluator and the
+versioned immutable target; viewport-derived or ad-hoc evaluators are not valid
+extensions.
 
 TradingView reference behavior:
 
 - [Getting started with technical alerts](https://www.tradingview.com/support/solutions/43000763315-getting-started-with-technical-alerts/)
 - [Learn how to configure alerts](https://www.tradingview.com/support/solutions/43000763312-learn-how-to-configure-alerts/)
 
-## 2. Proposed scope
+## 2. Implemented scope
 
 First release:
 
@@ -31,7 +32,8 @@ First release:
 | Trend angle | One sloped boundary | Between its two anchors |
 | Ray | One sloped boundary | From anchor 1 through anchor 2 and onward |
 | Extended line | One sloped boundary | All representable times |
-| Parallel channel | Upper boundary, lower boundary, or channel region | Baseline anchor interval |
+| Parallel channel | Upper boundary, lower boundary, or channel region | Stored segment/ray/infinite domain |
+| Fib Channel | Enabled dynamic level plus channel boundary/region operators | Baseline anchor interval or configured extension |
 
 Possible later extensions include rotated rectangles and other tools that can
 project deterministic time-varying boundaries. Vertical lines remain time-event
@@ -98,11 +100,11 @@ The domain policy decides whether `u` must be within `[0,1]`, at or beyond the
 ray origin, or unrestricted. Equal anchor times are invalid for dynamic price
 alerts.
 
-For a parallel channel, store two complete data-coordinate boundaries in the
-snapshot. Do not persist the current screen-space normal offset produced by
-`channelGeometry.ts`: screen pixels vary with viewport and scale. The future
-canonical data-space model uses the baseline slope `m=(p2-p1)/(t2-t1)` and a
-second line through the third anchor `(t3,p3)`:
+For a parallel channel, the snapshot stores two complete data-coordinate
+boundaries. It never persists a screen-space normal offset: screen pixels vary
+with viewport and scale. `channelDataGeometry.ts` is the canonical source used
+by both rendering and alert projection. It uses the baseline slope
+`m=(p2-p1)/(t2-t1)` and a second line through the third anchor `(t3,p3)`:
 
 ```text
 boundaryA(t) = p1 + m * (t - t1)
@@ -120,30 +122,30 @@ lower(t) = min(boundaryA(t), boundaryB(t))
 inside(t, price) = lower(t) <= price <= upper(t)
 ```
 
-Legacy two-point channels use a historical pixel offset and therefore cannot be
-alert sources. They must first be upgraded to a real third data-coordinate
-anchor by an explicit migration/user action.
+Legacy two-point channels use a historical pixel offset and therefore are
+rejected as alert sources. A real third data-coordinate anchor is required.
 
 ### Scale prerequisite
 
-Linear interpolation above is the initial canonical contract. If chart-wide
-logarithmic price scale is introduced, the snapshot must persist
-`interpolation: "linear" | "log"`; log mode interpolates `log(price)` and
-requires positive anchors. Browser-only visual scale state must never change an
-already armed alert.
+The DTO and evaluator persist `interpolation: "linear" | "log"`; log mode
+interpolates `log(price)` and requires positive anchors. Current channel and Fib
+Channel projection is explicitly linear because it shares the renderer's
+data-space model. Browser-only visual scale state never changes an already
+armed alert.
 
 ### Time prerequisite
 
-The target must be evaluated at the candle/market epoch used by drawing anchor
-times. Existing backend receive timestamps remain the replay ordering and
-freshness cursor, but they are not automatically valid chart-time coordinates.
-Implementation is blocked until MT5 tick time is normalized to the same UTC
-epoch contract as drawing points and covered by skew tests.
+The target is evaluated at the candle/market epoch used by drawing anchor
+times. `mt5AlertTicks.ts` normalizes broker/chart time separately from
+`receivedAt`: receive time remains the replay ordering and freshness cursor,
+while market time is the geometry coordinate and the persisted trigger-event
+timestamp. Duplicate/out-of-order market timestamps are handled
+deterministically without corrupting the receive cursor.
 
 ## 5. Alert data model
 
-Do not overload the legacy scalar `price`. Add a versioned target union, for
-example:
+The implementation does not overload the legacy scalar `price`. It persists a
+versioned target union:
 
 ```ts
 type DynamicLineTarget = {
@@ -177,22 +179,30 @@ type TechnicalAlertTarget =
     };
 ```
 
-Recommended persistence path:
+Persistence is delivered as follows:
 
-1. Add nullable `technical_target jsonb` and an `expired` lifecycle state.
-2. Keep `price` populated for legacy/fixed alerts and migration compatibility.
-3. Validate target version, finite coordinates, positive prices, time domain,
-   interpolation mode, and allowed operator at the Go boundary.
-4. Include the immutable target in bootstrap and push-worker synchronization.
-5. Keep `source` as provenance only; evaluation must be self-contained without
-   loading the drawing row.
+1. Migration `0020_alert_technical_target` adds nullable `technical_target
+   jsonb`; migration `0021_alert_expiration_and_arming_revision` adds the
+   `expired` lifecycle state and positive `arming_revision`.
+2. `price` remains populated for legacy/fixed alerts and migration
+   compatibility.
+3. Frontend ingestion and the Go boundary fail closed on unknown versions,
+   fields, non-finite/non-positive coordinates, invalid domains/interpolation,
+   mismatched channel times, non-parallel channel slopes, and unsupported
+   operators.
+4. Bootstrap, local persistence, push storage, and worker synchronization carry
+   the immutable target and arming revision. Malformed dynamic payloads are
+   rejected instead of degrading to a fixed alert.
+5. `source` is provenance only; evaluation is self-contained and never reloads
+   the drawing row.
 
 Changing condition or geometry creates a new arming revision and clears the
 previous signed-distance baseline. Note/channel-only notification edits do not.
 
-## 6. Shared evaluator
+## 6. Shared evaluator and verified trigger path
 
-Introduce pure functions with no chart or store dependencies:
+`dynamicAlertTargets.ts` provides pure functions with no chart or store
+dependencies:
 
 ```ts
 targetAt(target, marketTime):
@@ -215,62 +225,79 @@ crossDown = previousDistance > 0 && currentDistance <= 0
 This is essential: comparing both observations with only the current target is
 incorrect when the line moves materially between ticks.
 
-The same fixtures must execute in:
+`useAlertEngine.ts` and `pushAlertEvaluator.ts` both call this evaluator. A
+successful result carries the exact evidence pair:
 
-- `useAlertEngine.ts` for open-browser evaluation;
-- `pushAlertEvaluator.ts` for closed-browser evaluation;
-- persistence/trigger validation, either by sharing the target evaluator or by
-  sending enough evaluated evidence for the Go API to verify safely.
+```ts
+{
+  previous?: { price, timestamp },
+  current: { price, timestamp },
+}
+```
 
-The Go scheduler only invokes the Next evaluator today. It must not gain an
-independent geometry formula unless cross-language golden vectors prove exact
-parity.
+The trigger request also carries `armingRevision`. The Go API does not trust a
+client-supplied trigger or target price: it reloads the persisted immutable
+target, rejects stale revisions, normalizes and validates the previous/current
+evidence, recomputes the geometry and condition, and timestamps the event from
+the current market observation. Dynamic crossing conditions require previous
+evidence; malformed, time-travelling, non-triggering, or mismatched claims fail
+closed.
 
 ## 7. UI contract
 
-- Dynamic-capable manifests use a new capability distinct from fixed
-  `alertProjection`; suggested names are `dynamic-line` and `dynamic-channel`.
-- The dialog shows tool name, selected boundary/operator, current projected
-  value, active time domain, and snapshot behavior.
+- Dynamic-capable manifests use `dynamicAlertProjection`, distinct from fixed
+  `alertProjection`, with `dynamic-line`, `dynamic-channel`, and
+  `dynamic-fib-channel` values.
+- The drawing dialog shows the tool, selectable projected target/operator,
+  current projected value, condition where applicable, and immutable snapshot
+  behavior.
 - Alert Center shows `Dynamic line` or `Channel` plus the current evaluated
   target/range. The creation-time preview price is not presented as the fixed
   trigger price.
-- Editing an alert opens its frozen geometry. An explicit **Replace from
-  drawing** action may create a new arming revision if the source still exists.
-- Expired alerts are visible in history/status and can be recreated; they are
-  not silently deleted.
+- Drawing edits/deletion never mutate the frozen geometry. Condition/geometry
+  changes re-arm with a new revision, while note/channel-only notification
+  changes retain the current baseline.
+- Expired alerts have their own bootstrapped/status collection, remain visible
+  in Alert Center, and can be reset/recreated; they are not silently deleted.
 
-## 8. Delivery phases
+## 8. Delivered implementation
 
-1. Normalize market time and add golden timestamp/skew fixtures.
-2. Build pure dynamic-line geometry and signed-distance tests.
-3. Add versioned target DTO, database migration, Go validation, and bootstrap.
-4. Update browser and closed-browser evaluators with shared fixtures.
-5. Enable Trendline, Ray, and Extended Line capabilities and UI.
-6. Define data-coordinate channel offset, reject legacy channels, and add
-   channel operators.
-7. Add lifecycle expiration, notification text, observability, and recovery.
-8. Run shadow evaluation against recorded tick sequences before enabling user
-   notifications.
+1. Market time is normalized independently from receive-order/freshness time.
+2. Pure dynamic-line/channel target, signed-distance, domain, and replay
+   evaluators are shared by the open and closed-browser paths.
+3. Versioned target DTOs, strict frontend/Go sanitizers, migrations `0020` and
+   `0021`, bootstrap, API mapping, and push persistence are in place.
+4. Trendline, Info Line, Trend Angle, Ray, Extended Line, Parallel Channel, and
+   Fib Channel expose manifest-owned targets.
+5. Channel rendering and alert snapshots share canonical data-space boundaries;
+   legacy two-point channels and non-parallel/mismatched boundary payloads are
+   rejected.
+6. Finite domains transition to `expired` in both open and push evaluation.
+   Push reconciliation checks the arming revision before moving an alert, and
+   workspace bootstrap carries `expiredAlerts`.
+7. Triggering is evidence-backed and revalidated in Go before persistence or
+   notification delivery.
 
-## 9. Required test gates
+## 9. Executable test gates
 
-- Horizontal dynamic line degenerates exactly to fixed-price behavior.
-- Rising/falling line cross-up and cross-down evaluate previous and current
-  targets separately.
-- Segment/ray/infinite domains, including backward rays, expire correctly.
-- Sparse ticks, equality, duplicate timestamps, out-of-order ticks, clock skew,
-  and price gaps are deterministic.
-- Channel upper/lower normalization works for both anchor orientations and
-  never swaps operator identity unexpectedly.
-- Enter/exit/inside/outside truth tables cover jumps across both boundaries.
-- Linear/log interpolation golden vectors match browser and worker execution.
-- Drawing edits/deletion do not mutate the snapshot; alert edits re-arm once.
-- API retries, bootstrap, push sync, reload, and closed-browser replay preserve
-  the exact versioned target.
-- Legacy two-point channels are rejected with an actionable UI message.
-- Browser tests cover creation, projected-value display, drawing deletion,
-  expiration, and notification deep-link behavior.
+The regression suites cover, without relying on source-text assertions:
+
+- horizontal dynamic-line/fixed-price equivalence; rising/falling moving
+  boundaries; segment/ray/infinite domains; backward-ray expiration; and
+  linear/log interpolation;
+- sparse, equal, duplicate, decreasing, and cross-poll replay timestamps, plus
+  price gaps and channel jumps that must not invent an intratick path;
+- channel normalization, all boundary/inside/outside operators, renderer/alert
+  geometry identity, Fib Channel levels, and malformed/legacy target rejection;
+- immutable target/API/push-store round trips, normalized previous/current
+  evidence, expiration lifecycle state, and arming-revision matching;
+- Go boundary validation, stale-revision rejection, server recomputation of
+  fixed/dynamic/channel triggers, evidence-time event timestamps, expiration
+  listing, and repository integration.
+
+The manifest-derived browser matrix supplements these semantic gates with
+reviewed drawing paint baselines. It does not replace evaluator/API tests, and
+this document does not claim a final aggregate test count.
 
 ## 10. Non-goals for the first release
 

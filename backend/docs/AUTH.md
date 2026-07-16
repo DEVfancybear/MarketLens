@@ -1,6 +1,6 @@
 # Authentication — Google Sign-in / Sign-up
 
-> Status: **Design / planning** (not yet implemented). Covers the only auth method the product needs
+> Status: **Implemented and maintained**. Covers the only auth method the product needs
 > right now: **login/register with a Google account**. Register and login are the *same* flow —
 > first Google sign-in auto-creates the account, subsequent sign-ins reuse it. There is no password,
 > email/password form, or separate registration screen.
@@ -132,7 +132,7 @@ The Admin SDK is preferred — it also handles key rotation and token revocation
 
 ---
 
-## 6. Proposed backend package layout
+## 6. Implemented backend package layout
 
 ```
 internal/
@@ -154,7 +154,7 @@ internal/
 
 ## 7. Frontend surface
 
-New pieces (implementation is a later step — this doc is the contract):
+Implemented pieces:
 
 ```
 src/services/auth/
@@ -210,9 +210,9 @@ APP_ENV=development                # toggles Secure cookie flag
 
 ## 9. Security checklist
 
-- [ ] Verify ID token **server-side** every time — never trust client-sent email/uid.
-- [ ] httpOnly + Secure + SameSite=Lax cookies; no tokens in localStorage.
-- [ ] Refresh-token rotation with reuse detection → revoke session family on reuse.
+- [x] Verify ID token **server-side** every time — never trust client-sent email/uid.
+- [x] httpOnly + Secure + SameSite=Lax cookies; no tokens in localStorage.
+- [x] Refresh-token rotation with reuse detection → revoke session family on reuse.
 - [ ] Store only the SHA-256 **hash** of refresh tokens.
 - [ ] Rate-limit `/auth/google` and `/auth/refresh` (per-IP) to blunt token-stuffing.
 - [ ] Strict CORS allow-list (`CORS_ALLOWED_ORIGINS`), `credentials: true`.

@@ -16,7 +16,7 @@ type Store interface {
 	Create(ctx context.Context, userID string, input CreateInput) (Alert, error)
 	Patch(ctx context.Context, userID, ref string, input PatchInput) (Alert, error)
 	Delete(ctx context.Context, userID, ref string) error
-	Trigger(ctx context.Context, userID, ref string, triggerPrice float64) (Alert, Event, error)
+	Trigger(ctx context.Context, userID, ref string, input TriggerInput) (Alert, Event, error)
 	ListEvents(ctx context.Context, userID, ref string, limit int) ([]Event, error)
 	ListHistory(ctx context.Context, userID string, limit int) ([]Event, error)
 	ClearHistory(ctx context.Context, userID string) error
@@ -41,13 +41,13 @@ func (r *Repo) List(ctx context.Context, userID, status string) ([]Alert, error)
 		return nil, err
 	}
 	status = strings.TrimSpace(status)
-	if status != "" && status != "active" && status != "triggered" {
+	if status != "" && status != "active" && status != "triggered" && status != "expired" {
 		return nil, fmt.Errorf("%w: unsupported status %q", ErrBadRequest, status)
 	}
 	rows, err := r.pool.Query(ctx, `
 SELECT id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
        status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-       trigger_price, triggered_at, created_at, updated_at, source
+       trigger_price, triggered_at, created_at, updated_at, source, technical_target, arming_revision
 FROM alerts
 WHERE user_id = $1 AND ($2::text = '' OR status::text = $2::text)
 ORDER BY created_at DESC, id`, uid, status)
@@ -81,9 +81,9 @@ func (r *Repo) Create(ctx context.Context, userID string, input CreateInput) (Al
 		item, _, err := scanAlert(r.pool.QueryRow(ctx, `
 INSERT INTO alerts (
   user_id, client_id, symbol, condition, price, note, enabled, locked, recurring,
-  sound, browser, push, telegram, discord, source
+  sound, browser, push, telegram, discord, source, technical_target
 )
-VALUES ($1, NULLIF($2, ''), $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, NULLIF($2, ''), $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
   symbol = EXCLUDED.symbol,
   condition = EXCLUDED.condition,
@@ -98,28 +98,36 @@ ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO UPDATE SET
   telegram = EXCLUDED.telegram,
   discord = EXCLUDED.discord,
   source = COALESCE(alerts.source, EXCLUDED.source),
+  technical_target = COALESCE(EXCLUDED.technical_target, alerts.technical_target),
+	arming_revision = alerts.arming_revision + CASE WHEN
+		alerts.symbol IS DISTINCT FROM EXCLUDED.symbol OR
+		alerts.condition IS DISTINCT FROM EXCLUDED.condition OR
+		alerts.price IS DISTINCT FROM EXCLUDED.price OR
+		alerts.recurring IS DISTINCT FROM EXCLUDED.recurring OR
+		(EXCLUDED.technical_target IS NOT NULL AND alerts.technical_target IS DISTINCT FROM EXCLUDED.technical_target)
+		THEN 1 ELSE 0 END,
   updated_at = now()
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at, source`,
+          trigger_price, triggered_at, created_at, updated_at, source, technical_target, arming_revision`,
 			uid, input.ClientID, input.Symbol, input.Condition, input.Price, input.Note,
 			*input.Enabled, input.Locked, input.Recurring, channels.Sound, channels.Browser,
-			channels.Push, channels.Telegram, channels.Discord, input.Source))
+			channels.Push, channels.Telegram, channels.Discord, input.Source, input.TechnicalTarget))
 		return item, err
 	}
 
 	item, _, err := scanAlert(r.pool.QueryRow(ctx, `
 INSERT INTO alerts (
   user_id, symbol, condition, price, note, enabled, locked, recurring,
-  sound, browser, push, telegram, discord, source
+  sound, browser, push, telegram, discord, source, technical_target
 )
-VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12, $13, $14)
+VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at, source`,
+          trigger_price, triggered_at, created_at, updated_at, source, technical_target, arming_revision`,
 		uid, input.Symbol, input.Condition, input.Price, input.Note, *input.Enabled,
 		input.Locked, input.Recurring, channels.Sound, channels.Browser, channels.Push,
-		channels.Telegram, channels.Discord, input.Source))
+		channels.Telegram, channels.Discord, input.Source, input.TechnicalTarget))
 	return item, err
 }
 
@@ -144,6 +152,14 @@ func (r *Repo) Patch(ctx context.Context, userID, ref string, input PatchInput) 
 	}
 	item, _, err := scanAlert(r.pool.QueryRow(ctx, `
 UPDATE alerts SET
+	arming_revision = arming_revision + CASE WHEN
+		($4::text IS NOT NULL AND symbol IS DISTINCT FROM $4::text) OR
+		($5::text IS NOT NULL AND condition::text IS DISTINCT FROM $5::text) OR
+		($6::numeric IS NOT NULL AND price IS DISTINCT FROM $6::numeric) OR
+		($12::boolean IS NOT NULL AND recurring IS DISTINCT FROM $12::boolean) OR
+		($18::jsonb IS NOT NULL AND technical_target IS DISTINCT FROM $18::jsonb) OR
+		($9::text = 'active' AND status::text <> 'active')
+		THEN 1 ELSE 0 END,
   symbol = COALESCE($4::text, symbol),
   condition = COALESCE($5::alert_condition, condition),
   price = COALESCE($6::numeric, price),
@@ -157,17 +173,19 @@ UPDATE alerts SET
   push = COALESCE($15::boolean, push),
   telegram = COALESCE($16::boolean, telegram),
   discord = COALESCE($17::boolean, discord),
-  trigger_price = CASE WHEN $9::text = 'active' THEN NULL ELSE trigger_price END,
-  triggered_at = CASE WHEN $9::text = 'active' THEN NULL ELSE triggered_at END,
+  technical_target = COALESCE($18::jsonb, technical_target),
+  trigger_price = CASE WHEN $9::text IN ('active', 'expired') THEN NULL ELSE trigger_price END,
+  triggered_at = CASE WHEN $9::text IN ('active', 'expired') THEN NULL ELSE triggered_at END,
   updated_at = now()
 WHERE user_id = $1
   AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at, source`,
+          trigger_price, triggered_at, created_at, updated_at, source, technical_target, arming_revision`,
 		uid, refUUID, refClientID, input.Symbol, input.Condition, input.Price, noteSet, note,
 		input.Status, input.Enabled, input.Locked, input.Recurring, channels.Sound,
-		channels.Browser, channels.Push, channels.Telegram, channels.Discord))
+		channels.Browser, channels.Push, channels.Telegram, channels.Discord,
+		input.TechnicalTarget))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Alert{}, ErrNotFound
 	}
@@ -194,9 +212,10 @@ WHERE user_id = $1
 	return nil
 }
 
-func (r *Repo) Trigger(ctx context.Context, userID, ref string, triggerPrice float64) (Alert, Event, error) {
-	if !validPrice(triggerPrice) {
-		return Alert{}, Event{}, fmt.Errorf("%w: triggerPrice must be greater than zero", ErrBadRequest)
+func (r *Repo) Trigger(ctx context.Context, userID, ref string, input TriggerInput) (Alert, Event, error) {
+	input, err := normalizeTriggerInput(input)
+	if err != nil {
+		return Alert{}, Event{}, err
 	}
 	uid, err := parseUUID(userID)
 	if err != nil {
@@ -212,10 +231,12 @@ func (r *Repo) Trigger(ctx context.Context, userID, ref string, triggerPrice flo
 	var selectedAlertID pgtype.UUID
 	var condition string
 	var targetPrice float64
+	var technicalTarget *TechnicalAlertTarget
 	var enabled bool
 	var status string
+	var armingRevision int64
 	err = tx.QueryRow(ctx, `
-SELECT id, condition::text, price, enabled, status::text
+SELECT id, condition::text, price, technical_target, enabled, status::text, arming_revision
 FROM alerts
 WHERE user_id = $1
   AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($3::text <> '' AND client_id = $3::text))
@@ -223,8 +244,10 @@ FOR UPDATE`, uid, refUUID, refClientID).Scan(
 		&selectedAlertID,
 		&condition,
 		&targetPrice,
+		&technicalTarget,
 		&enabled,
 		&status,
+		&armingRevision,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Alert{}, Event{}, ErrNotFound
@@ -238,23 +261,41 @@ FOR UPDATE`, uid, refUUID, refClientID).Scan(
 			ErrBadRequest,
 		)
 	}
-	if !validTriggerPrice(condition, targetPrice, triggerPrice) {
+	if input.ArmingRevision != armingRevision {
+		return Alert{}, Event{}, fmt.Errorf("%w: stale armingRevision", ErrBadRequest)
+	}
+	if technicalTarget == nil {
+		technicalTarget = fixedTechnicalTarget(targetPrice)
+	} else if err := validateTechnicalTarget(technicalTarget); err != nil {
+		return Alert{}, Event{}, fmt.Errorf("invalid stored technical target: %w", err)
+	}
+	evaluated := evaluateTechnicalAlert(condition, technicalTarget, input.Previous, *input.Current)
+	if !evaluated.Active {
 		return Alert{}, Event{}, fmt.Errorf(
-			"%w: triggerPrice is on the wrong side of the alert target",
-			ErrBadRequest,
+			"%w: technical target is not active (%s)", ErrBadRequest, evaluated.Reason,
 		)
 	}
+	if !evaluated.Triggered {
+		return Alert{}, Event{}, fmt.Errorf("%w: market evidence does not satisfy the alert", ErrBadRequest)
+	}
+	if input.TriggerPrice != nil && !nearlyEqual(*input.TriggerPrice, input.Current.Price) {
+		return Alert{}, Event{}, fmt.Errorf("%w: triggerPrice does not match current evidence", ErrBadRequest)
+	}
+	if input.TargetPrice != nil && !nearlyEqual(*input.TargetPrice, evaluated.TargetPrice) {
+		return Alert{}, Event{}, fmt.Errorf("%w: targetPrice does not match immutable technical target", ErrBadRequest)
+	}
+	triggeredAt := evidenceTimestamp(input.Current.Timestamp)
 
 	item, alertID, err := scanAlert(tx.QueryRow(ctx, `
 UPDATE alerts SET
   status = CASE WHEN recurring THEN 'active'::alert_status ELSE 'triggered'::alert_status END,
   trigger_price = $3,
-  triggered_at = now()
+  triggered_at = $4
 WHERE user_id = $1 AND id = $2
 RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(note, ''),
           status::text, enabled, locked, recurring, sound, browser, push, telegram, discord,
-          trigger_price, triggered_at, created_at, updated_at, source`,
-		uid, selectedAlertID, triggerPrice))
+          trigger_price, triggered_at, created_at, updated_at, source, technical_target, arming_revision`,
+		uid, selectedAlertID, input.Current.Price, triggeredAt))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Alert{}, Event{}, ErrNotFound
 	}
@@ -264,11 +305,12 @@ RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(
 
 	event, err := scanEvent(tx.QueryRow(ctx, `
 INSERT INTO alert_events (
-  alert_id, alert_ref, user_id, symbol, condition, target_price, trigger_price
+  alert_id, alert_ref, user_id, symbol, condition, target_price, trigger_price, triggered_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, alert_ref, symbol, condition::text, target_price, trigger_price, triggered_at, delivered`,
-		alertID, alertRef(item), uid, item.Symbol, item.Condition, item.Price, triggerPrice))
+		alertID, alertRef(item), uid, item.Symbol, item.Condition, evaluated.TargetPrice,
+		input.Current.Price, triggeredAt))
 	if err != nil {
 		return Alert{}, Event{}, err
 	}
@@ -348,12 +390,16 @@ func (r *Repo) Snapshot(ctx context.Context, userID string) (Snapshot, error) {
 	snapshot := Snapshot{
 		Alerts:          []Alert{},
 		TriggeredAlerts: []Alert{},
+		ExpiredAlerts:   []Alert{},
 		History:         history,
 	}
 	for _, item := range items {
-		if item.Status == "triggered" {
+		switch item.Status {
+		case "triggered":
 			snapshot.TriggeredAlerts = append(snapshot.TriggeredAlerts, item)
-		} else {
+		case "expired":
+			snapshot.ExpiredAlerts = append(snapshot.ExpiredAlerts, item)
+		default:
 			snapshot.Alerts = append(snapshot.Alerts, item)
 		}
 	}
@@ -412,7 +458,8 @@ func scanAlert(row rowScanner) (Alert, pgtype.UUID, error) {
 		&item.Status, &item.Enabled, &item.Locked, &item.Recurring,
 		&item.Channels.Sound, &item.Channels.Browser, &item.Channels.Push,
 		&item.Channels.Telegram, &item.Channels.Discord, &item.TriggerPrice,
-		&item.TriggeredAt, &item.CreatedAt, &item.UpdatedAt, &item.Source,
+		&item.TriggeredAt, &item.CreatedAt, &item.UpdatedAt, &item.Source, &item.TechnicalTarget,
+		&item.ArmingRevision,
 	)
 	if err != nil {
 		return Alert{}, pgtype.UUID{}, err

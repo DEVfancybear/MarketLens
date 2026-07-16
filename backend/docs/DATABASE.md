@@ -1,18 +1,18 @@
 # Database Design
 
-> Status: implemented through migration `0011_alerts` (Phase 10). Later
-> trading, journal, screenshot, and layout sections remain design contracts.
+> Status: implemented through migration `0021_alert_expiration_and_arming_revision`.
+> This includes alerts, dynamic technical targets, expiration/re-arming, drawing revisions,
+> integrations, replay, journal/screenshots, simulated trading, and layout persistence.
 > See `AUTH.md` for auth, `API.md` for endpoints, and
 > `BACKEND_IMPLEMENTATION_PLAN.md` for rollout order.
 >
-> **Audited against the frontend 2026-07-14** — every table below is reconciled with the real
+> **Audited against the frontend 2026-07-17** — every table below is reconciled with the real
 > localStorage/IndexedDB shapes and TypeScript types (`frontend/src/types/*`, `store/*`). The jsonb
 > columns intentionally mirror the frontend types so the client model can round-trip untouched.
 >
-> Backend-owned replay is a planned post-Phase-10 schema. Its control, immutable
-> dataset, checkpoint, and replay-trading tables are designed in
-> `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`. Migration `0012_replay_backend`
-> must not be created until that API/schema contract is reviewed.
+> Backend-owned replay is implemented by migrations `0012_replay_backend` through
+> `0014_replay_trading`; the design document in `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`
+> remains the long-form API and concurrency reference.
 
 ---
 
@@ -465,7 +465,7 @@ here.
 
 ```sql
 CREATE TYPE alert_condition AS ENUM ('above', 'below', 'crossUp', 'crossDown');
-CREATE TYPE alert_status    AS ENUM ('active', 'triggered');  -- frontend states; paused == enabled=false
+CREATE TYPE alert_status    AS ENUM ('active', 'triggered', 'expired'); -- paused == enabled=false
 
 CREATE TABLE alerts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -487,6 +487,8 @@ CREATE TABLE alerts (
   discord       boolean NOT NULL DEFAULT false,
   trigger_price numeric(20,8),                -- price at last trigger
   triggered_at  timestamptz,
+  technical_target jsonb,                     -- immutable versioned fixed/line/channel geometry
+  arming_revision bigint NOT NULL DEFAULT 1 CHECK (arming_revision > 0),
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
@@ -494,6 +496,16 @@ CREATE INDEX idx_alerts_user ON alerts(user_id);
 CREATE INDEX idx_alerts_active_symbol ON alerts(symbol) WHERE status = 'active' AND enabled;
 CREATE UNIQUE INDEX idx_alerts_client ON alerts(user_id, client_id) WHERE client_id IS NOT NULL;
 ```
+
+`arming_revision` advances only when an arming input changes (`symbol`,
+`condition`, `price`, `recurring`, `technical_target`) or an inactive alert is
+explicitly re-armed. Note, channel, lock, pause, and delivery-setting edits keep
+the revision stable. Trigger evidence must carry the matching revision.
+
+Migration `0021` intentionally retains the `expired` enum label on rollback:
+PostgreSQL has no safe `DROP VALUE`. Its down migration converts expired rows to
+active and drops `arming_revision`, avoiding a table/type rebuild with dependent
+indexes.
 
 ### 8.2 `alert_events` (trigger history)
 
@@ -669,12 +681,18 @@ Server authoritative, client cache — so auth can ship before every feature is 
 0014_replay_trading.sql          replay accounts, orders, fills and positions
 0015_journal.sql                 journal entries, screenshots, blob deletion queue
 0016_simulated_trading.sql       simulator accounts + snapshot positions, journal position FK
+0017_user_integrations.sql      encrypted MT5/Telegram/Discord integration settings
+0018_drawing_revisions.sql      optimistic drawing revisions and delete tombstones
+0019_alert_source.sql           immutable drawing provenance for fixed-price alerts
+0020_alert_technical_target.sql versioned fixed/dynamic technical alert geometry
+0021_alert_expiration_and_arming_revision.sql  expired lifecycle + arming revision
 ```
 
 `0015_journal` initially leaves `journal_entries.position_id` nullable without a foreign key because
 `replay_positions` is not interchangeable with simulator positions. `0016_simulated_trading`
-creates `sim_positions` and adds the deferred FK. Applied development schema after Phase 13 is
-version `16`.
+creates `sim_positions` and adds the FK. `0017`–`0021` add integrations, drawing conflict metadata,
+immutable alert provenance, dynamic technical targets, expiration, and re-arming semantics. The
+current development schema head is version `21`.
 
 ---
 

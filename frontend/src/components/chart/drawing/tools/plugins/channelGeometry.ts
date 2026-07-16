@@ -13,6 +13,7 @@ import {
   extendedLineSegment,
   raySegment,
 } from "./lineGeometry";
+import { channelDataLine } from "./channelDataGeometry";
 
 export interface ChannelGeometry {
   baseline: Segment;
@@ -95,6 +96,26 @@ export function projectChannel(
     };
   }
 
+
+  const dataBaseline = channelDataLine(drawing, 0);
+  const dataParallel = channelDataLine(drawing, 1);
+  if (dataBaseline && dataParallel) {
+    const baselineA = projectPoint(dataBaseline.a, toX, toY);
+    const baselineB = projectPoint(dataBaseline.b, toX, toY);
+    const parallelA = projectPoint(dataParallel.a, toX, toY);
+    const parallelB = projectPoint(dataParallel.b, toX, toY);
+    if (baselineA && baselineB && parallelA && parallelB) {
+      return {
+        baseline: { a: baselineA, b: baselineB },
+        parallel: { a: parallelA, b: parallelB },
+        offsetAnchor: third,
+        legacy: false,
+      };
+    }
+  }
+
+  // Equal-time/degenerate baselines cannot define a price-at-time alert, but
+  // they remain drawable. Preserve the visual normal fallback for that case.
   const dx = baseline.b.x - baseline.a.x;
   const dy = baseline.b.y - baseline.a.y;
   const length = Math.hypot(dx, dy);

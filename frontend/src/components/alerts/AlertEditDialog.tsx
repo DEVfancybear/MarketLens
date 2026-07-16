@@ -81,6 +81,9 @@ export function AlertEditDialog() {
   if (typeof document === 'undefined' || !editingId || !alert) return null;
 
   const prec = getMarketSymbol(alert.symbol)?.pricePrecision ?? 2;
+  const geometryLocked = Boolean(
+    alert.technicalTarget && alert.technicalTarget.kind !== "fixed-price",
+  );
   const close = () => editAlert(null);
 
   const save = () => {
@@ -97,6 +100,9 @@ export function AlertEditDialog() {
       push,
       telegram,
       discord,
+      ...(alert.technicalTarget?.kind === "fixed-price"
+        ? { technicalTarget: { version: 1 as const, kind: "fixed-price" as const, price: target } }
+        : {}),
     });
     close();
   };
@@ -132,6 +138,7 @@ export function AlertEditDialog() {
               <button
                 key={c}
                 onClick={() => setCondition(c)}
+                disabled={alert.technicalTarget?.kind === "dynamic-channel"}
                 className={cn(
                   'flex items-center justify-center gap-1 rounded border px-2 py-1 text-2xs font-medium transition-colors',
                   condition === c ? 'border-brand/40 bg-brand/15 text-brand' : 'border-terminal-border text-ink-muted hover:bg-terminal-hover',
@@ -144,13 +151,14 @@ export function AlertEditDialog() {
           </div>
 
           <label className="flex flex-col gap-1">
-            <span className="text-2xs text-ink-faint">Target price (precision {prec})</span>
+            <span className="text-2xs text-ink-faint">{geometryLocked ? "Creation-time geometry preview" : `Target price (precision ${prec})`}</span>
             <input
               type="number"
               inputMode="decimal"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
+              disabled={geometryLocked}
               className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </label>

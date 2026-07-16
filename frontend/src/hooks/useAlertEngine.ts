@@ -13,12 +13,15 @@ import {
   alertArmingRevision,
   previousPriceForRevision,
 } from "@/services/alertConditions";
-import { isAlertTriggered } from "@/services/alertEngine";
+import { evaluateAlert } from "@/services/alertEngine";
+import { technicalTargetSignature } from "@/services/dynamicAlertTargets";
 import { deliverAlert } from "@/services/notifications/notify";
-function latestPrice(symbol: string): number | undefined {
+function latestPrice(symbol: string): { price: number; timestamp: number } | undefined {
   const marketData = getMarketDataState();
   const quote = marketData.quotes[symbol];
-  if (quote && Number.isFinite(quote.last)) return quote.last;
+  if (quote && Number.isFinite(quote.last)) {
+    return { price: quote.last, timestamp: quote.timestamp };
+  }
   return undefined;
 }
 
@@ -29,7 +32,7 @@ export function useAlertEngine() {
     return [...symbols].sort().join(",");
   });
   const subscribedSymbolsRef = useRef<Set<string>>(new Set());
-  const previousPriceRef = useRef<Map<string, number>>(new Map());
+  const previousPriceRef = useRef<Map<string, { price: number; timestamp: number }>>(new Map());
   const revisionByAlertRef = useRef<Map<string, string>>(new Map());
 
   // Alerts own a ticker subscription even when their symbol is not charted or
@@ -64,42 +67,64 @@ export function useAlertEngine() {
 
   useEffect(() => {
     const evaluate = () => {
-      const { alerts, triggerAlert, settings } = getAlertState();
+      const { alerts, triggerAlert, expireAlert, settings } = getAlertState();
       if (alerts.length === 0) return;
 
       const now = Date.now();
-      const prices = new Map<string, number>();
+      const prices = new Map<string, { price: number; timestamp: number }>();
       for (const alert of alerts) {
         if (prices.has(alert.symbol)) continue;
-        const price = latestPrice(alert.symbol);
-        if (price !== undefined) prices.set(alert.symbol, price);
+        const snapshot = latestPrice(alert.symbol);
+        if (snapshot !== undefined) prices.set(alert.symbol, snapshot);
       }
 
       for (const alert of alerts) {
         if (!alert.enabled) continue;
         const current = prices.get(alert.symbol);
-        if (current === undefined) continue;
+        if (!current) continue;
 
-        const revision = alertArmingRevision(
+        const revision = `${alertArmingRevision(
           alert.condition,
           alert.symbol,
           alert.price,
           alert.recurring,
-          alert.updatedAt,
-        );
+          alert.armingRevision ?? alert.updatedAt,
+        )}:${technicalTargetSignature(alert.technicalTarget)}`;
         const previous = previousPriceForRevision(
           revision,
           revisionByAlertRef.current.get(alert.id),
-          previousPriceRef.current.get(alert.symbol),
+          previousPriceRef.current.get(alert.symbol)?.price,
         );
         const rearmBlocked =
           alert.recurring &&
           alert.triggeredAt !== undefined &&
           now - alert.triggeredAt * 1000 < RECURRING_REARM_MS;
 
-        if (!rearmBlocked && isAlertTriggered(alert, previous, current)) {
-          const fired = triggerAlert(alert.id, current);
-          if (fired) deliverAlert(fired, current, settings);
+        const previousPoint = previousPriceRef.current.get(alert.symbol);
+        const evaluated = evaluateAlert(
+          alert,
+          previous,
+          { current: current.price, timestamp: current.timestamp },
+          previous === undefined ? undefined : previousPoint,
+        );
+        if (!evaluated.active && evaluated.inactiveReason === "expired") {
+          expireAlert(
+            alert.id,
+            current.timestamp >= 100_000_000_000
+              ? current.timestamp
+              : current.timestamp * 1000,
+          );
+          revisionByAlertRef.current.delete(alert.id);
+          continue;
+        }
+        if (!rearmBlocked && evaluated.triggered) {
+          const fired = triggerAlert(
+            alert.id,
+            current.price,
+            evaluated.targetPrice,
+            evaluated.evidence,
+          );
+          if (fired) deliverAlert(fired, current.price, settings);
         }
         revisionByAlertRef.current.set(alert.id, revision);
       }
@@ -108,8 +133,8 @@ export function useAlertEngine() {
       for (const id of revisionByAlertRef.current.keys()) {
         if (!activeIds.has(id)) revisionByAlertRef.current.delete(id);
       }
-      for (const [symbol, price] of prices) {
-        previousPriceRef.current.set(symbol, price);
+      for (const [symbol, snapshot] of prices) {
+        previousPriceRef.current.set(symbol, snapshot);
       }
     };
 

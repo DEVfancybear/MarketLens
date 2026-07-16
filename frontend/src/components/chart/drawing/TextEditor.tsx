@@ -1,5 +1,12 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { clampTextEditorPosition } from "./textEditorGeometry";
 
 interface TextEditorProps {
   initialText: string;
@@ -25,6 +32,43 @@ export function TextEditor({
   const inputRef = useRef<HTMLInputElement>(null);
   const doneRef = useRef(false);
   const [text, setText] = useState(initialText);
+  const [position, setPosition] = useState({ left: x, top: y - 10 });
+
+  const updatePosition = useCallback(() => {
+    const editor = inputRef.current;
+    const viewport = editor?.offsetParent as HTMLElement | null;
+    if (!editor || !viewport) {
+      setPosition({ left: x, top: y - 10 });
+      return;
+    }
+    const next = clampTextEditorPosition({
+      left: x,
+      top: y - 10,
+      editorWidth: editor.offsetWidth,
+      editorHeight: editor.offsetHeight,
+      viewportWidth: viewport.clientWidth,
+      viewportHeight: viewport.clientHeight,
+    });
+    setPosition((current) =>
+      current.left === next.left && current.top === next.top ? current : next,
+    );
+  }, [x, y]);
+
+  useLayoutEffect(() => {
+    updatePosition();
+    const editor = inputRef.current;
+    const viewport = editor?.offsetParent as HTMLElement | null;
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updatePosition);
+    if (editor) observer?.observe(editor);
+    if (viewport) observer?.observe(viewport);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [updatePosition]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -94,9 +138,10 @@ export function TextEditor({
       onBlur={commit}
       className="absolute z-[100] rounded border border-brand bg-terminal-panel px-2 py-0.5 text-xs text-ink outline-none"
       style={{
-        left: x,
-        top: y - 10,
+        left: position.left,
+        top: position.top,
         minWidth: 80,
+        maxWidth: "calc(100% - 8px)",
         pointerEvents: "auto",
       }}
       placeholder="Enter text..."

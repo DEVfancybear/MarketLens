@@ -63,6 +63,30 @@ test("creation and style families are derived from the manifest", () => {
   ]);
   assert.equal(getDrawingToolManifestEntry("trendline").angleConstraint, "45-degree");
   assert.equal(getDrawingToolManifestEntry("channel").selectionTextEditor, "line-midpoint");
+  assert.deepEqual(getDrawingToolManifestEntry("regressionTrend").officialDocs, [
+    "https://www.tradingview.com/support/solutions/43000518108-regression-trend-drawing-tool/",
+  ]);
+  assert.deepEqual(getDrawingToolManifestEntry("regressionTrend").defaultProperties, {
+    lineWidth: 1.5,
+    regressionUpperDeviation: 2,
+    regressionLowerDeviation: -2,
+    regressionUseUpperDeviation: true,
+    regressionUseLowerDeviation: true,
+    regressionSource: "close",
+    regressionShowBaseLine: true,
+    regressionShowUpperLine: true,
+    regressionShowLowerLine: true,
+    regressionExtendLines: false,
+    regressionShowPearsonR: true,
+  });
+  for (const tool of ["fixedVolumeProfile", "anchoredVolumeProfile"] as const) {
+    const definition = getDrawingToolManifestEntry(tool);
+    assert.equal(definition.dataSnapshotDetail, "volume-profile");
+    assert.equal(definition.defaultProperties.volumeProfileRows, 24);
+    assert.equal(definition.defaultProperties.volumeProfileValueAreaPercent, 70);
+    assert.ok(definition.settingsFeatures.includes("volume-profile-inputs"));
+    assert.ok(definition.settingsFeatures.includes("volume-profile-style"));
+  }
   assert.equal(getDrawingToolManifestEntry("brush").pointSimplificationTolerance, 0.75);
   assert.deepEqual(getDrawingToolManifestEntry("highlighter").defaultProperties, {
     lineWidth: 8,

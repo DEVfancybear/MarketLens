@@ -816,6 +816,14 @@ export const setDrawingMagnetModeAtom = atom(null, (_get, set, mode: DrawingMagn
   commitDrawingToolPreferences(_get, set, next);
 });
 
+export const setDrawingSnapToIndicatorsAtom = atom(null, (_get, set, enabled: boolean) => {
+  const next = {
+    ..._get(drawingToolPreferencesAtom),
+    snapToIndicators: enabled,
+  };
+  commitDrawingToolPreferences(_get, set, next);
+});
+
 export const saveDrawingToolDefaultsAtom = atom(null, (_get, set, drawing: Drawing) => {
   const definition = getDrawingToolManifestEntry(drawing.tool);
   if (!definition.persistent) return;
@@ -1507,40 +1515,43 @@ export const hydrateAtom = atom(null, (_get, set) => {
   );
 });
 
-export const resetChartWorkspaceToDefaultsAtom = atom(null, (_get, set) => {
-  chartSettingsSync.cancelPending();
-  const symbol = _get(symbolAtom);
-  for (const drawing of _get(drawingsAtom)) {
-    queueDrawingDelete(_get, set, symbol, drawing);
-  }
-  drawingSyncQueue.preserveAndCancel();
-  if (indicatorSyncTimer) {
-    clearTimeout(indicatorSyncTimer);
-    indicatorSyncTimer = null;
-  }
-  pendingIndicatorUpserts.clear();
-  pendingIndicatorDeletes.clear();
+export const resetChartWorkspaceToDefaultsAtom = atom(
+  null,
+  (_get, set, options?: { clearLocal?: boolean }) => {
+    chartSettingsSync.cancelPending();
+    const symbol = _get(symbolAtom);
+    for (const drawing of _get(drawingsAtom)) {
+      queueDrawingDelete(_get, set, symbol, drawing);
+    }
+    drawingSyncQueue.preserveAndCancel();
+    if (indicatorSyncTimer) {
+      clearTimeout(indicatorSyncTimer);
+      indicatorSyncTimer = null;
+    }
+    pendingIndicatorUpserts.clear();
+    pendingIndicatorDeletes.clear();
 
-  set(drawingsAtom, []);
-  set(drawingTemplatesAtom, []);
-  set(indicatorsAtom, []);
-  set(pineScriptsAtom, []);
-  set(pineEditorScriptIdAtom, null);
-  set(pineEditorTitleAtom, "Untitled script");
-  set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
-  set(activeToolAtom, "cursor");
-  set(drawColorAtom, "#2962ff");
-  set(chartTimeZoneAtom, EXCHANGE_TIME_ZONE_ID);
-  set(drawingToolPreferencesAtom, structuredClone(EMPTY_DRAWING_TOOL_PREFERENCES));
-  set(newDrawingSyncModeAtom, DEFAULT_DRAWING_SYNC_MODE);
-  set(selectedDrawingIdAtom, null);
-  set(selectedDrawingIdsAtom, new Set());
-  set(editingIndicatorIdAtom, null);
-  set(editingDrawingIdAtom, null);
-  set(crosshairAtom, null);
-  set(orderPrefillAtom, null);
-  clearLocalChartWorkspace();
-});
+    set(drawingsAtom, []);
+    set(drawingTemplatesAtom, []);
+    set(indicatorsAtom, []);
+    set(pineScriptsAtom, []);
+    set(pineEditorScriptIdAtom, null);
+    set(pineEditorTitleAtom, "Untitled script");
+    set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
+    set(activeToolAtom, "cursor");
+    set(drawColorAtom, "#2962ff");
+    set(chartTimeZoneAtom, EXCHANGE_TIME_ZONE_ID);
+    set(drawingToolPreferencesAtom, structuredClone(EMPTY_DRAWING_TOOL_PREFERENCES));
+    set(newDrawingSyncModeAtom, DEFAULT_DRAWING_SYNC_MODE);
+    set(selectedDrawingIdAtom, null);
+    set(selectedDrawingIdsAtom, new Set());
+    set(editingIndicatorIdAtom, null);
+    set(editingDrawingIdAtom, null);
+    set(crosshairAtom, null);
+    set(orderPrefillAtom, null);
+    if (options?.clearLocal !== false) clearLocalChartWorkspace();
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Derived read-only atom (for compatibility / getChartState)

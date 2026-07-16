@@ -1,4 +1,6 @@
 import type { Drawing } from "../../../../types/drawing";
+import { resolveGannConfig } from "../../../../types/gann";
+import { resolveVolumeProfileConfig } from "../../../../types/volumeProfile";
 import {
   DRAWING_TOOLS,
   getDrawingToolManifestEntry,
@@ -13,9 +15,12 @@ export interface DrawingToolPreferences {
   keepDrawing: boolean;
   magnetEnabled: boolean;
   magnetMode: DrawingMagnetMode;
+  /** Overlay values augment OHLC candidates; they are not a third strength. */
+  snapToIndicators: boolean;
   toolDefaults: Partial<Record<DrawingTool, Partial<Drawing>>>;
 }
 
+/** TradingView exposes OHLC magnets plus a separate overlay-indicator snap. */
 export type DrawingMagnetMode = "weak" | "strong";
 
 export const EMPTY_DRAWING_TOOL_PREFERENCES: DrawingToolPreferences = {
@@ -23,6 +28,7 @@ export const EMPTY_DRAWING_TOOL_PREFERENCES: DrawingToolPreferences = {
   keepDrawing: false,
   magnetEnabled: false,
   magnetMode: "weak",
+  snapToIndicators: false,
   toolDefaults: {},
 };
 
@@ -94,11 +100,18 @@ export function resolveDrawingCreationDefaults(
       }
     }
   }
-  return {
+  const resolved: Partial<Drawing> = {
     color: fallbackColor,
     ...structuredClone(definition.defaultProperties),
     ...sanitized,
   };
+  if (definition.gannFamily) {
+    resolved.gann = resolveGannConfig(resolved.gann, definition.gannFamily);
+  }
+  if (definition.dataSnapshotDetail === "volume-profile") {
+    Object.assign(resolved, resolveVolumeProfileConfig(resolved));
+  }
+  return resolved;
 }
 
 /** Decode untrusted localStorage data without allowing unknown tools/fields. */
@@ -127,7 +140,14 @@ export function decodeDrawingToolPreferences(value: unknown): DrawingToolPrefere
     version: DRAWING_TOOL_PREFERENCES_VERSION,
     keepDrawing: value.keepDrawing === true,
     magnetEnabled: value.magnetEnabled === true,
-    magnetMode: value.magnetMode === "strong" ? "strong" : "weak",
+    magnetMode:
+      value.magnetMode === "strong"
+        ? "strong"
+        : "weak",
+    // Migrate the earlier audit build where indicator snapping was encoded as
+    // an exclusive strength instead of TradingView's independent checkbox.
+    snapToIndicators:
+      value.snapToIndicators === true || value.magnetMode === "indicator",
     toolDefaults,
   };
 }

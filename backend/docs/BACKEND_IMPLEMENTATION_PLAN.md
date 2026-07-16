@@ -1,21 +1,15 @@
 # Backend Implementation Plan (phased)
 
-> Status: Phases 0-13 are implemented. Simulated trading is persisted lazily per account and the
-> frontend remains the fill/SL/TP engine.
+> Status: Phases 0-13 and alert hardening migrations `0017`–`0021` are implemented. Simulated
+> trading is persisted lazily per account and the frontend remains the fill/SL/TP engine.
 > Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow), and `API.md` (endpoint contract). Each
 > phase is independently shippable and has explicit acceptance criteria so progress is unambiguous.
 
-## ⚠ Framework reconciliation (read first)
+## Framework reconciliation (historical note)
 
-The docs (`ARCHITECTURE.md`, `PROJECT_STRUCTURE.md`) declare **Fiber** as the backend framework, but
-the code as of commit `64a33b0` actually uses the **Go 1.22 standard library** (`net/http` +
-`http.ServeMux` method routing, see `internal/httpserver/server.go`, `internal/health/handler.go`).
-`go.mod` has no Fiber dependency.
-
-**Decision for this plan: adopt Fiber in Phase 0** (the documented decision; the current HTTP surface
-is ~60 lines, so migration is cheap and the design docs already assume `fiber.Router` handlers).
-If the team prefers to stay on stdlib instead, only Phase 0 changes — everything else (pgx, sqlc,
-JWT, Firebase verify, repos) is framework-agnostic. Flag this before starting.
+The historical stdlib-vs-Fiber discrepancy was resolved: the current code uses Fiber handlers and
+route groups as documented. The remainder of this file is the phased delivery record; current
+schema/API truth is maintained in `DATABASE.md` and `API.md`.
 
 ## Dependency additions (whole project)
 
@@ -419,10 +413,11 @@ bootstrap, and public `/api/v1/indicator-store`. The backing `pine_scripts` tabl
 
 ### Phase 10 — Alerts + push tokens
 
-**Status: Implemented 2026-07-10.** Migration `0011_alerts` is applied after
-the existing Phase 9/Store migrations. The protected handlers live in
-`internal/alerts`; bootstrap now returns active alerts, triggered alerts, and
-the newest 200 history rows.
+**Status: Implemented and hardened 2026-07-17.** Migration `0011_alerts` is
+followed by `0019_alert_source`, `0020_alert_technical_target`, and
+`0021_alert_expiration_and_arming_revision`. The protected handlers live in
+`internal/alerts`; bootstrap now returns active, triggered, and expired alerts
+plus the newest 200 history rows.
 
 **Goal:** Persist price alerts, their trigger history, and per-device FCM tokens. Unlocks
 closed-browser push targeting every device.
@@ -434,6 +429,8 @@ closed-browser push targeting every device.
 
 **Steps**
 1. Migration `0011_alerts` (alerts + retained alert_events) — `push_tokens` shipped in `0002_auth`.
+   Migrations `0019`–`0021` add immutable drawing provenance, technical targets, expiration, and
+   arming revisions.
 2. Queries: alerts CRUD including the **per-alert channel flags** (`sound`/`browser`/`push`/
    `telegram`/`discord`) and `enabled`/`locked`/`note`/`recurring`; pause == `enabled=false`; on
    trigger set `status='triggered'`, `trigger_price`, `triggered_at` **and** insert an `alert_events`

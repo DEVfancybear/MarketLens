@@ -6,7 +6,19 @@ import {
   useEffect,
   useLayoutEffect,
 } from "react";
-import type { Candle, Drawing, Point, DrawingTool } from "@/types";
+import type {
+  Candle,
+  Drawing,
+  DrawingDataTick,
+  DrawingTool,
+  Point,
+  Timeframe,
+} from "../../../../types";
+import {
+  resolveGannConfig,
+  TF_SECONDS,
+  type GannConfig,
+} from "../../../../types";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
@@ -38,7 +50,15 @@ import {
   type DrawingToolPreferences,
 } from "../settings/drawingToolPreferences";
 import { buildDrawingDataSnapshot } from "../data/drawingDataSnapshot";
+import {
+  selectCachedVolumeProfileHistory,
+  type VolumeProfileHistoryRequest,
+} from "../data/volumeProfileHistory";
 import type { DrawingAdapterInteractionContext } from "../tools/ToolRegistry";
+import {
+  constrainGannAnchor,
+  constrainGannResize,
+} from "../tools/plugins/gannGeometry";
 
 export {
   createInitialMachine,
@@ -84,6 +104,10 @@ export interface DrawingInteractionManagerOpts {
     selectedDrawingIds: Set<string>;
     candles: Candle[];
     symbol: string;
+    timeframe?: Timeframe;
+    cachedCandles?: Record<string, Candle[]>;
+    recentTicks?: DrawingDataTick[];
+    recentTickCoverage?: { start: number; end: number };
     adapterContext?: DrawingAdapterInteractionContext;
   };
   addDrawing: (d: Drawing) => void;
@@ -113,6 +137,10 @@ export interface DrawingInteractionManagerOpts {
    * first move(s) into the chart's pressedMouseMove pan/scale handler.
    */
   freezeChart?: (busy: boolean) => void;
+  /** Optional normal-history enrichment for capability-declared profile tools. */
+  loadVolumeProfileHistory?: (
+    request: VolumeProfileHistoryRequest,
+  ) => Promise<readonly Candle[] | undefined>;
 }
 
 export interface DrawingInteractionHandle {
@@ -153,6 +181,7 @@ export function useDrawingInteractionManager(
     onTextPlace,
     snapPoint,
     freezeChart,
+    loadVolumeProfileHistory,
     cancellationKey,
   } = opts;
   const freezeChartRef = useRef(freezeChart);
@@ -161,6 +190,8 @@ export function useDrawingInteractionManager(
   openDrawingSettingsRef.current = openDrawingSettings;
   const snapPointRef = useRef(snapPoint);
   snapPointRef.current = snapPoint;
+  const loadVolumeProfileHistoryRef = useRef(loadVolumeProfileHistory);
+  loadVolumeProfileHistoryRef.current = loadVolumeProfileHistory;
 
   const [machine, setMachine] = useState<Machine>(() => createInitialMachine());
   const [ctxMenu, setCtxMenu] = useState<DrawingMenuState | null>(null);
@@ -185,6 +216,10 @@ export function useDrawingInteractionManager(
   const drawingIdRef = useRef<string | null>(null);
   const hoveredIdRef = useRef<string | null>(null);
   const clipboardRef = useRef<Drawing | null>(null);
+  const pendingGannRatioRef = useRef<{
+    drawingId: string;
+    gann: GannConfig;
+  } | null>(null);
   const pointerClaimedRef = useRef(false);
   // True for the exact duration of a body-move / handle-resize drag. Set
   // synchronously on pointerdown and cleared on release. Gates the capture-phase
@@ -240,6 +275,7 @@ export function useDrawingInteractionManager(
     cancelHoverFrame();
     creationSessionRef.current = null;
     transformSessionRef.current = null;
+    pendingGannRatioRef.current = null;
     // Restore chart pan/zoom synchronously when the interaction ends.
     freezeChartRef.current?.(false);
     scheduleRedrawRef.current();
@@ -263,29 +299,96 @@ export function useDrawingInteractionManager(
         const points = tolerance
           ? simplifyProjectedPoints(outcome.points, toX, toY, tolerance)
           : outcome.points;
+        const capturedAt = Math.floor(Date.now() / 1000);
+        const profileDetail = session.definition.dataSnapshotDetail === "volume-profile";
+        const historyRequest = profileDetail && session.definition.dataSnapshot && cur.timeframe
+          ? {
+              mode: session.definition.dataSnapshot,
+              points: points.map((point) => ({ ...point })),
+              candles: cur.candles.map((candle) => ({ ...candle })),
+              symbol: cur.symbol,
+              timeframe: cur.timeframe,
+              capturedAt,
+            } satisfies VolumeProfileHistoryRequest
+          : undefined;
+        const lowerTimeframeBars = historyRequest && cur.cachedCandles
+          ? selectCachedVolumeProfileHistory(historyRequest, cur.cachedCandles)
+          : undefined;
+        const detailStart = session.definition.dataSnapshot === "between-anchors" && points[1]
+          ? Math.min(points[0].time, points[1].time)
+          : points[0]?.time ?? capturedAt;
+        const detailEnd = session.definition.dataSnapshot === "between-anchors" && points[1]
+          ? Math.min(
+              Math.max(points[0].time, points[1].time) +
+                (cur.timeframe ? TF_SECONDS[cur.timeframe] : 0),
+              capturedAt,
+            )
+          : capturedAt;
+        const ticks = profileDetail
+          ? cur.recentTicks?.filter(
+              (tick) => tick.time !== undefined && tick.time >= detailStart && tick.time < detailEnd,
+            )
+          : undefined;
         const dataSnapshot = session.definition.dataSnapshot
           ? buildDrawingDataSnapshot(
               session.definition.dataSnapshot,
               points,
               cur.candles,
               cur.symbol,
+              capturedAt,
+              profileDetail
+                ? {
+                    lowerTimeframeBars,
+                    ticks,
+                    tickCoverage: cur.recentTickCoverage,
+                  }
+                : undefined,
             )
           : undefined;
+        const drawingId = uid("dw");
         addDrawing({
           ...resolveDrawingCreationDefaults(
             session.tool,
             cur.drawingToolPreferences.toolDefaults[session.tool],
             cur.drawColor,
           ),
-          id: uid("dw"),
+          id: drawingId,
           tool: session.tool,
           points,
           ...(dataSnapshot ? { dataSnapshot } : {}),
         } as Drawing);
+        if (
+          historyRequest &&
+          !lowerTimeframeBars &&
+          loadVolumeProfileHistoryRef.current
+        ) {
+          const initialTicks = ticks?.map((tick) => ({ ...tick }));
+          const tickCoverage = cur.recentTickCoverage
+            ? { ...cur.recentTickCoverage }
+            : undefined;
+          void loadVolumeProfileHistoryRef.current(historyRequest).then((loadedBars) => {
+            if (!loadedBars?.length) return;
+            const enriched = buildDrawingDataSnapshot(
+              historyRequest.mode,
+              historyRequest.points,
+              historyRequest.candles,
+              historyRequest.symbol,
+              historyRequest.capturedAt,
+              {
+                lowerTimeframeBars: loadedBars,
+                ticks: initialTicks,
+                tickCoverage,
+              },
+            );
+            if (enriched) updateDrawing({ id: drawingId, patch: { dataSnapshot: enriched } });
+          }).catch(() => {
+            // The initial chart-timeframe snapshot remains authoritative.
+          });
+        }
       }
       reset();
     },
-    [addDrawing, getState, reset, toX, toY, transition],
+    [addDrawing, getState, reset, toX, toY, transition, updateDrawing],
   );
   const cancellationKeyRef = useRef(cancellationKey);
   cancellationKeyRef.current = cancellationKey;
@@ -364,6 +467,22 @@ export function useDrawingInteractionManager(
         session = new CreationSession(current.activeTool);
         creationSessionRef.current = session;
       }
+      if (definition.gannScaleConstraint && definition.gannFamily && session.points[0]) {
+        const defaults = resolveDrawingCreationDefaults(
+          current.activeTool,
+          current.drawingToolPreferences.toolDefaults[current.activeTool],
+          current.drawColor,
+        );
+        const config = resolveGannConfig(defaults.gann, definition.gannFamily);
+        if (config.scaleLock) {
+          point = constrainGannAnchor(
+            session.points[0],
+            point,
+            config.priceBarRatio,
+            current.adapterContext,
+          );
+        }
+      }
       if (event.shiftKey && definition.angleConstraint === "45-degree" && session.points[0]) {
         point = constrainPointTo45Degrees(session.points[0], point, toX, toY);
       }
@@ -385,9 +504,30 @@ export function useDrawingInteractionManager(
       const raw = fromEvent(event);
       const rawPoint = raw ? withPointerPressure(raw, event) : null;
       if (!session || !rawPoint) return;
+      const current = getState();
       let point = session.definition.magnetEligible
         ? snapPointRef.current?.(rawPoint, session.tool, event) ?? rawPoint
         : rawPoint;
+      if (
+        session.definition.gannScaleConstraint &&
+        session.definition.gannFamily &&
+        session.points[0]
+      ) {
+        const defaults = resolveDrawingCreationDefaults(
+          session.tool,
+          current.drawingToolPreferences.toolDefaults[session.tool],
+          current.drawColor,
+        );
+        const config = resolveGannConfig(defaults.gann, session.definition.gannFamily);
+        if (config.scaleLock) {
+          point = constrainGannAnchor(
+            session.points[0],
+            point,
+            config.priceBarRatio,
+            current.adapterContext,
+          );
+        }
+      }
       if (event.shiftKey && session.definition.angleConstraint === "45-degree" && session.points[0]) {
         point = constrainPointTo45Degrees(session.points[0], point, toX, toY);
       }
@@ -563,11 +703,41 @@ export function useDrawingInteractionManager(
       if (!rawPoint) return;
       const session = transformSessionRef.current;
       const definition = getDrawingToolManifestEntry(session.tool);
+      const current = getState();
       let p = definition.magnetEligible && snapPointRef.current
         ? session.pointerAdjustedForSnap(rawPoint, (point) =>
           snapPointRef.current!(point, session.tool, e),
         )
         : rawPoint;
+      if (
+        definition.gannScaleConstraint === "price-bar-ratio" &&
+        definition.gannFamily &&
+        session.mode === "resize" &&
+        !session.isMulti &&
+        session.primaryOriginal.length === 2
+      ) {
+        const drawing = current.drawings.find((item) => item.id === session.drawingId);
+        const constrained = drawing
+          ? constrainGannResize(
+            drawing,
+            definition.gannFamily,
+            session.primaryOriginal,
+            session.anchorIndex,
+            p,
+            current.adapterContext,
+            e.shiftKey,
+          )
+          : null;
+        if (constrained && drawing) {
+          p = constrained.point;
+          if (e.shiftKey) {
+            pendingGannRatioRef.current = {
+              drawingId: drawing.id,
+              gann: constrained.gann,
+            };
+          }
+        }
+      }
       if (
         e.shiftKey &&
         definition.angleConstraint === "45-degree" &&
@@ -676,7 +846,16 @@ export function useDrawingInteractionManager(
           const session = transformSessionRef.current;
           for (const [id, pts] of multiMap) {
             if (!session?.hasChanged(id, pts)) continue;
-            updateDrawing({ id, patch: { points: pts } });
+            const pendingGann = pendingGannRatioRef.current;
+            updateDrawing({
+              id,
+              patch: {
+                points: pts,
+                ...(pendingGann?.drawingId === id
+                  ? { gann: pendingGann.gann }
+                  : {}),
+              },
+            });
             if (commitMove) {
               const orig = session?.originalPointsFor(id);
               if (orig) commitMove(id, pts, orig);

@@ -1,7 +1,10 @@
 import { deleteToken, getToken } from "firebase/messaging";
 import type { Alert } from "@/store/alertStore";
 import type { PushPermission, PushRegistration } from "@/store/notificationStore";
-import type { PushAlertTriggerStatus, ServerPushAlert } from "@/types/pushAlerts";
+import type {
+  PushAlertReconcileStatus,
+  ServerPushAlert,
+} from "@/types/pushAlerts";
 import {
   getFirebaseConfigStatus,
   getFirebaseMessaging,
@@ -25,6 +28,7 @@ export interface PushSendPayload {
   body: string;
   alert: Alert;
   triggerPrice: number;
+  targetPrice: number;
 }
 
 async function postJson(
@@ -246,14 +250,18 @@ export async function syncServerPushAlerts({
     note: alert.note,
     recurring: alert.recurring,
     updatedAt: Math.round((alert.updatedAt ?? alert.createdAt) * 1000),
+    armingRevision: alert.armingRevision,
     lastTriggeredAt:
       alert.triggeredAt === undefined
         ? undefined
         : Math.round(alert.triggeredAt * 1000),
     triggerPrice: alert.triggerPrice,
+    targetPrice: alert.evaluatedTargetPrice,
+    triggerEvidence: alert.triggerEvidence,
     push: alert.push,
     telegram: alert.telegram,
     discord: alert.discord,
+    technicalTarget: alert.technicalTarget,
   }));
   return postJson(
     "/api/push/alerts/sync",
@@ -269,20 +277,23 @@ export async function syncServerPushAlerts({
   );
 }
 
-export async function fetchPushTriggerStatus(
+export async function fetchPushAlertStatus(
   token: string,
-): Promise<PushAlertTriggerStatus[]> {
+): Promise<PushAlertReconcileStatus> {
   try {
     const res = await fetch("/api/push/alerts/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     });
-    if (!res.ok) return [];
-    const body = (await res.json()) as { triggers?: PushAlertTriggerStatus[] };
-    return body.triggers ?? [];
+    if (!res.ok) return { triggers: [], expirations: [] };
+    const body = (await res.json()) as Partial<PushAlertReconcileStatus>;
+    return {
+      triggers: body.triggers ?? [],
+      expirations: body.expirations ?? [],
+    };
   } catch {
-    return [];
+    return { triggers: [], expirations: [] };
   }
 }
 
@@ -297,7 +308,7 @@ export async function sendAlertPush(
       alertId: payload.alert.id,
       symbol: payload.alert.symbol,
       condition: payload.alert.condition,
-      targetPrice: String(payload.alert.price),
+      targetPrice: String(payload.targetPrice),
       triggerPrice: String(payload.triggerPrice),
       source: "browser",
     },

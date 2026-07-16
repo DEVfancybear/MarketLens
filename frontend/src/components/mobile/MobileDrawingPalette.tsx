@@ -24,10 +24,12 @@ import {
   setDrawColorAtom,
   setDrawingMagnetEnabledAtom,
   setDrawingMagnetModeAtom,
+  setDrawingSnapToIndicatorsAtom,
   setKeepDrawingModeAtom,
   setNewDrawingSyncModeAtom,
 } from "@/store/chartStore";
 import { DrawingToolIcon } from "@/components/chart/drawing/DrawingToolIcon";
+import { useChartCtx } from "@/components/chart/ChartContext";
 import { useDrawingBulkActions } from "@/components/chart/drawing/bulk/useDrawingBulkActions";
 import { DRAWING_SYNC_MODE_OPTIONS } from "@/components/chart/drawing/persistence/drawingSyncScope";
 import { useDrawingToolFavorites } from "@/hooks/useDrawingToolFavorites";
@@ -52,8 +54,8 @@ const DRAWING_COLORS = [
   "#787b86",
 ] as const;
 
-const AVAILABLE_TOOLS = DRAWING_TOOL_MANIFEST.filter((entry) =>
-  isDrawingToolCreationEnabled(entry.id),
+const AVAILABLE_TOOLS = DRAWING_TOOL_MANIFEST.filter(
+  (entry) => entry.preferredForCreation && isDrawingToolCreationEnabled(entry.id),
 );
 
 /**
@@ -61,6 +63,7 @@ const AVAILABLE_TOOLS = DRAWING_TOOL_MANIFEST.filter((entry) =>
  * component, so desktop and mobile automatically expose the same catalog.
  */
 export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
+  const chartCtx = useChartCtx();
   const active = useAtomValue(activeToolAtom);
   const color = useAtomValue(drawColorAtom);
   const keepDrawing = useAtomValue(keepDrawingModeAtom);
@@ -71,6 +74,7 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
   const setKeepDrawing = useSetAtom(setKeepDrawingModeAtom);
   const setMagnetEnabled = useSetAtom(setDrawingMagnetEnabledAtom);
   const setMagnetMode = useSetAtom(setDrawingMagnetModeAtom);
+  const setSnapToIndicators = useSetAtom(setDrawingSnapToIndicatorsAtom);
   const setSyncMode = useSetAtom(setNewDrawingSyncModeAtom);
   const bulk = useDrawingBulkActions();
   const [favorites, toggleFavorite] = useDrawingToolFavorites();
@@ -171,7 +175,7 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
             onClick={() => setKeepDrawing(!keepDrawing)}
           />
           <div className="mobile-control-card">
-            <div><Magnet size={18} /><span><strong>Magnet</strong><small>Snap anchors to OHLC</small></span></div>
+            <div><Magnet size={18} /><span><strong>Magnet</strong><small>Snap anchors to OHLC or overlay indicators</small></span></div>
             <div className="mobile-choice-row" role="group" aria-label="Magnet mode">
               {(["off", "weak", "strong"] as const).map((mode) => {
                 const selected = mode === "off"
@@ -179,6 +183,13 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
                   : preferences.magnetEnabled && preferences.magnetMode === mode;
                 return <button key={mode} type="button" aria-pressed={selected} className={cn(selected && "is-active")} onClick={() => chooseMagnet(mode)}>{mode}</button>;
               })}
+              <button
+                type="button"
+                aria-pressed={preferences.snapToIndicators}
+                disabled={(chartCtx?.indicatorPoints?.length ?? 0) === 0}
+                className={cn(preferences.snapToIndicators && "is-active")}
+                onClick={() => setSnapToIndicators(!preferences.snapToIndicators)}
+              >indicators</button>
             </div>
           </div>
           <div className="mobile-control-card mobile-control-card--wide">

@@ -33,6 +33,7 @@ function backendAlert(): Awaited<ReturnType<AlertsApiModule["createAlert"]>> {
     },
     createdAt: "2026-07-10T01:00:00Z",
     updatedAt: "2026-07-10T01:01:00Z",
+    armingRevision: 1,
   };
 }
 
@@ -76,8 +77,10 @@ test("backend alert adapters preserve the optimistic client id and channels", as
       telegram: false,
       discord: true,
     },
+    armingRevision: 1,
   });
   assert.equal(localAlertToPatch(local).status, undefined);
+  assert.equal(localAlertToPatch(local).armingRevision, 1);
 
   const history = backendAlertEventToLocal({
     id: "event-1",
@@ -133,7 +136,16 @@ test("alert and push resource methods use the Phase 10 API routes", async (t) =>
   const createBody = api.localAlertToCreate(api.backendAlertToLocal(backendAlert()));
   await api.createAlert(createBody);
   await api.patchAlert("alert-1", { enabled: false });
-  await api.triggerAlert("alert-1", 1.126);
+  await api.triggerAlert(
+    "alert-1",
+    1.126,
+    1.1255,
+    {
+      previous: { price: 1.124, timestamp: 1_752_109_200 },
+      current: { price: 1.126, timestamp: 1_752_109_260 },
+    },
+    1,
+  );
   await api.clearAlertHistory();
   await api.registerPushToken({
     fcmToken: "token/1",
@@ -153,7 +165,13 @@ test("alert and push resource methods use the Phase 10 API routes", async (t) =>
       ["DELETE", "/api/v1/push/tokens/token%2F1"],
     ],
   );
-  assert.deepEqual(calls[2].body, { triggerPrice: 1.126 });
+  assert.deepEqual(calls[2].body, {
+    triggerPrice: 1.126,
+    targetPrice: 1.1255,
+    previous: { price: 1.124, timestamp: 1_752_109_200 },
+    current: { price: 1.126, timestamp: 1_752_109_260 },
+    armingRevision: 1,
+  });
   assert.deepEqual(calls[4].body, {
     fcmToken: "token/1",
     platform: "web",
@@ -167,4 +185,22 @@ test("drawing alert provenance round-trips on create and stays immutable on patc
   assert.deepEqual(local.source, drawingSource);
   assert.deepEqual(localAlertToCreate(local).source, drawingSource);
   assert.equal("source" in localAlertToPatch(local), false);
+});
+
+test("backend adapter fails closed on malformed technical geometry", async () => {
+  const { backendAlertToLocal } = await loadApi();
+  assert.throws(
+    () => backendAlertToLocal({
+      ...backendAlert(),
+      technicalTarget: {
+        version: 1,
+        kind: "dynamic-line",
+        a: { time: 1_750_000_000, price: 1.12 },
+        b: { time: 1_750_000_000, price: 1.13 },
+        domain: "segment",
+        interpolation: "linear",
+      },
+    }),
+    /invalid technical target/i,
+  );
 });

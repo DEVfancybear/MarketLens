@@ -1,4 +1,8 @@
-import type { Drawing, DrawingTemplate, Point } from "@/types";
+import type { Drawing, DrawingTemplate, LineStat, Point } from "@/types";
+import { resolveGannConfig } from "../../../../types/gann";
+import { resolveRegressionTrendConfig } from "../../../../types/regressionTrend";
+import { resolveVolumeProfileConfig } from "../../../../types/volumeProfile";
+import { sanitizeDrawingDataSamples } from "../data/drawingDataSamples";
 import { normalizeDrawingIntervalVisibility } from "../visibility/drawingIntervalVisibility";
 import { normalizeDrawingSyncMode } from "./drawingSyncScope";
 import {
@@ -42,6 +46,15 @@ type UnknownRecord = Record<string, unknown>;
 const MAX_OBJECT_NAME_LENGTH = 120;
 const MAX_DATA_SAMPLES = 1000;
 const MAX_CONTENT_TEXT = 200;
+const LINE_STAT_IDS = new Set<LineStat>([
+  "priceRange",
+  "percentChange",
+  "pips",
+  "barsRange",
+  "dateTimeRange",
+  "distance",
+  "angle",
+]);
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -84,10 +97,7 @@ function normalizedSync(value: unknown): Drawing["sync"] {
 
 function normalizedDataSnapshot(value: unknown): Drawing["dataSnapshot"] {
   if (!isRecord(value) || value.version !== 1 || typeof value.symbol !== "string" || !finite(value.capturedAt) || !Array.isArray(value.samples)) return undefined;
-  const samples = value.samples.slice(-MAX_DATA_SAMPLES).flatMap((sample) => {
-    if (!isRecord(sample) || !finite(sample.time) || !finite(sample.open) || !finite(sample.high) || !finite(sample.low) || !finite(sample.close) || !finite(sample.volume)) return [];
-    return [{ time: sample.time, open: sample.open, high: sample.high, low: sample.low, close: sample.close, volume: Math.max(0, sample.volume) }];
-  });
+  const samples = sanitizeDrawingDataSamples(value.samples, MAX_DATA_SAMPLES);
   if (samples.length === 0) return undefined;
   return { version: 1, symbol: value.symbol.trim().slice(0, MAX_OBJECT_NAME_LENGTH), capturedAt: value.capturedAt, samples };
 }
@@ -133,6 +143,16 @@ function decodePoints(value: unknown): Point[] | null {
     });
   }
   return points;
+}
+
+function normalizedLineStats(value: unknown): LineStat[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result = [...new Set(
+    value.filter((item): item is LineStat =>
+      typeof item === "string" && LINE_STAT_IDS.has(item as LineStat),
+    ),
+  )];
+  return result;
 }
 
 function persistentTool(value: unknown): value is DrawingTool {
@@ -208,6 +228,24 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
         : metadata.defaultProperties.lineWidth,
     points,
   } as Drawing;
+  const lineStats = normalizedLineStats(value.lineStats);
+  if (lineStats) drawing.lineStats = lineStats;
+  else if (value.showStats === true) {
+    // Compatibility with the audit-slice combined delta/percent chip.
+    drawing.lineStats = ["priceRange", "percentChange"];
+    drawing.alwaysShowLineStats = true;
+  } else delete drawing.lineStats;
+  if (["left", "center", "right", "auto"].includes(String(value.lineStatsPosition))) {
+    drawing.lineStatsPosition = value.lineStatsPosition as Drawing["lineStatsPosition"];
+  } else delete drawing.lineStatsPosition;
+  if (typeof value.alwaysShowLineStats === "boolean") {
+    drawing.alwaysShowLineStats = value.alwaysShowLineStats;
+  } else if (value.showStats !== true) delete drawing.alwaysShowLineStats;
+  if (metadata.gannFamily && value.gann !== undefined) {
+    drawing.gann = resolveGannConfig(value.gann, metadata.gannFamily);
+  } else if (!metadata.gannFamily) {
+    delete drawing.gann;
+  }
   const intervalVisibility = normalizeDrawingIntervalVisibility(value.intervalVisibility);
   if (intervalVisibility) drawing.intervalVisibility = intervalVisibility;
   else delete drawing.intervalVisibility;
@@ -226,6 +264,12 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
   const content = normalizedContent(value.content);
   if (content) drawing.content = content;
   else delete drawing.content;
+  if (drawing.tool === "regressionTrend") {
+    Object.assign(drawing, resolveRegressionTrendConfig(value));
+  }
+  if (metadata.dataSnapshotDetail === "volume-profile") {
+    Object.assign(drawing, resolveVolumeProfileConfig(value));
+  }
   delete drawing._dragging;
   return {
     drawing,

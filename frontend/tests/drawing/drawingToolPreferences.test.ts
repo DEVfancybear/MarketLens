@@ -57,6 +57,77 @@ test("creation defaults layer manifest, current color, and per-tool user setting
   );
   assert.equal(highlighter.lineWidth, 8);
   assert.equal(highlighter.opacity, 0.35);
+
+  const regression = resolveDrawingCreationDefaults(
+    "regressionTrend",
+    undefined,
+    "#2962ff",
+  );
+  assert.deepEqual(
+    {
+      regressionUpperDeviation: regression.regressionUpperDeviation,
+      regressionLowerDeviation: regression.regressionLowerDeviation,
+      regressionUseUpperDeviation: regression.regressionUseUpperDeviation,
+      regressionUseLowerDeviation: regression.regressionUseLowerDeviation,
+      regressionSource: regression.regressionSource,
+      regressionShowBaseLine: regression.regressionShowBaseLine,
+      regressionShowUpperLine: regression.regressionShowUpperLine,
+      regressionShowLowerLine: regression.regressionShowLowerLine,
+      regressionExtendLines: regression.regressionExtendLines,
+      regressionShowPearsonR: regression.regressionShowPearsonR,
+    },
+    {
+      regressionUpperDeviation: 2,
+      regressionLowerDeviation: -2,
+      regressionUseUpperDeviation: true,
+      regressionUseLowerDeviation: true,
+      regressionSource: "close",
+      regressionShowBaseLine: true,
+      regressionShowUpperLine: true,
+      regressionShowLowerLine: true,
+      regressionExtendLines: false,
+      regressionShowPearsonR: true,
+    },
+  );
+
+  const profile = resolveDrawingCreationDefaults(
+    "fixedVolumeProfile",
+    { volumeProfileRows: 48, volumeProfilePlacement: "left" },
+    "#2962ff",
+  );
+  assert.equal(profile.volumeProfileRows, 48);
+  assert.equal(profile.volumeProfilePlacement, "left");
+  assert.equal(profile.volumeProfileValueAreaPercent, 70);
+  assert.equal(profile.volumeProfileShowPointOfControl, true);
+});
+
+test("volume-profile tool defaults preserve every typed control", () => {
+  const drawing: Drawing = {
+    id: "profile",
+    tool: "anchoredVolumeProfile",
+    color: "#2962ff",
+    lineWidth: 1.5,
+    points: [{ time: 1, price: 2 }],
+    volumeProfileRows: 50,
+    volumeProfileValueAreaPercent: 65,
+    volumeProfileWidthPercent: 40,
+    volumeProfilePlacement: "left",
+    volumeProfileVolumeMode: "total",
+    volumeProfileShowHistogram: false,
+    volumeProfileShowPointOfControl: false,
+    volumeProfileShowValueAreaHigh: false,
+    volumeProfileShowValueAreaLow: true,
+  };
+  const defaults = pickDrawingToolDefaults(drawing);
+  assert.equal(defaults.volumeProfileRows, 50);
+  assert.equal(defaults.volumeProfileValueAreaPercent, 65);
+  assert.equal(defaults.volumeProfileWidthPercent, 40);
+  assert.equal(defaults.volumeProfilePlacement, "left");
+  assert.equal(defaults.volumeProfileVolumeMode, "total");
+  assert.equal(defaults.volumeProfileShowHistogram, false);
+  assert.equal(defaults.volumeProfileShowPointOfControl, false);
+  assert.equal(defaults.volumeProfileShowValueAreaHigh, false);
+  assert.equal(defaults.volumeProfileShowValueAreaLow, true);
 });
 
 test("preference decoder rejects unknown versions, tools, and unsafe fields", () => {
@@ -65,6 +136,7 @@ test("preference decoder rejects unknown versions, tools, and unsafe fields", ()
     keepDrawing: false,
     magnetEnabled: false,
     magnetMode: "weak",
+    snapToIndicators: false,
     toolDefaults: {},
   });
 
@@ -87,11 +159,24 @@ test("preference decoder rejects unknown versions, tools, and unsafe fields", ()
   assert.equal(decoded.keepDrawing, true);
   assert.equal(decoded.magnetEnabled, true);
   assert.equal(decoded.magnetMode, "strong");
+  assert.equal(decoded.snapToIndicators, false);
   assert.deepEqual(decoded.toolDefaults.trendline, {
     color: "#00ff00",
     lineWidth: 2,
   });
   assert.equal((decoded.toolDefaults as Record<string, unknown>).unknownTool, undefined);
+});
+
+test("legacy indicator magnet preference migrates to an independent source toggle", () => {
+  const decoded = decodeDrawingToolPreferences({
+    version: 1,
+    keepDrawing: false,
+    magnetEnabled: true,
+    magnetMode: "indicator",
+    toolDefaults: {},
+  });
+  assert.equal(decoded.magnetMode, "weak");
+  assert.equal(decoded.snapToIndicators, true);
 });
 
 test("position input preferences persist without carrying projected price geometry", () => {

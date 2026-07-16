@@ -1,6 +1,9 @@
 import type { Drawing } from "@/types";
+import type { Projector } from "../../drawingRenderer";
 import type { Segment } from "./lineGeometry";
 import { arrowHead, chip, handle, renderLineText } from "./shared";
+import { drawPriceAxisValueLabel } from "./axisLabels";
+import { lineStatItems, lineStatsAnchor } from "./lineStats";
 
 /** Shared visual controls documented for Trendline, Ray, and Extended Line. */
 export function renderTwoPointLineParity(
@@ -9,6 +12,7 @@ export function renderTwoPointLineParity(
   anchors: Segment,
   rendered: Segment,
   selected: boolean,
+  proj: Projector,
 ) {
   const arrowSize = Math.max(10, (drawing.lineWidth ?? 1.5) * 4);
   if (drawing.lineStart === "arrow") {
@@ -27,18 +31,37 @@ export function renderTwoPointLineParity(
     }
   }
   if (drawing.showPriceLabels) {
-    chip(g, drawing.points[0].price.toLocaleString(), anchors.a.x + 6, anchors.a.y - 18, drawing.color);
-    chip(g, drawing.points[1].price.toLocaleString(), anchors.b.x + 6, anchors.b.y - 18, drawing.color);
-  }
-  if (drawing.showStats) {
-    const delta = drawing.points[1].price - drawing.points[0].price;
-    const percent = drawing.points[0].price === 0 ? 0 : (delta / drawing.points[0].price) * 100;
-    chip(
+    drawPriceAxisValueLabel(
       g,
-      `${delta >= 0 ? "+" : ""}${delta.toLocaleString(undefined, { maximumFractionDigits: 6 })} (${percent.toFixed(2)}%)`,
-      (anchors.a.x + anchors.b.x) / 2 + 6,
-      (anchors.a.y + anchors.b.y) / 2 + 5,
+      drawing.points[0].price,
       drawing.color,
+      proj,
+      anchors.a.y,
     );
+    drawPriceAxisValueLabel(
+      g,
+      drawing.points[1].price,
+      drawing.color,
+      proj,
+      anchors.b.y,
+    );
+  }
+  const stats = lineStatItems(drawing, anchors, proj);
+  const always = drawing.alwaysShowLineStats ?? drawing.showStats === true;
+  if (stats.length > 0 && (selected || always)) {
+    const origin = lineStatsAnchor(
+      anchors,
+      drawing.lineStatsPosition ?? "auto",
+      proj.width,
+    );
+    stats.forEach((stat, index) => {
+      chip(
+        g,
+        stat.text,
+        origin.x,
+        origin.y + index * 18,
+        drawing.color,
+      );
+    });
   }
 }

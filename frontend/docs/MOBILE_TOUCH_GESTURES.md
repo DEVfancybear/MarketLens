@@ -1,6 +1,6 @@
 # Mobile Touch, Pointer and Drag Support
 
-_Reviewed: 2026-07-16_
+_Reviewed: 2026-07-17_
 
 ## Research basis
 

@@ -103,9 +103,11 @@ Browser popup headers:
 `UserMenu` attempts `POST /api/v1/auth/logout` first, then always signs out Firebase. Backend logout
 is best-effort so an expired backend cookie cannot trap the user in the signed-in UI.
 
-When Firebase reports `anonymous`, `useWorkspaceBootstrap()` resets the screen to the default
-workspace. The reset covers watchlists, UI panel preferences, SMC toggles, alert settings/history,
-push registration state, Trade panel runtime, indicators/Pine scripts, drawings/templates, and
-drawing-tool favorites. Login performs the opposite path: once `backendSession` is true,
+When Firebase reports `anonymous` after an authenticated session, `useWorkspaceBootstrap()` resets
+the screen to the default workspace and clears the previous user's local cache. A first
+anonymous/offline load instead hydrates the local cache, so drawing preferences can survive a
+reload without leaking an authenticated workspace. The sign-out reset covers watchlists, UI panel
+preferences, SMC toggles, alert settings/history, push registration state, Trade panel runtime,
+indicators/Pine scripts, drawings/templates, and drawing-tool favorites. Login performs the opposite path: once `backendSession` is true,
 `GET /api/v1/sync/bootstrap` rehydrates the authenticated user's settings and watchlists, then loads
 drawing templates and current-symbol drawings from the backend.

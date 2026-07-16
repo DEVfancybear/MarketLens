@@ -27,6 +27,7 @@ import {
   drawingToolPreferencesAtom,
   setDrawingMagnetEnabledAtom,
   setDrawingMagnetModeAtom,
+  setDrawingSnapToIndicatorsAtom,
   newDrawingSyncModeAtom,
   setNewDrawingSyncModeAtom,
 } from "@/store/chartStore";
@@ -34,6 +35,7 @@ import type { DrawingTool } from "@/types";
 import { DRAWING_SYNC_MODE_OPTIONS } from "@/components/chart/drawing/persistence/drawingSyncScope";
 import { useDrawingBulkActions } from "@/components/chart/drawing/bulk/useDrawingBulkActions";
 import { DrawingToolIcon } from "@/components/chart/drawing/DrawingToolIcon";
+import { useChartCtx } from "@/components/chart/ChartContext";
 import { useDrawingToolFavorites } from "@/hooks/useDrawingToolFavorites";
 import {
   DRAWING_TOOL_GROUPS,
@@ -65,7 +67,12 @@ const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
   ...group,
   icon: <DrawingToolIcon iconKey={group.iconKey} size={18} />,
   tools: DRAWING_TOOL_MANIFEST.filter(
-    (entry) => entry.group === group.id && isDrawingToolCreationEnabled(entry.id),
+    (entry) =>
+      // Mode tools (Cursor/Crosshair/Eraser) are intentionally non-persistent
+      // but still belong in the toolbar so users can leave a drawing mode.
+      (entry.preferredForCreation || entry.group === "cursor") &&
+      entry.group === group.id &&
+      isDrawingToolCreationEnabled(entry.id),
   ).map(
     (entry) => ({
       tool: entry.id,
@@ -121,6 +128,7 @@ function useLastUsed(): Record<string, DrawingTool> {
 }
 
 export function DrawingToolbar() {
+  const chartCtx = useChartCtx();
   const activeTool = useAtomValue(activeToolAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
   const drawColor = useAtomValue(drawColorAtom);
@@ -131,8 +139,10 @@ export function DrawingToolbar() {
   const drawingPreferences = useAtomValue(drawingToolPreferencesAtom);
   const setMagnetEnabled = useSetAtom(setDrawingMagnetEnabledAtom);
   const setMagnetMode = useSetAtom(setDrawingMagnetModeAtom);
+  const setSnapToIndicators = useSetAtom(setDrawingSnapToIndicatorsAtom);
   const newDrawingSyncMode = useAtomValue(newDrawingSyncModeAtom);
   const setNewDrawingSyncMode = useSetAtom(setNewDrawingSyncModeAtom);
+  const hasIndicatorMagnets = (chartCtx?.indicatorPoints?.length ?? 0) > 0;
   const lastUsed = useLastUsed();
   const [favorites, toggleFavorite] = useDrawingToolFavorites();
 
@@ -243,6 +253,7 @@ export function DrawingToolbar() {
                               </div>
                             )}
                             <button
+                              data-drawing-tool-id={t.tool}
                               onClick={() => {
                                 setActiveTool(t.tool);
                                 setOpenGroup(null);
@@ -324,7 +335,7 @@ export function DrawingToolbar() {
 
       <div className="relative">
         <IconButton
-          label={`Magnet: ${drawingPreferences.magnetEnabled ? drawingPreferences.magnetMode : "off"}`}
+          label={`Magnet: ${drawingPreferences.magnetEnabled ? `${drawingPreferences.magnetMode}${drawingPreferences.snapToIndicators ? " + indicators" : ""}` : "off"}`}
           active={drawingPreferences.magnetEnabled}
           onClick={() => setMagnetEnabled(!drawingPreferences.magnetEnabled)}
         >
@@ -358,9 +369,25 @@ export function DrawingToolbar() {
                     : "text-ink",
                 )}
               >
-                {mode === "weak" ? "Weak magnet" : "Strong magnet"}
+                {mode === "weak"
+                  ? "Weak magnet"
+                  : "Strong magnet"}
               </button>
             ))}
+            <div className="my-1 h-px bg-terminal-border" />
+            <button
+              type="button"
+              disabled={!hasIndicatorMagnets}
+              aria-pressed={drawingPreferences.snapToIndicators}
+              onClick={() => setSnapToIndicators(!drawingPreferences.snapToIndicators)}
+              className={cn(
+                "flex w-full items-center rounded px-2 py-1.5 text-left text-[11px] hover:bg-terminal-hover",
+                drawingPreferences.snapToIndicators ? "text-brand" : "text-ink",
+                !hasIndicatorMagnets && "cursor-not-allowed opacity-40",
+              )}
+            >
+              Snap to indicators
+            </button>
             <div className="px-2 pb-1 pt-1.5 text-[9px] text-ink-faint">
               Ctrl/Cmd temporarily toggles
             </div>

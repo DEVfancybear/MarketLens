@@ -1,10 +1,15 @@
 import type { Drawing } from "../../../../types/drawing";
+import { resolveGannConfig } from "../../../../types/gann";
+import { resolveVolumeProfileConfig } from "../../../../types/volumeProfile";
 import { getDrawingToolManifestEntry, type DrawingSettingsFeature, type DrawingTool } from "../../../../types/drawingToolManifest";
 
 export type DrawingSettingsTab = "inputs" | "style" | "text" | "coordinates" | "visibility";
 export type DrawingSettingsSectionId =
   | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
-  | "trendline-parity" | "price-label" | "time-label" | "channel-levels" | "coordinates" | "visibility";
+  | "trendline-parity" | "price-label" | "time-label" | "channel-levels"
+  | "gann" | "regression-inputs" | "regression-style"
+  | "volume-profile-inputs" | "volume-profile-style"
+  | "coordinates" | "visibility";
 
 export interface DrawingSettingsFieldDescriptor {
   key: keyof Drawing;
@@ -23,8 +28,10 @@ export interface DrawingSettingsSchema {
   title: string;
   profile: ReturnType<typeof getDrawingToolManifestEntry>["settingsProfile"];
   templateFamily: ReturnType<typeof getDrawingToolManifestEntry>["styleFamily"];
+  gannFamily?: ReturnType<typeof getDrawingToolManifestEntry>["gannFamily"];
   positionSide?: "long" | "short";
   coordinateLabels?: readonly string[];
+  coordinatePriceEditable: boolean;
   features: readonly DrawingSettingsFeature[];
   tabs: readonly DrawingSettingsTab[];
   sections: readonly DrawingSettingsSectionDescriptor[];
@@ -40,10 +47,46 @@ const SECTION_FIELDS: Record<DrawingSettingsSectionId, readonly (keyof Drawing)[
   "middle-line": ["showMiddleLine", "middleLineColor", "middleLineStyle"],
   "fib-levels": ["fibTrendLine", "fibTrendLineColor", "fibTrendLineWidth", "fibTrendLineStyle", "fibLevelsLine", "fibLevelLineColor", "fibLevelLineWidth", "fibLevelLineStyle", "fibLevels", "fibUseOneColor", "fibBackground", "fibReverse", "fibShowPrices", "fibShowLevels", "fibLevelsFormat", "fibLabelsHAlign", "fibLabelsVAlign", "fibShowText", "fibTextHAlign", "fibTextVAlign", "fibLogScale"],
   stats: ["accountSize", "accountCurrency", "lotSize", "riskValue", "riskUnit", "leverage", "qtyPrecision", "positionStats", "compactStats", "alwaysShowStats", "stop", "target"],
-  "trendline-parity": ["lineStart", "lineEnd", "showMidpoint", "showPriceLabels", "showStats"],
+  "trendline-parity": [
+    "lineStart",
+    "lineEnd",
+    "showMidpoint",
+    "showPriceLabels",
+    "lineStats",
+    "lineStatsPosition",
+    "alwaysShowLineStats",
+  ],
   "price-label": ["showPriceLabels"],
   "time-label": ["showTimeLabel"],
   "channel-levels": ["channelLevels", "channelBackground"],
+  gann: ["gann"],
+  "regression-inputs": [
+    "regressionUpperDeviation",
+    "regressionLowerDeviation",
+    "regressionUseUpperDeviation",
+    "regressionUseLowerDeviation",
+    "regressionSource",
+  ],
+  "regression-style": [
+    "regressionShowBaseLine",
+    "regressionShowUpperLine",
+    "regressionShowLowerLine",
+    "regressionExtendLines",
+    "regressionShowPearsonR",
+  ],
+  "volume-profile-inputs": [
+    "volumeProfileRows",
+    "volumeProfileValueAreaPercent",
+    "volumeProfileWidthPercent",
+    "volumeProfilePlacement",
+    "volumeProfileVolumeMode",
+  ],
+  "volume-profile-style": [
+    "volumeProfileShowHistogram",
+    "volumeProfileShowPointOfControl",
+    "volumeProfileShowValueAreaHigh",
+    "volumeProfileShowValueAreaLow",
+  ],
   coordinates: ["points"],
   visibility: ["visible", "intervalVisibility"],
 };
@@ -51,7 +94,11 @@ const SECTION_FIELDS: Record<DrawingSettingsSectionId, readonly (keyof Drawing)[
 const SECTION_TABS: Record<DrawingSettingsSectionId, DrawingSettingsTab> = {
   line: "style", fill: "style", text: "text", "middle-line": "style",
   "fib-levels": "style", stats: "inputs", "trendline-parity": "style",
-  "price-label": "style", "time-label": "style", "channel-levels": "style", coordinates: "coordinates", visibility: "visibility",
+  "price-label": "style", "time-label": "style", "channel-levels": "style",
+  gann: "style",
+  "regression-inputs": "inputs", "regression-style": "style",
+  "volume-profile-inputs": "inputs", "volume-profile-style": "style",
+  coordinates: "coordinates", visibility: "visibility",
 };
 
 const NON_TEMPLATE_KEYS = new Set<keyof Drawing>([
@@ -87,8 +134,10 @@ export function getDrawingSettingsSchema(tool: DrawingTool): DrawingSettingsSche
     title: definition.displayName,
     profile: definition.settingsProfile,
     templateFamily: definition.styleFamily,
+    gannFamily: definition.gannFamily,
     positionSide: definition.positionSide,
     coordinateLabels: definition.coordinateLabels,
+    coordinatePriceEditable: definition.coordinatePriceEditable,
     features: definition.settingsFeatures,
     tabs,
     sections,
@@ -112,9 +161,20 @@ export function applyDrawingTemplateStyle(
   template: Partial<Drawing>,
 ): Partial<Drawing> {
   const patch: Partial<Drawing> = {};
-  for (const key of getDrawingSettingsSchema(tool).templateKeys) {
+  const schema = getDrawingSettingsSchema(tool);
+  for (const key of schema.templateKeys) {
     const value = template[key];
     if (value !== undefined) (patch as Record<string, unknown>)[key] = structuredClone(value);
+  }
+  if (schema.gannFamily && patch.gann !== undefined) {
+    patch.gann = resolveGannConfig(patch.gann, schema.gannFamily);
+  }
+  if (schema.hasFeature("volume-profile-inputs")) {
+    const normalized = resolveVolumeProfileConfig(patch);
+    for (const key of schema.templateKeys) {
+      if (!String(key).startsWith("volumeProfile") || patch[key] === undefined) continue;
+      (patch as Record<string, unknown>)[key] = normalized[key as keyof typeof normalized];
+    }
   }
   return patch;
 }

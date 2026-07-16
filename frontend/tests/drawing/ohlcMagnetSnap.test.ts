@@ -4,7 +4,9 @@ import { test } from "node:test";
 import type { Candle } from "../../src/types";
 import {
   effectiveMagnetMode,
+  snapPointToIndicator,
   snapPointToOhlc,
+  snapPointWithMagnetSources,
 } from "../../src/components/chart/drawing/interaction/OhlcMagnetSnap";
 
 const candles: Candle[] = [
@@ -68,4 +70,59 @@ test("Ctrl/Cmd temporary toggle inverts persisted magnet enablement", () => {
   assert.equal(effectiveMagnetMode(false, "strong", true), "strong");
   assert.equal(effectiveMagnetMode(true, "weak", false), "weak");
   assert.equal(effectiveMagnetMode(true, "weak", true), null);
+});
+
+test("indicator magnet chooses the nearest visible overlay value and preserves pressure", () => {
+  const result = snapPointToIndicator({
+    point: { time: 191, price: 21.4, pressure: 0.7 },
+    indicators: [
+      { time: 100, value: 11, sourceId: "sma", seriesKey: "sma" },
+      { time: 200, value: 21, sourceId: "ema", seriesKey: "ema" },
+      { time: 200, value: 24, sourceId: "bands", seriesKey: "upper" },
+    ],
+    toX,
+    toY,
+  });
+  assert.equal(result.snapped, true);
+  assert.deepEqual(result.point, { time: 200, price: 21, pressure: 0.7 });
+  assert.equal(result.sourceId, "ema");
+  assert.equal(result.seriesKey, "ema");
+});
+
+test("Snap to indicators augments Weak/Strong OHLC candidates", () => {
+  const point = { time: 190, price: 23.4 };
+  const fallback = snapPointWithMagnetSources({
+    point,
+    candles,
+    indicators: [],
+    mode: "strong",
+    snapToIndicators: true,
+    toX,
+    toY,
+  });
+  assert.equal(fallback.source, "ohlc");
+  assert.deepEqual(fallback.point, { time: 200, price: 24 });
+
+  const indicatorWins = snapPointWithMagnetSources({
+    point,
+    candles,
+    indicators: [{ time: 190, value: 23.5, sourceId: "ema" }],
+    mode: "strong",
+    snapToIndicators: true,
+    toX,
+    toY,
+  });
+  assert.equal(indicatorWins.source, "indicator");
+  assert.deepEqual(indicatorWins.point, { time: 190, price: 23.5 });
+
+  const disabled = snapPointWithMagnetSources({
+    point,
+    candles,
+    indicators: [{ time: 190, value: 23.5 }],
+    mode: "strong",
+    snapToIndicators: false,
+    toX,
+    toY,
+  });
+  assert.equal(disabled.source, "ohlc");
 });

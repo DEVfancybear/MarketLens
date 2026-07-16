@@ -7,6 +7,8 @@ import type {
   ServerPushAlert,
 } from "@/types/pushAlerts";
 import { alertArmingRevision } from "@/services/alertConditions";
+import { technicalTargetSignature } from "@/services/dynamicAlertTargets";
+import { sanitizePushAlertForStorage } from "@/services/pushAlertSanitizer";
 
 const DB_VERSION = 1;
 const STORE_DIR = ".data";
@@ -22,6 +24,13 @@ async function readDb(): Promise<PushAlertDb> {
     const raw = await readFile(STORE_FILE, "utf8");
     const parsed = JSON.parse(raw) as PushAlertDb;
     if (parsed.version !== DB_VERSION || !parsed.devices) return emptyDb();
+    for (const device of Object.values(parsed.devices)) {
+      device.alerts = Array.isArray(device.alerts)
+        ? device.alerts
+            .map(sanitizePushAlertForStorage)
+            .filter((alert): alert is ServerPushAlert => Boolean(alert))
+        : [];
+    }
     return parsed;
   } catch {
     return emptyDb();
@@ -36,51 +45,19 @@ async function writeDb(db: PushAlertDb): Promise<void> {
   await rename(tmp, file);
 }
 
-function sanitizeAlert(alert: ServerPushAlert): ServerPushAlert | null {
-  if (!alert.id || !alert.symbol) return null;
-  if (!Number.isFinite(alert.price) || alert.price <= 0) return null;
-  if (
-    alert.condition !== "above" &&
-    alert.condition !== "below" &&
-    alert.condition !== "crossUp" &&
-    alert.condition !== "crossDown"
-  ) {
-    return null;
-  }
-  const sanitized: ServerPushAlert = {
-    id: String(alert.id),
-    symbol: String(alert.symbol).toUpperCase(),
-    condition: alert.condition,
-    price: alert.price,
-    recurring: Boolean(alert.recurring),
-    updatedAt: Number.isFinite(alert.updatedAt) ? alert.updatedAt : Date.now(),
-    push: Boolean(alert.push),
-    telegram: Boolean(alert.telegram),
-    discord: Boolean(alert.discord),
-  };
-  if (alert.note) sanitized.note = String(alert.note).slice(0, 240);
-  if (Number.isFinite(alert.lastTriggeredAt)) {
-    sanitized.lastTriggeredAt = alert.lastTriggeredAt;
-  }
-  if (Number.isFinite(alert.triggerPrice)) {
-    sanitized.triggerPrice = alert.triggerPrice;
-  }
-  return sanitized;
-}
-
 function mergeClientTriggerState(
   alerts: ServerPushAlert[],
   state: PushDeviceRecord["alertState"],
 ): PushDeviceRecord["alertState"] {
   const next = { ...state };
   for (const alert of alerts) {
-    const signature = alertArmingRevision(
+    const signature = `${alertArmingRevision(
       alert.condition,
       alert.symbol,
       alert.price,
       alert.recurring,
-      alert.updatedAt,
-    );
+      alert.armingRevision,
+    )}:${technicalTargetSignature(alert.technicalTarget)}`;
     if (
       alert.lastTriggeredAt === undefined ||
       alert.triggerPrice === undefined ||
@@ -94,8 +71,11 @@ function mergeClientTriggerState(
       signature,
       lastTriggeredAt: alert.lastTriggeredAt,
       lastEvaluatedAt: alert.lastTriggeredAt,
+      lastMarketTimestamp: alert.lastTriggeredAt,
       oneTimeFired: !alert.recurring,
       triggerPrice: alert.triggerPrice,
+      targetPrice: alert.targetPrice,
+      triggerEvidence: alert.triggerEvidence,
     };
   }
   return next;
@@ -132,10 +112,15 @@ function stripUndefined<T>(value: T): T {
 }
 
 function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
+  const alerts = Array.isArray(data.alerts)
+    ? (data.alerts as ServerPushAlert[])
+        .map(sanitizePushAlertForStorage)
+        .filter((alert): alert is ServerPushAlert => Boolean(alert))
+    : [];
   return {
     token: String(data.token),
     deliveryToken: typeof data.deliveryToken === "string" ? data.deliveryToken : undefined,
-    alerts: Array.isArray(data.alerts) ? (data.alerts as ServerPushAlert[]) : [],
+    alerts,
     settingsPush: Boolean(data.settingsPush),
     settingsTelegram: Boolean(data.settingsTelegram),
     settingsDiscord: Boolean(data.settingsDiscord),
@@ -233,7 +218,7 @@ export async function syncPushAlerts(
       Boolean(request.settingsDiscord);
     const alerts = shouldStoreAlerts
       ? request.alerts
-          .map(sanitizeAlert)
+          .map(sanitizePushAlertForStorage)
           .filter((alert): alert is ServerPushAlert => Boolean(alert))
       : [];
     const device = pruneState({
@@ -261,7 +246,7 @@ export async function syncPushAlerts(
     Boolean(request.settingsDiscord);
   const alerts = shouldStoreAlerts
     ? request.alerts
-        .map(sanitizeAlert)
+        .map(sanitizePushAlertForStorage)
         .filter((alert): alert is ServerPushAlert => Boolean(alert))
     : [];
 

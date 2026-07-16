@@ -1,14 +1,21 @@
 import type { PushAlertCondition } from "@/types/pushAlerts";
 import {
   isFreshMt5Tick,
-  mt5ChartPrice,
 } from "@/services/market-data/mt5Price";
+import { normalizeMt5AlertTicks } from "@/services/market-data/mt5AlertTicks";
 import {
   alertArmingRevision,
-  findPriceConditionTrigger,
+  findPriceConditionMatch,
   previousPriceForRevision,
 } from "@/services/alertConditions";
+import {
+  findTechnicalAlertTrigger,
+  orderedTechnicalPricePoints,
+  targetAt,
+  technicalTargetSignature,
+} from "@/services/dynamicAlertTargets";
 import type { PushDeviceRecord, ServerPushAlert } from "@/types/pushAlerts";
+import type { TechnicalAlertEvidence } from "@/types/technicalAlerts";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
 import { sendUserIntegrationNotifications } from "./externalNotifications";
 import { listPushDevices, updatePushDevice } from "./pushAlertStore";
@@ -20,6 +27,7 @@ interface EvaluationResult {
   devices: number;
   alerts: number;
   triggered: number;
+  expired: number;
   skipped: number;
   errors: string[];
   debug?: AlertEvaluationDebug[];
@@ -47,7 +55,8 @@ interface AlertEvaluationDebug {
 
 interface PriceSnapshot {
   current: number;
-  ticks: Array<{ price: number; timestamp: number }>;
+  ticks: Array<{ price: number; timestamp: number; receivedAt: number }>;
+  receivedThrough: number;
   open?: number;
   high?: number;
   low?: number;
@@ -55,13 +64,13 @@ interface PriceSnapshot {
 }
 
 export function alertSignature(alert: ServerPushAlert): string {
-  return alertArmingRevision(
+  return `${alertArmingRevision(
     alert.condition,
     alert.symbol,
     alert.price,
     alert.recurring,
-    alert.updatedAt,
-  );
+    alert.armingRevision,
+  )}:${technicalTargetSignature(alert.technicalTarget)}`;
 }
 
 const CONDITION_SYMBOL: Record<PushAlertCondition, string> = {
@@ -71,12 +80,37 @@ const CONDITION_SYMBOL: Record<PushAlertCondition, string> = {
   crossDown: "crosses below",
 };
 
-function formatAlert(alert: ServerPushAlert, triggerPrice: number) {
-  const op = CONDITION_SYMBOL[alert.condition];
+const CHANNEL_OPERATOR_TEXT = {
+  "cross-upper-up": "crosses upper boundary up",
+  "cross-upper-down": "crosses upper boundary down",
+  "cross-lower-up": "crosses lower boundary up",
+  "cross-lower-down": "crosses lower boundary down",
+  enter: "enters channel",
+  exit: "exits channel",
+  inside: "is inside channel",
+  outside: "is outside channel",
+} as const;
+
+function formatAlert(
+  alert: ServerPushAlert,
+  triggerPrice: number,
+  targetPrice: number,
+) {
+  const op = alert.technicalTarget?.kind === "dynamic-channel"
+    ? `${CHANNEL_OPERATOR_TEXT[alert.technicalTarget.operator]} @ ${targetPrice}`
+    : `${CONDITION_SYMBOL[alert.condition]} ${targetPrice}`;
   return {
     title: `${alert.symbol} alert`,
-    body: `${alert.symbol} ${op} ${alert.price} - now ${triggerPrice}${alert.note ? ` - ${alert.note}` : ""}`,
+    body: `${alert.symbol} ${op} - now ${triggerPrice}${alert.note ? ` - ${alert.note}` : ""}`,
   };
+}
+
+function epochSeconds(value: number): number {
+  return value >= 100_000_000_000 ? value / 1000 : value;
+}
+
+function epochMillis(value: number): number {
+  return value >= 100_000_000_000 ? value : value * 1000;
 }
 
 async function fetchMt5Price(symbol: string): Promise<PriceSnapshot | undefined> {
@@ -101,24 +135,17 @@ async function fetchMt5Price(symbol: string): Promise<PriceSnapshot | undefined>
     }>;
   };
   if (body.connected === false) return undefined;
-  const normalized = symbol.trim().toUpperCase();
-  const ticks = (body.ticks ?? [])
-    .filter((item) => item.symbol?.trim().toUpperCase() === normalized)
-    .map((item) => ({
-      price: mt5ChartPrice(Number(item.bid), Number(item.ask)),
-      timestamp:
-        Number(item.received_at) ||
-        Number(item.time_msc) ||
-        Number(item.timestamp) * 1000,
-    }))
-    .filter(
-      (item): item is { price: number; timestamp: number } =>
-        item.price !== undefined && Number.isFinite(item.timestamp),
-    )
-    .sort((left, right) => left.timestamp - right.timestamp);
+  const receivedTicks = normalizeMt5AlertTicks(body.ticks ?? [], symbol);
+  const receivedLatest = receivedTicks[receivedTicks.length - 1];
+  if (!receivedLatest || !isFreshMt5Tick(receivedLatest.receivedAt)) return undefined;
+  const ticks = orderedTechnicalPricePoints(undefined, receivedTicks);
   const latest = ticks[ticks.length - 1];
-  if (!latest || !isFreshMt5Tick(latest.timestamp)) return undefined;
-  return { current: latest.price, ticks };
+  if (!latest) return undefined;
+  return {
+    current: latest.price,
+    ticks,
+    receivedThrough: receivedLatest.receivedAt,
+  };
 }
 
 async function fetchCurrentPrice(symbol: string): Promise<PriceSnapshot | undefined> {
@@ -158,6 +185,7 @@ async function runEvaluation(
     devices: 0,
     alerts: 0,
     triggered: 0,
+    expired: 0,
     skipped: 0,
     errors: [],
   };
@@ -240,15 +268,61 @@ async function runEvaluation(
         alert.recurring &&
         state?.lastTriggeredAt !== undefined &&
         now - state.lastTriggeredAt < RECURRING_REARM_MS;
-      const replayTicks = price.ticks.filter((tick) => tick.timestamp > since);
-      const matchedTick = findPriceConditionTrigger(
-        alert.condition,
-        alert.price,
-        prev,
-        replayTicks,
+      const replayTicks = orderedTechnicalPricePoints(
+        state?.lastMarketTimestamp,
+        price.ticks.filter((tick) => tick.receivedAt > since),
       );
+      const matchedTechnical = alert.technicalTarget
+        ? findTechnicalAlertTrigger(
+            alert.condition,
+            alert.technicalTarget,
+            prev === undefined || state?.lastMarketTimestamp === undefined
+              ? undefined
+              : { price: prev, timestamp: state.lastMarketTimestamp },
+            replayTicks,
+          )
+        : undefined;
+      const matchedLegacy = alert.technicalTarget
+        ? undefined
+        : findPriceConditionMatch(
+            alert.condition,
+            alert.price,
+            prev === undefined || state?.lastMarketTimestamp === undefined
+              ? undefined
+              : { price: prev, timestamp: state.lastMarketTimestamp },
+            replayTicks,
+          );
+      const matchedTick = matchedTechnical?.point ?? matchedLegacy?.point;
+      const matchedTargetPrice = matchedTechnical?.targetPrice ?? alert.price;
+      const triggerEvidence: TechnicalAlertEvidence | undefined = matchedTick
+        ? matchedTechnical?.evidence ?? {
+            ...(matchedLegacy?.previous && Number.isFinite(matchedLegacy.previous.timestamp)
+              ? {
+                  previous: {
+                    price: matchedLegacy.previous.price,
+                    timestamp: epochSeconds(matchedLegacy.previous.timestamp),
+                  },
+                }
+              : {}),
+            current: {
+              price: matchedTick.price,
+              timestamp: epochSeconds(matchedTick.timestamp),
+            },
+          }
+        : undefined;
       const met = matchedTick !== undefined;
-      const evaluatedThrough = price.ticks[price.ticks.length - 1]?.timestamp ?? now;
+      const finalTick = replayTicks[replayTicks.length - 1];
+      const evaluatedThrough = price.receivedThrough;
+      const lastMarketTimestamp = finalTick?.timestamp ?? state?.lastMarketTimestamp;
+      const acceptedCurrent = finalTick?.price ?? previousPrices[alert.symbol] ?? price.current;
+      const finalTarget = alert.technicalTarget && finalTick
+        ? targetAt(alert.technicalTarget, finalTick.timestamp)
+        : undefined;
+      const expiredAt = finalTarget && !finalTarget.active && finalTarget.reason === "expired"
+        ? epochMillis(finalTick!.timestamp)
+        : state?.expiredAt;
+      const alreadyExpired = state?.expiredAt !== undefined;
+      if (!alreadyExpired && expiredAt !== undefined) result.expired += 1;
 
       const debugEntry: AlertEvaluationDebug = {
         token: device.token.slice(-8),
@@ -257,22 +331,24 @@ async function runEvaluation(
         condition: alert.condition,
         target: alert.price,
         prev,
-        current: price.current,
+        current: acceptedCurrent,
         since,
         candles: replayTicks.length,
         met,
         blocked: oneTimeFired
           ? "one-time fired"
+          : alreadyExpired
+            ? "expired"
           : rearmBlocked
             ? "recurring rearm"
             : undefined,
       };
       result.debug?.push(debugEntry);
 
-      if (!oneTimeFired && !rearmBlocked && matchedTick) {
+      if (!oneTimeFired && !alreadyExpired && !rearmBlocked && matchedTick) {
         const triggerPrice = matchedTick.price;
         const triggeredAt = matchedTick.timestamp;
-        const message = formatAlert(alert, triggerPrice);
+        const message = formatAlert(alert, triggerPrice, matchedTargetPrice);
         let deliverySucceeded = false;
 
         try {
@@ -285,7 +361,7 @@ async function runEvaluation(
                 alertId: alert.id,
                 symbol: alert.symbol,
                 condition: alert.condition,
-                targetPrice: String(alert.price),
+                targetPrice: String(matchedTargetPrice),
                 triggerPrice: String(triggerPrice),
                 source: "server-worker",
               },
@@ -307,7 +383,7 @@ async function runEvaluation(
             alertId: alert.id,
             symbol: alert.symbol,
             condition: alert.condition,
-            targetPrice: alert.price,
+            targetPrice: matchedTargetPrice,
             triggerPrice,
             note: alert.note,
             triggeredAt,
@@ -338,6 +414,10 @@ async function runEvaluation(
             lastEvaluatedAt: evaluatedThrough,
             oneTimeFired: !alert.recurring,
             triggerPrice,
+            targetPrice: matchedTargetPrice,
+            lastMarketTimestamp,
+            triggerEvidence,
+            expiredAt,
           };
         } else {
           alertState[alert.id] = {
@@ -345,7 +425,11 @@ async function runEvaluation(
             lastTriggeredAt: state?.lastTriggeredAt,
             lastEvaluatedAt: evaluatedThrough,
             triggerPrice: state?.triggerPrice,
+            targetPrice: state?.targetPrice,
+            lastMarketTimestamp,
             oneTimeFired: state?.oneTimeFired,
+            triggerEvidence: state?.triggerEvidence,
+            expiredAt,
           };
         }
       } else {
@@ -355,10 +439,14 @@ async function runEvaluation(
           lastEvaluatedAt: evaluatedThrough,
           oneTimeFired: state?.oneTimeFired,
           triggerPrice: state?.triggerPrice,
+          targetPrice: state?.targetPrice,
+          lastMarketTimestamp,
+          triggerEvidence: state?.triggerEvidence,
+          expiredAt,
         };
       }
 
-      lastPrices[alert.symbol] = price.current;
+      lastPrices[alert.symbol] = acceptedCurrent;
     }
 
     await updatePushDevice(device.token, { lastPrices, alertState });

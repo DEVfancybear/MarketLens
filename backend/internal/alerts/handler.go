@@ -83,7 +83,7 @@ func (h *Handler) trigger(c *fiber.Ctx) error {
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	item, event, err := h.store.Trigger(c.Context(), userID(c), c.Params("id"), req.TriggerPrice)
+	item, event, err := h.store.Trigger(c.Context(), userID(c), c.Params("id"), req)
 	if err != nil {
 		return apiError(err)
 	}
@@ -138,7 +138,8 @@ func (h *Handler) deletePushToken(c *fiber.Ctx) error {
 
 func emptyPatch(req PatchInput) bool {
 	if req.Symbol != nil || req.Condition != nil || req.Price != nil || req.Note != nil ||
-		req.Status != nil || req.Enabled != nil || req.Locked != nil || req.Recurring != nil {
+		req.Status != nil || req.Enabled != nil || req.Locked != nil || req.Recurring != nil ||
+		req.TechnicalTarget != nil {
 		return false
 	}
 	if req.Channels == nil {

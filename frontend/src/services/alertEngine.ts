@@ -16,6 +16,12 @@ import {
   conditionForTargetSide,
   isPriceConditionMet,
 } from "@/services/alertConditions";
+import {
+  evaluateTechnicalAlert,
+  type TechnicalAlertEvaluation,
+  type TechnicalPricePoint,
+} from "@/services/dynamicAlertTargets";
+import type { TechnicalAlertEvidence } from "@/types/technicalAlerts";
 
 export interface AlertPriceSnapshot {
   current: number;
@@ -25,6 +31,7 @@ export interface AlertPriceSnapshot {
   candleTime?: number;
   candleHigh?: number;
   candleLow?: number;
+  timestamp?: number;
 }
 
 export function conditionMet(
@@ -41,8 +48,51 @@ export function isAlertTriggered(
   alert: Alert,
   prev: number | undefined,
   price: number | AlertPriceSnapshot,
+  previousPoint?: TechnicalPricePoint,
 ): boolean {
-  return conditionMet(alert.condition, alert.price, prev, price);
+  return evaluateAlert(alert, prev, price, previousPoint).triggered;
+}
+
+export function evaluateAlert(
+  alert: Alert,
+  prev: number | undefined,
+  price: number | AlertPriceSnapshot,
+  previousPoint?: TechnicalPricePoint,
+): TechnicalAlertEvaluation {
+  const current = typeof price === "number"
+    ? { price, timestamp: Date.now() }
+    : {
+        price: price.current,
+        timestamp: price.timestamp ?? price.candleTime ?? Date.now(),
+      };
+  if (!alert.technicalTarget) {
+    const triggered = conditionMet(alert.condition, alert.price, prev, price);
+    const evidence: TechnicalAlertEvidence = {
+      ...(previousPoint
+        ? {
+            previous: {
+              price: previousPoint.price,
+              timestamp: previousPoint.timestamp >= 100_000_000_000
+                ? previousPoint.timestamp / 1000
+                : previousPoint.timestamp,
+            },
+          }
+        : {}),
+      current: {
+        price: current.price,
+        timestamp: current.timestamp >= 100_000_000_000
+          ? current.timestamp / 1000
+          : current.timestamp,
+      },
+    };
+    return {
+      triggered,
+      targetPrice: alert.price,
+      active: true,
+      ...(triggered ? { evidence } : {}),
+    };
+  }
+  return evaluateTechnicalAlert(alert.condition, alert.technicalTarget, previousPoint, current);
 }
 
 /**

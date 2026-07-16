@@ -23,12 +23,13 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { alertCenterOpenAtom, setAlertCenterAtom } from "@/store/uiStore";
 import { symbolAtom } from "@/store/chartStore";
-import { useMarketDataStore } from "@/store/marketDataStore";
+import { getMarketDataState, useMarketDataStore } from "@/store/marketDataStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   useAlertStore,
   CONDITION_LABEL,
   CONDITION_SYMBOL,
+  type Alert,
   type AlertCondition,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -47,8 +48,26 @@ import { subscriptionKey } from "@/types";
 import { fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
 import { cn } from "@/utils/cn";
+import { targetAt } from "@/services/dynamicAlertTargets";
 
 const CONDITIONS: AlertCondition[] = ["above", "below", "crossUp", "crossDown"];
+
+function alertTargetText(alert: Alert): string {
+  const target = alert.technicalTarget;
+  const precision = getMarketSymbol(alert.symbol)?.pricePrecision ?? 2;
+  if (!target || target.kind === "fixed-price") {
+    return `${CONDITION_SYMBOL[alert.condition]} ${fmtPrice(alert.price, precision)}`;
+  }
+  const timestamp = getMarketDataState().quotes[alert.symbol]?.timestamp ?? Date.now();
+  const projected = targetAt(target, timestamp);
+  if (!projected.active) {
+    return target.kind === "dynamic-line" ? "Dynamic line · inactive" : "Channel · inactive";
+  }
+  if (target.kind === "dynamic-line") {
+    return `${CONDITION_SYMBOL[alert.condition]} Dynamic line · ${fmtPrice(projected.lower, precision)}`;
+  }
+  return `Channel · ${fmtPrice(projected.lower, precision)}–${fmtPrice(projected.upper, precision)}`;
+}
 
 function useLivePrice(symbol: string): number | undefined {
   return useMarketDataStore((s) => {
@@ -100,6 +119,7 @@ export function AlertCenter() {
   const chartSymbol = useAtomValue(symbolAtom);
   const alerts = useAlertStore((s) => s.alerts);
   const triggered = useAlertStore((s) => s.triggeredAlerts);
+  const expired = useAlertStore((s) => s.expiredAlerts);
   const history = useAlertStore((s) => s.history);
   const settings = useAlertStore((s) => s.settings);
   const createAlert = useAlertStore((s) => s.createAlert);
@@ -108,6 +128,7 @@ export function AlertCenter() {
   const resetAlert = useAlertStore((s) => s.resetAlert);
   const clearHistory = useAlertStore((s) => s.clearHistory);
   const clearTriggered = useAlertStore((s) => s.clearTriggered);
+  const clearExpired = useAlertStore((s) => s.clearExpired);
   const setSettings = useAlertStore((s) => s.setSettings);
   const push = usePushNotifications();
   const { refresh: refreshPush } = push;
@@ -432,11 +453,7 @@ export function AlertCenter() {
                   {a.symbol}
                 </span>
                 <span className="text-2xs text-ink-muted">
-                  {CONDITION_SYMBOL[a.condition]}{" "}
-                  {fmtPrice(
-                    a.price,
-                    getMarketSymbol(a.symbol)?.pricePrecision ?? 2,
-                  )}
+                  {alertTargetText(a)}
                 </span>
                 {a.recurring && (
                   <span className="rounded bg-terminal-hover px-1 text-[9px] uppercase text-ink-faint">
@@ -477,11 +494,7 @@ export function AlertCenter() {
                     {a.symbol}
                   </span>
                   <span className="text-2xs text-ink-muted">
-                    {CONDITION_SYMBOL[a.condition]}{" "}
-                    {fmtPrice(
-                      a.price,
-                      getMarketSymbol(a.symbol)?.pricePrecision ?? 2,
-                    )}
+                    {alertTargetText(a)}
                     {a.triggerPrice != null && (
                       <span className="text-choch">
                         {" "}
@@ -505,6 +518,44 @@ export function AlertCenter() {
                       onClick={() => deleteAlert(a.id)}
                       className="rounded p-1 text-ink-faint hover:bg-terminal-hover hover:text-bear"
                       aria-label="Delete alert"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {/* Expired dynamic geometry */}
+          {expired.length > 0 && (
+            <Section
+              title={`Expired (${expired.length})`}
+              onClear={clearExpired}
+            >
+              {expired.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-center gap-2 rounded border border-terminal-border bg-terminal-panel-2 px-2.5 py-1.5 opacity-80"
+                >
+                  <span className="font-mono text-xs font-semibold text-ink">
+                    {a.symbol}
+                  </span>
+                  <span className="text-2xs text-ink-muted">
+                    {a.source?.kind === "drawing"
+                      ? `${a.source.targetLabel} · expired`
+                      : "Technical target · expired"}
+                  </span>
+                  {a.expiredAt != null && (
+                    <span className="text-[9px] text-ink-faint">
+                      {fmtDateTime(a.expiredAt)}
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-0.5">
+                    <button
+                      onClick={() => deleteAlert(a.id)}
+                      className="rounded p-1 text-ink-faint hover:bg-terminal-hover hover:text-bear"
+                      aria-label="Delete expired alert"
                     >
                       <Trash2 size={13} />
                     </button>

@@ -1,6 +1,6 @@
 # Desktop-Mobile Feature Parity
 
-_Last verified: 2026-07-16_
+_Last verified: 2026-07-17_
 
 The current desktop terminal capabilities have a touch-operable mobile path. Desktop and mobile keep independent presentation shells, while catalogs, state transitions, persistence and API calls stay shared.
 

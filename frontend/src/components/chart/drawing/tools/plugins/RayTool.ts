@@ -34,7 +34,7 @@ const plugin: DrawingToolPlugin = {
     if (!segment) return;
     const rendered = rayRenderSegment(segment, proj);
     line(g, rendered.a.x, rendered.a.y, rendered.b.x, rendered.b.y);
-    renderTwoPointLineParity(g, d, segment, rendered, selected);
+    renderTwoPointLineParity(g, d, segment, rendered, selected, proj);
   },
   hitTest(
     d: Drawing,

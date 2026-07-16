@@ -100,6 +100,7 @@ type bootstrapResponse struct {
 	PineScripts      []pinescripts.Script         `json:"pineScripts"`
 	Alerts           []alerts.Alert               `json:"alerts"`
 	TriggeredAlerts  []alerts.Alert               `json:"triggeredAlerts"`
+	ExpiredAlerts    []alerts.Alert               `json:"expiredAlerts"`
 	History          []alerts.Event               `json:"history"`
 	Layouts          []layouts.Layout             `json:"layouts"`
 }
@@ -147,6 +148,7 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 	alertSnapshot := alerts.Snapshot{
 		Alerts:          []alerts.Alert{},
 		TriggeredAlerts: []alerts.Alert{},
+		ExpiredAlerts:   []alerts.Alert{},
 		History:         []alerts.Event{},
 	}
 	if h.alerts != nil {
@@ -172,6 +174,7 @@ func (h *Handler) bootstrap(c *fiber.Ctx) error {
 		PineScripts:      pineScriptRows,
 		Alerts:           alertSnapshot.Alerts,
 		TriggeredAlerts:  alertSnapshot.TriggeredAlerts,
+		ExpiredAlerts:    alertSnapshot.ExpiredAlerts,
 		History:          alertSnapshot.History,
 		Layouts:          layoutRows,
 	})

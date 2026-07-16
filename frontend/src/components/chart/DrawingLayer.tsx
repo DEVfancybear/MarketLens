@@ -32,6 +32,7 @@ import { resolveDrawingCreationDefaults } from "./drawing/settings/drawingToolPr
 import {
   effectiveMagnetMode,
   snapPointToOhlc,
+  snapPointWithMagnetSources,
 } from "./drawing/interaction/OhlcMagnetSnap";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
@@ -69,6 +70,12 @@ import {
 } from "./drawing/coordinates/drawingCoordinates";
 import { mt5SymbolInfoAtom } from "@/store/mt5Store";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import {
+  getMarketDataState,
+  getRecentMarketTickCoverage,
+  getRecentMarketTicks,
+} from "@/store/marketDataStore";
+import { loadCompleteVolumeProfileHistory } from "./drawing/data/volumeProfileHistory";
 import { workspaceReadyAtom } from "@/store/authStore";
 import {
   POSITION_DEFAULT_RISK_HEIGHT_PX,
@@ -318,9 +325,17 @@ export function DrawingLayer() {
         event.ctrlKey || event.metaKey,
       );
       if (!mode) return point;
-      return snapPointToOhlc({ point, candles, mode, toX, toY }).point;
+      return snapPointWithMagnetSources({
+        point,
+        candles,
+        indicators: ctx?.indicatorPoints ?? [],
+        mode,
+        snapToIndicators: drawingToolPreferences.snapToIndicators,
+        toX,
+        toY,
+      }).point;
     },
-    [candles, drawingToolPreferences.magnetEnabled, drawingToolPreferences.magnetMode, toX, toY],
+    [candles, ctx?.indicatorPoints, drawingToolPreferences.magnetEnabled, drawingToolPreferences.magnetMode, drawingToolPreferences.snapToIndicators, toX, toY],
   );
 
   const stateRef = useRef({
@@ -609,6 +624,8 @@ export function DrawingLayer() {
       // chart event after selecting a tool cannot observe the previous tool.
       const store = getDefaultStore();
       const currentTimeframe = store.get(timeframeAtom);
+      const currentSymbol = store.get(symbolAtom);
+      const marketData = getMarketDataState();
       const currentDrawings = store.get(drawingsAtom);
       const currentVisibleDrawings = currentDrawings.filter((drawing) =>
         isDrawingVisibleAtTimeframe(drawing, currentTimeframe),
@@ -623,8 +640,11 @@ export function DrawingLayer() {
         selectedDrawingId: store.get(selectedDrawingIdAtom),
         selectedDrawingIds: store.get(selectedDrawingIdsAtom),
         candles: ctxRef.current?.candles ?? store.get(candlesAtom),
-        symbol: store.get(symbolAtom),
+        symbol: currentSymbol,
         timeframe: currentTimeframe,
+        cachedCandles: marketData.candles,
+        recentTicks: getRecentMarketTicks(currentSymbol),
+        recentTickCoverage: getRecentMarketTickCoverage(currentSymbol),
         adapterContext: {
           tickSize: stateRef.current.marketContext.tickSize,
           barIntervalSeconds: resolveCandleBarIntervalSeconds(
@@ -637,6 +657,7 @@ export function DrawingLayer() {
         },
       };
     },
+    loadVolumeProfileHistory: loadCompleteVolumeProfileHistory,
     addDrawing: addDrawingWithHistory,
     updateDrawing,
     removeDrawing,
@@ -950,6 +971,53 @@ export function DrawingLayer() {
           toY,
         )
       : null;
+  const overlayViewport = {
+    width: canvasRef.current?.getBoundingClientRect().width ?? 0,
+    height: canvasRef.current?.getBoundingClientRect().height ?? 0,
+    market: marketContext,
+  };
+  const axisPriceTextTarget = machine.state === "Idle"
+    ? resolveSelectionTextOverlay(
+        visibleDrawings,
+        selectedDrawingId,
+        "axis-price",
+        toX,
+        toY,
+        overlayViewport,
+      )
+    : null;
+  const axisTimeTextTarget = machine.state === "Idle"
+    ? resolveSelectionTextOverlay(
+        visibleDrawings,
+        selectedDrawingId,
+        "axis-time",
+        toX,
+        toY,
+        overlayViewport,
+      )
+    : null;
+  const axisPriceTextEditorTarget =
+    textEditSession?.editorKind === "axis-price"
+      ? resolveSelectionTextOverlay(
+          visibleDrawings,
+          textEditSession.drawingId,
+          "axis-price",
+          toX,
+          toY,
+          overlayViewport,
+        )
+      : null;
+  const axisTimeTextEditorTarget =
+    textEditSession?.editorKind === "axis-time"
+      ? resolveSelectionTextOverlay(
+          visibleDrawings,
+          textEditSession.drawingId,
+          "axis-time",
+          toX,
+          toY,
+          overlayViewport,
+        )
+      : null;
 
   return (
     <>
@@ -1031,6 +1099,54 @@ export function DrawingLayer() {
           }}
         />
       )}
+      {axisPriceTextTarget && textEditSession?.editorKind !== "axis-price" && (
+        <button
+          type="button"
+          data-chart-ui
+          aria-label={axisPriceTextTarget.drawing.text ? "Edit price-line text" : "Add price-line text"}
+          title={axisPriceTextTarget.drawing.text ? "Edit price-line text" : "Add price-line text"}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() =>
+            setTextEditSession(
+              TextEditSession.attached(axisPriceTextTarget.drawing, "axis-price"),
+            )
+          }
+          className="absolute z-10 cursor-text"
+          style={{
+            left: axisPriceTextTarget.x,
+            top: axisPriceTextTarget.y,
+            width: axisPriceTextTarget.width,
+            height: axisPriceTextTarget.height ?? 20,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "auto",
+            background: "transparent",
+          }}
+        />
+      )}
+      {axisTimeTextTarget && textEditSession?.editorKind !== "axis-time" && (
+        <button
+          type="button"
+          data-chart-ui
+          aria-label={axisTimeTextTarget.drawing.text ? "Edit time-line text" : "Add time-line text"}
+          title={axisTimeTextTarget.drawing.text ? "Edit time-line text" : "Add time-line text"}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() =>
+            setTextEditSession(
+              TextEditSession.attached(axisTimeTextTarget.drawing, "axis-time"),
+            )
+          }
+          className="absolute z-10 cursor-text"
+          style={{
+            left: axisTimeTextTarget.x,
+            top: axisTimeTextTarget.y,
+            width: axisTimeTextTarget.width,
+            height: axisTimeTextTarget.height ?? 20,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "auto",
+            background: "transparent",
+          }}
+        />
+      )}
       {textEditSession?.editorKind === "shape-center" && shapeTextEditorTarget && (
         <TextEditor
           key={textEditSession.drawingId}
@@ -1054,6 +1170,40 @@ export function DrawingLayer() {
           initialText={textEditSession.initialText}
           x={trendLineTextEditorTarget.x}
           y={trendLineTextEditorTarget.y}
+          onDraftChangeAction={(text) => {
+            setTextEditSession((current) => current?.withDraft(text) ?? null);
+          }}
+          onSaveAction={(text) => {
+            applyTextEditOutcome(textEditSession.finish(text));
+          }}
+          onCancelAction={() => {
+            applyTextEditOutcome(textEditSession.cancel());
+          }}
+        />
+      )}
+      {textEditSession?.editorKind === "axis-price" && axisPriceTextEditorTarget && (
+        <TextEditor
+          key={textEditSession.drawingId}
+          initialText={textEditSession.initialText}
+          x={axisPriceTextEditorTarget.x}
+          y={axisPriceTextEditorTarget.y}
+          onDraftChangeAction={(text) => {
+            setTextEditSession((current) => current?.withDraft(text) ?? null);
+          }}
+          onSaveAction={(text) => {
+            applyTextEditOutcome(textEditSession.finish(text));
+          }}
+          onCancelAction={() => {
+            applyTextEditOutcome(textEditSession.cancel());
+          }}
+        />
+      )}
+      {textEditSession?.editorKind === "axis-time" && axisTimeTextEditorTarget && (
+        <TextEditor
+          key={textEditSession.drawingId}
+          initialText={textEditSession.initialText}
+          x={axisTimeTextEditorTarget.x}
+          y={axisTimeTextEditorTarget.y}
           onDraftChangeAction={(text) => {
             setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}

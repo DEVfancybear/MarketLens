@@ -27,14 +27,28 @@ import {
   type AlertSettings,
 } from "@/store/alertStore";
 
-function format(
+const CHANNEL_OPERATOR_TEXT = {
+  "cross-upper-up": "crosses upper boundary up",
+  "cross-upper-down": "crosses upper boundary down",
+  "cross-lower-up": "crosses lower boundary up",
+  "cross-lower-down": "crosses lower boundary down",
+  enter: "enters channel",
+  exit: "exits channel",
+  inside: "is inside channel",
+  outside: "is outside channel",
+} as const;
+
+export function formatAlertNotification(
   alert: Alert,
   triggerPrice: number,
 ): { title: string; body: string } {
-  const op = CONDITION_SYMBOL[alert.condition];
+  const targetPrice = alert.evaluatedTargetPrice ?? alert.price;
+  const operation = alert.technicalTarget?.kind === "dynamic-channel"
+    ? `${CHANNEL_OPERATOR_TEXT[alert.technicalTarget.operator]} @ ${targetPrice}`
+    : `${CONDITION_SYMBOL[alert.condition]} ${targetPrice}`;
   return {
     title: `⏰ ${alert.symbol} alert`,
-    body: `${alert.symbol} ${op} ${alert.price} — now ${triggerPrice}${alert.note ? ` · ${alert.note}` : ""}`,
+    body: `${alert.symbol} ${operation} — now ${triggerPrice}${alert.note ? ` · ${alert.note}` : ""}`,
   };
 }
 
@@ -48,7 +62,8 @@ export function deliverAlert(
   triggerPrice: number,
   settings: AlertSettings,
 ): void {
-  const { title, body } = format(alert, triggerPrice);
+  const { title, body } = formatAlertNotification(alert, triggerPrice);
+  const targetPrice = alert.evaluatedTargetPrice ?? alert.price;
 
   // Always log to the in-app event log for an audit trail.
   getDefaultStore().set(logAtom, "info", `Alert triggered: ${body}`);
@@ -76,6 +91,7 @@ export function deliverAlert(
         body,
         alert,
         triggerPrice,
+        targetPrice,
       }).then((result) => {
         if (!result.ok) {
           getDefaultStore().set(
@@ -91,6 +107,7 @@ export function deliverAlert(
     void sendExternalAlert({
       alert,
       triggerPrice,
+      targetPrice,
       channels: {
         telegram: alert.telegram && settings.telegram,
         discord: alert.discord && settings.discord,

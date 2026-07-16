@@ -31,7 +31,7 @@ const plugin: DrawingToolPlugin = {
     const segment = projectTwoPoints(d, proj.toX, proj.toY);
     if (!segment) return;
     line(g, segment.a.x, segment.a.y, segment.b.x, segment.b.y);
-    renderTwoPointLineParity(g, d, segment, segment, selected);
+    renderTwoPointLineParity(g, d, segment, segment, selected, proj);
   },
   hitTest(
     d: Drawing,

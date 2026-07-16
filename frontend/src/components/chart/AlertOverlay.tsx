@@ -34,6 +34,8 @@ import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
 import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
 import { conditionForTargetSide } from "@/services/alertConditions";
 import { setChartInteractionLocked } from "./chartInteractionLock";
+import { getMarketDataState, marketDataTickAtom } from "@/store/marketDataStore";
+import { targetAt } from "@/services/dynamicAlertTargets";
 
 const HIT_PX = 12; // half-height of the interactive hit strip / proximity
 const LONG_PRESS_MS = 500;
@@ -42,6 +44,17 @@ const DRAG_THRESHOLD = 3;
 /** Flip to true to log the alert-render diagnostics (the 8 checks) to the console. */
 const ALERT_DEBUG = false;
 
+function projectedAlertPrice(alert: Alert, marketTime: number): number | null {
+  const target = alert.technicalTarget;
+  if (!target) return alert.price;
+  const projected = targetAt(target, marketTime);
+  if (!projected.active) return null;
+  if (target.kind !== "dynamic-channel") return projected.lower;
+  if (target.operator.includes("upper")) return projected.upper;
+  if (target.operator.includes("lower")) return projected.lower;
+  return (projected.lower + projected.upper) / 2;
+}
+
 /** Recompute the condition while dragging, keeping the alert's family (level vs cross). */
 export function AlertOverlay() {
   const ctx = useChartCtx();
@@ -49,6 +62,7 @@ export function AlertOverlay() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const symbol = useAtomValue(symbolAtom);
+  useAtomValue(marketDataTickAtom);
   const alerts = useAlertStore((s) => s.alerts);
   const selectedId = useAlertStore((s) => s.selectedAlertId);
   const selectAlert = useAlertStore((s) => s.selectAlert);
@@ -91,8 +105,11 @@ export function AlertOverlay() {
     [ctx],
   );
 
-  const displayPrice = (a: Alert) =>
-    drag && drag.id === a.id ? drag.price : a.price;
+  const displayPrice = (a: Alert) => {
+    if (drag && drag.id === a.id) return drag.price;
+    const marketTime = getMarketDataState().quotes[a.symbol]?.timestamp ?? Date.now();
+    return projectedAlertPrice(a, marketTime);
+  };
 
   // ---------------------------------------------------------------- rendering
   const draw = useCallback(() => {
@@ -123,6 +140,7 @@ export function AlertOverlay() {
     const latestSymbol = symbolRef.current;
     const latestSelectedId = selectedIdRef.current;
     const filtered = latestAlerts.filter((a) => a.symbol === latestSymbol);
+    const marketTime = getMarketDataState().quotes[latestSymbol]?.timestamp ?? Date.now();
 
     if (ALERT_DEBUG) {
       const cs = getComputedStyle(canvas);
@@ -142,7 +160,10 @@ export function AlertOverlay() {
 
     let drawn = 0;
     for (const a of filtered) {
-      const price = drag && drag.id === a.id ? drag.price : a.price;
+      const price = drag && drag.id === a.id
+        ? drag.price
+        : projectedAlertPrice(a, marketTime);
+      if (price == null) continue;
       const y = toY(price);
       if (y == null) {
         if (ALERT_DEBUG)
@@ -325,7 +346,7 @@ export function AlertOverlay() {
       }, LONG_PRESS_MS);
     }
 
-    if (a.locked) return; // locked alerts select but don't drag
+    if (a.locked || (a.technicalTarget && a.technicalTarget.kind !== "fixed-price")) return;
 
     draggingAlertIds.add(a.id);
 
@@ -423,7 +444,13 @@ export function AlertOverlay() {
           lastPrice,
           marketPrice,
         );
-        updateAlert(a.id, { price: lastPrice, condition });
+        updateAlert(a.id, {
+          price: lastPrice,
+          condition,
+          ...(a.technicalTarget?.kind === "fixed-price"
+            ? { technicalTarget: { version: 1, kind: "fixed-price", price: lastPrice } }
+            : {}),
+        });
       }
       // Release the guard after the store commit above so AlertLines' next
       // reconciliation (triggered by that same update) sees a native line
@@ -472,7 +499,8 @@ export function AlertOverlay() {
       {(() => {
         const sel = symbolAlerts.find((a) => a.id === selectedId && !a.locked);
         if (!sel) return null;
-        const y = toY(displayPrice(sel));
+        const selectedPrice = displayPrice(sel);
+        const y = selectedPrice == null ? null : toY(selectedPrice);
         if (y == null) return null;
         return (
           <button
@@ -501,7 +529,8 @@ export function AlertOverlay() {
       {/* Hit strips rendered OUTSIDE the pointer-events:none container
           so they reliably receive pointer events in all browsers. */}
       {symbolAlerts.map((a) => {
-        const y = toY(displayPrice(a));
+        const price = displayPrice(a);
+        const y = price == null ? null : toY(price);
         if (y == null) return null;
         const dragging = drag?.id === a.id;
         return (
@@ -517,7 +546,7 @@ export function AlertOverlay() {
               top: y - HIT_PX,
               height: HIT_PX * 2,
               pointerEvents: "auto",
-              cursor: a.locked ? "not-allowed" : dragging ? "grabbing" : "grab",
+              cursor: a.locked || (a.technicalTarget && a.technicalTarget.kind !== "fixed-price") ? "default" : dragging ? "grabbing" : "grab",
               touchAction: "none",
             }}
           />

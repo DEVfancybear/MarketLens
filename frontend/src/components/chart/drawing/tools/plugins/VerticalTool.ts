@@ -9,7 +9,7 @@ import {
   registerTool,
   defaultMovePoints,
 } from "../ToolRegistry";
-import { line } from "./shared";
+import { line, renderLineText } from "./shared";
 import { drawTimeAxisLabel } from "./axisLabels";
 import {
   moveVerticalLine,
@@ -30,6 +30,10 @@ const plugin: DrawingToolPlugin = {
     const x = proj.toX(d.points[0].time);
     if (x == null) return;
     line(g, x, 0, x, proj.height);
+    // Keep the attached text on the same projected geometry as the axis line.
+    // The DOM overlay targets the time badge for editing; this canvas label is
+    // what remains visible after the editor is committed.
+    renderLineText(g, d, x, 0, x, proj.height, _selected);
     if (d.showTimeLabel !== false) drawTimeAxisLabel(g, d, proj, x);
   },
   hitTest(

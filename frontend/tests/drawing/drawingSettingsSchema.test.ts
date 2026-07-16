@@ -15,9 +15,48 @@ test("settings schema derives family tabs and fields from manifest capabilities"
   assert.equal(getDrawingSettingsSchema("short").hasField("riskValue"), true);
   assert.equal(getDrawingSettingsSchema("trendline").hasField("intervalVisibility"), true);
   assert.equal(getDrawingSettingsSchema("trendline").hasField("lineEnd"), true);
-  assert.equal(getDrawingSettingsSchema("trendline").hasField("showStats"), true);
+  assert.equal(getDrawingSettingsSchema("trendline").hasField("lineStats"), true);
+  assert.equal(getDrawingSettingsSchema("trendline").hasField("lineStatsPosition"), true);
+  assert.equal(getDrawingSettingsSchema("trendline").hasField("alwaysShowLineStats"), true);
   assert.equal(getDrawingSettingsSchema("channel").hasField("channelLevels"), true);
   assert.equal(getDrawingSettingsSchema("channel").hasField("channelBackground"), true);
+  assert.deepEqual(getDrawingSettingsSchema("regressionTrend").tabs, [
+    "inputs",
+    "style",
+    "coordinates",
+    "visibility",
+  ]);
+  assert.equal(getDrawingSettingsSchema("regressionTrend").coordinatePriceEditable, false);
+  assert.equal(getDrawingSettingsSchema("trendline").coordinatePriceEditable, true);
+  for (const tool of ["fixedVolumeProfile", "anchoredVolumeProfile"] as const) {
+    const schema = getDrawingSettingsSchema(tool);
+    assert.deepEqual(schema.tabs, ["inputs", "style", "coordinates", "visibility"]);
+    for (const field of [
+      "volumeProfileRows",
+      "volumeProfileValueAreaPercent",
+      "volumeProfileWidthPercent",
+      "volumeProfilePlacement",
+      "volumeProfileVolumeMode",
+      "volumeProfileShowHistogram",
+      "volumeProfileShowPointOfControl",
+      "volumeProfileShowValueAreaHigh",
+      "volumeProfileShowValueAreaLow",
+    ] as const) assert.equal(schema.hasField(field), true, `${tool}:${field}`);
+  }
+  for (const field of [
+    "regressionUpperDeviation",
+    "regressionLowerDeviation",
+    "regressionUseUpperDeviation",
+    "regressionUseLowerDeviation",
+    "regressionSource",
+    "regressionShowBaseLine",
+    "regressionShowUpperLine",
+    "regressionShowLowerLine",
+    "regressionExtendLines",
+    "regressionShowPearsonR",
+  ] as const) {
+    assert.equal(getDrawingSettingsSchema("regressionTrend").hasField(field), true, field);
+  }
   assert.equal(getDrawingSettingsSchema("text").hasField("points"), true);
   assert.deepEqual(getDrawingSettingsSchema("long").coordinateLabels, ["Entry", "Target", "Stop"]);
 });
@@ -46,4 +85,44 @@ test("template pick/apply is capability scoped and never carries geometry", () =
   const linePatch = applyDrawingTemplateStyle("trendline", picked);
   assert.equal(linePatch.fillColor, undefined);
   assert.equal(linePatch.color, "#fff");
+
+  const regression: Drawing = {
+    id: "regression",
+    tool: "regressionTrend",
+    color: "#fff",
+    lineWidth: 2,
+    points: [{ time: 1, price: 2 }, { time: 3, price: 4 }],
+    regressionSource: "hlc3",
+    regressionUpperDeviation: 1.5,
+    regressionShowPearsonR: false,
+  };
+  const regressionTemplate = pickDrawingTemplateStyle(regression);
+  assert.equal(regressionTemplate.regressionSource, "hlc3");
+  assert.equal(regressionTemplate.regressionUpperDeviation, 1.5);
+  assert.equal(regressionTemplate.regressionShowPearsonR, false);
+  assert.equal(
+    applyDrawingTemplateStyle("regressionTrend", regressionTemplate).regressionSource,
+    "hlc3",
+  );
+
+  const profile: Drawing = {
+    id: "profile",
+    tool: "fixedVolumeProfile",
+    color: "#2962ff",
+    lineWidth: 1,
+    points: [{ time: 1, price: 2 }, { time: 3, price: 4 }],
+    volumeProfileRows: 64,
+    volumeProfileValueAreaPercent: 68,
+    volumeProfileWidthPercent: 45,
+    volumeProfilePlacement: "left",
+    volumeProfileVolumeMode: "delta",
+    volumeProfileShowPointOfControl: false,
+  };
+  const profileTemplate = pickDrawingTemplateStyle(profile);
+  assert.equal(profileTemplate.volumeProfileRows, 64);
+  assert.equal(profileTemplate.volumeProfilePlacement, "left");
+  assert.equal(
+    applyDrawingTemplateStyle("anchoredVolumeProfile", profileTemplate).volumeProfileVolumeMode,
+    "delta",
+  );
 });

@@ -1,6 +1,6 @@
 # Drawing Tools Post-Phase 8 Maintenance
 
-_Date: 2026-07-13_
+_Date: 2026-07-13; parity/Gann follow-up updated 2026-07-17_
 _Status: implemented; Node, build, and browser integration gates verified_
 _Scope: drawing manifest, adapters, shared geometry contracts, interaction context, and executable tests_
 
@@ -315,15 +315,39 @@ The final maintenance verification completed with:
 7. Add a focused family regression and keep the all-adapter contract green.
 8. Document intentional TradingView differences and any bounded work limit.
 
-## Deliberately deferred work
+## 2026-07-16/17 follow-up (supersedes the deferred list)
 
-- Indicator-value magnet snapping remains a later Phase 6 subphase; OHLC magnets
-  are implemented.
-- Dynamic alerts for sloped/time-varying geometry remain defined by
-  `DYNAMIC_DRAWING_ALERTS_PLAN.md`; the current alert runtime snapshots fixed
-  prices only.
-- Variable-width pressure rendering, exact Gann scale locking, full family
-  preset/settings parity, and lower-timeframe/tick reconstruction for volume
-  profiles remain intentional differences.
-- A comprehensive per-tool visual snapshot matrix and measured mixed-family
-  browser frame budgets remain useful follow-up quality work.
+The original post-Phase 8 deferred list is no longer the current feature state:
+
+- Magnet strength remains Off/Weak/Strong for OHLC, with `Snap to indicators`
+  delivered as an independent capability. Visible overlays and OHLC candidates
+  use one projected-distance policy and preserve fallback behavior.
+- Dynamic line/channel/Fib Channel alerts now snapshot versioned data-space
+  targets. Open and push evaluation share the moving-boundary evaluator; trigger
+  requests carry normalized previous/current market evidence and
+  `armingRevision`; Go reloads the target and recomputes the condition before
+  persistence. Finite domains enter the bootstrapped `expired` lifecycle.
+- Brush/Highlighter capture normalized pen pressure, render bounded
+  variable-width segments, and simplify without discarding pressure ramps or
+  spikes. Mouse/touch strokes remain constant-width by design.
+- Gann Fan/Square/Box use typed persisted configs and verified nine-angle/eighth
+  defaults. Square/Box price/time rows persist independent color, opacity,
+  width, and line style; `Use one color` selects the shared drawing color at
+  render time. Enabling logical-bar scale locking captures the object's current
+  price-per-bar ratio before resize, avoiding a jump to the legacy fallback.
+  This claims observed built-ins plus custom settings, not undocumented
+  TradingView template names.
+- Fixed/Anchored Volume Profile select complete measured ticks first, then
+  validated lower-timeframe OHLCV, then chart bars. Partial coverage never
+  displaces a complete coarser source.
+- The manifest-derived visual matrix covers all persistent ids semantically and
+  every creation-enabled id with a stable Playwright screenshot name. Browser
+  runs use a fixed clock, manifest-id selectors, representative/full/per-id
+  modes, and reviewed platform baselines under the browser snapshot directory.
+
+Remaining boundaries are explicit rather than hidden: vertical/time alerts and
+touch tolerance need separate condition semantics; incomplete market history
+falls back instead of being reconstructed speculatively; executable third-party
+embeds remain unsupported; and no blanket pixel-for-pixel TradingView
+equivalence is claimed. See
+`DRAWING_TOOLS_TRADINGVIEW_PARITY_AUDIT_2026-07-15.md` for the current evidence.

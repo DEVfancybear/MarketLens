@@ -30,12 +30,17 @@ import {
   isTriggerPriceValid,
 } from "@/services/alertConditions";
 import type { DrawingAlertSnapshot } from "@/components/chart/drawing/alerts/drawingAlertCapabilities";
+import type {
+  TechnicalAlertEvidence,
+  TechnicalAlertTarget,
+} from "@/types/technicalAlerts";
+import { sanitizeTechnicalAlertTarget } from "@/services/dynamicAlertTargets";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
 
 export type AlertCondition = "above" | "below" | "crossUp" | "crossDown";
-export type AlertStatus = "active" | "triggered";
+export type AlertStatus = "active" | "triggered" | "expired";
 
 export interface Alert {
   id: string;
@@ -47,8 +52,13 @@ export interface Alert {
   locked: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Stable evaluator baseline; changes only when the alert is re-armed. */
+  armingRevision: number;
   triggeredAt?: number;
+  expiredAt?: number;
   triggerPrice?: number;
+  evaluatedTargetPrice?: number;
+  triggerEvidence?: TechnicalAlertEvidence;
   note?: string;
   recurring: boolean;
   sound: boolean;
@@ -56,8 +66,10 @@ export interface Alert {
   push: boolean;
   telegram: boolean;
   discord: boolean;
-  /** Immutable provenance; evaluation continues against the snapshotted `price`. */
+  /** Immutable provenance for fixed-price or versioned geometry evaluation. */
   source?: DrawingAlertSnapshot;
+  /** Immutable versioned geometry. `price` remains its creation-time preview. */
+  technicalTarget?: TechnicalAlertTarget;
 }
 
 export interface AlertHistoryEntry {
@@ -68,6 +80,7 @@ export interface AlertHistoryEntry {
   targetPrice: number;
   triggerPrice: number;
   triggerTime: number;
+  evidence?: TechnicalAlertEvidence;
 }
 
 export interface AlertSettings {
@@ -86,6 +99,7 @@ export interface CreateAlertInput {
   note?: string;
   recurring?: boolean;
   source?: DrawingAlertSnapshot;
+  technicalTarget?: TechnicalAlertTarget;
 }
 
 /** Human-readable operator for a condition. */
@@ -112,6 +126,7 @@ export const RECURRING_REARM_MS = 60_000;
 interface PersistShape {
   alerts: Alert[];
   triggeredAlerts: Alert[];
+  expiredAlerts: Alert[];
   history: AlertHistoryEntry[];
   settings: AlertSettings;
 }
@@ -132,6 +147,7 @@ function persist() {
   const shape: PersistShape = {
     alerts: store.get(alertsAtom),
     triggeredAlerts: store.get(triggeredAlertsAtom),
+    expiredAlerts: store.get(expiredAlertsAtom),
     history: store.get(historyAtom),
     settings: store.get(settingsAtom),
   };
@@ -201,6 +217,7 @@ function queueSettingsSync(get: Getter): void {
 // ── State atoms ──────────────────────────────────────────────────────────────
 export const alertsAtom = atom<Alert[]>([]);
 export const triggeredAlertsAtom = atom<Alert[]>([]);
+export const expiredAlertsAtom = atom<Alert[]>([]);
 export const historyAtom = atom<AlertHistoryEntry[]>([]);
 export const settingsAtom = atom<AlertSettings>(DEFAULT_SETTINGS);
 export const selectedAlertIdAtom = atom<string | null>(null);
@@ -212,6 +229,10 @@ export const createAlertAtom = atom(
   null,
   (get, set, input: CreateAlertInput): Alert => {
     const settings = get(settingsAtom);
+    const technicalTarget = sanitizeTechnicalAlertTarget(input.technicalTarget);
+    if (input.technicalTarget !== undefined && !technicalTarget) {
+      throw new Error("Cannot create an alert with an invalid technical target.");
+    }
     const alert: Alert = {
       id: uid("alert"),
       symbol: input.symbol,
@@ -222,6 +243,7 @@ export const createAlertAtom = atom(
       locked: false,
       createdAt: Date.now() / 1000,
       updatedAt: Date.now() / 1000,
+      armingRevision: 1,
       note: input.note,
       recurring: input.recurring ?? false,
       sound: settings.sound,
@@ -230,6 +252,7 @@ export const createAlertAtom = atom(
       telegram: settings.telegram,
       discord: settings.discord,
       source: input.source,
+      technicalTarget,
     };
     set(alertsAtom, [alert, ...get(alertsAtom)]);
     persist();
@@ -245,32 +268,51 @@ export const updateAlertAtom = atom(
   (get, set, id: string, patch: Partial<Omit<Alert, "id">>) => {
     const existing =
       get(alertsAtom).find((alert) => alert.id === id) ??
-      get(triggeredAlertsAtom).find((alert) => alert.id === id);
+      get(triggeredAlertsAtom).find((alert) => alert.id === id) ??
+      get(expiredAlertsAtom).find((alert) => alert.id === id);
     if (!existing) return;
-    const rearm =
-      existing.status === "active" && hasAlertArmingChange(existing, patch);
+    let safePatch = patch;
+    if (Object.prototype.hasOwnProperty.call(patch, "technicalTarget")) {
+      const technicalTarget = sanitizeTechnicalAlertTarget(patch.technicalTarget);
+      if (!technicalTarget) {
+        throw new Error("Cannot update an alert with an invalid technical target.");
+      }
+      safePatch = { ...patch, technicalTarget };
+    }
+    const rearm = hasAlertArmingChange(existing, safePatch);
     const applyPatch = (alert: Alert): Alert => ({
       ...alert,
-      ...patch,
+      ...safePatch,
       updatedAt: Date.now() / 1000,
-      ...(rearm ? { status: "active", triggeredAt: undefined, triggerPrice: undefined } : {}),
+      armingRevision: rearm
+        ? (alert.armingRevision ?? alert.updatedAt) + 1
+        : alert.armingRevision,
+      ...(rearm
+        ? {
+            status: "active",
+            triggeredAt: undefined,
+            expiredAt: undefined,
+            triggerPrice: undefined,
+            evaluatedTargetPrice: undefined,
+            triggerEvidence: undefined,
+          }
+        : {}),
     });
-    set(
-      alertsAtom,
-      get(alertsAtom).map((a) =>
-        a.id === id ? applyPatch(a) : a,
-      ),
-    );
-    set(
-      triggeredAlertsAtom,
-      get(triggeredAlertsAtom).map((a) =>
-        a.id === id ? applyPatch(a) : a,
-      ),
-    );
+    const updated = applyPatch(existing);
+    if (rearm) {
+      set(alertsAtom, [updated, ...get(alertsAtom).filter((a) => a.id !== id)]);
+      set(triggeredAlertsAtom, get(triggeredAlertsAtom).filter((a) => a.id !== id));
+      set(expiredAlertsAtom, get(expiredAlertsAtom).filter((a) => a.id !== id));
+    } else {
+      set(alertsAtom, get(alertsAtom).map((a) => a.id === id ? updated : a));
+      set(triggeredAlertsAtom, get(triggeredAlertsAtom).map((a) => a.id === id ? updated : a));
+      set(expiredAlertsAtom, get(expiredAlertsAtom).map((a) => a.id === id ? updated : a));
+    }
     persist();
     const current =
       get(alertsAtom).find((alert) => alert.id === id) ??
-      get(triggeredAlertsAtom).find((alert) => alert.id === id);
+      get(triggeredAlertsAtom).find((alert) => alert.id === id) ??
+      get(expiredAlertsAtom).find((alert) => alert.id === id);
     if (current) {
       queueAlertSync(get, id, "update", () =>
         patchRemoteAlert(id, {
@@ -291,6 +333,7 @@ export const deleteAlertAtom = atom(null, (get, set, id: string) => {
     triggeredAlertsAtom,
     get(triggeredAlertsAtom).filter((a) => a.id !== id),
   );
+  set(expiredAlertsAtom, get(expiredAlertsAtom).filter((a) => a.id !== id));
   if (get(selectedAlertIdAtom) === id) set(selectedAlertIdAtom, null);
   if (get(editingAlertIdAtom) === id) set(editingAlertIdAtom, null);
   persist();
@@ -302,7 +345,8 @@ export const duplicateAlertAtom = atom(
   (get, set, id: string): Alert | undefined => {
     const src =
       get(alertsAtom).find((a) => a.id === id) ??
-      get(triggeredAlertsAtom).find((a) => a.id === id);
+      get(triggeredAlertsAtom).find((a) => a.id === id) ??
+      get(expiredAlertsAtom).find((a) => a.id === id);
     if (!src) return undefined;
     const clone: Alert = {
       ...src,
@@ -310,8 +354,12 @@ export const duplicateAlertAtom = atom(
       status: "active",
       createdAt: Date.now() / 1000,
       updatedAt: Date.now() / 1000,
+      armingRevision: 1,
       triggeredAt: undefined,
+      expiredAt: undefined,
       triggerPrice: undefined,
+      evaluatedTargetPrice: undefined,
+      triggerEvidence: undefined,
     };
     set(alertsAtom, [clone, ...get(alertsAtom)]);
     set(selectedAlertIdAtom, clone.id);
@@ -343,27 +391,39 @@ export const triggerAlertAtom = atom(
     id: string,
     triggerPrice: number,
     triggeredAtMs?: number,
+    targetPrice?: number,
+    evidence?: TechnicalAlertEvidence,
   ): Alert | undefined => {
     const alert = get(alertsAtom).find((a) => a.id === id);
     if (!alert || !alert.enabled || alert.status !== "active") return undefined;
-    if (!isTriggerPriceValid(alert.condition, alert.price, triggerPrice)) {
+    const evaluatedTarget = targetPrice ?? alert.price;
+    const validDynamicChannel =
+      alert.technicalTarget?.kind === "dynamic-channel" &&
+      Number.isFinite(evaluatedTarget) &&
+      evaluatedTarget > 0 &&
+      Number.isFinite(triggerPrice) &&
+      triggerPrice > 0;
+    if (!validDynamicChannel && !isTriggerPriceValid(alert.condition, evaluatedTarget, triggerPrice)) {
       return undefined;
     }
-    const now = (triggeredAtMs ?? Date.now()) / 1000;
+    const now = (triggeredAtMs ?? (evidence ? evidence.current.timestamp * 1000 : Date.now())) / 1000;
     const fired: Alert = {
       ...alert,
       status: "triggered",
       triggeredAt: now,
       triggerPrice,
+      evaluatedTargetPrice: evaluatedTarget,
+      triggerEvidence: evidence,
     };
     const entry: AlertHistoryEntry = {
       id: uid("alh"),
       alertId: alert.id,
       symbol: alert.symbol,
       condition: alert.condition,
-      targetPrice: alert.price,
+      targetPrice: evaluatedTarget,
       triggerPrice,
       triggerTime: now,
+      evidence,
     };
 
     set(historyAtom, [entry, ...get(historyAtom)].slice(0, MAX_HISTORY));
@@ -373,7 +433,15 @@ export const triggerAlertAtom = atom(
       set(
         alertsAtom,
         get(alertsAtom).map((a) =>
-          a.id === id ? { ...a, triggeredAt: now, triggerPrice } : a,
+          a.id === id
+            ? {
+                ...a,
+                triggeredAt: now,
+                triggerPrice,
+                evaluatedTargetPrice: evaluatedTarget,
+                triggerEvidence: evidence,
+              }
+            : a,
         ),
       );
     } else {
@@ -389,26 +457,63 @@ export const triggerAlertAtom = atom(
     }
     persist();
     queueAlertSync(get, id, "trigger", () =>
-      triggerRemoteAlert(id, triggerPrice),
+      triggerRemoteAlert(
+        id,
+        triggerPrice,
+        evaluatedTarget,
+        evidence,
+        alert.armingRevision,
+      ),
     );
     return fired;
   },
 );
 
+export const expireAlertAtom = atom(
+  null,
+  (get, set, id: string, expiredAtMs?: number): Alert | undefined => {
+    const alert = get(alertsAtom).find((item) => item.id === id);
+    if (!alert || alert.status !== "active" || !alert.technicalTarget) return undefined;
+    const expired: Alert = {
+      ...alert,
+      status: "expired",
+      expiredAt: (expiredAtMs ?? Date.now()) / 1000,
+      updatedAt: Date.now() / 1000,
+    };
+    set(alertsAtom, get(alertsAtom).filter((item) => item.id !== id));
+    set(expiredAlertsAtom, [expired, ...get(expiredAlertsAtom).filter((item) => item.id !== id)]);
+    persist();
+    queueAlertSync(get, id, "expire", () =>
+      patchRemoteAlert(id, {
+        status: "expired",
+        armingRevision: alert.armingRevision,
+      }),
+    );
+    return expired;
+  },
+);
+
 export const resetAlertAtom = atom(null, (get, set, id: string) => {
-  const fired = get(triggeredAlertsAtom).find((a) => a.id === id);
+  const fired =
+    get(triggeredAlertsAtom).find((a) => a.id === id) ??
+    get(expiredAlertsAtom).find((a) => a.id === id);
   if (!fired) return;
   const rearmed: Alert = {
     ...fired,
     status: "active",
     updatedAt: Date.now() / 1000,
+    armingRevision: (fired.armingRevision ?? fired.updatedAt) + 1,
     triggeredAt: undefined,
+    expiredAt: undefined,
     triggerPrice: undefined,
+    evaluatedTargetPrice: undefined,
+    triggerEvidence: undefined,
   };
   set(
     triggeredAlertsAtom,
     get(triggeredAlertsAtom).filter((a) => a.id !== id),
   );
+  set(expiredAlertsAtom, get(expiredAlertsAtom).filter((a) => a.id !== id));
   set(alertsAtom, [rearmed, ...get(alertsAtom)]);
   persist();
   queueAlertSync(get, id, "re-arm", () =>
@@ -424,6 +529,15 @@ export const clearTriggeredAtom = atom(null, (get, set) => {
   persist();
   for (const id of ids) {
     queueAlertSync(get, id, "clear triggered", () => deleteRemoteAlert(id));
+  }
+});
+
+export const clearExpiredAtom = atom(null, (get, set) => {
+  const ids = get(expiredAlertsAtom).map((alert) => alert.id);
+  set(expiredAlertsAtom, []);
+  persist();
+  for (const id of ids) {
+    queueAlertSync(get, id, "clear expired", () => deleteRemoteAlert(id));
   }
 });
 
@@ -447,19 +561,32 @@ export const setSettingsAtom = atom(
 export const hydrateAtom = atom(null, (_get, set) => {
   const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
   if (!saved) return;
-  const migrate = (a: Alert): Alert => ({
-    ...a,
-    enabled: a.enabled ?? true,
-    locked: a.locked ?? false,
-    updatedAt: a.updatedAt ?? a.createdAt ?? Date.now() / 1000,
-    sound: a.sound ?? true,
-    browser: a.browser ?? false,
-    push: a.push ?? false,
-    telegram: a.telegram ?? false,
-    discord: a.discord ?? false,
-  });
-  set(alertsAtom, (saved.alerts ?? []).map(migrate));
-  set(triggeredAlertsAtom, (saved.triggeredAlerts ?? []).map(migrate));
+  const migrate = (a: Alert): Alert | undefined => {
+    const technicalTarget = sanitizeTechnicalAlertTarget(a.technicalTarget);
+    if (a.technicalTarget !== undefined && !technicalTarget) return undefined;
+    return {
+      ...a,
+      enabled: a.enabled ?? true,
+      locked: a.locked ?? false,
+      updatedAt: a.updatedAt ?? a.createdAt ?? Date.now() / 1000,
+      armingRevision: Math.max(
+        1,
+        Math.trunc(a.armingRevision ?? a.updatedAt ?? a.createdAt ?? 1),
+      ),
+      sound: a.sound ?? true,
+      browser: a.browser ?? false,
+      push: a.push ?? false,
+      telegram: a.telegram ?? false,
+      discord: a.discord ?? false,
+      technicalTarget,
+    };
+  };
+  const migrateAll = (alerts: Alert[]): Alert[] => alerts
+    .map(migrate)
+    .filter((alert): alert is Alert => Boolean(alert));
+  set(alertsAtom, migrateAll(saved.alerts ?? []));
+  set(triggeredAlertsAtom, migrateAll(saved.triggeredAlerts ?? []));
+  set(expiredAlertsAtom, migrateAll(saved.expiredAlerts ?? []));
   set(historyAtom, saved.history ?? []);
   set(settingsAtom, { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) });
 });
@@ -487,10 +614,12 @@ export const applyRemoteAlertsAtom = atom(
   (get, set, snapshot: BackendAlertSnapshot) => {
     const localAlerts = get(alertsAtom);
     const localTriggered = get(triggeredAlertsAtom);
+    const localExpired = get(expiredAlertsAtom);
     const localHistory = get(historyAtom);
     const remoteEmpty =
       snapshot.alerts.length === 0 &&
       snapshot.triggeredAlerts.length === 0 &&
+      (snapshot.expiredAlerts?.length ?? 0) === 0 &&
       snapshot.history.length === 0;
 
     // First backend sign-in migration: preserve the existing browser workspace
@@ -500,19 +629,55 @@ export const applyRemoteAlertsAtom = atom(
       remoteEmpty &&
       (localAlerts.length > 0 ||
         localTriggered.length > 0 ||
+        localExpired.length > 0 ||
         localHistory.length > 0)
     ) {
-      for (const alert of localAlerts) {
+      // The backend initializes first-generation rows at revision 1. Normalize
+      // pre-backend local timestamps/counters so both evaluators share the same
+      // optimistic revision immediately after migration.
+      const migratedActive = localAlerts.map((alert) => ({
+        ...alert,
+        armingRevision: 1,
+      }));
+      const migratedTriggered = localTriggered.map((alert) => ({
+        ...alert,
+        armingRevision: 1,
+      }));
+      const migratedExpired = localExpired.map((alert) => ({
+        ...alert,
+        armingRevision: 1,
+      }));
+      set(alertsAtom, migratedActive);
+      set(triggeredAlertsAtom, migratedTriggered);
+      set(expiredAlertsAtom, migratedExpired);
+      for (const alert of migratedActive) {
         queueAlertSync(get, alert.id, "migrate active", () =>
           createRemoteAlert(localAlertToCreate(alert)),
         );
       }
-      for (const alert of localTriggered) {
+      for (const alert of migratedTriggered) {
         queueAlertSync(get, alert.id, "migrate triggered create", () =>
           createRemoteAlert(localAlertToCreate(alert)),
         );
         queueAlertSync(get, alert.id, "migrate triggered event", () =>
-          triggerRemoteAlert(alert.id, alert.triggerPrice ?? alert.price),
+          triggerRemoteAlert(
+            alert.id,
+            alert.triggerPrice ?? alert.price,
+            alert.evaluatedTargetPrice,
+            alert.triggerEvidence,
+            alert.armingRevision,
+          ),
+        );
+      }
+      for (const alert of migratedExpired) {
+        queueAlertSync(get, alert.id, "migrate expired create", () =>
+          createRemoteAlert(localAlertToCreate(alert)),
+        );
+        queueAlertSync(get, alert.id, "migrate expired status", () =>
+          patchRemoteAlert(alert.id, {
+            status: "expired",
+            armingRevision: alert.armingRevision,
+          }),
         );
       }
       persist();
@@ -523,6 +688,10 @@ export const applyRemoteAlertsAtom = atom(
     set(
       triggeredAlertsAtom,
       snapshot.triggeredAlerts.map(backendAlertToLocal),
+    );
+    set(
+      expiredAlertsAtom,
+      (snapshot.expiredAlerts ?? []).map(backendAlertToLocal),
     );
     set(historyAtom, snapshot.history.map(backendAlertEventToLocal));
     set(selectedAlertIdAtom, null);
@@ -537,6 +706,7 @@ export const resetAlertsToDefaultsAtom = atom(null, (_get, set) => {
 	alertSyncQueues.clear();
   set(alertsAtom, []);
   set(triggeredAlertsAtom, []);
+  set(expiredAlertsAtom, []);
   set(historyAtom, []);
   set(settingsAtom, DEFAULT_SETTINGS);
   set(selectedAlertIdAtom, null);
@@ -576,6 +746,7 @@ export const clearAlertsAtom = atom(null, (_get, set) => {
 interface AlertState {
   alerts: Alert[];
   triggeredAlerts: Alert[];
+  expiredAlerts: Alert[];
   history: AlertHistoryEntry[];
   settings: AlertSettings;
   selectedAlertId: string | null;
@@ -589,9 +760,16 @@ export interface AlertActions {
   duplicateAlert: (id: string) => Alert | undefined;
   selectAlert: (id: string | null) => void;
   editAlert: (id: string | null) => void;
-  triggerAlert: (id: string, triggerPrice: number) => Alert | undefined;
+  triggerAlert: (
+    id: string,
+    triggerPrice: number,
+    targetPrice?: number,
+    evidence?: TechnicalAlertEvidence,
+  ) => Alert | undefined;
+  expireAlert: (id: string, expiredAtMs?: number) => Alert | undefined;
   resetAlert: (id: string) => void;
   clearTriggered: () => void;
+  clearExpired: () => void;
   clearHistory: () => void;
   setSettings: (patch: Partial<AlertSettings>) => void;
   hydrate: () => void;
@@ -605,6 +783,7 @@ export type AlertStoreInterface = AlertState & AlertActions;
 const alertStateAtom = atom<AlertState>((get) => ({
   alerts: get(alertsAtom),
   triggeredAlerts: get(triggeredAlertsAtom),
+  expiredAlerts: get(expiredAlertsAtom),
   history: get(historyAtom),
   settings: get(settingsAtom),
   selectedAlertId: get(selectedAlertIdAtom),
@@ -623,10 +802,20 @@ const alertCombinedAtom = atom<AlertStoreInterface>((get) => {
       store.set(duplicateAlertAtom, id) as Alert | undefined,
     selectAlert: (id) => store.set(selectAlertAtom, id),
     editAlert: (id) => store.set(editAlertAtom, id),
-    triggerAlert: (id, triggerPrice) =>
-      store.set(triggerAlertAtom, id, triggerPrice) as Alert | undefined,
+    triggerAlert: (id, triggerPrice, targetPrice, evidence) =>
+      store.set(
+        triggerAlertAtom,
+        id,
+        triggerPrice,
+        undefined,
+        targetPrice,
+        evidence,
+      ) as Alert | undefined,
+    expireAlert: (id, expiredAtMs) =>
+      store.set(expireAlertAtom, id, expiredAtMs) as Alert | undefined,
     resetAlert: (id) => store.set(resetAlertAtom, id),
     clearTriggered: () => store.set(clearTriggeredAtom),
+    clearExpired: () => store.set(clearExpiredAtom),
     clearHistory: () => store.set(clearHistoryAtom),
     setSettings: (patch) => store.set(setSettingsAtom, patch),
     hydrate: () => store.set(hydrateAtom),

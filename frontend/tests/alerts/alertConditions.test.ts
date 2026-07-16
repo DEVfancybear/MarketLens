@@ -5,6 +5,7 @@ import {
   alertLineRenderKey,
   conditionForTargetSide,
   findPriceConditionTrigger,
+  findPriceConditionMatch,
   hasAlertArmingChange,
   isPriceConditionMet,
   isTriggerPriceValid,
@@ -59,6 +60,19 @@ test("closed-browser replay catches a wick that returns before the next poll", (
   assert.deepEqual(trigger, { price: 1.14393, timestamp: 1100 });
 });
 
+test("closed-browser match retains the consecutive market evidence", () => {
+  const match = findPriceConditionMatch(
+    "crossUp",
+    100,
+    { price: 99, timestamp: 1000 },
+    [{ price: 101, timestamp: 1100 }],
+  );
+  assert.deepEqual(match, {
+    previous: { price: 99, timestamp: 1000 },
+    point: { price: 101, timestamp: 1100 },
+  });
+});
+
 test("level conditions use current price only", () => {
   assert.equal(isPriceConditionMet("above", 100, undefined, 100), true);
   assert.equal(isPriceConditionMet("above", 100, 101, 99), false);
@@ -98,16 +112,17 @@ test("MT5 realtime evaluation rejects invalid and out-of-order timestamps", () =
   assert.equal(isOrderedMt5Tick(Number.NaN, 2000), false);
 });
 
-test("editing or re-arming changes the arming revision", () => {
+test("only a semantic revision changes the evaluator signature", () => {
   const original = alertArmingRevision("crossUp", "EURUSD", 1.1442, false, 1000);
   assert.notEqual(
-    alertArmingRevision("crossUp", "EURUSD", 1.1443, false, 1001),
+    alertArmingRevision("crossUp", "EURUSD", 1.1443, false, 1000),
     original,
   );
-  assert.notEqual(
-    alertArmingRevision("crossUp", "EURUSD", 1.1442, false, 1001),
+  assert.equal(
+    alertArmingRevision("crossUp", "EURUSD", 1.1442, false, 1000),
     original,
   );
+  assert.notEqual(alertArmingRevision("crossUp", "EURUSD", 1.1442, false, 1001), original);
 });
 
 test("a new arming revision never reuses a previous market tick", () => {
@@ -140,7 +155,15 @@ test("only semantic alert changes re-arm recurring state", () => {
   };
   assert.equal(hasAlertArmingChange(current, { price: 1.1443 }), true);
   assert.equal(hasAlertArmingChange(current, { condition: "crossDown" }), true);
-  assert.equal(hasAlertArmingChange({ ...current, enabled: false }, { enabled: true }), true);
+  assert.equal(hasAlertArmingChange({ ...current, enabled: false }, { enabled: true }), false);
   assert.equal(hasAlertArmingChange(current, { enabled: false }), false);
+  assert.equal(hasAlertArmingChange(current, { note: "renamed" }), false);
+  assert.equal(hasAlertArmingChange(current, { push: true, discord: true }), false);
   assert.equal(hasAlertArmingChange(current, {}), false);
+  assert.equal(
+    hasAlertArmingChange(current, {
+      technicalTarget: { version: 1, kind: "fixed-price", price: 1.2 },
+    }),
+    true,
+  );
 });

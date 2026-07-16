@@ -42,6 +42,10 @@ The current suite covers shared geometry plus Phase 0 characterization contracts
 - Browser gesture smoke tests cover create, select, move, undo, redo, delete,
   and restoration of chart zoom interaction. Mouse and touch cases cover the
   shared first-drag/selected-handle policy.
+- `visualSnapshotMatrix.test.ts` derives a per-tool visual row from the typed
+  manifest and checks that every persistent id still has a production fixture.
+  The opt-in `tests/browser/drawingSnapshotMatrix.spec.ts` captures stable PNG
+  artifacts for human review; geometry/adapter contracts remain the oracle.
 - Position creation tests assert tick-snapped, viewport-visible initial geometry,
   candle-index session-gap handling, and logical-width body movement; and
   axis-constrained movement tests assert Horizontal/Vertical Line grab-offset
@@ -118,6 +122,19 @@ npx playwright test tests/browser/mobileDrawing.spec.ts
 
 It creates, moves, and resizes a rectangle through touch input and verifies that
 the chart viewport does not move while the drawing owns the gesture.
+
+The browser visual matrix is intentionally opt-in:
+
+```powershell
+$env:DRAWING_VISUAL_MATRIX = "1"
+npm.cmd run test:chart-browser -- drawingSnapshotMatrix.spec.ts
+```
+
+Use `$env:DRAWING_VISUAL_MATRIX = "representative"` for one case per visual
+family; with no flag the browser matrix is skipped.
+
+See `docs/DRAWING_TOOLS_VISUAL_SNAPSHOT_MATRIX.md` for the artifact naming and
+TradingView review workflow.
 
 ## Last verified gates (2026-07-13)
 

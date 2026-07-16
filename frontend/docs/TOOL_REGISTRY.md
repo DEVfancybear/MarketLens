@@ -1,6 +1,7 @@
 # Tool Registry
 
-_Date: 2026-06-25. Updated 2026-07-13 after the post-Phase 8 adapter audit._
+_Date: 2026-06-25. Updated 2026-07-13 after the post-Phase 8 adapter audit and
+2026-07-17 after the parity/visual-matrix follow-up._
 
 ## Current catalog
 

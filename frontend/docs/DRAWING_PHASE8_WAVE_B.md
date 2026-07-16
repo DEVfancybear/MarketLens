@@ -6,7 +6,9 @@ _Scope: shared level, fan, radial, Gann-grid, and median-line geometry_
 
 > Historical Wave B delivery/verification snapshot. Current catalog-wide
 > contracts and the Fib Wedge angular-sweep audit are recorded in
-> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. The Gann limitations
+> recorded below describe the 2026-07-12 milestone and were superseded by the
+> 2026-07-16/17 typed settings and logical-bar scale-lock follow-up.
 
 ## Delivered catalog
 
@@ -43,8 +45,9 @@ Primary references:
 - https://www.tradingview.com/support/solutions/43000703396-drawing-tools-available-on-tradingview/
 - https://www.tradingview.com/support/solutions/43000518136-trend-based-fib-time-drawing-tool/
 - https://www.tradingview.com/support/solutions/43000558494-fib-speed-resistance-fan-drawing-tool-is-inverted-reversed/
-- https://www.tradingview.com/support/solutions/43000518151/gann-fan/
-- https://www.tradingview.com/support/solutions/43000518149/gann-square/
+- https://www.tradingview.com/support/solutions/43000518151-gann-fan-drawing-tool/
+- https://www.tradingview.com/support/solutions/43000518149-gann-square-drawing-tool/
+- https://www.tradingview.com/support/solutions/43000518152-gann-box/
 - https://www.tradingview.com/support/folders/43000547459-how-to-use-various-drawing-tools/
 - https://www.tradingview.com/charting-library-docs/latest/ui_elements/drawings/Drawings-List/
 
@@ -90,16 +93,21 @@ test proves encode/decode round trips for every new id. Older clients safely qua
 
 ## Intentional differences
 
-- Gann slope/ratio geometry is evaluated in current CSS-pixel projection. A future scale-lock
-  capability is needed for TradingView's exact price-to-bar ratio preservation and Shift locking.
+- Historical Wave B boundary: Gann slope/ratio geometry was evaluated only in CSS-pixel
+  projection. The 2026-07-16/17 follow-up supersedes this with a persisted price-per-logical-bar
+  ratio; enabling the lock captures the visible object's current ratio before constrained resize.
 - Speed Resistance Arcs currently render complete ellipses instead of directional half-arcs. This
   preserves deterministic hit/culling geometry until an explicit arc-direction property is added.
-- Wave B reuses the existing Fib level editor. It does not yet expose every TradingView family-
-  specific preset, label-alignment option, per-line opacity, or reverse control as a separate schema.
+- Historical Wave B boundary: the first release reused the Fib level editor. Gann now owns a typed
+  family schema, and Square/Box price/time levels persist independent color, opacity, width, and
+  line style. Unverified TradingView preset names and still-unimplemented controls in other Wave B
+  families remain outside the current claim.
 - Pitchfork formulas implement the documented origin differences, but omit TradingView's full
   alternate level presets and per-level fills.
-- Dynamic alerts remain unavailable because every Wave B target changes with time/scale; fixed-price
-  snapshot alerts would be misleading.
+- Historical Wave B boundary: dynamic targets were unavailable because freezing their current
+  intersection as a fixed price would be misleading. The 2026-07-16 follow-up delivered immutable
+  time-indexed Fib Channel targets; other Wave B tools continue to advertise alert support only
+  when their manifest capability and evaluator contract are explicit.
 
 ## Performance review
 

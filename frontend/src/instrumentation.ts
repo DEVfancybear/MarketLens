@@ -14,10 +14,10 @@ export async function register() {
   const tick = async () => {
     try {
       const result = await evaluatePushAlerts();
-      if (result.triggered > 0 || result.errors.length > 0) {
+      if (result.triggered > 0 || result.expired > 0 || result.errors.length > 0) {
         const errors = result.errors.length ? ` errors=${result.errors.length}` : "";
         console.log(
-          `[push-worker] devices=${result.devices} alerts=${result.alerts} triggered=${result.triggered} skipped=${result.skipped}${errors}`,
+          `[push-worker] devices=${result.devices} alerts=${result.alerts} triggered=${result.triggered} expired=${result.expired} skipped=${result.skipped}${errors}`,
         );
       }
     } catch (error) {

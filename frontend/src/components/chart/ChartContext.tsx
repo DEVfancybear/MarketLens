@@ -2,6 +2,7 @@
 import { createContext, useContext } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import type { Candle } from '@/types';
+import type { IndicatorMagnetPoint } from './drawing/interaction/OhlcMagnetSnap';
 
 export interface ChartCtx {
   chart: IChartApi;
@@ -11,6 +12,8 @@ export interface ChartCtx {
   /** Monotonic counter that bumps whenever the visible range/size changes,
    *  so overlay canvases know to repaint. */
   version: number;
+  /** Values from visible overlay indicators eligible for magnet snapping. */
+  indicatorPoints?: readonly IndicatorMagnetPoint[];
 }
 
 export const ChartContextObj = createContext<ChartCtx | null>(null);

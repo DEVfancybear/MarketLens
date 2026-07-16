@@ -28,6 +28,7 @@ import {
   applyRemoteChartSettingsAtom,
   applyRemoteDrawingTemplatesAtom,
   applyRemotePineScriptsAtom,
+  hydrateAtom as hydrateChartAtom,
   loadActiveSymbolDrawingsAtom,
   resetChartWorkspaceToDefaultsAtom,
 } from "@/store/chartStore";
@@ -49,8 +50,9 @@ import {
  *
  * Auth/session establishment stays in useAuthSession(). This hook runs after
  * `backendSessionAtom` flips true and applies server-owned sections into atoms.
- * Watchlists are no longer localStorage-backed; anonymous/offline edits are only
- * an in-memory cache for the current tab.
+ * Watchlists are no longer localStorage-backed. Anonymous/offline chart edits
+ * hydrate from the local cache; an explicit sign-out clears that cache before
+ * the next account can use the browser.
  */
 export function useWorkspaceBootstrap(): void {
   const authStatus = useAtomValue(authStatusAtom);
@@ -69,6 +71,7 @@ export function useWorkspaceBootstrap(): void {
   const applyPineScripts = useSetAtom(applyRemotePineScriptsAtom);
   const applyIndicators = useSetAtom(applyRemoteIndicatorsAtom);
   const applyChartSettings = useSetAtom(applyRemoteChartSettingsAtom);
+  const hydrateChart = useSetAtom(hydrateChartAtom);
   const loadActiveDrawings = useSetAtom(loadActiveSymbolDrawingsAtom);
   const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
   const resetTrade = useSetAtom(resetTradeAtom);
@@ -79,20 +82,30 @@ export function useWorkspaceBootstrap(): void {
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
   const anonymousResetRef = useRef(false);
+  const authenticatedBeforeAnonymousRef = useRef(false);
 
   useEffect(() => {
     if (authStatus === "anonymous") {
       bootstrappedUserRef.current = null;
       if (!anonymousResetRef.current) {
         anonymousResetRef.current = true;
-        resetUI();
-        resetSmc();
-        resetAlerts();
-        applyWatchlists([]);
-        applyLayouts([]);
-        resetChartWorkspace();
-        resetTrade();
-        resetPushNotifications();
+        const signedOut = authenticatedBeforeAnonymousRef.current;
+        if (signedOut) {
+          resetUI();
+          resetSmc();
+          resetAlerts();
+          applyWatchlists([]);
+          applyLayouts([]);
+          resetChartWorkspace({ clearLocal: true });
+          resetTrade();
+          resetPushNotifications();
+        } else {
+          // Initial/offline anonymous sessions may use the local cache. The
+          // hydration hook ran before this effect, so rehydrate after resetting
+          // the SSR-safe atoms without deleting the cache.
+          resetChartWorkspace({ clearLocal: false });
+          hydrateChart();
+        }
         log("info", "Workspace reset to defaults");
       }
       setWorkspaceReady(true);
@@ -105,6 +118,7 @@ export function useWorkspaceBootstrap(): void {
     }
 
     anonymousResetRef.current = false;
+    authenticatedBeforeAnonymousRef.current = true;
 
     if (!backendSession || !user) {
       bootstrappedUserRef.current = null;
@@ -140,6 +154,7 @@ export function useWorkspaceBootstrap(): void {
         applyAlerts({
           alerts: bootstrap.alerts,
           triggeredAlerts: bootstrap.triggeredAlerts,
+          expiredAlerts: bootstrap.expiredAlerts ?? [],
           history: bootstrap.history,
         });
         applyWatchlists(watchlists);
@@ -172,6 +187,7 @@ export function useWorkspaceBootstrap(): void {
     applyPineScripts,
     applyIndicators,
     applyChartSettings,
+    hydrateChart,
     applyLayouts,
     loadActiveDrawings,
     loadDefaultLayout,

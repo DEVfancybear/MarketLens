@@ -1,6 +1,7 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog, capability-driven cross-cutting behavior, pure adapters with explicit runtime context, and the executable all-adapter contract._
+_Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog and
+2026-07-17 for the capability-driven parity follow-up, dynamic alerts, and visual matrix._
 
 The current post-Phase 8 maintenance record is
 `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. Older dated counts in

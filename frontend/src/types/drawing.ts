@@ -1,11 +1,36 @@
 /** User drawing primitives rendered on the chart overlay canvas. */
 import type { DrawingTool } from "./drawingToolManifest";
 import type { Timeframe } from "./market";
+import type { GannConfig } from "./gann";
+import type { RegressionTrendProperties } from "./regressionTrend";
+import type { VolumeProfileProperties } from "./volumeProfile";
 export type { DrawingTool } from "./drawingToolManifest";
 export { ALL_DRAWING_TOOL_IDS } from "./drawingToolManifest";
+export * from "./regressionTrend";
+export * from "./volumeProfile";
 
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type LineEnd = "normal" | "arrow";
+
+export type LineStat =
+  | "priceRange"
+  | "percentChange"
+  | "pips"
+  | "barsRange"
+  | "dateTimeRange"
+  | "distance"
+  | "angle";
+export type LineStatsPosition = "left" | "center" | "right" | "auto";
+
+export const LINE_STATS: readonly { id: LineStat; label: string }[] = [
+  { id: "priceRange", label: "Price range" },
+  { id: "percentChange", label: "Percent change" },
+  { id: "pips", label: "Change in pips" },
+  { id: "barsRange", label: "Bars range" },
+  { id: "dateTimeRange", label: "Date/time range" },
+  { id: "distance", label: "Distance" },
+  { id: "angle", label: "Angle" },
+] as const;
 
 export interface ChannelLevelConfig {
   value: number;
@@ -77,13 +102,42 @@ export interface DrawingSyncBinding {
   chartId?: string;
 }
 
-export interface DrawingDataSample {
+export interface DrawingDataBar {
   time: number;
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
+}
+
+/** Optional lower-timeframe bar retained inside a bounded drawing snapshot. */
+export type DrawingDataSubBar = DrawingDataBar;
+
+/**
+ * Optional trade/quote update used for price-level volume reconstruction.
+ * Missing volume represents one tick, matching tick-volume markets.
+ */
+export interface DrawingDataTick {
+  time?: number;
+  price: number;
+  volume?: number;
+  direction?: "up" | "down";
+}
+
+export interface DrawingDataSample extends DrawingDataBar {
+  /** Lower-timeframe bars take precedence over the chart bar fallback. */
+  subBars?: DrawingDataSubBar[];
+  /** False when a persistence/capture bound removed part of this bar's detail. */
+  subBarsComplete?: boolean;
+  /** Price-level ticks take precedence over lower-timeframe bars when present. */
+  ticks?: DrawingDataTick[];
+  /**
+   * True only when capture has explicit evidence that the retained tick ring
+   * covers this snapshot's requested interval. Missing is intentionally not
+   * treated as complete for legacy/recent partial rings.
+   */
+  ticksComplete?: boolean;
 }
 
 /** Immutable candle snapshot captured at a data-driven drawing transaction. */
@@ -101,7 +155,8 @@ export interface DrawingRichContent {
   cells?: string[][];
 }
 
-export interface BaseDrawing {
+export interface BaseDrawing
+  extends RegressionTrendProperties, VolumeProfileProperties {
   /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
   schemaVersion?: number;
   id: string;
@@ -132,6 +187,11 @@ export interface BaseDrawing {
   showPriceLabels?: boolean;
   /** Axis-time label for vertical/cross-line tools. Historical payloads default to visible. */
   showTimeLabel?: boolean;
+  /** TradingView's independent Trendline/Ray/Extended Line stat controls. */
+  lineStats?: LineStat[];
+  lineStatsPosition?: LineStatsPosition;
+  alwaysShowLineStats?: boolean;
+  /** @deprecated Legacy combined price/percent chip; decoded as two lineStats. */
   showStats?: boolean;
   /** Fill color for shapes (rectangle, circle, etc.). */
   fillColor?: string;
@@ -193,6 +253,8 @@ export interface BaseDrawing {
   fibTextHAlign?: FibAlignH;
   fibTextVAlign?: FibAlignV;
   fibLogScale?: boolean;
+  /** Typed TradingView Gann Fan/Square/Box configuration. */
+  gann?: GannConfig;
   /** Parallel-channel ratios, where 0 is the baseline and 1 the offset side. */
   channelLevels?: ChannelLevelConfig[];
   channelBackground?: boolean;
@@ -249,7 +311,8 @@ export type StyleFamily = "line" | "shape" | "text";
  * apply to another of the same family. Style-only — never points / id — so a
  * bad template can't move or duplicate objects.
  */
-export interface DrawingTemplate {
+export interface DrawingTemplate
+  extends RegressionTrendProperties, VolumeProfileProperties {
   /** Backend id when the template is synced; absent for anonymous/local presets. */
   id?: string;
   name: string;
@@ -261,6 +324,9 @@ export interface DrawingTemplate {
   lineEnd?: LineEnd;
   showMidpoint?: boolean;
   showPriceLabels?: boolean;
+  lineStats?: LineStat[];
+  lineStatsPosition?: LineStatsPosition;
+  alwaysShowLineStats?: boolean;
   showStats?: boolean;
   fillColor?: string;
   opacity?: number;
@@ -301,6 +367,7 @@ export interface DrawingTemplate {
   fibTextHAlign?: FibAlignH;
   fibTextVAlign?: FibAlignV;
   fibLogScale?: boolean;
+  gann?: GannConfig;
   channelLevels?: ChannelLevelConfig[];
   channelBackground?: boolean;
 }

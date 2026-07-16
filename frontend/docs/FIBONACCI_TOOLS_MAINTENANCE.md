@@ -179,4 +179,6 @@ npm run build
 - Negative fib levels are not in the default settings list yet, though level values are editable.
 - Full TradingView per-timeframe visibility checkboxes are not implemented; Visibility currently
   keeps the app-level shown/hidden control.
-- Alert conditions on fib levels are not implemented.
+- Fixed-price alerts for enabled retracement/extension levels are implemented;
+  time-indexed dynamic alerts are currently limited to Fib Channel levels and
+  use the contract in `DYNAMIC_DRAWING_ALERTS_PLAN.md`.

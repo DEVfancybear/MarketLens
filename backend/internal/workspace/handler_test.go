@@ -119,6 +119,7 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 	alertReader := &fakeAlertSnapshotReader{snapshot: alertspkg.Snapshot{
 		Alerts:          []alertspkg.Alert{{ID: "alert-server-1", ClientID: "alert-1", Symbol: "EURUSD", Status: "active"}},
 		TriggeredAlerts: []alertspkg.Alert{},
+		ExpiredAlerts:   []alertspkg.Alert{},
 		History:         []alertspkg.Event{},
 	}}
 
@@ -158,6 +159,7 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 		PineScripts      []pinescripts.Script         `json:"pineScripts"`
 		Alerts           []alertspkg.Alert            `json:"alerts"`
 		TriggeredAlerts  []alertspkg.Alert            `json:"triggeredAlerts"`
+		ExpiredAlerts    []alertspkg.Alert            `json:"expiredAlerts"`
 		History          []alertspkg.Event            `json:"history"`
 		Layouts          []layouts.Layout             `json:"layouts"`
 	}
@@ -165,7 +167,7 @@ func TestBootstrapReturnsSettingsAndEmptySlices(t *testing.T) {
 		t.Fatalf("decode bootstrap response: %v", err)
 	}
 	if body.Watchlists == nil || body.DrawingTemplates == nil || body.Indicators == nil ||
-		body.PineScripts == nil || body.Alerts == nil || body.TriggeredAlerts == nil ||
+		body.PineScripts == nil || body.Alerts == nil || body.TriggeredAlerts == nil || body.ExpiredAlerts == nil ||
 		body.History == nil || body.Layouts == nil {
 		t.Fatal("bootstrap arrays must be empty arrays, not null")
 	}

@@ -16,6 +16,7 @@ import {
   type MarketCandle,
   type MarketChannel,
   type MarketQuote,
+  type DrawingDataTick,
   type MarketSubscription,
   type SubscriptionKey,
   type Timeframe,
@@ -41,6 +42,10 @@ import {
   incrementChartPerformanceCounter,
 } from "@/services/chartPerformanceProbe";
 import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
+import {
+  measuredCumulativeVolumeDelta,
+  normalizedCumulativeVolume,
+} from "@/services/market-data/quoteVolume";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 const MAX_CANDLES = 5000;
@@ -78,6 +83,77 @@ export const connectionStatusAtom = atom<ConnectionStatus>("disconnected");
 export const subscriptionsAtom = atom<
   Record<SubscriptionKey, MarketSubscription>
 >({});
+
+const MAX_RECENT_MARKET_TICKS = 20_000;
+const recentMarketTicks = new Map<string, DrawingDataTick[]>();
+/** Last cumulative/session quote volume, used to derive per-update volume. */
+const recentMarketQuoteVolumes = new Map<string, number>();
+
+function recordRecentMarketTick(quote: MarketQuote): void {
+  if (!Number.isFinite(quote.last) || quote.last <= 0 || !Number.isFinite(quote.timestamp)) return;
+  const symbol = quote.symbol.trim().toUpperCase();
+  const ticks = recentMarketTicks.get(symbol) ?? [];
+  const previous = ticks[ticks.length - 1];
+  const time = quote.timestamp >= 100_000_000_000
+    ? quote.timestamp / 1000
+    : quote.timestamp;
+  const cumulativeVolume = normalizedCumulativeVolume(quote.volume);
+  const previousCumulativeVolume = recentMarketQuoteVolumes.get(symbol);
+  const measuredVolume = measuredCumulativeVolumeDelta(
+    quote.volume,
+    previousCumulativeVolume,
+  );
+  if (cumulativeVolume != null) recentMarketQuoteVolumes.set(symbol, cumulativeVolume);
+  const volume = measuredVolume;
+  if (previous?.time === time && previous.price === quote.last) {
+    if (volume != null) previous.volume = (previous.volume ?? 0) + volume;
+    return;
+  }
+  const direction = previous
+    ? quote.last > previous.price
+      ? "up" as const
+      : quote.last < previous.price
+        ? "down" as const
+        : undefined
+    : undefined;
+  ticks.push({
+    time,
+    price: quote.last,
+    ...(volume != null ? { volume } : {}),
+    ...(direction ? { direction } : {}),
+  });
+  if (ticks.length > MAX_RECENT_MARKET_TICKS) {
+    ticks.splice(0, ticks.length - MAX_RECENT_MARKET_TICKS);
+  }
+  recentMarketTicks.set(symbol, ticks);
+}
+
+/** Immutable tick-volume evidence retained for newly created profile drawings. */
+export function getRecentMarketTicks(
+  symbol: string,
+  start = Number.NEGATIVE_INFINITY,
+  end = Number.POSITIVE_INFINITY,
+): DrawingDataTick[] {
+  return (recentMarketTicks.get(symbol.trim().toUpperCase()) ?? [])
+    .filter((tick) => (tick.time ?? 0) >= start && (tick.time ?? 0) <= end)
+    .map((tick) => ({ ...tick }));
+}
+
+/**
+ * Explicit retained-ring bounds for completeness checks. A caller may use
+ * ticks only when its entire requested interval sits inside these bounds.
+ */
+export function getRecentMarketTickCoverage(
+  symbol: string,
+): { start: number; end: number } | undefined {
+  const times = (recentMarketTicks.get(symbol.trim().toUpperCase()) ?? [])
+    .flatMap((tick) => Number.isFinite(tick.time) ? [tick.time!] : []);
+  if (times.length === 0) return undefined;
+  return {
+    start: Math.min(...times),
+    end: Math.max(...times),
+  };
+}
 export const subRefsAtom = atom<Record<SubscriptionKey, number>>({});
 export const lastUpdateAtom = atom<number>(0);
 
@@ -208,6 +284,7 @@ export const selectMarketAtom = atom(
 // ── Write atoms: data ingress (service → store) ──────────────────────────────
 
 export const updateQuoteAtom = atom(null, (get, set, quote: MarketQuote) => {
+  recordRecentMarketTick(quote);
   set(quotesAtom, { ...get(quotesAtom), [quote.symbol]: quote });
   set(lastUpdateAtom, Date.now());
   set(marketDataTickAtom, get(marketDataTickAtom) + 1);
@@ -340,6 +417,8 @@ export const setConnectionStatusAtom = atom(
 );
 
 export const resetAtom = atom(null, (_get, set) => {
+  recentMarketTicks.clear();
+  recentMarketQuoteVolumes.clear();
   set(quotesAtom, {});
   set(candlesAtom, {});
   set(candleRepositoriesAtom, {});

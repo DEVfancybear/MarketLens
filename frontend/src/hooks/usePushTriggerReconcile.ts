@@ -2,11 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { alertsAtom, triggerAlertAtom, type Alert } from "@/store/alertStore";
+import {
+  alertsAtom,
+  expireAlertAtom,
+  triggerAlertAtom,
+  type Alert,
+} from "@/store/alertStore";
 import { workspaceReadyAtom } from "@/store/authStore";
 import { pushRegistrationAtom } from "@/store/notificationStore";
-import { fetchPushTriggerStatus } from "@/services/notifications/push";
+import { fetchPushAlertStatus } from "@/services/notifications/push";
 import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
+import { sanitizeTechnicalAlertEvidence } from "@/services/dynamicAlertTargets";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -19,10 +25,18 @@ export function usePushTriggerReconcile() {
   const registration = useAtomValue(pushRegistrationAtom);
   const externalSyncToken = useExternalSyncToken();
   const triggerAlert = useSetAtom(triggerAlertAtom);
+  const expireAlert = useSetAtom(expireAlertAtom);
   const token = registration?.token ?? externalSyncToken;
   const activeSnapshotKey = alerts
     .map((alert) =>
-      [alert.id, alert.symbol, alert.condition, alert.price, alert.recurring].join(":"),
+      [
+        alert.id,
+        alert.symbol,
+        alert.condition,
+        alert.price,
+        alert.recurring,
+        alert.armingRevision,
+      ].join(":"),
     )
     .sort()
     .join("|");
@@ -31,21 +45,40 @@ export function usePushTriggerReconcile() {
     if (!token || !workspaceReady) return;
 
     const reconcile = async () => {
-      const triggers = await fetchPushTriggerStatus(token);
-      for (const trigger of triggers) {
+      const status = await fetchPushAlertStatus(token);
+      for (const trigger of status.triggers) {
         const alert = alertsRef.current.find((item) => item.id === trigger.alertId);
         if (!alert) continue;
         if (
           alert.symbol !== trigger.symbol ||
           alert.condition !== trigger.condition ||
           alert.price !== trigger.price ||
-          alert.recurring !== trigger.recurring
+          alert.recurring !== trigger.recurring ||
+          (trigger.armingRevision !== undefined &&
+            alert.armingRevision !== trigger.armingRevision)
         ) {
           continue;
         }
         const knownTriggeredAt = alert.triggeredAt ? alert.triggeredAt * 1000 : 0;
         if (trigger.triggeredAt <= knownTriggeredAt) continue;
-        triggerAlert(alert.id, trigger.triggerPrice, trigger.triggeredAt);
+        triggerAlert(
+          alert.id,
+          trigger.triggerPrice,
+          trigger.triggeredAt,
+          trigger.targetPrice,
+          sanitizeTechnicalAlertEvidence(trigger.evidence),
+        );
+      }
+      for (const expiration of status.expirations) {
+        const alert = alertsRef.current.find((item) => item.id === expiration.alertId);
+        if (
+          !alert ||
+          alert.symbol !== expiration.symbol ||
+          alert.armingRevision !== expiration.armingRevision
+        ) {
+          continue;
+        }
+        expireAlert(alert.id, expiration.expiredAt);
       }
     };
 
@@ -60,5 +93,5 @@ export function usePushTriggerReconcile() {
       document.removeEventListener("visibilitychange", onVisible);
       window.clearInterval(interval);
     };
-  }, [activeSnapshotKey, token, triggerAlert, workspaceReady]);
+  }, [activeSnapshotKey, expireAlert, token, triggerAlert, workspaceReady]);
 }

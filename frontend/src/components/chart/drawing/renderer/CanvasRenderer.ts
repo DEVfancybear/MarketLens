@@ -100,7 +100,11 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
           "," +
           d.points[j].time.toFixed(0) +
           "," +
-          d.points[j].price.toFixed(4);
+          d.points[j].price.toFixed(4) +
+          "," +
+          (Number.isFinite(d.points[j].pressure)
+            ? Number(d.points[j].pressure).toFixed(3)
+            : "-");
       }
       // Include text/fontSize so text-only updates invalidate the memo.
       if (d.text != null) h += ":text=" + d.text;
@@ -165,6 +169,12 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         (d.showTimeLabel === false ? "0" : "1") +
         "," +
         (d.showStats ? "1" : "0") +
+        "," +
+        JSON.stringify(d.lineStats ?? []) +
+        "," +
+        (d.lineStatsPosition ?? "") +
+        "," +
+        (d.alwaysShowLineStats ? "1" : "0") +
         "," +
         (d.channelBackground === false ? "0" : "1") +
         "," +
@@ -241,6 +251,34 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         (d.alwaysShowStats === false ? "0" : "1") +
         "," +
         JSON.stringify(d.positionStats ?? []);
+      h +=
+        ":reg=" +
+        [
+          d.regressionUpperDeviation,
+          d.regressionLowerDeviation,
+          d.regressionUseUpperDeviation,
+          d.regressionUseLowerDeviation,
+          d.regressionSource,
+          d.regressionShowBaseLine,
+          d.regressionShowUpperLine,
+          d.regressionShowLowerLine,
+          d.regressionExtendLines,
+          d.regressionShowPearsonR,
+        ].join(",") +
+        ":vp=" +
+        [
+          d.volumeProfileRows,
+          d.volumeProfileValueAreaPercent,
+          d.volumeProfileWidthPercent,
+          d.volumeProfilePlacement,
+          d.volumeProfileVolumeMode,
+          d.volumeProfileShowHistogram,
+          d.volumeProfileShowPointOfControl,
+          d.volumeProfileShowValueAreaHigh,
+          d.volumeProfileShowValueAreaLow,
+        ].join(",") +
+        ":gann=" +
+        JSON.stringify(d.gann ?? null);
     }
     lastDrawingsRef = ds;
     lastDrawingsHash = h;
@@ -252,7 +290,13 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     let h = String(pts.size);
     for (const arr of pts.values()) {
       for (const pt of arr)
-        h += "," + pt.time.toFixed(0) + "," + pt.price.toFixed(4);
+        h +=
+          "," +
+          pt.time.toFixed(0) +
+          "," +
+          pt.price.toFixed(4) +
+          "," +
+          (Number.isFinite(pt.pressure) ? Number(pt.pressure).toFixed(3) : "-");
     }
     return h;
   }

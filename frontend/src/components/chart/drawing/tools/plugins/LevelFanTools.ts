@@ -1,5 +1,5 @@
 /** Phase 8 Wave B parallel-level, ray-fan, and time-level families. */
-import type { Drawing, DrawingTool, FibLevelConfig } from "@/types";
+import { resolveGannConfig, type Drawing, type DrawingTool, type FibLevelConfig } from "../../../../../types";
 import { DEFAULT_FIB_LEVELS } from "../../../../../types/drawing";
 import type { Projector } from "../../drawingRenderer";
 import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
@@ -20,10 +20,10 @@ import {
   type Segment,
 } from "./lineGeometry";
 import { projectChannel, channelAnchorHits } from "./channelGeometry";
+import { projectGannFan } from "./gannGeometry";
 
 const CORE_FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 const TIME_FIB = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
-const GANN_RATIOS = [0.125, 0.25, 1 / 3, 0.5, 1, 2, 3, 4, 8] as const;
 
 function fibLevels(d: Drawing, min = 0, max = 1): FibLevelConfig[] {
   const configured = d.fibLevels?.length ? d.fibLevels : DEFAULT_FIB_LEVELS;
@@ -85,19 +85,72 @@ const fibChannel: DrawingToolPlugin = {
 };
 
 function fanSegments(d: Drawing, toX: HitTestProjector, toY: HitTestProjector, kind: "fib" | "gann" | "pitch"): Array<{ segment: Segment; color: string; label: string }> {
+  if (kind === "gann") {
+    const geometry = projectGannFan(d, toX, toY);
+    return geometry?.strokes.map((item) => ({
+      segment: item.segment,
+      color: item.color ?? d.color,
+      label: item.label ?? "",
+    })) ?? [];
+  }
   if (kind === "pitch") {
     const [a,b,c]=d.points.map((point)=>projectPoint(point,toX,toY)); if(!a||!b||!c)return[];
     return CORE_FIB.map((ratio,index)=>{const target={x:b.x+(c.x-b.x)*ratio,y:b.y+(c.y-b.y)*ratio};return{segment:{a,b:target},color:DEFAULT_FIB_LEVELS[index]?.color||d.color,label:String(ratio)};});
   }
   const source=projectTwoPoints(d,toX,toY);if(!source)return[];
-  const ratios=kind==="gann"?GANN_RATIOS:fibLevels(d).map((level)=>level.value);
-  return ratios.map((ratio,index)=>{const effective=kind==="fib"&&d.fibReverse?1-ratio:ratio;return{segment:{a:source.a,b:{x:source.b.x,y:source.a.y+(source.b.y-source.a.y)*effective}},color:kind==="gann"?d.color:(fibLevels(d)[index]?.color||d.color),label:kind==="gann"?`${ratio}:1`:String(ratio)};});
+  const ratios=fibLevels(d).map((level)=>level.value);
+  return ratios.map((ratio,index)=>{const effective=d.fibReverse?1-ratio:ratio;return{segment:{a:source.a,b:{x:source.b.x,y:source.a.y+(source.b.y-source.a.y)*effective}},color:fibLevels(d)[index]?.color||d.color,label:String(ratio)};});
+}
+
+function renderGannFan(
+  g: CanvasRenderingContext2D,
+  d: Drawing,
+  proj: Projector,
+): void {
+  const geometry = projectGannFan(d, proj.toX, proj.toY);
+  if (!geometry) return;
+  const config = resolveGannConfig(d.gann, "fan");
+  const rendered = geometry.strokes.map((item) => ({
+    ...item,
+    rendered: rayRenderSegment(item.segment, proj),
+  }));
+  if (config.background && rendered.length > 1) {
+    g.globalAlpha = d.opacity ?? 0.08;
+    for (let index = 0; index < rendered.length - 1; index++) {
+      const current = rendered[index];
+      const next = rendered[index + 1];
+      g.fillStyle = config.useOneColor
+        ? d.color
+        : current.color ?? d.color;
+      g.beginPath();
+      g.moveTo(geometry.origin.x, geometry.origin.y);
+      g.lineTo(current.rendered.b.x, current.rendered.b.y);
+      g.lineTo(next.rendered.b.x, next.rendered.b.y);
+      g.closePath();
+      g.fill();
+    }
+  }
+  g.font = canvasFont(d.fontSize ?? 10, { weight: 500 });
+  for (const item of rendered) {
+    g.globalAlpha = item.opacity ?? 1;
+    g.strokeStyle = config.useOneColor ? d.color : item.color ?? d.color;
+    g.fillStyle = g.strokeStyle;
+    g.lineWidth = item.lineWidth ?? d.lineWidth;
+    applyStyle(g, item.lineStyle ?? d.lineStyle ?? "solid");
+    line(g, item.rendered.a.x, item.rendered.a.y, item.rendered.b.x, item.rendered.b.y);
+    if (config.labels && item.label) {
+      const x = Math.max(4, Math.min(proj.width - 36, item.segment.b.x + 4));
+      const y = Math.max(12, Math.min(proj.height - 4, item.segment.b.y - 4));
+      g.fillText(item.label, x, y);
+    }
+  }
+  g.globalAlpha = 1;
 }
 
 function createFan(tool: DrawingTool, kind: "fib" | "gann" | "pitch"): DrawingToolPlugin {
   const points=kind==="pitch"?3:2;
   return {tool,minPoints:points,maxPoints:points===3?3:undefined,
-    render(g,d,proj,selected){const source=fanSegments(d,proj.toX,proj.toY,kind);g.save();const rendered=source.map((item)=>({...item,segment:rayRenderSegment(item.segment,proj)}));renderSegments(g,d,rendered);if(selected)d.points.slice(0,points).forEach((point)=>{const p=projectPoint(point,proj.toX,proj.toY);if(p)handle(g,p.x,p.y,d.color);});g.restore();},
+    render(g,d,proj,selected){g.save();if(kind==="gann")renderGannFan(g,d,proj);else{const source=fanSegments(d,proj.toX,proj.toY,kind);const rendered=source.map((item)=>({...item,segment:rayRenderSegment(item.segment,proj)}));renderSegments(g,d,rendered);}if(selected)d.points.slice(0,points).forEach((point)=>{const p=projectPoint(point,proj.toX,proj.toY);if(p)handle(g,p.x,p.y,d.color);});g.restore();},
     hitTest(d,px,py,toX,toY){const anchors=d.points.slice(0,points).flatMap((point,index)=>{const p=projectPoint(point,toX,toY);if(!p)return[];const distance=Math.hypot(px-p.x,py-p.y);return distance<=24?[{drawing:d,target:(index===0?"p1":index===1?"p2":"p3") as HitResult["target"],anchorIndex:index,distance}]:[];});return[...anchors,...bodyHits(d,fanSegments(d,toX,toY,kind).map((item)=>raySegment(item.segment)),px,py)];},
     movePoints:defaultMovePoints,boundingBox(){return fullViewportBounds();},
   };

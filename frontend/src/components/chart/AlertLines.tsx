@@ -31,7 +31,12 @@ export function AlertLines() {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   if (ctx?.candleSeries) seriesRef.current = ctx.candleSeries;
 
-  const symbolAlerts = alerts.filter((a) => a.symbol === symbol && a.enabled);
+  const symbolAlerts = alerts.filter(
+    (a) =>
+      a.symbol === symbol &&
+      a.enabled &&
+      (!a.technicalTarget || a.technicalTarget.kind === "fixed-price"),
+  );
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   // `symbolAlerts` is a fresh array every render (including on every chart tick,
   // since `ctx` changes reference each tick and both `symbol`/`alerts` selectors

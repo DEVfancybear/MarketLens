@@ -4,7 +4,8 @@ Base URL (dev): `http://localhost:8080`
 API prefix: `/api/v1` (except `/health`).
 
 > Status: health, auth, settings/bootstrap, watchlists, drawings, indicators,
-> Pine scripts/runtime, MT5, Phase 10 alerts/push tokens, and Phase 12 layouts are implemented.
+> Pine scripts/runtime, MT5, layouts, and the alert/push API are implemented. Alerts include
+> immutable fixed/dynamic technical targets, evidence-verified triggers, expiration, and re-arming.
 > Phase 13 resources remain planned contracts. See `AUTH.md` for auth and
 > `DATABASE.md` for persistence details.
 >
@@ -779,7 +780,7 @@ Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery c
 
 | Method | Path                            | Purpose                                      |
 | ------ | ------------------------------- | -------------------------------------------- |
-| GET    | `/api/v1/alerts`                | List; optional `?status=active|triggered`    |
+| GET    | `/api/v1/alerts`                | List; optional `?status=active|triggered|expired` |
 | POST   | `/api/v1/alerts`                | Idempotent create/upsert by `clientId`       |
 | PATCH  | `/api/v1/alerts/:id`            | Update / pause (`enabled:false`) / re-arm    |
 | DELETE | `/api/v1/alerts/:id`            | Delete alert; retained history is unaffected |
@@ -799,7 +800,15 @@ Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery c
   "recurring": false,
   "enabled": true,
   "locked": false,
-  "channels": { "sound": true, "browser": false, "push": true, "telegram": false, "discord": false }
+  "channels": { "sound": true, "browser": false, "push": true, "telegram": false, "discord": false },
+  "technicalTarget": {
+    "version": 1,
+    "kind": "dynamic-line",
+    "a": { "time": 1783420800, "price": 64000 },
+    "b": { "time": 1783424400, "price": 65000 },
+    "domain": "ray",
+    "interpolation": "linear"
+  }
 }
 ```
 
@@ -810,14 +819,31 @@ to remain ordered without replacing IDs in chart overlays.
 **Trigger body**
 
 ```json
-{ "triggerPrice": 65012.5 }
+{
+  "armingRevision": 3,
+  "previous": { "price": 64980, "timestamp": 1783424380 },
+  "current": { "price": 65012.5, "timestamp": 1783424410 },
+  "triggerPrice": 65012.5,
+  "targetPrice": 65008.3333333333
+}
 ```
+
+`current` and `armingRevision` are required. `previous` is required by crossing,
+channel-enter/exit, and directional-boundary operators; level operators do not
+need it. Timestamps are normalized UTC epoch seconds (fractional seconds are
+accepted). `triggerPrice` and `targetPrice` are optional compatibility claims:
+the backend recomputes the immutable line/channel target and condition from the
+evidence and rejects mismatched claims, stale revisions, out-of-order evidence,
+or a condition that was not actually met.
 
 The trigger response is `{ "alert": Alert, "event": AlertEvent }`. A one-time
 alert moves to `triggered`; a recurring alert remains `active` and receives new
 `triggeredAt`/`triggerPrice` values. Event shape:
 `{ id, alertId, symbol, condition, targetPrice, triggerPrice, triggeredAt, delivered }`.
-Events retain their stable `alertId` after an alert is deleted.
+`triggeredAt` is the accepted `current.timestamp`, not API receive time. Events
+retain their stable `alertId` after an alert is deleted. Finite targets may be
+patched to `status:"expired"`; snapshot/bootstrap responses expose those rows in
+`expiredAlerts`. Re-arming with `status:"active"` increments `armingRevision`.
 
 ### Push tokens (FCM), protected, implemented
 

@@ -12,14 +12,14 @@ function drawing(tool: Drawing["tool"], points: Drawing["points"], patch: Partia
 
 test("fixed horizontal and rectangle geometry project stable alert targets", () => {
   assert.deepEqual(drawingAlertTargets(drawing("horizontal", [{ time: 1, price: 101 }])), [
-    { id: "point:0", label: "Price level", price: 101 },
+    { id: "point:0", label: "Price level", price: 101, technicalTarget: { version: 1, kind: "fixed-price", price: 101 } },
   ]);
   assert.deepEqual(drawingAlertTargets(drawing("rectangle", [
     { time: 1, price: 90 },
     { time: 2, price: 110 },
   ])), [
-    { id: "range:upper", label: "Upper boundary", price: 110 },
-    { id: "range:lower", label: "Lower boundary", price: 90 },
+    { id: "range:upper", label: "Upper boundary", price: 110, technicalTarget: { version: 1, kind: "fixed-price", price: 110 } },
+    { id: "range:lower", label: "Lower boundary", price: 90, technicalTarget: { version: 1, kind: "fixed-price", price: 90 } },
   ]);
   assert.deepEqual(drawingAlertTargets(drawing("trendline", [
     { time: 1, price: 90 },

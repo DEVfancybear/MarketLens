@@ -1,7 +1,9 @@
 # Drawing Tools TradingView Parity Audit
 
 _Date: 2026-07-15_
-_Scope: all 84 persistent drawing ids; first implementation slice covers the shared line family_
+_Follow-up implementation: 2026-07-16_
+_Gann settings/scale-lock refinement: 2026-07-17_
+_Scope: all 84 persistent drawing ids; initial line-family slice plus the eight follow-up contracts_
 
 ## Maintenance rule
 
@@ -48,22 +50,59 @@ Primary catalog:
 7. Added executable tests for label visibility and line-family parity. The all-adapter geometry
    contract continues to cover all 84 persistent ids.
 
-## Remaining explicit parity work
+## 2026-07-16 parity follow-up
 
-The current engine already has render/hit/move/resize/settings/persistence coverage for every id,
-but complete TradingView depth is not claimed. Maintain these as family-sized changes:
+The eight explicit follow-up items from the 2026-07-15 audit are now implemented as shared family
+contracts rather than tool-specific patches:
 
-- Split Trendline/Ray/Extended stats into TradingView's individual toggles and positions rather
-  than the current compact combined label.
-- Add direct on-chart text editing targets for horizontal and vertical axis lines.
-- Add dynamic alerts for sloped/time-varying lines and channel/Fib projections.
-- Add exact regression inputs/source/Pearson R settings.
-- Add exact Gann scale locking and the full family preset catalogs.
-- Add lower-timeframe/tick reconstruction for volume profiles; current snapshots remain bounded to
-  available chart data.
-- Add indicator-value magnet snapping and variable-width pressure strokes.
-- Build a per-tool visual/browser snapshot matrix. Geometry contracts remain the correctness
-  oracle; screenshots supplement rather than replace them.
+1. Trendline, Ray, and Extended Line stats use seven independently persisted toggles: Price range,
+   Percent change, Change in pips, Bars range, Date/time range, Distance, and Angle. Placement is
+   Left/Center/Right/Auto, `always show` is independent of selection, Bars range uses logical candle
+   indices, and Distance uses projected CSS pixels as observed in TradingView.
+2. Horizontal and Vertical axis labels expose manifest-owned `axis-price`/`axis-time` editing
+   targets. Their transparent DOM hit regions open the same inline text editor used by other
+   capability-driven drawing text, without adding tool-id branches to the interaction manager.
+3. Technical alerts snapshot versioned data-coordinate targets for Trendline, Info Line, Trend
+   Angle, Ray, Extended Line, Parallel Channel, and Fib Channel levels. Segment/ray/infinite domains,
+   moving-boundary crossings, channel operators, open-browser evaluation, closed-browser replay,
+   immutable provenance, server-side evidence recomputation, arming revisions, and expiration are
+   described in `DYNAMIC_DRAWING_ALERTS_PLAN.md`.
+4. Regression Trend now owns typed upper/lower deviation values and enable toggles, all eight
+   TradingView source choices (`Open`, `High`, `Low`, `Close`, `HL2`, `HLC3`, `OHLC4`, `HLCC4`),
+   base/upper/lower line toggles, right extension, and Pearson R. Calculation, render, hit-test,
+   bounds, settings, codec, and legacy defaults resolve through the same configuration.
+5. Gann Fan/Square/Box share a versioned typed configuration. Fan uses the verified nine ratios
+   from `1/8` through `8/1`; Square/Box expose editable price/time eighth levels with independently
+   persisted color, opacity, width, and line style. `Use one color` switches rendering between the
+   drawing color and those level styles without changing geometry. Scale locking uses logical
+   chart-bar distance and a persisted price-per-bar ratio, so weekends and market gaps do not
+   distort the 1x1 relationship. Enabling the lock captures the current drawing ratio before any
+   resize, rather than applying the legacy `1` fallback and making the object jump. Verified
+   built-in `classic`/`eighths` defaults and bounded custom rows are explicit; unverified
+   TradingView template names are not invented.
+6. Fixed and Anchored Volume Profile use a deterministic detail order: complete measured ticks,
+   complete lower-timeframe OHLCV, then chart bars. Snapshot capture and runtime revalidate interval
+   coverage/parent-volume conservation, reject partial or unit/mixed tick detail, and retain the
+   documented chart-timeframe fallback. Profile row allocation, up/down classification, POC, and
+   value-area tie breaking are shared by render, hit-test, and bounds.
+7. Magnet preferences keep TradingView's Weak/Strong OHLC policy and add `Snap to indicators` as an
+   independent option. Visible overlay values compete with OHLC candidates by projected distance
+   and fall back safely when no overlay is available. Pen input persists normalized pressure;
+   Brush/Highlighter render bounded variable-width segments, and simplification preserves pressure
+   ramps and spikes while mouse/touch strokes retain their configured width.
+8. The manifest-derived visual matrix has one row for every persistent id and real Playwright chart
+   screenshots for every creation-enabled id. It supports representative, full-catalog, and
+   comma-separated per-id runs, fixes the browser clock, selects tools by manifest id, and compares
+   against reviewed platform baselines. The executable adapter/geometry contracts remain the
+   semantic oracle; screenshots cover paint order, fills, labels, and handles.
 
-These differences are intentional until their family implementation and regression suite land;
-they must not be hidden behind claims of complete TradingView equivalence.
+## Honest parity boundary
+
+This follow-up closes the named audit gaps; it is not a blanket claim that every pixel, preset,
+gesture, product workflow, or future TradingView behavior is equivalent. The implementation is
+bounded by the official behavior reviewed on 2026-07-15/16 and by deterministic data available to
+the chart. In particular, incomplete tick/lower-timeframe history falls back instead of being
+guessed, legacy two-point pixel-offset channels are not valid alert sources, vertical/time alerts
+and touch tolerance are separate condition models, and executable third-party embeds remain
+unsupported. Any later family change must repeat the official-source review and keep geometry,
+settings, persistence, evaluator, and browser evidence aligned.

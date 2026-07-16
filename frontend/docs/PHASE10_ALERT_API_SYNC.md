@@ -1,7 +1,8 @@
 # Phase 10 Alert API Sync
 
-_Implemented 2026-07-10. Scope: Go alert/history/push-token persistence and
-frontend synchronization._
+_Implemented 2026-07-10; technical-alert hardening verified 2026-07-17. Scope:
+Go alert/history/push-token persistence, immutable technical targets, lifecycle
+state, and frontend synchronization._
 
 ## Ownership
 
@@ -9,11 +10,11 @@ Phase 10 separates three concerns that previously shared one browser-local flow:
 
 | Concern | Source of truth | Browser role |
 | --- | --- | --- |
-| Alert definitions and lifecycle | Go API + PostgreSQL `alerts` | Optimistic Jotai state and `localStorage` cache |
+| Alert definitions and lifecycle | Go API + PostgreSQL `alerts` | Optimistic Jotai state and `localStorage` cache; fixed and dynamic targets remain versioned |
 | Trigger audit history | PostgreSQL `alert_events` | Immediate optimistic history, then bootstrap hydration |
 | Global channel defaults | `user_settings.notifications` | `AlertSettings` atom/cache |
 | Authenticated FCM device ownership | PostgreSQL `push_tokens` | Firebase token acquisition and local registration cache |
-| Closed-browser evaluation state | Existing Next push worker store | Sync enabled alerts and reconcile confirmed triggers |
+| Closed-browser evaluation state | Existing Next push worker store | Sync enabled alerts, preserve `armingRevision`, evaluate dynamic targets, and reconcile confirmed triggers |
 
 The Next push worker remains in place because it evaluates market conditions and
 tracks delivery state. The Go `push_tokens` table answers a different question:
@@ -263,7 +264,9 @@ wrong side of its alert line.
 | `src/services/market-data/mt5Price.ts` | Bid-based MT5 chart/alert price normalization |
 | `src/services/market-data/subscriptionRegistry.ts` | Independent ticker/kline ownership per MT5 symbol |
 | `src/hooks/useAlertEngine.ts` | Consecutive-tick live alert evaluation |
-| `src/server/pushAlertEvaluator.ts` | Closed-browser ordered MT5 tick replay and evaluation |
+| `src/server/pushAlertEvaluator.ts` | Closed-browser ordered MT5 tick replay, dynamic target evaluation, and expiration |
+| `src/services/dynamicAlertTargets.ts` | Shared time-indexed line/channel/Fib Channel evaluator |
+| `src/services/pushAlertSanitizer.ts` | Strict target/evidence/arming-revision validation before push persistence |
 | `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot, then opens the push runtime gate |
 | `src/services/notifications/push.ts` | Dual token registration/unregistration |
 | `src/hooks/usePushNotifications.ts` | Enables Go token sync only for backend sessions |
@@ -275,8 +278,9 @@ wrong side of its alert line.
 | `tests/alerts/mt5AlertSubscription.test.ts` | Alert ticker/chart kline ownership regression test |
 | `tests/alerts/notificationDeepLink.test.ts` | Symbol query/message validation regression test |
 
-Backend implementation lives in `backend/internal/alerts`; schema migration is
-`backend/migrations/0011_alerts`.
+Backend implementation lives in `backend/internal/alerts`; alert schema migrations are
+`backend/migrations/0011_alerts`, `0019_alert_source`, `0020_alert_technical_target`, and
+`0021_alert_expiration_and_arming_revision`.
 
 ## Verification
 
@@ -297,4 +301,4 @@ npm run test:alerts
 npm run test:ui
 ```
 
-Expected database version after Phase 10: `11`, not dirty.
+Expected database version after the current alert lifecycle hardening: `21`, not dirty.

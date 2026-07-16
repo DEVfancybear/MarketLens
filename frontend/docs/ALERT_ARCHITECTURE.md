@@ -1,7 +1,10 @@
 # Alert Architecture
 
-TradingView-style price alert runtime. This document reflects the current frontend code, including
-browser notifications, sound, Firebase push, and external Telegram/Discord dispatch paths.
+TradingView-style price and technical drawing alert runtime. This document reflects the current
+frontend code, including browser notifications, sound, Firebase push, external Telegram/Discord
+dispatch paths, immutable drawing targets, and the closed-browser push evaluator.
+
+_Updated: 2026-07-17_
 
 ## Goals
 
@@ -10,14 +13,17 @@ browser notifications, sound, Firebase push, and external Telegram/Discord dispa
 - The alert engine does not poll and does not create a separate market-data socket.
 - One-time alerts trigger once; recurring alerts are re-armed through a cooldown.
 - Delivery channels are independent from evaluation logic.
+- Dynamic drawing alerts persist a versioned data-coordinate target rather than a viewport price.
+- Open-browser and push evaluation share the same target/evidence contract; the Go API verifies
+  trigger evidence before persistence and notification delivery.
+- Finite dynamic domains transition to an explicit `expired` lifecycle and can be re-armed.
 
 ## TradingView Compatibility Contract
 
-The current runtime intentionally implements **price alerts**, including fixed-price
-snapshots created from eligible drawings, not indicator, strategy, watchlist, or
-other technical alerts. The compatibility
-baseline was checked against TradingView's official alert documentation on
-2026-07-11:
+The current runtime implements **fixed-price alerts** and a bounded set of
+**time-indexed drawing alerts**. It does not claim indicator, strategy, watchlist,
+or multi-condition alert parity. The compatibility baseline was checked against
+TradingView's official alert documentation on 2026-07-15/16:
 
 - [Introduction to TradingView alerts](https://www.tradingview.com/support/solutions/43000520149-introduction-to-tradingview-alerts/)
 - [Learn how to configure alerts](https://www.tradingview.com/support/solutions/43000763312-learn-how-to-configure-alerts/)
@@ -35,6 +41,8 @@ These are maintenance invariants for the existing implementation:
 | Running script alerts use a snapshot of their symbol, timeframe, script, and inputs. | Price alerts store their own symbol, condition, target, recurrence, and channel flags. Chart navigation and global notification-setting changes do not mutate an existing alert. Editing an alert creates a new arming revision. |
 | Triggering and notification delivery are separate concerns. | Persist the trigger/history independently; dispatch toast, sound, browser, push, Telegram, and Discord as best-effort channels. |
 | Alerts can be one-time or repeat. | One-time alerts leave the active set after firing. Recurring alerts remain active and use the existing 60-second re-arm guard. |
+| Technical alerts evaluate a referenced series/geometry at market time. | Dynamic drawing alerts freeze a versioned target at creation; drawing edits never mutate the alert. Both browser paths evaluate the same target and evidence pair. |
+| Technical alerts can expire when their referenced domain ends. | Segment/ray/infinite domains are explicit; finite targets become `expired`, remain visible in bootstrap/history, and require a new arming revision to resume. |
 
 ### Drawing alert snapshots
 
@@ -44,19 +52,22 @@ levels, and Long/Short Position entry/target/stop levels project one or more fix
 price targets. The shared drawing action registry exposes **Add alert** only when
 that projection returns at least one valid positive price.
 
-Creation copies the selected target into the ordinary price-alert contract and
+Creation copies a selected fixed target into the ordinary price-alert contract and
 stores immutable provenance in `source`: drawing id/tool, target id/label, and the
 snapshot timestamp. The alert therefore continues to evaluate the same price if
 the source drawing is moved, edited, hidden, synchronized elsewhere, or deleted.
 The provenance is persisted locally and in PostgreSQL and is visible in Alert
 Center, but it does not participate in evaluation or re-arming.
 
-Sloped lines, rays, channels, and other time-varying geometry intentionally do not
-declare this capability. Supporting them requires a time-indexed geometry evaluator
-in both the browser and closed-browser worker; silently freezing their current
-intersection would misrepresent a dynamic technical alert. The deferred contract,
-data model, rollout, and test gates are specified in
-[`DYNAMIC_DRAWING_ALERTS_PLAN.md`](./DYNAMIC_DRAWING_ALERTS_PLAN.md).
+Trendline, Info Line, Trend Angle, Ray, Extended Line, Parallel Channel, and Fib
+Channel advertise `dynamicAlertProjection`. Creation stores a versioned
+data-coordinate target, active domain, interpolation mode, selected boundary or
+operator, and `armingRevision`. `dynamicAlertTargets.ts` evaluates the target at
+market time in both the open-browser engine and the closed-browser push worker.
+The Go trigger endpoint reloads the immutable target, validates the normalized
+previous/current evidence, recomputes the condition, and rejects stale or forged
+claims. See [`DYNAMIC_DRAWING_ALERTS_PLAN.md`](./DYNAMIC_DRAWING_ALERTS_PLAN.md)
+for the full contract and boundaries.
 
 Two naming differences are deliberate and must not be silently changed:
 
@@ -69,10 +80,10 @@ Two naming differences are deliberate and must not be silently changed:
   close`, and `Once per minute`). Adding that matrix requires an explicit model
   and migration rather than overloading the existing `recurring` boolean.
 
-Out of scope for this price-alert runtime: expiration/open-ended alerts,
-minimum-tick metadata, alert names/message placeholders, webhooks, frequency by
-bar, indicator/strategy snapshots, dynamic drawing-geometry alerts,
-multi-condition alerts, and watchlist alerts.
+Still outside this drawing-alert contract: minimum-tick metadata, alert
+names/message placeholders, webhooks, TradingView's complete frequency-by-bar
+matrix, indicator/strategy snapshots, vertical/time-event alerts, multi-condition
+alerts, watchlist alerts, and automatic retargeting after a drawing edit.
 
 ## Runtime Flow
 
@@ -94,9 +105,12 @@ without clobbering each other.
 
 | Concern | File | Notes |
 | --- | --- | --- |
-| Alert state | `src/store/alertStore.ts` | Alerts, triggered alerts, history, settings, selected/editing ids. Persists to localStorage key `alerts`. |
-| Pure evaluation | `src/services/alertEngine.ts` | Condition helpers with no React or I/O dependency. |
+| Alert state | `src/store/alertStore.ts` | Alerts, triggered/expired alerts, history, settings, selected/editing ids. Persists to localStorage key `alerts`. |
+| Fixed evaluation | `src/services/alertEngine.ts` | Level/cross condition helpers with no React or I/O dependency. |
+| Dynamic evaluation | `src/services/dynamicAlertTargets.ts` | Data-coordinate target interpolation, domain checks, signed-distance conditions, and evidence normalization. |
 | Runtime hook | `src/hooks/useAlertEngine.ts` | Connects market ticks to pure evaluation and alert store actions. |
+| Push evaluator | `src/server/pushAlertEvaluator.ts`, `src/hooks/usePushTriggerReconcile.ts` | Ordered MT5 replay, expiration, arming-revision checks, and trigger reconciliation. |
+| Server verification | `backend/internal/alerts/technical_evaluator.go`, `backend/internal/alerts/handler.go` | Recomputes technical targets and validates trigger evidence before persistence. |
 | Dispatch | `src/services/notifications/notify.ts` | Fans a trigger out to enabled channels. |
 | Toast | `src/store/toastStore.ts`, `src/components/notifications/Toaster.tsx` | In-app notification stack. |
 | Sound | `src/services/notifications/sound.ts` | Web Audio chime. |
@@ -112,7 +126,7 @@ Core fields:
 
 ```ts
 type AlertCondition = "above" | "below" | "crossUp" | "crossDown";
-type AlertStatus = "active" | "triggered";
+type AlertStatus = "active" | "triggered" | "expired";
 
 interface Alert {
   id: string;
@@ -130,6 +144,8 @@ interface Alert {
   discord?: boolean;
   createdAt: number;
   updatedAt: number;
+  armingRevision: number;
+  technicalTarget?: TechnicalAlertTarget;
   triggeredAt?: number;
   triggerPrice?: number;
   note?: string;
@@ -155,6 +171,21 @@ cross between worker polls is not lost.
 New alerts skip cross detection on their first evaluation so stale previous prices cannot trigger an
 immediate false cross. Above/below alerts can trigger immediately if the current price already meets
 the condition.
+
+### Dynamic drawing evaluation
+
+For a dynamic target, the evaluator first resolves `targetAt(marketTime)` and
+then compares signed distances for the previous and current observations. A
+crossing, channel-enter/exit, or directional boundary condition requires the
+consecutive evidence pair; a level condition may use the current observation
+alone. Segment, ray, and infinite domains are enforced before evaluation, and
+finite domains return `expired` rather than a guessed fixed price. The push path
+replays ordered MT5 market timestamps, while `receivedAt` remains a separate
+freshness/order cursor.
+
+The browser sends normalized evidence and `armingRevision` with a trigger. The
+Go API recomputes the target/condition from the persisted immutable payload and
+uses the accepted market timestamp for `triggeredAt`.
 
 ## Chart Integration
 
@@ -184,6 +215,9 @@ Dispatch failures do not change alert trigger state; they are surfaced through t
 `alerts`, `triggeredAlerts`, `history`, and `settings` persist under localStorage key `alerts`.
 Push registration state persists separately under `pushNotifications`.
 
-Remote alert persistence is not yet the source of truth. When the backend alert endpoints are wired,
-keep evaluation local/push-driven and move create/update/delete/history synchronization through the
-shared `ky` API resource layer described in `BACKEND_API_SYNC_ARCHITECTURE.md`.
+For anonymous users, localStorage remains the durable cache. For an authenticated
+session, the Go API/PostgreSQL alert record and event history are authoritative;
+the frontend remains optimistic and queues mutations through the shared `ky` API
+resource layer. Bootstrap carries active, triggered, and expired alerts plus
+history. Push storage keeps the same immutable target and arming revision, so a
+closed-browser trigger cannot silently downgrade to a fixed-price alert.

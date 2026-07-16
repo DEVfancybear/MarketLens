@@ -20,6 +20,49 @@ export interface OhlcMagnetSnapResult {
   distancePx?: number;
 }
 
+/** A projected value emitted by an overlay indicator (not a separate pane). */
+export interface IndicatorMagnetPoint {
+  time: number;
+  value: number;
+  /** Stable ids are useful for diagnostics and future per-indicator filters. */
+  sourceId?: string;
+  seriesKey?: string;
+}
+
+export interface IndicatorMagnetSnapOptions {
+  point: Point;
+  indicators: readonly IndicatorMagnetPoint[];
+  toX: (time: number) => number | null;
+  toY: (price: number) => number | null;
+  weakDistancePx?: number;
+}
+
+export interface IndicatorMagnetSnapResult {
+  point: Point;
+  snapped: boolean;
+  sourceId?: string;
+  seriesKey?: string;
+  distancePx?: number;
+}
+
+export interface CombinedMagnetSnapOptions {
+  point: Point;
+  candles: readonly Candle[];
+  indicators: readonly IndicatorMagnetPoint[];
+  mode: DrawingMagnetMode;
+  snapToIndicators: boolean;
+  toX: (time: number) => number | null;
+  toY: (price: number) => number | null;
+  weakDistancePx?: number;
+}
+
+export interface CombinedMagnetSnapResult {
+  point: Point;
+  snapped: boolean;
+  source?: "ohlc" | "indicator";
+  distancePx?: number;
+}
+
 const OHLC_FIELDS = ["open", "high", "low", "close"] as const;
 
 function nearestTimeCandidateIndexes(candles: readonly Candle[], time: number): number[] {
@@ -90,10 +133,99 @@ export function snapPointToOhlc(options: OhlcMagnetSnapOptions): OhlcMagnetSnapR
     return { point: { ...options.point }, snapped: false };
   }
   return {
-    point: { time: best.candleTime!, price: best.price },
+    point: { ...options.point, time: best.candleTime!, price: best.price },
     snapped: true,
     candleTime: best.candleTime,
     field: best.field,
     distancePx: best.distancePx,
   };
+}
+
+/**
+ * Snap to the nearest value from visible overlay indicators.  TradingView's
+ * “Snap to indicators” is an explicit magnet mode, so it intentionally does
+ * not fall back to OHLC when no indicator value is available.  A weak pixel
+ * guard is still honoured when supplied by callers; the default accepts the
+ * nearest finite indicator point because the mode itself is an explicit opt-in.
+ */
+export function snapPointToIndicator(
+  options: IndicatorMagnetSnapOptions,
+): IndicatorMagnetSnapResult {
+  const pointX = options.toX(options.point.time);
+  const pointY = options.toY(options.point.price);
+  if (pointX == null || pointY == null || options.indicators.length === 0) {
+    return { point: { ...options.point }, snapped: false };
+  }
+  let best: (IndicatorMagnetPoint & { distancePx: number }) | null = null;
+  for (const candidate of options.indicators) {
+    if (!Number.isFinite(candidate.time) || !Number.isFinite(candidate.value)) continue;
+    const x = options.toX(candidate.time);
+    const y = options.toY(candidate.value);
+    if (x == null || y == null) continue;
+    const distancePx = Math.hypot(x - pointX, y - pointY);
+    if (!best || distancePx < best.distancePx) {
+      best = { ...candidate, distancePx };
+    }
+  }
+  if (!best) return { point: { ...options.point }, snapped: false };
+  const threshold = options.weakDistancePx;
+  if (threshold != null && best.distancePx > threshold) {
+    return { point: { ...options.point }, snapped: false };
+  }
+  return {
+    point: { ...options.point, time: best.time, price: best.value },
+    snapped: true,
+    sourceId: best.sourceId,
+    seriesKey: best.seriesKey,
+    distancePx: best.distancePx,
+  };
+}
+
+/**
+ * Indicator values augment OHLC candidates under the current Weak/Strong
+ * policy. Both sources use the same projected CSS-pixel distance and the
+ * nearest candidate wins; ties deliberately keep the native OHLC candidate.
+ */
+export function snapPointWithMagnetSources(
+  options: CombinedMagnetSnapOptions,
+): CombinedMagnetSnapResult {
+  const weakDistancePx = options.weakDistancePx ?? WEAK_MAGNET_DISTANCE_PX;
+  const ohlc = snapPointToOhlc({
+    point: options.point,
+    candles: options.candles,
+    mode: options.mode,
+    toX: options.toX,
+    toY: options.toY,
+    weakDistancePx,
+  });
+  const indicator = options.snapToIndicators
+    ? snapPointToIndicator({
+        point: options.point,
+        indicators: options.indicators,
+        toX: options.toX,
+        toY: options.toY,
+        weakDistancePx: options.mode === "weak" ? weakDistancePx : undefined,
+      })
+    : { point: { ...options.point }, snapped: false as const };
+
+  if (
+    indicator.snapped &&
+    (!ohlc.snapped || (indicator.distancePx ?? Infinity) < (ohlc.distancePx ?? Infinity))
+  ) {
+    return {
+      point: indicator.point,
+      snapped: true,
+      source: "indicator",
+      distancePx: indicator.distancePx,
+    };
+  }
+  if (ohlc.snapped) {
+    return {
+      point: ohlc.point,
+      snapped: true,
+      source: "ohlc",
+      distancePx: ohlc.distancePx,
+    };
+  }
+  return { point: { ...options.point }, snapped: false };
 }

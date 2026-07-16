@@ -112,6 +112,7 @@ import {
   resolveCandleViewport,
   type CandleViewport,
 } from "@/services/candleViewport";
+import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
 
 function keepLatestBarInView(
   chart: IChartApi,
@@ -980,6 +981,24 @@ export function PriceChart({
     () => [...overlayResults, ...paneResults],
     [overlayResults, paneResults],
   );
+  const indicatorMagnetPoints = useMemo<IndicatorMagnetPoint[]>(
+    () =>
+      overlayResults.flatMap(({ cfg, result }) =>
+        result.series.flatMap((series) =>
+          series.data.flatMap((point) =>
+            Number.isFinite(point.time) && Number.isFinite(point.value)
+              ? [{
+                  time: point.time,
+                  value: point.value,
+                  sourceId: cfg.id,
+                  seriesKey: series.key,
+                }]
+              : [],
+          ),
+        ),
+      ),
+    [overlayResults],
+  );
   const overlayLegendValueText = useMemo(
     () =>
       Object.fromEntries(
@@ -1319,8 +1338,9 @@ export function PriceChart({
       candleSeries: candleSeriesRef.current,
       candles,
       version,
+      indicatorPoints: indicatorMagnetPoints,
     };
-  }, [ready, candles, version]);
+  }, [indicatorMagnetPoints, ready, candles, version]);
 
   // ---- Right-click context menu with exact price detection ----
   const [menu, setMenu] = useState<ContextMenuState | null>(null);

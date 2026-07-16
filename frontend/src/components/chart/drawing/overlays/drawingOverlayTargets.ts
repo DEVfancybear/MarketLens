@@ -1,6 +1,10 @@
 import type { Drawing } from "../../../../types/drawing";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 import { getTool } from "../tools/ToolRegistry";
+import {
+  priceAxisLabelRect,
+  timeAxisLabelRect,
+} from "../tools/plugins/axisLabels";
 
 export type OverlayProjector = (value: number) => number | null;
 
@@ -9,15 +13,29 @@ export interface SelectionTextOverlayTarget {
   x: number;
   y: number;
   width: number;
+  height?: number;
   angle: number;
+}
+
+export interface SelectionTextOverlayViewport {
+  width: number;
+  height: number;
+  market?: {
+    symbol: string;
+    candles: readonly { time: number; close: number; high: number; low: number }[];
+    tickSize?: number;
+    pricePrecision?: number;
+    pointValue?: number;
+  };
 }
 
 export function resolveSelectionTextOverlay(
   drawings: readonly Drawing[],
   drawingId: string | null | undefined,
-  editorKind: "shape-center" | "line-midpoint",
+  editorKind: "shape-center" | "line-midpoint" | "axis-price" | "axis-time",
   toX: OverlayProjector,
   toY: OverlayProjector,
+  viewport?: SelectionTextOverlayViewport,
 ): SelectionTextOverlayTarget | null {
   if (!drawingId) return null;
   const drawing = drawings.find(
@@ -38,6 +56,52 @@ export function resolveSelectionTextOverlay(
           angle: 0,
         }
       : null;
+  }
+
+  if (editorKind === "axis-price" || editorKind === "axis-time") {
+    if (!viewport || !drawing.points[0]) return null;
+    // A committed attached text remains editable from the direct axis target
+    // even when the optional numeric/date badge is hidden in Style settings.
+    // Empty lines keep the target hidden with their badge to avoid an
+    // invisible click trap.
+    if (
+      editorKind === "axis-price" &&
+      drawing.showPriceLabels === false &&
+      !drawing.text?.trim()
+    ) return null;
+    if (
+      editorKind === "axis-time" &&
+      drawing.showTimeLabel === false &&
+      !drawing.text?.trim()
+    ) return null;
+    const x = toX(drawing.points[0].time);
+    const y = toY(drawing.points[0].price);
+    if (editorKind === "axis-price") {
+      if (y == null) return null;
+      const rect = priceAxisLabelRect(
+        drawing,
+        viewport,
+        y,
+      );
+      return {
+        drawing,
+        x: rect.x + rect.width / 2,
+        y: rect.y + rect.height / 2,
+        width: rect.width,
+        height: rect.height,
+        angle: 0,
+      };
+    }
+    if (x == null) return null;
+    const rect = timeAxisLabelRect(drawing, viewport, x);
+    return {
+      drawing,
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      angle: 0,
+    };
   }
 
   const [p0, p1] = drawing.points;

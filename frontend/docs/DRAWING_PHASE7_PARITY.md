@@ -5,7 +5,8 @@ _Status: implemented_
 
 > Historical Phase 7 verification snapshot. For the current 84-adapter catalog
 > and the post-Phase 8 geometry/purity audit, see
-> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+> `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. The deferred items
+> below are historical; the 2026-07-16/17 follow-up supersedes them where noted.
 
 This is the executable-scope checklist for Phase 7 of
 `DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`. Historical payloads keep their
@@ -26,9 +27,10 @@ defaults; new optional fields are capability-scoped and pass through the version
 - [x] Editable enabled/disabled custom ratio levels.
 - [x] Left, right, both, or no extension.
 - [x] Background bands and direct text. Render, hit-test, and bounds share level geometry.
-- [ ] Dynamic sloped-channel alerts are intentionally deferred. The current alert engine
-  evaluates immutable fixed prices; the time-indexed contract is documented in
-  `DYNAMIC_DRAWING_ALERTS_PLAN.md`.
+- [x] Dynamic sloped-channel alerts were deferred in this historical snapshot;
+  the 2026-07-16/17 follow-up now provides immutable time-indexed line/channel/
+  Fib Channel targets, shared open/push evaluation, evidence verification, and
+  expiration. See `DYNAMIC_DRAWING_ALERTS_PLAN.md`.
 
 ## Fibonacci
 
@@ -59,8 +61,9 @@ defaults; new optional fields are capability-scoped and pass through the version
 - [x] Brush/highlighter rendering remains smoothed; curve hit-test samples the curve.
 - [x] Pen pressure is normalized and persisted as optional point metadata.
 - [x] Completion/cancellation remains owned and tested by `CreationSession`.
-- [ ] Variable-width pressure rendering is deferred until cross-device normalization and
-  brush style UX are specified. The persisted model is ready for it.
+- [x] Variable-width pressure rendering was deferred in this historical snapshot;
+  normalized pen pressure now drives bounded Brush/Highlighter segments while
+  mouse/touch retain configured constant width.
 
 ## Regression gates
 

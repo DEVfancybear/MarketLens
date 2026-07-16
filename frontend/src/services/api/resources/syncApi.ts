@@ -15,6 +15,7 @@ export interface WorkspaceBootstrap {
   pineScripts: BackendPineScript[];
   alerts: BackendAlert[];
   triggeredAlerts: BackendAlert[];
+  expiredAlerts?: BackendAlert[];
   history: BackendAlertEvent[];
   layouts: BackendLayout[];
 }

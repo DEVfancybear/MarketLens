@@ -1,6 +1,6 @@
 # Drawing Tools Maintenance and Refactor Plan
 
-_Date: 2026-07-11; post-Phase 8 audit updated 2026-07-13_
+_Date: 2026-07-11; post-Phase 8 audit updated 2026-07-13; parity/Gann follow-up updated 2026-07-17_
 _Status: implemented; current maintenance record: `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`_
 _Scope: frontend drawing engine, drawing UX, persistence contracts, and drawing-specific backend APIs_
 
@@ -70,8 +70,9 @@ coverage should not be added until the corresponding shared contract is stable.
 
 The original 2026-07-11 baseline motivated this plan; its historical counts are
 kept in `DRAWING_PHASE0_CHARACTERIZATION.md`. The section below now summarizes
-the implemented state after Phases 0-8. The 2026-07-13 post-Phase 8 audit is recorded in
-`DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`.
+the implemented state after Phases 0-8 and the 2026-07-16/17 parity follow-up. The maintenance record
+is in `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`; the official-source evidence and honest
+parity boundary are in `DRAWING_TOOLS_TRADINGVIEW_PARITY_AUDIT_2026-07-15.md`.
 
 ### 3.1 Current architecture
 
@@ -92,18 +93,22 @@ the implemented state after Phases 0-8. The 2026-07-13 post-Phase 8 audit is rec
 
 ### 3.2 Implemented catalog
 
-| TradingView group | Current coverage | Intentional/deferred depth |
+| TradingView group | Current coverage | Intentional boundary |
 | --- | --- | --- |
-| Trend tools | Trendline/ray/Info Line/extended/angle/axis lines, Parallel/Flat/Disjoint channels, Regression Trend, Pitchfork variants | Dynamic alerts for sloped/time-varying targets |
-| Fibonacci/Gann | Legacy Fib, retracement/extension/channel/time/fan/arc/circle/wedge families, Pitchfan, Gann Fan/Square/Box | Exact Gann scale locking and the complete preset catalog |
+| Trend tools | Trendline/ray/Info Line/extended/angle/axis lines, Parallel/Flat/Disjoint channels, exact Regression inputs/source/Pearson R, Pitchfork variants, dynamic line/channel alerts | Vertical/time alerts, touch tolerance, and alerts linked to later drawing edits use separate future contracts |
+| Fibonacci/Gann | Legacy Fib, retracement/extension/channel/time/fan/arc/circle/wedge families, Pitchfan, Fib Channel alerts, Gann Fan/Square/Box with verified canonical ratios/eighths, independently styled levels, and logical-bar scale lock that captures the current ratio when enabled | Unverified TradingView template names are not fabricated; only observed built-ins plus bounded custom rows are claimed |
 | Patterns | ABCD/XABCD/Triangle/Three Drives/Head and Shoulders, Elliott variants, Time Cycles | Automatic detection and full configurable ratio validation |
-| Forecast/measure/data | Long/Short, ranges, Forecast, Sector, Bars Pattern, Ghost Feed, VWAP, profiles | Lower-timeframe/tick reconstruction and complete family settings |
-| Shapes/freehand | Rectangle/Rotated Rectangle, circle/ellipse/triangle, arc/curves/path/polyline, Brush/Highlighter, arrows/marks | Variable-width pressure rendering |
+| Forecast/measure/data | Long/Short, ranges, Forecast, Sector, Bars Pattern, Ghost Feed, VWAP, profiles with complete-tick/lower-timeframe reconstruction and deterministic chart fallback | Bounded snapshots never guess missing tick/session history; remaining family settings require tool-specific official-source review |
+| Shapes/freehand | Rectangle/Rotated Rectangle, circle/ellipse/triangle, arc/curves/path/polyline, pressure-aware Brush/Highlighter, arrows/marks | Mouse/touch retain constant configured width; only pen events supply normalized pressure |
 | Annotations/rich content | Text/Emoji/Note/Callout/Comment/Price Label/Signpost/Flag, Table/Image/Social card | Executable third-party embeds are intentionally unsupported |
-| Global controls | Modes, favorites/templates, keep drawing, OHLC magnets, interval visibility, object tree/groups/names, sync scopes, undoable bulk actions | Indicator-value magnets and broader layout product UX |
+| Global controls | Modes, favorites/templates, keep drawing, Weak/Strong OHLC magnets plus optional visible-indicator snapping, interval visibility, object tree/groups/names, sync scopes, undoable bulk actions | Broader layout product UX remains outside the drawing-engine parity contract |
 
 `fib` must remain loadable for backward compatibility but should not appear as a preferred new
 creation type after migration to `fibRetracement` is proven.
+
+The table above supersedes deferred-status statements inside the dated Phase 6/7 milestone
+sections below. Those sections remain as historical delivery records and must not be read as the
+current 2026-07-17 feature state.
 
 ### 3.3 Historical structural hotspots and resolution
 
@@ -540,7 +545,8 @@ Purpose: finish shared behavior before catalog expansion.
 Suggested order:
 
 1. Keep-drawing mode and tool-default persistence.
-2. Weak/strong OHLC magnet with a pure snap service; indicator snapping as a later subphase.
+2. Weak/strong OHLC magnet with a pure snap service; optional indicator snapping was delivered in
+   the 2026-07-16 follow-up.
 3. Interval visibility model and quick presets.
 4. Precise coordinate controls shared across all point-based tools.
 5. Object names, grouping, and object-tree management.
@@ -579,8 +585,9 @@ Delivered (item 2):
   do not alter sensitivity.
 - Magnet eligibility is a manifest capability consumed by shared interaction code. All point-based
   persistent tools participate; pointer-continuous Brush/Highlighter strokes remain unsnapped so
-  sampled freehand geometry is not collapsed onto candle values. Indicator snapping is intentionally
-  deferred to its later subphase.
+  sampled freehand geometry is not collapsed onto candle values. Historical note: indicator
+  snapping was deferred here and was delivered as the independent `Snap to indicators` preference
+  on 2026-07-16.
 - Creation previews/commits and Text anchors use the same resolver. Anchor resize snaps the active
   handle, while body and multi-object moves translate from a snapped primary reference anchor, so
   transaction boundaries and undo/redo remain unchanged.
@@ -704,10 +711,11 @@ Delivered (item 8):
   id/label, and timestamp). Moving, editing, synchronizing, hiding, or deleting the drawing cannot
   mutate the armed alert. Alert Center identifies drawing-created alerts and the Go API persists the
   optional source metadata through migration `0019_alert_source`.
-- Sloped and time-varying geometry deliberately does not advertise alert capability because the
-  existing open/closed-browser evaluator accepts fixed prices only. Dynamic line/channel alerts
-  require a future time-indexed geometry contract rather than freezing a misleading intersection;
-  the deferred implementation contract is recorded in `DYNAMIC_DRAWING_ALERTS_PLAN.md`.
+- Historical 2026-07-12 boundary: sloped and time-varying geometry did not advertise alert
+  capability while the evaluator accepted fixed prices only. Superseded on 2026-07-16 by the
+  versioned time-indexed line/channel/Fib Channel target, shared open/push evaluator,
+  previous/current trigger evidence, server recomputation, `armingRevision`, and `expired`
+  lifecycle recorded in `DYNAMIC_DRAWING_ALERTS_PLAN.md`.
 - Unit coverage verifies all projector families, unsupported tools, provenance immutability, and
   frontend API round trips. Go tests verify source validation and handler propagation; browser
   coverage creates an alert from a horizontal drawing, deletes the drawing, and proves the alert
@@ -724,8 +732,9 @@ Verification on 2026-07-12:
 - `go test ./...`: passing.
 - `npm run test:chart-browser -- drawingInteractions.spec.ts`: 16/16 passing in 84.8 seconds.
 
-Remaining: indicator-value magnet snapping is intentionally deferred. OHLC Off/Weak/Strong magnet
-behavior is implemented and complete for this phase's shipped scope.
+Superseded on 2026-07-16: Weak/Strong remains the OHLC magnet-strength policy and `Snap to
+indicators` is now an independent preference. Visible overlay values compete with OHLC candidates
+by projected distance and safely fall back when an indicator source is unavailable.
 
 Exit gate:
 
@@ -764,9 +773,13 @@ Delivered:
 - Text and Position parity items retain the direct-edit, interval/coordinate, symbol-aware formula,
   lifecycle, compact-label, and isolated trade-prefill contracts delivered in earlier phases.
 - Brush/Highlighter commits use deterministic CSS-pixel simplification while retaining smoothed
-  rendering. Optional normalized pen pressure now round-trips for future variable-width rendering.
-- Dynamic sloped line/channel alerts remain deferred to `DYNAMIC_DRAWING_ALERTS_PLAN.md`; the
-  current evaluator safely supports fixed-price snapshots only.
+  rendering. This milestone only persisted normalized pen pressure; the 2026-07-16 follow-up now
+  renders it as bounded variable-width segments and preserves pressure transitions during
+  simplification.
+- Historical 2026-07-12 boundary: dynamic sloped line/channel alerts were deferred. The 2026-07-16
+  follow-up supersedes this item with immutable dynamic line/channel/Fib Channel targets, canonical
+  data-space channel geometry, open/push evaluation parity, server-verified evidence, arming
+  revisions, and expiration.
 
 Verification on 2026-07-12:
 

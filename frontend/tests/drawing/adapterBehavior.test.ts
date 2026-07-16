@@ -170,8 +170,26 @@ test("axis line labels follow TradingView visibility controls", () => {
   assert.equal(hiddenContext.calls.filter((call) => call === "fillText").length, 0);
 
   const verticalContext = recordingContext();
-  vertical.render(verticalContext.context, { ...drawing("vertical", 1), showTimeLabel: true }, projector, false);
+  vertical.render(
+    verticalContext.context,
+    { ...drawing("vertical", 1), text: undefined, showTimeLabel: true },
+    projector,
+    false,
+  );
   assert.equal(verticalContext.calls.filter((call) => call === "fillText").length, 1, "time label is visible without selecting the line");
+
+  const verticalTextContext = recordingContext();
+  vertical.render(
+    verticalTextContext.context,
+    { ...drawing("vertical", 1), text: "Session open", showTimeLabel: true },
+    projector,
+    false,
+  );
+  assert.equal(
+    verticalTextContext.calls.filter((call) => call === "fillText").length,
+    2,
+    "vertical lines render attached text independently from their axis label",
+  );
 
   const crossContext = recordingContext();
   crossLine.render(crossContext.context, { ...drawing("crossLine", 1), showPriceLabels: true, showTimeLabel: true }, projector, false);
@@ -190,6 +208,42 @@ test("ray families share trendline text, labels, and stats rendering", () => {
     adapter.render(context, { ...drawing(tool, 2), showPriceLabels: true, showStats: true }, projector, true);
     assert.ok(calls.filter((call) => call === "fillText").length >= 4, `${tool} must render text, two prices, and stats`);
   }
+});
+
+test("line-family endpoint price labels render on the right price axis", () => {
+  const ray = getTool("ray");
+  assert.ok(ray);
+  const fillTexts: Array<{ text: string; x: number; y: number }> = [];
+  const target: Record<string, unknown> = {
+    canvas: { width: 800, height: 600 },
+    measureText: (text: string) => ({ width: text.length * 7 }),
+    fillText: (text: string, x: number, y: number) => {
+      fillTexts.push({ text, x, y });
+    },
+  };
+  const context = new Proxy(target, {
+    get(object, property) {
+      if (property in object) return object[property as string];
+      return () => undefined;
+    },
+    set(object, property, value) {
+      object[property as string] = value;
+      return true;
+    },
+  }) as unknown as CanvasRenderingContext2D;
+  ray.render(
+    context,
+    { ...drawing("ray", 2), text: undefined, showPriceLabels: true },
+    projector,
+    false,
+  );
+
+  const endpointLabels = fillTexts.filter(({ text }) => text === "20" || text === "70");
+  assert.equal(endpointLabels.length, 2);
+  assert.ok(
+    endpointLabels.every(({ x }) => x > projector.width - 50),
+    "endpoint labels belong to the price-axis strip, not their anchor pixels",
+  );
 });
 
 test("rectangle renders attached text through its real adapter", () => {

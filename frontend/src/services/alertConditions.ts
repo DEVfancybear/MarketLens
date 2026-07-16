@@ -5,9 +5,9 @@ export function alertArmingRevision(
   symbol: string,
   target: number,
   recurring: boolean,
-  updatedAt: number,
+  armingRevision: number,
 ): string {
-  return [condition, symbol, target, recurring, updatedAt].join(":");
+  return [condition, symbol, target, recurring, armingRevision].join(":");
 }
 
 export function previousPriceForRevision(
@@ -46,6 +46,13 @@ export function hasAlertArmingChange(
     price: number;
     recurring: boolean;
     enabled: boolean;
+    technicalTarget?: unknown;
+    note?: string;
+    sound?: boolean;
+    browser?: boolean;
+    push?: boolean;
+    telegram?: boolean;
+    discord?: boolean;
   },
   patch: Partial<{
     symbol: string;
@@ -53,14 +60,24 @@ export function hasAlertArmingChange(
     price: number;
     recurring: boolean;
     enabled: boolean;
+    technicalTarget?: unknown;
+    note?: string;
+    sound?: boolean;
+    browser?: boolean;
+    push?: boolean;
+    telegram?: boolean;
+    discord?: boolean;
   }>,
 ): boolean {
+  const targetChanged =
+    patch.technicalTarget !== undefined &&
+    JSON.stringify(patch.technicalTarget) !== JSON.stringify(current.technicalTarget);
   return (
     (patch.symbol !== undefined && patch.symbol !== current.symbol) ||
     (patch.condition !== undefined && patch.condition !== current.condition) ||
     (patch.price !== undefined && patch.price !== current.price) ||
     (patch.recurring !== undefined && patch.recurring !== current.recurring) ||
-    (patch.enabled === true && !current.enabled)
+    targetChanged
   );
 }
 
@@ -89,20 +106,41 @@ export interface AlertPricePoint {
   timestamp: number;
 }
 
+export interface AlertPriceMatch {
+  point: AlertPricePoint;
+  previous?: AlertPricePoint;
+}
+
+export function findPriceConditionMatch(
+  condition: PriceAlertCondition,
+  target: number,
+  previousPoint: AlertPricePoint | undefined,
+  points: AlertPricePoint[],
+): AlertPriceMatch | undefined {
+  let previous = previousPoint;
+  for (const point of points) {
+    if (isPriceConditionMet(condition, target, previous?.price, point.price)) {
+      return { point, ...(previous ? { previous } : {}) };
+    }
+    previous = point;
+  }
+  return undefined;
+}
+
 export function findPriceConditionTrigger(
   condition: PriceAlertCondition,
   target: number,
   previousPrice: number | undefined,
   points: AlertPricePoint[],
 ): AlertPricePoint | undefined {
-  let previous = previousPrice;
-  for (const point of points) {
-    if (isPriceConditionMet(condition, target, previous, point.price)) {
-      return point;
-    }
-    previous = point.price;
-  }
-  return undefined;
+  return findPriceConditionMatch(
+    condition,
+    target,
+    previousPrice === undefined
+      ? undefined
+      : { price: previousPrice, timestamp: Number.NaN },
+    points,
+  )?.point;
 }
 
 /** Final persistence guard shared by live and reconciled triggers. */

@@ -10,6 +10,14 @@ import type {
   AlertHistoryEntry,
 } from "../../../store/alertStore";
 import type { DrawingAlertSnapshot } from "../../../components/chart/drawing/alerts/drawingAlertCapabilities";
+import type {
+  TechnicalAlertEvidence,
+  TechnicalAlertTarget,
+} from "../../../types/technicalAlerts";
+import {
+  sanitizeTechnicalAlertEvidence,
+  sanitizeTechnicalAlertTarget,
+} from "../../dynamicAlertTargets";
 
 export interface BackendAlertChannels {
   sound: boolean;
@@ -26,16 +34,19 @@ export interface BackendAlert {
   condition: AlertCondition;
   price: number;
   note?: string;
-  status: "active" | "triggered";
+  status: "active" | "triggered" | "expired";
   enabled: boolean;
   locked: boolean;
   recurring: boolean;
   channels: BackendAlertChannels;
   triggerPrice?: number;
   triggeredAt?: string;
+  expiredAt?: string;
   createdAt: string;
   updatedAt: string;
   source?: DrawingAlertSnapshot;
+  technicalTarget?: TechnicalAlertTarget;
+  armingRevision?: number;
 }
 
 export interface BackendAlertEvent {
@@ -47,11 +58,13 @@ export interface BackendAlertEvent {
   triggerPrice: number;
   triggeredAt: string;
   delivered: boolean;
+  evidence?: TechnicalAlertEvidence;
 }
 
 export interface BackendAlertSnapshot {
   alerts: BackendAlert[];
   triggeredAlerts: BackendAlert[];
+  expiredAlerts?: BackendAlert[];
   history: BackendAlertEvent[];
 }
 
@@ -66,6 +79,8 @@ export interface BackendAlertCreate {
   locked: boolean;
   channels: BackendAlertChannels;
   source?: DrawingAlertSnapshot;
+  technicalTarget?: TechnicalAlertTarget;
+  armingRevision: number;
 }
 
 export interface BackendAlertPatch {
@@ -73,11 +88,13 @@ export interface BackendAlertPatch {
   condition?: AlertCondition;
   price?: number;
   note?: string;
-  status?: "active";
+  status?: "active" | "expired";
   enabled?: boolean;
   locked?: boolean;
   recurring?: boolean;
   channels?: Partial<BackendAlertChannels>;
+  technicalTarget?: TechnicalAlertTarget;
+  armingRevision?: number;
 }
 
 export interface BackendTriggerResponse {
@@ -104,6 +121,10 @@ function epochSeconds(value: string): number {
 }
 
 export function backendAlertToLocal(row: BackendAlert): Alert {
+  const technicalTarget = sanitizeTechnicalAlertTarget(row.technicalTarget);
+  if (row.technicalTarget !== undefined && !technicalTarget) {
+    throw new Error(`Backend alert ${row.clientId || row.id} has an invalid technical target.`);
+  }
   return {
     id: row.clientId || row.id,
     symbol: row.symbol,
@@ -117,6 +138,11 @@ export function backendAlertToLocal(row: BackendAlert): Alert {
     triggeredAt: row.triggeredAt
       ? epochSeconds(row.triggeredAt)
       : undefined,
+    expiredAt: row.expiredAt
+      ? epochSeconds(row.expiredAt)
+      : row.status === "expired"
+        ? epochSeconds(row.updatedAt)
+        : undefined,
     triggerPrice: row.triggerPrice,
     note: row.note || undefined,
     recurring: row.recurring,
@@ -126,12 +152,18 @@ export function backendAlertToLocal(row: BackendAlert): Alert {
     telegram: row.channels.telegram,
     discord: row.channels.discord,
     source: row.source,
+    technicalTarget,
+    armingRevision:
+      typeof row.armingRevision === "number" && Number.isFinite(row.armingRevision)
+        ? Math.max(1, Math.trunc(row.armingRevision))
+        : Math.max(1, Math.trunc(epochSeconds(row.updatedAt))),
   };
 }
 
 export function backendAlertEventToLocal(
   row: BackendAlertEvent,
 ): AlertHistoryEntry {
+  const evidence = sanitizeTechnicalAlertEvidence(row.evidence);
   return {
     id: row.id,
     alertId: row.alertId,
@@ -140,6 +172,7 @@ export function backendAlertEventToLocal(
     targetPrice: row.targetPrice,
     triggerPrice: row.triggerPrice,
     triggerTime: epochSeconds(row.triggeredAt),
+    ...(evidence ? { evidence } : {}),
   };
 }
 
@@ -165,6 +198,8 @@ export function localAlertToCreate(alert: Alert): BackendAlertCreate {
     locked: alert.locked,
     channels: channels(alert),
     ...(alert.source ? { source: alert.source } : {}),
+    ...(alert.technicalTarget ? { technicalTarget: alert.technicalTarget } : {}),
+    armingRevision: alert.armingRevision,
   };
 }
 
@@ -178,10 +213,12 @@ export function localAlertToPatch(alert: Alert): BackendAlertPatch {
     locked: alert.locked,
     recurring: alert.recurring,
     channels: channels(alert),
+    technicalTarget: alert.technicalTarget,
+    armingRevision: alert.armingRevision,
   };
 }
 
-export async function listAlerts(status?: "active" | "triggered"): Promise<BackendAlert[]> {
+export async function listAlerts(status?: "active" | "triggered" | "expired"): Promise<BackendAlert[]> {
   const query = status ? `?status=${status}` : "";
   return getJson<BackendAlert[]>(`alerts${query}`);
 }
@@ -198,9 +235,22 @@ export async function deleteAlert(id: string): Promise<void> {
   await deleteJson<{ ok: boolean }>(`alerts/${encodePath(id)}`);
 }
 
-export async function triggerAlert(id: string, triggerPrice: number): Promise<BackendTriggerResponse> {
+export async function triggerAlert(
+  id: string,
+  triggerPrice: number,
+  targetPrice?: number,
+  evidence?: TechnicalAlertEvidence,
+  armingRevision?: number,
+): Promise<BackendTriggerResponse> {
   return postJson<BackendTriggerResponse>(`alerts/${encodePath(id)}/trigger`, {
     triggerPrice,
+    ...(targetPrice !== undefined ? { targetPrice } : {}),
+    ...(evidence?.previous ? { previous: evidence.previous } : {}),
+    current: evidence?.current ?? {
+      price: triggerPrice,
+      timestamp: Date.now() / 1000,
+    },
+    ...(armingRevision !== undefined ? { armingRevision } : {}),
   });
 }
 

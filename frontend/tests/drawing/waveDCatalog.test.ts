@@ -4,7 +4,7 @@ import type { Drawing, DrawingDataSample } from "../../src/types/drawing";
 import { anchoredVwap, regressionChannel, volumeProfile } from "../../src/components/chart/drawing/data/dataDrivenGeometry";
 import { getTool } from "../../src/components/chart/drawing/tools/ToolRegistry";
 import { getDrawingToolManifestEntry } from "../../src/types/drawingToolManifest";
-import "../../src/components/chart/drawing/tools/plugins/DataDrivenTools";
+import { projectRegressionTrendGeometry } from "../../src/components/chart/drawing/tools/plugins/DataDrivenTools";
 import "../../src/components/chart/drawing/tools/plugins/ProjectionRichTools";
 
 const TOOLS=["anchoredVWAP","fixedVolumeProfile","anchoredVolumeProfile","regressionTrend","barsPattern","ghostFeed","forecast","sector","table","image","socialEmbed"] as const;
@@ -43,6 +43,36 @@ test("Regression hit testing and bounds include both deviation channels",()=>{
   const bounds=adapter.boundingBox(drawing,projector.toX,projector.toY)!;
   assert.ok(bounds.y<=Math.min(...regression.values.map((value)=>value-regression.deviation*2)),"bounds must contain lower channel");
   assert.ok(bounds.y+bounds.h>=Math.max(...regression.values.map((value)=>value+regression.deviation*2)),"bounds must contain upper channel");
+});
+
+test("Regression projects source values over edited anchors without reversing right-to-left drawings",()=>{
+  const regressionSamples:DrawingDataSample[]=[
+    {time:100,open:10,high:10,low:10,close:10,volume:1},
+    {time:160,open:12,high:12,low:12,close:12,volume:1},
+    {time:220,open:14,high:14,low:14,close:14,volume:1},
+  ];
+  const moved:Drawing={
+    ...fixture("regressionTrend"),
+    points:[{time:400,price:999},{time:700,price:-999}],
+    dataSnapshot:{version:1,symbol:"TEST",capturedAt:1,samples:regressionSamples},
+  };
+  const source=regressionChannel(regressionSamples).values;
+  const forward=projectRegressionTrendGeometry(moved,projector.toX,projector.toY);
+  assert.deepEqual(forward.base,{a:{x:400,y:source[0]},b:{x:700,y:source.at(-1)!}});
+  assert.deepEqual(forward.anchorPoints,[forward.base!.a,forward.base!.b]);
+
+  const reversed:Drawing={...moved,points:[{time:700,price:123},{time:400,price:456}]};
+  const backward=projectRegressionTrendGeometry(reversed,projector.toX,projector.toY);
+  assert.deepEqual(backward.base,forward.base,"source slope stays chronological");
+  assert.deepEqual(
+    backward.anchorPoints,
+    [backward.base!.b,backward.base!.a],
+    "p1/p2 handles stay attached to their creation-order anchors",
+  );
+  const p1Hit=getTool("regressionTrend")!
+    .hitTest(reversed,700,source.at(-1)!,projector.toX,projector.toY)
+    .find((hit)=>hit.anchorIndex===0);
+  assert.equal(p1Hit?.target,"p1");
 });
 
 test("Bars Pattern hit testing follows rendered wicks and bodies, not an invisible close path",()=>{

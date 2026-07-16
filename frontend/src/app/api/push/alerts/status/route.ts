@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPushDevice } from "@/server/pushAlertStore";
 import { alertSignature } from "@/server/pushAlertEvaluator";
-import type { PushAlertTriggerStatus } from "@/types/pushAlerts";
+import type {
+  PushAlertExpirationStatus,
+  PushAlertTriggerStatus,
+} from "@/types/pushAlerts";
 
 export const runtime = "nodejs";
 
@@ -13,24 +16,38 @@ export async function POST(req: NextRequest) {
 
   const device = await getPushDevice(body.token);
   if (!device) {
-    return NextResponse.json({ ok: true, triggers: [] });
+    return NextResponse.json({ ok: true, triggers: [], expirations: [] });
   }
 
   const triggers: PushAlertTriggerStatus[] = [];
+  const expirations: PushAlertExpirationStatus[] = [];
   for (const alert of device.alerts) {
     const state = device.alertState[alert.id];
-    if (!state || state.lastTriggeredAt === undefined) continue;
+    if (!state) continue;
     if (state.signature !== alertSignature(alert)) continue;
-    triggers.push({
-      alertId: alert.id,
-      symbol: alert.symbol,
-      condition: alert.condition,
-      price: alert.price,
-      recurring: alert.recurring,
-      triggerPrice: state.triggerPrice ?? alert.price,
-      triggeredAt: state.lastTriggeredAt,
-    });
+    if (state.lastTriggeredAt !== undefined) {
+      triggers.push({
+        alertId: alert.id,
+        symbol: alert.symbol,
+        condition: alert.condition,
+        price: alert.price,
+        recurring: alert.recurring,
+        armingRevision: alert.armingRevision,
+        triggerPrice: state.triggerPrice ?? alert.price,
+        targetPrice: state.targetPrice,
+        triggeredAt: state.lastTriggeredAt,
+        evidence: state.triggerEvidence,
+      });
+    }
+    if (state.expiredAt !== undefined) {
+      expirations.push({
+        alertId: alert.id,
+        symbol: alert.symbol,
+        armingRevision: alert.armingRevision,
+        expiredAt: state.expiredAt,
+      });
+    }
   }
 
-  return NextResponse.json({ ok: true, triggers });
+  return NextResponse.json({ ok: true, triggers, expirations });
 }

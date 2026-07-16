@@ -33,12 +33,28 @@ import {
 import {
   DEFAULT_CHANNEL_LEVELS,
   DEFAULT_FIB_LEVELS,
+  DEFAULT_GANN_BOX_CONFIG,
+  DEFAULT_GANN_FAN_CONFIG,
+  DEFAULT_GANN_SQUARE_CONFIG,
+  LINE_STATS,
+  TF_SECONDS,
+  resolveGannConfig,
+  resolveRegressionTrendConfig,
+  resolveVolumeProfileConfig,
   type ChannelLevelConfig,
   type Drawing,
   type FibAlignH,
   type FibAlignV,
   type FibLevelConfig,
   type FibTextMode,
+  type GannConfig,
+  type GannLevelConfig,
+  type GannRatioConfig,
+  type LineStat,
+  type LineStatsPosition,
+  type RegressionTrendSource,
+  type VolumeProfilePlacement,
+  type VolumeProfileVolumeMode,
 } from "@/types";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
@@ -56,6 +72,8 @@ import {
 import { CheckBox, ColorPopover, LineWidget, Select, Swatch } from "./drawing/settings/DrawingSettingsFields";
 import { DrawingIntervalVisibilityFields } from "./drawing/settings/DrawingIntervalVisibilityFields";
 import { DrawingCoordinatesFields } from "./drawing/settings/DrawingCoordinatesFields";
+import { resolveCandleBarIntervalSeconds } from "./drawing/coordinates/drawingCoordinates";
+import { setGannScaleLock } from "./drawing/tools/plugins/gannGeometry";
 
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40];
 const EXTEND_OPTS: { value: NonNullable<Drawing["extend"]>; label: string }[] = [
@@ -93,8 +111,42 @@ const FIB_V_ALIGN: { value: FibAlignV; label: string }[] = [
   { value: "middle", label: "Middle" },
   { value: "bottom", label: "Bottom" },
 ];
+const LINE_STATS_POSITION_OPTIONS: { value: LineStatsPosition; label: string }[] = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+  { value: "auto", label: "Auto" },
+];
+const REGRESSION_SOURCE_OPTIONS: {
+  value: RegressionTrendSource;
+  label: string;
+}[] = [
+  { value: "open", label: "Open" },
+  { value: "high", label: "High" },
+  { value: "low", label: "Low" },
+  { value: "close", label: "Close" },
+  { value: "hl2", label: "(H+L)/2" },
+  { value: "hlc3", label: "(H+L+C)/3" },
+  { value: "ohlc4", label: "(O+H+L+C)/4" },
+  { value: "hlcc4", label: "(H+L+C+C)/4" },
+];
+const VOLUME_PROFILE_PLACEMENT_OPTIONS: {
+  value: VolumeProfilePlacement;
+  label: string;
+}[] = [
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
+];
+const VOLUME_PROFILE_MODE_OPTIONS: {
+  value: VolumeProfileVolumeMode;
+  label: string;
+}[] = [
+  { value: "total", label: "Total" },
+  { value: "up-down", label: "Up/Down" },
+  { value: "delta", label: "Delta" },
+];
 
-type Tab = "style" | "text" | "coordinates" | "visibility";
+type Tab = "inputs" | "style" | "text" | "coordinates" | "visibility";
 
 function normalizedFibLevels(d: Drawing): FibLevelConfig[] {
   return DEFAULT_FIB_LEVELS.map((base, i) => {
@@ -114,6 +166,80 @@ function normalizedChannelLevels(d: Drawing): ChannelLevelConfig[] {
   return source
     .filter((level) => Number.isFinite(level.value))
     .map((level) => ({ ...level, enabled: level.enabled !== false }));
+}
+
+function normalizedGannConfig(
+  d: Drawing,
+  family: NonNullable<ReturnType<typeof getDrawingSettingsSchema>["gannFamily"]>,
+): GannConfig {
+  return resolveGannConfig(d.gann, family);
+}
+
+function GannGridLevelEditor({
+  id,
+  level,
+  fallbackColor,
+  fallbackWidth,
+  fallbackStyle,
+  openPopover,
+  onPopoverChange,
+  onPatch,
+}: {
+  id: string;
+  level: GannLevelConfig;
+  fallbackColor: string;
+  fallbackWidth: number;
+  fallbackStyle: NonNullable<Drawing["lineStyle"]>;
+  openPopover: string | null;
+  onPopoverChange: (value: string | null) => void;
+  onPatch: (patch: Partial<GannLevelConfig>) => void;
+}) {
+  const color = level.color ?? fallbackColor;
+  const colorPopover = `${id}-color`;
+  const linePopover = `${id}-line`;
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <CheckBox
+        checked={level.enabled}
+        onChange={(enabled) => onPatch({ enabled })}
+      />
+      <NumberField
+        value={level.value}
+        onCommit={(value) => onPatch({ value })}
+        className="h-[30px] w-[76px]"
+      />
+      <div className="relative">
+        <Swatch
+          color={color}
+          opacity={level.opacity ?? 1}
+          onClick={() => onPopoverChange(
+            openPopover === colorPopover ? null : colorPopover,
+          )}
+        />
+        {openPopover === colorPopover && (
+          <ColorPopover
+            value={color}
+            opacity={level.opacity ?? 1}
+            onPick={(next) => next && onPatch({ color: next })}
+            onOpacity={(opacity) => onPatch({ opacity })}
+            onClose={() => onPopoverChange(null)}
+          />
+        )}
+      </div>
+      <LineWidget
+        color={color}
+        width={level.lineWidth ?? fallbackWidth}
+        style={level.lineStyle ?? fallbackStyle}
+        open={openPopover === linePopover}
+        onToggle={() => onPopoverChange(
+          openPopover === linePopover ? null : linePopover,
+        )}
+        onWidth={(lineWidth) => onPatch({ lineWidth })}
+        onStyle={(lineStyle) => onPatch({ lineStyle })}
+        onClose={() => onPopoverChange(null)}
+      />
+    </div>
+  );
 }
 
 // ---- dialog -------------------------------------------------------------
@@ -193,10 +319,31 @@ export function ObjectSettingsDialog() {
   const hasPriceLabel = settings.hasFeature("price-label");
   const hasTimeLabel = settings.hasFeature("time-label");
   const isChannel = settings.hasFeature("channel-levels");
+  const isGann = settings.hasFeature("gann") && !!settings.gannFamily;
+  const isRegression = settings.hasFeature("regression-inputs");
+  const isVolumeProfile = settings.hasFeature("volume-profile-inputs");
   const hasTextTab = settings.tabs.includes("text");
+  const regression = resolveRegressionTrendConfig(drawing);
+  const volumeProfile = resolveVolumeProfileConfig(drawing);
+  const gann = isGann && settings.gannFamily
+    ? normalizedGannConfig(drawing, settings.gannFamily)
+    : null;
 
   const patch = (p: Partial<Drawing>) =>
     updateDrawing({ id: drawing.id, patch: p });
+  const patchGann = (p: Record<string, unknown>) => {
+    if (!gann) return;
+    patch({ gann: { ...gann, ...p } as GannConfig });
+  };
+  const enabledLineStats = new Set<LineStat>(
+    drawing.lineStats ?? (drawing.showStats ? ["priceRange", "percentChange"] : []),
+  );
+  const toggleLineStat = (stat: LineStat, enabled: boolean) => {
+    const next = new Set(enabledLineStats);
+    if (enabled) next.add(stat);
+    else next.delete(stat);
+    patch({ lineStats: LINE_STATS.map((item) => item.id).filter((id) => next.has(id)), showStats: undefined });
+  };
 
   const cancel = () => {
     const snap = snapshot.current;
@@ -228,6 +375,9 @@ export function ObjectSettingsDialog() {
 
   const fibLevels = normalizedFibLevels(drawing);
   const channelLevels = normalizedChannelLevels(drawing);
+  const gannRatios = gann?.family === "fan" ? gann.ratios : [];
+  const gannPriceLevels = gann && gann.family !== "fan" ? gann.priceLevels : [];
+  const gannTimeLevels = gann && gann.family !== "fan" ? gann.timeLevels : [];
   const patchFibLevel = (idx: number, p: Partial<FibLevelConfig>) => {
     const next = normalizedFibLevels(drawing);
     if (!next[idx]) return;
@@ -239,6 +389,22 @@ export function ObjectSettingsDialog() {
     if (!next[idx]) return;
     next[idx] = { ...next[idx], ...p };
     patch({ channelLevels: next });
+  };
+  const patchGannRatio = (idx: number, p: Partial<GannRatioConfig>) => {
+    if (!gann || gann.family !== "fan" || !gann.ratios[idx]) return;
+    const ratios = gann.ratios.map((item, itemIndex) =>
+      itemIndex === idx ? { ...item, ...p } : { ...item },
+    );
+    patchGann({ ratios, preset: "custom" });
+  };
+  const patchGannLevels = (axis: "priceLevels" | "timeLevels", idx: number, p: Partial<GannLevelConfig>) => {
+    if (!gann || gann.family === "fan") return;
+    const source = axis === "priceLevels" ? gann.priceLevels : gann.timeLevels;
+    if (!source[idx]) return;
+    const levels = source.map((item, itemIndex) =>
+      itemIndex === idx ? { ...item, ...p } : { ...item },
+    );
+    patchGann({ [axis]: levels, preset: "custom" });
   };
 
   const onSaveTemplate = () => {
@@ -475,6 +641,7 @@ export function ObjectSettingsDialog() {
                   points={drawing.points}
                   candles={candles}
                   labels={settings.coordinateLabels}
+                  showPrice={settings.coordinatePriceEditable}
                   onChange={(points) => patch({ points })}
                 />
               )}
@@ -696,6 +863,102 @@ export function ObjectSettingsDialog() {
               : "min-h-[180px] flex-1 overflow-y-auto px-5 py-5",
           )}
         >
+          {/* ------------------------------------------------- INPUTS */}
+          {tab === "inputs" && isRegression && (
+            <div className="space-y-3">
+              <Row label="Upper Deviation">
+                <NumberField
+                  value={regression.regressionUpperDeviation}
+                  onCommit={(regressionUpperDeviation) =>
+                    patch({ regressionUpperDeviation })
+                  }
+                />
+              </Row>
+              <Row label="Lower Deviation">
+                <NumberField
+                  value={regression.regressionLowerDeviation}
+                  onCommit={(regressionLowerDeviation) =>
+                    patch({ regressionLowerDeviation })
+                  }
+                />
+              </Row>
+              <Row label="Use Upper Deviation">
+                <CheckBox
+                  checked={regression.regressionUseUpperDeviation}
+                  onChange={(regressionUseUpperDeviation) =>
+                    patch({ regressionUseUpperDeviation })
+                  }
+                />
+              </Row>
+              <Row label="Use Lower Deviation">
+                <CheckBox
+                  checked={regression.regressionUseLowerDeviation}
+                  onChange={(regressionUseLowerDeviation) =>
+                    patch({ regressionUseLowerDeviation })
+                  }
+                />
+              </Row>
+              <Row label="Source">
+                <Select
+                  value={regression.regressionSource}
+                  options={REGRESSION_SOURCE_OPTIONS}
+                  onChange={(regressionSource) => patch({ regressionSource })}
+                />
+              </Row>
+            </div>
+          )}
+          {tab === "inputs" && isVolumeProfile && (
+            <div className="space-y-3">
+              <Row label="Rows">
+                <NumberField
+                  value={volumeProfile.volumeProfileRows}
+                  onCommit={(volumeProfileRows) => patch({
+                    volumeProfileRows: resolveVolumeProfileConfig({
+                      ...volumeProfile,
+                      volumeProfileRows,
+                    }).volumeProfileRows,
+                  })}
+                />
+              </Row>
+              <Row label="Value Area, %">
+                <NumberField
+                  value={volumeProfile.volumeProfileValueAreaPercent}
+                  onCommit={(volumeProfileValueAreaPercent) => patch({
+                    volumeProfileValueAreaPercent: resolveVolumeProfileConfig({
+                      ...volumeProfile,
+                      volumeProfileValueAreaPercent,
+                    }).volumeProfileValueAreaPercent,
+                  })}
+                />
+              </Row>
+              <Row label="Width, %">
+                <NumberField
+                  value={volumeProfile.volumeProfileWidthPercent}
+                  onCommit={(volumeProfileWidthPercent) => patch({
+                    volumeProfileWidthPercent: resolveVolumeProfileConfig({
+                      ...volumeProfile,
+                      volumeProfileWidthPercent,
+                    }).volumeProfileWidthPercent,
+                  })}
+                />
+              </Row>
+              <Row label="Placement">
+                <Select
+                  value={volumeProfile.volumeProfilePlacement}
+                  options={VOLUME_PROFILE_PLACEMENT_OPTIONS}
+                  onChange={(volumeProfilePlacement) => patch({ volumeProfilePlacement })}
+                />
+              </Row>
+              <Row label="Volume">
+                <Select
+                  value={volumeProfile.volumeProfileVolumeMode}
+                  options={VOLUME_PROFILE_MODE_OPTIONS}
+                  onChange={(volumeProfileVolumeMode) => patch({ volumeProfileVolumeMode })}
+                />
+              </Row>
+            </div>
+          )}
+
           {/* -------------------------------------------------- STYLE */}
           {tab === "style" && (
             <>
@@ -911,7 +1174,197 @@ export function ObjectSettingsDialog() {
                 </>
               )}
 
-              {!isFib && isShape && (
+              {isGann && gann && (
+                <div className="space-y-3">
+                  <SectionTitle>Gann scale</SectionTitle>
+                  <Row label="Price / bar ratio">
+                    <NumberField
+                      value={gann.priceBarRatio}
+                      onCommit={(value) => patchGann({
+                        priceBarRatio: Math.max(Number.EPSILON, Math.abs(value)),
+                        preset: "custom",
+                      })}
+                    />
+                  </Row>
+                  <Row label="Lock ratio">
+                    <CheckBox
+                      checked={gann.scaleLock}
+                      onChange={(scaleLock) => patch({
+                        gann: setGannScaleLock(
+                          gann,
+                          drawing.points,
+                          scaleLock,
+                          {
+                            candles,
+                            barIntervalSeconds: resolveCandleBarIntervalSeconds(
+                              candles,
+                              TF_SECONDS[timeframe],
+                              60,
+                            ),
+                          },
+                        ),
+                      })}
+                    />
+                  </Row>
+                  <Row label="Preset">
+                    <Select
+                      value={gann.preset}
+                      options={
+                        gann.family === "fan"
+                          ? [{ value: "classic" as const, label: "Classic (1:8 … 8:1)" }, { value: "custom" as const, label: "Custom" }]
+                          : [{ value: "eighths" as const, label: "Classic levels" }, { value: "custom" as const, label: "Custom" }]
+                      }
+                      onChange={(preset) => {
+                        if (preset === "classic" && gann.family === "fan") {
+                          patchGann({ preset, ratios: structuredClone(DEFAULT_GANN_FAN_CONFIG.ratios) });
+                        } else if (preset === "eighths" && gann.family === "square") {
+                          patchGann({
+                            preset,
+                            priceLevels: structuredClone(DEFAULT_GANN_SQUARE_CONFIG.priceLevels),
+                            timeLevels: structuredClone(DEFAULT_GANN_SQUARE_CONFIG.timeLevels),
+                          });
+                        } else if (preset === "eighths" && gann.family === "box") {
+                          patchGann({
+                            preset,
+                            priceLevels: structuredClone(DEFAULT_GANN_BOX_CONFIG.priceLevels),
+                            timeLevels: structuredClone(DEFAULT_GANN_BOX_CONFIG.timeLevels),
+                          });
+                        } else {
+                          patchGann({ preset });
+                        }
+                      }}
+                    />
+                  </Row>
+                  <Row label="Use one color">
+                    <CheckBox
+                      checked={gann.useOneColor}
+                      onChange={(useOneColor) => patchGann({ useOneColor })}
+                    />
+                    <div className="relative">
+                      <Swatch
+                        color={drawing.color}
+                        onClick={() => setPop(
+                          pop === "gann-one-color" ? null : "gann-one-color",
+                        )}
+                      />
+                      {pop === "gann-one-color" && (
+                        <ColorPopover
+                          value={drawing.color}
+                          onPick={(color) => color && patch({ color })}
+                          onClose={() => setPop(null)}
+                        />
+                      )}
+                    </div>
+                  </Row>
+
+                  {gann.family === "fan" && (
+                    <>
+                      <Row label="Background">
+                        <CheckBox checked={gann.background} onChange={(background) => patchGann({ background })} />
+                      </Row>
+                      <Row label="Labels">
+                        <CheckBox checked={gann.labels} onChange={(labels) => patchGann({ labels })} />
+                      </Row>
+                      <SectionTitle>Angles</SectionTitle>
+                      <div className="space-y-1">
+                        {gannRatios.map((ratio, index) => (
+                          <div key={`${ratio.label}-${index}`} className="flex items-center gap-2 py-1">
+                            <CheckBox checked={ratio.enabled} onChange={(enabled) => patchGannRatio(index, { enabled })} />
+                            <span className="w-10 text-xs text-ink-muted">{ratio.label}</span>
+                            <div className="relative">
+                              <Swatch
+                                color={ratio.color ?? drawing.color}
+                                opacity={ratio.opacity ?? 1}
+                                onClick={() => setPop(pop === `gann-ratio-${index}` ? null : `gann-ratio-${index}`)}
+                              />
+                              {pop === `gann-ratio-${index}` && (
+                                <ColorPopover
+                                  value={ratio.color ?? drawing.color}
+                                  opacity={ratio.opacity ?? 1}
+                                  onPick={(color) => color && patchGannRatio(index, { color })}
+                                  onOpacity={(opacity) => patchGannRatio(index, { opacity })}
+                                  onClose={() => setPop(null)}
+                                />
+                              )}
+                            </div>
+                            <LineWidget
+                              color={ratio.color ?? drawing.color}
+                              width={ratio.lineWidth ?? drawing.lineWidth ?? 1.5}
+                              style={ratio.lineStyle ?? drawing.lineStyle ?? "solid"}
+                              open={pop === `gann-ratio-line-${index}`}
+                              onToggle={() => setPop(pop === `gann-ratio-line-${index}` ? null : `gann-ratio-line-${index}`)}
+                              onWidth={(lineWidth) => patchGannRatio(index, { lineWidth })}
+                              onStyle={(lineStyle) => patchGannRatio(index, { lineStyle })}
+                              onClose={() => setPop(null)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {gann.family === "square" && (
+                    <>
+                      <Row label="Background"><CheckBox checked={gann.background} onChange={(background) => patchGann({ background })} /></Row>
+                      <Row label="Levels"><CheckBox checked={gann.showLevels} onChange={(showLevels) => patchGann({ showLevels })} /></Row>
+                      <Row label="Fan"><CheckBox checked={gann.showFan} onChange={(showFan) => patchGann({ showFan })} /></Row>
+                      <Row label="Arcs"><CheckBox checked={gann.showArcs} onChange={(showArcs) => patchGann({ showArcs })} /></Row>
+                      <Row label="Reverse"><CheckBox checked={gann.reverse} onChange={(reverse) => patchGann({ reverse })} /></Row>
+                      <Row label="Ranges and ratio"><CheckBox checked={gann.showRanges} onChange={(showRanges) => patchGann({ showRanges })} /></Row>
+                    </>
+                  )}
+
+                  {gann.family === "box" && (
+                    <>
+                      <Row label="Background"><CheckBox checked={gann.background} onChange={(background) => patchGann({ background })} /></Row>
+                      <Row label="Price background"><CheckBox checked={gann.priceBackground} onChange={(priceBackground) => patchGann({ priceBackground })} /></Row>
+                      <Row label="Time background"><CheckBox checked={gann.timeBackground} onChange={(timeBackground) => patchGann({ timeBackground })} /></Row>
+                      <Row label="Angles"><CheckBox checked={gann.angles} onChange={(angles) => patchGann({ angles })} /></Row>
+                      <Row label="Reverse"><CheckBox checked={gann.reverse} onChange={(reverse) => patchGann({ reverse })} /></Row>
+                      <SectionTitle>Labels</SectionTitle>
+                      <Row label="Left"><CheckBox checked={gann.labelLeft} onChange={(labelLeft) => patchGann({ labelLeft })} /></Row>
+                      <Row label="Right"><CheckBox checked={gann.labelRight} onChange={(labelRight) => patchGann({ labelRight })} /></Row>
+                      <Row label="Top"><CheckBox checked={gann.labelTop} onChange={(labelTop) => patchGann({ labelTop })} /></Row>
+                      <Row label="Bottom"><CheckBox checked={gann.labelBottom} onChange={(labelBottom) => patchGann({ labelBottom })} /></Row>
+                    </>
+                  )}
+
+                  {gann.family !== "fan" && (
+                    <>
+                      <SectionTitle>Price levels</SectionTitle>
+                      {gannPriceLevels.map((level, index) => (
+                        <GannGridLevelEditor
+                          key={`gann-${gann.family}-price-${index}`}
+                          id={`gann-${gann.family}-price-${index}`}
+                          level={level}
+                          fallbackColor={drawing.color}
+                          fallbackWidth={drawing.lineWidth ?? 1.5}
+                          fallbackStyle={drawing.lineStyle ?? "solid"}
+                          openPopover={pop}
+                          onPopoverChange={setPop}
+                          onPatch={(next) => patchGannLevels("priceLevels", index, next)}
+                        />
+                      ))}
+                      <SectionTitle>Time levels</SectionTitle>
+                      {gannTimeLevels.map((level, index) => (
+                        <GannGridLevelEditor
+                          key={`gann-${gann.family}-time-${index}`}
+                          id={`gann-${gann.family}-time-${index}`}
+                          level={level}
+                          fallbackColor={drawing.color}
+                          fallbackWidth={drawing.lineWidth ?? 1.5}
+                          fallbackStyle={drawing.lineStyle ?? "solid"}
+                          openPopover={pop}
+                          onPopoverChange={setPop}
+                          onPatch={(next) => patchGannLevels("timeLevels", index, next)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!isGann && !isFib && isShape && (
                 <>
                   {isRect && (
                     <Row label="Extend">
@@ -1045,13 +1498,82 @@ export function ObjectSettingsDialog() {
                     />
                   </div>
                 </Row>
+                {isRegression && (
+                  <div className="mt-4 space-y-3 border-t border-terminal-border pt-4">
+                    <Row label="Base">
+                      <CheckBox
+                        checked={regression.regressionShowBaseLine}
+                        onChange={(regressionShowBaseLine) =>
+                          patch({ regressionShowBaseLine })
+                        }
+                      />
+                    </Row>
+                    <Row label="Up">
+                      <CheckBox
+                        checked={regression.regressionShowUpperLine}
+                        onChange={(regressionShowUpperLine) =>
+                          patch({ regressionShowUpperLine })
+                        }
+                      />
+                    </Row>
+                    <Row label="Down">
+                      <CheckBox
+                        checked={regression.regressionShowLowerLine}
+                        onChange={(regressionShowLowerLine) =>
+                          patch({ regressionShowLowerLine })
+                        }
+                      />
+                    </Row>
+                    <Row label="Extend lines">
+                      <CheckBox
+                        checked={regression.regressionExtendLines}
+                        onChange={(regressionExtendLines) =>
+                          patch({ regressionExtendLines })
+                        }
+                      />
+                    </Row>
+                    <Row label="Pearson's R">
+                      <CheckBox
+                        checked={regression.regressionShowPearsonR}
+                        onChange={(regressionShowPearsonR) =>
+                          patch({ regressionShowPearsonR })
+                        }
+                      />
+                    </Row>
+                  </div>
+                )}
                 {isTrendline && (
                   <div className="mt-4 space-y-3 border-t border-terminal-border pt-4">
                     <Row label="Start"><Select value={drawing.lineStart ?? "normal"} options={LINE_END_OPTS} onChange={(lineStart) => patch({ lineStart })} /></Row>
                     <Row label="End"><Select value={drawing.lineEnd ?? "normal"} options={LINE_END_OPTS} onChange={(lineEnd) => patch({ lineEnd })} /></Row>
                     <Row label="Midpoint"><CheckBox checked={drawing.showMidpoint !== false} onChange={(showMidpoint) => patch({ showMidpoint })} /></Row>
                     <Row label="Price labels"><CheckBox checked={!!drawing.showPriceLabels} onChange={(showPriceLabels) => patch({ showPriceLabels })} /></Row>
-                    <Row label="Stats"><CheckBox checked={!!drawing.showStats} onChange={(showStats) => patch({ showStats })} /></Row>
+                    <div className="space-y-2">
+                      <span className="text-[12px] text-ink-muted">Stats</span>
+                      <div className="space-y-1 rounded-lg border border-terminal-border p-2">
+                        {LINE_STATS.map((stat) => (
+                          <Row key={stat.id} label={stat.label}>
+                            <CheckBox
+                              checked={enabledLineStats.has(stat.id)}
+                              onChange={(enabled) => toggleLineStat(stat.id, enabled)}
+                            />
+                          </Row>
+                        ))}
+                      </div>
+                    </div>
+                    <Row label="Stats position">
+                      <Select
+                        value={drawing.lineStatsPosition ?? "auto"}
+                        options={LINE_STATS_POSITION_OPTIONS}
+                        onChange={(lineStatsPosition) => patch({ lineStatsPosition })}
+                      />
+                    </Row>
+                    <Row label="Always show stats">
+                      <CheckBox
+                        checked={drawing.alwaysShowLineStats ?? drawing.showStats === true}
+                        onChange={(alwaysShowLineStats) => patch({ alwaysShowLineStats })}
+                      />
+                    </Row>
                   </div>
                 )}
                 {(hasPriceLabel || hasTimeLabel) && (
@@ -1080,6 +1602,36 @@ export function ObjectSettingsDialog() {
                   </div>
                 )}
                 </>
+              )}
+
+              {isVolumeProfile && (
+                <div className="mt-4 space-y-3 border-t border-terminal-border pt-4">
+                  <SectionTitle>Volume Profile</SectionTitle>
+                  <Row label="Histogram">
+                    <CheckBox
+                      checked={volumeProfile.volumeProfileShowHistogram}
+                      onChange={(volumeProfileShowHistogram) => patch({ volumeProfileShowHistogram })}
+                    />
+                  </Row>
+                  <Row label="Point of Control">
+                    <CheckBox
+                      checked={volumeProfile.volumeProfileShowPointOfControl}
+                      onChange={(volumeProfileShowPointOfControl) => patch({ volumeProfileShowPointOfControl })}
+                    />
+                  </Row>
+                  <Row label="Value Area High">
+                    <CheckBox
+                      checked={volumeProfile.volumeProfileShowValueAreaHigh}
+                      onChange={(volumeProfileShowValueAreaHigh) => patch({ volumeProfileShowValueAreaHigh })}
+                    />
+                  </Row>
+                  <Row label="Value Area Low">
+                    <CheckBox
+                      checked={volumeProfile.volumeProfileShowValueAreaLow}
+                      onChange={(volumeProfileShowValueAreaLow) => patch({ volumeProfileShowValueAreaLow })}
+                    />
+                  </Row>
+                </div>
               )}
 
               {!isFib && isText && (
@@ -1166,6 +1718,7 @@ export function ObjectSettingsDialog() {
               points={drawing.points}
               candles={candles}
               labels={settings.coordinateLabels}
+              showPrice={settings.coordinatePriceEditable}
               onChange={(points) => patch({ points })}
             />
           )}

@@ -40,6 +40,17 @@ test("three-anchor channel sides are parallel and the second side is hittable", 
     y: geometry.parallel.b.y - geometry.parallel.a.y,
   };
   assert.deepEqual(parallelDelta, baseDelta);
+  assert.deepEqual(geometry.parallel, {
+    a: { x: 10, y: 85 },
+    b: { x: 110, y: 135 },
+  });
+  // The third data-coordinate anchor lies on the same canonical line used by
+  // dynamic channel alerts (x=40 is 30% of the baseline span).
+  assert.equal(
+    geometry.parallel.a.y +
+      (geometry.parallel.b.y - geometry.parallel.a.y) * 0.3,
+    100,
+  );
 
   const middle = {
     x: (geometry.parallel.a.x + geometry.parallel.b.x) / 2,

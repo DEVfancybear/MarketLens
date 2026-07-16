@@ -17,6 +17,7 @@ export async function getExternalNotificationCapabilities(): Promise<ExternalNot
 export async function sendExternalAlert(payload: {
   alert: Alert;
   triggerPrice: number;
+  targetPrice: number;
   channels: { telegram?: boolean; discord?: boolean };
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -26,7 +27,7 @@ export async function sendExternalAlert(payload: {
         alertId: payload.alert.id,
         symbol: payload.alert.symbol,
         condition: payload.alert.condition,
-        targetPrice: payload.alert.price,
+        targetPrice: payload.targetPrice,
         triggerPrice: payload.triggerPrice,
         note: payload.alert.note,
         triggeredAt: Date.now(),

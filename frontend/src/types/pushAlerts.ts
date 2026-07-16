@@ -1,4 +1,8 @@
 export type PushAlertCondition = "above" | "below" | "crossUp" | "crossDown";
+import type {
+  TechnicalAlertEvidence,
+  TechnicalAlertTarget,
+} from "./technicalAlerts";
 
 export interface ServerPushAlert {
   id: string;
@@ -8,11 +12,15 @@ export interface ServerPushAlert {
   note?: string;
   recurring: boolean;
   updatedAt: number;
+  armingRevision: number;
   lastTriggeredAt?: number;
   triggerPrice?: number;
+  targetPrice?: number;
+  triggerEvidence?: TechnicalAlertEvidence;
   push?: boolean;
   telegram?: boolean;
   discord?: boolean;
+  technicalTarget?: TechnicalAlertTarget;
 }
 
 export interface PushAlertSyncRequest {
@@ -38,8 +46,13 @@ export interface PushDeviceRecord {
       signature: string;
       lastTriggeredAt?: number;
       lastEvaluatedAt?: number;
+      /** Last broker/chart epoch, separate from the receive-time replay cursor. */
+      lastMarketTimestamp?: number;
       oneTimeFired?: boolean;
       triggerPrice?: number;
+      targetPrice?: number;
+      triggerEvidence?: TechnicalAlertEvidence;
+      expiredAt?: number;
     }
   >;
   createdAt: number;
@@ -58,6 +71,21 @@ export interface PushAlertTriggerStatus {
   condition: PushAlertCondition;
   price: number;
   recurring: boolean;
+  armingRevision: number;
   triggerPrice: number;
+  targetPrice?: number;
   triggeredAt: number;
+  evidence?: TechnicalAlertEvidence;
+}
+
+export interface PushAlertExpirationStatus {
+  alertId: string;
+  symbol: string;
+  armingRevision: number;
+  expiredAt: number;
+}
+
+export interface PushAlertReconcileStatus {
+  triggers: PushAlertTriggerStatus[];
+  expirations: PushAlertExpirationStatus[];
 }

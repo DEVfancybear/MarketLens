@@ -30,6 +30,34 @@ function project(
   return x != null && y != null ? { x, y } : null;
 }
 
+const MIN_PRESSURE_SCALE = 0.35;
+const PRESSURE_RANGE = 0.9;
+
+/**
+ * Map normalized pen pressure to a stable visual width. Mouse/touch points have
+ * no pressure and therefore keep the configured width exactly, preserving all
+ * historical strokes. The non-zero floor avoids gaps from pen-up jitter.
+ */
+export function pressureStrokeWidth(baseWidth: number, pressure?: number): number {
+  const safeBase = Math.max(0.5, Number.isFinite(baseWidth) ? baseWidth : 1.5);
+  if (!Number.isFinite(pressure)) return safeBase;
+  const normalized = Math.max(0, Math.min(1, Number(pressure)));
+  return safeBase * (MIN_PRESSURE_SCALE + normalized * PRESSURE_RANGE);
+}
+
+export function pressureSegmentWidths(
+  points: readonly Pt[],
+  baseWidth: number,
+): number[] {
+  const widths: number[] = [];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const a = pressureStrokeWidth(baseWidth, points[index]?.pressure);
+    const b = pressureStrokeWidth(baseWidth, points[index + 1]?.pressure);
+    widths.push((a + b) / 2);
+  }
+  return widths;
+}
+
 function makeBrushTool(
   tool: Extract<DrawingTool, "brush" | "highlighter">,
 ): DrawingToolPlugin {
@@ -47,9 +75,12 @@ function makeBrushTool(
       const pts = d.points;
       if (pts.length < 2) return;
       g.save();
+      const baseWidth = highlighter
+        ? Math.max(d.lineWidth || 8, 8)
+        : Math.max(d.lineWidth || 1.5, 0.5);
       if (highlighter) {
         g.globalAlpha = d.opacity ?? 0.35;
-        g.lineWidth = Math.max(d.lineWidth || 8, 8);
+        g.lineWidth = baseWidth;
         g.lineCap = "round";
         g.lineJoin = "round";
       } else {
@@ -62,16 +93,36 @@ function makeBrushTool(
         g.restore();
         return;
       }
-      g.moveTo(p0.x, p0.y);
-      for (let i = 1; i < pts.length - 1; i++) {
-        const a = project(pts[i], proj.toX, proj.toY);
-        const b = project(pts[i + 1], proj.toX, proj.toY);
-        if (!a || !b) continue;
-        g.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
-      }
       const last = project(pts[pts.length - 1], proj.toX, proj.toY);
-      if (last) g.lineTo(last.x, last.y);
-      g.stroke();
+      const pressureAware = pts.some((point) => Number.isFinite(point.pressure));
+      if (pressureAware) {
+        // Pointer-continuous points are already sampled at a <=2px cadence.
+        // Stroking each short segment with round caps yields a smooth envelope
+        // while allowing Canvas2D's otherwise path-wide lineWidth to vary.
+        const widths = pressureSegmentWidths(pts, baseWidth);
+        for (let index = 0; index < pts.length - 1; index += 1) {
+          const a = project(pts[index], proj.toX, proj.toY);
+          const b = project(pts[index + 1], proj.toX, proj.toY);
+          if (!a || !b) continue;
+          g.lineWidth = widths[index];
+          g.beginPath();
+          g.moveTo(a.x, a.y);
+          g.lineTo(b.x, b.y);
+          g.stroke();
+        }
+      } else {
+        g.lineWidth = baseWidth;
+        g.beginPath();
+        g.moveTo(p0.x, p0.y);
+        for (let i = 1; i < pts.length - 1; i++) {
+          const a = project(pts[i], proj.toX, proj.toY);
+          const b = project(pts[i + 1], proj.toX, proj.toY);
+          if (!a || !b) continue;
+          g.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        }
+        if (last) g.lineTo(last.x, last.y);
+        g.stroke();
+      }
       g.restore();
       if (selected && last) {
         handle(g, p0.x, p0.y, d.color);
@@ -90,6 +141,10 @@ function makeBrushTool(
         x: toX(pt.time),
         y: toY(pt.price),
       }));
+      const baseWidth = highlighter
+        ? Math.max(d.lineWidth || 8, 8)
+        : Math.max(d.lineWidth || 1.5, 0.5);
+      const segmentWidths = pressureSegmentWidths(d.points, baseWidth);
       const first = projected[0];
       const last = projected[projected.length - 1];
       if (first?.x != null && first.y != null) {
@@ -114,7 +169,8 @@ function makeBrushTool(
           b = projected[j + 1];
         if (a.x == null || a.y == null || b.x == null || b.y == null) continue;
         const segDist = distToSegment(px, py, a.x, a.y, b.x, b.y);
-        if (segDist < TOL)
+        const tolerance = Math.max(TOL, (segmentWidths[j] ?? baseWidth) / 2 + 3);
+        if (segDist < tolerance)
           results.push({ drawing: d, target: "body", distance: segDist });
       }
       return results;
@@ -156,11 +212,18 @@ function makeBrushTool(
         .map((pt) => toY(pt.price))
         .filter((v): v is number => v != null);
       if (xs.length === 0 || ys.length === 0) return null;
+      const baseWidth = highlighter
+        ? Math.max(d.lineWidth || 8, 8)
+        : Math.max(d.lineWidth || 1.5, 0.5);
+      const strokeRadius = Math.max(
+        TOL,
+        ...d.points.map((point) => pressureStrokeWidth(baseWidth, point.pressure) / 2 + 3),
+      );
       return {
-        x: Math.min(...xs) - TOL,
-        y: Math.min(...ys) - TOL,
-        w: Math.max(...xs) - Math.min(...xs) + TOL * 2,
-        h: Math.max(...ys) - Math.min(...ys) + TOL * 2,
+        x: Math.min(...xs) - strokeRadius,
+        y: Math.min(...ys) - strokeRadius,
+        w: Math.max(...xs) - Math.min(...xs) + strokeRadius * 2,
+        h: Math.max(...ys) - Math.min(...ys) + strokeRadius * 2,
       };
     },
   };

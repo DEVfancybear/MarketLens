@@ -1,4 +1,13 @@
 import type { StyleFamily } from "./drawing";
+import {
+  cloneGannConfig,
+  DEFAULT_GANN_BOX_CONFIG,
+  DEFAULT_GANN_FAN_CONFIG,
+  DEFAULT_GANN_SQUARE_CONFIG,
+  type GannFamily,
+} from "./gann";
+import { DEFAULT_REGRESSION_TREND_CONFIG } from "./regressionTrend";
+import { DEFAULT_VOLUME_PROFILE_CONFIG } from "./volumeProfile";
 
 /** Stable ids and their metadata intentionally live in the same module. */
 export const ALL_DRAWING_TOOL_IDS = [
@@ -49,7 +58,9 @@ export type DrawingToolGroupId =
 export type DrawingSettingsProfile = "mode" | "line" | "shape" | "text" | "fib" | "position";
 export type DrawingSettingsFeature =
   | "line" | "fill" | "text" | "middle-line" | "fib-levels" | "stats"
-  | "trendline-parity" | "price-label" | "time-label" | "channel-levels"
+  | "trendline-parity" | "price-label" | "time-label" | "channel-levels" | "gann"
+  | "regression-inputs" | "regression-style"
+  | "volume-profile-inputs" | "volume-profile-style"
   | "coordinates" | "visibility" | "templates";
 export type DrawingAlertProjection =
   | "point-price"
@@ -57,6 +68,10 @@ export type DrawingAlertProjection =
   | "fib-retracement-levels"
   | "fib-extension-levels"
   | "position-levels";
+export type DrawingDynamicAlertProjection =
+  | "dynamic-line"
+  | "dynamic-channel"
+  | "dynamic-fib-channel";
 
 /** A normalized keyboard chord owned by the tool catalog. */
 export interface DrawingToolShortcut {
@@ -87,15 +102,32 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly styleFamily: StyleFamily;
   readonly defaultProperties: Readonly<{ lineWidth: number } & Partial<TProps>>;
   readonly overlayExtension?: "text-editor";
-  readonly selectionTextEditor?: "shape-center" | "line-midpoint";
+  /**
+   * Location of the inline text target exposed on the chart.  Axis targets are
+   * deliberately separate from the generic line midpoint: TradingView lets a
+   * user click the price/time badge itself to enter text, while clicking the
+   * line body continues to select the drawing.
+   */
+  readonly selectionTextEditor?:
+    | "shape-center"
+    | "line-midpoint"
+    | "axis-price"
+    | "axis-time";
   readonly settingsOverlay?: "position-dialog";
   readonly lifecycleExtension?: "position-resolution";
   readonly dataSnapshot?: "anchor-to-latest" | "between-anchors";
+  /** Optional market-detail capture owned by data-driven drawing families. */
+  readonly dataSnapshotDetail?: "volume-profile";
   readonly contentKind?: "table" | "image" | "social";
   readonly magnetEligible: boolean;
   readonly angleConstraint?: "45-degree";
+  /** Shift/scale constraint shared by the Gann family. */
+  readonly gannScaleConstraint?: "price-bar-ratio";
+  readonly gannFamily?: GannFamily;
   readonly pointSimplificationTolerance?: number;
   readonly coordinateLabels?: readonly string[];
+  /** Whether the Coordinates tab exposes price alongside time/bar values. */
+  readonly coordinatePriceEditable: boolean;
   readonly modeInteraction?: "selection" | "pass-through" | "erase";
   readonly settingsProfile: DrawingSettingsProfile;
   readonly settingsFeatures: readonly DrawingSettingsFeature[];
@@ -104,6 +136,8 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly viewportCulling: "spatial" | "always-render";
   /** Fixed-price targets that can be snapshotted into the current alert runtime. */
   readonly alertProjection?: DrawingAlertProjection;
+  /** Frozen geometry evaluated at every market timestamp. */
+  readonly dynamicAlertProjection?: DrawingDynamicAlertProjection;
 }
 
 export interface DrawingToolGroupDefinition {
@@ -156,6 +190,7 @@ function tool(
     magnetEligible: persistent && creationMode !== "pointer-continuous",
     shortcuts: [],
     viewportCulling: "spatial",
+    coordinatePriceEditable: true,
     styleFamily,
     settingsProfile,
     settingsFeatures,
@@ -171,20 +206,20 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("eraser", "Eraser", "cursor", "eraser", "mode", 0, { favoriteEligible: true, modeInteraction: "erase" }),
   tool("measure", "Measure", null, "ruler", "mode", 0, { favoriteEligible: false, modeInteraction: "pass-through" }),
 
-  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518095-trendline-drawing-tool/"], shortcuts: [{ key: "2" }, { key: "t", altKey: true }], section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
-  tool("ray", "Ray", "lines", "ray", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518113-ray-drawing-tool/"], selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
-  tool("infoLine", "Info line", "lines", "ruler", "two-point", 2),
-  tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518131-extended-line-drawing-tool/"], selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
-  tool("trendAngle", "Trend angle", "lines", "triangle", "two-point", 2),
-  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518124-horizontal-line-drawing-tool/"], shortcuts: [{ key: "3" }, { key: "h", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
+  tool("trendline", "Trendline", "lines", "trend", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518095-trendline-drawing-tool/"], shortcuts: [{ key: "2" }, { key: "t", altKey: true }], section: "LINES", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", dynamicAlertProjection: "dynamic-line", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
+  tool("ray", "Ray", "lines", "ray", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518113-ray-drawing-tool/"], selectionTextEditor: "line-midpoint", dynamicAlertProjection: "dynamic-line", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
+  tool("infoLine", "Info line", "lines", "ruler", "two-point", 2, { dynamicAlertProjection: "dynamic-line" }),
+  tool("extendedLine", "Extended line", "lines", "branch", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518131-extended-line-drawing-tool/"], selectionTextEditor: "line-midpoint", dynamicAlertProjection: "dynamic-line", settingsFeatures: ["line", "text", "trendline-parity", "coordinates", "visibility", "templates"] }),
+  tool("trendAngle", "Trend angle", "lines", "triangle", "two-point", 2, { dynamicAlertProjection: "dynamic-line" }),
+  tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518124-horizontal-line-drawing-tool/"], shortcuts: [{ key: "3" }, { key: "h", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, selectionTextEditor: "axis-price", settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
   tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518121-horizontal-ray-drawing-tool/"], shortcuts: [{ key: "j", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
-  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518093-vertical-line-drawing-tool/"], shortcuts: [{ key: "v", altKey: true }], defaultProperties: { lineWidth: 1.5, showTimeLabel: true }, settingsFeatures: ["line", "text", "time-label", "coordinates", "visibility", "templates"] }),
+  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518093-vertical-line-drawing-tool/"], shortcuts: [{ key: "v", altKey: true }], defaultProperties: { lineWidth: 1.5, showTimeLabel: true }, selectionTextEditor: "axis-time", settingsFeatures: ["line", "text", "time-label", "coordinates", "visibility", "templates"] }),
   tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000477747-crossline-drawing-tool/"], shortcuts: [{ key: "c", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true, showTimeLabel: true }, settingsFeatures: ["line", "price-label", "time-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
-  tool("channel", "Parallel channel", null, "trend", "fixed-multi-point", 2, { maxPoints: 3, selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
+  tool("channel", "Parallel channel", "lines", "trend", "fixed-multi-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518117-parallel-channel-drawing-tool/"], maxPoints: 3, selectionTextEditor: "line-midpoint", dynamicAlertProjection: "dynamic-channel", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("flatTopBottom", "Flat top/bottom", "lines", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("disjointChannel", "Disjoint channel", "lines", "trend", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
 
-  tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { section: "BRUSHES", pointSimplificationTolerance: 0.75 }),
+  tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516987-brush-drawing-tool/"], section: "BRUSHES", pointSimplificationTolerance: 0.75 }),
   tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { pointSimplificationTolerance: 0.75, defaultProperties: { lineWidth: 8, opacity: 0.35 } }),
   tool("arrowMarker", "Arrow marker", "shapes", "arrowUpRight", "two-point", 2, { section: "ARROWS" }),
   tool("arrow", "Arrow", "shapes", "arrowUpRight", "two-point", 2),
@@ -206,16 +241,48 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("fibRetracement", "Fib Retracement", "fibonacci", "fib", "two-point", 2, { shortcuts: [{ key: "7" }], settingsProfile: "fib", alertProjection: "fib-retracement-levels" }),
   tool("fibExtension", "Trend-Based Fib Extension", "fibonacci", "fibExtension", "fixed-multi-point", 2, { maxPoints: 3, settingsProfile: "fib", alertProjection: "fib-extension-levels" }),
   tool("fibTimeZone", "Fib Time Zone", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-a" }),
-  tool("fibChannel", "Fib Channel", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
+  tool("fibChannel", "Fib Channel", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib", dynamicAlertProjection: "dynamic-fib-channel" }),
   tool("fibSpeedFan", "Fib Speed Resistance Fan", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-b", settingsProfile: "fib" }),
   tool("fibSpeedArcs", "Fib Speed Resistance Arcs", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-b", settingsProfile: "fib" }),
   tool("fibCircles", "Fib Circles", "fibonacci", "circle", "two-point", 2, { rollout: "phase8-wave-b", settingsProfile: "fib" }),
   tool("fibWedge", "Fib Wedge", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
   tool("trendFibTime", "Trend-Based Fib Time", "fibonacci", "fibExtension", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
   tool("pitchfan", "Pitchfan", "fibonacci", "fib", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsProfile: "fib" }),
-  tool("gannFan", "Gann Fan", "fibonacci", "fib", "two-point", 2, { rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
-  tool("gannSquare", "Gann Square", "fibonacci", "square", "two-point", 2, { rollout: "phase8-wave-b", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
-  tool("gannBox", "Gann Box", "fibonacci", "square", "two-point", 2, { rollout: "phase8-wave-b", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("gannFan", "Gann Fan", "fibonacci", "fib", "two-point", 2, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000518151-gann-fan-drawing-tool/"],
+    rollout: "phase8-wave-b",
+    gannFamily: "fan",
+    gannScaleConstraint: "price-bar-ratio",
+    defaultProperties: {
+      lineWidth: 1.5,
+      gann: cloneGannConfig(DEFAULT_GANN_FAN_CONFIG),
+    },
+    settingsFeatures: ["line", "gann", "coordinates", "visibility", "templates"],
+  }),
+  tool("gannSquare", "Gann Square", "fibonacci", "square", "two-point", 2, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000518149-gann-square-drawing-tool/"],
+    rollout: "phase8-wave-b",
+    styleFamily: "shape",
+    gannFamily: "square",
+    gannScaleConstraint: "price-bar-ratio",
+    defaultProperties: {
+      lineWidth: 1.5,
+      gann: cloneGannConfig(DEFAULT_GANN_SQUARE_CONFIG),
+    },
+    settingsFeatures: ["line", "gann", "coordinates", "visibility", "templates"],
+  }),
+  tool("gannBox", "Gann Box", "fibonacci", "square", "two-point", 2, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000518152-gann-box-drawing-tool/"],
+    rollout: "phase8-wave-b",
+    styleFamily: "shape",
+    gannFamily: "box",
+    gannScaleConstraint: "price-bar-ratio",
+    defaultProperties: {
+      lineWidth: 1.5,
+      gann: cloneGannConfig(DEFAULT_GANN_BOX_CONFIG),
+    },
+    settingsFeatures: ["line", "gann", "coordinates", "visibility", "templates"],
+  }),
   tool("pitchfork", "Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("insidePitchfork", "Inside Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("schiffPitchfork", "Schiff Pitchfork", "fibonacci", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-b", settingsFeatures: ["line", "fill", "channel-levels", "coordinates", "visibility", "templates"] }),
@@ -233,10 +300,50 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("elliottCorrection", "Elliott Correction Wave", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", coordinateLabels: ["Start", "A", "B", "C"] }),
   tool("elliottDoubleCombo", "Elliott Double Combo Wave", "patterns", "path", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-c", coordinateLabels: ["Start", "W", "X", "Y"] }),
   tool("timeCycles", "Time Cycles", "patterns", "circle", "two-point", 2, { rollout: "phase8-wave-c" }),
-  tool("anchoredVWAP", "Anchored VWAP", "lines", "trend", "one-point", 1, { rollout: "phase8-wave-d", dataSnapshot: "anchor-to-latest" }),
-  tool("regressionTrend", "Regression Trend", "lines", "trend", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
-  tool("fixedVolumeProfile", "Fixed Range Volume Profile", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
-  tool("anchoredVolumeProfile", "Anchored Volume Profile", "measurements", "ruler", "one-point", 1, { rollout: "phase8-wave-d", dataSnapshot: "anchor-to-latest", styleFamily: "shape", settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
+  tool("anchoredVWAP", "Anchored VWAP", "lines", "trend", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000669764-anchored-vwap-drawing-tool/"], rollout: "phase8-wave-d", dataSnapshot: "anchor-to-latest" }),
+  tool("regressionTrend", "Regression Trend", "lines", "trend", "two-point", 2, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000518108-regression-trend-drawing-tool/"],
+    rollout: "phase8-wave-d",
+    dataSnapshot: "between-anchors",
+    coordinatePriceEditable: false,
+    coordinateLabels: ["Point 1", "Point 2"],
+    defaultProperties: {
+      lineWidth: 1.5,
+      ...DEFAULT_REGRESSION_TREND_CONFIG,
+    },
+    settingsFeatures: [
+      "regression-inputs",
+      "line",
+      "regression-style",
+      "coordinates",
+      "visibility",
+      "templates",
+    ],
+  }),
+  tool("fixedVolumeProfile", "Fixed Range Volume Profile", "measurements", "ruler", "two-point", 2, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000707985-fixed-range-volume-profile-drawing-tool/", "https://www.tradingview.com/support/solutions/43000502040-volume-profile-indicators-basic-concepts/"],
+    rollout: "phase8-wave-d",
+    dataSnapshot: "between-anchors",
+    dataSnapshotDetail: "volume-profile",
+    styleFamily: "shape",
+    defaultProperties: {
+      lineWidth: 1.5,
+      ...DEFAULT_VOLUME_PROFILE_CONFIG,
+    },
+    settingsFeatures: ["volume-profile-inputs", "line", "fill", "volume-profile-style", "coordinates", "visibility", "templates"],
+  }),
+  tool("anchoredVolumeProfile", "Anchored Volume Profile", "measurements", "ruler", "one-point", 1, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000707989-anchored-volume-profile-drawing-tool/", "https://www.tradingview.com/support/solutions/43000502040-volume-profile-indicators-basic-concepts/"],
+    rollout: "phase8-wave-d",
+    dataSnapshot: "anchor-to-latest",
+    dataSnapshotDetail: "volume-profile",
+    styleFamily: "shape",
+    defaultProperties: {
+      lineWidth: 1.5,
+      ...DEFAULT_VOLUME_PROFILE_CONFIG,
+    },
+    settingsFeatures: ["volume-profile-inputs", "line", "fill", "volume-profile-style", "coordinates", "visibility", "templates"],
+  }),
   tool("barsPattern", "Bars Pattern", "measurements", "path", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors" }),
   tool("ghostFeed", "Ghost Feed", "measurements", "path", "two-point", 2, { rollout: "phase8-wave-d", dataSnapshot: "between-anchors" }),
   tool("forecast", "Forecast", "measurements", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-d", styleFamily: "shape", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),

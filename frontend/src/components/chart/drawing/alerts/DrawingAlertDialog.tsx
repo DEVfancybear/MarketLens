@@ -31,8 +31,11 @@ export function DrawingAlertDialog() {
   const drawings = useAtomValue(drawingsAtom);
   const symbol = useAtomValue(symbolAtom);
   const drawing = drawings.find((candidate) => candidate.id === drawingId) ?? null;
-  const targets = useMemo(() => drawing ? drawingAlertTargets(drawing) : [], [drawing]);
   const quote = useQuote(symbol);
+  const targets = useMemo(
+    () => drawing ? drawingAlertTargets(drawing, quote?.timestamp ?? Date.now()) : [],
+    [drawing, quote?.timestamp],
+  );
   const createAlert = useAlertStore((state) => state.createAlert);
   const close = useSetAtom(setDrawingAlertDrawingIdAtom);
   const showAlerts = useSetAtom(setAlertCenterAtom);
@@ -70,6 +73,7 @@ export function DrawingAlertDialog() {
       recurring,
       note: note.trim() || `${drawing.name ?? drawing.tool} · ${target.label}`,
       source: drawingAlertSnapshot(drawing, target),
+      ...(target.technicalTarget ? { technicalTarget: target.technicalTarget } : {}),
     });
     close(null);
     showAlerts(true);
@@ -90,19 +94,25 @@ export function DrawingAlertDialog() {
               {targets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label} · {candidate.price}</option>)}
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-1">
-            {CONDITIONS.map((candidate) => (
-              <button key={candidate} type="button" aria-pressed={condition === candidate} onClick={() => setCondition(candidate)} className={cn("rounded border px-2 py-1.5 text-2xs", condition === candidate ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted hover:bg-terminal-hover")}>
-                {CONDITION_SYMBOL[candidate]} {CONDITION_LABEL[candidate]}
-              </button>
-            ))}
-          </div>
+          {target.technicalTarget?.kind === "dynamic-channel" ? (
+            <div className="rounded-lg border border-terminal-border bg-terminal-bg px-2.5 py-2 text-2xs text-ink-muted">
+              Channel operator: <span className="font-medium text-ink">{target.label}</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-1">
+              {CONDITIONS.map((candidate) => (
+                <button key={candidate} type="button" aria-pressed={condition === candidate} onClick={() => setCondition(candidate)} className={cn("rounded border px-2 py-1.5 text-2xs", condition === candidate ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted hover:bg-terminal-hover")}>
+                  {CONDITION_SYMBOL[candidate]} {CONDITION_LABEL[candidate]}
+                </button>
+              ))}
+            </div>
+          )}
           <label className="flex flex-col gap-1">
             <span className="text-2xs text-ink-faint">Message (optional)</span>
             <input aria-label="Drawing alert message" value={note} onChange={(event) => setNote(event.target.value)} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
           <button type="button" aria-pressed={recurring} onClick={() => setRecurring((value) => !value)} className={cn("rounded border px-2 py-1.5 text-2xs", recurring ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted")}>{recurring ? "Every time" : "Only once"}</button>
-          <p className="text-[10px] leading-4 text-ink-faint">The target price is snapshotted now. Moving or deleting the drawing will not change this alert.</p>
+          <p className="text-[10px] leading-4 text-ink-faint">{target.technicalTarget?.kind === "dynamic-line" || target.technicalTarget?.kind === "dynamic-channel" ? "The drawing geometry is snapshotted now and evaluated at each market timestamp." : "The target price is snapshotted now. Moving or deleting the drawing will not change this alert."}</p>
         </div>
         <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-3 py-2">
           <button type="button" onClick={() => close(null)} className="min-h-10 rounded-xl border border-terminal-border-strong px-3 text-xs font-semibold text-ink-muted hover:bg-terminal-hover">Cancel</button>
