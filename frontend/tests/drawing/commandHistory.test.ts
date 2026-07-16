@@ -7,6 +7,7 @@ import {
   CreateDrawingCommand,
   DeleteDrawingCommand,
   DuplicateDrawingCommand,
+  BatchMoveDrawingsCommand,
   MoveDrawingCommand,
   PropertyChangeCommand,
   PreviewedPropertyChangeCommand,
@@ -109,6 +110,61 @@ test("a batch property command groups several drawing changes into one history e
   assert.equal(state.drawings.get("b")?.group, undefined);
   assert.equal(history.redo(), true);
   assert.deepEqual(state.drawings.get("b")?.group, group);
+});
+
+test("a grouped move writes once per execute, undo, and redo and restores full patches", () => {
+  const state = drawingState();
+  const history = new CommandManager();
+  const first = fixture("a");
+  const second = fixture("b");
+  state.add(first);
+  state.add(second);
+
+  const firstPoints = first.points.map((point) => ({
+    time: point.time + 5,
+    price: point.price + 2,
+  }));
+  const secondPoints = second.points.map((point) => ({
+    time: point.time + 5,
+    price: point.price + 2,
+  }));
+  let batchWrites = 0;
+  const updateBatch = (
+    updates: readonly { id: string; patch: Partial<Drawing> }[],
+  ) => {
+    batchWrites += 1;
+    for (const update of updates) state.update(update);
+  };
+
+  history.execute(new BatchMoveDrawingsCommand(updateBatch, [
+    {
+      id: first.id,
+      newPatch: { points: firstPoints, lineWidth: 4 },
+      oldPatch: { points: first.points, lineWidth: first.lineWidth },
+    },
+    {
+      id: second.id,
+      newPatch: { points: secondPoints, color: "#f23645" },
+      oldPatch: { points: second.points, color: second.color },
+    },
+  ]));
+
+  assert.equal(batchWrites, 1);
+  assert.deepEqual(state.drawings.get("a")?.points, firstPoints);
+  assert.equal(state.drawings.get("a")?.lineWidth, 4);
+  assert.equal(state.drawings.get("b")?.color, "#f23645");
+  assert.equal(history.lastUndoLabel, "Move Drawings");
+
+  assert.equal(history.undo(), true);
+  assert.equal(batchWrites, 2);
+  assert.deepEqual(state.drawings.get("a")?.points, first.points);
+  assert.equal(state.drawings.get("a")?.lineWidth, first.lineWidth);
+  assert.equal(state.drawings.get("b")?.color, second.color);
+  assert.equal(history.undo(), false, "the whole gesture occupies one history step");
+
+  assert.equal(history.redo(), true);
+  assert.equal(batchWrites, 3);
+  assert.deepEqual(state.drawings.get("b")?.points, secondPoints);
 });
 
 test("bulk delete removes and restores several drawings with one undo", () => {

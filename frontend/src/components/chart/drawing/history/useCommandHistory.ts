@@ -3,9 +3,12 @@ import { useMemo } from "react";
 import {
   drawingCommandManager,
   type CommandManager,
+  BatchMoveDrawingsCommand,
   MoveDrawingCommand,
   DeleteDrawingCommand,
+  type BatchDrawingUpdate,
   type Command,
+  type DrawingMoveChange,
 } from "../history/CommandManager";
 import type { Drawing, Point } from "@/types";
 
@@ -13,6 +16,8 @@ export interface UseCommandHistory {
   manager: CommandManager;
   /** Schedule a move commit (called on pointerup after drag). */
   commitMove: (id: string, newPoints: Point[], oldPoints: Point[]) => void;
+  /** Commit a group move/resize with one atomic write and one history entry. */
+  commitMoves: (changes: readonly DrawingMoveChange[]) => void;
   /** Schedule a delete commit. */
   commitDelete: (drawing: Drawing, addFn: (d: Drawing) => void) => void;
   /** Execute a generic command. */
@@ -25,10 +30,21 @@ export function useCommandHistory(
   addDrawing: (d: Drawing) => void,
   removeDrawing: (id: string) => void,
   updateDrawing: (arg: { id: string; patch: Partial<Drawing> }) => void,
+  updateDrawings?: BatchDrawingUpdate,
 ): UseCommandHistory {
   const commitMove = (id: string, newPoints: Point[], oldPoints: Point[]) => {
     drawingCommandManager.execute(
       new MoveDrawingCommand(updateDrawing, id, newPoints, oldPoints),
+    );
+  };
+
+  const commitMoves = (changes: readonly DrawingMoveChange[]) => {
+    if (changes.length === 0) return;
+    const updateBatch: BatchDrawingUpdate = updateDrawings ?? ((updates) => {
+      for (const update of updates) updateDrawing(update);
+    });
+    drawingCommandManager.execute(
+      new BatchMoveDrawingsCommand(updateBatch, changes),
     );
   };
 
@@ -46,6 +62,7 @@ export function useCommandHistory(
     () => ({
       manager: drawingCommandManager,
       commitMove,
+      commitMoves,
       commitDelete,
       execute,
       undo: () => drawingCommandManager.undo(),

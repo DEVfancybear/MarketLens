@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Drawing gesture lifecycle and interaction-frame performance (2026-07-17)
+- Unified all two-point tools on shared click-click and press-drag-release semantics with a 4px
+  threshold, pointer-id ownership, explicit capture/release, and a release guard that prevents the
+  finishing gesture from arming another drawing.
+- Coalesced pointer samples to display cadence, batched continuous samples, kept anchor previews
+  outside React reconciliation, cached canvas bounds per frame, and read market snapshots only for
+  tools that require them.
+- Reused committed spatial indexes and DPR-correct static canvas layers during active gestures
+  while preserving z-order and invalidating caches on projection, store, selection, or market
+  context changes.
+- Committed single- and multi-drawing transforms as one store write, one history entry, and one
+  persistence/sync batch.
+- Added unit and browser regressions for two-point creation, `buttons = 0` pointer telemetry, Keep
+  Drawing release isolation, static-scene caching, and atomic batch updates.
+
 ### Added - MT5 Position Sizer-compatible web lot calculation (2026-07-16)
 - Added a broker-agnostic position-sizing core and an MT5 adapter for percent/money risk,
   account-basis selection, round-trip commission, direction-specific tick values, contract-size

@@ -1,7 +1,8 @@
 # DRAWING ENGINE ARCHITECTURE
 
 _Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog and
-2026-07-17 for the capability-driven parity follow-up, dynamic alerts, and visual matrix._
+2026-07-17 for capability-driven parity, shared creation gestures, atomic transforms, and
+interaction-frame rendering._
 
 The current post-Phase 8 maintenance record is
 `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. Older dated counts in
@@ -88,15 +89,18 @@ For the shared chart zoom/pan/viewport invalidation contract, see
 ## Data flow
 
 ```
-1. User clicks canvas with 'trendline' tool active
-   → DrawingInteractionManager (Drawing-mode pointerdown) → machine = Drawing, anchors=[p1]
+1. User starts a two-point tool such as Trend Line or Rectangle
+   → DrawingInteractionManager (Drawing-mode pointerdown)
+   → CreationSession owns the confirmed anchors; CreationGesture owns drag threshold/pointer id
+   → machine = Drawing, anchors=[p1]
 
 2. User moves the pointer (before the 2nd click)
    → pointermove → machineRef.anchors = [p1, cursor] → scheduleRedraw (markDirty)
    → CanvasRenderer paints a live "rubber-band" preview (a __pending drawing)
 
-3. User clicks second point
-   → pointerdown → addDrawing({ tool:'trendline', points:[p1,p2] }) + history CreateCommand
+3. User clicks the second point, or drags at least 4 CSS px and releases
+   → pointerdown or pointerup → addDrawing({ tool:'trendline', points:[p1,p2] })
+     + history CreateCommand
    → chartStore.addDrawing() → appends to drawings[], updates local cache,
      queues backend `/drawings/batch` upsert when authenticated
    → DrawingLayer's store-change effect → markDirty → repaint
@@ -144,6 +148,12 @@ high-frequency preview data in mutable refs and schedules the canvas render loop
 
 - Creating a 2-point object such as Rectangle/Trendline updates `machineRef.anchors` on every
   pointermove without publishing React state for every pixel.
+- `CreationGesture.ts` supplies one drag threshold and pointer-ownership contract for every
+  manifest tool with `creationMode: "two-point"`; individual adapters must not implement their
+  own press/drag/release interpretation.
+- Creation pointer samples use browser coalesced events where available and collapse remaining
+  work to the display cadence. `CreationSession.pointerMoveBatch()` appends continuous-tool
+  samples with one preview publication.
 - Dragging/resizing existing objects updates `livePointsRef` and commits to `chartStore.drawings[]`
   only on pointerup.
 - React `machine` state is still published for low-frequency boundaries such as Idle -> Drawing,
@@ -167,6 +177,37 @@ high-frequency preview data in mutable refs and schedules the canvas render loop
 Future tools should use the adapter contract (`move`, `moveAnchor`, `getAnchors`) and let the
 manager handle live preview. Do not call store updates from pointermove for new tools; store writes
 belong at the interaction boundary.
+
+### Two-point creation gesture contract - updated 2026-07-17
+
+Every manifest tool with `creationMode: "two-point"` shares the same lifecycle through
+`CreationGesture.ts`, `CreationSession.ts`, and `DrawingInteractionManager.ts`:
+
+- click-click remains supported;
+- press-drag-release commits after a 4 CSS-pixel threshold;
+- the drag transaction is owned by `pointerId`, not by `buttons` or `pressure`, because embedded
+  browsers and trackpads may report `buttons = 0` during captured movement;
+- the exact pointer-up coordinate is flushed before commit;
+- when click-click commits on `pointerdown`, a release guard quarantines that physical pointer
+  transaction until its matching `pointerup` or `pointercancel`;
+- Keep Drawing may retain the selected tool, but a new object requires a fresh `pointerdown`.
+  Hover or movement from the finishing gesture must never arm another object.
+
+This is a common interaction-layer contract for Rectangle, Fib, Channel, line, and every other
+two-point adapter. Tool-specific conditionals for thresholds or release behavior are regressions.
+
+### Atomic transform commit - updated 2026-07-17
+
+Existing-drawing move and resize previews remain transient until pointerup. The completed gesture
+is committed through `batchUpdateDrawingsAtom` and `BatchMoveDrawingsCommand`:
+
+- one `drawingsAtom` publication, even when a multi-selection moves several drawings;
+- one undo/redo history entry containing every changed patch;
+- one local persistence write and one coalesced backend sync batch;
+- tool-specific geometry and lifecycle patches round-trip with `points`.
+
+Never publish one store update per pointer sample or one intermediate collection per selected
+drawing. Those intermediate states add React work, persistence work, and visible tearing.
 
 ## Render loop & repaint contract (READ THIS BEFORE TOUCHING THE CANVAS)
 
@@ -535,6 +576,18 @@ that index with `queryViewportWithOverrides()` so only actively dragged drawings
 An override is included even if its original indexed box was outside the viewport. Forced viewport
 invalidations (`markDirty(true)`) and structural/store changes rebuild the index before reuse.
 
+Pending creation geometry follows the same override path. The spatial index contains committed
+drawings only; `__pending` and live transform geometry are injected by
+`queryViewportWithOverrides()`. This prevents a full bounds rebuild for every pointer sample and
+keeps a pending preview visible on an index-rebuild frame.
+
+During an active creation or transform, the renderer may cache DPR-correct static canvas layers
+before and after the dynamic z-index band. Only that middle band is repainted each frame. The cache
+key covers projection, dimensions, DPR, selection, visibility, drawing revisions/z-order, market
+context, and the partition itself. It is discarded on forced viewport invalidation or when the
+viewport is following pan/zoom. Offscreen layers are capped at 16 million device pixels; when a
+layer exceeds the budget or cannot be allocated, the renderer paints that range directly.
+
 This is required because many tools render outside their anchors:
 
 - horizontal, vertical, and cross lines;
@@ -608,6 +661,13 @@ All three confirmed fixed via a scripted Playwright repro: create → exactly 1 
 exactly 2; Ctrl+D then Ctrl+C/Ctrl+V → exactly 3.
 
 ## Perf notes
+
+- **Interaction-frame pipeline - updated 2026-07-17.** Pointer samples are coalesced to the
+  display cadence, canvas bounds are cached for one animation frame, transient previews stay in
+  mutable refs, committed spatial indexes are reused with live overrides, and static z-bands are
+  composited from DPR-correct offscreen layers. Expensive tick/history snapshots are read only for
+  tools whose manifest requests volume-profile data. Move/resize commits use one atomic store and
+  history transaction.
 
 - **`hitTest()` bounding-box pre-filter — fixed 2026-07-02.** Every cursor-mode pointerdown/hover
   used to call every drawing's (potentially expensive, per-tool) `adapter.hitTest()`, even ones

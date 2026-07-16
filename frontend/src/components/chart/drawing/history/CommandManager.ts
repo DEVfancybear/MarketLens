@@ -152,6 +152,54 @@ export class MoveDrawingCommand implements Command {
   }
 }
 
+/** One patch in an atomic drawing collection write. */
+export interface DrawingPatchUpdate {
+  id: string;
+  patch: Partial<Drawing>;
+}
+
+/** The committed and previous state for one member of a transform gesture. */
+export interface DrawingMoveChange {
+  id: string;
+  newPatch: Partial<Drawing>;
+  oldPatch: Partial<Drawing>;
+}
+
+export type BatchDrawingUpdate = (
+  updates: readonly DrawingPatchUpdate[],
+) => void;
+
+/**
+ * Moves/resizes one or more drawings with one store write and one history step.
+ * Full patches are retained so tool-specific geometry (for example Gann ratio)
+ * round-trips together with points.
+ */
+export class BatchMoveDrawingsCommand implements Command {
+  readonly label: string;
+
+  constructor(
+    private updateBatchFn: BatchDrawingUpdate,
+    private changes: readonly DrawingMoveChange[],
+    label?: string,
+  ) {
+    this.label = label ?? (changes.length === 1 ? "Move Drawing" : "Move Drawings");
+  }
+
+  execute() {
+    this.updateBatchFn(this.changes.map(({ id, newPatch }) => ({
+      id,
+      patch: newPatch,
+    })));
+  }
+
+  undo() {
+    this.updateBatchFn(this.changes.map(({ id, oldPatch }) => ({
+      id,
+      patch: oldPatch,
+    })));
+  }
+}
+
 /** Duplicates a drawing. Undo removes the copy. */
 export class DuplicateDrawingCommand implements Command {
   readonly label = "Duplicate Drawing";

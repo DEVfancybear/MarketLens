@@ -23,7 +23,7 @@ import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManife
 import { uid } from "@/utils/id";
 import { hitTest, type HitResult } from "../hittest/HitTestEngine";
 import type { DrawingMenuState } from "../../DrawingContextMenu";
-import type { Command } from "../history/CommandManager";
+import type { Command, DrawingMoveChange } from "../history/CommandManager";
 import {
   DeleteDrawingCommand,
   DeleteDrawingsCommand,
@@ -36,6 +36,12 @@ import {
   type Machine,
 } from "./machine";
 import { PointerFrameCoalescer } from "./PointerFrameCoalescer";
+import { getFrameClientRect } from "./FrameRectCache";
+import {
+  advanceCreationDrag,
+  createCreationDragState,
+  type CreationDragState,
+} from "./CreationGesture";
 import {
   CreationSession,
   type CreationSessionOutcome,
@@ -88,12 +94,32 @@ function withPointerPressure(point: Point, event: PointerEvent): Point {
     : point;
 }
 
+function coalescedPointerSamples(event: PointerEvent): readonly PointerEvent[] {
+  try {
+    const samples = event.getCoalescedEvents?.();
+    if (samples?.length) return samples;
+  } catch {
+    // Some embedded browsers expose the method without allowing it to run.
+  }
+  return [event];
+}
+
+function latestPointerSample(event: PointerEvent): PointerEvent {
+  const samples = coalescedPointerSamples(event);
+  return samples[samples.length - 1] ?? event;
+}
+
+export interface InteractionStateReadOptions {
+  /** Expensive tick/history copies are only required by profile-tool commits. */
+  includeSnapshotData?: boolean;
+}
+
 export interface DrawingInteractionManagerOpts {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   fromEvent: (e: PointerEvent) => Point | null;
   toX: (time: number) => number | null;
   toY: (price: number) => number | null;
-  getState: () => {
+  getState: (options?: InteractionStateReadOptions) => {
     drawings: Drawing[];
     activeTool: DrawingTool;
     drawColor: string;
@@ -117,7 +143,7 @@ export interface DrawingInteractionManagerOpts {
   toggleSelectDrawing: (id: string) => void;
   setActiveTool: (t: DrawingTool) => void;
   scheduleRedraw: () => void;
-  commitMove?: (id: string, newPoints: Point[], oldPoints: Point[]) => void;
+  commitMoves: (changes: readonly DrawingMoveChange[]) => void;
   executeCommand?: (cmd: Command) => void;
   undo?: () => void;
   redo?: () => void;
@@ -172,7 +198,7 @@ export function useDrawingInteractionManager(
     toggleSelectDrawing,
     setActiveTool,
     scheduleRedraw,
-    commitMove,
+    commitMoves,
     executeCommand,
     undo,
     redo,
@@ -205,7 +231,16 @@ export function useDrawingInteractionManager(
   const dragMoveCoalescerRef = useRef<PointerFrameCoalescer<PointerEvent> | null>(
     null,
   );
+  const creationMoveCoalescerRef = useRef<PointerFrameCoalescer<PointerEvent> | null>(
+    null,
+  );
   const creationSessionRef = useRef<CreationSession | null>(null);
+  const creationDragRef = useRef<CreationDragState | null>(null);
+  // A two-point tool can commit on pointerdown (the click-click flow). Keep
+  // that physical pointer transaction quarantined until its matching pointerup;
+  // otherwise a browser/embedded surface that replays a move/down while the
+  // finishing button is still held can immediately arm the next drawing.
+  const creationReleaseGuardRef = useRef<number | null>(null);
   const transformSessionRef = useRef<TransformSession | null>(null);
   const eraseSessionRef = useRef(
     new EraseSession(
@@ -220,6 +255,13 @@ export function useDrawingInteractionManager(
     drawingId: string;
     gann: GannConfig;
   } | null>(null);
+  const originalGannRef = useRef<GannConfig | undefined>(undefined);
+  const originalResolvedTradeRef = useRef<{
+    drawingId: string;
+    tradeStatus: "tp_hit" | "sl_hit";
+    hitTime: number | undefined;
+    hitPrice: number | undefined;
+  } | null>(null);
   const pointerClaimedRef = useRef(false);
   // True for the exact duration of a body-move / handle-resize drag. Set
   // synchronously on pointerdown and cleared on release. Gates the capture-phase
@@ -229,6 +271,7 @@ export function useDrawingInteractionManager(
   // its pan; the option-freeze raced against the first leaked move).
   const dragActiveRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
+  const captureTargetRef = useRef<Element | null>(null);
   // Manual double-click detection for finishing freeform draws (Path, Polyline…).
   // `PointerEvent.detail` is unreliable on `pointerdown` (0 in many browsers), so
   // we track the previous down's time + screen position instead.
@@ -249,9 +292,23 @@ export function useDrawingInteractionManager(
       hoverRafRef.current = null;
     }
   }, []);
+  const capturePointer = useCallback((event: PointerEvent, fallback: Element) => {
+    const target = event.target instanceof Element ? event.target : fallback;
+    try {
+      target.setPointerCapture(event.pointerId);
+      captureTargetRef.current = target;
+    } catch {
+      // Document capture listeners remain the compatibility fallback.
+      captureTargetRef.current = null;
+    }
+  }, []);
   const releaseCapture = useCallback(() => {
-    const c = canvasRef.current;
+    const c = captureTargetRef.current ?? canvasRef.current;
     const p = activePointerIdRef.current;
+    // Clear ownership before releasePointerCapture can dispatch
+    // lostpointercapture, preventing a normal release from looking cancelled.
+    activePointerIdRef.current = null;
+    captureTargetRef.current = null;
     if (c && p != null) {
       try {
         c.releasePointerCapture(p);
@@ -259,7 +316,6 @@ export function useDrawingInteractionManager(
         /* ok */
       }
     }
-    activePointerIdRef.current = null;
   }, [canvasRef]);
   const reset = useCallback(() => {
     const nextMachine = createInitialMachine();
@@ -269,13 +325,17 @@ export function useDrawingInteractionManager(
     pointerClaimedRef.current = false;
     dragActiveRef.current = false;
     dragMoveCoalescerRef.current?.cancel();
+    creationMoveCoalescerRef.current?.cancel();
     livePointsRef.current = null;
     livePointsWorkRef.current.clear();
     drawingIdRef.current = null;
     cancelHoverFrame();
     creationSessionRef.current = null;
+    creationDragRef.current = null;
     transformSessionRef.current = null;
     pendingGannRatioRef.current = null;
+    originalGannRef.current = undefined;
+    originalResolvedTradeRef.current = null;
     // Restore chart pan/zoom synchronously when the interaction ends.
     freezeChartRef.current?.(false);
     scheduleRedrawRef.current();
@@ -286,21 +346,24 @@ export function useDrawingInteractionManager(
       const session = creationSessionRef.current;
       if (!session) return;
       if (outcome.kind === "preview") {
-        transition({
+        // Canvas reads machineRef directly. Publish only the transition into
+        // Drawing; anchor-only previews stay off React's reconciliation path.
+        const publish = machineRef.current.state !== "Drawing";
+        patchMachine({
           state: "Drawing",
           anchors: outcome.points,
           drawingTool: session.tool,
-        });
+        }, publish);
         return;
       }
       if (outcome.kind === "commit") {
-        const cur = getState();
+        const profileDetail = session.definition.dataSnapshotDetail === "volume-profile";
+        const cur = getState({ includeSnapshotData: profileDetail });
         const tolerance = session.definition.pointSimplificationTolerance;
         const points = tolerance
           ? simplifyProjectedPoints(outcome.points, toX, toY, tolerance)
           : outcome.points;
         const capturedAt = Math.floor(Date.now() / 1000);
-        const profileDetail = session.definition.dataSnapshotDetail === "volume-profile";
         const historyRequest = profileDetail && session.definition.dataSnapshot && cur.timeframe
           ? {
               mode: session.definition.dataSnapshot,
@@ -388,7 +451,7 @@ export function useDrawingInteractionManager(
       }
       reset();
     },
-    [addDrawing, getState, reset, toX, toY, transition, updateDrawing],
+    [addDrawing, getState, patchMachine, reset, toX, toY, updateDrawing],
   );
   const cancellationKeyRef = useRef(cancellationKey);
   cancellationKeyRef.current = cancellationKey;
@@ -421,6 +484,7 @@ export function useDrawingInteractionManager(
     if (!canvas) return;
 
     const handleDown = (event: PointerEvent) => {
+      if (creationReleaseGuardRef.current != null) return;
       if (isOverDrawingUI(event) || !isOverCanvas(event, canvas) || event.button > 0) return;
       // Keep this listener mounted across tool switches. Jotai updates the
       // active tool synchronously, while a React effect keyed by activeTool can
@@ -448,7 +512,7 @@ export function useDrawingInteractionManager(
       // without stopping sibling listeners, this same pointerdown immediately
       // starts a phantom resize/move on the newly-created object.
       event.stopImmediatePropagation();
-      canvas.setPointerCapture(event.pointerId);
+      capturePointer(event, canvas);
       activePointerIdRef.current = event.pointerId;
       pointerClaimedRef.current = true;
 
@@ -486,25 +550,38 @@ export function useDrawingInteractionManager(
       if (event.shiftKey && definition.angleConstraint === "45-degree" && session.points[0]) {
         point = constrainPointTo45Degrees(session.points[0], point, toX, toY);
       }
-      if (definition.creationMode === "pointer-continuous") {
+      const canDragCreate =
+        definition.creationMode === "pointer-continuous" ||
+        (definition.creationMode === "two-point" && session.points.length === 0);
+      if (canDragCreate) {
         dragActiveRef.current = true;
         freezeChartRef.current?.(true);
+        if (definition.creationMode === "two-point") {
+          creationDragRef.current = createCreationDragState(
+            event.pointerId,
+            event.clientX,
+            event.clientY,
+          );
+        }
       }
-      applyCreationOutcome(session.pointerDown({
+      const downOutcome = session.pointerDown({
         point,
         clientX: event.clientX,
         clientY: event.clientY,
         timeStamp: event.timeStamp,
-      }));
+      });
+      if (downOutcome.kind === "commit") {
+        creationReleaseGuardRef.current = event.pointerId;
+      }
+      applyCreationOutcome(downOutcome);
     };
 
-    const handleMove = (event: PointerEvent) => {
-      if (!isOverCanvas(event, canvas) || machineRef.current.state !== "Drawing") return;
+    const applyCreationMove = (event: PointerEvent) => {
+      if (machineRef.current.state !== "Drawing") return;
       const session = creationSessionRef.current;
       const raw = fromEvent(event);
       const rawPoint = raw ? withPointerPressure(raw, event) : null;
       if (!session || !rawPoint) return;
-      const current = getState();
       let point = session.definition.magnetEligible
         ? snapPointRef.current?.(rawPoint, session.tool, event) ?? rawPoint
         : rawPoint;
@@ -513,6 +590,7 @@ export function useDrawingInteractionManager(
         session.definition.gannFamily &&
         session.points[0]
       ) {
+        const current = getState();
         const defaults = resolveDrawingCreationDefaults(
           session.tool,
           current.drawingToolPreferences.toolDefaults[session.tool],
@@ -531,19 +609,109 @@ export function useDrawingInteractionManager(
       if (event.shiftKey && session.definition.angleConstraint === "45-degree" && session.points[0]) {
         point = constrainPointTo45Degrees(session.points[0], point, toX, toY);
       }
-      if (session.definition.creationMode === "pointer-continuous") {
-        event.preventDefault();
-        event.stopPropagation();
-        const previous = session.points[session.points.length - 1];
-        if (!shouldRecordContinuousPoint(previous, point, toX, toY)) return;
-      }
       applyCreationOutcome(session.pointerMove(point));
+    };
+    const creationMoves = new PointerFrameCoalescer<PointerEvent>(applyCreationMove);
+    creationMoveCoalescerRef.current = creationMoves;
+
+    const handleMove = (event: PointerEvent) => {
+      if (creationReleaseGuardRef.current != null) return;
+      if (machineRef.current.state !== "Drawing") return;
+      const session = creationSessionRef.current;
+      if (!session) return;
+      const dragState = creationDragRef.current;
+      if (
+        session.definition.creationMode === "two-point" &&
+        dragState &&
+        dragState.pointerId === event.pointerId
+      ) {
+        const advancedDragState = advanceCreationDrag(dragState, event);
+        if (advancedDragState !== dragState) {
+          creationDragRef.current = advancedDragState;
+        }
+        if (advancedDragState.dragged) {
+          dragActiveRef.current = true;
+          freezeChartRef.current?.(true);
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }
+      if (!isOverCanvas(event, canvas)) return;
+      if (session.definition.creationMode !== "pointer-continuous") {
+        creationMoves.push(latestPointerSample(event));
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const accepted: Point[] = [];
+      let previous = session.points[session.points.length - 1];
+      for (const sample of coalescedPointerSamples(event)) {
+        const raw = fromEvent(sample);
+        const rawPoint = raw ? withPointerPressure(raw, sample) : null;
+        if (!rawPoint) continue;
+        const point = session.definition.magnetEligible
+          ? snapPointRef.current?.(rawPoint, session.tool, sample) ?? rawPoint
+          : rawPoint;
+        if (!shouldRecordContinuousPoint(previous, point, toX, toY)) continue;
+        accepted.push(point);
+        previous = point;
+      }
+      if (accepted.length > 0) {
+        applyCreationOutcome(session.pointerMoveBatch(accepted));
+      }
     };
 
     const handleUp = (event: PointerEvent) => {
+      if (creationReleaseGuardRef.current === event.pointerId) {
+        creationReleaseGuardRef.current = null;
+        return;
+      }
       if (machineRef.current.state !== "Drawing") return;
       const session = creationSessionRef.current;
-      if (!session || session.definition.creationMode !== "pointer-continuous") return;
+      if (!session) return;
+
+      const dragState = creationDragRef.current;
+      const samePointer =
+        dragState?.pointerId === event.pointerId ||
+        activePointerIdRef.current == null ||
+        activePointerIdRef.current === event.pointerId;
+      if (
+        session.definition.creationMode === "two-point" &&
+        dragState?.dragged &&
+        samePointer
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        // A queued preview must not run after the commit and resurrect the
+        // rubber band. Apply the exact release location synchronously first.
+        creationMoveCoalescerRef.current?.cancel();
+        applyCreationMove(event);
+        const anchors = machineRef.current.anchors;
+        const finalPoint = anchors[anchors.length - 1];
+        if (finalPoint) {
+          applyCreationOutcome(session.pointerUp(finalPoint, true));
+        } else {
+          reset();
+        }
+        return;
+      }
+
+      if (session.definition.creationMode !== "pointer-continuous") {
+        // A stationary first click is intentionally left open for the existing
+        // click-click gesture. Release capture and chart freeze, but preserve
+        // the CreationSession so the next pointerdown supplies anchor two.
+        if (samePointer) {
+          event.preventDefault();
+          event.stopPropagation();
+          releaseCapture();
+          pointerClaimedRef.current = false;
+          dragActiveRef.current = false;
+          freezeChartRef.current?.(false);
+          creationDragRef.current = null;
+        }
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       const raw = fromEvent(event);
@@ -557,6 +725,7 @@ export function useDrawingInteractionManager(
     };
 
     const handleCancel = () => {
+      creationReleaseGuardRef.current = null;
       if (machineRef.current.state !== "Drawing") return;
       const session = creationSessionRef.current;
       if (session) applyCreationOutcome(session.cancel());
@@ -572,6 +741,10 @@ export function useDrawingInteractionManager(
       document.removeEventListener("pointermove", handleMove, true);
       document.removeEventListener("pointerup", handleUp, true);
       document.removeEventListener("pointercancel", handleCancel, true);
+      creationMoves.cancel();
+      if (creationMoveCoalescerRef.current === creationMoves) {
+        creationMoveCoalescerRef.current = null;
+      }
       if (machineRef.current.state === "Drawing") {
         creationSessionRef.current?.cancel();
         reset();
@@ -586,6 +759,9 @@ export function useDrawingInteractionManager(
     if (!canvas) return;
 
     const handleDown = (e: PointerEvent) => {
+      // One active pointer owns the transform transaction. A second touch must
+      // not replace its capture target/session while the first is still down.
+      if (machineRef.current.state !== "Idle" || activePointerIdRef.current != null) return;
       const cur = getState();
       const modeInteraction = getDrawingToolManifestEntry(
         cur.activeTool,
@@ -649,6 +825,7 @@ export function useDrawingInteractionManager(
         activePointerIdRef.current = e.pointerId;
         pointerClaimedRef.current = true;
         dragActiveRef.current = true;
+        capturePointer(e, canvas);
         freezeChartRef.current?.(true);
 
         const transformSession = new TransformSession({
@@ -660,24 +837,22 @@ export function useDrawingInteractionManager(
           adapterContext: cur.adapterContext,
         });
         transformSessionRef.current = transformSession;
+        originalGannRef.current = outcome.drawing.gann;
+        originalResolvedTradeRef.current =
+          outcome.drawing.tradeStatus === "tp_hit" ||
+          outcome.drawing.tradeStatus === "sl_hit"
+            ? {
+                drawingId: outcome.drawing.id,
+                tradeStatus: outcome.drawing.tradeStatus,
+                hitTime: outcome.drawing.hitTime,
+                hitPrice: outcome.drawing.hitPrice,
+              }
+            : null;
         drawingIdRef.current = outcome.drawing.id;
         livePointsWorkRef.current.clear();
         livePointsRef.current = null;
         cancelHoverFrame();
 
-        if (
-          outcome.drawing.tradeStatus === "tp_hit" ||
-          outcome.drawing.tradeStatus === "sl_hit"
-        ) {
-          updateDrawing({
-            id: outcome.drawing.id,
-            patch: {
-              tradeStatus: undefined,
-              hitTime: undefined,
-              hitPrice: undefined,
-            },
-          });
-        }
         transition({
           state: outcome.mode === "move" ? "MovingDrawing" : "ResizingHandle",
           drawingId: outcome.drawing.id,
@@ -703,7 +878,9 @@ export function useDrawingInteractionManager(
       if (!rawPoint) return;
       const session = transformSessionRef.current;
       const definition = getDrawingToolManifestEntry(session.tool);
-      const current = getState();
+      // A constrained ratio belongs only to the current sample. Releasing Shift
+      // before pointer-up must not commit a ratio captured by an earlier frame.
+      pendingGannRatioRef.current = null;
       let p = definition.magnetEligible && snapPointRef.current
         ? session.pointerAdjustedForSnap(rawPoint, (point) =>
           snapPointRef.current!(point, session.tool, e),
@@ -716,6 +893,7 @@ export function useDrawingInteractionManager(
         !session.isMulti &&
         session.primaryOriginal.length === 2
       ) {
+        const current = getState();
         const drawing = current.drawings.find((item) => item.id === session.drawingId);
         const constrained = drawing
           ? constrainGannResize(
@@ -764,16 +942,14 @@ export function useDrawingInteractionManager(
         e.preventDefault();
         e.stopPropagation();
         if (activePointerIdRef.current == null || e.pointerId === activePointerIdRef.current) {
-          dragMoves.push(e);
+          dragMoves.push(latestPointerSample(e));
         }
         return;
       }
+      // The drawing-mode listener owns preview input. Avoid duplicate state,
+      // layout and hit-test work in this sibling document listener.
+      if (m.state !== "Idle") return;
       // Hover
-      const cur = getState();
-      if (
-        getDrawingToolManifestEntry(cur.activeTool).modeInteraction !==
-        "selection"
-      ) return;
       if (!canvas || !isOverCanvas(e, canvas)) {
         cancelHoverFrame();
         if (hoveredIdRef.current !== null) {
@@ -782,6 +958,11 @@ export function useDrawingInteractionManager(
         }
         return;
       }
+      const cur = getState();
+      if (
+        getDrawingToolManifestEntry(cur.activeTool).modeInteraction !==
+        "selection"
+      ) return;
       pendingHoverEventRef.current = e;
       if (hoverRafRef.current == null) {
         hoverRafRef.current = requestAnimationFrame(() => {
@@ -844,22 +1025,45 @@ export function useDrawingInteractionManager(
         const multiMap = livePointsRef.current;
         if (multiMap && multiMap.size > 0) {
           const session = transformSessionRef.current;
+          const changes: DrawingMoveChange[] = [];
           for (const [id, pts] of multiMap) {
-            if (!session?.hasChanged(id, pts)) continue;
             const pendingGann = pendingGannRatioRef.current;
-            updateDrawing({
+            const hasGannChange = pendingGann?.drawingId === id;
+            if (!session?.hasChanged(id, pts) && !hasGannChange) continue;
+            const orig = session?.originalPointsFor(id);
+            if (!orig) continue;
+            const resolvedTrade =
+              originalResolvedTradeRef.current?.drawingId === id
+                ? originalResolvedTradeRef.current
+                : null;
+            changes.push({
               id,
-              patch: {
+              newPatch: {
                 points: pts,
-                ...(pendingGann?.drawingId === id
-                  ? { gann: pendingGann.gann }
+                ...(hasGannChange ? { gann: pendingGann?.gann } : {}),
+                ...(resolvedTrade
+                  ? {
+                      tradeStatus: undefined,
+                      hitTime: undefined,
+                      hitPrice: undefined,
+                    }
+                  : {}),
+              },
+              oldPatch: {
+                points: orig,
+                ...(hasGannChange ? { gann: originalGannRef.current } : {}),
+                ...(resolvedTrade
+                  ? {
+                      tradeStatus: resolvedTrade.tradeStatus,
+                      hitTime: resolvedTrade.hitTime,
+                      hitPrice: resolvedTrade.hitPrice,
+                    }
                   : {}),
               },
             });
-            if (commitMove) {
-              const orig = session?.originalPointsFor(id);
-              if (orig) commitMove(id, pts, orig);
-            }
+          }
+          if (changes.length > 0) {
+            commitMoves(changes);
           }
         }
         releaseCapture();
@@ -1099,7 +1303,7 @@ function isOverCanvas(
   e: PointerEvent | MouseEvent,
   canvas: HTMLCanvasElement,
 ): boolean {
-  const r = canvas.getBoundingClientRect();
+  const r = getFrameClientRect(canvas);
   return (
     e.clientX >= r.left &&
     e.clientX <= r.right &&

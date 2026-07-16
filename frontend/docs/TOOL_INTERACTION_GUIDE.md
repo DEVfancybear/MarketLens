@@ -1,6 +1,6 @@
 # TOOL INTERACTION GUIDE — Phase 4.2
 
-_Date: 2026-06-25._
+_Date: 2026-06-25. Updated 2026-07-17 for shared two-point gestures and atomic transforms._
 
 ## Cursor mode
 
@@ -17,11 +17,19 @@ _Date: 2026-06-25._
 | Tool | Creation |
 |---|---|
 | Horizontal / Vertical / HorizRay / CrossLine | Single click places |
-| Trendline / Ray / ExtendedLine / InfoLine | Click 1 → click 2 |
+| Trendline / Ray / ExtendedLine / InfoLine | Click first and second anchors, or press-drag-release |
 | Text | Click 1 → type text in prompt → placed |
-| Rectangle / Fib / Channel | Click 1 → click 2 |
+| Rectangle / Fib / Channel | Click first and second anchors, or press-drag-release |
 
-All two-click tools show a live **preview** of the pending point (drawn as a virtual drawing with `id: '__pending'`) while the user moves the cursor.
+All two-point tools show a live **preview** of the pending point (drawn as a virtual drawing with
+`id: '__pending'`) while the user moves the cursor. Press-drag-release commits after a shared 4 CSS
+pixel threshold; a normal first click still starts the click-click workflow.
+
+## Keep Drawing
+
+With Keep Drawing off, a completed two-point drawing returns to cursor mode. With Keep Drawing on,
+the tool remains selected, but another drawing requires a fresh `pointerdown`. The release and
+hover events from the completed gesture cannot create or arm another object.
 
 ## Keyboard shortcuts
 
@@ -45,13 +53,15 @@ Right-click a drawing → menu appears at cursor:
 ## Drag behavior
 
 - Whole-object drag: all points translate by (Δtime, Δprice)
-- Dragged update is applied per-pointer-move for lag-free feel
-- On pointer-up, the final position is persisted to localStorage
+- Pointer samples are coalesced to the display cadence; live geometry stays in transient refs
+  instead of being persisted on every `pointermove`
+- Pointer-up flushes the exact final coordinate before commit
+- Single- and multi-drawing transforms commit through one atomic store write and one undo entry
 - Locked drawings are not selectable and cannot be dragged
 
 ## Persistence
 
-- All drawings persist to `localStorage` key `drawings:<symbol>`
-- Written on every `addDrawing`, `updateDrawing`, `removeDrawing`, `clearDrawings`
-- Loaded on symbol change via `chartStore.setSymbol()`
-- Symbol-scoped: switching from BTCUSDT to ETHUSDT loads ETHUSDT's drawings
+- Authenticated drawings persist through the backend `/drawings` API and debounced batch sync
+- Anonymous/offline fallback uses the symbol-scoped `localStorage` key `drawings:<symbol>`
+- A completed multi-drawing transform writes the local collection once and queues each final value
+  once; no intermediate preview geometry is persisted

@@ -102,6 +102,10 @@ Add tests here when changing:
 - Tool manifest shortcuts, viewport-culling policy, position side, snapshots,
   content, or other shared capabilities
 - The command transaction boundary or viewport event subscription contract
+- Shared two-point creation semantics: click-click, 4px press-drag-release, pointer-id ownership,
+  `buttons = 0` telemetry, and Keep Drawing release isolation
+- Static-scene layer partitioning/cache invalidation and committed-index live overrides
+- Atomic single/multi-drawing transform writes and full-patch undo/redo
 
 ## Browser contracts
 
@@ -136,17 +140,20 @@ family; with no flag the browser matrix is skipped.
 See `docs/DRAWING_TOOLS_VISUAL_SNAPSHOT_MATRIX.md` for the artifact naming and
 TradingView review workflow.
 
-## Last verified gates (2026-07-13)
+## Last verified gates (2026-07-17)
 
 - `npm run typecheck`: pass
-- `npm run lint`: 0 errors; two pre-existing Watchlist hook warnings
-- `npm run test:drawing`: 153/153 pass
+- `npm run lint`: pass
+- `npm run test:drawing`: 229/229 pass
+- Focused browser regressions for Rectangle click-click, press-drag-release, Keep Drawing release
+  isolation, and captured `buttons = 0` pointer movement: pass
 - `npm run test:drawing-persistence`: 18/18 pass
 - `npm run test:position`: 41/41 pass
 - `npm run check:drawing-viewport`: 7/7 pass
 - `npm run build`: pass
-- `npm run test:chart-browser -- drawingInteractions.spec.ts`: 23/23 pass
-  (full suite, approximately 3.7 minutes)
+- Last full `npm run test:chart-browser -- drawingInteractions.spec.ts`: 23/23 pass
+  (verified before the 2026-07-17 gesture follow-up; current changes were verified with the focused
+  cases above)
 - Focused dense-zoom regression `compact one-click Long position`: pass; the
   initial box is at least 158 CSS pixels wide and target/stop stay in the pane
   before any move or resize

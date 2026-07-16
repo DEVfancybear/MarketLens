@@ -107,6 +107,12 @@ import {
   selectDrawingsForSyncContext,
   type DrawingSyncContext,
 } from "@/components/chart/drawing/persistence/drawingSyncScope";
+import {
+  applyDrawingBatchUpdates,
+  type DrawingPatchUpdate,
+} from "./drawingBatchUpdate";
+
+export type { DrawingPatchUpdate } from "./drawingBatchUpdate";
 
 // The backend MT5 catalog selects the first symbol after /api/v1/mt5/symbols loads.
 const DEFAULT_SYMBOL = "";
@@ -127,6 +133,36 @@ function touchesPositionTradePlan(patch: Partial<Drawing>) {
     patch.riskValue !== undefined ||
     patch.riskUnit !== undefined
   );
+}
+
+function syncPositionDrawingPrefill(
+  get: AtomGet,
+  set: AtomSet,
+  id: string,
+  patch: Partial<Drawing>,
+  drawing: Drawing | null | undefined,
+) {
+  if (!isPositionDrawing(drawing) || !touchesPositionTradePlan(patch)) return;
+
+  const activePrefill = get(orderPrefillAtom);
+  const isSelected = get(selectedDrawingIdAtom) === id;
+  const isActiveTicketSource =
+    activePrefill?.source === "position-drawing" &&
+    activePrefill.drawingId === id;
+  if (!isSelected && !isActiveTicketSource) return;
+
+  const symbol = get(symbolAtom);
+  const prefill = buildOrderPrefillFromPositionDrawing(
+    drawing,
+    latestMarketPrice(get(candlesAtom)),
+    {
+      symbolInfo: positionLotSymbolInfo(
+        symbol,
+        get(mt5SymbolInfoAtom)[symbol],
+      ),
+    },
+  );
+  if (prefill) set(setOrderPrefillAtom, prefill);
 }
 
 function latestMarketPrice(candles: Candle[]) {
@@ -975,26 +1011,45 @@ export const updateDrawingAtom = atom(
     const symbol = _get(symbolAtom);
     persistLocalDrawings(_get, symbol, drawings);
     if (updatedDrawing) queueDrawingUpsert(_get, set, symbol, updatedDrawing);
+    syncPositionDrawingPrefill(_get, set, id, patch, updatedDrawing);
+  },
+);
 
-    if (isPositionDrawing(updatedDrawing) && touchesPositionTradePlan(patch)) {
-      const activePrefill = _get(orderPrefillAtom);
-      const isSelected = _get(selectedDrawingIdAtom) === id;
-      const isActiveTicketSource =
-        activePrefill?.source === "position-drawing" &&
-        activePrefill.drawingId === id;
-      if (isSelected || isActiveTicketSource) {
-        const prefill = buildOrderPrefillFromPositionDrawing(
-          updatedDrawing,
-          latestMarketPrice(_get(candlesAtom)),
-          {
-            symbolInfo: positionLotSymbolInfo(
-              _get(symbolAtom),
-              _get(mt5SymbolInfoAtom)[_get(symbolAtom)],
-            ),
-          },
-        );
-        if (prefill) set(setOrderPrefillAtom, prefill);
-      }
+/**
+ * Publish and persist several drawing changes as one atomic collection write.
+ * Each updated drawing still advances its client revision and enters the sync
+ * queue, matching updateDrawingAtom without exposing intermediate states.
+ */
+export const batchUpdateDrawingsAtom = atom(
+  null,
+  (_get, set, updates: readonly DrawingPatchUpdate[]) => {
+    const result = applyDrawingBatchUpdates(_get(drawingsAtom), updates);
+    if (result.updatedById.size === 0) return;
+
+    set(drawingsAtom, result.drawings);
+    const symbol = _get(symbolAtom);
+    persistLocalDrawings(_get, symbol, result.drawings);
+
+    // The sync queue coalesces by drawing id, so enqueue only each final value.
+    const queued = new Set<string>();
+    for (const { id } of updates) {
+      if (queued.has(id)) continue;
+      const drawing = result.updatedById.get(id);
+      if (!drawing) continue;
+      queued.add(id);
+      queueDrawingUpsert(_get, set, symbol, drawing);
+    }
+
+    // Process in request order so selected/active ticket ownership follows the
+    // same observable semantics as sequential singular updates.
+    for (const { id, patch } of updates) {
+      syncPositionDrawingPrefill(
+        _get,
+        set,
+        id,
+        patch,
+        result.updatedById.get(id),
+      );
     }
   },
 );

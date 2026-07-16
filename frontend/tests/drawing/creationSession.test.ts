@@ -30,6 +30,26 @@ test("one and two-point creation sessions commit at their manifest boundary", ()
   });
 });
 
+test("two-point sessions also commit an explicitly completed drag", () => {
+  const rectangle = new CreationSession("rectangle");
+  assert.equal(rectangle.pointerDown(sample(1)).kind, "preview");
+  assert.deepEqual(rectangle.pointerUp(point(2), true), {
+    kind: "commit",
+    points: [point(1), point(2)],
+  });
+
+  const clickClick = new CreationSession("rectangle");
+  clickClick.pointerDown(sample(1));
+  assert.deepEqual(clickClick.pointerUp(), {
+    kind: "preview",
+    points: [point(1)],
+  });
+  assert.deepEqual(clickClick.pointerDown(sample(2)), {
+    kind: "commit",
+    points: [point(1), point(2)],
+  });
+});
+
 test("fixed multi-point creation commits exactly at maxPoints", () => {
   const triangle = new CreationSession("triangle");
   assert.equal(triangle.pointerDown(sample(1)).kind, "preview");
@@ -69,11 +89,30 @@ test("continuous sessions own sampling and cancel when below minimum", () => {
 
   const stroke = new CreationSession("brush");
   stroke.pointerDown(sample(1));
-  stroke.pointerMove(point(2));
-  assert.deepEqual(stroke.pointerUp(point(3)), {
-    kind: "commit",
+  const preview = stroke.pointerMoveBatch([point(2), point(3)]);
+  assert.deepEqual(preview, {
+    kind: "preview",
     points: [point(1), point(2), point(3)],
   });
+  assert.deepEqual(stroke.pointerUp(point(4)), {
+    kind: "commit",
+    points: [point(1), point(2), point(3), point(4)],
+  });
+});
+
+test("continuous previews reuse their transient buffer while commits clone it", () => {
+  const stroke = new CreationSession("brush");
+  const first = stroke.pointerDown(sample(1));
+  assert.equal(first.kind, "preview");
+  const second = stroke.pointerMoveBatch([point(2), point(3)]);
+  assert.equal(second.kind, "preview");
+  if (first.kind !== "preview" || second.kind !== "preview") return;
+  assert.equal(first.points, second.points);
+
+  const committed = stroke.pointerUp(point(4));
+  assert.equal(committed.kind, "commit");
+  if (committed.kind !== "commit") return;
+  assert.notEqual(committed.points, second.points);
 });
 
 test("Escape-style cancel never commits a partially valid freeform drawing", () => {

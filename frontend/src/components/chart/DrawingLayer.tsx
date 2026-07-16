@@ -14,6 +14,7 @@ import {
   selectedDrawingIdsAtom,
   addDrawingAtom,
   updateDrawingAtom,
+  batchUpdateDrawingsAtom,
   selectDrawingAtom,
   toggleSelectDrawingAtom,
   removeDrawingAtom,
@@ -34,6 +35,7 @@ import {
   snapPointToOhlc,
   snapPointWithMagnetSources,
 } from "./drawing/interaction/OhlcMagnetSnap";
+import { getFrameClientRect } from "./drawing/interaction/FrameRectCache";
 import { DrawingContextMenu } from "./DrawingContextMenu";
 import { DrawingSettingsToolbar } from "./DrawingSettingsToolbar";
 import {
@@ -131,8 +133,19 @@ export function DrawingLayer() {
     () => drawings.filter((drawing) => isDrawingVisibleAtTimeframe(drawing, timeframe)),
     [drawings, timeframe],
   );
+  const interactionVisibleDrawingsCacheRef = useRef({
+    drawings,
+    timeframe,
+    visibleDrawings,
+  });
+  interactionVisibleDrawingsCacheRef.current = {
+    drawings,
+    timeframe,
+    visibleDrawings,
+  };
   const addDrawing = useSetAtom(addDrawingAtom);
   const updateDrawing = useSetAtom(updateDrawingAtom);
+  const batchUpdateDrawings = useSetAtom(batchUpdateDrawingsAtom);
   const selectDrawing = useSetAtom(selectDrawingAtom);
   const toggleSelectDrawing = useSetAtom(toggleSelectDrawingAtom);
   const removeDrawing = useSetAtom(removeDrawingAtom);
@@ -145,10 +158,11 @@ export function DrawingLayer() {
 
   const [textEditSession, setTextEditSession] = useState<TextEditSession | null>(null);
 
-  const { manager: commandManager, commitMove, undo, redo, execute } = useCommandHistory(
+  const { manager: commandManager, commitMoves, undo, redo, execute } = useCommandHistory(
     addDrawing,
     removeDrawing,
     updateDrawing,
+    batchUpdateDrawings,
   );
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -263,7 +277,7 @@ export function DrawingLayer() {
     const c = ctxRef.current;
     const cv = canvasRef.current;
     if (!c || !cv) return null;
-    const r = cv.getBoundingClientRect();
+    const r = getFrameClientRect(cv);
     // The canvas, the chart container, and the time-scale pane all share the same
     // left edge and CSS-pixel width, so the local X maps 1:1 to a time-scale
     // coordinate. Do NOT rescale by timeScale().width() (which excludes the right
@@ -617,7 +631,7 @@ export function DrawingLayer() {
     fromEvent,
     toX,
     toY,
-    getState: () => {
+    getState: (options) => {
       // Toolbar/Jotai writes are synchronous, while the React render that
       // refreshes stateRef may be deferred until after a fast mouse/touch tap.
       // Read creation inputs directly at the pointer boundary so the first
@@ -625,11 +639,28 @@ export function DrawingLayer() {
       const store = getDefaultStore();
       const currentTimeframe = store.get(timeframeAtom);
       const currentSymbol = store.get(symbolAtom);
-      const marketData = getMarketDataState();
       const currentDrawings = store.get(drawingsAtom);
-      const currentVisibleDrawings = currentDrawings.filter((drawing) =>
-        isDrawingVisibleAtTimeframe(drawing, currentTimeframe),
-      );
+      const visibleCache = interactionVisibleDrawingsCacheRef.current;
+      const currentVisibleDrawings =
+        visibleCache.drawings === currentDrawings &&
+        visibleCache.timeframe === currentTimeframe
+          ? visibleCache.visibleDrawings
+          : currentDrawings.filter((drawing) =>
+              isDrawingVisibleAtTimeframe(drawing, currentTimeframe),
+            );
+      if (
+        visibleCache.drawings !== currentDrawings ||
+        visibleCache.timeframe !== currentTimeframe
+      ) {
+        interactionVisibleDrawingsCacheRef.current = {
+          drawings: currentDrawings,
+          timeframe: currentTimeframe,
+          visibleDrawings: currentVisibleDrawings,
+        };
+      }
+      const snapshotData = options?.includeSnapshotData
+        ? getMarketDataState()
+        : undefined;
       return {
         ...stateRef.current,
         activeTool: store.get(activeToolAtom),
@@ -642,9 +673,13 @@ export function DrawingLayer() {
         candles: ctxRef.current?.candles ?? store.get(candlesAtom),
         symbol: currentSymbol,
         timeframe: currentTimeframe,
-        cachedCandles: marketData.candles,
-        recentTicks: getRecentMarketTicks(currentSymbol),
-        recentTickCoverage: getRecentMarketTickCoverage(currentSymbol),
+        cachedCandles: snapshotData?.candles,
+        recentTicks: options?.includeSnapshotData
+          ? getRecentMarketTicks(currentSymbol)
+          : undefined,
+        recentTickCoverage: options?.includeSnapshotData
+          ? getRecentMarketTickCoverage(currentSymbol)
+          : undefined,
         adapterContext: {
           tickSize: stateRef.current.marketContext.tickSize,
           barIntervalSeconds: resolveCandleBarIntervalSeconds(
@@ -665,7 +700,7 @@ export function DrawingLayer() {
     toggleSelectDrawing,
     setActiveTool,
     scheduleRedraw,
-    commitMove,
+    commitMoves,
     executeCommand: execute,
     undo,
     redo,
@@ -876,8 +911,8 @@ export function DrawingLayer() {
         drawingsHidden: stateRef.current.drawingsHidden,
         selectedDrawingId: stateRef.current.selectedDrawingId,
         selectedDrawingIds: stateRef.current.selectedDrawingIds,
-        drawColor,
-        activeTool,
+        drawColor: stateRef.current.drawColor,
+        activeTool: stateRef.current.activeTool,
         machine: machineRef.current,
         chartReady: !!ctxRef.current,
         livePoints: livePointsRef.current,

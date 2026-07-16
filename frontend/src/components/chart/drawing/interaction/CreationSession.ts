@@ -54,7 +54,11 @@ export class CreationSession {
     }
     if (creationMode === "pointer-continuous") {
       if (this.confirmed.length === 0) this.confirmed = [{ ...sample.point }];
-      return { kind: "preview", points: clonePoints(this.confirmed) };
+      // Continuous previews are transient and owned exclusively by the active
+      // interaction session. Return the stable backing array so appending pen /
+      // brush samples does not clone the entire stroke on every pointer event.
+      // The commit boundary below still returns an immutable clone.
+      return { kind: "preview", points: this.confirmed };
     }
 
     if (creationMode === "click-freeform" && this.isDoubleClick(sample)) {
@@ -80,11 +84,18 @@ export class CreationSession {
   }
 
   pointerMove(point: Point, acceptContinuousPoint = true): CreationSessionOutcome {
+    return this.pointerMoveBatch(acceptContinuousPoint ? [point] : []);
+  }
+
+  /** Append a browser-coalesced continuous sample batch with one preview. */
+  pointerMoveBatch(points: readonly Point[]): CreationSessionOutcome {
     if (this.confirmed.length === 0) return { kind: "cancel" };
     if (this.definition.creationMode === "pointer-continuous") {
-      if (acceptContinuousPoint) this.confirmed = [...this.confirmed, { ...point }];
-      return { kind: "preview", points: clonePoints(this.confirmed) };
+      for (const point of points) this.confirmed.push({ ...point });
+      return { kind: "preview", points: this.confirmed };
     }
+    const point = points[points.length - 1];
+    if (!point) return { kind: "preview", points: clonePoints(this.confirmed) };
     return {
       kind: "preview",
       points: [...clonePoints(this.confirmed), { ...point }],
@@ -92,6 +103,16 @@ export class CreationSession {
   }
 
   pointerUp(point?: Point, acceptContinuousPoint = true): CreationSessionOutcome {
+    if (this.definition.creationMode === "two-point") {
+      // Support press-drag-release while preserving click-click creation. The
+      // interaction layer only supplies a point after the drag threshold is
+      // crossed, so a plain first click remains an open two-point session.
+      if (point && acceptContinuousPoint && this.confirmed.length === 1) {
+        this.confirmed = [...this.confirmed, { ...point }];
+        return { kind: "commit", points: clonePoints(this.confirmed.slice(0, 2)) };
+      }
+      return { kind: "preview", points: clonePoints(this.confirmed) };
+    }
     if (this.definition.creationMode !== "pointer-continuous") {
       return { kind: "preview", points: clonePoints(this.confirmed) };
     }

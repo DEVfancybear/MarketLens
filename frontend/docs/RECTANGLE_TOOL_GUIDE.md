@@ -1,13 +1,17 @@
 # RECTANGLE TOOL GUIDE — Phase 4.3
 
-_Date: 2026-06-25._
+_Date: 2026-06-25. Updated 2026-07-17 for shared two-point creation semantics._
 
 ## Creation
 
-1. Select **Rectangle** tool from the left toolbar (SHAPES section)
-2. Click first corner on the chart
-3. Drag to second corner — live preview shows while dragging
-4. Click to place
+Rectangle supports two equivalent workflows after selecting it from the left toolbar:
+
+1. Click the first corner, move the pointer, then click the opposite corner.
+2. Press at the first corner, drag at least 4 CSS pixels, then release at the opposite corner.
+
+A completed Rectangle releases its active pointer immediately. With Keep Drawing enabled,
+Rectangle remains selected but waits for a new `pointerdown`; moving or hovering after release does
+not create another Rectangle.
 
 ## Editing
 
@@ -31,7 +35,8 @@ _Date: 2026-06-25._
 
 ## Persistence
 
-- Stored in `localStorage` key `drawings:<symbol>`
+- Authenticated drawings sync through the backend; anonymous/offline fallback uses
+  `localStorage` key `drawings:<symbol>`
 - All properties preserved: `color`, `fillColor`, `opacity`, `lineStyle`, `points`, `locked`, `visible`, `zIndex`
 
 ## Context menu

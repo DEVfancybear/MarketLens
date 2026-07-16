@@ -1,48 +1,47 @@
 # DRAWING STATE MACHINE — Phase 4.2.1
 
-_Date: 2026-06-25._
+_Date: 2026-06-25. Updated 2026-07-17 for the current interaction manager._
 
 ## States
 
 | State | Description | User sees |
 |---|---|---|
-| **Idle** | Cursor tool active, no pending drawing | Default cursor, click to select drawings |
-| **ToolSelected** | Drawing tool active, awaiting first click | Crosshair cursor, toolbar icon highlighted |
-| **DrawingPreview** | First point placed, preview rendering | Preview line/shape follows cursor, crosshair cursor |
-| **DrawingCompleted** | Drawing committed to store | Drawing appears on chart, tool stays or resets |
-| **Cancelled** | Esc or right-click during preview | Preview disappears, tool may reset to cursor |
+| **Idle** | No active pointer transaction | Cursor selection, or an armed drawing tool awaiting input |
+| **Drawing** | A creation session owns confirmed/transient anchors | Live `__pending` preview follows input |
+| **MovingDrawing** | A transform session owns one or more drawing bodies | Selected geometry moves from transient points |
+| **ResizingHandle** | A transform session owns one drawing anchor | Selected handle updates transient geometry |
 
 ## Transitions
 
 ```
 Idle
-  │ click drawing tool in toolbar
+  │ pointerdown with a creation tool
+  ├─ one-point commit ───────────────────────────────→ Idle
   ▼
-ToolSelected
-  │ click on chart (1-click tool)
-  ▼
-DrawingCompleted ──→ ToolSelected (tool stays active)
-  
-  │ click on chart (2-click tool, point 1)
-  ▼
-DrawingPreview
-  │ click on chart (2-click tool, point 2)
-  ▼
-DrawingCompleted ──→ Idle (tool resets to cursor)
+Drawing
+  │ click second anchor OR drag >= 4px + pointerup
+  ├─ commit; Keep Drawing off ──────────────────────→ Idle + cursor tool
+  └─ commit; Keep Drawing on ───────────────────────→ Idle + same tool
 
-DrawingPreview
-  │ Esc / right-click
-  ▼
-Cancelled ──→ Idle
+Idle + cursor tool
+  │ pointerdown on drawing body / selected handle
+  ├──────────────────────────────→ MovingDrawing / ResizingHandle
+  │ pointermove: transient preview only
+  └ pointerup: atomic store + history commit ───────→ Idle
+
+Any active state
+  │ Escape, right-click cancellation, or owned pointercancel
+  └────────────────────────────────────────────────→ Idle
 ```
 
 ## Implementation
 
 | Concern | File | Mechanism |
 |---|---|---|
-| Active tool state | `activeToolAtom` in `chartStore` | Jotai atom state, set by toolbar through `setActiveToolAtom` |
-| Pending points | `DrawingLayer.pending` | `useState<Point[] | null>`, set to `[p1]` on first click, `null` on completion/cancel |
-| Preview rendering | `DrawingLayer.draw()` | Virtual `Drawing` with `id: '__pending'` prepended to render list |
-| Commit | `DrawingLayer.onPointerDown()` | Calls `addDrawing()` in the store |
-| Cancel | `DrawingLayer` keyboard/context handler | `setPending(null)` + optionally `setActiveTool('cursor')` |
-| Stay active | `chartStore.addDrawingAtom` | Single-click tools skip resetting `activeToolAtom` to `cursor` |
+| Active tool state | `activeToolAtom` in `chartStore` | Jotai state set by toolbar/shortcuts |
+| Creation topology | `CreationSession.ts` | Click, two-point, freeform, and continuous commit rules |
+| Shared drag gesture | `CreationGesture.ts` | 4px threshold and `pointerId` ownership for all two-point tools |
+| Pointer arbitration | `DrawingInteractionManager.ts` | Capture/release, release guard, coalescing, cancel/reset, Keep Drawing |
+| Preview rendering | `CanvasRenderer.ts` | Virtual `__pending` geometry read from the mutable machine ref |
+| Transform commit | `BatchMoveDrawingsCommand` + `batchUpdateDrawingsAtom` | One atomic write and one undo entry |
+| Cancel | `DrawingInteractionManager.reset()` | Clears sessions/live refs, releases chart lock, returns machine to Idle |

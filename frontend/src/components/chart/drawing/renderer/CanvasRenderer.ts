@@ -4,6 +4,7 @@
 import type { Drawing } from "@/types";
 import { renderDrawing, type Projector } from "../drawingRenderer";
 import type { Point } from "@/types";
+import type { RefObject } from "react";
 import { getTool } from "../tools/ToolRegistry";
 import { CoordinateCache } from "./CoordinateCache";
 import { SpatialIndex } from "./SpatialIndex";
@@ -16,6 +17,337 @@ import {
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
 
 const VIEWPORT_FOLLOW_MS = 450;
+// Two 1080p layers at DPR 2 fit just under this budget (~64 MiB RGBA). Larger
+// viewports cache only the more valuable side of the active drawing, or fall
+// back to direct painting when even one layer would be too expensive.
+const MAX_STATIC_CACHE_PIXELS = 16 * 1024 * 1024;
+
+export interface StaticScenePartition {
+  firstDynamicIndex: number;
+  lastDynamicIndex: number;
+}
+
+/**
+ * Keep all dynamic drawings in one ordered window. The static prefix/suffix
+ * can then be cached independently without moving a dragged drawing above or
+ * below neighbours with a different z-index.
+ */
+export function partitionStaticScene(
+  drawings: readonly Pick<Drawing, "id">[],
+  dynamicIds: ReadonlySet<string>,
+): StaticScenePartition {
+  let firstDynamicIndex = drawings.length;
+  let lastDynamicIndex = drawings.length - 1;
+  for (let i = 0; i < drawings.length; i++) {
+    if (!dynamicIds.has(drawings[i].id)) continue;
+    if (firstDynamicIndex === drawings.length) firstDynamicIndex = i;
+    lastDynamicIndex = i;
+  }
+  return { firstDynamicIndex, lastDynamicIndex };
+}
+
+interface StaticSceneCache {
+  drawingsHash: string;
+  drawingsHidden: boolean;
+  selectedDrawingId: string | null;
+  selectedDrawingIdsHash: string;
+  canvasW: number;
+  canvasH: number;
+  cssWidth: number;
+  cssHeight: number;
+  dpr: number;
+  barIntervalSeconds: Projector["barIntervalSeconds"];
+  marketContext: Projector["market"];
+  firstDynamicIndex: number;
+  lastDynamicIndex: number;
+  prefixDrawings: Drawing[];
+  suffixDrawings: Drawing[];
+  prefixSelection: boolean[];
+  suffixSelection: boolean[];
+  prefixCanvas: HTMLCanvasElement | null;
+  suffixCanvas: HTMLCanvasElement | null;
+}
+
+interface StaticSceneCacheInput {
+  drawingsHash: string;
+  drawingsHidden: boolean;
+  selectedDrawingId: string | null;
+  selectedDrawingIds: Set<string> | undefined;
+  selectedDrawingIdsHash: string;
+  canvasW: number;
+  canvasH: number;
+  cssWidth: number;
+  cssHeight: number;
+  dpr: number;
+  barIntervalSeconds: Projector["barIntervalSeconds"];
+  marketContext: Projector["market"];
+  partition: StaticScenePartition;
+  sorted: Drawing[];
+  sourceCanvas: HTMLCanvasElement;
+  projector: Projector;
+}
+
+function isSelected(
+  drawing: Drawing,
+  selectedDrawingId: string | null,
+  selectedDrawingIds: Set<string> | undefined,
+): boolean {
+  return (
+    drawing.id === selectedDrawingId ||
+    selectedDrawingIds?.has(drawing.id) === true
+  );
+}
+
+function paintDrawing(
+  g: CanvasRenderingContext2D,
+  drawing: Drawing,
+  projector: Projector,
+  selected: boolean,
+): void {
+  g.strokeStyle = drawing.color;
+  g.fillStyle = drawing.color;
+  g.lineWidth = (drawing.lineWidth || 1.5) * (selected ? 1.6 : 1);
+  renderDrawing(g, drawing, projector, selected);
+}
+
+function paintDrawingRange(
+  g: CanvasRenderingContext2D,
+  drawings: readonly Drawing[],
+  start: number,
+  end: number,
+  projector: Projector,
+  selectedDrawingId: string | null,
+  selectedDrawingIds: Set<string> | undefined,
+): void {
+  for (let i = start; i < end; i++) {
+    const drawing = drawings[i];
+    if (drawing.visible === false) continue;
+    paintDrawing(
+      g,
+      drawing,
+      projector,
+      isSelected(drawing, selectedDrawingId, selectedDrawingIds),
+    );
+  }
+}
+
+function createStaticLayer(
+  sourceCanvas: HTMLCanvasElement,
+  canvasW: number,
+  canvasH: number,
+  dpr: number,
+  drawings: readonly Drawing[],
+  projector: Projector,
+  selectedDrawingId: string | null,
+  selectedDrawingIds: Set<string> | undefined,
+): HTMLCanvasElement | null {
+  try {
+    const layer = sourceCanvas.ownerDocument.createElement("canvas");
+    layer.width = canvasW;
+    layer.height = canvasH;
+    const context = layer.getContext("2d");
+    if (!context) {
+      layer.width = 0;
+      layer.height = 0;
+      return null;
+    }
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    paintDrawingRange(
+      context,
+      drawings,
+      0,
+      drawings.length,
+      projector,
+      selectedDrawingId,
+      selectedDrawingIds,
+    );
+    return layer;
+  } catch {
+    // Canvas allocation can fail on very large surfaces or constrained GPUs.
+    // Direct rendering remains the correctness-preserving fallback.
+    return null;
+  }
+}
+
+function buildStaticSceneCache(input: StaticSceneCacheInput): StaticSceneCache {
+  const { firstDynamicIndex, lastDynamicIndex } = input.partition;
+  const prefixDrawings = input.sorted.slice(0, firstDynamicIndex);
+  const suffixDrawings = input.sorted.slice(lastDynamicIndex + 1);
+  const prefixSelection = prefixDrawings.map((drawing) =>
+    isSelected(
+      drawing,
+      input.selectedDrawingId,
+      input.selectedDrawingIds,
+    ),
+  );
+  const suffixSelection = suffixDrawings.map((drawing) =>
+    isSelected(
+      drawing,
+      input.selectedDrawingId,
+      input.selectedDrawingIds,
+    ),
+  );
+  const layerPixels = input.canvasW * input.canvasH;
+  let cachePrefix = prefixDrawings.length > 0;
+  let cacheSuffix = suffixDrawings.length > 0;
+
+  if (layerPixels <= 0 || layerPixels > MAX_STATIC_CACHE_PIXELS) {
+    cachePrefix = false;
+    cacheSuffix = false;
+  } else if (
+    Number(cachePrefix) * layerPixels +
+      Number(cacheSuffix) * layerPixels >
+    MAX_STATIC_CACHE_PIXELS
+  ) {
+    // Keep one full-size layer and directly paint the smaller static side.
+    cachePrefix = prefixDrawings.length >= suffixDrawings.length;
+    cacheSuffix = !cachePrefix;
+  }
+
+  return {
+    drawingsHash: input.drawingsHash,
+    drawingsHidden: input.drawingsHidden,
+    selectedDrawingId: input.selectedDrawingId,
+    selectedDrawingIdsHash: input.selectedDrawingIdsHash,
+    canvasW: input.canvasW,
+    canvasH: input.canvasH,
+    cssWidth: input.cssWidth,
+    cssHeight: input.cssHeight,
+    dpr: input.dpr,
+    barIntervalSeconds: input.barIntervalSeconds,
+    marketContext: input.marketContext,
+    firstDynamicIndex,
+    lastDynamicIndex,
+    prefixDrawings,
+    suffixDrawings,
+    prefixSelection,
+    suffixSelection,
+    prefixCanvas: cachePrefix
+      ? createStaticLayer(
+          input.sourceCanvas,
+          input.canvasW,
+          input.canvasH,
+          input.dpr,
+          prefixDrawings,
+          input.projector,
+          input.selectedDrawingId,
+          input.selectedDrawingIds,
+        )
+      : null,
+    suffixCanvas: cacheSuffix
+      ? createStaticLayer(
+          input.sourceCanvas,
+          input.canvasW,
+          input.canvasH,
+          input.dpr,
+          suffixDrawings,
+          input.projector,
+          input.selectedDrawingId,
+          input.selectedDrawingIds,
+        )
+      : null,
+  };
+}
+
+function sameDrawingRefs(
+  cached: readonly Drawing[],
+  drawings: readonly Drawing[],
+  start: number,
+): boolean {
+  if (start < 0 || cached.length > drawings.length - start) return false;
+  for (let i = 0; i < cached.length; i++) {
+    if (cached[i] !== drawings[start + i]) return false;
+  }
+  return true;
+}
+
+function sameSelectionFlags(
+  cached: readonly boolean[],
+  drawings: readonly Drawing[],
+  start: number,
+  selectedDrawingId: string | null,
+  selectedDrawingIds: Set<string> | undefined,
+): boolean {
+  if (start < 0 || cached.length > drawings.length - start) return false;
+  for (let i = 0; i < cached.length; i++) {
+    if (
+      cached[i] !==
+      isSelected(drawings[start + i], selectedDrawingId, selectedDrawingIds)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function canReuseStaticSceneCache(
+  cache: StaticSceneCache,
+  input: StaticSceneCacheInput,
+): boolean {
+  const { firstDynamicIndex, lastDynamicIndex } = input.partition;
+  return (
+    cache.drawingsHash === input.drawingsHash &&
+    cache.drawingsHidden === input.drawingsHidden &&
+    cache.selectedDrawingId === input.selectedDrawingId &&
+    cache.selectedDrawingIdsHash === input.selectedDrawingIdsHash &&
+    cache.canvasW === input.canvasW &&
+    cache.canvasH === input.canvasH &&
+    cache.cssWidth === input.cssWidth &&
+    cache.cssHeight === input.cssHeight &&
+    cache.dpr === input.dpr &&
+    cache.barIntervalSeconds === input.barIntervalSeconds &&
+    cache.marketContext === input.marketContext &&
+    cache.firstDynamicIndex === firstDynamicIndex &&
+    cache.lastDynamicIndex === lastDynamicIndex &&
+    cache.prefixDrawings.length === firstDynamicIndex &&
+    cache.suffixDrawings.length ===
+      input.sorted.length - (lastDynamicIndex + 1) &&
+    sameDrawingRefs(cache.prefixDrawings, input.sorted, 0) &&
+    sameSelectionFlags(
+      cache.prefixSelection,
+      input.sorted,
+      0,
+      input.selectedDrawingId,
+      input.selectedDrawingIds,
+    ) &&
+    sameDrawingRefs(
+      cache.suffixDrawings,
+      input.sorted,
+      lastDynamicIndex + 1,
+    ) &&
+    sameSelectionFlags(
+      cache.suffixSelection,
+      input.sorted,
+      lastDynamicIndex + 1,
+      input.selectedDrawingId,
+      input.selectedDrawingIds,
+    )
+  );
+}
+
+function compositeStaticLayer(
+  target: CanvasRenderingContext2D,
+  layer: HTMLCanvasElement,
+): void {
+  target.save();
+  // Both canvases already contain DPR-scaled pixels. Copy in device space to
+  // avoid a second scale/filter pass while retaining the target's CSS transform.
+  target.setTransform(1, 0, 0, 1, 0, 0);
+  target.drawImage(layer, 0, 0);
+  target.restore();
+}
+
+function disposeStaticSceneCache(cache: StaticSceneCache | null): void {
+  if (!cache) return;
+  if (cache.prefixCanvas) {
+    cache.prefixCanvas.width = 0;
+    cache.prefixCanvas.height = 0;
+  }
+  if (cache.suffixCanvas) {
+    cache.suffixCanvas.width = 0;
+    cache.suffixCanvas.height = 0;
+  }
+}
 
 type RenderMachine = {
   state: string;
@@ -24,7 +356,7 @@ type RenderMachine = {
 };
 
 export interface RenderLoopDeps {
-  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  canvasRef: RefObject<HTMLCanvasElement | null>;
   toX: (time: number) => number | null;
   toY: (price: number) => number | null;
   getData: () => {
@@ -88,13 +420,24 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
   let spatialCanvasH = -1;
   let spatialHidden = false;
   let spatialInvalidated = true;
+  let staticSceneCache: StaticSceneCache | null = null;
 
   function drawingsHash(ds: Drawing[]): string {
     if (ds === lastDrawingsRef) return lastDrawingsHash;
     let h = String(ds.length);
     for (let i = 0; i < ds.length; i++) {
       const d = ds[i];
-      h += "|" + d.id + ":" + d.points.length;
+      // Every store mutation advances clientRevision. Keep zIndex explicit as
+      // well so ordering-only changes cannot be swallowed by the render memo.
+      h +=
+        "|" +
+        d.id +
+        ":r=" +
+        (d.clientRevision ?? 0) +
+        ":z=" +
+        (d.zIndex ?? 0) +
+        ":" +
+        d.points.length;
       for (let j = 0; j < d.points.length; j++) {
         h +=
           "," +
@@ -354,14 +697,19 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       marketContext: data.marketContext,
     };
 
+    const forcedRender = forceNext;
     if (
-      !forceNext &&
+      !forcedRender &&
       lastMemoState &&
       sameRenderMemoState(memoState, lastMemoState)
     )
       return;
 
     forceNext = false;
+    if (forcedRender) {
+      disposeStaticSceneCache(staticSceneCache);
+      staticSceneCache = null;
+    }
     lastMemoState = memoState;
     const g = canvas.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -394,20 +742,20 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       m?.state === "Drawing" && m.anchors.length > 0 ? m.anchors : null;
     const tool =
       m?.state === "Drawing" ? (m.drawingTool ?? data.activeTool) : null;
-    const all =
+    const pendingDrawing =
       pr && tool && pr.length >= (getTool(tool)?.minPoints ?? 2)
-        ? [
-            ...storeDrawings,
-            {
-              id: "__pending",
-              tool,
-              color: data.drawColor,
-              lineWidth: 1.5,
-              points: pr,
-              visible: true,
-            } as Drawing,
-          ]
-        : storeDrawings;
+        ? ({
+            id: "__pending",
+            tool,
+            color: data.drawColor,
+            lineWidth: 1.5,
+            points: pr,
+            visible: true,
+          } as Drawing)
+        : null;
+    const all = pendingDrawing
+      ? [...storeDrawings, pendingDrawing]
+      : storeDrawings;
 
     const liveOverrides = new Map<string, Drawing>();
     if (data.livePoints && data.livePoints.size > 0) {
@@ -417,6 +765,10 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         }
       }
     }
+    // Pending creation geometry is transient just like drag geometry. Keep the
+    // committed scene index stable and inject the one preview object at query
+    // time instead of rebuilding every tool's bounds on every pointer sample.
+    if (pendingDrawing) liveOverrides.set(pendingDrawing.id, pendingDrawing);
     const canReuseSpatialIndex =
       liveOverrides.size > 0 &&
       !spatialInvalidated &&
@@ -434,9 +786,20 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         liveOverrides,
       );
     } else {
-      spatialIndex.rebuild(all, toX, toY);
-      viewport = spatialIndex.queryViewport(0, 0, rect.width, rect.height);
-      spatialDrawingsRef = pr ? null : data.drawings;
+      // Index only committed drawings. Transient overrides are added by
+      // queryViewportWithOverrides above, so their changing geometry cannot
+      // invalidate the static scene index.
+      spatialIndex.rebuild(storeDrawings, toX, toY);
+      viewport = liveOverrides.size > 0
+        ? spatialIndex.queryViewportWithOverrides(
+            0,
+            0,
+            rect.width,
+            rect.height,
+            liveOverrides,
+          )
+        : spatialIndex.queryViewport(0, 0, rect.width, rect.height);
+      spatialDrawingsRef = data.drawings;
       spatialCanvasW = cw;
       spatialCanvasH = ch;
       spatialHidden = data.drawingsHidden;
@@ -444,20 +807,73 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     }
     // Projected tools can opt out when future-space coordinates collapse their
     // spatial bounds because the current time scale cannot represent them.
+    const viewportIds = new Set(viewport.map((drawing) => drawing.id));
     for (const d of storeDrawings) {
       if (
         d.visible !== false &&
         getDrawingToolManifestEntry(d.tool).viewportCulling === "always-render" &&
-        !viewport.some((v) => v.id === d.id)
+        !viewportIds.has(d.id)
       ) {
         viewport.push(d);
+        viewportIds.add(d.id);
       }
     }
     const sorted = [...viewport].sort(
       (a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0),
     );
 
+    const dynamicIds = new Set<string>();
+    if (data.draggingId) dynamicIds.add(data.draggingId);
+    if (data.livePoints) {
+      for (const id of data.livePoints.keys()) dynamicIds.add(id);
+    }
+    if (pendingDrawing) dynamicIds.add(pendingDrawing.id);
+    const partition = partitionStaticScene(sorted, dynamicIds);
+    const interactionActive =
+      data.draggingId !== null ||
+      (data.livePoints?.size ?? 0) > 0 ||
+      (m?.state === "Drawing" && m.anchors.length > 0);
+    const viewportIsFollowing = viewportFollowUntil > performance.now();
+    let frameCache: StaticSceneCache | null = null;
+    if (interactionActive && !viewportIsFollowing) {
+      const cacheInput: StaticSceneCacheInput = {
+        drawingsHash: drawHash,
+        drawingsHidden: data.drawingsHidden,
+        selectedDrawingId: data.selectedDrawingId,
+        selectedDrawingIds: data.selectedDrawingIds,
+        selectedDrawingIdsHash: selectedHash,
+        canvasW: cw,
+        canvasH: ch,
+        cssWidth: rect.width,
+        cssHeight: rect.height,
+        dpr,
+        // Keep the raw projector value in the cache key. The render memo uses
+        // a 60-second fallback for cheap equality, but adapters may distinguish
+        // an explicit interval from an omitted one during an active drag.
+        barIntervalSeconds: data.barIntervalSeconds,
+        marketContext: data.marketContext,
+        partition,
+        sorted,
+        sourceCanvas: canvas,
+        projector,
+      };
+      if (
+        !staticSceneCache ||
+        !canReuseStaticSceneCache(staticSceneCache, cacheInput)
+      ) {
+        disposeStaticSceneCache(staticSceneCache);
+        staticSceneCache = buildStaticSceneCache(cacheInput);
+      }
+      frameCache = staticSceneCache;
+    } else {
+      disposeStaticSceneCache(staticSceneCache);
+      staticSceneCache = null;
+    }
+
     let drawn = 0;
+    for (const drawing of sorted) {
+      if (drawing.visible !== false) drawn++;
+    }
     const hovered = data.hoveredId
       ? sorted.find((d) => d.id === data.hoveredId && d.visible !== false)
       : null;
@@ -470,16 +886,54 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       renderDrawing(g, hovered, projector, false);
       g.restore();
     }
-    for (const d of sorted) {
-      if (d.visible === false) continue;
-      const selected =
-        d.id === data.selectedDrawingId ||
-        data.selectedDrawingIds?.has(d.id) === true;
-      g.strokeStyle = d.color;
-      g.fillStyle = d.color;
-      g.lineWidth = (d.lineWidth || 1.5) * (selected ? 1.6 : 1);
-      renderDrawing(g, d, projector, selected);
-      drawn++;
+    if (frameCache) {
+      const middleStart = frameCache.firstDynamicIndex;
+      const middleEnd = frameCache.lastDynamicIndex + 1;
+      if (frameCache.prefixCanvas) {
+        compositeStaticLayer(g, frameCache.prefixCanvas);
+      } else {
+        paintDrawingRange(
+          g,
+          sorted,
+          0,
+          middleStart,
+          projector,
+          data.selectedDrawingId,
+          data.selectedDrawingIds,
+        );
+      }
+      paintDrawingRange(
+        g,
+        sorted,
+        middleStart,
+        middleEnd,
+        projector,
+        data.selectedDrawingId,
+        data.selectedDrawingIds,
+      );
+      if (frameCache.suffixCanvas) {
+        compositeStaticLayer(g, frameCache.suffixCanvas);
+      } else {
+        paintDrawingRange(
+          g,
+          sorted,
+          middleEnd,
+          sorted.length,
+          projector,
+          data.selectedDrawingId,
+          data.selectedDrawingIds,
+        );
+      }
+    } else {
+      paintDrawingRange(
+        g,
+        sorted,
+        0,
+        sorted.length,
+        projector,
+        data.selectedDrawingId,
+        data.selectedDrawingIds,
+      );
     }
 
     const renderMs = performance.now() - t0;
@@ -521,6 +975,8 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     markDirty,
     destroy: () => {
       unsubVersion?.();
+      disposeStaticSceneCache(staticSceneCache);
+      staticSceneCache = null;
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;

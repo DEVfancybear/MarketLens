@@ -905,6 +905,204 @@ test("creation cancellation and explicit freeform completion are transactional",
   expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
 });
 
+test("rectangle completion releases one-shot creation before hover movement", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = { x: pane.x + pane.width * 0.24, y: pane.y + pane.height * 0.68 };
+  const second = { x: pane.x + pane.width * 0.56, y: pane.y + pane.height * 0.38 };
+  const hover = { x: pane.x + pane.width * 0.76, y: pane.y + pane.height * 0.2 };
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  if ((await keepDrawing.getAttribute("class"))?.includes("bg-brand/10")) {
+    await keepDrawing.click();
+  }
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(first.x, first.y);
+  await page.mouse.move(second.x, second.y, { steps: 4 });
+  await page.mouse.click(second.x, second.y);
+
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("cursor");
+  const committed = (await drawingSnapshot(page)).drawings[0].points;
+
+  await page.mouse.move(hover.x, hover.y, { steps: 8 });
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
+  const afterHover = await drawingSnapshot(page);
+  expect(afterHover.machineState).toBe("Idle");
+  expect(afterHover.activeTool).toBe("cursor");
+  expect(afterHover.drawings).toHaveLength(1);
+  expect(afterHover.drawings[0].points).toEqual(committed);
+});
+
+test("keep-drawing rectangle waits for a new pointerdown after commit", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = { x: pane.x + pane.width * 0.22, y: pane.y + pane.height * 0.7 };
+  const second = { x: pane.x + pane.width * 0.5, y: pane.y + pane.height * 0.42 };
+  const hover = { x: pane.x + pane.width * 0.74, y: pane.y + pane.height * 0.22 };
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  if (!(await keepDrawing.getAttribute("class"))?.includes("bg-brand/10")) {
+    await keepDrawing.click();
+  }
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(first.x, first.y);
+  await page.mouse.move(second.x, second.y, { steps: 4 });
+  await page.mouse.click(second.x, second.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("rectangle");
+
+  await page.mouse.move(hover.x, hover.y, { steps: 8 });
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
+  const afterHover = await drawingSnapshot(page);
+  expect(afterHover.machineState).toBe("Idle");
+  expect(afterHover.drawings).toHaveLength(1);
+
+  await keepDrawing.click();
+});
+
+test("keep-drawing does not reuse the finishing pointer for another rectangle", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = { x: pane.x + pane.width * 0.2, y: pane.y + pane.height * 0.72 };
+  const second = { x: pane.x + pane.width * 0.48, y: pane.y + pane.height * 0.44 };
+  const whileHeld = { x: pane.x + pane.width * 0.74, y: pane.y + pane.height * 0.22 };
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  if (!(await keepDrawing.getAttribute("class"))?.includes("bg-brand/10")) {
+    await keepDrawing.click();
+  }
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(first.x, first.y);
+  await page.mouse.move(second.x, second.y, { steps: 4 });
+  await page.mouse.down();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  await page.mouse.move(whileHeld.x, whileHeld.y, { steps: 8 });
+  await page.mouse.up();
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
+
+  const afterRelease = await drawingSnapshot(page);
+  expect(afterRelease.drawings).toHaveLength(1);
+  expect(afterRelease.machineState).toBe("Idle");
+  expect(afterRelease.activeTool).toBe("rectangle");
+  await keepDrawing.click();
+});
+
+test("rectangle commit does not reopen creation while the finishing pointer is held", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = { x: pane.x + pane.width * 0.2, y: pane.y + pane.height * 0.72 };
+  const second = { x: pane.x + pane.width * 0.48, y: pane.y + pane.height * 0.44 };
+  const whileHeld = { x: pane.x + pane.width * 0.72, y: pane.y + pane.height * 0.24 };
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  if ((await keepDrawing.getAttribute("class"))?.includes("bg-brand/10")) {
+    await keepDrawing.click();
+  }
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(first.x, first.y);
+  await page.mouse.move(second.x, second.y, { steps: 4 });
+  await page.mouse.down();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  await page.mouse.move(whileHeld.x, whileHeld.y, { steps: 8 });
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
+  expect((await drawingSnapshot(page)).drawings).toHaveLength(1);
+  expect((await drawingSnapshot(page)).machineState).toBe("Idle");
+  await page.mouse.up();
+});
+
+test("rectangle drag-release commits and exits creation mode", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.22, y: pane.y + pane.height * 0.7 };
+  const end = { x: pane.x + pane.width * 0.58, y: pane.y + pane.height * 0.34 };
+  const hover = { x: pane.x + pane.width * 0.78, y: pane.y + pane.height * 0.2 };
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  if ((await keepDrawing.getAttribute("class"))?.includes("bg-brand/10")) {
+    await keepDrawing.click();
+  }
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("cursor");
+  const committed = (await drawingSnapshot(page)).drawings[0].points;
+
+  await page.mouse.move(hover.x, hover.y, { steps: 8 });
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
+  const afterHover = await drawingSnapshot(page);
+  expect(afterHover.drawings).toHaveLength(1);
+  expect(afterHover.machineState).toBe("Idle");
+  expect(afterHover.drawings[0].points).toEqual(committed);
+});
+
+test("two-point drag follows owned pointer when buttons telemetry is zero", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.26, y: pane.y + pane.height * 0.66 };
+  const end = { x: pane.x + pane.width * 0.62, y: pane.y + pane.height * 0.3 };
+  const keepDrawing = page.getByRole("button", { name: "Keep drawing", exact: true });
+  if ((await keepDrawing.getAttribute("class"))?.includes("bg-brand/10")) {
+    await keepDrawing.click();
+  }
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y);
+    target?.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      buttons: 0,
+      pressure: 0,
+      clientX: x,
+      clientY: y,
+    }));
+    target?.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      buttons: 0,
+      pressure: 0,
+      clientX: x,
+      clientY: y,
+    }));
+  }, end);
+  await page.mouse.up();
+
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+  await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("cursor");
+});
+
 test("eraser is undoable and pass-through modes never start creation", async ({ page }) => {
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];
