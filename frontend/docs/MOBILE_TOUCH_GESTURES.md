@@ -135,6 +135,12 @@ history and vertical-sheet gesture contracts; they are not wrapped in
 - Dialogs use the shared `platform-dialog-overlay`/`platform-dialog` slots;
   anchored popovers use `mobile-popover`, and pointer-position menus clamp to
   `visualViewport` so a keyboard or pinch viewport cannot hide their actions.
+- Action prompts and confirmations use `usePlatformDialog` from
+  `components/ui/PlatformDialog.tsx` on both mobile and desktop. It returns a
+  promise, keeps focus inside the topmost dialog, gives destructive actions a
+  cancel-first focus target, and never falls back to browser-native
+  `window.prompt`/`window.confirm` UI. A dialog opened from `MobileSheet` owns
+  Escape and Tab until it resolves.
 - `prefers-reduced-motion` disables non-essential animation and transitions.
 
 ## Platform isolation

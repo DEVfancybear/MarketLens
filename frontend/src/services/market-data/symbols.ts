@@ -116,6 +116,9 @@ function inferAssetClass(
   ) {
     return "index";
   }
+  if (text.includes("stock") || text.includes("shares") || text.includes("equity")) {
+    return "stock";
+  }
   if (base && quote) return "forex";
   return "commodity";
 }

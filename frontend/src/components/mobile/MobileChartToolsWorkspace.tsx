@@ -71,6 +71,7 @@ import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import { fmtPrice } from "@/utils/format";
 import { uid } from "@/utils/id";
 import { cn } from "@/utils/cn";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 
 export interface MobileChartToolsWorkspaceProps {
   onOpenAlerts: () => void;
@@ -118,6 +119,7 @@ export function MobileChartToolsWorkspace({
   const deleteLayout = useSetAtom(deleteActiveLayoutAtom);
   const setChartLayout = useSetAtom(setChartLayoutPresetAtom);
   const setReplayLayout = useSetAtom(setReplayLayoutModeAtom);
+  const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
 
   const last = candles[candles.length - 1];
   const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
@@ -170,6 +172,56 @@ export function MobileChartToolsWorkspace({
       points: [{ time: last.time, price: last.close }],
     });
     log("info", `Horizontal line added at ${fmtPrice(last.close, precision)}`);
+  };
+
+  const saveCurrentLayout = () => {
+    void requestPrompt({
+      title: "Save layout",
+      label: "Layout name",
+      defaultValue: activeLayout?.name ?? "My layout",
+    }).then((value) => {
+      const name = value?.trim();
+      if (name) void runLayoutAction(() => createLayout({ name, isDefault: layouts.length === 0 }), `Layout saved: ${name}`);
+    });
+  };
+
+  const deleteCurrentLayout = () => {
+    if (!activeLayout) return;
+    const name = activeLayout.name;
+    void requestConfirm({
+      title: `Delete layout “${name}”?`,
+      description: "This saved layout will be removed from your workspace.",
+      confirmLabel: "Delete layout",
+      tone: "danger",
+    }).then((accepted) => {
+      if (accepted) void runLayoutAction(deleteLayout, `Layout deleted: ${name}`);
+    });
+  };
+
+  const removeAllDrawings = () => {
+    const count = bulk.drawings.length;
+    if (!count) return;
+    void requestConfirm({
+      title: `Remove all ${count} drawings?`,
+      description: "This cannot be undone from the current chart view.",
+      confirmLabel: "Remove drawings",
+      tone: "danger",
+    }).then((accepted) => {
+      if (accepted) bulk.remove({ kind: "all" });
+    });
+  };
+
+  const removeAllIndicators = () => {
+    const count = indicators.length;
+    if (!count) return;
+    void requestConfirm({
+      title: `Remove all ${count} indicators?`,
+      description: "All indicators will be removed from this chart.",
+      confirmLabel: "Remove indicators",
+      tone: "danger",
+    }).then((accepted) => {
+      if (accepted) clearIndicators();
+    });
   };
 
   return (
@@ -233,15 +285,10 @@ export function MobileChartToolsWorkspace({
               ))}
             </div>
             <div className="mobile-layout-actions">
-              <button type="button" onClick={() => {
-                const name = window.prompt("Layout name", activeLayout?.name ?? "My layout")?.trim();
-                if (name) void runLayoutAction(() => createLayout({ name, isDefault: layouts.length === 0 }), `Layout saved: ${name}`);
-              }}>Save current</button>
+              <button type="button" onClick={saveCurrentLayout}>Save current</button>
               <button type="button" disabled={!activeLayout} onClick={() => activeLayout && void runLayoutAction(overwriteLayout, `Layout updated: ${activeLayout.name}`)}>Update</button>
               <button type="button" disabled={!activeLayout || activeLayout.isDefault} onClick={() => activeLayout && void runLayoutAction(makeDefault, `Default layout: ${activeLayout.name}`)}>Make default</button>
-              <button type="button" className="is-danger" disabled={!activeLayout} onClick={() => {
-                if (activeLayout && window.confirm(`Delete layout “${activeLayout.name}”?`)) void runLayoutAction(deleteLayout, `Layout deleted: ${activeLayout.name}`);
-              }}>Delete</button>
+              <button type="button" className="is-danger" disabled={!activeLayout} onClick={deleteCurrentLayout}>Delete</button>
             </div>
           </>
         )}
@@ -265,11 +312,12 @@ export function MobileChartToolsWorkspace({
       {(bulk.drawings.length > 0 || indicators.length > 0) && (
         <ToolSection title="Clear chart" subtitle="Destructive actions">
           <div className="mobile-clear-actions">
-            <button type="button" disabled={!bulk.drawings.length} onClick={() => { if (window.confirm(`Remove all ${bulk.drawings.length} drawings?`)) bulk.remove({ kind: "all" }); }}><Eraser size={18} />Remove {bulk.drawings.length} drawings</button>
-            <button type="button" disabled={!indicators.length} onClick={() => { if (window.confirm(`Remove all ${indicators.length} indicators?`)) clearIndicators(); }}><Trash2 size={18} />Remove {indicators.length} indicators</button>
+            <button type="button" disabled={!bulk.drawings.length} onClick={removeAllDrawings}><Eraser size={18} />Remove {bulk.drawings.length} drawings</button>
+            <button type="button" disabled={!indicators.length} onClick={removeAllIndicators}><Trash2 size={18} />Remove {indicators.length} indicators</button>
           </div>
         </ToolSection>
       )}
+      {dialog}
     </div>
   );
 }

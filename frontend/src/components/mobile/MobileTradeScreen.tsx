@@ -29,6 +29,7 @@ import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import type { Position } from "@/types";
+import { usePlatformDialog, type PlatformConfirmOptions, type PlatformPromptOptions } from "@/components/ui/PlatformDialog";
 
 type TradeTab = "ticket" | "positions" | "bridge";
 
@@ -44,6 +45,7 @@ export function MobileTradeScreen() {
   const mt5Pending = useAtomValue(mt5PendingOrdersAtom);
   const reset = useSetAtom(resetPersistedTradeAtom);
   const replay = useReplayTrading();
+  const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
   const replayMode = replay.active && executionMode === "simulator";
   const simulatorOpen = positions.filter((item) => item.status === "open" || item.status === "pending");
   const activeEquity = replayMode
@@ -65,9 +67,16 @@ export function MobileTradeScreen() {
   const returnPct = baseline ? ((activeEquity - baseline) / baseline) * 100 : 0;
 
   const resetAccount = () => {
-    if (!window.confirm("Reset the active trading account and its positions?")) return;
-    if (replayMode) void replay.reset();
-    else void reset();
+    void requestConfirm({
+      title: "Reset trading account?",
+      description: "The active account balance, positions, and pending orders will be reset.",
+      confirmLabel: "Reset account",
+      tone: "danger",
+    }).then((accepted) => {
+      if (!accepted) return;
+      if (replayMode) void replay.reset();
+      else void reset();
+    });
   };
   const exportReplayReport = async () => {
     const report = await replay.report();
@@ -90,13 +99,22 @@ export function MobileTradeScreen() {
     <div className="mobile-segmented mobile-segmented--three"><button type="button" onClick={() => setTab("ticket")} className={cn(tab === "ticket" && "is-active")}>Order ticket</button><button type="button" onClick={() => setTab("positions")} className={cn(tab === "positions" && "is-active")}>Positions</button><button type="button" onClick={() => setTab("bridge")} className={cn(tab === "bridge" && "is-active")}>Bridge</button></div>
     <div className="mobile-trade-content">
       {tab === "ticket" && <OrderTicket variant="mobile" />}
-      {tab === "positions" && <MobilePositionList simulatorPositions={simulatorOpen} />}
+      {tab === "positions" && <MobilePositionList simulatorPositions={simulatorOpen} requestPrompt={requestPrompt} requestConfirm={requestConfirm} />}
       {tab === "bridge" && <div className="mobile-bridge-workspace">{executionMode !== "mt5" && <Mt5ConnectionPanel />}<Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Enable and select MT5 to inspect the execution bridge.</span></div>}</div>}
     </div>
+    {dialog}
   </section>;
 }
 
-function MobilePositionList({ simulatorPositions }: { simulatorPositions: Position[] }) {
+function MobilePositionList({
+  simulatorPositions,
+  requestPrompt,
+  requestConfirm,
+}: {
+  simulatorPositions: Position[];
+  requestPrompt: (options: PlatformPromptOptions) => Promise<string | null>;
+  requestConfirm: (options: PlatformConfirmOptions) => Promise<boolean>;
+}) {
   const executionMode = useAtomValue(executionModeAtom);
   const mt5Positions = useAtomValue(mt5PositionsAtom);
   const mt5Pending = useAtomValue(mt5PendingOrdersAtom);
@@ -117,7 +135,16 @@ function MobilePositionList({ simulatorPositions }: { simulatorPositions: Positi
           <Metric label="Volume" value={position.volume.toFixed(4)} />
           <Metric label="Stop / target" value={`${position.sl ? fmtPrice(position.sl, precision) : "—"} / ${position.tp ? fmtPrice(position.tp, precision) : "—"}`} />
           <Metric label="P/L" value={fmtMoney(position.profit)} tone={position.profit} />
-          <div className="mobile-position-actions"><button type="button" className="is-danger" onClick={() => { if (window.confirm(`Close MT5 ticket ${position.ticket}?`)) closeMt5({ clientOrderId: makeClientOrderId("mt5_close"), ticket: position.ticket }); }}><X size={17} />Close</button></div>
+          <div className="mobile-position-actions"><button type="button" className="is-danger" onClick={() => {
+            void requestConfirm({
+              title: `Close MT5 ticket ${position.ticket}?`,
+              description: "The live position will be closed at the broker.",
+              confirmLabel: "Close position",
+              tone: "danger",
+            }).then((accepted) => {
+              if (accepted) closeMt5({ clientOrderId: makeClientOrderId("mt5_close"), ticket: position.ticket });
+            });
+          }}><X size={17} />Close</button></div>
         </article>;
       })}
       {mt5Pending.map((order) => {
@@ -144,14 +171,30 @@ function MobilePositionList({ simulatorPositions }: { simulatorPositions: Positi
         const entryOrder = [...replay.orders].reverse().find((order) => order.trackId === position.trackId && order.status === "filled" && ((side === "long" && order.side === "buy") || (side === "short" && order.side === "sell")));
         const editBracket = () => {
           if (!entryOrder) return;
-          const stopText = window.prompt("Replay stop loss", position.stopLoss?.toString() ?? "");
-          if (stopText == null) return;
-          const targetText = window.prompt("Replay take profit", position.takeProfit?.toString() ?? "");
-          if (targetText == null) return;
-          const stopLoss = stopText.trim() ? Number(stopText) : undefined;
-          const takeProfit = targetText.trim() ? Number(targetText) : undefined;
-          if ((stopLoss != null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) || (takeProfit != null && (!Number.isFinite(takeProfit) || takeProfit <= 0))) return;
-          void replay.updateBracket(entryOrder.id, stopLoss, takeProfit);
+          void requestPrompt({
+            title: "Replay stop loss",
+            description: "Leave blank to remove the stop loss.",
+            label: "Stop loss",
+            defaultValue: position.stopLoss?.toString() ?? "",
+            placeholder: "Optional price",
+            confirmLabel: "Next",
+          }).then((stopText) => {
+            if (stopText == null) return;
+            void requestPrompt({
+              title: "Replay take profit",
+              description: "Leave blank to remove the take profit.",
+              label: "Take profit",
+              defaultValue: position.takeProfit?.toString() ?? "",
+              placeholder: "Optional price",
+              confirmLabel: "Save bracket",
+            }).then((targetText) => {
+              if (targetText == null) return;
+              const stopLoss = stopText.trim() ? Number(stopText) : undefined;
+              const takeProfit = targetText.trim() ? Number(targetText) : undefined;
+              if ((stopLoss != null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) || (takeProfit != null && (!Number.isFinite(takeProfit) || takeProfit <= 0))) return;
+              void replay.updateBracket(entryOrder.id, stopLoss, takeProfit);
+            });
+          });
         };
         return <article key={position.id} className="mobile-position-card">
           <PositionIdentity symbol={symbol} side={side} type="Replay market" />

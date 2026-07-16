@@ -53,6 +53,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import { SymbolLogo } from "./SymbolLogo";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 import {
   WatchlistContextMenu,
   type WatchlistMenuState,
@@ -148,7 +149,7 @@ export function Watchlist() {
 
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(activeList.name);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const { requestPrompt, dialog } = usePlatformDialog();
   const renameInputRef = useRef<HTMLInputElement>(null);
   const skipRenameBlurRef = useRef(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
@@ -236,13 +237,16 @@ export function Watchlist() {
     setRenaming(true);
   }, [activeList.name]);
 
-  const createNamedWatchlist = useCallback(
-    (name: string) => {
-      createWatchlist(name);
-      setCreateDialogOpen(false);
-    },
-    [createWatchlist],
-  );
+  const openCreateWatchlistDialog = useCallback(() => {
+    void requestPrompt({
+      title: "Create new list",
+      label: "List name",
+      defaultValue: "Untitled list",
+    }).then((value) => {
+      if (value == null) return;
+      createWatchlist(value.trim() || "Untitled list");
+    });
+  }, [createWatchlist, requestPrompt]);
 
   const log = useSetAtom(logAtom);
   const onRowClick = useCallback(
@@ -723,7 +727,7 @@ export function Watchlist() {
               });
             }}
             onClear={clearWatchlist}
-            onCreate={() => setCreateDialogOpen(true)}
+            onCreate={openCreateWatchlistDialog}
           />
         )}
 
@@ -830,12 +834,7 @@ export function Watchlist() {
           disableAlertCreation={replayActive}
         />
       )}
-      {createDialogOpen && (
-        <CreateWatchlistDialog
-          onCancel={() => setCreateDialogOpen(false)}
-          onCreate={createNamedWatchlist}
-        />
-      )}
+      {dialog}
     </div>
   );
 }
@@ -993,99 +992,6 @@ function WatchlistListMenuRow({
           <Trash2 size={14} />
         </button>
       )}
-    </div>
-  );
-}
-
-function CreateWatchlistDialog({
-  onCancel,
-  onCreate,
-}: {
-  onCancel: () => void;
-  onCreate: (name: string) => void;
-}) {
-  const [name, setName] = useState("Untitled list");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
-  }, []);
-
-  const commit = () => {
-    onCreate(name.trim() || "Untitled list");
-  };
-
-  return (
-    <div
-      className="platform-dialog-overlay fixed inset-0 z-[1000] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
-      data-chart-ui
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-    >
-      <div
-        className="platform-dialog flex w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-watchlist-title"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div data-dialog-header className="flex min-h-16 items-center justify-between border-b border-terminal-border px-5">
-          <h3
-            id="create-watchlist-title"
-            className="text-xl font-semibold leading-none tracking-[-0.02em] text-ink"
-          >
-            Create new list
-          </h3>
-          <button
-            type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink focus-ring"
-            onClick={onCancel}
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <div data-dialog-body className="min-h-[120px] space-y-3 overflow-y-auto px-5 py-5">
-          <label
-            htmlFor="new-watchlist-name"
-            className="block text-[13px] font-semibold text-ink-muted"
-          >
-            List name
-          </label>
-          <input
-            ref={inputRef}
-            id="new-watchlist-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") onCancel();
-            }}
-            className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-medium text-ink outline-none selection:bg-brand selection:text-[var(--accent-contrast)] focus:border-brand focus:ring-2 focus:ring-brand/15"
-          />
-        </div>
-        <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-5 py-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="min-h-10 rounded-xl border border-terminal-border-strong bg-transparent px-3.5 text-sm font-semibold text-ink transition-colors hover:bg-terminal-hover focus-ring"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={commit}
-            className="min-h-10 rounded-xl border border-brand bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover focus-ring"
-          >
-            Ok
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

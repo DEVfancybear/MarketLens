@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
+import { BarChart3, Bitcoin, Building2, Coins, Globe2, Package } from "lucide-react";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import type { MarketSymbol } from "@/types";
+import type { AssetClass, MarketSymbol } from "@/types";
 
 /**
  * TradingView-style circular symbol logo. Forex pairs render two overlapping
@@ -76,20 +77,30 @@ function logoUrls(meta: MarketSymbol | undefined): string[] {
 function FallbackCircle({
   letter,
   size,
+  assetClass,
   className,
   style,
 }: {
   letter: string;
   size: number;
+  assetClass?: AssetClass;
   className?: string;
   style?: React.CSSProperties;
 }) {
+  const Icon = assetClass ? {
+    crypto: Bitcoin,
+    forex: Globe2,
+    index: BarChart3,
+    metal: Coins,
+    stock: Building2,
+    commodity: Package,
+  }[assetClass] : null;
   return (
     <span
       className={`flex items-center justify-center rounded-full bg-terminal-panel-2 font-bold text-ink-muted ${className ?? ""}`}
       style={{ width: size, height: size, fontSize: size * 0.5, ...style }}
     >
-      {letter}
+      {Icon ? <Icon size={Math.max(12, Math.round(size * 0.52))} strokeWidth={2.2} aria-hidden="true" /> : letter}
     </span>
   );
 }
@@ -99,6 +110,7 @@ function LogoImg({
   alt,
   size,
   fallback,
+  assetClass,
   className,
   style,
 }: {
@@ -106,6 +118,7 @@ function LogoImg({
   alt: string;
   size: number;
   fallback: string;
+  assetClass?: AssetClass;
   className?: string;
   style?: React.CSSProperties;
 }) {
@@ -115,6 +128,7 @@ function LogoImg({
       <FallbackCircle
         letter={fallback}
         size={size}
+        assetClass={assetClass}
         className={className}
         style={style}
       />
@@ -150,10 +164,20 @@ export function SymbolLogo({ id, size = 18 }: { id: string; size?: number }) {
       style={{ width: slot, height: size }}
     >
       {urls.length === 0 && (
-        <FallbackCircle letter={id[0] ?? "?"} size={size} />
+        <FallbackCircle
+          letter={id[0] ?? "?"}
+          size={size}
+          assetClass={meta?.assetClass}
+        />
       )}
       {urls.length === 1 && (
-        <LogoImg src={urls[0]} alt={id} size={size} fallback={id[0] ?? "?"} />
+        <LogoImg
+          src={urls[0]}
+          alt={id}
+          size={size}
+          fallback={id[0] ?? "?"}
+          assetClass={meta?.assetClass}
+        />
       )}
       {urls.length === 2 && (
         <>
@@ -162,6 +186,7 @@ export function SymbolLogo({ id, size = 18 }: { id: string; size?: number }) {
             alt={meta?.quote ?? id}
             size={size}
             fallback={meta?.quote?.[0] ?? "?"}
+            assetClass={meta?.assetClass}
             className="absolute right-0 top-0"
             style={{ position: "absolute", right: 0, top: 0 }}
           />
@@ -170,6 +195,7 @@ export function SymbolLogo({ id, size = 18 }: { id: string; size?: number }) {
             alt={meta?.base ?? id}
             size={size}
             fallback={meta?.base?.[0] ?? "?"}
+            assetClass={meta?.assetClass}
             className="absolute left-0 top-0 z-[1]"
             style={{
               position: "absolute",

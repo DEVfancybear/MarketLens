@@ -1,6 +1,41 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("isolated terminal platforms", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/v1/mt5/symbols", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          connected: true,
+          source: "fixture",
+          count: 2,
+          streamSymbols: ["AAPL"],
+          symbols: [
+            {
+              name: "AAPL",
+              path: "Pro\\Stocks\\AAPL",
+              description: "Apple Inc.",
+              currency_base: "USD",
+              currency_profit: "USD",
+              digits: 2,
+              point: 0.01,
+            },
+            {
+              name: "EURUSD",
+              path: "Pro\\Forex\\EURUSD",
+              description: "Euro vs US Dollar",
+              currency_base: "EUR",
+              currency_profit: "USD",
+              digits: 5,
+              point: 0.00001,
+            },
+          ],
+        }),
+      });
+    });
+  });
+
   test("mobile owns navigation, touch targets, theme and sheet history", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
@@ -8,6 +43,15 @@ test.describe("isolated terminal platforms", () => {
     const mobile = page.locator('[data-platform="mobile"]');
     await expect(mobile).toBeVisible();
     await expect(page.locator('.desktop-terminal')).toHaveCount(0);
+
+    const symbolTrigger = mobile.locator('.mobile-symbol-trigger');
+    await symbolTrigger.click();
+    const symbolPicker = page.getByRole('dialog', { name: 'Select market' });
+    await expect(symbolPicker).toBeVisible();
+    await expect.poll(async () => symbolPicker.locator('.mobile-symbol-avatar').count()).toBeGreaterThan(0);
+    await expect.poll(async () => symbolPicker.locator('.mobile-symbol-avatar').first().locator('svg, img').count()).toBeGreaterThan(0);
+    await page.keyboard.press('Escape');
+    await expect(symbolPicker).toHaveCount(0);
 
     const nav = mobile.locator('.mobile-bottom-nav');
     await expect(nav.getByRole('button')).toHaveCount(5);
@@ -81,6 +125,49 @@ test.describe("isolated terminal platforms", () => {
     await expect(page.locator('.mobile-chart')).toBeVisible();
   });
 
+  test("mobile watchlist actions use the shared platform dialog", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    let nativeDialogCount = 0;
+    page.on("dialog", async (browserDialog) => {
+      nativeDialogCount += 1;
+      await browserDialog.dismiss();
+    });
+    await page.goto("/");
+
+    const mobile = page.locator('[data-platform="mobile"]');
+    await mobile.locator('.mobile-bottom-nav').getByRole('button', { name: 'Markets', exact: true }).click();
+    await mobile.getByRole('button', { name: 'Manage watchlists' }).click();
+
+    const manager = page.getByRole('dialog', { name: 'Manage watchlists' });
+    await expect(manager).toBeVisible();
+    await manager.getByRole('button', { name: 'New', exact: true }).click();
+
+    const createDialog = page.getByRole('dialog', { name: 'Create new list' });
+    await expect(createDialog).toBeVisible();
+    await expect(createDialog.locator('xpath=ancestor::*[@data-platform-dialog]')).toHaveCount(1);
+    await expect(createDialog.getByLabel('List name')).toBeFocused();
+    expect(await createDialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+    })).toBe(true);
+
+    await createDialog.getByLabel('List name').fill('Mobile list');
+    await createDialog.getByRole('button', { name: 'Ok', exact: true }).click();
+    await expect(createDialog).toHaveCount(0);
+    await expect(manager.getByText('Mobile list', { exact: true })).toBeVisible();
+
+    await manager.getByRole('button', { name: 'Delete', exact: true }).click();
+    const deleteDialog = page.getByRole('dialog', { name: 'Delete “Mobile list”?' });
+    await expect(deleteDialog).toBeVisible();
+    await expect(deleteDialog.locator('xpath=ancestor::*[@data-platform-dialog]')).toHaveCount(1);
+    await expect(deleteDialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(deleteDialog).toHaveCount(0);
+    await expect(manager).toBeVisible();
+    expect(nativeDialogCount).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  });
+
   test("desktop loads only the command-center presentation", async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
     await page.goto("/");
@@ -120,6 +207,15 @@ test.describe("isolated terminal platforms", () => {
     await page.keyboard.press('Escape');
     await expect(smcMenu).toHaveCount(0);
     await expect(smcTrigger).toBeFocused();
+
+    const marketSidebar = desktop.getByRole('complementary', { name: 'Market sidebar' });
+    await marketSidebar.getByRole('button', { name: 'Watchlist', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Create new list...', exact: true }).click();
+    const desktopCreateDialog = page.getByRole('dialog', { name: 'Create new list' });
+    await expect(desktopCreateDialog).toBeVisible();
+    await expect(desktopCreateDialog.locator('xpath=ancestor::*[@data-platform-dialog]')).toHaveCount(1);
+    await desktopCreateDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(desktopCreateDialog).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   });
 });

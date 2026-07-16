@@ -23,6 +23,10 @@ export function MobileSheet({ title, children, onClose, fullscreen = false }: {
     document.body.style.overflow = "hidden";
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      // A small shared platform dialog can open above this full-screen sheet
+      // (for example, naming a watchlist). Let the topmost dialog own Escape
+      // and focus traversal instead of closing or refocusing the sheet below.
+      if ((document.activeElement as HTMLElement | null)?.closest("[data-platform-dialog]")) return;
       if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
       if (event.key !== "Tab" || !sheetRef.current) return;
       const focusable = Array.from(sheetRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));

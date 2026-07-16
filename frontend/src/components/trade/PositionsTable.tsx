@@ -19,6 +19,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { cn } from "@/utils/cn";
 import { Ban, Pencil, X } from "lucide-react";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 
 /** Open & pending positions with mark-to-market P/L and close controls. */
 export function PositionsTable() {
@@ -30,6 +31,7 @@ export function PositionsTable() {
   const cancelPending = useSetAtom(cancelPendingAtom);
   const closeMt5Position = useSetAtom(closeMt5PositionAtom);
   const replayTrading = useReplayTrading();
+  const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
 
   const live = positions.filter(
     (p) => p.status === "open" || p.status === "pending",
@@ -41,6 +43,7 @@ export function PositionsTable() {
       ...mt5PendingOrders.map((order) => ({ kind: "order" as const, order })),
     ];
     return (
+      <>
       <div className="min-w-0 flex-1 overflow-auto bg-terminal-panel">
         <table className="w-full border-collapse text-2xs">
           <thead className="sticky top-0 bg-terminal-panel-2 text-ink-faint">
@@ -132,12 +135,17 @@ export function PositionsTable() {
                   <td className="text-right">
                     <button
                       onClick={() => {
-                        if (!window.confirm(`Close MT5 ticket ${position.ticket}?`)) {
-                          return;
-                        }
-                        closeMt5Position({
-                          clientOrderId: makeClientOrderId("mt5_close"),
-                          ticket: position.ticket,
+                        void requestConfirm({
+                          title: `Close MT5 ticket ${position.ticket}?`,
+                          description: "The live position will be closed at the broker.",
+                          confirmLabel: "Close position",
+                          tone: "danger",
+                        }).then((accepted) => {
+                          if (!accepted) return;
+                          closeMt5Position({
+                            clientOrderId: makeClientOrderId("mt5_close"),
+                            ticket: position.ticket,
+                          });
                         });
                       }}
                       className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
@@ -152,6 +160,8 @@ export function PositionsTable() {
           </tbody>
         </table>
       </div>
+      {dialog}
+      </>
     );
   }
 
@@ -163,6 +173,7 @@ export function PositionsTable() {
       (order) => order.status === "pending" || order.status === "partially_filled",
     );
     return (
+      <>
       <div className="min-w-0 flex-1 overflow-auto bg-terminal-panel">
         <table className="w-full border-collapse text-2xs">
           <thead className="sticky top-0 bg-terminal-panel-2 text-ink-faint">
@@ -187,15 +198,31 @@ export function PositionsTable() {
               );
               const editBracket = () => {
                 if (!entryOrder) return;
-                const stopText = window.prompt("Replay stop loss", position.stopLoss?.toString() ?? "");
-                if (stopText == null) return;
-                const targetText = window.prompt("Replay take profit", position.takeProfit?.toString() ?? "");
-                if (targetText == null) return;
-                const stopLoss = stopText.trim() ? Number(stopText) : undefined;
-                const takeProfit = targetText.trim() ? Number(targetText) : undefined;
-                if ((stopLoss != null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) ||
-                  (takeProfit != null && (!Number.isFinite(takeProfit) || takeProfit <= 0))) return;
-                void replayTrading.updateBracket(entryOrder.id, stopLoss, takeProfit);
+                void requestPrompt({
+                  title: "Replay stop loss",
+                  description: "Leave blank to remove the stop loss.",
+                  label: "Stop loss",
+                  defaultValue: position.stopLoss?.toString() ?? "",
+                  placeholder: "Optional price",
+                  confirmLabel: "Next",
+                }).then((stopText) => {
+                  if (stopText == null) return;
+                  void requestPrompt({
+                    title: "Replay take profit",
+                    description: "Leave blank to remove the take profit.",
+                    label: "Take profit",
+                    defaultValue: position.takeProfit?.toString() ?? "",
+                    placeholder: "Optional price",
+                    confirmLabel: "Save bracket",
+                  }).then((targetText) => {
+                    if (targetText == null) return;
+                    const stopLoss = stopText.trim() ? Number(stopText) : undefined;
+                    const takeProfit = targetText.trim() ? Number(targetText) : undefined;
+                    if ((stopLoss != null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) ||
+                      (takeProfit != null && (!Number.isFinite(takeProfit) || takeProfit <= 0))) return;
+                    void replayTrading.updateBracket(entryOrder.id, stopLoss, takeProfit);
+                  });
+                });
               };
               return (
                 <tr key={position.id} className="border-b border-terminal-border hover:bg-terminal-hover [&>td]:h-8 [&>td]:px-2">
@@ -238,10 +265,13 @@ export function PositionsTable() {
           </tbody>
         </table>
       </div>
+      {dialog}
+      </>
     );
   }
 
   return (
+    <>
     <div className="min-w-0 flex-1 overflow-auto bg-terminal-panel">
       <table className="w-full border-collapse text-2xs">
         <thead className="sticky top-0 bg-terminal-panel-2 text-ink-faint">
@@ -358,5 +388,7 @@ export function PositionsTable() {
         </div>
       )}
     </div>
+    {dialog}
+    </>
   );
 }

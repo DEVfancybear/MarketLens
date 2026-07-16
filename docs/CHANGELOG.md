@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Shared mobile action dialogs and symbol identity (2026-07-16)
+- Replaced every remaining browser-native `prompt`/`confirm` in mobile
+  watchlists, saved layouts, drawing/indicator cleanup, account reset, MT5
+  position closing, and Replay bracket editing with one responsive
+  `PlatformDialog` primitive.
+- Reused the same promise-based prompt/confirmation flow for desktop watchlist,
+  layout, and positions actions. Dialogs now preserve focus, trap keyboard
+  navigation, keep destructive actions cancel-focused, and layer correctly
+  above full-screen mobile sheets.
+- Removed the drawing engine's last native text prompt fallback; text placement
+  continues through the shared inline React editor on desktop and mobile.
+- Restored recognizable symbol artwork in mobile market lists and pickers with
+  shared logo metadata plus asset-class glyph fallbacks when no remote logo is
+  available.
+- Added browser regressions that reject native dialogs, exercise create/delete
+  watchlist popups on mobile, verify desktop reuse, and keep compact viewports
+  overflow-free.
+
 ### Fixed - Mobile chart timezone and settings popup anchoring (2026-07-16)
 - Restored trigger-anchored placement for the chart timezone menu on touch
   viewports. Mobile CSS now constrains the popup size without overriding the

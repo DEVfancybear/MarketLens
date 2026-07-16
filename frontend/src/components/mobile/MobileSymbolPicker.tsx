@@ -7,6 +7,7 @@ import { symbolAtom, setSymbolAtom } from "@/store/chartStore";
 import { useMarketSymbols } from "@/store/marketSymbolStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { contractTagOf } from "@/services/exchange";
+import { SymbolLogo } from "@/components/watchlist/SymbolLogo";
 import { MobileSheet } from "./MobileSheet";
 
 export function MobileSymbolPicker() {
@@ -33,7 +34,7 @@ export function MobileSymbolPicker() {
           <div className="mobile-symbol-list">
             {results.map((item) => (
               <button key={item.id} type="button" onClick={() => { setSymbol(item.id); setOpen(false); setQuery(""); }}>
-                <span className="mobile-symbol-avatar">{item.id.slice(0, 2)}</span>
+                <span className="mobile-symbol-avatar" aria-hidden="true"><SymbolLogo id={item.id} size={26} /></span>
                 <span className="mobile-symbol-copy"><strong>{item.id}</strong><small>{item.name} · {item.exchange}</small></span>
                 {item.id === symbol && <Check size={18} className="text-brand" />}
               </button>

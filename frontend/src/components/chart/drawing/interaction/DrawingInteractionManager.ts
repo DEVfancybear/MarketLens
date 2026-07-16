@@ -100,7 +100,7 @@ export interface DrawingInteractionManagerOpts {
   selectAll?: () => void;
   duplicateDrawing?: (id: string) => void;
   openDrawingSettings?: (id: string) => void;
-  /** Called when Text tool is used. If provided, replaces window.prompt. */
+  /** Called when the Text tool is placed so the React inline editor can open. */
   onTextPlace?: (tool: DrawingTool, point: Point, color: string) => void;
   /** Capability-aware OHLC snapping supplied by the chart composition root. */
   snapPoint?: (point: Point, tool: DrawingTool, event: PointerEvent) => Point;
@@ -353,24 +353,7 @@ export function useDrawingInteractionManager(
         ? snapPointRef.current?.(rawPoint, current.activeTool, event) ?? rawPoint
         : rawPoint;
       if (definition.overlayExtension === "text-editor") {
-        if (onTextPlace) {
-          onTextPlace(current.activeTool, point, current.drawColor);
-        } else {
-          const text = window.prompt("Text:") || "";
-          if (text) {
-            addDrawing({
-              ...resolveDrawingCreationDefaults(
-                current.activeTool,
-                current.drawingToolPreferences.toolDefaults[current.activeTool],
-                current.drawColor,
-              ),
-              id: uid("dw"),
-              tool: current.activeTool,
-              points: [point],
-              text,
-            } as Drawing);
-          }
-        }
+        onTextPlace?.(current.activeTool, point, current.drawColor);
         reset();
         if (!current.drawingToolPreferences.keepDrawing) setActiveTool("cursor");
         return;

@@ -39,6 +39,7 @@ import {
 } from "@/types/drawingToolManifest";
 import type { DrawingTool } from "@/types";
 import { cn } from "@/utils/cn";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 
 const DRAWING_COLORS = [
   "#2962ff",
@@ -75,6 +76,7 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
   const [favorites, toggleFavorite] = useDrawingToolFavorites();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { requestConfirm, dialog } = usePlatformDialog();
 
   const normalizedQuery = query.trim().toLowerCase();
   const groups = useMemo(
@@ -114,6 +116,19 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
   const allHidden =
     bulk.drawings.length > 0 &&
     bulk.drawings.every((drawing) => drawing.visible === false);
+
+  const removeAllDrawings = () => {
+    const count = bulk.drawings.length;
+    if (!count) return;
+    void requestConfirm({
+      title: `Remove all ${count} drawings?`,
+      description: "This cannot be undone from the current chart view.",
+      confirmLabel: "Remove drawings",
+      tone: "danger",
+    }).then((accepted) => {
+      if (accepted) bulk.remove({ kind: "all" });
+    });
+  };
 
   return (
     <div className="mobile-drawing-workspace" data-mobile-drawing-palette>
@@ -240,8 +255,9 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
       <section className="mobile-drawing-bulk" aria-label="Manage all drawings">
         <button type="button" disabled={!bulk.drawings.length} aria-pressed={allLocked} onClick={() => bulk.toggleLock({ kind: "all" })}><Lock size={18} /><span>{allLocked ? "Unlock all" : "Lock all"}</span></button>
         <button type="button" disabled={!bulk.drawings.length} aria-pressed={allHidden} onClick={() => bulk.toggleVisibility({ kind: "all" })}><EyeOff size={18} /><span>{allHidden ? "Show all" : "Hide all"}</span></button>
-        <button type="button" className="is-danger" disabled={!bulk.drawings.length} onClick={() => { if (window.confirm(`Remove all ${bulk.drawings.length} drawings?`)) bulk.remove({ kind: "all" }); }}><Trash2 size={18} /><span>Remove all</span></button>
+        <button type="button" className="is-danger" disabled={!bulk.drawings.length} onClick={removeAllDrawings}><Trash2 size={18} /><span>Remove all</span></button>
       </section>
+      {dialog}
     </div>
   );
 }

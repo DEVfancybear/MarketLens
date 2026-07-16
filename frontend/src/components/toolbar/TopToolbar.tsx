@@ -73,6 +73,7 @@ import {
   overwriteActiveLayoutAtom,
 } from "@/store/layoutStore";
 import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 
 export function TopToolbar() {
   // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
@@ -111,6 +112,7 @@ export function TopToolbar() {
   const deleteActiveLayout = useSetAtom(deleteActiveLayoutAtom);
   const activeLayout = layouts.find((layout) => layout.id === activeLayoutId);
   const snapshot = useChartSnapshotActions();
+  const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
 
   const runLayoutAction = useCallback(
     async (action: () => Promise<unknown>, success: string) => {
@@ -251,13 +253,19 @@ export function TopToolbar() {
                 <div className="my-1 border-t border-terminal-border" />
                 <MenuItem
                   onClick={() => {
-                    const name = window.prompt("Layout name", activeLayout?.name ?? "My layout")?.trim();
-                    if (!name) return;
-                    void runLayoutAction(
-                      () => createCurrentLayout({ name, isDefault: layouts.length === 0 }),
-                      `Layout saved: ${name}`,
-                    );
                     close();
+                    void requestPrompt({
+                      title: "Save layout",
+                      label: "Layout name",
+                      defaultValue: activeLayout?.name ?? "My layout",
+                    }).then((value) => {
+                      const name = value?.trim();
+                      if (!name) return;
+                      void runLayoutAction(
+                        () => createCurrentLayout({ name, isDefault: layouts.length === 0 }),
+                        `Layout saved: ${name}`,
+                      );
+                    });
                   }}
                 >
                   Save current as…
@@ -283,9 +291,16 @@ export function TopToolbar() {
                 <MenuItem
                   className={!activeLayout ? "cursor-not-allowed opacity-40 text-red-400" : "text-red-400"}
                   onClick={activeLayout ? () => {
-                    if (!window.confirm(`Delete layout “${activeLayout.name}”?`)) return;
-                    void runLayoutAction(deleteActiveLayout, `Layout deleted: ${activeLayout.name}`);
+                    const name = activeLayout.name;
                     close();
+                    void requestConfirm({
+                      title: `Delete layout “${name}”?`,
+                      description: "This saved layout will be removed from your workspace.",
+                      confirmLabel: "Delete layout",
+                      tone: "danger",
+                    }).then((accepted) => {
+                      if (accepted) void runLayoutAction(deleteActiveLayout, `Layout deleted: ${name}`);
+                    });
                   } : undefined}
                 >
                   Delete selected
@@ -433,6 +448,7 @@ export function TopToolbar() {
         <div className="h-5 w-px bg-terminal-border" />
         <AuthControl />
       </div>
+      {dialog}
     </div>
   );
 }
