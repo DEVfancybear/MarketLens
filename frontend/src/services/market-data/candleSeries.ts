@@ -9,6 +9,43 @@ export interface CandleGap {
   missingBars: number;
 }
 
+/**
+ * Detect a stale live-history tail before merging a small refresh page.
+ *
+ * MT5 can briefly return an older, terminal-cached window while it warms the
+ * requested timeframe. A later refresh then starts strictly after that stale
+ * window. Merging the two pages preserves the stale prices forever and creates
+ * the large visual price gap seen on the chart. A normal refresh overlaps the
+ * existing tail, or begins at most one bar after it.
+ */
+export function hasDiscontinuousHistoryTail(
+  current: readonly { time: number }[],
+  refresh: readonly { time: number }[],
+  expectedStepSeconds: number,
+): boolean {
+  if (
+    current.length === 0 ||
+    refresh.length === 0 ||
+    !Number.isFinite(expectedStepSeconds) ||
+    expectedStepSeconds <= 0
+  ) {
+    return false;
+  }
+
+  const currentLastTime = current[current.length - 1]?.time;
+  let refreshFirstTime = Number.POSITIVE_INFINITY;
+  for (const candle of refresh) {
+    if (Number.isFinite(candle.time)) {
+      refreshFirstTime = Math.min(refreshFirstTime, candle.time);
+    }
+  }
+  if (!Number.isFinite(currentLastTime) || !Number.isFinite(refreshFirstTime)) {
+    return false;
+  }
+
+  return refreshFirstTime > currentLastTime + expectedStepSeconds;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }

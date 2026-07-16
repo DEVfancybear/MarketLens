@@ -30,7 +30,10 @@ import { useCandles } from "@/hooks/useCandles";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
 import { TF_SECONDS, type Candle, type Timeframe } from "@/types";
-import { findRecentCandleGap } from "@/services/market-data/candleSeries";
+import {
+  findRecentCandleGap,
+  hasDiscontinuousHistoryTail,
+} from "@/services/market-data/candleSeries";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import {
   marketSymbolCatalogStatusAtom,
@@ -228,7 +231,25 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
           signal: activeController.signal,
         });
         if (cancelled) return;
-        getMarketDataState().setCandles(symbol, timeframe, hist);
+        const marketData = getMarketDataState();
+        const current = marketData.getCandles(symbol, timeframe);
+        if (hasDiscontinuousHistoryTail(current, hist, TF_SECONDS[timeframe])) {
+          // The first MT5 request can expose a stale terminal cache while the
+          // timeframe warms. A tiny latest-bars merge cannot remove that bad
+          // window, so re-fetch and authoritatively replace the active cache.
+          const replacement = await getHistoricalDataService().loadHistory({
+            symbol,
+            timeframe,
+            limit: initialHistoryBars(timeframe),
+            refresh: true,
+          }, {
+            signal: activeController.signal,
+          });
+          if (cancelled) return;
+          getMarketDataState().replaceCandles(symbol, timeframe, replacement);
+        } else {
+          marketData.setCandles(symbol, timeframe, hist);
+        }
       } catch (err) {
         if (isAbortError(err)) return;
         if (cancelled) return;

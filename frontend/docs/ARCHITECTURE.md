@@ -116,6 +116,12 @@ the loading overlay or blank a valid chart. A failed revalidation keeps the cach
 loads request only the policy's initial window; panning left requests another page with
 `before=<first candle time>`. MT5 refresh timers run only while the document is visible.
 
+During an active MT5 refresh, a latest-bars page is mergeable only when it overlaps the cached tail
+or begins at the next expected bar. A page beginning later indicates that the first paint came from
+a stale terminal warm-up window. `useMarketData()` then re-fetches the policy-sized initial window
+with `refresh=true` and calls `replaceCandles()` so both the flat candle series and chunk repository
+are rebuilt instead of retaining disconnected stale prices.
+
 Symbol/timeframe effects pass an `AbortSignal` through `HistoricalDataService` to the Go API. A
 selection change cancels obsolete work end-to-end; the active selection must not wait behind queued
 history requests for frames the user has already left.

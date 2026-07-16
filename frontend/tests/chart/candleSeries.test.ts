@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   findRecentCandleGap,
+  hasDiscontinuousHistoryTail,
   mergeHistoryWithLiveCandles,
   normalizeMarketCandleSeries,
   resolveRealtimeSeriesUpdatePlan,
@@ -151,6 +152,30 @@ test("ignores large session gaps so markets with closures do not loop backfill",
   );
 
   assert.equal(result, null);
+});
+
+test("detects a small refresh page disconnected from a stale history tail", () => {
+  assert.equal(
+    hasDiscontinuousHistoryTail(
+      [candle(60), candle(120)],
+      [candle(300), candle(360)],
+      60,
+    ),
+    true,
+  );
+});
+
+test("accepts overlapping and directly adjacent history refresh pages", () => {
+  const current = [candle(60), candle(120), candle(180)];
+
+  assert.equal(
+    hasDiscontinuousHistoryTail(current, [candle(120), candle(180)], 60),
+    false,
+  );
+  assert.equal(
+    hasDiscontinuousHistoryTail(current, [candle(240), candle(300)], 60),
+    false,
+  );
 });
 
 test("series update plan uses realtime update only when the prefix is unchanged", () => {

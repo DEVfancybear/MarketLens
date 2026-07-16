@@ -25,7 +25,10 @@ Market data is live-provider based:
 
 - Binance for crypto symbols
 - OANDA / FXCM / IC Markets / TwelveData provider modules for supported FX/CFD symbols
-- `services/market-data/candleSeries.ts` normalizes, merges, upserts, and repairs short candle gaps
+- `services/market-data/candleSeries.ts` normalizes, merges, upserts, repairs short candle gaps, and
+  detects an MT5 refresh page disconnected from a stale cached tail
+- `store/marketDataStore.ts` merges ordinary history/pagination pages but also supports an
+  authoritative replacement used to discard a stale MT5 first-paint window after rates warm
 
 The old seeded mock `services/marketData.ts` path is no longer the active market-data model.
 

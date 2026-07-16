@@ -18,7 +18,8 @@ Current coverage:
 - nearest loaded candle lookup for `Go to`, explicit out-of-window detection,
   and the no-tail-clamping invariant,
 - logical range centering that preserves the current zoom span,
-- candle series merge/update planning for REST-history vs realtime races,
+- candle series merge/update planning for REST-history vs realtime races, including stale MT5
+  refresh-tail detection,
 - custom Pine `request.security()` cache-key policy for MT5 same-window OHLC refreshes,
 - local date/time draft parsing,
 - fixed Monday-first calendar grid generation.

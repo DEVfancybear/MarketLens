@@ -348,7 +348,14 @@ export const updateCandleAtom = atom(
 
 export const setCandlesAtom = atom(
   null,
-  (get, set, symbol: string, timeframe: Timeframe, candles: MarketCandle[]) => {
+  (
+    get,
+    set,
+    symbol: string,
+    timeframe: Timeframe,
+    candles: MarketCandle[],
+    mode: "merge" | "replace" = "merge",
+  ) => {
     const key = subscriptionKey(symbol, timeframe);
     const all = get(candlesAtom);
     const existing = all[key] ?? [];
@@ -359,10 +366,20 @@ export const setCandlesAtom = atom(
         : "rollout.repository.legacyWrites",
     );
     if (!rollout.chunkRepository) {
-      const trimmed = existing.length > 0
+      const trimmed = mode === "replace"
+        ? normalizeMarketCandleSeries(candles, MAX_CANDLES)
+        : existing.length > 0
         ? mergeHistoryWithLiveCandles(candles, existing, MAX_CANDLES)
         : normalizeMarketCandleSeries(candles, MAX_CANDLES);
       if (marketCandleSeriesEqual(existing, trimmed)) return;
+      if (mode === "replace") {
+        const repositories = get(candleRepositoriesAtom);
+        if (repositories[key]) {
+          const nextRepositories = { ...repositories };
+          delete nextRepositories[key];
+          set(candleRepositoriesAtom, nextRepositories);
+        }
+      }
       set(candlesAtom, { ...all, [key]: trimmed });
       set(lastUpdateAtom, Date.now());
       set(marketDataTickAtom, get(marketDataTickAtom) + 1);
@@ -375,7 +392,9 @@ export const setCandlesAtom = atom(
       existingCandles: previous.length,
       chunks: previous.chunks.length,
     });
-    const next = existing.length > 0
+    const next = mode === "replace"
+      ? createCandleRepository(candles, MAX_CANDLES)
+      : existing.length > 0
       ? mergeHistoryIntoCandleRepository(previous, candles, MAX_CANDLES)
       : createCandleRepository(candles, MAX_CANDLES);
     endMerge();
@@ -460,6 +479,11 @@ export interface MarketDataActions {
     timeframe: Timeframe,
     candles: MarketCandle[],
   ) => void;
+  replaceCandles: (
+    symbol: string,
+    timeframe: Timeframe,
+    candles: MarketCandle[],
+  ) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   getCandles: (symbol?: string, timeframe?: Timeframe) => MarketCandle[];
   getQuote: (symbol: string) => MarketQuote | undefined;
@@ -498,6 +522,8 @@ const marketDataCombinedAtom = atom<MarketDataStoreInterface>((get) => {
       store.set(updateCandleAtom, symbol, timeframe, candle),
     setCandles: (symbol, timeframe, candles) =>
       store.set(setCandlesAtom, symbol, timeframe, candles),
+    replaceCandles: (symbol, timeframe, candles) =>
+      store.set(setCandlesAtom, symbol, timeframe, candles, "replace"),
     setConnectionStatus: (status) => store.set(setConnectionStatusAtom, status),
     getCandles: (symbol, timeframe) => {
       const s = store.get(marketDataStateAtom);

@@ -379,6 +379,11 @@ History scheduling:
   first paint and is revalidated by later active-chart refreshes; only empty windows consume the
   bounded bridge retry budget. This prevents one cold symbol from holding the single MT5 worker for
   a full chain of freshness retries.
+- After a small active-chart refresh, the frontend checks whether the returned page overlaps or
+  directly continues the cached tail. If it begins more than one bar interval later, the browser
+  treats the first-paint window as stale, fetches the normal full initial window with
+  `refresh=true`, and authoritatively replaces its local `symbol:timeframe` candle cache. Ordinary
+  overlapping, adjacent, and older pagination pages still merge so valid loaded history is kept.
 
 Successful `/history/around` responses identify both sides of the resolution contract:
 
@@ -548,7 +553,9 @@ quotes. It must not poll `/api/v1/mt5/ticks` on an interval; `/ticks` is retaine
 for one-off snapshots, debugging, and compatibility. MT5 chart candles must come
 from `/api/v1/mt5/history` because bid/ask ticks are not a full OHLC source.
 Active MT5 charts pass `refresh=true` with a small `limit` to bypass the backend
-cache and update the latest bars from MT5 rates. The `streamSymbols` array from
+cache and update the latest bars from MT5 rates. A disconnected refresh boundary triggers the
+full-window authoritative recovery described above instead of leaving stale and warmed price
+segments in one chart series. The `streamSymbols` array from
 `/api/v1/mt5/symbols` is the confirmed live set from the Python bridge. If the browser later
 subscribes to a catalog symbol that is not in that initial set, the Go API sends a
 `stream.subscribe` message to the Python bridge and waits for the bridge catalog update to confirm

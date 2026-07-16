@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 stale-history candle gaps (2026-07-17)
+- Detected small active-chart refresh pages that begin more than one bar interval after the cached
+  candle tail. This identifies the cold-terminal case where MT5 first returns a stale window and a
+  later refresh returns warmed rates that cannot safely be merged onto it.
+- Re-fetched the normal initial history window and authoritatively replaced both flat and chunked
+  frontend candle caches, removing stale outlier candles that previously created a large price gap
+  and compressed the chart autoscale.
+- Preserved normal merge behavior for overlapping, directly adjacent, and older paginated history
+  pages, with chart regression coverage for disconnected and valid refresh boundaries.
+
 ### Changed - Drawing gesture lifecycle and interaction-frame performance (2026-07-17)
 - Unified all two-point tools on shared click-click and press-drag-release semantics with a 4px
   threshold, pointer-id ownership, explicit capture/release, and a release guard that prevents the
