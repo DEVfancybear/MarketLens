@@ -133,9 +133,12 @@ class RiskGuard:
         if entry is None or entry <= 0:
             return math.inf
         distance = abs(entry - sl)
-        if distance <= 0:
+        if distance <= 0 or meta.tick_size <= 0:
             return math.inf
-        return distance / meta.tick_size * meta.tick_value * volume
+        tick_value = _loss_tick_value(meta)
+        if tick_value <= 0:
+            return math.inf
+        return distance / meta.tick_size * tick_value * volume
 
     def effective_account_size(self, equity: float) -> float:
         if self.config.account_size_configured and self.config.account_size > 0:
@@ -152,7 +155,12 @@ class RiskGuard:
         volume = _as_float(position.get("volume"))
         if sl is None or open_price is None or volume is None:
             return 0
-        return abs(open_price - sl) / meta.tick_size * meta.tick_value * volume
+        if meta.tick_size <= 0:
+            return math.inf
+        tick_value = _loss_tick_value(meta)
+        if tick_value <= 0:
+            return math.inf
+        return abs(open_price - sl) / meta.tick_size * tick_value * volume
 
     def _reason(self, readiness_ok: bool, daily_remaining: float, max_remaining: float, extra_risk: float) -> str:
         if not readiness_ok:
@@ -178,6 +186,21 @@ def floor_to_step(value: float, step: float) -> float:
         return value
     decimals = max(0, len(str(step).split(".")[1]) if "." in str(step) else 0)
     return round(math.floor((value + 1e-12) / step) * step, decimals)
+
+
+def _loss_tick_value(meta: SymbolMeta) -> float:
+    """Use MT5's direction-specific loss value when it is available.
+
+    ``trade_tick_value_loss`` is already expressed in the account currency by
+    the terminal.  The contract-size fallback keeps dry-run metadata useful
+    for CFD symbols that expose no tick value at all.
+    """
+    value = meta.tick_value_loss or meta.tick_value
+    if value > 0:
+        return value
+    if meta.tick_size > 0 and meta.contract_size > 0:
+        return meta.tick_size * meta.contract_size
+    return 0.0
 
 
 def _as_float(value: Any) -> float | None:

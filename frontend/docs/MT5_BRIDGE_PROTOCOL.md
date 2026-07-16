@@ -322,6 +322,17 @@ export interface Mt5SymbolInfo {
   maxLotReason?: 'broker' | 'bridge';
   tickSize?: number;
   tickValue?: number;
+  tickValueLoss?: number;
+  tickValueProfit?: number;
+  contractSize?: number;
+  calcMode?: string | number;
+  currencyBase?: string;
+  currencyProfit?: string;
+  currencyMargin?: string;
+  marginInitial?: number;
+  marginMaintenance?: number;
+  marginHedged?: number;
+  spread?: number;
   stopLevel?: number;
   freezeLevel?: number;
   minStopDistance?: number;
@@ -341,6 +352,37 @@ the active cap.
 `stopLevel` and `minStopDistance` come from MT5 symbol metadata. Clients should reject Buy orders
 unless SL is below entry and TP above entry, and reject Sell orders unless SL is above entry and TP
 below entry. The bridge revalidates the same rule against broker bid/ask before `order_check`.
+
+`tickValueLoss` and `tickValueProfit` are MT5's direction-specific per-tick values in account
+currency. `tickValue` is retained for older bridges. The Position Sizer adapter uses tick-size /
+contract-size metadata for non-Forex calculation modes when a reliable tick value is unavailable.
+The browser includes round-trip commission in its estimate, but the bridge's server-side risk guard
+and broker response remain authoritative.
+
+### `risk.snapshot`
+
+Bridge to client. The snapshot is optional; when present it supplies portfolio-risk context. The
+order ticket currently uses `openRiskAtStops` for its `balanceMinusRisk` account basis, while the
+bridge enforces the remaining daily, maximum-loss, and per-trade limits.
+
+```ts
+export interface Mt5RiskSnapshot {
+  accountSize?: number;
+  accountSizeSource?: 'fixed' | 'equity';
+  dailyLossLimit?: number;
+  maxLossLimit?: number;
+  maxRiskPerTrade?: number;
+  dailyLossUsed?: number;
+  dailyLossRemaining?: number;
+  maxLossRemaining?: number;
+  openRiskAtStops?: number;
+  dailyOrderCount?: number;
+  maxDailyOrders?: number;
+  canTrade?: boolean;
+  reason?: string | null;
+  updatedAt?: number;
+}
+```
 
 ## 7. Command Messages
 
@@ -534,7 +576,7 @@ not the only safety boundary.
 `scripts/mock-mt5-bridge.mjs` should support deterministic frontend testing:
 
 - Send `hello`, accept/reject auth, and heartbeat.
-- Emit account, positions, pending orders, and symbol info snapshots.
+- Emit account, risk, positions, pending orders, and symbol info snapshots.
 - Accept `order.place`, `order.modify`, `order.close`, `order.closeAll`, and `order.cancel`.
 - Toggle command behavior between ack, reject, delayed execution report, and socket close.
 - Preserve positions across reconnect during one mock process lifetime.
@@ -548,6 +590,7 @@ Manual scenarios:
 - Heartbeat stale.
 - Socket close and reconnect.
 - Account snapshot update.
+- Risk snapshot update, including `openRiskAtStops`.
 - Empty and non-empty position snapshots.
 - Market order ack plus fill report.
 - Order reject.

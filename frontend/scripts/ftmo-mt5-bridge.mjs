@@ -329,6 +329,8 @@ function accountSnapshot() {
 function symbolInfo(chartSymbol) {
   const meta = SYMBOLS[chartSymbol];
   if (!meta) return null;
+  const isForex = chartSymbol.length >= 6 &&
+    !["BTC", "ETH", "XAU", "XAG"].some((prefix) => chartSymbol.startsWith(prefix));
   return {
     chartSymbol: meta.chartSymbol,
     brokerSymbol: meta.brokerSymbol,
@@ -337,6 +339,14 @@ function symbolInfo(chartSymbol) {
     lotStep: meta.lotStep,
     minLot: meta.minLot,
     maxLot: Math.min(meta.maxLot, CONFIG.maxOrderVolume),
+    tickSize: meta.tickSize,
+    tickValue: meta.tickValue,
+    tickValueLoss: meta.tickValue,
+    tickValueProfit: meta.tickValue,
+    contractSize: isForex ? 100000 : meta.chartSymbol === "XAUUSD" ? 100 : 1,
+    calcMode: isForex ? "forex" : "cfd",
+    currencyBase: meta.chartSymbol.slice(0, 3),
+    currencyProfit: meta.chartSymbol.slice(3, 6),
     tradeMode: "full",
     updatedAt: Date.now(),
   };

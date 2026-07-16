@@ -32,9 +32,22 @@ Startup logs print `riskBase`, `source`, `maxRiskPerTrade`, and `maxOrderVolume`
 Live account, position, order, and risk snapshots are pushed to connected web clients every
 `FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS` milliseconds. Default is `1000`.
 
-The web order ticket sizes MT5 lots from `risk %`, account equity, stop distance, `tickSize`, and
-`tickValue` streamed by the bridge. `FTMO_BRIDGE_MAX_ORDER_VOLUME` is still a hard cap; if it is set
-to `0.01`, every web order will be capped at `0.01` lots even when risk % is higher.
+The web order ticket uses the same reusable sizing core for simulator and MT5 orders. In MT5 mode
+the calculation is:
+
+```text
+target risk = floor(account basis × risk %, account-currency digits)
+loss/lot   = stop distance × loss value per price unit + 2 × one-way commission
+lots       = floor(target risk / loss/lot, broker lot step)
+```
+
+The bridge now streams `tickValueLoss`, `tickValueProfit`, `contractSize`, `calcMode`, symbol
+currencies, margin fields, and spread in addition to the legacy `tickValue`. Forex/futures modes
+use MT5's direction-specific tick values; CFD/stock modes use tick-size × contract-size plus the
+provided currency conversion rate. The ticket supports percent or money risk, balance/equity (or
+balance-minus-existing-risk) bases, round-trip commission, broker min/max/step, and an optional
+free-margin cap. `FTMO_BRIDGE_MAX_ORDER_VOLUME` remains a hard bridge cap; if it is set to `0.01`,
+every web order will be capped at `0.01` lots even when risk % is higher.
 
 The bridge also logs symbol lot limits once per connected chart symbol:
 

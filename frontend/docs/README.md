@@ -64,6 +64,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `OANDA_INTEGRATION.md` | OANDA integration notes |
 | `OANDA_DEBUG_REPORT.md` | OANDA debugging notes |
 | `MT5_BRIDGE_PROTOCOL.md` | Frontend bridge protocol contract |
+| `MT5_POSITION_SIZING.md` | MT5 Position Sizer-compatible lot/risk calculation and verification |
 | `PHASE10_ALERT_API_SYNC.md` | Go API sync for alerts, history, and push tokens |
 | `PHASE6_IMPLEMENTATION_PLAN.md` | Phase 6 implementation overview |
 | `PHASE6A_PUSH_NOTIFICATIONS.md` | Push notification implementation |

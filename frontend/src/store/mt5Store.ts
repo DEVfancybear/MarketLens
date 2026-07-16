@@ -27,6 +27,7 @@ import type {
   Mt5PendingCommand,
   Mt5PendingOrder,
   Mt5Position,
+  Mt5RiskSnapshot,
   Mt5SymbolInfo,
 } from "@/types/mt5";
 import { pushToastAtom } from "./toastStore";
@@ -51,6 +52,7 @@ export const mt5StatusAtom = atom<Mt5ConnectionStatus>(
     : "disabled",
 );
 export const mt5AccountAtom = atom<Mt5AccountSnapshot | null>(null);
+export const mt5RiskSnapshotAtom = atom<Mt5RiskSnapshot | null>(null);
 export const mt5PositionsAtom = atom<Mt5Position[]>([]);
 export const mt5PendingOrdersAtom = atom<Mt5PendingOrder[]>([]);
 export const mt5SymbolInfoAtom = atom<Record<string, Mt5SymbolInfo>>({});
@@ -224,6 +226,9 @@ export const applyMt5MessageAtom = atom(null, (get, set, message: Mt5Message) =>
     }
     case "account.snapshot":
       set(mt5AccountAtom, message.payload as Mt5AccountSnapshot);
+      break;
+    case "risk.snapshot":
+      set(mt5RiskSnapshotAtom, message.payload as Mt5RiskSnapshot);
       break;
     case "positions.snapshot":
       set(
@@ -554,6 +559,7 @@ const mt5CombinedAtom = atom((get) => ({
   executionMode: get(executionModeAtom),
   status: get(mt5StatusAtom),
   account: get(mt5AccountAtom),
+  riskSnapshot: get(mt5RiskSnapshotAtom),
   positions: get(mt5PositionsAtom),
   pendingOrders: get(mt5PendingOrdersAtom),
   symbolInfo: get(mt5SymbolInfoAtom),

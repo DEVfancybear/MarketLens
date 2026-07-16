@@ -30,15 +30,41 @@ const account = () => ({
   updatedAt: Date.now(),
 });
 
+const isForexSymbol = (chartSymbol) =>
+  chartSymbol.length >= 6 &&
+  !["BTC", "ETH", "XAU", "XAG"].some((prefix) => chartSymbol.startsWith(prefix));
+
 const symbolInfo = (chartSymbol) => ({
   chartSymbol,
   brokerSymbol: brokerSymbolFor(chartSymbol),
   digits: chartSymbol.includes("JPY") ? 3 : chartSymbol.includes("USD") ? 5 : 2,
   point: chartSymbol.includes("JPY") ? 0.001 : chartSymbol.includes("USD") ? 0.00001 : 0.01,
+  tickSize: chartSymbol.includes("JPY") ? 0.001 : chartSymbol.includes("USD") ? 0.00001 : 0.01,
+  tickValue: chartSymbol.includes("BTC") || chartSymbol.includes("ETH") ? 0.01 : 1,
+  tickValueLoss: chartSymbol.includes("BTC") || chartSymbol.includes("ETH") ? 0.01 : 1,
+  tickValueProfit: chartSymbol.includes("BTC") || chartSymbol.includes("ETH") ? 0.01 : 1,
+  contractSize: isForexSymbol(chartSymbol) ? 100000 : chartSymbol.startsWith("XAU") ? 100 : 1,
+  calcMode: isForexSymbol(chartSymbol) ? "forex" : "cfd",
+  currencyBase: chartSymbol.slice(0, 3),
+  currencyProfit: chartSymbol.slice(3, 6),
   lotStep: 0.01,
   minLot: 0.01,
   maxLot: 10,
   tradeMode: "full",
+  updatedAt: Date.now(),
+});
+
+const riskSnapshot = () => ({
+  accountSize: 10000,
+  openRiskAtStops: [...positions.values()].reduce((total, position) => {
+    const info = symbolInfo(position.symbol);
+    if (!info || !Number.isFinite(position.sl)) return total;
+    return total +
+      Math.abs(position.openPrice - position.sl) /
+        info.tickSize *
+        info.tickValue *
+        position.volume;
+  }, 0),
   updatedAt: Date.now(),
 });
 
@@ -121,6 +147,7 @@ function decodeFrames(buffer) {
 
 function sendSnapshots(socket) {
   send(socket, envelope("account.snapshot", account()));
+  send(socket, envelope("risk.snapshot", riskSnapshot()));
   send(socket, envelope("positions.snapshot", { positions: [...positions.values()] }));
   send(socket, envelope("orders.snapshot", { orders: [] }));
   for (const symbol of ["BTCUSDT", "ETHUSDT", "EURUSD", "GBPUSD", "XAUUSD"]) {
@@ -236,6 +263,7 @@ function handleMessage(socket, raw) {
       });
       broadcast("positions.update", { action: "upsert", position });
       broadcast("account.snapshot", account());
+      broadcast("risk.snapshot", riskSnapshot());
     }, 600);
     return;
   }
@@ -266,6 +294,7 @@ function handleMessage(socket, raw) {
       });
       broadcast("positions.update", { action: "remove", position });
       broadcast("account.snapshot", account());
+      broadcast("risk.snapshot", riskSnapshot());
     }
     return;
   }
@@ -298,6 +327,7 @@ function handleMessage(socket, raw) {
     });
     broadcast("positions.snapshot", { positions: [...positions.values()] });
     broadcast("account.snapshot", account());
+    broadcast("risk.snapshot", riskSnapshot());
     return;
   }
 
@@ -326,6 +356,7 @@ function handleMessage(socket, raw) {
         executedAt: Date.now(),
       });
       broadcast("positions.update", { action: "upsert", position });
+      broadcast("risk.snapshot", riskSnapshot());
     }
     return;
   }

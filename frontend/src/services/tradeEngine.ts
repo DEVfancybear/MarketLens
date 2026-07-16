@@ -3,6 +3,7 @@
  * owns positions and calls these helpers.
  */
 import type { Candle, OrderRequest, Position, RiskMetrics, Side } from '../types';
+import { calculatePositionSizing } from './positionSizing';
 
 export const dirSign = (side: Side): number => (side === 'long' ? 1 : -1);
 
@@ -34,9 +35,23 @@ export function computeRisk(
     stopLoss != null && entry > 0 ? Math.abs(entry - stopLoss) : 0;
 
   let positionSize: number;
-  if (Number.isFinite(order.quantity)) positionSize = Number(order.quantity);
-  else if (stopDist > 0) positionSize = riskAmount / stopDist;
-  else if (entry > 0)
+  if (Number.isFinite(order.quantity)) {
+    positionSize = Number(order.quantity);
+  } else if (stopDist > 0) {
+    const sizing = calculatePositionSizing({
+      accountSize: accountEquity,
+      riskValue: riskPct,
+      riskMode: "percent",
+      stopDistance: stopDist,
+      targetDistance: takeProfit != null && entry > 0 ? Math.abs(takeProfit - entry) : 0,
+      lossPerPriceUnit: 1,
+      profitPerPriceUnit: 1,
+      // Simulator quantities are generic units, not broker lots.
+      normalizeVolume: false,
+      moneyPrecision: 12,
+    });
+    positionSize = sizing.volume;
+  } else if (entry > 0)
     positionSize = riskAmount / Math.max(entry * 0.01, 1e-9); // 1% fallback stop
   else positionSize = 0;
 

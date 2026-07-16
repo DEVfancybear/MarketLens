@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - MT5 Position Sizer-compatible web lot calculation (2026-07-16)
+- Added a broker-agnostic position-sizing core and an MT5 adapter for percent/money risk,
+  account-basis selection, round-trip commission, direction-specific tick values, contract-size
+  conversion, broker lot rules, and free-margin caps.
+- Extended the bridge `symbol.info` metadata contract with tick loss/profit values, contract and
+  calculation modes, symbol currencies, margin fields, spread, and an optional `risk.snapshot`.
+- Added focused TypeScript and Python regression coverage plus a frontend guide at
+  [`frontend/docs/MT5_POSITION_SIZING.md`](../frontend/docs/MT5_POSITION_SIZING.md).
+- Documented the remaining scope boundary: the web ticket covers the core one-stop/one-target
+  workflow; the full MQL5 application's multi-target, swap/carry, and Trading-tab workflows
+  are not yet represented.
+
 ### Fixed - Shared mobile action dialogs and symbol identity (2026-07-16)
 - Replaced every remaining browser-native `prompt`/`confirm` in mobile
   watchlists, saved layouts, drawing/indicator cleanup, account reset, MT5

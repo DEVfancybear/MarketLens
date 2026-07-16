@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   priceAtom,
   equityAtom,
@@ -12,6 +12,7 @@ import {
   executionModeAtom,
   mt5AccountAtom,
   mt5RequireConfirmationAtom,
+  mt5RiskSnapshotAtom,
   mt5StatusAtom,
   mt5SymbolInfoAtom,
   placeMt5OrderAtom,
@@ -19,12 +20,16 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { symbolAtom } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { useQuote } from "@/hooks/useQuote";
 import { computeRisk } from "@/services/tradeEngine";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import {
   computeMt5PositionRiskMetrics,
   formatPositionVolume,
   normalizePositionVolume,
+  type Mt5AccountBasis,
+  type Mt5CommissionType,
+  type Mt5PositionRiskMetrics,
 } from "@/services/positionLotSizing";
 import {
   formatTicketRatio,
@@ -55,6 +60,7 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
   const mt5Status = useAtomValue(mt5StatusAtom);
   const mt5SymbolInfo = useAtomValue(mt5SymbolInfoAtom);
   const mt5Account = useAtomValue(mt5AccountAtom);
+  const mt5RiskSnapshot = useAtomValue(mt5RiskSnapshotAtom);
   const requireMt5Confirmation = useAtomValue(mt5RequireConfirmationAtom);
   const placeMt5 = useSetAtom(placeMt5OrderAtom);
   const closeAllMt5 = useSetAtom(closeAllMt5Atom);
@@ -66,6 +72,7 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
   const simulatorEquity = replayMode
     ? replayTrading.account?.equity ?? equity
     : equity;
+  const quote = useQuote(symbol);
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const [type, setType] = useState<OrderType>("market");
@@ -73,6 +80,11 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
   const [risk, setRisk] = useState("1");
+  const [riskUnit, setRiskUnit] = useState<"%" | "amount">("%");
+  const [accountBasis, setAccountBasis] = useState<Mt5AccountBasis>("equity");
+  const [commission, setCommission] = useState("");
+  const [commissionType, setCommissionType] =
+    useState<Mt5CommissionType>("currency");
   const [plannedSide, setPlannedSide] = useState<Side | null>(null);
   const [mt5Lot, setMt5Lot] = useState("");
   const [pendingLive, setPendingLive] = useState<
@@ -88,7 +100,7 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     price: type === "market" ? undefined : parseTicketNumber(entry),
     stopLoss: parseTicketNumber(sl),
     takeProfit: parseTicketNumber(tp),
-    riskPct: parseTicketNumber(risk) ?? 1,
+    riskPct: riskUnit === "%" ? parseTicketNumber(risk) ?? 1 : 1,
   });
 
   const simulatorMetrics = useMemo(
@@ -106,39 +118,71 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     },
     [activeSymbolInfo, symbol],
   );
-  const metrics = useMemo(() => {
-    if (executionMode !== "mt5") return simulatorMetrics;
-    return computeMt5PositionRiskMetrics({
-      entryPrice: type === "market" ? price : parseTicketNumber(entry),
+  const mt5SizingBase = useMemo(
+    () => ({
       stopPrice: parseTicketNumber(sl),
       targetPrice: parseTicketNumber(tp),
-      riskPct: parseTicketNumber(risk) ?? 1,
+      riskValue: parseTicketNumber(risk) ?? 1,
+      riskUnit,
+      accountBasis,
+      existingRiskMoney: mt5RiskSnapshot?.openRiskAtStops,
+      balance: mt5Account?.balance,
       equity: mt5Account?.equity ?? equity,
+      freeMargin: mt5Account?.freeMargin,
+      leverage: mt5Account?.leverage,
+      accountCurrency: mt5Account?.currency,
+      commission: parseTicketNumber(commission),
+      commissionType,
+      bidPrice: quote?.bid,
+      askPrice: quote?.ask,
       symbolInfo: sizingSymbolInfo,
       volumeOverride: parseTicketNumber(mt5Lot),
+    }),
+    [
+      accountBasis,
+      commission,
+      commissionType,
+      equity,
+      mt5Account?.balance,
+      mt5Account?.currency,
+      mt5Account?.equity,
+      mt5Account?.freeMargin,
+      mt5Account?.leverage,
+      mt5Lot,
+      mt5RiskSnapshot?.openRiskAtStops,
+      quote?.ask,
+      quote?.bid,
+      risk,
+      riskUnit,
+      sl,
+      sizingSymbolInfo,
+      tp,
+    ],
+  );
+  const calculateMt5MetricsForSide = useCallback((side: Side): Mt5PositionRiskMetrics => {
+    const marketEntry =
+      side === "short" ? quote?.bid ?? price : quote?.ask ?? price;
+    return computeMt5PositionRiskMetrics({
+      ...mt5SizingBase,
+      entryPrice:
+        type === "market" ? marketEntry : parseTicketNumber(entry),
+      side,
     });
+  }, [entry, mt5SizingBase, price, quote?.ask, quote?.bid, type]);
+  const metrics = useMemo(() => {
+    if (executionMode !== "mt5") return simulatorMetrics;
+    return calculateMt5MetricsForSide(plannedSide ?? "long");
   }, [
-    entry,
-    equity,
     executionMode,
-    mt5Account?.equity,
-    price,
-    risk,
+    plannedSide,
     simulatorMetrics,
-    sl,
-    sizingSymbolInfo,
-    mt5Lot,
-    tp,
-    type,
+    calculateMt5MetricsForSide,
   ]);
 
   const buildMt5Order = (side: Side): Mt5OrderRequest => {
     const info = mt5SymbolInfo[symbol] ?? sizingSymbolInfo;
-    const manualVolume = parseTicketNumber(mt5Lot);
-    const volume =
-      manualVolume != null
-        ? manualVolume
-        : normalizePositionVolume(metrics.positionSize, info);
+    const sideMetrics = calculateMt5MetricsForSide(side);
+    const volume = normalizePositionVolume(sideMetrics.positionSize, info);
     return {
       clientOrderId: makeClientOrderId(),
       chartSymbol: symbol,
@@ -147,7 +191,12 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
       type,
       volume,
       price: type === "market" ? undefined : parseTicketNumber(entry),
-      marketPrice: type === "market" ? price : undefined,
+      marketPrice:
+        type === "market"
+          ? side === "short"
+            ? quote?.bid ?? price
+            : quote?.ask ?? price
+          : undefined,
       sl: parseTicketNumber(sl),
       tp: parseTicketNumber(tp),
       comment: "SMC terminal",
@@ -213,7 +262,13 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     tp,
     mt5Lot,
     risk,
+    riskUnit,
+    accountBasis,
+    commission,
+    commissionType,
     price,
+    quote?.ask,
+    quote?.bid,
     executionMode,
     mt5Status,
     mt5SymbolInfo,
@@ -241,7 +296,10 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     if (prefill.price != null) setEntry(formatTicketNumber(prefill.price));
     if (prefill.stopLoss != null) setSl(formatTicketNumber(prefill.stopLoss));
     if (prefill.takeProfit != null) setTp(formatTicketNumber(prefill.takeProfit));
-    if (prefill.riskPct != null) setRisk(formatPercent(prefill.riskPct));
+    if (prefill.riskPct != null) {
+      setRiskUnit("%");
+      setRisk(formatPercent(prefill.riskPct));
+    }
     if (prefill.quantity != null && Number.isFinite(prefill.quantity)) {
       setMt5Lot(formatPositionVolume(prefill.quantity, sizingSymbolInfo));
     } else if (prefill.source === "position-drawing") {
@@ -255,10 +313,16 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
           sizingSymbolInfo.maxLotReason ? `cap: ${sizingSymbolInfo.maxLotReason}` : undefined,
           sizingSymbolInfo.brokerMaxLot != null ? `broker max: ${sizingSymbolInfo.brokerMaxLot}` : undefined,
           sizingSymbolInfo.bridgeMaxLot != null ? `bridge max: ${sizingSymbolInfo.bridgeMaxLot}` : undefined,
+          "Risk = stop loss + round-trip commission",
+          "Volume is floored to the broker lot step",
         ]
           .filter(Boolean)
           .join(" | ")
       : undefined;
+  const sizingWarnings =
+    executionMode === "mt5" && "warnings" in metrics
+      ? (metrics as Mt5PositionRiskMetrics).warnings
+      : [];
 
   // Pre-fill the ticket from persistent atoms. This path also works when the
   // Trade tab was not mounted yet; the producer can switch to the Trade tab
@@ -340,7 +404,67 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
           <TradeInput label="Stop loss" value={sl} onChange={setSl} />
           <TradeInput label="Take profit" value={tp} onChange={setTp} />
         </div>
-        <TradeInput label="Risk %" value={risk} onChange={setRisk} />
+        {executionMode === "mt5" ? (
+          <div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+            <TradeInput
+              label={riskUnit === "%" ? "Risk %" : "Risk amount"}
+              value={risk}
+              onChange={setRisk}
+              placeholder={riskUnit === "%" ? "1" : "100"}
+            />
+            <InlineSelect
+              label="Risk basis"
+              value={riskUnit}
+              onChange={(value) => setRiskUnit(value as "%" | "amount")}
+              options={[
+                { value: "%", label: "%" },
+                { value: "amount", label: "Money" },
+              ]}
+            />
+          </div>
+        ) : (
+          <TradeInput label="Risk %" value={risk} onChange={setRisk} />
+        )}
+        {executionMode === "mt5" && (
+          <div className="grid grid-cols-2 gap-2">
+            <InlineSelect
+              label="Account basis"
+              value={accountBasis}
+              onChange={(value) => setAccountBasis(value as Mt5AccountBasis)}
+              options={[
+                { value: "equity", label: "Equity" },
+                { value: "balance", label: "Balance" },
+                { value: "balanceMinusRisk", label: "Balance − risk" },
+              ]}
+            />
+            <TradeInput
+              label="Commission / lot"
+              value={commission}
+              onChange={setCommission}
+              placeholder="0"
+            />
+          </div>
+        )}
+        {executionMode === "mt5" && (
+          <div className="flex items-end justify-end -mt-2">
+            <label className="flex items-center gap-1.5 text-[10px] text-ink-faint">
+              <span>Commission</span>
+              <select
+                aria-label="Commission type"
+                value={commissionType}
+                onChange={(event) =>
+                  setCommissionType(event.target.value as Mt5CommissionType)
+                }
+                className="h-7 rounded-md border border-terminal-border-strong bg-terminal-bg px-1.5 text-[10px] text-ink outline-none focus:border-brand"
+              >
+                <option value="currency">
+                  {mt5Account?.currency ?? "Account currency"}
+                </option>
+                <option value="percent">Percent</option>
+              </select>
+            </label>
+          </div>
+        )}
         {executionMode === "mt5" && (
           <TradeInput
             label="Lot"
@@ -372,6 +496,14 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
             accent="var(--accent)"
           />
         </div>
+        {sizingWarnings.length > 0 && (
+          <div
+            role="status"
+            className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-4 text-amber-200"
+          >
+            {formatSizingWarning(sizingWarnings[0])}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -438,6 +570,67 @@ function TradeInput({
       />
     </label>
   );
+}
+
+function InlineSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-medium uppercase text-ink-faint">
+        {label}
+      </span>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-xs text-ink outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function formatSizingWarning(code: string): string {
+  switch (code) {
+    case "STOP_LOSS_REQUIRED":
+      return "Add a stop loss to calculate a risk-safe lot size.";
+    case "STOP_LOSS_WRONG_SIDE":
+      return "Stop loss is on the wrong side of the entry for this direction.";
+    case "STOP_LOSS_TOO_CLOSE":
+      return "Stop loss is inside the broker minimum stop distance.";
+    case "TAKE_PROFIT_WRONG_SIDE":
+      return "Take profit is on the wrong side of the entry.";
+    case "TAKE_PROFIT_TOO_CLOSE":
+      return "Take profit is inside the broker minimum stop distance.";
+    case "MIN_VOLUME_INCREASED_RISK":
+      return "Broker minimum lot is above the requested risk; actual risk is higher.";
+    case "MARGIN_VOLUME_CAPPED":
+      return "Lot size is capped by available margin.";
+    case "MAX_VOLUME_CAPPED":
+      return "Lot size is capped by the broker maximum.";
+    case "TICK_VALUE_UNAVAILABLE":
+      return "Tick value is unavailable; verify the MT5 symbol specification.";
+    case "PERCENT_COMMISSION_NEEDS_CONTRACT_SIZE":
+      return "Percent commission needs contract-size metadata from MT5.";
+    case "STOP_DISTANCE_UNAVAILABLE":
+      return "Enter a valid stop loss and verify the symbol tick value.";
+    default:
+      return "Review the symbol and risk inputs before sending the order.";
+  }
 }
 
 function Metric({

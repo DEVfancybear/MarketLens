@@ -149,3 +149,4 @@ See:
 - `docs/AUTH_UI.md`
 - `docs/BACKEND_API_SYNC_ARCHITECTURE.md`
 - `docs/ARCHITECTURE.md`
+- `docs/MT5_POSITION_SIZING.md`

@@ -67,6 +67,24 @@ export interface Mt5AccountSnapshot {
   updatedAt: number;
 }
 
+/** Optional FTMO/Position Sizer portfolio-risk snapshot from the bridge. */
+export interface Mt5RiskSnapshot {
+  accountSize?: number;
+  accountSizeSource?: "fixed" | "equity";
+  dailyLossLimit?: number;
+  maxLossLimit?: number;
+  dailyLossUsed?: number;
+  dailyLossRemaining?: number;
+  maxLossRemaining?: number;
+  openRiskAtStops?: number;
+  maxRiskPerTrade?: number;
+  dailyOrderCount?: number;
+  maxDailyOrders?: number;
+  canTrade?: boolean;
+  reason?: string | null;
+  updatedAt?: number;
+}
+
 export interface Mt5SymbolInfo {
   chartSymbol: string;
   brokerSymbol: string;
@@ -80,6 +98,21 @@ export interface Mt5SymbolInfo {
   maxLotReason?: "broker" | "bridge";
   tickSize?: number;
   tickValue?: number;
+  /** MT5 exposes direction-specific values for a tick.  Brokers may leave
+   * these fields out, in which case the calculator falls back to tickValue. */
+  tickValueLoss?: number;
+  tickValueProfit?: number;
+  /** Contract/margin metadata used by the Position Sizer-compatible math. */
+  contractSize?: number;
+  calcMode?: string | number;
+  currencyBase?: string;
+  currencyProfit?: string;
+  currencyMargin?: string;
+  marginInitial?: number;
+  marginMaintenance?: number;
+  marginHedged?: number;
+  /** Optional broker spread in price units/points (metadata only). */
+  spread?: number;
   stopLevel?: number;
   freezeLevel?: number;
   minStopDistance?: number;
