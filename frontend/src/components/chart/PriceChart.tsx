@@ -54,10 +54,12 @@ import {
   timeScaleOptions,
 } from "./chartVisualProfile";
 import { computeCachedIndicator } from "@/services/indicatorComputationCache";
-import { computeIndicator } from "@/services/indicators";
 import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
-import { ensurePineIndicatorResult, subscribePineRuntimeCache } from "@/services/pineRuntimeCache";
-import { ensureIndicatorRuntimeResult, subscribeIndicatorRuntimeCache } from "@/services/indicatorRuntimeCache";
+import {
+  computeIndicator,
+  ensureIndicatorRuntimeResult,
+  subscribeIndicatorRuntimeCache,
+} from "@/services/indicatorRuntimeCache";
 import { resolveRealtimeSeriesUpdatePlan, type RealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
@@ -840,20 +842,11 @@ export function PriceChart({
   const overlayLegendIndicators = useMemo(() => indicators.filter((i) => !i.separatePane), [indicators]);
   useEffect(() => {
     const onRuntimeUpdate = () => setPineRuntimeVersion((value) => value + 1);
-    const unsubscribePine = subscribePineRuntimeCache(onRuntimeUpdate);
-    const unsubscribeBuiltIn = subscribeIndicatorRuntimeCache(onRuntimeUpdate);
-    return () => {
-      unsubscribePine();
-      unsubscribeBuiltIn();
-    };
+    return subscribeIndicatorRuntimeCache(onRuntimeUpdate);
   }, []);
   useEffect(() => {
     [...overlayIndicators, ...visiblePaneIndicators].forEach((cfg) => {
-      if (cfg.type === "CUSTOM") {
-        ensurePineIndicatorResult(cfg, candles, { symbol, timeframe });
-      } else {
-        ensureIndicatorRuntimeResult(cfg, candles, { symbol, timeframe });
-      }
+      ensureIndicatorRuntimeResult(cfg, candles, { symbol, timeframe });
     });
   }, [overlayIndicators, visiblePaneIndicators, candles, symbol, timeframe]);
   const overlayResults = useMemo(() => {
@@ -1153,7 +1146,7 @@ export function PriceChart({
   };
 
   const openIndicatorSource = (indicator: IndicatorConfig) => {
-    if (indicator.type !== "CUSTOM" || !indicator.sourceCode) return;
+    if (!indicator.sourceCode) return;
     if (indicator.scriptId) {
       loadPineScript(indicator.scriptId);
     } else {

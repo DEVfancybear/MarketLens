@@ -1,4 +1,6 @@
 import type { Candle, IndicatorConfig } from "@/types";
+import type { IndicatorRuntimeDefinition } from "@/services/api/resources/indicatorRuntimeApi";
+import { indicatorConfigFromDefinition } from "./indicatorDefinitionModel";
 
 export const CHART_BENCHMARK_SIZES = [900, 5_000, 20_000, 100_000] as const;
 export type ChartBenchmarkSize = (typeof CHART_BENCHMARK_SIZES)[number];
@@ -26,32 +28,13 @@ export function isChartBenchmarkSize(value: number): value is ChartBenchmarkSize
   return CHART_BENCHMARK_SIZES.includes(value as ChartBenchmarkSize);
 }
 
-/** Stable built-in workload for measuring Phase 2 independently of user Pine state. */
-export function createPhase2BenchmarkIndicators(): IndicatorConfig[] {
-  return [
-    { id: "benchmark-sma", type: "SMA", length: 50, color: "#2962ff", visible: true },
-    { id: "benchmark-ema", type: "EMA", length: 21, color: "#ff6d00", visible: true },
-    { id: "benchmark-vwap", type: "VWAP", length: 0, color: "#ab47bc", visible: true },
-    {
-      id: "benchmark-rsi",
-      type: "RSI",
-      length: 14,
-      color: "#26a69a",
-      visible: true,
-      separatePane: true,
-    },
-    {
-      id: "benchmark-macd",
-      type: "MACD",
-      length: 12,
-      length3: 26,
-      length2: 9,
-      color: "#2962ff",
-      color2: "#ff9800",
-      visible: true,
-      separatePane: true,
-    },
-  ];
+/** Stable catalog workload for measuring Phase 2 independently of user state. */
+export function createPhase2BenchmarkIndicators(
+  definitions: readonly IndicatorRuntimeDefinition[],
+): IndicatorConfig[] {
+  return definitions.slice(0, 5).map((definition, index) =>
+    indicatorConfigFromDefinition(definition, `benchmark-indicator-${index}`),
+  );
 }
 
 /** Deterministic, gap-aware OHLCV fixture. Same seed and size always match. */

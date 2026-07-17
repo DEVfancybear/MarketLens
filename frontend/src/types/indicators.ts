@@ -1,17 +1,7 @@
 /** Technical indicator configuration. */
 
-export type BuiltInIndicatorType =
-  | 'SMA'
-  | 'EMA'
-  | 'VWAP'
-  | 'RSI'
-  | 'MACD'
-  | 'ADR'
-  /** LuxAlgo-compatible fair value gap detection and mitigation zones. */
-  | 'FVG'
-  /** Swing high/low support and resistance overlay. */
-  | 'SWING_SR';
-export type IndicatorType = BuiltInIndicatorType | 'CUSTOM';
+/** Backend-owned catalog key or a saved/public script key. */
+export type IndicatorType = string;
 
 export interface CustomIndicatorScript {
   id: string;
@@ -30,15 +20,14 @@ export type IndicatorStyleValues = Record<string, IndicatorStyleValue>;
 export interface IndicatorConfig {
   id: string;
   type: IndicatorType;
-  length: number;
-  /** Secondary length, used by MACD (signal), swing-low strength, and similar. */
+  /** Legacy persisted fields are read by the backend migration adapter only. */
+  length?: number;
   length2?: number;
-  /** Tertiary length, used by MACD (slow). */
   length3?: number;
-  color: string;
+  color?: string;
   color2?: string;
   visible: boolean;
-  /** Renders in a separate pane below price (RSI, MACD). */
+  /** Backend definition places the output in a separate chart pane. */
   separatePane?: boolean;
   /** Display name for source-code indicators. */
   name?: string;
@@ -50,6 +39,8 @@ export interface IndicatorConfig {
   inputValues?: IndicatorInputValues;
   /** Per-instance visual overrides for plots, hlines, fills, and supported Pine objects. */
   styleValues?: IndicatorStyleValues;
+  /** Backend-derived execution requirement; never inferred from source in the browser. */
+  requiresHistoryContext?: boolean;
 }
 
 /** A single computed indicator value keyed by time. */
@@ -106,7 +97,7 @@ export interface IndicatorDashboard {
 
 export interface IndicatorResult {
   id: string;
-  /** Multiple series for multi-line indicators (e.g. MACD). */
+  /** Multiple output series produced by the common runtime. */
   series: IndicatorSeries[];
   labels?: IndicatorOverlayLabel[];
   dashboard?: IndicatorDashboard;

@@ -33,7 +33,8 @@ import {
   isChartBenchmarkSize,
   setActiveChartBenchmarkCandles,
 } from "@/services/chartBenchmarkFixtures";
-import type { Candle } from "@/types";
+import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
+import type { Candle, IndicatorConfig } from "@/types";
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {}) {
@@ -55,6 +56,7 @@ export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {
   const [benchmarkProfile, setBenchmarkProfile] = useState<
     "workspace" | "phase2" | "phase3"
   >("workspace");
+  const [benchmarkIndicators, setBenchmarkIndicators] = useState<IndicatorConfig[]>([]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -109,6 +111,26 @@ export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {
     };
   }, []);
 
+  useEffect(() => {
+    if (benchmarkProfile !== "phase2") {
+      setBenchmarkIndicators([]);
+      return;
+    }
+    let cancelled = false;
+    loadIndicatorCatalog()
+      .then((definitions) => {
+        if (!cancelled) {
+          setBenchmarkIndicators(createPhase2BenchmarkIndicators(definitions));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBenchmarkIndicators([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [benchmarkProfile]);
+
   const displayedCandles = useMemo(
     () => benchmarkCandles
       ? benchmarkCandles.slice(
@@ -124,11 +146,11 @@ export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {
   const exchange = meta?.exchange ?? "";
   const displayedIndicators = useMemo(
     () => benchmarkProfile === "phase2"
-      ? createPhase2BenchmarkIndicators()
+      ? benchmarkIndicators
       : benchmarkProfile === "phase3"
         ? []
         : indicators,
-    [benchmarkProfile, indicators],
+    [benchmarkIndicators, benchmarkProfile, indicators],
   );
   const replayOwnsChart = Boolean(replay.snapshot) ||
     replay.connection === "connecting" ||

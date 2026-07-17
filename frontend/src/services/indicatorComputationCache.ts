@@ -1,20 +1,19 @@
 /**
  * Compatibility facade for chart virtualization.
  *
- * Calculation is never performed here. Built-ins are fetched from the Go
- * indicator runtime and custom scripts from the Go Pine runtime; this module
- * only selects the already-cached API result for the current candle window.
+ * Calculation is never performed here. Every indicator is fetched from the
+ * common Go runtime; this module only reads the current cached result.
  */
 import type { Candle, IndicatorConfig, IndicatorResult } from "@/types";
-import type { PineCompileContext } from "@/services/pineRuntimeCache";
-import { computeIndicator } from "@/services/indicators";
+import type { IndicatorRuntimeContext } from "@/services/indicatorRuntimeCache";
+import { computeIndicator } from "@/services/indicatorRuntimeCache";
 import { incrementChartPerformanceCounter } from "@/services/chartPerformanceProbe";
 import { clearIndicatorRuntimeCache } from "@/services/indicatorRuntimeCache";
 
 export function computeCachedIndicator(
   config: IndicatorConfig,
   candles: readonly Candle[],
-  ctx?: PineCompileContext,
+  ctx?: IndicatorRuntimeContext,
   _runtimeRevision = 0,
 ): IndicatorResult {
   incrementChartPerformanceCounter("indicator.cache.runtimeReads");

@@ -23,6 +23,7 @@ import {
 } from "@/store/chartStore";
 import { emit } from "@/utils/bus";
 import { getDrawingToolForShortcut } from "@/types/drawingToolManifest";
+import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
 
 /**
  * Global keyboard shortcuts:
@@ -32,7 +33,7 @@ import { getDrawingToolForShortcut } from "@/types/drawingToolManifest";
  *   1–9          switch drawing tools
  *   Alt+T/H/J/V/C line tools; Alt+Shift+R rectangle
  *   Ctrl/Cmd+Z   undo (prevents browser tab-close)
- *   Ctrl/I       toggle SMA indicator
+ *   Ctrl/I       toggle backend-designated primary indicator
  *   Escape       deselect / cancel tool
  *   Alt+A        toggle alert center
  *
@@ -115,10 +116,15 @@ export function useHotkeys() {
         return;
       }
 
-      // --- Ctrl+I: toggle SMA ---
+      // --- Ctrl+I: toggle the backend-designated primary indicator ---
       if (mod && e.key === "i") {
         e.preventDefault();
-        getDefaultStore().set(toggleIndicatorAtom, "SMA");
+        void loadIndicatorCatalog()
+          .then((definitions) => definitions.find((item) => item.shortcut === "primary"))
+          .then((definition) => {
+            if (definition) getDefaultStore().set(toggleIndicatorAtom, definition);
+          })
+          .catch(() => undefined);
         return;
       }
 

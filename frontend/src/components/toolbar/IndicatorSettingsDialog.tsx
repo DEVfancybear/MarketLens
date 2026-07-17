@@ -2,14 +2,10 @@
 /**
  * Shared indicator settings dialog.
  *
- * TradingView exposes one settings surface for every indicator, while the Inputs tab is generated
- * from that script's `input.*()` declarations. This component follows the same split:
- * - CUSTOM indicators read their schema from the Go Pine runtime API.
- * - Built-ins provide small local schemas but use the exact same field renderer.
- * - Saving only stores per-instance values; the Pine runtime re-executes the script with those
- *   values on the next chart render.
+ * Every tab is generated from the backend indicator definition. The browser
+ * owns field rendering only; it has no catalog names, defaults, or formulas.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -20,7 +16,6 @@ import {
   updateIndicatorAtom,
 } from "@/store/chartStore";
 import type {
-  BuiltInIndicatorType,
   IndicatorConfig,
   IndicatorInputValue,
   IndicatorInputValues,
@@ -29,18 +24,17 @@ import type {
   IndicatorStyleValue,
   IndicatorStyleValues,
 } from "@/types";
-import { defaultIndicator } from "@/services/indicators";
-import {
-  getPineRuntimeInputs,
-  getPineRuntimeMeta,
-  getPineRuntimeStyles,
-} from "@/services/api/resources/pineRuntimeApi";
 import { groupIndicatorInputRows } from "@/components/toolbar/indicatorSettingsInputRows";
 import type {
   PineInputDefinition,
-  PineScriptMeta,
   PineStyleDefinition,
 } from "@/services/pineRuntimeTypes";
+import type { IndicatorRuntimeDefinition } from "@/services/api/resources/indicatorRuntimeApi";
+import {
+  indicatorInputsFromConfig,
+  indicatorStylesFromConfig,
+  loadIndicatorDefinition,
+} from "@/services/indicatorDefinitions";
 import {
   commonStyleDefaults,
   STYLE_INPUTS_IN_STATUS_LINE_KEY,
@@ -54,14 +48,7 @@ import { cn } from "@/utils/cn";
 type SettingsTab = "inputs" | "style" | "visibility";
 
 interface SettingsDraft {
-  type: BuiltInIndicatorType;
-  length: number;
-  length2: number;
-  length3: number;
-  color: string;
-  color2: string;
   visible: boolean;
-  separatePane: boolean;
   inputValues: IndicatorInputValues;
   styleValues: IndicatorStyleValues;
 }
@@ -96,17 +83,6 @@ const SOURCE_LABELS: Record<string, string> = {
   hlcc4: "HLCC4",
   volume: "Volume",
 };
-
-const SWING_SOURCE_OPTIONS: IndicatorInputValue[] = [
-  "open",
-  "high",
-  "low",
-  "close",
-  "hl2",
-  "hlc3",
-  "ohlc4",
-  "hlcc4",
-];
 
 const LINE_STYLE_OPTIONS: { value: IndicatorLineStyle; label: string }[] = [
   { value: 0, label: "Solid" },
@@ -203,193 +179,17 @@ function currentFieldValue(
   return values[field.key] ?? field.defaultValue;
 }
 
-function builtInInputFields(type: BuiltInIndicatorType): PineInputDefinition[] {
-  switch (type) {
-    case "SMA":
-    case "EMA":
-    case "RSI":
-    case "ADR":
-      return [{
-        key: "length",
-        title: type === "ADR" ? "ADR Period" : "Length",
-        kind: "int",
-        defaultValue: defaultIndicator(type, "__default").length,
-        min: 1,
-        max: 500,
-        step: 1,
-      }];
-    case "MACD":
-      return [
-        { key: "length", title: "Fast Length", kind: "int", defaultValue: 12, min: 1, max: 500, step: 1 },
-        { key: "length3", title: "Slow Length", kind: "int", defaultValue: 26, min: 1, max: 500, step: 1 },
-        { key: "length2", title: "Signal Smoothing", kind: "int", defaultValue: 9, min: 1, max: 200, step: 1 },
-      ];
-    case "SWING_SR":
-      return [
-        {
-          key: "length",
-          title: "Swing high strength",
-          kind: "int",
-          defaultValue: 25,
-          min: 1,
-          max: 500,
-          step: 1,
-          group: "Swing highs",
-        },
-        {
-          key: "highSource",
-          title: "High source",
-          kind: "source",
-          defaultValue: "high",
-          options: SWING_SOURCE_OPTIONS,
-          group: "Swing highs",
-        },
-        {
-          key: "length2",
-          title: "Swing low strength",
-          kind: "int",
-          defaultValue: 25,
-          min: 1,
-          max: 500,
-          step: 1,
-          group: "Swing lows",
-        },
-        {
-          key: "lowSource",
-          title: "Low source",
-          kind: "source",
-          defaultValue: "low",
-          options: SWING_SOURCE_OPTIONS,
-          group: "Swing lows",
-        },
-      ];
-    case "FVG":
-      return [
-        { key: "thresholdPer", title: "Threshold %", kind: "float", defaultValue: 0, min: 0, max: 100, step: 0.1, group: "Settings" },
-        { key: "auto", title: "Auto threshold", kind: "bool", defaultValue: false, group: "Settings" },
-        { key: "showLast", title: "Unmitigated levels", kind: "int", defaultValue: 0, min: 0, max: 500, step: 1, group: "Settings" },
-        { key: "mitigationLevels", title: "Mitigation levels", kind: "bool", defaultValue: false, group: "Settings" },
-        { key: "timeframe", title: "Timeframe", kind: "timeframe", defaultValue: "", group: "Settings" },
-        { key: "extend", title: "Extend", kind: "int", defaultValue: 20, min: 0, max: 500, step: 1, group: "Style" },
-        { key: "dynamic", title: "Dynamic", kind: "bool", defaultValue: false, group: "Style" },
-        { key: "showDash", title: "Show dashboard", kind: "bool", defaultValue: false, group: "Dashboard" },
-        { key: "dashLoc", title: "Location", kind: "string", defaultValue: "Top Right", options: ["Top Right", "Bottom Right", "Bottom Left"], group: "Dashboard" },
-        { key: "textSize", title: "Size", kind: "string", defaultValue: "Small", options: ["Tiny", "Small", "Normal"], group: "Dashboard" },
-      ];
-    case "VWAP":
-      return [];
-  }
-}
-
-function builtInStyleDefinitions(type: BuiltInIndicatorType): PineStyleDefinition[] {
-  const primary = {
-    key: "builtin:primary",
-    title:
-      type === "ADR"
-        ? "High line"
-        : type === "SWING_SR"
-          ? "Swing high"
-          : type,
-    target: "plot" as const,
-    group: "Plots",
-    defaultVisible: true,
-    defaultColor: defaultIndicator(type, "__default").color,
-    defaultLineWidth: 2 as IndicatorLineWidth,
-    defaultLineStyle: (type === "SWING_SR" ? 1 : 0) as IndicatorLineStyle,
-    supportsColor: true,
-    supportsLineWidth: true,
-    supportsLineStyle: true,
-  };
-  if (type === "FVG") {
-    const zoneStyle = (key: string, title: string, color: string): PineStyleDefinition => ({
-      key,
-      title,
-      target: "box",
-      group: "Zones",
-      defaultVisible: true,
-      defaultColor: color,
-      supportsColor: true,
-      supportsLineWidth: false,
-      supportsLineStyle: false,
-    });
-    return [
-      zoneStyle("builtin:fvg-bull", "Bullish FVG", "#089981"),
-      zoneStyle("builtin:fvg-bear", "Bearish FVG", "#f23645"),
-    ];
-  }
-  if (type === "MACD") {
-    return [
-      primary,
-      {
-        key: "builtin:secondary",
-        title: "Signal",
-        target: "plot",
-        group: "Plots",
-        defaultVisible: true,
-        defaultColor: "#ff9800",
-        defaultLineWidth: 2,
-        defaultLineStyle: 0,
-        supportsColor: true,
-        supportsLineWidth: true,
-        supportsLineStyle: true,
-      },
-    ];
-  }
-  if (type === "ADR") {
-    return [
-      primary,
-      {
-        key: "builtin:secondary",
-        title: "Low line",
-        target: "plot",
-        group: "Plots",
-        defaultVisible: true,
-        defaultColor: "#ef5350",
-        defaultLineWidth: 2,
-        defaultLineStyle: 0,
-        supportsColor: true,
-        supportsLineWidth: true,
-        supportsLineStyle: true,
-      },
-    ];
-  }
-  if (type === "SWING_SR") {
-    return [
-      primary,
-      {
-        key: "builtin:secondary",
-        title: "Swing low",
-        target: "plot",
-        group: "Plots",
-        defaultVisible: true,
-        defaultColor: "#26c6da",
-        defaultLineWidth: 2,
-        defaultLineStyle: 1,
-        supportsColor: true,
-        supportsLineWidth: true,
-        supportsLineStyle: true,
-      },
-    ];
-  }
-  return [primary];
-}
-
-function initialDraft(indicator: IndicatorConfig): SettingsDraft {
-  const fallback = defaultIndicator(
-    indicator.type === "CUSTOM" ? "SMA" : indicator.type,
-    indicator.id,
-  );
+function initialDraft(
+  indicator: IndicatorConfig,
+  definition: IndicatorRuntimeDefinition,
+): SettingsDraft {
   return {
-    type: indicator.type === "CUSTOM" ? "SMA" : indicator.type,
-    length: indicator.length || fallback.length,
-    length2: indicator.length2 ?? fallback.length2 ?? 9,
-    length3: indicator.length3 ?? fallback.length3 ?? 26,
-    color: indicator.color || fallback.color,
-    color2: indicator.color2 ?? fallback.color2 ?? "#ff9800",
     visible: indicator.visible !== false,
-    separatePane: indicator.separatePane ?? fallback.separatePane ?? false,
-    inputValues: indicator.inputValues ?? {},
-    styleValues: indicator.styleValues ?? {},
+    inputValues: indicatorInputsFromConfig(definition, indicator),
+    styleValues: {
+      ...commonStyleDefaults(),
+      ...indicatorStylesFromConfig(definition, indicator),
+    },
   };
 }
 
@@ -416,82 +216,49 @@ export function IndicatorSettingsDialog() {
     useDraggableDialog();
 
   const indicator = indicators.find((item) => item.id === editingId);
-  const [pineSchema, setPineSchema] = useState<{
-    sourceCode: string;
-    inputs: PineInputDefinition[];
-    styles: PineStyleDefinition[];
-    meta: PineScriptMeta | null;
-  }>({ sourceCode: "", inputs: [], styles: [], meta: null });
-  const pineInputs = pineSchema.inputs;
-  const pineStyles = pineSchema.styles;
-  const pineMeta = pineSchema.meta;
-
+  const [definition, setDefinition] = useState<IndicatorRuntimeDefinition | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("inputs");
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
 
   useEffect(() => {
-    const sourceCode = indicator?.type === "CUSTOM" ? indicator.sourceCode ?? "" : "";
-    if (!sourceCode.trim()) {
-      setPineSchema({ sourceCode: "", inputs: [], styles: [], meta: null });
+    if (!indicator) {
+      setDefinition(null);
       return;
     }
+    setDefinition(null);
     let cancelled = false;
-    Promise.all([
-      getPineRuntimeInputs(sourceCode, indicator?.inputValues ?? {}),
-      getPineRuntimeStyles(sourceCode, indicator?.styleValues ?? {}),
-      getPineRuntimeMeta(sourceCode),
-    ])
-      .then(([inputs, styles, meta]) => {
-        if (!cancelled) setPineSchema({ sourceCode, inputs, styles, meta });
+    loadIndicatorDefinition({
+      indicatorType: indicator.type,
+      sourceCode: indicator.sourceCode,
+    })
+      .then((next) => {
+        if (!cancelled) setDefinition(next);
       })
       .catch(() => {
-        if (!cancelled) setPineSchema({ sourceCode, inputs: [], styles: [], meta: null });
+        if (cancelled) return;
+        setDefinition({
+          type: indicator.type,
+          name: indicator.name || indicator.type,
+          overlay: !indicator.separatePane,
+          inputs: [],
+          styles: [],
+          requiresHistoryContext: indicator.requiresHistoryContext ?? false,
+          sourceAvailable: Boolean(indicator.sourceCode),
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [indicator?.id, indicator?.sourceCode, indicator?.inputValues, indicator?.styleValues, indicator?.type]);
+  }, [indicator]);
 
   useEffect(() => {
-    if (!indicator) return;
-    const next = initialDraft(indicator);
-    if (indicator.type === "CUSTOM") {
-      next.inputValues = {
-        ...defaultInputValues(pineInputs),
-        ...(pineMeta?.timeframe !== undefined
-          ? { __timeframe: indicator.inputValues?.__timeframe ?? pineMeta.timeframe ?? "" }
-          : {}),
-        ...(indicator.inputValues ?? {}),
-      };
-      next.styleValues = {
-        ...defaultStyleValues(pineStyles),
-        ...(indicator.styleValues ?? {}),
-      };
-    } else {
-      const builtInStyles = builtInStyleDefinitions(next.type);
-      next.inputValues = {
-        ...defaultInputValues(builtInInputFields(next.type)),
-        ...(indicator.inputValues ?? {}),
-        length: next.length,
-        length2: next.length2,
-        length3: next.length3,
-      };
-      next.styleValues = {
-        ...defaultStyleValues(builtInStyles),
-        [styleFieldKey("builtin:primary", "color")]: next.color,
-        [styleFieldKey("builtin:secondary", "color")]: next.color2,
-        ...(next.type === "FVG"
-          ? {
-              [styleFieldKey("builtin:fvg-bull", "color")]: next.color,
-              [styleFieldKey("builtin:fvg-bear", "color")]: next.color2,
-            }
-          : {}),
-        ...(indicator.styleValues ?? {}),
-      };
+    if (!indicator || !definition) {
+      setDraft(null);
+      return;
     }
-    setDraft(next);
+    setDraft(initialDraft(indicator, definition));
     setActiveTab("inputs");
-  }, [indicator, pineInputs, pineMeta, pineStyles]);
+  }, [definition, indicator]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -501,17 +268,20 @@ export function IndicatorSettingsDialog() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editingId, setEditingIndicator]);
 
-  if (typeof document === "undefined" || !editingId || !indicator || !draft) {
+  if (
+    typeof document === "undefined" ||
+    !editingId ||
+    !indicator ||
+    !definition ||
+    !draft
+  ) {
     return null;
   }
 
-  const isCustom = indicator.type === "CUSTOM";
-  const title = isCustom
-    ? pineMeta?.shortTitle || indicator.name || pineMeta?.name || "Custom script"
-    : indicator.type;
-  const inputFields = isCustom ? pineInputs : builtInInputFields(draft.type);
-  const styleFields = isCustom ? pineStyles : builtInStyleDefinitions(draft.type);
-
+  const title =
+    definition.shortTitle || indicator.name || definition.name || indicator.type;
+  const inputFields = definition.inputs;
+  const styleFields = definition.styles;
   const close = () => setEditingIndicator(null);
 
   const updateInputValue = (key: string, value: IndicatorInputValue) => {
@@ -537,67 +307,17 @@ export function IndicatorSettingsDialog() {
   };
 
   const resetDefaults = () => {
-    if (isCustom) {
-      setDraft((current) =>
-        current
-          ? {
-              ...current,
-              inputValues: {
-                ...defaultInputValues(pineInputs),
-                ...(pineMeta?.timeframe !== undefined ? { __timeframe: pineMeta.timeframe ?? "" } : {}),
-              },
-              styleValues: defaultStyleValues(pineStyles),
-            }
-          : current,
-      );
-      return;
-    }
-
-    const defaults = defaultIndicator(draft.type, editingId);
     setDraft({
-      type: draft.type,
-      length: defaults.length,
-      length2: defaults.length2 ?? 9,
-      length3: defaults.length3 ?? 26,
-      color: defaults.color,
-      color2: defaults.color2 ?? "#ff9800",
-      visible: defaults.visible,
-      separatePane: defaults.separatePane ?? false,
-      inputValues: {
-        ...defaultInputValues(builtInInputFields(draft.type)),
-        ...(defaults.inputValues ?? {}),
-      },
-      styleValues: defaultStyleValues(builtInStyleDefinitions(draft.type)),
+      visible: true,
+      inputValues: defaultInputValues(inputFields),
+      styleValues: defaultStyleValues(styleFields),
     });
   };
 
   const save = () => {
-    if (isCustom) {
-      const inputValues: IndicatorInputValues = {};
-      for (const field of pineInputs) {
-        inputValues[field.key] = coerceFieldValue(
-          field,
-          currentFieldValue(field, draft.inputValues),
-        );
-      }
-      if (pineMeta?.timeframe !== undefined) {
-        inputValues.__timeframe = draft.inputValues.__timeframe ?? "";
-      }
-      updateIndicator({
-        id: editingId,
-        patch: {
-          inputValues,
-          styleValues: compactStyleValues(pineStyles, draft.styleValues),
-          visible: draft.visible,
-        },
-      });
-      close();
-      return;
-    }
-
-    const builtInValues: IndicatorInputValues = {};
+    const inputValues: IndicatorInputValues = {};
     for (const field of inputFields) {
-      builtInValues[field.key] = coerceFieldValue(
+      inputValues[field.key] = coerceFieldValue(
         field,
         currentFieldValue(field, draft.inputValues),
       );
@@ -605,39 +325,17 @@ export function IndicatorSettingsDialog() {
     updateIndicator({
       id: editingId,
       patch: {
-        length: draft.type === "FVG" ? 0 : Number(builtInValues.length ?? draft.length),
-        length2:
-          draft.type === "MACD" || draft.type === "SWING_SR"
-            ? Number(builtInValues.length2 ?? draft.length2)
-            : undefined,
-        length3: draft.type === "MACD" ? Number(builtInValues.length3 ?? draft.length3) : undefined,
-        color: String(
-          draft.styleValues[styleFieldKey(
-            draft.type === "FVG" ? "builtin:fvg-bull" : "builtin:primary",
-            "color",
-          )] ??
-            draft.color,
-        ),
-        color2:
-          draft.type === "MACD" || draft.type === "ADR" || draft.type === "SWING_SR" || draft.type === "FVG"
-            ? String(
-                draft.styleValues[styleFieldKey(
-                  draft.type === "FVG" ? "builtin:fvg-bear" : "builtin:secondary",
-                  "color",
-                )] ?? draft.color2,
-              )
-            : undefined,
-        inputValues: builtInValues,
+        inputValues,
         styleValues: compactStyleValues(styleFields, draft.styleValues),
-        separatePane:
-          draft.type === "RSI" || draft.type === "MACD"
-            ? draft.separatePane
-            : undefined,
         visible: draft.visible,
+        separatePane: !definition.overlay,
+        name: definition.shortTitle || definition.name,
+        requiresHistoryContext: definition.requiresHistoryContext,
       },
     });
     close();
   };
+
   return createPortal(
     <div
       className="platform-dialog-overlay fixed inset-0 z-[1100] flex items-center justify-center bg-[var(--scrim)] backdrop-blur-sm"
@@ -700,15 +398,6 @@ export function IndicatorSettingsDialog() {
         <div data-dialog-body className="min-h-[220px] flex-1 overflow-auto px-5 pb-5 pt-5">
           {activeTab === "inputs" && (
             <div className="space-y-5">
-              {isCustom && pineMeta?.timeframe !== undefined && (
-                <FieldRow label="Indicator Timeframe">
-                  <SelectControl
-                    value={String(draft.inputValues.__timeframe ?? "")}
-                    options={TIMEFRAME_OPTIONS}
-                    onChange={(value) => updateInputValue("__timeframe", value)}
-                  />
-                </FieldRow>
-              )}
               <InputGroups
                 fields={inputFields}
                 values={draft.inputValues}
@@ -740,17 +429,6 @@ export function IndicatorSettingsDialog() {
                   setDraft((current) => current ? { ...current, visible: checked } : current)
                 }
               />
-              {!isCustom && (draft.type === "RSI" || draft.type === "MACD") && (
-                <CheckboxRow
-                  label="Separate pane"
-                  checked={draft.separatePane}
-                  onChange={(checked) =>
-                    setDraft((current) =>
-                      current ? { ...current, separatePane: checked } : current,
-                    )
-                  }
-                />
-              )}
             </div>
           )}
         </div>
@@ -1114,6 +792,20 @@ function InputControl({
           aria-label={field.title || field.key}
         />
       </label>
+    );
+  }
+
+  if (field.kind === "timeframe") {
+    const options = field.options?.length
+      ? field.options.map((option) => ({ value: String(option), label: String(option) }))
+      : TIMEFRAME_OPTIONS;
+    return (
+      <SelectControl
+        value={String(value)}
+        options={options}
+        onChange={onChange}
+        className={compact ? "w-[108px]" : undefined}
+      />
     );
   }
 

@@ -1,6 +1,10 @@
-import { postJson } from "@/services/api/client";
+import { getJson, postJson } from "@/services/api/client";
 import type { Candle, IndicatorConfig, IndicatorResult } from "@/types";
-import type { PineCompileContext } from "@/services/pineRuntimeCachePolicy";
+import type { IndicatorRuntimeContext } from "@/services/indicatorRuntimePolicy";
+import type {
+  PineInputDefinition,
+  PineStyleDefinition,
+} from "@/services/pineRuntimeTypes";
 
 export interface IndicatorRuntimeError {
   message: string;
@@ -13,21 +17,65 @@ export interface IndicatorRuntimeResponse {
   warnings?: IndicatorRuntimeError[];
 }
 
+export interface IndicatorRuntimeDefinition {
+  type: string;
+  name: string;
+  shortTitle?: string;
+  description?: string;
+  overlay: boolean;
+  timeframe?: string;
+  inputs: PineInputDefinition[];
+  styles: PineStyleDefinition[];
+  legacyInputBindings?: Record<string, string>;
+  legacyStyleBindings?: Record<string, string>;
+  requiresHistoryContext: boolean;
+  sourceAvailable: boolean;
+  shortcut?: string;
+}
+
+interface IndicatorCatalogResponse {
+  indicators: IndicatorRuntimeDefinition[];
+  errors: IndicatorRuntimeError[];
+}
+
+interface IndicatorDefinitionResponse {
+  definition: IndicatorRuntimeDefinition;
+  errors: IndicatorRuntimeError[];
+}
+
+export async function listIndicatorRuntimeCatalog(): Promise<IndicatorRuntimeDefinition[]> {
+  const response = await getJson<IndicatorCatalogResponse>("indicator-runtime/catalog");
+  if (response.errors.length > 0) throw new Error(response.errors[0].message);
+  return response.indicators;
+}
+
+export async function getIndicatorRuntimeDefinition(request: {
+  indicatorType?: string;
+  sourceCode?: string;
+}): Promise<IndicatorRuntimeDefinition> {
+  const response = await postJson<IndicatorDefinitionResponse>(
+    "indicator-runtime/definition",
+    request,
+  );
+  if (response.errors.length > 0) throw new Error(response.errors[0].message);
+  return response.definition;
+}
+
 /**
- * Ask the backend indicator registry to calculate a built-in indicator.
- * Frontend code deliberately sends the instance config unchanged and only
- * consumes the returned chart primitives.
+ * Calculate any catalog or user-source indicator through one backend path.
+ * The browser sends instance state unchanged and only consumes chart primitives.
  */
 export async function computeIndicatorRuntime(
   config: IndicatorConfig,
   candles: Candle[],
-  ctx?: PineCompileContext,
+  ctx?: IndicatorRuntimeContext,
 ): Promise<IndicatorRuntimeResponse> {
   return postJson<IndicatorRuntimeResponse>(
     "indicator-runtime/compute",
     {
       indicatorType: config.type,
       indicatorId: config.id,
+      sourceCode: config.sourceCode,
       timeframe: ctx?.timeframe,
       config,
       candles,

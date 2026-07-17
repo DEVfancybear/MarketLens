@@ -40,7 +40,37 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Post("/inputs", h.inputs)
 	g.Post("/styles", h.styles)
 	g.Post("/compile", h.compile)
+	router.Get("/indicator-runtime/catalog", h.indicatorCatalog)
+	router.Post("/indicator-runtime/definition", h.indicatorDefinition)
 	router.Post("/indicator-runtime/compute", h.computeIndicator)
+}
+
+func (h *Handler) indicatorCatalog(c *fiber.Ctx) error {
+	response, err := builtInIndicatorCatalog()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(IndicatorCatalogResponse{
+			Indicators: []IndicatorDefinition{},
+			Errors:     []RuntimeError{{Message: err.Error()}},
+		})
+	}
+	return c.JSON(response)
+}
+
+func (h *Handler) indicatorDefinition(c *fiber.Ctx) error {
+	var req IndicatorDefinitionRequest
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	definition, err := indicatorDefinition(req)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(IndicatorDefinitionResponse{
+			Errors: []RuntimeError{{Message: err.Error()}},
+		})
+	}
+	return c.JSON(IndicatorDefinitionResponse{
+		Definition: definition,
+		Errors:     []RuntimeError{},
+	})
 }
 
 func (h *Handler) meta(c *fiber.Ctx) error {
@@ -120,6 +150,7 @@ func (h *Handler) computeIndicator(c *fiber.Ctx) error {
 	}
 	canonical := req
 	canonical.IndicatorID = ""
+	canonical.SourceCode = indicatorSourceCode(req)
 	canonical.Config = runtimeConfigForKey(req.Config)
 	response, err := h.indicatorJobs.Do(ctx, key, func(jobCtx context.Context) (IndicatorRuntimeResponse, error) {
 		response := ComputeIndicatorRuntime(jobCtx, canonical)
@@ -132,7 +163,7 @@ func (h *Handler) computeIndicator(c *fiber.Ctx) error {
 			Warnings: []RuntimeError{},
 		})
 	}
-	response.Result.ID = runtimeResultID(req.IndicatorID, "builtin")
+	response.Result.ID = runtimeResultID(req.IndicatorID, "indicator")
 	return c.JSON(response)
 }
 

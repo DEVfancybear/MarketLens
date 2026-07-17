@@ -3,7 +3,6 @@ import { atom, getDefaultStore, type Getter, type Setter } from "jotai";
 import { useAtomValue } from "jotai";
 import type {
   Candle,
-  BuiltInIndicatorType,
   CustomIndicatorScript,
   Drawing,
   DrawingTemplate,
@@ -51,12 +50,12 @@ import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import { getDefaultMt5SymbolInfo } from "@/services/mt5/symbolMapping";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { uid } from "@/utils/id";
-import { defaultIndicator } from "@/services/indicators";
-import { getPineRuntimeMeta } from "@/services/api/resources/pineRuntimeApi";
+import { DEFAULT_PINE_SOURCE } from "@/services/pineRuntimeTypes";
 import {
-  DEFAULT_PINE_SOURCE,
-  type PineScriptMeta,
-} from "@/services/pineRuntimeTypes";
+  indicatorConfigFromDefinition,
+  loadIndicatorDefinition,
+} from "@/services/indicatorDefinitions";
+import type { IndicatorRuntimeDefinition } from "@/services/api/resources/indicatorRuntimeApi";
 import { buildOrderPrefillFromPositionDrawing } from "@/components/chart/drawing/tools/positionTradePrefill";
 import {
   initializePositionDrawing,
@@ -1179,23 +1178,23 @@ export const selectAllAtom = atom(null, (_get, set) => {
   set(selectedDrawingIdAtom, null);
 });
 
-export const addIndicatorAtom = atom(null, (_get, set, type: BuiltInIndicatorType) => {
-  const cfg = defaultIndicator(type, uid("ind"));
+export const addIndicatorAtom = atom(null, (_get, set, definition: IndicatorRuntimeDefinition) => {
+  const cfg = indicatorConfigFromDefinition(definition, uid("ind"));
   const indicators = [..._get(indicatorsAtom), cfg];
   commitIndicators(_get, set, indicators);
 });
 
 export const toggleIndicatorAtom = atom(
   null,
-  (_get, set, type: BuiltInIndicatorType) => {
+  (_get, set, definition: IndicatorRuntimeDefinition) => {
     const current = _get(indicatorsAtom);
-    const has = current.some((i) => i.type === type);
+    const has = current.some((indicator) => indicator.type === definition.type);
     const indicators = has
-      ? current.filter((i) => i.type !== type)
-      : [...current, defaultIndicator(type, uid("ind"))];
+      ? current.filter((indicator) => indicator.type !== definition.type)
+      : [...current, indicatorConfigFromDefinition(definition, uid("ind"))];
     if (has) {
       current
-        .filter((indicator) => indicator.type === type)
+        .filter((indicator) => indicator.type === definition.type)
         .forEach((indicator) => queueIndicatorDelete(_get, set, indicator.id));
     }
     commitIndicators(_get, set, indicators);
@@ -1227,11 +1226,22 @@ export const clearIndicatorsAtom = atom(null, (_get, set) => {
   localStore.set("indicators", []);
 });
 
-async function pineRuntimeMeta(sourceCode: string): Promise<PineScriptMeta> {
+async function sourceIndicatorDefinition(
+  sourceCode: string,
+  indicatorType?: string,
+): Promise<IndicatorRuntimeDefinition> {
   try {
-    return await getPineRuntimeMeta(sourceCode);
+    return await loadIndicatorDefinition({ indicatorType, sourceCode });
   } catch {
-    return { name: "Untitled script", overlay: true };
+    return {
+      type: indicatorType || "source",
+      name: "Untitled script",
+      overlay: true,
+      inputs: [],
+      styles: [],
+      requiresHistoryContext: false,
+      sourceAvailable: true,
+    };
   }
 }
 
@@ -1239,18 +1249,15 @@ async function customIndicatorConfig(
   script: Pick<CustomIndicatorScript, "id" | "name" | "sourceCode">,
   id = uid("ind"),
 ): Promise<IndicatorConfig> {
-  const meta = await pineRuntimeMeta(script.sourceCode);
-  return {
-    id,
-    type: "CUSTOM",
-    length: 0,
-    color: "#2962ff",
-    visible: true,
-    separatePane: !meta.overlay,
-    name: script.name.trim() || meta.name,
+  const definition = await sourceIndicatorDefinition(
+    script.sourceCode,
+    `script:${script.id}`,
+  );
+  return indicatorConfigFromDefinition(definition, id, {
+    name: script.name.trim() || definition.name,
     scriptId: script.id,
     sourceCode: script.sourceCode,
-  };
+  });
 }
 
 function persistIndicators(get: AtomGet, set: AtomSet, indicators: IndicatorConfig[]) {
@@ -1278,14 +1285,14 @@ export const savePineScriptAtom = atom(
     set,
     arg: { id?: string | null; name: string; sourceCode: string },
   ) => {
-    const meta = await pineRuntimeMeta(arg.sourceCode);
+    const definition = await sourceIndicatorDefinition(arg.sourceCode);
     const now = Date.now();
     const existing = arg.id
       ? _get(pineScriptsAtom).find((item) => item.id === arg.id)
       : undefined;
     const script: CustomIndicatorScript = {
       id: existing?.id ?? uid("pine"),
-      name: arg.name.trim() || meta.name || "Untitled script",
+      name: arg.name.trim() || definition.name || "Untitled script",
       sourceCode: arg.sourceCode,
       favorite: existing?.favorite ?? false,
       createdAt: existing?.createdAt ?? now,
@@ -1304,13 +1311,13 @@ export const savePineScriptAtom = atom(
     set(pineEditorSourceAtom, script.sourceCode);
 
     const indicators = _get(indicatorsAtom).map((indicator) =>
-      indicator.type === "CUSTOM" && indicator.scriptId === script.id
+      indicator.scriptId === script.id
         ? {
             ...indicator,
             name: script.name,
             sourceCode: script.sourceCode,
-            separatePane: !meta.overlay,
-            styleValues: indicator.styleValues,
+            separatePane: !definition.overlay,
+            requiresHistoryContext: definition.requiresHistoryContext,
           }
         : indicator,
     );
@@ -1334,7 +1341,7 @@ export const addCustomIndicatorFromScriptAtom = atom(
     const cfg = await customIndicatorConfig(fullScript);
     const current = _get(indicatorsAtom);
     const existing = current.find(
-      (item) => item.type === "CUSTOM" && item.scriptId === fullScript.id,
+      (item) => item.scriptId === fullScript.id,
     );
     const indicators = existing
       ? current.map((item) =>
@@ -1360,16 +1367,16 @@ export const addCustomIndicatorFromSourceAtom = atom(
     set,
     arg: { name: string; sourceCode: string; scriptId?: string | null },
   ) => {
-    const meta = await pineRuntimeMeta(arg.sourceCode);
+    const definition = await sourceIndicatorDefinition(arg.sourceCode);
     const cfg = await customIndicatorConfig({
       id: arg.scriptId ?? uid("pine-draft"),
-      name: arg.name.trim() || meta.name,
+      name: arg.name.trim() || definition.name,
       sourceCode: arg.sourceCode,
     });
     const current = _get(indicatorsAtom);
     const existing = arg.scriptId
       ? current.find(
-          (item) => item.type === "CUSTOM" && item.scriptId === arg.scriptId,
+          (item) => item.scriptId === arg.scriptId,
         )
       : undefined;
     const indicators = existing

@@ -39,7 +39,9 @@ import {
   type IndicatorBrowserTab,
 } from "@/services/privateWorkspaceAccess";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
-import type { BuiltInIndicatorType, CustomIndicatorScript } from "@/types";
+import type { CustomIndicatorScript } from "@/types";
+import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
+import type { IndicatorRuntimeDefinition } from "@/services/api/resources/indicatorRuntimeApi";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import { trapFocusWithin } from "@/utils/focusManagement";
@@ -95,32 +97,9 @@ export interface IndicatorMenuProps {
   onOpenPine?: () => void;
 }
 
-const BUILT_IN_INDICATORS: {
-  type: BuiltInIndicatorType;
-  name: string;
-  description: string;
-}[] = [
-  { type: "SMA", name: "Moving Average (SMA)", description: "Simple moving average" },
-  { type: "EMA", name: "Moving Average (EMA)", description: "Exponential moving average" },
-  { type: "VWAP", name: "VWAP", description: "Session anchored VWAP" },
-  { type: "RSI", name: "Relative Strength Index", description: "Momentum oscillator" },
-  { type: "MACD", name: "MACD", description: "Trend and momentum" },
-  { type: "ADR", name: "Average Daily Range", description: "Daily range levels" },
-  {
-    type: "FVG",
-    name: "Fair Value Gap [LuxAlgo]",
-    description: "Threshold, mitigation, dynamic zones, and dashboard",
-  },
-  {
-    type: "SWING_SR",
-    name: "Swing high/low support & resistance",
-    description: "Confirmed pivot levels with horizontal segments",
-  },
-];
-
-function builtInMatches(item: (typeof BUILT_IN_INDICATORS)[number], query: string) {
+function catalogIndicatorMatches(item: IndicatorRuntimeDefinition, query: string) {
   const q = query.trim().toLowerCase();
-  return !q || `${item.name} ${item.description}`.toLowerCase().includes(q);
+  return !q || `${item.name} ${item.shortTitle ?? ""} ${item.description ?? ""} ${item.type}`.toLowerCase().includes(q);
 }
 
 export function IndicatorMenu({
@@ -136,6 +115,9 @@ export function IndicatorMenu({
   const [deleteTarget, setDeleteTarget] =
     useState<CustomIndicatorScript | null>(null);
   const [storeRows, setStoreRows] = useState<PublicIndicatorScript[]>([]);
+  const [catalog, setCatalog] = useState<IndicatorRuntimeDefinition[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [storeLoading, setStoreLoading] = useState(false);
   const [storeError, setStoreError] = useState<string | null>(null);
 
@@ -150,7 +132,7 @@ export function IndicatorMenu({
   const scripts = useAtomValue(pineScriptsAtom);
   const addCustomIndicator = useSetAtom(addCustomIndicatorFromScriptAtom);
   const addCustomIndicatorFromSource = useSetAtom(addCustomIndicatorFromSourceAtom);
-  const addBuiltInIndicator = useSetAtom(addIndicatorAtom);
+  const addCatalogDefinition = useSetAtom(addIndicatorAtom);
   const deleteScript = useSetAtom(deletePineScriptAtom);
   const loadPineScript = useSetAtom(loadPineScriptAtom);
   const togglePineFavorite = useSetAtom(togglePineFavoriteAtom);
@@ -233,6 +215,32 @@ export function IndicatorMenu({
     return () => window.clearTimeout(timeout);
   }, [open, query, tab]);
 
+  useEffect(() => {
+    if (!open || tab !== "store") return;
+    let active = true;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    loadIndicatorCatalog()
+      .then((definitions) => {
+        if (active) setCatalog(definitions);
+      })
+      .catch((error) => {
+        if (!active) return;
+        const description = reportFrontendError(error, {
+          title: "Indicator catalog load failed",
+          toast: false,
+        });
+        setCatalog([]);
+        setCatalogError(description.message);
+      })
+      .finally(() => {
+        if (active) setCatalogLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, tab]);
+
   const filteredScripts = useMemo(() => {
     if (!canUsePrivatePine) return [];
     const sorted = [...scripts].sort(
@@ -247,9 +255,9 @@ export function IndicatorMenu({
           : [];
     return base.filter((script) => scriptMatches(script, query));
   }, [canUsePrivatePine, query, scripts, tab]);
-  const filteredBuiltIns = useMemo(
-    () => BUILT_IN_INDICATORS.filter((item) => builtInMatches(item, query)),
-    [query],
+  const filteredCatalog = useMemo(
+    () => catalog.filter((item) => catalogIndicatorMatches(item, query)),
+    [catalog, query],
   );
 
   const openPineEditor = () => {
@@ -294,8 +302,8 @@ export function IndicatorMenu({
     closeBrowser();
   };
 
-  const addBuiltIn = (type: BuiltInIndicatorType) => {
-    addBuiltInIndicator(type);
+  const addCatalogIndicator = (definition: IndicatorRuntimeDefinition) => {
+    addCatalogDefinition(definition);
     closeBrowser();
   };
 
@@ -355,15 +363,17 @@ export function IndicatorMenu({
           )}
           {tab === "store" && (
             <>
-              {filteredBuiltIns.map((item) => (
-                <MobileBuiltInRow key={`builtin:${item.type}`} item={item} onAdd={() => addBuiltIn(item.type)} />
+              {filteredCatalog.map((item) => (
+                <MobileCatalogRow key={`catalog:${item.type}`} item={item} onAdd={() => addCatalogIndicator(item)} />
               ))}
+              {catalogLoading && <EmptyState>Loading indicator catalog...</EmptyState>}
+              {!catalogLoading && catalogError && <EmptyState>{catalogError}</EmptyState>}
               {storeLoading && <EmptyState>Loading public indicators...</EmptyState>}
               {!storeLoading && storeError && <EmptyState>{storeError}</EmptyState>}
               {!storeLoading && !storeError && storeRows.map((item) => (
                 <MobileStoreRow key={item.id} item={item} showFavoriteMarker={canShowFavorites} onAdd={() => void addPublicScript(item)} />
               ))}
-              {!storeLoading && !storeError && storeRows.length === 0 && filteredBuiltIns.length === 0 && <EmptyState>No indicators found.</EmptyState>}
+              {!catalogLoading && !catalogError && !storeLoading && !storeError && storeRows.length === 0 && filteredCatalog.length === 0 && <EmptyState>No indicators found.</EmptyState>}
             </>
           )}
         </section>
@@ -535,9 +545,11 @@ export function IndicatorMenu({
 
                     {tab === "store" && (
                       <>
-                        {filteredBuiltIns.map((item) => (
-                          <BuiltInRow key={`builtin:${item.type}`} item={item} onAdd={() => addBuiltIn(item.type)} />
+                        {filteredCatalog.map((item) => (
+                          <CatalogIndicatorRow key={`catalog:${item.type}`} item={item} onAdd={() => addCatalogIndicator(item)} />
                         ))}
+                        {catalogLoading && <EmptyState>Loading indicator catalog...</EmptyState>}
+                        {!catalogLoading && catalogError && <EmptyState>{catalogError}</EmptyState>}
                         {storeLoading && <EmptyState>Loading public indicators...</EmptyState>}
                         {!storeLoading && storeError && <EmptyState>{storeError}</EmptyState>}
                         {!storeLoading && !storeError && storeRows.map((item) => (
@@ -548,7 +560,7 @@ export function IndicatorMenu({
                             onAdd={() => void addPublicScript(item)}
                           />
                         ))}
-                        {!storeLoading && !storeError && storeRows.length === 0 && filteredBuiltIns.length === 0 && (
+                        {!catalogLoading && !catalogError && !storeLoading && !storeError && storeRows.length === 0 && filteredCatalog.length === 0 && (
                           <EmptyState>No indicators found.</EmptyState>
                         )}
                       </>
@@ -698,11 +710,11 @@ function MobileStoreRow({
   );
 }
 
-function MobileBuiltInRow({
+function MobileCatalogRow({
   item,
   onAdd,
 }: {
-  item: (typeof BUILT_IN_INDICATORS)[number];
+  item: IndicatorRuntimeDefinition;
   onAdd: () => void;
 }) {
   return (
@@ -714,11 +726,11 @@ function MobileBuiltInRow({
   );
 }
 
-function BuiltInRow({
+function CatalogIndicatorRow({
   item,
   onAdd,
 }: {
-  item: (typeof BUILT_IN_INDICATORS)[number];
+  item: IndicatorRuntimeDefinition;
   onAdd: () => void;
 }) {
   return (

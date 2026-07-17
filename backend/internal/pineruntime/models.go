@@ -161,12 +161,47 @@ type CompileResponse struct {
 	UnsupportedFeatures []string        `json:"unsupportedFeatures"`
 }
 
-// IndicatorRuntimeRequest is the stable catalog contract for built-ins. Config
-// stays opaque so a catalog definition can map it to Pine inputs/styles without
-// changing the transport; execution still goes through the common compiler.
+// IndicatorDefinition is the single UI/runtime contract for both catalog
+// indicators and user Pine source. The browser renders these fields without
+// knowing any indicator names or formulas.
+type IndicatorDefinition struct {
+	Type                   string            `json:"type"`
+	Name                   string            `json:"name"`
+	ShortTitle             string            `json:"shortTitle,omitempty"`
+	Description            string            `json:"description,omitempty"`
+	Overlay                bool              `json:"overlay"`
+	Timeframe              string            `json:"timeframe,omitempty"`
+	Inputs                 []InputDefinition `json:"inputs"`
+	Styles                 []StyleDefinition `json:"styles"`
+	LegacyInputBindings    map[string]string `json:"legacyInputBindings,omitempty"`
+	LegacyStyleBindings    map[string]string `json:"legacyStyleBindings,omitempty"`
+	RequiresHistoryContext bool              `json:"requiresHistoryContext"`
+	SourceAvailable        bool              `json:"sourceAvailable"`
+	Shortcut               string            `json:"shortcut,omitempty"`
+}
+
+type IndicatorCatalogResponse struct {
+	Indicators []IndicatorDefinition `json:"indicators"`
+	Errors     []RuntimeError        `json:"errors"`
+}
+
+type IndicatorDefinitionRequest struct {
+	IndicatorType string `json:"indicatorType,omitempty"`
+	SourceCode    string `json:"sourceCode,omitempty"`
+}
+
+type IndicatorDefinitionResponse struct {
+	Definition IndicatorDefinition `json:"definition"`
+	Errors     []RuntimeError      `json:"errors"`
+}
+
+// IndicatorRuntimeRequest is the stable contract for every indicator. Config
+// stays opaque so definitions can evolve without transport changes. SourceCode
+// is present for saved/public user scripts; catalog entries resolve it by type.
 type IndicatorRuntimeRequest struct {
 	IndicatorType string         `json:"indicatorType"`
 	IndicatorID   string         `json:"indicatorId,omitempty"`
+	SourceCode    string         `json:"sourceCode,omitempty"`
 	Timeframe     string         `json:"timeframe,omitempty"`
 	Config        map[string]any `json:"config,omitempty"`
 	Candles       []Candle       `json:"candles"`

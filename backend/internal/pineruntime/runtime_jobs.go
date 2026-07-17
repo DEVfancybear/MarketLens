@@ -251,12 +251,14 @@ func indicatorRuntimeKey(req IndicatorRuntimeRequest) (string, error) {
 	// IndicatorID is an instance identity rather than calculator input.
 	return hashRuntimeRequest(struct {
 		IndicatorType string         `json:"indicatorType"`
+		SourceCode    string         `json:"sourceCode,omitempty"`
 		Timeframe     string         `json:"timeframe,omitempty"`
 		Config        map[string]any `json:"config,omitempty"`
 		Candles       []Candle       `json:"candles"`
 		Truncated     bool           `json:"truncated,omitempty"`
 	}{
 		IndicatorType: req.IndicatorType,
+		SourceCode:    indicatorSourceCode(req),
 		Timeframe:     req.Timeframe,
 		Config:        runtimeConfigForKey(req.Config),
 		Candles:       candles,
@@ -274,6 +276,9 @@ func runtimeConfigForKey(config map[string]any) map[string]any {
 		case "id", "indicatorId", "clientId":
 			// Instance identity must not prevent equivalent calculations from
 			// sharing the common runtime job.
+			continue
+		case "sourceCode":
+			// Source is canonicalized and hashed as a top-level runtime field.
 			continue
 		default:
 			canonical[key] = value

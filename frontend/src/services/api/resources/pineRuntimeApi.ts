@@ -1,16 +1,13 @@
 import { postJson } from "@/services/api/client";
 import type {
   Candle,
-  IndicatorInputValue,
   IndicatorInputValues,
   IndicatorResult,
   IndicatorStyleValues,
 } from "@/types";
 import type {
   PineCompilation,
-  PineInputDefinition,
   PineScriptMeta,
-  PineStyleDefinition,
 } from "@/services/pineRuntimeTypes";
 
 export interface PineRuntimeError {
@@ -19,16 +16,6 @@ export interface PineRuntimeError {
 }
 
 export interface PineRuntimeMetaResponse extends PineScriptMeta {
-  errors: PineRuntimeError[];
-}
-
-export interface PineRuntimeInputsResponse {
-  inputs: PineInputDefinition[];
-  errors: PineRuntimeError[];
-}
-
-export interface PineRuntimeStylesResponse {
-  styles: PineStyleDefinition[];
   errors: PineRuntimeError[];
 }
 
@@ -64,28 +51,6 @@ export async function getPineRuntimeMeta(sourceCode: string): Promise<PineScript
   };
 }
 
-export async function getPineRuntimeInputs(
-  sourceCode: string,
-  inputOverrides: IndicatorInputValues = {},
-): Promise<PineInputDefinition[]> {
-  const response = await postJson<PineRuntimeInputsResponse>("pine-runtime/inputs", {
-    sourceCode,
-    inputOverrides,
-  });
-  return response.inputs;
-}
-
-export async function getPineRuntimeStyles(
-  sourceCode: string,
-  styleOverrides: IndicatorStyleValues = {},
-): Promise<PineStyleDefinition[]> {
-  const response = await postJson<PineRuntimeStylesResponse>("pine-runtime/styles", {
-    sourceCode,
-    styleOverrides,
-  });
-  return response.styles;
-}
-
 export async function compilePineRuntime(params: {
   scriptId?: string;
   sourceCode: string;
@@ -109,5 +74,3 @@ export async function compilePineRuntime(params: {
     errors: runtimeErrorText(response.errors),
   };
 }
-
-export type { IndicatorInputValue };

@@ -6,18 +6,17 @@ import (
 	"strings"
 )
 
-// ComputeIndicatorRuntime keeps the built-in HTTP contract while deliberately
-// delegating every catalog entry to Compile. There is no indicatorType formula
-// dispatch here: built-ins differ from saved scripts only by where their Pine
-// source and default properties come from.
+// ComputeIndicatorRuntime is the common execution path for catalog entries,
+// saved scripts, and public scripts. The only difference is whether source is
+// resolved from the backend catalog or supplied in the request.
 func ComputeIndicatorRuntime(ctx context.Context, req IndicatorRuntimeRequest) IndicatorRuntimeResponse {
-	id := runtimeResultID(req.IndicatorID, "builtin")
+	id := runtimeResultID(req.IndicatorID, "indicator")
 	response := IndicatorRuntimeResponse{
 		Result:   IndicatorResult{ID: id, Series: []IndicatorSeries{}},
 		Errors:   []RuntimeError{},
 		Warnings: []RuntimeError{},
 	}
-	compileRequest, err := builtInCompileRequest(req)
+	compileRequest, err := indicatorCompileRequest(req)
 	if err != nil {
 		response.Errors = append(response.Errors, RuntimeError{Message: err.Error()})
 		return response

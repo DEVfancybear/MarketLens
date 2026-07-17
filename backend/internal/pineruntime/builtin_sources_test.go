@@ -6,11 +6,15 @@ import (
 )
 
 func TestBuiltInPineCatalogIsCompleteAndHasParseableMetadata(t *testing.T) {
-	expected := []string{"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "SWING_SR", "FVG"}
-	if len(builtInPineCatalog) != len(expected) {
-		t.Fatalf("catalog entries = %d, want %d", len(builtInPineCatalog), len(expected))
+	if len(builtInPineCatalog) != len(builtInPineOrder) {
+		t.Fatalf("catalog entries = %d, order entries = %d", len(builtInPineCatalog), len(builtInPineOrder))
 	}
-	for _, indicatorType := range expected {
+	seen := map[string]bool{}
+	for _, indicatorType := range builtInPineOrder {
+		if seen[indicatorType] {
+			t.Fatalf("duplicate catalog order entry %q", indicatorType)
+		}
+		seen[indicatorType] = true
 		source, ok, err := builtInPineSource(indicatorType)
 		if err != nil {
 			t.Fatalf("%s source: %v", indicatorType, err)
@@ -21,6 +25,65 @@ func TestBuiltInPineCatalogIsCompleteAndHasParseableMetadata(t *testing.T) {
 		if meta := ExtractMeta(source); strings.TrimSpace(meta.Name) == "" {
 			t.Fatalf("%s source metadata has no name", indicatorType)
 		}
+	}
+}
+
+func TestIndicatorCatalogOwnsDynamicFrontendDefinition(t *testing.T) {
+	catalog, err := builtInIndicatorCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Indicators) != len(builtInPineOrder) {
+		t.Fatalf("catalog definitions = %d, want %d", len(catalog.Indicators), len(builtInPineOrder))
+	}
+	for index, definition := range catalog.Indicators {
+		if definition.Type != builtInPineOrder[index] || definition.Name == "" || definition.Description == "" {
+			t.Fatalf("definition %d = %+v", index, definition)
+		}
+		if definition.Type == "ADR" && !definition.RequiresHistoryContext {
+			t.Fatalf("ADR must request backend-declared history context: %+v", definition)
+		}
+		for _, input := range definition.Inputs {
+			if input.Key == "lineColor" || input.Key == "bullCss" || input.Key == "showHigh" {
+				t.Fatalf("style-owned input leaked into generic Inputs UI: %s/%s", definition.Type, input.Key)
+			}
+		}
+	}
+	if catalog.Indicators[0].Shortcut != "primary" {
+		t.Fatalf("catalog shortcut = %q", catalog.Indicators[0].Shortcut)
+	}
+	byType := map[string]IndicatorDefinition{}
+	for _, definition := range catalog.Indicators {
+		byType[definition.Type] = definition
+	}
+	macd := byType["MACD"]
+	if macd.LegacyInputBindings["fastLength"] != "length" || macd.LegacyInputBindings["slowLength"] != "length3" {
+		t.Fatalf("MACD legacy input bindings = %+v", macd.LegacyInputBindings)
+	}
+	fvg := byType["FVG"]
+	if fvg.LegacyStyleBindings["builtin:fvg-bull.color"] != "color" || fvg.LegacyStyleBindings["builtin:fvg-bear.color"] != "color2" {
+		t.Fatalf("FVG legacy style bindings = %+v", fvg.LegacyStyleBindings)
+	}
+}
+
+func TestUserSourceAndBuiltInResolveToSameDefinitionShape(t *testing.T) {
+	source := `//@version=5
+indicator("User MA", overlay=true)
+period = input.int(7, "Period")
+plot(ta.sma(close, period), "Average", color=#123456)`
+	user, err := indicatorDefinition(IndicatorDefinitionRequest{IndicatorType: "saved:42", SourceCode: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	builtIn, err := indicatorDefinition(IndicatorDefinitionRequest{IndicatorType: "SMA"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.Type != "saved:42" || !user.SourceAvailable || user.Name != "User MA" || len(user.Inputs) != 1 || len(user.Styles) != 1 {
+		t.Fatalf("user definition = %+v", user)
+	}
+	if builtIn.Type != "SMA" || builtIn.SourceAvailable || len(builtIn.Inputs) != 1 || len(builtIn.Styles) != 1 {
+		t.Fatalf("built-in definition = %+v", builtIn)
 	}
 }
 
@@ -63,6 +126,23 @@ func TestBuiltInCompileRequestMapsLegacyConfigToPineInputsAndStyles(t *testing.T
 	}
 	if got := request.StyleOverrides["__output.precision"]; got != 4 {
 		t.Fatalf("common output style = %#v", got)
+	}
+}
+
+func TestBuiltInCompileRequestAcceptsDefinitionNativeInputKeys(t *testing.T) {
+	request, err := builtInCompileRequest(IndicatorRuntimeRequest{
+		IndicatorType: "MACD",
+		Config: map[string]any{"inputValues": map[string]any{
+			"fastLength": 6, "slowLength": 18, "signalLength": 4,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]InputValue{"fastLength": 6, "slowLength": 18, "signalLength": 4} {
+		if got := request.InputOverrides[key]; got != want {
+			t.Fatalf("%s = %#v, want %#v", key, got, want)
+		}
 	}
 }
 

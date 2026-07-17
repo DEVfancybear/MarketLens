@@ -5,6 +5,25 @@ import {
   createChartBenchmarkCandles,
   createPhase2BenchmarkIndicators,
 } from "../../src/services/chartBenchmarkFixtures";
+import type { IndicatorRuntimeDefinition } from "../../src/services/api/resources/indicatorRuntimeApi";
+
+const benchmarkDefinitions: IndicatorRuntimeDefinition[] = Array.from(
+  { length: 6 },
+  (_, index) => ({
+    type: `backend-definition-${index}`,
+    name: `Backend definition ${index}`,
+    overlay: index < 3,
+    inputs: [{
+      key: "period",
+      title: "Period",
+      kind: "int",
+      defaultValue: index + 2,
+    }],
+    styles: [],
+    requiresHistoryContext: false,
+    sourceAvailable: false,
+  }),
+);
 
 test("benchmark fixtures provide every Phase 0 size", () => {
   assert.deepEqual(CHART_BENCHMARK_SIZES, [900, 5_000, 20_000, 100_000]);
@@ -15,16 +34,17 @@ test("benchmark fixtures provide every Phase 0 size", () => {
   }
 });
 
-test("Phase 2 benchmark profile exercises the backend-runtime built-in mix", () => {
-  const indicators = createPhase2BenchmarkIndicators();
-  assert.deepEqual(indicators.map((indicator) => indicator.type), [
-    "SMA",
-    "EMA",
-    "VWAP",
-    "RSI",
-    "MACD",
-  ]);
+test("Phase 2 benchmark profile derives its workload from backend definitions", () => {
+  const indicators = createPhase2BenchmarkIndicators(benchmarkDefinitions);
+  assert.deepEqual(
+    indicators.map((indicator) => indicator.type),
+    benchmarkDefinitions.slice(0, 5).map((definition) => definition.type),
+  );
   assert.equal(indicators.filter((indicator) => indicator.separatePane).length, 2);
+  assert.deepEqual(
+    indicators.map((indicator) => indicator.inputValues?.period),
+    [2, 3, 4, 5, 6],
+  );
   assert.equal(new Set(indicators.map((indicator) => indicator.id)).size, indicators.length);
 });
 

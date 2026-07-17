@@ -728,31 +728,28 @@ to chart without a private script lookup:
 
 ---
 
-## Built-in indicator runtime
+## Common indicator runtime
 
-Built-ins are Pine source catalog entries compiled by the same parser/executor
-as saved user scripts. The frontend sends instance config and the replay-visible
-OHLCV window, then renders only the returned `IndicatorResult`. The catalog
-currently supports `SMA`, `EMA`, `VWAP`, `RSI`, `MACD`, `ADR`, `FVG`, and
-`SWING_SR`; adding another source entry does not add a formula-specific route.
+Catalog entries, saved scripts, and public scripts use one definition and
+compute contract. The frontend contains no catalog list or type-specific
+execution branch; it renders backend metadata and returned chart primitives.
 
-| Method | Path                                | Purpose                                      |
-| ------ | ----------------------------------- | -------------------------------------------- |
-| POST   | `/api/v1/indicator-runtime/compute` | Compile a catalog Pine source against OHLCV |
+| Method | Path                                   | Purpose |
+| ------ | -------------------------------------- | ------- |
+| GET    | `/api/v1/indicator-runtime/catalog`    | Ordered backend catalog with names, defaults, inputs, styles, pane placement, and history metadata |
+| POST   | `/api/v1/indicator-runtime/definition` | Resolve the same definition shape from a catalog type or supplied Pine source |
+| POST   | `/api/v1/indicator-runtime/compute`    | Compile a catalog or user-source indicator against OHLCV |
 
 Request:
 
 ```json
 {
-  "indicatorType": "SWING_SR",
+  "indicatorType": "catalog-or-script-key",
   "indicatorId": "ind_abc",
+  "sourceCode": "optional Pine source for a saved/public script",
   "config": {
-    "type": "SWING_SR",
-    "length": 25,
-    "length2": 25,
-    "color": "#ef5350",
-    "color2": "#26c6da",
-    "inputValues": { "highSource": "high", "lowSource": "low" },
+    "type": "catalog-or-script-key",
+    "inputValues": { "period": 25 },
     "styleValues": {}
   },
   "candles": [
@@ -772,10 +769,14 @@ Response:
 ```
 
 The common compiler sorts/deduplicates candles, caps the supplied window at
-5,000 bars, maps catalog properties to Pine inputs/styles, and emits the same
-result contract used for user source. Swing pivots are emitted only after the
-complete right-hand strength window exists, so replay cannot observe a future
-candle.
+5,000 bars, maps instance properties to Pine inputs/styles, and emits one
+`IndicatorResult` contract. When `sourceCode` is present it wins; otherwise the
+backend resolves embedded source by `indicatorType`. Both paths invoke the same
+`Compile` function. Backend definitions also expose legacy property bindings so
+old persisted presets can be hydrated without frontend type-name dispatch.
+
+Swing pivots are emitted only after the complete right-hand strength window
+exists, so replay cannot observe a future candle.
 
 `SWING_SR` is a clean-room implementation of the behavior publicly described
 by the protected TradingView script: confirmed high/low pivots, independent

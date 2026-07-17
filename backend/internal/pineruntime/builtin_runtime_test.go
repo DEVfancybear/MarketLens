@@ -70,7 +70,7 @@ func computeBuiltInForTest(t *testing.T, indicatorType string, candles []Candle,
 
 func TestEveryCurrentBuiltInIsPineSourceCompiledByCommonRuntime(t *testing.T) {
 	candles := sampleIntradayCandles(18)
-	for _, indicatorType := range []string{"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "SWING_SR", "FVG"} {
+	for _, indicatorType := range builtInPineOrder {
 		t.Run(indicatorType, func(t *testing.T) {
 			input := candles
 			config := runtimeConfig("runtime-"+indicatorType, indicatorType)
@@ -145,6 +145,26 @@ func TestFVGUserCopyAndCatalogEntryUseSameCompilerResult(t *testing.T) {
 	left, right := builtIn.Result.Series[0], userCopy.Result.Series[0]
 	if left.Type != right.Type || left.Color != right.Color || *left.BaseValue != *right.BaseValue || len(left.Data) != len(right.Data) {
 		t.Fatalf("common compiler diverged: built-in=%+v user=%+v", left, right)
+	}
+}
+
+func TestSavedUserSourceUsesIndicatorRuntimeComputePath(t *testing.T) {
+	source := `//@version=5
+indicator("Saved EMA", overlay=true)
+period = input.int(3, "Period")
+plot(ta.ema(close, period), "saved-ema", color=#00ff00)`
+	response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
+		IndicatorType: "saved:user-1",
+		IndicatorID:   "chart-instance",
+		SourceCode:    source,
+		Config:        map[string]any{"inputValues": map[string]any{"period": 2}},
+		Candles:       sampleCandles(8),
+	})
+	if len(response.Errors) != 0 || response.Result.ID != "chart-instance" || len(response.Result.Series) != 1 {
+		t.Fatalf("common user runtime response = %+v", response)
+	}
+	if response.Result.Series[0].Key != "saved-ema" {
+		t.Fatalf("series = %+v", response.Result.Series[0])
 	}
 }
 
@@ -245,5 +265,49 @@ func TestIndicatorRuntimeHTTPContract(t *testing.T) {
 	}
 	if decoded.Result.ID != "sma-http" || len(decoded.Result.Series) != 1 || decoded.Result.Series[0].Key != "sma" {
 		t.Fatalf("response = %+v", decoded)
+	}
+}
+
+func TestIndicatorRuntimeCatalogAndDefinitionHTTPContracts(t *testing.T) {
+	app := fiber.New()
+	NewHandler().Register(app.Group("/api/v1"))
+
+	catalogRequest := httptest.NewRequest(http.MethodGet, "/api/v1/indicator-runtime/catalog", nil)
+	catalogResponse, err := app.Test(catalogRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalogResponse.StatusCode != fiber.StatusOK {
+		t.Fatalf("catalog status = %d", catalogResponse.StatusCode)
+	}
+	var catalog IndicatorCatalogResponse
+	if err := json.NewDecoder(catalogResponse.Body).Decode(&catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Indicators) != len(builtInPineOrder) || catalog.Indicators[0].Type != builtInPineOrder[0] {
+		t.Fatalf("catalog = %+v", catalog)
+	}
+
+	body, err := json.Marshal(IndicatorDefinitionRequest{
+		IndicatorType: "CUSTOM",
+		SourceCode: `//@version=5
+indicator("HTTP user", overlay=false)
+plot(close, "close")`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitionRequest := httptest.NewRequest(http.MethodPost, "/api/v1/indicator-runtime/definition", bytes.NewReader(body))
+	definitionRequest.Header.Set("Content-Type", "application/json")
+	definitionResponse, err := app.Test(definitionRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded IndicatorDefinitionResponse
+	if err := json.NewDecoder(definitionResponse.Body).Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if definitionResponse.StatusCode != fiber.StatusOK || decoded.Definition.Name != "HTTP user" || decoded.Definition.Overlay {
+		t.Fatalf("definition status=%d body=%+v", definitionResponse.StatusCode, decoded)
 	}
 }

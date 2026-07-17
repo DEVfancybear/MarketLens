@@ -42,7 +42,7 @@
     "src/components/smc/smcVisibleRange.ts",
     "src/services/chartBenchmarkFixtures.ts",
     "src/services/chartOptimizationRollout.ts",
-    "src/services/pineRuntimeCachePolicy.ts",
+    "src/services/indicatorRuntimePolicy.ts",
     "src/components/chart/drawing/tools/plugins/lineGeometry.ts",
     "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",
     "src/components/chart/drawing/tools/positionGeometry.ts",

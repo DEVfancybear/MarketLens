@@ -3,14 +3,12 @@ import { useEffect, useState } from "react";
 import { useAtomValue } from "jotai";
 import { authStatusAtom } from "@/store/authStore";
 import type { IndicatorConfig } from "@/types";
+import type { PineInputDefinition } from "@/services/pineRuntimeTypes";
+import type { IndicatorRuntimeDefinition } from "@/services/api/resources/indicatorRuntimeApi";
 import {
-  getPineRuntimeInputs,
-  getPineRuntimeMeta,
-} from "@/services/api/resources/pineRuntimeApi";
-import type {
-  PineInputDefinition,
-  PineScriptMeta,
-} from "@/services/pineRuntimeTypes";
+  indicatorInputsFromConfig,
+  loadIndicatorDefinition,
+} from "@/services/indicatorDefinitions";
 import {
   inputsInStatusLine,
   valuesInStatusLine,
@@ -21,13 +19,15 @@ import { ChartPopupSurface } from "./ChartPopupSurface";
 
 function pineLegendInputs(
   indicator: IndicatorConfig,
-  definitions: PineInputDefinition[] = [],
+  definition: IndicatorRuntimeDefinition,
 ): string {
+  const definitions: PineInputDefinition[] = definition.inputs;
   if (definitions.length === 0) return "";
+  const values = indicatorInputsFromConfig(definition, indicator);
   return definitions
     .filter((input) => input.kind !== "bool" && input.kind !== "color")
     .slice(0, 6)
-    .map((input) => indicator.inputValues?.[input.key] ?? input.defaultValue)
+    .map((input) => values[input.key] ?? input.defaultValue)
     .map((value) => String(value))
     .join(" ");
 }
@@ -35,26 +35,15 @@ function pineLegendInputs(
 export function indicatorLegendTitle(
   indicator: IndicatorConfig,
   valueText?: string,
-  inputDefinitions?: PineInputDefinition[],
-  meta?: PineScriptMeta,
+  definition?: IndicatorRuntimeDefinition,
 ): string {
   const base =
-    indicator.type === "CUSTOM"
-      ? meta?.shortTitle || indicator.name || meta?.name || "Custom script"
-      : indicator.type === "SWING_SR"
-        ? "Swing S/R"
-        : indicator.type === "FVG"
-          ? "Fair Value Gap"
-        : indicator.type;
+    definition?.shortTitle || indicator.name || definition?.name || indicator.type;
   const params =
     inputsInStatusLine(indicator.styleValues)
-      ? indicator.type === "CUSTOM"
-        ? pineLegendInputs(indicator, inputDefinitions)
-        : indicator.type === "SWING_SR"
-          ? `${indicator.length}/${indicator.length2 ?? indicator.length}`
-          : indicator.type !== "VWAP" && indicator.type !== "FVG" && indicator.length
-            ? String(indicator.length)
-            : ""
+      ? definition
+        ? pineLegendInputs(indicator, definition)
+        : ""
       : "";
   const values =
     valuesInStatusLine(indicator.styleValues) && valueText
@@ -84,50 +73,42 @@ export function IndicatorLegend({
   const mobile = platform === "mobile";
   const authStatus = useAtomValue(authStatusAtom);
   const canShowSourceControls = canShowPineSourceControls(authStatus);
-  const [inputDefinitionsById, setInputDefinitionsById] = useState<
-    Record<string, {
-      sourceCode: string;
-      definitions: PineInputDefinition[];
-      meta: PineScriptMeta | null;
-    }>
+  const [definitionsById, setDefinitionsById] = useState<
+    Record<string, IndicatorRuntimeDefinition>
   >({});
 
   useEffect(() => {
     let cancelled = false;
-    for (const indicator of indicators) {
-      if (indicator.type !== "CUSTOM" || !indicator.sourceCode?.trim()) continue;
-      if (inputDefinitionsById[indicator.id]?.sourceCode === indicator.sourceCode) continue;
-      Promise.all([
-        getPineRuntimeInputs(indicator.sourceCode, indicator.inputValues ?? {}),
-        getPineRuntimeMeta(indicator.sourceCode),
-      ])
-        .then(([definitions, meta]) => {
-          if (cancelled) return;
-          setInputDefinitionsById((current) => ({
-            ...current,
-            [indicator.id]: {
-              sourceCode: indicator.sourceCode ?? "",
-              definitions,
-              meta,
-            },
-          }));
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setInputDefinitionsById((current) => ({
-            ...current,
-            [indicator.id]: {
-              sourceCode: indicator.sourceCode ?? "",
-              definitions: [],
-              meta: null,
-            },
-          }));
-        });
-    }
+    void Promise.all(
+      indicators.map(async (indicator) => {
+        try {
+          const definition = await loadIndicatorDefinition({
+            indicatorType: indicator.type,
+            sourceCode: indicator.sourceCode,
+          });
+          return [indicator.id, definition] as const;
+        } catch {
+          return [
+            indicator.id,
+            {
+              type: indicator.type,
+              name: indicator.name || indicator.type,
+              overlay: !indicator.separatePane,
+              inputs: [],
+              styles: [],
+              requiresHistoryContext: indicator.requiresHistoryContext ?? false,
+              sourceAvailable: Boolean(indicator.sourceCode),
+            } satisfies IndicatorRuntimeDefinition,
+          ] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) setDefinitionsById(Object.fromEntries(entries));
+    });
     return () => {
       cancelled = true;
     };
-  }, [indicators, inputDefinitionsById]);
+  }, [indicators]);
 
   if (indicators.length === 0) return null;
 
@@ -144,12 +125,11 @@ export function IndicatorLegend({
     >
       {indicators.map((indicator, index) => {
         const visible = indicator.visible !== false;
-        const sourceEnabled = indicator.type === "CUSTOM" && !!indicator.sourceCode;
+        const sourceEnabled = !!indicator.sourceCode;
         const title = indicatorLegendTitle(
           indicator,
           valueTextById?.[indicator.id],
-          inputDefinitionsById[indicator.id]?.definitions,
-          inputDefinitionsById[indicator.id]?.meta ?? undefined,
+          definitionsById[indicator.id],
         );
         return (
           <div

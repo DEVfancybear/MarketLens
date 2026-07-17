@@ -103,7 +103,7 @@ copy(window.__chartPerformanceProbe.exportJson())
 The Phase 2 gate is:
 
 1. parity tests remain green;
-2. built-in realtime work records append/latest cache hits rather than repeated
+2. common indicator-runtime work records append/latest cache hits rather than repeated
    full rebuilds;
 3. `indicator.viewport.pointsAvoided` is positive and retained windows exceed
    shifts during pan/zoom;
@@ -113,9 +113,11 @@ The Phase 2 gate is:
 5. no empty visible region, Replay future leak, or indicator discontinuity is
    observed.
 
-The `phase2` benchmark profile injects a deterministic SMA, EMA, VWAP, RSI, and
-MACD set without modifying the saved indicator workspace. Omit the profile only
-for a separate custom-Pine fallback capture.
+The `phase2` benchmark profile now derives a deterministic five-indicator
+workload from the first five backend catalog definitions without modifying the
+saved indicator workspace. This keeps the benchmark backend-driven and prevents
+the benchmark harness from becoming a second frontend catalog. Historical
+captures below retain the names used when those captures were recorded.
 
 ## First post-change capture
 
