@@ -17,6 +17,14 @@ older references:
 
 Recent post-split work:
 
+- **Backend-owned indicator runtime and Swing S/R complete (2026-07-16):** SMA,
+  EMA, VWAP, RSI, MACD, ADR, and Swing S/R now calculate through the common Go
+  registry; the frontend only requests, caches, and renders API results. The
+  protected reference's pivot-formation Alert Center feature is intentionally
+  pending. Continue it only from
+  `docs/PIVOT_FORMATION_ALERT_PLAN.md`; do not add a frontend detector or
+  client-claimed trigger path.
+
 - **Drawing maintenance Phase 8 Wave C complete (2026-07-12):** 11 harmonic/Elliott/time-cycle
   tools added through a manifest-labeled pattern framework, taking the persistent catalog to 73.
   `NEXT_PUBLIC_DRAWING_PHASE8_WAVE_C=false` disables creation while preserving saved-object decode.

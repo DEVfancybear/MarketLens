@@ -2,6 +2,12 @@
 
 _Implemented and benchmarked: 2026-07-11._
 
+> Superseded for indicator calculation on 2026-07-16. Built-in formulas and
+> warmup/recursive state now live in the Go indicator runtime; the frontend
+> retains only viewport projection and an async API-result cache. The local
+> dependency and incremental-computation sections below are historical Phase 2
+> benchmark context, not the current execution architecture.
+
 ## Scope
 
 Phase 2 virtualizes derived chart work without windowing the canonical candle

@@ -31,6 +31,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Post("/inputs", h.inputs)
 	g.Post("/styles", h.styles)
 	g.Post("/compile", h.compile)
+	router.Post("/indicator-runtime/compute", h.computeIndicator)
 }
 
 func (h *Handler) meta(c *fiber.Ctx) error {
@@ -92,5 +93,30 @@ func (h *Handler) compile(c *fiber.Ctx) error {
 		})
 	case item := <-ch:
 		return c.JSON(item.resp)
+	}
+}
+
+func (h *Handler) computeIndicator(c *fiber.Ctx) error {
+	var req IndicatorRuntimeRequest
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	ctx, cancel := h.timeout.WithTimeout(c.Context())
+	defer cancel()
+
+	ch := make(chan IndicatorRuntimeResponse, 1)
+	go func() {
+		ch <- ComputeIndicatorRuntime(ctx, req)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return c.Status(fiber.StatusRequestTimeout).JSON(IndicatorRuntimeResponse{
+			Result:   IndicatorResult{ID: req.IndicatorID, Series: []IndicatorSeries{}},
+			Errors:   []RuntimeError{{Message: ctx.Err().Error()}},
+			Warnings: []RuntimeError{},
+		})
+	case response := <-ch:
+		return c.JSON(response)
 	}
 }

@@ -15,7 +15,7 @@ test("benchmark fixtures provide every Phase 0 size", () => {
   }
 });
 
-test("Phase 2 benchmark profile exercises every incremental built-in dependency", () => {
+test("Phase 2 benchmark profile exercises the backend-runtime built-in mix", () => {
   const indicators = createPhase2BenchmarkIndicators();
   assert.deepEqual(indicators.map((indicator) => indicator.type), [
     "SMA",

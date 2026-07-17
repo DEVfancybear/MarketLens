@@ -2,6 +2,18 @@
 
 _Post-monorepo update 2026-07-06._
 
+## Deferred indicator-event alerts
+
+- Alert Center support for `SWING_SR` pivot-high/pivot-low formation is pending
+  and was intentionally not included in the backend indicator-runtime cutover.
+- Continue only from
+  [`PIVOT_FORMATION_ALERT_PLAN.md`](PIVOT_FORMATION_ALERT_PLAN.md): build the
+  common backend event registry, authoritative closed-candle evaluator,
+  immutable alert snapshot, cursor/idempotency persistence, and delivery path
+  before adding UI.
+- The frontend may configure and render indicator-event alerts, but it must not
+  scan candles, infer events from returned series, or submit pivot triggers.
+
 ## Drawing maintenance refactor
 
 - Phase 8 Waves A-C are complete; do not reopen their shared interaction/persistence boundaries to add

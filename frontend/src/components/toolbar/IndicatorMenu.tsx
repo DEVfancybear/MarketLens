@@ -18,6 +18,7 @@ import { authStatusAtom } from "@/store/authStore";
 import {
   addCustomIndicatorFromScriptAtom,
   addCustomIndicatorFromSourceAtom,
+  addIndicatorAtom,
   deletePineScriptAtom,
   loadPineScriptAtom,
   pineScriptsAtom,
@@ -38,7 +39,7 @@ import {
   type IndicatorBrowserTab,
 } from "@/services/privateWorkspaceAccess";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
-import type { CustomIndicatorScript } from "@/types";
+import type { BuiltInIndicatorType, CustomIndicatorScript } from "@/types";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
 import { trapFocusWithin } from "@/utils/focusManagement";
@@ -94,6 +95,29 @@ export interface IndicatorMenuProps {
   onOpenPine?: () => void;
 }
 
+const BUILT_IN_INDICATORS: {
+  type: BuiltInIndicatorType;
+  name: string;
+  description: string;
+}[] = [
+  { type: "SMA", name: "Moving Average (SMA)", description: "Simple moving average" },
+  { type: "EMA", name: "Moving Average (EMA)", description: "Exponential moving average" },
+  { type: "VWAP", name: "VWAP", description: "Session anchored VWAP" },
+  { type: "RSI", name: "Relative Strength Index", description: "Momentum oscillator" },
+  { type: "MACD", name: "MACD", description: "Trend and momentum" },
+  { type: "ADR", name: "Average Daily Range", description: "Daily range levels" },
+  {
+    type: "SWING_SR",
+    name: "Swing high/low support & resistance",
+    description: "Confirmed pivot levels with horizontal segments",
+  },
+];
+
+function builtInMatches(item: (typeof BUILT_IN_INDICATORS)[number], query: string) {
+  const q = query.trim().toLowerCase();
+  return !q || `${item.name} ${item.description}`.toLowerCase().includes(q);
+}
+
 export function IndicatorMenu({
   presentation = "toolbar",
   onRequestClose,
@@ -121,6 +145,7 @@ export function IndicatorMenu({
   const scripts = useAtomValue(pineScriptsAtom);
   const addCustomIndicator = useSetAtom(addCustomIndicatorFromScriptAtom);
   const addCustomIndicatorFromSource = useSetAtom(addCustomIndicatorFromSourceAtom);
+  const addBuiltInIndicator = useSetAtom(addIndicatorAtom);
   const deleteScript = useSetAtom(deletePineScriptAtom);
   const loadPineScript = useSetAtom(loadPineScriptAtom);
   const togglePineFavorite = useSetAtom(togglePineFavoriteAtom);
@@ -217,6 +242,10 @@ export function IndicatorMenu({
           : [];
     return base.filter((script) => scriptMatches(script, query));
   }, [canUsePrivatePine, query, scripts, tab]);
+  const filteredBuiltIns = useMemo(
+    () => BUILT_IN_INDICATORS.filter((item) => builtInMatches(item, query)),
+    [query],
+  );
 
   const openPineEditor = () => {
     if (!canUsePrivatePine) return;
@@ -257,6 +286,11 @@ export function IndicatorMenu({
       sourceCode: script.sourceCode,
       scriptId: publicIndicatorScriptId(script),
     });
+    closeBrowser();
+  };
+
+  const addBuiltIn = (type: BuiltInIndicatorType) => {
+    addBuiltInIndicator(type);
     closeBrowser();
   };
 
@@ -314,12 +348,17 @@ export function IndicatorMenu({
               )}
             </>
           )}
-          {tab === "store" && storeLoading && <EmptyState>Loading public indicators...</EmptyState>}
-          {tab === "store" && !storeLoading && storeError && <EmptyState>{storeError}</EmptyState>}
-          {tab === "store" && !storeLoading && !storeError && (
+          {tab === "store" && (
             <>
-              {storeRows.map((item) => <MobileStoreRow key={item.id} item={item} showFavoriteMarker={canShowFavorites} onAdd={() => void addPublicScript(item)} />)}
-              {storeRows.length === 0 && <EmptyState>No public indicators found.</EmptyState>}
+              {filteredBuiltIns.map((item) => (
+                <MobileBuiltInRow key={`builtin:${item.type}`} item={item} onAdd={() => addBuiltIn(item.type)} />
+              ))}
+              {storeLoading && <EmptyState>Loading public indicators...</EmptyState>}
+              {!storeLoading && storeError && <EmptyState>{storeError}</EmptyState>}
+              {!storeLoading && !storeError && storeRows.map((item) => (
+                <MobileStoreRow key={item.id} item={item} showFavoriteMarker={canShowFavorites} onAdd={() => void addPublicScript(item)} />
+              ))}
+              {!storeLoading && !storeError && storeRows.length === 0 && filteredBuiltIns.length === 0 && <EmptyState>No indicators found.</EmptyState>}
             </>
           )}
         </section>
@@ -489,15 +528,14 @@ export function IndicatorMenu({
                       </>
                     )}
 
-                    {tab === "store" && storeLoading && (
-                      <EmptyState>Loading public indicators...</EmptyState>
-                    )}
-                    {tab === "store" && !storeLoading && storeError && (
-                      <EmptyState>{storeError}</EmptyState>
-                    )}
-                    {tab === "store" && !storeLoading && !storeError && (
+                    {tab === "store" && (
                       <>
-                        {storeRows.map((item) => (
+                        {filteredBuiltIns.map((item) => (
+                          <BuiltInRow key={`builtin:${item.type}`} item={item} onAdd={() => addBuiltIn(item.type)} />
+                        ))}
+                        {storeLoading && <EmptyState>Loading public indicators...</EmptyState>}
+                        {!storeLoading && storeError && <EmptyState>{storeError}</EmptyState>}
+                        {!storeLoading && !storeError && storeRows.map((item) => (
                           <StoreRow
                             key={`store:${item.id}`}
                             item={item}
@@ -505,8 +543,8 @@ export function IndicatorMenu({
                             onAdd={() => void addPublicScript(item)}
                           />
                         ))}
-                        {storeRows.length === 0 && (
-                          <EmptyState>No public indicators found.</EmptyState>
+                        {!storeLoading && !storeError && storeRows.length === 0 && filteredBuiltIns.length === 0 && (
+                          <EmptyState>No indicators found.</EmptyState>
                         )}
                       </>
                     )}
@@ -652,6 +690,52 @@ function MobileStoreRow({
       {showFavoriteMarker && <Star size={16} aria-hidden="true" />}
       <span className="mobile-add-label">Add</span>
     </button>
+  );
+}
+
+function MobileBuiltInRow({
+  item,
+  onAdd,
+}: {
+  item: (typeof BUILT_IN_INDICATORS)[number];
+  onAdd: () => void;
+}) {
+  return (
+    <button type="button" className="mobile-store-indicator" onClick={onAdd}>
+      <span className="mobile-indicator-glyph"><ChartNoAxesCombined size={19} /></span>
+      <span><strong>{item.name}</strong><small>{item.description} · Built-in</small></span>
+      <span className="mobile-add-label">Add</span>
+    </button>
+  );
+}
+
+function BuiltInRow({
+  item,
+  onAdd,
+}: {
+  item: (typeof BUILT_IN_INDICATORS)[number];
+  onAdd: () => void;
+}) {
+  return (
+    <div className="group grid min-h-8 grid-cols-[minmax(220px,1fr)_128px_92px] items-center rounded-md px-1 text-[13px] text-ink transition-colors hover:bg-terminal-hover">
+      <div className="flex min-w-0 items-center gap-2">
+        <ChartNoAxesCombined size={16} className="h-7 w-7 shrink-0 rounded p-1.5 text-brand" />
+        <button
+          type="button"
+          onClick={onAdd}
+          className="min-w-0 flex-1 truncate py-1.5 text-left font-semibold hover:text-brand"
+          title={item.name}
+        >
+          {item.name}
+        </button>
+      </div>
+      <button type="button" onClick={onAdd} className="truncate py-1.5 text-left text-brand">
+        Built-in
+      </button>
+      <button type="button" onClick={onAdd} className="truncate py-1.5 text-left font-semibold text-ink">
+        Add
+      </button>
+    </div>
   );
 }
 

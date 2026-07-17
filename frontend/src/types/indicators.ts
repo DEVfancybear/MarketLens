@@ -1,6 +1,14 @@
 /** Technical indicator configuration. */
 
-export type BuiltInIndicatorType = 'SMA' | 'EMA' | 'VWAP' | 'RSI' | 'MACD' | 'ADR';
+export type BuiltInIndicatorType =
+  | 'SMA'
+  | 'EMA'
+  | 'VWAP'
+  | 'RSI'
+  | 'MACD'
+  | 'ADR'
+  /** Swing high/low support and resistance overlay. */
+  | 'SWING_SR';
 export type IndicatorType = BuiltInIndicatorType | 'CUSTOM';
 
 export interface CustomIndicatorScript {
@@ -21,7 +29,7 @@ export interface IndicatorConfig {
   id: string;
   type: IndicatorType;
   length: number;
-  /** Secondary length, used by MACD (signal) and similar. */
+  /** Secondary length, used by MACD (signal), swing-low strength, and similar. */
   length2?: number;
   /** Tertiary length, used by MACD (slow). */
   length3?: number;

@@ -157,3 +157,20 @@ type CompileResponse struct {
 	Warnings            []RuntimeError  `json:"warnings"`
 	UnsupportedFeatures []string        `json:"unsupportedFeatures"`
 }
+
+// IndicatorRuntimeRequest is the stable backend-owned contract for built-in
+// indicators. Config is intentionally opaque JSON-shaped data so adding a new
+// indicator does not require changing this transport type; the registry
+// validates and consumes only the fields its calculator declares.
+type IndicatorRuntimeRequest struct {
+	IndicatorType string         `json:"indicatorType"`
+	IndicatorID   string         `json:"indicatorId,omitempty"`
+	Config        map[string]any `json:"config,omitempty"`
+	Candles       []Candle       `json:"candles"`
+}
+
+type IndicatorRuntimeResponse struct {
+	Result   IndicatorResult `json:"result"`
+	Errors   []RuntimeError  `json:"errors"`
+	Warnings []RuntimeError  `json:"warnings"`
+}

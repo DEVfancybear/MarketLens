@@ -417,6 +417,65 @@ plot(x, style=linebr, linewidth=3, color=color.red, title="Break Plot")`
 	}
 }
 
+func TestCompilePivotFunctionsEmitOnlyOnConfirmationBar(t *testing.T) {
+	candles := make([]Candle, 9)
+	highs := []float64{1, 2, 5, 3, 2, 4, 6, 3, 2}
+	lows := []float64{0, -1, -3, -1, 0, -2, -1, -1, 0}
+	for index := range candles {
+		candles[index] = Candle{
+			Time:   int64(index + 1),
+			Open:   (highs[index] + lows[index]) / 2,
+			High:   highs[index],
+			Low:    lows[index],
+			Close:  (highs[index] + lows[index]) / 2,
+			Volume: 1,
+		}
+	}
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID: "pivot",
+		SourceCode: `//@version=6
+indicator("Swing pivots", overlay=true)
+ph = ta.pivothigh(high, 2, 2)
+pl = ta.pivotlow(low, 2, 2)
+plot(ph, title="PH")
+plot(pl, title="PL")`,
+		Candles: candles,
+	})
+	if len(resp.Errors) > 0 {
+		t.Fatalf("compile errors: %+v", resp.Errors)
+	}
+	if len(resp.Result.Series) != 2 {
+		t.Fatalf("series = %+v, want PH and PL", resp.Result.Series)
+	}
+	if got := resp.Result.Series[0].Data; len(got) != 2 || got[0].Time != 5 || got[0].Value != 5 || got[1].Time != 9 || got[1].Value != 6 {
+		t.Fatalf("unexpected pivot high points: %+v", got)
+	}
+	if got := resp.Result.Series[1].Data; len(got) != 2 || got[0].Time != 5 || got[0].Value != -3 || got[1].Time != 8 || got[1].Value != -2 {
+		t.Fatalf("unexpected pivot low points: %+v", got)
+	}
+}
+
+func TestExtractInputsIncludesHLCC4SwingSource(t *testing.T) {
+	inputs := ExtractInputs(`//@version=6
+indicator("Swing")
+source = input.source(hlcc4, "Source")`)
+	if len(inputs) != 1 || inputs[0].Kind != "source" {
+		t.Fatalf("unexpected source input: %+v", inputs)
+	}
+	if len(inputs[0].Options) < 8 {
+		t.Fatalf("expected HLCC4 source option set: %+v", inputs[0].Options)
+	}
+	found := false
+	for _, option := range inputs[0].Options {
+		if option == "hlcc4" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("HLCC4 missing from options: %+v", inputs[0].Options)
+	}
+}
+
 func TestCompileMultiMovingAverageFunctionBody(t *testing.T) {
 	resp := Compile(context.Background(), CompileRequest{
 		ScriptID:   "multi-ma",

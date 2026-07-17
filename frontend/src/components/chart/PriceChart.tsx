@@ -64,6 +64,10 @@ import {
   subscribePineRuntimeCache,
 } from "@/services/pineRuntimeCache";
 import {
+  ensureIndicatorRuntimeResult,
+  subscribeIndicatorRuntimeCache,
+} from "@/services/indicatorRuntimeCache";
+import {
   resolveRealtimeSeriesUpdatePlan,
   type RealtimeSeriesUpdatePlan,
 } from "@/services/market-data/candleSeries";
@@ -902,7 +906,7 @@ export function PriceChart({
     scheduleVersionBump,
   ]);
 
-  // ---- Overlay indicators (SMA/EMA/VWAP/ADR) ----
+  // ---- Overlay indicators (backend-runtime results) ----
   const overlayIndicators = useMemo(
     () => indicators.filter((i) => i.visible !== false && !i.separatePane),
     [indicators],
@@ -920,13 +924,23 @@ export function PriceChart({
     [indicators],
   );
   useEffect(
-    () => subscribePineRuntimeCache(() => setPineRuntimeVersion((value) => value + 1)),
+    () => {
+      const onRuntimeUpdate = () => setPineRuntimeVersion((value) => value + 1);
+      const unsubscribePine = subscribePineRuntimeCache(onRuntimeUpdate);
+      const unsubscribeBuiltIn = subscribeIndicatorRuntimeCache(onRuntimeUpdate);
+      return () => {
+        unsubscribePine();
+        unsubscribeBuiltIn();
+      };
+    },
     [],
   );
   useEffect(() => {
     [...overlayIndicators, ...visiblePaneIndicators].forEach((cfg) => {
       if (cfg.type === "CUSTOM") {
         ensurePineIndicatorResult(cfg, candles, { symbol, timeframe });
+      } else {
+        ensureIndicatorRuntimeResult(cfg, candles, { symbol, timeframe });
       }
     });
   }, [overlayIndicators, visiblePaneIndicators, candles, symbol, timeframe]);

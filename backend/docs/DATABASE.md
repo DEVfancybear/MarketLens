@@ -439,7 +439,7 @@ for filtering/ordering. `CUSTOM` indicators link to a saved script.
 CREATE TABLE indicator_presets (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  indicator_type text NOT NULL,             -- IndicatorConfig.type: SMA|EMA|VWAP|RSI|MACD|ADR|CUSTOM
+  indicator_type text NOT NULL,             -- IndicatorConfig.type: SMA|EMA|VWAP|RSI|MACD|ADR|SWING_SR|CUSTOM
   script_id      uuid REFERENCES pine_scripts(id) ON DELETE SET NULL,  -- for CUSTOM (frontend scriptId)
   config         jsonb NOT NULL DEFAULT '{}',-- full IndicatorConfig
   visible        boolean NOT NULL DEFAULT true, -- IndicatorConfig.visible

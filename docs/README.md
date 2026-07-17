@@ -31,6 +31,7 @@ owning package docs.
 | `REPLAY_BACKEND_MIGRATION_PLAN.md` | Cross-stack design for moving replay sessions, clock, aggregation, and replay trading from frontend to Go/PostgreSQL |
 | `REPLAY_BACKEND_PHASE6.md` | Final Replay cutover, mandatory deletion proof, boundary guard, and verification runbook |
 | `PINE_RUNTIME_GO_MIGRATION.md` | Cross-package plan for moving Pine parsing/compilation from frontend TypeScript to the Go backend |
+| `PIVOT_FORMATION_ALERT_PLAN.md` | Deferred cross-stack plan for backend-owned, durable Swing pivot-formation alerts |
 
 ## Documentation Rules
 

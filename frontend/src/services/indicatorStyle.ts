@@ -1,6 +1,5 @@
 import type {
   IndicatorResult,
-  IndicatorSeries,
   IndicatorStyleValues,
 } from "@/types";
 
@@ -28,40 +27,12 @@ export function styleBool(
   return value === true || value === "true";
 }
 
-export function stylePrecision(
-  values: IndicatorStyleValues | undefined,
-): number | undefined {
-  const raw = values?.[STYLE_OUTPUT_PRECISION_KEY];
-  if (raw === undefined || raw === "default") return undefined;
-  const value = Number(raw);
-  return Number.isInteger(value) && value >= 0 && value <= 8 ? value : undefined;
-}
-
-export function labelsOnPriceScale(values: IndicatorStyleValues | undefined): boolean {
-  return styleBool(values, STYLE_LABELS_ON_PRICE_SCALE_KEY, true);
-}
-
 export function valuesInStatusLine(values: IndicatorStyleValues | undefined): boolean {
   return styleBool(values, STYLE_VALUES_IN_STATUS_LINE_KEY, true);
 }
 
 export function inputsInStatusLine(values: IndicatorStyleValues | undefined): boolean {
   return styleBool(values, STYLE_INPUTS_IN_STATUS_LINE_KEY, true);
-}
-
-export function applyCommonSeriesStyle(
-  series: IndicatorSeries,
-  values: IndicatorStyleValues | undefined,
-): IndicatorSeries {
-  const precision = stylePrecision(values);
-  return {
-    ...series,
-    lastValueVisible:
-      series.lastValueVisible === false || series.type === "baselineFill"
-        ? false
-        : labelsOnPriceScale(values),
-    precision,
-  };
 }
 
 function formatLegendValue(value: number): string {

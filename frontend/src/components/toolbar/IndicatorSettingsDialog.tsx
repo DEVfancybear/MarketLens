@@ -93,8 +93,20 @@ const SOURCE_LABELS: Record<string, string> = {
   hl2: "HL2",
   hlc3: "HLC3",
   ohlc4: "OHLC4",
+  hlcc4: "HLCC4",
   volume: "Volume",
 };
+
+const SWING_SOURCE_OPTIONS: IndicatorInputValue[] = [
+  "open",
+  "high",
+  "low",
+  "close",
+  "hl2",
+  "hlc3",
+  "ohlc4",
+  "hlcc4",
+];
 
 const LINE_STYLE_OPTIONS: { value: IndicatorLineStyle; label: string }[] = [
   { value: 0, label: "Solid" },
@@ -212,6 +224,45 @@ function builtInInputFields(type: BuiltInIndicatorType): PineInputDefinition[] {
         { key: "length3", title: "Slow Length", kind: "int", defaultValue: 26, min: 1, max: 500, step: 1 },
         { key: "length2", title: "Signal Smoothing", kind: "int", defaultValue: 9, min: 1, max: 200, step: 1 },
       ];
+    case "SWING_SR":
+      return [
+        {
+          key: "length",
+          title: "Swing high strength",
+          kind: "int",
+          defaultValue: 25,
+          min: 1,
+          max: 500,
+          step: 1,
+          group: "Swing highs",
+        },
+        {
+          key: "highSource",
+          title: "High source",
+          kind: "source",
+          defaultValue: "high",
+          options: SWING_SOURCE_OPTIONS,
+          group: "Swing highs",
+        },
+        {
+          key: "length2",
+          title: "Swing low strength",
+          kind: "int",
+          defaultValue: 25,
+          min: 1,
+          max: 500,
+          step: 1,
+          group: "Swing lows",
+        },
+        {
+          key: "lowSource",
+          title: "Low source",
+          kind: "source",
+          defaultValue: "low",
+          options: SWING_SOURCE_OPTIONS,
+          group: "Swing lows",
+        },
+      ];
     case "VWAP":
       return [];
   }
@@ -220,13 +271,18 @@ function builtInInputFields(type: BuiltInIndicatorType): PineInputDefinition[] {
 function builtInStyleDefinitions(type: BuiltInIndicatorType): PineStyleDefinition[] {
   const primary = {
     key: "builtin:primary",
-    title: type === "ADR" ? "High line" : type,
+    title:
+      type === "ADR"
+        ? "High line"
+        : type === "SWING_SR"
+          ? "Swing high"
+          : type,
     target: "plot" as const,
     group: "Plots",
     defaultVisible: true,
     defaultColor: defaultIndicator(type, "__default").color,
     defaultLineWidth: 2 as IndicatorLineWidth,
-    defaultLineStyle: 0 as IndicatorLineStyle,
+    defaultLineStyle: (type === "SWING_SR" ? 1 : 0) as IndicatorLineStyle,
     supportsColor: true,
     supportsLineWidth: true,
     supportsLineStyle: true,
@@ -261,6 +317,24 @@ function builtInStyleDefinitions(type: BuiltInIndicatorType): PineStyleDefinitio
         defaultColor: "#ef5350",
         defaultLineWidth: 2,
         defaultLineStyle: 0,
+        supportsColor: true,
+        supportsLineWidth: true,
+        supportsLineStyle: true,
+      },
+    ];
+  }
+  if (type === "SWING_SR") {
+    return [
+      primary,
+      {
+        key: "builtin:secondary",
+        title: "Swing low",
+        target: "plot",
+        group: "Plots",
+        defaultVisible: true,
+        defaultColor: "#26c6da",
+        defaultLineWidth: 2,
+        defaultLineStyle: 1,
         supportsColor: true,
         supportsLineWidth: true,
         supportsLineStyle: true,
@@ -369,6 +443,12 @@ export function IndicatorSettingsDialog() {
         length: next.length,
         length2: next.length2,
         length3: next.length3,
+        ...(next.type === "SWING_SR"
+          ? {
+              highSource: indicator.inputValues?.highSource ?? "high",
+              lowSource: indicator.inputValues?.lowSource ?? "low",
+            }
+          : {}),
       };
       next.styleValues = {
         ...defaultStyleValues(builtInStyles),
@@ -455,6 +535,9 @@ export function IndicatorSettingsDialog() {
         length: defaults.length,
         length2: defaults.length2 ?? 9,
         length3: defaults.length3 ?? 26,
+        ...(draft.type === "SWING_SR"
+          ? { highSource: "high", lowSource: "low" }
+          : {}),
       },
       styleValues: defaultStyleValues(builtInStyleDefinitions(draft.type)),
     });
@@ -488,18 +571,28 @@ export function IndicatorSettingsDialog() {
       id: editingId,
       patch: {
         length: Number(draft.inputValues.length ?? draft.length),
-        length2: draft.type === "MACD" ? Number(draft.inputValues.length2 ?? draft.length2) : undefined,
+        length2:
+          draft.type === "MACD" || draft.type === "SWING_SR"
+            ? Number(draft.inputValues.length2 ?? draft.length2)
+            : undefined,
         length3: draft.type === "MACD" ? Number(draft.inputValues.length3 ?? draft.length3) : undefined,
         color: String(
           draft.styleValues[styleFieldKey("builtin:primary", "color")] ??
             draft.color,
         ),
         color2:
-          draft.type === "MACD" || draft.type === "ADR"
+          draft.type === "MACD" || draft.type === "ADR" || draft.type === "SWING_SR"
             ? String(
                 draft.styleValues[styleFieldKey("builtin:secondary", "color")] ??
                   draft.color2,
               )
+            : undefined,
+        inputValues:
+          draft.type === "SWING_SR"
+            ? {
+                highSource: String(draft.inputValues.highSource ?? "high"),
+                lowSource: String(draft.inputValues.lowSource ?? "low"),
+              }
             : undefined,
         styleValues: compactStyleValues(styleFields, draft.styleValues),
         separatePane:

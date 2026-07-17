@@ -1,6 +1,6 @@
 # INDICATOR ARCHITECTURE
 
-_Date: 2026-07-03. Scope: built-in indicators plus source-code indicators created from the
+_Date: 2026-07-16. Scope: built-in indicators plus source-code indicators created from the
 bottom Pine Editor._
 
 ## Architecture rule
@@ -10,8 +10,10 @@ drawing state, alert state, or chart pointer handling. Every indicator must cons
 array it is given, and the caller must pass the replay-aware visible candle slice. This keeps
 indicator rendering no-look-ahead by construction.
 
-Custom Pine-like scripts pass through the whitelist compiler in
-`backend/internal/pineruntime`. The frontend does not compile Pine source; see
+All indicator formulas are backend-owned. Registered built-ins pass through the
+common Go indicator runtime and custom Pine-like scripts pass through the
+whitelist compiler in `backend/internal/pineruntime`. The frontend does not
+calculate built-ins or compile Pine source; see
 [`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md).
 Do not execute user-provided source with `eval`, `new Function`, dynamic imports,
 or any other general JavaScript execution path.
@@ -20,11 +22,12 @@ or any other general JavaScript execution path.
 
 The indicator subsystem has two families:
 
-1. Built-in indicators: SMA, EMA, VWAP, RSI, MACD, ADR.
+1. Built-in indicators: SMA, EMA, VWAP, RSI, MACD, ADR, Swing S/R.
 2. Source-code indicators: saved Pine-like scripts from the bottom `Pine Editor` tab.
 
-Both families converge into the same `IndicatorConfig` model and the same chart render contract:
-`computeIndicator(config, candles) -> IndicatorResult`.
+Both families converge into the same `IndicatorConfig` model and chart render contract. An async
+runtime request populates the appropriate cache, and `computeIndicator(config, candles)` only
+selects the cached `IndicatorResult`; it never calculates a series.
 
 ```
 BottomPanel / IndicatorMenu
@@ -33,9 +36,9 @@ BottomPanel / IndicatorMenu
 chartStore indicators[] + pineScripts[]
         |
         v
-services/indicators.ts
+services/indicators.ts + runtime caches
         |
-        +-- built-in calculation functions
+        +-- POST indicator-runtime/compute (registered built-ins)
         |
         +-- pineRuntimeCache for CUSTOM backend compile results
         |
@@ -54,7 +57,8 @@ IndicatorResult { id, series[] }
 | Indicator and script types | `src/types/indicators.ts` |
 | Indicator state, persistence, script actions | `src/store/chartStore.ts` |
 | Backend indicator presets API | `src/services/api/resources/indicatorsApi.ts` |
-| Built-in indicator calculations and dispatch | `src/services/indicators.ts` |
+| Built-in runtime API/cache and display adapter | `src/services/api/resources/indicatorRuntimeApi.ts`, `src/services/indicatorRuntimeCache.ts`, `src/services/indicators.ts` |
+| Backend built-in registry/calculators | `backend/internal/pineruntime/builtin_runtime.go` |
 | Pine runtime API client/cache | `src/services/api/resources/pineRuntimeApi.ts`, `src/services/pineRuntimeCache.ts` |
 | Pine runtime shared types/default source | `src/services/pineRuntimeTypes.ts` |
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
@@ -71,7 +75,7 @@ IndicatorResult { id, series[] }
 `IndicatorConfig` is the chart-attached instance:
 
 ```ts
-type BuiltInIndicatorType = "SMA" | "EMA" | "VWAP" | "RSI" | "MACD" | "ADR";
+type BuiltInIndicatorType = "SMA" | "EMA" | "VWAP" | "RSI" | "MACD" | "ADR" | "SWING_SR";
 type IndicatorType = BuiltInIndicatorType | "CUSTOM";
 
 interface IndicatorConfig {
@@ -173,12 +177,18 @@ IndicatorMenu click SMA/EMA/etc.
   -> indicatorsAtom update + localStorage/cache write
   -> authenticated mode queues POST/DELETE /api/v1/indicators by clientId
   -> ChartArea sees indicatorsAtom
-  -> PriceChart calls computeIndicator(config, visibleCandles)
+  -> PriceChart calls ensureIndicatorRuntimeResult(config, visibleCandles)
+  -> POST /api/v1/indicator-runtime/compute
+  -> Go registry calculates the indicator and returns IndicatorResult
+  -> runtime cache notifies PriceChart
+  -> computeIndicator reads the cached API result (no formula execution)
   -> Lightweight Charts series receives calculated LinePoint[]
 ```
 
-Built-ins are implemented as pure functions in `services/indicators.ts`. They take candles and
-parameters, return time-aligned `LinePoint[]`, and never read global chart state.
+Built-in formulas live only in the backend registry. The frontend adapter is deliberately a cache
+lookup: it sends the replay-visible candle slice and instance config, then renders the returned
+time-aligned `IndicatorResult`. There is no browser fallback calculator; a runtime error is isolated
+to an empty result for that indicator instance.
 
 ## Source-code indicator flow
 
@@ -487,11 +497,16 @@ Separate-pane indicators render in native Lightweight Charts 5 panes owned by
 The source of `candles` must be `useChartSeries()` from `ChartArea`, not raw full history. During
 Replay that projection contains only server-revealed bars.
 
+Indicator-event alerts are not part of the current runtime response or Alert
+Center model. The deferred backend-only implementation is documented in
+[`../../docs/PIVOT_FORMATION_ALERT_PLAN.md`](../../docs/PIVOT_FORMATION_ALERT_PLAN.md).
+Do not detect pivot formation from returned series in the frontend.
+
 ## Overlay vs separate pane
 
 Built-in defaults:
 
-- Overlay: SMA, EMA, VWAP, ADR.
+- Overlay: SMA, EMA, VWAP, ADR, Swing S/R.
 - Separate pane: RSI, MACD.
 
 Custom script default:
@@ -518,12 +533,17 @@ errors, not application runtime errors.
 To add a new built-in indicator:
 
 1. Add the type to `BuiltInIndicatorType`.
-2. Add calculation function(s) in `services/indicators.ts`.
-3. Add a `case` in `computeIndicator`.
-4. Add defaults in `defaultIndicator`.
+2. Add a backend calculator to the common registry in
+   `backend/internal/pineruntime/builtin_runtime.go` and return the shared
+   `IndicatorResult` contract.
+3. Add backend registry, numerical/parity, validation, and HTTP-contract tests.
+4. Add frontend instance defaults in `defaultIndicator`; these are UI defaults,
+   not calculation logic.
 5. Add a menu option in `IndicatorMenu`.
 6. Add settings schema through the shared settings architecture if needed. See
    `SETTTING_ARCHITECTURE.md`; do not create an indicator-specific settings modal.
+7. Keep `services/indicators.ts` as a cache-result adapter. Never add a browser
+   formula or fallback calculator.
 
 To add a new Pine subset function:
 

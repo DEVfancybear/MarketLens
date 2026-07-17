@@ -85,6 +85,13 @@ names/message placeholders, webhooks, TradingView's complete frequency-by-bar
 matrix, indicator/strategy snapshots, vertical/time-event alerts, multi-condition
 alerts, watchlist alerts, and automatic retargeting after a drawing edit.
 
+Swing pivot-formation alerts are deliberately deferred. Their required
+backend-owned event registry, immutable indicator snapshot, closed-browser
+evaluator, persistence/deduplication contract, Replay boundary, and frontend
+constraints are specified in
+[`../../docs/PIVOT_FORMATION_ALERT_PLAN.md`](../../docs/PIVOT_FORMATION_ALERT_PLAN.md).
+Do not implement them by scanning candles or indicator series in the browser.
+
 ## Runtime Flow
 
 ```text

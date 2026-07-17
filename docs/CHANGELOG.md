@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Backend-owned common indicator runtime and Swing S/R (2026-07-16)
+- Moved all built-in indicator formulas out of the browser into one Go runtime registry with a
+  shared `POST /api/v1/indicator-runtime/compute` request/result contract for current and future
+  indicators. SMA, EMA, VWAP, RSI, MACD, ADR, and Swing S/R now return chart-ready series from the
+  backend; the frontend only caches and renders those API results.
+- Added Swing high/low support and resistance with independent strengths and OHLC-derived sources,
+  confirmed/no-lookahead pivots, dotted historical level segments, active price labels, and shared
+  style overrides.
+- Extended the backend Pine subset with `ta.pivothigh()` / `ta.pivotlow()` and `hlcc4` source input
+  metadata, then added registry, HTTP-contract, pivot-confirmation, and segment regression tests.
+- Removed the frontend SMA/EMA/RSI/MACD/VWAP/ADR incremental calculators and dependency state so
+  there is no browser calculation fallback that can diverge from backend results.
+- Documented pivot-formation alerts as explicitly deferred work in
+  `docs/PIVOT_FORMATION_ALERT_PLAN.md`, including the backend event registry,
+  immutable snapshots, closed-browser evaluator, deduplication, Replay boundary,
+  migration/API contract, and the rule that the frontend never detects or
+  submits pivot events.
+
 ### Fixed - Shared drawing coordinate-field layout (2026-07-17)
 - Made every field in the shared drawing coordinate editor use an explicit
   label-above-control grid instead of relying on inline label flow. Price,

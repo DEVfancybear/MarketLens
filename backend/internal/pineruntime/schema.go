@@ -150,7 +150,7 @@ func inferInputKind(callName string, args callArguments, defaultExpression strin
 		return "string"
 	}
 	switch strings.ToLower(def) {
-	case "open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "volume":
+	case "open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "hlcc4", "volume":
 		return "source"
 	}
 	if value, ok := parseNumberLiteral(def); ok {
@@ -219,7 +219,7 @@ func parseListLiteral(raw string) []InputValue {
 }
 
 func sourceInputOptions(defaultValue InputValue) []InputValue {
-	defaults := []InputValue{"open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "volume"}
+	defaults := []InputValue{"open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "hlcc4", "volume"}
 	value := fmt.Sprint(defaultValue)
 	for _, item := range defaults {
 		if item == value {

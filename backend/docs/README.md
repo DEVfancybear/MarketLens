@@ -23,4 +23,5 @@ local MT5 streaming sidecar/consumer. The migration head is `0021`.
 | File | Purpose |
 | --- | --- |
 | [`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md) | Plan for moving Pine parsing/compilation from frontend TypeScript into the Go backend runtime |
+| [`../../docs/PIVOT_FORMATION_ALERT_PLAN.md`](../../docs/PIVOT_FORMATION_ALERT_PLAN.md) | Deferred design for backend-owned indicator-event evaluation and Swing pivot alerts |
 | [`../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`](../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md) | Design for backend-owned replay sessions, database, API, deterministic engine, and frontend cutover |

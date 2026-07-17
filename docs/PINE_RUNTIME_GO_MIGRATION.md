@@ -1,7 +1,8 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Scope: move the Pine-like parser/compiler runtime out of the
-frontend and into the Go backend._
+_Date: 2026-07-09. Updated 2026-07-16 to include the built-in runtime cutover.
+Scope: move indicator parsing/calculation out of the frontend and into the Go
+backend._
 
 ## Goal
 
@@ -36,8 +37,8 @@ Implemented on 2026-07-09:
 | Input schema extraction | Go `backend/internal/pineruntime` API |
 | Style schema extraction | Go `backend/internal/pineruntime` API, including plot/hline/fill and line/box/label objects |
 | Pine subset compilation | Go `backend/internal/pineruntime` through `/api/v1/pine-runtime/compile` |
-| Built-in indicator calculations | `frontend/src/services/indicators.ts` |
-| Active indicator dispatch | `frontend/src/services/indicators.ts` |
+| Built-in indicator calculations | Go `backend/internal/pineruntime` registry through `/api/v1/indicator-runtime/compute` |
+| Active indicator dispatch | Frontend runtime caches call the Go built-in/Pine endpoints; `services/indicators.ts` reads cached results only |
 | Overlay rendering | `frontend/src/components/chart/PriceChart.tsx` |
 | Separate pane rendering | Native LWC panes in `frontend/src/components/chart/PriceChart.tsx` |
 | Script persistence | Backend Phase 9 `/api/v1/pine-scripts` |
@@ -46,6 +47,10 @@ Frontend chart rendering now uses `frontend/src/services/pineRuntimeCache.ts`.
 CUSTOM indicators no longer call the compiler synchronously from
 `computeIndicator()`. The chart/pane effects request backend compilation, render
 the latest cached `IndicatorResult`, and rerender when the cache resolves.
+
+As of 2026-07-16, registered built-ins also use the Go runtime through
+`frontend/src/services/indicatorRuntimeCache.ts`. `services/indicators.ts` is a
+display adapter for cached API results and must not regain calculation logic.
 
 Go runtime supports the chart-visible subset currently needed by VSA Volume,
 Better RSI, ADR-style object-heavy scripts, and multi-moving-average overlays:

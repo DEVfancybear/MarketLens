@@ -41,14 +41,18 @@ export function indicatorLegendTitle(
   const base =
     indicator.type === "CUSTOM"
       ? meta?.shortTitle || indicator.name || meta?.name || "Custom script"
-      : indicator.type;
+      : indicator.type === "SWING_SR"
+        ? "Swing S/R"
+        : indicator.type;
   const params =
     inputsInStatusLine(indicator.styleValues)
       ? indicator.type === "CUSTOM"
         ? pineLegendInputs(indicator, inputDefinitions)
-        : indicator.type !== "VWAP" && indicator.length
-          ? String(indicator.length)
-          : ""
+        : indicator.type === "SWING_SR"
+          ? `${indicator.length}/${indicator.length2 ?? indicator.length}`
+          : indicator.type !== "VWAP" && indicator.length
+            ? String(indicator.length)
+            : ""
       : "";
   const values =
     valuesInStatusLine(indicator.styleValues) && valueText

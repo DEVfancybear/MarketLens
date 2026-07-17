@@ -724,6 +724,61 @@ to chart without a private script lookup:
 
 ---
 
+## Built-in indicator runtime
+
+Built-in indicator calculations are backend-owned. The frontend sends the
+instance config and replay-visible OHLCV window, then renders only the returned
+`IndicatorResult` series. The common registry currently supports `SMA`, `EMA`,
+`VWAP`, `RSI`, `MACD`, `ADR`, and `SWING_SR`; future built-ins register another
+calculator without adding a new route or response shape.
+
+| Method | Path                                | Purpose                                      |
+| ------ | ----------------------------------- | -------------------------------------------- |
+| POST   | `/api/v1/indicator-runtime/compute` | Compute a registered built-in against OHLCV |
+
+Request:
+
+```json
+{
+  "indicatorType": "SWING_SR",
+  "indicatorId": "ind_abc",
+  "config": {
+    "type": "SWING_SR",
+    "length": 25,
+    "length2": 25,
+    "color": "#ef5350",
+    "color2": "#26c6da",
+    "inputValues": { "highSource": "high", "lowSource": "low" },
+    "styleValues": {}
+  },
+  "candles": [
+    { "time": 1783420800, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 100 }
+  ]
+}
+```
+
+Response:
+
+```json
+{
+  "result": { "id": "ind_abc", "series": [] },
+  "errors": [],
+  "warnings": []
+}
+```
+
+The runtime sorts/deduplicates candles, caps the calculation window at 5,000
+bars, validates per-indicator inputs, and applies the shared style/output
+contract. Swing pivots are emitted only after the complete right-hand strength
+window exists, so replay requests cannot observe a future candle.
+
+`SWING_SR` is a clean-room implementation of the behavior publicly described
+by the protected TradingView script: confirmed high/low pivots, independent
+OHLC-derived sources, and dotted horizontal support/resistance segments. No
+closed source was copied.
+
+---
+
 ## Pine runtime
 
 Runtime-only compiler endpoints. These routes do not persist scripts and do not
@@ -767,7 +822,8 @@ Compile response:
 Current runtime subset covers metadata/input/style extraction, series
 assignments, recursive/self-referential series patterns, plot/hline/fill output,
 daily `request.security()` aggregation, and the Pine functions needed by VSA
-Volume, Better RSI, and ADR-style scripts. `plot(..., style=linebr)` and
+Volume, Better RSI, ADR-style scripts, and confirmed `ta.pivothigh()` /
+`ta.pivotlow()` calculations. `plot(..., style=linebr)` and
 `plot.style_linebr` compile into independent chart series split at every `na`
 gap so the frontend never bridges conditional plot ranges. `hline()` and
 `fill()` reference outputs carry `extendToVisibleRange=true`; clients should

@@ -599,8 +599,74 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 		return seriesValue(crossSeries(toSeries(byNameOrIndex("source1", 0), len(context.candles)), toSeries(byNameOrIndex("source2", 1), len(context.candles)), "over")), nil
 	case "ta.crossunder", "crossunder":
 		return seriesValue(crossSeries(toSeries(byNameOrIndex("source1", 0), len(context.candles)), toSeries(byNameOrIndex("source2", 1), len(context.candles)), "under")), nil
+	case "ta.pivothigh", "pivothigh":
+		values, left, right := pivotCallInputs(args, context, "high")
+		return seriesValue(pivotSeries(values, left, right, "high")), nil
+	case "ta.pivotlow", "pivotlow":
+		values, left, right := pivotCallInputs(args, context, "low")
+		return seriesValue(pivotSeries(values, left, right, "low")), nil
 	}
 	return pineValue{}, fmt.Errorf("unsupported function %q", name+"()")
+}
+
+// pivotCallInputs supports both Pine signatures:
+//
+//	ta.pivothigh(source, leftbars, rightbars)
+//	ta.pivothigh(leftbars, rightbars)
+//
+// and their named-argument equivalents. The two-argument form defaults to
+// high/low as Pine does, while an explicit source can be any numeric series.
+func pivotCallInputs(args []callArg, context *evalContext, defaultSource string) ([]float64, int, int) {
+	length := len(context.candles)
+	source := sourceSeries(context.candles, defaultSource)
+	leftValue := numberValue(1)
+	rightValue := numberValue(1)
+
+	for _, item := range args {
+		switch item.name {
+		case "source":
+			source = item.value
+		case "leftbars", "left":
+			leftValue = item.value
+		case "rightbars", "right":
+			rightValue = item.value
+		}
+	}
+	if len(args) >= 3 {
+		if args[0].name == "" {
+			source = args[0].value
+		}
+		if args[1].name == "" {
+			leftValue = args[1].value
+		}
+		if args[2].name == "" {
+			rightValue = args[2].value
+		}
+	} else if len(args) >= 2 {
+		// Without a source the first two positional values are strengths.
+		if args[0].name == "" {
+			leftValue = args[0].value
+		}
+		if args[1].name == "" {
+			rightValue = args[1].value
+		}
+	}
+	return toSeries(source, length), period(leftValue), period(rightValue)
+}
+
+// pivotSeries emits a pivot on the confirmation bar (pivot index + right
+// strength), never before all required right-side bars are available. The
+// shared detector rejects flat plateaus because a qualifying neighbor must be
+// strictly lower/higher on both sides.
+func pivotSeries(values []float64, left, right int, kind string) []float64 {
+	out := make([]float64, len(values))
+	for i := range out {
+		out[i] = math.NaN()
+	}
+	for _, pivot := range detectRuntimePivots(values, left, right, kind) {
+		out[pivot.confirmation] = pivot.value
+	}
+	return out
 }
 
 func naValue(value pineValue, length int) pineValue {

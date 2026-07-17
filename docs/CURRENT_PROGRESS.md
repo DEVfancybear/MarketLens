@@ -1,12 +1,18 @@
 # Current Progress
 
-Last updated: 2026-07-12
+Last updated: 2026-07-16
 
 ## Current Milestone
 
 Backend persistence and Google authentication.
 
 ## Status
+
+- Backend-owned built-in indicators: **common runtime cutover complete** for
+  SMA, EMA, VWAP, RSI, MACD, ADR, and Swing S/R. The frontend is an API
+  cache/render client. Swing pivot-formation Alert Center support remains
+  explicitly deferred; see `PIVOT_FORMATION_ALERT_PLAN.md` for the required
+  backend event/evaluator architecture.
 
 - Drawing maintenance Phase 8 is in progress: Waves A-C are complete. Wave C adds 11 harmonic,
   Elliott, and time-cycle tools through a shared labeled-anchor framework. The manifest now covers

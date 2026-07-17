@@ -14,6 +14,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `CANDLE_VIRTUALIZATION_RESEARCH.md` | React Native VirtualizedList research mapped to canvas candle, indicator, history, and benchmark optimization |
 | `INDICATOR_ARCHITECTURE.md` | Pine indicator runtime and renderer |
 | `../../docs/PINE_RUNTIME_GO_MIGRATION.md` | Cross-package migration plan for moving Pine compile/runtime ownership to Go |
+| `../../docs/PIVOT_FORMATION_ALERT_PLAN.md` | Deferred backend-owned Swing pivot-formation alert contract and rollout plan |
 | `REPLAY_ARCHITECTURE.md` | Replay mode engine |
 | `REPLAY_CONTROL_INCIDENTS.md` | Pause race and debounced Replay control incident analysis |
 | `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md` | Target architecture and phased migration from frontend-owned replay to Go/PostgreSQL |
@@ -61,6 +62,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | File | Topic |
 | --- | --- |
 | `ALERT_ARCHITECTURE.md` | Alert engine and notification channels |
+| `../../docs/PIVOT_FORMATION_ALERT_PLAN.md` | Pending indicator-event alert architecture; frontend remains configuration/rendering only |
 | `DYNAMIC_DRAWING_ALERTS_PLAN.md` | Implemented dynamic line/channel/Fib Channel alert contract, evidence, and lifecycle |
 | `FOREX_DATA_ANALYSIS.md` | Forex data provider notes |
 | `OANDA_INTEGRATION.md` | OANDA integration notes |
