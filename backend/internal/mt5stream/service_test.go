@@ -306,6 +306,68 @@ func TestHistoryRefreshesPaginatedCacheThatDoesNotReachBefore(t *testing.T) {
 	}
 }
 
+func TestHistoryRefreshReadsThroughCacheSynchronously(t *testing.T) {
+	bridge := newHistoryBridgeHarness(t)
+	service := NewService(Config{
+		Enabled:     true,
+		BridgeURL:   bridge.url,
+		DialTimeout: time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(ctx)
+	waitForServiceConnection(t, service)
+
+	service.applyHistory(HistoryMessage{
+		Source:    "mt5",
+		Symbol:    "EURUSD",
+		Timeframe: "15m",
+		Candles: []Candle{
+			{Time: 1_800_000_000, Open: 1.1, High: 1.2, Low: 1.0, Close: 1.15},
+		},
+	})
+
+	resultDone := make(chan HistorySnapshot, 1)
+	go func() {
+		resultDone <- service.History(context.Background(), "EURUSD", "15m", 1500, 0, true)
+	}()
+
+	request := <-bridge.requests
+	if request["symbol"] != "EURUSD" || request["timeframe"] != "15m" {
+		t.Fatalf("unexpected refresh request: %+v", request)
+	}
+	select {
+	case result := <-resultDone:
+		t.Fatalf("refresh returned cached data before bridge response: %+v", result)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	freshTime := int64(1_800_000_900)
+	hasMore := false
+	bridge.replies <- HistoryMessage{
+		Type:      "history",
+		Source:    "mt5",
+		RequestID: fmt.Sprint(request["id"]),
+		Symbol:    "EURUSD",
+		Timeframe: "15m",
+		HasMore:   &hasMore,
+		Candles: []Candle{
+			{Time: freshTime, Open: 1.2, High: 1.3, Low: 1.1, Close: 1.25},
+		},
+	}
+
+	result := <-resultDone
+	if result.LastError != "" || result.Stale || result.RefreshPending {
+		t.Fatalf("unexpected refresh status: %+v", result)
+	}
+	if len(result.Candles) != 1 || result.Candles[0].Time != freshTime {
+		t.Fatalf("refresh returned stale candles: %+v", result.Candles)
+	}
+	if result.HasMore == nil || *result.HasMore {
+		t.Fatalf("hasMore = %v, want explicit false", result.HasMore)
+	}
+}
+
 func TestCanceledCoalescedWaiterDoesNotCancelActiveWaiter(t *testing.T) {
 	bridge := newHistoryBridgeHarness(t)
 	service := NewService(Config{

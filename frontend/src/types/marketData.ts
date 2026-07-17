@@ -17,21 +17,10 @@ export type { Timeframe } from "./market";
 export type MarketProvider = "binance" | "twelvedata" | "oanda" | "mt5" | "mock";
 
 /** Asset class — drives provider routing and formatting. */
-export type AssetClass =
-  | "crypto"
-  | "forex"
-  | "metal"
-  | "index"
-  | "stock"
-  | "commodity";
+export type AssetClass = "crypto" | "forex" | "metal" | "index" | "stock" | "commodity";
 
 /** WebSocket / feed lifecycle state. */
-export type ConnectionStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "reconnecting"
-  | "error";
+export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "error";
 
 /** Per-provider connection detail (for the status badge + reconnect logic). */
 export interface ConnectionState {
@@ -160,6 +149,13 @@ export interface HistoryRequest {
   refresh?: boolean;
 }
 
+/** Result of a chart history prepend attempt. */
+export type LoadMoreHistoryStatus = "loaded" | "exhausted" | "retry";
+
+export interface LoadMoreHistoryResult {
+  status: LoadMoreHistoryStatus;
+}
+
 // ----------------------------------------------------------------------------
 // Model constants (declarative — part of the type contract, not service logic)
 // ----------------------------------------------------------------------------
@@ -183,10 +179,7 @@ export const SUPPORTED_TIMEFRAMES = [
 export const RECONNECT_BACKOFF_MS = [1000, 2000, 5000, 10000, 30000] as const;
 
 /** UI metadata for each connection status (label + colour token / emoji dot). */
-export const CONNECTION_STATUS_META: Record<
-  ConnectionStatus,
-  { label: string; color: string; emoji: string }
-> = {
+export const CONNECTION_STATUS_META: Record<ConnectionStatus, { label: string; color: string; emoji: string }> = {
   disconnected: { label: "Disconnected", color: "var(--bear)", emoji: "🔴" },
   connecting: { label: "Connecting", color: "var(--choch)", emoji: "🟡" },
   connected: { label: "Connected", color: "var(--bull)", emoji: "🟢" },
@@ -195,9 +188,6 @@ export const CONNECTION_STATUS_META: Record<
 };
 
 /** Canonical subscription key. Keep all keys flowing through here. */
-export function subscriptionKey(
-  symbol: string,
-  timeframe?: Timeframe,
-): SubscriptionKey {
+export function subscriptionKey(symbol: string, timeframe?: Timeframe): SubscriptionKey {
   return timeframe ? `${symbol}:${timeframe}` : symbol;
 }

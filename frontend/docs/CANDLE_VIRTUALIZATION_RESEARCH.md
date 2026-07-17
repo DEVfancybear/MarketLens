@@ -164,7 +164,7 @@ Current limits and policies:
 | Live cache | `marketDataStore.ts` caps each series at `MAX_CANDLES = 5000` |
 | Initial history | 60–900 bars depending on timeframe |
 | Older page | 60–1,000 bars depending on timeframe |
-| Prefetch | `PriceChart` loads left history when logical `range.from <= 120` |
+| Prefetch | `PriceChart` loads left history when `candleSeries.barsInLogicalRange(range).barsBefore <= 120` |
 | SMC | worker-throttled to 90ms; engine slices to the most recent 1,500 bars |
 | Replay | server projection maps all revealed bars, preserving identity with a `WeakMap` |
 

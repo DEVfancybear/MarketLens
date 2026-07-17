@@ -49,6 +49,7 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.original_catalog = list(mt5_server.SYMBOL_CATALOG)
         self.original_stream_symbols = tuple(mt5_server.STREAM_SYMBOLS)
         self.original_tick_offset = mt5_server.MT5_TICK_TIME_OFFSET_SECONDS
+        self.original_history_sync_delay = mt5_server.HISTORY_SYNC_DELAY
 
     def tearDown(self) -> None:
         mt5_server.mt5.symbol_info_tick = self.original_symbol_info_tick
@@ -77,6 +78,7 @@ class Mt5ServerTickTests(unittest.TestCase):
         mt5_server.SYMBOL_CATALOG = self.original_catalog
         mt5_server.STREAM_SYMBOLS = self.original_stream_symbols
         mt5_server.MT5_TICK_TIME_OFFSET_SECONDS = self.original_tick_offset
+        mt5_server.HISTORY_SYNC_DELAY = self.original_history_sync_delay
 
     def test_changed_tick_messages_dedupes_and_normalizes_tick_time(self) -> None:
         ticks = {
@@ -182,6 +184,37 @@ class Mt5ServerTickTests(unittest.TestCase):
 
         self.assertIs(result, rates)
 
+    def test_older_history_retries_a_transient_empty_window(self) -> None:
+        requested = [
+            {"time": 1_700_000_000},
+            {"time": 1_700_000_060},
+        ]
+        calls = 0
+
+        def copy_rates(
+            _symbol: str,
+            _timeframe: int,
+            _cursor: object,
+            _limit: int,
+        ) -> list[dict[str, int]]:
+            nonlocal calls
+            calls += 1
+            return [] if calls == 1 else requested
+
+        mt5_server.HISTORY_SYNC_DELAY = 0
+        mt5_server.mt5.copy_rates_from = copy_rates
+
+        result = mt5_server.copy_rates_synced_blocking(
+            "EURUSD",
+            mt5_server.TIMEFRAME_MAP["15m"],
+            "15m",
+            100,
+            before=1_700_001_000,
+        )
+
+        self.assertIs(result, requested)
+        self.assertEqual(calls, 2)
+
     def test_history_around_expands_forward_and_keeps_target_context(self) -> None:
         requested_time = 1_800_000_000
         mt5_server.mt5.copy_rates_from = (
@@ -229,6 +262,38 @@ class Mt5ServerTickTests(unittest.TestCase):
 
 
 class Mt5ServerWorkerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cursor_history_payload_reports_has_more(self) -> None:
+        original_loader = mt5_server.copy_selected_rates_synced_worker
+        requested_time = 1_800_000_000
+
+        async def fake_loader(*_args: object) -> tuple[list[dict[str, float]], str]:
+            return ([
+                {
+                    "time": requested_time - 60,
+                    "open": 1.0,
+                    "high": 1.1,
+                    "low": 0.9,
+                    "close": 1.05,
+                    "tick_volume": 10,
+                }
+            ], "")
+
+        mt5_server.copy_selected_rates_synced_worker = fake_loader
+        try:
+            payload = json.loads(
+                await mt5_server.load_history_message(
+                    "EURUSD",
+                    "1m",
+                    4,
+                    "hist-before",
+                    before=requested_time,
+                )
+            )
+        finally:
+            mt5_server.copy_selected_rates_synced_worker = original_loader
+
+        self.assertFalse(payload["has_more"])
+
     async def test_history_around_payload_reports_requested_and_resolved_time(self) -> None:
         original_loader = mt5_server.copy_selected_rates_synced_worker
         requested_time = 1_800_000_000

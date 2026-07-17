@@ -17,28 +17,17 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import {
-  symbolAtom,
-  timeframeAtom,
-  setCandlesAtom,
-  setLoadingAtom,
-} from "@/store/chartStore";
+import { symbolAtom, timeframeAtom, setCandlesAtom, setLoadingAtom } from "@/store/chartStore";
 import { getDefaultStore } from "jotai";
 import { logAtom } from "@/store/uiStore";
-import { getMarketDataState } from "@/store/marketDataStore";
+import { getMarketDataState, MAX_CANDLES_PER_SERIES } from "@/store/marketDataStore";
 import { useCandles } from "@/hooks/useCandles";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
-import { TF_SECONDS, type Candle, type Timeframe } from "@/types";
-import {
-  findRecentCandleGap,
-  hasDiscontinuousHistoryTail,
-} from "@/services/market-data/candleSeries";
+import { TF_SECONDS, type Candle, type LoadMoreHistoryResult, type Timeframe } from "@/types";
+import { findRecentCandleGap, hasDiscontinuousHistoryTail } from "@/services/market-data/candleSeries";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import {
-  marketSymbolCatalogStatusAtom,
-  marketSymbolsAtom,
-} from "@/store/marketSymbolStore";
+import { marketSymbolCatalogStatusAtom, marketSymbolsAtom } from "@/store/marketSymbolStore";
 import {
   HISTORY_SELECTION_DEBOUNCE_MS,
   historyPageBars,
@@ -75,6 +64,8 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
   const olderHistoryInFlightRef = useRef(false);
+  const olderHistoryControllerRef = useRef<AbortController | null>(null);
+  const olderHistoryGenerationRef = useRef(0);
   const exhaustedOlderHistoryRef = useRef<Set<string>>(new Set());
   const activeKey = `${symbol}:${timeframe}`;
   const [historyReadyKey, setHistoryReadyKey] = useState<string | null>(null);
@@ -87,9 +78,18 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
   }, [enabled, setLoading, symbol, timeframe]);
 
   useEffect(() => {
+    olderHistoryGenerationRef.current += 1;
+    olderHistoryControllerRef.current?.abort();
+    olderHistoryControllerRef.current = null;
     olderHistoryInFlightRef.current = false;
     exhaustedOlderHistoryRef.current.clear();
-  }, [activeKey]);
+    return () => {
+      olderHistoryGenerationRef.current += 1;
+      olderHistoryControllerRef.current?.abort();
+      olderHistoryControllerRef.current = null;
+      olderHistoryInFlightRef.current = false;
+    };
+  }, [activeKey, enabled]);
 
   // ---- Select market + load history on symbol/timeframe change ----
   useEffect(() => {
@@ -145,24 +145,24 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     // MT5 only receives work for the selection the user actually stopped on.
     const requestTimer = window.setTimeout(() => {
       getHistoricalDataService()
-        .loadHistory({
-          symbol,
-          timeframe,
-          limit: historyLimit,
-          refresh: hasCachedHistory || undefined,
-        }, {
-          signal: controller.signal,
-        })
+        .loadHistory(
+          {
+            symbol,
+            timeframe,
+            limit: historyLimit,
+            refresh: hasCachedHistory || undefined,
+          },
+          {
+            signal: controller.signal,
+          },
+        )
         .then((hist) => {
           if (cancelled) return;
           // Seed history before subscribing. For MT5, candles must come from
           // MT5 rates/history; ticks are used only for quotes/watchlist.
           getMarketDataState().setCandles(symbol, timeframe, hist);
           getMarketDataState().selectMarket(symbol, timeframe);
-          const nextCandles = getMarketDataState().getCandles(
-            symbol,
-            timeframe,
-          ) as Candle[];
+          const nextCandles = getMarketDataState().getCandles(symbol, timeframe) as Candle[];
           setCandles(nextCandles);
           setHistoryReadyKey(key);
           setLoading(false);
@@ -197,13 +197,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     if (historyReadyKey !== activeKey) return;
     const nextCandles = liveCandles as Candle[];
     setCandles(nextCandles);
-  }, [
-    activeKey,
-    enabled,
-    historyReadyKey,
-    liveCandles,
-    setCandles,
-  ]);
+  }, [activeKey, enabled, historyReadyKey, liveCandles, setCandles]);
 
   // ---- MT5 active-chart refresh: update OHLC from MT5 rates, not bid/ask ticks ----
   useEffect(() => {
@@ -222,14 +216,17 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
       inFlight = true;
       activeController = new AbortController();
       try {
-        const hist = await getHistoricalDataService().loadHistory({
-          symbol,
-          timeframe,
-          limit: mt5RefreshBarsForTimeframe(timeframe),
-          refresh: true,
-        }, {
-          signal: activeController.signal,
-        });
+        const hist = await getHistoricalDataService().loadHistory(
+          {
+            symbol,
+            timeframe,
+            limit: mt5RefreshBarsForTimeframe(timeframe),
+            refresh: true,
+          },
+          {
+            signal: activeController.signal,
+          },
+        );
         if (cancelled) return;
         const marketData = getMarketDataState();
         const current = marketData.getCandles(symbol, timeframe);
@@ -237,14 +234,17 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
           // The first MT5 request can expose a stale terminal cache while the
           // timeframe warms. A tiny latest-bars merge cannot remove that bad
           // window, so re-fetch and authoritatively replace the active cache.
-          const replacement = await getHistoricalDataService().loadHistory({
-            symbol,
-            timeframe,
-            limit: initialHistoryBars(timeframe),
-            refresh: true,
-          }, {
-            signal: activeController.signal,
-          });
+          const replacement = await getHistoricalDataService().loadHistory(
+            {
+              symbol,
+              timeframe,
+              limit: initialHistoryBars(timeframe),
+              refresh: true,
+            },
+            {
+              signal: activeController.signal,
+            },
+          );
           if (cancelled) return;
           getMarketDataState().replaceCandles(symbol, timeframe, replacement);
         } else {
@@ -254,11 +254,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
         if (isAbortError(err)) return;
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
-        getDefaultStore().set(
-          logAtom,
-          "warn",
-          `MT5 latest bars refresh failed for ${symbol} ${timeframe}: ${message}`,
-        );
+        getDefaultStore().set(logAtom, "warn", `MT5 latest bars refresh failed for ${symbol} ${timeframe}: ${message}`);
       } finally {
         activeController = null;
         inFlight = false;
@@ -284,11 +280,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     if (!symbol || !meta || meta.provider === "mt5") return;
 
     const step = TF_SECONDS[timeframe];
-    const gap = findRecentCandleGap(
-      liveCandles,
-      step,
-      MAX_BACKFILL_MISSING_BARS,
-    );
+    const gap = findRecentCandleGap(liveCandles, step, MAX_BACKFILL_MISSING_BARS);
     if (!gap) return;
 
     const gapKey = `${symbol}:${timeframe}:${gap.afterTime}:${gap.beforeTime}`;
@@ -315,71 +307,116 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
       });
   }, [enabled, liveCandles, symbol, timeframe]);
 
-  const loadOlderCandles = useCallback(async () => {
-    if (!enabled) return;
-    if (historyReadyKey !== activeKey) return;
+  const loadOlderCandles = useCallback(async (): Promise<LoadMoreHistoryResult> => {
+    const retry = (): LoadMoreHistoryResult => ({ status: "retry" });
+    if (!enabled) return retry();
+    if (historyReadyKey !== activeKey) return retry();
     const store = getDefaultStore();
 
     const current = getMarketDataState().getCandles(symbol, timeframe);
     const first = current[0];
-    if (!symbol || !first || olderHistoryInFlightRef.current) return;
+    if (!symbol || !first || olderHistoryInFlightRef.current) return retry();
 
     const cursorKey = `${symbol}:${timeframe}:${first.time}`;
-    if (exhaustedOlderHistoryRef.current.has(cursorKey)) return;
+    if (exhaustedOlderHistoryRef.current.has(cursorKey)) {
+      return { status: "exhausted" };
+    }
 
+    const generation = olderHistoryGenerationRef.current;
+    const controller = new AbortController();
     olderHistoryInFlightRef.current = true;
+    olderHistoryControllerRef.current = controller;
     try {
-      const older = await getHistoricalDataService().loadHistory({
-        symbol,
-        timeframe,
-        limit: historyPageBars(timeframe),
-        before: first.time,
-      });
-      if (older.length === 0 || older[0]?.time >= first.time) {
-        exhaustedOlderHistoryRef.current.add(cursorKey);
-        return;
+      const page = await getHistoricalDataService().loadHistoryPage(
+        {
+          symbol,
+          timeframe,
+          limit: historyPageBars(timeframe),
+          before: first.time,
+        },
+        { signal: controller.signal },
+      );
+      if (controller.signal.aborted || generation !== olderHistoryGenerationRef.current) {
+        return retry();
+      }
+
+      const older = page.candles;
+      if (older.length === 0) {
+        // MT5 marks a genuine end-of-history explicitly. An unannotated empty
+        // page is retryable because a cold terminal can return it temporarily.
+        if (page.hasMore === false) {
+          exhaustedOlderHistoryRef.current.add(cursorKey);
+          return { status: "exhausted" };
+        }
+        return retry();
+      }
+      if (older[0]!.time >= first.time) {
+        if (page.hasMore === false) {
+          exhaustedOlderHistoryRef.current.add(cursorKey);
+          return { status: "exhausted" };
+        }
+        return retry();
       }
       getMarketDataState().setCandles(symbol, timeframe, older);
+      const merged = getMarketDataState().getCandles(symbol, timeframe);
+      if (!merged[0] || merged[0].time >= first.time) {
+        // A bounded in-memory window can discard an older page. Once the
+        // configured cap is reached, stop this cursor instead of repeatedly
+        // downloading pages that the store must discard.
+        if (page.hasMore === false || merged.length >= MAX_CANDLES_PER_SERIES) {
+          exhaustedOlderHistoryRef.current.add(cursorKey);
+          return { status: "exhausted" };
+        }
+        return retry();
+      }
+      if (page.hasMore === false) {
+        exhaustedOlderHistoryRef.current.add(`${symbol}:${timeframe}:${merged[0].time}`);
+      }
+      return { status: "loaded" };
     } catch (err) {
+      if (isAbortError(err) || generation !== olderHistoryGenerationRef.current) {
+        return retry();
+      }
       const message = err instanceof Error ? err.message : String(err);
-      store.set(
-        logAtom,
-        "warn",
-        `Older history load failed for ${symbol} ${timeframe}: ${message}`,
-      );
+      store.set(logAtom, "warn", `Older history load failed for ${symbol} ${timeframe}: ${message}`);
+      return retry();
     } finally {
-      olderHistoryInFlightRef.current = false;
+      if (olderHistoryControllerRef.current === controller) {
+        olderHistoryControllerRef.current = null;
+        olderHistoryInFlightRef.current = false;
+      }
     }
   }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);
 
-  const loadCandlesAroundTime = useCallback(async (
-    time: number,
-  ): Promise<LoadedGoToHistory> => {
-    if (!enabled || historyReadyKey !== activeKey) {
-      throw new Error("Chart history is not ready yet");
-    }
-    if (!symbol || !Number.isFinite(time) || time <= 0) {
-      throw new Error("A valid symbol and date are required");
-    }
+  const loadCandlesAroundTime = useCallback(
+    async (time: number): Promise<LoadedGoToHistory> => {
+      if (!enabled || historyReadyKey !== activeKey) {
+        throw new Error("Chart history is not ready yet");
+      }
+      if (!symbol || !Number.isFinite(time) || time <= 0) {
+        throw new Error("A valid symbol and date are required");
+      }
 
-    const result = await getHistoricalDataService().loadHistoryAround({
-      symbol,
-      timeframe,
-      time,
-      limit: historyPageBars(timeframe),
-    });
-    const marketData = getMarketDataState();
-    marketData.setCandles(symbol, timeframe, result.candles);
-    const merged = marketData.getCandles(symbol, timeframe) as Candle[];
-    if (!merged.some((candle) => candle.time === result.resolvedTime)) {
-      throw new Error("The selected candle could not be retained in the chart history window");
-    }
-    return {
-      candles: merged,
-      requestedTime: result.requestedTime,
-      resolvedTime: result.resolvedTime,
-    };
-  }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);
+      const result = await getHistoricalDataService().loadHistoryAround({
+        symbol,
+        timeframe,
+        time,
+        limit: historyPageBars(timeframe),
+      });
+      const marketData = getMarketDataState();
+      marketData.setCandles(symbol, timeframe, result.candles);
+      const merged = marketData.getCandles(symbol, timeframe) as Candle[];
+      if (!merged.some((candle) => candle.time === result.resolvedTime)) {
+        throw new Error("The selected candle could not be retained in the chart history window");
+      }
+      return {
+        candles: merged,
+        requestedTime: result.requestedTime,
+        resolvedTime: result.resolvedTime,
+      };
+    },
+    [activeKey, enabled, historyReadyKey, symbol, timeframe],
+  );
 
   return { loadOlderCandles, loadCandlesAroundTime };
 }

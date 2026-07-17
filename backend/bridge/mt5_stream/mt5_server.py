@@ -167,12 +167,20 @@ def copy_rates_synced_blocking(
     responses.
     """
     if before > 0:
-        return mt5.copy_rates_from(
-            symbol,
-            mt5_timeframe,
-            datetime.fromtimestamp(max(0, before - 1), timezone.utc),
-            limit,
-        )
+        # Historical pages can be cold independently of the latest window.
+        # Retry the same strict-before query while the terminal downloads that
+        # part of the chart history; returning one transient empty page makes
+        # the browser incorrectly conclude that pagination has ended.
+        cursor = datetime.fromtimestamp(max(0, before - 1), timezone.utc)
+        rates = mt5.copy_rates_from(symbol, mt5_timeframe, cursor, limit)
+        if rates is not None and len(rates) > 0:
+            return rates
+        for _ in range(HISTORY_SYNC_RETRIES):
+            time.sleep(HISTORY_SYNC_DELAY)
+            rates = mt5.copy_rates_from(symbol, mt5_timeframe, cursor, limit)
+            if rates is not None and len(rates) > 0:
+                return rates
+        return rates
 
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
@@ -913,6 +921,11 @@ async def load_history_message(
         }
         for row in rates
     ]
+    if before > 0:
+        # A full page means there may be more bars to the left. A short page is
+        # an explicit terminal boundary; the frontend can stop without turning
+        # a transient transport/MT5 error into permanent exhaustion.
+        payload["has_more"] = len(rates) >= limit
     if around > 0:
         resolved = next(
             (

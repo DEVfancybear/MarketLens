@@ -337,21 +337,25 @@ Python sidecar directly.
 | Go API | `GET /api/v1/mt5/symbols` | Returns the latest MT5 symbol catalog cached from the Python bridge |
 | Go API WebSocket | `GET /api/v1/mt5/stream` | Browser-facing realtime quote stream; clients send subscribe messages and receive pushed ticks |
 | Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | One-off latest cached tick snapshot/debug endpoint; also requests on-demand streaming for requested catalog symbols |
-| Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` bypasses the cache for active chart updates |
+| Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` performs a synchronous cache read-through |
 | Go API | `GET /api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&time=1782345600&limit=600` | Returns bounded context around a Go-to timestamp plus explicit `requestedTime` and first tradable `resolvedTime` |
 
 History scheduling:
 
 - The browser must request chart candles from `GET /api/v1/mt5/history`; ticks are quote/watchlist
   data only and must not be used to synthesize missing candles.
-- The Go service keeps a per-`symbol:timeframe` candle cache. If the latest window is already
-  cached, the endpoint returns cached candles immediately and refreshes stale/latest windows in the
-  background so timeframe changes do not block on MT5 warm-up.
+- The Go service keeps a per-`symbol:timeframe` candle cache. Ordinary non-refresh requests can
+  return a cached latest window immediately and revalidate it in the background. Requests with
+  `refresh=true` wait for the MT5 read-through and do not silently return the cached window as the
+  successful result; if MT5 fails, the response includes `lastError` and marks the fallback `stale`.
 - Older pagination requests (`before > 0`) still wait for MT5 history because they extend the left
   side of the visible chart. A cached slice is eligible only when its oldest candle reaches or
   crosses the requested `before` cursor; a newer, unrelated cached tail must go back through the
   MT5 bridge instead of returning a misleading partial page. This coverage rule is also what makes
   Replay `Select date -> First day` resolve against the requested historical window.
+- Cursor pages include `hasMore` when the bridge can determine whether another page exists. The
+  frontend treats an unannotated empty MT5 page as retryable because a cold terminal may return an
+  empty window while downloading historical rates.
 - Go-to requests use `/history/around` instead of guessing a pagination cursor. The Python bridge
   loads left context separately and expands its forward range across weekends/market closures;
   Go returns no resolution rather than silently clamping to the first or last cached candle.

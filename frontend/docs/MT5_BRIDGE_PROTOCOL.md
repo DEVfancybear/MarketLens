@@ -627,9 +627,11 @@ Rules for frontend maintainers:
   latest-price labels; do not synthesize chart candles from bid/ask ticks.
 - Pass an `AbortSignal` for symbol/timeframe history loads. Cleanup on symbol/timeframe change must
   abort the old request so the Go scheduler can drop queued stale work before it reaches MT5.
-- Keep active-chart refresh small (`refresh=true`, latest bars only). The Go service returns cached
-  candles immediately when possible and refreshes stale latest windows in the background.
+- Keep active-chart refresh small (`refresh=true`, latest bars only). Explicit refresh requests wait
+  for the Go-to-MT5 read-through; ordinary non-refresh reads may return a marked stale cache while a
+  background revalidation is pending.
 - Left-edge pagination (`before`) is allowed to wait because it is user-driven and must load older
-  bars, not reuse the latest-window cache.
+  bars, not reuse the latest-window cache. Pass an `AbortSignal`, and only stop pagination when the
+  response explicitly reports `hasMore=false`.
 - The Go service single-flights identical history requests and serializes bridge access because the
   Python sidecar keeps MT5 calls on one worker for terminal/thread safety.

@@ -111,8 +111,8 @@ of truth for initial/page sizes and MT5 refresh cadence:
 | `1M` | 60 / 60 | 5m |
 
 `marketDataStore` retains candles per `symbol:timeframe`. `useMarketData()` paints an existing
-timeframe cache synchronously and revalidates it in the background, so switching back does not show
-the loading overlay or blank a valid chart. A failed revalidation keeps the cached series. Cold
+timeframe cache synchronously, then starts an explicit read-through revalidation without blanking
+the chart, so switching back does not show the loading overlay. A failed revalidation keeps the cached series. Cold
 loads request only the policy's initial window; panning left requests another page with
 `before=<first candle time>`. MT5 refresh timers run only while the document is visible.
 
@@ -122,9 +122,11 @@ a stale terminal warm-up window. `useMarketData()` then re-fetches the policy-si
 with `refresh=true` and calls `replaceCandles()` so both the flat candle series and chunk repository
 are rebuilt instead of retaining disconnected stale prices.
 
-Symbol/timeframe effects pass an `AbortSignal` through `HistoricalDataService` to the Go API. A
-selection change cancels obsolete work end-to-end; the active selection must not wait behind queued
-history requests for frames the user has already left.
+Symbol/timeframe effects and left-edge pagination pass an `AbortSignal` through
+`HistoricalDataService` to the Go API. A selection change cancels obsolete work end-to-end; the
+active selection must not wait behind queued history requests for frames the user has already left.
+Pagination only marks a cursor exhausted when MT5 explicitly returns `hasMore=false`; transient
+empty/error responses remain retryable.
 The initial request is deferred by 75ms so React development Strict Mode probes and rapid toolbar
 clicks are collapsed before any HTTP work begins.
 

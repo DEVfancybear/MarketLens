@@ -12,17 +12,9 @@
  * Pure service layer — returns candles; callers (hooks/chart) push them into
  * `marketDataStore.setCandles`. CORS-friendly endpoints (client fetch).
  */
-import {
-  TF_SECONDS,
-  type HistoryRequest,
-  type MarketCandle,
-  type Timeframe,
-} from "@/types";
+import { TF_SECONDS, type HistoryRequest, type MarketCandle, type Timeframe } from "@/types";
 import { getMarketSymbol, twelveDataSymbol } from "./symbols";
-import {
-  getMt5History,
-  getMt5HistoryAround,
-} from "@/services/api/resources/mt5Api";
+import { getMt5History, getMt5HistoryAround } from "@/services/api/resources/mt5Api";
 
 const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
 const TWELVEDATA_TS = "https://api.twelvedata.com/time_series";
@@ -101,24 +93,36 @@ export interface HistoryAroundResult {
   resolvedTime: number;
 }
 
+/** A history window plus pagination state returned by providers that expose it. */
+export interface HistoryPageResult {
+  candles: MarketCandle[];
+  /** For a `before` request, whether the provider has more bars to the left. */
+  hasMore?: boolean;
+}
+
 export class HistoricalDataService {
   private readonly tdKey: string;
   private readonly oandaKey: string;
   private readonly oandaBase: string;
 
   constructor(opts: HistoricalDataServiceOptions = {}) {
-    this.tdKey =
-      opts.twelveDataApiKey ?? process.env.NEXT_PUBLIC_TWELVEDATA_API_KEY ?? "";
-    this.oandaKey =
-      opts.oandaApiKey ?? process.env.NEXT_PUBLIC_OANDA_API_KEY ?? "";
+    this.tdKey = opts.twelveDataApiKey ?? process.env.NEXT_PUBLIC_TWELVEDATA_API_KEY ?? "";
+    this.oandaKey = opts.oandaApiKey ?? process.env.NEXT_PUBLIC_OANDA_API_KEY ?? "";
     this.oandaBase = opts.oandaPractice !== false ? OANDA_PRACTICE : OANDA_LIVE;
   }
 
   /** Load up to `limit` (capped 5000) candles, optionally ending before `before` (sec). */
-  async loadHistory(
-    req: HistoryRequest,
-    options: LoadHistoryOptions = {},
-  ): Promise<MarketCandle[]> {
+  async loadHistory(req: HistoryRequest, options: LoadHistoryOptions = {}): Promise<MarketCandle[]> {
+    const page = await this.loadHistoryPage(req, options);
+    return page.candles;
+  }
+
+  /**
+   * Load a history page while retaining provider pagination metadata.
+   * Existing callers should use loadHistory(); the chart's left-pagination path
+   * uses this method so a transient empty page is not mistaken for exhaustion.
+   */
+  async loadHistoryPage(req: HistoryRequest, options: LoadHistoryOptions = {}): Promise<HistoryPageResult> {
     const { symbol, timeframe, limit = 1500, before, refresh } = req;
     const capped = Math.min(Math.max(limit, 1), MAX_LIMIT);
     const meta = getMarketSymbol(symbol);
@@ -126,31 +130,35 @@ export class HistoricalDataService {
     const provider = meta?.provider;
 
     if (provider === "mt5") {
-      return this.loadMt5(
-        providerSymbol,
-        timeframe,
-        capped,
-        before,
-        refresh,
-        options,
-      );
+      return this.loadMt5Page(providerSymbol, timeframe, capped, before, refresh, options);
     }
 
     if (provider === "oanda") {
       if (!this.oandaKey && this.tdKey) {
-        return this.loadTwelveData(
-          twelveDataSymbol(symbol),
-          timeframe,
-          capped,
-          before,
-        );
+        const candles = await this.loadTwelveData(twelveDataSymbol(symbol), timeframe, capped, before);
+        return {
+          candles,
+          hasMore: candles.length >= capped,
+        };
       }
-      return this.loadOanda(providerSymbol, timeframe, capped, before);
+      const candles = await this.loadOanda(providerSymbol, timeframe, capped, before);
+      return {
+        candles,
+        hasMore: candles.length >= capped,
+      };
     }
     if (provider === "twelvedata") {
-      return this.loadTwelveData(twelveDataSymbol(symbol), timeframe, capped, before);
+      const candles = await this.loadTwelveData(twelveDataSymbol(symbol), timeframe, capped, before);
+      return {
+        candles,
+        hasMore: candles.length >= capped,
+      };
     }
-    return this.loadBinance(providerSymbol, timeframe, capped, before);
+    const candles = await this.loadBinance(providerSymbol, timeframe, capped, before);
+    return {
+      candles,
+      hasMore: candles.length >= capped,
+    };
   }
 
   /** Load a bounded candle window containing the first tradable bar at/after `time`. */
@@ -164,14 +172,17 @@ export class HistoricalDataService {
     const providerSymbol = meta?.providerSymbol ?? symbol;
 
     if (meta?.provider === "mt5") {
-      const snapshot = await getMt5HistoryAround({
-        symbol: providerSymbol,
-        timeframe,
-        time,
-        limit,
-      }, {
-        signal: options.signal,
-      });
+      const snapshot = await getMt5HistoryAround(
+        {
+          symbol: providerSymbol,
+          timeframe,
+          time,
+          limit,
+        },
+        {
+          signal: options.signal,
+        },
+      );
       const candles = dedupeAscending(
         snapshot.candles.map((candle) => ({
           time: candle.time,
@@ -183,12 +194,10 @@ export class HistoricalDataService {
           closed: true,
         })),
       );
-      const resolvedTime = snapshot.resolvedTime ??
-        candles.find((candle) => candle.time >= time)?.time;
+      const resolvedTime = snapshot.resolvedTime ?? candles.find((candle) => candle.time >= time)?.time;
       if (!resolvedTime) {
         throw new Error(
-          snapshot.lastError ||
-            `MT5 has no candle at or after the selected time for ${symbol} ${timeframe}`,
+          snapshot.lastError || `MT5 has no candle at or after the selected time for ${symbol} ${timeframe}`,
         );
       }
       return {
@@ -202,12 +211,15 @@ export class HistoricalDataService {
     // whose right half is after the target, then resolve the first tradable bar.
     const step = TF_SECONDS[timeframe];
     const before = time + step * Math.max(2, Math.ceil(limit / 2));
-    const candles = await this.loadHistory({
-      symbol,
-      timeframe,
-      limit,
-      before,
-    }, options);
+    const candles = await this.loadHistory(
+      {
+        symbol,
+        timeframe,
+        limit,
+        before,
+      },
+      options,
+    );
     const resolvedTime = candles.find((candle) => candle.time >= time)?.time;
     if (!resolvedTime) {
       throw new Error(`No candle exists at or after the selected time for ${symbol} ${timeframe}`);
@@ -216,58 +228,74 @@ export class HistoricalDataService {
   }
 
   // ------------------------------------------------------------------ MT5
-  private async loadMt5(
+  private async loadMt5Page(
     symbol: string,
     timeframe: Timeframe,
     limit: number,
     before?: number,
     refresh?: boolean,
     options: LoadHistoryOptions = {},
-  ): Promise<MarketCandle[]> {
-    let snapshot = await getMt5History({
-      symbol,
-      timeframe,
-      limit,
-      before,
-      refresh,
-    }, {
-      signal: options.signal,
-    });
-    for (
-      let attempt = 1;
-      snapshot.candles.length === 0 &&
-      !snapshot.lastError &&
-      attempt < MT5_HISTORY_ATTEMPTS;
-      attempt += 1
-    ) {
-      await delay(MT5_HISTORY_RETRY_DELAY_MS, options.signal);
-      snapshot = await getMt5History({
+  ): Promise<HistoryPageResult> {
+    let snapshot = await getMt5History(
+      {
         symbol,
         timeframe,
         limit,
         before,
         refresh,
-      }, {
+      },
+      {
         signal: options.signal,
-      });
-    }
-    if (snapshot.candles.length === 0) {
-      throw new Error(
-        snapshot.lastError ||
-          `MT5 returned no history candles for ${symbol} ${timeframe}`,
+      },
+    );
+    for (
+      let attempt = 1;
+      snapshot.candles.length === 0 &&
+      !snapshot.lastError &&
+      snapshot.hasMore !== false &&
+      attempt < MT5_HISTORY_ATTEMPTS;
+      attempt += 1
+    ) {
+      await delay(MT5_HISTORY_RETRY_DELAY_MS, options.signal);
+      snapshot = await getMt5History(
+        {
+          symbol,
+          timeframe,
+          limit,
+          before,
+          refresh,
+        },
+        {
+          signal: options.signal,
+        },
       );
     }
-    return dedupeAscending(
-      snapshot.candles.map((candle) => ({
-        time: candle.time,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-        volume: candle.volume,
-        closed: true,
-      })),
-    ).slice(-limit);
+    if (snapshot.candles.length === 0) {
+      // A provider-reported end is a valid result for a left-pagination page.
+      // Without that explicit bit, treat an empty MT5 response as retryable;
+      // cold terminals can briefly return an empty window while history warms.
+      if (before !== undefined && snapshot.hasMore === false && !snapshot.lastError) {
+        return { candles: [], hasMore: false };
+      }
+      throw new Error(snapshot.lastError || `MT5 returned no history candles for ${symbol} ${timeframe}`);
+    }
+    if (snapshot.lastError && (before !== undefined || refresh)) {
+      throw new Error(snapshot.lastError);
+    }
+    return {
+      candles: dedupeAscending(
+        snapshot.candles.map((candle) => ({
+          time: candle.time,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: candle.volume,
+          closed: true,
+        })),
+      ).slice(-limit),
+      hasMore: snapshot.hasMore,
+    };
   }
 
   // ------------------------------------------------------------------ Binance
@@ -288,8 +316,7 @@ export class HistoricalDataService {
         `${BINANCE_KLINES}?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${batch}` +
         (endTime ? `&endTime=${endTime}` : "");
       const res = await fetch(url);
-      if (!res.ok)
-        throw new Error(`Binance klines ${res.status} for ${symbol}`);
+      if (!res.ok) throw new Error(`Binance klines ${res.status} for ${symbol}`);
       const rows = (await res.json()) as unknown[];
       if (!Array.isArray(rows) || rows.length === 0) break;
 
@@ -322,10 +349,7 @@ export class HistoricalDataService {
     limit: number,
     before?: number,
   ): Promise<MarketCandle[]> {
-    if (!this.tdKey)
-      throw new Error(
-        "TwelveData API key missing (NEXT_PUBLIC_TWELVEDATA_API_KEY)",
-      );
+    if (!this.tdKey) throw new Error("TwelveData API key missing (NEXT_PUBLIC_TWELVEDATA_API_KEY)");
     const params = new URLSearchParams({
       symbol,
       interval: TF_TO_TD[timeframe],
@@ -337,8 +361,7 @@ export class HistoricalDataService {
     if (before) params.set("end_date", isoFromSeconds(before));
 
     const res = await fetch(`${TWELVEDATA_TS}?${params.toString()}`);
-    if (!res.ok)
-      throw new Error(`TwelveData time_series ${res.status} for ${symbol}`);
+    if (!res.ok) throw new Error(`TwelveData time_series ${res.status} for ${symbol}`);
     const data = (await res.json()) as {
       status?: string;
       message?: string;
@@ -351,8 +374,7 @@ export class HistoricalDataService {
         volume?: string;
       }>;
     };
-    if (data.status === "error")
-      throw new Error(`TwelveData: ${data.message ?? "error"} (${symbol})`);
+    if (data.status === "error") throw new Error(`TwelveData: ${data.message ?? "error"} (${symbol})`);
     if (!Array.isArray(data.values)) return [];
 
     const candles = data.values.map<MarketCandle>((v) => ({
@@ -374,11 +396,9 @@ export class HistoricalDataService {
     limit: number,
     before?: number,
   ): Promise<MarketCandle[]> {
-    if (!this.oandaKey)
-      throw new Error("OANDA API key missing (NEXT_PUBLIC_OANDA_API_KEY)");
+    if (!this.oandaKey) throw new Error("OANDA API key missing (NEXT_PUBLIC_OANDA_API_KEY)");
     const granularity = TF_TO_OANDA[timeframe];
-    if (!granularity)
-      throw new Error(`Unsupported timeframe for OANDA: ${timeframe}`);
+    if (!granularity) throw new Error(`Unsupported timeframe for OANDA: ${timeframe}`);
 
     const params = new URLSearchParams({
       granularity,
@@ -430,10 +450,7 @@ function isoFromSeconds(sec: number): string {
 }
 
 function abortReason(signal: AbortSignal): unknown {
-  return (
-    signal.reason ??
-    Object.assign(new Error("Aborted"), { name: "AbortError" })
-  );
+  return signal.reason ?? Object.assign(new Error("Aborted"), { name: "AbortError" });
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -454,9 +471,7 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 // ---- singleton --------------------------------------------------------------
 let singleton: HistoricalDataService | null = null;
 
-export function getHistoricalDataService(
-  opts?: HistoricalDataServiceOptions,
-): HistoricalDataService {
+export function getHistoricalDataService(opts?: HistoricalDataServiceOptions): HistoricalDataService {
   if (!singleton) singleton = new HistoricalDataService(opts);
   return singleton;
 }

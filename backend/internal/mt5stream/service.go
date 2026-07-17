@@ -313,11 +313,11 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		}
 	}
 
-	// Serve known data immediately whenever possible. The latest window refreshes
-	// in the background when the cache is stale or refresh=true, which keeps
-	// timeframe switches responsive while MT5 warms or reloads rates. Older
-	// pagination still waits for MT5 because returning a stale page would duplicate
-	// the current viewport instead of extending the left edge.
+	// Serve known data immediately for ordinary (non-refresh) reads. An explicit
+	// refresh request is a synchronous read-through: callers using
+	// `refresh=true` must not receive a stale window while MT5 is being refreshed.
+	// Older pagination also waits for MT5 because returning a stale page would
+	// duplicate the current viewport instead of extending the left edge.
 	candles := s.cachedHistory(symbol, timeframe, limit, before)
 	if len(candles) > 0 {
 		if before > 0 && s.historyCacheCoversBefore(symbol, timeframe, before) {
@@ -326,30 +326,48 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		if before == 0 && !refresh && s.historyIsFresh(symbol, timeframe, candles) {
 			return s.historySnapshot(symbol, timeframe, candles, "")
 		}
-		if before == 0 {
+		if before == 0 && !refresh {
 			// Keep the chart responsive while MT5 warms or refreshes rates. The
 			// background request updates the Go cache; the next frontend refresh
 			// receives fresh bars without making this HTTP call wait behind the
 			// single-threaded MT5 history bridge.
 			s.refreshHistoryAsync(symbol, timeframe, limit, before)
-			return s.historySnapshot(symbol, timeframe, candles, "")
+			snapshot := s.historySnapshot(symbol, timeframe, candles, "")
+			snapshot.Stale = true
+			snapshot.RefreshPending = true
+			return snapshot
 		}
 	}
 
 	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0)
 	if err != nil {
 		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
-			return s.historySnapshot(symbol, timeframe, candles, err.Error())
+			snapshot := s.historySnapshot(symbol, timeframe, candles, err.Error())
+			snapshot.Stale = true
+			return snapshot
 		}
-		return s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
+		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
+		snapshot.HasMore = nil
+		return snapshot
 	}
 	if msg.Error != "" {
 		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
-			return s.historySnapshot(symbol, timeframe, candles, msg.Error)
+			snapshot := s.historySnapshot(symbol, timeframe, candles, msg.Error)
+			snapshot.Stale = true
+			return snapshot
 		}
-		return s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
+		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
+		snapshot.HasMore = msg.HasMore
+		return snapshot
 	}
-	return s.historySnapshot(symbol, timeframe, limitCandles(msg.Candles, limit, before), "")
+	snapshot := s.historySnapshot(
+		symbol,
+		timeframe,
+		limitCandles(msg.Candles, limit, before),
+		"",
+	)
+	snapshot.HasMore = msg.HasMore
+	return snapshot
 }
 
 func (s *Service) HistoryAround(

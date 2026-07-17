@@ -18,6 +18,7 @@ import type {
   IndicatorDashboard,
   IndicatorResult,
   IndicatorSeries,
+  LoadMoreHistoryResult,
   Timeframe,
 } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -39,11 +40,7 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import { indicatorSeriesDataForCandles } from "@/services/indicatorSeriesProjection";
-import {
-  chartColors,
-  makeTickMarkFormatter,
-  makeTimeFormatter,
-} from "./chartTheme";
+import { chartColors, makeTickMarkFormatter, makeTimeFormatter } from "./chartTheme";
 import {
   INDICATOR_PANE_HEIGHT,
   RIGHT_OFFSET_BARS,
@@ -59,18 +56,9 @@ import {
 import { computeCachedIndicator } from "@/services/indicatorComputationCache";
 import { computeIndicator } from "@/services/indicators";
 import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
-import {
-  ensurePineIndicatorResult,
-  subscribePineRuntimeCache,
-} from "@/services/pineRuntimeCache";
-import {
-  ensureIndicatorRuntimeResult,
-  subscribeIndicatorRuntimeCache,
-} from "@/services/indicatorRuntimeCache";
-import {
-  resolveRealtimeSeriesUpdatePlan,
-  type RealtimeSeriesUpdatePlan,
-} from "@/services/market-data/candleSeries";
+import { ensurePineIndicatorResult, subscribePineRuntimeCache } from "@/services/pineRuntimeCache";
+import { ensureIndicatorRuntimeResult, subscribeIndicatorRuntimeCache } from "@/services/indicatorRuntimeCache";
+import { resolveRealtimeSeriesUpdatePlan, type RealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
 import { fmtPrice } from "@/utils/format";
@@ -79,10 +67,7 @@ import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 import { IndicatorLegend } from "./IndicatorLegend";
 import { subscribeChartViewportEvents } from "./chartViewportEvents";
-import {
-  installChartViewportController,
-  type ChartViewportController,
-} from "./chartViewportController";
+import { installChartViewportController, type ChartViewportController } from "./chartViewportController";
 import {
   initialReplayLogicalRange,
   latestReplayLogicalRange,
@@ -107,45 +92,24 @@ import { installChartInteractionTestHarness } from "./chartInteractionTestHarnes
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
 import { crosshairTimeToTimestamp } from "./crosshairSynchronization";
 import { removeChartAfterCurrentStack } from "./chartLifecycle";
-import {
-  resolveIndicatorSeriesWritePlan,
-  type IndicatorWritePoint,
-} from "@/services/indicatorSeriesWritePlan";
-import {
-  indicatorPointsInViewport,
-  resolveCandleViewport,
-  type CandleViewport,
-} from "@/services/candleViewport";
+import { resolveIndicatorSeriesWritePlan, type IndicatorWritePoint } from "@/services/indicatorSeriesWritePlan";
+import { indicatorPointsInViewport, resolveCandleViewport, type CandleViewport } from "@/services/candleViewport";
 import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
 
-function keepLatestBarInView(
-  chart: IChartApi,
-  viewport: ChartViewportController,
-  dataLength: number,
-) {
+function keepLatestBarInView(chart: IChartApi, viewport: ChartViewportController, dataLength: number) {
   const timeScale = chart.timeScale();
-  const next = latestReplayLogicalRange(
-    dataLength,
-    timeScale.getVisibleLogicalRange(),
-    RIGHT_OFFSET_BARS,
-  );
+  const next = latestReplayLogicalRange(dataLength, timeScale.getVisibleLogicalRange(), RIGHT_OFFSET_BARS);
   if (next) viewport.setLogicalRange(next, "replay-realign");
 }
 
-function initializeReplaySessionViewport(
-  viewport: ChartViewportController,
-  dataLength: number,
-) {
+function initializeReplaySessionViewport(viewport: ChartViewportController, dataLength: number) {
   const next = initialReplayLogicalRange(dataLength, RIGHT_OFFSET_BARS);
   if (next) viewport.setLogicalRange(next, "replay-realign");
 }
 
 const LEFT_HISTORY_PREFETCH_BARS = 120;
 
-type IndicatorSeriesApi =
-  | ISeriesApi<"Line">
-  | ISeriesApi<"Histogram">
-  | ISeriesApi<"Baseline">;
+type IndicatorSeriesApi = ISeriesApi<"Line"> | ISeriesApi<"Histogram"> | ISeriesApi<"Baseline">;
 type ProjectedIndicatorLabel = {
   key: string;
   text: string;
@@ -224,9 +188,7 @@ function logicalRangeAfterDataReplacement(
   if (!range || previous.length === 0 || next.length === 0) return null;
   const previousFirstTime = previous[0]?.time;
   if (previousFirstTime == null) return range;
-  const nextIndexOfPreviousFirst = next.findIndex(
-    (candle) => candle.time === previousFirstTime,
-  );
+  const nextIndexOfPreviousFirst = next.findIndex((candle) => candle.time === previousFirstTime);
   if (nextIndexOfPreviousFirst <= 0) return range;
   return {
     from: (Number(range.from) + nextIndexOfPreviousFirst) as Logical,
@@ -251,7 +213,7 @@ export function PriceChart({
   candles: Candle[];
   indicatorsOverride?: IndicatorConfig[];
   children?: React.ReactNode;
-  onLoadMoreHistory?: () => Promise<void> | void;
+  onLoadMoreHistory?: () => Promise<LoadMoreHistoryResult | void> | LoadMoreHistoryResult | void;
   onReady?: (chart: IChartApi | null) => void;
   timeZone?: string;
 }) {
@@ -283,6 +245,7 @@ export function PriceChart({
   const candlesRef = useRef<Candle[]>(candles);
   const loadMoreHistoryRef = useRef(onLoadMoreHistory);
   const loadMoreInFlightRef = useRef(false);
+  const loadMoreGenerationRef = useRef(0);
   const lastLoadMoreFirstTimeRef = useRef<number | null>(null);
   const indicatorViewportRef = useRef<CandleViewport | null>(null);
   const visibleLogicalRangeRef = useRef<LogicalRange | null>(null);
@@ -314,16 +277,10 @@ export function PriceChart({
 
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
-  const [indicatorViewport, setIndicatorViewport] =
-    useState<CandleViewport | null>(null);
-  const [priceMarker, setPriceMarker] =
-    useState<CurrentPriceMarkerState | null>(null);
-  const [indicatorLabels, setIndicatorLabels] = useState<
-    ProjectedIndicatorLabel[]
-  >([]);
-  const [indicatorDashboards, setIndicatorDashboards] = useState<
-    IndicatorDashboard[]
-  >([]);
+  const [indicatorViewport, setIndicatorViewport] = useState<CandleViewport | null>(null);
+  const [priceMarker, setPriceMarker] = useState<CurrentPriceMarkerState | null>(null);
+  const [indicatorLabels, setIndicatorLabels] = useState<ProjectedIndicatorLabel[]>([]);
+  const [indicatorDashboards, setIndicatorDashboards] = useState<IndicatorDashboard[]>([]);
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
   const countdown = useCountdown(timeframe, candles[candles.length - 1]?.time);
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
@@ -352,11 +309,7 @@ export function PriceChart({
       }
       if (derivedDataEnabledRef.current) {
         const previousViewport = indicatorViewportRef.current;
-        const nextViewport = resolveCandleViewport(
-          candlesRef.current.length,
-          range,
-          previousViewport,
-        );
+        const nextViewport = resolveCandleViewport(candlesRef.current.length, range, previousViewport);
         indicatorViewportRef.current = nextViewport;
         if (nextViewport?.revision !== previousViewport?.revision) {
           incrementChartPerformanceCounter("indicator.viewport.windowShifts");
@@ -372,6 +325,8 @@ export function PriceChart({
   useEffect(() => {
     prevMarkerPriceRef.current = null;
     markerUpRef.current = true;
+    loadMoreGenerationRef.current += 1;
+    loadMoreInFlightRef.current = false;
     lastLoadMoreFirstTimeRef.current = null;
     indicatorViewportRef.current = null;
     visibleLogicalRangeRef.current = null;
@@ -439,10 +394,7 @@ export function PriceChart({
       },
     });
 
-    const candleSeries = chart.addSeries(
-      CandlestickSeries,
-      candlestickOptions(theme, precision),
-    );
+    const candleSeries = chart.addSeries(CandlestickSeries, candlestickOptions(theme, precision));
 
     chartRef.current = chart;
     const viewportController = installChartViewportController(chart);
@@ -453,18 +405,12 @@ export function PriceChart({
     onReady?.(chart);
 
     let disposed = false;
-    const unsubscribeViewportEvents = subscribeChartViewportEvents(
-      chart,
-      (source) => {
-        if (disposed) return;
-        if (source === "input") viewportController.beginUserInteraction();
-        scheduleVersionBump();
-      },
-    );
-    const uninstallBenchmarkHarness = installChartBenchmarkHarness(
-      chart,
-      () => candlesRef.current.length,
-    );
+    const unsubscribeViewportEvents = subscribeChartViewportEvents(chart, (source) => {
+      if (disposed) return;
+      if (source === "input") viewportController.beginUserInteraction();
+      scheduleVersionBump();
+    });
+    const uninstallBenchmarkHarness = installChartBenchmarkHarness(chart, () => candlesRef.current.length);
     const uninstallInteractionHarness = installChartInteractionTestHarness({
       chart,
       viewport: viewportController,
@@ -473,9 +419,7 @@ export function PriceChart({
       lastCrosshairTime: () => lastCrosshairTimeRef.current,
     });
 
-    const handleCrosshairMove: Parameters<
-      IChartApi["subscribeCrosshairMove"]
-    >[0] = (param) => {
+    const handleCrosshairMove: Parameters<IChartApi["subscribeCrosshairMove"]>[0] = (param) => {
       if (disposed) return;
       const timestamp = crosshairTimeToTimestamp(param.time);
       lastCrosshairTimeRef.current = timestamp;
@@ -560,17 +504,36 @@ export function PriceChart({
 
       const range = chart.timeScale().getVisibleLogicalRange();
       const first = candlesRef.current[0];
-      if (!range || !first || range.from > LEFT_HISTORY_PREFETCH_BARS) return;
+      if (!range || !first) return;
+      const candleSeries = candleSeriesRef.current;
+      const barsInfo = candleSeries?.barsInLogicalRange(range);
+      const barsBefore = barsInfo?.barsBefore ?? range.from;
+      if (barsBefore > LEFT_HISTORY_PREFETCH_BARS) return;
       if (lastLoadMoreFirstTimeRef.current === first.time) return;
 
+      const generation = loadMoreGenerationRef.current;
       lastLoadMoreFirstTimeRef.current = first.time;
       loadMoreInFlightRef.current = true;
-      Promise.resolve(loadMore())
+      // Start in a microtask so synchronous callback throws are also handled.
+      Promise.resolve()
+        .then(() => loadMore())
+        .then((result) => {
+          if (generation !== loadMoreGenerationRef.current) return;
+          if (result?.status !== "exhausted") {
+            // `retry` (including a not-ready/no-op response) must allow the
+            // same cursor to be attempted again on the next range notification.
+            lastLoadMoreFirstTimeRef.current = null;
+          }
+        })
         .catch(() => {
-          lastLoadMoreFirstTimeRef.current = null;
+          if (generation === loadMoreGenerationRef.current) {
+            lastLoadMoreFirstTimeRef.current = null;
+          }
         })
         .finally(() => {
-          loadMoreInFlightRef.current = false;
+          if (generation === loadMoreGenerationRef.current) {
+            loadMoreInFlightRef.current = false;
+          }
         });
     };
 
@@ -578,7 +541,7 @@ export function PriceChart({
     timeScale.subscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
     maybeLoadOlderHistory();
     return () => timeScale.unsubscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
-  }, [ready]);
+  }, [candles.length, onLoadMoreHistory, ready, symbol, timeframe]);
 
   // ---- Re-theme / grid toggle / timeframe-aware time format ----
   useEffect(() => {
@@ -627,25 +590,28 @@ export function PriceChart({
     const setCandleData = (source: readonly Candle[]) => {
       const data = measureChartPerformance(
         "candle.projection",
-        () => source.map((candle) => ({
-          time: candle.time as UTCTimestamp,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-        })),
+        () =>
+          source.map((candle) => ({
+            time: candle.time as UTCTimestamp,
+            open: candle.open,
+            high: candle.high,
+            low: candle.low,
+            close: candle.close,
+          })),
         { candles: source.length },
       );
       measureChartSeriesWrite("candle", "setData", data.length, () => cs.setData(data));
     };
     const updateCandle = (candle: Candle) =>
-      measureChartSeriesWrite("candle", "update", 1, () => cs.update({
-        time: candle.time as UTCTimestamp,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-      }));
+      measureChartSeriesWrite("candle", "update", 1, () =>
+        cs.update({
+          time: candle.time as UTCTimestamp,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+        }),
+      );
     const animationWasRunning = candleAnimationRafRef.current !== null;
     if (candleAnimationRafRef.current !== null) {
       cancelAnimationFrame(candleAnimationRafRef.current);
@@ -659,10 +625,7 @@ export function PriceChart({
       const renderedCount = Math.min(renderedCandleCountRef.current, candles.length);
       const renderedLatest = renderedLatestCandleRef.current;
       if (renderedCount > 0 && renderedLatest) {
-        prevCandlesRef.current = [
-          ...candles.slice(0, renderedCount - 1),
-          renderedLatest,
-        ];
+        prevCandlesRef.current = [...candles.slice(0, renderedCount - 1), renderedLatest];
       }
       prevThemeRef.current = theme;
       scheduleVersionBump();
@@ -691,23 +654,11 @@ export function PriceChart({
     // history load, replay slice, theme change) → setData.
     const sameTheme = prevThemeRef.current === theme;
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
-    const replayBurst = replayPlaying && sameTheme
-      ? replayAppendedCandles(prev, candles)
-      : null;
-    const structuralDataWindowChange =
-      sameTheme &&
-      prev.length > 0 &&
-      candles.length > 0 &&
-      updatePlan === "replace";
+    const replayBurst = replayPlaying && sameTheme ? replayAppendedCandles(prev, candles) : null;
+    const structuralDataWindowChange = sameTheme && prev.length > 0 && candles.length > 0 && updatePlan === "replace";
     const visibleRangeBeforeReplace =
-      structuralDataWindowChange && fittedRef.current
-        ? chartRef.current?.timeScale().getVisibleLogicalRange()
-        : null;
-    candleByTimeRef.current = updateCandleLookup(
-      candleByTimeRef.current,
-      candles,
-      updatePlan,
-    );
+      structuralDataWindowChange && fittedRef.current ? chartRef.current?.timeScale().getVisibleLogicalRange() : null;
+    candleByTimeRef.current = updateCandleLookup(candleByTimeRef.current, candles, updatePlan);
 
     if (replayActive && !replayPlaying && renderedCandleCountRef.current !== candles.length) {
       setCandleData(candles);
@@ -793,11 +744,7 @@ export function PriceChart({
       setCandleData(candles);
       renderedLatestCandleRef.current = last ?? null;
       renderedCandleCountRef.current = candles.length;
-      const restoredRange = logicalRangeAfterDataReplacement(
-        visibleRangeBeforeReplace ?? null,
-        prev,
-        candles,
-      );
+      const restoredRange = logicalRangeAfterDataReplacement(visibleRangeBeforeReplace ?? null, prev, candles);
       if (restoredRange) {
         if (historyPrependViewportRafRef.current !== null) {
           cancelAnimationFrame(historyPrependViewportRafRef.current);
@@ -810,11 +757,7 @@ export function PriceChart({
           historyPrependViewportRafRef.current = null;
           if (viewportControllerRef.current !== viewport) return;
           if (viewport && revision != null) {
-            viewport.setLogicalRangeIfRevision(
-              restoredRange,
-              "history-prepend",
-              revision,
-            );
+            viewport.setLogicalRangeIfRevision(restoredRange, "history-prepend", revision);
             return;
           }
           viewport?.setLogicalRange(restoredRange, "history-prepend");
@@ -859,10 +802,7 @@ export function PriceChart({
       const frame = requestAnimationFrame(() => {
         if (replayViewportInitRafRef.current !== frame) return;
         replayViewportInitRafRef.current = null;
-        if (
-          activeReplaySessionRef.current !== replaySessionId ||
-          viewportControllerRef.current !== viewport
-        ) return;
+        if (activeReplaySessionRef.current !== replaySessionId || viewportControllerRef.current !== viewport) return;
         if (viewport) {
           initializeReplaySessionViewport(viewport, candlesRef.current.length);
         }
@@ -874,67 +814,38 @@ export function PriceChart({
       fittedRef.current = autoFit.markComplete;
     } else if (
       replayActive &&
-      shouldRealignReplayViewport(
-        chartRef.current?.timeScale().getVisibleLogicalRange(),
-        candles.length,
-      )
+      shouldRealignReplayViewport(chartRef.current?.timeScale().getVisibleLogicalRange(), candles.length)
     ) {
       const dataLength = candles.length;
       requestAnimationFrame(() => {
         const chart = chartRef.current;
         if (!chart) return;
-        if (
-          replayActive &&
-          shouldRealignReplayViewport(
-            chart.timeScale().getVisibleLogicalRange(),
-            dataLength,
-          )
-        ) {
+        if (replayActive && shouldRealignReplayViewport(chart.timeScale().getVisibleLogicalRange(), dataLength)) {
           const viewport = viewportControllerRef.current;
           if (viewport) keepLatestBarInView(chart, viewport, dataLength);
         }
       });
     }
     scheduleVersionBump();
-  }, [
-    candles,
-    theme,
-    replayActive,
-    replaySessionId,
-    replayPlaying,
-    replaySpeed,
-    scheduleVersionBump,
-  ]);
+  }, [candles, theme, replayActive, replaySessionId, replayPlaying, replaySpeed, scheduleVersionBump]);
 
   // ---- Overlay indicators (backend-runtime results) ----
   const overlayIndicators = useMemo(
     () => indicators.filter((i) => i.visible !== false && !i.separatePane),
     [indicators],
   );
-  const paneIndicators = useMemo(
-    () => indicators.filter((i) => i.separatePane),
-    [indicators],
-  );
-  const visiblePaneIndicators = useMemo(
-    () => paneIndicators.filter((i) => i.visible !== false),
-    [paneIndicators],
-  );
-  const overlayLegendIndicators = useMemo(
-    () => indicators.filter((i) => !i.separatePane),
-    [indicators],
-  );
-  useEffect(
-    () => {
-      const onRuntimeUpdate = () => setPineRuntimeVersion((value) => value + 1);
-      const unsubscribePine = subscribePineRuntimeCache(onRuntimeUpdate);
-      const unsubscribeBuiltIn = subscribeIndicatorRuntimeCache(onRuntimeUpdate);
-      return () => {
-        unsubscribePine();
-        unsubscribeBuiltIn();
-      };
-    },
-    [],
-  );
+  const paneIndicators = useMemo(() => indicators.filter((i) => i.separatePane), [indicators]);
+  const visiblePaneIndicators = useMemo(() => paneIndicators.filter((i) => i.visible !== false), [paneIndicators]);
+  const overlayLegendIndicators = useMemo(() => indicators.filter((i) => !i.separatePane), [indicators]);
+  useEffect(() => {
+    const onRuntimeUpdate = () => setPineRuntimeVersion((value) => value + 1);
+    const unsubscribePine = subscribePineRuntimeCache(onRuntimeUpdate);
+    const unsubscribeBuiltIn = subscribeIndicatorRuntimeCache(onRuntimeUpdate);
+    return () => {
+      unsubscribePine();
+      unsubscribeBuiltIn();
+    };
+  }, []);
   useEffect(() => {
     [...overlayIndicators, ...visiblePaneIndicators].forEach((cfg) => {
       if (cfg.type === "CUSTOM") {
@@ -944,69 +855,39 @@ export function PriceChart({
       }
     });
   }, [overlayIndicators, visiblePaneIndicators, candles, symbol, timeframe]);
-  const overlayResults = useMemo(
-    () => {
-      void pineRuntimeVersion;
-      return overlayIndicators.map((cfg) => ({
-        cfg,
-        result: optimizationDecision.derivedData
-          ? computeCachedIndicator(
-              cfg,
-              candles,
-              { symbol, timeframe },
-              pineRuntimeVersion,
-            )
-          : computeIndicator(cfg, candles, { symbol, timeframe }),
-      }));
-    },
-    [
-      overlayIndicators,
-      candles,
-      optimizationDecision.derivedData,
-      pineRuntimeVersion,
-      symbol,
-      timeframe,
-    ],
-  );
-  const paneResults = useMemo(
-    () => {
-      void pineRuntimeVersion;
-      return visiblePaneIndicators.map((cfg) => ({
-        cfg,
-        result: optimizationDecision.derivedData
-          ? computeCachedIndicator(
-              cfg,
-              candles,
-              { symbol, timeframe },
-              pineRuntimeVersion,
-            )
-          : computeIndicator(cfg, candles, { symbol, timeframe }),
-      }));
-    }, [
-      visiblePaneIndicators,
-      candles,
-      optimizationDecision.derivedData,
-      pineRuntimeVersion,
-      symbol,
-      timeframe,
-    ],
-  );
-  const chartIndicatorResults = useMemo(
-    () => [...overlayResults, ...paneResults],
-    [overlayResults, paneResults],
-  );
+  const overlayResults = useMemo(() => {
+    void pineRuntimeVersion;
+    return overlayIndicators.map((cfg) => ({
+      cfg,
+      result: optimizationDecision.derivedData
+        ? computeCachedIndicator(cfg, candles, { symbol, timeframe }, pineRuntimeVersion)
+        : computeIndicator(cfg, candles, { symbol, timeframe }),
+    }));
+  }, [overlayIndicators, candles, optimizationDecision.derivedData, pineRuntimeVersion, symbol, timeframe]);
+  const paneResults = useMemo(() => {
+    void pineRuntimeVersion;
+    return visiblePaneIndicators.map((cfg) => ({
+      cfg,
+      result: optimizationDecision.derivedData
+        ? computeCachedIndicator(cfg, candles, { symbol, timeframe }, pineRuntimeVersion)
+        : computeIndicator(cfg, candles, { symbol, timeframe }),
+    }));
+  }, [visiblePaneIndicators, candles, optimizationDecision.derivedData, pineRuntimeVersion, symbol, timeframe]);
+  const chartIndicatorResults = useMemo(() => [...overlayResults, ...paneResults], [overlayResults, paneResults]);
   const indicatorMagnetPoints = useMemo<IndicatorMagnetPoint[]>(
     () =>
       overlayResults.flatMap(({ cfg, result }) =>
         result.series.flatMap((series) =>
           series.data.flatMap((point) =>
             Number.isFinite(point.time) && Number.isFinite(point.value)
-              ? [{
-                  time: point.time,
-                  value: point.value,
-                  sourceId: cfg.id,
-                  seriesKey: series.key,
-                }]
+              ? [
+                  {
+                    time: point.time,
+                    value: point.value,
+                    sourceId: cfg.id,
+                    seriesKey: series.key,
+                  },
+                ]
               : [],
           ),
         ),
@@ -1014,23 +895,11 @@ export function PriceChart({
     [overlayResults],
   );
   const overlayLegendValueText = useMemo(
-    () =>
-      Object.fromEntries(
-        overlayResults.map(({ cfg, result }) => [
-          cfg.id,
-          indicatorResultValueText(result),
-        ]),
-      ),
+    () => Object.fromEntries(overlayResults.map(({ cfg, result }) => [cfg.id, indicatorResultValueText(result)])),
     [overlayResults],
   );
   const paneLegendValueText = useMemo(
-    () =>
-      Object.fromEntries(
-        paneResults.map(({ cfg, result }) => [
-          cfg.id,
-          indicatorResultValueText(result),
-        ]),
-      ),
+    () => Object.fromEntries(paneResults.map(({ cfg, result }) => [cfg.id, indicatorResultValueText(result)])),
     [paneResults],
   );
 
@@ -1051,17 +920,23 @@ export function PriceChart({
         chart.removePane(chart.panes().length - 1);
       }
       paneIndicators.forEach(() => chart.addPane(true));
-      chart.panes().slice(1).forEach((pane) => {
-        pane.setPreserveEmptyPane(true);
-        pane.setHeight(INDICATOR_PANE_HEIGHT);
-      });
+      chart
+        .panes()
+        .slice(1)
+        .forEach((pane) => {
+          pane.setPreserveEmptyPane(true);
+          pane.setHeight(INDICATOR_PANE_HEIGHT);
+        });
       paneLayoutSignatureRef.current = paneLayoutSignature;
       setVersion((value) => value + 1);
     }
-    chart.panes().slice(1).forEach((pane, index) => {
-      pane.setPreserveEmptyPane(true);
-      chart.priceScale("right", index + 1).applyOptions(panePriceScaleOptions(theme));
-    });
+    chart
+      .panes()
+      .slice(1)
+      .forEach((pane, index) => {
+        pane.setPreserveEmptyPane(true);
+        chart.priceScale("right", index + 1).applyOptions(panePriceScaleOptions(theme));
+      });
 
     const activeIds = new Set(chartIndicatorResults.map((item) => item.cfg.id));
 
@@ -1082,9 +957,7 @@ export function PriceChart({
 
     for (const { cfg, result } of chartIndicatorResults) {
       let series = store.get(cfg.id);
-      const paneIndex = cfg.separatePane
-        ? paneIndicators.findIndex((item) => item.id === cfg.id) + 1
-        : 0;
+      const paneIndex = cfg.separatePane ? paneIndicators.findIndex((item) => item.id === cfg.id) + 1 : 0;
       const structureSignature = `${paneIndex}:${indicatorStructureSignature(result.series)}`;
       const structureChanged = indStructureRef.current.get(cfg.id) !== structureSignature;
       if (!series || structureChanged) {
@@ -1092,37 +965,49 @@ export function PriceChart({
         series?.forEach((s) => chart.removeSeries(s));
         series = result.series.map((s) => {
           if (s.type === "baselineFill") {
-            return chart.addSeries(BaselineSeries, {
-              baseValue: { type: "price", price: s.baseValue ?? 0 },
-              topFillColor1: s.color,
-              topFillColor2: s.color,
-              topLineColor: "rgba(0, 0, 0, 0)",
-              bottomFillColor1: "rgba(0, 0, 0, 0)",
-              bottomFillColor2: "rgba(0, 0, 0, 0)",
-              bottomLineColor: "rgba(0, 0, 0, 0)",
-              lineVisible: s.lineVisible ?? false,
-              priceLineVisible: false,
-              lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-              ...seriesPriceFormatOptions(s),
-            }, paneIndex);
+            return chart.addSeries(
+              BaselineSeries,
+              {
+                baseValue: { type: "price", price: s.baseValue ?? 0 },
+                topFillColor1: s.color,
+                topFillColor2: s.color,
+                topLineColor: "rgba(0, 0, 0, 0)",
+                bottomFillColor1: "rgba(0, 0, 0, 0)",
+                bottomFillColor2: "rgba(0, 0, 0, 0)",
+                bottomLineColor: "rgba(0, 0, 0, 0)",
+                lineVisible: s.lineVisible ?? false,
+                priceLineVisible: false,
+                lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
+                ...seriesPriceFormatOptions(s),
+              },
+              paneIndex,
+            );
           }
 
           return s.type === "histogram"
-            ? chart.addSeries(HistogramSeries, {
-                color: s.color,
-                priceLineVisible: false,
-                lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-                ...seriesPriceFormatOptions(s),
-              }, paneIndex)
-            : chart.addSeries(LineSeries, {
-                color: s.color,
-                lineWidth: s.lineWidth ?? 2,
-                lineStyle: s.lineStyle ?? 0,
-                priceLineVisible: false,
-                lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-                crosshairMarkerVisible: cfg.separatePane,
-                ...seriesPriceFormatOptions(s),
-              }, paneIndex);
+            ? chart.addSeries(
+                HistogramSeries,
+                {
+                  color: s.color,
+                  priceLineVisible: false,
+                  lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
+                  ...seriesPriceFormatOptions(s),
+                },
+                paneIndex,
+              )
+            : chart.addSeries(
+                LineSeries,
+                {
+                  color: s.color,
+                  lineWidth: s.lineWidth ?? 2,
+                  lineStyle: s.lineStyle ?? 0,
+                  priceLineVisible: false,
+                  lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
+                  crosshairMarkerVisible: cfg.separatePane,
+                  ...seriesPriceFormatOptions(s),
+                },
+                paneIndex,
+              );
         });
         store.set(cfg.id, series);
         indStructureRef.current.set(cfg.id, structureSignature);
@@ -1170,14 +1055,11 @@ export function PriceChart({
         const projected = measureChartPerformance(
           "indicator.projection",
           () => {
-            const source = indicatorSeriesDataForCandles(
-              s,
-              candles,
-              visibleLogicalRangeRef.current,
-            );
-            const windowed = s.extendToVisibleRange || !optimizationDecision.derivedData
-              ? source
-              : indicatorPointsInViewport(source, candles, indicatorViewport);
+            const source = indicatorSeriesDataForCandles(s, candles, visibleLogicalRangeRef.current);
+            const windowed =
+              s.extendToVisibleRange || !optimizationDecision.derivedData
+                ? source
+                : indicatorPointsInViewport(source, candles, indicatorViewport);
             incrementChartPerformanceCounter(
               "indicator.viewport.pointsAvoided",
               Math.max(0, source.length - windowed.length),
@@ -1190,20 +1072,13 @@ export function PriceChart({
           },
           { candles: candles.length, indicator: cfg.type },
         );
-        const plan = resolveIndicatorSeriesWritePlan(
-          indDataRef.current.get(cacheKey) ?? [],
-          projected,
-        );
+        const plan = resolveIndicatorSeriesWritePlan(indDataRef.current.get(cacheKey) ?? [], projected);
         if (plan === "replace") {
-          measureChartSeriesWrite("indicator", "setData", projected.length, () =>
-            series![idx].setData(projected),
-          );
+          measureChartSeriesWrite("indicator", "setData", projected.length, () => series![idx].setData(projected));
         } else if (plan === "append" || plan === "update-latest") {
           const latest = projected.at(-1);
           if (latest) {
-            measureChartSeriesWrite("indicator", "update", 1, () =>
-              series![idx].update(latest),
-            );
+            measureChartSeriesWrite("indicator", "update", 1, () => series![idx].update(latest));
           }
         } else {
           incrementChartPerformanceCounter("series.indicator.skipped");
@@ -1233,21 +1108,14 @@ export function PriceChart({
 
     const frame = requestAnimationFrame(() => {
       const width = container.clientWidth;
-      const labels = overlayResults.flatMap(({ result }) =>
-        result.labels ?? [],
-      );
-      const dashboards = overlayResults.flatMap(({ result }) =>
-        result.dashboard ? [result.dashboard] : [],
-      );
+      const labels = overlayResults.flatMap(({ result }) => result.labels ?? []);
+      const dashboards = overlayResults.flatMap(({ result }) => (result.dashboard ? [result.dashboard] : []));
       const rightReserve = dashboards.length > 0 ? 238 : 96;
       setIndicatorLabels(
         labels.flatMap((label) => {
           const y = series.priceToCoordinate(label.price);
           if (y == null) return [];
-          const x =
-            label.time == null
-              ? width - 220
-              : chart.timeScale().timeToCoordinate(label.time as UTCTimestamp);
+          const x = label.time == null ? width - 220 : chart.timeScale().timeToCoordinate(label.time as UTCTimestamp);
           if (x == null) return [];
           const leftClip = -80;
           const rightClip = width + 80;
@@ -1374,8 +1242,7 @@ export function PriceChart({
     const price = series.coordinateToPrice(localY);
     const t = chart.timeScale().coordinateToTime(localX);
     const fallbackPrice = candles[candles.length - 1]?.close ?? 0;
-    const fallbackTime =
-      candles[candles.length - 1]?.time ?? Math.floor(Date.now() / 1000);
+    const fallbackTime = candles[candles.length - 1]?.time ?? Math.floor(Date.now() / 1000);
 
     setMenu({
       visible: true,
@@ -1393,15 +1260,8 @@ export function PriceChart({
       onContextMenu={onContextMenu}
     >
       <div ref={containerRef} className="h-full w-full" />
-      {ctx && (
-        <ChartContextObj.Provider value={ctx}>
-          {children}
-        </ChartContextObj.Provider>
-      )}
-      <IndicatorOverlay
-        labels={indicatorLabels}
-        dashboards={indicatorDashboards}
-      />
+      {ctx && <ChartContextObj.Provider value={ctx}>{children}</ChartContextObj.Provider>}
+      <IndicatorOverlay labels={indicatorLabels} dashboards={indicatorDashboards} />
       <IndicatorLegend
         className="absolute left-2 top-8 z-30 max-w-[calc(100%-116px)]"
         indicators={overlayLegendIndicators}
@@ -1434,13 +1294,7 @@ export function PriceChart({
           </div>
         );
       })}
-      {priceMarker && (
-        <CurrentPriceMarker
-          marker={priceMarker}
-          precision={precision}
-          symbol={symbol}
-        />
-      )}
+      {priceMarker && <CurrentPriceMarker marker={priceMarker} precision={precision} symbol={symbol} />}
       {menu && <ChartContextMenu state={menu} onClose={() => setMenu(null)} />}
     </div>
   );
@@ -1490,9 +1344,7 @@ function IndicatorOverlay({
         >
           <div className="grid grid-cols-[1fr_auto] border-b border-gray-500/60">
             <div className="truncate px-1 text-cyan-300">{dashboard.title}</div>
-            <div className="px-1 text-right text-gray-400">
-              {dashboard.subtitle}
-            </div>
+            <div className="px-1 text-right text-gray-400">{dashboard.subtitle}</div>
           </div>
           {dashboard.rows.map((row, rowIndex) => (
             <div
@@ -1500,10 +1352,7 @@ function IndicatorOverlay({
               className="grid grid-cols-[1fr_auto] border-b border-gray-500/40 last:border-b-0"
             >
               <div className="truncate px-1 text-gray-300">{row.label}</div>
-              <div
-                className="truncate px-1 text-right font-semibold"
-                style={{ color: row.valueColor ?? "#ffffff" }}
-              >
+              <div className="truncate px-1 text-right font-semibold" style={{ color: row.valueColor ?? "#ffffff" }}>
                 {row.value}
               </div>
             </div>
@@ -1551,9 +1400,7 @@ function CurrentPriceMarker({
         data-testid="current-price-countdown"
         data-countdown={marker.countdown}
         className={`flex h-[15px] items-center justify-end whitespace-nowrap tabular-nums ${
-          marker.countdown.includes("d ")
-            ? "px-1 text-[9px] tracking-[-0.02em]"
-            : "px-1.5 text-[10px]"
+          marker.countdown.includes("d ") ? "px-1 text-[9px] tracking-[-0.02em]" : "px-1.5 text-[10px]"
         }`}
         style={{
           backgroundColor: marker.color,

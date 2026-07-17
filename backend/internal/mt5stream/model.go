@@ -91,21 +91,29 @@ type HistoryMessage struct {
 	Candles       []Candle `json:"candles"`
 	RequestedTime int64    `json:"requested_time,omitempty"`
 	ResolvedTime  int64    `json:"resolved_time,omitempty"`
-	Error         string   `json:"error,omitempty"`
+	// HasMore is populated for cursor pages. A pointer distinguishes an
+	// explicit end-of-history from older bridge versions that omit the field.
+	HasMore *bool  `json:"has_more,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // HistorySnapshot is returned by GET /api/v1/mt5/history.
 type HistorySnapshot struct {
-	Connected     bool      `json:"connected"`
-	BridgeURL     string    `json:"bridgeUrl"`
-	Source        string    `json:"source"`
-	Symbol        string    `json:"symbol"`
-	Timeframe     string    `json:"timeframe"`
-	Candles       []Candle  `json:"candles"`
-	RequestedTime int64     `json:"requestedTime,omitempty"`
-	ResolvedTime  int64     `json:"resolvedTime,omitempty"`
-	UpdatedAt     time.Time `json:"updatedAt,omitempty"`
-	LastError     string    `json:"lastError,omitempty"`
+	Connected bool     `json:"connected"`
+	BridgeURL string   `json:"bridgeUrl"`
+	Source    string   `json:"source"`
+	Symbol    string   `json:"symbol"`
+	Timeframe string   `json:"timeframe"`
+	Candles   []Candle `json:"candles"`
+	// HasMore is populated for `before` pages when the bridge can determine
+	// whether another page exists to the left.
+	HasMore        *bool     `json:"hasMore,omitempty"`
+	Stale          bool      `json:"stale,omitempty"`
+	RefreshPending bool      `json:"refreshPending,omitempty"`
+	RequestedTime  int64     `json:"requestedTime,omitempty"`
+	ResolvedTime   int64     `json:"resolvedTime,omitempty"`
+	UpdatedAt      time.Time `json:"updatedAt,omitempty"`
+	LastError      string    `json:"lastError,omitempty"`
 }
 
 type inboundMessage struct {

@@ -48,7 +48,8 @@ import {
 } from "@/services/market-data/quoteVolume";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
-const MAX_CANDLES = 5000;
+export const MAX_CANDLES_PER_SERIES = 5000;
+const MAX_CANDLES = MAX_CANDLES_PER_SERIES;
 const CANDLE_CACHE_BUDGET = { maxRepositories: 10, maxCandles: 50_000 } as const;
 
 const DEFAULT_SYMBOL = "";

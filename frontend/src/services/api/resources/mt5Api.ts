@@ -62,6 +62,12 @@ export interface Mt5HistorySnapshot {
   symbol: string;
   timeframe: Timeframe;
   candles: Mt5Candle[];
+  /** For a `before` page, whether the provider reports more bars to the left. */
+  hasMore?: boolean;
+  /** True when the returned data is a cache fallback rather than a fresh read. */
+  stale?: boolean;
+  /** True while a background refresh is still pending. */
+  refreshPending?: boolean;
   updatedAt?: string;
   lastError?: string;
 }
@@ -75,24 +81,22 @@ export async function getMt5Symbols(): Promise<Mt5SymbolSnapshot> {
   return getJson<Mt5SymbolSnapshot>("mt5/symbols");
 }
 
-export async function getMt5Ticks(
-  symbols?: string[],
-): Promise<Mt5TickSnapshot> {
+export async function getMt5Ticks(symbols?: string[]): Promise<Mt5TickSnapshot> {
   const uniqueSymbols = [...new Set((symbols ?? []).map((s) => s.trim()).filter(Boolean))];
-  const query =
-    uniqueSymbols.length > 0
-      ? `?symbols=${encodeURIComponent(uniqueSymbols.join(","))}`
-      : "";
+  const query = uniqueSymbols.length > 0 ? `?symbols=${encodeURIComponent(uniqueSymbols.join(","))}` : "";
   return getJson<Mt5TickSnapshot>(`mt5/ticks${query}`);
 }
 
-export async function getMt5History(params: {
-  symbol: string;
-  timeframe: Timeframe;
-  limit?: number;
-  before?: number;
-  refresh?: boolean;
-}, options?: Options): Promise<Mt5HistorySnapshot> {
+export async function getMt5History(
+  params: {
+    symbol: string;
+    timeframe: Timeframe;
+    limit?: number;
+    before?: number;
+    refresh?: boolean;
+  },
+  options?: Options,
+): Promise<Mt5HistorySnapshot> {
   const query = new URLSearchParams({
     symbol: params.symbol,
     timeframe: params.timeframe,
@@ -110,24 +114,24 @@ export async function getMt5History(params: {
   });
 }
 
-export async function getMt5HistoryAround(params: {
-  symbol: string;
-  timeframe: Timeframe;
-  time: number;
-  limit?: number;
-}, options?: Options): Promise<Mt5HistoryAroundSnapshot> {
+export async function getMt5HistoryAround(
+  params: {
+    symbol: string;
+    timeframe: Timeframe;
+    time: number;
+    limit?: number;
+  },
+  options?: Options,
+): Promise<Mt5HistoryAroundSnapshot> {
   const query = new URLSearchParams({
     symbol: params.symbol,
     timeframe: params.timeframe,
     time: String(params.time),
     limit: String(params.limit ?? 600),
   });
-  return getJson<Mt5HistoryAroundSnapshot>(
-    `mt5/history/around?${query.toString()}`,
-    {
-      timeout: 75_000,
-      retry: { limit: 0 },
-      ...options,
-    },
-  );
+  return getJson<Mt5HistoryAroundSnapshot>(`mt5/history/around?${query.toString()}`, {
+    timeout: 75_000,
+    retry: { limit: 0 },
+    ...options,
+  });
 }

@@ -72,10 +72,10 @@ single-threaded; the MT5 Python package should not be called concurrently from
 multiple runtime threads.
 
 On-demand history requests may need a cold-start refresh because MT5 downloads
-recent bars after the first `copy_rates_from` call. A non-empty history window
-is returned immediately even if its newest bar is slightly stale; later active
-chart refreshes pick up the terminal's warmed bars. Only empty responses use the
-bounded retry budget. The worker serializes `copy_rates_*` work, so a slow
+bars after the first `copy_rates_*` call. A non-empty latest window is returned
+immediately even if its newest bar is slightly stale; later active chart
+refreshes pick up the terminal's warmed bars. Empty latest and cursor-page
+responses use the bounded retry budget. The worker serializes `copy_rates_*` work, so a slow
 request does not freeze the asyncio WebSocket loop or block catalog messages.
 
 History `symbol_select()` and `copy_rates_*` execute together on that worker.
@@ -130,6 +130,8 @@ candles when it has enough current data; otherwise it sends a `history.request`
 message over the existing bridge WebSocket. Latest windows use
 `copy_rates_from_pos`; older pages use `copy_rates_from(..., before - 1s, limit)`
 so infinite-scroll history loads bars strictly before the first loaded candle.
+Cursor responses include `has_more`; the frontend only treats an explicit false
+value as the terminal history boundary.
 Date navigation uses
 `GET /api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&time=<unix-seconds>&limit=600`.
 The bridge loads backward context and adaptively expands a forward range until it finds the first
@@ -243,6 +245,7 @@ The Python bridge responds:
   "request_id": "hist-request-id",
   "symbol": "EURUSD",
   "timeframe": "15m",
+  "has_more": false,
   "candles": [
     { "time": 1760000000, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 42 }
   ]
