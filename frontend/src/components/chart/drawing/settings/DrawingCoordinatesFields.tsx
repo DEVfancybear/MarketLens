@@ -42,7 +42,7 @@ function ExactNumberField({
           event.currentTarget.blur();
         }
       }}
-      className="h-[34px] min-w-0 rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[12px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand disabled:cursor-not-allowed disabled:opacity-40"
+      className="h-[34px] w-full min-w-0 rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[12px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand disabled:cursor-not-allowed disabled:opacity-40"
     />
   );
 }
@@ -76,7 +76,10 @@ export function DrawingCoordinatesFields({
             </div>
             <div className="grid grid-cols-2 gap-2">
               {showPrice && (
-                <label className="space-y-1 text-[10px] text-ink-faint">
+                <label
+                  className="grid min-w-0 grid-cols-1 gap-1 text-[10px] text-ink-faint"
+                  data-coordinate-field
+                >
                   <span>Price</span>
                   <ExactNumberField
                     label={`${title} price`}
@@ -85,7 +88,10 @@ export function DrawingCoordinatesFields({
                   />
                 </label>
               )}
-              <label className="space-y-1 text-[10px] text-ink-faint">
+              <label
+                className="grid min-w-0 grid-cols-1 gap-1 text-[10px] text-ink-faint"
+                data-coordinate-field
+              >
                 <span>Unix time</span>
                 <ExactNumberField
                   label={`${title} Unix time`}
@@ -93,7 +99,10 @@ export function DrawingCoordinatesFields({
                   onCommit={(time) => patchPoint(index, { time: Math.round(time) })}
                 />
               </label>
-              <label className="space-y-1 text-[10px] text-ink-faint">
+              <label
+                className="grid min-w-0 grid-cols-1 gap-1 text-[10px] text-ink-faint"
+                data-coordinate-field
+              >
                 <span>Date / time</span>
                 <input
                   type="datetime-local"
@@ -106,7 +115,10 @@ export function DrawingCoordinatesFields({
                   className="h-[34px] min-w-0 w-full rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2 text-[11px] text-ink-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"
                 />
               </label>
-              <label className="space-y-1 text-[10px] text-ink-faint">
+              <label
+                className="grid min-w-0 grid-cols-1 gap-1 text-[10px] text-ink-faint"
+                data-coordinate-field
+              >
                 <span>Bar index</span>
                 <ExactNumberField
                   label={`${title} bar index`}

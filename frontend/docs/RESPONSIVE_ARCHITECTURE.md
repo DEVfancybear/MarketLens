@@ -1,6 +1,6 @@
 # Responsive Architecture
 
-_Last updated: 2026-07-16_
+_Last updated: 2026-07-17_
 
 The terminal no longer implements mobile as responsive desktop DOM. It selects one of two isolated presentation platforms:
 
@@ -62,6 +62,10 @@ share one responsive contract:
   horizontally, and the footer remains reachable above the safe area.
 - Mobile controls use a 44px touch target, 16px form text, and preserve native
   checkbox dimensions while expanding the surrounding hit area.
+- Shared form grids must explicitly own their internal flow. Coordinate fields
+  use a one-column label/control grid inside each responsive two-column cell,
+  and controls use `width: 100%` with `min-width: 0`; do not rely on an inline
+  `<label>` to wrap differently as available width changes.
 - Interval-visibility tiles are an explicit exception to the compact checkbox
   rule: each `role="checkbox"` tile fills its grid cell and remains at least
   44px tall, while native/compact checkbox controls stay square.
@@ -104,4 +108,10 @@ UI unit set passed 39/39, and production build, typecheck and lint passed.
 Latest mobile popup verification on 2026-07-16: `platformUi` passed 3/3,
 `mobileOverlayResponsive` passed 6/6, and `npm run typecheck` passed.
 
-Required viewport checks: 320x568, 375x812, 390x844, 430x932, 844x390, 768x1024, 1024x768, 1366x768 and 1920x1080.
+Shared coordinate-field verification on 2026-07-17: the focused adaptive
+dialog browser regression passed at 320x568, the reported 558x501 viewport,
+and 844x390 landscape; the existing coordinate edit/undo-redo browser test,
+targeted lint, and `npm run typecheck` also passed.
+
+Required viewport checks: 320x568, 375x812, 390x844, 430x932, 558x501,
+844x390, 768x1024, 1024x768, 1366x768 and 1920x1080.

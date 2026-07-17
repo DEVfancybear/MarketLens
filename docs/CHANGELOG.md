@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Shared drawing coordinate-field layout (2026-07-17)
+- Made every field in the shared drawing coordinate editor use an explicit
+  label-above-control grid instead of relying on inline label flow. Price,
+  Unix-time, date/time, and bar-index controls now remain aligned without
+  labels colliding with their inputs.
+- Made exact-number inputs fill their grid cell consistently across Fib,
+  line/shape drawing, and Long/Short Position settings dialogs.
+- Added responsive browser coverage at the reported `558x501` viewport, plus
+  the existing compact portrait and landscape checks, to preserve label/input
+  separation, full-width controls, reachable footers, and zero page overflow.
+
 ### Fixed - MT5 stale-history candle gaps (2026-07-17)
 - Detected small active-chart refresh pages that begin more than one bar interval after the cached
   candle tail. This identifies the cold-terminal case where MT5 first returns a stale window and a

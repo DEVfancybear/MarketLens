@@ -188,6 +188,7 @@ test("drawing settings tabs keep their fields inside the mobile sheet", async ({
 test("adaptive dialog remains reachable at compact portrait and landscape sizes", async ({ page }, testInfo) => {
   for (const viewport of [
     { width: 320, height: 568, name: "compact" },
+    { width: 558, height: 501, name: "compact-wide" },
     { width: 844, height: 390, name: "landscape" },
   ]) {
     await page.setViewportSize(viewport);
@@ -245,6 +246,22 @@ test("adaptive dialog remains reachable at compact portrait and landscape sizes"
       await styleTab.focus();
       await styleTab.press("Enter");
       await expect(styleTab).toHaveAttribute("aria-selected", "true");
+    }
+    if (viewport.width === 558) {
+      await dialog.getByRole("tab", { name: "coordinates", exact: true }).click();
+      const fields = dialog.locator("[data-coordinate-editor] section:first-child [data-coordinate-field]");
+      await expect(fields).toHaveCount(4);
+      for (const field of await fields.all()) {
+        const fieldBox = await field.boundingBox();
+        const labelBox = await field.locator("span").boundingBox();
+        const inputBox = await field.locator("input").boundingBox();
+        expect(fieldBox).not.toBeNull();
+        expect(labelBox).not.toBeNull();
+        expect(inputBox).not.toBeNull();
+        expect(inputBox!.y).toBeGreaterThanOrEqual(labelBox!.y + labelBox!.height + 3);
+        expect(inputBox!.x).toBeGreaterThanOrEqual(fieldBox!.x);
+        expect(Math.abs(inputBox!.width - fieldBox!.width)).toBeLessThanOrEqual(1);
+      }
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
     await page.screenshot({ path: testInfo.outputPath(`drawing-settings-${viewport.name}.png`) });

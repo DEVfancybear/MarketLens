@@ -137,8 +137,12 @@ Fib tools use `ObjectSettingsDialog`:
 - Style tab mirrors TradingView's layout: trend line, levels line, extend, 24 per-level rows, use
   one color, background opacity, reverse, prices, levels value/percent mode, labels align, text
   align, font size, and log-scale toggle.
-- Coordinates tab uses `#1 (price, bar)`, `#2 (price, bar)` rows. Bar is the nearest loaded candle
-  index and edits snap to the selected candle's time.
+- Coordinates uses the shared `DrawingCoordinatesFields` editor rather than a
+  Fib-only layout. Each anchor exposes price, Unix time, local date/time, and
+  nearest loaded bar index; editing the bar index snaps time to that candle.
+  Every field keeps an explicit label-above-control layout and a full-width,
+  shrinkable input so compact/coarse-pointer dialogs cannot place labels beside
+  or on top of their controls.
 - Fib setting fields are included in `CanvasRenderer.drawingsHash()` and `TEMPLATE_STYLE_KEYS`, so
   live edits repaint immediately and templates preserve fib styling.
 
@@ -165,6 +169,11 @@ The shared drawing settings, overlay, all-adapter, persistence, and browser
 gesture suites cover the dialog schema, repaint/selection integration,
 round-trip compatibility, and double-click settings flow. This replaces the
 former source-text regex guard with executable behavior contracts.
+
+`mobileOverlayResponsive.spec.ts` also covers the shared coordinate layout at
+320x568, 558x501, and 844x390. Because Fib, other drawings, and Position
+settings consume the same editor, layout regressions should be fixed and tested
+there instead of adding tool-specific CSS.
 
 Run this together with the normal checks before commit:
 
