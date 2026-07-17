@@ -1,0 +1,5 @@
+//@version=5
+indicator("Relative Strength Index", overlay = false)
+length = input.int(14, "Length", minval = 1, maxval = 500)
+lineColor = input.color(#26a69a, "Color")
+plot(ta.rsi(close, length), "rsi", color = lineColor, linewidth = 2)

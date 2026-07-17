@@ -1,0 +1,5 @@
+//@version=5
+indicator("Moving Average (SMA)", overlay = true)
+length = input.int(50, "Length", minval = 1, maxval = 500)
+lineColor = input.color(#2962ff, "Color")
+plot(ta.sma(close, length), "sma", color = lineColor, linewidth = 2)

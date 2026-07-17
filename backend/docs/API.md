@@ -730,15 +730,15 @@ to chart without a private script lookup:
 
 ## Built-in indicator runtime
 
-Built-in indicator calculations are backend-owned. The frontend sends the
-instance config and replay-visible OHLCV window, then renders only the returned
-`IndicatorResult` series. The common registry currently supports `SMA`, `EMA`,
-`VWAP`, `RSI`, `MACD`, `ADR`, and `SWING_SR`; future built-ins register another
-calculator without adding a new route or response shape.
+Built-ins are Pine source catalog entries compiled by the same parser/executor
+as saved user scripts. The frontend sends instance config and the replay-visible
+OHLCV window, then renders only the returned `IndicatorResult`. The catalog
+currently supports `SMA`, `EMA`, `VWAP`, `RSI`, `MACD`, `ADR`, `FVG`, and
+`SWING_SR`; adding another source entry does not add a formula-specific route.
 
 | Method | Path                                | Purpose                                      |
 | ------ | ----------------------------------- | -------------------------------------------- |
-| POST   | `/api/v1/indicator-runtime/compute` | Compute a registered built-in against OHLCV |
+| POST   | `/api/v1/indicator-runtime/compute` | Compile a catalog Pine source against OHLCV |
 
 Request:
 
@@ -771,10 +771,11 @@ Response:
 }
 ```
 
-The runtime sorts/deduplicates candles, caps the calculation window at 5,000
-bars, validates per-indicator inputs, and applies the shared style/output
-contract. Swing pivots are emitted only after the complete right-hand strength
-window exists, so replay requests cannot observe a future candle.
+The common compiler sorts/deduplicates candles, caps the supplied window at
+5,000 bars, maps catalog properties to Pine inputs/styles, and emits the same
+result contract used for user source. Swing pivots are emitted only after the
+complete right-hand strength window exists, so replay cannot observe a future
+candle.
 
 `SWING_SR` is a clean-room implementation of the behavior publicly described
 by the protected TradingView script: confirmed high/low pivots, independent

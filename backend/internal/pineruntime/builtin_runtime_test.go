@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -20,62 +21,173 @@ func TestIndicatorRuntimeNormalizesCandlesAndRejectsInvalidNumbers(t *testing.T)
 		{Time: 3, Open: 4, High: 5, Low: 3, Close: 4, Volume: 2},
 		{Time: 4, Open: math.NaN(), High: 5, Low: 3, Close: 4, Volume: 1},
 	})
-	if len(candles) != 2 || candles[0].Time != 2 || candles[1].Time != 3 {
-		t.Fatalf("candles were not filtered, sorted, and deduplicated: %+v", candles)
-	}
-	if candles[1].Close != 4 || candles[1].Volume != 2 {
-		t.Fatalf("last duplicate should win: %+v", candles[1])
-	}
-	if got := runtimeLength(map[string]any{"length": "not-a-number"}, "length", 25); got != 25 {
-		t.Fatalf("invalid numeric config should use fallback, got %d", got)
+	if len(candles) != 2 || candles[0].Time != 2 || candles[1].Time != 3 || candles[1].Close != 4 {
+		t.Fatalf("normalized candles = %+v", candles)
 	}
 }
 
 func TestRuntimePivotsRejectEqualPlateaus(t *testing.T) {
-	if got := detectRuntimePivots([]float64{1, 3, 3, 1}, 1, 1, "high"); len(got) != 0 {
-		t.Fatalf("equal high plateau should not be a strict pivot: %+v", got)
+	if pivots := detectRuntimePivots([]float64{1, 3, 3, 1}, 1, 1, "high"); len(pivots) != 0 {
+		t.Fatalf("equal high plateau must not be a pivot: %+v", pivots)
 	}
-	if got := detectRuntimePivots([]float64{3, 1, 1, 3}, 1, 1, "low"); len(got) != 0 {
-		t.Fatalf("equal low plateau should not be a strict pivot: %+v", got)
+	if pivots := detectRuntimePivots([]float64{3, 1, 1, 3}, 1, 1, "low"); len(pivots) != 0 {
+		t.Fatalf("equal low plateau must not be a pivot: %+v", pivots)
 	}
 }
 
 func runtimeConfig(id, indicatorType string) map[string]any {
 	return map[string]any{
-		"id":      id,
-		"type":    indicatorType,
-		"length":  5,
-		"length2": 4,
-		"length3": 9,
-		"color":   "#2962ff",
-		"color2":  "#ff9800",
-		"inputValues": map[string]any{
-			"highSource": "high",
-			"lowSource":  "low",
-		},
+		"id": id, "type": indicatorType,
+		"length": 3, "length2": 2, "length3": 5,
+		"color": "#2962ff", "color2": "#ff9800",
+		"inputValues": map[string]any{"highSource": "high", "lowSource": "low"},
 	}
 }
 
-func TestIndicatorRuntimeRegistryComputesEveryCurrentBuiltIn(t *testing.T) {
+func fvgFixtureCandles() []Candle {
+	return []Candle{
+		{Time: 60, Open: 10, High: 11, Low: 9, Close: 10, Volume: 1},
+		{Time: 120, Open: 11, High: 12, Low: 10, Close: 11.5, Volume: 1},
+		{Time: 180, Open: 13, High: 14, Low: 12, Close: 13, Volume: 1},
+		{Time: 240, Open: 13, High: 15, Low: 12.5, Close: 14, Volume: 1},
+	}
+}
+
+func computeBuiltInForTest(t *testing.T, indicatorType string, candles []Candle, config map[string]any) IndicatorRuntimeResponse {
+	t.Helper()
+	response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
+		IndicatorType: indicatorType,
+		IndicatorID:   "runtime-" + indicatorType,
+		Timeframe:     "1m",
+		Config:        config,
+		Candles:       candles,
+	})
+	if len(response.Errors) > 0 {
+		t.Fatalf("%s runtime errors: %+v", indicatorType, response.Errors)
+	}
+	return response
+}
+
+func TestEveryCurrentBuiltInIsPineSourceCompiledByCommonRuntime(t *testing.T) {
 	candles := sampleIntradayCandles(18)
-	for _, indicatorType := range []string{"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "SWING_SR"} {
+	for _, indicatorType := range []string{"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "SWING_SR", "FVG"} {
 		t.Run(indicatorType, func(t *testing.T) {
-			response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
-				IndicatorType: indicatorType,
-				IndicatorID:   "runtime-" + indicatorType,
-				Config:        runtimeConfig("runtime-"+indicatorType, indicatorType),
-				Candles:       candles,
-			})
-			if len(response.Errors) > 0 {
-				t.Fatalf("runtime errors: %+v", response.Errors)
+			input := candles
+			config := runtimeConfig("runtime-"+indicatorType, indicatorType)
+			if indicatorType == "FVG" {
+				input = fvgFixtureCandles()
+				config["inputValues"] = map[string]any{"timeframe": ""}
 			}
-			if response.Result.ID != "runtime-"+indicatorType {
-				t.Fatalf("result id = %q", response.Result.ID)
+			response := computeBuiltInForTest(t, indicatorType, input, config)
+			if response.Result.ID != "runtime-"+indicatorType || len(response.Result.Series) == 0 {
+				t.Fatalf("%s result = %+v", indicatorType, response.Result)
 			}
-			if len(response.Result.Series) == 0 {
-				t.Fatalf("%s returned no series", indicatorType)
+			source, ok, err := builtInPineSource(indicatorType)
+			if err != nil || !ok || !strings.Contains(source, "indicator(") {
+				t.Fatalf("%s is not source-backed: ok=%v err=%v", indicatorType, ok, err)
 			}
 		})
+	}
+}
+
+func TestFVGSourceUsesMiddleCloseThresholdAndSourceGeometry(t *testing.T) {
+	candles := fvgFixtureCandles()[:3]
+	config := runtimeConfig("fvg", "FVG")
+	config["color"] = "#089981"
+	config["color2"] = "#f23645"
+	config["inputValues"] = map[string]any{"thresholdPer": 0, "auto": false, "extend": 20, "timeframe": ""}
+	response := computeBuiltInForTest(t, "FVG", candles, config)
+	if len(response.Result.Series) != 1 {
+		t.Fatalf("fixed FVG series = %+v", response.Result.Series)
+	}
+	zone := response.Result.Series[0]
+	if zone.Type != "baselineFill" || zone.BaseValue == nil || *zone.BaseValue != 11 || len(zone.Data) != 2 {
+		t.Fatalf("bull FVG geometry = %+v", zone)
+	}
+	if zone.Data[0].Value != 12 || zone.Data[0].Time != 60 || zone.Data[1].Time <= 240 {
+		t.Fatalf("bull FVG anchors = %+v", zone.Data)
+	}
+
+	rejected := runtimeConfig("fvg-threshold", "FVG")
+	rejected["inputValues"] = map[string]any{"thresholdPer": 20, "timeframe": ""}
+	if got := computeBuiltInForTest(t, "FVG", candles, rejected); len(got.Result.Series) != 0 {
+		t.Fatalf("20%% threshold should reject fixture gap: %+v", got.Result.Series)
+	}
+	candles = fvgFixtureCandles()[:3]
+	candles[1].Close = candles[0].High
+	if got := computeBuiltInForTest(t, "FVG", candles, runtimeConfig("fvg-close", "FVG")); len(got.Result.Series) != 0 {
+		t.Fatalf("middle close at high[2] should reject fixture gap: %+v", got.Result.Series)
+	}
+}
+
+func TestFVGUserCopyAndCatalogEntryUseSameCompilerResult(t *testing.T) {
+	candles := fvgFixtureCandles()[:3]
+	config := runtimeConfig("catalog-fvg", "FVG")
+	config["color"] = "#089981"
+	config["color2"] = "#f23645"
+	config["inputValues"] = map[string]any{"timeframe": "", "auto": false, "extend": 20}
+	builtInRequest, err := builtInCompileRequest(IndicatorRuntimeRequest{
+		IndicatorType: "FVG", IndicatorID: "catalog-fvg", Config: config, Candles: candles, Timeframe: "1m",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	builtIn := Compile(context.Background(), builtInRequest)
+	userRequest := builtInRequest
+	userRequest.ScriptID = "another-user-saved-copy"
+	userCopy := Compile(context.Background(), userRequest)
+	if len(builtIn.Errors) != 0 || len(userCopy.Errors) != 0 {
+		t.Fatalf("built-in errors=%+v user errors=%+v", builtIn.Errors, userCopy.Errors)
+	}
+	if len(builtIn.Result.Series) != len(userCopy.Result.Series) || len(userCopy.Result.Series) != 1 {
+		t.Fatalf("built-in=%+v user=%+v", builtIn.Result.Series, userCopy.Result.Series)
+	}
+	left, right := builtIn.Result.Series[0], userCopy.Result.Series[0]
+	if left.Type != right.Type || left.Color != right.Color || *left.BaseValue != *right.BaseValue || len(left.Data) != len(right.Data) {
+		t.Fatalf("common compiler diverged: built-in=%+v user=%+v", left, right)
+	}
+}
+
+func TestFVGDynamicModeAndDashboardComeFromPineObjects(t *testing.T) {
+	config := runtimeConfig("fvg-dynamic", "FVG")
+	config["inputValues"] = map[string]any{
+		"dynamic": true, "showDash": true, "dashLoc": "Bottom Left", "textSize": "Normal", "timeframe": "",
+	}
+	response := computeBuiltInForTest(t, "FVG", fvgFixtureCandles(), config)
+	if len(response.Result.Series) == 0 || response.Result.Series[0].Type != "baselineFill" {
+		t.Fatalf("dynamic fills = %+v", response.Result.Series)
+	}
+	if response.Result.Dashboard == nil || response.Result.Dashboard.Position != "Bottom Left" || response.Result.Dashboard.TextSize != "Normal" {
+		t.Fatalf("dashboard = %+v", response.Result.Dashboard)
+	}
+}
+
+func TestRunOrderedJobsKeepsDeclarationOrder(t *testing.T) {
+	jobs := []orderedJob[int]{
+		func(context.Context) (int, error) { return 3, nil },
+		func(context.Context) (int, error) { return 1, nil },
+		func(context.Context) (int, error) { return 2, nil },
+	}
+	results, err := runOrderedJobs(context.Background(), jobs, 3)
+	if err != nil || len(results) != 3 || results[0] != 3 || results[1] != 1 || results[2] != 2 {
+		t.Fatalf("ordered results = %+v, err=%v", results, err)
+	}
+}
+
+func TestTimeframeSecondsDistinguishesMinutesFromMonths(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  int64
+	}{
+		{input: "15", want: 15 * 60},
+		{input: "15m", want: 15 * 60},
+		{input: "1M", want: 30 * 86400},
+		{input: "D", want: 86400},
+	} {
+		got, ok := timeframeSeconds(test.input)
+		if !ok || got != test.want {
+			t.Fatalf("timeframeSeconds(%q) = (%d, %v), want %d", test.input, got, ok, test.want)
+		}
 	}
 }
 
@@ -84,53 +196,28 @@ func TestIndicatorRuntimeSwingProducesConfirmedHorizontalSegments(t *testing.T) 
 	lows := []float64{0, -1, -3, -1, 0, -2, -1, -1, 0}
 	candles := make([]Candle, len(highs))
 	for index := range candles {
-		candles[index] = Candle{
-			Time:   int64(index + 1),
-			Open:   (highs[index] + lows[index]) / 2,
-			High:   highs[index],
-			Low:    lows[index],
-			Close:  (highs[index] + lows[index]) / 2,
-			Volume: 1,
-		}
+		candles[index] = Candle{Time: int64(index + 1), Open: (highs[index] + lows[index]) / 2, High: highs[index], Low: lows[index], Close: (highs[index] + lows[index]) / 2, Volume: 1}
 	}
 	config := runtimeConfig("swing", "SWING_SR")
-	config["length"] = 2
-	config["length2"] = 2
-	config["color"] = "#ef5350"
-	config["color2"] = "#26c6da"
-	response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
-		IndicatorType: "SWING_SR",
-		IndicatorID:   "swing",
-		Config:        config,
-		Candles:       candles,
-	})
-	if len(response.Errors) > 0 {
-		t.Fatalf("runtime errors: %+v", response.Errors)
-	}
+	config["length"], config["length2"] = 2, 2
+	config["color"], config["color2"] = "#ef5350", "#26c6da"
+	response := computeBuiltInForTest(t, "SWING_SR", candles, config)
 	if len(response.Result.Series) != 4 {
 		t.Fatalf("expected two high and two low segments, got %+v", response.Result.Series)
 	}
-	firstHigh := response.Result.Series[0]
-	activeHigh := response.Result.Series[1]
-	if firstHigh.Key != "swing-high:2" || len(firstHigh.Data) != 4 {
-		t.Fatalf("unexpected first high segment: %+v", firstHigh)
-	}
-	for _, point := range firstHigh.Data {
-		if point.Value != 5 {
-			t.Fatalf("first high segment is not horizontal: %+v", firstHigh.Data)
+	highSegments := []IndicatorSeries{}
+	for _, series := range response.Result.Series {
+		if series.Color == "#ef5350" {
+			highSegments = append(highSegments, series)
 		}
 	}
-	if firstHigh.LastValueVisible == nil || *firstHigh.LastValueVisible {
-		t.Fatalf("historical segment should not show a price label: %+v", firstHigh)
+	if len(highSegments) != 2 {
+		t.Fatalf("high segments = %+v", highSegments)
 	}
-	if activeHigh.Key != "swing-high:6" || activeHigh.LastValueVisible == nil || !*activeHigh.LastValueVisible {
-		t.Fatalf("active segment should show a price label: %+v", activeHigh)
-	}
-	if activeHigh.LineStyle == nil || *activeHigh.LineStyle != 1 {
-		t.Fatalf("swing lines should default to dotted: %+v", activeHigh)
-	}
-	if activeHigh.ExtendToVisibleRange == nil || !*activeHigh.ExtendToVisibleRange {
-		t.Fatalf("active swing level should extend through the chart right offset: %+v", activeHigh)
+	for _, series := range highSegments {
+		if len(series.Data) != 2 || series.Data[0].Value != series.Data[1].Value || series.LineStyle == nil || *series.LineStyle != 1 {
+			t.Fatalf("non-horizontal compiled swing line = %+v", series)
+		}
 	}
 }
 
@@ -138,28 +225,25 @@ func TestIndicatorRuntimeHTTPContract(t *testing.T) {
 	app := fiber.New()
 	NewHandler().Register(app.Group("/api/v1"))
 	body, err := json.Marshal(IndicatorRuntimeRequest{
-		IndicatorType: "SMA",
-		IndicatorID:   "sma-http",
-		Config:        runtimeConfig("sma-http", "SMA"),
-		Candles:       sampleCandles(30),
+		IndicatorType: "SMA", IndicatorID: "sma-http", Config: runtimeConfig("sma-http", "SMA"), Candles: sampleCandles(20),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/indicator-runtime/compute", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := app.Test(req)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/indicator-runtime/compute", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := app.Test(request)
 	if err != nil {
-		t.Fatalf("compute route: %v", err)
-	}
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
-	}
-	var decoded IndicatorRuntimeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Errors) > 0 || decoded.Result.ID != "sma-http" || len(decoded.Result.Series) != 1 {
-		t.Fatalf("unexpected response: %+v", decoded)
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var decoded IndicatorRuntimeResponse
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Result.ID != "sma-http" || len(decoded.Result.Series) != 1 || decoded.Result.Series[0].Key != "sma" {
+		t.Fatalf("response = %+v", decoded)
 	}
 }

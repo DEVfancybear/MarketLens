@@ -10,17 +10,72 @@ import {
 
 type Listener = () => void;
 
+const MAX_RUNTIME_CANDLES = 5_000;
+const MAX_ENTRIES = 64;
+const MAX_HISTORY_CONTEXT_ENTRIES = 24;
+const FAILURE_RETRY_MS = 15_000;
 const cache = new Map<string, IndicatorResult>();
 const inflight = new Map<string, Promise<void>>();
+const failedAt = new Map<string, number>();
 const listeners = new Set<Listener>();
 const historyContextCache = new Map<string, Promise<Candle[]>>();
 const latestByScope = new Map<string, IndicatorResult>();
+const latestRequestByScope = new Map<string, string>();
 const MAX_OBJECT_SEGMENTS_PER_HANDLE = 3;
+let generation = 0;
 
 export type { PineCompileContext } from "@/services/pineRuntimeCachePolicy";
 
 function notify() {
   for (const listener of listeners) listener();
+}
+
+function rememberFailure(cacheKey: string, requestGeneration: number) {
+  const timestamp = Date.now();
+  failedAt.delete(cacheKey);
+  failedAt.set(cacheKey, timestamp);
+  while (failedAt.size > MAX_ENTRIES) {
+    const oldest = failedAt.keys().next().value as string | undefined;
+    if (!oldest) break;
+    failedAt.delete(oldest);
+  }
+  window.setTimeout(() => {
+    if (requestGeneration !== generation || failedAt.get(cacheKey) !== timestamp) return;
+    failedAt.delete(cacheKey);
+    notify();
+  }, FAILURE_RETRY_MS);
+}
+
+function touchResult(
+  target: Map<string, IndicatorResult>,
+  key: string,
+  result: IndicatorResult,
+) {
+  target.delete(key);
+  target.set(key, result);
+  while (target.size > MAX_ENTRIES) {
+    const oldest = target.keys().next().value as string | undefined;
+    if (!oldest) break;
+    target.delete(oldest);
+    if (target === latestByScope) latestRequestByScope.delete(oldest);
+  }
+}
+
+function readResult(
+  target: Map<string, IndicatorResult>,
+  key: string,
+): IndicatorResult | null {
+  const result = target.get(key);
+  if (!result) return null;
+  target.delete(key);
+  target.set(key, result);
+  return result;
+}
+
+function runtimeCandles(candles: Candle[]): Candle[] {
+  return candles.length > MAX_RUNTIME_CANDLES
+    ? candles.slice(-MAX_RUNTIME_CANDLES)
+    : candles;
 }
 
 function pineContextBarsForTimeframe(timeframe: Timeframe | undefined): number {
@@ -114,11 +169,26 @@ async function loadPineHistoryContext(
   const key = `${ctx.symbol}:${ctx.timeframe}:${limit}`;
   let promise = historyContextCache.get(key);
   if (!promise) {
-    promise = getHistoricalDataService().loadHistory({
-      symbol: ctx.symbol,
-      timeframe: ctx.timeframe,
-      limit,
-    });
+    promise = getHistoricalDataService()
+      .loadHistory({
+        symbol: ctx.symbol,
+        timeframe: ctx.timeframe,
+        limit,
+      })
+      .catch((error) => {
+        if (historyContextCache.get(key) === promise) {
+          historyContextCache.delete(key);
+        }
+        throw error;
+      });
+    historyContextCache.set(key, promise);
+    while (historyContextCache.size > MAX_HISTORY_CONTEXT_ENTRIES) {
+      const oldest = historyContextCache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      historyContextCache.delete(oldest);
+    }
+  } else {
+    historyContextCache.delete(key);
     historyContextCache.set(key, promise);
   }
   return promise;
@@ -156,8 +226,8 @@ export function getCachedPineIndicatorResult(
     return { id: cfg.id, series: [] };
   }
   return (
-    cache.get(pineRuntimeCacheKey(cfg, candles, ctx)) ??
-    latestByScope.get(pineIndicatorScopeKey(cfg, ctx)) ??
+    readResult(cache, pineRuntimeCacheKey(cfg, candles, ctx)) ??
+    readResult(latestByScope, pineIndicatorScopeKey(cfg, ctx)) ??
     null
   );
 }
@@ -170,42 +240,56 @@ export function ensurePineIndicatorResult(
   if (cfg.type !== "CUSTOM" || !cfg.sourceCode?.trim() || candles.length === 0) return;
   const key = pineRuntimeCacheKey(cfg, candles, ctx);
   if (cache.has(key) || inflight.has(key)) return;
+  const lastFailure = failedAt.get(key);
+  if (lastFailure != null && Date.now() - lastFailure < FAILURE_RETRY_MS) return;
+  failedAt.delete(key);
   const scopeKey = pineIndicatorScopeKey(cfg, ctx);
+  const requestGeneration = generation;
+  latestRequestByScope.set(scopeKey, key);
 
-  const promise = resolveCompileCandles(cfg, candles, ctx)
+  let promise: Promise<void>;
+  promise = resolveCompileCandles(cfg, candles, ctx)
     .then((compileCandles) =>
       compilePineRuntime({
         scriptId: cfg.id,
         sourceCode: cfg.sourceCode ?? "",
-        candles: compileCandles,
+        candles: runtimeCandles(compileCandles),
         inputOverrides: cfg.inputValues,
         styleOverrides: cfg.styleValues,
+        timeframe: ctx?.timeframe,
       }),
     )
     .then((compiled) => {
-      const result =
-        compiled.errors.length === 0
-          ? limitObjectSegments(compiled.result)
-          : { id: cfg.id, series: [] };
-      cache.set(key, result);
+      if (requestGeneration !== generation) return;
       if (compiled.errors.length === 0) {
-        latestByScope.set(scopeKey, result);
+        const result = limitObjectSegments(compiled.result);
+        failedAt.delete(key);
+        touchResult(cache, key, result);
+        if (latestRequestByScope.get(scopeKey) === key) {
+          touchResult(latestByScope, scopeKey, result);
+        }
+      } else {
+        rememberFailure(key, requestGeneration);
       }
     })
     .catch(() => {
-      cache.set(key, { id: cfg.id, series: [] });
+      if (requestGeneration !== generation) return;
+      rememberFailure(key, requestGeneration);
     })
     .finally(() => {
-      inflight.delete(key);
-      notify();
+      if (inflight.get(key) === promise) inflight.delete(key);
+      if (requestGeneration === generation) notify();
     });
   inflight.set(key, promise);
 }
 
 export function clearPineRuntimeCache() {
+  generation += 1;
   cache.clear();
   inflight.clear();
+  failedAt.clear();
   historyContextCache.clear();
   latestByScope.clear();
+  latestRequestByScope.clear();
   notify();
 }

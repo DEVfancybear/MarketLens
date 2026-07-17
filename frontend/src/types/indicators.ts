@@ -7,6 +7,8 @@ export type BuiltInIndicatorType =
   | 'RSI'
   | 'MACD'
   | 'ADR'
+  /** LuxAlgo-compatible fair value gap detection and mitigation zones. */
+  | 'FVG'
   /** Swing high/low support and resistance overlay. */
   | 'SWING_SR';
 export type IndicatorType = BuiltInIndicatorType | 'CUSTOM';
@@ -69,6 +71,7 @@ export interface IndicatorSeries {
   lineWidth?: IndicatorLineWidth;
   lineStyle?: IndicatorLineStyle;
   baseValue?: number;
+  fillBelowBase?: boolean;
   lastValueVisible?: boolean;
   statusLineVisible?: boolean;
   extendToVisibleRange?: boolean;
@@ -96,6 +99,8 @@ export interface IndicatorDashboard {
   key: string;
   title: string;
   subtitle?: string;
+  position?: string;
+  textSize?: string;
   rows: IndicatorDashboardRow[];
 }
 

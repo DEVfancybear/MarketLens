@@ -93,6 +93,14 @@ function upperBound(points: readonly LinePoint[], time: number) {
   return low;
 }
 
+function candleIntervalSeconds(candles: readonly Candle[]): number {
+  for (let index = candles.length - 1; index > 0; index -= 1) {
+    const delta = candles[index].time - candles[index - 1].time;
+    if (Number.isFinite(delta) && delta > 0) return delta;
+  }
+  return 60;
+}
+
 export function indicatorPointsInViewport(
   points: readonly LinePoint[],
   candles: readonly Candle[],
@@ -106,6 +114,26 @@ export function indicatorPointsInViewport(
   // use those future timestamps as anchors. Keep them once the window reaches
   // the data tail; historical windows still discard unrelated future points.
   const reachesLatestCandle = viewport.overscan.last >= candles.length - 1;
-  const end = reachesLatestCandle ? points.length : upperBound(points, lastTime);
-  return points.slice(lowerBound(points, firstTime), end);
+  let end = reachesLatestCandle ? points.length : upperBound(points, lastTime);
+  let start = lowerBound(points, firstTime);
+  // Sparse segment outputs (for example FVG boxes represented by two
+  // endpoints) need their preceding anchor when the viewport opens inside the
+  // segment. A contiguous series does not pay this extra point, preserving the
+  // existing projection budget and semantics.
+  if (
+    start > 0 &&
+    start < points.length &&
+    points[start].time - points[start - 1].time > candleIntervalSeconds(candles)
+  ) {
+    start -= 1;
+  }
+  if (
+    !reachesLatestCandle &&
+    end > 0 &&
+    end < points.length &&
+    points[end].time - points[end - 1].time > candleIntervalSeconds(candles)
+  ) {
+    end += 1;
+  }
+  return points.slice(start, end);
 }

@@ -1,0 +1,15 @@
+//@version=5
+indicator("MACD", overlay = false)
+fastLength = input.int(12, "Fast Length", minval = 1, maxval = 500)
+slowLength = input.int(26, "Slow Length", minval = 1, maxval = 500)
+signalLength = input.int(9, "Signal Smoothing", minval = 1, maxval = 200)
+macdColor = input.color(#2962ff, "MACD")
+signalColor = input.color(#ff9800, "Signal")
+fast = ta.ema(close, fastLength)
+slow = ta.ema(close, slowLength)
+macd = fast - slow
+signal = ta.ema(macd, signalLength)
+hist = macd - signal
+plot(macd, "macd", color = macdColor, linewidth = 2)
+plot(signal, "signal", color = signalColor, linewidth = 2)
+plot(hist, "hist", color = #787b86, style = plot.style_histogram)

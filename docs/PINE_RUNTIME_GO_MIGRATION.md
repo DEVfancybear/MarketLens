@@ -1,6 +1,7 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Updated 2026-07-16 to include the built-in runtime cutover.
+_Date: 2026-07-09. Updated 2026-07-17 for the generic stateful executor,
+source-backed built-in catalog, and bounded runtime scheduler.
 Scope: move indicator parsing/calculation out of the frontend and into the Go
 backend._
 
@@ -105,7 +106,15 @@ Implemented package:
 ```text
 backend/internal/pineruntime/
   handler.go       # Fiber HTTP handlers
-  compiler.go      # request orchestration, context, concurrency
+  compiler.go      # shared user/catalog compile orchestration and diagnostics
+  builtin_runtime.go # built-in HTTP contract delegating exclusively to Compile
+  builtin_sources.go # catalog config-to-Pine-input/style mapping
+  sources/*.pine   # source for every built-in, including attributed LuxAlgo FVG
+  stateful_parser.go # AST parser for UDTs, methods, blocks, tuples, loops, objects
+  stateful_eval.go # ordered closed-bar VM and reference-type operations
+  stateful_runtime.go # state/history, security contexts, and normalized primitives
+  runtime_common.go # bounded ordered goroutine jobs and shared runtime inputs/timeframes
+  runtime_jobs.go  # fixed worker pool, singleflight, timeout, panic recovery, LRU
   scanner.go       # balanced call scanning, args, source lines
   schema.go        # indicator()/study(), input.*(), plot/hline/fill style extraction
   expression.go    # expression tokenizer/parser/evaluator
@@ -119,6 +128,52 @@ backend/internal/pineruntime/
 Keep this package isolated from persistence packages. It should not import
 `internal/pinescripts` except through higher-level handlers if a future
 compile-by-id endpoint is added.
+
+## Pine compatibility boundary
+
+This package implements an allowlisted Pine subset, not TradingView's full
+Pine v3-v6 compiler. Every source uses one public pipeline:
+
+```text
+source + properties + normalized OHLCV
+  -> parse / validate / fail-closed diagnostics
+  -> pure-series evaluator or ordered stateful bar VM
+  -> IndicatorResult chart primitives
+```
+
+Built-ins are not native formula adapters. `SMA`, `EMA`, `VWAP`, `RSI`,
+`MACD`, `ADR`, `SWING_SR`, and `FVG` are embedded `.pine` files passed to the
+same `Compile` function as a saved or public user script. The catalog only maps
+legacy UI properties to source inputs/styles.
+
+The stateful path executes historical candles sequentially and commits variable
+history after each bar, matching the closed-bar part of Pine's execution model.
+It supports the subset exercised by generic fixtures and the supplied LuxAlgo
+source: UDT/default fields, methods, function-local `var`, tuples, typed
+reference arrays, ascending/descending and `for ... in` loops, history,
+`ta.cum`, pivots, child `request.security()` contexts, boxes, lines, deletion,
+tables, plots, and fills.
+
+Deliberate limits:
+
+- No realtime tick rollback/re-execution or `varip` semantics. `barstate`
+  reflects the supplied closed-bar snapshot.
+- No strategies, orders, broker emulator, libraries/imports, maps, matrices,
+  polylines, `while`, or unsupported visual calls. These fail before execution.
+- `alertcondition()` is parsed so historical visuals still compile, but alert
+  event delivery is reported as unsupported.
+- `request.security()` uses the current symbol and supplied candle data. Higher
+  timeframes run in independent aggregated contexts and become visible on the
+  final sub-bar. Multi-symbol and lower-timeframe array requests fail; a plain
+  lower-timeframe string cannot reconstruct missing sub-bars and uses chart
+  candles.
+- Unknown evaluated identifiers/functions return a compile error. Advertised
+  support must be backed by a semantic regression test, not inferred from
+  accepted syntax.
+
+These constraints follow Pine's documented distinction between sequential bar
+execution, qualifier/history semantics, reference types, and requested data
+contexts. They must remain explicit when the subset grows.
 
 ## Runtime API
 
@@ -274,17 +329,76 @@ Response shape must remain compatible with the current frontend
 The frontend renderer should not need to understand backend internals. It should
 only receive normalized chart primitives.
 
+### `POST /api/v1/indicator-runtime/compute`
+
+Resolve a built-in catalog entry, map its opaque `config` to Pine inputs/styles,
+and pass the resulting `CompileRequest` to the same compiler used by
+`/pine-runtime/compile`. The separate route preserves the existing frontend
+transport; it is not a separate formula runtime.
+
+```json
+{
+  "indicatorType": "FVG",
+  "indicatorId": "chart-instance-id",
+  "timeframe": "15m",
+  "config": {
+    "inputValues": {
+      "thresholdPer": 0,
+      "auto": false,
+      "showLast": 0,
+      "mitigationLevels": false,
+      "timeframe": "",
+      "extend": 20,
+      "dynamic": false,
+      "showDash": false,
+      "dashLoc": "Top Right",
+      "textSize": "Small"
+    }
+  },
+  "candles": []
+}
+```
+
+The embedded, attributed Pine v5 `Fair Value Gap [LuxAlgo]` catalog source
+implements:
+
+- Bullish: `low > high[2]`, `close[1] > high[2]`, and the relative gap is
+  greater than the manual or cumulative-range auto threshold.
+- Bearish: the symmetric `high < low[2]` and `close[1] < low[2]` conditions.
+- Fixed boxes start at chart bar `n-2`, end at `n+extend`, and are removed only
+  when a close strictly crosses the FVG's mitigation boundary.
+- Optional mitigation lines, newest unmitigated levels, per-bar dynamic fills,
+  and dashboard location/text size follow the source inputs.
+- The configured higher timeframe runs in an independent child context and is
+  mapped back only on its final chart sub-bar. A lower timeframe cannot be
+  reconstructed from coarser OHLC, so the supplied chart candles are the
+  deterministic fallback until market-data fan-out exists.
+
+There is no FVG-specific 300-bar default. The runtime analyzes the candle
+window the chart has loaded, capped globally at 5,000 candles for request
+safety, and the viewport layer renders only series that intersect the current
+pan/zoom window. The source file preserves LuxAlgo attribution and the
+CC BY-NC-SA 4.0 notice. Pine `alertcondition()` events are reported but are not
+yet part of the common `IndicatorResult` contract.
+
 ## Concurrency Model
 
-Fiber already handles simultaneous HTTP requests concurrently. The compile
-handler also dispatches each compile request to a goroutine with a request-scoped
-timeout:
+Fiber already handles simultaneous HTTP requests concurrently. Both compile
+and built-in requests additionally pass through `runtimeJobGroup[T]`:
 
-- `/compile` creates a 5s context.
-- compile work runs in a goroutine and returns through a buffered channel.
-- timeout returns `408` with a structured compile response.
-- each request owns its evaluator state, variable map, series buffers, and
-  output primitives.
+- Each runtime group owns four long-lived workers and a bounded queue; distinct
+  requests cannot create an unbounded number of goroutines.
+- Equivalent requests share one in-flight job (singleflight).
+- Completed results live in a bounded 64-entry LRU; no unbounded user/script
+  cache is retained.
+- Work has an independent 5s context and panic recovery. Context failures map
+  to HTTP 408, queue saturation to 503, and internal/panic failures to 500.
+- Compile and indicator keys contain source/type, timeframe, properties, and
+  the normalized candle tail. User, script, and chart-instance identity are
+  excluded, then the handler rebinds the cached result ID to each caller.
+- Independent pure-series output branches use `runOrderedJobs`, a bounded group
+  that retains declaration order so goroutine scheduling cannot change series
+  keys or snapshots.
 
 Do not share mutable evaluator state across requests. Each compile request owns
 its parser state, variable store, series buffers, and emitted primitives.
@@ -434,6 +548,18 @@ Backend tests:
   10-in-1 moving-average script shape.
 - Replay safety: compile only receives and emits values for supplied candles.
 - Concurrency: compile multiple scripts in parallel without data races.
+- Shared saved scripts: equivalent source/properties/candles coalesce even
+  when saved by different users or under different script IDs, and every HTTP
+  response still carries its own requested instance ID.
+- Common compiler parity: every current built-in resolves to a `.pine` source;
+  an FVG catalog request and the same source saved under another user's script
+  ID produce the same primitives while retaining their own instance IDs.
+- Generic stateful fixtures cover identity-neutral UDT/tuple/array/object
+  execution, independent security state, function-local `var`, fixed boxes,
+  dynamic fills, tables, input-source pivots, and closed-bar history.
+- FVG source behavior: middle-candle confirmation, threshold, strict geometry,
+  dynamic/dashboard output, and loaded-window history without a fixed 300-bar
+  limit.
 
 Frontend tests:
 
@@ -447,6 +573,9 @@ Frontend tests:
 - Indicator pane projection keeps sparse Pine `hline()`/`fill()` references
   extended through right-offset whitespace without extending dynamic plots or
   `linebr` helper segments.
+- Sparse FVG segments retain both anchors when crossing a viewport, return an
+  empty slice safely when the viewport misses them, and never index past the
+  point array while panning.
 
 Manual checks:
 
@@ -474,7 +603,5 @@ Manual checks:
 
 - Whether compile-by-script-id should be added:
   `POST /api/v1/pine-runtime/compile/:scriptId`.
-- Whether backend should cache compile responses by source hash and candle range,
-  or leave cache ownership entirely in the frontend.
-- Whether built-in indicators should stay in TypeScript or later move to the
-  same Go runtime for consistency.
+- Whether a market-data fan-out endpoint should supply true lower-timeframe
+  candles to an indicator running on a coarser chart.

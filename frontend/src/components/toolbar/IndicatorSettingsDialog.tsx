@@ -263,6 +263,19 @@ function builtInInputFields(type: BuiltInIndicatorType): PineInputDefinition[] {
           group: "Swing lows",
         },
       ];
+    case "FVG":
+      return [
+        { key: "thresholdPer", title: "Threshold %", kind: "float", defaultValue: 0, min: 0, max: 100, step: 0.1, group: "Settings" },
+        { key: "auto", title: "Auto threshold", kind: "bool", defaultValue: false, group: "Settings" },
+        { key: "showLast", title: "Unmitigated levels", kind: "int", defaultValue: 0, min: 0, max: 500, step: 1, group: "Settings" },
+        { key: "mitigationLevels", title: "Mitigation levels", kind: "bool", defaultValue: false, group: "Settings" },
+        { key: "timeframe", title: "Timeframe", kind: "timeframe", defaultValue: "", group: "Settings" },
+        { key: "extend", title: "Extend", kind: "int", defaultValue: 20, min: 0, max: 500, step: 1, group: "Style" },
+        { key: "dynamic", title: "Dynamic", kind: "bool", defaultValue: false, group: "Style" },
+        { key: "showDash", title: "Show dashboard", kind: "bool", defaultValue: false, group: "Dashboard" },
+        { key: "dashLoc", title: "Location", kind: "string", defaultValue: "Top Right", options: ["Top Right", "Bottom Right", "Bottom Left"], group: "Dashboard" },
+        { key: "textSize", title: "Size", kind: "string", defaultValue: "Small", options: ["Tiny", "Small", "Normal"], group: "Dashboard" },
+      ];
     case "VWAP":
       return [];
   }
@@ -287,6 +300,23 @@ function builtInStyleDefinitions(type: BuiltInIndicatorType): PineStyleDefinitio
     supportsLineWidth: true,
     supportsLineStyle: true,
   };
+  if (type === "FVG") {
+    const zoneStyle = (key: string, title: string, color: string): PineStyleDefinition => ({
+      key,
+      title,
+      target: "box",
+      group: "Zones",
+      defaultVisible: true,
+      defaultColor: color,
+      supportsColor: true,
+      supportsLineWidth: false,
+      supportsLineStyle: false,
+    });
+    return [
+      zoneStyle("builtin:fvg-bull", "Bullish FVG", "#089981"),
+      zoneStyle("builtin:fvg-bear", "Bearish FVG", "#f23645"),
+    ];
+  }
   if (type === "MACD") {
     return [
       primary,
@@ -440,20 +470,22 @@ export function IndicatorSettingsDialog() {
     } else {
       const builtInStyles = builtInStyleDefinitions(next.type);
       next.inputValues = {
+        ...defaultInputValues(builtInInputFields(next.type)),
+        ...(indicator.inputValues ?? {}),
         length: next.length,
         length2: next.length2,
         length3: next.length3,
-        ...(next.type === "SWING_SR"
-          ? {
-              highSource: indicator.inputValues?.highSource ?? "high",
-              lowSource: indicator.inputValues?.lowSource ?? "low",
-            }
-          : {}),
       };
       next.styleValues = {
         ...defaultStyleValues(builtInStyles),
         [styleFieldKey("builtin:primary", "color")]: next.color,
         [styleFieldKey("builtin:secondary", "color")]: next.color2,
+        ...(next.type === "FVG"
+          ? {
+              [styleFieldKey("builtin:fvg-bull", "color")]: next.color,
+              [styleFieldKey("builtin:fvg-bear", "color")]: next.color2,
+            }
+          : {}),
         ...(indicator.styleValues ?? {}),
       };
     }
@@ -532,12 +564,8 @@ export function IndicatorSettingsDialog() {
       visible: defaults.visible,
       separatePane: defaults.separatePane ?? false,
       inputValues: {
-        length: defaults.length,
-        length2: defaults.length2 ?? 9,
-        length3: defaults.length3 ?? 26,
-        ...(draft.type === "SWING_SR"
-          ? { highSource: "high", lowSource: "low" }
-          : {}),
+        ...defaultInputValues(builtInInputFields(draft.type)),
+        ...(defaults.inputValues ?? {}),
       },
       styleValues: defaultStyleValues(builtInStyleDefinitions(draft.type)),
     });
@@ -567,33 +595,39 @@ export function IndicatorSettingsDialog() {
       return;
     }
 
+    const builtInValues: IndicatorInputValues = {};
+    for (const field of inputFields) {
+      builtInValues[field.key] = coerceFieldValue(
+        field,
+        currentFieldValue(field, draft.inputValues),
+      );
+    }
     updateIndicator({
       id: editingId,
       patch: {
-        length: Number(draft.inputValues.length ?? draft.length),
+        length: draft.type === "FVG" ? 0 : Number(builtInValues.length ?? draft.length),
         length2:
           draft.type === "MACD" || draft.type === "SWING_SR"
-            ? Number(draft.inputValues.length2 ?? draft.length2)
+            ? Number(builtInValues.length2 ?? draft.length2)
             : undefined,
-        length3: draft.type === "MACD" ? Number(draft.inputValues.length3 ?? draft.length3) : undefined,
+        length3: draft.type === "MACD" ? Number(builtInValues.length3 ?? draft.length3) : undefined,
         color: String(
-          draft.styleValues[styleFieldKey("builtin:primary", "color")] ??
+          draft.styleValues[styleFieldKey(
+            draft.type === "FVG" ? "builtin:fvg-bull" : "builtin:primary",
+            "color",
+          )] ??
             draft.color,
         ),
         color2:
-          draft.type === "MACD" || draft.type === "ADR" || draft.type === "SWING_SR"
+          draft.type === "MACD" || draft.type === "ADR" || draft.type === "SWING_SR" || draft.type === "FVG"
             ? String(
-                draft.styleValues[styleFieldKey("builtin:secondary", "color")] ??
-                  draft.color2,
+                draft.styleValues[styleFieldKey(
+                  draft.type === "FVG" ? "builtin:fvg-bear" : "builtin:secondary",
+                  "color",
+                )] ?? draft.color2,
               )
             : undefined,
-        inputValues:
-          draft.type === "SWING_SR"
-            ? {
-                highSource: String(draft.inputValues.highSource ?? "high"),
-                lowSource: String(draft.inputValues.lowSource ?? "low"),
-              }
-            : undefined,
+        inputValues: builtInValues,
         styleValues: compactStyleValues(styleFields, draft.styleValues),
         separatePane:
           draft.type === "RSI" || draft.type === "MACD"

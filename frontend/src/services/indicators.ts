@@ -1,10 +1,9 @@
 /**
  * Indicator runtime boundary.
  *
- * Built-in formulas are owned by the Go indicator runtime. The browser keeps
- * only the instance defaults and projects the API's IndicatorResult into the
- * chart. This intentionally gives future indicators the same request/result
- * contract instead of adding another client-side calculator.
+ * Built-ins and user scripts are both Pine source compiled by the Go runtime.
+ * The browser keeps only instance defaults and projects IndicatorResult into
+ * the chart; it never owns a formula or fallback calculator.
  */
 import type {
   BuiltInIndicatorType,
@@ -76,6 +75,27 @@ export function defaultIndicator(
         color: "#26a69a",
         color2: "#ef5350",
         visible: true,
+      };
+    case "FVG":
+      return {
+        id,
+        type,
+        length: 0,
+        color: "#089981",
+        color2: "#f23645",
+        visible: true,
+        inputValues: {
+          thresholdPer: 0,
+          auto: false,
+          showLast: 0,
+          mitigationLevels: false,
+          timeframe: "",
+          extend: 20,
+          dynamic: false,
+          showDash: false,
+          dashLoc: "Top Right",
+          textSize: "Small",
+        },
       };
     case "SWING_SR":
       return {

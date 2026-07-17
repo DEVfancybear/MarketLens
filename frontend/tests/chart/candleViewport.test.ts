@@ -101,3 +101,51 @@ test("indicator projection still clips future object points away from the live t
     candles.slice(3, 11).map((candle) => candle.time),
   );
 });
+
+test("indicator projection keeps a sparse segment anchor inside the viewport", () => {
+  const candles = Array.from({ length: 20 }, (_, index): Candle => ({
+    time: 1_000 + index * 60,
+    open: 1,
+    high: 2,
+    low: 0,
+    close: 1,
+    volume: 1,
+  }));
+  const points = [
+    { time: candles[2].time, value: 2 },
+    { time: candles[18].time, value: 2 },
+  ];
+  const viewport = {
+    visible: { first: 10, last: 12 },
+    overscan: { first: 8, last: 14 },
+    direction: "idle" as const,
+    revision: 1,
+  };
+  assert.deepEqual(
+    indicatorPointsInViewport(points, candles, viewport).map((point) => point.time),
+    [candles[2].time, candles[18].time],
+  );
+});
+
+test("indicator projection does not read past points when the viewport misses the data", () => {
+  const candles = Array.from({ length: 20 }, (_, index): Candle => ({
+    time: 1_000 + index * 60,
+    open: 1,
+    high: 2,
+    low: 0,
+    close: 1,
+    volume: 1,
+  }));
+  const points = [
+    { time: candles[2].time, value: 2 },
+    { time: candles[4].time, value: 2 },
+  ];
+  const viewport = {
+    visible: { first: 10, last: 12 },
+    overscan: { first: 8, last: 14 },
+    direction: "idle" as const,
+    revision: 1,
+  };
+
+  assert.deepEqual(indicatorPointsInViewport(points, candles, viewport), []);
+});

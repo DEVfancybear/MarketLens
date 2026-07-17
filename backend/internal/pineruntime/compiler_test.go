@@ -585,6 +585,73 @@ func TestHandlerCompileUsesHTTPContract(t *testing.T) {
 	}
 }
 
+func TestHandlerCompileRebindsSharedSavedScriptResultToEachInstance(t *testing.T) {
+	app := fiber.New()
+	NewHandler().Register(app.Group("/api/v1"))
+	makeRequest := func(scriptID string) CompileResponse {
+		body := `{"scriptId":` + quoteJSON(scriptID) + `,"sourceCode":` + quoteJSON(vsaSource) + `,"candles":` + candlesJSON(sampleCandles(80)) + `}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/pine-runtime/compile", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("compile route for %s: %v", scriptID, err)
+		}
+		if resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("status for %s = %d", scriptID, resp.StatusCode)
+		}
+		var decoded CompileResponse
+		if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+			t.Fatalf("decode %s: %v", scriptID, err)
+		}
+		return decoded
+	}
+	first := makeRequest("saved-by-user-a")
+	second := makeRequest("saved-by-user-b")
+	if first.Result.ID != "saved-by-user-a" || second.Result.ID != "saved-by-user-b" {
+		t.Fatalf("shared compile result IDs were not rebound: first=%q second=%q", first.Result.ID, second.Result.ID)
+	}
+	if len(first.Result.Series) == 0 || len(second.Result.Series) == 0 {
+		t.Fatal("saved scripts should retain compiled series on cache hits")
+	}
+}
+
+func TestCompilerFailsClosedForUnsupportedPineFeatures(t *testing.T) {
+	for name, source := range map[string]string{
+		"strategy": `//@version=5
+strategy("Orders")
+strategy.entry("L", strategy.long)`,
+		"visual": `//@version=5
+indicator("Shapes")
+plotshape(close > open)`,
+		"multi-symbol": `//@version=5
+indicator("Other symbol")
+plot(request.security("NASDAQ:AAPL", "D", close))`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := Compile(context.Background(), CompileRequest{SourceCode: source, Candles: sampleCandles(20)})
+			if len(response.Errors) == 0 || len(response.UnsupportedFeatures) == 0 {
+				t.Fatalf("unsupported source compiled silently: %+v", response)
+			}
+		})
+	}
+}
+
+func TestAlertConditionIsReportedWithoutBlockingHistoricalPlots(t *testing.T) {
+	response := Compile(context.Background(), CompileRequest{
+		SourceCode: `//@version=5
+indicator("Alerted line")
+plot(close)
+alertcondition(close > open, "Up", "Up bar")`,
+		Candles: sampleCandles(20),
+	})
+	if len(response.Errors) != 0 || len(response.Result.Series) != 1 {
+		t.Fatalf("historical plot was blocked: %+v", response)
+	}
+	if len(response.UnsupportedFeatures) != 1 || response.UnsupportedFeatures[0] != "alert event delivery" {
+		t.Fatalf("unsupported alerts = %+v", response.UnsupportedFeatures)
+	}
+}
+
 func quoteJSON(value string) string {
 	data, _ := json.Marshal(value)
 	return string(data)

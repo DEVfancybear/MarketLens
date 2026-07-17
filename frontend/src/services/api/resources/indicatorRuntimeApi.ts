@@ -1,5 +1,6 @@
 import { postJson } from "@/services/api/client";
 import type { Candle, IndicatorConfig, IndicatorResult } from "@/types";
+import type { PineCompileContext } from "@/services/pineRuntimeCachePolicy";
 
 export interface IndicatorRuntimeError {
   message: string;
@@ -20,12 +21,14 @@ export interface IndicatorRuntimeResponse {
 export async function computeIndicatorRuntime(
   config: IndicatorConfig,
   candles: Candle[],
+  ctx?: PineCompileContext,
 ): Promise<IndicatorRuntimeResponse> {
   return postJson<IndicatorRuntimeResponse>(
     "indicator-runtime/compute",
     {
       indicatorType: config.type,
       indicatorId: config.id,
+      timeframe: ctx?.timeframe,
       config,
       candles,
     },

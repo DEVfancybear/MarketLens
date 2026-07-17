@@ -1,0 +1,43 @@
+//@version=5
+indicator("Swing high/low support & resistance", overlay = true, max_lines_count = 500)
+highLength = input.int(25, "Swing high strength", minval = 1, maxval = 500)
+lowLength = input.int(25, "Swing low strength", minval = 1, maxval = 500)
+highSource = input.source(high, "High source")
+lowSource = input.source(low, "Low source")
+highColor = input.color(#ef5350, "Swing high")
+lowColor = input.color(#26c6da, "Swing low")
+showHigh = input.bool(true, "Show swing highs")
+showLow = input.bool(true, "Show swing lows")
+highWidth = input.int(2, "High line width", minval = 1, maxval = 4)
+lowWidth = input.int(2, "Low line width", minval = 1, maxval = 4)
+highStyleInput = input.int(1, "High line style", minval = 0, maxval = 4)
+lowStyleInput = input.int(1, "Low line style", minval = 0, maxval = 4)
+highStyle = highStyleInput == 1 or highStyleInput == 4 ? line.style_dotted : highStyleInput >= 2 ? line.style_dashed : line.style_solid
+lowStyle = lowStyleInput == 1 or lowStyleInput == 4 ? line.style_dotted : lowStyleInput >= 2 ? line.style_dashed : line.style_solid
+highPivot = ta.pivothigh(highSource, highLength, highLength)
+lowPivot = ta.pivotlow(lowSource, lowLength, lowLength)
+var int highStart = na
+var int lowStart = na
+var float highValue = na
+var float lowValue = na
+var line activeHigh = na
+var line activeLow = na
+var swingLines = array.new<line>(0)
+
+if showHigh and not na(highPivot)
+    pivotIndex = bar_index - highLength
+    if not na(activeHigh)
+        activeHigh.delete()
+        line.new(highStart, highValue, pivotIndex - 1, highValue, color = highColor, style = highStyle, width = highWidth)
+    highStart := pivotIndex
+    highValue := highPivot
+    activeHigh := line.new(highStart, highValue, bar_index + 500, highValue, color = highColor, style = highStyle, width = highWidth)
+
+if showLow and not na(lowPivot)
+    pivotIndex = bar_index - lowLength
+    if not na(activeLow)
+        activeLow.delete()
+        line.new(lowStart, lowValue, pivotIndex - 1, lowValue, color = lowColor, style = lowStyle, width = lowWidth)
+    lowStart := pivotIndex
+    lowValue := lowPivot
+    activeLow := line.new(lowStart, lowValue, bar_index + 500, lowValue, color = lowColor, style = lowStyle, width = lowWidth)

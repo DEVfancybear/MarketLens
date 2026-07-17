@@ -3,12 +3,16 @@ package pineruntime
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type Handler struct {
-	timeout timeouter
+	timeout       timeouter
+	compileJobs   *runtimeJobGroup[CompileResponse]
+	indicatorJobs *runtimeJobGroup[IndicatorRuntimeResponse]
 }
 
 type timeouter interface {
@@ -22,7 +26,12 @@ func (runtimeTimeout) WithTimeout(ctx context.Context) (context.Context, context
 }
 
 func NewHandler() *Handler {
-	return &Handler{timeout: runtimeTimeout{}}
+	timeout := runtimeTimeout{}
+	return &Handler{
+		timeout:       timeout,
+		compileJobs:   newRuntimeJobGroup[CompileResponse](defaultRuntimeCacheEntries, timeout),
+		indicatorJobs: newRuntimeJobGroup[IndicatorRuntimeResponse](defaultRuntimeCacheEntries, timeout),
+	}
 }
 
 func (h *Handler) Register(router fiber.Router) {
@@ -73,27 +82,28 @@ func (h *Handler) compile(c *fiber.Ctx) error {
 	ctx, cancel := h.timeout.WithTimeout(c.Context())
 	defer cancel()
 
-	type result struct {
-		resp CompileResponse
+	key, err := compileRuntimeKey(req)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid runtime properties")
 	}
-	ch := make(chan result, 1)
-	go func() {
-		ch <- result{resp: Compile(ctx, req)}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return c.Status(fiber.StatusRequestTimeout).JSON(CompileResponse{
+	canonical := req
+	canonical.ScriptID = ""
+	response, err := h.compileJobs.Do(ctx, key, func(jobCtx context.Context) (CompileResponse, error) {
+		response := Compile(jobCtx, canonical)
+		return response, jobCtx.Err()
+	})
+	if err != nil {
+		return c.Status(runtimeErrorStatus(err)).JSON(CompileResponse{
 			Meta: ExtractMeta(req.SourceCode),
 			Result: IndicatorResult{
 				ID:     req.ScriptID,
 				Series: []IndicatorSeries{},
 			},
-			Errors: []RuntimeError{{Message: ctx.Err().Error()}},
+			Errors: []RuntimeError{{Message: err.Error()}},
 		})
-	case item := <-ch:
-		return c.JSON(item.resp)
 	}
+	response.Result.ID = runtimeResultID(req.ScriptID, "custom")
+	return c.JSON(response)
 }
 
 func (h *Handler) computeIndicator(c *fiber.Ctx) error {
@@ -104,19 +114,42 @@ func (h *Handler) computeIndicator(c *fiber.Ctx) error {
 	ctx, cancel := h.timeout.WithTimeout(c.Context())
 	defer cancel()
 
-	ch := make(chan IndicatorRuntimeResponse, 1)
-	go func() {
-		ch <- ComputeIndicatorRuntime(ctx, req)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return c.Status(fiber.StatusRequestTimeout).JSON(IndicatorRuntimeResponse{
+	key, err := indicatorRuntimeKey(req)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid runtime properties")
+	}
+	canonical := req
+	canonical.IndicatorID = ""
+	canonical.Config = runtimeConfigForKey(req.Config)
+	response, err := h.indicatorJobs.Do(ctx, key, func(jobCtx context.Context) (IndicatorRuntimeResponse, error) {
+		response := ComputeIndicatorRuntime(jobCtx, canonical)
+		return response, jobCtx.Err()
+	})
+	if err != nil {
+		return c.Status(runtimeErrorStatus(err)).JSON(IndicatorRuntimeResponse{
 			Result:   IndicatorResult{ID: req.IndicatorID, Series: []IndicatorSeries{}},
-			Errors:   []RuntimeError{{Message: ctx.Err().Error()}},
+			Errors:   []RuntimeError{{Message: err.Error()}},
 			Warnings: []RuntimeError{},
 		})
-	case response := <-ch:
-		return c.JSON(response)
 	}
+	response.Result.ID = runtimeResultID(req.IndicatorID, "builtin")
+	return c.JSON(response)
+}
+
+func runtimeResultID(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func runtimeErrorStatus(err error) int {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return fiber.StatusRequestTimeout
+	}
+	if errors.Is(err, errRuntimeQueueFull) {
+		return fiber.StatusServiceUnavailable
+	}
+	return fiber.StatusInternalServerError
 }

@@ -107,6 +107,11 @@ const BUILT_IN_INDICATORS: {
   { type: "MACD", name: "MACD", description: "Trend and momentum" },
   { type: "ADR", name: "Average Daily Range", description: "Daily range levels" },
   {
+    type: "FVG",
+    name: "Fair Value Gap [LuxAlgo]",
+    description: "Threshold, mitigation, dynamic zones, and dashboard",
+  },
+  {
     type: "SWING_SR",
     name: "Swing high/low support & resistance",
     description: "Confirmed pivot levels with horizontal segments",

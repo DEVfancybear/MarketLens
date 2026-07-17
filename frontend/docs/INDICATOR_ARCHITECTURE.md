@@ -1,6 +1,6 @@
 # INDICATOR ARCHITECTURE
 
-_Date: 2026-07-16. Scope: built-in indicators plus source-code indicators created from the
+_Date: 2026-07-17. Scope: built-in indicators plus source-code indicators created from the
 bottom Pine Editor._
 
 ## Architecture rule
@@ -10,10 +10,11 @@ drawing state, alert state, or chart pointer handling. Every indicator must cons
 array it is given, and the caller must pass the replay-aware visible candle slice. This keeps
 indicator rendering no-look-ahead by construction.
 
-All indicator formulas are backend-owned. Registered built-ins pass through the
-common Go indicator runtime and custom Pine-like scripts pass through the
-whitelist compiler in `backend/internal/pineruntime`. The frontend does not
-calculate built-ins or compile Pine source; see
+All indicator formulas are Pine source compiled by one backend pipeline.
+Registered built-ins differ only because the backend catalog supplies their
+source/default mapping; saved/public scripts supply source from storage. Both
+call `pineruntime.Compile`. The frontend does not calculate built-ins or compile
+Pine source; see
 [`../../docs/PINE_RUNTIME_GO_MIGRATION.md`](../../docs/PINE_RUNTIME_GO_MIGRATION.md).
 Do not execute user-provided source with `eval`, `new Function`, dynamic imports,
 or any other general JavaScript execution path.
@@ -22,7 +23,7 @@ or any other general JavaScript execution path.
 
 The indicator subsystem has two families:
 
-1. Built-in indicators: SMA, EMA, VWAP, RSI, MACD, ADR, Swing S/R.
+1. Built-in indicators: SMA, EMA, VWAP, RSI, MACD, ADR, FVG, Swing S/R.
 2. Source-code indicators: saved Pine-like scripts from the bottom `Pine Editor` tab.
 
 Both families converge into the same `IndicatorConfig` model and chart render contract. An async
@@ -38,7 +39,7 @@ chartStore indicators[] + pineScripts[]
         v
 services/indicators.ts + runtime caches
         |
-        +-- POST indicator-runtime/compute (registered built-ins)
+        +-- POST indicator-runtime/compute (catalog source -> Compile)
         |
         +-- pineRuntimeCache for CUSTOM backend compile results
         |
@@ -58,7 +59,9 @@ IndicatorResult { id, series[] }
 | Indicator state, persistence, script actions | `src/store/chartStore.ts` |
 | Backend indicator presets API | `src/services/api/resources/indicatorsApi.ts` |
 | Built-in runtime API/cache and display adapter | `src/services/api/resources/indicatorRuntimeApi.ts`, `src/services/indicatorRuntimeCache.ts`, `src/services/indicators.ts` |
-| Backend built-in registry/calculators | `backend/internal/pineruntime/builtin_runtime.go` |
+| Backend Pine source catalog | `backend/internal/pineruntime/builtin_sources.go`, `sources/*.pine` |
+| Shared compiler/stateful VM | `backend/internal/pineruntime/compiler.go`, `stateful_parser.go`, `stateful_eval.go`, `stateful_runtime.go` |
+| Common goroutine scheduler/input/timeframe helpers | `backend/internal/pineruntime/runtime_jobs.go`, `runtime_common.go` |
 | Pine runtime API client/cache | `src/services/api/resources/pineRuntimeApi.ts`, `src/services/pineRuntimeCache.ts` |
 | Pine runtime shared types/default source | `src/services/pineRuntimeTypes.ts` |
 | Bottom Pine Editor + embedded script storage | `src/components/pine/PineEditor.tsx` |
@@ -75,7 +78,7 @@ IndicatorResult { id, series[] }
 `IndicatorConfig` is the chart-attached instance:
 
 ```ts
-type BuiltInIndicatorType = "SMA" | "EMA" | "VWAP" | "RSI" | "MACD" | "ADR" | "SWING_SR";
+type BuiltInIndicatorType = "SMA" | "EMA" | "VWAP" | "RSI" | "MACD" | "ADR" | "FVG" | "SWING_SR";
 type IndicatorType = BuiltInIndicatorType | "CUSTOM";
 
 interface IndicatorConfig {
@@ -189,6 +192,27 @@ Built-in formulas live only in the backend registry. The frontend adapter is del
 lookup: it sends the replay-visible candle slice and instance config, then renders the returned
 time-aligned `IndicatorResult`. There is no browser fallback calculator; a runtime error is isolated
 to an empty result for that indicator instance.
+
+### Fair Value Gap built-in
+
+`FVG` is the embedded, attributed user-provided `Fair Value Gap [LuxAlgo]` Pine
+v5 source, executed by the same compiler as a user-saved copy. It
+requires the middle candle to close beyond the candle-two-bars-back boundary,
+supports manual or cumulative-range auto threshold, and removes a bullish or
+bearish record only after the close strictly crosses its mitigation boundary.
+Fixed boxes use chart indices `n-2` through `n+extend`; dynamic mode emits the
+evolving boundary at every supplied bar. Optional mitigation levels,
+unmitigated levels, one configured timeframe, and dashboard location/size are
+source inputs exposed by the shared settings dialog.
+
+The FVG request uses the chart's loaded candle window, up to the common 5,000
+candle request cap. There is no hardcoded 300-bar history mode: panning/zooming
+loads history through the chart and viewport projection culls off-screen
+segments. Higher-timeframe signals are confirmed on the final chart sub-bar;
+lower-timeframe requests use chart bars as a deterministic fallback because
+coarser OHLC cannot reconstruct missing sub-bars. The reference source is
+attributed under CC BY-NC-SA 4.0 by LuxAlgo. Alert conditions remain outside
+the current `IndicatorResult` contract.
 
 ## Source-code indicator flow
 
@@ -306,9 +330,10 @@ surfaces:
 - Do not reintroduce hardcoded TradingView catalog fallback data. Public Store
   rows must come from backend API data only.
 
-## Pine-like compiler contract
+## Pine subset compiler contract
 
-`backend/internal/pineruntime` implements a safe subset compiler:
+`backend/internal/pineruntime` implements a safe, version-agnostic subset
+compiler. It is not a full Pine v3-v6 implementation:
 
 - No `eval`.
 - No arbitrary JavaScript calls.
@@ -333,9 +358,11 @@ surfaces:
   the last real candle. This prevents right-side blank gaps when Pine compile
   cache and chart viewport ranges differ, without stretching dynamic plots or
   `linebr` helper segments.
-- Daily `request.security()` aggregation and object APIs (`line`, `box`, `label`, `table`) are
-  compiled in Go for ADR-style scripts. Frontend compile requests include extra historical candles
-  for scripts that use `request.security()` so higher-timeframe values are not computed only from
+- Pure series use the vector evaluator. UDT/typed-array/tuple/loop programs use
+  an ordered bar VM with committed history and reference identity. Both paths
+  are selected by syntax/AST capability inside the same `Compile` function.
+- Frontend compile requests include extra historical candles for scripts using
+  `request.security()` so higher-timeframe values are not computed only from
   the visible viewport.
 
 Supported source structure:
@@ -347,6 +374,17 @@ len = input.int(20, title="Length")
 basis = ta.sma(close, len)
 plot(basis, title="SMA", color=color.blue)
 ```
+
+Compatibility boundaries:
+
+| Area | Implemented | Explicit limit |
+|---|---|---|
+| Execution | Sequential closed-bar state/history for the stateful subset; batch pure-series evaluation | No realtime tick rollback/re-execution or `varip` |
+| Types/state | Scalars, series, colors, UDTs, tuples, typed reference arrays, methods, `var`, history | No maps, matrices, polylines, libraries/imports |
+| Control flow | `if/else`, ternary, compound reassignment, ascending/descending and `for ... in` loops in the stateful subset | No `while`; unsupported AST fails closed |
+| Data contexts | Current-symbol higher-timeframe `request.security()` with independent child state and final-subbar mapping | No multi-symbol data or lower-timeframe arrays; unavailable sub-bars are never invented |
+| Visuals | Plots, line-break segments, hlines/fills, supported line/box/label/table lifecycles, dynamic baseline fills | Unsupported visual calls fail before execution |
+| Trading/events | Historical indicator primitives | No strategies/orders/broker emulation; alert conditions do not deliver events |
 
 Supported identifiers:
 
@@ -371,7 +409,9 @@ Supported expression features:
 - Ternary conditionals, including color palettes.
 - History references such as `series[1]`.
 - Typed declarations such as `float volumeMA = 0`.
-- Declaration qualifiers used by public scripts: `var`, `varip`, `const`, `series`, `simple`.
+- `var` state in the bar VM; selected declaration qualifiers accepted by the
+  pure-series subset. `varip` is rejected because realtime rollback semantics
+  are not implemented.
 - Compound assignments such as `x += 1`, parsed as reassignment syntax.
 - One-line helper functions in the form `helper(float value, int length) => expression`.
 - Pine v3 indentation-based `if ... else` expressions for supported assignment patterns.
@@ -382,15 +422,17 @@ Supported expression features:
 Supported functions:
 
 - Inputs: `input`, `input.int`, `input.float`, `input.source`, `input.bool`, `input.color`
-- Series: `ta.sma`, `ta.ema`, `ta.rma`, `ta.rsi`, `ta.vwap`, `ta.highest`, `ta.lowest`,
-  `ta.change`, `ta.atr`, `ta.crossover`, `ta.crossunder`, plus Pine v3 aliases such as `sma`,
-  `ema`, `rma`, `rsi`; common helpers `ta.stdev`, `ta.barssince`, `ta.valuewhen`,
-  `ta.rising`, and `ta.falling`.
+- Pure series: `ta.sma`, `ta.ema`, `ta.rma`, `ta.wma`, `ta.hma`, `ta.vwma`,
+  `ta.vwap`, `ta.rsi`, `ta.change`, `ta.crossover`, `ta.crossunder`,
+  `ta.pivothigh`, and `ta.pivotlow`, plus their implemented legacy aliases.
+- Stateful calls required by current generic fixtures/catalog sources:
+  `ta.cum`, `ta.pivothigh`, and `ta.pivotlow`.
 - Math/helpers: `math.abs`, `math.max`, `math.min`, `abs`, `max`, `min`, `nz`, `na`,
   `color(base, transp)`, `color.new(base, transp)`, `str.tostring`, `str.format_time`
-- Timeframe bridge: `request.security(..., timeframe, expression, lookahead=barmerge.lookahead_off)`
-  over higher-timeframe candles aggregated from the chart runtime for common second/minute/day/week
-  and month strings, plus `time(timeframe)` and `timeframe.change(timeframe)`.
+- Timeframe bridge: current-symbol
+  `request.security(..., timeframe, expression, lookahead=barmerge.lookahead_off)`
+  over higher-timeframe candles aggregated from the supplied chart runtime for
+  common second/minute/day/week/month strings, plus `time(timeframe)`.
   The Go runtime has a narrow bootstrap path for lagged SMA security expressions such as
   `ta.sma(high - low, length)[1]`: if the strict SMA is still `na` because the supplied higher-
   timeframe history is shorter than TradingView would normally preload, it fills missing values from
@@ -400,13 +442,11 @@ Supported functions:
   `plot(..., style=linebr|plot.style_linebr)`, `hline(...)`,
   `fill(hlineA, hlineB, color, transp=...)`
 - Indicator metadata: `indicator("Name", overlay=true|false)` and `study(...)`
-- Object runtime subset: `line.new` with `line.set_*`, `box.new` with `box.set_*`,
-  `label.new` with `label.set_*`, and `table.new`/`table.cell` are converted into chart overlay
-  series, labels, and dashboard metadata. Object rendering honors common `x1/y1/x2/y2`, `xloc`,
-  and `extend` arguments where they map cleanly to Lightweight Charts data. Labels carry text,
-  text color, optional background color, and projected time/price; active `label.style_label_left`
-  labels are moved to the emitted object's right edge to avoid line/text collisions. This is a
-  shared subset, not an indicator-name adapter.
+- Stateful reference subset: typed arrays preserve handle identity; `line.new`,
+  `box.new`, `label.new`, `table.new`, handle deletion, array mutation, and
+  `table.cell` become chart series, labels, and dashboard metadata. The legacy
+  pure object projection remains for its fixture-tested setters. Neither path
+  matches an indicator title or formula.
 
 Object-heavy Pine scripts can emit one object per trading day. The frontend cache keeps only the
 latest few emitted segments per object handle before rendering, so ADR-style historical lines remain
@@ -427,10 +467,12 @@ empty result on each refresh would remove and re-add Pine overlay series, which 
 like it reloads. The cache keeps the latest successful result for the same script/symbol/timeframe
 while a new compile is pending.
 
-Unsupported Pine features should fail with a user-visible compile error instead of silently doing
-the wrong thing. Examples: strategies, orders, arrays, loops, multi-symbol `request.security`,
-sessions, alerts, multi-line custom functions, tuple-return functions beyond the whitelisted
-surface, and general-purpose block statements outside the whitelisted assignment/object patterns.
+Unsupported Pine features fail visibly instead of silently producing an empty
+chart. Strategies/orders, libraries/imports, maps/matrices/polylines, legacy
+unsupported collection constructors, `while`, multi-symbol data,
+`request.security_lower_tf`, `varip`, and unsupported visuals are blocking
+errors. `alertcondition()` remains non-blocking for historical visuals but is
+listed in `unsupportedFeatures` because event delivery is absent.
 
 ## Render contract
 
@@ -447,6 +489,7 @@ interface IndicatorResult {
     lineWidth?: 1 | 2 | 3 | 4;
     lineStyle?: 0 | 1 | 2 | 3 | 4;
     baseValue?: number;
+    fillBelowBase?: boolean;
     lastValueVisible?: boolean;
     lineVisible?: boolean;
   }[];
@@ -517,7 +560,7 @@ Do not detect pivot formation from returned series in the frontend.
 
 Built-in defaults:
 
-- Overlay: SMA, EMA, VWAP, ADR, Swing S/R.
+- Overlay: SMA, EMA, VWAP, ADR, FVG, Swing S/R.
 - Separate pane: RSI, MACD.
 
 Custom script default:
@@ -544,10 +587,11 @@ errors, not application runtime errors.
 To add a new built-in indicator:
 
 1. Add the type to `BuiltInIndicatorType`.
-2. Add a backend calculator to the common registry in
-   `backend/internal/pineruntime/builtin_runtime.go` and return the shared
-   `IndicatorResult` contract.
-3. Add backend registry, numerical/parity, validation, and HTTP-contract tests.
+2. Add a `.pine` file under `backend/internal/pineruntime/sources/` and a
+   config/input/style mapping in `builtin_sources.go`. Do not add a native Go
+   formula dispatch.
+3. Add backend catalog completeness, common-compiler parity, validation, and
+   HTTP-contract tests.
 4. Add frontend instance defaults in `defaultIndicator`; these are UI defaults,
    not calculation logic.
 5. Add a menu option in `IndicatorMenu`.

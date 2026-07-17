@@ -43,6 +43,8 @@ export function indicatorLegendTitle(
       ? meta?.shortTitle || indicator.name || meta?.name || "Custom script"
       : indicator.type === "SWING_SR"
         ? "Swing S/R"
+        : indicator.type === "FVG"
+          ? "Fair Value Gap"
         : indicator.type;
   const params =
     inputsInStatusLine(indicator.styleValues)
@@ -50,7 +52,7 @@ export function indicatorLegendTitle(
         ? pineLegendInputs(indicator, inputDefinitions)
         : indicator.type === "SWING_SR"
           ? `${indicator.length}/${indicator.length2 ?? indicator.length}`
-          : indicator.type !== "VWAP" && indicator.length
+          : indicator.type !== "VWAP" && indicator.type !== "FVG" && indicator.length
             ? String(indicator.length)
             : ""
       : "";

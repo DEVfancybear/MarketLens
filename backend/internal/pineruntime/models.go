@@ -68,6 +68,7 @@ type IndicatorSeries struct {
 	LineWidth            *int        `json:"lineWidth,omitempty"`
 	LineStyle            *int        `json:"lineStyle,omitempty"`
 	BaseValue            *float64    `json:"baseValue,omitempty"`
+	FillBelowBase        *bool       `json:"fillBelowBase,omitempty"`
 	LastValueVisible     *bool       `json:"lastValueVisible,omitempty"`
 	StatusLineVisible    *bool       `json:"statusLineVisible,omitempty"`
 	ExtendToVisibleRange *bool       `json:"extendToVisibleRange,omitempty"`
@@ -94,6 +95,8 @@ type IndicatorDashboard struct {
 	Key      string                  `json:"key"`
 	Title    string                  `json:"title"`
 	Subtitle string                  `json:"subtitle,omitempty"`
+	Position string                  `json:"position,omitempty"`
+	TextSize string                  `json:"textSize,omitempty"`
 	Rows     []IndicatorDashboardRow `json:"rows"`
 }
 
@@ -158,13 +161,13 @@ type CompileResponse struct {
 	UnsupportedFeatures []string        `json:"unsupportedFeatures"`
 }
 
-// IndicatorRuntimeRequest is the stable backend-owned contract for built-in
-// indicators. Config is intentionally opaque JSON-shaped data so adding a new
-// indicator does not require changing this transport type; the registry
-// validates and consumes only the fields its calculator declares.
+// IndicatorRuntimeRequest is the stable catalog contract for built-ins. Config
+// stays opaque so a catalog definition can map it to Pine inputs/styles without
+// changing the transport; execution still goes through the common compiler.
 type IndicatorRuntimeRequest struct {
 	IndicatorType string         `json:"indicatorType"`
 	IndicatorID   string         `json:"indicatorId,omitempty"`
+	Timeframe     string         `json:"timeframe,omitempty"`
 	Config        map[string]any `json:"config,omitempty"`
 	Candles       []Candle       `json:"candles"`
 }

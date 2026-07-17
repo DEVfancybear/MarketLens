@@ -28,6 +28,11 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "source is too large"})
 		return resp
 	}
+	if blocked := blockingUnsupportedFeatures(req.SourceCode); len(blocked) > 0 {
+		resp.Errors = append(resp.Errors, RuntimeError{Message: "unsupported Pine features: " + strings.Join(blocked, ", ")})
+		return resp
+	}
+	req.Candles = normalizeRuntimeCandles(req.Candles)
 	if len(req.Candles) > maxCompileCandles {
 		req.Candles = req.Candles[len(req.Candles)-maxCompileCandles:]
 		resp.Warnings = append(resp.Warnings, RuntimeError{Message: fmt.Sprintf("compile input truncated to %d candles", maxCompileCandles)})
@@ -38,37 +43,75 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		return resp
 	default:
 	}
-
+	if result, handled, errors := compileStatefulPine(ctx, req, id); handled {
+		resp.Result = result
+		resp.Result.ID = id
+		resp.Errors = append(resp.Errors, errors...)
+		return resp
+	}
 	cleaned := normalizeSource(req.SourceCode)
-	context := &evalContext{
+	evalCtx := &evalContext{
 		candles:        req.Candles,
 		variables:      map[string]pineValue{},
 		functions:      map[string]pineFunction{},
 		inputOverrides: req.InputOverrides,
 	}
-	readAssignments(cleaned, context, &resp.Errors)
-	hlines := readHlines(cleaned, context, req.StyleOverrides, &resp.Errors)
-	resp.Result.Series = append(resp.Result.Series, readFills(cleaned, context, hlines, req.Candles, req.StyleOverrides, &resp.Errors)...)
-	for _, line := range hlines {
-		if !line.visible {
-			continue
-		}
-		extendToVisibleRange := true
-		resp.Result.Series = append(resp.Result.Series, IndicatorSeries{
-			Key:                  line.title,
-			Color:                line.color,
-			Data:                 flatLinePoints(line.value, req.Candles),
-			Type:                 "line",
-			LineWidth:            &line.lineWidth,
-			LineStyle:            &line.lineStyle,
-			ExtendToVisibleRange: &extendToVisibleRange,
-		})
+	readAssignments(cleaned, evalCtx, &resp.Errors)
+
+	// Assignments establish the immutable evaluation context. The three output
+	// branches below are independent and can be evaluated concurrently while
+	// preserving their historical fill/hline, plot, object result ordering.
+	type compileOutput struct {
+		series    []IndicatorSeries
+		labels    []IndicatorOverlayLabel
+		dashboard *IndicatorDashboard
+		errors    []RuntimeError
 	}
-	resp.Result.Series = append(resp.Result.Series, readPlots(cleaned, context, req.Candles, req.StyleOverrides, &resp.Errors)...)
-	if objectResult := compileObjectRuntime(cleaned, req.Candles, id, context, req.StyleOverrides, &resp.Errors); objectResult != nil {
-		resp.Result.Series = append(resp.Result.Series, objectResult.Series...)
-		resp.Result.Labels = append(resp.Result.Labels, objectResult.Labels...)
-		resp.Result.Dashboard = objectResult.Dashboard
+	jobs := []orderedJob[compileOutput]{
+		func(context.Context) (compileOutput, error) {
+			output := compileOutput{errors: []RuntimeError{}}
+			hlines := readHlines(cleaned, evalCtx, req.StyleOverrides, &output.errors)
+			output.series = append(output.series, readFills(cleaned, evalCtx, hlines, req.Candles, req.StyleOverrides, &output.errors)...)
+			for _, line := range hlines {
+				if !line.visible {
+					continue
+				}
+				extendToVisibleRange := true
+				output.series = append(output.series, IndicatorSeries{
+					Key: line.title, Color: line.color, Data: flatLinePoints(line.value, req.Candles), Type: "line",
+					LineWidth: &line.lineWidth, LineStyle: &line.lineStyle, ExtendToVisibleRange: &extendToVisibleRange,
+				})
+			}
+			return output, nil
+		},
+		func(context.Context) (compileOutput, error) {
+			output := compileOutput{errors: []RuntimeError{}}
+			output.series = readPlots(cleaned, evalCtx, req.Candles, req.StyleOverrides, &output.errors)
+			return output, nil
+		},
+		func(context.Context) (compileOutput, error) {
+			output := compileOutput{errors: []RuntimeError{}}
+			objectResult := compileObjectRuntime(cleaned, req.Candles, id, evalCtx, req.StyleOverrides, &output.errors)
+			if objectResult != nil {
+				output.series = objectResult.Series
+				output.labels = objectResult.Labels
+				output.dashboard = objectResult.Dashboard
+			}
+			return output, nil
+		},
+	}
+	outputs, err := runOrderedJobs(ctx, jobs, len(jobs))
+	if err != nil {
+		resp.Errors = append(resp.Errors, RuntimeError{Message: err.Error()})
+		return resp
+	}
+	for _, output := range outputs {
+		resp.Result.Series = append(resp.Result.Series, output.series...)
+		resp.Result.Labels = append(resp.Result.Labels, output.labels...)
+		if output.dashboard != nil {
+			resp.Result.Dashboard = output.dashboard
+		}
+		resp.Errors = append(resp.Errors, output.errors...)
 	}
 	if len(resp.Result.Series) == 0 && len(resp.Result.Labels) == 0 && resp.Result.Dashboard == nil && len(resp.Errors) == 0 {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "No supported plot(), hline(), fill(), or drawing object output found"})
@@ -77,7 +120,45 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 }
 
 func unsupportedFeatures(source string) []string {
-	return []string{}
+	features := []string{}
+	cleaned := normalizeSource(source)
+	checks := []struct {
+		name    string
+		pattern string
+	}{
+		{name: "strategies and broker orders", pattern: `(?m)\b(strategy\s*\(|strategy\.)`},
+		{name: "libraries and imports", pattern: `(?m)^\s*(library|import|export)\b`},
+		{name: "maps, matrices, and polylines", pattern: `\b(map\.|matrix\.|polyline\.)`},
+		{name: "legacy collection constructors", pattern: `\b(array\.new_(float|int|bool|string|line|box|label)|array\.from)\s*\(`},
+		{name: "while loops", pattern: `(?m)^\s*while\b`},
+		{name: "lower-timeframe array requests", pattern: `\brequest\.security_lower_tf\s*\(`},
+		{name: "multi-symbol data requests", pattern: `\brequest\.security\s*\(\s*["']`},
+		{name: "unsupported visual calls", pattern: `\b(plotshape|plotchar|plotcandle|plotbar|barcolor|bgcolor)\s*\(`},
+		{name: "realtime varip semantics", pattern: `\bvarip\b`},
+		{name: "realtime rollback semantics", pattern: `\bbarstate\.isrealtime\b`},
+		{name: "alert event delivery", pattern: `\b(alert|alertcondition)\s*\(`},
+	}
+	for _, check := range checks {
+		if regexp.MustCompile(check.pattern).MatchString(cleaned) {
+			features = append(features, check.name)
+		}
+	}
+	return features
+}
+
+func blockingUnsupportedFeatures(source string) []string {
+	blocked := []string{}
+	for _, feature := range unsupportedFeatures(source) {
+		switch feature {
+		case "alert event delivery", "realtime rollback semantics":
+			// These do not affect historical chart primitives. Report them in
+			// UnsupportedFeatures while still compiling the closed-bar output.
+			continue
+		default:
+			blocked = append(blocked, feature)
+		}
+	}
+	return blocked
 }
 
 func readAssignments(cleaned string, context *evalContext, errors *[]RuntimeError) {
@@ -624,7 +705,10 @@ func resolvePlotColor(expression string, context *evalContext, fallback string) 
 					break
 				}
 			}
-			return base, value.colors
+			// Plot style normalization may rewrite the returned colors (for
+			// example when applying transp). Keep the evaluator's immutable
+			// series backing storage isolated from concurrent output branches.
+			return base, append([]string(nil), value.colors...)
 		}
 	}
 	return resolveColor(expression, fallback), nil

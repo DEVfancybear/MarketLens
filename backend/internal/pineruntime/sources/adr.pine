@@ -1,0 +1,11 @@
+//@version=5
+indicator("Average Daily Range", overlay = true)
+length = input.int(14, "ADR Period", minval = 1, maxval = 500)
+highColor = input.color(#26a69a, "High")
+lowColor = input.color(#ef5350, "Low")
+adr = request.security(syminfo.tickerid, "D", ta.sma(high - low, length)[1], lookahead = barmerge.lookahead_off)
+dayHigh = request.security(syminfo.tickerid, "D", high, lookahead = barmerge.lookahead_off)
+dayLow = request.security(syminfo.tickerid, "D", low, lookahead = barmerge.lookahead_off)
+mid = (dayHigh + dayLow) / 2
+plot(mid + adr / 2, "adr-high", color = highColor, linewidth = 2)
+plot(mid - adr / 2, "adr-low", color = lowColor, linewidth = 2)

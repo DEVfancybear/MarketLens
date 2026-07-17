@@ -587,6 +587,11 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 			toSeries(sourceSeries(context.candles, "volume"), len(context.candles)),
 			period(byNameOrIndex("length", 1)),
 		)), nil
+	case "ta.vwap", "vwap":
+		return seriesValue(sessionVWAP(
+			toSeries(byNameOrIndex("source", 0), len(context.candles)),
+			context.candles,
+		)), nil
 	case "ta.rsi", "rsi":
 		return seriesValue(rsiSeries(toSeries(byNameOrIndex("source", 0), len(context.candles)), period(byNameOrIndex("length", 1)))), nil
 	case "ta.change", "change":
@@ -607,6 +612,35 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 		return seriesValue(pivotSeries(values, left, right, "low")), nil
 	}
 	return pineValue{}, fmt.Errorf("unsupported function %q", name+"()")
+}
+
+func sessionVWAP(source []float64, candles []Candle) []float64 {
+	out := make([]float64, len(candles))
+	day := int64(-1)
+	priceVolume := 0.0
+	volume := 0.0
+	for index, candle := range candles {
+		bucket := candle.Time / 86400
+		if bucket != day {
+			day = bucket
+			priceVolume = 0
+			volume = 0
+		}
+		value := math.NaN()
+		if index < len(source) {
+			value = source[index]
+		}
+		if usable(value) && usable(candle.Volume) {
+			priceVolume += value * candle.Volume
+			volume += candle.Volume
+		}
+		if volume > 0 {
+			out[index] = priceVolume / volume
+		} else {
+			out[index] = value
+		}
+	}
+	return out
 }
 
 // pivotCallInputs supports both Pine signatures:

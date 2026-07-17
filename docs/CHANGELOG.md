@@ -4,6 +4,37 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Generic stateful Pine runtime and source-backed catalog (2026-07-17)
+- Added a generic closed-bar Pine parser/VM for UDTs, function-local `var`,
+  tuples, typed reference arrays, methods, loops, history, independent
+  `request.security()` contexts, boxes/lines/tables, plots, and fills. Dispatch
+  depends on syntax/AST capabilities, never a script title or FVG formula.
+- Converted every current built-in (`SMA`, `EMA`, `VWAP`, `RSI`, `MACD`, `ADR`,
+  `SWING_SR`, `FVG`) to embedded Pine source. Both catalog entries and scripts
+  saved by any user now call the same `Compile` pipeline; the built-in route is
+  only a config-to-input/style adapter.
+- Applied the user-provided `Fair Value Gap [LuxAlgo]` Pine v5 source behavior:
+  middle-candle confirmation, threshold, configurable timeframe,
+  `n-2`/`n+extend` boxes, strict-close mitigation, mitigation/unmitigated levels,
+  per-bar dynamic fills, source colors, and dashboard options. Its source keeps
+  the LuxAlgo attribution and CC BY-NC-SA 4.0 notice.
+- FVG history now follows the chart's loaded runtime window (globally capped at
+  5,000 candles) instead of a fixed 300-bar default; viewport projection keeps
+  rendering proportional to the current pan/zoom range.
+- Added fixed four-worker runtime pools with bounded queues, deterministic
+  ordered compiler workers, request singleflight, timeout/panic isolation, and
+  a bounded LRU. Saved
+  scripts with equal source/properties/candles share work across script/user
+  identities while each response is rebound to its own chart instance ID.
+- Fixed sparse FVG viewport projection so crossing segments retain their
+  anchors and fully missed segments cannot read beyond the point array.
+- Added fail-closed diagnostics for unsupported strategies/orders, multi-symbol
+  data, lower-TF arrays, map/matrix/polyline, `while`, `varip`, and unsupported
+  visuals. Alert conditions remain non-blocking but are reported as having no
+  event-delivery support.
+- Added backend common-compiler/stateful/source-parity/cache/identity tests plus
+  chart viewport regressions.
+
 ### Fixed - ADR live labels and transient SMC chart range crash (2026-07-17)
 - Preserved Pine object points beyond the latest candle when the indicator
   viewport reaches the live tail. ADR H50/L50 lines now extend into the chart's

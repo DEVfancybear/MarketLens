@@ -140,6 +140,7 @@ function indicatorStyleSignature(series: IndicatorSeries) {
     series.lineWidth ?? "",
     series.lineStyle ?? "",
     series.baseValue ?? "",
+    series.fillBelowBase ?? "",
     series.lineVisible ?? "",
     series.lastValueVisible ?? "",
     series.precision ?? "",
@@ -972,8 +973,8 @@ export function PriceChart({
                 topFillColor1: s.color,
                 topFillColor2: s.color,
                 topLineColor: "rgba(0, 0, 0, 0)",
-                bottomFillColor1: "rgba(0, 0, 0, 0)",
-                bottomFillColor2: "rgba(0, 0, 0, 0)",
+                bottomFillColor1: s.fillBelowBase ? s.color : "rgba(0, 0, 0, 0)",
+                bottomFillColor2: s.fillBelowBase ? s.color : "rgba(0, 0, 0, 0)",
                 bottomLineColor: "rgba(0, 0, 0, 0)",
                 lineVisible: s.lineVisible ?? false,
                 priceLineVisible: false,
@@ -1028,6 +1029,8 @@ export function PriceChart({
               baseValue: { type: "price", price: s.baseValue ?? 0 },
               topFillColor1: s.color,
               topFillColor2: s.color,
+              bottomFillColor1: s.fillBelowBase ? s.color : "rgba(0, 0, 0, 0)",
+              bottomFillColor2: s.fillBelowBase ? s.color : "rgba(0, 0, 0, 0)",
               lineVisible: s.lineVisible ?? false,
               lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
               ...seriesPriceFormatOptions(s),
@@ -1339,8 +1342,20 @@ function IndicatorOverlay({
       {dashboards.map((dashboard, index) => (
         <div
           key={dashboard.key}
-          className="pointer-events-none absolute right-16 z-20 w-[150px] overflow-hidden rounded-lg border border-terminal-border-strong bg-terminal-raised/85 font-mono text-[10px] leading-[15px] text-ink shadow-floating backdrop-blur"
-          style={{ top: 12 + index * 136 }}
+          className="pointer-events-none absolute z-20 w-[150px] overflow-hidden rounded-lg border border-terminal-border-strong bg-terminal-raised/85 font-mono leading-[15px] text-ink shadow-floating backdrop-blur"
+          style={{
+            ...(dashboard.position === "Bottom Left"
+              ? { bottom: 12 + index * 136, left: 12 }
+              : dashboard.position === "Bottom Right"
+                ? { bottom: 12 + index * 136, right: 64 }
+                : { right: 64, top: 12 + index * 136 }),
+            fontSize:
+              dashboard.textSize === "Tiny"
+                ? 9
+                : dashboard.textSize === "Normal"
+                  ? 12
+                  : 10,
+          }}
         >
           <div className="grid grid-cols-[1fr_auto] border-b border-gray-500/60">
             <div className="truncate px-1 text-cyan-300">{dashboard.title}</div>
