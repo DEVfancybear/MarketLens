@@ -8,6 +8,7 @@ import { timeframeAtom, symbolAtom } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtPrice } from "@/utils/format";
 import { fmtDate } from "@/utils/time";
+import { readSmcVisibleRange } from "./smcVisibleRange";
 
 /** Set `window.__SMC_DEBUG__ = true` in the console to log coordinate mapping. */
 type SmcDebugWindow = Window & { __SMC_DEBUG__?: boolean };
@@ -70,10 +71,10 @@ export function SmcLayer() {
     g.clearRect(0, 0, rect.width, rect.height);
 
     const ts = ctx.chart.timeScale();
-    const range = ts.getVisibleRange();
+    const range = readSmcVisibleRange(ts);
     if (!range) return;
-    const fromT = range.from as number;
-    const toT = range.to as number;
+    const fromT = range.from;
+    const toT = range.to;
     const visibleSpan = Math.max(1, toT - fromT);
     const timePad = visibleSpan * 0.25;
     const latestClose = ctx.candles[ctx.candles.length - 1]?.close ?? null;

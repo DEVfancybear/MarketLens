@@ -39,6 +39,7 @@
     "src/services/indicatorDependencies.ts",
     "src/services/indicatorSeriesWritePlan.ts",
     "src/services/smc/smcInputWindow.ts",
+    "src/components/smc/smcVisibleRange.ts",
     "src/services/chartBenchmarkFixtures.ts",
     "src/services/chartOptimizationRollout.ts",
     "src/services/pineRuntimeCachePolicy.ts",

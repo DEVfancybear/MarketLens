@@ -48,3 +48,56 @@ test("indicator projection slices by candle timestamps", () => {
     candles.slice(5, 14).map((candle) => candle.time),
   );
 });
+
+test("indicator projection keeps future object points when the viewport reaches the live tail", () => {
+  const candles = Array.from({ length: 20 }, (_, index): Candle => ({
+    time: 1_000 + index * 60,
+    open: 1,
+    high: 2,
+    low: 0,
+    close: 1,
+    volume: 1,
+  }));
+  const points = [
+    ...candles.map((candle) => ({ time: candle.time, value: candle.close })),
+    { time: candles.at(-1)!.time + 60, value: 2 },
+    { time: candles.at(-1)!.time + 12 * 60, value: 2 },
+  ];
+  const viewport = {
+    visible: { first: 16, last: 19 },
+    overscan: { first: 12, last: 19 },
+    direction: "right" as const,
+    revision: 1,
+  };
+
+  assert.deepEqual(
+    indicatorPointsInViewport(points, candles, viewport).map((point) => point.time),
+    points.slice(12).map((point) => point.time),
+  );
+});
+
+test("indicator projection still clips future object points away from the live tail", () => {
+  const candles = Array.from({ length: 20 }, (_, index): Candle => ({
+    time: 1_000 + index * 60,
+    open: 1,
+    high: 2,
+    low: 0,
+    close: 1,
+    volume: 1,
+  }));
+  const points = [
+    ...candles.map((candle) => ({ time: candle.time, value: candle.close })),
+    { time: candles.at(-1)!.time + 12 * 60, value: 2 },
+  ];
+  const viewport = {
+    visible: { first: 5, last: 7 },
+    overscan: { first: 3, last: 10 },
+    direction: "idle" as const,
+    revision: 1,
+  };
+
+  assert.deepEqual(
+    indicatorPointsInViewport(points, candles, viewport).map((point) => point.time),
+    candles.slice(3, 11).map((candle) => candle.time),
+  );
+});

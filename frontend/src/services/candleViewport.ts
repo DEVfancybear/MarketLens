@@ -102,5 +102,10 @@ export function indicatorPointsInViewport(
   const firstTime = candles[viewport.overscan.first]?.time;
   const lastTime = candles[viewport.overscan.last]?.time;
   if (firstTime == null || lastTime == null) return [...points];
-  return points.slice(lowerBound(points, firstTime), upperBound(points, lastTime));
+  // Live Pine objects can extend into right-offset whitespace, and their labels
+  // use those future timestamps as anchors. Keep them once the window reaches
+  // the data tail; historical windows still discard unrelated future points.
+  const reachesLatestCandle = viewport.overscan.last >= candles.length - 1;
+  const end = reachesLatestCandle ? points.length : upperBound(points, lastTime);
+  return points.slice(lowerBound(points, firstTime), end);
 }

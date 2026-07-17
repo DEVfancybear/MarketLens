@@ -1,6 +1,6 @@
 # SMC Overlay Maintenance
 
-Updated: 2026-07-09
+Updated: 2026-07-17
 
 This document is the handoff reference for the Smart Money Concepts overlay.
 
@@ -65,6 +65,12 @@ Important invariants:
   not.
 - Canvas fonts must use concrete font strings. `ctx.font = "10px var(--font-mono)"` does not resolve
   reliably and causes bad text measurement.
+- Read the time scale through `readSmcVisibleRange()` rather than calling
+  `getVisibleRange()` directly. Lightweight Charts 5.2 can throw its internal
+  `Value is null` assertion while series time points are transiently cleared or
+  hydrated. Treat only that assertion, `null`, and non-finite/non-numeric bounds
+  as an unavailable frame; rethrow unrelated API errors so real failures are not
+  hidden.
 
 ## Render Limits
 
@@ -112,6 +118,8 @@ Run:
 
 ```bash
 npm run check:smc-overlay
+npm run test:chart
+node --test .test-build/tests/smc/smcVisibleRange.test.js
 ```
 
 This guard checks:
@@ -122,3 +130,5 @@ This guard checks:
 - SMC canvas font strings are concrete.
 - The menu/store feature list remains complete.
 - Mojibake checkmarks and unsupported canvas marker glyphs do not return.
+- Transient missing chart ranges skip one paint frame without crashing, valid
+  timestamp ranges pass through, and unrelated chart API failures remain visible.

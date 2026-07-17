@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - ADR live labels and transient SMC chart range crash (2026-07-17)
+- Preserved Pine object points beyond the latest candle when the indicator
+  viewport reaches the live tail. ADR H50/L50 lines now extend into the chart's
+  right-offset whitespace and their current labels retain a valid time-scale
+  anchor; historical viewports continue to discard unrelated future points.
+- Guarded the SMC canvas against Lightweight Charts 5.2 transiently throwing
+  `Value is null` from `getVisibleRange()` while time points are being cleared
+  or hydrated. Only that known transition is treated as an unavailable range;
+  unrelated chart API failures still surface.
+- Added live-tail/historical indicator viewport regressions and focused SMC
+  visible-range tests.
+
 ### Changed - Backend-owned common indicator runtime and Swing S/R (2026-07-16)
 - Moved all built-in indicator formulas out of the browser into one Go runtime registry with a
   shared `POST /api/v1/indicator-runtime/compute` request/result contract for current and future

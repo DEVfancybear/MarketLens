@@ -412,6 +412,14 @@ Object-heavy Pine scripts can emit one object per trading day. The frontend cach
 latest few emitted segments per object handle before rendering, so ADR-style historical lines remain
 readable across 1m/5m/15m/H1 instead of flooding the chart.
 
+Active Pine objects may deliberately contain a short future tail. The Go object runtime uses this
+for `line.new` right-edge extension and anchors active `label.style_label_left` labels at the same
+future timestamp. `indicatorPointsInViewport()` must therefore preserve points after the newest real
+candle whenever the overscan window reaches the live tail. If those points are clipped, Lightweight
+Charts never registers their timestamps, `timeToCoordinate()` returns `null`, and current ADR H50/L50
+labels disappear. Historical windows must continue to upper-clip future points so panning backward
+does not retain unrelated live objects.
+
 For custom scripts that use `request.security()`, the frontend runtime cache is keyed by the candle
 window (`length`, first bar time, last bar time) rather than every OHLC value. MT5 can refresh the
 latest bars every few seconds with the same timestamps; recompiling and temporarily rendering an
@@ -469,6 +477,9 @@ Overlay indicators render in `PriceChart`:
   coordinates; this is used by the ADR object-script compatibility path.
 - Overlay labels are clipped when their projected anchor is off-screen to the left. Do not clamp
   historical off-screen labels to the left edge, or ADR labels will stack over the chart.
+- At the live tail, viewport culling keeps the bounded future points emitted by mutable Pine objects.
+  This is distinct from `extendToVisibleRange`: object geometry owns its short right extension,
+  while reference outputs such as `hline()` are re-projected across the whole logical viewport.
 - Series are keyed by indicator id and recreated only when series count changes.
 
 Separate-pane indicators render in native Lightweight Charts 5 panes owned by
