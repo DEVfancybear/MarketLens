@@ -18,6 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Set
 
 import MetaTrader5 as mt5
@@ -42,6 +43,9 @@ class Config:
     login: int | None
     password: str | None
     server: str | None
+    market_status_file: str | None
+    market_status_poll_ms: int
+    market_status_max_age_seconds: int
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -65,6 +69,15 @@ class Config:
             login=int(login_raw) if login_raw else None,
             password=os.getenv("MT5_PASSWORD") or None,
             server=os.getenv("MT5_SERVER") or None,
+            market_status_file=os.getenv("MT5_MARKET_STATUS_FILE") or None,
+            market_status_poll_ms=max(
+                int(os.getenv("MT5_MARKET_STATUS_POLL_MS", "1000")),
+                250,
+            ),
+            market_status_max_age_seconds=max(
+                int(os.getenv("MT5_MARKET_STATUS_MAX_AGE_SECONDS", "20")),
+                5,
+            ),
         )
 
 
@@ -73,6 +86,8 @@ SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
 HISTORY_TASKS: dict[tuple[int, str], asyncio.Task[None]] = {}
+MARKET_STATUSES: dict[str, dict[str, Any]] = {}
+MARKET_STATUS_PATH: Path | None = None
 MT5_TICK_TIME_OFFSET_SECONDS = 0
 # The MetaTrader5 Python module is blocking and should be treated as
 # single-thread-affine. Keep every MT5 call that runs after startup on this one
@@ -457,6 +472,172 @@ def last_mt5_error() -> str:
     return f"{code}: {message}"
 
 
+MARKET_STATUS_TIMESTAMP_FIELDS = (
+    "session_open_at",
+    "session_close_at",
+    "next_open_at",
+    "next_transition_at",
+    "server_time",
+    "observed_at",
+    "valid_until",
+)
+
+
+def _status_int(value: Any) -> int:
+    try:
+        result = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, result)
+
+
+def unknown_market_status(
+    symbol: str,
+    reason: str = "session_helper_unavailable",
+) -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "state": "unknown",
+        "scheduled_open": False,
+        "reason": reason,
+        "session_open_at": 0,
+        "session_close_at": 0,
+        "next_open_at": 0,
+        "next_transition_at": 0,
+        "server_time": 0,
+        "observed_at": 0,
+        "valid_until": 0,
+        "source": "mt5-mql5-session",
+    }
+
+
+def normalize_market_status_document(
+    document: Any,
+    now_seconds: int | None = None,
+    max_age_seconds: int = 20,
+) -> dict[str, dict[str, Any]]:
+    """Validate the MQL5 helper document and fail closed to `unknown`.
+
+    The native helper is the only component that can call
+    SymbolInfoSessionTrade. Its file is intentionally treated as an expiring
+    observation: a crashed helper or sleeping terminal must never leave an old
+    `open` value alive in Go/the browser.
+    """
+    if not isinstance(document, dict):
+        return {}
+    raw_statuses = document.get("statuses")
+    if not isinstance(raw_statuses, list):
+        return {}
+
+    now = int(time.time()) if now_seconds is None else int(now_seconds)
+    source = str(document.get("source") or "mt5-mql5-session")
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw in raw_statuses:
+        if not isinstance(raw, dict):
+            continue
+        symbol = str(raw.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        state = str(raw.get("state") or "unknown").strip().lower()
+        if state not in {"open", "closed", "unknown"}:
+            state = "unknown"
+
+        item: dict[str, Any] = {
+            "symbol": symbol,
+            "state": state,
+            "scheduled_open": bool(raw.get("scheduled_open")) and state == "open",
+            "reason": str(raw.get("reason") or ""),
+            "source": source,
+        }
+        for field in MARKET_STATUS_TIMESTAMP_FIELDS:
+            item[field] = _status_int(raw.get(field, document.get(field)))
+
+        observed_at = item["observed_at"]
+        valid_until = item["valid_until"] or observed_at + max_age_seconds
+        item["valid_until"] = valid_until
+        transition = item["next_transition_at"]
+        open_boundary = max(item["session_close_at"], transition)
+        inconsistent = (
+            state == "open"
+            and (
+                not item["scheduled_open"]
+                or item["server_time"] <= 0
+                or open_boundary <= observed_at
+            )
+        )
+        expired = (
+            observed_at <= 0
+            or observed_at > now + max_age_seconds
+            or now - observed_at > max_age_seconds
+            or valid_until <= now
+            or (state in {"open", "closed"} and transition > 0 and transition <= now)
+            or inconsistent
+        )
+        if expired:
+            item.update(
+                state="unknown",
+                scheduled_open=False,
+                reason=(
+                    "session_helper_invalid"
+                    if inconsistent
+                    else "session_helper_stale"
+                ),
+                valid_until=0,
+            )
+        elif not item["reason"]:
+            item["reason"] = (
+                "within_trade_session"
+                if item["state"] == "open"
+                else "outside_trade_session"
+                if item["state"] == "closed"
+                else "schedule_unavailable"
+            )
+        normalized[symbol.upper()] = item
+    return normalized
+
+
+def resolve_market_status_path(cfg: Config) -> Path | None:
+    if cfg.market_status_file:
+        return Path(os.path.expandvars(cfg.market_status_file)).expanduser()
+    terminal = mt5.terminal_info()
+    common_path = str(getattr(terminal, "commondata_path", "") or "").strip()
+    if not common_path:
+        return None
+    return Path(common_path) / "Files" / "SMCTradingTerminal" / "market_sessions.json"
+
+
+def read_market_status_file(
+    path: Path | None,
+    max_age_seconds: int,
+    now_seconds: int | None = None,
+) -> dict[str, dict[str, Any]]:
+    if path is None:
+        return {}
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    return normalize_market_status_document(document, now_seconds, max_age_seconds)
+
+
+def market_status_message(symbols: tuple[str, ...]) -> str:
+    statuses = [
+        dict(
+            MARKET_STATUSES.get(symbol.upper())
+            or unknown_market_status(symbol)
+        )
+        for symbol in symbols
+    ]
+    return json.dumps(
+        {
+            "type": "market_status",
+            "source": "mt5-mql5-session",
+            "statuses": statuses,
+        },
+        separators=(",", ":"),
+    )
+
+
 def initialize_mt5(cfg: Config) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
     init_args = {}
     if cfg.terminal_path:
@@ -580,6 +761,7 @@ async def register_client(websocket: WebSocketServerProtocol) -> None:
         await websocket.send(symbol_catalog_message())
         for message in await current_tick_messages_worker(STREAM_SYMBOLS):
             await websocket.send(message)
+        await websocket.send(market_status_message(STREAM_SYMBOLS))
         for message in HISTORY_MESSAGES:
             await websocket.send(message)
         async for raw in websocket:
@@ -608,6 +790,7 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
             await broadcast(symbol_catalog_message())
             for tick_message in await current_tick_messages_worker(added):
                 await broadcast(tick_message)
+            await broadcast(market_status_message(added))
         return
 
     if message_type == "history.cancel":
@@ -981,6 +1164,57 @@ async def stream_ticks(cfg: Config, stop_event: asyncio.Event) -> None:
             pass
 
 
+def expire_market_status_cache(
+    statuses: dict[str, dict[str, Any]],
+    now_seconds: int,
+    max_age_seconds: int,
+) -> dict[str, dict[str, Any]]:
+    return normalize_market_status_document(
+        {
+            "source": "mt5-mql5-session",
+            "statuses": list(statuses.values()),
+        },
+        now_seconds,
+        max_age_seconds,
+    )
+
+
+async def stream_market_status(cfg: Config, stop_event: asyncio.Event) -> None:
+    """Watch the native MQL5 helper file and push snapshots/heartbeats to Go."""
+    global MARKET_STATUSES
+
+    last_message = ""
+    sleep_seconds = cfg.market_status_poll_ms / 1000
+    while not stop_event.is_set():
+        now = int(time.time())
+        loaded = read_market_status_file(
+            MARKET_STATUS_PATH,
+            cfg.market_status_max_age_seconds,
+            now,
+        )
+        if loaded:
+            MARKET_STATUSES = loaded
+        elif MARKET_STATUSES:
+            # A writer can be observed between truncate/write on Windows. Keep
+            # the last valid observation through that tiny window, but expire it
+            # deterministically if the helper stops refreshing.
+            MARKET_STATUSES = expire_market_status_cache(
+                MARKET_STATUSES,
+                now,
+                cfg.market_status_max_age_seconds,
+            )
+
+        message = market_status_message(STREAM_SYMBOLS)
+        if message != last_message:
+            await broadcast(message)
+            last_message = message
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=sleep_seconds)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def main() -> None:
     setup_logging()
     cfg = Config.from_env()
@@ -996,13 +1230,33 @@ async def main() -> None:
             pass
 
     global SYMBOL_CATALOG, STREAM_SYMBOLS, HISTORY_MESSAGES
+    global MARKET_STATUSES, MARKET_STATUS_PATH
     SYMBOL_CATALOG, STREAM_SYMBOLS = initialize_mt5(cfg)
+    MARKET_STATUS_PATH = resolve_market_status_path(cfg)
+    MARKET_STATUSES = read_market_status_file(
+        MARKET_STATUS_PATH,
+        cfg.market_status_max_age_seconds,
+    )
+    if MARKET_STATUS_PATH is None:
+        LOG.warning("MT5 market-session helper path is unavailable")
+    elif not MARKET_STATUSES:
+        LOG.warning(
+            "MT5 market-session helper has no fresh status file path=%s",
+            MARKET_STATUS_PATH,
+        )
+    else:
+        LOG.info(
+            "loaded MT5 market-session statuses count=%d path=%s",
+            len(MARKET_STATUSES),
+            MARKET_STATUS_PATH,
+        )
     HISTORY_MESSAGES = (
         await load_history_messages(STREAM_SYMBOLS, cfg.history_timeframes, cfg.history_bars)
         if cfg.preload_history
         else []
     )
     tick_task: asyncio.Task[None] | None = None
+    market_status_task: asyncio.Task[None] | None = None
     try:
         async with websockets.serve(
             register_client,
@@ -1014,8 +1268,17 @@ async def main() -> None:
         ):
             LOG.info("MT5 tick WebSocket listening on ws://%s:%d", cfg.host, cfg.port)
             tick_task = asyncio.create_task(stream_ticks(cfg, stop_event))
+            market_status_task = asyncio.create_task(
+                stream_market_status(cfg, stop_event)
+            )
             await stop_event.wait()
     finally:
+        if market_status_task:
+            market_status_task.cancel()
+            try:
+                await market_status_task
+            except asyncio.CancelledError:
+                pass
         if tick_task:
             tick_task.cancel()
             try:

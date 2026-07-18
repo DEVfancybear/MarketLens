@@ -67,7 +67,7 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `MT5_STREAM_API_ENABLED` | boolean | `true` | Start the Go API background client for `/api/v1/mt5/symbols`, `/api/v1/mt5/stream`, `/api/v1/mt5/ticks`, and `/api/v1/mt5/history` |
+| `MT5_STREAM_API_ENABLED` | boolean | `true` | Start the Go API background client for `/api/v1/mt5/symbols`, `/api/v1/mt5/stream`, `/api/v1/mt5/ticks`, `/api/v1/mt5/market-status`, and `/api/v1/mt5/history` |
 | `MT5_SYMBOLS` | string | empty | Comma-separated extra symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
 | `MT5_STREAM_ALL_VISIBLE` | boolean | `true` | Stream every MT5 symbol currently marked visible; when true, `MT5_SYMBOLS` is added on top of visible symbols |
 | `MT5_STREAM_HOST` | string | `localhost` | Python WebSocket listen host |
@@ -82,12 +82,20 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_LOGIN` | integer | empty | Optional MT5 login; set with password/server |
 | `MT5_PASSWORD` | string | empty | Optional MT5 password; keep out of browser env |
 | `MT5_SERVER` | string | empty | Optional MT5 broker server name |
+| `MT5_MARKET_STATUS_FILE` | string | auto-discovered | Optional override for the MQL5 helper's `market_sessions.json` path |
+| `MT5_MARKET_STATUS_POLL_MS` | integer | `1000` | Local helper-file polling interval, clamped to at least `250`; no broker/network polling is performed |
+| `MT5_MARKET_STATUS_MAX_AGE_SECONDS` | integer | `20` | Maximum helper heartbeat age, clamped to at least `5`, before every cached session state becomes `unknown` |
 | `MT5_STREAM_LOG_LEVEL` | string | `INFO` | Python bridge log level |
 | `MT5_BRIDGE_WS_URL` | string | `ws://localhost:8765` | Go consumer bridge URL |
 | `MT5_BRIDGE_DIAL_TIMEOUT_SECONDS` | integer | `10` | Go consumer WebSocket dial timeout |
 | `MT5_BRIDGE_READ_LIMIT_BYTES` | integer | `8388608` | Go consumer max WebSocket message size; large enough for MT5 symbol catalogs |
 | `MT5_BRIDGE_RECONNECT_MIN` | duration | `1s` | Go API/client minimum reconnect backoff |
 | `MT5_BRIDGE_RECONNECT_MAX` | duration | `30s` | Go API/client maximum reconnect backoff |
+
+Exact scheduled open/closed status requires the read-only native MQL5 helper in
+[`bridge/mt5_session`](../bridge/mt5_session/README.md). The Python package does
+not expose `SymbolInfoSessionTrade`; when the helper is missing or stale, the
+API deliberately returns `unknown` instead of inferring a session from tick age.
 
 Bridge regression tests can run without an installed MT5 terminal because they
 stub the `MetaTrader5` module:

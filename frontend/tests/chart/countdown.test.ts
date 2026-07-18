@@ -85,11 +85,21 @@ test("monthly countdown uses real UTC calendar month lengths", () => {
   );
 });
 
-test("a stale candle anchor advances to the next future boundary", () => {
+test("a stale candle anchor does not invent countdowns through a closed session", () => {
   const staleOpen = utc(2026, 7, 15, 6, 47);
   const now = utc(2026, 7, 15, 6, 50, 30);
 
-  assert.equal(nextBarCloseTime("1m", now, staleOpen), utc(2026, 7, 15, 6, 51));
-  assert.equal(secondsUntilBarClose("1m", now, staleOpen), 30);
+  assert.equal(nextBarCloseTime("1m", now, staleOpen), null);
+  assert.equal(secondsUntilBarClose("1m", now, staleOpen), 0);
   assert.equal(secondsUntilBarClose("1m", Number.NaN, staleOpen), 0);
+});
+
+test("the last candle keeps its countdown only until its own close", () => {
+  const barOpen = utc(2026, 7, 17, 20, 55);
+
+  assert.equal(
+    secondsUntilBarClose("5m", utc(2026, 7, 17, 20, 59, 34), barOpen),
+    26,
+  );
+  assert.equal(nextBarCloseTime("5m", utc(2026, 7, 18, 12), barOpen), null);
 });

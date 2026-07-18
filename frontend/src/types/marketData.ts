@@ -22,6 +22,33 @@ export type AssetClass = "crypto" | "forex" | "metal" | "index" | "stock" | "com
 /** WebSocket / feed lifecycle state. */
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "error";
 
+/** Broker-scheduled trading-session state for one canonical symbol. */
+export type MarketSessionState = "open" | "closed" | "unknown";
+
+/**
+ * Normalized dynamic market-session status.
+ *
+ * All timestamps are UNIX seconds. `receivedAt` is captured by the browser and
+ * lets countdown consumers advance from the backend's UTC `observedAt` without
+ * trusting the workstation clock to be perfectly synchronized.
+ */
+export interface MarketSessionStatus {
+  provider: MarketProvider;
+  symbol: string;
+  state: MarketSessionState;
+  scheduledOpen: boolean;
+  reason?: string;
+  sessionOpenAt?: number;
+  sessionCloseAt?: number;
+  nextOpenAt?: number;
+  nextTransitionAt?: number;
+  serverTime: number;
+  observedAt: number;
+  validUntil?: number;
+  source?: string;
+  receivedAt: number;
+}
+
 /** Per-provider connection detail (for the status badge + reconnect logic). */
 export interface ConnectionState {
   provider: MarketProvider;
@@ -132,6 +159,11 @@ export type MarketDataEvent =
       provider: MarketProvider;
       status: ConnectionStatus;
       error?: string;
+    }
+  | {
+      type: "sessions";
+      provider: MarketProvider;
+      sessions: MarketSessionStatus[];
     };
 
 /** Listener used by the service layer to fan events out to the store. */

@@ -131,8 +131,17 @@ right price scale
   positioning of interactive menus.
 
 `PriceChart` passes the latest candle's UTC open timestamp into `useCountdown`.
+For MT5 symbols it also passes the latest authoritative broker-session status.
 The hook updates independently of quote arrival every 250ms, while
 `countdownModel` owns boundary calculation:
+
+- MT5 renders the countdown only while a fresh status is `open`,
+  `scheduledOpen` is true, and its session boundary and TTL are still in the
+  future. `closed`, `unknown`, missing, or expired status hides the countdown
+  row instead of guessing from tick age. The clock advances from the backend's
+  UTC observation using elapsed browser time, so workstation clock skew cannot
+  move the boundary. Providers without an authoritative session feed retain the
+  candle-based fallback.
 
 - `1m` through `1W` advance by their fixed duration from the source candle
   anchor. This preserves the broker's actual daily and weekly session alignment
@@ -140,10 +149,13 @@ The hook updates independently of quote arrival every 250ms, while
 - `1M` advances from the source candle with UTC calendar arithmetic. Do not use
   the approximate `TF_SECONDS["1M"]` value for countdowns because months contain
   28, 29, 30, or 31 days.
-- A stale source candle advances by complete intervals until the first boundary
-  strictly after the current wall clock. The timer never mutates candle data.
+- A real source candle identifies one specific forming bar. Once its boundary
+  has elapsed, the model returns no countdown instead of rolling that candle
+  through empty weekend or closed-session intervals. When no usable candle
+  anchor exists, the normal epoch/week/calendar fallback locates the current
+  bucket. The timer never mutates candle data.
 
-`formatCountdown` floors the remaining whole seconds and renders:
+`formatCountdown` formats the remaining whole-second value and renders:
 
 - `M:SS` below one hour, for example `2:47` or `13:15`;
 - `H:MM:SS` at one hour or above, for example `4:05:06`;

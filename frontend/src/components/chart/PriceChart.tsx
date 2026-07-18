@@ -285,9 +285,17 @@ export function PriceChart({
   const [indicatorLabels, setIndicatorLabels] = useState<ProjectedIndicatorLabel[]>([]);
   const [indicatorDashboards, setIndicatorDashboards] = useState<IndicatorDashboard[]>([]);
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
-  const countdown = useCountdown(timeframe, candles[candles.length - 1]?.time);
+  const marketSymbol = getMarketSymbol(symbol);
+  const sessionStatus = useMarketDataStore(
+    (s) => s.marketSessions[symbol.trim().toUpperCase()],
+  );
+  const countdown = useCountdown(
+    timeframe,
+    candles[candles.length - 1]?.time,
+    marketSymbol?.provider === "mt5" ? sessionStatus ?? null : undefined,
+  );
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
-  const precision = getMarketSymbol(symbol)?.pricePrecision ?? 2;
+  const precision = marketSymbol?.pricePrecision ?? 2;
   const optimizationDecision = getChartOptimizationDecision(candles.length);
   derivedDataEnabledRef.current = optimizationDecision.derivedData;
 
@@ -1300,7 +1308,7 @@ type CurrentPriceMarkerState = {
   y: number;
   price: number;
   color: string;
-  countdown: string;
+  countdown: string | null;
   priceScaleWidth: number;
 };
 
@@ -1381,6 +1389,9 @@ function CurrentPriceMarker({
   symbol: string;
 }) {
   const formattedPrice = fmtPrice(marker.price, precision);
+  const accessibleLabel = marker.countdown
+    ? `${symbol} current price ${formattedPrice}. Next bar in ${marker.countdown}.`
+    : `${symbol} current price ${formattedPrice}.`;
 
   return (
     <div
@@ -1388,14 +1399,16 @@ function CurrentPriceMarker({
       data-price-scale-width={marker.priceScaleWidth}
       data-symbol={symbol}
       role="group"
-      aria-label={`${symbol} current price ${formattedPrice}. Next bar in ${marker.countdown}.`}
+      aria-label={accessibleLabel}
       className="pointer-events-none absolute right-0 z-30 flex flex-col overflow-hidden rounded-l-[3px] border-l border-white/30 font-mono font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
       style={{
         top: marker.y,
         transform: "translateY(-9.5px)",
         width: marker.priceScaleWidth,
       }}
-      title={`${symbol} · ${formattedPrice} · Next bar: ${marker.countdown}`}
+      title={marker.countdown
+        ? `${symbol} · ${formattedPrice} · Next bar: ${marker.countdown}`
+        : `${symbol} · ${formattedPrice}`}
     >
       <div
         data-testid="current-price-value"
@@ -1404,19 +1417,21 @@ function CurrentPriceMarker({
       >
         {formattedPrice}
       </div>
-      <div
-        data-testid="current-price-countdown"
-        data-countdown={marker.countdown}
-        className={`flex h-[15px] items-center justify-end whitespace-nowrap tabular-nums ${
-          marker.countdown.includes("d ") ? "px-1 text-[9px] tracking-[-0.02em]" : "px-1.5 text-[10px]"
-        }`}
-        style={{
-          backgroundColor: marker.color,
-          boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",
-        }}
-      >
-        {marker.countdown}
-      </div>
+      {marker.countdown && (
+        <div
+          data-testid="current-price-countdown"
+          data-countdown={marker.countdown}
+          className={`flex h-[15px] items-center justify-end whitespace-nowrap tabular-nums ${
+            marker.countdown.includes("d ") ? "px-1 text-[9px] tracking-[-0.02em]" : "px-1.5 text-[10px]"
+          }`}
+          style={{
+            backgroundColor: marker.color,
+            boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",
+          }}
+        >
+          {marker.countdown}
+        </div>
+      )}
     </div>
   );
 }

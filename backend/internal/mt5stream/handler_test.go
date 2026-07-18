@@ -11,10 +11,11 @@ import (
 )
 
 type fakeSymbolSource struct {
-	snapshot Snapshot
-	ticks    TickSnapshot
-	history  HistorySnapshot
-	around   HistorySnapshot
+	snapshot     Snapshot
+	ticks        TickSnapshot
+	marketStatus MarketStatusSnapshot
+	history      HistorySnapshot
+	around       HistorySnapshot
 }
 
 func (f fakeSymbolSource) Snapshot() Snapshot {
@@ -23,6 +24,10 @@ func (f fakeSymbolSource) Snapshot() Snapshot {
 
 func (f fakeSymbolSource) Ticks(_ []string) TickSnapshot {
 	return f.ticks
+}
+
+func (f fakeSymbolSource) MarketStatuses(_ []string) MarketStatusSnapshot {
+	return f.marketStatus
 }
 
 func (f fakeSymbolSource) History(_ context.Context, _ string, _ string, _ int, _ int64, _ bool) HistorySnapshot {
@@ -170,6 +175,79 @@ func TestTicksEndpointReturnsLatestTicks(t *testing.T) {
 	}
 	if body.Ticks[0].Symbol != "EURUSD" || body.Ticks[0].Bid == 0 || body.Ticks[0].Ask == 0 {
 		t.Fatalf("unexpected tick: %+v", body.Ticks[0])
+	}
+}
+
+func TestMarketStatusEndpointReturnsSessionSnapshot(t *testing.T) {
+	app := fiber.New()
+	NewHandler(fakeSymbolSource{
+		marketStatus: MarketStatusSnapshot{
+			Connected: true,
+			BridgeURL: "ws://localhost:8765",
+			Source:    "mt5",
+			Sessions: []MarketStatus{
+				{
+					Symbol:           "EURUSD",
+					State:            "closed",
+					ScheduledOpen:    false,
+					Reason:           "outside_trade_session",
+					NextOpenAt:       1_800_100_000,
+					NextTransitionAt: 1_800_100_000,
+					ServerTime:       1_800_000_000,
+					ObservedAt:       1_800_000_001,
+					ValidUntil:       1_800_000_030,
+				},
+			},
+		},
+	}).Register(app.Group("/api/v1"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/mt5/market-status?symbols=eurusd", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+
+	var body MarketStatusSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !body.Connected || len(body.Sessions) != 1 {
+		t.Fatalf("unexpected market-status snapshot: %+v", body)
+	}
+	status := body.Sessions[0]
+	if status.Symbol != "EURUSD" || status.State != "closed" || status.NextOpenAt != 1_800_100_000 {
+		t.Fatalf("unexpected market status: %+v", status)
+	}
+}
+
+func TestMarketStatusEndpointReturnsUnknownWhenSourceMissing(t *testing.T) {
+	app := fiber.New()
+	NewHandler(nil).Register(app.Group("/api/v1"))
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/mt5/market-status?symbols=eurusd,xauusd",
+		nil,
+	)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+
+	var body MarketStatusSnapshot
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Connected || body.LastError == "" || len(body.Sessions) != 2 {
+		t.Fatalf("unexpected unavailable snapshot: %+v", body)
+	}
+	for _, status := range body.Sessions {
+		if status.State != "unknown" || status.Reason != "service_unavailable" {
+			t.Fatalf("unavailable status claimed a market state: %+v", status)
+		}
 	}
 }
 

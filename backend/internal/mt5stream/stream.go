@@ -1,6 +1,7 @@
 package mt5stream
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -11,14 +12,15 @@ const tickStreamBuffer = 1024
 // quotes. REST /ticks remains a point-in-time snapshot API; this stream is the
 // push path used by watchlists and chart price labels.
 type TickStreamMessage struct {
-	Type      string    `json:"type"`
-	Connected bool      `json:"connected,omitempty"`
-	Source    string    `json:"source,omitempty"`
-	Symbols   []string  `json:"symbols,omitempty"`
-	Ticks     []Tick    `json:"ticks,omitempty"`
-	Tick      *Tick     `json:"tick,omitempty"`
-	UpdatedAt time.Time `json:"updatedAt,omitempty"`
-	LastError string    `json:"lastError,omitempty"`
+	Type      string         `json:"type"`
+	Connected bool           `json:"connected,omitempty"`
+	Source    string         `json:"source,omitempty"`
+	Symbols   []string       `json:"symbols,omitempty"`
+	Ticks     []Tick         `json:"ticks,omitempty"`
+	Tick      *Tick          `json:"tick,omitempty"`
+	Sessions  []MarketStatus `json:"sessions,omitempty"`
+	UpdatedAt time.Time      `json:"updatedAt,omitempty"`
+	LastError string         `json:"lastError,omitempty"`
 }
 
 // TickSubscriber is one browser WebSocket client. It owns its symbol filter and
@@ -85,6 +87,43 @@ func (s *Service) broadcastStreamStatus(message string) {
 	}
 }
 
+// broadcastUnknownMarketStatuses invalidates the browser's last known session
+// state when the bridge disappears. The service cache is cleared at the same
+// transition, so reconnecting cannot accidentally revive a stale open/closed
+// observation before the bridge sends a fresh market_status message.
+func (s *Service) broadcastUnknownMarketStatuses() {
+	s.mu.RLock()
+	subscribers := make([]*TickSubscriber, 0, len(s.subscribers))
+	for _, subscriber := range s.subscribers {
+		subscribers = append(subscribers, subscriber)
+	}
+	source := firstNonEmpty(s.marketStatusSource, "mt5-mql5-session")
+	updatedAt := s.updatedAt
+	lastErr := s.lastErr
+	s.mu.RUnlock()
+
+	for _, subscriber := range subscribers {
+		symbols := subscriber.symbolSnapshot()
+		if len(symbols) == 0 {
+			continue
+		}
+		sessions := make([]MarketStatus, 0, len(symbols))
+		for _, symbol := range symbols {
+			status := unknownMarketStatus(symbol, "bridge_disconnected")
+			status.Source = source
+			sessions = append(sessions, status)
+		}
+		subscriber.enqueue(TickStreamMessage{
+			Type:      "market_status",
+			Connected: false,
+			Source:    source,
+			Sessions:  sessions,
+			UpdatedAt: updatedAt,
+			LastError: lastErr,
+		})
+	}
+}
+
 func (s *TickSubscriber) Messages() <-chan TickStreamMessage {
 	return s.send
 }
@@ -114,14 +153,16 @@ func (s *TickSubscriber) Subscribe(symbols []string) {
 	s.mu.Unlock()
 
 	snapshot := s.service.Ticks(normalized)
+	marketStatus := s.service.MarketStatuses(normalized)
 	s.enqueue(TickStreamMessage{
 		Type:      "snapshot",
 		Connected: snapshot.Connected,
 		Source:    snapshot.Source,
 		Symbols:   normalized,
 		Ticks:     snapshot.Ticks,
+		Sessions:  marketStatus.Sessions,
 		UpdatedAt: snapshot.UpdatedAt,
-		LastError: snapshot.LastError,
+		LastError: firstNonEmpty(snapshot.LastError, marketStatus.LastError),
 	})
 }
 
@@ -160,14 +201,16 @@ func (s *TickSubscriber) SetSymbols(symbols []string) {
 
 	s.service.ensureStreamSymbols(normalized)
 	snapshot := s.service.Ticks(normalized)
+	marketStatus := s.service.MarketStatuses(normalized)
 	s.enqueue(TickStreamMessage{
 		Type:      "snapshot",
 		Connected: snapshot.Connected,
 		Source:    snapshot.Source,
 		Symbols:   normalized,
 		Ticks:     snapshot.Ticks,
+		Sessions:  marketStatus.Sessions,
 		UpdatedAt: snapshot.UpdatedAt,
-		LastError: snapshot.LastError,
+		LastError: firstNonEmpty(snapshot.LastError, marketStatus.LastError),
 	})
 }
 
@@ -176,6 +219,17 @@ func (s *TickSubscriber) matches(symbol string) bool {
 	_, ok := s.symbols[symbol]
 	s.mu.RUnlock()
 	return ok
+}
+
+func (s *TickSubscriber) symbolSnapshot() []string {
+	s.mu.RLock()
+	symbols := make([]string, 0, len(s.symbols))
+	for symbol := range s.symbols {
+		symbols = append(symbols, symbol)
+	}
+	s.mu.RUnlock()
+	sort.Strings(symbols)
+	return symbols
 }
 
 func (s *TickSubscriber) enqueue(message TickStreamMessage) {

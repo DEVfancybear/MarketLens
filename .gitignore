@@ -37,6 +37,7 @@ npm-debug.log*
 # Go
 backend/vendor/
 .gocache/
+.gotmp/
 *.exe
 *.exe~
 *.dll
@@ -44,5 +45,7 @@ backend/vendor/
 *.dylib
 *.test
 *.out
+*.ex5
+*.compile.log
 go.work
 go.work.sum

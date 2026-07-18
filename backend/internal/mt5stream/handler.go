@@ -27,6 +27,10 @@ type TickHistorySource interface {
 	TicksSince(symbols []string, sinceMS int64) TickSnapshot
 }
 
+type MarketStatusSource interface {
+	MarketStatuses(symbols []string) MarketStatusSnapshot
+}
+
 type Handler struct {
 	source SymbolSource
 }
@@ -39,6 +43,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g := router.Group("/mt5")
 	g.Get("/symbols", h.symbols)
 	g.Get("/ticks", h.ticks)
+	g.Get("/market-status", h.marketStatus)
 	g.Get("/history/around", h.historyAround)
 	g.Get("/history", h.history)
 	g.Use("/stream", func(c *fiber.Ctx) error {
@@ -129,6 +134,43 @@ func (h *Handler) ticks(c *fiber.Ctx) error {
 		snapshot.Ticks = []Tick{}
 	}
 	return c.JSON(snapshot)
+}
+
+func (h *Handler) marketStatus(c *fiber.Ctx) error {
+	symbols := parseSymbolsQuery(c.Query("symbols"))
+	if h == nil || h.source == nil {
+		return c.JSON(unavailableMarketStatusSnapshot(
+			symbols,
+			"MT5 market-status service is not configured",
+		))
+	}
+	source, ok := h.source.(MarketStatusSource)
+	if !ok {
+		return c.JSON(unavailableMarketStatusSnapshot(
+			symbols,
+			"MT5 market-status service is not configured",
+		))
+	}
+
+	snapshot := source.MarketStatuses(symbols)
+	if snapshot.Sessions == nil {
+		snapshot.Sessions = []MarketStatus{}
+	}
+	return c.JSON(snapshot)
+}
+
+func unavailableMarketStatusSnapshot(symbols []string, message string) MarketStatusSnapshot {
+	normalized := normalizeSymbols(symbols)
+	sessions := make([]MarketStatus, 0, len(normalized))
+	for _, symbol := range normalized {
+		sessions = append(sessions, unknownMarketStatus(symbol, "service_unavailable"))
+	}
+	return MarketStatusSnapshot{
+		Connected: false,
+		Source:    "mt5",
+		Sessions:  sessions,
+		LastError: message,
+	}
 }
 
 func (h *Handler) history(c *fiber.Ctx) error {

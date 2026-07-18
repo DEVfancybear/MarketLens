@@ -25,6 +25,15 @@ function nextFixedBoundary(
 ): number {
   const span = TF_SECONDS[timeframe];
   const anchor = fixedTimeframeAnchor(timeframe, nowSeconds, barOpenTime);
+
+  // A real candle anchor identifies one specific forming bar. Do not roll a
+  // stale Friday/session-close candle forward through empty wall-clock buckets:
+  // that makes the countdown keep running while the market is closed. With no
+  // candle yet, the epoch/week fallback can still locate the current bucket.
+  if (isUsableBarOpen(barOpenTime, nowSeconds)) {
+    return anchor + span;
+  }
+
   const elapsed = Math.max(0, nowSeconds - anchor);
   const completedBars = Math.floor(elapsed / span);
   return anchor + (completedBars + 1) * span;
@@ -56,6 +65,9 @@ function nextMonthlyBoundary(
   const anchor = isUsableBarOpen(barOpenTime, nowSeconds)
     ? Math.floor(barOpenTime)
     : fallback;
+  if (isUsableBarOpen(barOpenTime, nowSeconds)) {
+    return addUtcMonths(anchor, 1);
+  }
   const anchorDate = new Date(anchor * 1000);
   let monthOffset = Math.max(
     1,
@@ -80,9 +92,10 @@ export function nextBarCloseTime(
   barOpenTime?: number | null,
 ): number | null {
   if (!Number.isFinite(nowSeconds) || nowSeconds < 0) return null;
-  return timeframe === "1M"
+  const boundary = timeframe === "1M"
     ? nextMonthlyBoundary(nowSeconds, barOpenTime)
     : nextFixedBoundary(timeframe, nowSeconds, barOpenTime);
+  return boundary > nowSeconds ? boundary : null;
 }
 
 /** Return whole seconds until the next formal bar close. */

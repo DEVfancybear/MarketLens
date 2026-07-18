@@ -337,6 +337,7 @@ Python sidecar directly.
 | Go API | `GET /api/v1/mt5/symbols` | Returns the latest MT5 symbol catalog cached from the Python bridge |
 | Go API WebSocket | `GET /api/v1/mt5/stream` | Browser-facing realtime quote stream; clients send subscribe messages and receive pushed ticks |
 | Go API | `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` | One-off latest cached tick snapshot/debug endpoint; also requests on-demand streaming for requested catalog symbols |
+| Go API | `GET /api/v1/mt5/market-status?symbols=EURUSD,GBPUSD` | Returns cached broker-native scheduled session status; missing or expired helper data is `unknown` |
 | Go API | `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500&refresh=true` | Returns MT5 OHLC candles; `refresh=true` performs a synchronous cache read-through |
 | Go API | `GET /api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&time=1782345600&limit=600` | Returns bounded context around a Go-to timestamp plus explicit `requestedTime` and first tradable `resolvedTime` |
 
@@ -446,6 +447,46 @@ After the catalog, the Python bridge immediately sends the current tick snapshot
 stream symbol. This avoids blank watchlist rows for low-frequency symbols whose `time_msc` may not
 change for a while after the Go backend reconnects.
 
+The bridge then sends a `market_status` snapshot sourced from the read-only MQL5
+helper. Unlike static `trade_mode` metadata or tick-age heuristics, this status
+uses the broker's native `SymbolInfoSessionTrade` windows and expires quickly:
+
+```json
+{
+  "type": "market_status",
+  "source": "mt5-mql5-session",
+  "statuses": [
+    {
+      "symbol": "EURUSD",
+      "state": "closed",
+      "scheduled_open": false,
+      "reason": "outside_trade_session",
+      "session_open_at": 0,
+      "session_close_at": 0,
+      "next_open_at": 1784581200,
+      "next_transition_at": 1784581200,
+      "server_time": 1784491200,
+      "observed_at": 1784491200,
+      "valid_until": 1784491215
+    }
+  ]
+}
+```
+
+The Python package itself cannot call `SymbolInfoSessionTrade`. Install
+`backend/bridge/mt5_session/TradingSessionBridge.mq5` to provide that read-only
+local IPC feed. If the helper, terminal, or bridge heartbeat is unavailable,
+the state is `unknown`; the system never turns an old tick into a false `closed`
+or keeps an expired `open` alive.
+
+`server_time`/`serverTime` and `observed_at`/`observedAt` are UTC heartbeat
+reference seconds. The helper evaluates weekly windows with broker server time
+and converts the resolved boundaries to UTC. Future boundaries are refreshed
+continuously and may adjust when the broker changes its server UTC/DST offset.
+This is exact for the broker's configured scheduled sessions and contract life,
+not a guarantee that an order will be accepted during a holiday, emergency
+halt, or unscheduled maintenance window.
+
 Tick payload:
 
 ```json
@@ -518,6 +559,33 @@ Latest tick API response:
 }
 ```
 
+Market-status API response:
+
+```json
+{
+  "connected": true,
+  "bridgeUrl": "ws://localhost:8765",
+  "source": "mt5-mql5-session",
+  "sessions": [
+    {
+      "symbol": "EURUSD",
+      "source": "mt5-mql5-session",
+      "state": "closed",
+      "scheduledOpen": false,
+      "reason": "outside_trade_session",
+      "sessionOpenAt": 0,
+      "sessionCloseAt": 0,
+      "nextOpenAt": 1784581200,
+      "nextTransitionAt": 1784581200,
+      "serverTime": 1784491200,
+      "observedAt": 1784491200,
+      "validUntil": 1784491215
+    }
+  ],
+  "updatedAt": "2026-07-19T00:00:00Z"
+}
+```
+
 Browser realtime quote stream:
 
 ```json
@@ -539,6 +607,22 @@ Browser realtime quote stream:
   "ticks": [
     { "type": "tick", "source": "mt5", "symbol": "EURUSD", "bid": 1.08425, "ask": 1.08437, "timestamp": 1760000000 }
   ],
+  "sessions": [
+    {
+      "symbol": "EURUSD",
+      "source": "mt5-mql5-session",
+      "state": "open",
+      "scheduledOpen": true,
+      "reason": "within_trade_session",
+      "sessionOpenAt": 1759946400,
+      "sessionCloseAt": 1760032800,
+      "nextOpenAt": 1760119200,
+      "nextTransitionAt": 1760032800,
+      "serverTime": 1760000000,
+      "observedAt": 1760000000,
+      "validUntil": 1760000015
+    }
+  ],
   "updatedAt": "2026-07-07T12:00:00Z"
 }
 
@@ -549,6 +633,30 @@ Browser realtime quote stream:
   "source": "mt5",
   "tick": { "type": "tick", "source": "mt5", "symbol": "EURUSD", "bid": 1.08426, "ask": 1.08438, "timestamp": 1760000001 },
   "updatedAt": "2026-07-07T12:00:01Z"
+}
+
+// server -> client (session transition or helper heartbeat)
+{
+  "type": "market_status",
+  "connected": true,
+  "source": "mt5-mql5-session",
+  "sessions": [
+    {
+      "symbol": "EURUSD",
+      "source": "mt5-mql5-session",
+      "state": "closed",
+      "scheduledOpen": false,
+      "reason": "outside_trade_session",
+      "sessionOpenAt": 0,
+      "sessionCloseAt": 0,
+      "nextOpenAt": 1760202000,
+      "nextTransitionAt": 1760202000,
+      "serverTime": 1760032800,
+      "observedAt": 1760032800,
+      "validUntil": 1760032815
+    }
+  ],
+  "updatedAt": "2026-07-07T21:20:00Z"
 }
 ```
 

@@ -22,6 +22,7 @@ import {
   isOrderedMt5Tick,
   mt5ChartPrice,
 } from "@/services/market-data/mt5Price";
+import { normalizeMt5MarketSessions } from "@/services/market-data/mt5SessionStatus";
 import type { MarketDataServiceBinding } from "@/store/marketDataStore";
 import { SymbolSubscriptionRegistry } from "../subscriptionRegistry";
 
@@ -36,12 +37,13 @@ type Mt5StreamTick = {
 };
 
 type Mt5StreamMessage = {
-  type?: "status" | "snapshot" | "tick" | "error";
+  type?: "status" | "snapshot" | "tick" | "market_status" | "error";
   connected?: boolean;
   source?: string;
   symbols?: string[];
   ticks?: Mt5StreamTick[];
   tick?: Mt5StreamTick;
+  sessions?: unknown[];
   updatedAt?: string;
   lastError?: string;
 };
@@ -175,12 +177,18 @@ export class Mt5Provider implements MarketDataServiceBinding {
       return;
     }
 
+    if (message.type === "market_status") {
+      this.emitSessions(message.sessions, message.source);
+      return;
+    }
+
     if (message.type === "snapshot") {
       if (message.connected === false) {
         this.emitStatus("reconnecting", message.lastError);
       } else {
         this.emitStatus("connected");
       }
+      this.emitSessions(message.sessions, message.source);
       for (const tick of message.ticks ?? []) {
         const event = this.normalizeTick(tick);
         if (event) this.emit(event);
@@ -260,6 +268,12 @@ export class Mt5Provider implements MarketDataServiceBinding {
 
   private emit(event: MarketDataEvent) {
     this.listener?.(event);
+  }
+
+  private emitSessions(raw: unknown, source?: string) {
+    const sessions = normalizeMt5MarketSessions(raw, Date.now() / 1000, source);
+    if (sessions.length === 0) return;
+    this.emit({ type: "sessions", provider: this.name, sessions });
   }
 
   private emitStatus(status: StatusValue, error?: string) {

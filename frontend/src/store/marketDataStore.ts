@@ -16,6 +16,7 @@ import {
   type MarketCandle,
   type MarketChannel,
   type MarketQuote,
+  type MarketSessionStatus,
   type DrawingDataTick,
   type MarketSubscription,
   type SubscriptionKey,
@@ -46,6 +47,10 @@ import {
   measuredCumulativeVolumeDelta,
   normalizedCumulativeVolume,
 } from "@/services/market-data/quoteVolume";
+import {
+  clearMarketSessionsByProvider,
+  mergeMarketSessionStatuses,
+} from "@/services/market-data/mt5SessionStatus";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 export const MAX_CANDLES_PER_SERIES = 5000;
@@ -81,6 +86,7 @@ export const candleRepositoriesAtom = atom<Record<SubscriptionKey, CandleReposit
 export const selectedSymbolAtom = atom<string>(DEFAULT_SYMBOL);
 export const selectedTimeframeAtom = atom<Timeframe>(DEFAULT_TIMEFRAME);
 export const connectionStatusAtom = atom<ConnectionStatus>("disconnected");
+export const marketSessionsAtom = atom<Record<string, MarketSessionStatus>>({});
 export const subscriptionsAtom = atom<
   Record<SubscriptionKey, MarketSubscription>
 >({});
@@ -436,12 +442,43 @@ export const setConnectionStatusAtom = atom(
   },
 );
 
+export const setMarketSessionsAtom = atom(
+  null,
+  (get, set, sessions: MarketSessionStatus[]) => {
+    const current = get(marketSessionsAtom);
+    const next = mergeMarketSessionStatuses(current, sessions);
+    if (next !== current) set(marketSessionsAtom, next);
+  },
+);
+
+export const clearMarketSessionsAtom = atom(
+  null,
+  (get, set, provider: MarketSessionStatus["provider"]) => {
+    const current = get(marketSessionsAtom);
+    const next = clearMarketSessionsByProvider(current, provider);
+    if (next !== current) set(marketSessionsAtom, next);
+  },
+);
+
+export const clearMarketSessionAtom = atom(
+  null,
+  (get, set, symbol: string) => {
+    const key = symbol.trim().toUpperCase();
+    const current = get(marketSessionsAtom);
+    if (!key || !current[key]) return;
+    const next = { ...current };
+    delete next[key];
+    set(marketSessionsAtom, next);
+  },
+);
+
 export const resetAtom = atom(null, (_get, set) => {
   recentMarketTicks.clear();
   recentMarketQuoteVolumes.clear();
   set(quotesAtom, {});
   set(candlesAtom, {});
   set(candleRepositoriesAtom, {});
+  set(marketSessionsAtom, {});
   set(subscriptionsAtom, {});
   set(subRefsAtom, {});
   set(connectionStatusAtom, "disconnected");
@@ -456,6 +493,7 @@ interface MarketDataState {
   selectedSymbol: string;
   selectedTimeframe: Timeframe;
   connectionStatus: ConnectionStatus;
+  marketSessions: Record<string, MarketSessionStatus>;
   subscriptions: Record<SubscriptionKey, MarketSubscription>;
   subRefs: Record<SubscriptionKey, number>;
   lastUpdate: number;
@@ -486,6 +524,9 @@ export interface MarketDataActions {
     candles: MarketCandle[],
   ) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
+  setMarketSessions: (sessions: MarketSessionStatus[]) => void;
+  clearMarketSessions: (provider: MarketSessionStatus["provider"]) => void;
+  clearMarketSession: (symbol: string) => void;
   getCandles: (symbol?: string, timeframe?: Timeframe) => MarketCandle[];
   getQuote: (symbol: string) => MarketQuote | undefined;
   reset: () => void;
@@ -499,6 +540,7 @@ const marketDataStateAtom = atom<MarketDataState>((get) => ({
   selectedSymbol: get(selectedSymbolAtom),
   selectedTimeframe: get(selectedTimeframeAtom),
   connectionStatus: get(connectionStatusAtom),
+  marketSessions: get(marketSessionsAtom),
   subscriptions: get(subscriptionsAtom),
   subRefs: get(subRefsAtom),
   lastUpdate: get(lastUpdateAtom),
@@ -526,6 +568,9 @@ const marketDataCombinedAtom = atom<MarketDataStoreInterface>((get) => {
     replaceCandles: (symbol, timeframe, candles) =>
       store.set(setCandlesAtom, symbol, timeframe, candles, "replace"),
     setConnectionStatus: (status) => store.set(setConnectionStatusAtom, status),
+    setMarketSessions: (sessions) => store.set(setMarketSessionsAtom, sessions),
+    clearMarketSessions: (provider) => store.set(clearMarketSessionsAtom, provider),
+    clearMarketSession: (symbol) => store.set(clearMarketSessionAtom, symbol),
     getCandles: (symbol, timeframe) => {
       const s = store.get(marketDataStateAtom);
       const key = subscriptionKey(

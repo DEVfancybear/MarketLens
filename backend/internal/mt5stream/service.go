@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,29 +46,31 @@ type Config struct {
 type Service struct {
 	cfg Config
 
-	mu             sync.RWMutex
-	connected      bool
-	source         string
-	count          int
-	streamSymbols  []string
-	symbols        []Symbol
-	ticks          map[string]Tick
-	tickHistory    map[string][]Tick
-	history        map[string][]Candle
-	conn           *websocket.Conn
-	writeMu        sync.Mutex
-	pendingHistory map[string]chan HistoryMessage
-	historyFlights map[string]*historyFlight
-	historySlots   chan struct{}
-	pendingStream  map[string]time.Time
-	subscribers    map[uint64]*TickSubscriber
-	nextSubscriber uint64
-	updatedAt      time.Time
-	lastErr        string
-	startOnce      sync.Once
-	reconnectMin   time.Duration
-	reconnectMax   time.Duration
-	readLimitBytes int64
+	mu                 sync.RWMutex
+	connected          bool
+	source             string
+	marketStatusSource string
+	count              int
+	streamSymbols      []string
+	symbols            []Symbol
+	ticks              map[string]Tick
+	tickHistory        map[string][]Tick
+	marketStatuses     map[string]MarketStatus
+	history            map[string][]Candle
+	conn               *websocket.Conn
+	writeMu            sync.Mutex
+	pendingHistory     map[string]chan HistoryMessage
+	historyFlights     map[string]*historyFlight
+	historySlots       chan struct{}
+	pendingStream      map[string]time.Time
+	subscribers        map[uint64]*TickSubscriber
+	nextSubscriber     uint64
+	updatedAt          time.Time
+	lastErr            string
+	startOnce          sync.Once
+	reconnectMin       time.Duration
+	reconnectMax       time.Duration
+	readLimitBytes     int64
 }
 
 type historyFlight struct {
@@ -92,19 +95,21 @@ func NewService(cfg Config) *Service {
 		readLimit = 8 * 1024 * 1024
 	}
 	return &Service{
-		cfg:            cfg,
-		reconnectMin:   reconnectMin,
-		reconnectMax:   reconnectMax,
-		readLimitBytes: readLimit,
-		source:         "mt5",
-		ticks:          make(map[string]Tick),
-		tickHistory:    make(map[string][]Tick),
-		history:        make(map[string][]Candle),
-		pendingHistory: make(map[string]chan HistoryMessage),
-		historyFlights: make(map[string]*historyFlight),
-		historySlots:   make(chan struct{}, defaultHistoryConcurrency),
-		pendingStream:  make(map[string]time.Time),
-		subscribers:    make(map[uint64]*TickSubscriber),
+		cfg:                cfg,
+		reconnectMin:       reconnectMin,
+		reconnectMax:       reconnectMax,
+		readLimitBytes:     readLimit,
+		source:             "mt5",
+		marketStatusSource: "mt5-mql5-session",
+		ticks:              make(map[string]Tick),
+		tickHistory:        make(map[string][]Tick),
+		marketStatuses:     make(map[string]MarketStatus),
+		history:            make(map[string][]Candle),
+		pendingHistory:     make(map[string]chan HistoryMessage),
+		historyFlights:     make(map[string]*historyFlight),
+		historySlots:       make(chan struct{}, defaultHistoryConcurrency),
+		pendingStream:      make(map[string]time.Time),
+		subscribers:        make(map[uint64]*TickSubscriber),
 	}
 }
 
@@ -210,6 +215,62 @@ func (s *Service) TicksSince(symbols []string, sinceMS int64) TickSnapshot {
 		Ticks:     ticks,
 		UpdatedAt: s.updatedAt,
 		LastError: s.lastErr,
+	}
+}
+
+// MarketStatuses returns the latest broker-provided session observations. The
+// method is cache-only: requesting a symbol may ask the bridge to start
+// streaming it, but the HTTP response never blocks waiting for MT5. Until an
+// observation arrives, and whenever the bridge is disconnected or an
+// observation expires, the state is explicitly unknown.
+func (s *Service) MarketStatuses(symbols []string) MarketStatusSnapshot {
+	requestedAll := len(symbols) == 0
+	requested := normalizeSymbols(symbols)
+	if len(requested) > 0 {
+		s.ensureStreamSymbols(requested)
+	}
+
+	s.mu.RLock()
+	connected := s.connected
+	source := firstNonEmpty(s.marketStatusSource, "mt5-mql5-session")
+	updatedAt := s.updatedAt
+	lastErr := s.lastErr
+	now := time.Now().UTC().Unix()
+
+	if requestedAll {
+		requested = make([]string, 0, len(s.marketStatuses))
+		for symbol := range s.marketStatuses {
+			requested = append(requested, symbol)
+		}
+		sort.Strings(requested)
+	}
+
+	sessions := make([]MarketStatus, 0, len(requested))
+	for _, symbol := range requested {
+		status, ok := s.marketStatuses[symbol]
+		if !ok {
+			reason := "status_missing"
+			if !connected {
+				reason = "bridge_disconnected"
+			}
+			status = unknownMarketStatus(symbol, reason)
+		} else {
+			status = marketStatusForSnapshot(status, connected, now)
+		}
+		if status.Source == "" {
+			status.Source = source
+		}
+		sessions = append(sessions, status)
+	}
+	s.mu.RUnlock()
+
+	return MarketStatusSnapshot{
+		Connected: connected,
+		BridgeURL: s.cfg.BridgeURL,
+		Source:    source,
+		Sessions:  sessions,
+		UpdatedAt: updatedAt,
+		LastError: lastErr,
 	}
 }
 
@@ -513,6 +574,12 @@ func (s *Service) readLoop(ctx context.Context, conn *websocket.Conn) error {
 				return fmt.Errorf("decode MT5 history: %w", err)
 			}
 			s.applyHistory(history)
+		case "market_status":
+			var status bridgeMarketStatusMessage
+			if err := json.Unmarshal(payload, &status); err != nil {
+				return fmt.Errorf("decode MT5 market status: %w", err)
+			}
+			s.applyMarketStatuses(status)
 		default:
 			log.Debug().Str("type", header.Type).Msg("ignored MT5 bridge message")
 		}
@@ -593,6 +660,65 @@ func (s *Service) applyTick(tick Tick) {
 	}
 	for _, subscriber := range subscribers {
 		subscriber.enqueue(message)
+	}
+}
+
+func (s *Service) applyMarketStatuses(message bridgeMarketStatusMessage) {
+	source := firstNonEmpty(message.Source, "mt5-mql5-session")
+	sessions := make([]MarketStatus, 0, len(message.Statuses))
+	for _, item := range message.Statuses {
+		status := normalizeMarketStatus(item.public())
+		if status.Symbol == "" {
+			continue
+		}
+		status.Source = source
+		sessions = append(sessions, status)
+	}
+
+	updatedAt := time.Now().UTC()
+	s.mu.Lock()
+	s.connected = true
+	s.lastErr = ""
+	accepted := sessions[:0]
+	for _, status := range sessions {
+		current, exists := s.marketStatuses[status.Symbol]
+		if exists && marketStatusIsOlder(status, current) {
+			continue
+		}
+		s.marketStatuses[status.Symbol] = status
+		accepted = append(accepted, status)
+	}
+	sessions = accepted
+	if len(sessions) > 0 {
+		s.marketStatusSource = source
+	}
+	s.updatedAt = updatedAt
+	subscribers := make([]*TickSubscriber, 0, len(s.subscribers))
+	for _, subscriber := range s.subscribers {
+		subscribers = append(subscribers, subscriber)
+	}
+	s.mu.Unlock()
+
+	if len(sessions) == 0 {
+		return
+	}
+	for _, subscriber := range subscribers {
+		filtered := make([]MarketStatus, 0, len(sessions))
+		for _, status := range sessions {
+			if subscriber.matches(status.Symbol) {
+				filtered = append(filtered, status)
+			}
+		}
+		if len(filtered) == 0 {
+			continue
+		}
+		subscriber.enqueue(TickStreamMessage{
+			Type:      "market_status",
+			Connected: true,
+			Source:    source,
+			Sessions:  filtered,
+			UpdatedAt: updatedAt,
+		})
 	}
 }
 
@@ -987,6 +1113,88 @@ func normalizeSymbol(symbol string) string {
 	return string(b)
 }
 
+func normalizeMarketStatus(status MarketStatus) MarketStatus {
+	status.Symbol = normalizeSymbol(status.Symbol)
+	switch strings.ToLower(strings.TrimSpace(status.State)) {
+	case "open":
+		status.State = "open"
+	case "closed":
+		status.State = "closed"
+	case "unknown":
+		status.State = "unknown"
+	default:
+		status.State = "unknown"
+		if strings.TrimSpace(status.Reason) == "" {
+			status.Reason = "invalid_status"
+		}
+	}
+	status.Reason = strings.TrimSpace(status.Reason)
+	if status.State == "unknown" && status.Reason == "" {
+		status.Reason = "status_unknown"
+	}
+	if status.State == "unknown" {
+		status.ScheduledOpen = false
+	}
+	status.SessionOpenAt = nonNegativeTimestamp(status.SessionOpenAt)
+	status.SessionCloseAt = nonNegativeTimestamp(status.SessionCloseAt)
+	status.NextOpenAt = nonNegativeTimestamp(status.NextOpenAt)
+	status.NextTransitionAt = nonNegativeTimestamp(status.NextTransitionAt)
+	status.ServerTime = nonNegativeTimestamp(status.ServerTime)
+	status.ObservedAt = nonNegativeTimestamp(status.ObservedAt)
+	status.ValidUntil = nonNegativeTimestamp(status.ValidUntil)
+	return status
+}
+
+func marketStatusIsOlder(incoming, current MarketStatus) bool {
+	// A zero-clock unknown is an explicit invalidation emitted when the
+	// authoritative helper/bridge disappears. It must replace a cached open even
+	// if the browser or another process has a skewed wall clock.
+	if incoming.State == "unknown" && incoming.ObservedAt == 0 && incoming.ServerTime == 0 {
+		return false
+	}
+	if incoming.ObservedAt != current.ObservedAt {
+		return incoming.ObservedAt < current.ObservedAt
+	}
+	return incoming.ServerTime < current.ServerTime
+}
+
+func marketStatusForSnapshot(status MarketStatus, connected bool, now int64) MarketStatus {
+	if !connected {
+		status.State = "unknown"
+		status.ScheduledOpen = false
+		status.Reason = "bridge_disconnected"
+		return status
+	}
+	if status.ValidUntil > 0 && now >= status.ValidUntil {
+		status.State = "unknown"
+		status.ScheduledOpen = false
+		status.Reason = "status_expired"
+	} else if status.NextTransitionAt > 0 && now >= status.NextTransitionAt {
+		status.State = "unknown"
+		status.ScheduledOpen = false
+		status.Reason = "status_transition_elapsed"
+	} else if status.State == "unknown" {
+		status.ScheduledOpen = false
+	}
+	return status
+}
+
+func unknownMarketStatus(symbol, reason string) MarketStatus {
+	return MarketStatus{
+		Symbol: normalizeSymbol(symbol),
+		Source: "mt5-mql5-session",
+		State:  "unknown",
+		Reason: reason,
+	}
+}
+
+func nonNegativeTimestamp(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
 func normalizeTimeframe(timeframe string) string {
 	switch timeframe {
 	case "1m", "3m", "5m", "15m", "30m", "1H", "2H", "4H", "1D", "1W", "1M":
@@ -1114,17 +1322,23 @@ func (s *Service) setDisconnected(message string) {
 	s.mu.Lock()
 	s.connected = false
 	s.lastErr = message
+	s.marketStatuses = make(map[string]MarketStatus)
+	s.updatedAt = time.Now().UTC()
 	log.Warn().Str("bridge", s.cfg.BridgeURL).Msg(message)
 	s.mu.Unlock()
 	s.broadcastStreamStatus(message)
+	s.broadcastUnknownMarketStatuses()
 }
 
 func (s *Service) setError(message string) {
 	s.mu.Lock()
 	s.connected = false
 	s.lastErr = message
+	s.marketStatuses = make(map[string]MarketStatus)
+	s.updatedAt = time.Now().UTC()
 	s.mu.Unlock()
 	s.broadcastStreamStatus(message)
+	s.broadcastUnknownMarketStatuses()
 }
 
 func (s *Service) nextBackoff(current time.Duration) time.Duration {

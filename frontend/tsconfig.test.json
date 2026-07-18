@@ -55,6 +55,7 @@
     "src/services/chartPerformanceProbe.ts",
     "src/services/market-data/symbols.ts",
     "src/services/market-data/mt5Price.ts",
+    "src/services/market-data/mt5SessionStatus.ts",
     "src/services/market-data/historyPolicy.ts",
     "src/services/market-data/candleRepository.ts",
     "src/services/market-data/subscriptionRegistry.ts",

@@ -47,10 +47,23 @@ python -m pip install -r bridge/mt5_stream/requirements.txt
 | `MT5_LOGIN` | empty | Optional MT5 account login |
 | `MT5_PASSWORD` | empty | Optional MT5 account password |
 | `MT5_SERVER` | empty | Optional MT5 broker server name |
+| `MT5_MARKET_STATUS_FILE` | auto-discovered | Optional override for the native MQL5 helper JSON path |
+| `MT5_MARKET_STATUS_POLL_MS` | `1000` | Poll interval for local helper IPC |
+| `MT5_MARKET_STATUS_MAX_AGE_SECONDS` | `20` | Heartbeat TTL before session state becomes `unknown` |
 | `MT5_STREAM_LOG_LEVEL` | `INFO` | Python logging level |
 
 If one of `MT5_LOGIN`, `MT5_PASSWORD`, or `MT5_SERVER` is set, all three must be set. If none are set,
 the bridge uses the account already active in the local MT5 terminal.
+
+### Exact scheduled broker session status
+
+Install the read-only helper under [`../mt5_session`](../mt5_session/README.md)
+to expose `SymbolInfoSessionTrade` schedules. The bridge forwards its expiring
+`open`, `closed`, or `unknown` observations to Go as `market_status` messages.
+No order is sent as a market probe. Missing/expired helper data always produces
+`unknown`, so a stale terminal cannot leave the frontend countdown running.
+The feed represents the broker's configured weekly sessions and contract life;
+holiday closures, emergency halts, and unscheduled maintenance can still differ.
 
 The bridge always sends the full MT5 symbol catalog to every Go client on connect, then immediately
 sends the current tick snapshot for every active stream symbol before waiting for new ticks. This is

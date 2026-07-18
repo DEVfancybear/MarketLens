@@ -68,6 +68,76 @@ type TickSnapshot struct {
 	LastError string    `json:"lastError,omitempty"`
 }
 
+// MarketStatus is the browser-facing, per-symbol trading-session state. The
+// Python bridge receives the broker schedule from its native MQL5 helper and
+// sends snake_case fields; the API exposes the same data using the existing
+// camelCase HTTP/WebSocket convention. All timestamps are UTC Unix seconds;
+// ServerTime is the helper heartbeat reference, not broker-local wall time.
+type MarketStatus struct {
+	Symbol           string `json:"symbol"`
+	Source           string `json:"source,omitempty"`
+	State            string `json:"state"`
+	ScheduledOpen    bool   `json:"scheduledOpen"`
+	Reason           string `json:"reason"`
+	SessionOpenAt    int64  `json:"sessionOpenAt"`
+	SessionCloseAt   int64  `json:"sessionCloseAt"`
+	NextOpenAt       int64  `json:"nextOpenAt"`
+	NextTransitionAt int64  `json:"nextTransitionAt"`
+	ServerTime       int64  `json:"serverTime"`
+	ObservedAt       int64  `json:"observedAt"`
+	ValidUntil       int64  `json:"validUntil"`
+}
+
+// MarketStatusSnapshot is returned by GET /api/v1/mt5/market-status. A missing,
+// expired, or disconnected bridge observation is represented as state=unknown;
+// the API never infers a closed market from absent data.
+type MarketStatusSnapshot struct {
+	Connected bool           `json:"connected"`
+	BridgeURL string         `json:"bridgeUrl"`
+	Source    string         `json:"source"`
+	Sessions  []MarketStatus `json:"sessions"`
+	UpdatedAt time.Time      `json:"updatedAt,omitempty"`
+	LastError string         `json:"lastError,omitempty"`
+}
+
+// bridgeMarketStatusMessage mirrors the Python bridge wire contract. Keep the
+// item field names snake_case here and convert them before exposing API data.
+type bridgeMarketStatusMessage struct {
+	Type     string               `json:"type"`
+	Source   string               `json:"source,omitempty"`
+	Statuses []bridgeMarketStatus `json:"statuses"`
+}
+
+type bridgeMarketStatus struct {
+	Symbol           string `json:"symbol"`
+	State            string `json:"state"`
+	ScheduledOpen    bool   `json:"scheduled_open"`
+	Reason           string `json:"reason"`
+	SessionOpenAt    int64  `json:"session_open_at"`
+	SessionCloseAt   int64  `json:"session_close_at"`
+	NextOpenAt       int64  `json:"next_open_at"`
+	NextTransitionAt int64  `json:"next_transition_at"`
+	ServerTime       int64  `json:"server_time"`
+	ObservedAt       int64  `json:"observed_at"`
+	ValidUntil       int64  `json:"valid_until"`
+}
+
+func (status bridgeMarketStatus) public() MarketStatus {
+	return MarketStatus{
+		Symbol:           status.Symbol,
+		State:            status.State,
+		ScheduledOpen:    status.ScheduledOpen,
+		Reason:           status.Reason,
+		SessionOpenAt:    status.SessionOpenAt,
+		SessionCloseAt:   status.SessionCloseAt,
+		NextOpenAt:       status.NextOpenAt,
+		NextTransitionAt: status.NextTransitionAt,
+		ServerTime:       status.ServerTime,
+		ObservedAt:       status.ObservedAt,
+		ValidUntil:       status.ValidUntil,
+	}
+}
+
 // Candle is the backend/frontend OHLCV contract for MT5 history. Time is UNIX
 // seconds at bar open, aligned with lightweight-charts and the frontend
 // MarketCandle type.

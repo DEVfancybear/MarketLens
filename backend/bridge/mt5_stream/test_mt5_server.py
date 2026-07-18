@@ -50,6 +50,7 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.original_stream_symbols = tuple(mt5_server.STREAM_SYMBOLS)
         self.original_tick_offset = mt5_server.MT5_TICK_TIME_OFFSET_SECONDS
         self.original_history_sync_delay = mt5_server.HISTORY_SYNC_DELAY
+        self.original_market_statuses = dict(mt5_server.MARKET_STATUSES)
 
     def tearDown(self) -> None:
         mt5_server.mt5.symbol_info_tick = self.original_symbol_info_tick
@@ -79,6 +80,7 @@ class Mt5ServerTickTests(unittest.TestCase):
         mt5_server.STREAM_SYMBOLS = self.original_stream_symbols
         mt5_server.MT5_TICK_TIME_OFFSET_SECONDS = self.original_tick_offset
         mt5_server.HISTORY_SYNC_DELAY = self.original_history_sync_delay
+        mt5_server.MARKET_STATUSES = self.original_market_statuses
 
     def test_changed_tick_messages_dedupes_and_normalizes_tick_time(self) -> None:
         ticks = {
@@ -129,6 +131,100 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.assertEqual(added, ("XAUUSD",))
         self.assertEqual(mt5_server.STREAM_SYMBOLS, ("EURUSD", "XAUUSD"))
         self.assertEqual(selected, [("XAUUSD", True)])
+
+    def test_market_status_document_keeps_fresh_broker_session(self) -> None:
+        now = 1_800_000_000
+        statuses = mt5_server.normalize_market_status_document(
+            {
+                "source": "mt5-mql5-session",
+                "statuses": [{
+                    "symbol": "EURUSD",
+                    "state": "open",
+                    "scheduled_open": True,
+                    "reason": "within_trade_session",
+                    "session_open_at": now - 3600,
+                    "session_close_at": now + 7200,
+                    "next_transition_at": now + 7200,
+                    "server_time": now - 2,
+                    "observed_at": now - 2,
+                    "valid_until": now + 10,
+                }],
+            },
+            now_seconds=now,
+            max_age_seconds=20,
+        )
+
+        self.assertEqual(statuses["EURUSD"]["state"], "open")
+        self.assertTrue(statuses["EURUSD"]["scheduled_open"])
+        self.assertEqual(statuses["EURUSD"]["next_transition_at"], now + 7200)
+
+    def test_market_status_document_expires_stale_open_and_boundary(self) -> None:
+        now = 1_800_000_000
+        base = {
+            "symbol": "EURUSD",
+            "state": "open",
+            "scheduled_open": True,
+            "server_time": now - 1,
+            "observed_at": now - 30,
+            "valid_until": now + 30,
+            "next_transition_at": now + 3600,
+        }
+        stale = mt5_server.normalize_market_status_document(
+            {"statuses": [base]},
+            now_seconds=now,
+            max_age_seconds=20,
+        )["EURUSD"]
+        boundary = mt5_server.normalize_market_status_document(
+            {"statuses": [{
+                **base,
+                "observed_at": now - 1,
+                "next_transition_at": now,
+            }]},
+            now_seconds=now,
+            max_age_seconds=20,
+        )["EURUSD"]
+
+        self.assertEqual(stale["state"], "unknown")
+        self.assertEqual(stale["reason"], "session_helper_stale")
+        self.assertEqual(boundary["state"], "unknown")
+
+    def test_market_status_document_rejects_incomplete_open_claim(self) -> None:
+        now = 1_800_000_000
+        invalid = mt5_server.normalize_market_status_document(
+            {
+                "statuses": [{
+                    "symbol": "EURUSD",
+                    "state": "open",
+                    "scheduled_open": False,
+                    "server_time": now,
+                    "observed_at": now,
+                    "valid_until": now + 10,
+                }],
+            },
+            now_seconds=now,
+            max_age_seconds=20,
+        )["EURUSD"]
+
+        self.assertEqual(invalid["state"], "unknown")
+        self.assertEqual(invalid["reason"], "session_helper_invalid")
+
+    def test_market_status_message_fills_missing_symbol_with_unknown(self) -> None:
+        mt5_server.MARKET_STATUSES = {
+            "EURUSD": {
+                **mt5_server.unknown_market_status("EURUSD"),
+                "state": "closed",
+                "reason": "outside_trade_session",
+            }
+        }
+
+        payload = json.loads(
+            mt5_server.market_status_message(("EURUSD", "XAUUSD"))
+        )
+
+        self.assertEqual(payload["type"], "market_status")
+        self.assertEqual(payload["statuses"][0]["state"], "closed")
+        self.assertEqual(payload["statuses"][1]["symbol"], "XAUUSD")
+        self.assertEqual(payload["statuses"][1]["state"], "unknown")
 
     def test_calendar_timeframe_freshness_uses_variable_windows(self) -> None:
         tick_time = 1_800_000_000

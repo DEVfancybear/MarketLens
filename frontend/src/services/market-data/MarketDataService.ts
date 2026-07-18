@@ -231,6 +231,7 @@ export class MarketDataService implements MarketDataServiceBinding {
       this.symbolsByProvider[provider]?.delete(symbol);
       this.tfBySymbol.delete(symbol);
       this.candleEngine.reset(symbol);
+      if (provider === "mt5") getMarketDataState().clearMarketSession(symbol);
     } else if (timeframe) {
       this.candleEngine.reset(symbol, timeframe);
       const remainingKline = [...subscriptions.values()].find((sub) =>
@@ -281,7 +282,13 @@ export class MarketDataService implements MarketDataServiceBinding {
         break;
       case "status":
         this.statuses[event.provider] = event.status;
+        if (event.provider === "mt5" && event.status !== "connected") {
+          store.clearMarketSessions("mt5");
+        }
         store.setConnectionStatus(this.aggregateStatus());
+        break;
+      case "sessions":
+        store.setMarketSessions(event.sessions);
         break;
     }
   }

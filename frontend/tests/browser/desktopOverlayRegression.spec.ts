@@ -278,7 +278,9 @@ test.describe("desktop overlay boundaries", () => {
     await expect(chartRoot).toBeVisible();
     await expect(priceMarker).toBeVisible();
     await expect(page.getByTestId("current-price-value")).not.toBeEmpty();
-    await expect(page.getByTestId("current-price-countdown")).not.toBeEmpty();
+    // This benchmark intentionally uses historical candles and has no live MT5
+    // session snapshot, so the stale-safe countdown must stay hidden.
+    await expect(page.getByTestId("current-price-countdown")).toHaveCount(0);
     await expect(priceMarker).toHaveAttribute("data-symbol", "EURUSD");
 
     await expectMarkerInsidePriceScale(page);
