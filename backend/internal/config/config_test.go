@@ -2,6 +2,30 @@ package config
 
 import "testing"
 
+func TestAuthCookiesSecure(t *testing.T) {
+	t.Run("manual development config defaults false", func(t *testing.T) {
+		cfg := Config{Env: "development"}
+		if cfg.AuthCookiesSecure() {
+			t.Fatal("AuthCookiesSecure() = true, want false")
+		}
+	})
+
+	t.Run("manual production config defaults true", func(t *testing.T) {
+		cfg := Config{Env: "production"}
+		if !cfg.AuthCookiesSecure() {
+			t.Fatal("AuthCookiesSecure() = false, want true")
+		}
+	})
+
+	t.Run("explicit local HTTP override", func(t *testing.T) {
+		value := false
+		cfg := Config{Env: "production", AuthCookieSecure: &value}
+		if cfg.AuthCookiesSecure() {
+			t.Fatal("AuthCookiesSecure() = true, want explicit false")
+		}
+	})
+}
+
 func TestLoadDefaultsChartTimeZone(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("CHART_TIME_ZONE", "")

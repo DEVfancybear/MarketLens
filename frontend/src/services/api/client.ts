@@ -4,20 +4,37 @@ import { ApiError, type BackendErrorEnvelope } from "./errors";
 const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
 
 // Resolve the backend origin the browser should call.
-//   1. An explicit NEXT_PUBLIC_API_BASE_URL always wins (required for real deploys).
-//   2. `next dev` defaults to the local Go Fiber backend on :8080.
-//   3. A production build served from localhost (e.g. `next start` on the dev
-//      box) also targets :8080 so it works without a rebuild. Real deployments
-//      serve from a non-localhost host, where we refuse to guess.
+// A production bundle may be served both from localhost and from the machine's
+// LAN/public hostname. Keep localhost self-contained even when the bundle was
+// built with a LAN/public API URL; non-local hosts use the explicit deployment
+// URL from NEXT_PUBLIC_API_BASE_URL.
 function resolveApiBase(): string {
-  if (configuredApiBase) return configuredApiBase.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") return "http://localhost:8080";
   if (typeof window !== "undefined") {
     const { hostname, protocol } = window.location;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return `${protocol}//${hostname}:8080`;
     }
+
+    // When the local bundle is opened through a LAN address while its env
+    // still points at localhost, keep the API on the same host. This is
+    // important for browser cookie/site rules: localhost and 192.168.x.x are
+    // different sites even when they resolve to the same machine.
+    if (configuredApiBase) {
+      try {
+        const configured = new URL(configuredApiBase);
+        if (
+          configured.hostname === "localhost" ||
+          configured.hostname === "127.0.0.1"
+        ) {
+          return `${protocol}//${hostname}:8080`;
+        }
+      } catch {
+        // Fall through to the configured value below when it is malformed.
+      }
+    }
   }
+  if (configuredApiBase) return configuredApiBase.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "development") return "http://localhost:8080";
   return "";
 }
 

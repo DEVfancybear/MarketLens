@@ -17,6 +17,7 @@ local MT5 streaming sidecar/consumer. The migration head is `0022`.
 | `AUTH.md`          | Google sign-in / sign-up flow and implemented routes |
 | `BACKEND_IMPLEMENTATION_PLAN.md` | Phased build order for the Go backend|
 | `CONFIGURATION.md` | Environment and configuration                      |
+| `PRODUCTION_BUILD.md` | Repeatable production build, startup, verification, and troubleshooting runbook |
 
 ## Cross-Package Runtime Plans
 

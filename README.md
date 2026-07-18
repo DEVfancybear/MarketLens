@@ -55,3 +55,4 @@ Backend dev server: `http://localhost:8080`
 - Root docs: [`docs/README.md`](docs/README.md)
 - Frontend docs: [`frontend/docs/README.md`](frontend/docs/README.md)
 - Backend docs: [`backend/docs/README.md`](backend/docs/README.md)
+- Production build/runbook: [`backend/docs/PRODUCTION_BUILD.md`](backend/docs/PRODUCTION_BUILD.md)

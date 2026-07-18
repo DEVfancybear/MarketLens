@@ -10,6 +10,7 @@ Copy `backend/.env.example` to `backend/.env` for local development.
 | --- | --- | --- | --- |
 | `PORT` | integer | `8080` | TCP port the HTTP server listens on |
 | `APP_ENV` | string | `development` | Runtime environment; production enables required-secret checks and secure cookies |
+| `AUTH_COOKIE_SECURE` | boolean | `false` in development, `true` otherwise | Override the session-cookie `Secure` flag; set `false` only for local HTTP, keep `true` behind HTTPS |
 | `DATABASE_URL` | string | empty | PostgreSQL used by migrations, workspace sync, alerts, history, and push-token ownership |
 | `AUTH_JWT_SECRET` | string | empty | Backend access/refresh token secret; use at least 32 random bytes in production |
 | `AUTH_ACCESS_TTL` | duration | `15m` | Access-token lifetime |

@@ -20,10 +20,10 @@ const (
 )
 
 // SetAuthCookies writes the access + refresh tokens as hardened cookies:
-// HttpOnly, SameSite=Lax, and Secure in every environment except development
-// (so http://localhost still works). Max-Age mirrors each token's TTL.
+// HttpOnly, SameSite=Lax, and Secure according to the environment/configured
+// override. Max-Age mirrors each token's TTL.
 func SetAuthCookies(c *fiber.Ctx, cfg config.Config, access, refresh string) {
-	secure := cfg.IsProduction()
+	secure := cfg.AuthCookiesSecure()
 
 	c.Cookie(&fiber.Cookie{
 		Name:     AccessCookieName,
@@ -48,7 +48,7 @@ func SetAuthCookies(c *fiber.Ctx, cfg config.Config, access, refresh string) {
 // ClearAuthCookies expires both auth cookies (logout). Path/flags must match the
 // originals for the browser to overwrite them.
 func ClearAuthCookies(c *fiber.Ctx, cfg config.Config) {
-	secure := cfg.IsProduction()
+	secure := cfg.AuthCookiesSecure()
 	expired := time.Now().Add(-time.Hour)
 
 	c.Cookie(&fiber.Cookie{

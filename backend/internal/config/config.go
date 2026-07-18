@@ -18,6 +18,11 @@ type Config struct {
 	Port int
 	Env  string
 
+	// AuthCookieSecure controls whether backend session cookies require HTTPS.
+	// It defaults to true outside development and can be disabled explicitly
+	// for a local production-mode HTTP setup.
+	AuthCookieSecure *bool
+
 	DatabaseURL string
 
 	AuthJWTSecret          string
@@ -89,9 +94,12 @@ func Load() (Config, error) {
 	_ = godotenv.Load("../.env.local")
 	_ = godotenv.Load("../.env")
 
+	env := getEnv("APP_ENV", "development")
+	authCookieSecure := getEnvBool("AUTH_COOKIE_SECURE", env != "development")
 	cfg := Config{
 		Port:                   getEnvInt("PORT", 8080),
-		Env:                    getEnv("APP_ENV", "development"),
+		Env:                    env,
+		AuthCookieSecure:       &authCookieSecure,
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
 		AuthJWTSecret:          os.Getenv("AUTH_JWT_SECRET"),
 		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
@@ -135,6 +143,16 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// AuthCookiesSecure returns the effective Secure flag for backend session
+// cookies. Config values built manually (for tests/tools) preserve the original
+// environment-based default when no explicit override is supplied.
+func (c Config) AuthCookiesSecure() bool {
+	if c.AuthCookieSecure != nil {
+		return *c.AuthCookieSecure
+	}
+	return c.IsProduction()
 }
 
 // validate fails fast when required secrets are absent in a non-development

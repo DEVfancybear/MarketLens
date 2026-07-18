@@ -17,6 +17,8 @@ playwright-report/
 # Python cache
 __pycache__/
 *.pyc
+.venv/
+.venv-*/
 
 # Next.js env declaration (auto-generated)
 next-env.d.ts
