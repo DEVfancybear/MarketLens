@@ -11,7 +11,7 @@ The backend has two components:
 The Python bridge runs as a separate process. It is not part of the Go HTTP request path and does
 not share memory or state with the Go server.
 
-Current implementation note: the Fiber API and migrations through `0021` are implemented. The
+Current implementation note: the Fiber API and migrations through `0022` are implemented. The
 runtime includes authenticated workspace sync, drawings/revisions, alerts with dynamic technical
 targets and evidence verification, layouts, replay/trading, journal/screenshot contracts, and the
 MT5 stream. Keep business logic outside handlers so modules remain testable without an HTTP server.

@@ -949,7 +949,7 @@ label, and dashboard payloads.
 
 ---
 
-## Alerts  protected, implemented
+## Alerts - browser protected / worker service-authenticated, implemented
 
 Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery channels; the
 **global** notification defaults (`AlertSettings`) are read/written via `/api/v1/settings`
@@ -962,6 +962,7 @@ Backed by `alerts` + `alert_events`. The alert body carries per-alert delivery c
 | PATCH  | `/api/v1/alerts/:id`            | Update / pause (`enabled:false`) / re-arm    |
 | DELETE | `/api/v1/alerts/:id`            | Delete alert; retained history is unaffected |
 | POST   | `/api/v1/alerts/:id/trigger`    | Atomically trigger and append one event      |
+| POST   | `/api/v1/alerts/worker-trigger` | Service-authenticated closed-browser trigger |
 | GET    | `/api/v1/alerts/:id/events`     | Trigger history for one alert                |
 | GET    | `/api/v1/alerts/history`        | All events, newest-first, max 200            |
 | DELETE | `/api/v1/alerts/history`        | Clear the authenticated user's event history |
@@ -1013,14 +1014,36 @@ the backend recomputes the immutable line/channel target and condition from the
 evidence and rejects mismatched claims, stale revisions, out-of-order evidence,
 or a condition that was not actually met.
 
-The trigger response is `{ "alert": Alert, "event": AlertEvent }`. A one-time
+The trigger response is `{ "alert": Alert, "event": AlertEvent }`. An exact
+retry returns `200 { "alreadyTriggered": true, "event": AlertEvent }` without a
+second history row. Attempt identity is
+`(alert_id, arming_revision, triggered_at)`, with `triggered_at` taken from the
+accepted current-evidence timestamp. Reusing that timestamp for the same alert
+revision means retrying the same immutable market observation; a conflicting
+price or target is rejected rather than treated as a new trigger. A one-time
 alert moves to `triggered`; a recurring alert remains `active` and receives new
 `triggeredAt`/`triggerPrice` values. Event shape:
-`{ id, alertId, symbol, condition, targetPrice, triggerPrice, triggeredAt, delivered }`.
+`{ id, alertId, symbol, condition, targetPrice, triggerPrice, triggeredAt, delivered, armingRevision }`.
+`delivered` is a legacy/reserved field and is not authoritative evidence that a
+provider accepted a notification. The stable `event.id` groups FCM work with a
+device recipient and Telegram/Discord work by `(event.id, channel)` within one
+evaluator run after either a new or idempotent acknowledgement.
 `triggeredAt` is the accepted `current.timestamp`, not API receive time. Events
 retain their stable `alertId` after an alert is deleted. Finite targets may be
 patched to `status:"expired"`; snapshot/bootstrap responses expose those rows in
 `expiredAlerts`. Re-arming with `status:"active"` increments `armingRevision`.
+
+`POST /api/v1/alerts/worker-trigger` accepts the same trigger/evidence fields plus
+`alertId` and a signed `deliveryToken`. It is not a browser-auth route: callers
+must also send `x-push-worker-secret`, and the backend derives the alert owner
+only from the signed token. Missing server configuration, a wrong worker secret,
+or an invalid token fails closed. The Next evaluator must receive this durable
+acknowledgement before any channel dispatch. `alreadyTriggered:true` proves the
+same immutable event exists and may still drain caller-local pending delivery;
+it does not prove any provider accepted a notification. Callers retain immutable
+evidence after transport, invalid/truncated responses, 401/403, 408/425/429, or
+5xx failures. Alert-specific permanent 4xx responses require corrected alert
+state instead of an infinite retry loop.
 
 ### Push tokens (FCM), protected, implemented
 

@@ -4,7 +4,7 @@ TradingView-style price and technical drawing alert runtime. This document refle
 frontend code, including browser notifications, sound, Firebase push, external Telegram/Discord
 dispatch paths, immutable drawing targets, and the closed-browser push evaluator.
 
-_Updated: 2026-07-17_
+_Updated: 2026-07-18_
 
 ## Goals
 
@@ -29,6 +29,9 @@ TradingView's official alert documentation on 2026-07-15/16:
 - [Learn how to configure alerts](https://www.tradingview.com/support/solutions/43000763312-learn-how-to-configure-alerts/)
 - [How to use price alerts](https://www.tradingview.com/support/solutions/43000763313-how-to-use-price-alerts/)
 - [Getting started with technical alerts](https://www.tradingview.com/support/solutions/43000763315-getting-started-with-technical-alerts/)
+- [How to enable/disable the alert line on the chart](https://www.tradingview.com/support/solutions/43000645260-how-to-enable-disable-the-alert-line-on-the-chart/)
+- [Manage alerts](https://www.tradingview.com/support/solutions/43000595311-manage-alerts/)
+- [Trend Line drawing tool](https://www.tradingview.com/support/solutions/43000518095-trendline-drawing-tool/)
 - [Pine Script alert FAQ](https://www.tradingview.com/pine-script-docs/faq/alerts/)
 
 These are maintenance invariants for the existing implementation:
@@ -41,6 +44,7 @@ These are maintenance invariants for the existing implementation:
 | Running script alerts use a snapshot of their symbol, timeframe, script, and inputs. | Price alerts store their own symbol, condition, target, recurrence, and channel flags. Chart navigation and global notification-setting changes do not mutate an existing alert. Editing an alert creates a new arming revision. |
 | Triggering and notification delivery are separate concerns. | Persist the trigger/history independently; dispatch toast, sound, browser, push, Telegram, and Discord as best-effort channels. |
 | Alerts can be one-time or repeat. | One-time alerts leave the active set after firing. Recurring alerts remain active and use the existing 60-second re-arm guard. |
+| A drawing and its alert are separate objects; alert-line visibility is also a chart display setting. | Keep the source trendline after its alert fires. `AlertLines`/`AlertOverlay` render only active alert records, so a committed one-time trigger removes the orange alert overlay without deleting the drawing. |
 | Technical alerts evaluate a referenced series/geometry at market time. | Dynamic drawing alerts freeze a versioned target at creation; drawing edits never mutate the alert. Both browser paths evaluate the same target and evidence pair. |
 | Technical alerts can expire when their referenced domain ends. | Segment/ray/infinite domains are explicit; finite targets become `expired`, remain visible in bootstrap/history, and require a new arming revision to resume. |
 
@@ -99,24 +103,37 @@ MarketDataService/provider stream
   -> marketDataStore quotes/candles
   -> useAlertEngine()
   -> services/alertEngine.ts
-  -> alertStore.triggerAlert()
-  -> services/notifications/notify.ts
-  -> toast / sound / browser / Firebase push / Telegram / Discord
+  -> POST /api/v1/alerts/:id/trigger (canonical PostgreSQL transaction)
+  -> retain exact crossing evidence and back off on transient API failure
+  -> alertStore.triggerAlert() applies local lifecycle
+  -> services/notifications/notify.ts makes one live-tab delivery attempt
+     after either a new commit or an idempotent acknowledgement
+  -> bootstrap / legacy reconciliation converge silently
+
+Closed-browser worker
+  -> replay ordered MT5 ticks and freeze trigger evidence
+  -> POST /api/v1/alerts/worker-trigger (worker secret + signed user token)
+  -> retain the frozen candidate after transient/ambiguous canonical failure
+  -> drain FCM per device and Telegram/Discord per event/channel in-run
+  -> retain failed channels for retry without reactivating the alert
 ```
 
-`useAlertEngine()` mounts once from `GlobalRuntime`. It subscribes alert symbols through the shared
-market-data subscription store, so watchlist subscriptions and alert subscriptions can coexist
-without clobbering each other.
+`useAlertEngine()` mounts from `GlobalRuntime` but does not evaluate until
+`workspaceReady` confirms local reset or authenticated bootstrap is complete.
+This prevents stale local cache from firing before the server snapshot can classify
+a previously triggered one-time alert. It subscribes alert symbols through the
+shared market-data subscription store, so watchlist and alert subscriptions can
+coexist without clobbering each other.
 
 ## Modules
 
 | Concern | File | Notes |
 | --- | --- | --- |
-| Alert state | `src/store/alertStore.ts` | Alerts, triggered/expired alerts, history, settings, selected/editing ids. Persists to localStorage key `alerts`. |
+| Alert state | `src/store/alertStore.ts` | Alerts, triggered/expired alerts, history, settings, selected/editing ids. Authenticated browser triggers wait for the per-alert backend queue before applying local lifecycle. |
 | Fixed evaluation | `src/services/alertEngine.ts` | Level/cross condition helpers with no React or I/O dependency. |
 | Dynamic evaluation | `src/services/dynamicAlertTargets.ts` | Data-coordinate target interpolation, domain checks, signed-distance conditions, and evidence normalization. |
 | Runtime hook | `src/hooks/useAlertEngine.ts` | Connects market ticks to pure evaluation and alert store actions. |
-| Push evaluator | `src/server/pushAlertEvaluator.ts`, `src/hooks/usePushTriggerReconcile.ts` | Ordered MT5 replay, expiration, arming-revision checks, and trigger reconciliation. |
+| Push evaluator | `src/server/pushAlertEvaluator.ts`, `src/server/canonicalAlertTrigger.ts`, `src/server/pushAlertLifecycle.ts` | Ordered MT5 replay, transient/ambiguous canonical retries, alert-specific rejection quarantine, FCM retries per device, and Telegram/Discord grouping per canonical event/channel within one evaluator run. |
 | Server verification | `backend/internal/alerts/technical_evaluator.go`, `backend/internal/alerts/handler.go` | Recomputes technical targets and validates trigger evidence before persistence. |
 | Dispatch | `src/services/notifications/notify.ts` | Fans a trigger out to enabled channels. |
 | Toast | `src/store/toastStore.ts`, `src/components/notifications/Toaster.tsx` | In-app notification stack. |
@@ -213,9 +230,19 @@ Disabled alerts render dimmed and are skipped by evaluation.
 - Sound requires the alert and global settings to enable sound.
 - Browser notifications require permission and are requested only from explicit UI.
 - Firebase push requires a valid registration token in `notificationStore`.
-- Telegram/Discord dispatch is best-effort and logs failures without blocking local UI.
+- Telegram/Discord dispatch is best-effort after canonical trigger persistence and logs delivery failures.
 
-Dispatch failures do not change alert trigger state; they are surfaced through the app log.
+Dispatch failures do not change an already committed alert trigger state; they are surfaced through
+the app log. Conversely, a canonical persistence failure blocks remote notification delivery so the
+system cannot report a trigger while PostgreSQL still considers the one-time alert active.
+Retained worker delivery attempts use at-least-once retry semantics rather than
+claiming provider-visible exactly-once. A lost canonical response can drain the
+retained candidate and failed channels retry independently. There is no
+transactional provider outbox: a crash after canonical commit but before worker
+state is updated can lose a provider attempt, while a crash after provider
+acceptance, concurrent workers, or simultaneous browser resync can duplicate or
+drop non-atomic work. PostgreSQL lifecycle/history remain idempotent and cannot
+re-arm or redraw the one-time alert.
 
 ## Persistence
 
@@ -223,8 +250,19 @@ Dispatch failures do not change alert trigger state; they are surfaced through t
 Push registration state persists separately under `pushNotifications`.
 
 For anonymous users, localStorage remains the durable cache. For an authenticated
-session, the Go API/PostgreSQL alert record and event history are authoritative;
-the frontend remains optimistic and queues mutations through the shared `ky` API
-resource layer. Bootstrap carries active, triggered, and expired alerts plus
-history. Push storage keeps the same immutable target and arming revision, so a
-closed-browser trigger cannot silently downgrade to a fixed-price alert.
+session, the Go API/PostgreSQL alert record and event history are authoritative.
+Browser-open triggers commit through the per-alert API queue before local lifecycle
+and notification dispatch. Closed-browser triggers commit through the worker-only
+endpoint before FCM/Telegram/Discord dispatch. A failed acknowledgement is
+retained as `pendingTrigger` for transient, ambiguous, and invalid/truncated
+protocol responses and retried even when the market later closes. Only
+alert-specific permanent 4xx failures quarantine that signature until a
+successful browser sync supplies corrected state. Bootstrap
+therefore already classifies a one-time fired alert as
+`triggered`; token-keyed `usePushTriggerReconcile` remains a fallback for legacy
+worker state and open-tab cache convergence, not the lifecycle writer.
+
+Migration `0022_alert_event_idempotency` stores `arming_revision` on events and
+uniquely identifies an attempt by `(alert_id, arming_revision, triggered_at)`.
+Exact HTTP retries return success without inserting another history row, including
+recurring alerts.

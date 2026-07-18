@@ -32,6 +32,41 @@ export interface PushAlertSyncRequest {
   alerts: ServerPushAlert[];
 }
 
+export interface PushWorkerTriggerRequest {
+  deliveryToken: string;
+  alertId: string;
+  triggerPrice: number;
+  targetPrice?: number;
+  previous?: TechnicalAlertEvidence["previous"];
+  current: TechnicalAlertEvidence["current"];
+  armingRevision: number;
+}
+
+export interface PushWorkerTriggerResponse {
+  ok: true;
+  alreadyTriggered: boolean;
+  event: { id: string };
+}
+
+export interface PendingPushAlertTrigger {
+  triggerPrice: number;
+  targetPrice: number;
+  /** Notification/worker timestamp in epoch milliseconds. */
+  triggeredAt: number;
+  /** Canonical backend evidence remains UTC epoch seconds. */
+  triggerEvidence: TechnicalAlertEvidence;
+}
+
+export interface PendingPushAlertDelivery {
+  eventId: string;
+  /** Frozen payload retained even after one-time alert sync removes the active definition. */
+  alert: ServerPushAlert;
+  candidate: PendingPushAlertTrigger;
+  push: boolean;
+  telegram: boolean;
+  discord: boolean;
+}
+
 export interface PushDeviceRecord {
   token: string;
   deliveryToken?: string;
@@ -52,6 +87,13 @@ export interface PushDeviceRecord {
       triggerPrice?: number;
       targetPrice?: number;
       triggerEvidence?: TechnicalAlertEvidence;
+      /** Durable retry candidate when PostgreSQL acknowledgement is unavailable. */
+      pendingTrigger?: PendingPushAlertTrigger;
+      /** Per-destination at-least-once delivery work after canonical commit. */
+      pendingDelivery?: PendingPushAlertDelivery;
+      /** Permanent canonical rejection for this exact alert signature. */
+      canonicalRejectedAt?: number;
+      canonicalRejectedReason?: string;
       expiredAt?: number;
     }
   >;

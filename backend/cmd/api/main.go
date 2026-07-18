@@ -138,7 +138,9 @@ func main() {
 		indicatorsHandler = indicators.NewHandler(indicatorsStore, requireAuth)
 		pineScriptsHandler = pinescripts.NewHandler(pineScriptsStore, requireAuth)
 		alertsStore := alerts.NewRepo(pool.Pool)
-		alertsHandler = alerts.NewHandler(alertsStore, requireAuth)
+		alertsHandler = alerts.NewHandler(alertsStore, requireAuth).WithWorkerTrigger(
+			cfg.PushWorkerSecret, secretBox.VerifyDeliveryToken,
+		)
 		layoutsStore := layouts.NewRepo(pool.Pool)
 		layoutsHandler = layouts.NewHandler(layoutsStore, requireAuth)
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, layoutsStore, requireAuth)

@@ -1,6 +1,6 @@
 # Backend Implementation Plan (phased)
 
-> Status: Phases 0-13 and alert hardening migrations `0017`–`0021` are implemented. Simulated
+> Status: Phases 0-13 and alert hardening migrations `0017`–`0022` are implemented. Simulated
 > trading is persisted lazily per account and the frontend remains the fill/SL/TP engine.
 > Companion to `DATABASE.md` (schema), `AUTH.md` (auth flow), and `API.md` (endpoint contract). Each
 > phase is independently shippable and has explicit acceptance criteria so progress is unambiguous.
@@ -413,9 +413,10 @@ bootstrap, and public `/api/v1/indicator-store`. The backing `pine_scripts` tabl
 
 ### Phase 10 — Alerts + push tokens
 
-**Status: Implemented and hardened 2026-07-17.** Migration `0011_alerts` is
+**Status: Implemented and hardened 2026-07-18.** Migration `0011_alerts` is
 followed by `0019_alert_source`, `0020_alert_technical_target`, and
-`0021_alert_expiration_and_arming_revision`. The protected handlers live in
+`0021_alert_expiration_and_arming_revision`, then
+`0022_alert_event_idempotency`. The protected handlers live in
 `internal/alerts`; bootstrap now returns active, triggered, and expired alerts
 plus the newest 200 history rows.
 
@@ -429,8 +430,8 @@ closed-browser push targeting every device.
 
 **Steps**
 1. Migration `0011_alerts` (alerts + retained alert_events) — `push_tokens` shipped in `0002_auth`.
-   Migrations `0019`–`0021` add immutable drawing provenance, technical targets, expiration, and
-   arming revisions.
+   Migrations `0019`–`0022` add immutable drawing provenance, technical targets, expiration,
+   arming revisions, and idempotent trigger-attempt identity.
 2. Queries: alerts CRUD including the **per-alert channel flags** (`sound`/`browser`/`push`/
    `telegram`/`discord`) and `enabled`/`locked`/`note`/`recurring`; pause == `enabled=false`; on
    trigger set `status='triggered'`, `trigger_price`, `triggered_at` **and** insert an `alert_events`
@@ -440,7 +441,8 @@ closed-browser push targeting every device.
 3. Repo: validate server-side (`above|below|crossUp|crossDown`, `price > 0`); prune `alert_events` to
    the newest ~200 per user (matches the frontend cap).
 4. Handler: `GET/POST /api/v1/alerts`, `PATCH/DELETE /api/v1/alerts/:id`,
-   `POST /api/v1/alerts/:id/trigger`, `GET /api/v1/alerts/:id/events`,
+   `POST /api/v1/alerts/:id/trigger`, service-authenticated
+   `POST /api/v1/alerts/worker-trigger`, `GET /api/v1/alerts/:id/events`,
    `GET/DELETE /api/v1/alerts/history`,
    `POST /api/v1/push/tokens`, `DELETE /api/v1/push/tokens/:tok`. Global notification prefs are read/
    written via `/api/v1/settings` (`notifications` section), not here.
@@ -452,11 +454,22 @@ Implementation notes discovered during the frontend audit:
   `(user_id, client_id)`, and resource routes accept either UUID or client ID.
 - Triggering is a dedicated transaction so an alert state update and its event
   cannot diverge. Recurring alerts remain active; one-time alerts become triggered.
+- Browser-open and closed-browser evaluators both wait for that transaction.
+  An exact `alreadyTriggered` retry proves lifecycle/history but not provider
+  delivery, so caller-local pending at-least-once work still drains. The worker
+  route requires the shared worker secret plus a signed user delivery token and
+  reuses the same evidence verifier.
+- `alert_events.arming_revision` and the unique attempt index make exact worker or
+  browser retries idempotent without collapsing a later re-armed trigger.
 - `alert_events.alert_ref` survives alert deletion and `alert_id` uses
   `ON DELETE SET NULL`, matching the UI where clearing Triggered does not clear History.
 - FCM registration is dual-written: Postgres owns authenticated user/device
-  association, while the existing Next push worker store remains responsible
-  for closed-browser evaluation and delivery state.
+  association and all lifecycle/history; the Next push worker store owns only
+  closed-browser evaluation cursors, transient pending canonical candidates,
+  FCM retries per device, Telegram/Discord grouping per event/channel in-run, and
+  alert-specific rejection quarantine. It is not a transactional provider outbox;
+  crash-after-send can duplicate and simultaneous browser resync can remove
+  non-atomic delivery work.
 
 **Acceptance**
 - Create an alert with specific channels (e.g. push+telegram), pause/resume, delete — all persist.

@@ -64,3 +64,17 @@ The Node in-process loop and these services remain optional fallbacks:
 `PUSH_WORKER_SECRET` must match in the Next evaluator and Go backend. External
 cron deletion no longer stops evaluation while the persistent Go scheduler is
 enabled and can reach the frontend URL.
+
+Before Telegram/Discord (or FCM) delivery, the evaluator calls
+`POST /api/v1/alerts/worker-trigger` with that shared secret and the user's signed
+`deliveryToken`. PostgreSQL lifecycle/history acknowledgement is mandatory. Only
+after a durable new or idempotent acknowledgement may channel dispatch start.
+`alreadyTriggered:true` still drains retained at-least-once worker attempts so an ambiguous commit response
+does not consume the crossing. Transient/global auth or
+configuration failures retry; alert-specific permanent 4xx failures quarantine
+that alert until corrected browser sync. Telegram/Discord are grouped by canonical
+event/channel within one worker run, while FCM remains per device. Without a
+transactional provider outbox, a crash after canonical commit but before worker
+state is updated can lose a provider attempt; a crash after provider acceptance
+or simultaneous browser resync can duplicate/remove non-atomic work. Lifecycle/history remain correct.
+`/settings/integrations/worker-deliver` remains notification-only.

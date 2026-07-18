@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { getDefaultStore } from "jotai";
+import { getDefaultStore, useAtomValue } from "jotai";
 import { getMarketDataState, marketDataTickAtom } from "@/store/marketDataStore";
 import {
   useAlertStore,
   getAlertState,
   RECURRING_REARM_MS,
+  type Alert,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import {
@@ -16,6 +17,12 @@ import {
 import { evaluateAlert } from "@/services/alertEngine";
 import { technicalTargetSignature } from "@/services/dynamicAlertTargets";
 import { deliverAlert } from "@/services/notifications/notify";
+import {
+  BrowserAlertTriggerQueue,
+  type BrowserAlertTriggerCandidate,
+} from "@/services/notifications/browserAlertTriggerQueue";
+import { workspaceReadyAtom } from "@/store/authStore";
+
 function latestPrice(symbol: string): { price: number; timestamp: number } | undefined {
   const marketData = getMarketDataState();
   const quote = marketData.quotes[symbol];
@@ -25,8 +32,19 @@ function latestPrice(symbol: string): { price: number; timestamp: number } | und
   return undefined;
 }
 
+function revisionOf(alert: Alert): string {
+  return `${alertArmingRevision(
+    alert.condition,
+    alert.symbol,
+    alert.price,
+    alert.recurring,
+    alert.armingRevision ?? alert.updatedAt,
+  )}:${technicalTargetSignature(alert.technicalTarget)}`;
+}
+
 /** Evaluates alert revisions only from consecutive live MT5 prices. */
 export function useAlertEngine() {
+  const workspaceReady = useAtomValue(workspaceReadyAtom);
   const alertSymbolsKey = useAlertStore((state) => {
     const symbols = new Set(state.alerts.map((alert) => alert.symbol));
     return [...symbols].sort().join(",");
@@ -66,8 +84,41 @@ export function useAlertEngine() {
   }, []);
 
   useEffect(() => {
+    if (!workspaceReady) {
+      previousPriceRef.current.clear();
+      revisionByAlertRef.current.clear();
+      return;
+    }
+
+    const isCurrent = (candidate: BrowserAlertTriggerCandidate): boolean => {
+      const current = getAlertState().alerts.find(
+        (alert) => alert.id === candidate.alertId,
+      );
+      return Boolean(
+        current &&
+          current.enabled &&
+          current.status === "active" &&
+          revisionOf(current) === candidate.revision,
+      );
+    };
+    const triggerQueue = new BrowserAlertTriggerQueue<Alert>({
+      isCurrent,
+      attempt: async (candidate) => {
+        if (!isCurrent(candidate)) return { status: "discarded" };
+        return getAlertState().triggerAlert(
+          candidate.alertId,
+          candidate.triggerPrice,
+          candidate.targetPrice,
+          candidate.evidence,
+        );
+      },
+      notify: (fired, candidate) => {
+        deliverAlert(fired, candidate.triggerPrice, getAlertState().settings);
+      },
+    });
+
     const evaluate = () => {
-      const { alerts, triggerAlert, expireAlert, settings } = getAlertState();
+      const { alerts, expireAlert } = getAlertState();
       if (alerts.length === 0) return;
 
       const now = Date.now();
@@ -83,13 +134,7 @@ export function useAlertEngine() {
         const current = prices.get(alert.symbol);
         if (!current) continue;
 
-        const revision = `${alertArmingRevision(
-          alert.condition,
-          alert.symbol,
-          alert.price,
-          alert.recurring,
-          alert.armingRevision ?? alert.updatedAt,
-        )}:${technicalTargetSignature(alert.technicalTarget)}`;
+        const revision = revisionOf(alert);
         const previous = previousPriceForRevision(
           revision,
           revisionByAlertRef.current.get(alert.id),
@@ -118,13 +163,13 @@ export function useAlertEngine() {
           continue;
         }
         if (!rearmBlocked && evaluated.triggered) {
-          const fired = triggerAlert(
-            alert.id,
-            current.price,
-            evaluated.targetPrice,
-            evaluated.evidence,
-          );
-          if (fired) deliverAlert(fired, current.price, settings);
+          triggerQueue.enqueue({
+            alertId: alert.id,
+            revision,
+            triggerPrice: current.price,
+            targetPrice: evaluated.targetPrice ?? alert.price,
+            evidence: evaluated.evidence,
+          });
         }
         revisionByAlertRef.current.set(alert.id, revision);
       }
@@ -139,6 +184,10 @@ export function useAlertEngine() {
     };
 
     evaluate();
-    return getDefaultStore().sub(marketDataTickAtom, evaluate);
-  }, []);
+    const unsubscribe = getDefaultStore().sub(marketDataTickAtom, evaluate);
+    return () => {
+      unsubscribe();
+      triggerQueue.dispose();
+    };
+  }, [workspaceReady]);
 }

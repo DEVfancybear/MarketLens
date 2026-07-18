@@ -14,11 +14,22 @@ import {
   targetAt,
   technicalTargetSignature,
 } from "@/services/dynamicAlertTargets";
-import type { PushDeviceRecord, ServerPushAlert } from "@/types/pushAlerts";
+import type {
+  PendingPushAlertDelivery,
+  PendingPushAlertTrigger,
+  PushDeviceRecord,
+  ServerPushAlert,
+} from "@/types/pushAlerts";
 import type { TechnicalAlertEvidence } from "@/types/technicalAlerts";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
 import { sendUserIntegrationNotifications } from "./externalNotifications";
 import { listPushDevices, updatePushDevice } from "./pushAlertStore";
+import { acknowledgeCanonicalAlertTrigger } from "./canonicalAlertTrigger";
+import { persistBeforeNotification } from "./pushAlertLifecycle";
+import {
+  createPendingPushAlertDelivery,
+  externalAlertDeliveryKey,
+} from "./pushAlertDeliveryPolicy";
 
 const RECURRING_REARM_MS = 60_000;
 const MT5_TICK_REPLAY_LOOKBACK_MS = 10 * 60_000;
@@ -63,6 +74,15 @@ interface PriceSnapshot {
   candles?: unknown[];
 }
 
+type PushAlertState = PushDeviceRecord["alertState"][string];
+type ExternalChannel = "telegram" | "discord";
+type ExternalDeliveryResult = {
+  channel: ExternalChannel;
+  ok: boolean;
+  error?: string;
+};
+type ExternalDeliveryCache = Map<string, Promise<ExternalDeliveryResult>>;
+
 export function alertSignature(alert: ServerPushAlert): string {
   return `${alertArmingRevision(
     alert.condition,
@@ -102,6 +122,159 @@ function formatAlert(
   return {
     title: `${alert.symbol} alert`,
     body: `${alert.symbol} ${op} - now ${triggerPrice}${alert.note ? ` - ${alert.note}` : ""}`,
+  };
+}
+
+async function deliverExternalOnce({
+  cache,
+  channel,
+  device,
+  alert,
+  delivery,
+}: {
+  cache: ExternalDeliveryCache;
+  channel: ExternalChannel;
+  device: PushDeviceRecord;
+  alert: ServerPushAlert;
+  delivery: PendingPushAlertDelivery;
+}): Promise<ExternalDeliveryResult> {
+  const key = externalAlertDeliveryKey(delivery.eventId, channel);
+  const existing = cache.get(key);
+  if (existing) return existing;
+
+  const work = sendUserIntegrationNotifications(
+    device.deliveryToken,
+    {
+      alertId: alert.id,
+      symbol: alert.symbol,
+      condition: alert.condition,
+      targetPrice: delivery.candidate.targetPrice,
+      triggerPrice: delivery.candidate.triggerPrice,
+      note: alert.note,
+      triggeredAt: delivery.candidate.triggeredAt,
+      source: "closed-browser-worker",
+    },
+    {
+      telegram: channel === "telegram",
+      discord: channel === "discord",
+    },
+  )
+    .then((items): ExternalDeliveryResult => {
+      const item = items.find((candidate) => candidate.channel === channel);
+      return item
+        ? { channel, ok: item.ok, error: item.error }
+        : { channel, ok: false, error: `${channel} returned no delivery result` };
+    })
+    .catch((error): ExternalDeliveryResult => ({
+      channel,
+      ok: false,
+      error: error instanceof Error ? error.message : `${channel} send failed`,
+    }));
+  cache.set(key, work);
+  const outcome = await work;
+  if (!outcome.ok && cache.get(key) === work) cache.delete(key);
+  return outcome;
+}
+
+async function deliverTriggerNotifications({
+  device,
+  alert,
+  delivery,
+  canSendFirebase,
+  debugEntry,
+  result,
+  externalCache,
+}: {
+  device: PushDeviceRecord;
+  alert: ServerPushAlert;
+  delivery: PendingPushAlertDelivery;
+  canSendFirebase: boolean;
+  debugEntry: AlertEvaluationDebug;
+  result: EvaluationResult;
+  externalCache: ExternalDeliveryCache;
+}): Promise<PendingPushAlertDelivery | undefined> {
+  const { candidate } = delivery;
+  const message = formatAlert(alert, candidate.triggerPrice, candidate.targetPrice);
+  let push = delivery.push;
+  let telegram = delivery.telegram;
+  let discord = delivery.discord;
+
+  if (push) {
+    try {
+      if (!canSendFirebase) throw new Error("Firebase Admin is not configured.");
+      debugEntry.messageId = await sendFirebasePush({
+        token: device.token,
+        title: message.title,
+        body: message.body,
+        data: {
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          targetPrice: String(candidate.targetPrice),
+          triggerPrice: String(candidate.triggerPrice),
+          source: "server-worker",
+        },
+      });
+      push = false;
+    } catch (error) {
+      result.errors.push(
+        `${alert.symbol}/${alert.id}/push: ${error instanceof Error ? error.message : "push send failed"}`,
+      );
+    }
+  }
+
+  const externalResults: ExternalDeliveryResult[] = [];
+  for (const channel of ["telegram", "discord"] as const) {
+    if (channel === "telegram" ? !telegram : !discord) continue;
+    const item = await deliverExternalOnce({
+      cache: externalCache,
+      channel,
+      device,
+      alert,
+      delivery,
+    });
+    externalResults.push(item);
+    if (item.ok) {
+      if (channel === "telegram") telegram = false;
+      else discord = false;
+    }
+    if (!item.ok) {
+      result.errors.push(
+        `${alert.symbol}/${alert.id}/${item.channel}: ${item.error ?? "external send failed"}`,
+      );
+    }
+  }
+  if (externalResults.length > 0) {
+    debugEntry.external = [
+      ...(debugEntry.external ?? []),
+      ...externalResults,
+    ];
+  }
+
+  return push || telegram || discord
+    ? { ...delivery, push, telegram, discord }
+    : undefined;
+}
+
+function committedAlertState(
+  base: PushAlertState | undefined,
+  signature: string,
+  alert: ServerPushAlert,
+  candidate: PendingPushAlertTrigger,
+  pendingDelivery?: PendingPushAlertDelivery,
+): PushAlertState {
+  return {
+    signature,
+    lastTriggeredAt: candidate.triggeredAt,
+    lastEvaluatedAt: base?.lastEvaluatedAt ?? candidate.triggeredAt,
+    oneTimeFired: !alert.recurring,
+    triggerPrice: candidate.triggerPrice,
+    targetPrice: candidate.targetPrice,
+    lastMarketTimestamp:
+      base?.lastMarketTimestamp ?? candidate.triggerEvidence.current.timestamp * 1000,
+    triggerEvidence: candidate.triggerEvidence,
+    pendingDelivery,
+    expiredAt: base?.expiredAt,
   };
 }
 
@@ -192,6 +365,7 @@ async function runEvaluation(
   if (options.debug) result.debug = [];
 
   const canSendFirebase = firebaseAdminConfigured();
+  const externalCache: ExternalDeliveryCache = new Map();
 
   const devices = await listPushDevices();
   result.devices = devices.length;
@@ -199,6 +373,7 @@ async function runEvaluation(
   const symbols = new Set<string>();
   for (const device of devices) {
     if (
+      !device.deliveryToken ||
       !device.settingsPush &&
       !device.settingsTelegram &&
       !device.settingsDiscord
@@ -224,20 +399,163 @@ async function runEvaluation(
 
   const now = Date.now();
   for (const device of devices) {
+    const alertsForDevice = [...device.alerts];
+    const activeIds = new Set(alertsForDevice.map((alert) => alert.id));
+    for (const state of Object.values(device.alertState)) {
+      const retained = state.pendingDelivery?.alert;
+      if (retained && !activeIds.has(retained.id)) {
+        alertsForDevice.push(retained);
+        activeIds.add(retained.id);
+      }
+    }
+    const hasPendingDelivery = alertsForDevice.some(
+      (alert) => device.alertState[alert.id]?.pendingDelivery !== undefined,
+    );
     if (
-      (!device.settingsPush &&
+      ((!device.settingsPush &&
         !device.settingsTelegram &&
-        !device.settingsDiscord) ||
-      device.alerts.length === 0
+        !device.settingsDiscord) &&
+        !hasPendingDelivery) ||
+      alertsForDevice.length === 0
     ) {
+      continue;
+    }
+    if (!device.deliveryToken) {
+      result.skipped += alertsForDevice.length;
+      result.errors.push(
+        `${device.token.slice(-8)}: closed-browser alerts skipped because the signed delivery token is missing.`,
+      );
       continue;
     }
     const lastPrices = { ...device.lastPrices };
     const previousPrices = { ...device.lastPrices };
     const alertState = { ...device.alertState };
 
-    for (const alert of device.alerts) {
+    for (const alert of alertsForDevice) {
       result.alerts += 1;
+      const { signature, state } = shouldEvaluate(device, alert);
+      if (state?.canonicalRejectedAt !== undefined) {
+        result.skipped += 1;
+        result.debug?.push({
+          token: device.token.slice(-8),
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          target: alert.price,
+          skipped: state.canonicalRejectedReason ?? "canonical trigger rejected",
+        });
+        continue;
+      }
+      const pendingTrigger = state?.pendingTrigger;
+      if (pendingTrigger) {
+        const debugEntry: AlertEvaluationDebug = {
+          token: device.token.slice(-8),
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          target: pendingTrigger.targetPrice,
+          current: pendingTrigger.triggerPrice,
+          met: true,
+          blocked: "pending canonical persistence",
+        };
+        result.debug?.push(debugEntry);
+        const retry = await persistBeforeNotification(
+          () =>
+            acknowledgeCanonicalAlertTrigger(
+              device.deliveryToken,
+              alert,
+              pendingTrigger,
+            ),
+          (canonical) => {
+            const delivery = createPendingPushAlertDelivery(
+              canonical.eventId,
+              device,
+              alert,
+              pendingTrigger,
+            );
+            return delivery
+              ? deliverTriggerNotifications({
+                  device,
+                  alert,
+                  delivery,
+                  canSendFirebase,
+                  debugEntry,
+                  result,
+                  externalCache,
+                })
+              : Promise.resolve(undefined);
+          },
+        );
+        if (!retry.committed) {
+          result.skipped += 1;
+          result.errors.push(
+            `${alert.symbol}/${alert.id}: ${retry.persistenceError}`,
+          );
+          alertState[alert.id] = retry.retryable
+            ? { ...state, signature, pendingTrigger }
+            : {
+                ...state,
+                signature,
+                pendingTrigger: undefined,
+                canonicalRejectedAt: now,
+                canonicalRejectedReason: retry.persistenceError,
+              };
+          continue;
+        }
+        if (!retry.canonical.alreadyTriggered) result.triggered += 1;
+        if (retry.notificationError) {
+          result.errors.push(
+            `${alert.symbol}/${alert.id}: ${retry.notificationError}`,
+          );
+        }
+        alertState[alert.id] = committedAlertState(
+          state,
+          signature,
+          alert,
+          pendingTrigger,
+          retry.notificationError
+            ? createPendingPushAlertDelivery(
+                retry.canonical.eventId,
+                device,
+                alert,
+                pendingTrigger,
+              )
+            : retry.notification,
+        );
+        continue;
+      }
+
+      const pendingDelivery = state?.pendingDelivery;
+      if (pendingDelivery) {
+        const debugEntry: AlertEvaluationDebug = {
+          token: device.token.slice(-8),
+          alertId: alert.id,
+          symbol: alert.symbol,
+          condition: alert.condition,
+          target: pendingDelivery.candidate.targetPrice,
+          current: pendingDelivery.candidate.triggerPrice,
+          met: true,
+          blocked: "pending notification delivery",
+        };
+        result.debug?.push(debugEntry);
+        const remaining = await deliverTriggerNotifications({
+          device,
+          alert,
+          delivery: pendingDelivery,
+          canSendFirebase,
+          debugEntry,
+          result,
+          externalCache,
+        });
+        if (!remaining && !device.alerts.some((item) => item.id === alert.id)) {
+          delete alertState[alert.id];
+        } else {
+          alertState[alert.id] = { ...state, pendingDelivery: remaining };
+        }
+        if (remaining) result.skipped += 1;
+        continue;
+      }
+
       const price = prices[alert.symbol];
       if (price === undefined) {
         result.skipped += 1;
@@ -252,7 +570,6 @@ async function runEvaluation(
         continue;
       }
 
-      const { signature, state } = shouldEvaluate(device, alert);
       const sameAlertState = state?.signature === signature;
       const since =
         sameAlertState && state?.lastEvaluatedAt !== undefined
@@ -345,92 +662,91 @@ async function runEvaluation(
       };
       result.debug?.push(debugEntry);
 
-      if (!oneTimeFired && !alreadyExpired && !rearmBlocked && matchedTick) {
-        const triggerPrice = matchedTick.price;
-        const triggeredAt = matchedTick.timestamp;
-        const message = formatAlert(alert, triggerPrice, matchedTargetPrice);
-        let deliverySucceeded = false;
-
-        try {
-          if (device.settingsPush && alert.push && canSendFirebase) {
-            const messageId = await sendFirebasePush({
-              token: device.token,
-              title: message.title,
-              body: message.body,
-              data: {
-                alertId: alert.id,
-                symbol: alert.symbol,
-                condition: alert.condition,
-                targetPrice: String(matchedTargetPrice),
-                triggerPrice: String(triggerPrice),
-                source: "server-worker",
-              },
-            });
-            debugEntry.messageId = messageId;
-            deliverySucceeded = true;
-          } else if (device.settingsPush && alert.push && !canSendFirebase) {
-            result.errors.push("Firebase Admin is not configured.");
-          }
-        } catch (error) {
-          result.errors.push(
-            `${alert.symbol}/${alert.id}: ${error instanceof Error ? error.message : "push send failed"}`,
-          );
-        }
-
-        const externalResults = await sendUserIntegrationNotifications(
-          device.deliveryToken,
-          {
-            alertId: alert.id,
-            symbol: alert.symbol,
-            condition: alert.condition,
-            targetPrice: matchedTargetPrice,
-            triggerPrice,
-            note: alert.note,
-            triggeredAt,
-            source: "closed-browser-worker",
-          },
-          {
-            telegram: device.settingsTelegram && alert.telegram,
-            discord: device.settingsDiscord && alert.discord,
+      if (
+        !oneTimeFired &&
+        !alreadyExpired &&
+        !rearmBlocked &&
+        matchedTick &&
+        triggerEvidence
+      ) {
+        const candidate: PendingPushAlertTrigger = {
+          triggerPrice: matchedTick.price,
+          targetPrice: matchedTargetPrice,
+          triggeredAt: epochMillis(matchedTick.timestamp),
+          triggerEvidence,
+        };
+        const cursorState: PushAlertState = {
+          signature,
+          lastTriggeredAt: state?.lastTriggeredAt,
+          lastEvaluatedAt: evaluatedThrough,
+          triggerPrice: state?.triggerPrice,
+          targetPrice: state?.targetPrice,
+          lastMarketTimestamp,
+          oneTimeFired: state?.oneTimeFired,
+          triggerEvidence: state?.triggerEvidence,
+          expiredAt,
+        };
+        const attempt = await persistBeforeNotification(
+          () =>
+            acknowledgeCanonicalAlertTrigger(
+              device.deliveryToken,
+              alert,
+              candidate,
+            ),
+          (canonical) => {
+            const delivery = createPendingPushAlertDelivery(
+              canonical.eventId,
+              device,
+              alert,
+              candidate,
+            );
+            return delivery
+              ? deliverTriggerNotifications({
+                  device,
+                  alert,
+                  delivery,
+                  canSendFirebase,
+                  debugEntry,
+                  result,
+                  externalCache,
+                })
+              : Promise.resolve(undefined);
           },
         );
-        if (externalResults.length > 0) {
-          debugEntry.external = externalResults;
-          deliverySucceeded ||= externalResults.some((item) => item.ok);
-          for (const item of externalResults) {
-            if (!item.ok) {
-              result.errors.push(
-                `${alert.symbol}/${alert.id}/${item.channel}: ${item.error ?? "external send failed"}`,
-              );
-            }
-          }
-        }
-
-        if (deliverySucceeded) {
-          result.triggered += 1;
-          alertState[alert.id] = {
-            signature,
-            lastTriggeredAt: triggeredAt,
-            lastEvaluatedAt: evaluatedThrough,
-            oneTimeFired: !alert.recurring,
-            triggerPrice,
-            targetPrice: matchedTargetPrice,
-            lastMarketTimestamp,
-            triggerEvidence,
-            expiredAt,
-          };
+        if (!attempt.committed) {
+          result.skipped += 1;
+          result.errors.push(
+            `${alert.symbol}/${alert.id}: ${attempt.persistenceError}`,
+          );
+          alertState[alert.id] = attempt.retryable
+            ? { ...cursorState, pendingTrigger: candidate }
+            : {
+                ...cursorState,
+                pendingTrigger: undefined,
+                canonicalRejectedAt: now,
+                canonicalRejectedReason: attempt.persistenceError,
+              };
         } else {
-          alertState[alert.id] = {
+          if (!attempt.canonical.alreadyTriggered) result.triggered += 1;
+          if (attempt.notificationError) {
+            result.errors.push(
+              `${alert.symbol}/${alert.id}: ${attempt.notificationError}`,
+            );
+          }
+          alertState[alert.id] = committedAlertState(
+            cursorState,
             signature,
-            lastTriggeredAt: state?.lastTriggeredAt,
-            lastEvaluatedAt: evaluatedThrough,
-            triggerPrice: state?.triggerPrice,
-            targetPrice: state?.targetPrice,
-            lastMarketTimestamp,
-            oneTimeFired: state?.oneTimeFired,
-            triggerEvidence: state?.triggerEvidence,
-            expiredAt,
-          };
+            alert,
+            candidate,
+            attempt.notificationError
+              ? createPendingPushAlertDelivery(
+                  attempt.canonical.eventId,
+                  device,
+                  alert,
+                  candidate,
+                )
+              : attempt.notification,
+          );
         }
       } else {
         alertState[alert.id] = {

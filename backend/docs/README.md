@@ -5,7 +5,7 @@ Documentation for the SMC Trading Terminal Go API server.
 Backend framework decision: Fiber. Current code includes health/readiness,
 auth, settings/bootstrap, watchlists, drawings, indicators, Pine scripts/runtime,
 alerts/push tokens with dynamic technical-target verification, layouts, and the
-local MT5 streaming sidecar/consumer. The migration head is `0021`.
+local MT5 streaming sidecar/consumer. The migration head is `0022`.
 
 ## Index
 

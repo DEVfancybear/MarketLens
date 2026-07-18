@@ -1,6 +1,6 @@
 # PHASE 6A PUSH NOTIFICATIONS
 
-_Implemented 2026-07-01._
+_Implemented 2026-07-01; canonical lifecycle ordering hardened 2026-07-18._
 
 ## Scope
 
@@ -13,11 +13,13 @@ reuse the same alert trigger and closed-browser worker flow without changing ale
 
 Runtime modes:
 
-- **Browser-open mode:** existing `useAlertEngine` evaluates alerts in the browser and sends push
-  through `/api/push/send`.
+- **Browser-open mode:** `useAlertEngine` evaluates alerts and waits for the Go
+  trigger transaction. A live in-memory candidate makes one delivery attempt
+  after either a new commit or `alreadyTriggered`; bootstrap/reconcile stays silent.
 - **Closed-browser mode:** the browser syncs push-enabled alerts and the FCM token to the server;
   `npm run push-worker` or an external cron calls `/api/push/evaluate` to evaluate those alerts and
-  send FCM while the app/browser is closed.
+  persist the canonical Go lifecycle before draining per-device FCM work while
+  the app/browser is closed. Failed delivery remains pending independently.
 
 ## User Behavior
 
@@ -54,7 +56,10 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/app/api/push/evaluate/route.ts` | Evaluates server-stored alerts and sends FCM. |
 | `src/app/firebase-messaging-sw.js/route.ts` | Dynamic service worker with public Firebase config injected from env. |
 | `src/server/pushAlertStore.ts` | Firestore-backed server store for tokens and alert snapshots, with local file fallback when Firebase Admin is not configured. |
-| `src/server/pushAlertEvaluator.ts` | Server-side price polling and alert trigger evaluation. |
+| `src/server/pushAlertEvaluator.ts` | Server-side price polling, pending trigger retry, and alert evaluation. |
+| `src/server/canonicalAlertTrigger.ts` | Service-authenticated worker acknowledgement to Go/PostgreSQL. |
+| `src/server/pushAlertLifecycle.ts` | Enforces canonical persistence before notification delivery. |
+| `src/server/pushAlertDeliveryPolicy.ts` | Retains failed delivery work, creates FCM per-device work, and groups Telegram/Discord by canonical event/channel in-run. |
 | `scripts/push-alert-worker.mjs` | Local worker loop for closed-browser push evaluation. |
 | `src/components/alerts/AlertCenter.tsx` | Push toggle/status/error UI. |
 | `src/components/alerts/AlertEditDialog.tsx` | Per-alert Push flag. |
@@ -209,7 +214,8 @@ losing pushes for any realistically long closed-browser window.
 - Permission denied: Push toggle is disabled until the user changes browser site settings.
 - Missing Firebase Admin env: token registration falls back to local `.data/push-alerts.json`, but
   `/api/push/send` and `/api/push/evaluate` cannot send FCM.
-- FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
+- Browser-open FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
+- Closed-browser FCM send error: the worker retains that device's pending FCM work and retries it without reactivating the alert.
 - `Subscription failed - no active Service Worker`: unregister old service workers / clear site data
   after redeploy. The app now waits for `/firebase-messaging-sw.js` to activate before requesting
   an FCM token, and the worker calls `skipWaiting()`/`clients.claim()` on install/activate.
@@ -253,11 +259,18 @@ worker. Alert definitions/history are stored in PostgreSQL `alerts` and
 `alert_events`; FCM ownership is stored in `push_tokens`. Enabling a token with
 an active backend session writes `POST /api/v1/push/tokens`.
 
-When Firebase Admin env is configured, closed-browser evaluator device state
-and its alert snapshots remain in Firestore collection `pushAlertDevices`.
-This store drives evaluation/delivery, while PostgreSQL drives user workspace
-hydration and durable alert history. See `PHASE10_ALERT_API_SYNC.md` for the
-dual-write and reconciliation flow.
+When Firebase Admin env is configured, closed-browser evaluator cursors, pending
+trigger candidates, and alert snapshots remain in Firestore collection
+`pushAlertDevices`. PostgreSQL is authoritative for lifecycle and history. The
+worker must first call `/api/v1/alerts/worker-trigger` with the shared worker
+secret and signed user token. Both a new commit and an idempotent
+`alreadyTriggered` acknowledgement may drain
+FCM work per device and Telegram/Discord work per event/channel within the run;
+this prevents an ambiguous commit response from losing delivery. Transient/global
+failures remain pending, alert-specific permanent rejections are quarantined
+until browser resync, and no channel is sent before commit. See
+`PHASE10_ALERT_API_SYNC.md` for the canonical flow;
+token-keyed reconciliation is now fallback cache convergence.
 
 When Firebase Admin env is missing, local development falls back to `.data/push-alerts.json`.
 That fallback is not suitable for Vercel/serverless persistence and should not be committed.

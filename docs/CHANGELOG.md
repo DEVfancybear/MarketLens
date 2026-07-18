@@ -4,6 +4,36 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Canonical trendline-alert lifecycle across restart (2026-07-18)
+- Made both browser-open and closed-browser alerts commit lifecycle/history to
+  Go/PostgreSQL before FCM, Telegram, or Discord delivery. A one-time alert that
+  produced a remote notification can no longer bootstrap as active and redraw
+  its orange alert overlay after a browser or computer restart; the source
+  trendline remains independent and is not deleted.
+- Added the service-authenticated `/api/v1/alerts/worker-trigger` route using the
+  shared worker secret plus signed user delivery token. Worker persistence
+  failures block notification delivery; transient failures retain an exact
+  pending candidate for retry even when no new market tick is available, while
+  permanent rejections wait for a corrected browser sync.
+- Added migration `0022_alert_event_idempotency`: alert events retain their arming
+  revision and exact trigger retries are idempotent for one-time and recurring
+  alerts. Closed-browser sync now waits for a signed credential and cannot erase
+  an existing worker credential with its initial loading state.
+- Added browser-side exact-evidence retry with capped backoff. A committed trigger
+  that races an edit/delete still emits from its frozen pre-edit snapshot without
+  overwriting the newer local state. Browser evaluation now waits for
+  `workspaceReady`, so stale local cache cannot fire before authenticated
+  bootstrap classifies a previously triggered one-time alert.
+- Added per-device/channel worker delivery state: FCM remains per device,
+  Telegram/Discord group by canonical event/channel within one evaluator run, and
+  failed channels retry without restoring the alert line. Worker attempts use
+  at-least-once retry semantics, but without a transactional provider outbox a
+  narrow crash/resync window can still lose or duplicate notification delivery;
+  lifecycle/history and reopen state remain idempotent.
+- Added backend route/repository regressions and frontend canonical-order,
+  credential-gate, worker-body, and failure-path tests; updated alert/API/database
+  documentation against TradingView's drawing/alert-line separation.
+
 ### Added - Generic stateful Pine runtime and source-backed catalog (2026-07-17)
 - Added a generic closed-bar Pine parser/VM for UDTs, function-local `var`,
   tuples, typed reference arrays, methods, loops, history, independent

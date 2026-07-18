@@ -61,7 +61,7 @@ export function usePushTriggerReconcile() {
         }
         const knownTriggeredAt = alert.triggeredAt ? alert.triggeredAt * 1000 : 0;
         if (trigger.triggeredAt <= knownTriggeredAt) continue;
-        triggerAlert(
+        void triggerAlert(
           alert.id,
           trigger.triggerPrice,
           trigger.triggeredAt,

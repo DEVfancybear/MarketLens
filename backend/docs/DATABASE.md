@@ -1,6 +1,6 @@
 # Database Design
 
-> Status: implemented through migration `0021_alert_expiration_and_arming_revision`.
+> Status: implemented through migration `0022_alert_event_idempotency`.
 > This includes alerts, dynamic technical targets, expiration/re-arming, drawing revisions,
 > integrations, replay, journal/screenshots, simulated trading, and layout persistence.
 > See `AUTH.md` for auth, `API.md` for endpoints, and
@@ -523,17 +523,36 @@ CREATE TABLE alert_events (
   target_price  numeric(20,8) NOT NULL,
   trigger_price numeric(20,8) NOT NULL,
   triggered_at  timestamptz NOT NULL DEFAULT now(),
-  delivered     boolean NOT NULL DEFAULT false  -- push/notification delivery result
+  delivered     boolean NOT NULL DEFAULT false, -- legacy/reserved; not provider delivery truth
+  arming_revision bigint                        -- nullable only for pre-0022 history
 );
 CREATE INDEX idx_alert_events_alert ON alert_events(alert_id);
 CREATE INDEX idx_alert_events_ref ON alert_events(user_id, alert_ref, triggered_at DESC);
 CREATE INDEX idx_alert_events_user ON alert_events(user_id, triggered_at DESC);
+CREATE UNIQUE INDEX idx_alert_events_trigger_attempt
+  ON alert_events(alert_id, arming_revision, triggered_at)
+  WHERE alert_id IS NOT NULL AND arming_revision IS NOT NULL;
 ```
+
+`delivered` is not updated by the current worker and must not be interpreted as
+provider acceptance. Retry state is maintained per FCM device/channel in the
+worker store; Telegram/Discord are grouped per event/channel within one evaluator
+run. There is no transactional provider outbox.
 
 Triggering is transactional: update `alerts`, insert `alert_events`, then prune
 older user events beyond 200 before commit. `alert_id` is nullable by design;
 deleting or clearing a triggered alert must not erase the History audit trail
 shown by the frontend.
+
+Migration `0022` writes `arming_revision` on every new event and uniquely keys a
+trigger attempt by `(alert_id, arming_revision, triggered_at)`, where
+`triggered_at` is the accepted current-evidence timestamp. The same alert ID,
+arming revision, and evidence timestamp represents the same immutable market
+observation, so an exact browser/worker retry returns the existing event. A
+different price or target under that identity is a collision and is rejected.
+The row lock and index provide this idempotency for recurring as well as one-time
+alerts, while a later evidence timestamp or re-armed revision is a distinct
+attempt.
 
 ---
 
@@ -686,13 +705,14 @@ Server authoritative, client cache — so auth can ship before every feature is 
 0019_alert_source.sql           immutable drawing provenance for fixed-price alerts
 0020_alert_technical_target.sql versioned fixed/dynamic technical alert geometry
 0021_alert_expiration_and_arming_revision.sql  expired lifecycle + arming revision
+0022_alert_event_idempotency.sql event arming revision + unique trigger attempt
 ```
 
 `0015_journal` initially leaves `journal_entries.position_id` nullable without a foreign key because
 `replay_positions` is not interchangeable with simulator positions. `0016_simulated_trading`
-creates `sim_positions` and adds the FK. `0017`–`0021` add integrations, drawing conflict metadata,
-immutable alert provenance, dynamic technical targets, expiration, and re-arming semantics. The
-current development schema head is version `21`.
+creates `sim_positions` and adds the FK. `0017`–`0022` add integrations, drawing conflict metadata,
+immutable alert provenance, dynamic technical targets, expiration, re-arming, and idempotent
+trigger attempts. The current development schema head is version `22`.
 
 ---
 

@@ -255,12 +255,6 @@ FOR UPDATE`, uid, refUUID, refClientID).Scan(
 	if err != nil {
 		return Alert{}, Event{}, err
 	}
-	if !enabled || status != "active" {
-		return Alert{}, Event{}, fmt.Errorf(
-			"%w: only enabled active alerts can be triggered",
-			ErrBadRequest,
-		)
-	}
 	if input.ArmingRevision != armingRevision {
 		return Alert{}, Event{}, fmt.Errorf("%w: stale armingRevision", ErrBadRequest)
 	}
@@ -286,6 +280,34 @@ FOR UPDATE`, uid, refUUID, refClientID).Scan(
 	}
 	triggeredAt := evidenceTimestamp(input.Current.Timestamp)
 
+	// A worker can lose the HTTP response after this transaction commits and
+	// retry the exact market observation. Detect that attempt while holding the
+	// alert row lock so recurring alerts cannot insert duplicate history rows.
+	var existing Event
+	existing, err = scanEvent(tx.QueryRow(ctx, `
+SELECT id, alert_ref, symbol, condition::text, target_price, trigger_price,
+       triggered_at, delivered, COALESCE(arming_revision, 0)
+FROM alert_events
+WHERE alert_id = $1 AND arming_revision = $2 AND triggered_at = $3
+LIMIT 1`, selectedAlertID, input.ArmingRevision, triggeredAt))
+	if err == nil {
+		if !nearlyEqual(existing.TriggerPrice, input.Current.Price) ||
+			!nearlyEqual(existing.TargetPrice, evaluated.TargetPrice) {
+			return Alert{}, Event{}, fmt.Errorf("%w: trigger attempt identity collision", ErrBadRequest)
+		}
+		return Alert{}, existing, ErrAlreadyTriggered
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return Alert{}, Event{}, err
+	}
+
+	if !enabled || status != "active" {
+		return Alert{}, Event{}, fmt.Errorf(
+			"%w: only enabled active alerts can be triggered",
+			ErrBadRequest,
+		)
+	}
+
 	item, alertID, err := scanAlert(tx.QueryRow(ctx, `
 UPDATE alerts SET
   status = CASE WHEN recurring THEN 'active'::alert_status ELSE 'triggered'::alert_status END,
@@ -305,12 +327,14 @@ RETURNING id, COALESCE(client_id, ''), symbol, condition::text, price, COALESCE(
 
 	event, err := scanEvent(tx.QueryRow(ctx, `
 INSERT INTO alert_events (
-  alert_id, alert_ref, user_id, symbol, condition, target_price, trigger_price, triggered_at
+  alert_id, alert_ref, user_id, symbol, condition, target_price, trigger_price,
+  triggered_at, arming_revision
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, alert_ref, symbol, condition::text, target_price, trigger_price, triggered_at, delivered`,
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, alert_ref, symbol, condition::text, target_price, trigger_price,
+          triggered_at, delivered, COALESCE(arming_revision, 0)`,
 		alertID, alertRef(item), uid, item.Symbol, item.Condition, evaluated.TargetPrice,
-		input.Current.Price, triggeredAt))
+		input.Current.Price, triggeredAt, input.ArmingRevision))
 	if err != nil {
 		return Alert{}, Event{}, err
 	}
@@ -336,7 +360,8 @@ func (r *Repo) ListEvents(ctx context.Context, userID, ref string, limit int) ([
 	limit = normalizeLimit(limit)
 	rows, err := r.pool.Query(ctx, `
 SELECT ae.id, ae.alert_ref, ae.symbol, ae.condition::text,
-       ae.target_price, ae.trigger_price, ae.triggered_at, ae.delivered
+       ae.target_price, ae.trigger_price, ae.triggered_at, ae.delivered,
+       COALESCE(ae.arming_revision, 0)
 FROM alert_events ae
 WHERE ae.user_id = $1
   AND (($2::uuid IS NOT NULL AND ae.alert_id = $2::uuid) OR ($3::text <> '' AND ae.alert_ref = $3::text))
@@ -357,7 +382,8 @@ func (r *Repo) ListHistory(ctx context.Context, userID string, limit int) ([]Eve
 	limit = normalizeLimit(limit)
 	rows, err := r.pool.Query(ctx, `
 SELECT ae.id, ae.alert_ref, ae.symbol, ae.condition::text,
-       ae.target_price, ae.trigger_price, ae.triggered_at, ae.delivered
+       ae.target_price, ae.trigger_price, ae.triggered_at, ae.delivered,
+       COALESCE(ae.arming_revision, 0)
 FROM alert_events ae
 WHERE ae.user_id = $1
 ORDER BY ae.triggered_at DESC, ae.id DESC
@@ -473,7 +499,7 @@ func scanEvent(row rowScanner) (Event, error) {
 	var item Event
 	if err := row.Scan(
 		&id, &item.AlertID, &item.Symbol, &item.Condition, &item.TargetPrice,
-		&item.TriggerPrice, &item.TriggeredAt, &item.Delivered,
+		&item.TriggerPrice, &item.TriggeredAt, &item.Delivered, &item.ArmingRevision,
 	); err != nil {
 		return Event{}, err
 	}

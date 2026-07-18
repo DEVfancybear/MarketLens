@@ -12,6 +12,7 @@ import { uid } from "@/utils/id";
 import { localStore } from "@/services/storage";
 import { backendSessionAtom } from "@/store/authStore";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
+import { isApiError } from "@/services/api/errors";
 import {
   backendAlertEventToLocal,
   backendAlertToLocal,
@@ -35,6 +36,7 @@ import type {
   TechnicalAlertTarget,
 } from "@/types/technicalAlerts";
 import { sanitizeTechnicalAlertTarget } from "@/services/dynamicAlertTargets";
+import type { BrowserAlertTriggerAttempt } from "@/services/notifications/browserAlertTriggerQueue";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -171,26 +173,48 @@ function reportSyncError(action: string, error: unknown): void {
   });
 }
 
-function queueAlertSync(
+type AlertSyncOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: unknown };
+
+function queueAlertSync<T>(
   get: Getter,
   alertID: string,
   action: string,
-  request: () => Promise<unknown>,
-): void {
-  if (!syncEnabled(get)) return;
+  request: () => Promise<T>,
+): Promise<AlertSyncOutcome<T>> {
+  if (!syncEnabled(get)) {
+    return Promise.resolve({ ok: true, value: undefined as T });
+  }
   const previous = alertSyncQueues.get(alertID) ?? Promise.resolve();
-  let tracked: Promise<void>;
-  tracked = previous
+  const outcome: Promise<AlertSyncOutcome<T>> = previous
     .catch(() => undefined)
     .then(request)
+    .then((value) => ({ ok: true as const, value }))
+    .catch((error) => {
+      reportSyncError(action, error);
+      return { ok: false as const, error };
+    });
+  let tracked: Promise<void>;
+  tracked = outcome
     .then(() => undefined)
-    .catch((error) => reportSyncError(action, error))
     .finally(() => {
       if (alertSyncQueues.get(alertID) === tracked) {
         alertSyncQueues.delete(alertID);
       }
     });
   alertSyncQueues.set(alertID, tracked);
+  return outcome;
+}
+
+function isRetryableTriggerError(error: unknown): boolean {
+  if (!isApiError(error)) return true;
+  return (
+    error.status === 408 ||
+    error.status === 425 ||
+    error.status === 429 ||
+    error.status >= 500
+  );
 }
 
 function queueHistoryClear(get: Getter): void {
@@ -385,7 +409,7 @@ export const editAlertAtom = atom(null, (_get, set, id: string | null) => {
 
 export const triggerAlertAtom = atom(
   null,
-  (
+  async (
     get,
     set,
     id: string,
@@ -393,9 +417,11 @@ export const triggerAlertAtom = atom(
     triggeredAtMs?: number,
     targetPrice?: number,
     evidence?: TechnicalAlertEvidence,
-  ): Alert | undefined => {
+  ): Promise<BrowserAlertTriggerAttempt<Alert>> => {
     const alert = get(alertsAtom).find((a) => a.id === id);
-    if (!alert || !alert.enabled || alert.status !== "active") return undefined;
+    if (!alert || !alert.enabled || alert.status !== "active") {
+      return { status: "discarded" };
+    }
     const evaluatedTarget = targetPrice ?? alert.price;
     const validDynamicChannel =
       alert.technicalTarget?.kind === "dynamic-channel" &&
@@ -404,11 +430,54 @@ export const triggerAlertAtom = atom(
       Number.isFinite(triggerPrice) &&
       triggerPrice > 0;
     if (!validDynamicChannel && !isTriggerPriceValid(alert.condition, evaluatedTarget, triggerPrice)) {
-      return undefined;
+      return { status: "discarded" };
     }
-    const now = (triggeredAtMs ?? (evidence ? evidence.current.timestamp * 1000 : Date.now())) / 1000;
+    const persisted = await queueAlertSync(get, id, "trigger", () =>
+      triggerRemoteAlert(
+        id,
+        triggerPrice,
+        evaluatedTarget,
+        evidence,
+        alert.armingRevision,
+      ),
+    );
+    if (!persisted.ok) {
+      return {
+        status: isRetryableTriggerError(persisted.error)
+          ? "retryable"
+          : "discarded",
+      };
+    }
+
+    // The alert can be edited or deleted while the canonical request is in
+    // flight. Apply the local lifecycle only if the same arming revision is
+    // still active; the queued mutation order will reconcile later edits.
+    const currentAlert = get(alertsAtom).find((item) => item.id === id);
+    const now =
+      (triggeredAtMs ??
+        (evidence ? evidence.current.timestamp * 1000 : Date.now())) / 1000;
     const fired: Alert = {
       ...alert,
+      status: "triggered",
+      triggeredAt: now,
+      triggerPrice,
+      evaluatedTargetPrice: evaluatedTarget,
+      triggerEvidence: evidence,
+    };
+    if (
+      !currentAlert ||
+      !currentAlert.enabled ||
+      currentAlert.status !== "active" ||
+      currentAlert.armingRevision !== alert.armingRevision
+    ) {
+      // The canonical event committed before a queued local edit/delete. The
+      // newer local mutation must win, but this immutable fired snapshot still
+      // owns one best-effort notification attempt for the accepted crossing.
+      return { status: "committed", value: fired };
+    }
+
+    const currentFired: Alert = {
+      ...currentAlert,
       status: "triggered",
       triggeredAt: now,
       triggerPrice,
@@ -428,7 +497,7 @@ export const triggerAlertAtom = atom(
 
     set(historyAtom, [entry, ...get(historyAtom)].slice(0, MAX_HISTORY));
 
-    if (alert.recurring) {
+    if (currentAlert.recurring) {
       // Stay armed; just stamp the last trigger time (engine re-arm gate).
       set(
         alertsAtom,
@@ -452,20 +521,14 @@ export const triggerAlertAtom = atom(
       );
       set(
         triggeredAlertsAtom,
-        [fired, ...get(triggeredAlertsAtom)].slice(0, MAX_TRIGGERED),
+        [currentFired, ...get(triggeredAlertsAtom)].slice(0, MAX_TRIGGERED),
       );
     }
     persist();
-    queueAlertSync(get, id, "trigger", () =>
-      triggerRemoteAlert(
-        id,
-        triggerPrice,
-        evaluatedTarget,
-        evidence,
-        alert.armingRevision,
-      ),
-    );
-    return fired;
+    return {
+      status: "committed",
+      value: fired,
+    };
   },
 );
 
@@ -765,7 +828,7 @@ export interface AlertActions {
     triggerPrice: number,
     targetPrice?: number,
     evidence?: TechnicalAlertEvidence,
-  ) => Alert | undefined;
+  ) => Promise<BrowserAlertTriggerAttempt<Alert>>;
   expireAlert: (id: string, expiredAtMs?: number) => Alert | undefined;
   resetAlert: (id: string) => void;
   clearTriggered: () => void;
@@ -810,7 +873,7 @@ const alertCombinedAtom = atom<AlertStoreInterface>((get) => {
         undefined,
         targetPrice,
         evidence,
-      ) as Alert | undefined,
+      ) as Promise<BrowserAlertTriggerAttempt<Alert>>,
     expireAlert: (id, expiredAtMs) =>
       store.set(expireAlertAtom, id, expiredAtMs) as Alert | undefined,
     resetAlert: (id) => store.set(resetAlertAtom, id),

@@ -7,6 +7,11 @@ import { syncServerPushAlerts } from "@/services/notifications/push";
 import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
 import { workspaceReadyAtom } from "@/store/authStore";
 import { getIntegrationSettings } from "@/services/api/resources/integrationsApi";
+import {
+  canSyncClosedBrowserAlerts,
+  type WorkerDeliveryCredential,
+  workerCredentialRetryDelay,
+} from "@/services/notifications/pushSyncPolicy";
 
 export function usePushAlertSync() {
   const alerts = useAtomValue(alertsAtom);
@@ -14,15 +19,56 @@ export function usePushAlertSync() {
   const registration = useAtomValue(pushRegistrationAtom);
   const externalSyncToken = useExternalSyncToken();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
-  const [deliveryToken, setDeliveryToken] = useState<string>();
+  const [credential, setCredential] = useState<WorkerDeliveryCredential>({
+    status: "idle",
+  });
 
   useEffect(() => {
-    if (!workspaceReady) { setDeliveryToken(undefined); return; }
-    void getIntegrationSettings().then((v)=>setDeliveryToken(v.deliveryToken)).catch(()=>setDeliveryToken(undefined));
+    let cancelled = false;
+    let retryHandle: number | undefined;
+    let retryAttempt = 0;
+
+    if (!workspaceReady) {
+      setCredential({ status: "idle" });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const loadCredential = async () => {
+      setCredential({ status: "loading" });
+      try {
+        const value = await getIntegrationSettings();
+        if (cancelled) return;
+        const token = value.deliveryToken.trim();
+        if (!token) throw new Error("Signed delivery token is unavailable.");
+        retryAttempt = 0;
+        if (retryHandle !== undefined) {
+          window.clearTimeout(retryHandle);
+          retryHandle = undefined;
+        }
+        setCredential({ status: "ready", token });
+      } catch {
+        if (cancelled) return;
+        setCredential({ status: "failed" });
+        const delay = workerCredentialRetryDelay(retryAttempt);
+        retryAttempt += 1;
+        retryHandle = window.setTimeout(() => {
+          retryHandle = undefined;
+          if (!cancelled) void loadCredential();
+        }, delay);
+      }
+    };
+
+    void loadCredential();
+    return () => {
+      cancelled = true;
+      if (retryHandle !== undefined) window.clearTimeout(retryHandle);
+    };
   }, [workspaceReady]);
 
   useEffect(() => {
-    if (!workspaceReady) return;
+    if (!canSyncClosedBrowserAlerts(workspaceReady, credential)) return;
     const syncToken = registration?.token ?? externalSyncToken;
     const hasExternalAlertFlags = alerts.some(
       (alert) => alert.telegram || alert.discord,
@@ -54,7 +100,7 @@ export function usePushAlertSync() {
       syncServerPushAlerts(
         {
           token: syncToken,
-          deliveryToken,
+          deliveryToken: credential.token,
           settingsPush: canSyncPush,
           settingsTelegram: settings.telegram,
           settingsDiscord: settings.discord,
@@ -85,7 +131,7 @@ export function usePushAlertSync() {
     };
   }, [
     alerts,
-    deliveryToken,
+    credential,
     externalSyncToken,
     registration?.permission,
     registration?.token,

@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -136,7 +137,7 @@ func (f *fakeStore) Trigger(_ context.Context, userID, ref string, input Trigger
 		if item.ID != ref && item.ClientID != ref {
 			continue
 		}
-		if !item.Enabled || item.Status != "active" || normalized.ArmingRevision != item.ArmingRevision {
+		if normalized.ArmingRevision != item.ArmingRevision {
 			return Alert{}, Event{}, ErrBadRequest
 		}
 		target := item.TechnicalTarget
@@ -150,6 +151,20 @@ func (f *fakeStore) Trigger(_ context.Context, userID, ref string, input Trigger
 			return Alert{}, Event{}, ErrBadRequest
 		}
 		now := evidenceTimestamp(normalized.Current.Timestamp)
+		for _, existing := range f.events[userID] {
+			if existing.AlertID == externalRef(*item) &&
+				existing.ArmingRevision == normalized.ArmingRevision &&
+				existing.TriggeredAt.Equal(now) {
+				if !nearlyEqual(existing.TriggerPrice, normalized.Current.Price) ||
+					!nearlyEqual(existing.TargetPrice, evaluated.TargetPrice) {
+					return Alert{}, Event{}, ErrBadRequest
+				}
+				return Alert{}, existing, ErrAlreadyTriggered
+			}
+		}
+		if !item.Enabled || item.Status != "active" {
+			return Alert{}, Event{}, ErrBadRequest
+		}
 		item.TriggerPrice = &normalized.Current.Price
 		item.TriggeredAt = &now
 		if !item.Recurring {
@@ -157,13 +172,14 @@ func (f *fakeStore) Trigger(_ context.Context, userID, ref string, input Trigger
 		}
 		f.seq++
 		event := Event{
-			ID:           fmt.Sprintf("event-%d", f.seq),
-			AlertID:      externalRef(*item),
-			Symbol:       item.Symbol,
-			Condition:    item.Condition,
-			TargetPrice:  evaluated.TargetPrice,
-			TriggerPrice: normalized.Current.Price,
-			TriggeredAt:  now,
+			ID:             fmt.Sprintf("event-%d", f.seq),
+			AlertID:        externalRef(*item),
+			Symbol:         item.Symbol,
+			Condition:      item.Condition,
+			TargetPrice:    evaluated.TargetPrice,
+			TriggerPrice:   normalized.Current.Price,
+			TriggeredAt:    now,
+			ArmingRevision: normalized.ArmingRevision,
 		}
 		f.events[userID] = append([]Event{event}, f.events[userID]...)
 		return *item, event, nil
@@ -270,6 +286,20 @@ func TestAlertRoutesCRUDTriggerAndHistory(t *testing.T) {
 	}
 	if triggerBody.Alert.Status != "triggered" || triggerBody.Event.AlertID != "alert-1" {
 		t.Fatalf("unexpected trigger response: %+v", triggerBody)
+	}
+	resp = doRequest(t, app, http.MethodPost, "/api/v1/alerts/alert-1/trigger", `{
+		"triggerPrice":1.131,"targetPrice":1.13,"armingRevision":2,
+		"previous":{"price":1.129,"timestamp":1750000000},
+		"current":{"price":1.131,"timestamp":1750000001}
+	}`)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("idempotent authenticated trigger status = %d, want 200", resp.StatusCode)
+	}
+	var retryBody struct {
+		AlreadyTriggered bool `json:"alreadyTriggered"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&retryBody); err != nil || !retryBody.AlreadyTriggered {
+		t.Fatalf("authenticated trigger retry was not acknowledged: body=%+v err=%v", retryBody, err)
 	}
 
 	resp = doRequest(t, app, http.MethodGet, "/api/v1/alerts/history", "")
@@ -491,6 +521,176 @@ func TestDynamicChannelPatchAndTrigger(t *testing.T) {
 	}
 }
 
+func TestWorkerTriggerPersistsLifecycleBeforeDeliveryAndRetriesIdempotently(t *testing.T) {
+	store := newFakeStore()
+	created, err := store.Create(context.Background(), "user-1", CreateInput{
+		ClientID:  "worker-alert-1",
+		Symbol:    "BTCUSD",
+		Condition: "below",
+		Price:     64_000,
+	})
+	if err != nil {
+		t.Fatalf("seed alert: %v", err)
+	}
+
+	verifyToken := func(token string) (string, error) {
+		switch token {
+		case "token-user-1":
+			return "user-1", nil
+		case "token-user-2":
+			return "user-2", nil
+		default:
+			return "", errors.New("invalid delivery token")
+		}
+	}
+	app := fiber.New()
+	NewHandler(store, fakeRequireAuth).
+		WithWorkerTrigger("worker-secret", verifyToken).
+		Register(app.Group("/api/v1"))
+
+	body := fmt.Sprintf(`{
+		"deliveryToken":"token-user-1","alertId":"%s",
+		"triggerPrice":63965.72,"targetPrice":64000,
+		"current":{"price":63965.72,"timestamp":1752836830.125},
+		"armingRevision":%d
+	}`, created.ClientID, created.ArmingRevision)
+
+	resp := doWorkerRequest(t, app, "wrong-secret", body)
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("wrong worker secret status = %d, want 401", resp.StatusCode)
+	}
+	resp = doWorkerRequest(t, app, "worker-secret", strings.Replace(body, "token-user-1", "invalid-token", 1))
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("invalid delivery token status = %d, want 401", resp.StatusCode)
+	}
+	resp = doWorkerRequest(t, app, "worker-secret", strings.Replace(body, "token-user-1", "token-user-2", 1))
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("cross-user trigger status = %d, want 404", resp.StatusCode)
+	}
+	if len(store.events["user-1"]) != 0 || store.alerts["user-1"][0].Status != "active" {
+		t.Fatalf("unauthorized attempts mutated alert state")
+	}
+
+	resp = doWorkerRequest(t, app, "worker-secret", body)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("worker trigger status = %d, want 200", resp.StatusCode)
+	}
+	if store.alerts["user-1"][0].Status != "triggered" || len(store.events["user-1"]) != 1 {
+		t.Fatalf("worker trigger did not atomically persist lifecycle and history")
+	}
+
+	resp = doWorkerRequest(t, app, "worker-secret", body)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("idempotent retry status = %d, want 200", resp.StatusCode)
+	}
+	var retry struct {
+		OK               bool `json:"ok"`
+		AlreadyTriggered bool `json:"alreadyTriggered"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&retry); err != nil {
+		t.Fatalf("decode retry response: %v", err)
+	}
+	if !retry.OK || !retry.AlreadyTriggered || len(store.events["user-1"]) != 1 {
+		t.Fatalf("retry was not idempotent: response=%+v events=%d", retry, len(store.events["user-1"]))
+	}
+
+	// Reopening the browser hydrates from this snapshot. A one-time alert that
+	// the closed-browser worker already triggered must not return to the active
+	// collection (and therefore must not recreate its chart alert line).
+	snapshot, err := store.Snapshot(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("snapshot after worker trigger: %v", err)
+	}
+	if len(snapshot.Alerts) != 0 || len(snapshot.TriggeredAlerts) != 1 || len(snapshot.History) != 1 {
+		t.Fatalf(
+			"reopen snapshot = active:%d triggered:%d history:%d, want 0/1/1",
+			len(snapshot.Alerts),
+			len(snapshot.TriggeredAlerts),
+			len(snapshot.History),
+		)
+	}
+	if snapshot.TriggeredAlerts[0].ClientID != created.ClientID ||
+		snapshot.History[0].AlertID != created.ClientID {
+		t.Fatalf("snapshot did not retain the triggered alert identity: %+v", snapshot)
+	}
+}
+
+func TestWorkerTriggerAcceptsDynamicTrendlineCrossEvidence(t *testing.T) {
+	store := newFakeStore()
+	created, err := store.Create(context.Background(), "user-1", CreateInput{
+		ClientID:  "worker-trendline-1",
+		Symbol:    "EURUSD",
+		Condition: "crossUp",
+		Price:     1.125,
+		TechnicalTarget: &TechnicalAlertTarget{
+			Version:       1,
+			Kind:          "dynamic-line",
+			A:             &TechnicalAlertPoint{Time: 1_750_000_000, Price: 1.12},
+			B:             &TechnicalAlertPoint{Time: 1_750_003_600, Price: 1.13},
+			Domain:        "ray",
+			Interpolation: "linear",
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed dynamic trendline alert: %v", err)
+	}
+
+	app := fiber.New()
+	NewHandler(store, fakeRequireAuth).
+		WithWorkerTrigger("worker-secret", func(token string) (string, error) {
+			if token != "token-user-1" {
+				return "", errors.New("invalid delivery token")
+			}
+			return "user-1", nil
+		}).
+		Register(app.Group("/api/v1"))
+
+	body := fmt.Sprintf(`{
+		"deliveryToken":"token-user-1","alertId":"%s",
+		"triggerPrice":1.141,"targetPrice":1.14,
+		"previous":{"price":1.139,"timestamp":1750007100},
+		"current":{"price":1.141,"timestamp":1750007200},
+		"armingRevision":%d
+	}`, created.ClientID, created.ArmingRevision)
+	resp := doWorkerRequest(t, app, "worker-secret", body)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("dynamic worker trigger status = %d, want 200", resp.StatusCode)
+	}
+	var result struct {
+		OK               bool  `json:"ok"`
+		AlreadyTriggered bool  `json:"alreadyTriggered"`
+		Alert            Alert `json:"alert"`
+		Event            Event `json:"event"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode dynamic worker trigger: %v", err)
+	}
+	if !result.OK || result.AlreadyTriggered || result.Alert.Status != "triggered" {
+		t.Fatalf("unexpected dynamic worker trigger response: %+v", result)
+	}
+	if result.Alert.TechnicalTarget == nil || result.Alert.TechnicalTarget.Kind != "dynamic-line" ||
+		!nearlyEqual(result.Event.TargetPrice, 1.14) ||
+		!nearlyEqual(result.Event.TriggerPrice, 1.141) ||
+		result.Event.ArmingRevision != created.ArmingRevision {
+		t.Fatalf("worker did not persist verified trendline evidence: %+v", result)
+	}
+	if !result.Event.TriggeredAt.Equal(time.Unix(1_750_007_200, 0).UTC()) {
+		t.Fatalf("dynamic worker event time = %v, want evidence time", result.Event.TriggeredAt)
+	}
+}
+
+func TestWorkerTriggerFailsClosedWithoutServerSecret(t *testing.T) {
+	app := fiber.New()
+	NewHandler(newFakeStore(), fakeRequireAuth).
+		WithWorkerTrigger("", func(string) (string, error) { return "user-1", nil }).
+		Register(app.Group("/api/v1"))
+
+	resp := doWorkerRequest(t, app, "", `{"deliveryToken":"token","alertId":"alert-1"}`)
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("blank worker configuration status = %d, want 401", resp.StatusCode)
+	}
+}
+
 func newTestApp(store Store) *fiber.App {
 	app := fiber.New()
 	NewHandler(store, fakeRequireAuth).Register(app.Group("/api/v1"))
@@ -506,6 +706,22 @@ func doRequest(t *testing.T, app *fiber.App, method, path, body string) *http.Re
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	return resp
+}
+
+func doWorkerRequest(t *testing.T, app *fiber.App, workerSecret, body string) *http.Response {
+	t.Helper()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/alerts/worker-trigger",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-push-worker-secret", workerSecret)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("POST worker trigger: %v", err)
 	}
 	return resp
 }

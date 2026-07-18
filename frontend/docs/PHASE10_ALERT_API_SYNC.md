@@ -1,6 +1,6 @@
 # Phase 10 Alert API Sync
 
-_Implemented 2026-07-10; technical-alert hardening verified 2026-07-17. Scope:
+_Implemented 2026-07-10; lifecycle/technical-alert hardening verified 2026-07-18. Scope:
 Go alert/history/push-token persistence, immutable technical targets, lifecycle
 state, and frontend synchronization._
 
@@ -11,18 +11,19 @@ Phase 10 separates three concerns that previously shared one browser-local flow:
 | Concern | Source of truth | Browser role |
 | --- | --- | --- |
 | Alert definitions and lifecycle | Go API + PostgreSQL `alerts` | Optimistic Jotai state and `localStorage` cache; fixed and dynamic targets remain versioned |
-| Trigger audit history | PostgreSQL `alert_events` | Immediate optimistic history, then bootstrap hydration |
+| Trigger audit history | PostgreSQL `alert_events` | Apply browser history only after the canonical trigger transaction succeeds, then hydrate it again on bootstrap |
 | Global channel defaults | `user_settings.notifications` | `AlertSettings` atom/cache |
 | Authenticated FCM device ownership | PostgreSQL `push_tokens` | Firebase token acquisition and local registration cache |
-| Closed-browser evaluation state | Existing Next push worker store | Sync enabled alerts, preserve `armingRevision`, evaluate dynamic targets, and reconcile confirmed triggers |
+| Closed-browser evaluation cursor and pending-trigger state | Existing Next push worker store | Sync enabled alerts, preserve `armingRevision`, evaluate dynamic targets, retain pending canonical retries, and converge an open tab |
 
 The Next push worker remains in place because it evaluates market conditions and
-tracks delivery state. The Go `push_tokens` table answers a different question:
+tracks evaluation cursors plus pending canonical trigger candidates. The Go
+`push_tokens` table answers a different question:
 which authenticated user owns each FCM device token.
 
 ## Backend Contract
 
-Protected routes:
+Authenticated browser routes plus one service-authenticated worker route:
 
 | Method | Route | Frontend action |
 | --- | --- | --- |
@@ -31,6 +32,7 @@ Protected routes:
 | `PATCH` | `/api/v1/alerts/:id` | Edit, pause/resume, re-arm |
 | `DELETE` | `/api/v1/alerts/:id` | Delete and clear Triggered rows |
 | `POST` | `/api/v1/alerts/:id/trigger` | Persist trigger state and event atomically |
+| `POST` | `/api/v1/alerts/worker-trigger` | Service-authenticated closed-browser trigger; worker secret + signed user delivery token |
 | `GET` | `/api/v1/alerts/:id/events` | Per-alert event history |
 | `GET` | `/api/v1/alerts/history` | Newest 200 user events |
 | `DELETE` | `/api/v1/alerts/history` | Clear History UI and database rows |
@@ -125,35 +127,64 @@ ordered retained ticks. All alerts for one symbol in one worker pass read the
 same frozen tick sequence and previous baseline, avoiding loop-order-dependent
 crossings.
 
-Recurring browser-open triggers sync their trigger timestamp and price into the
-worker state. This prevents the worker from delivering the same crossing again
-through push or external channels. Backend trigger transactions accept only
-enabled, active alerts; duplicate one-time and disabled trigger requests fail
-without inserting history events. Triggering does not change `updatedAt`, so it
-does not accidentally create a new arming revision.
+Browser-open triggers wait for their serialized Go trigger transaction before
+applying the local lifecycle or dispatching notification channels. Recurring
+browser-open triggers then sync their trigger timestamp and price into the worker
+state, preventing a second normal evaluation of the same crossing. The browser retains
+the exact evidence in a backoff queue when persistence fails transiently, so
+advancing the live-price cursor cannot consume the crossing. Exact retries are
+idempotent for both one-time and recurring alerts: migration `0022` stores the
+arming revision on `alert_events` and uniquely keys an attempt by
+`(alert_id, arming_revision, triggered_at)`, where `triggered_at` is the accepted
+current-evidence timestamp. The same alert ID, arming revision, and evidence
+timestamp denotes the same immutable market observation, so a transport retry
+returns the existing event instead of inserting history again. A different price
+or target under that same key is rejected as a collision; a later evidence
+timestamp or a newly armed revision is a distinct attempt. Disabled,
+stale-revision, or non-triggering evidence still fails without inserting history.
+Triggering does not change `updatedAt` and does not accidentally create a new
+arming revision.
 
-### Reopen reconciliation order
+### Canonical closed-browser order and reopen behavior
 
-On browser reopen, authenticated workspace bootstrap still reads the alert as
-`active` until the closed-browser trigger is written back. Push synchronization
-and trigger reconciliation are therefore gated by `workspaceReadyAtom`:
+The Next evaluator never treats notification success as lifecycle success. It
+persists the accepted evidence through the worker-only Go endpoint first. If that
+request fails transiently, no FCM/Telegram/Discord channel runs; the exact
+candidate remains pending and can retry without a live market tick. Ambiguous
+transport/protocol responses and global worker auth/configuration failures also
+remain recoverable. Alert-specific permanent 4xx rejections quarantine that
+signature until a successful browser sync corrects its alert snapshot. Once PostgreSQL commits, a
+one-time alert is terminal even when every notification channel later fails:
 
 ```text
-Firebase identity resolved
-  -> backend session exchange resolved
-  -> workspace bootstrap applies active/triggered/history snapshot
-  -> workspaceReady = true
-  -> fetch closed-browser trigger status immediately
-  -> triggerAlertAtom moves one-time alert Active -> Triggered
-  -> per-alert API queue persists trigger/event in Go
-  -> debounced push sync removes the consumed one-time alert from worker state
+Next worker detects crossing and freezes previous/current evidence
+  -> POST /api/v1/alerts/worker-trigger
+     (x-push-worker-secret + signed deliveryToken)
+  -> PostgreSQL atomically updates lifecycle + inserts idempotent event
+  -> drain FCM per device; group Telegram/Discord per event/channel in-run
+  -> persist worker cursor + any failed channel work
+     (oneTimeFired/lastTriggeredAt/evidence/pendingDelivery)
+  -> browser reopen bootstrap already receives the alert as Triggered
 ```
 
-Identity changes close the gate immediately. The gate stays closed while the
-backend login exchange or workspace request is in flight, preventing an early
-local reconcile from being overwritten by a later `active` bootstrap snapshot.
-Reconciliation also reruns whenever the active alert snapshot changes, so it
-does not wait for the normal 60-second status poll after bootstrap.
+`alreadyTriggered` proves canonical lifecycle/history, not provider delivery. An
+exact retry therefore still drains that device record's pending work. FCM is
+attempted per device; Telegram/Discord share the canonical event ID and channel
+within one evaluator run so duplicate device records do not fan out duplicate
+external sends. Failed channels remain pending and retry without a market tick or
+reactivating the alert. Worker attempts deliberately use **at-least-once retry
+semantics**; this is not an end-to-end provider guarantee. Without a transactional
+provider outbox, a crash after canonical commit but before worker state is updated
+can lose a provider attempt. A crash after provider acceptance, concurrent worker
+processes, or simultaneous browser resync/edit can duplicate or remove non-atomic work.
+PostgreSQL lifecycle/history and browser reopen state remain idempotent and correct.
+
+`usePushAlertSync` waits until integration settings return a signed delivery token
+before arming a non-empty worker snapshot, and an omitted token no longer erases a
+stored credential. Identity changes still close `workspaceReadyAtom` immediately.
+The token-keyed status route and `usePushTriggerReconcile` remain for legacy
+worker records and open-tab cache convergence; they are no longer required to
+turn an `active` PostgreSQL row into `triggered` after restart.
 
 ### Notification click navigation
 
@@ -249,10 +280,10 @@ can reference the same service account in both runtime files, but must never be 
 `NEXT_PUBLIC_*` variables.
 
 `usePushAlertSync` and `usePushTriggerReconcile` continue to use the Next worker
-routes. Reconciled closed-browser triggers call the normal `triggerAlertAtom`,
-which now records the trigger in PostgreSQL without sending the notification a
-second time. Reconciliation cannot apply a stored trigger whose price is on the
-wrong side of its alert line.
+routes for snapshot/cursor convergence. A legacy reconciled trigger calls the
+normal idempotent `triggerAlertAtom`, which waits for Go acknowledgement and does
+not send the notification a second time. Reconciliation cannot apply a stored
+trigger whose price is on the wrong side of its alert line.
 
 ## Files
 
@@ -260,11 +291,15 @@ wrong side of its alert line.
 | --- | --- |
 | `src/services/api/resources/alertsApi.ts` | DTOs, adapters, alert/history/token resource calls |
 | `src/store/alertStore.ts` | Optimistic state, per-alert queues, migration, settings sync |
+| `src/server/canonicalAlertTrigger.ts` | Signed worker-to-Go canonical trigger request |
+| `src/server/pushAlertLifecycle.ts` | Enforces persistence-before-notification ordering |
+| `src/server/pushAlertDeliveryPolicy.ts` | Retains failed delivery work, builds FCM per-device work, and groups external work by canonical event/channel in-run |
 | `src/services/alertConditions.ts` | Shared level/cross predicates and final trigger-price guard |
 | `src/services/market-data/mt5Price.ts` | Bid-based MT5 chart/alert price normalization |
 | `src/services/market-data/subscriptionRegistry.ts` | Independent ticker/kline ownership per MT5 symbol |
-| `src/hooks/useAlertEngine.ts` | Consecutive-tick live alert evaluation |
-| `src/server/pushAlertEvaluator.ts` | Closed-browser ordered MT5 tick replay, dynamic target evaluation, and expiration |
+| `src/hooks/useAlertEngine.ts` | Workspace-gated consecutive-tick live alert evaluation |
+| `src/services/notifications/browserAlertTriggerQueue.ts` | Retains exact browser crossing evidence and retries transient canonical failures with backoff |
+| `src/server/pushAlertEvaluator.ts` | Closed-browser ordered MT5 tick replay, pending canonical retry, dynamic target evaluation, and expiration |
 | `src/services/dynamicAlertTargets.ts` | Shared time-indexed line/channel/Fib Channel evaluator |
 | `src/services/pushAlertSanitizer.ts` | Strict target/evidence/arming-revision validation before push persistence |
 | `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot, then opens the push runtime gate |
@@ -275,12 +310,18 @@ wrong side of its alert line.
 | `tests/alerts/alertsApi.test.ts` | Adapter and method/path/body contract tests |
 | `tests/alerts/alertConditions.test.ts` | Crossing, level, wrong-side, and MT5 Bid regression tests |
 | `tests/alerts/pushWorkspaceGate.test.ts` | Identity/bootstrap ordering gate regression test |
+| `tests/alerts/workerCanonicalTrigger.test.ts` | Worker auth/body/idempotent acknowledgement regression test |
+| `tests/alerts/pushAlertLifecycle.test.ts` | Persistence-before-delivery and delivery-failure regression test |
+| `tests/alerts/pushAlertDeliveryPolicy.test.ts` | Per-device channel plan and per-event external grouping regression test |
+| `tests/alerts/browserAlertTriggerQueue.test.ts` | Browser retry, stale-revision discard, and duplicate-delivery suppression regression test |
+| `tests/alerts/pushAlertSyncCredential.test.ts` | Signed-token readiness gate regression test |
 | `tests/alerts/mt5AlertSubscription.test.ts` | Alert ticker/chart kline ownership regression test |
 | `tests/alerts/notificationDeepLink.test.ts` | Symbol query/message validation regression test |
 
 Backend implementation lives in `backend/internal/alerts`; alert schema migrations are
 `backend/migrations/0011_alerts`, `0019_alert_source`, `0020_alert_technical_target`, and
-`0021_alert_expiration_and_arming_revision`.
+`0021_alert_expiration_and_arming_revision`, and
+`0022_alert_event_idempotency`.
 
 ## Verification
 
@@ -301,4 +342,4 @@ npm run test:alerts
 npm run test:ui
 ```
 
-Expected database version after the current alert lifecycle hardening: `21`, not dirty.
+Expected database version after the current alert lifecycle hardening: `22`, not dirty.

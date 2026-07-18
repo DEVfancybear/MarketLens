@@ -54,6 +54,11 @@ sends, real Telegram test send) rather than guessing. Found and fixed, in order:
    for a device token; `src/hooks/usePushTriggerReconcile.ts` (polls on mount / tab-visible / 60s)
    applies them via the existing `triggerAlertAtom` without re-notifying.
 
+   **Superseded 2026-07-18:** authenticated closed-browser triggers now commit
+   directly to PostgreSQL before notification delivery. Bootstrap therefore
+   already returns a one-time alert as triggered; token-keyed reconciliation is
+   retained only for legacy worker records and open-tab cache convergence.
+
 **Debugging tools that worked well and are worth reusing:** `POST /api/push/evaluate?debug=1` with
 the `x-push-worker-secret` header (per-alert condition/target/high/low/met/blocked without exposing
 tokens); a small Node script using `@next/env`'s `loadEnvConfig()` + `firebase-admin` to read

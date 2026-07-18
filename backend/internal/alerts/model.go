@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	ErrNotFound   = errors.New("alerts: not found")
-	ErrBadRequest = errors.New("alerts: bad request")
+	ErrNotFound         = errors.New("alerts: not found")
+	ErrBadRequest       = errors.New("alerts: bad request")
+	ErrAlreadyTriggered = fmt.Errorf("%w: trigger already persisted", ErrBadRequest)
 )
 
 const (
@@ -129,14 +130,15 @@ type Alert struct {
 }
 
 type Event struct {
-	ID           string    `json:"id"`
-	AlertID      string    `json:"alertId"`
-	Symbol       string    `json:"symbol"`
-	Condition    string    `json:"condition"`
-	TargetPrice  float64   `json:"targetPrice"`
-	TriggerPrice float64   `json:"triggerPrice"`
-	TriggeredAt  time.Time `json:"triggeredAt"`
-	Delivered    bool      `json:"delivered"`
+	ID             string    `json:"id"`
+	AlertID        string    `json:"alertId"`
+	Symbol         string    `json:"symbol"`
+	Condition      string    `json:"condition"`
+	TargetPrice    float64   `json:"targetPrice"`
+	TriggerPrice   float64   `json:"triggerPrice"`
+	TriggeredAt    time.Time `json:"triggeredAt"`
+	Delivered      bool      `json:"delivered"`
+	ArmingRevision int64     `json:"armingRevision"`
 }
 
 type Snapshot struct {

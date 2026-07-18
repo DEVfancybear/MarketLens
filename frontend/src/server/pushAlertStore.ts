@@ -1,5 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { firebaseAdminConfigured, getFirebaseFirestore } from "./firebaseAdmin";
+import { resolveStoredDeliveryToken } from "@/services/notifications/pushSyncPolicy";
+import { shouldRetainPushAlertState } from "./pushAlertDeliveryPolicy";
 import type {
   PushAlertDb,
   PushAlertSyncRequest,
@@ -58,6 +60,20 @@ function mergeClientTriggerState(
       alert.recurring,
       alert.armingRevision,
     )}:${technicalTargetSignature(alert.technicalTarget)}`;
+    const existingState = next[alert.id];
+    if (
+      existingState?.signature === signature &&
+      existingState.canonicalRejectedAt !== undefined
+    ) {
+      // A successful browser sync is the recovery boundary for an updated
+      // credential or corrected backend alert. Permit one fresh evaluation.
+      next[alert.id] = {
+        ...existingState,
+        canonicalRejectedAt: undefined,
+        canonicalRejectedReason: undefined,
+        pendingTrigger: undefined,
+      };
+    }
     if (
       alert.lastTriggeredAt === undefined ||
       alert.triggerPrice === undefined ||
@@ -84,7 +100,9 @@ function mergeClientTriggerState(
 function pruneState(device: PushDeviceRecord): PushDeviceRecord {
   const ids = new Set(device.alerts.map((a) => a.id));
   const alertState = Object.fromEntries(
-    Object.entries(device.alertState).filter(([id]) => ids.has(id)),
+    Object.entries(device.alertState).filter(
+      ([id, state]) => shouldRetainPushAlertState(ids.has(id), state),
+    ),
   );
   return { ...device, alertState };
 }
@@ -223,7 +241,10 @@ export async function syncPushAlerts(
       : [];
     const device = pruneState({
       token: request.token,
-      deliveryToken: request.deliveryToken,
+      deliveryToken: resolveStoredDeliveryToken(
+        request.deliveryToken,
+        existing?.deliveryToken,
+      ),
       alerts,
       settingsPush: Boolean(request.settingsPush),
       settingsTelegram: Boolean(request.settingsTelegram),
@@ -252,7 +273,10 @@ export async function syncPushAlerts(
 
   const device: PushDeviceRecord = pruneState({
     token: request.token,
-    deliveryToken: request.deliveryToken,
+    deliveryToken: resolveStoredDeliveryToken(
+      request.deliveryToken,
+      existing?.deliveryToken,
+    ),
     alerts,
     settingsPush: Boolean(request.settingsPush),
     settingsTelegram: Boolean(request.settingsTelegram),

@@ -58,6 +58,7 @@ export interface BackendAlertEvent {
   triggerPrice: number;
   triggeredAt: string;
   delivered: boolean;
+  armingRevision?: number;
   evidence?: TechnicalAlertEvidence;
 }
 
@@ -98,8 +99,9 @@ export interface BackendAlertPatch {
 }
 
 export interface BackendTriggerResponse {
-  alert: BackendAlert;
+  alert?: BackendAlert;
   event: BackendAlertEvent;
+  alreadyTriggered?: boolean;
 }
 
 export interface BackendPushToken {

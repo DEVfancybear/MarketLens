@@ -104,8 +104,39 @@ func TestRepoIntegrationAlertLifecycleAndPushToken(t *testing.T) {
 		t.Fatalf("event triggeredAt = %v, want evidence time", event.TriggeredAt)
 	}
 	_, _, err = repo.Trigger(ctx, userID, created.ClientID, fixedEvidence)
-	if !errors.Is(err, ErrBadRequest) {
-		t.Fatalf("duplicate one-time trigger error = %v, want ErrBadRequest", err)
+	if !errors.Is(err, ErrAlreadyTriggered) {
+		t.Fatalf("duplicate one-time trigger error = %v, want ErrAlreadyTriggered", err)
+	}
+
+	recurring, err := repo.Create(ctx, userID, CreateInput{
+		ClientID:  "repo-recurring-idempotency",
+		Symbol:    "EURUSD",
+		Condition: "above",
+		Price:     1.14,
+		Recurring: true,
+	})
+	if err != nil {
+		t.Fatalf("create recurring alert: %v", err)
+	}
+	recurringEvidence := TriggerInput{
+		ArmingRevision: recurring.ArmingRevision,
+		Current:        &TechnicalEvidencePoint{Price: 1.141, Timestamp: 1_750_000_100.25},
+	}
+	triggeredRecurring, _, err := repo.Trigger(ctx, userID, recurring.ClientID, recurringEvidence)
+	if err != nil || triggeredRecurring.Status != "active" {
+		t.Fatalf("trigger recurring alert: alert=%+v err=%v", triggeredRecurring, err)
+	}
+	_, _, err = repo.Trigger(ctx, userID, recurring.ClientID, recurringEvidence)
+	if !errors.Is(err, ErrAlreadyTriggered) {
+		t.Fatalf("duplicate recurring trigger error = %v, want ErrAlreadyTriggered", err)
+	}
+	recurringEvents, err := repo.ListEvents(ctx, userID, recurring.ClientID, MaxHistory)
+	if err != nil || len(recurringEvents) != 1 {
+		t.Fatalf("duplicate recurring trigger inserted history: events=%+v err=%v", recurringEvents, err)
+	}
+	recurringEvidence.Current.Timestamp++
+	if _, _, err = repo.Trigger(ctx, userID, recurring.ClientID, recurringEvidence); err != nil {
+		t.Fatalf("later recurring observation should create a new event: %v", err)
 	}
 	if err := repo.Delete(ctx, userID, created.ClientID); err != nil {
 		t.Fatalf("delete alert: %v", err)
@@ -114,7 +145,14 @@ func TestRepoIntegrationAlertLifecycleAndPushToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list retained history: %v", err)
 	}
-	if len(history) != 1 || history[0].AlertID != created.ClientID {
+	foundDeletedAlertEvent := false
+	for _, historyEvent := range history {
+		if historyEvent.AlertID == created.ClientID {
+			foundDeletedAlertEvent = true
+			break
+		}
+	}
+	if !foundDeletedAlertEvent {
 		t.Fatalf("history should survive alert delete: %+v", history)
 	}
 

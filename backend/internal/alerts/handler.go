@@ -1,10 +1,12 @@
 package alerts
 
 import (
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -12,15 +14,28 @@ import (
 )
 
 type Handler struct {
-	store       Store
-	requireAuth fiber.Handler
+	store               Store
+	requireAuth         fiber.Handler
+	workerSecret        string
+	verifyDeliveryToken func(string) (string, error)
 }
 
 func NewHandler(store Store, requireAuth fiber.Handler) *Handler {
 	return &Handler{store: store, requireAuth: requireAuth}
 }
 
+func (h *Handler) WithWorkerTrigger(
+	workerSecret string,
+	verifyDeliveryToken func(string) (string, error),
+) *Handler {
+	h.workerSecret = strings.TrimSpace(workerSecret)
+	h.verifyDeliveryToken = verifyDeliveryToken
+	return h
+}
+
 func (h *Handler) Register(router fiber.Router) {
+	router.Post("/alerts/worker-trigger", h.workerTrigger)
+
 	g := router.Group("/alerts", h.requireAuth)
 	g.Get("/", h.list)
 	g.Post("/", h.create)
@@ -84,10 +99,56 @@ func (h *Handler) trigger(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
 	item, event, err := h.store.Trigger(c.Context(), userID(c), c.Params("id"), req)
+	if errors.Is(err, ErrAlreadyTriggered) {
+		return c.JSON(fiber.Map{
+			"alreadyTriggered": true,
+			"event":            event,
+		})
+	}
 	if err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"alert": item, "event": event})
+}
+
+type workerTriggerRequest struct {
+	DeliveryToken string `json:"deliveryToken"`
+	AlertID       string `json:"alertId"`
+	TriggerInput
+}
+
+func (h *Handler) workerTrigger(c *fiber.Ctx) error {
+	if h.workerSecret == "" || h.verifyDeliveryToken == nil ||
+		!hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret)) {
+		return fiber.ErrUnauthorized
+	}
+
+	var req workerTriggerRequest
+	if err := json.Unmarshal(c.Body(), &req); err != nil || strings.TrimSpace(req.AlertID) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid worker trigger request")
+	}
+	uid, err := h.verifyDeliveryToken(strings.TrimSpace(req.DeliveryToken))
+	if err != nil || strings.TrimSpace(uid) == "" {
+		return fiber.ErrUnauthorized
+	}
+
+	item, event, err := h.store.Trigger(c.Context(), uid, req.AlertID, req.TriggerInput)
+	if errors.Is(err, ErrAlreadyTriggered) {
+		return c.JSON(fiber.Map{
+			"ok":               true,
+			"alreadyTriggered": true,
+			"event":            event,
+		})
+	}
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(fiber.Map{
+		"ok":               true,
+		"alreadyTriggered": false,
+		"alert":            item,
+		"event":            event,
+	})
 }
 
 func (h *Handler) events(c *fiber.Ctx) error {
