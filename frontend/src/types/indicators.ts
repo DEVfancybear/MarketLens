@@ -77,6 +77,10 @@ export interface IndicatorOverlayLabel {
   text: string;
   color: string;
   backgroundColor?: string;
+  /** Pine label.style_* identifier, when supplied by the runtime. */
+  style?: string;
+  /** Dynamic Pine tooltip text. Newlines are intentionally preserved. */
+  tooltip?: string;
   time?: number;
 }
 

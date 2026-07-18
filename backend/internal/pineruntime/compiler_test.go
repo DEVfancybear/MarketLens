@@ -585,6 +585,37 @@ func TestHandlerCompileUsesHTTPContract(t *testing.T) {
 	}
 }
 
+func TestHandlerCompileAppliesReplayCutoffBeforeSavedSourceExecution(t *testing.T) {
+	app := fiber.New()
+	NewHandler().Register(app.Group("/api/v1"))
+	source := `//@version=5
+indicator("Replay-safe source")
+plot(close)`
+	candles := []Candle{
+		{Time: 60, Close: 1},
+		{Time: 120, Close: 2},
+		{Time: 180, Close: 99},
+	}
+	body := `{"scriptId":"replay-source","sourceCode":` + quoteJSON(source) + `,"replayCutoff":120,"candles":` + candlesJSON(candles) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/pine-runtime/compile", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("compile route: %v", err)
+	}
+	var decoded CompileResponse
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK || len(decoded.Errors) != 0 || len(decoded.Result.Series) != 1 {
+		t.Fatalf("replay compile response: status=%d body=%+v", resp.StatusCode, decoded)
+	}
+	points := decoded.Result.Series[0].Data
+	if len(points) != 2 || points[len(points)-1].Time != 120 || points[len(points)-1].Value != 2 {
+		t.Fatalf("future candle reached saved-source execution: %+v", points)
+	}
+}
+
 func TestHandlerCompileRebindsSharedSavedScriptResultToEachInstance(t *testing.T) {
 	app := fiber.New()
 	NewHandler().Register(app.Group("/api/v1"))

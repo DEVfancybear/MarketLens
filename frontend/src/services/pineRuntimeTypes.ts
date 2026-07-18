@@ -17,6 +17,8 @@ export interface PineScriptMeta {
   shortTitle?: string;
   overlay: boolean;
   timeframe?: string;
+  version?: number;
+  properties?: Record<string, unknown>;
 }
 
 export interface PineCompilation {

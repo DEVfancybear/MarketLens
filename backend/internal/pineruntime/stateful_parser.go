@@ -110,9 +110,9 @@ func parseStatefulProgram(source string) (*statefulProgram, error) {
 		types:     map[string]*statefulType{},
 		functions: map[string]*statefulFunction{},
 		methods:   map[string]*statefulFunction{},
-		maxBoxes:  500,
-		maxLines:  500,
-		maxLabels: 500,
+		maxBoxes:  50,
+		maxLines:  50,
+		maxLabels: 50,
 	}
 	lines, err := statefulLogicalSourceLines(source)
 	if err != nil {
@@ -450,16 +450,23 @@ func parseStatefulAssignment(text string, line int) (*statefulAssignStmt, bool, 
 
 func (p *statefulSourceParser) readObjectLimits(text string) {
 	bodies := findCallBodies(text, "indicator")
+	positionalNames := indicatorDeclarationProperties
 	if len(bodies) == 0 {
 		bodies = findCallBodies(text, "study")
+		positionalNames = studyDeclarationProperties
 	}
 	if len(bodies) == 0 {
 		return
 	}
-	args := parseCallArguments(bodies[0])
+	properties := extractDeclarationProperties(parseCallArguments(bodies[0]), positionalNames)
 	read := func(key string, fallback int) int {
-		if raw := args.named[key]; raw != "" {
-			if value, ok := parseNumberLiteral(raw); ok && value > 0 {
+		switch value := properties[key].(type) {
+		case int:
+			if value > 0 {
+				return value
+			}
+		case float64:
+			if value > 0 {
 				return int(value)
 			}
 		}
@@ -486,27 +493,41 @@ func statefulLogicalSourceLines(source string) ([]statefulLogicalLine, error) {
 			continue
 		}
 		text := strings.TrimSpace(line.text)
-		balance := statefulDelimiterBalance(text)
-		for balance > 0 && index+1 < len(physical) {
-			index++
-			next := strings.TrimSpace(physical[index].text)
-			if next == "" {
-				continue
-			}
-			text += " " + next
-			balance += statefulDelimiterBalance(next)
-		}
-		if balance != 0 {
-			return nil, fmt.Errorf("line %d: unbalanced expression", line.number)
-		}
+		// Pine permits a statement to continue on an indented line when the
+		// indentation is not a multiple of four spaces.  Four-space (or tab)
+		// indentation starts a local block, while two-space indentation is a
+		// wrapped expression.  The old scanner only recognized `:` prefixes,
+		// which rejected valid scripts that wrap string concatenations as:
+		//
+		//   title = "first"
+		//     + "second"
+		//
+		// Keep the first line's indentation as the block boundary while we
+		// consume wrapped lines.  Delimiter-balanced calls are joined regardless
+		// of indentation, as Pine allows arbitrary formatting inside parentheses.
+		baseIndent := line.indent
 		for index+1 < len(physical) {
-			next := physical[index+1]
-			nextText := strings.TrimSpace(next.text)
-			if !strings.HasPrefix(nextText, ":") {
+			balance := statefulDelimiterBalance(text)
+			nextLine := physical[index+1]
+			next := strings.TrimSpace(nextLine.text)
+			if next == "" {
+				if balance > 0 {
+					index++
+					continue
+				}
+				break
+			}
+			wrapped := strings.HasPrefix(next, ":") ||
+				(nextLine.indent > baseIndent && nextLine.indent%4 != 0)
+			if balance <= 0 && !wrapped {
 				break
 			}
 			index++
-			text += " " + nextText
+			text += " " + next
+		}
+		balance := statefulDelimiterBalance(text)
+		if balance != 0 {
+			return nil, fmt.Errorf("line %d: unbalanced expression", line.number)
 		}
 		out = append(out, statefulLogicalLine{line: line.number, indent: line.indent, text: text})
 	}
@@ -746,13 +767,30 @@ func tokenizeStatefulExpression(text string) ([]statefulToken, error) {
 			quote := char
 			start := index + 1
 			index++
-			for index < len(text) && (text[index] != quote || text[index-1] == '\\') {
+			escaped := false
+			for index < len(text) {
+				if escaped {
+					escaped = false
+					index++
+					continue
+				}
+				if text[index] == '\\' {
+					escaped = true
+					index++
+					continue
+				}
+				if text[index] == quote {
+					break
+				}
 				index++
 			}
 			if index >= len(text) {
 				return nil, fmt.Errorf("unterminated string")
 			}
-			tokens = append(tokens, statefulToken{kind: statefulTokenString, text: text[start:index]})
+			tokens = append(tokens, statefulToken{
+				kind: statefulTokenString,
+				text: decodePineStringLiteral(text[start:index]),
+			})
 			index++
 			continue
 		}
@@ -822,6 +860,49 @@ func tokenizeStatefulExpression(text string) ([]statefulToken, error) {
 	}
 	tokens = append(tokens, statefulToken{kind: statefulTokenEOF})
 	return tokens, nil
+}
+
+// decodePineStringLiteral converts the escape sequences Pine accepts in a
+// quoted string into their runtime characters.  Keeping this in the lexer is
+// important: string values participate in concatenation, UDT fields, and
+// drawing labels, so decoding later would make history/state snapshots differ
+// from Pine's bar-by-bar values.  Unknown escapes retain their backslash to
+// avoid silently changing user text.
+func decodePineStringLiteral(raw string) string {
+	if !strings.Contains(raw, "\\") {
+		return raw
+	}
+	var builder strings.Builder
+	builder.Grow(len(raw))
+	for index := 0; index < len(raw); index++ {
+		if raw[index] != '\\' {
+			builder.WriteByte(raw[index])
+			continue
+		}
+		if index+1 >= len(raw) {
+			builder.WriteByte('\\')
+			continue
+		}
+		index++
+		switch raw[index] {
+		case 'n':
+			builder.WriteByte('\n')
+		case 'r':
+			builder.WriteByte('\r')
+		case 't':
+			builder.WriteByte('\t')
+		case '\\':
+			builder.WriteByte('\\')
+		case '"':
+			builder.WriteByte('"')
+		case '\'':
+			builder.WriteByte('\'')
+		default:
+			builder.WriteByte('\\')
+			builder.WriteByte(raw[index])
+		}
+	}
+	return builder.String()
 }
 
 type statefulExpressionParser struct {

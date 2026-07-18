@@ -4,6 +4,34 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Generic Pine source support and `SWING_SR` removal (2026-07-19)
+- Treat Pine source as the common backend contract for catalog, saved, public,
+  and future indicators. The runtime exposes Pine version and literal/enum
+  declaration metadata, executes the supported historical subset on a common
+  backend path, and enforces the inclusive Replay cutoff before evaluation.
+- Added the user-provided Swing Highs/Lows Pine v5 fixture to generic runtime
+  regression coverage. It exercises UDTs, pivot confirmation, multiline
+  descriptions, escaped newlines, grouped inputs, and label style/tooltip
+  properties while preserving the LuxAlgo CC BY-NC-SA 4.0 attribution.
+- Removed `SWING_SR` from the active catalog/source set. Persisted legacy rows
+  are not deleted, but direct runtime requests for that type are unsupported;
+  clients can present an explicit unavailable/migration state without silently
+  selecting a replacement formula.
+- Made vector drawing constructors execute per creation bar (including
+  multiline calls and sparse branches), preserved creation-time text/color,
+  retained every enclosing condition for nested branches, applied global object
+  limits in creation order, and normalized Pine defaults for omitted plot/label
+  colors without conflating them with `color(na)`.
+- Made current-symbol `request.security()` causal across fixed higher
+  timeframes, accepted positional or named required arguments, and failed
+  closed for external symbols, invalid/lower timeframes, `gaps_on`, or
+  `lookahead_on`. Intermediate series assignments are re-evaluated inside the
+  higher-timeframe child context. Missing/legacy/v6 version boundaries now emit
+  compatibility warnings and versions newer than v6 fail closed.
+- Updated `docs/PINE_RUNTIME_GO_MIGRATION.md`, `backend/docs/API.md`, and
+  `backend/docs/DATABASE.md` with the compatibility boundary and official
+  TradingView execution/declaration references.
+
 ### Fixed - Replay indicator no-lookahead boundary (2026-07-18)
 - Added one backend-owned `replayCutoff` contract for catalog, saved-source, and
   future indicators. Replay candles are filtered before Pine compilation and

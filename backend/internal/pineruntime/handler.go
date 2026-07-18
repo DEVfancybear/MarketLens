@@ -84,6 +84,8 @@ func (h *Handler) meta(c *fiber.Ctx) error {
 		ShortTitle: meta.ShortTitle,
 		Overlay:    meta.Overlay,
 		Timeframe:  meta.Timeframe,
+		Version:    meta.Version,
+		Properties: meta.Properties,
 		Errors:     []RuntimeError{},
 	})
 }

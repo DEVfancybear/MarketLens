@@ -29,7 +29,7 @@ type builtInPineDefinition struct {
 }
 
 var builtInPineOrder = []string{
-	"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "FVG", "SWING_SR",
+	"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "FVG",
 }
 
 func objectStyle(key, title, target, color string, width, lineStyle int) StyleDefinition {
@@ -110,30 +110,6 @@ var builtInPineCatalog = map[string]builtInPineDefinition{
 		styleDefaults: map[string]string{"plot:1": "highColor", "plot:2": "lowColor"},
 		hiddenInputs:  map[string]bool{"highColor": true, "lowColor": true},
 	},
-	"SWING_SR": {
-		path:        "sources/swing_sr.pine",
-		description: "Confirmed pivot support and resistance segments",
-		configInputs: map[string]string{
-			"highLength": "length", "lowLength": "length2", "highColor": "color", "lowColor": "color2",
-		},
-		inputAliases: map[string]string{"length": "highLength", "length2": "lowLength"},
-		styleFieldInputs: map[string]map[string]string{
-			"builtin:primary": {
-				"visible": "showHigh", "color": "highColor", "lineWidth": "highWidth", "lineStyle": "highStyleInput",
-			},
-			"builtin:secondary": {
-				"visible": "showLow", "color": "lowColor", "lineWidth": "lowWidth", "lineStyle": "lowStyleInput",
-			},
-		},
-		hiddenInputs: map[string]bool{
-			"highColor": true, "lowColor": true, "showHigh": true, "showLow": true,
-			"highWidth": true, "lowWidth": true, "highStyleInput": true, "lowStyleInput": true,
-		},
-		styles: []StyleDefinition{
-			objectStyle("builtin:primary", "Swing high", "line", "#ef5350", 2, 1),
-			objectStyle("builtin:secondary", "Swing low", "line", "#26c6da", 2, 1),
-		},
-	},
 	"FVG": {
 		path:        "sources/fvg_luxalgo.pine",
 		description: "Threshold, mitigation, dynamic fair-value-gap zones, and dashboard",
@@ -185,6 +161,8 @@ func indicatorDefinition(request IndicatorDefinitionRequest) (IndicatorDefinitio
 		Description:            "User Pine script",
 		Overlay:                meta.Overlay,
 		Timeframe:              meta.Timeframe,
+		Version:                meta.Version,
+		Properties:             meta.Properties,
 		Inputs:                 ExtractInputs(source),
 		Styles:                 ExtractStyles(source),
 		RequiresHistoryContext: pineSourceNeedsHistoryContext(source),
@@ -255,6 +233,8 @@ func builtInIndicatorDefinition(indicatorType string) (IndicatorDefinition, erro
 		Description:            definition.description,
 		Overlay:                meta.Overlay,
 		Timeframe:              meta.Timeframe,
+		Version:                meta.Version,
+		Properties:             meta.Properties,
 		Inputs:                 inputs,
 		Styles:                 styles,
 		LegacyInputBindings:    legacyInputs,
@@ -289,7 +269,16 @@ func builtInIndicatorCatalog() (IndicatorCatalogResponse, error) {
 }
 
 func pineSourceNeedsHistoryContext(source string) bool {
-	return strings.Contains(normalizeSource(source), "request.security")
+	cleaned := normalizeSource(source)
+	if strings.TrimSpace(cleaned) == "" {
+		return false
+	}
+	// Pine's execution model starts at the beginning of the accessible dataset,
+	// not at the viewport. Even a source with no obvious ta.* call can depend on
+	// earlier bars through `var`, mutable objects, bar_index, a UDF, or a future
+	// language feature the detector does not know yet. Prefer a bounded warm-up
+	// fetch for every declared script over a false negative that resets state.
+	return len(findCallBodies(cleaned, "indicator")) > 0 || len(findCallBodies(cleaned, "study")) > 0
 }
 
 func indicatorSourceCode(request IndicatorRuntimeRequest) string {
@@ -315,6 +304,7 @@ func indicatorCompileRequest(request IndicatorRuntimeRequest) (CompileRequest, e
 			Candles:        request.Candles,
 			InputOverrides: runtimeNestedValues(config, "inputValues"),
 			StyleOverrides: runtimeNestedValues(config, "styleValues"),
+			ReplayCutoff:   request.ReplayCutoff,
 		}, nil
 	}
 	return builtInCompileRequest(request)
@@ -385,5 +375,6 @@ func builtInCompileRequest(request IndicatorRuntimeRequest) (CompileRequest, err
 		Candles:        request.Candles,
 		InputOverrides: inputs,
 		StyleOverrides: styles,
+		ReplayCutoff:   request.ReplayCutoff,
 	}, nil
 }

@@ -28,11 +28,39 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "source is too large"})
 		return resp
 	}
+	if meta.Version > 6 {
+		feature := fmt.Sprintf("Pine version %d (only versions through v6 are supported)", meta.Version)
+		resp.UnsupportedFeatures = append(resp.UnsupportedFeatures, feature)
+		resp.Errors = append(resp.Errors, RuntimeError{Message: "unsupported Pine version: " + feature})
+		return resp
+	}
+	if meta.Version == 0 {
+		resp.Warnings = append(resp.Warnings, RuntimeError{Message: "Pine version is not declared; using the v5-compatible historical subset"})
+	} else if meta.Version < 5 {
+		resp.Warnings = append(resp.Warnings, RuntimeError{Message: fmt.Sprintf("legacy Pine v%d syntax is accepted through the compatibility subset; v5/v6 semantics are preferred", meta.Version)})
+	} else if meta.Version == 6 {
+		resp.Warnings = append(resp.Warnings, RuntimeError{Message: "Pine v6 syntax is accepted with the documented v5-compatible historical subset"})
+	}
 	if blocked := blockingUnsupportedFeatures(req.SourceCode); len(blocked) > 0 {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "unsupported Pine features: " + strings.Join(blocked, ", ")})
 		return resp
 	}
+	if blocked := unsupportedDeclarationExecutionProperties(meta); len(blocked) > 0 {
+		resp.Errors = append(resp.Errors, RuntimeError{Message: "unsupported Pine declaration execution properties: " + strings.Join(blocked, ", ")})
+		return resp
+	}
+	if err := validateReplayCutoff(req.ReplayCutoff); err != nil {
+		resp.Errors = append(resp.Errors, RuntimeError{Message: err.Error()})
+		return resp
+	}
 	req.Candles = normalizeRuntimeCandles(req.Candles)
+	if req.ReplayCutoff != nil {
+		// Replay is a fresh historical execution, not a full-history execution
+		// followed by a visual crop. Truncate before the VM/vector evaluator sees
+		// the input so pivots, request.security(), and mutable objects cannot
+		// observe a future bar.
+		req.Candles = candlesThroughReplayCutoff(req.Candles, *req.ReplayCutoff)
+	}
 	if len(req.Candles) > maxCompileCandles {
 		req.Candles = req.Candles[len(req.Candles)-maxCompileCandles:]
 		resp.Warnings = append(resp.Warnings, RuntimeError{Message: fmt.Sprintf("compile input truncated to %d candles", maxCompileCandles)})
@@ -47,6 +75,9 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		resp.Result = result
 		resp.Result.ID = id
 		resp.Errors = append(resp.Errors, errors...)
+		if req.ReplayCutoff != nil {
+			resp.Result = clampIndicatorResultToReplay(resp.Result, *req.ReplayCutoff)
+		}
 		return resp
 	}
 	cleaned := normalizeSource(req.SourceCode)
@@ -116,6 +147,9 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 	if len(resp.Result.Series) == 0 && len(resp.Result.Labels) == 0 && resp.Result.Dashboard == nil && len(resp.Errors) == 0 {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "No supported plot(), hline(), fill(), or drawing object output found"})
 	}
+	if req.ReplayCutoff != nil {
+		resp.Result = clampIndicatorResultToReplay(resp.Result, *req.ReplayCutoff)
+	}
 	return resp
 }
 
@@ -132,7 +166,8 @@ func unsupportedFeatures(source string) []string {
 		{name: "legacy collection constructors", pattern: `\b(array\.new_(float|int|bool|string|line|box|label)|array\.from)\s*\(`},
 		{name: "while loops", pattern: `(?m)^\s*while\b`},
 		{name: "lower-timeframe array requests", pattern: `\brequest\.security_lower_tf\s*\(`},
-		{name: "multi-symbol data requests", pattern: `\brequest\.security\s*\(\s*["']`},
+		{name: "request.security lookahead_on", pattern: `\bbarmerge\.lookahead_on\b`},
+		{name: "request.security gaps_on", pattern: `\bbarmerge\.gaps_on\b`},
 		{name: "unsupported visual calls", pattern: `\b(plotshape|plotchar|plotcandle|plotbar|barcolor|bgcolor)\s*\(`},
 		{name: "realtime varip semantics", pattern: `\bvarip\b`},
 		{name: "realtime rollback semantics", pattern: `\bbarstate\.isrealtime\b`},
@@ -143,7 +178,25 @@ func unsupportedFeatures(source string) []string {
 			features = append(features, check.name)
 		}
 	}
+	if unsupportedRequestSecuritySymbol(cleaned) {
+		features = append(features, "multi-symbol data requests")
+	}
 	return features
+}
+
+func unsupportedRequestSecuritySymbol(source string) bool {
+	for _, body := range findCallBodies(source, "request.security") {
+		args := parseCallArguments(body)
+		symbol := strings.TrimSpace(rawArg(args, "symbol", 0))
+		switch symbol {
+		case "", "syminfo.tickerid", "syminfo.main_tickerid":
+			// Empty/current-symbol identifiers are the only data contexts this
+			// runtime can evaluate without a second market-data stream.
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func blockingUnsupportedFeatures(source string) []string {
@@ -156,6 +209,27 @@ func blockingUnsupportedFeatures(source string) []string {
 			continue
 		default:
 			blocked = append(blocked, feature)
+		}
+	}
+	return blocked
+}
+
+func unsupportedDeclarationExecutionProperties(meta ScriptMeta) []string {
+	properties := meta.Properties
+	if len(properties) == 0 {
+		return nil
+	}
+	blocked := []string{}
+	// A non-empty declaration timeframe changes the dataset on which the whole
+	// script executes. Compile() only owns the candles supplied by its caller,
+	// so pretending to apply this property would produce valid-looking but
+	// semantically different output.
+	if meta.Timeframe != "" {
+		blocked = append(blocked, "timeframe/resolution")
+	}
+	for _, key := range []string{"timeframe_gaps", "resolution_gaps", "calc_bars_count", "dynamic_requests"} {
+		if _, ok := properties[key]; ok {
+			blocked = append(blocked, key)
 		}
 	}
 	return blocked
@@ -213,29 +287,34 @@ func readAssignments(cleaned string, context *evalContext, errors *[]RuntimeErro
 			expression = parsed
 			index = end - 1
 		}
-		value, err := evaluateInputExpression(expression, context, name)
+		value, err := evaluateAssignmentValue(name, expression, context)
 		if err != nil {
 			*errors = append(*errors, RuntimeError{Line: line.number, Message: err.Error()})
 			continue
 		}
-		if value.kind == 0 && len(expression) > 0 && !isNumberZeroValue(value) {
-			// no-op; see fallback below
-		}
-		if value.kind == 0 && value.number == 0 && !isInputExpression(expression) {
-			if recursive, ok := evaluateRecursiveAssignment(name, expression, context); ok {
-				value = recursive
-			} else if self, ok := evaluateSelfReferentialAssignment(name, expression, context); ok {
-				value = self
-			} else {
-				value, err = evaluateExpression(expression, context)
-				if err != nil {
-					*errors = append(*errors, RuntimeError{Line: line.number, Message: err.Error()})
-					continue
-				}
-			}
-		}
 		context.variables[name] = value
+		context.assignments = append(context.assignments, pineAssignment{name: name, expression: expression})
 	}
+}
+
+func evaluateAssignmentValue(name string, expression string, context *evalContext) (pineValue, error) {
+	value, err := evaluateInputExpression(expression, context, name)
+	if err != nil {
+		return pineValue{}, err
+	}
+	if value.kind == 0 && len(expression) > 0 && !isNumberZeroValue(value) {
+		// no-op; see the non-input fallback below
+	}
+	if value.kind == 0 && value.number == 0 && !isInputExpression(expression) {
+		if recursive, ok := evaluateRecursiveAssignment(name, expression, context); ok {
+			return recursive, nil
+		}
+		if self, ok := evaluateSelfReferentialAssignment(name, expression, context); ok {
+			return self, nil
+		}
+		return evaluateExpression(expression, context)
+	}
+	return value, nil
 }
 
 func isNumberZeroValue(value pineValue) bool {

@@ -1,6 +1,6 @@
 # Current Progress
 
-Last updated: 2026-07-16
+Last updated: 2026-07-19
 
 ## Current Milestone
 
@@ -8,11 +8,13 @@ Backend persistence and Google authentication.
 
 ## Status
 
-- Backend-owned built-in indicators: **common runtime cutover complete** for
-  SMA, EMA, VWAP, RSI, MACD, ADR, and Swing S/R. The frontend is an API
-  cache/render client. Swing pivot-formation Alert Center support remains
-  explicitly deferred; see `PIVOT_FORMATION_ALERT_PLAN.md` for the required
-  backend event/evaluator architecture.
+- Backend-owned indicators: **generic Pine source path is active** for the
+  documented historical subset, with replay candles truncated before any VM or
+  vector evaluation. SMA, EMA, VWAP, RSI, MACD, ADR, and FVG remain embedded
+  Pine sources. The former formula-specific `SWING_SR` source/catalog entry has
+  been removed; Swing High/Low scripts now use the same saved-source compile
+  path as every other user script. `PIVOT_FORMATION_ALERT_PLAN.md` is archived
+  and must not be used to restore a `SWING_SR` branch.
 
 - Drawing maintenance Phase 8 is in progress: Waves A-C are complete. Wave C adds 11 harmonic,
   Elliott, and time-cycle tools through a shared labeled-anchor framework. The manifest now covers

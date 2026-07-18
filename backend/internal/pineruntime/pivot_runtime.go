@@ -10,9 +10,9 @@ type runtimePivot struct {
 	value        float64
 }
 
-// detectRuntimePivots is shared by built-in Swing S/R and the Pine
-// ta.pivothigh()/ta.pivotlow() implementation. Keeping the comparison policy
-// in one place prevents the two backend entry points from drifting apart.
+// detectRuntimePivots implements the common Pine ta.pivothigh()/ta.pivotlow()
+// comparison policy. Keeping the formation and confirmation indexes together
+// prevents vector and stateful execution paths from drifting apart.
 func detectRuntimePivots(values []float64, left, right int, kind string) []runtimePivot {
 	pivots := []runtimePivot{}
 	if len(values) == 0 || left < 1 || right < 1 || len(values) < left+right+1 {

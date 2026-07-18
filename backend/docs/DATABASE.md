@@ -395,7 +395,7 @@ CREATE TABLE pine_scripts (
   name        text NOT NULL,
   source_code text NOT NULL,                 -- frontend `sourceCode`
   favorite    boolean NOT NULL DEFAULT false,
-  meta        jsonb NOT NULL DEFAULT '{}',   -- parsed inputs / plot config / last compile status
+  meta        jsonb NOT NULL DEFAULT '{}',   -- parsed Pine version/declaration, inputs/styles, diagnostics
   client_id   text,                          -- frontend script id (for scriptId links + sync)
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
@@ -404,6 +404,17 @@ CREATE INDEX idx_pine_scripts_user ON pine_scripts(user_id);
 CREATE UNIQUE INDEX idx_pine_scripts_client ON pine_scripts(user_id, client_id)
   WHERE client_id IS NOT NULL;
 ```
+
+`source_code` is the source of truth for execution. `meta` is a rehydratable
+cache of Pine metadata (including the `//@version` annotation and declaration
+properties such as `shorttitle`, `overlay`, `timeframe`, object limits, and
+`calc_bars_count`), input/style schemas, and the latest diagnostic summary. The
+backend must re-parse source when the source or runtime version changes; stale
+metadata must never change execution semantics. Saved and public scripts use
+the same closed-bar compiler and optional replay cutoff as catalog indicators.
+The submitted Swing Highs/Lows v5 source is an ordinary saved script/fixture,
+not a special database indicator type; preserve its LuxAlgo attribution and
+CC BY-NC-SA 4.0 notice when storing or publishing it.
 
 ### 7.6 `public_pine_scripts`
 
@@ -439,7 +450,7 @@ for filtering/ordering. `CUSTOM` indicators link to a saved script.
 CREATE TABLE indicator_presets (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  indicator_type text NOT NULL,             -- IndicatorConfig.type: SMA|EMA|VWAP|RSI|MACD|ADR|SWING_SR|CUSTOM
+  indicator_type text NOT NULL,             -- IndicatorConfig.type: SMA|EMA|VWAP|RSI|MACD|ADR|FVG|CUSTOM
   script_id      uuid REFERENCES pine_scripts(id) ON DELETE SET NULL,  -- for CUSTOM (frontend scriptId)
   config         jsonb NOT NULL DEFAULT '{}',-- full IndicatorConfig
   visible        boolean NOT NULL DEFAULT true, -- IndicatorConfig.visible
@@ -452,6 +463,13 @@ CREATE INDEX idx_indicator_presets_user ON indicator_presets(user_id);
 CREATE UNIQUE INDEX idx_indicator_presets_client ON indicator_presets(user_id, client_id)
   WHERE client_id IS NOT NULL;
 ```
+
+`indicator_type` is intentionally an opaque compatibility value rather than a
+foreign key to the current catalog. Legacy rows containing `SWING_SR` may remain
+after that catalog entry is removed; reads must classify them as deprecated or
+unavailable (or offer an explicit migration to a saved Pine script), and writes
+must not create new `SWING_SR` rows. Deleting a catalog entry must not delete a
+user's saved preset or Pine source.
 
 ---
 

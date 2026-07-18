@@ -63,7 +63,7 @@ func isIdentChar(ch byte) bool {
 func findCallBodies(source, name string) []string {
 	out := []string{}
 	index := 0
-	needle := name + "("
+	needle := name
 	for index < len(source) {
 		found := strings.Index(source[index:], needle)
 		if found < 0 {
@@ -74,11 +74,19 @@ func findCallBodies(source, name string) []string {
 			index = found + len(name)
 			continue
 		}
+		open := found + len(name)
+		for open < len(source) && unicode.IsSpace(rune(source[open])) {
+			open++
+		}
+		if open >= len(source) || source[open] != '(' {
+			index = found + len(name)
+			continue
+		}
 		depth := 0
 		start := -1
 		var quote byte
 		escaped := false
-		for i := found + len(name); i < len(source); i++ {
+		for i := open; i < len(source); i++ {
 			ch := source[i]
 			if escaped {
 				escaped = false

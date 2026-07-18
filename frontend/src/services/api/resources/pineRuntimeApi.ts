@@ -48,6 +48,8 @@ export async function getPineRuntimeMeta(sourceCode: string): Promise<PineScript
     shortTitle: response.shortTitle,
     overlay: response.overlay,
     timeframe: response.timeframe,
+    version: response.version,
+    properties: response.properties,
   };
 }
 
@@ -58,6 +60,7 @@ export async function compilePineRuntime(params: {
   inputOverrides?: IndicatorInputValues;
   styleOverrides?: IndicatorStyleValues;
   timeframe?: string;
+  replayCutoff?: number;
 }): Promise<PineRuntimeCompileResponse> {
   const response = await postJson<RawPineRuntimeCompileResponse>("pine-runtime/compile", {
     scriptId: params.scriptId,
@@ -66,6 +69,7 @@ export async function compilePineRuntime(params: {
     inputOverrides: params.inputOverrides ?? {},
     styleOverrides: params.styleOverrides ?? {},
     timeframe: params.timeframe,
+    replayCutoff: params.replayCutoff,
   }, {
     timeout: 8_000,
   });

@@ -913,10 +913,11 @@ backend result.
 Swing pivots are emitted only after the complete right-hand strength window
 exists, so replay cannot observe a future candle.
 
-`SWING_SR` is a clean-room implementation of the behavior publicly described
-by the protected TradingView script: confirmed high/low pivots, independent
-OHLC-derived sources, and dotted horizontal support/resistance segments. No
-closed source was copied.
+The catalog intentionally does not include the legacy `SWING_SR` type anymore.
+Persisted rows may still contain that opaque value, but a runtime compute request
+for it is unsupported. Clients can offer an explicit unavailable/migration
+state; the backend does not silently substitute a formula or keep a hidden
+type-specific branch.
 
 ---
 
@@ -931,15 +932,16 @@ runtime receives source plus candles and returns chart primitives.
 | POST   | `/api/v1/pine-runtime/meta`    | Extract `indicator()` / `study()` metadata   |
 | POST   | `/api/v1/pine-runtime/inputs`  | Extract Inputs-tab schema                    |
 | POST   | `/api/v1/pine-runtime/styles`  | Extract Style-tab schema                     |
-| POST   | `/api/v1/pine-runtime/compile` | Compile source against supplied OHLCV bars   |
+| POST   | `/api/v1/pine-runtime/compile` | Compile source against supplied OHLCV bars and optional replay cutoff |
 
 Compile request:
 
 ```json
 {
   "scriptId": "ind_abc",
-  "sourceCode": "indicator(\"VSA\")\nplot(volume)",
+  "sourceCode": "//@version=5\nindicator(\"VSA\")\nplot(volume)",
   "timeframe": "15m",
+  "replayCutoff": 1783420800,
   "candles": [
     { "time": 1783420800, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 100 }
   ],
@@ -948,11 +950,24 @@ Compile request:
 }
 ```
 
+`replayCutoff` is optional and inclusive. When supplied, the backend performs
+the same causal boundary as `/api/v1/indicator-runtime/compute`: it retains
+pre-cutoff candles supplied in the request as warm-up context (without fetching
+missing history), executes only through the selected candle,
+removes future objects/labels, clips geometry crossing the boundary, disables
+right-side extensions, and includes the cutoff in the cache key. Omit it for
+live behavior. It is a Unix timestamp in seconds, not JavaScript milliseconds.
+
 Compile response:
 
 ```json
 {
-  "meta": { "name": "VSA", "overlay": false },
+  "meta": {
+    "name": "VSA",
+    "overlay": false,
+    "version": 5,
+    "properties": { "title": "VSA" }
+  },
   "result": { "id": "ind_abc", "series": [] },
   "errors": [],
   "warnings": [],
@@ -960,11 +975,14 @@ Compile response:
 }
 ```
 
-Current runtime subset covers metadata/input/style extraction, series
-assignments, recursive/self-referential series patterns, plot/hline/fill output,
-daily `request.security()` aggregation, and the Pine functions needed by VSA
-Volume, Better RSI, ADR-style scripts, and confirmed `ta.pivothigh()` /
-`ta.pivotlow()` calculations. `plot(..., style=linebr)` and
+Current runtime subset covers generic metadata/input/style extraction, source
+version/declaration properties, series assignments, recursive/self-referential
+series patterns, plot/hline/fill output, fixed higher-timeframe
+`request.security()` aggregation for the current symbol (positional or named
+required arguments),
+and the Pine functions needed by VSA Volume, Better RSI, ADR-style scripts,
+and confirmed `ta.pivothigh()` / `ta.pivotlow()` calculations. `plot(...,
+style=linebr)` and
 `plot.style_linebr` compile into independent chart series split at every `na`
 gap so the frontend never bridges conditional plot ranges. `hline()` and
 `fill()` reference outputs carry `extendToVisibleRange=true`; clients should
@@ -972,7 +990,53 @@ project those sparse series onto the current candle window before rendering so
 indicator panes do not show right-side gaps. Object APIs such as `line.new`,
 `line.set_*`, `label.new`, `label.set_*`, `box.new`,
 `box.set_*`, `table.new`, and `table.cell` compile to chart-ready line, fill,
-label, and dashboard payloads.
+label, and dashboard payloads. Multiline drawing constructors are coalesced
+before vector object scanning, and nested constructors retain every enclosing
+branch condition. Omitted `plot()` and `label.new()` colors use the corresponding
+Pine defaults, while an explicit `color(na)` remains transparent. Intermediate
+series referenced by `request.security()` are re-evaluated in its aggregated
+child context rather than frozen from the chart timeframe.
+
+Pine sources (`indicator()` and legacy `study()` declarations; strategy/library
+execution remains explicitly unsupported) execute sequentially on closed bars:
+OHLCV/bar-state values are
+updated, the source runs with data available on that bar, and series/history
+and object state are committed before the next bar. The backend intentionally
+does not emulate realtime tick rollback or `varip`. Unsupported language or
+declaration features fail closed with structured diagnostics. See TradingView's
+[execution model](https://www.tradingview.com/pine-script-docs/language/execution-model/)
+and [declaration statements](https://www.tradingview.com/pine-script-docs/language/declaration-statements/)
+for the compatibility contract.
+
+The declaration metadata contract preserves literal/enum-valued positional and
+named arguments for `title`, `shorttitle`, `overlay`,
+`format`, `precision`, `scale`, `max_bars_back`, `timeframe`,
+`timeframe_gaps`, `explicit_plot_zorder`, `max_lines_count`,
+`max_labels_count`, `max_boxes_count`, `calc_bars_count`,
+`max_polylines_count`, `dynamic_requests`, and `behind_chart`. Metadata presence
+does not imply full visual/execution parity: the API exposes overlay/timeframe
+for caller-side placement/routing, and both execution paths apply line/label/box
+retention limits (default 50). A non-empty declaration timeframe and the `timeframe_gaps`,
+`calc_bars_count`, or `dynamic_requests` properties fail closed because their
+execution semantics are not implemented. Formatting, z-order, polylines, and
+behind-chart behavior remain metadata-only compatibility gaps. Features on the
+explicit unsupported list fail closed; other syntax is supported only where
+covered by compiler diagnostics and regression fixtures. Input changes trigger
+a fresh historical evaluation. Missing/pre-v5 annotations and v6 return an
+explicit compatibility warning; versions newer than v6 fail closed. Pine
+v5/v6 semantic differences beyond the supported subset are not otherwise
+version-gated.
+
+### Generic Swing Highs/Lows fixture
+
+The regression source
+`backend/internal/pineruntime/testdata/swing_high_low_luxalgo.pine` is the
+user-provided Pine v5 Swing Highs/Lows script. It exercises multiline string
+continuations/escaped newlines, grouped inputs, a `pattern` UDT and
+`pattern.new()`, pivot confirmation/history, nullable UDT ternaries, and
+`label.new()` style/text-color/tooltip properties. It is compiled through this
+generic endpoint, not registered as `SWING_SR`. LuxAlgo attribution and the
+CC BY-NC-SA 4.0 notice remain in the fixture.
 
 ---
 

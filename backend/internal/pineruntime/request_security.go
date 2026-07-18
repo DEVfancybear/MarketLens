@@ -18,40 +18,57 @@ func evaluateRequestSecurityExpression(expression string, context *evalContext) 
 		return pineValue{}, false, nil
 	}
 	args := parseCallArguments(bodies[0])
-	if len(args.positional) < 3 {
+	timeframeExpression := rawArg(args, "timeframe", 1)
+	requestedExpression := rawArg(args, "expression", 2)
+	if rawArg(args, "symbol", 0) == "" || timeframeExpression == "" || requestedExpression == "" {
 		return pineValue{}, true, fmt.Errorf("request.security() expects symbol, timeframe, and expression")
 	}
-	timeframeArg := strings.TrimSpace(args.positional[1])
+	timeframeArg := strings.TrimSpace(timeframeExpression)
 	requestedTimeframe, ok := unquote(timeframeArg)
 	if !ok {
 		requestedTimeframe = timeframeArg
 	}
-	dailyCandles, originalToBucket, ok := aggregateCandlesForTimeframe(context.candles, requestedTimeframe)
-	if !ok || len(dailyCandles) == 0 {
+	higherTimeframeCandles, originalToBucket, err := aggregateCandlesForTimeframe(context.candles, requestedTimeframe)
+	if err != nil {
+		return pineValue{}, true, err
+	}
+	if len(higherTimeframeCandles) == 0 {
 		return seriesValue(fillNaN(len(context.candles))), true, nil
 	}
 
 	securityContext := &evalContext{
-		candles:        dailyCandles,
+		candles:        higherTimeframeCandles,
 		variables:      map[string]pineValue{},
 		functions:      context.functions,
 		inputOverrides: context.inputOverrides,
 	}
+	assignedNames := make(map[string]struct{}, len(context.assignments))
+	for _, assignment := range context.assignments {
+		assignedNames[assignment.name] = struct{}{}
+	}
 	for key, value := range context.variables {
-		if value.kind != kindSeries && value.kind != kindColorSeries {
+		if _, assigned := assignedNames[key]; !assigned && value.kind != kindSeries && value.kind != kindColorSeries {
 			securityContext.variables[key] = value
 		}
 	}
-	requestedValue, err := evaluateExpression(args.positional[2], securityContext)
+	for _, assignment := range context.assignments {
+		value, err := evaluateAssignmentValue(assignment.name, assignment.expression, securityContext)
+		if err != nil {
+			return pineValue{}, true, fmt.Errorf("request.security dependency %s: %w", assignment.name, err)
+		}
+		securityContext.variables[assignment.name] = value
+		securityContext.assignments = append(securityContext.assignments, assignment)
+	}
+	requestedValue, err := evaluateExpression(requestedExpression, securityContext)
 	if err != nil {
 		return pineValue{}, true, err
 	}
-	if fallback, ok, err := evaluateSecurityWarmupExpression(args.positional[2], securityContext); err != nil {
+	if fallback, ok, err := evaluateSecurityWarmupExpression(requestedExpression, securityContext); err != nil {
 		return pineValue{}, true, err
 	} else if ok {
-		requestedValue = fillMissingSecurityValue(requestedValue, fallback, len(dailyCandles))
+		requestedValue = fillMissingSecurityValue(requestedValue, fallback, len(higherTimeframeCandles))
 	}
-	return expandSecurityValue(requestedValue, originalToBucket, len(context.candles), len(dailyCandles)), true, nil
+	return expandSecurityValue(requestedValue, originalToBucket, len(context.candles), len(higherTimeframeCandles)), true, nil
 }
 
 // evaluateSecurityWarmupExpression covers the common Pine pattern used by ADR
@@ -165,49 +182,39 @@ func fillMissingSecurityValue(primary pineValue, fallback pineValue, length int)
 	return seriesValue(out)
 }
 
-func aggregateCandlesForTimeframe(candles []Candle, timeframeName string) ([]Candle, []int, bool) {
+func aggregateCandlesForTimeframe(candles []Candle, timeframeName string) ([]Candle, []int, error) {
 	if len(candles) == 0 {
-		return nil, nil, false
+		return nil, nil, nil
 	}
-	normalized := strings.ToUpper(strings.TrimSpace(timeframeName))
-	if normalized == "" {
-		return candles, sequenceBuckets(len(candles)), true
+	seconds, valid := timeframeSeconds(timeframeName)
+	if !valid {
+		return nil, nil, fmt.Errorf("unsupported request.security() timeframe %q", timeframeName)
 	}
-	if normalized != "D" && normalized != "1D" {
-		return nil, nil, false
+	chartSeconds := statefulCandleInterval(candles)
+	if seconds == 0 || seconds == chartSeconds {
+		return candles, sequenceBuckets(len(candles)), nil
 	}
-
-	buckets := []Candle{}
+	if seconds < chartSeconds {
+		return nil, nil, fmt.Errorf("lower-timeframe request.security() is unsupported")
+	}
+	buckets, err := aggregateRuntimeCandles(candles, seconds)
+	if err != nil {
+		return nil, nil, err
+	}
+	bucketIndex := make(map[int64]int, len(buckets))
+	for index, candle := range buckets {
+		bucketIndex[candle.Time] = index
+	}
 	originalToBucket := make([]int, len(candles))
-	currentBucket := -1
-	currentStart := int64(math.MinInt64)
 	for index, candle := range candles {
-		start := dayStart(candle.Time)
-		if currentBucket < 0 || start != currentStart {
-			currentStart = start
-			currentBucket = len(buckets)
-			buckets = append(buckets, Candle{
-				Time:   start,
-				Open:   candle.Open,
-				High:   candle.High,
-				Low:    candle.Low,
-				Close:  candle.Close,
-				Volume: candle.Volume,
-			})
-		} else {
-			bucket := &buckets[currentBucket]
-			if candle.High > bucket.High {
-				bucket.High = candle.High
-			}
-			if candle.Low < bucket.Low {
-				bucket.Low = candle.Low
-			}
-			bucket.Close = candle.Close
-			bucket.Volume += candle.Volume
+		bucketTime := candle.Time - candle.Time%seconds
+		mapped, exists := bucketIndex[bucketTime]
+		if !exists {
+			return nil, nil, fmt.Errorf("request.security() timeframe mapping failed")
 		}
-		originalToBucket[index] = currentBucket
+		originalToBucket[index] = mapped
 	}
-	return buckets, originalToBucket, true
+	return buckets, originalToBucket, nil
 }
 
 func expandSecurityValue(value pineValue, originalToBucket []int, originalLength int, bucketLength int) pineValue {
@@ -215,8 +222,9 @@ func expandSecurityValue(value pineValue, originalToBucket []int, originalLength
 		colors := toColorSeries(value, bucketLength)
 		out := make([]string, originalLength)
 		for i, bucket := range originalToBucket {
-			if bucket >= 0 && bucket < len(colors) {
-				out[i] = colors[bucket]
+			visibleBucket := securityVisibleBucket(originalToBucket, i, bucket)
+			if visibleBucket >= 0 && visibleBucket < len(colors) {
+				out[i] = colors[visibleBucket]
 			}
 		}
 		return colorSeriesValue(out)
@@ -224,13 +232,31 @@ func expandSecurityValue(value pineValue, originalToBucket []int, originalLength
 	values := toSeries(value, bucketLength)
 	out := make([]float64, originalLength)
 	for i, bucket := range originalToBucket {
-		if bucket >= 0 && bucket < len(values) {
-			out[i] = values[bucket]
+		visibleBucket := securityVisibleBucket(originalToBucket, i, bucket)
+		if visibleBucket >= 0 && visibleBucket < len(values) {
+			out[i] = values[visibleBucket]
 		} else {
 			out[i] = math.NaN()
 		}
 	}
 	return seriesValue(out)
+}
+
+// securityVisibleBucket implements higher-timeframe lookahead_off mapping with
+// gaps_off. Until the final chart bar in a bucket, only the previous completed
+// bucket is visible. The last supplied candle is treated as the current chart
+// snapshot, so its partially aggregated bucket may be exposed there; it still
+// contains no data later than that candle. This prevents an early intraday bar
+// from observing the end-of-day high/close assembled from future chart bars.
+func securityVisibleBucket(originalToBucket []int, index int, bucket int) int {
+	if bucket < 0 {
+		return -1
+	}
+	isFinalSubbar := index == len(originalToBucket)-1 || originalToBucket[index+1] != bucket
+	if !isFinalSubbar {
+		return bucket - 1
+	}
+	return bucket
 }
 
 func timeframeOpenTimeSeries(candles []Candle, timeframeName string) []float64 {

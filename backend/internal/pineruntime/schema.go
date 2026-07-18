@@ -55,41 +55,144 @@ var defaultColors = []string{
 	"#ef5350",
 }
 
+// Declaration arguments are positional in Pine's public signatures even
+// though most published scripts use named arguments after shorttitle. Keeping
+// the canonical order here makes metadata extraction independent of formatting
+// style and lets future consumers inspect the exact script-wide properties.
+var indicatorDeclarationProperties = []string{
+	"title",
+	"shorttitle",
+	"overlay",
+	"format",
+	"precision",
+	"scale",
+	"max_bars_back",
+	"timeframe",
+	"timeframe_gaps",
+	"explicit_plot_zorder",
+	"max_lines_count",
+	"max_labels_count",
+	"max_boxes_count",
+	"calc_bars_count",
+	"max_polylines_count",
+	"dynamic_requests",
+	"behind_chart",
+}
+
+// study() is retained for legacy source compatibility. Pine renamed its final
+// pair of dataset arguments when indicator() replaced it.
+var studyDeclarationProperties = []string{
+	"title",
+	"shorttitle",
+	"overlay",
+	"format",
+	"precision",
+	"scale",
+	"max_bars_back",
+	"resolution",
+	"resolution_gaps",
+}
+
 func ExtractMeta(source string) ScriptMeta {
 	cleaned := normalizeSource(source)
+	version := pineSourceVersion(source)
 	body := ""
+	declarationProperties := indicatorDeclarationProperties
 	if bodies := findCallBodies(cleaned, "indicator"); len(bodies) > 0 {
 		body = bodies[0]
 	} else if bodies := findCallBodies(cleaned, "study"); len(bodies) > 0 {
 		body = bodies[0]
+		declarationProperties = studyDeclarationProperties
 	}
 	if body == "" {
-		return ScriptMeta{Name: "Untitled script", Overlay: true}
+		return ScriptMeta{Name: "Untitled script", Overlay: true, Version: version}
 	}
 	args := parseCallArguments(body)
+	properties := extractDeclarationProperties(args, declarationProperties)
 	name := "Untitled script"
-	if value, ok := unquote(args.named["title"]); ok {
+	if value, ok := properties["title"].(string); ok {
 		name = value
-	} else if len(args.positional) > 0 {
-		if value, ok := unquote(args.positional[0]); ok {
-			name = value
-		}
 	}
 	shortTitle := ""
-	if value, ok := unquote(args.named["shorttitle"]); ok {
+	if value, ok := properties["shorttitle"].(string); ok {
 		shortTitle = strings.TrimSpace(value)
 	}
 	overlay := false
-	if value, ok := parseBoolLiteral(args.named["overlay"]); ok {
+	if value, ok := properties["overlay"].(bool); ok {
 		overlay = value
 	}
 	timeframe := ""
-	if value, ok := unquote(args.named["timeframe"]); ok {
+	if value, ok := properties["timeframe"].(string); ok {
 		timeframe = value
-	} else if value, ok := unquote(args.named["resolution"]); ok {
+	} else if value, ok := properties["resolution"].(string); ok {
 		timeframe = value
 	}
-	return ScriptMeta{Name: name, ShortTitle: shortTitle, Overlay: overlay, Timeframe: timeframe}
+	if len(properties) == 0 {
+		properties = nil
+	}
+	return ScriptMeta{Name: name, ShortTitle: shortTitle, Overlay: overlay, Timeframe: timeframe, Version: version, Properties: properties}
+}
+
+func extractDeclarationProperties(args callArguments, positionalNames []string) map[string]any {
+	properties := map[string]any{}
+	for index, raw := range args.positional {
+		if index >= len(positionalNames) {
+			break
+		}
+		if value, ok := parseDeclarationProperty(raw); ok {
+			properties[positionalNames[index]] = value
+		}
+	}
+	// Pine allows callers to switch to named arguments at any point. A named
+	// value is authoritative if malformed source happens to repeat a positional
+	// parameter; the Pine compiler itself remains responsible for rejecting the
+	// duplicate when full declaration validation is implemented.
+	for key, raw := range args.named {
+		if value, ok := parseDeclarationProperty(raw); ok {
+			properties[key] = value
+		}
+	}
+	return properties
+}
+
+var pineVersionPattern = regexp.MustCompile(`(?m)^\s*//@version\s*=\s*(\d+)\b`)
+var declarationEnumPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
+
+func pineSourceVersion(cleaned string) int {
+	match := pineVersionPattern.FindStringSubmatch(cleaned)
+	if len(match) < 2 {
+		// Pine defaults unannotated sources to the legacy language version. The
+		// value is metadata only; unsupported legacy syntax still fails closed.
+		return 1
+	}
+	value, ok := parseNumberLiteral(match[1])
+	if !ok || value < 1 {
+		return 1
+	}
+	return int(math.Round(value))
+}
+
+func parseDeclarationProperty(raw string) (any, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if value, ok := parseBoolLiteral(trimmed); ok {
+		return value, true
+	}
+	if value, ok := parseNumberLiteral(trimmed); ok {
+		if math.Trunc(value) == value {
+			return int(value), true
+		}
+		return value, true
+	}
+	if value, ok := unquote(trimmed); ok {
+		return value, true
+	}
+	if strings.EqualFold(trimmed, "na") {
+		return nil, true
+	}
+	if trimmed != "" && declarationEnumPattern.MatchString(trimmed) {
+		return trimmed, true
+	}
+	return nil, false
 }
 
 func inputCallName(expression string) string {
@@ -563,27 +666,27 @@ func ExtractStyles(source string) []StyleDefinition {
 			SupportsLineStyle: true,
 		})
 	}
-	for index, call := range objectCreationCalls(lines, "box.new") {
+	for _, call := range objectCreationCalls(lines, "box.new") {
 		defs = append(defs, StyleDefinition{
 			Key:               styleKey("box", call.variable),
 			Title:             call.variable,
 			Target:            "box",
 			Group:             "Drawing Objects",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(rawArg(call.args, "bgcolor", 9), defaultColors[(len(defs)+index)%len(defaultColors)]),
+			DefaultColor:      resolveColor(rawArg(call.args, "bgcolor", 9), resolveColor("color.blue", defaultColors[0])),
 			SupportsColor:     true,
 			SupportsLineWidth: false,
 			SupportsLineStyle: false,
 		})
 	}
-	for index, call := range objectCreationCalls(lines, "label.new") {
+	for _, call := range objectCreationCalls(lines, "label.new") {
 		defs = append(defs, StyleDefinition{
 			Key:               styleKey("label", call.variable),
 			Title:             call.variable,
 			Target:            "label",
 			Group:             "Drawing Objects",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(rawArg(call.args, "textcolor", 7), defaultColors[(len(defs)+index)%len(defaultColors)]),
+			DefaultColor:      resolveColor(rawArg(call.args, "textcolor", 7), "#ffffff"),
 			SupportsColor:     true,
 			SupportsLineWidth: false,
 			SupportsLineStyle: false,

@@ -22,6 +22,13 @@ type ScriptMeta struct {
 	ShortTitle string `json:"shortTitle,omitempty"`
 	Overlay    bool   `json:"overlay"`
 	Timeframe  string `json:"timeframe,omitempty"`
+	// Version and declaration properties are kept with the source metadata so
+	// callers can make the same version/limit decisions as the backend VM. The
+	// map is intentionally extensible: Pine adds declaration parameters between
+	// language versions and unknown properties must not require a transport
+	// schema change.
+	Version    int            `json:"version,omitempty"`
+	Properties map[string]any `json:"properties,omitempty"`
 }
 
 type InputValue any
@@ -74,6 +81,11 @@ type IndicatorSeries struct {
 	ExtendToVisibleRange *bool       `json:"extendToVisibleRange,omitempty"`
 	LineVisible          *bool       `json:"lineVisible,omitempty"`
 	Precision            *int        `json:"precision,omitempty"`
+	// Vector drawing compilation uses these internal fields to apply Pine's
+	// global object limits in per-bar/source creation order. They intentionally
+	// stay out of the transport contract.
+	objectCreationIndex int
+	objectSourceLine    int
 }
 
 type IndicatorOverlayLabel struct {
@@ -82,7 +94,16 @@ type IndicatorOverlayLabel struct {
 	Text            string  `json:"text"`
 	Color           string  `json:"color"`
 	BackgroundColor string  `json:"backgroundColor,omitempty"`
-	Time            *int64  `json:"time,omitempty"`
+	// Style and Tooltip preserve Pine label presentation metadata. They are
+	// optional because older/runtime-generated labels may not specify them.
+	Style   string `json:"style,omitempty"`
+	Tooltip string `json:"tooltip,omitempty"`
+	Time    *int64 `json:"time,omitempty"`
+	// See IndicatorSeries.objectCreationIndex. Stateful labels are already
+	// retained in execution order; vector labels use these fields before JSON
+	// serialization and cache publication.
+	objectCreationIndex int
+	objectSourceLine    int
 }
 
 type IndicatorDashboardRow struct {
@@ -121,6 +142,8 @@ type MetaResponse struct {
 	ShortTitle string         `json:"shortTitle,omitempty"`
 	Overlay    bool           `json:"overlay"`
 	Timeframe  string         `json:"timeframe,omitempty"`
+	Version    int            `json:"version,omitempty"`
+	Properties map[string]any `json:"properties,omitempty"`
 	Errors     []RuntimeError `json:"errors"`
 }
 
@@ -151,6 +174,10 @@ type CompileRequest struct {
 	Candles        []Candle              `json:"candles"`
 	InputOverrides map[string]InputValue `json:"inputOverrides,omitempty"`
 	StyleOverrides map[string]InputValue `json:"styleOverrides,omitempty"`
+	// ReplayCutoff is an inclusive Unix-second execution boundary. It is
+	// applied before compilation, so a custom script cannot observe candles
+	// beyond the selected replay bar even when this endpoint is called directly.
+	ReplayCutoff *int64 `json:"replayCutoff,omitempty"`
 }
 
 type CompileResponse struct {
@@ -171,6 +198,8 @@ type IndicatorDefinition struct {
 	Description            string            `json:"description,omitempty"`
 	Overlay                bool              `json:"overlay"`
 	Timeframe              string            `json:"timeframe,omitempty"`
+	Version                int               `json:"version,omitempty"`
+	Properties             map[string]any    `json:"properties,omitempty"`
 	Inputs                 []InputDefinition `json:"inputs"`
 	Styles                 []StyleDefinition `json:"styles"`
 	LegacyInputBindings    map[string]string `json:"legacyInputBindings,omitempty"`

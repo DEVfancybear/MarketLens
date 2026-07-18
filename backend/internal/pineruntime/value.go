@@ -32,6 +32,12 @@ type evalContext struct {
 	variables      map[string]pineValue
 	functions      map[string]pineFunction
 	inputOverrides map[string]InputValue
+	assignments    []pineAssignment
+}
+
+type pineAssignment struct {
+	name       string
+	expression string
 }
 
 type pineFunction struct {
@@ -172,6 +178,15 @@ func stringAt(value pineValue, index int, length int) string {
 }
 
 func chooseValue(condition, whenTrue, whenFalse pineValue, length int) pineValue {
+	// Object metadata is evaluated in a one-bar scalar context. A built-in such
+	// as `close` is still represented as a one-element series there, but its
+	// ternary result is scalar and may legitimately be a string.
+	if length <= 1 {
+		if truthyAt(condition, 0, length) {
+			return whenTrue
+		}
+		return whenFalse
+	}
 	if !valueVaries(condition) {
 		if truthyAt(condition, 0, length) {
 			return whenTrue

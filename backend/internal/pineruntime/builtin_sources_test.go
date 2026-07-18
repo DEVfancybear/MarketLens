@@ -161,26 +161,28 @@ func TestFVGDefinitionUsesGenericPineFeaturesAndPreservesAttribution(t *testing.
 	}
 }
 
-func TestSwingObjectStylesMapToPineInputs(t *testing.T) {
-	request, err := builtInCompileRequest(IndicatorRuntimeRequest{
-		IndicatorType: "SWING_SR",
-		Config: map[string]any{
-			"styleValues": map[string]any{
-				"builtin:primary.visible":   false,
-				"builtin:primary.lineWidth": 4,
-				"builtin:primary.lineStyle": 2,
-				"builtin:primary.color":     "#123456",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+func TestLegacySwingTypeIsNoLongerCataloged(t *testing.T) {
+	if _, err := builtInIndicatorDefinition("SWING_SR"); err == nil {
+		t.Fatal("legacy SWING_SR unexpectedly remains in the active catalog")
 	}
-	for key, want := range map[string]InputValue{
-		"showHigh": false, "highWidth": 4, "highStyleInput": 2, "highColor": "#123456",
+	if _, err := builtInCompileRequest(IndicatorRuntimeRequest{IndicatorType: "SWING_SR"}); err == nil {
+		t.Fatal("legacy SWING_SR unexpectedly remains executable")
+	}
+}
+
+func TestEveryDeclaredPineSourceRequestsHistoryContext(t *testing.T) {
+	for _, source := range []string{
+		`indicator("RSI"); plot(ta.rsi(close, 14))`,
+		`indicator("Cross"); plot(ta.crossover(close, open) ? 1 : 0)`,
+		`indicator("Positional history", "PH", false, format.inherit, 2, scale.right, 250); plot(close)`,
+		`indicator("Stateful"); var int count = 0; count += close > open ? 1 : 0; plot(count)`,
+		`indicator("Pointwise"); plot(math.abs(close))`,
 	} {
-		if got := request.InputOverrides[key]; got != want {
-			t.Fatalf("%s = %#v, want %#v", key, got, want)
+		if !pineSourceNeedsHistoryContext(source) {
+			t.Fatalf("history-sensitive source was not detected: %s", source)
 		}
+	}
+	if pineSourceNeedsHistoryContext("") {
+		t.Fatal("empty source unexpectedly requires history context")
 	}
 }

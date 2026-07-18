@@ -291,36 +291,6 @@ func TestTimeframeSecondsDistinguishesMinutesFromMonths(t *testing.T) {
 	}
 }
 
-func TestIndicatorRuntimeSwingProducesConfirmedHorizontalSegments(t *testing.T) {
-	highs := []float64{1, 2, 5, 3, 2, 4, 6, 3, 2}
-	lows := []float64{0, -1, -3, -1, 0, -2, -1, -1, 0}
-	candles := make([]Candle, len(highs))
-	for index := range candles {
-		candles[index] = Candle{Time: int64(index + 1), Open: (highs[index] + lows[index]) / 2, High: highs[index], Low: lows[index], Close: (highs[index] + lows[index]) / 2, Volume: 1}
-	}
-	config := runtimeConfig("swing", "SWING_SR")
-	config["length"], config["length2"] = 2, 2
-	config["color"], config["color2"] = "#ef5350", "#26c6da"
-	response := computeBuiltInForTest(t, "SWING_SR", candles, config)
-	if len(response.Result.Series) != 4 {
-		t.Fatalf("expected two high and two low segments, got %+v", response.Result.Series)
-	}
-	highSegments := []IndicatorSeries{}
-	for _, series := range response.Result.Series {
-		if series.Color == "#ef5350" {
-			highSegments = append(highSegments, series)
-		}
-	}
-	if len(highSegments) != 2 {
-		t.Fatalf("high segments = %+v", highSegments)
-	}
-	for _, series := range highSegments {
-		if len(series.Data) != 2 || series.Data[0].Value != series.Data[1].Value || series.LineStyle == nil || *series.LineStyle != 1 {
-			t.Fatalf("non-horizontal compiled swing line = %+v", series)
-		}
-	}
-}
-
 func TestIndicatorRuntimeHTTPContract(t *testing.T) {
 	app := fiber.New()
 	NewHandler().Register(app.Group("/api/v1"))

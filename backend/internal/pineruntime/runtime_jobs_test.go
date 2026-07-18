@@ -109,6 +109,35 @@ func TestIndicatorRuntimeKeySeparatesReplayBoundaryFromLive(t *testing.T) {
 	}
 }
 
+func TestCompileRuntimeKeySeparatesReplayBoundaryFromLive(t *testing.T) {
+	request := CompileRequest{
+		SourceCode: `indicator("Replay key"); plot(close)`,
+		Candles:    sampleCandles(20),
+	}
+	liveKey, err := compileRuntimeKey(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := request.Candles[8].Time
+	request.ReplayCutoff = &cutoff
+	replayKey, err := compileRuntimeKey(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if liveKey == replayKey {
+		t.Fatalf("direct compile live/replay work shared a cache key: %q", liveKey)
+	}
+	secondCutoff := request.Candles[9].Time
+	request.ReplayCutoff = &secondCutoff
+	secondKey, err := compileRuntimeKey(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayKey == secondKey {
+		t.Fatalf("direct compile replay cutoffs shared a cache key: %q", replayKey)
+	}
+}
+
 func TestIndicatorRuntimeKeyRejectsInvalidReplayBoundary(t *testing.T) {
 	for _, cutoff := range []int64{-1, maxReplayCutoff + 1} {
 		_, err := indicatorRuntimeKey(IndicatorRuntimeRequest{ReplayCutoff: &cutoff})

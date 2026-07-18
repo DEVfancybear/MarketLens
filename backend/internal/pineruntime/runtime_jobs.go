@@ -218,6 +218,12 @@ func waitRuntimeJob[T any](ctx context.Context, call *runtimeJobCall[T]) (T, err
 
 func compileRuntimeKey(req CompileRequest) (string, error) {
 	candles := normalizeRuntimeCandles(req.Candles)
+	if err := validateReplayCutoff(req.ReplayCutoff); err != nil {
+		return "", err
+	}
+	if req.ReplayCutoff != nil {
+		candles = candlesThroughReplayCutoff(candles, *req.ReplayCutoff)
+	}
 	truncated := len(candles) > maxCompileCandles
 	if len(candles) > maxCompileCandles {
 		candles = candles[len(candles)-maxCompileCandles:]
@@ -232,6 +238,7 @@ func compileRuntimeKey(req CompileRequest) (string, error) {
 		Truncated      bool                  `json:"truncated,omitempty"`
 		InputOverrides map[string]InputValue `json:"inputOverrides,omitempty"`
 		StyleOverrides map[string]InputValue `json:"styleOverrides,omitempty"`
+		ReplayCutoff   *int64                `json:"replayCutoff,omitempty"`
 	}{
 		SourceCode:     req.SourceCode,
 		Timeframe:      req.Timeframe,
@@ -239,6 +246,7 @@ func compileRuntimeKey(req CompileRequest) (string, error) {
 		Truncated:      truncated,
 		InputOverrides: req.InputOverrides,
 		StyleOverrides: req.StyleOverrides,
+		ReplayCutoff:   req.ReplayCutoff,
 	})
 }
 

@@ -122,6 +122,8 @@ type ProjectedIndicatorLabel = {
   text: string;
   color: string;
   backgroundColor?: string;
+  style?: string;
+  tooltip?: string;
   x: number;
   y: number;
 };
@@ -155,12 +157,14 @@ function indicatorStyleSignature(series: IndicatorSeries) {
 }
 
 function labelBackground(color: string | undefined): string {
-  if (!color) return "rgba(8, 12, 18, 0.72)";
+  return color || "rgba(8, 12, 18, 0.72)";
+}
+
+function labelBackgroundIsTransparent(color: string | undefined): boolean {
+  if (!color) return false;
+  if (color.trim().toLowerCase() === "transparent") return true;
   const transparentRgba = color.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\s*\)/i);
-  if (transparentRgba && Number(transparentRgba[1]) < 0.08) {
-    return "rgba(8, 12, 18, 0.72)";
-  }
-  return color;
+  return transparentRgba != null && Number(transparentRgba[1]) < 0.08;
 }
 
 function rebuildCandleLookup(candles: readonly Candle[]): Map<number, Candle> {
@@ -1159,6 +1163,8 @@ export function PriceChart({
               text: label.text,
               color: label.color,
               backgroundColor: label.backgroundColor,
+              style: label.style,
+              tooltip: label.tooltip,
               x: Math.min(width - rightReserve, Math.max(4, x + 8)),
               y,
             },
@@ -1353,17 +1359,27 @@ function IndicatorOverlay({
       {labels.map((label) => (
         <div
           key={label.key}
-          className="pointer-events-none absolute z-20 whitespace-nowrap font-mono text-[12px] font-semibold leading-none"
+          className={`${label.tooltip ? "pointer-events-auto" : "pointer-events-none"} absolute z-20 whitespace-pre-wrap font-mono text-[12px] font-semibold leading-none`}
+          title={label.tooltip || undefined}
+          aria-label={label.tooltip || undefined}
           style={{
             color: label.color,
             backgroundColor: labelBackground(label.backgroundColor),
-            border: "1px solid rgba(255, 255, 255, 0.12)",
+            border: labelBackgroundIsTransparent(label.backgroundColor)
+              ? "none"
+              : "1px solid rgba(255, 255, 255, 0.12)",
             borderRadius: 2,
             left: label.x,
             padding: "2px 4px",
             top: label.y,
             transform: "translateY(-50%)",
             textShadow: "0 1px 2px rgba(0, 0, 0, 0.9)",
+            // Keep the metadata available for future style-specific layout
+            // while preserving the current compact overlay presentation.
+            // `label_up` sits below its anchor with an upward pointer;
+            // `label_down` sits above its anchor with a downward pointer.
+            ...(label.style === "label.style_label_up" ? { transform: "translateY(0%)" } : {}),
+            ...(label.style === "label.style_label_down" ? { transform: "translateY(-100%)" } : {}),
           }}
         >
           {label.text}

@@ -24,6 +24,8 @@ export interface IndicatorRuntimeDefinition {
   description?: string;
   overlay: boolean;
   timeframe?: string;
+  version?: number;
+  properties?: Record<string, unknown>;
   inputs: PineInputDefinition[];
   styles: PineStyleDefinition[];
   legacyInputBindings?: Record<string, string>;

@@ -1,8 +1,9 @@
 # Pivot Formation Alert Plan
 
-_Status: deferred/pending. This document is an implementation plan only. The
-2026-07-16 Swing S/R runtime change does not add an Alert Center indicator-event
-type or dispatch pivot notifications._
+_Status: archived on 2026-07-18. The `SWING_SR` catalog entry and source were
+removed. Examples below describe the former proposal only. A future design must
+identify source-driven Pine events by saved script and event key through the
+common backend runtime; it must not reintroduce a `SWING_SR` formula branch._
 
 ## Decision summary
 

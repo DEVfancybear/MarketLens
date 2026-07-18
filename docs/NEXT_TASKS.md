@@ -4,14 +4,13 @@ _Post-monorepo update 2026-07-06._
 
 ## Deferred indicator-event alerts
 
-- Alert Center support for `SWING_SR` pivot-high/pivot-low formation is pending
-  and was intentionally not included in the backend indicator-runtime cutover.
-- Continue only from
-  [`PIVOT_FORMATION_ALERT_PLAN.md`](PIVOT_FORMATION_ALERT_PLAN.md): build the
-  common backend event registry, authoritative closed-candle evaluator,
-  immutable alert snapshot, cursor/idempotency persistence, and delivery path
-  before adding UI.
-- The frontend may configure and render indicator-event alerts, but it must not
+- The former `SWING_SR`-specific pivot alert task is retired with that catalog
+  entry. Any future pivot-high/pivot-low alerts must be source-driven and use a
+  common backend Pine event contract rather than restoring a hidden formula.
+- [`PIVOT_FORMATION_ALERT_PLAN.md`](PIVOT_FORMATION_ALERT_PLAN.md) is retained
+  as an archived design reference; its `SWING_SR` payloads are not an active
+  implementation target.
+- The frontend may configure and render future indicator-event alerts, but it must not
   scan candles, infer events from returned series, or submit pivot triggers.
 
 ## Drawing maintenance refactor

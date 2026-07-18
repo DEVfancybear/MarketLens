@@ -71,6 +71,7 @@ type statefulObject struct {
 	style      string
 	width      int
 	text       string
+	tooltip    string
 	position   string
 	textSize   string
 	table      map[int]map[int]statefulTableCell
@@ -382,6 +383,8 @@ func (vm *statefulVM) labelResult(object *statefulObject) (IndicatorOverlayLabel
 		Text:            object.text,
 		Color:           object.color,
 		BackgroundColor: object.background,
+		Style:           object.style,
+		Tooltip:         object.tooltip,
 		Time:            timePointer,
 	}, true
 }
@@ -411,7 +414,7 @@ func (vm *statefulVM) plotSeries(plot *statefulPlot) (IndicatorSeries, bool) {
 	data := make([]LinePoint, 0, len(plot.values))
 	color := ""
 	for index, value := range plot.values {
-		if index < len(plot.colors) && plot.colors[index] != "" {
+		if index < len(plot.colors) && plot.colors[index] != "" && plot.colors[index] != "transparent" {
 			color = plot.colors[index]
 		}
 		if index < len(vm.candles) && statefulUsable(value) {

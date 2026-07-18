@@ -1,7 +1,8 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Updated 2026-07-17 for the generic stateful executor,
-source-backed built-in catalog, and bounded runtime scheduler.
+_Date: 2026-07-09. Updated 2026-07-19 for generic Pine v5 source execution,
+replay-causal evaluation, the submitted Swing Highs/Lows fixture, and removal
+of the legacy `SWING_SR` catalog entry.
 Scope: move indicator parsing/calculation out of the frontend and into the Go
 backend._
 
@@ -25,6 +26,8 @@ compilation, while the frontend stays responsible for:
 - Do not call TradingView private APIs for compilation.
 - Do not make the frontend compile user code in the steady state.
 - Do not special-case indicator names such as ADR, VSA, RSI, or future scripts.
+- Do not restore `SWING_SR` as a formula-specific backend branch. Older saved
+  presets may retain that type, but new catalog responses must not advertise it.
 - Do not persist market candles in the Pine runtime. Candles remain market-data
   runtime input.
 
@@ -43,6 +46,8 @@ Implemented on 2026-07-09:
 | Overlay rendering | `frontend/src/components/chart/PriceChart.tsx` |
 | Separate pane rendering | Native LWC panes in `frontend/src/components/chart/PriceChart.tsx` |
 | Script persistence | Backend Phase 9 `/api/v1/pine-scripts` |
+| Replay boundary | Backend `replayCutoff` normalization shared by catalog and user source |
+| Generic fixture parity | Pine v5 Swing Highs/Lows UDT/pivot/label regression fixture |
 
 Frontend chart rendering now uses `frontend/src/services/pineRuntimeCache.ts`.
 CUSTOM indicators no longer call the compiler synchronously from
@@ -62,7 +67,8 @@ Better RSI, ADR-style object-heavy scripts, and multi-moving-average overlays:
 - Pine `hline`/`fill` reference outputs marked with `extendToVisibleRange` so
   frontend chart panes can project them onto the active logical viewport,
   including TradingView-style right-offset whitespace beyond the latest candle.
-- `request.security()` for daily aggregation on chart candles.
+- `request.security()` for current-symbol fixed higher-timeframe aggregation on
+  chart candles, including positional or named required arguments.
 - Nested `request.security()` expression fallback for scripts that place the call
   inside larger ternary expressions.
 - Multiline user-defined functions declared with `=>`, including nested
@@ -109,7 +115,7 @@ backend/internal/pineruntime/
   compiler.go      # shared user/catalog compile orchestration and diagnostics
   builtin_runtime.go # built-in HTTP contract delegating exclusively to Compile
   builtin_sources.go # catalog config-to-Pine-input/style mapping
-  sources/*.pine   # source for every built-in, including attributed LuxAlgo FVG
+  sources/*.pine   # source for each supported catalog entry (including attributed LuxAlgo FVG)
   stateful_parser.go # AST parser for UDTs, methods, blocks, tuples, loops, objects
   stateful_eval.go # ordered closed-bar VM and reference-type operations
   stateful_runtime.go # state/history, security contexts, and normalized primitives
@@ -142,12 +148,19 @@ source + properties + normalized OHLCV
 ```
 
 Built-ins are not native formula adapters. `SMA`, `EMA`, `VWAP`, `RSI`,
-`MACD`, `ADR`, `SWING_SR`, and `FVG` are embedded `.pine` files passed to the
-same `Compile` function as a saved or public user script. The catalog only maps
-legacy UI properties to source inputs/styles.
+`MACD`, `ADR`, and `FVG` are embedded `.pine` files passed to the same
+`Compile` function as a saved or public user script. The catalog only maps
+legacy UI properties to source inputs/styles. `SWING_SR` is no longer a catalog
+source or executable runtime type. Existing rows may still contain the opaque
+legacy value; clients can offer an explicit migration/unavailable state, but the
+backend never selects a hidden replacement formula.
 
 The stateful path executes historical candles sequentially and commits variable
 history after each bar, matching the closed-bar part of Pine's execution model.
+Every declared user/catalog source is conservatively marked as requiring
+bounded pre-viewport history. This intentionally accepts extra history fetches
+for pointwise scripts so `var`, objects, `bar_index`, UDF state, and future Pine
+features cannot silently reset at a viewport boundary.
 It supports the subset exercised by generic fixtures and the supplied LuxAlgo
 source: UDT/default fields, methods, function-local `var`, tuples, typed
 reference arrays, ascending/descending and `for ... in` loops, history,
@@ -164,9 +177,11 @@ Deliberate limits:
   event delivery is reported as unsupported.
 - `request.security()` uses the current symbol and supplied candle data. Higher
   timeframes run in independent aggregated contexts and become visible on the
-  final sub-bar. Multi-symbol and lower-timeframe array requests fail; a plain
-  lower-timeframe string cannot reconstruct missing sub-bars and uses chart
-  candles.
+  final sub-bar. Required arguments can be positional or named, and prior
+  intermediate assignments are re-executed against the child OHLCV context.
+  Multi-symbol, invalid-timeframe, plain lower-timeframe, and lower-timeframe
+  array requests fail closed because missing sub-bars cannot be reconstructed
+  from chart candles.
 - Unknown evaluated identifiers/functions return a compile error. Advertised
   support must be backed by a semantic regression test, not inferred from
   accepted syntax.
@@ -174,6 +189,93 @@ Deliberate limits:
 These constraints follow Pine's documented distinction between sequential bar
 execution, qualifier/history semantics, reference types, and requested data
 contexts. They must remain explicit when the subset grows.
+
+## Generic Pine source and execution contract
+
+The runtime is source-driven rather than name-driven. Pine itself requires one
+global declaration and the current chart-output executor accepts `indicator()`
+and legacy `study()` declarations. `strategy()` and `library()` are detected and
+fail closed because their distinct execution contracts are not implemented.
+The optional `//@version=N` annotation is exposed in metadata and is inherently
+part of the source/cache hash; v5 is the compatibility target for the submitted
+fixture. Missing and legacy pre-v5 annotations compile with an explicit
+compatibility warning, v6 compiles with a subset warning, and a version newer
+than v6 fails closed. Full version-gated v5/v6 behavior (for example boolean
+conversion, lazy logical operators, and dynamic-request differences) is not yet
+emulated.
+
+Metadata extraction preserves literal or enum-valued named and positional
+declaration arguments using the documented `indicator()` signature: `title`,
+`shorttitle`, `overlay`, `format`, `precision`, `scale`, `max_bars_back`,
+`timeframe`, `timeframe_gaps`, `explicit_plot_zorder`, `max_lines_count`,
+`max_labels_count`, `max_boxes_count`, `calc_bars_count`,
+`max_polylines_count`, `dynamic_requests`, and `behind_chart`. This metadata is
+not a claim that every property has runtime parity. The API exposes
+overlay/timeframe for caller-side placement/routing; both execution paths retain
+the newest line/label/box outputs according to the declared limits (default 50).
+A non-empty declaration timeframe and the
+`timeframe_gaps`, `calc_bars_count`, or `dynamic_requests` properties fail
+closed because they would change execution semantics the runtime does not yet
+model. Formatting, z-order, polylines, and behind-chart semantics remain
+metadata-only compatibility gaps. Features on the runtime's explicit
+unsupported list fail closed; other
+syntax is supported only where covered by parser/runtime diagnostics and
+regression fixtures. An unimplemented declaration property's metadata is
+informational rather than silently treated as a fully implemented behavior.
+
+The historical evaluator follows TradingView's closed-bar sequence:
+
+1. Select the accessible dataset and any required warm-up bars.
+2. Update OHLCV, `bar_index`, and bar-state values for the current bar.
+3. Execute the source from start to finish using data available at that bar.
+4. Commit series/history and drawing state before advancing to the next bar.
+
+For an inclusive `replayCutoff`, the evaluator retains caller-supplied candles
+before the selected bar as warm-up context, but it executes and emits only bars
+at or before the cutoff. This endpoint does not fetch missing history itself.
+It must not use the full live dataset and then merely hide future
+outputs: pivots, labels, boxes, lines, fills, requested higher-timeframe data,
+and history buffers all have to be causal at the boundary. A source-created
+object whose creation/anchor is in the future is absent; an object that began
+before the boundary is clipped to the boundary and cannot retain a right
+extension. The cutoff is included in the runtime cache key.
+
+The backend currently models the closed-bar portion of Pine. It does not model
+realtime tick rollback/re-execution or `varip`; `barstate` therefore describes
+the supplied closed-bar snapshot. This limitation is intentional and must stay
+visible in API diagnostics until a tick engine is implemented. The semantics are
+based on TradingView's [execution model](https://www.tradingview.com/pine-script-docs/language/execution-model/),
+[declaration statements](https://www.tradingview.com/pine-script-docs/language/declaration-statements/),
+[variable declarations](https://www.tradingview.com/pine-script-docs/language/variable-declarations/),
+[script structure](https://www.tradingview.com/pine-script-docs/language/script-structure/),
+[type system](https://www.tradingview.com/pine-script-docs/language/type-system/),
+[inputs](https://www.tradingview.com/pine-script-docs/concepts/inputs/),
+[objects](https://www.tradingview.com/pine-script-docs/language/objects/),
+[labels/text and shapes](https://www.tradingview.com/pine-script-docs/visuals/text-and-shapes/),
+[v6 migration guide](https://www.tradingview.com/pine-script-docs/migration-guides/to-pine-version-6/),
+and [repainting guidance](https://www.tradingview.com/pine-script-docs/concepts/repainting/).
+
+### Submitted Swing Highs/Lows fixture
+
+`backend/internal/pineruntime/testdata/swing_high_low_luxalgo.pine` is a
+regression fixture copied from the user-provided `swing high low.pine.txt`.
+It is Pine v5 and intentionally exercises generic features rather than a
+catalog name:
+
+- `input()` values with `group` metadata and color overrides;
+- multiline string concatenation and escaped newlines;
+- a `pattern` user-defined type with fields and `pattern.new()` construction;
+- `ta.pivothigh()` / `ta.pivotlow()` confirmation windows and history access;
+- numeric-to-boolean conditions used by Pine v5;
+- ternary selection of a nullable UDT;
+- persistent variables, back-referenced `bar_index`, and `label.new()` with
+  transparent color, style, text color, and tooltip fields.
+
+The fixture must compile through the same endpoint as any saved/public source,
+emit a swing label only after the complete right-hand pivot window exists, and
+never emit a label after a replay cutoff. Its LuxAlgo copyright and
+CC BY-NC-SA 4.0 attribution are retained in the fixture; the runtime does not
+claim or publish the source as an original built-in catalog implementation.
 
 ## Runtime API
 
@@ -276,8 +378,9 @@ Response:
 
 ### `POST /api/v1/pine-runtime/compile`
 
-Compile a script against the exact replay-aware candle slice supplied by the
-frontend.
+Compile a script against the supplied OHLCV window. `replayCutoff` is optional
+for direct callers, but when present it is an inclusive Unix-seconds boundary
+and is enforced by the backend before execution and output normalization.
 
 Request:
 
@@ -286,6 +389,7 @@ Request:
   "scriptId": "optional-client-or-backend-id",
   "sourceCode": "...",
   "timeframe": "15m",
+  "replayCutoff": 1783420800,
   "candles": [
     {
       "time": 1783420800,
@@ -326,6 +430,14 @@ Response shape must remain compatible with the current frontend
 }
 ```
 
+The common runtime normalizes candle order, keeps the supplied pre-cutoff
+history (up to the compile limit), then evaluates only through `replayCutoff`.
+It removes
+future labels/objects, clips geometry crossing the boundary, disables
+right-side extensions, and includes the cutoff in the compile cache key. Omit
+the field for live behavior. Values outside the validated Unix-seconds range
+are rejected; JavaScript millisecond values are not accepted.
+
 The frontend renderer should not need to understand backend internals. It should
 only receive normalized chart primitives.
 
@@ -341,6 +453,7 @@ transport; it is not a separate formula runtime.
   "indicatorType": "FVG",
   "indicatorId": "chart-instance-id",
   "timeframe": "15m",
+  "replayCutoff": 1783420800,
   "config": {
     "inputValues": {
       "thresholdPer": 0,
@@ -381,6 +494,23 @@ pan/zoom window. The source file preserves LuxAlgo attribution and the
 CC BY-NC-SA 4.0 notice. Pine `alertcondition()` events are reported but are not
 yet part of the common `IndicatorResult` contract.
 
+### Legacy `SWING_SR` removal
+
+`SWING_SR` was a temporary catalog implementation for the earlier common
+indicator runtime. It is removed from the active catalog and from the
+source-backed built-in set so the runtime has one generic Pine path. This is a
+catalog/API change, not a request to delete user data:
+
+- New catalog responses and new indicator presets must not create `SWING_SR`.
+- Existing persisted rows remain readable as opaque configs. Hydration should
+  mark them as deprecated/unavailable (or offer an explicit migration to a
+  saved Pine source) instead of silently substituting a different formula.
+- The runtime must reject a direct `SWING_SR` compute request with a structured
+  diagnostic, while `CUSTOM`/saved/public scripts continue through the generic
+  compiler.
+- Historical changelog entries remain historical; they do not imply that the
+  removed catalog entry is still supported.
+
 ## Concurrency Model
 
 Fiber already handles simultaneous HTTP requests concurrently. Both compile
@@ -393,9 +523,11 @@ and built-in requests additionally pass through `runtimeJobGroup[T]`:
   cache is retained.
 - Work has an independent 5s context and panic recovery. Context failures map
   to HTTP 408, queue saturation to 503, and internal/panic failures to 500.
-- Compile and indicator keys contain source/type, timeframe, properties, and
-  the normalized candle tail. User, script, and chart-instance identity are
-  excluded, then the handler rebinds the cached result ID to each caller.
+- Compile and indicator keys contain source/type (the source hash inherently
+  includes its Pine version and declaration text), timeframe, input/style
+  properties, normalized candle tail, and replay cutoff. User, script, and
+  chart-instance identity are excluded, then the handler rebinds the cached
+  result ID to each caller.
 - Independent pure-series output branches use `runOrderedJobs`, a bounded group
   that retains declaration order so goroutine scheduling cannot change series
   keys or snapshots.
@@ -425,7 +557,7 @@ The resource should expose:
 getPineMeta(sourceCode)
 getPineInputs(sourceCode, inputOverrides)
 getPineStyles(sourceCode, styleOverrides)
-compilePine(sourceCode, candles, inputOverrides, styleOverrides)
+compilePine(sourceCode, candles, inputOverrides, styleOverrides, replayCutoff?)
 ```
 
 Then migrate call sites:
@@ -452,12 +584,15 @@ The chart render path must not block on an HTTP request. It should:
 Use a stable cache key:
 
 ```text
-scriptId/sourceHash + candleRangeHash + inputHash + styleHash + timeframe
+scriptId/sourceHash + candleRangeHash + inputHash + styleHash + timeframe +
+replayCutoff
 ```
 
 The candle range hash should include first candle time, last candle time, candle
-count, and replay cursor when active. Do not stringify every candle for normal
-render invalidation; full candles are only sent in the compile request.
+count, and replay cursor when active. The source hash already changes with its
+version annotation and declaration arguments. Do not stringify every candle
+for normal render invalidation; full candles are only sent in the compile
+request.
 
 For scripts that use `request.security()`, the frontend cache is intentionally
 window-based (`length`, first bar time, last bar time) rather than full-OHLC
@@ -557,6 +692,13 @@ Backend tests:
 - Generic stateful fixtures cover identity-neutral UDT/tuple/array/object
   execution, independent security state, function-local `var`, fixed boxes,
   dynamic fills, tables, input-source pivots, and closed-bar history.
+- The submitted Swing Highs/Lows v5 fixture compiles through the generic path,
+  preserves multiline descriptions and label properties, confirms pivots only
+  after their right-hand window, and produces no future labels under replay.
+- Declaration-property coverage records named and positional literal/enum
+  values (`shorttitle`, format/precision/scale, lookback/object limits,
+  timeframe gaps, and `calc_bars_count`) as metadata. Tests separately cover
+  the object-limit semantics currently used by the stateful executor.
 - FVG source behavior: middle-candle confirmation, threshold, strict geometry,
   dynamic/dashboard output, and loaded-window history without a fixed 300-bar
   limit.
@@ -582,9 +724,15 @@ Manual checks:
 - Add VSA, Better RSI, and ADR from Pine Editor.
 - Add 10-in-1 moving averages from Pine Editor and confirm the chart shows
   `10 in 1 MAs` with visible MA lines and horizontal Inputs rows.
+- Add the submitted Swing Highs/Lows v5 source from the Pine Editor; verify
+  confirmed labels, multiline tooltips, style colors, and no labels beyond a
+  selected Replay candle.
 - Change inputs and style values.
 - Switch symbol/timeframe while custom indicators are visible.
 - Start replay, select a past bar, then switch timeframe.
+- Submit a legacy `SWING_SR` compute request and verify the runtime rejects it;
+  a client may separately present an unavailable/migration state, but it must
+  not silently execute a replacement formula.
 - Sign out and confirm user script data is cleared from view.
 
 ## Acceptance Criteria

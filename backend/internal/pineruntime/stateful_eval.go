@@ -478,6 +478,21 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 		return vm.evaluatePivot(call, scope, "low")
 	case "color.new":
 		return vm.colorNew(call, scope)
+	case "color":
+		// Pine permits an explicit color cast, including color(na).  The
+		// latter must remain `na` so drawing constructors can distinguish an
+		// omitted/transparent color from a literal fallback.
+		value, err := vm.callArgument(call, scope, "", 0)
+		if err != nil {
+			return statefulNA(), err
+		}
+		if value.kind == statefulValueNA || value.kind == statefulValueNumber && !statefulUsable(value.number) {
+			return statefulNA(), nil
+		}
+		if color := statefulColorText(value); color != "" {
+			return statefulColor(color), nil
+		}
+		return statefulColor(statefulValueText(value, "")), nil
 	case "color.r", "color.g", "color.b":
 		return vm.colorComponent(name, call, scope)
 	case "color.rgb":
@@ -1073,8 +1088,10 @@ func (vm *statefulVM) constructLabel(call *statefulCallExpr, scope *statefulScop
 	}
 	object.text = vm.textArgument(call, scope, "text", 2, "")
 	object.xloc = vm.textArgument(call, scope, "xloc", 3, "xloc.bar_index")
-	object.background = vm.colorArgument(call, scope, "color", 5, "")
+	object.background = vm.colorArgument(call, scope, "color", 5, resolveColor("color.blue", defaultColors[0]))
+	object.style = vm.textArgument(call, scope, "style", 6, "label.style_label_down")
 	object.color = vm.colorArgument(call, scope, "textcolor", 7, "#ffffff")
+	object.tooltip = vm.textArgument(call, scope, "tooltip", 10, "")
 	vm.retainObject(object, vm.program.maxLabels)
 	return statefulValue{kind: statefulValueObject, object: object}, nil
 }
@@ -1142,9 +1159,19 @@ func (vm *statefulVM) textArgument(call *statefulCallExpr, scope *statefulScope,
 }
 
 func (vm *statefulVM) colorArgument(call *statefulCallExpr, scope *statefulScope, name string, index int, fallback string) string {
-	value, err := vm.callArgument(call, scope, name, index)
+	expression := vm.rawArgument(call, name, index)
+	if expression == nil {
+		return fallback
+	}
+	value, err := vm.evaluate(expression, scope)
 	if err != nil {
 		return fallback
+	}
+	if value.kind == statefulValueNA || value.kind == statefulValueNumber && !statefulUsable(value.number) {
+		// Preserve an explicitly supplied color(na) as transparent. Returning the
+		// fallback here would make it indistinguishable from an omitted argument
+		// and gives labels/boxes an opaque default background.
+		return "transparent"
 	}
 	if color := statefulColorText(value); color != "" {
 		return color
@@ -1188,7 +1215,7 @@ func (vm *statefulVM) evaluatePlot(call *statefulCallExpr, scope *statefulScope)
 	if err != nil {
 		return statefulNA(), err
 	}
-	color := vm.colorArgument(call, scope, "color", 1, "")
+	color := vm.colorArgument(call, scope, "color", 1, defaultColors[0])
 	for plot.lastBar+1 < vm.bar {
 		plot.values = append(plot.values, math.NaN())
 		plot.colors = append(plot.colors, "")
@@ -1247,17 +1274,25 @@ func (vm *statefulVM) evaluateSecurity(call *statefulCallExpr, scope *statefulSc
 		}
 		return statefulNA(), nil
 	}
-	if len(call.arguments) < 3 {
+	timeframeExpression := vm.rawArgument(call, "timeframe", 1)
+	requestedExpression := vm.rawArgument(call, "expression", 2)
+	if vm.rawArgument(call, "symbol", 0) == nil || timeframeExpression == nil || requestedExpression == nil {
 		return statefulNA(), fmt.Errorf("request.security() expects symbol, timeframe, and expression")
 	}
-	timeframeValue, err := vm.evaluate(call.arguments[1].expression, scope)
+	timeframeValue, err := vm.evaluate(timeframeExpression, scope)
 	if err != nil {
 		return statefulNA(), err
 	}
 	timeframe := statefulValueText(timeframeValue, "")
 	chartSeconds := statefulCandleInterval(vm.candles)
 	targetSeconds, valid := timeframeSeconds(timeframe)
-	if !valid || targetSeconds <= chartSeconds {
+	if !valid {
+		return statefulNA(), fmt.Errorf("unsupported request.security() timeframe %q", timeframe)
+	}
+	if targetSeconds > 0 && targetSeconds < chartSeconds {
+		return statefulNA(), fmt.Errorf("lower-timeframe request.security() is unsupported")
+	}
+	if targetSeconds == chartSeconds {
 		targetSeconds = 0
 	}
 	targetCandles := vm.candles
@@ -1271,20 +1306,12 @@ func (vm *statefulVM) evaluateSecurity(call *statefulCallExpr, scope *statefulSc
 	childRequest.Candles = targetCandles
 	child := newStatefulVM(vm.ctx, vm.program, childRequest, targetCandles)
 	child.outputSuppressed = true
-	// request.security has an independent execution context.  Inputs and other
-	// immutable scalar values are copied, while mutable arrays/objects and
-	// function-local `var` state begin fresh in the child VM.
-	for name, cell := range vm.global.cells {
-		if !cell.initialized {
-			continue
-		}
-		switch cell.value.kind {
-		case statefulValueNumber, statefulValueBool, statefulValueString, statefulValueColor:
-			copyCell := child.global.ensure(name)
-			copyCell.value = cloneStatefulValue(cell.value)
-			copyCell.initialized = true
-		}
-	}
+	// request.security has an independent execution context. Re-run the global
+	// statements that precede this call on every target bar so intermediate
+	// dependencies (for example `src = close * 2`) use target-timeframe OHLCV.
+	// Copying the parent scalar cell would freeze it at the chart bar and also
+	// leak parent `var` state into the child context.
+	prefix := statefulStatementsBeforeCall(vm.program.statements, call)
 	targetValues := make([]statefulValue, len(targetCandles))
 	for index := range targetCandles {
 		select {
@@ -1293,7 +1320,10 @@ func (vm *statefulVM) evaluateSecurity(call *statefulCallExpr, scope *statefulSc
 		default:
 		}
 		child.bar = index
-		value, err := child.evaluate(call.arguments[2].expression, child.global)
+		if _, err := child.executeBlock(prefix, child.global); err != nil {
+			return statefulNA(), fmt.Errorf("request.security dependency: %w", err)
+		}
+		value, err := child.evaluate(requestedExpression, child.global)
 		if err != nil {
 			return statefulNA(), fmt.Errorf("request.security expression: %w", err)
 		}
@@ -1309,6 +1339,88 @@ func (vm *statefulVM) evaluateSecurity(call *statefulCallExpr, scope *statefulSc
 		return cloneStatefulValue(mapped[vm.bar]), nil
 	}
 	return statefulNA(), nil
+}
+
+func statefulStatementsBeforeCall(statements []statefulStmt, target *statefulCallExpr) []statefulStmt {
+	for index, statement := range statements {
+		if statefulStatementContainsCall(statement, target) {
+			return statements[:index]
+		}
+	}
+	return statements
+}
+
+func statefulStatementContainsCall(statement statefulStmt, target *statefulCallExpr) bool {
+	switch value := statement.(type) {
+	case *statefulAssignStmt:
+		return statefulExpressionContainsCall(value.expression, target)
+	case *statefulExprStmt:
+		return statefulExpressionContainsCall(value.expression, target)
+	case *statefulIfStmt:
+		for _, branch := range value.branches {
+			if statefulExpressionContainsCall(branch.condition, target) {
+				return true
+			}
+			for _, child := range branch.body {
+				if statefulStatementContainsCall(child, target) {
+					return true
+				}
+			}
+		}
+		for _, child := range value.other {
+			if statefulStatementContainsCall(child, target) {
+				return true
+			}
+		}
+	case *statefulForStmt:
+		if statefulExpressionContainsCall(value.from, target) ||
+			statefulExpressionContainsCall(value.to, target) ||
+			statefulExpressionContainsCall(value.in, target) {
+			return true
+		}
+		for _, child := range value.body {
+			if statefulStatementContainsCall(child, target) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func statefulExpressionContainsCall(expression statefulExpr, target *statefulCallExpr) bool {
+	if expression == nil {
+		return false
+	}
+	switch value := expression.(type) {
+	case *statefulCallExpr:
+		if value == target || statefulExpressionContainsCall(value.callee, target) {
+			return true
+		}
+		for _, argument := range value.arguments {
+			if statefulExpressionContainsCall(argument.expression, target) {
+				return true
+			}
+		}
+	case *statefulUnaryExpr:
+		return statefulExpressionContainsCall(value.value, target)
+	case *statefulBinaryExpr:
+		return statefulExpressionContainsCall(value.left, target) || statefulExpressionContainsCall(value.right, target)
+	case *statefulTernaryExpr:
+		return statefulExpressionContainsCall(value.condition, target) ||
+			statefulExpressionContainsCall(value.whenTrue, target) ||
+			statefulExpressionContainsCall(value.whenFalse, target)
+	case *statefulFieldExpr:
+		return statefulExpressionContainsCall(value.receiver, target)
+	case *statefulIndexExpr:
+		return statefulExpressionContainsCall(value.receiver, target) || statefulExpressionContainsCall(value.index, target)
+	case *statefulTupleExpr:
+		for _, item := range value.values {
+			if statefulExpressionContainsCall(item, target) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func mapStatefulSecurityValues(original, target []Candle, values []statefulValue, seconds int64) []statefulValue {

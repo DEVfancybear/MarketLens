@@ -118,54 +118,6 @@ test.describe("desktop overlay boundaries", () => {
     await expect(page.getByRole("button", { name: "Indicators", exact: true })).toBeFocused();
   });
 
-  test("Swing S/R is added through the common backend runtime contract", async ({ page }) => {
-    // The shared phase2 fixture intentionally owns its indicator list; use the
-    // normal workspace profile here so the add action is allowed to mutate it.
-    await page.goto("/?chartFixture=900&chartFixtureTail=500");
-    await expect(page.locator('[data-platform="desktop"]')).toBeVisible({ timeout: 45_000 });
-    let swingRequest: Record<string, unknown> | null = null;
-    await page.route("**/api/v1/indicator-runtime/compute", async (route) => {
-      const body = route.request().postDataJSON() as Record<string, unknown>;
-      if (body.indicatorType === "SWING_SR") swingRequest = body;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          result: { id: body.indicatorId, series: [] },
-          errors: [],
-          warnings: [],
-        }),
-      });
-    });
-
-    await page.getByRole("button", { name: "Indicators", exact: true }).click();
-    const browser = page.getByRole("dialog", { name: "Indicators" });
-    await browser
-      .getByRole("button", { name: "Swing high/low support & resistance", exact: true })
-      .click();
-
-    const legendTitle = page.getByText("Swing S/R 25/25", { exact: true });
-    await expect(legendTitle).toBeVisible();
-    await expect.poll(() => swingRequest).not.toBeNull();
-    expect(swingRequest).toMatchObject({
-      indicatorType: "SWING_SR",
-      config: {
-        type: "SWING_SR",
-        length: 25,
-        length2: 25,
-        inputValues: { highSource: "high", lowSource: "low" },
-      },
-    });
-
-    await legendTitle.locator("..").getByTitle("Indicator settings").click();
-    const settings = page.getByRole("dialog", { name: "SWING_SR settings" });
-    await expect(settings.getByText("Swing high strength", { exact: true })).toBeVisible();
-    await expect(settings.getByText("Swing low strength", { exact: true })).toBeVisible();
-    await settings.getByRole("button", { name: "Style", exact: true }).click();
-    await expect(settings.getByText("Swing high", { exact: true })).toBeVisible();
-    await expect(settings.getByText("Swing low", { exact: true })).toBeVisible();
-  });
-
   test("chart settings renders above the chart and restores focus on Escape", async ({ page }) => {
     const trigger = page.getByRole("button", { name: "Chart settings" });
     await trigger.click();

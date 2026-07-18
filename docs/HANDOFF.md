@@ -17,13 +17,12 @@ older references:
 
 Recent post-split work:
 
-- **Backend-owned indicator runtime and Swing S/R complete (2026-07-16):** SMA,
-  EMA, VWAP, RSI, MACD, ADR, and Swing S/R now calculate through the common Go
-  registry; the frontend only requests, caches, and renders API results. The
-  protected reference's pivot-formation Alert Center feature is intentionally
-  pending. Continue it only from
-  `docs/PIVOT_FORMATION_ALERT_PLAN.md`; do not add a frontend detector or
-  client-claimed trigger path.
+- **Generic Pine source runtime and legacy Swing S/R removal (2026-07-19):**
+  replay cutoff is enforced before backend evaluation, the submitted Pine v5
+  Swing Highs/Lows script is covered as a generic source fixture, and the old
+  `SWING_SR` source/catalog entry is removed. Do not restore a formula-specific
+  Swing branch. Persisted legacy rows may be migrated to saved Pine source; the
+  archived `docs/PIVOT_FORMATION_ALERT_PLAN.md` is historical context only.
 
 - **Drawing maintenance Phase 8 Wave C complete (2026-07-12):** 11 harmonic/Elliott/time-cycle
   tools added through a manifest-labeled pattern framework, taking the persistent catalog to 73.
