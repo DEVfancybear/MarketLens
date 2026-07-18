@@ -205,6 +205,11 @@ type IndicatorRuntimeRequest struct {
 	Timeframe     string         `json:"timeframe,omitempty"`
 	Config        map[string]any `json:"config,omitempty"`
 	Candles       []Candle       `json:"candles"`
+	// ReplayCutoff limits calculation to the replay evaluation boundary supplied
+	// by a replay-aware caller. It is expressed as a Unix timestamp in seconds.
+	// A nil value preserves live-chart behavior, including right extensions for
+	// drawing objects.
+	ReplayCutoff *int64 `json:"replayCutoff,omitempty"`
 }
 
 type IndicatorRuntimeResponse struct {

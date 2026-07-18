@@ -25,6 +25,10 @@ Current coverage:
 - fixed Monday-first calendar grid generation.
 - viewport-controller write attribution and no-op dedupe,
 - crosshair time normalization to UTC timestamps.
+- Replay cutoff normalization, session-isolated runtime cache keys, and causal
+  fallback behavior during forward navigation and rewind,
+- indicator series/label projection clipping and discrete histogram boundary
+  handling.
 
 Keep browser/visual assertions out of this folder. Pure chart math belongs here;
 DOM rendering and pointer interaction should use a separate browser test suite.

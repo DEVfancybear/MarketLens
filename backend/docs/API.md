@@ -9,9 +9,10 @@ API prefix: `/api/v1` (except `/health`).
 > Phase 13 resources remain planned contracts. See `AUTH.md` for auth and
 > `DATABASE.md` for persistence details.
 >
-> Backend-owned replay endpoints are design-only. The complete planned REST,
-> WebSocket, command, event, error, and concurrency contracts live in
-> `../../docs/REPLAY_BACKEND_MIGRATION_PLAN.md`.
+> Backend-owned replay endpoints are implemented. The session, track, command,
+> event, and concurrency details are maintained in
+> `../../docs/REPLAY_BACKEND_PHASE6.md` and the frontend contract in
+> `../../frontend/docs/REPLAY_ARCHITECTURE.md`.
 
 ## Conventions
 
@@ -855,11 +856,13 @@ Request:
   "indicatorType": "catalog-or-script-key",
   "indicatorId": "ind_abc",
   "sourceCode": "optional Pine source for a saved/public script",
+  "timeframe": "15m",
   "config": {
     "type": "catalog-or-script-key",
     "inputValues": { "period": 25 },
     "styleValues": {}
   },
+  "replayCutoff": 1783420800,
   "candles": [
     { "time": 1783420800, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 100 }
   ]
@@ -882,6 +885,30 @@ The common compiler sorts/deduplicates candles, caps the supplied window at
 backend resolves embedded source by `indicatorType`. Both paths invoke the same
 `Compile` function. Backend definitions also expose legacy property bindings so
 old persisted presets can be hydrated without frontend type-name dispatch.
+
+### Replay no-lookahead boundary
+
+`replayCutoff` is optional and is an inclusive Unix timestamp in seconds. The
+Replay client derives it from the backend's `tracks[0].visibleThrough` value and
+must not derive it from a local wall clock or viewport. Omit the field for live
+behavior; values outside `1..253402300799` (including JavaScript milliseconds)
+are rejected.
+
+When a cutoff is present, the common backend path applies the same boundary to
+catalog indicators and saved/public Pine source:
+
+- normalize, sort, deduplicate, and filter candles at or before the cutoff
+  before the 5,000-bar cap and Pine compilation;
+- remove series and labels that exist only after the boundary;
+- clip continuous geometry that crosses the boundary, while never synthesizing
+  a boundary sample for histogram/discrete output;
+- force `extendToVisibleRange` off for Replay results; and
+- include the cutoff in the runtime cache key so live, forward, and rewind
+  calculations cannot reuse a look-ahead result.
+
+The backend is authoritative. Frontend projection additionally clips series,
+labels, and magnet points as defense in depth, but it must never widen the
+backend result.
 
 Swing pivots are emitted only after the complete right-hand strength window
 exists, so replay cannot observe a future candle.

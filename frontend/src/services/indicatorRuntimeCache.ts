@@ -5,6 +5,9 @@ import { getHistoricalDataService } from "@/services/market-data/HistoricalDataS
 import {
   indicatorRuntimeCacheKey,
   indicatorRuntimeScopeKey,
+  canUseLatestIndicatorRuntimeResult,
+  normalizeReplayCutoff,
+  normalizeReplaySessionId,
   type IndicatorRuntimeContext,
 } from "@/services/indicatorRuntimePolicy";
 
@@ -20,7 +23,13 @@ const cache = new Map<string, IndicatorResult>();
 const inflight = new Map<string, Promise<void>>();
 const failedAt = new Map<string, number>();
 const historyContextCache = new Map<string, Promise<Candle[]>>();
-const latestByScope = new Map<string, IndicatorResult>();
+interface LatestRuntimeResult {
+  result: IndicatorResult;
+  replaySessionId?: string;
+  replayCutoff?: number;
+}
+
+const latestByScope = new Map<string, LatestRuntimeResult>();
 const latestRequestByScope = new Map<string, string>();
 const listeners = new Set<Listener>();
 let generation = 0;
@@ -47,7 +56,7 @@ function rememberFailure(cacheKey: string, requestGeneration: number) {
   }, FAILURE_RETRY_MS);
 }
 
-function touchResult(target: Map<string, IndicatorResult>, key: string, result: IndicatorResult) {
+function touchResult<T>(target: Map<string, T>, key: string, result: T) {
   target.delete(key);
   target.set(key, result);
   while (target.size > MAX_ENTRIES) {
@@ -58,7 +67,7 @@ function touchResult(target: Map<string, IndicatorResult>, key: string, result: 
   }
 }
 
-function readResult(target: Map<string, IndicatorResult>, key: string): IndicatorResult | null {
+function readResult<T>(target: Map<string, T>, key: string): T | null {
   const result = target.get(key);
   if (!result) return null;
   target.delete(key);
@@ -145,13 +154,29 @@ function limitObjectSegments(result: IndicatorResult): IndicatorResult {
 async function loadHistoryContext(
   context: IndicatorRuntimeContext,
   limit: number,
+  replayBefore?: number,
 ): Promise<Candle[]> {
   if (!context.symbol || !context.timeframe) return [];
-  const key = `${context.symbol}:${context.timeframe}:${limit}`;
+  const replaySessionId = normalizeReplaySessionId(context.replaySessionId);
+  const replayCutoff = normalizeReplayCutoff(context.replayCutoff);
+  // A Replay history window must never share the live/latest cache entry. One
+  // bounded history promise is enough for a session: newly revealed candles
+  // are merged into it and every request is filtered at its current cutoff.
+  const scope = replaySessionId
+    ? `replay-session:${replaySessionId}`
+    : replayCutoff == null
+      ? "live"
+      : `replay-cutoff:${replayCutoff}`;
+  const key = JSON.stringify([scope, context.symbol, context.timeframe, limit]);
   let promise = historyContextCache.get(key);
   if (!promise) {
     promise = getHistoricalDataService()
-      .loadHistory({ symbol: context.symbol, timeframe: context.timeframe, limit })
+      .loadHistory({
+        symbol: context.symbol,
+        timeframe: context.timeframe,
+        limit,
+        ...(replayBefore != null ? { before: replayBefore } : {}),
+      })
       .catch((error) => {
         if (historyContextCache.get(key) === promise) historyContextCache.delete(key);
         throw error;
@@ -187,15 +212,40 @@ async function resolveRuntimeCandles(
   candles: readonly Candle[],
   context?: IndicatorRuntimeContext,
 ): Promise<Candle[]> {
+  const replayCutoff = normalizeReplayCutoff(context?.replayCutoff);
+  const replaySessionId = normalizeReplaySessionId(context?.replaySessionId);
+  // The candle array is authoritative for Replay. This guard also protects
+  // against a stale hydration race before the new backend bars arrive.
+  const boundedCandles = replayCutoff == null
+    ? [...candles]
+    : candles.filter((candle) => candle.time <= replayCutoff);
+  // A Replay session without a valid authoritative cutoff is fail-closed:
+  // compute only from bars already supplied by that session and never ask the
+  // live history provider for warm-up context.
+  if (replaySessionId && replayCutoff == null) {
+    return boundedCandles;
+  }
   if (!(await requiresHistoryContext(config)) || !context?.symbol || !context.timeframe) {
-    return [...candles];
+    return boundedCandles;
   }
   const targetBars = historyBarsForTimeframe(context.timeframe);
-  if (candles.length >= targetBars) return [...candles];
+  if (boundedCandles.length >= targetBars) return boundedCandles;
   try {
-    return mergeCandles(await loadHistoryContext(context, targetBars), candles);
+    // Provider OHLC for the current replay bucket may already contain its
+    // future high/low/close. Only request warm-up bars strictly before the
+    // latest authoritative replay candle, then let replay candles win merges.
+    const isReplay = replaySessionId != null || replayCutoff != null;
+    const replayBefore = isReplay ? boundedCandles.at(-1)?.time : undefined;
+    if (isReplay && replayBefore == null) return boundedCandles;
+    const merged = mergeCandles(
+      await loadHistoryContext(context, targetBars, replayBefore),
+      boundedCandles,
+    );
+    return replayCutoff == null
+      ? merged
+      : merged.filter((candle) => candle.time <= replayCutoff);
   } catch {
-    return [...candles];
+    return boundedCandles;
   }
 }
 
@@ -209,11 +259,11 @@ export function getCachedIndicatorRuntimeResult(
   candles: readonly Candle[],
   context?: IndicatorRuntimeContext,
 ): IndicatorResult | null {
-  return (
-    readResult(cache, indicatorRuntimeCacheKey(config, candles, context)) ??
-    readResult(latestByScope, indicatorRuntimeScopeKey(config, context)) ??
-    null
-  );
+  const exact = readResult(cache, indicatorRuntimeCacheKey(config, candles, context));
+  if (exact) return exact;
+  const latest = readResult(latestByScope, indicatorRuntimeScopeKey(config, context));
+  if (!latest || !canUseLatestIndicatorRuntimeResult(context, latest)) return null;
+  return latest.result;
 }
 
 export function computeIndicator(
@@ -233,6 +283,15 @@ export function ensureIndicatorRuntimeResult(
   context?: IndicatorRuntimeContext,
 ): void {
   if (candles.length === 0) return;
+  // Never let a malformed/missing Replay snapshot degrade into an unbounded
+  // runtime request. The chart will render an empty result until a valid
+  // backend-owned `visibleThrough` arrives.
+  if (
+    normalizeReplaySessionId(context?.replaySessionId) &&
+    normalizeReplayCutoff(context?.replayCutoff) == null
+  ) {
+    return;
+  }
   const runtimeKey = indicatorRuntimeCacheKey(config, candles, context);
   if (cache.has(runtimeKey) || inflight.has(runtimeKey)) return;
   const lastFailure = failedAt.get(runtimeKey);
@@ -252,7 +311,11 @@ export function ensureIndicatorRuntimeResult(
         failedAt.delete(runtimeKey);
         touchResult(cache, runtimeKey, result);
         if (latestRequestByScope.get(scope) === runtimeKey) {
-          touchResult(latestByScope, scope, result);
+          touchResult(latestByScope, scope, {
+            result,
+            replaySessionId: normalizeReplaySessionId(context?.replaySessionId),
+            replayCutoff: normalizeReplayCutoff(context?.replayCutoff),
+          });
         }
       } else {
         rememberFailure(runtimeKey, requestGeneration);

@@ -22,6 +22,7 @@ Indicator Settings / Legend
 
 PriceChart
   -> ensureIndicatorRuntimeResult (one cache for every indicator)
+  -> Replay snapshot visibleThrough -> replayCutoff (when Replay is active)
   -> optional history fetch when backend metadata requires it
   -> POST /api/v1/indicator-runtime/compute
   -> ComputeIndicatorRuntime
@@ -68,6 +69,7 @@ legend therefore render catalog and user scripts identically.
   "indicatorId": "chart-instance-id",
   "sourceCode": "optional user Pine source",
   "timeframe": "15m",
+  "replayCutoff": 1783420800,
   "config": {
     "inputValues": {},
     "styleValues": {}
@@ -78,6 +80,11 @@ legend therefore render catalog and user scripts identically.
 
 When `sourceCode` is present it wins. Otherwise the backend resolves source by
 `indicatorType`. Both paths construct `CompileRequest` and invoke `Compile`.
+
+When Replay is active, `replayCutoff` is copied from the backend-owned
+`tracks[0].visibleThrough` timestamp. It is inclusive and expressed in Unix
+seconds. The backend filters and clamps the runtime result before it reaches the
+chart; the browser must not substitute a local clock or a viewport edge.
 
 ## Frontend responsibilities
 
@@ -106,6 +113,17 @@ list of catalog names or select behavior based on a catalog type.
   an indicator needs extended history through `requiresHistoryContext`.
 - Cache keys include the complete dynamic config, symbol, timeframe, and OHLCV
   content, so forming-bar corrections invalidate every indicator consistently.
+- Replay cache keys also include the session identity and cutoff. A cached
+  result is a valid temporary fallback only when its cutoff is less than or
+  equal to the requested cutoff in the same Replay session. Live and Replay
+  results, and different Replay sessions, are never interchangeable.
+- Replay history warm-up is requested strictly before the latest authoritative
+  Replay candle, preventing provider OHLC for the forming bucket from importing
+  future high/low/close values. A Replay session without a valid cutoff fails
+  closed and renders no runtime result until the backend snapshot is ready.
+- Frontend projection clips series, labels, and magnet points at the cutoff as
+  defense in depth. This does not replace the backend boundary, which applies
+  before compilation for catalog and saved/source indicators alike.
 - Backend jobs use the bounded worker pool, queue, singleflight, and LRU in
   `runtime_jobs.go`.
 

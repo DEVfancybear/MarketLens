@@ -16,6 +16,12 @@ func ComputeIndicatorRuntime(ctx context.Context, req IndicatorRuntimeRequest) I
 		Errors:   []RuntimeError{},
 		Warnings: []RuntimeError{},
 	}
+	normalizedRequest, err := normalizeIndicatorRuntimeRequest(req)
+	if err != nil {
+		response.Errors = append(response.Errors, RuntimeError{Message: err.Error()})
+		return response
+	}
+	req = normalizedRequest
 	compileRequest, err := indicatorCompileRequest(req)
 	if err != nil {
 		response.Errors = append(response.Errors, RuntimeError{Message: err.Error()})
@@ -26,6 +32,9 @@ func ComputeIndicatorRuntime(ctx context.Context, req IndicatorRuntimeRequest) I
 	response.Result.ID = id
 	response.Errors = compiled.Errors
 	response.Warnings = compiled.Warnings
+	if req.ReplayCutoff != nil {
+		response.Result = clampIndicatorResultToReplay(response.Result, *req.ReplayCutoff)
+	}
 	return response
 }
 

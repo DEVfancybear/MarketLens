@@ -78,6 +78,46 @@ func TestIndicatorRuntimeKeySharesInstanceIdentity(t *testing.T) {
 	}
 }
 
+func TestIndicatorRuntimeKeySeparatesReplayBoundaryFromLive(t *testing.T) {
+	base := IndicatorRuntimeRequest{
+		IndicatorType: "FVG",
+		Config:        map[string]any{"type": "FVG", "inputValues": map[string]any{"extend": 20}},
+		Candles:       sampleCandles(20),
+	}
+	liveKey, err := indicatorRuntimeKey(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := base.Candles[8].Time
+	base.ReplayCutoff = &cutoff
+	replayKey, err := indicatorRuntimeKey(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if liveKey == replayKey {
+		t.Fatalf("live and replay calculations must not share a cache key: %q", liveKey)
+	}
+
+	secondCutoff := base.Candles[9].Time
+	base.ReplayCutoff = &secondCutoff
+	secondReplayKey, err := indicatorRuntimeKey(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayKey == secondReplayKey {
+		t.Fatalf("different replay boundaries must not share a cache key: %q", replayKey)
+	}
+}
+
+func TestIndicatorRuntimeKeyRejectsInvalidReplayBoundary(t *testing.T) {
+	for _, cutoff := range []int64{-1, maxReplayCutoff + 1} {
+		_, err := indicatorRuntimeKey(IndicatorRuntimeRequest{ReplayCutoff: &cutoff})
+		if err == nil || !strings.Contains(err.Error(), "replayCutoff") {
+			t.Fatalf("invalid replay boundary %d error = %v", cutoff, err)
+		}
+	}
+}
+
 func TestRuntimeJobGroupCoalescesConcurrentSavedScriptCompiles(t *testing.T) {
 	group := newRuntimeJobGroup[int](4, runtimeTimeout{})
 	const callers = 12

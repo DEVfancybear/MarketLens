@@ -1,6 +1,6 @@
 # Replay Architecture
 
-_Updated after Replay selection, viewport, and mobile hardening: 2026-07-13._
+_Updated after Replay selection, indicator causality, viewport, and mobile hardening: 2026-07-18._
 
 ## Authority boundary
 
@@ -134,6 +134,32 @@ revealed candle. At 10x, a normal ten-candle server batch is presented in about
 price, candle timestamp, cursor, or simulated time; interpolation is only a
 visual transition between server-owned values.
 
+## Indicator causality boundary
+
+The backend's `tracks[0].visibleThrough` is the only authority for the latest
+candle an indicator may observe. `PriceChart` converts that RFC 3339 timestamp
+to the inclusive Unix-second `replayCutoff` field on the common indicator
+runtime request. Catalog indicators, saved Pine scripts, and future indicators
+all use this same contract; no indicator-specific Replay exception is allowed.
+
+Before compilation, the backend filters normalized candles at or before the
+cutoff. It removes future-only series/labels, clips continuous geometry that
+crosses the boundary, disables right extension, and keeps live behavior
+unchanged when the field is omitted. Histogram/discrete output does not receive
+an invented boundary sample. The cutoff is part of the backend cache key.
+
+History warm-up during Replay may fetch context only with `before` set strictly
+before the latest authoritative Replay candle. This avoids importing a provider
+forming candle whose high/low/close already includes data beyond the Replay
+cursor. A missing or invalid cutoff fails closed and renders no runtime result
+until a valid server snapshot arrives.
+
+The frontend separately clips plotted series, labels, and magnet points and
+allows a cached result to flow forward only when
+`cachedCutoff <= requestedCutoff` in the same session. It never reuses a future
+result while rewinding, and never mixes live with Replay results. These checks
+are defense in depth; the backend remains the enforcement point.
+
 ## Timeframe and layout changes during Replay
 
 Changing symbol, timeframe, layout, or Replay scope while a session exists
@@ -226,6 +252,7 @@ npm run check:replay-client-boundary
 npm run test:replay
 npm run test:chart
 npm run typecheck
+cd ../backend && go test ./internal/pineruntime
 go test ./internal/replay/...
 ```
 
@@ -242,3 +269,6 @@ OHLC interpolation bounds, normal-speed single append, and high-speed append.
 It also includes stale paginated-history refresh, partial first-bucket forks,
 mobile touch/keyboard selection, compact landscape, session-expiry cleanup, and
 the active `Select bar -> Select date -> First day` empty-to-one-bar viewport.
+Indicator regressions cover the backend FVG and generic primitive cutoff,
+invalid boundaries, HTTP contract, live-vs-Replay cache keys, causal rewind
+fallbacks, and frontend series/label/magnet clipping.

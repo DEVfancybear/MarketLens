@@ -77,6 +77,7 @@ export async function computeIndicatorRuntime(
       indicatorId: config.id,
       sourceCode: config.sourceCode,
       timeframe: ctx?.timeframe,
+      replayCutoff: ctx?.replayCutoff,
       config,
       candles,
     },

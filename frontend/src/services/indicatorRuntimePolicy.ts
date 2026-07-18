@@ -3,6 +3,41 @@ import type { Candle, IndicatorConfig, Timeframe } from "@/types";
 export interface IndicatorRuntimeContext {
   symbol?: string;
   timeframe?: Timeframe;
+  /** Backend Replay session identity. Omitted for the live chart. */
+  replaySessionId?: string;
+  /** Latest candle timestamp that an indicator is allowed to observe. */
+  replayCutoff?: number;
+}
+
+/**
+ * Replay timestamps are part of the data contract, rather than a UI hint.
+ * Keep malformed values out of cache keys and request payloads so a failed
+ * replay snapshot cannot accidentally turn into an unbounded live request.
+ */
+export function normalizeReplayCutoff(value: unknown): number | undefined {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > 253_402_300_799
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+export function normalizeReplaySessionId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized || undefined;
+}
+
+/** Convert the Replay API's RFC3339 `visibleThrough` value to UNIX seconds. */
+export function replayCutoffFromVisibleThrough(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return undefined;
+  return normalizeReplayCutoff(Math.floor(milliseconds / 1000));
 }
 
 export function stableIndicatorRuntimeJSON(value: unknown): string {
@@ -58,12 +93,24 @@ export function indicatorRuntimeScopeKey(
   config: IndicatorConfig,
   context?: IndicatorRuntimeContext,
 ): string {
+  const replaySessionId = normalizeReplaySessionId(context?.replaySessionId);
+  const replayCutoff = normalizeReplayCutoff(context?.replayCutoff);
+  const runtimeMode = replaySessionId
+    ? `replay:${replaySessionId}`
+    : replayCutoff != null
+      ? "replay:unsessioned"
+      : "live";
   return [
     config.id,
     config.type,
     indicatorRuntimeHash(stableIndicatorRuntimeJSON(config)),
     context?.symbol ?? "",
     context?.timeframe ?? "",
+    // Keep the cutoff out of the scope key so a forward Replay can safely use
+    // the previous result as a temporary fallback. The exact candle cache key
+    // below still includes the cutoff. Session identity keeps live and Replay
+    // results (and separate Replay sessions) isolated from one another.
+    runtimeMode,
   ].join("|");
 }
 
@@ -74,6 +121,33 @@ export function indicatorRuntimeCacheKey(
 ): string {
   return [
     indicatorRuntimeScopeKey(config, context),
+    `cutoff:${normalizeReplayCutoff(context?.replayCutoff) ?? ""}`,
     indicatorCandleSignature(candles),
   ].join("|");
+}
+
+/**
+ * Decide whether a cached result is safe as a temporary render fallback.
+ *
+ * A result computed at an earlier Replay cutoff is causal for a later cutoff,
+ * but the reverse is a look-ahead leak. Live and Replay sessions are always
+ * isolated, as are two different Replay session ids.
+ */
+export function canUseLatestIndicatorRuntimeResult(
+  requested?: Pick<IndicatorRuntimeContext, "replaySessionId" | "replayCutoff">,
+  cached?: Pick<IndicatorRuntimeContext, "replaySessionId" | "replayCutoff">,
+): boolean {
+  const requestedSession = normalizeReplaySessionId(requested?.replaySessionId);
+  const cachedSession = normalizeReplaySessionId(cached?.replaySessionId);
+  if (requestedSession !== cachedSession) return false;
+
+  const requestedCutoff = normalizeReplayCutoff(requested?.replayCutoff);
+  const cachedCutoff = normalizeReplayCutoff(cached?.replayCutoff);
+  // A Replay session without two valid cutoffs is not a causal fallback.
+  // The request path fails closed in this state as well.
+  if (requestedSession && (requestedCutoff == null || cachedCutoff == null)) return false;
+  // A live result must never be replaced by an unsessioned Replay result, and
+  // vice versa. Two ordinary live contexts remain compatible.
+  if (requestedCutoff == null || cachedCutoff == null) return requestedCutoff == null && cachedCutoff == null;
+  return cachedCutoff <= requestedCutoff;
 }

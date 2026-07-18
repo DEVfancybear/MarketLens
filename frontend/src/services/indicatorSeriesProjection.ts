@@ -5,6 +5,35 @@ export interface IndicatorLogicalRange {
   to: number;
 }
 
+/**
+ * Keep indicator geometry inside a Replay data boundary. Object indicators
+ * commonly encode a right extension as a future point; when that happens we
+ * carry the last known value to the cutoff rather than allowing the extension
+ * to recreate a future chart region.
+ */
+export function indicatorSeriesDataThroughCutoff(
+  points: readonly LinePoint[],
+  cutoff?: number,
+  carryBoundary = true,
+): LinePoint[] {
+  if (cutoff == null || !Number.isFinite(cutoff)) return points as LinePoint[];
+  const bounded: LinePoint[] = [];
+  let crossed = false;
+  for (const point of points) {
+    if (point.time <= cutoff) {
+      bounded.push(point);
+      continue;
+    }
+    crossed = true;
+    break;
+  }
+  const last = bounded.at(-1);
+  if (carryBoundary && crossed && last && last.time < cutoff) {
+    bounded.push({ ...last, time: cutoff });
+  }
+  return bounded;
+}
+
 function lastFinitePoint(points: readonly LinePoint[]): LinePoint | null {
   for (let index = points.length - 1; index >= 0; index--) {
     const point = points[index];

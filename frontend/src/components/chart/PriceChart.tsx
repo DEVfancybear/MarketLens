@@ -39,7 +39,10 @@ import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
-import { indicatorSeriesDataForCandles } from "@/services/indicatorSeriesProjection";
+import {
+  indicatorSeriesDataForCandles,
+  indicatorSeriesDataThroughCutoff,
+} from "@/services/indicatorSeriesProjection";
 import { chartColors, makeTickMarkFormatter, makeTimeFormatter } from "./chartTheme";
 import {
   INDICATOR_PANE_HEIGHT,
@@ -60,6 +63,8 @@ import {
   ensureIndicatorRuntimeResult,
   subscribeIndicatorRuntimeCache,
 } from "@/services/indicatorRuntimeCache";
+import type { IndicatorRuntimeContext } from "@/services/indicatorRuntimePolicy";
+import { replayCutoffFromVisibleThrough } from "@/services/indicatorRuntimePolicy";
 import { resolveRealtimeSeriesUpdatePlan, type RealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
 import { useMarketDataStore } from "@/store/marketDataStore";
@@ -266,6 +271,16 @@ export function PriceChart({
   const replaySpeed = replaySnapshot?.speed ?? 1;
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const indicatorRuntimeContext = useMemo<IndicatorRuntimeContext>(() => {
+    const context: IndicatorRuntimeContext = { symbol, timeframe };
+    if (!replayActive || !replaySessionId) return context;
+    const replayCutoff = replayCutoffFromVisibleThrough(
+      replaySnapshot?.tracks[0]?.visibleThrough,
+    );
+    return replayCutoff == null
+      ? { ...context, replaySessionId }
+      : { ...context, replaySessionId, replayCutoff };
+  }, [replayActive, replaySessionId, replaySnapshot?.tracks, symbol, timeframe]);
   const storedIndicators = useAtomValue(indicatorsAtom);
   const indicators = indicatorsOverride ?? storedIndicators;
   const setCrosshair = useSetAtom(setCrosshairAtom);
@@ -854,34 +869,37 @@ export function PriceChart({
   }, []);
   useEffect(() => {
     [...overlayIndicators, ...visiblePaneIndicators].forEach((cfg) => {
-      ensureIndicatorRuntimeResult(cfg, candles, { symbol, timeframe });
+      ensureIndicatorRuntimeResult(cfg, candles, indicatorRuntimeContext);
     });
-  }, [overlayIndicators, visiblePaneIndicators, candles, symbol, timeframe]);
+  }, [overlayIndicators, visiblePaneIndicators, candles, indicatorRuntimeContext]);
   const overlayResults = useMemo(() => {
     void pineRuntimeVersion;
     return overlayIndicators.map((cfg) => ({
       cfg,
       result: optimizationDecision.derivedData
-        ? computeCachedIndicator(cfg, candles, { symbol, timeframe }, pineRuntimeVersion)
-        : computeIndicator(cfg, candles, { symbol, timeframe }),
+        ? computeCachedIndicator(cfg, candles, indicatorRuntimeContext, pineRuntimeVersion)
+        : computeIndicator(cfg, candles, indicatorRuntimeContext),
     }));
-  }, [overlayIndicators, candles, optimizationDecision.derivedData, pineRuntimeVersion, symbol, timeframe]);
+  }, [overlayIndicators, candles, indicatorRuntimeContext, optimizationDecision.derivedData, pineRuntimeVersion]);
   const paneResults = useMemo(() => {
     void pineRuntimeVersion;
     return visiblePaneIndicators.map((cfg) => ({
       cfg,
       result: optimizationDecision.derivedData
-        ? computeCachedIndicator(cfg, candles, { symbol, timeframe }, pineRuntimeVersion)
-        : computeIndicator(cfg, candles, { symbol, timeframe }),
+        ? computeCachedIndicator(cfg, candles, indicatorRuntimeContext, pineRuntimeVersion)
+        : computeIndicator(cfg, candles, indicatorRuntimeContext),
     }));
-  }, [visiblePaneIndicators, candles, optimizationDecision.derivedData, pineRuntimeVersion, symbol, timeframe]);
+  }, [visiblePaneIndicators, candles, indicatorRuntimeContext, optimizationDecision.derivedData, pineRuntimeVersion]);
   const chartIndicatorResults = useMemo(() => [...overlayResults, ...paneResults], [overlayResults, paneResults]);
   const indicatorMagnetPoints = useMemo<IndicatorMagnetPoint[]>(
     () =>
       overlayResults.flatMap(({ cfg, result }) =>
         result.series.flatMap((series) =>
           series.data.flatMap((point) =>
-            Number.isFinite(point.time) && Number.isFinite(point.value)
+            Number.isFinite(point.time) &&
+            Number.isFinite(point.value) &&
+            (indicatorRuntimeContext.replayCutoff == null ||
+              point.time <= indicatorRuntimeContext.replayCutoff)
               ? [
                   {
                     time: point.time,
@@ -894,7 +912,7 @@ export function PriceChart({
           ),
         ),
       ),
-    [overlayResults],
+    [indicatorRuntimeContext.replayCutoff, overlayResults],
   );
   const overlayLegendValueText = useMemo(
     () => Object.fromEntries(overlayResults.map(({ cfg, result }) => [cfg.id, indicatorResultValueText(result)])),
@@ -1059,7 +1077,11 @@ export function PriceChart({
         const projected = measureChartPerformance(
           "indicator.projection",
           () => {
-            const source = indicatorSeriesDataForCandles(s, candles, visibleLogicalRangeRef.current);
+            const source = indicatorSeriesDataThroughCutoff(
+              indicatorSeriesDataForCandles(s, candles, visibleLogicalRangeRef.current),
+              indicatorRuntimeContext.replayCutoff,
+              s.type !== "histogram",
+            );
             const windowed =
               s.extendToVisibleRange || !optimizationDecision.derivedData
                 ? source
@@ -1094,6 +1116,7 @@ export function PriceChart({
     candles,
     indicatorViewport,
     chartIndicatorResults,
+    indicatorRuntimeContext.replayCutoff,
     optimizationDecision.derivedData,
     paneIndicators,
     ready,
@@ -1112,7 +1135,13 @@ export function PriceChart({
 
     const frame = requestAnimationFrame(() => {
       const width = container.clientWidth;
-      const labels = overlayResults.flatMap(({ result }) => result.labels ?? []);
+      const labels = overlayResults
+        .flatMap(({ result }) => result.labels ?? [])
+        .filter((label) =>
+          label.time == null ||
+          indicatorRuntimeContext.replayCutoff == null ||
+          label.time <= indicatorRuntimeContext.replayCutoff,
+        );
       const dashboards = overlayResults.flatMap(({ result }) => (result.dashboard ? [result.dashboard] : []));
       const rightReserve = dashboards.length > 0 ? 238 : 96;
       setIndicatorLabels(
@@ -1140,7 +1169,7 @@ export function PriceChart({
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [overlayResults, ready, version]);
+  }, [indicatorRuntimeContext.replayCutoff, overlayResults, ready, version]);
 
   const toggleIndicatorVisibility = (indicator: IndicatorConfig) => {
     updateIndicator({

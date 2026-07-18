@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay indicator no-lookahead boundary (2026-07-18)
+- Added one backend-owned `replayCutoff` contract for catalog, saved-source, and
+  future indicators. Replay candles are filtered before Pine compilation and
+  returned series, labels, and drawing extensions cannot cross the selected
+  historical candle.
+- Isolated live and Replay runtime caches, made fallback causal during forward
+  navigation, and prevented history warm-up from importing the current Replay
+  candle's provider OHLC (which may contain future high/low/close values).
+- Added backend generic-primitive, FVG, HTTP, invalid-boundary, and cache-key
+  regressions plus frontend cutoff, cache-causality, projection, label, and
+  magnet-point coverage.
+
 ### Fixed - Vietnamese notification copy and selected timezone parity (2026-07-18)
 - Unified toast, browser, FCM, Telegram, and Discord alert bodies through one
   Vietnamese formatter with explicit event, target, trigger-price, source,

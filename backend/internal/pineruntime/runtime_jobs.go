@@ -244,6 +244,12 @@ func compileRuntimeKey(req CompileRequest) (string, error) {
 
 func indicatorRuntimeKey(req IndicatorRuntimeRequest) (string, error) {
 	candles := normalizeRuntimeCandles(req.Candles)
+	if err := validateReplayCutoff(req.ReplayCutoff); err != nil {
+		return "", err
+	}
+	if req.ReplayCutoff != nil {
+		candles = candlesThroughReplayCutoff(candles, *req.ReplayCutoff)
+	}
 	truncated := len(candles) > maxCompileCandles
 	if len(candles) > maxCompileCandles {
 		candles = candles[len(candles)-maxCompileCandles:]
@@ -256,6 +262,7 @@ func indicatorRuntimeKey(req IndicatorRuntimeRequest) (string, error) {
 		Config        map[string]any `json:"config,omitempty"`
 		Candles       []Candle       `json:"candles"`
 		Truncated     bool           `json:"truncated,omitempty"`
+		ReplayCutoff  *int64         `json:"replayCutoff,omitempty"`
 	}{
 		IndicatorType: req.IndicatorType,
 		SourceCode:    indicatorSourceCode(req),
@@ -263,6 +270,7 @@ func indicatorRuntimeKey(req IndicatorRuntimeRequest) (string, error) {
 		Config:        runtimeConfigForKey(req.Config),
 		Candles:       candles,
 		Truncated:     truncated,
+		ReplayCutoff:  req.ReplayCutoff,
 	})
 }
 

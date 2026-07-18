@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { indicatorSeriesDataForCandles } from "../../src/services/indicatorSeriesProjection";
+import {
+  indicatorSeriesDataForCandles,
+  indicatorSeriesDataThroughCutoff,
+} from "../../src/services/indicatorSeriesProjection";
 import type { Candle, IndicatorSeries } from "../../src/types";
 
 const candles: Candle[] = [
@@ -61,5 +64,48 @@ describe("indicator series viewport projection", () => {
       { time: 200, value: 70 },
       { time: 600, value: 70 },
     ]);
+  });
+
+  it("clips a crossing future extension at the replay cutoff", () => {
+    assert.deepEqual(
+      indicatorSeriesDataThroughCutoff(
+        [
+          { time: 100, value: 70 },
+          { time: 600, value: 70 },
+        ],
+        300,
+      ),
+      [
+        { time: 100, value: 70 },
+        { time: 300, value: 70 },
+      ],
+    );
+  });
+
+  it("drops indicator geometry that exists only after the replay cutoff", () => {
+    assert.deepEqual(
+      indicatorSeriesDataThroughCutoff(
+        [
+          { time: 400, value: 70 },
+          { time: 600, value: 70 },
+        ],
+        300,
+      ),
+      [],
+    );
+  });
+
+  it("does not synthesize a boundary sample for discrete histograms", () => {
+    assert.deepEqual(
+      indicatorSeriesDataThroughCutoff(
+        [
+          { time: 100, value: 7 },
+          { time: 600, value: 9 },
+        ],
+        300,
+        false,
+      ),
+      [{ time: 100, value: 7 }],
+    );
   });
 });

@@ -120,6 +120,86 @@ func TestFVGSourceUsesMiddleCloseThresholdAndSourceGeometry(t *testing.T) {
 	}
 }
 
+func TestIndicatorRuntimeReplayCutoffHidesFutureFVGAndClipsActiveZone(t *testing.T) {
+	candles := fvgFixtureCandles()
+	cutoff := int64(120)
+	request := IndicatorRuntimeRequest{
+		IndicatorType: "FVG",
+		IndicatorID:   "replay-fvg",
+		Timeframe:     "1m",
+		Config:        runtimeConfig("replay-fvg", "FVG"),
+		Candles:       candles,
+		ReplayCutoff:  &cutoff,
+	}
+	request.Config["inputValues"] = map[string]any{"thresholdPer": 0, "auto": false, "extend": 20, "timeframe": ""}
+	response := ComputeIndicatorRuntime(context.Background(), request)
+	if len(response.Errors) != 0 {
+		t.Fatalf("future FVG runtime errors: %+v", response.Errors)
+	}
+	if len(response.Result.Series) != 0 {
+		t.Fatalf("FVG formed after replay cutoff must be hidden: %+v", response.Result.Series)
+	}
+
+	cutoff = 180
+	response = ComputeIndicatorRuntime(context.Background(), request)
+	if len(response.Errors) != 0 || len(response.Result.Series) != 1 {
+		t.Fatalf("active FVG response = %+v errors=%+v", response.Result, response.Errors)
+	}
+	zone := response.Result.Series[0]
+	if len(zone.Data) < 2 || zone.Data[len(zone.Data)-1].Time != cutoff {
+		t.Fatalf("active FVG right edge was not clamped: %+v", zone.Data)
+	}
+	for _, point := range zone.Data {
+		if point.Time > cutoff {
+			t.Fatalf("clipped FVG contains future point: %+v", zone.Data)
+		}
+	}
+	if zone.ExtendToVisibleRange == nil || *zone.ExtendToVisibleRange {
+		t.Fatalf("replay FVG must not extend through the visible viewport: %+v", zone.ExtendToVisibleRange)
+	}
+}
+
+func TestIndicatorRuntimeReplayCutoffAppliesToSavedSource(t *testing.T) {
+	source, found, err := builtInPineSource("FVG")
+	if err != nil || !found {
+		t.Fatalf("load FVG source: found=%v err=%v", found, err)
+	}
+	candles := fvgFixtureCandles()
+	cutoff := int64(180)
+	config := runtimeConfig("saved-replay-fvg", "saved:FVG")
+	config["inputValues"] = map[string]any{"thresholdPer": 0, "auto": false, "extend": 20, "timeframe": ""}
+	response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
+		IndicatorType: "saved:FVG",
+		IndicatorID:   "saved-replay-fvg",
+		SourceCode:    source,
+		Timeframe:     "1m",
+		Config:        config,
+		Candles:       candles,
+		ReplayCutoff:  &cutoff,
+	})
+	if len(response.Errors) != 0 || len(response.Result.Series) != 1 {
+		t.Fatalf("saved source replay response = %+v errors=%+v", response.Result, response.Errors)
+	}
+	for _, point := range response.Result.Series[0].Data {
+		if point.Time > cutoff {
+			t.Fatalf("saved source emitted future point: %+v", response.Result.Series[0].Data)
+		}
+	}
+}
+
+func TestIndicatorRuntimeReplayCutoffRejectsInvalidBoundary(t *testing.T) {
+	for _, cutoff := range []int64{0, maxReplayCutoff + 1} {
+		response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
+			IndicatorType: "SMA",
+			Candles:       sampleCandles(4),
+			ReplayCutoff:  &cutoff,
+		})
+		if len(response.Errors) != 1 || !strings.Contains(response.Errors[0].Message, "replayCutoff") {
+			t.Fatalf("invalid replay cutoff %d response = %+v", cutoff, response)
+		}
+	}
+}
+
 func TestFVGUserCopyAndCatalogEntryUseSameCompilerResult(t *testing.T) {
 	candles := fvgFixtureCandles()[:3]
 	config := runtimeConfig("catalog-fvg", "FVG")
@@ -265,6 +345,50 @@ func TestIndicatorRuntimeHTTPContract(t *testing.T) {
 	}
 	if decoded.Result.ID != "sma-http" || len(decoded.Result.Series) != 1 || decoded.Result.Series[0].Key != "sma" {
 		t.Fatalf("response = %+v", decoded)
+	}
+}
+
+func TestIndicatorRuntimeHTTPReplayCutoffFiltersFutureCandles(t *testing.T) {
+	app := fiber.New()
+	NewHandler().Register(app.Group("/api/v1"))
+	candles := sampleCandles(4)
+	cutoff := candles[1].Time
+	body, err := json.Marshal(IndicatorRuntimeRequest{
+		IndicatorType: "saved:close",
+		IndicatorID:   "saved-close-replay",
+		SourceCode: `//@version=5
+indicator("Saved close", overlay=true)
+plot(close, "close")`,
+		Candles:      candles,
+		ReplayCutoff: &cutoff,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/indicator-runtime/compute", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response, err := app.Test(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var decoded IndicatorRuntimeResponse
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Errors) != 0 || len(decoded.Result.Series) != 1 {
+		t.Fatalf("response = %+v", decoded)
+	}
+	data := decoded.Result.Series[0].Data
+	if len(data) != 2 || data[len(data)-1].Time != cutoff {
+		t.Fatalf("HTTP runtime did not stop at replay cutoff: %+v", data)
+	}
+	for _, point := range data {
+		if point.Time > cutoff {
+			t.Fatalf("HTTP runtime leaked future candle: %+v", data)
+		}
 	}
 }
 
