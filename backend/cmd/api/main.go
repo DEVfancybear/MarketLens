@@ -128,7 +128,7 @@ func main() {
 			stdlog.Fatalf("integration settings encryption init error: %v", secretErr)
 		}
 		settingsHandler = settings.NewHandler(settingsStore, requireAuth).WithIntegrations(
-			settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret,
+			settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret, cfg.ChartTimeZone,
 		)
 		watchlistsStore := watchlists.NewRepo(pool.Pool)
 		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)

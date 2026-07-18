@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       triggerPrice: 101,
       triggeredAt: Date.now(),
       source: "test",
-      note: "External alert test message",
+      note: "Tin nhắn kiểm tra cảnh báo bên ngoài",
     },
     { [channel]: true },
   );

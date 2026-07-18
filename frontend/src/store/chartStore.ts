@@ -559,6 +559,8 @@ function commitIndicators(get: AtomGet, set: AtomSet, indicators: IndicatorConfi
 export const symbolAtom = atom<string>(DEFAULT_SYMBOL);
 export const timeframeAtom = atom<Timeframe>(DEFAULT_TF);
 export const chartTimeZoneAtom = atom<ChartTimeZoneId>(EXCHANGE_TIME_ZONE_ID);
+/** Resolved IANA zone used by chart labels and every notification channel. */
+export const resolvedChartTimeZoneAtom = atom<string>("UTC");
 export const candlesAtom = atom<Candle[]>([]);
 export const loadingAtom = atom<boolean>(false);
 export const drawingsAtom = atom<Drawing[]>([]);
@@ -713,6 +715,10 @@ export const applyRemoteChartSettingsAtom = atom(
     const drawingSyncMode = normalizeDrawingSyncMode(settings.drawingSyncMode);
 
     set(chartTimeZoneAtom, timeZone);
+    set(
+      resolvedChartTimeZoneAtom,
+      timeZone === EXCHANGE_TIME_ZONE_ID ? "UTC" : timeZone,
+    );
     set(drawingToolPreferencesAtom, drawingToolPreferences);
     set(newDrawingSyncModeAtom, drawingSyncMode);
     localStore.set(CHART_TIME_ZONE_STORAGE_KEY, timeZone);
@@ -806,6 +812,10 @@ export const setChartTimeZoneAtom = atom(
   (_get, set, value: ChartTimeZoneId) => {
     const timeZone = normalizeChartTimeZone(value);
     set(chartTimeZoneAtom, timeZone);
+    set(
+      resolvedChartTimeZoneAtom,
+      timeZone === EXCHANGE_TIME_ZONE_ID ? "UTC" : timeZone,
+    );
     localStore.set(CHART_TIME_ZONE_STORAGE_KEY, timeZone);
     queueChartSettings(_get, set, { timeZone });
   },
@@ -1564,9 +1574,11 @@ export const hydrateAtom = atom(null, (_get, set) => {
       localStore.get<unknown>(DRAWING_TOOL_PREFERENCES_KEY, null),
     ),
   );
+  const storedTimeZone = readStoredChartTimeZone();
+  set(chartTimeZoneAtom, storedTimeZone);
   set(
-    chartTimeZoneAtom,
-    readStoredChartTimeZone(),
+    resolvedChartTimeZoneAtom,
+    storedTimeZone === EXCHANGE_TIME_ZONE_ID ? "UTC" : storedTimeZone,
   );
   const syncMode = localStore.get<unknown>(DRAWING_SYNC_MODE_KEY, DEFAULT_DRAWING_SYNC_MODE);
   set(
@@ -1603,6 +1615,7 @@ export const resetChartWorkspaceToDefaultsAtom = atom(
     set(activeToolAtom, "cursor");
     set(drawColorAtom, "#2962ff");
     set(chartTimeZoneAtom, EXCHANGE_TIME_ZONE_ID);
+    set(resolvedChartTimeZoneAtom, "UTC");
     set(drawingToolPreferencesAtom, structuredClone(EMPTY_DRAWING_TOOL_PREFERENCES));
     set(newDrawingSyncModeAtom, DEFAULT_DRAWING_SYNC_MODE);
     set(selectedDrawingIdAtom, null);

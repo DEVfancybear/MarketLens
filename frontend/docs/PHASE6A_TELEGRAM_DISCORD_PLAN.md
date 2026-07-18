@@ -139,23 +139,36 @@ interface ExternalAlertMessage {
   alertId: string;
   symbol: string;
   condition: "above" | "below" | "crossUp" | "crossDown";
+  conditionLabel?: string;
   targetPrice: number;
   triggerPrice: number;
   note?: string;
   triggeredAt: number;
-  source: "browser-open" | "closed-browser-worker";
+  timeZone?: string;
+  source: "browser-open" | "closed-browser-worker" | "test";
 }
 ```
 
-Recommended message text:
+Canonical message text (the same body is used by toast, browser push,
+Firebase/FCM, Telegram, and Discord):
 
 ```text
-Trading alert triggered
-BTCUSDT crossed up 108000
-Trigger price: 108125.50
-Time: 2026-07-01T11:20:00.000Z
-Note: Breakout alert
+🚨 CẢNH BÁO GIAO DỊCH — BTCUSD
+Sự kiện: Giá cắt lên đường xu hướng
+Mức cảnh báo: 64,098.59
+Giá thị trường khi kích hoạt: 64,099.84
+Thời điểm kích hoạt: 2026-07-18 07:19:57 UTC-7
+Múi giờ hiển thị: America/Los_Angeles (UTC-7)
+Nguồn xử lý: Bộ xử lý nền
+Ghi chú: Xác nhận breakout
 ```
+
+The event timestamp is rendered from the chart's effective IANA time zone
+(with UTC as the safe fallback), never from the host computer's clock. The
+epoch timestamp remains canonical UTC in storage and retry payloads. Telegram
+and Discord may still show a small receipt/bubble time in the viewer's local
+zone; that provider metadata cannot be controlled by a webhook. The
+`Thời điểm kích hoạt` line in the message body is the authoritative event time.
 
 Telegram formatting:
 

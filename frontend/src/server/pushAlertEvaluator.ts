@@ -21,6 +21,10 @@ import type {
   ServerPushAlert,
 } from "@/types/pushAlerts";
 import type { TechnicalAlertEvidence } from "@/types/technicalAlerts";
+import {
+  alertConditionLabel,
+  formatAlertNotificationMessage,
+} from "@/services/notifications/alertMessage";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
 import { sendUserIntegrationNotifications } from "./externalNotifications";
 import { listPushDevices, updatePushDevice } from "./pushAlertStore";
@@ -93,38 +97,6 @@ export function alertSignature(alert: ServerPushAlert): string {
   )}:${technicalTargetSignature(alert.technicalTarget)}`;
 }
 
-const CONDITION_SYMBOL: Record<PushAlertCondition, string> = {
-  above: ">=",
-  below: "<=",
-  crossUp: "crosses above",
-  crossDown: "crosses below",
-};
-
-const CHANNEL_OPERATOR_TEXT = {
-  "cross-upper-up": "crosses upper boundary up",
-  "cross-upper-down": "crosses upper boundary down",
-  "cross-lower-up": "crosses lower boundary up",
-  "cross-lower-down": "crosses lower boundary down",
-  enter: "enters channel",
-  exit: "exits channel",
-  inside: "is inside channel",
-  outside: "is outside channel",
-} as const;
-
-function formatAlert(
-  alert: ServerPushAlert,
-  triggerPrice: number,
-  targetPrice: number,
-) {
-  const op = alert.technicalTarget?.kind === "dynamic-channel"
-    ? `${CHANNEL_OPERATOR_TEXT[alert.technicalTarget.operator]} @ ${targetPrice}`
-    : `${CONDITION_SYMBOL[alert.condition]} ${targetPrice}`;
-  return {
-    title: `${alert.symbol} alert`,
-    body: `${alert.symbol} ${op} - now ${triggerPrice}${alert.note ? ` - ${alert.note}` : ""}`,
-  };
-}
-
 async function deliverExternalOnce({
   cache,
   channel,
@@ -148,10 +120,15 @@ async function deliverExternalOnce({
       alertId: alert.id,
       symbol: alert.symbol,
       condition: alert.condition,
+      conditionLabel: alertConditionLabel(alert.condition, alert.technicalTarget),
       targetPrice: delivery.candidate.targetPrice,
       triggerPrice: delivery.candidate.triggerPrice,
       note: alert.note,
       triggeredAt: delivery.candidate.triggeredAt,
+      timeZone:
+        delivery.notificationTimeZone ??
+        device.notificationTimeZone ??
+        "UTC",
       source: "closed-browser-worker",
     },
     {
@@ -194,7 +171,20 @@ async function deliverTriggerNotifications({
   externalCache: ExternalDeliveryCache;
 }): Promise<PendingPushAlertDelivery | undefined> {
   const { candidate } = delivery;
-  const message = formatAlert(alert, candidate.triggerPrice, candidate.targetPrice);
+  const message = formatAlertNotificationMessage({
+    symbol: alert.symbol,
+    condition: alert.condition,
+    technicalTarget: alert.technicalTarget,
+    targetPrice: candidate.targetPrice,
+    triggerPrice: candidate.triggerPrice,
+    triggeredAt: candidate.triggeredAt,
+    timeZone:
+      delivery.notificationTimeZone ??
+      device.notificationTimeZone ??
+      "UTC",
+    note: alert.note,
+    source: "closed-browser-worker",
+  });
   let push = delivery.push;
   let telegram = delivery.telegram;
   let discord = delivery.discord;
@@ -212,6 +202,11 @@ async function deliverTriggerNotifications({
           condition: alert.condition,
           targetPrice: String(candidate.targetPrice),
           triggerPrice: String(candidate.triggerPrice),
+          triggeredAt: String(candidate.triggeredAt),
+          timeZone:
+            delivery.notificationTimeZone ??
+            device.notificationTimeZone ??
+            "UTC",
           source: "server-worker",
         },
       });

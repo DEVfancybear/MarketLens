@@ -230,6 +230,7 @@ export async function unregisterServerPushToken(
 export async function syncServerPushAlerts({
   token,
   deliveryToken,
+  notificationTimeZone,
   settingsPush,
   settingsTelegram,
   settingsDiscord,
@@ -237,6 +238,7 @@ export async function syncServerPushAlerts({
 }: {
   token: string;
   deliveryToken?: string;
+  notificationTimeZone?: string;
   settingsPush: boolean;
   settingsTelegram?: boolean;
   settingsDiscord?: boolean;
@@ -268,6 +270,7 @@ export async function syncServerPushAlerts({
     {
       token,
       deliveryToken,
+      notificationTimeZone,
       settingsPush,
       settingsTelegram,
       settingsDiscord,

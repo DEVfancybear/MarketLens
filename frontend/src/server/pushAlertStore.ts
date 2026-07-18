@@ -11,6 +11,7 @@ import type {
 import { alertArmingRevision } from "@/services/alertConditions";
 import { technicalTargetSignature } from "@/services/dynamicAlertTargets";
 import { sanitizePushAlertForStorage } from "@/services/pushAlertSanitizer";
+import { normalizeAlertTimeZone } from "@/services/notifications/alertMessage";
 
 const DB_VERSION = 1;
 const STORE_DIR = ".data";
@@ -138,6 +139,7 @@ function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
   return {
     token: String(data.token),
     deliveryToken: typeof data.deliveryToken === "string" ? data.deliveryToken : undefined,
+    notificationTimeZone: normalizeAlertTimeZone(data.notificationTimeZone),
     alerts,
     settingsPush: Boolean(data.settingsPush),
     settingsTelegram: Boolean(data.settingsTelegram),
@@ -180,6 +182,9 @@ export async function registerPushDevice(token: string): Promise<void> {
     await setFirestoreDevice({
       token,
       deliveryToken: existing?.deliveryToken,
+      notificationTimeZone: normalizeAlertTimeZone(
+        existing?.notificationTimeZone,
+      ),
       alerts: existing?.alerts ?? [],
       settingsPush: existing?.settingsPush ?? false,
       settingsTelegram: existing?.settingsTelegram ?? false,
@@ -198,6 +203,9 @@ export async function registerPushDevice(token: string): Promise<void> {
   db.devices[token] = {
     token,
     deliveryToken: existing?.deliveryToken,
+    notificationTimeZone: normalizeAlertTimeZone(
+      existing?.notificationTimeZone,
+    ),
     alerts: existing?.alerts ?? [],
     settingsPush: existing?.settingsPush ?? false,
     settingsTelegram: existing?.settingsTelegram ?? false,
@@ -245,6 +253,9 @@ export async function syncPushAlerts(
         request.deliveryToken,
         existing?.deliveryToken,
       ),
+      notificationTimeZone: normalizeAlertTimeZone(
+        request.notificationTimeZone ?? existing?.notificationTimeZone,
+      ),
       alerts,
       settingsPush: Boolean(request.settingsPush),
       settingsTelegram: Boolean(request.settingsTelegram),
@@ -276,6 +287,9 @@ export async function syncPushAlerts(
     deliveryToken: resolveStoredDeliveryToken(
       request.deliveryToken,
       existing?.deliveryToken,
+    ),
+    notificationTimeZone: normalizeAlertTimeZone(
+      request.notificationTimeZone ?? existing?.notificationTimeZone,
     ),
     alerts,
     settingsPush: Boolean(request.settingsPush),

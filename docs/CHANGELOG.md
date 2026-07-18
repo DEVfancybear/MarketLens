@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Vietnamese notification copy and selected timezone parity (2026-07-18)
+- Unified toast, browser, FCM, Telegram, and Discord alert bodies through one
+  Vietnamese formatter with explicit event, target, trigger-price, source,
+  note, and display-time fields.
+- Propagated the effective chart IANA timezone through browser-open and
+  closed-browser worker delivery, including daylight-saving offsets; invalid or
+  legacy records fall back to UTC. Provider receipt timestamps remain client
+  metadata while the message-body event time is authoritative.
+
 ### Fixed - Canonical trendline-alert lifecycle across restart (2026-07-18)
 - Made both browser-open and closed-browser alerts commit lifecycle/history to
   Go/PostgreSQL before FCM, Telegram, or Discord delivery. A one-time alert that

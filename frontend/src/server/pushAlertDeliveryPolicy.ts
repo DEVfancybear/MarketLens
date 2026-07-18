@@ -9,7 +9,10 @@ export function createPendingPushAlertDelivery(
   eventId: string,
   device: Pick<
     PushDeviceRecord,
-    "settingsPush" | "settingsTelegram" | "settingsDiscord"
+    | "settingsPush"
+    | "settingsTelegram"
+    | "settingsDiscord"
+    | "notificationTimeZone"
   >,
   alert: ServerPushAlert,
   candidate: PendingPushAlertTrigger,
@@ -18,6 +21,7 @@ export function createPendingPushAlertDelivery(
     eventId,
     alert: { ...alert },
     candidate,
+    notificationTimeZone: device.notificationTimeZone ?? "UTC",
     push: device.settingsPush && Boolean(alert.push),
     telegram: device.settingsTelegram && Boolean(alert.telegram),
     discord: device.settingsDiscord && Boolean(alert.discord),

@@ -6,6 +6,7 @@ import { pushRegistrationAtom } from "@/store/notificationStore";
 import { syncServerPushAlerts } from "@/services/notifications/push";
 import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
 import { workspaceReadyAtom } from "@/store/authStore";
+import { resolvedChartTimeZoneAtom } from "@/store/chartStore";
 import { getIntegrationSettings } from "@/services/api/resources/integrationsApi";
 import {
   canSyncClosedBrowserAlerts,
@@ -19,6 +20,7 @@ export function usePushAlertSync() {
   const registration = useAtomValue(pushRegistrationAtom);
   const externalSyncToken = useExternalSyncToken();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
+  const notificationTimeZone = useAtomValue(resolvedChartTimeZoneAtom);
   const [credential, setCredential] = useState<WorkerDeliveryCredential>({
     status: "idle",
   });
@@ -101,6 +103,7 @@ export function usePushAlertSync() {
         {
           token: syncToken,
           deliveryToken: credential.token,
+          notificationTimeZone,
           settingsPush: canSyncPush,
           settingsTelegram: settings.telegram,
           settingsDiscord: settings.discord,
@@ -133,6 +136,7 @@ export function usePushAlertSync() {
     alerts,
     credential,
     externalSyncToken,
+    notificationTimeZone,
     registration?.permission,
     registration?.token,
     settings.discord,

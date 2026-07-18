@@ -15,6 +15,7 @@ type Handler struct {
 	integrationStore IntegrationStore
 	secretBox        *SecretBox
 	workerSecret     string
+	exchangeTimeZone string
 }
 
 func NewHandler(store Store, requireAuth fiber.Handler) *Handler {

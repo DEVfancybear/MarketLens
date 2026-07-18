@@ -1,5 +1,6 @@
 import type { Alert } from "@/store/alertStore";
 import { deliverIntegrationAlert, getIntegrationSettings } from "@/services/api/resources/integrationsApi";
+import { alertConditionLabel } from "./alertMessage";
 
 export interface ExternalNotificationCapabilities {
   telegram: { configured: boolean; enabled: boolean };
@@ -18,6 +19,8 @@ export async function sendExternalAlert(payload: {
   alert: Alert;
   triggerPrice: number;
   targetPrice: number;
+  triggeredAt: number;
+  timeZone: string;
   channels: { telegram?: boolean; discord?: boolean };
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -27,10 +30,15 @@ export async function sendExternalAlert(payload: {
         alertId: payload.alert.id,
         symbol: payload.alert.symbol,
         condition: payload.alert.condition,
+        conditionLabel: alertConditionLabel(
+          payload.alert.condition,
+          payload.alert.technicalTarget,
+        ),
         targetPrice: payload.targetPrice,
         triggerPrice: payload.triggerPrice,
         note: payload.alert.note,
-        triggeredAt: Date.now(),
+        triggeredAt: payload.triggeredAt,
+        timeZone: payload.timeZone,
         source: "browser-open",
       },
     });

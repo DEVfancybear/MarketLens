@@ -1,16 +1,13 @@
-import type { PushAlertCondition } from "@/types/pushAlerts";
+import {
+  formatAlertNotificationMessage,
+  type AlertNotificationMessage,
+} from "../services/notifications/alertMessage";
 
 export type ExternalAlertChannel = "telegram" | "discord";
 export type ExternalAlertSource = "browser-open" | "closed-browser-worker" | "test";
 
-export interface ExternalAlertMessage {
+export interface ExternalAlertMessage extends AlertNotificationMessage {
   alertId: string;
-  symbol: string;
-  condition: PushAlertCondition;
-  targetPrice: number;
-  triggerPrice: number;
-  note?: string;
-  triggeredAt: number;
   source: ExternalAlertSource;
 }
 
@@ -29,13 +26,6 @@ export interface ExternalDeliveryResult {
   ok: boolean;
   error?: string;
 }
-
-const CONDITION_TEXT: Record<PushAlertCondition, string> = {
-  above: "above",
-  below: "below",
-  crossUp: "crossed up",
-  crossDown: "crossed down",
-};
 
 function envEnabled(name: string): boolean {
   return process.env[name] === "true";
@@ -64,15 +54,7 @@ export function externalNotificationCapabilities(): ExternalCapabilities {
 }
 
 export function formatExternalAlertMessage(message: ExternalAlertMessage): string {
-  const lines = [
-    "Trading alert triggered",
-    `${message.symbol} ${CONDITION_TEXT[message.condition]} ${message.targetPrice}`,
-    `Trigger price: ${message.triggerPrice}`,
-    `Time: ${new Date(message.triggeredAt).toISOString()}`,
-  ];
-  if (message.note) lines.push(`Note: ${message.note}`);
-  if (message.source !== "test") lines.push(`Source: ${message.source}`);
-  return lines.join("\n");
+  return formatAlertNotificationMessage(message).body;
 }
 
 function sanitizeError(error: unknown, fallback: string): string {

@@ -1,17 +1,10 @@
 /**
- * Alert notification dispatcher (Phase 2).
+ * Alert notification dispatcher.
  *
- * Fans a triggered alert out to the enabled delivery channels. Channels are
- * intentionally decoupled so Phase 6 (Firebase Cloud Messaging / mobile push)
- * can be added as one more channel here without touching the engine or store:
- *
- *   in-app toast   → toastStore           (done)
- *   sound chime    → notifications/sound   (done)
- *   system notif   → notifications/browser (done)
- *   push (mobile)  → notifications/push    (Phase 6 — add a channel call below)
- *
- * Pure dispatch — no evaluation logic. The engine decides *when*; this decides
- * *how*.
+ * All human-readable alert channels use the same Vietnamese message and the
+ * same event timestamp rendered in the chart's selected time zone.
+ * Host/platform receipt timestamps remain metadata and are not used as the
+ * alert time.
  */
 import { getDefaultStore } from "jotai";
 import { pushToastAtom } from "@/store/toastStore";
@@ -21,52 +14,53 @@ import { playAlertSound } from "./sound";
 import { showBrowserNotification } from "./browser";
 import { sendAlertPush } from "./push";
 import { sendExternalAlert } from "./external";
-import {
-  CONDITION_SYMBOL,
-  type Alert,
-  type AlertSettings,
-} from "@/store/alertStore";
+import { type Alert, type AlertSettings } from "@/store/alertStore";
+import { resolvedChartTimeZoneAtom } from "@/store/chartStore";
+import { formatAlertNotificationMessage } from "./alertMessage";
 
-const CHANNEL_OPERATOR_TEXT = {
-  "cross-upper-up": "crosses upper boundary up",
-  "cross-upper-down": "crosses upper boundary down",
-  "cross-lower-up": "crosses lower boundary up",
-  "cross-lower-down": "crosses lower boundary down",
-  enter: "enters channel",
-  exit: "exits channel",
-  inside: "is inside channel",
-  outside: "is outside channel",
-} as const;
+function alertTriggeredAtMs(alert: Alert): number {
+  return alert.triggeredAt !== undefined
+    ? alert.triggeredAt * 1000
+    : Date.now();
+}
 
 export function formatAlertNotification(
   alert: Alert,
   triggerPrice: number,
+  triggeredAtMs = alertTriggeredAtMs(alert),
+  timeZone = "UTC",
 ): { title: string; body: string } {
   const targetPrice = alert.evaluatedTargetPrice ?? alert.price;
-  const operation = alert.technicalTarget?.kind === "dynamic-channel"
-    ? `${CHANNEL_OPERATOR_TEXT[alert.technicalTarget.operator]} @ ${targetPrice}`
-    : `${CONDITION_SYMBOL[alert.condition]} ${targetPrice}`;
-  return {
-    title: `⏰ ${alert.symbol} alert`,
-    body: `${alert.symbol} ${operation} — now ${triggerPrice}${alert.note ? ` · ${alert.note}` : ""}`,
-  };
+  return formatAlertNotificationMessage({
+    symbol: alert.symbol,
+    condition: alert.condition,
+    technicalTarget: alert.technicalTarget,
+    targetPrice,
+    triggerPrice,
+    triggeredAt: triggeredAtMs,
+    timeZone,
+    note: alert.note,
+    source: "browser-open",
+  });
 }
 
-/**
- * Deliver a triggered alert across enabled channels. Per-alert flags
- * (`alert.sound` / `alert.browser`) gate sound + system push; the global
- * `settings.toast` gates the in-app toast.
- */
+/** Deliver one accepted trigger across all enabled local and remote channels. */
 export function deliverAlert(
   alert: Alert,
   triggerPrice: number,
   settings: AlertSettings,
 ): void {
-  const { title, body } = formatAlertNotification(alert, triggerPrice);
+  const triggeredAtMs = alertTriggeredAtMs(alert);
+  const timeZone = getDefaultStore().get(resolvedChartTimeZoneAtom);
+  const { title, body } = formatAlertNotification(
+    alert,
+    triggerPrice,
+    triggeredAtMs,
+    timeZone,
+  );
   const targetPrice = alert.evaluatedTargetPrice ?? alert.price;
 
-  // Always log to the in-app event log for an audit trail.
-  getDefaultStore().set(logAtom, "info", `Alert triggered: ${body}`);
+  getDefaultStore().set(logAtom, "info", `Đã kích hoạt cảnh báo: ${body}`);
 
   if (settings.toast) {
     getDefaultStore().set(pushToastAtom, {
@@ -76,12 +70,9 @@ export function deliverAlert(
       duration: 8000,
     });
   }
-  if (alert.sound && settings.sound) {
-    playAlertSound();
-  }
-  if (alert.browser && settings.browser) {
-    showBrowserNotification(title, body);
-  }
+  if (alert.sound && settings.sound) playAlertSound();
+  if (alert.browser && settings.browser) showBrowserNotification(title, body);
+
   if (alert.push && settings.push) {
     const registration = getDefaultStore().get(pushRegistrationAtom);
     if (registration?.token) {
@@ -97,17 +88,20 @@ export function deliverAlert(
           getDefaultStore().set(
             logAtom,
             "warn",
-            `Push notification failed: ${result.error}`,
+            `Gửi thông báo đẩy thất bại: ${result.error}`,
           );
         }
       });
     }
   }
+
   if ((alert.telegram && settings.telegram) || (alert.discord && settings.discord)) {
     void sendExternalAlert({
       alert,
       triggerPrice,
       targetPrice,
+      triggeredAt: triggeredAtMs,
+      timeZone,
       channels: {
         telegram: alert.telegram && settings.telegram,
         discord: alert.discord && settings.discord,
@@ -117,7 +111,7 @@ export function deliverAlert(
         getDefaultStore().set(
           logAtom,
           "warn",
-          `External alert notification failed: ${result.error}`,
+          `Gửi thông báo Telegram/Discord thất bại: ${result.error}`,
         );
       }
     });

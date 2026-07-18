@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -126,5 +128,79 @@ func TestWorkerDeliveryRequiresServiceSecretAndSignedUser(t *testing.T) {
 	resp, _ = app.Test(request)
 	if resp.StatusCode != 200 {
 		t.Fatalf("authorized worker status=%d", resp.StatusCode)
+	}
+}
+
+func TestFormatIntegrationAlertMessageUsesVietnameseAndSelectedTimeZone(t *testing.T) {
+	message := integrationAlertMessage{
+		Symbol:         "BTCUSD",
+		Condition:      "crossUp",
+		ConditionLabel: "Giá cắt lên đường xu hướng",
+		TargetPrice:    64098.59,
+		TriggerPrice:   64099.84,
+		TriggeredAt:    time.Date(2026, 7, 18, 14, 19, 57, 0, time.UTC).UnixMilli(),
+		TimeZone:       "America/Los_Angeles",
+		Source:         "browser-open",
+		Note:           "Xác nhận\r\nbreakout",
+	}
+	want := strings.Join([]string{
+		"🚨 CẢNH BÁO GIAO DỊCH — BTCUSD",
+		"Sự kiện: Giá cắt lên đường xu hướng",
+		"Mức cảnh báo: 64,098.59",
+		"Giá thị trường khi kích hoạt: 64,099.84",
+		"Thời điểm kích hoạt: 2026-07-18 07:19:57 UTC-7",
+		"Múi giờ hiển thị: America/Los_Angeles (UTC-7)",
+		"Nguồn xử lý: Ứng dụng web đang mở",
+		"Ghi chú: Xác nhận breakout",
+	}, "\n")
+	if got := formatIntegrationAlertMessage(message); got != want {
+		t.Fatalf("message mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestFormatIntegrationAlertMessageNormalizesSecondsAndInvalidValues(t *testing.T) {
+	message := integrationAlertMessage{
+		Symbol:       "EURUSD",
+		Condition:    "unknown",
+		TargetPrice:  math.NaN(),
+		TriggerPrice: math.Inf(1),
+		TriggeredAt:  time.Date(2026, 7, 18, 14, 19, 57, 0, time.UTC).Unix(),
+		TimeZone:     "invalid/zone",
+		Source:       "unknown",
+	}
+	got := formatIntegrationAlertMessage(message)
+	for _, want := range []string{
+		"Sự kiện: Điều kiện cảnh báo",
+		"Mức cảnh báo: Không xác định",
+		"Giá thị trường khi kích hoạt: Không xác định",
+		"Thời điểm kích hoạt: 2026-07-18 14:19:57 UTC",
+		"Múi giờ hiển thị: UTC",
+		"Nguồn xử lý: Hệ thống cảnh báo",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("message %q missing %q", got, want)
+		}
+	}
+}
+
+func TestResolveIntegrationTimeZonePrefersFreshRequestAndResolvesExchange(t *testing.T) {
+	store := newFakeSettingsStore()
+	store.doc.Chart = json.RawMessage(`{"timeZone":"Asia/Ho_Chi_Minh"}`)
+	h := NewHandler(store, fakeRequireAuth)
+	h.exchangeTimeZone = "Asia/Ho_Chi_Minh"
+
+	if got := h.resolveIntegrationTimeZone(context.Background(), "user-1", "America/Los_Angeles"); got != "America/Los_Angeles" {
+		t.Fatalf("fresh request zone = %q, want America/Los_Angeles", got)
+	}
+	if got := h.resolveIntegrationTimeZone(context.Background(), "user-1", ""); got != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("legacy blank zone = %q, want stored zone", got)
+	}
+
+	store.doc.Chart = json.RawMessage(`{"timeZone":"exchange"}`)
+	if got := h.resolveIntegrationTimeZone(context.Background(), "user-1", "exchange"); got != "Asia/Ho_Chi_Minh" {
+		t.Fatalf("exchange zone = %q, want backend exchange zone", got)
+	}
+	if got := normalizeIntegrationTimeZone("invalid/zone", "Asia/Ho_Chi_Minh"); got != "UTC" {
+		t.Fatalf("invalid zone = %q, want UTC fallback", got)
 	}
 }

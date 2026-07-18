@@ -24,6 +24,7 @@ import type { Candle } from "@/types";
 import {
   chartTimeZoneAtom,
   loadingAtom,
+  resolvedChartTimeZoneAtom,
   setChartTimeZoneAtom,
   setCrosshairAtom,
   setTimeframeAtom,
@@ -262,6 +263,7 @@ export function ChartTimeToolbar({
   const [timeZoneAnchor, setTimeZoneAnchor] = useState<ElementAnchor | null>(null);
   const timeZoneId = useAtomValue(chartTimeZoneAtom);
   const setTimeZoneId = useSetAtom(setChartTimeZoneAtom);
+  const setResolvedTimeZone = useSetAtom(resolvedChartTimeZoneAtom);
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
   const [lastGoToSelection, setLastGoToSelection] =
     useState<GoToSelection | null>(null);
@@ -288,8 +290,9 @@ export function ChartTimeToolbar({
   );
 
   useEffect(() => {
+    setResolvedTimeZone(activeTimeZone ?? "UTC");
     onTimeZoneChange?.(activeTimeZone);
-  }, [activeTimeZone, onTimeZoneChange]);
+  }, [activeTimeZone, onTimeZoneChange, setResolvedTimeZone]);
 
   useEffect(() => {
     let cancelled = false;

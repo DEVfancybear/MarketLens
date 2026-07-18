@@ -26,6 +26,8 @@ export interface ServerPushAlert {
 export interface PushAlertSyncRequest {
   token: string;
   deliveryToken?: string;
+  /** Resolved IANA chart zone used for closed-browser notification rendering. */
+  notificationTimeZone?: string;
   settingsPush: boolean;
   settingsTelegram?: boolean;
   settingsDiscord?: boolean;
@@ -62,6 +64,8 @@ export interface PendingPushAlertDelivery {
   /** Frozen payload retained even after one-time alert sync removes the active definition. */
   alert: ServerPushAlert;
   candidate: PendingPushAlertTrigger;
+  /** Frozen display zone for retries of this exact event. */
+  notificationTimeZone?: string;
   push: boolean;
   telegram: boolean;
   discord: boolean;
@@ -70,6 +74,8 @@ export interface PendingPushAlertDelivery {
 export interface PushDeviceRecord {
   token: string;
   deliveryToken?: string;
+  /** Resolved IANA chart zone. Older records safely fall back to UTC. */
+  notificationTimeZone?: string;
   alerts: ServerPushAlert[];
   settingsPush: boolean;
   settingsTelegram: boolean;

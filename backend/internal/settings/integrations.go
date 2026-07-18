@@ -12,10 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -182,10 +185,14 @@ func integrationView(v IntegrationRecord, userID string, box *SecretBox) Integra
 	return out
 }
 
-func (h *Handler) WithIntegrations(store IntegrationStore, box *SecretBox, workerSecret string) *Handler {
+func (h *Handler) WithIntegrations(store IntegrationStore, box *SecretBox, workerSecret string, exchangeTimeZones ...string) *Handler {
 	h.integrationStore = store
 	h.secretBox = box
 	h.workerSecret = workerSecret
+	h.exchangeTimeZone = "UTC"
+	if len(exchangeTimeZones) > 0 {
+		h.exchangeTimeZone = normalizeIntegrationTimeZone(exchangeTimeZones[0], "UTC")
+	}
 	return h
 }
 func (h *Handler) registerIntegrationRoutes(router fiber.Router) {
@@ -313,29 +320,33 @@ func (h *Handler) testIntegration(c *fiber.Ctx) error {
 		return fiber.ErrInternalServerError
 	}
 	channel := c.Params("channel")
-	if err := h.sendConfigured(v, channel, "Trading terminal test message"); err != nil {
+	if err := h.sendConfigured(v, channel, "✅ Tin nhắn kiểm tra tích hợp SMC Terminal đã được gửi thành công."); err != nil {
 		return fiber.NewError(502, err.Error())
 	}
 	return c.JSON(fiber.Map{"ok": true, "channel": channel})
 }
 
+type integrationAlertMessage struct {
+	Symbol         string  `json:"symbol"`
+	Condition      string  `json:"condition"`
+	ConditionLabel string  `json:"conditionLabel"`
+	Note           string  `json:"note"`
+	Source         string  `json:"source"`
+	TargetPrice    float64 `json:"targetPrice"`
+	TriggerPrice   float64 `json:"triggerPrice"`
+	TriggeredAt    int64   `json:"triggeredAt"`
+	TimeZone       string  `json:"timeZone"`
+}
+
 type integrationDeliveryRequest struct {
-	Message struct {
-		Symbol, Condition, Note   string
-		TargetPrice, TriggerPrice float64
-		TriggeredAt               int64
-	} `json:"message"`
+	Message  integrationAlertMessage          `json:"message"`
 	Channels struct{ Telegram, Discord bool } `json:"channels"`
 }
 
 type workerDeliveryRequest struct {
-	DeliveryToken string `json:"deliveryToken"`
-	Message       struct {
-		Symbol, Condition, Note   string
-		TargetPrice, TriggerPrice float64
-		TriggeredAt               int64
-	} `json:"message"`
-	Channels struct{ Telegram, Discord bool } `json:"channels"`
+	DeliveryToken string                           `json:"deliveryToken"`
+	Message       integrationAlertMessage          `json:"message"`
+	Channels      struct{ Telegram, Discord bool } `json:"channels"`
 }
 
 func (h *Handler) deliverIntegration(c *fiber.Ctx) error {
@@ -343,7 +354,9 @@ func (h *Handler) deliverIntegration(c *fiber.Ctx) error {
 	if err := json.Unmarshal(c.Body(), &in); err != nil || in.Message.Symbol == "" {
 		return fiber.NewError(400, "invalid alert message")
 	}
-	v, err := h.integrationStore.Get(c.Context(), userID(c))
+	uid := userID(c)
+	in.Message.TimeZone = h.resolveIntegrationTimeZone(c.Context(), uid, in.Message.TimeZone)
+	v, err := h.integrationStore.Get(c.Context(), uid)
 	if err != nil {
 		return fiber.ErrInternalServerError
 	}
@@ -367,22 +380,15 @@ func (h *Handler) workerDeliverIntegration(c *fiber.Ctx) error {
 		return fiber.ErrInternalServerError
 	}
 	var in integrationDeliveryRequest
-	in.Message.Symbol = raw.Message.Symbol
-	in.Message.Condition = raw.Message.Condition
-	in.Message.Note = raw.Message.Note
-	in.Message.TargetPrice = raw.Message.TargetPrice
-	in.Message.TriggerPrice = raw.Message.TriggerPrice
-	in.Message.TriggeredAt = raw.Message.TriggeredAt
+	in.Message = raw.Message
+	in.Message.TimeZone = h.resolveIntegrationTimeZone(c.Context(), uid, raw.Message.TimeZone)
 	in.Channels.Telegram = raw.Channels.Telegram
 	in.Channels.Discord = raw.Channels.Discord
 	return c.JSON(fiber.Map{"ok": true, "results": h.deliverResults(v, in)})
 }
 
 func (h *Handler) deliverResults(v IntegrationRecord, in integrationDeliveryRequest) []fiber.Map {
-	text := fmt.Sprintf("Trading alert triggered\n%s %s %.8g\nTrigger price: %.8g\nTime: %s", in.Message.Symbol, in.Message.Condition, in.Message.TargetPrice, in.Message.TriggerPrice, time.UnixMilli(in.Message.TriggeredAt).UTC().Format(time.RFC3339))
-	if in.Message.Note != "" {
-		text += "\nNote: " + in.Message.Note
-	}
+	text := formatIntegrationAlertMessage(in.Message)
 	results := []fiber.Map{}
 	for _, item := range []struct {
 		name               string
@@ -403,6 +409,185 @@ func (h *Handler) deliverResults(v IntegrationRecord, in integrationDeliveryRequ
 		results = append(results, row)
 	}
 	return results
+}
+
+func normalizeIntegrationTimeZone(value, exchangeTimeZone string) string {
+	value = cleanNotificationText(value, 80)
+	if value == "exchange" {
+		value = cleanNotificationText(exchangeTimeZone, 80)
+	}
+	if value == "" {
+		return "UTC"
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return "UTC"
+	}
+	return value
+}
+
+func chartTimeZoneFromDocument(doc Document) string {
+	var chart struct {
+		TimeZone string `json:"timeZone"`
+	}
+	if err := json.Unmarshal(doc.Chart, &chart); err != nil {
+		return ""
+	}
+	return chart.TimeZone
+}
+
+func (h *Handler) resolveIntegrationTimeZone(ctx context.Context, uid, requested string) string {
+	selected := cleanNotificationText(requested, 80)
+	// A concrete zone from the browser/device is the freshest chart setting.
+	// Resolve the symbolic Exchange value (or a missing legacy field) from the
+	// persisted account setting so closed-browser records remain deterministic.
+	if selected == "" || selected == "exchange" {
+		selected = ""
+	}
+	if selected == "" && h.store != nil {
+		if doc, err := h.store.Get(ctx, uid); err == nil {
+			if stored := chartTimeZoneFromDocument(doc); stored != "" {
+				selected = stored
+			}
+		}
+	}
+	return normalizeIntegrationTimeZone(selected, h.exchangeTimeZone)
+}
+
+func cleanNotificationText(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	var normalized strings.Builder
+	wasLineBreak := false
+	for _, char := range value {
+		if char == '\r' || char == '\n' {
+			if !wasLineBreak {
+				normalized.WriteByte(' ')
+			}
+			wasLineBreak = true
+			continue
+		}
+		wasLineBreak = false
+		normalized.WriteRune(char)
+	}
+	value = strings.TrimSpace(normalized.String())
+	runes := []rune(value)
+	if len(runes) > limit {
+		return string(runes[:limit])
+	}
+	return value
+}
+
+func integrationConditionLabel(message integrationAlertMessage) string {
+	if label := cleanNotificationText(message.ConditionLabel, 160); label != "" {
+		return label
+	}
+	switch message.Condition {
+	case "above":
+		return "Giá chạm hoặc vượt mức cảnh báo"
+	case "below":
+		return "Giá chạm hoặc giảm xuống dưới mức cảnh báo"
+	case "crossUp":
+		return "Giá cắt lên mức cảnh báo"
+	case "crossDown":
+		return "Giá cắt xuống mức cảnh báo"
+	default:
+		return "Điều kiện cảnh báo"
+	}
+}
+
+func formatNotificationPrice(value float64) string {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return "Không xác định"
+	}
+	text := strings.TrimRight(strings.TrimRight(strconv.FormatFloat(value, 'f', 8, 64), "0"), ".")
+	parts := strings.SplitN(text, ".", 2)
+	integer := parts[0]
+	sign := ""
+	if strings.HasPrefix(integer, "-") {
+		sign = "-"
+		integer = strings.TrimPrefix(integer, "-")
+	}
+	for index := len(integer) - 3; index > 0; index -= 3 {
+		integer = integer[:index] + "," + integer[index:]
+	}
+	if len(parts) == 2 {
+		return sign + integer + "." + parts[1]
+	}
+	return sign + integer
+}
+
+func integrationSourceLabel(source string) string {
+	switch source {
+	case "browser-open":
+		return "Ứng dụng web đang mở"
+	case "closed-browser-worker":
+		return "Bộ xử lý nền"
+	case "test":
+		return "Kiểm tra tích hợp"
+	default:
+		return "Hệ thống cảnh báo"
+	}
+}
+
+func notificationUTCOffset(offsetSeconds int) string {
+	if offsetSeconds == 0 {
+		return "UTC"
+	}
+	sign := "+"
+	if offsetSeconds < 0 {
+		sign = "-"
+		offsetSeconds = -offsetSeconds
+	}
+	totalMinutes := offsetSeconds / 60
+	hours := totalMinutes / 60
+	minutes := totalMinutes % 60
+	if minutes == 0 {
+		return fmt.Sprintf("UTC%s%d", sign, hours)
+	}
+	return fmt.Sprintf("UTC%s%d:%02d", sign, hours, minutes)
+}
+
+func formatNotificationTime(timestamp int64, requestedTimeZone string) (string, string) {
+	timeZone := normalizeIntegrationTimeZone(requestedTimeZone, "UTC")
+	location, err := time.LoadLocation(timeZone)
+	if err != nil {
+		timeZone = "UTC"
+		location = time.UTC
+	}
+	zoneLabel := timeZone
+	if timestamp <= 0 {
+		return "Không xác định", zoneLabel
+	}
+	if timestamp < 100_000_000_000 {
+		timestamp *= 1000
+	}
+	eventTime := time.UnixMilli(timestamp).In(location)
+	_, offsetSeconds := eventTime.Zone()
+	offset := notificationUTCOffset(offsetSeconds)
+	if timeZone != "UTC" {
+		zoneLabel = fmt.Sprintf("%s (%s)", timeZone, offset)
+	}
+	return eventTime.Format("2006-01-02 15:04:05") + " " + offset, zoneLabel
+}
+
+func formatIntegrationAlertMessage(message integrationAlertMessage) string {
+	symbol := cleanNotificationText(message.Symbol, 40)
+	if symbol == "" {
+		symbol = "Không xác định"
+	}
+	triggeredAt, timeZoneLabel := formatNotificationTime(message.TriggeredAt, message.TimeZone)
+	lines := []string{
+		fmt.Sprintf("🚨 CẢNH BÁO GIAO DỊCH — %s", symbol),
+		"Sự kiện: " + integrationConditionLabel(message),
+		"Mức cảnh báo: " + formatNotificationPrice(message.TargetPrice),
+		"Giá thị trường khi kích hoạt: " + formatNotificationPrice(message.TriggerPrice),
+		"Thời điểm kích hoạt: " + triggeredAt,
+		"Múi giờ hiển thị: " + timeZoneLabel,
+		"Nguồn xử lý: " + integrationSourceLabel(message.Source),
+	}
+	if note := cleanNotificationText(message.Note, 500); note != "" {
+		lines = append(lines, "Ghi chú: "+note)
+	}
+	return strings.Join(lines, "\n")
 }
 func (h *Handler) sendConfigured(v IntegrationRecord, channel, text string) error {
 	client := &http.Client{Timeout: 5 * time.Second}
