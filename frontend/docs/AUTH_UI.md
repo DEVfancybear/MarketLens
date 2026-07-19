@@ -41,6 +41,7 @@ workspace sync must require `backendSession === true`.
 | --- | --- |
 | `src/services/firebase/client.ts` | Firebase app/config bootstrap |
 | `src/services/auth/firebaseAuth.ts` | Google popup, Firebase sign-out, Firebase auth subscription |
+| `src/services/auth/browserAuthPolicy.ts` | Rejects embedded app browsers before Google returns `disallowed_useragent` |
 | `src/services/api/client.ts` | Shared `ky` backend client with `credentials: "include"` |
 | `src/services/api/errors.ts` | `ApiError` and backend error-envelope helpers |
 | `src/services/api/resources/authApi.ts` | Auth resource calls: `/auth/me`, `/auth/refresh`, `/auth/google`, `/auth/logout` |
@@ -97,6 +98,29 @@ Browser popup headers:
   `frontend/next.config.mjs` sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` for all
   routes. Do not change this to `same-origin`; Chrome will warn that COOP blocks Firebase's
   `window.closed` check and popup sign-in can become unreliable.
+
+### Mobile and in-app browsers
+
+Google OAuth does not permit sign-in from embedded user agents such as the
+built-in browsers in Zalo, Facebook, Messenger, Instagram, TikTok, or the
+Google app. Google returns `403: disallowed_useragent` before Firebase can
+complete sign-in; this is a provider policy and must not be bypassed with a
+different OAuth URL.
+
+`browserAuthPolicy.ts` detects common Android WebView and iOS embedded-browser
+user agents before opening the Firebase popup. The UI tells the user to open
+`https://tradingterminal.io.vn` from the app browser's top-right menu in Safari
+or Chrome, then retry sign-in. Safari and Chrome on iOS remain allowed. Keep
+this guard and its UI regression coverage synchronized when adding another
+authentication entry point.
+
+Production support checklist:
+
+- Reproduce mobile sign-in in Safari or Chrome, not an in-app browser.
+- Confirm `tradingterminal.io.vn` is listed under Firebase Authentication ->
+  Settings -> Authorized domains.
+- Treat `disallowed_useragent` as an embedded-browser problem; treat
+  `auth/unauthorized-domain` as Firebase configuration instead.
 
 ## Logout
 

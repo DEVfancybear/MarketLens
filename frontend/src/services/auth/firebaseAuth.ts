@@ -12,6 +12,7 @@ import {
   getFirebaseApp,
   getFirebaseAuthConfigStatus,
 } from "@/services/firebase/client";
+import { assertGoogleAuthBrowser } from "./browserAuthPolicy";
 import type { AuthUser } from "@/store/authStore";
 
 /** Firebase Auth wrapper — Google sign-in / sign-up (register == first sign-in). */
@@ -44,6 +45,7 @@ export function mapUser(user: User | null): AuthUser | null {
  * failure; the caller maps popup-closed / config errors to UI state.
  */
 export async function signInWithGoogle(): Promise<void> {
+  assertGoogleAuthBrowser(window.navigator.userAgent);
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
   await signInWithPopup(authInstance(), provider);

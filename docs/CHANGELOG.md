@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Mobile Google sign-in guidance (2026-07-19)
+- Detect embedded mobile app browsers before opening Firebase Google Auth, so
+  Zalo, Facebook, Messenger, Instagram, TikTok, Google-app, and Android WebView
+  users receive an actionable Safari/Chrome instruction instead of Google's
+  `403: disallowed_useragent` page.
+- Preserve Google popup sign-in in supported system browsers and add UI unit
+  coverage for embedded Android/iOS agents plus Safari and Chrome on iOS.
+- Document the Google OAuth embedded-user-agent policy and production support
+  checklist in `frontend/docs/AUTH_UI.md`.
+
 ### Changed - Generic Pine source support and `SWING_SR` removal (2026-07-19)
 - Treat Pine source as the common backend contract for catalog, saved, public,
   and future indicators. The runtime exposes Pine version and literal/enum

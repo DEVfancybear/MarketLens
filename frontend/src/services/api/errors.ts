@@ -41,6 +41,8 @@ interface ErrorLike {
 }
 
 const FIREBASE_MESSAGES: Record<string, string> = {
+  "auth/disallowed-useragent":
+    "Google blocks sign-in inside this app browser. Use the top-right menu to open tradingterminal.io.vn in Safari or Chrome, then sign in again.",
   "auth/popup-blocked":
     "Browser blocked the Google sign-in popup. Allow popups for this site and try again.",
   "auth/unauthorized-domain":
