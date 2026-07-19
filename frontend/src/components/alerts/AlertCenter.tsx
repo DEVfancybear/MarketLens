@@ -36,6 +36,7 @@ import { getMarketSymbol } from "@/services/market-data/symbols";
 import { useMarketSymbols } from "@/store/marketSymbolStore";
 import {
   getBrowserPermission,
+  NOTIFICATION_PERMISSION_BLOCKED_MESSAGE,
   requestBrowserPermission,
   type BrowserPermission,
 } from "@/services/notifications/browser";
@@ -204,6 +205,7 @@ export function AlertCenter() {
   const enableBrowser = async () => {
     const next = settings.browser;
     if (!next) {
+      if (perm === "denied") return;
       const result = await requestBrowserPermission();
       setPerm(result);
       setSettings({ browser: result === "granted" });
@@ -256,7 +258,7 @@ export function AlertCenter() {
         : push.status === "unconfigured"
           ? "Push setup"
           : push.status === "denied"
-            ? "Push denied"
+            ? "Push blocked"
             : "Push";
 
   if (!open) return null;
@@ -314,8 +316,15 @@ export function AlertCenter() {
             <Toggle
               on={settings.browser && perm === "granted"}
               onClick={enableBrowser}
+              disabled={perm === "unsupported" || perm === "denied"}
               icon={<Monitor size={12} />}
-              label={perm === "unsupported" ? "No browser push" : "Browser"}
+              label={
+                perm === "unsupported"
+                  ? "No browser push"
+                  : perm === "denied"
+                    ? "Browser blocked"
+                    : "Browser"
+              }
             />
             <Toggle
               on={settings.push && push.status === "enabled"}
@@ -357,6 +366,12 @@ export function AlertCenter() {
             {push.error && (
               <div className="basis-full text-[10px] leading-4 text-bear">
                 {push.error}
+              </div>
+            )}
+            {perm === "denied" &&
+              push.error !== NOTIFICATION_PERMISSION_BLOCKED_MESSAGE && (
+              <div className="basis-full text-[10px] leading-4 text-choch">
+                {NOTIFICATION_PERMISSION_BLOCKED_MESSAGE}
               </div>
             )}
             {externalError && (

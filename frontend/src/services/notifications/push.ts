@@ -15,6 +15,7 @@ import {
   registerPushToken as registerBackendPushToken,
 } from "@/services/api/resources/alertsApi";
 import { currentIdToken } from "@/services/auth/firebaseAuth";
+import { NOTIFICATION_PERMISSION_BLOCKED_MESSAGE } from "./browser";
 
 export interface PushCapability {
   supported: boolean;
@@ -149,10 +150,15 @@ export async function getPushCapability(): Promise<PushCapability> {
     };
   }
 
+  const permission = notificationPermission();
   return {
     supported: true,
     configured: true,
-    permission: notificationPermission(),
+    permission,
+    error:
+      permission === "denied"
+        ? NOTIFICATION_PERMISSION_BLOCKED_MESSAGE
+        : undefined,
   };
 }
 
@@ -168,6 +174,9 @@ export async function registerPushToken(
   }
 
   let permission = notificationPermission();
+  if (permission === "denied") {
+    throw new Error(NOTIFICATION_PERMISSION_BLOCKED_MESSAGE);
+  }
   if (permission === "default") {
     permission = await Notification.requestPermission();
   }

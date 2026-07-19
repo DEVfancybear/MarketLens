@@ -126,6 +126,16 @@ Production support checklist:
 - Treat `disallowed_useragent` as an embedded-browser problem; treat
   `auth/unauthorized-domain` as Firebase configuration instead.
 
+### Notification permission blocked state
+
+Chrome can permanently suppress the notification prompt for a site after the
+user dismisses it repeatedly. In that state `Notification.requestPermission()`
+returns `denied` and calling it again cannot reopen the prompt. The Alert Center
+therefore labels Browser/Push as **blocked**, avoids repeated permission calls,
+and directs the user to the tune/lock icon next to the address -> Site settings
+-> Notifications -> Allow, followed by a page reload. This is a browser-level
+setting and cannot be reset by frontend JavaScript.
+
 ### Authenticated push route 500s
 
 Routes that verify Firebase ID tokens import `firebase-admin/auth` at runtime.

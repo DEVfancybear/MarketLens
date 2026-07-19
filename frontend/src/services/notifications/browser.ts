@@ -5,6 +5,9 @@
  */
 export type BrowserPermission = NotificationPermission | 'unsupported';
 
+export const NOTIFICATION_PERMISSION_BLOCKED_MESSAGE =
+  "Notifications are blocked for this site. Open the tune/lock icon next to the address, set Notifications to Allow in Site settings, then reload.";
+
 export function browserNotificationsSupported(): boolean {
   return typeof window !== 'undefined' && 'Notification' in window;
 }
@@ -17,6 +20,9 @@ export function getBrowserPermission(): BrowserPermission {
 /** Ask the user to allow system notifications. Returns the resulting state. */
 export async function requestBrowserPermission(): Promise<BrowserPermission> {
   if (!browserNotificationsSupported()) return 'unsupported';
+  // Chromium blocks the prompt after repeated dismissals. Calling the API
+  // again only produces a console warning; the user must change Site settings.
+  if (Notification.permission === 'denied') return 'denied';
   try {
     return await Notification.requestPermission();
   } catch {

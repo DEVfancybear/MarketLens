@@ -21,6 +21,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Regenerated `frontend/package-lock.json`; a clean `npm ci` and Next.js
   production build now complete successfully on the supported Node runtime.
 
+### Fixed - Blocked notification permission UX (2026-07-19)
+- Stop calling `Notification.requestPermission()` after Chromium has returned
+  `denied`, preventing repeated console warnings and ineffective prompts.
+- Label Browser and Push channels as blocked and show the exact Site settings
+  recovery path when the user has dismissed the notification prompt too many
+  times.
+
 ### Changed - Generic Pine source support and `SWING_SR` removal (2026-07-19)
 - Treat Pine source as the common backend contract for catalog, saved, public,
   and future indicators. The runtime exposes Pine version and literal/enum
