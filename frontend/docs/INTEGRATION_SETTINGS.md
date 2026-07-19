@@ -33,15 +33,17 @@ per-user MT5, Telegram, and Discord configuration.
   decrypting and sending through that user's enabled channels.
 - MT5 login/server/password and verification state are owned by the authenticated
   user. Saving changed credentials invalidates only that user's prior verification.
-- **Save & Verify MT5** persists the current draft, decrypts it only inside the
+- **Connect & Verify MT5** persists the current draft, decrypts it only inside the
   backend, and runs a short-lived native MT5 login check. The browser receives a
   sanitized account summary, never the stored password.
-- Production verification requires a dedicated broker terminal configured with
-  `MT5_VERIFY_TERMINAL_PATH`; it must not share the market-data terminal from
-  `MT5_TERMINAL_PATH`.
-- The native Python execution bridge remains host-local. It must reconnect or
-  restart after the terminal account changes, and its account login/server must
-  match the current user's verified integration before live orders are allowed.
+- The production runner provisions the dedicated FTMO verifier automatically;
+  product users do not configure terminal paths, Python, source code, or environment variables.
+- The dialog provides a Windows Connector download. The user opens FTMO MT5, signs in, runs the
+  Connector, and allows the browser's Local Network Access prompt. The Connector binds only to
+  `127.0.0.1:8787`.
+- Each browser connection requests a short-lived, one-use backend ticket. The Connector selects
+  the open FTMO terminal matching that ticket's login/server and rechecks the account immediately
+  before each live order. It never receives the saved MT5 password.
 
 ## Verification
 

@@ -43,7 +43,10 @@ const MAX_LOGS = 80;
 /** Per-user execution access, hydrated from backend-verified integration settings. */
 export const mt5EnabledAtom = atom(false);
 export const mt5BridgeUrlAtom = atom(
-  process.env.NEXT_PUBLIC_MT5_BRIDGE_URL || "ws://localhost:8787",
+  (process.env.NEXT_PUBLIC_MT5_BRIDGE_URL || "ws://127.0.0.1:8787").replace(
+    /^ws:\/\/localhost(?=[:/]|$)/i,
+    "ws://127.0.0.1",
+  ),
 );
 export const mt5RequireConfirmationAtom = atom(
   process.env.NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION !== "false",
@@ -269,7 +272,7 @@ export const applyMt5MessageAtom = atom(null, (get, set, message: Mt5Message) =>
       });
       break;
     case "auth.reject": {
-      const reason = getReason(message.payload);
+      const reason = mt5AuthRejectMessage(getReason(message.payload));
       set(mt5LastErrorAtom, reason);
       set(addMt5LogAtom, {
         level: "error",
@@ -765,4 +768,21 @@ function getReason(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "unknown";
   const reason = (payload as { reason?: unknown }).reason;
   return typeof reason === "string" ? reason : "unknown";
+}
+
+function mt5AuthRejectMessage(reason: string): string {
+  switch (reason) {
+    case "account_mismatch":
+      return "The Connector is attached to a different MT5 account. Open the verified account and reconnect.";
+    case "account_unavailable":
+      return "Open FTMO MetaTrader 5, sign in to the verified account, and reconnect.";
+    case "trading_not_allowed":
+      return "This MT5 account cannot trade. Sign in with the master password.";
+    case "validation_unavailable":
+      return "Connector pairing is temporarily unavailable. Try again shortly.";
+    case "session_expired":
+      return "The secure Connector session expired. Reconnecting will pair it again.";
+    default:
+      return "MT5 Connector pairing was rejected. Reconnect to request a new secure ticket.";
+  }
 }

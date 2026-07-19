@@ -12,8 +12,9 @@ import {
 } from "@/store/mt5Store";
 import { fmtMoney } from "@/utils/format";
 import { cn } from "@/utils/cn";
+import { MT5_CONNECTOR_DOWNLOAD_URL } from "@/services/mt5/connectorDownload";
 import { useAtomValue, useSetAtom } from "jotai";
-import { Plug, PlugZap, WifiOff } from "lucide-react";
+import { Download, Plug, PlugZap, WifiOff } from "lucide-react";
 
 const STATUS_STYLE: Record<string, string> = {
   disabled: "bg-terminal-hover text-ink-faint",
@@ -76,11 +77,30 @@ export function Mt5ConnectionPanel() {
       {heartbeatAge != null && (
         <span className="text-ink-faint">hb {heartbeatAge}s</span>
       )}
+      {displayStatus !== "connected" && lastError && (
+        <span
+          className="max-w-[min(45vw,28rem)] truncate text-bear"
+          title={lastError}
+        >
+          {lastError}
+        </span>
+      )}
+      {displayStatus !== "connected" && (
+        <a
+          href={MT5_CONNECTOR_DOWNLOAD_URL}
+          download
+          className="ml-1 flex items-center gap-1 rounded px-1.5 py-1 font-medium text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+          title="Download the Windows MT5 Connector"
+        >
+          <Download size={12} aria-hidden="true" />
+          Connector
+        </a>
+      )}
       <button
         onClick={connect}
-        className="ml-1 rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-bull focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
-        title="Connect MT5 bridge"
-        aria-label="Connect MT5 bridge"
+        className="rounded p-1 text-ink-muted hover:bg-terminal-hover hover:text-bull focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+        title="Connect MT5 Connector"
+        aria-label="Connect MT5 Connector"
       >
         <PlugZap size={13} />
       </button>

@@ -65,8 +65,9 @@ Key characteristics:
 and exposes authenticated/public HTTP/WebSocket market-data routes to the frontend. Separately,
 `internal/mt5verify` launches `bridge/ftmo_mt5/verify_account.py` for the authenticated Verify
 endpoint. That helper has no listening port and is not the long-running execution bridge. In
-production it must target a dedicated broker terminal installation; sharing the market-data
-terminal would let a credential check switch or disconnect the live quote session.
+production the canonical runner maintains a dedicated portable terminal clone under
+`backend/.data`; sharing the market-data terminal would let a credential check switch or disconnect
+the live quote session.
 
 ## Request Flow
 

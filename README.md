@@ -50,8 +50,8 @@ Backend dev server: `http://localhost:8080`
 - The production frontend is `https://tradingterminal.io.vn` (Vercel).
 - The production API is `https://api.tradingterminal.io.vn` (Cloudflare Tunnel to the Windows
   host's Go API on `localhost:8080`). The market-data sidecar stays private on `localhost:8765`;
-  the optional browser-facing execution bridge uses private `localhost:8787`; the verifier is a
-  short-lived Go child process and opens no port.
+  each user's packaged Connector uses private `127.0.0.1:8787`; the verifier is a short-lived Go
+  child process and opens no port.
 - Root docs describe cross-project rules only. Frontend and backend implementation docs live in
   their own package folders.
 

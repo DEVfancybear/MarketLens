@@ -1,22 +1,24 @@
 # PHASE 6B FTMO COPY TRADING PLAN
 
-_Created 2026-07-02. Updated 2026-07-02 with the first FTMO dry-run bridge implementation. Scope:
-copy orders from this web terminal to an FTMO MT5 account through the Phase 6B bridge._
+_Created 2026-07-02. Updated 2026-07-20 for the packaged Windows Connector and backend pairing
+tickets. Scope: copy orders from this web terminal to an FTMO MT5 account through Phase 6B._
 
 ## 1. Goal
 
 When the user places a live order on the web terminal, the same intent should be executed on the
 configured FTMO MT5 account.
 
-This is not browser-to-MT5 direct trading. The browser sends a typed command to the local or
-server-side MT5 Bridge. The bridge owns FTMO credentials, connects to the FTMO MT5 terminal/session,
-translates the web order into broker-correct MT5 parameters, submits it, then streams the confirmed
-account/position/execution state back to the browser.
+This is not browser-to-MT5 direct trading. The browser sends a typed command to the packaged local
+Connector. The backend owns the saved credentials and issues a short-lived one-use account ticket;
+the Connector discovers the already logged-in FTMO terminal, translates the web order into
+broker-correct MT5 parameters, submits it, then streams confirmed account/position/execution state
+back to the browser. The Connector never receives the saved MT5 password.
 
 ```text
 Web Order Ticket
-  -> Phase 6B WebSocket protocol
-  -> FTMO MT5 Bridge Service
+  -> two-minute, one-use backend ticket
+  -> Phase 6B WebSocket protocol on 127.0.0.1:8787
+  -> Packaged TradingTerminal MT5 Connector
   -> MT5 terminal/session logged into FTMO account
   -> FTMO server
 ```
@@ -25,10 +27,16 @@ Web Order Ticket
 
 Implemented in this repository:
 
+- `backend/bridge/ftmo_mt5/connector.py`: consumer Connector that binds only to loopback,
+  auto-discovers FTMO terminal installations, and validates one-use tickets with the backend.
+- `backend/bridge/ftmo_mt5/build-connector.ps1`: builds the downloadable packaged Windows
+  Connector; normal users do not need source code, Python, terminal paths, or environment variables.
+- Backend connector-ticket issue/validation endpoints bind each browser session to the signed-in
+  user's verified login/server without returning the MT5 password.
 - `frontend/scripts/ftmo-mt5-bridge.mjs`: standalone Node dry-run FTMO bridge process that speaks the Phase 6B
-  WebSocket protocol used by the web app.
+  WebSocket protocol used for development.
 - `backend/bridge/ftmo_mt5/`: standalone Python FTMO bridge service intended for real MT5 terminal
-  integration through the official `MetaTrader5` Python package.
+  integration and legacy source-based development through the official `MetaTrader5` package.
 - `npm run ftmo-mt5-bridge`: starts the bridge.
 - `npm run ftmo-mt5-python`: starts the Python bridge service when Python is installed.
 - Dry-run execution only by default. The bridge accepts web order intents, validates FTMO-style
@@ -40,8 +48,8 @@ Implemented in this repository:
 - The Python bridge contains the real MT5 adapter path (`initialize`, `login`, `account_info`,
   `positions_get`, `orders_get`, `symbol_info`, `symbol_info_tick`, `order_check`, `order_send`),
   but live mode must be enabled explicitly and must be demo-validated before any funded use.
-- FTMO credentials stay bridge-only; no FTMO login, password, or terminal path is exposed through
-  `NEXT_PUBLIC_*`.
+- FTMO credentials stay backend-only; no FTMO login, password, terminal path, or static Connector
+  token is exposed through `NEXT_PUBLIC_*`.
 
 Not implemented yet:
 
@@ -86,53 +94,66 @@ Sources:
 - Do not optimistically create live positions in the UI before MT5 confirms execution.
 - Do not support funded/live validation before FTMO demo/evaluation dry-run validation passes.
 
-## 4. Required Bridge Deployment Shape
+## 4. Required Connector Deployment Shape
 
 Recommended first implementation:
 
 ```text
-Windows VPS or local Windows host
+User's Windows computer
   - MT5 desktop terminal installed
   - FTMO account logged in with master password
-  - FTMO MT5 Bridge Service running next to terminal
-  - WebSocket endpoint exposed only to the web app/user network
+  - Packaged TradingTerminal MT5 Connector running
+  - Loopback WebSocket bound only to 127.0.0.1:8787
+
+TradingTerminal backend
+  - Verifies the user's saved credentials
+  - Issues a two-minute, one-use Connector ticket
+  - Validates and consumes that ticket for the expected login/server
 ```
 
-Bridge process responsibilities:
+Packaged Connector responsibilities:
 
-- Load FTMO credentials from local secret storage or environment variables.
-- Connect to the FTMO MT5 terminal/session.
+- Auto-discover an FTMO terminal that the user has already opened and logged into.
+- Validate the browser's one-use backend ticket and bind the session to its login/server.
 - Verify account login, server, account mode, trade permission, balance/equity, margin, and broker
   symbol metadata before accepting live commands.
 - Execute `order.place`, `order.modify`, `order.close`, `order.closeAll`, and `order.cancel`.
 - Enforce FTMO-aware risk guards before sending orders to MT5.
 - Stream `account.snapshot`, `symbol.info`, `positions.snapshot`, `positions.update`,
   `orders.snapshot`, `orders.update`, `order.ack`, `order.reject`, and `execution.report`.
+- Never receive the MT5 password saved by the backend or require a source checkout, Python, a
+  terminal path, or environment-variable setup from the user.
 
 Browser responsibilities:
 
-- Require **Save & Verify MT5** for the signed-in user before enabling MT5 execution mode.
+- Require **Connect & Verify MT5** for the signed-in user before enabling MT5 execution mode.
+- Request a fresh backend Connector ticket for each WebSocket authentication attempt.
 - Let the user explicitly choose MT5 mode.
 - Require live confirmation by default.
 - Send only typed order intents to the bridge.
 - Display bridge-confirmed account, positions, pending commands, rejects, and execution reports.
 - Block every live command unless the bridge snapshot matches the user's verified login/server.
 
-## 5. FTMO Bridge Environment Variables
+## 5. Connector Runtime And Legacy Development Variables
 
 Browser-safe variables already exist:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
-NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
 ```
 
 Frontend MT5 availability is per user, not an environment flag. The backend verifies saved
 credentials and returns only masked status plus `verified`/`verifiedAt`.
 
-Bridge-only variables must live outside the Next browser app:
+The released Windows Connector requires no user-edited configuration. The frontend obtains a
+two-minute, one-use ticket from `POST /api/v1/settings/integrations/mt5/connector-ticket`; the
+Connector consumes it through `POST /api/v1/settings/integrations/mt5/connector/validate`. No
+static browser token is supported.
+
+The following bridge-only variables belong only to the legacy source-based operator/development
+service; they are not part of the packaged Connector user flow:
 
 ```env
 FTMO_MT5_ENABLED=false
@@ -169,7 +190,8 @@ Rules:
 - `FTMO_MT5_PASSWORD` must be the master password only if the bridge is intended to trade.
 - Never use the read-only password for a trading bridge; it should fail readiness checks.
 - `FTMO_BRIDGE_DRY_RUN=true` is the default until all demo checks pass.
-- `FTMO_BRIDGE_TOKEN` should be required if the bridge is reachable beyond localhost.
+- `FTMO_BRIDGE_TOKEN` applies only to the legacy source bridge and should be required if that
+  service is reachable beyond loopback.
 - `.data/ftmo-mt5-audit.jsonl` is ignored by git and should remain local runtime evidence.
 - The Python bridge reads process env plus `.env` / `.env.local` from the repository root at
   startup. Existing process env wins. Restart the Python bridge after changing account size,
@@ -196,7 +218,9 @@ Rules:
 
 ## 5.1 Dry-Run Quickstart
 
-Use this for local validation without sending any order to FTMO:
+This section is for repository development only. Normal users download and run the packaged Windows
+Connector and do not run these commands. Use the legacy service for local validation without
+sending any order to FTMO:
 
 ```powershell
 $env:FTMO_MT5_ENABLED="true"
@@ -217,14 +241,14 @@ python -m bridge.ftmo_mt5.service
 In another terminal, run the web app with the execution bridge URL configured:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
 ```
 
-Sign in, open **Connections & notifications**, and select **Save & Verify MT5**. MT5 becomes
-selectable only after verification succeeds; restart/reconnect the execution bridge if the terminal
-account changed.
+Sign in, open **Connections & notifications**, and select **Connect & Verify MT5**. MT5 becomes
+selectable only after verification succeeds. In the packaged flow, the browser obtains a fresh
+backend ticket and the Connector selects the open terminal matching that login/server.
 
 Expected result:
 
@@ -607,7 +631,8 @@ Exit criteria:
 
 - Require explicit funded-mode env flag.
 - Add hardware/VPS uptime checks.
-- Add bridge auth token rotation.
+- [x] Require short-lived, one-use backend pairing tickets and reject expired, replayed, or
+  account-mismatched tickets.
 - Add operator kill switch.
 - Add daily loss/session/news/weekend policy checks for the specific FTMO account.
 
@@ -621,25 +646,33 @@ Exit criteria:
 Use this order:
 
 1. Signed-in user is unverified: simulator works and MT5 selection is disabled.
-2. **Save & Verify MT5** succeeds: MT5 selection becomes available for only that user.
-3. `npm run mock-mt5`: web connects to mock, no FTMO involved.
-4. FTMO bridge dry-run: matching account snapshot and positions visible; no orders sent.
-5. Wrong password: verification/readiness false.
-6. Read-only password: verification fails or trading remains blocked.
-7. Wrong server or bridge account mismatch: live commands are blocked.
-8. Missing symbol mapping: order blocked.
-9. Invalid lot step: order rejected.
-10. No SL with `FTMO_REQUIRE_STOP_LOSS=true`: order rejected.
-11. Projected daily loss breach: order rejected.
-12. Demo market order: fill report and position update received.
-13. Demo SL/TP modify: bridge event updates chart levels.
-14. Demo close: position removed only after bridge event.
-15. Bridge restart: browser reconnects and receives fresh snapshots.
-16. Duplicate `clientOrderId`: no duplicate MT5 order.
+2. **Connect & Verify MT5** succeeds: MT5 selection becomes available for only that user.
+3. Run the packaged Windows Connector with the matching FTMO terminal open; the one-use backend
+   ticket authenticates and cannot be replayed.
+4. `npm run mock-mt5`: web connects to mock, no FTMO involved.
+5. FTMO bridge dry-run: matching account snapshot and positions visible; no orders sent.
+6. Wrong password: verification/readiness false.
+7. Read-only password: verification fails or trading remains blocked.
+8. Wrong server or bridge account mismatch: live commands are blocked.
+9. Missing symbol mapping: order blocked.
+10. Invalid lot step: order rejected.
+11. No SL with `FTMO_REQUIRE_STOP_LOSS=true`: order rejected.
+12. Projected daily loss breach: order rejected.
+13. Demo market order: fill report and position update received.
+14. Demo SL/TP modify: bridge event updates chart levels.
+15. Demo close: position removed only after bridge event.
+16. Connector restart: browser requests a fresh ticket, reconnects, and receives fresh snapshots.
+17. Duplicate `clientOrderId`: no duplicate MT5 order.
 
 ## 17. Rollback
 
-Immediate rollback:
+Immediate consumer rollback:
+
+- Quit the packaged Windows Connector or use the UI disconnect action.
+- Change/clear saved MT5 credentials to invalidate the affected user's verification and future
+  Connector tickets.
+
+Legacy source-bridge rollback:
 
 ```env
 FTMO_MT5_ENABLED=false
@@ -648,8 +681,7 @@ FTMO_BRIDGE_DRY_RUN=true
 
 Operational rollback:
 
-- Stop the bridge service.
-- Change/clear saved MT5 credentials to invalidate the affected user's verification.
+- Stop the legacy bridge service.
 - Disable MT5 AutoTrading/Algo Trading if an EA adapter is used.
 - Confirm open positions directly in MT5.
 - Use the web terminal simulator mode only.

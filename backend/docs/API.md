@@ -254,6 +254,8 @@ boolean. Non-secret MT5 verification state is returned separately.
 | GET | `/api/v1/settings/integrations` | Read masked integration status |
 | PUT | `/api/v1/settings/integrations` | Save metadata, enable flags, and optional replacement secrets |
 | POST | `/api/v1/settings/integrations/verify/mt5` | Verify the signed-in user's saved MT5 credentials |
+| POST | `/api/v1/settings/integrations/mt5/connector-ticket` | Issue a two-minute, one-use Connector pairing ticket for the signed-in verified account |
+| POST | `/api/v1/settings/integrations/mt5/connector/validate` | Consume a pairing ticket from the loopback Connector and return its account/session boundary |
 | POST | `/api/v1/settings/integrations/test/telegram` | Send a Telegram test message |
 | POST | `/api/v1/settings/integrations/test/discord` | Send a Discord test message |
 | POST | `/api/v1/settings/integrations/deliver` | Deliver a browser-open alert through enabled per-user channels |
@@ -292,17 +294,18 @@ helper over stdin, and returns a sanitized result. A successful response is:
 Credential rejection returns `422`; incomplete/invalid saved credentials return
 `400`; a concurrent credential change returns `409`; verifier infrastructure
 failures return `502` or `503`, and a bounded verifier timeout returns `504` with
-`MT5_VERIFICATION_TIMEOUT`. Production returns a terminal configuration error
-without launching the helper unless `MT5_VERIFY_TERMINAL_PATH` points to a
-dedicated installation distinct from `MT5_TERMINAL_PATH`. Verification updates are conditional on the
-same encrypted credential row, so a slow result cannot approve credentials that
-were edited while the helper was running.
+`MT5_VERIFICATION_TIMEOUT`. The production runner automatically supplies an isolated portable
+terminal; an unavailable verifier returns only the generic `MT5_VERIFIER_UNAVAILABLE` response,
+while operator diagnostics remain in backend logs. Verification updates are conditional on the same
+encrypted credential row, so a slow result cannot approve credentials that were edited while the
+helper was running.
 
-MT5 credentials describe the desired local bridge account. Because the Python
-bridge owns the native terminal connection, changing them does not hot-swap a
-running bridge; reconnect/restart the bridge to apply a different account. The
-Trade UI unlocks MT5 per user after verification, but live commands remain
-blocked until the bridge reports the same login and broker server.
+The browser requests a Connector ticket only after backend verification. The API stores only its
+SHA-256 digest, expires it after two minutes, consumes it once, and rejects it if the saved
+credential row changed. The packaged loopback Connector validates the ticket, selects the open
+FTMO terminal with the same login/server, and receives a 15-minute session boundary. It rechecks
+account identity and trading permission before live commands; no MT5 password is returned to the
+browser or Connector.
 
 ## Watchlists  🔒
 

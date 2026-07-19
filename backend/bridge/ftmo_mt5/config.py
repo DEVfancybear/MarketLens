@@ -78,6 +78,10 @@ class BridgeConfig:
     deviation_points: int
     comment_prefix: str
     symbols: dict[str, str]
+    # Companion mode attaches to an account already authenticated in MT5.  It
+    # never reads broker credentials or a terminal path from environment
+    # variables and never calls mt5.login().
+    attached_account: bool = False
 
 
 def load_config() -> BridgeConfig:
@@ -97,7 +101,9 @@ def load_config() -> BridgeConfig:
         account_label=os.getenv("FTMO_MT5_ACCOUNT_LABEL", "FTMO"),
         account_size=_float_env("FTMO_ACCOUNT_SIZE", 100000),
         account_size_configured=account_size_configured,
-        max_daily_loss_pct=_float_env("FTMO_MAX_DAILY_LOSS_PCT", 5),
+        # Three percent is the fail-safe default across current FTMO account
+        # variants. Operators may lower it; a larger value must be deliberate.
+        max_daily_loss_pct=_float_env("FTMO_MAX_DAILY_LOSS_PCT", 3),
         max_total_loss_pct=_float_env("FTMO_MAX_TOTAL_LOSS_PCT", 10),
         daily_loss_safety_buffer_pct=_float_env("FTMO_DAILY_LOSS_SAFETY_BUFFER_PCT", 0.2),
         max_risk_per_trade_pct=_float_env("FTMO_MAX_RISK_PER_TRADE_PCT", 0.5),
@@ -119,6 +125,7 @@ def load_config() -> BridgeConfig:
             "BTCUSDT": os.getenv("FTMO_SYMBOL_BTCUSDT", "BTCUSD"),
             "ETHUSDT": os.getenv("FTMO_SYMBOL_ETHUSDT", "ETHUSD"),
         },
+        attached_account=False,
     )
     loopback_hosts = {"127.0.0.1", "::1", "localhost"}
     if (not config.dry_run or config.host.lower() not in loopback_hosts) and len(config.token) < 32:
@@ -126,3 +133,58 @@ def load_config() -> BridgeConfig:
             "FTMO_BRIDGE_TOKEN must contain at least 32 characters for live or non-loopback bridges"
         )
     return config
+
+
+def companion_config(*, port: int = 8787, data_dir: Path | None = None) -> BridgeConfig:
+    """Return safe, zero-configuration defaults for the desktop connector.
+
+    Unlike :func:`load_config`, this function deliberately does not load a
+    repository ``.env`` file or broker credentials.  The packaged connector
+    binds to loopback and attaches to the FTMO account already logged in to the
+    user's desktop terminal.
+    """
+
+    if port < 1 or port > 65_535:
+        raise ValueError("connector port must be between 1 and 65535")
+    if data_dir is None:
+        local_app_data = os.getenv("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        data_dir = base / "TradingTerminal" / "MT5Connector"
+    return BridgeConfig(
+        enabled=True,
+        dry_run=False,
+        allow_live=True,
+        host="127.0.0.1",
+        port=port,
+        token="",
+        login="",
+        password="",
+        server="",
+        terminal_path="",
+        account_label="FTMO",
+        account_size=100_000,
+        account_size_configured=False,
+        max_daily_loss_pct=3,
+        max_total_loss_pct=10,
+        daily_loss_safety_buffer_pct=0.2,
+        max_risk_per_trade_pct=0.5,
+        max_order_volume=1,
+        max_daily_orders=100,
+        max_messages_per_minute=60,
+        snapshot_interval_ms=1_000,
+        close_all_enabled=True,
+        require_stop_loss=True,
+        audit_path=data_dir / "audit.jsonl",
+        magic=6602,
+        deviation_points=20,
+        comment_prefix="smc-ftmo",
+        symbols={
+            "EURUSD": "EURUSD",
+            "GBPUSD": "GBPUSD",
+            "USDJPY": "USDJPY",
+            "XAUUSD": "XAUUSD",
+            "BTCUSDT": "BTCUSD",
+            "ETHUSDT": "ETHUSD",
+        },
+        attached_account=True,
+    )

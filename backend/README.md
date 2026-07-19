@@ -72,11 +72,12 @@ It never connects to the Python bridge directly.
 
 Run `build-production.ps1` from the repository root to provision `backend/.venv-mt5` and its MT5
 dependencies. Leave `MT5_VERIFY_PYTHON` and `MT5_VERIFY_SCRIPT` unset unless overriding them; the
-Go API resolves the production venv and verifier script automatically. Production verification
-requires `MT5_VERIFY_TERMINAL_PATH` to target a dedicated broker terminal distinct from the
-market-data `MT5_TERMINAL_PATH`; `MT5_VERIFY_TIMEOUT` still applies. The helper opens no port. Existing
-saved credentials remain Configured but unverified until the signed-in user selects
-**Save & Verify MT5** once.
+Go API resolves the production venv and verifier script automatically. The canonical production
+runner discovers a broker terminal and maintains a separate portable verifier clone under
+`backend/.data`. If no FTMO installation exists, it downloads and validates FTMO's officially
+signed installer first; `MT5_VERIFY_TERMINAL_PATH` remains an optional operator override.
+`MT5_VERIFY_TIMEOUT` still applies. The helper opens no port. Existing saved credentials remain
+configured but unverified until the signed-in user selects **Connect & Verify MT5** once.
 
 ## Configuration
 

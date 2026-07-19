@@ -6,7 +6,7 @@ Windows host.
 
 ```text
 Browser -> https://tradingterminal.io.vn (Vercel)
-       -> ws://localhost:8787 (optional private FTMO execution bridge)
+       -> ws://127.0.0.1:8787 (packaged Connector on each user's Windows PC)
        -> https://api.tradingterminal.io.vn (Cloudflare Tunnel)
           -> Go/Fiber API localhost:8080
              -> Python MT5 market-data sidecar localhost:8765
@@ -15,7 +15,7 @@ Browser -> https://tradingterminal.io.vn (Vercel)
              -> PostgreSQL (DATABASE_URL)
 ```
 
-Both Python bridges must remain private on localhost. Cloudflare Tunnel exposes only the Go API.
+All MT5 sidecars and Connectors must remain private on localhost. Cloudflare Tunnel exposes only the Go API.
 Do not open router ports 8080, 8765, or 8787 and do not put MT5 credentials in Vercel or browser
 env.
 
@@ -27,7 +27,7 @@ env.
 | Public API | `https://api.tradingterminal.io.vn` | Cloudflare Tunnel |
 | Go API origin | `http://localhost:8080` | This Windows host |
 | MT5 market-data sidecar | `ws://localhost:8765` | This Windows host, private only |
-| FTMO execution bridge | `ws://localhost:8787` | Browser/operator host, private only |
+| FTMO Connector | `ws://127.0.0.1:8787` | Each user's Windows PC, loopback only |
 | MT5 verifier | no listening port | Short-lived child of the Go API |
 
 The legacy Vercel URL may continue to resolve, but production configuration and user links should
@@ -49,7 +49,8 @@ This script is the single normal production entrypoint. Do not replace it with a
 2. Provisions and import-checks `backend\.venv-mt5`.
 3. Builds `backend\bin\api.next.exe` without rebuilding the Vercel frontend.
 4. Applies forward-only migrations and prints the migration version.
-5. Starts MT5 when needed, but never closes or changes the signed-in terminal account.
+5. Starts MT5 when needed and provisions an isolated verifier from an existing FTMO installation
+   or FTMO's MetaQuotes-signed public installer; it never changes the market-data account.
 6. Stops only repository-owned listeners on `8080`/`8765`, atomically promotes the staged API,
    then starts the MT5 market-data sidecar and Go API from `backend\`.
 7. Requires local liveness, database readiness, MT5 `connected:true`, verifier-runtime startup
@@ -60,8 +61,8 @@ Useful recovery switches are `-SkipPull`, `-SkipBuild`, `-SkipMigrations`, and
 `-SkipPublicHealthCheck`. They are exceptional/manual recovery options; an ordinary request to
 build or run production uses no switches.
 
-The script intentionally does not start the FTMO execution bridge on port `8787`. That bridge is
-browser/account-local (`ws://localhost:8787`) and is not part of the multi-user backend server.
+The script intentionally does not start port `8787`. The packaged Connector is browser/account
+local (`ws://127.0.0.1:8787`) on each user's PC and is not part of the multi-user backend server.
 
 ## Artifact build options (manual or CI only)
 
@@ -83,8 +84,9 @@ commit with its own Production environment variables.
 
 Install 64-bit Python 3 for Windows, Go, and Node.js/npm before the first build. The script runs
 `npm ci` automatically when `frontend\node_modules` is absent. The build validates
-`MT5_VERIFY_TERMINAL_PATH` when it is set; the production API additionally requires explicit,
-distinct market-data and verifier terminal paths before it enables account verification.
+`MT5_VERIFY_TERMINAL_PATH` when it is set. At runtime, the canonical production runner exports the
+resolved market-data path and either honors a distinct verifier override or provisions an isolated
+portable clone automatically before it starts the API.
 
 Only a host that intentionally does not support MT5 may skip Python provisioning:
 
@@ -182,8 +184,8 @@ do not launch duplicate listeners on ports `8080` or `8765`.
    The tunnel is required for `https://api.tradingterminal.io.vn` to reach the local API. It exposes
    only port `8080` through Cloudflare; never expose `8765` or `8787` publicly.
 
-The optional FTMO execution bridge stays separate: start it only after its user account has been
-verified, as described in [Per-user Verify and optional execution bridge](#4-per-user-verify-and-optional-execution-bridge).
+Each user's packaged Connector stays separate from the server, as described in
+[Per-user verification and packaged Connector](#4-per-user-verification-and-packaged-connector).
 
 ### 4. Verify local and public traffic
 
@@ -225,7 +227,7 @@ Current production values are:
 # Vercel Production environment
 NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn
 NEXT_PUBLIC_APP_URL=https://tradingterminal.io.vn
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 
 # backend/.env on the Windows host
 APP_ENV=production
@@ -238,7 +240,8 @@ MT5_TERMINAL_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 # Leave unset/blank to use backend\.venv-mt5 created by build-production.ps1.
 MT5_VERIFY_PYTHON=
 MT5_VERIFY_SCRIPT=bridge/ftmo_mt5/verify_account.py
-MT5_VERIFY_TERMINAL_PATH=C:\Program Files\FTMO MetaTrader 5\terminal64.exe
+# Optional override; leave blank for the runner-managed isolated clone.
+MT5_VERIFY_TERMINAL_PATH=
 MT5_VERIFY_TIMEOUT=30s
 MT5_VERIFY_NATIVE_TIMEOUT_MS=8000
 ```
@@ -248,11 +251,12 @@ automatic selection and probes each candidate with `import MetaTrader5`; a broke
 falls back to `backend\.venv-mt5\Scripts\python.exe`. Restart the Go API after changing any
 `MT5_VERIFY_*` value or rebuilding the venv.
 
-`MT5_TERMINAL_PATH` and `MT5_VERIFY_TERMINAL_PATH` must point to different terminal installations.
-Install the broker/FTMO terminal first and use its real `terminal64.exe` path for verification. The
-API disables verification in production when these paths are missing, identical, or the verifier
-path does not exist; this prevents a verification login from disconnecting the live market-data
-account.
+When explicitly set, `MT5_VERIFY_TERMINAL_PATH` must point to an installation different from
+`MT5_TERMINAL_PATH`. Normally it stays blank: the runner prefers an installed FTMO terminal, uses
+the market-data installation only when that session is itself FTMO, and otherwise downloads an
+official MetaQuotes-signed FTMO installer. It refreshes a separate clone at
+`backend\.data\mt5-verifier-terminal` when the source executable changes. The resolved paths are
+exported to child processes only and are never written into `.env`.
 
 Additional local/LAN origins may be appended to `CORS_ALLOWED_ORIGINS` for diagnostics. Never use
 `*` because authenticated requests send cookies.
@@ -280,15 +284,15 @@ Keep `localhost` for local browser access.
 
 The canonical runner performs this order automatically. Use the commands below only for recovery:
 start MT5 first, then the market-data sidecar, then the API. Verify the signed-in user's account
-before starting/restarting the optional browser-local execution bridge. Cloudflare Tunnel may
+before testing the browser-local packaged Connector. Cloudflare Tunnel may
 remain running while the API is restarted.
 
 ### 1. MetaTrader 5 terminal
 
 Start the installed `terminal64.exe`, sign in to the intended account, and wait until MT5 shows a
 live broker connection. The Python package may select a logged-in terminal automatically, but set
-`MT5_TERMINAL_PATH` explicitly whenever production account verification is enabled so the API can
-prove that the market-data and verifier terminals are isolated.
+`MT5_TERMINAL_PATH` explicitly when the installation is not at the runner's standard path. The
+runner exports the resolved value and provisions a physically separate verifier instance.
 
 ### 2. MT5 market-data sidecar
 
@@ -333,32 +337,26 @@ Readiness must report `"ready":true` and `"database":"up"`. The MT5 symbols resp
 report `connected:true`; its `streamSymbols` list grows when the frontend subscribes to watchlist
 symbols.
 
-### 4. Per-user Verify and optional execution bridge
+### 4. Per-user verification and packaged Connector
 
-Sign in, open **Connections & notifications**, and select **Save & Verify MT5**. The Go API launches
+Sign in, open **Connections & notifications**, and select **Connect & Verify MT5**. The Go API launches
 the short-lived verifier configured by `MT5_VERIFY_*`; credentials travel to it only over stdin.
 On success, the current user's integration receives `verifiedAt` and MT5 becomes selectable.
 Changing login/server/password invalidates that verification.
 
-`MT5_VERIFIER_TERMINAL_REQUIRED`, `MT5_VERIFIER_TERMINAL_NOT_ISOLATED`, and
-`MT5_VERIFIER_TERMINAL_UNAVAILABLE` are configuration errors: install/configure a distinct broker
-terminal and restart the backend. `MT5_VERIFICATION_TIMEOUT` means the isolated terminal did not
-complete its native login within the bounded verification window.
+Verifier configuration failures return the generic `MT5_VERIFIER_UNAVAILABLE` response; exact
+operator diagnostics stay in backend logs. `MT5_VERIFICATION_TIMEOUT` means the isolated terminal
+did not complete its native login within the bounded verification window.
 
 If the response code is `dependency_unavailable`, the helper started but its selected Python could
 not import `MetaTrader5`; it is not an FTMO password or terminal-login failure. Rerun the full
 production build and restart the actual API service/process so it loads the new binary and venv.
 
-For execution, start or restart the private FTMO bridge after verification:
-
-```powershell
-cd backend
-.\.venv-mt5\Scripts\python.exe -m bridge.ftmo_mt5.service
-```
-
-The execution bridge listens on `ws://localhost:8787` by default and must report the same login and
-server verified by the current user. One bridge represents one active terminal account; other
-verified users remain isolated and their live commands are blocked on account mismatch.
+For execution, the user downloads the Windows Connector from the same dialog, opens FTMO MT5 with
+the verified account, runs `TradingTerminalMT5Connector.exe`, and allows the browser's Local
+Network Access prompt. No source checkout, Python install, environment variable, terminal path, or
+local token is required. The Connector listens only on `127.0.0.1:8787`, pairs with a one-use
+backend ticket, selects the matching open terminal, and blocks commands after an account mismatch.
 
 ### 5. Next.js UI (local diagnostic only)
 
@@ -438,8 +436,9 @@ Invoke-WebRequest https://api.tradingterminal.io.vn/api/v1/mt5/symbols
 ```
 
 In the browser Network panel, `symbols`, `history`, and the market-data WebSocket should succeed.
-After Google sign-in, **Save & Verify MT5** should return a sanitized account summary; the execution
-WebSocket on 8787 is required only for live MT5 commands. `auth/refresh` returning 401 before the
+After Google sign-in, **Connect & Verify MT5** should return a sanitized account summary. The
+packaged Connector on `127.0.0.1:8787` is required only for live MT5 commands. `auth/refresh`
+returning 401 before the
 first sign-in is expected; after sign-in, `/auth/google` should return 200 and workspace/bootstrap
 requests should stop returning 401.
 
@@ -448,8 +447,8 @@ requests should stop returning 401.
 | Symptom | Check |
 | --- | --- |
 | Watchlist rows show `--` | Check bridge log for `IPC send failed`; restart bridge and confirm MT5 login. |
-| MT5 is Configured but cannot be selected | Run **Save & Verify MT5** for the signed-in user and inspect the sanitized failure message. |
-| MT5 is Verified but orders are blocked | Reconnect the execution bridge with the same login/server shown in the verified integration. |
+| MT5 is Configured but cannot be selected | Run **Connect & Verify MT5** for the signed-in user and inspect the sanitized failure message. |
+| MT5 is Verified but orders are blocked | Open the verified account in FTMO MT5, run the downloaded Connector, and allow Local Network Access for the site. |
 | `Workspace sync failed` / 401 | Use the same API hostname as the UI, clear site data, sign in again, and verify CORS/cookie settings. |
 | Google says domain not allowed | Add the exact hostname (without scheme/port) under Firebase Authentication → Authorized domains. |
 | `/api/push/alerts/sync` returns 500 | Check Next logs for Firebase Admin errors, verify service-account values, and ensure Windows time is synchronized (`w32tm /query /status`). |

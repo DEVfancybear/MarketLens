@@ -27,13 +27,13 @@ Browser client
 Default local URL:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 ```
 
 Rules:
 
 - Messages are UTF-8 JSON objects.
-- Unknown message `type` values are ignored and logged.
+- Unknown message `type` values are rejected and logged.
 - Unsupported `version` values are rejected and logged.
 - The bridge sends `hello` first after socket open.
 - The client sends `auth.request` after `hello`.
@@ -130,13 +130,14 @@ Client to bridge.
   "ts": 1783000000100,
   "payload": {
     "clientName": "smc-trading-terminal",
-    "token": "optional-local-dev-token"
+    "token": "short-lived-one-use-backend-ticket"
   }
 }
 ```
 
-Production should prefer a short-lived server-issued session token. Static
-`NEXT_PUBLIC_MT5_BRIDGE_TOKEN` is acceptable only for local development.
+The production client requests a two-minute, one-use ticket from the authenticated backend after
+the account has been verified. The Connector consumes it through the API and binds the resulting
+session to that login/server; no static browser token is supported.
 
 ### `auth.ok`
 

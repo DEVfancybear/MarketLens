@@ -32,6 +32,13 @@ export interface Mt5VerificationResult {
   account: Mt5VerifiedAccount;
 }
 
+export interface Mt5ConnectorTicket {
+  ok: true;
+  ticket: string;
+  expiresAt: number;
+  account: { login: string; server: string };
+}
+
 export interface IntegrationSettingsWrite {
   mt5: { login: string; server: string; password: string; clearPassword: boolean };
   telegram: { chatId: string; botToken: string; enabled: boolean; clearBotToken: boolean };
@@ -73,5 +80,13 @@ export const verifyMt5Integration = () => {
     },
   );
 };
+
+/** Issue a one-use pairing ticket for the signed-in user's verified account. */
+export const createMt5ConnectorTicket = () =>
+  postJson<Mt5ConnectorTicket>(
+    "settings/integrations/mt5/connector-ticket",
+    undefined,
+    { retry: { limit: 0 } },
+  );
 export const testIntegration = (channel: "telegram" | "discord") => postJson<{ok:boolean;channel:string}>(`settings/integrations/test/${channel}`);
 export const deliverIntegrationAlert = (body: unknown) => postJson<{ok:boolean;results:Array<{ok:boolean;channel:string;error?:string}>}>("settings/integrations/deliver", body);

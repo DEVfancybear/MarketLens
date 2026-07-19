@@ -16,7 +16,7 @@ import type {
 
 interface Mt5BridgeClientOptions {
   url: string;
-  token?: string;
+  getToken: () => Promise<string>;
   onMessage: (message: Mt5Message) => void;
   onStatus: (status: Mt5ConnectionStatus) => void;
   onError: (message: string) => void;
@@ -30,7 +30,8 @@ export class Mt5BridgeClient {
   private commandTimers = new Map<string, number>();
   private reconnectAttempt = 0;
   private manualClose = false;
-  private closeAfterError = false;
+  private authenticated = false;
+  private authSequence = 0;
 
   constructor(private readonly options: Mt5BridgeClientOptions) {}
 
@@ -49,7 +50,8 @@ export class Mt5BridgeClient {
       return;
     }
     this.manualClose = false;
-    this.closeAfterError = false;
+    this.authenticated = false;
+    this.authSequence += 1;
     this.clearReconnect();
     this.options.onStatus(this.reconnectAttempt > 0 ? "reconnecting" : "connecting");
 
@@ -61,18 +63,14 @@ export class Mt5BridgeClient {
       return;
     }
 
-    this.ws.onmessage = (event) => this.handleRawMessage(event.data);
-    this.ws.onerror = () => {
-      this.options.onError("MT5 bridge socket error");
-    };
+    this.ws.onmessage = (event) => void this.handleRawMessage(event.data);
+    this.ws.onerror = () => void this.reportSocketError();
     this.ws.onclose = () => {
       this.stopHeartbeat();
+      this.authenticated = false;
+      this.authSequence += 1;
       this.ws = null;
       this.clearCommandTimers();
-      if (this.closeAfterError) {
-        this.closeAfterError = false;
-        return;
-      }
       if (this.manualClose) {
         this.options.onStatus("disconnected");
         return;
@@ -83,6 +81,8 @@ export class Mt5BridgeClient {
 
   disconnect() {
     this.manualClose = true;
+    this.authenticated = false;
+    this.authSequence += 1;
     this.clearReconnect();
     this.stopHeartbeat();
     this.clearCommandTimers();
@@ -98,8 +98,8 @@ export class Mt5BridgeClient {
   }
 
   sendCommand(type: string, payload: Mt5ClientCommandPayload): string | null {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.options.onError("MT5 bridge is not connected");
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.authenticated) {
+      this.options.onError("MT5 Connector is not authenticated");
       return null;
     }
     const msg = buildMt5Message(type, payload);
@@ -114,7 +114,7 @@ export class Mt5BridgeClient {
     return msg.id ?? null;
   }
 
-  private handleRawMessage(raw: unknown) {
+  private async handleRawMessage(raw: unknown) {
     if (typeof raw !== "string") return;
     let message: Mt5Message;
     try {
@@ -125,22 +125,19 @@ export class Mt5BridgeClient {
     }
 
     if (message.type === "hello") {
-      this.reconnectAttempt = 0;
       this.options.onStatus("authenticating");
-      const payload: Mt5AuthRequest = {
-        clientName: MT5_CLIENT_NAME,
-        ...(this.options.token ? { token: this.options.token } : {}),
-      };
-      this.sendAuth(payload);
+      await this.authenticate();
     } else if (message.type === "auth.ok") {
+      this.reconnectAttempt = 0;
+      this.authenticated = true;
       this.options.onStatus("connected");
       this.startHeartbeat();
     } else if (message.type === "auth.reject") {
+      this.authenticated = false;
       this.options.onStatus("error");
-      this.manualClose = true;
-      this.closeAfterError = true;
+      this.options.onError(authRejectMessage(message.payload));
       this.ws?.close();
-    } else if (message.type === "order.ack" || message.type === "order.reject") {
+    } else if (message.type === "order.reject") {
       const id = message.id || getRequestId(message.payload);
       if (id) this.clearCommandTimer(id);
     } else if (message.type === "execution.report") {
@@ -149,6 +146,48 @@ export class Mt5BridgeClient {
     }
 
     this.options.onMessage(message);
+  }
+
+  private async authenticate() {
+    const socket = this.ws;
+    const sequence = this.authSequence;
+    try {
+      const token = (await this.options.getToken()).trim();
+      if (!token) throw new Error("empty pairing ticket");
+      if (
+        sequence !== this.authSequence ||
+        socket !== this.ws ||
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+      ) {
+        return;
+      }
+      const payload: Mt5AuthRequest = {
+        clientName: MT5_CLIENT_NAME,
+        token,
+      };
+      this.sendAuth(payload);
+    } catch {
+      if (sequence !== this.authSequence || socket !== this.ws) return;
+      this.options.onStatus("error");
+      this.options.onError(
+        "Unable to pair MT5 Connector with this account. Verify MT5 and try again.",
+      );
+      socket?.close();
+    }
+  }
+
+  private async reportSocketError() {
+    const permission = await loopbackPermissionState();
+    if (permission === "denied") {
+      this.options.onError(
+        "Local device access is blocked. Allow Local Network Access for this site, then reconnect MT5 Connector.",
+      );
+      return;
+    }
+    this.options.onError(
+      "MT5 Connector is not reachable. Start the Connector and allow the browser's Local Network Access prompt.",
+    );
   }
 
   private sendAuth(payload: Mt5AuthRequest) {
@@ -209,4 +248,39 @@ function getRequestId(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const requestId = (payload as { requestId?: unknown }).requestId;
   return typeof requestId === "string" ? requestId : undefined;
+}
+
+function authRejectMessage(payload: unknown): string {
+  const reason =
+    payload && typeof payload === "object"
+      ? (payload as { reason?: unknown }).reason
+      : undefined;
+  if (reason === "account_mismatch") {
+    return "The MT5 Connector is attached to a different account. Open the verified account in MT5 and reconnect.";
+  }
+  if (reason === "account_unavailable") {
+    return "Open MetaTrader 5, sign in with the verified account, then reconnect the Connector.";
+  }
+  return "MT5 Connector pairing was rejected. Reconnect to request a new secure ticket.";
+}
+
+async function loopbackPermissionState(): Promise<PermissionState | null> {
+  if (typeof navigator === "undefined" || !navigator.permissions) return null;
+  try {
+    const permissions = navigator.permissions as Permissions & {
+      query(descriptor: { name: string }): Promise<PermissionStatus>;
+    };
+    const status = await permissions.query({ name: "loopback-network" });
+    return status.state;
+  } catch {
+    try {
+      const permissions = navigator.permissions as Permissions & {
+        query(descriptor: { name: string }): Promise<PermissionStatus>;
+      };
+      const status = await permissions.query({ name: "local-network-access" });
+      return status.state;
+    } catch {
+      return null;
+    }
+  }
 }

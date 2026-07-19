@@ -142,7 +142,7 @@ func main() {
 		}, 5*time.Second)
 		if runtimeErr != nil {
 			unavailableCode = "MT5_VERIFIER_UNAVAILABLE"
-			unavailableMessage = "The backend MT5 verifier runtime is unavailable. Rebuild and restart the backend service."
+			unavailableMessage = mt5VerifierUnavailableMessage
 			log.Error().
 				Err(runtimeErr).
 				Str("configured_python", cfg.MT5VerifyPython).
@@ -243,14 +243,16 @@ func mt5VerifierConfigurationIssue(cfg config.Config) (string, string) {
 	marketDataTerminal := strings.TrimSpace(cfg.MT5TerminalPath)
 	verifierTerminal := strings.TrimSpace(cfg.MT5VerifyTerminalPath)
 	if marketDataTerminal == "" || verifierTerminal == "" {
-		return "MT5_VERIFIER_TERMINAL_REQUIRED", "MT5 verification requires a dedicated broker terminal. Set MT5_TERMINAL_PATH for market data and MT5_VERIFY_TERMINAL_PATH to a different FTMO terminal64.exe."
+		return "MT5_VERIFIER_UNAVAILABLE", mt5VerifierUnavailableMessage
 	}
 	if strings.EqualFold(filepath.Clean(marketDataTerminal), filepath.Clean(verifierTerminal)) {
-		return "MT5_VERIFIER_TERMINAL_NOT_ISOLATED", "MT5_VERIFY_TERMINAL_PATH must not use the market-data terminal from MT5_TERMINAL_PATH."
+		return "MT5_VERIFIER_UNAVAILABLE", mt5VerifierUnavailableMessage
 	}
 	info, err := os.Stat(verifierTerminal)
 	if err != nil || info.IsDir() {
-		return "MT5_VERIFIER_TERMINAL_UNAVAILABLE", "The configured dedicated MT5 verifier terminal is unavailable on the backend host."
+		return "MT5_VERIFIER_UNAVAILABLE", mt5VerifierUnavailableMessage
 	}
 	return "", ""
 }
+
+const mt5VerifierUnavailableMessage = "MT5 verification is temporarily unavailable. Please try again later."

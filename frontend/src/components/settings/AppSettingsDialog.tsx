@@ -12,6 +12,7 @@ import {
   Check,
   CheckCircle2,
   CircleAlert,
+  Download,
   Loader2,
   MessageCircle,
   Send,
@@ -28,18 +29,21 @@ import {
   verifyMt5Integration,
   type IntegrationSettingsWrite,
 } from "@/services/api/resources/integrationsApi";
-import {
-  describeUserFacingError,
-  errorMessage,
-  isApiError,
-} from "@/services/api/errors";
+import { errorMessage, isApiError } from "@/services/api/errors";
 import { syncMt5IntegrationAtom } from "@/store/mt5Store";
+import { MT5_CONNECTOR_DOWNLOAD_URL } from "@/services/mt5/connectorDownload";
 import {
   APP_SETTINGS_OVERLAY_STACK_CLASS,
   createEmptyIntegrationDraft,
   mergeLoadedIntegrationSettings,
   type IntegrationDraftField,
 } from "./integrationSettingsDraft";
+import {
+  MT5_CONNECT_ACTION_LABEL,
+  MT5_CONNECTOR_RUNNING_NOTE,
+  MT5_SETUP_NOTE,
+  mt5VerificationErrorMessage,
+} from "./mt5VerificationPresentation";
 
 const fieldClassName =
   "h-11 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-3 text-base text-ink outline-none transition-[border-color,box-shadow,background-color] placeholder:text-ink-faint hover:border-terminal-border-strong focus:border-brand focus:ring-2 focus:ring-brand/20 sm:h-10 sm:text-sm";
@@ -255,7 +259,7 @@ export function AppSettingsDialog() {
       });
       syncMt5Integration(result.mt5);
       setMessage(
-        `MT5 login ${result.account.login} on ${result.account.server} verified successfully.`,
+        `MT5 login ${result.account.login} on ${result.account.server} verified successfully. ${MT5_CONNECTOR_RUNNING_NOTE}`,
       );
       setMessageTone("success");
     } catch (error) {
@@ -272,15 +276,7 @@ export function AppSettingsDialog() {
         setMt5Verification({ verified: false, verifiedAt: null });
         syncMt5Integration(unverified);
       }
-      const isTerminalConfigurationError =
-        isApiError(error) && error.code.startsWith("MT5_VERIFIER_TERMINAL_");
-      setMessage(
-        isApiError(error) && error.code === "dependency_unavailable"
-          ? "The backend is running a Python runtime without MetaTrader5. Run build-production.ps1 and restart the API service."
-          : isTerminalConfigurationError
-            ? error.message
-            : describeUserFacingError(error, "MT5 verification failed.").message,
-      );
+      setMessage(mt5VerificationErrorMessage(error));
       setMessageTone("error");
     } finally {
       setVerifyingMt5(false);
@@ -380,7 +376,7 @@ export function AppSettingsDialog() {
               <Section
                 icon={<ServerCog size={18} />}
                 title="MetaTrader 5"
-                note="Credentials and verification belong to the signed-in user. Reconnect the local bridge after changing accounts."
+                note={MT5_SETUP_NOTE}
                 configured={configured.mt5}
                 verified={mt5Verified}
               >
@@ -454,7 +450,7 @@ export function AppSettingsDialog() {
                     )}
                     <span>
                       {mt5Verified
-                        ? `Verified for login ${draft.mt5.login} on ${draft.mt5.server}.`
+                        ? `Verified for login ${draft.mt5.login} on ${draft.mt5.server}. ${MT5_CONNECTOR_RUNNING_NOTE}`
                         : mt5CredentialsDirty
                           ? "These account changes are not verified yet. Save and verify them before using MT5."
                           : configured.mt5
@@ -462,26 +458,36 @@ export function AppSettingsDialog() {
                             : "Enter the MT5 login, exact broker server, and master password to verify the account."}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    disabled={
-                      busy ||
-                      !draft.mt5.login.trim() ||
-                      !draft.mt5.server.trim() ||
-                      draft.mt5.clearPassword ||
-                      !(configured.mt5 || draft.mt5.password.trim())
-                    }
-                    onClick={() => void verifyMt5()}
-                    aria-describedby={mt5VerificationStatusId}
-                    className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-brand/35 bg-brand/10 px-4 text-sm font-semibold text-brand transition-colors hover:border-brand/60 hover:bg-brand/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-                  >
-                    {verifyingMt5 ? (
-                      <Loader2 size={15} className="animate-spin" aria-hidden="true" />
-                    ) : (
-                      <ShieldCheck size={15} aria-hidden="true" />
-                    )}
-                    Save &amp; Verify MT5
-                  </button>
+                  <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
+                    <a
+                      href={MT5_CONNECTOR_DOWNLOAD_URL}
+                      download
+                      className="flex h-11 items-center justify-center gap-2 rounded-xl border border-terminal-border-strong bg-terminal-panel px-4 text-sm font-semibold text-ink transition-colors hover:border-brand/45 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+                    >
+                      <Download size={15} aria-hidden="true" />
+                      Download Connector
+                    </a>
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        !draft.mt5.login.trim() ||
+                        !draft.mt5.server.trim() ||
+                        draft.mt5.clearPassword ||
+                        !(configured.mt5 || draft.mt5.password.trim())
+                      }
+                      onClick={() => void verifyMt5()}
+                      aria-describedby={mt5VerificationStatusId}
+                      className="flex h-11 items-center justify-center gap-2 rounded-xl border border-brand/35 bg-brand/10 px-4 text-sm font-semibold text-brand transition-colors hover:border-brand/60 hover:bg-brand/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {verifyingMt5 ? (
+                        <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <ShieldCheck size={15} aria-hidden="true" />
+                      )}
+                      {MT5_CONNECT_ACTION_LABEL}
+                    </button>
+                  </div>
                 </div>
               </Section>
 

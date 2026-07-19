@@ -60,7 +60,8 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), payment=()",
+            value:
+              "camera=(), microphone=(), geolocation=(), payment=(), local-network=(self), loopback-network=(self), local-network-access=(self)",
           },
           { key: "X-DNS-Prefetch-Control", value: "off" },
         ],

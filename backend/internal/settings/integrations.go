@@ -222,6 +222,9 @@ func integrationView(v IntegrationRecord, userID string, box *SecretBox) Integra
 func (h *Handler) WithIntegrations(store IntegrationStore, box *SecretBox, workerSecret string, exchangeTimeZones ...string) *Handler {
 	h.integrationStore = store
 	h.secretBox = box
+	if h.mt5ConnectorTickets == nil {
+		h.mt5ConnectorTickets = newMT5ConnectorTicketStore()
+	}
 	h.workerSecret = workerSecret
 	h.exchangeTimeZone = "UTC"
 	if len(exchangeTimeZones) > 0 {
@@ -233,6 +236,8 @@ func (h *Handler) registerIntegrationRoutes(router fiber.Router) {
 	router.Get("/settings/integrations", h.requireAuth, h.getIntegrations)
 	router.Put("/settings/integrations", h.requireAuth, h.putIntegrations)
 	router.Post("/settings/integrations/verify/mt5", h.requireAuth, h.verifyMT5Integration)
+	router.Post("/settings/integrations/mt5/connector-ticket", h.requireAuth, h.issueMT5ConnectorTicket)
+	router.Post("/settings/integrations/mt5/connector/validate", h.validateMT5ConnectorTicket)
 	router.Post("/settings/integrations/test/:channel", h.requireAuth, h.testIntegration)
 	router.Post("/settings/integrations/deliver", h.requireAuth, h.deliverIntegration)
 	router.Post("/settings/integrations/worker-deliver", h.workerDeliverIntegration)

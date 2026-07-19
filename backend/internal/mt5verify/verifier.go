@@ -209,11 +209,12 @@ var resultMessages = map[string]string{
 	"missing_credentials":    "MT5 login, server, and password are required.",
 	"invalid_request":        "The MT5 verification request is invalid.",
 	"invalid_login":          "The MT5 login must be a positive number.",
-	"dependency_unavailable": "The selected Python runtime cannot import MetaTrader5. Rebuild and restart the backend API.",
+	"dependency_unavailable": "MT5 verification is temporarily unavailable.",
 	"initialize_failed":      "MetaTrader 5 could not be initialized.",
 	"login_failed":           "MT5 rejected the login, server, or password.",
 	"account_unavailable":    "MT5 did not return account information.",
 	"account_mismatch":       "MT5 connected to a different login or server.",
+	"unsupported_broker":     "This MT5 connection is not an FTMO account.",
 	"trading_not_allowed":    "The MT5 account is not allowed to trade.",
 	"internal_error":         "MT5 verification failed unexpectedly.",
 }

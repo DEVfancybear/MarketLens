@@ -1,13 +1,13 @@
 # PHASE 6B MT5 BRIDGE PLAN
 
-_Created 2026-07-01. Updated 2026-07-06. Scope: detailed implementation plan for MT5 bridge
-integration. The frontend MT5 store/client path and Node dry-run bridge exist; the Python bridge
-service now lives under `backend/bridge/ftmo_mt5/`._
+_Created 2026-07-01. Updated 2026-07-20. Scope: detailed implementation plan for MT5 bridge
+integration. The consumer path uses a packaged Windows Connector with backend pairing tickets;
+the Node/Python source bridges remain development tools._
 
 ## 1. Goal
 
-Phase 6B adds a live-execution path through an external MT5 Bridge Service while preserving the
-current simulator as the default and safest mode.
+Phase 6B adds a live-execution path through the packaged loopback Windows MT5 Connector while
+preserving the current simulator as the default and safest mode.
 
 The frontend must be able to:
 
@@ -45,27 +45,29 @@ The frontend must be able to:
 ```text
 Next browser client
   |
-  | WebSocket JSON protocol
+  | WebSocket JSON protocol + short-lived backend ticket
   v
-MT5 Bridge Service
+Packaged Windows MT5 Connector (127.0.0.1:8787)
   |
-  | Python MetaTrader5 package, local EA socket, or bridge-native adapter
+  | MetaTrader5 adapter; auto-discovers an open matching terminal
   v
 MT5 terminal + broker account
 ```
 
 The bridge process owns:
 
-- Broker credentials and MT5 login session.
-- MT5 terminal lifecycle and reconnection.
+- Backend-ticket validation and the verified login/server session boundary.
+- Discovery and reconnection of the matching terminal that the user logged into through MT5.
 - Broker symbol metadata.
 - Order execution, modification, close, and rejection mapping.
 - Account and position snapshots.
+- It never receives the MT5 password saved by the backend.
 
 The browser owns:
 
 - UI, explicit execution mode, command confirmation, and command logs.
 - A WebSocket client and typed protocol handling.
+- Requesting a two-minute, one-use Connector ticket from the authenticated backend.
 - Rendering the bridge state without pretending unconfirmed commands are fills.
 
 ## 5. Environment Variables
@@ -73,22 +75,18 @@ The browser owns:
 Add placeholders to `.env.example` during implementation:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
 ```
 
 There is no build-wide MT5 enable flag. `mt5EnabledAtom` is hydrated from the signed-in user's
-backend integration only after **Save & Verify MT5** succeeds.
+backend integration only after **Connect & Verify MT5** succeeds.
 
-Development-only static token, if the bridge supports it:
-
-```env
-NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
-```
-
-Production should prefer a short-lived session token issued by a server route, not a static
-`NEXT_PUBLIC_*` token.
+There is no static browser token. `useMt5Bridge()` requests a two-minute, one-use ticket from
+`POST /api/v1/settings/integrations/mt5/connector-ticket`. The packaged Connector validates and
+consumes it through `POST /api/v1/settings/integrations/mt5/connector/validate` before exposing
+account data or accepting commands.
 
 ## 6. Protocol
 
@@ -114,7 +112,7 @@ interface Mt5Message<T = unknown> {
 | Type | Direction | Payload | Notes |
 |---|---|---|---|
 | `hello` | bridge -> client | `{ bridgeId, version, serverTime }` | Sent after socket open. |
-| `auth.request` | client -> bridge | `{ token?, clientName }` | Optional in local dev. |
+| `auth.request` | client -> bridge | `{ token, clientName }` | Token is a short-lived, one-use backend Connector ticket. |
 | `auth.ok` | bridge -> client | `{ sessionId, expiresAt? }` | Client can subscribe after this. |
 | `auth.reject` | bridge -> client | `{ reason }` | Client goes to error state. |
 | `heartbeat` | both | `{ ts }` | Every 5-10s; stale after 20s. |
@@ -252,6 +250,7 @@ export interface Mt5OrderRequest {
 | `src/components/trade/LiveOrderConfirmDialog.tsx` | Required confirmation before live place/close/closeAll. |
 | `src/components/trade/Mt5CommandLog.tsx` | Compact diagnostics for sent/ack/reject/execution messages. |
 | `frontend/scripts/mock-mt5-bridge.mjs` | Local WebSocket mock bridge for deterministic frontend testing. |
+| `src/services/mt5/connectorDownload.ts` | Stable URL for the packaged Windows Connector download. |
 
 ## 9. Existing Modules To Modify
 
@@ -263,7 +262,7 @@ export interface Mt5OrderRequest {
 | `src/components/trade/PositionsTable.tsx` | Read simulator positions or MT5 positions based on execution mode. |
 | `src/components/trade/TradeLevels.tsx` | Render MT5 live positions when mode is MT5. |
 | `src/store/tradeStore.ts` | No behavior change required; keep simulator isolated. |
-| `.env.example` | Add bridge URL, enable flag, max volume, confirmation flag. |
+| `.env.example` | Add loopback bridge URL, max volume, and confirmation defaults. |
 | `docs/HANDOFF.md` | Update next action and runtime notes after implementation. |
 | `docs/CHANGELOG.md` | Record each milestone. |
 

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/smc-trading-terminal/backend/internal/config"
@@ -35,9 +36,9 @@ func TestMT5VerifierConfigurationRequiresAnIsolatedProductionTerminal(t *testing
 			cfg:  config.Config{Env: "production", MT5StreamAPIEnabled: false},
 		},
 		{
-			name: "production requires explicit paths",
+			name: "production requires resolved paths",
 			cfg:  config.Config{Env: "production", MT5StreamAPIEnabled: true},
-			code: "MT5_VERIFIER_TERMINAL_REQUIRED",
+			code: "MT5_VERIFIER_UNAVAILABLE",
 		},
 		{
 			name: "production rejects a shared terminal",
@@ -47,7 +48,7 @@ func TestMT5VerifierConfigurationRequiresAnIsolatedProductionTerminal(t *testing
 				MT5TerminalPath:       marketTerminal,
 				MT5VerifyTerminalPath: marketTerminal,
 			},
-			code: "MT5_VERIFIER_TERMINAL_NOT_ISOLATED",
+			code: "MT5_VERIFIER_UNAVAILABLE",
 		},
 		{
 			name: "production rejects a missing verifier terminal",
@@ -57,7 +58,7 @@ func TestMT5VerifierConfigurationRequiresAnIsolatedProductionTerminal(t *testing
 				MT5TerminalPath:       marketTerminal,
 				MT5VerifyTerminalPath: filepath.Join(tempDir, "missing.exe"),
 			},
-			code: "MT5_VERIFIER_TERMINAL_UNAVAILABLE",
+			code: "MT5_VERIFIER_UNAVAILABLE",
 		},
 		{
 			name: "production accepts distinct terminal installations",
@@ -72,9 +73,17 @@ func TestMT5VerifierConfigurationRequiresAnIsolatedProductionTerminal(t *testing
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			code, _ := mt5VerifierConfigurationIssue(test.cfg)
+			code, message := mt5VerifierConfigurationIssue(test.cfg)
 			if code != test.code {
 				t.Fatalf("code=%q, want %q", code, test.code)
+			}
+			if code != "" && message != mt5VerifierUnavailableMessage {
+				t.Fatalf("message=%q, want generic unavailable message", message)
+			}
+			for _, forbidden := range []string{"MT5_VERIFY", "MT5_TERMINAL", "terminal64.exe", ".env"} {
+				if code != "" && strings.Contains(message, forbidden) {
+					t.Fatalf("message leaks operator detail %q: %q", forbidden, message)
+				}
 			}
 		})
 	}

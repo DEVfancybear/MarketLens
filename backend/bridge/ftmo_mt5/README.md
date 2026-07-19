@@ -1,16 +1,31 @@
 # FTMO MT5 Python Service
 
-Standalone Python WebSocket bridge for copying web-terminal order intents to an FTMO MT5 terminal.
+Local WebSocket connector for copying web-terminal order intents to an FTMO MT5 terminal.
 
 ## Status
 
-- Dry-run mode works without MT5 and is the default.
-- Live mode uses the official `MetaTrader5` Python package and requires Windows with the MT5
-  desktop terminal installed.
-- Live mode must be explicitly enabled with both `FTMO_BRIDGE_DRY_RUN=false` and
-  `FTMO_BRIDGE_ALLOW_LIVE=true`.
+- The consumer connector is packaged as `TradingTerminalMT5Connector.exe`. It binds to loopback,
+  auto-discovers an already logged-in FTMO terminal, and validates a one-time backend pairing ticket.
+  Users do not need source code, Python, environment variables, a terminal path, or credentials in
+  the connector.
+- The environment-driven `python -m bridge.ftmo_mt5.service` entrypoint remains an
+  operator/development preview. Its dry-run mode works without MT5 and is the default; its legacy
+  live mode must be explicitly enabled.
 
-## Install
+See [CONNECTOR_RELEASE.md](CONNECTOR_RELEASE.md) for the consumer entrypoint, pairing contract, and
+Windows executable build.
+
+The connector's risk baseline is account-scoped and persisted in the current Windows user's local
+application-data directory. It uses a conservative unified 3% daily allowance and 10% maximum-loss
+allowance. The initial-capital reference comes from the earliest dated positive MT5 balance deal
+when available; otherwise the first observed balance is persisted as an estimate. Daily references
+reset at midnight Europe/Prague and never below initial capital, while the maximum-loss reference
+trails the highest observed balance. Open stop-loss risk and a daily safety buffer reduce the
+reported remaining allowance. This is a fail-safe local guard, not an exact reconstruction of every
+FTMO product or missing broker history; the stricter of the Connector and FTMO dashboard limits
+must be followed.
+
+## Legacy Source Install (Development Only)
 
 ```powershell
 cd backend
@@ -19,15 +34,15 @@ python -m venv .venv-ftmo
 python -m pip install -r bridge\ftmo_mt5\requirements.txt
 ```
 
-## Dry-Run
+## Legacy Dry-Run
 
 The service reads bridge variables from the current process environment and, if present, `.env` /
 `.env.local` in the repository root. Existing process environment values take priority over file
 values. Restart the service after changing these values.
 
-If `FTMO_ACCOUNT_SIZE` is not set, live mode uses the connected MT5 account equity as the risk
-base. If `FTMO_ACCOUNT_SIZE` is set, that fixed value is used for FTMO-style loss/risk limits.
-Startup logs print `riskBase`, `source`, `maxRiskPerTrade`, and `maxOrderVolume`.
+If `FTMO_ACCOUNT_SIZE` is set, that fixed value is used as initial capital. Otherwise live mode
+uses the earliest dated positive MT5 balance deal when available, falling back to a persisted first
+observed balance. Startup logs print `riskBase`, `source`, `maxRiskPerTrade`, and `maxOrderVolume`.
 
 Live account, position, order, and risk snapshots are pushed to connected web clients every
 `FTMO_BRIDGE_SNAPSHOT_INTERVAL_MS` milliseconds. Default is `1000`.
@@ -71,7 +86,7 @@ $env:FTMO_BRIDGE_DRY_RUN="true"
 python -m bridge.ftmo_mt5.service
 ```
 
-## Live Demo Validation
+## Legacy Live Demo Validation
 
 Use only an FTMO demo/evaluation account first.
 

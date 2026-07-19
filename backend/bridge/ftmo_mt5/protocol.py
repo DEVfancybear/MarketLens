@@ -28,9 +28,17 @@ def validate_envelope(message: Any) -> tuple[bool, str | None]:
         return False, "Message must be a JSON object"
     if message.get("version") != PROTOCOL_VERSION:
         return False, "Only protocol version 1 is supported"
-    if not isinstance(message.get("type"), str):
+    message_type = message.get("type")
+    if not isinstance(message_type, str) or not message_type or len(message_type) > 64:
         return False, "Message type is required"
-    if "payload" not in message:
-        return False, "Message payload is required"
+    if not isinstance(message.get("ts"), (int, float)):
+        return False, "Message timestamp is required"
+    request_id = message.get("id")
+    if request_id is not None and (
+        not isinstance(request_id, str) or not request_id or len(request_id) > 128
+    ):
+        return False, "Message id is invalid"
+    if not isinstance(message.get("payload"), dict):
+        return False, "Message payload must be an object"
     return True, None
 

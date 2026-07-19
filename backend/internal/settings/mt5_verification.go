@@ -40,7 +40,7 @@ func (h *Handler) verifyMT5Integration(c *fiber.Ctx) error {
 		}
 		message := h.mt5VerifierUnavailableMessage
 		if message == "" {
-			message = "MT5 verifier is not configured"
+			message = "MT5 verification is temporarily unavailable. Please try again later."
 		}
 		return mt5VerificationError(c, fiber.StatusServiceUnavailable, code, message)
 	}
@@ -77,7 +77,7 @@ func (h *Handler) verifyMT5Integration(c *fiber.Ctx) error {
 	if err != nil {
 		log.Warn().Err(err).Msg("MT5 credential verification failed")
 		if errors.Is(err, context.DeadlineExceeded) {
-			return mt5VerificationError(c, fiber.StatusGatewayTimeout, "MT5_VERIFICATION_TIMEOUT", "MT5 verification timed out; confirm the dedicated broker terminal and exact server name, then try again")
+			return mt5VerificationError(c, fiber.StatusGatewayTimeout, "MT5_VERIFICATION_TIMEOUT", "MT5 verification timed out; check the login and exact broker server, then try again")
 		}
 		return mt5VerificationError(c, fiber.StatusBadGateway, "MT5_VERIFICATION_UNAVAILABLE", "MT5 verification could not be completed")
 	}

@@ -94,17 +94,18 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_BRIDGE_RECONNECT_MAX` | duration | `30s` | Go API/client maximum reconnect backoff |
 | `MT5_VERIFY_PYTHON` | string | auto | Preferred Python executable for the authenticated per-user verifier; the API probes candidates with `import MetaTrader5` and automatically falls back to the build-managed venv or a working PATH Python |
 | `MT5_VERIFY_SCRIPT` | string | auto | Credential verifier script; relative values are resolved from the backend directory, repository root, or built API location |
-| `MT5_VERIFY_TERMINAL_PATH` | string | empty | Dedicated broker terminal executable used only for account verification; in production it is required and must differ from `MT5_TERMINAL_PATH` while the stream API is enabled |
+| `MT5_VERIFY_TERMINAL_PATH` | string | auto | Optional operator override for the dedicated verifier terminal; the canonical runner otherwise discovers an FTMO terminal or installs FTMO's signed public runtime, clones it under `backend/.data`, and exports the isolated path only to its child processes |
 | `MT5_VERIFY_TIMEOUT` | duration | `30s` | Hard timeout for one per-user MT5 credential verification attempt |
-| `MT5_VERIFY_NATIVE_TIMEOUT_MS` | integer | `8000` | Timeout for each native MT5 initialize/login call, clamped to `1000..12000` so both calls fit inside the outer verifier budget |
+| `MT5_VERIFY_NATIVE_TIMEOUT_MS` | integer | `8000` | Timeout for the native MT5 initialize-and-login call, clamped to `1000..12000` inside the outer verifier budget |
 
 The root `build-production.ps1` provisions `backend/.venv-mt5` and validates its MT5 imports. Leave
 `MT5_VERIFY_PYTHON` empty unless intentionally overriding that runtime. Legacy bare values such as
 `python`, `python.exe`, and `py` are treated as automatic selection when the managed venv exists.
 Even an explicit preferred runtime is skipped when its `MetaTrader5` import probe fails. Restart the
-API after changing the environment or rebuilding the venv. Never point
-`MT5_VERIFY_TERMINAL_PATH` at the terminal used by the market-data sidecar: an account verification
-login switches that terminal session and disconnects live ticks.
+API after changing the environment or rebuilding the venv. When using the optional terminal-path
+override, never point it at the terminal used by the market-data sidecar: an account verification
+login switches that terminal session and disconnects live ticks. Normal production runs need no
+override because the canonical runner provisions the isolated portable clone automatically.
 
 Exact scheduled open/closed status requires the read-only native MQL5 helper in
 [`bridge/mt5_session`](../bridge/mt5_session/README.md). The Python package does

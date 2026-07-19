@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 import { getDefaultStore, useAtomValue } from "jotai";
 import { Mt5BridgeClient } from "@/services/mt5/Mt5BridgeClient";
+import { createMt5ConnectorTicket } from "@/services/api/resources/integrationsApi";
 import { MT5_STALE_AFTER_MS } from "@/services/mt5/protocol";
 import { setMt5RuntimeHandlers } from "@/services/mt5/runtime";
 import {
@@ -32,7 +33,7 @@ export function useMt5Bridge() {
 
     const client = new Mt5BridgeClient({
       url,
-      token: process.env.NEXT_PUBLIC_MT5_BRIDGE_TOKEN || undefined,
+      getToken: async () => (await createMt5ConnectorTicket()).ticket,
       onMessage: (message) => store.set(applyMt5MessageAtom, message),
       onStatus: (nextStatus) => store.set(setMt5StatusAtom, nextStatus),
       onError: (message) => store.set(setMt5ErrorAtom, message),

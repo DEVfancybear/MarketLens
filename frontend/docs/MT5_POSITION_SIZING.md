@@ -65,8 +65,7 @@ before execution.
 Set the frontend bridge variables in `frontend/.env.local` (the port must match the bridge):
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
-NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 ```
 
 MT5 availability is loaded from the authenticated user's verified integration;

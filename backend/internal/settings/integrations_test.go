@@ -248,8 +248,8 @@ func TestVerifyMT5IntegrationReturnsConfiguredUnavailableReason(t *testing.T) {
 	NewHandler(newFakeSettingsStore(), fakeRequireAuth).
 		WithIntegrations(store, box, "worker-secret").
 		WithMT5VerifierUnavailable(
-			"MT5_VERIFIER_TERMINAL_REQUIRED",
-			"A dedicated MT5 verifier terminal is required.",
+			"MT5_VERIFIER_UNAVAILABLE",
+			"MT5 verification is temporarily unavailable. Please try again later.",
 		).
 		Register(app.Group("/api/v1"))
 
@@ -266,7 +266,7 @@ func TestVerifyMT5IntegrationReturnsConfiguredUnavailableReason(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error.Code != "MT5_VERIFIER_TERMINAL_REQUIRED" || !strings.Contains(body.Error.Message, "dedicated") {
+	if body.Error.Code != "MT5_VERIFIER_UNAVAILABLE" || !strings.Contains(body.Error.Message, "temporarily unavailable") {
 		t.Fatalf("unexpected unavailable response: %+v", body)
 	}
 }

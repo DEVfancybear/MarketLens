@@ -14,6 +14,7 @@ type Handler struct {
 	requireAuth                   fiber.Handler
 	integrationStore              IntegrationStore
 	secretBox                     *SecretBox
+	mt5ConnectorTickets           *mt5ConnectorTicketStore
 	mt5Verifier                   MT5Verifier
 	mt5VerifierUnavailableCode    string
 	mt5VerifierUnavailableMessage string

@@ -7,10 +7,11 @@ Implementation status:
 - **Phase 6A - Push notifications:** implemented. See `PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **Phase 6A extension - Telegram/Discord alert channels:** implemented. See
   `PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - MT5 bridge:** partially implemented. The frontend MT5 store/client path and Node
-  dry-run bridge exist; the Python bridge service lives under `backend/bridge/ftmo_mt5/`. Protocol
-  contract remains in `MT5_BRIDGE_PROTOCOL.md`; detailed plan remains in
-  `PHASE6B_MT5_BRIDGE_PLAN.md`.
+- **Phase 6B - MT5 bridge:** implemented through the packaged Windows Connector, loopback
+  WebSocket client, per-user backend verification, and short-lived one-use pairing tickets. The
+  Node/Python source services remain development tools under `frontend/scripts/` and
+  `backend/bridge/ftmo_mt5/`. Protocol contract remains in `MT5_BRIDGE_PROTOCOL.md`; detailed plan
+  remains in `PHASE6B_MT5_BRIDGE_PLAN.md`.
 
 ## 1. Objective
 
@@ -23,7 +24,7 @@ The phase has two parallel workstreams:
    (FCM) as a fourth alert delivery channel after toast, sound, and browser notifications, then
    extend the same alert delivery pipeline to server-side Telegram and Discord messages.
 2. **Phase 6B - MT5 bridge:** add a bridge-client architecture for account sync and real order
-   routing through an external MT5 Bridge Service.
+   routing through the packaged loopback Windows MT5 Connector.
 
 Push remains opt-in and safe when unconfigured. MT5 keeps simulator mode as the default and is
 unlocked only for the signed-in user whose saved credentials pass backend verification.
@@ -205,7 +206,8 @@ The optional Phase 6A Telegram/Discord extension is implemented in
 
 ### 6.1 Target Behavior
 
-- User can connect the terminal to an external MT5 Bridge Service.
+- User can connect an already logged-in FTMO terminal through the packaged Windows MT5 Connector
+  without a source checkout, Python installation, or local environment-variable setup.
 - The app shows MT5 account status, balance/equity/margin, open positions, and connection health.
 - Order Ticket can route orders to simulator or MT5 mode.
 - In MT5 mode, order placement/modification/closing goes through the bridge and waits for bridge
@@ -217,18 +219,19 @@ The optional Phase 6A Telegram/Discord extension is implemented in
 ```text
 Browser / Next client
   |
-  | WebSocket or HTTP+SSE JSON protocol
+  | WebSocket JSON protocol + short-lived backend ticket
   v
-MT5 Bridge Service
+Packaged Windows MT5 Connector (127.0.0.1:8787)
   |
-  | Local IPC / Python MetaTrader5 package / EA socket protocol
+  | MetaTrader5 adapter; auto-discovers an open matching terminal
   v
 MT5 Terminal + broker account
 ```
 
-The bridge is a separate service. This repository should implement the browser client, state, UI,
-and protocol docs. The bridge implementation can be built in this repo later or kept as a separate
-process, but the browser contract must be explicit.
+The Connector is a separate packaged Windows process. The browser requests a two-minute, one-use
+ticket from the authenticated backend after **Connect & Verify MT5**, then presents it over the
+loopback WebSocket. The Connector consumes the ticket through the backend, binds the session to its
+login/server, and never receives the saved MT5 password.
 
 ### 6.3 Protocol Contract
 
@@ -249,7 +252,7 @@ Connection messages:
 
 | Type | Direction | Purpose |
 |---|---|---|
-| `auth.request` | client -> bridge | Authenticate session token if configured. |
+| `auth.request` | client -> bridge | Present the short-lived, one-use backend Connector ticket. |
 | `auth.ok` | bridge -> client | Auth accepted. |
 | `auth.reject` | bridge -> client | Auth failed. |
 | `heartbeat` | both | Keep connection alive and detect stale sessions. |
@@ -360,21 +363,17 @@ interface Mt5OrderRequest {
 ### 6.7 Environment Variables
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://127.0.0.1:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 ```
 
 MT5 availability is not a build-time environment flag. The frontend hydrates it from the current
-authenticated user's `verified` integration setting after **Save & Verify MT5** succeeds.
+authenticated user's `verified` integration setting after **Connect & Verify MT5** succeeds.
 
-Optional browser-visible session token only if the bridge uses a local/dev token:
-
-```env
-NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
-```
-
-Production authentication should prefer a server-issued short-lived session token, not a static
-browser environment variable.
+There is no browser-visible static Connector token. For each connection the frontend calls
+`POST /api/v1/settings/integrations/mt5/connector-ticket`; the packaged Connector consumes that
+ticket through `POST /api/v1/settings/integrations/mt5/connector/validate`. Tickets expire after
+two minutes and can be used only once.
 
 ### 6.8 Store Design
 
