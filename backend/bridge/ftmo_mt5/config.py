@@ -83,7 +83,7 @@ class BridgeConfig:
 def load_config() -> BridgeConfig:
     _load_env_files()
     account_size_configured = "FTMO_ACCOUNT_SIZE" in os.environ
-    return BridgeConfig(
+    config = BridgeConfig(
         enabled=_bool_env("FTMO_MT5_ENABLED", False),
         dry_run=_bool_env("FTMO_BRIDGE_DRY_RUN", True),
         allow_live=_bool_env("FTMO_BRIDGE_ALLOW_LIVE", False),
@@ -120,3 +120,9 @@ def load_config() -> BridgeConfig:
             "ETHUSDT": os.getenv("FTMO_SYMBOL_ETHUSDT", "ETHUSD"),
         },
     )
+    loopback_hosts = {"127.0.0.1", "::1", "localhost"}
+    if (not config.dry_run or config.host.lower() not in loopback_hosts) and len(config.token) < 32:
+        raise ValueError(
+            "FTMO_BRIDGE_TOKEN must contain at least 32 characters for live or non-loopback bridges"
+        )
+    return config

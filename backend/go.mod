@@ -2,6 +2,8 @@ module github.com/smc-trading-terminal/backend
 
 go 1.25.8
 
+toolchain go1.26.5
+
 require (
 	firebase.google.com/go/v4 v4.20.0
 	github.com/gofiber/contrib/websocket v1.3.4

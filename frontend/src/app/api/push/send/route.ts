@@ -3,6 +3,8 @@ import {
   firebaseAdminConfigured,
   sendFirebasePush,
 } from "@/server/firebaseAdmin";
+import { requireFirebaseUser, validPushToken } from "@/server/requestSecurity";
+import { getPushDevice } from "@/server/pushAlertStore";
 
 export const runtime = "nodejs";
 
@@ -14,6 +16,10 @@ interface PushRequestBody {
 }
 
 export async function POST(req: NextRequest) {
+  const userId = await requireFirebaseUser(req);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
   if (!firebaseAdminConfigured()) {
     return NextResponse.json(
       { error: "Firebase Admin is not configured." },
@@ -28,11 +34,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  if (!body.token || !body.title || !body.body) {
+  if (!validPushToken(body.token) || !body.title || !body.body) {
     return NextResponse.json(
       { error: "token, title, and body are required." },
       { status: 400 },
     );
+  }
+  if (body.title.length > 160 || body.body.length > 2_000 || Object.keys(body.data ?? {}).length > 32) {
+    return NextResponse.json({ error: "Push payload is too large." }, { status: 413 });
+  }
+  if (!(await getPushDevice(body.token, userId))) {
+    return NextResponse.json({ error: "Push token is not available." }, { status: 403 });
   }
 
   try {

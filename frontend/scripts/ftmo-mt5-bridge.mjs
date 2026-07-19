@@ -45,6 +45,13 @@ const CONFIG = {
   auditPath: env.FTMO_BRIDGE_AUDIT_PATH || path.join(process.cwd(), ".data", "ftmo-mt5-audit.jsonl"),
 };
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+if ((!CONFIG.dryRun || !LOOPBACK_HOSTS.has(CONFIG.host.toLowerCase())) && CONFIG.token.length < 32) {
+  throw new Error(
+    "FTMO_BRIDGE_TOKEN must contain at least 32 characters for live or non-loopback bridges",
+  );
+}
+
 const SYMBOLS = {
   EURUSD: {
     chartSymbol: "EURUSD",

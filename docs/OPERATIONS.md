@@ -2,6 +2,9 @@
 
 Day-to-day commands for developing, testing, and deploying the monorepo.
 
+Security hardening and the production release checklist are documented in
+ [`SECURITY.md`](SECURITY.md). Read it before exposing either service publicly.
+
 ## Frontend
 
 ```bash
@@ -47,6 +50,9 @@ cd backend
 # Install Go dependencies
 go mod tidy
 
+# Verify the patched Go toolchain is selected
+go version
+
 # Run API server
 go run ./cmd/api
 
@@ -56,6 +62,9 @@ go test ./...
 # Build binary
 go build -o bin/api ./cmd/api
 ```
+
+Production backend builds must use Go 1.26.5 or newer; `backend/go.mod` pins this toolchain because
+Go 1.26.4 has a `crypto/tls` vulnerability.
 
 Backend dev server: `http://localhost:8080`
 
@@ -123,7 +132,7 @@ to `http://localhost:8080` in development; set `NEXT_PUBLIC_API_BASE_URL` explic
 | `FTMO_BRIDGE_ALLOW_LIVE` | `false` | Allow live MT5 connection |
 | `FTMO_BRIDGE_BIND_HOST` | `127.0.0.1` | WebSocket listen host |
 | `FTMO_BRIDGE_BIND_PORT` | `8787` | WebSocket listen port |
-| `FTMO_BRIDGE_TOKEN` | (empty) | Optional auth token |
+| `FTMO_BRIDGE_TOKEN` | (empty) | 32+ random bytes required for live mode or any non-loopback bind |
 | `FTMO_MT5_LOGIN` | (empty) | MT5 account login |
 | `FTMO_MT5_PASSWORD` | (empty) | MT5 account password |
 | `FTMO_MT5_SERVER` | (empty) | MT5 broker server |

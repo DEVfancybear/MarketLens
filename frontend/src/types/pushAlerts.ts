@@ -73,6 +73,8 @@ export interface PendingPushAlertDelivery {
 
 export interface PushDeviceRecord {
   token: string;
+  /** Firebase UID that owns this token; optional only for legacy records. */
+  userId?: string;
   deliveryToken?: string;
   /** Resolved IANA chart zone. Older records safely fall back to UTC. */
   notificationTimeZone?: string;

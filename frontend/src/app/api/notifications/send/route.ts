@@ -4,6 +4,7 @@ import {
   type ExternalAlertChannel,
   type ExternalAlertMessage,
 } from "@/server/externalNotifications";
+import { secretMatches } from "@/server/requestSecurity";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,9 @@ function validMessage(message: ExternalAlertMessage | undefined): message is Ext
 }
 
 export async function POST(req: NextRequest) {
+  if (!secretMatches(req.headers.get("x-alert-webhook-secret"), process.env.ALERT_WEBHOOK_SECRET)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
   const body = (await req.json().catch(() => null)) as SendRequest | null;
   if (!validMessage(body?.message)) {
     return NextResponse.json(

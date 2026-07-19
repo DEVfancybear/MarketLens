@@ -364,7 +364,7 @@ func (h *Handler) deliverIntegration(c *fiber.Ctx) error {
 }
 
 func (h *Handler) workerDeliverIntegration(c *fiber.Ctx) error {
-	if h.workerSecret != "" && !hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret)) {
+	if h.workerSecret == "" || !hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret)) {
 		return fiber.ErrUnauthorized
 	}
 	var raw workerDeliveryRequest
@@ -604,7 +604,7 @@ func (h *Handler) sendConfigured(v IntegrationRecord, channel, text string) erro
 		req.Header.Set("Content-Type", "application/json")
 	case "discord":
 		url, e := h.secretBox.Open(v.DiscordWebhook)
-		if e != nil || url == "" {
+		if e != nil || url == "" || !validDiscordWebhook(url) {
 			return errors.New("Discord is not configured")
 		}
 		bodyBytes, _ := json.Marshal(fiber.Map{"content": text, "allowed_mentions": fiber.Map{"parse": []string{}}})

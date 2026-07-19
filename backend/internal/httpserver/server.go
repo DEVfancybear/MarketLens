@@ -62,6 +62,7 @@ func New(
 	app := fiber.New(fiber.Config{
 		AppName:               "smc-trading-backend",
 		DisableStartupMessage: true,
+		BodyLimit:             8 * 1024 * 1024,
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          30 * time.Second,
 		IdleTimeout:           60 * time.Second,
@@ -73,6 +74,8 @@ func New(
 	app.Use(requestid.New())
 	app.Use(recover.New())
 	app.Use(middleware.Logging())
+	app.Use(middleware.SecurityHeaders())
+	app.Use(middleware.RequireAllowedOrigin(cfg.CORSAllowedOrigins))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(cfg.CORSAllowedOrigins, ","),
 		AllowCredentials: true,

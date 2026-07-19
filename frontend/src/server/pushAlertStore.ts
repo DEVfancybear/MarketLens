@@ -138,6 +138,7 @@ function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
     : [];
   return {
     token: String(data.token),
+    userId: typeof data.userId === "string" ? data.userId : undefined,
     deliveryToken: typeof data.deliveryToken === "string" ? data.deliveryToken : undefined,
     notificationTimeZone: normalizeAlertTimeZone(data.notificationTimeZone),
     alerts,
@@ -175,12 +176,20 @@ async function setFirestoreDevice(device: PushDeviceRecord): Promise<void> {
     .set(stripUndefined(device));
 }
 
-export async function registerPushDevice(token: string): Promise<void> {
+function assertDeviceOwner(device: PushDeviceRecord | undefined, userId: string): void {
+  if (device?.userId && device.userId !== userId) {
+    throw new Error("push device belongs to another user");
+  }
+}
+
+export async function registerPushDevice(token: string, userId: string): Promise<void> {
   if (firestoreEnabled()) {
     const now = Date.now();
     const existing = await getFirestoreDevice(token);
+    assertDeviceOwner(existing, userId);
     await setFirestoreDevice({
       token,
+      userId,
       deliveryToken: existing?.deliveryToken,
       notificationTimeZone: normalizeAlertTimeZone(
         existing?.notificationTimeZone,
@@ -200,8 +209,10 @@ export async function registerPushDevice(token: string): Promise<void> {
   const db = await readDb();
   const now = Date.now();
   const existing = db.devices[token];
+  assertDeviceOwner(existing, userId);
   db.devices[token] = {
     token,
+    userId,
     deliveryToken: existing?.deliveryToken,
     notificationTimeZone: normalizeAlertTimeZone(
       existing?.notificationTimeZone,
@@ -218,8 +229,10 @@ export async function registerPushDevice(token: string): Promise<void> {
   await writeDb(db);
 }
 
-export async function unregisterPushDevice(token: string): Promise<void> {
+export async function unregisterPushDevice(token: string, userId: string): Promise<void> {
   if (firestoreEnabled()) {
+    const existing = await getFirestoreDevice(token);
+    assertDeviceOwner(existing, userId);
     await getFirebaseFirestore()
       .collection(COLLECTION)
       .doc(tokenDocId(token))
@@ -228,16 +241,19 @@ export async function unregisterPushDevice(token: string): Promise<void> {
   }
 
   const db = await readDb();
+  assertDeviceOwner(db.devices[token], userId);
   delete db.devices[token];
   await writeDb(db);
 }
 
 export async function syncPushAlerts(
   request: PushAlertSyncRequest,
+  userId: string,
 ): Promise<{ stored: number }> {
   if (firestoreEnabled()) {
     const now = Date.now();
     const existing = await getFirestoreDevice(request.token);
+    assertDeviceOwner(existing, userId);
     const shouldStoreAlerts =
       request.settingsPush ||
       Boolean(request.settingsTelegram) ||
@@ -249,6 +265,7 @@ export async function syncPushAlerts(
       : [];
     const device = pruneState({
       token: request.token,
+      userId,
       deliveryToken: resolveStoredDeliveryToken(
         request.deliveryToken,
         existing?.deliveryToken,
@@ -272,6 +289,7 @@ export async function syncPushAlerts(
   const db = await readDb();
   const now = Date.now();
   const existing = db.devices[request.token];
+  assertDeviceOwner(existing, userId);
   const shouldStoreAlerts =
     request.settingsPush ||
     Boolean(request.settingsTelegram) ||
@@ -284,6 +302,7 @@ export async function syncPushAlerts(
 
   const device: PushDeviceRecord = pruneState({
     token: request.token,
+    userId,
     deliveryToken: resolveStoredDeliveryToken(
       request.deliveryToken,
       existing?.deliveryToken,
@@ -308,13 +327,18 @@ export async function syncPushAlerts(
 
 export async function getPushDevice(
   token: string,
+  userId?: string,
 ): Promise<PushDeviceRecord | undefined> {
   if (firestoreEnabled()) {
-    return getFirestoreDevice(token);
+    const device = await getFirestoreDevice(token);
+    if (userId && device?.userId !== userId) return undefined;
+    return device;
   }
 
   const db = await readDb();
-  return db.devices[token];
+  const device = db.devices[token];
+  if (userId && device?.userId !== userId) return undefined;
+  return device;
 }
 
 export async function listPushDevices(): Promise<PushDeviceRecord[]> {

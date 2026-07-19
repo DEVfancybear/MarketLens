@@ -3,6 +3,7 @@ import {
   sendExternalAlertNotifications,
   type ExternalAlertChannel,
 } from "@/server/externalNotifications";
+import { secretMatches } from "@/server/requestSecurity";
 
 export const runtime = "nodejs";
 
@@ -11,9 +12,10 @@ interface TestRequest {
 }
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.ALERT_WEBHOOK_SECRET;
-  if (!secret) return true;
-  return req.headers.get("x-alert-webhook-secret") === secret;
+  return secretMatches(
+    req.headers.get("x-alert-webhook-secret"),
+    process.env.ALERT_WEBHOOK_SECRET,
+  );
 }
 
 export async function POST(req: NextRequest) {

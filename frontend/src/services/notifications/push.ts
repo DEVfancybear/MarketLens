@@ -14,6 +14,7 @@ import {
   deletePushToken as deleteBackendPushToken,
   registerPushToken as registerBackendPushToken,
 } from "@/services/api/resources/alertsApi";
+import { currentIdToken } from "@/services/auth/firebaseAuth";
 
 export interface PushCapability {
   supported: boolean;
@@ -37,9 +38,16 @@ async function postJson(
   init?: Pick<RequestInit, "keepalive">,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    const idToken = await currentIdToken();
+    if (!idToken) {
+      return { ok: false, error: "Sign in is required for remote push notifications." };
+    }
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
       body: JSON.stringify(body),
       keepalive: init?.keepalive,
     });
@@ -284,9 +292,14 @@ export async function fetchPushAlertStatus(
   token: string,
 ): Promise<PushAlertReconcileStatus> {
   try {
+    const idToken = await currentIdToken();
+    if (!idToken) return { triggers: [], expirations: [] };
     const res = await fetch("/api/push/alerts/status", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
       body: JSON.stringify({ token }),
     });
     if (!res.ok) return { triggers: [], expirations: [] };

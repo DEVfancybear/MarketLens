@@ -1,20 +1,18 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals"),
+  ...nextCoreWebVitals,
   {
     rules: {
       "@next/next/no-img-element": "off",
       "react-hooks/exhaustive-deps": "warn",
+      // Next 16 enables React compiler migration rules that were not part of
+      // this repository's previous lint contract. Keep the dependency patched
+      // without turning an unrelated security update into an 87-file refactor.
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/static-components": "off",
     },
   },
   {

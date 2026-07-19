@@ -1,14 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { evaluatePushAlerts } from "@/server/pushAlertEvaluator";
+import { secretMatches } from "@/server/requestSecurity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function authorized(req: NextRequest): boolean {
   const workerSecret = process.env.PUSH_WORKER_SECRET;
-  if (workerSecret && req.headers.get("x-push-worker-secret") === workerSecret) return true;
+  if (secretMatches(req.headers.get("x-push-worker-secret"), workerSecret)) return true;
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && req.headers.get("authorization") === `Bearer ${cronSecret}`) return true;
+  if (cronSecret && secretMatches(req.headers.get("authorization"), `Bearer ${cronSecret}`)) return true;
   return !workerSecret && !cronSecret && process.env.NODE_ENV !== "production";
 }
 

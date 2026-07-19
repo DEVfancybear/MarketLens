@@ -51,7 +51,7 @@ class Config:
     def from_env(cls) -> "Config":
         login_raw = os.getenv("MT5_LOGIN", "").strip()
         symbols_raw = os.getenv("MT5_SYMBOLS", "")
-        return cls(
+        config = cls(
             symbols=parse_symbols(symbols_raw),
             stream_all_visible=env_bool("MT5_STREAM_ALL_VISIBLE", True),
             host=os.getenv("MT5_STREAM_HOST", "localhost").strip(),
@@ -79,6 +79,11 @@ class Config:
                 5,
             ),
         )
+        if config.host.lower() not in {"127.0.0.1", "::1", "localhost"}:
+            raise ValueError(
+                "MT5_STREAM_HOST must be loopback; the stream protocol has no remote authentication"
+            )
+        return config
 
 
 CLIENTS: Set[WebSocketServerProtocol] = set()

@@ -54,3 +54,25 @@ func TestValidateChartTimeZone(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateRejectsUnsafeCORSOrigins(t *testing.T) {
+	for _, origin := range []string{"*", "https://app.example.com/path", "javascript:alert(1)"} {
+		t.Run(origin, func(t *testing.T) {
+			cfg := Config{Env: "development", ChartTimeZone: "UTC", CORSAllowedOrigins: []string{origin}}
+			if err := cfg.validate(); err == nil {
+				t.Fatalf("validate() accepted unsafe origin %q", origin)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsWeakJWTWhenAuthConfigured(t *testing.T) {
+	cfg := Config{
+		Env: "development", ChartTimeZone: "UTC", DatabaseURL: "postgres://example",
+		FirebaseProjectID: "project", FirebaseClientEmail: "service@example.com", FirebasePrivateKey: "key",
+		AuthJWTSecret: "short", CORSAllowedOrigins: []string{"http://localhost:3000"},
+	}
+	if err := cfg.validate(); err == nil {
+		t.Fatal("validate() accepted a weak JWT secret")
+	}
+}

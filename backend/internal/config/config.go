@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -161,6 +162,16 @@ func (c Config) validate() error {
 	if _, err := time.LoadLocation(c.ChartTimeZone); err != nil {
 		return fmt.Errorf("CHART_TIME_ZONE must be a valid IANA time zone: %q", c.ChartTimeZone)
 	}
+	for _, origin := range c.CORSAllowedOrigins {
+		if err := validateCORSOrigin(origin); err != nil {
+			return err
+		}
+	}
+	// Never assemble authentication with an empty or guessable HMAC key, even
+	// in development. A dev server is often reachable from the local network.
+	if c.DatabaseURL != "" && c.FirebaseConfigured() && len(c.AuthJWTSecret) < 32 {
+		return fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 characters when authentication is configured")
+	}
 
 	storageValues := []string{c.ObjectStorageBucket, c.ObjectStorageAccessKey, c.ObjectStorageSecretKey}
 	storageSet := 0
@@ -199,6 +210,22 @@ func (c Config) validate() error {
 		sort.Strings(missing)
 		return fmt.Errorf("missing required environment variables for APP_ENV=%s: %s",
 			c.Env, strings.Join(missing, ", "))
+	}
+	if len(c.AuthJWTSecret) < 32 {
+		return fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 characters")
+	}
+	if len(c.PushWorkerSecret) < 32 {
+		return fmt.Errorf("PUSH_WORKER_SECRET must contain at least 32 characters")
+	}
+	return nil
+}
+
+func validateCORSOrigin(raw string) error {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS contains an invalid absolute origin: %q", raw)
 	}
 	return nil
 }
