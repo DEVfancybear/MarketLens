@@ -28,6 +28,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   recovery path when the user has dismissed the notification prompt too many
   times.
 
+### Fixed - Self-generated drawing revision conflicts (2026-07-19)
+- Rebase newer drawing edits/deletes queued behind an in-flight write to the
+  server revision returned by that write, preventing rapid drag/edit sequences
+  from producing their own 409 and `[drawing-conflict]` warning.
+- Preserve newer local geometry while advancing its acknowledged
+  `serverRevision`; genuine multi-tab conflicts still use last-write-wins.
+- Add a regression covering a newer edit queued while the prior drawing write
+  is awaiting acknowledgement.
+
 ### Changed - Generic Pine source support and `SWING_SR` removal (2026-07-19)
 - Treat Pine source as the common backend contract for catalog, saved, public,
   and future indicators. The runtime exposes Pine version and literal/enum

@@ -110,3 +110,63 @@ test("in-flight requests remain in the persisted snapshot until acknowledged", a
   await flushing;
   assert.equal(queue.snapshot().upserts.length, 0);
 });
+
+test("acknowledged writes rebase a newer edit queued while the request was in flight", async () => {
+  let resolveFirst!: (value: {
+    upserted: Array<{
+      id: string;
+      symbol: string;
+      toolType: string;
+      clientId: string;
+      payload: BackendDrawingWrite["payload"];
+      locked: boolean;
+      hidden: boolean;
+      revision: number;
+      clientRevision: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+    deleted: number;
+  }) => void;
+  const firstResponse = new Promise<Parameters<typeof resolveFirst>[0]>((resolve) => {
+    resolveFirst = resolve;
+  });
+  const requests: BackendDrawingWrite[][] = [];
+  const queue = new DrawingSyncQueue({
+    send: async ({ upserts }) => {
+      requests.push(structuredClone(upserts));
+      if (requests.length === 1) return firstResponse;
+      return { upserted: [], deleted: 0 };
+    },
+    schedule: () => 1 as unknown as ReturnType<typeof setTimeout>,
+    cancel: () => {},
+  });
+
+  queue.enqueueUpsert({ ...write(1), expectedRevision: 7 });
+  const firstFlush = queue.flushNow();
+  queue.enqueueUpsert({ ...write(2), expectedRevision: 7 });
+  resolveFirst({
+    upserted: [
+      {
+        id: "server-1",
+        symbol: "EURUSD",
+        toolType: "trendline",
+        clientId: "dw-1",
+        payload: write(1).payload,
+        locked: false,
+        hidden: false,
+        revision: 8,
+        clientRevision: 1,
+        createdAt: "",
+        updatedAt: "",
+      },
+    ],
+    deleted: 0,
+  });
+  await firstFlush;
+  await queue.flushNow();
+
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1][0].clientRevision, 2);
+  assert.equal(requests[1][0].expectedRevision, 8);
+});

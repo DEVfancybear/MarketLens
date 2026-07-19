@@ -138,6 +138,7 @@ export class DrawingSyncQueue {
       .then((response) => {
         this.retryAttempt = 0;
         this.inFlightRequest = null;
+        this.rebasePendingToAcknowledgedRevisions(response);
         this.options.onSuccess?.(response, request);
       })
       .catch((error) => {
@@ -166,6 +167,34 @@ export class DrawingSyncQueue {
         if (this.size > 0 && this.retryAttempt === 0) this.schedule(0);
       });
     return this.inFlight;
+  }
+
+  /**
+   * A newer local edit can be queued while an older revision is in flight.
+   * Once that write succeeds, advance the queued edit/delete precondition to
+   * the acknowledged server revision so normal single-tab editing does not
+   * manufacture its own optimistic-lock conflict.
+   */
+  private rebasePendingToAcknowledgedRevisions(
+    response: BackendDrawingBatchResponse,
+  ): void {
+    for (const row of response.upserted) {
+      const key = row.clientId || row.payload.id;
+      const pendingUpsert = this.upserts.get(key);
+      if (pendingUpsert) {
+        this.upserts.set(key, {
+          ...pendingUpsert,
+          expectedRevision: row.revision,
+        });
+      }
+      const pendingDelete = this.deletes.get(key);
+      if (pendingDelete) {
+        this.deletes.set(key, {
+          ...pendingDelete,
+          expectedRevision: row.revision,
+        });
+      }
+    }
   }
 
   private schedule(delay: number): void {

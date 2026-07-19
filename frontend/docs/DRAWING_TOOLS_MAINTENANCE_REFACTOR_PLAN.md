@@ -514,7 +514,11 @@ Delivered:
 - Drawing mutations carry monotonic client revisions. A persisted outbox coalesces writes by
   client id, survives anonymous sessions, symbol changes, logout, reload, page hide, and workspace
   reset, retries failures with capped exponential backoff, and merges acknowledgements without
-  allowing stale responses to replace local geometry.
+  allowing stale responses to replace local geometry. When an older mutation is acknowledged while
+  a newer edit for the same client id is already queued, the outbox advances that queued edit's
+  `expectedRevision` to the acknowledged server revision. This prevents rapid single-tab drag/edit
+  sequences from manufacturing their own 409 conflict; genuine cross-tab conflicts still use the
+  explicit last-write-wins policy.
 - Remote loads use a generation guard in addition to symbol matching, so an older same-symbol or
   previous-symbol response cannot replace newer chart state. Anonymous drawings merge into the
   authenticated resource set and enter the same idempotent outbox.
@@ -524,7 +528,8 @@ Delivered:
   retry operations remain idempotent by client id.
 - Executable persistence tests cover codec fixtures, every current tool, clipboard rejection,
   outbox coalescing/retry/hydration, stale load guards, conflict rebasing, persisted-hit-safe local
-  mutation, backend batch idempotency, and HTTP conflict mapping.
+  mutation, in-flight acknowledgement rebasing, backend batch idempotency, and HTTP conflict
+  mapping.
 
 Verification on 2026-07-12:
 

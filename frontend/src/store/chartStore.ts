@@ -420,7 +420,7 @@ function acknowledgeDrawingBatch(rows: BackendDrawing[]) {
   let changed = false;
   const next = current.map((drawing) => {
     const row = byID.get(drawing.id);
-    if (!row || (row.clientRevision ?? 0) < (drawing.clientRevision ?? 0)) return drawing;
+    if (!row || drawing.serverRevision === row.revision) return drawing;
     changed = true;
     return { ...drawing, serverRevision: row.revision };
   });
