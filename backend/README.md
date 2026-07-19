@@ -29,6 +29,10 @@ go run ./cmd/api
 
 Default server: `http://localhost:8080`
 
+On the Windows production host, **build backend production** and **run backend** both mean running
+`.\run-backend-production.ps1` from the repository root. It is the canonical pull/build/migrate/
+restart/health-check entrypoint; direct commands in this README are for development or recovery.
+
 ### Python MT5 Bridge
 
 Run these commands from `backend/`:

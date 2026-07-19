@@ -18,14 +18,12 @@ older references:
 Recent post-split work:
 
 - **Production backend operator runbook (2026-07-19):**
-  `backend/docs/PRODUCTION_BUILD.md` now contains the canonical Windows host update/restart
-  sequence: pull, `migrate up`, choose full Go+frontend or optional backend-only build, then start
-  MT5, the private market-data bridge, production Go API, and Cloudflare Tunnel before checking
-  local and public readiness. Do not remove the full frontend build option; use backend-only only
-  when the frontend is intentionally unchanged. The full build also provisions
-  `backend/.venv-mt5`; leave `MT5_VERIFY_PYTHON` unset so the Go API auto-detects it. Runtime
-  selection probes `import MetaTrader5` and falls back to the managed venv when an inherited or
-  service-level Python override is stale. Building alone does not restart the running API process.
+  Treat the phrases **build backend production** and **run backend** as exactly
+  `.\run-backend-production.ps1` from the repository root, with no switches in the normal case.
+  The runner pulls, provisions/import-checks `backend/.venv-mt5`, builds a staged API, migrates,
+  safely replaces only repo-owned listeners, starts the MT5 stream and Go API, and gates success on
+  local/public health. `build-production.ps1` only creates artifacts and must not substitute for
+  the runner. Port `8787` remains browser/account-local and is intentionally excluded.
 
 - **Generic Pine source runtime and legacy Swing S/R removal (2026-07-19):**
   replay cutoff is enforced before backend evaluation, the submitted Pine v5

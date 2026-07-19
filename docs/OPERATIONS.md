@@ -44,6 +44,16 @@ npm run test:ui
 
 ## Backend
 
+On the Windows production host, **build backend production** and **run backend** both mean:
+
+```powershell
+.\run-backend-production.ps1
+```
+
+This is the only normal production entrypoint. It pulls, provisions the MT5 runtime, builds a
+staged backend binary, migrates, safely restarts ports `8765`/`8080`, and requires local plus public
+health checks. Commands below are development or manual-recovery commands.
+
 ```bash
 cd backend
 
@@ -186,8 +196,8 @@ an old commit from before the monorepo split. Redeploy the latest `master` commi
 Deploy the Go backend as a separate service from `backend/`. Do not include it in the Vercel
 frontend build.
 
-For the exact Windows restart order, Cloudflare Tunnel configuration, public health checks, and
-troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.
+For the runner contract, exceptional switches, manual recovery, Cloudflare Tunnel configuration,
+and troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.
 
 ## Validation Before Push
 

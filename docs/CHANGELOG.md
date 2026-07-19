@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Single production backend entrypoint (2026-07-19)
+- Defined **build backend production** and **run backend** as one root command:
+  `.\run-backend-production.ps1`.
+- The runner pulls a clean worktree, provisions MT5 Python, stages the API build, migrates, safely
+  replaces repository-owned processes, starts ports `8765`/`8080`, and gates success on verifier,
+  database, MT5, and public API health.
+- Added backend-only and staged-API modes to `build-production.ps1`; direct artifact builds remain
+  manual/CI operations and no longer represent a complete production restart.
+
 ### Changed - Production backend operator runbook (2026-07-19)
 - Added a canonical Windows production-host sequence for pull, forward-only migration, optional
   backend-only Go build, MT5 market-data bridge/API/tunnel startup, and local/public health checks.

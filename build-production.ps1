@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-  [switch]$SkipMT5PythonSetup
+  [switch]$SkipMT5PythonSetup,
+  [switch]$BackendOnly,
+  [switch]$StageApi
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +16,8 @@ $frontendDir = Join-Path $repoRoot "frontend"
 $mt5VenvDir = Join-Path $backendDir ".venv-mt5"
 $mt5Python = Join-Path $mt5VenvDir "Scripts\python.exe"
 $mt5Requirements = Join-Path $backendDir "bridge\ftmo_mt5\requirements.txt"
+$apiArtifactName = if ($StageApi) { "api.next.exe" } else { "api.exe" }
+$apiArtifact = Join-Path $backendDir "bin\$apiArtifactName"
 
 if (-not $SkipMT5PythonSetup) {
   if ($env:OS -ne "Windows_NT") {
@@ -67,32 +71,34 @@ Push-Location $backendDir
 try {
   $env:GOTOOLCHAIN = "local"
   New-Item -ItemType Directory -Path ".\bin" -Force | Out-Null
-  & $goPath build -trimpath -ldflags="-s -w" -o ".\bin\api.exe" ".\cmd\api"
+  & $goPath build -trimpath -ldflags="-s -w" -o $apiArtifact ".\cmd\api"
   if ($LASTEXITCODE -ne 0) { throw "Go API build failed (exit $LASTEXITCODE)." }
 } finally {
   Pop-Location
 }
 
-Write-Host "Building Next.js frontend..." -ForegroundColor Cyan
-Push-Location $frontendDir
-try {
-  $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
-  if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
-  if (-not $npm) { throw "npm was not found. Install Node.js and rerun this script." }
-  if (-not (Test-Path -LiteralPath ".\node_modules" -PathType Container)) {
-    Write-Host "Installing frontend dependencies with npm ci..." -ForegroundColor Cyan
-    & $npm.Source ci
-    if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit $LASTEXITCODE)." }
+if (-not $BackendOnly) {
+  Write-Host "Building Next.js frontend..." -ForegroundColor Cyan
+  Push-Location $frontendDir
+  try {
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) { $npm = Get-Command npm -ErrorAction SilentlyContinue }
+    if (-not $npm) { throw "npm was not found. Install Node.js and rerun this script." }
+    if (-not (Test-Path -LiteralPath ".\node_modules" -PathType Container)) {
+      Write-Host "Installing frontend dependencies with npm ci..." -ForegroundColor Cyan
+      & $npm.Source ci
+      if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit $LASTEXITCODE)." }
+    }
+    & $npm.Source run build
+    if ($LASTEXITCODE -ne 0) { throw "Next.js build failed (exit $LASTEXITCODE)." }
+  } finally {
+    Pop-Location
   }
-  & $npm.Source run build
-  if ($LASTEXITCODE -ne 0) { throw "Next.js build failed (exit $LASTEXITCODE)." }
-} finally {
-  Pop-Location
 }
 
 Write-Host "Production build complete." -ForegroundColor Green
-Write-Host "Go artifact: backend\bin\api.exe"
-Write-Host "Next artifact: frontend\.next"
+Write-Host "Go artifact: backend\bin\$apiArtifactName"
+if (-not $BackendOnly) { Write-Host "Next artifact: frontend\.next" }
 if (-not $SkipMT5PythonSetup) {
   Write-Host "MT5 verifier Python: backend\.venv-mt5\Scripts\python.exe"
   Write-Host "The Go API auto-detects this venv when MT5_VERIFY_PYTHON is unset."

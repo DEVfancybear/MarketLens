@@ -33,7 +33,37 @@ env.
 The legacy Vercel URL may continue to resolve, but production configuration and user links should
 use `tradingterminal.io.vn`.
 
-## Build options
+## Canonical `build backend production` / `run backend` command
+
+The phrases **build backend production** and **run backend** always mean this one command from the
+repository root on the Windows production host:
+
+```powershell
+.\run-backend-production.ps1
+```
+
+This script is the single normal production entrypoint. Do not replace it with a manual
+`go build`, `api.exe`, or `python -m ...` command. It performs the complete workflow:
+
+1. Refuses a dirty production worktree, then runs `git pull --ff-only`.
+2. Provisions and import-checks `backend\.venv-mt5`.
+3. Builds `backend\bin\api.next.exe` without rebuilding the Vercel frontend.
+4. Applies forward-only migrations and prints the migration version.
+5. Starts MT5 when needed, but never closes or changes the signed-in terminal account.
+6. Stops only repository-owned listeners on `8080`/`8765`, atomically promotes the staged API,
+   then starts the MT5 market-data sidecar and Go API from `backend\`.
+7. Requires local liveness, database readiness, MT5 `connected:true`, verifier-runtime startup
+   confirmation, and public Cloudflare readiness before reporting success.
+8. Writes timestamped stdout/stderr and PID files under ignored `.runtime-logs\`.
+
+Useful recovery switches are `-SkipPull`, `-SkipBuild`, `-SkipMigrations`, and
+`-SkipPublicHealthCheck`. They are exceptional/manual recovery options; an ordinary request to
+build or run production uses no switches.
+
+The script intentionally does not start the FTMO execution bridge on port `8787`. That bridge is
+browser/account-local (`ws://localhost:8787`) and is not part of the multi-user backend server.
+
+## Artifact build options (manual or CI only)
 
 ### Full production build (Go API + frontend)
 
@@ -72,20 +102,19 @@ changed and the frontend does not need a new local production artifact. It inten
 changes or whenever a local Next.js production-build check is wanted.
 
 ```powershell
-cd backend
-$env:GOTOOLCHAIN = "local"
-go build -trimpath -ldflags="-s -w" -o ".\bin\api.exe" ".\cmd\api"
+.\build-production.ps1 -BackendOnly
 ```
 
-The resulting artifact is the same `backend\bin\api.exe` produced by `build-production.ps1`, but
-this backend-only command does not create or update `backend\.venv-mt5`. Run the full build at least
-once on a new server and whenever the MT5 Python requirements change.
+The resulting artifact is the same `backend\bin\api.exe` produced by `build-production.ps1`.
+Backend-only mode still creates/updates and import-checks `backend\.venv-mt5`; it skips only the
+local Next.js build. The canonical runner additionally uses `-StageApi` so a new binary is complete
+before the currently running API is replaced.
 
-## Canonical production host update and restart
+## Manual production recovery sequence
 
-Use this sequence after pulling a deployment on the Windows production host. It is deliberately
-backend-first: the hosted Vercel frontend remains unchanged unless the full build or a Vercel
-deployment is explicitly needed.
+Use this section only when the canonical `run-backend-production.ps1` entrypoint fails and an
+operator needs to isolate one step. It is not the normal interpretation of **build backend
+production** or **run backend**.
 
 ### 1. Pull and migrate before starting the new API
 
@@ -104,10 +133,10 @@ cd ..
 The version command must report `dirty=false` and the current highest migration version. Do not use
 `migrate force` or `migrate down` as part of a normal production update.
 
-### 2. Choose the build scope
+### 2. Choose the recovery build scope
 
-- Run `./build-production.ps1` for the full Go API + frontend production build.
-- Run the **Backend-only production build** above when the frontend is intentionally unchanged.
+- Run `./build-production.ps1` for a manual full Go API + frontend artifact build.
+- Run `./build-production.ps1 -BackendOnly` for a manual backend-only artifact build.
 
 Both build commands only create local ignored artifacts. Neither starts a service, modifies secrets,
 runs migrations, or deploys Vercel.
@@ -238,12 +267,12 @@ Add `tradingterminal.io.vn` to Firebase Authentication -> Settings -> Authorized
 UI is opened by LAN IP, also add that host without scheme or port, for example `192.168.2.128`.
 Keep `localhost` for local browser access.
 
-## Start order on the Windows production host
+## Manual start order on the Windows production host
 
-Start MT5 first, then the market-data sidecar, then the API. Verify the signed-in user's account
-before starting/restarting the optional execution bridge. Cloudflare Tunnel may remain running
-while the API is restarted; it will return an origin error briefly until port 8080 is listening
-again.
+The canonical runner performs this order automatically. Use the commands below only for recovery:
+start MT5 first, then the market-data sidecar, then the API. Verify the signed-in user's account
+before starting/restarting the optional browser-local execution bridge. Cloudflare Tunnel may
+remain running while the API is restarted.
 
 ### 1. MetaTrader 5 terminal
 
