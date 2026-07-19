@@ -476,6 +476,34 @@ function Wait-ForJsonEndpoint {
   throw "Timed out waiting for $Uri ($lastFailure)."
 }
 
+function Wait-ForLogPattern {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Paths,
+    [Parameter(Mandatory = $true)][string]$Pattern,
+    [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process,
+    [int]$TimeoutSeconds = 15
+  )
+
+  $lastFailure = "marker not written yet"
+  for ($attempt = 0; $attempt -le $TimeoutSeconds; $attempt++) {
+    if ($Process.HasExited) {
+      throw "Process PID $($Process.Id) exited before its readiness log marker was written."
+    }
+    $logText = ""
+    foreach ($path in $Paths) {
+      if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+      try {
+        $logText += [System.IO.File]::ReadAllText($path)
+      } catch {
+        $lastFailure = $_.Exception.Message
+      }
+    }
+    if ($logText -match $Pattern) { return }
+    if ($attempt -lt $TimeoutSeconds) { Start-Sleep -Seconds 1 }
+  }
+  throw "Timed out waiting for the API readiness log marker ($lastFailure)."
+}
+
 if (-not (Test-Path -LiteralPath $backendEnv -PathType Leaf)) {
   throw "Missing backend\.env. Create it from backend\.env.example before running production."
 }
@@ -612,13 +640,10 @@ $null = Wait-ForJsonEndpoint -Uri "http://localhost:8080/health" -Accept { param
 $null = Wait-ForJsonEndpoint -Uri "http://localhost:8080/health/ready" -Accept { param($r) $r.ready -eq $true -and $r.database -eq "up" }
 $symbols = Wait-ForJsonEndpoint -Uri "http://localhost:8080/api/v1/mt5/symbols" -Accept { param($r) $r.connected -eq $true } -TimeoutSeconds 60
 
-$apiLogText = ""
-foreach ($path in @($apiOut, $apiErr)) {
-  if (Test-Path -LiteralPath $path -PathType Leaf) { $apiLogText += [System.IO.File]::ReadAllText($path) }
-}
-if ($apiLogText -notmatch "MT5 verifier runtime ready") {
-  throw "API started, but its logs do not confirm a ready MT5 verifier runtime. See $apiErr"
-}
+Wait-ForLogPattern `
+  -Paths @($apiOut, $apiErr) `
+  -Pattern "MT5 verifier runtime ready" `
+  -Process $apiProcess
 
 if (-not $SkipPublicHealthCheck) {
   $null = Wait-ForJsonEndpoint -Uri "https://api.tradingterminal.io.vn/health/ready" -Accept { param($r) $r.ready -eq $true -and $r.database -eq "up" } -TimeoutSeconds 30
