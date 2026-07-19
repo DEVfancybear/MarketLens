@@ -73,6 +73,12 @@ virtual keyboard cannot leave its controls outside the visible area. Popup
 content remains independently tappable, editable and scrollable because only
 the handle owns `touch-action: none`.
 
+ResizeObserver, window-resize and Visual Viewport notifications are coalesced
+into one animation frame. The clamp path treats offset changes below `0.1px` as
+equal and must not issue state updates from a layout effect on every render.
+This keeps resize/re-clamp feedback finite when browser chrome or the virtual
+keyboard changes the viewport.
+
 `ChartArea` owns the common `data-chart-popup-bounds` region and the
 `.mobile-chart-popup-stack` overlay host. The mobile chart action bar and
 compact Replay controls are siblings in this host, so layout gap, paint order
@@ -88,6 +94,20 @@ Non-actionable transient output such as crosshair labels, price markers and
 drawing previews stays pointer-transparent. Modal dialogs retain the dialog
 contract, while `MobileSheet` retains focus trapping, Back/Escape/scrim/Close
 dismissal and its downward-only handle gesture.
+
+## Nested modal and editable-form contract
+
+A platform settings dialog opened from a `MobileSheet` renders at the shared
+application-dialog stack level above the sheet and carries
+`data-platform-dialog`. While it is topmost, the sheet must not intercept its
+pointer, keyboard or focus events. Deferred initial focus is conditional: it
+must not move focus after the user has already entered an input.
+
+Settings loaded asynchronously merge into the form at field granularity. A
+response may populate only fields that remain untouched; it must not overwrite
+typing that began while the request was in flight. Controlled form edits use
+functional state updates so rapid mobile input cannot lose characters to stale
+render state.
 
 ## Theme contract
 

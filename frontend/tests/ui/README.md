@@ -11,6 +11,8 @@ Covered contracts include:
 - Dialog viewport clamping and oversized-dialog reachability.
 - Mobile/desktop platform policy for phone, tablet, coarse and fine pointers.
 - Mobile sheet gesture threshold, dismiss boundary, cancellation rollback and foreign-pointer rejection.
+- Integration-settings late-load merging and secret reset behavior.
+- Draggable popup sub-pixel stability, preventing layout/update feedback loops.
 - Timeframe favorite/custom-interval behavior.
 - Private workspace access and bottom-workspace defaults.
 - Indicator inline-row grouping, user-facing errors and session recovery.
@@ -29,6 +31,8 @@ npm run test:chart-browser
 - Portrait/landscape and desktop have no horizontal page overflow.
 - Dark/light theme switching.
 - Modal chart-interaction boundary, hidden background and browser-Back dismissal.
+- Connection settings remain topmost and keyboard-focusable over mobile workspace sheets.
+- Draggable chart surfaces remain error-free across mobile viewport and keyboard-style resizes.
 - Desktop command bar, drawing rail and market sidebar presence.
 
 `tests/browser/desktopOverlayRegression.spec.ts` verifies:

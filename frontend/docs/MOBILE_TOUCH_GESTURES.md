@@ -99,6 +99,11 @@ contract:
   changes. Window resize, `visualViewport` resize/scroll and observed
   container/surface resizes all re-clamp the popup so it cannot be stranded
   outside the chart or visible viewport.
+- Resize and Visual Viewport notifications are coalesced into one animation
+  frame. Re-clamping treats sub-pixel offset differences below `0.1px` as
+  unchanged, and the layout effect only runs when the stable clamp callback
+  changes. These invariants prevent observer/layout feedback from reaching
+  React's maximum update depth during keyboard and viewport changes.
 - Mobile chart actions, compact Replay controls, drawing settings and their
   option popovers, indicator legend, Replay selection HUD, risk controls, time
   zone menu and chart context menus use this shared behavior instead of
@@ -141,6 +146,12 @@ history and vertical-sheet gesture contracts; they are not wrapped in
   cancel-first focus target, and never falls back to browser-native
   `window.prompt`/`window.confirm` UI. A dialog opened from `MobileSheet` owns
   Escape and Tab until it resolves.
+- A settings dialog opened from `MobileSheet` must render above the sheet's
+  stack level and expose `data-platform-dialog`, so the underlying sheet cannot
+  intercept pointer, keyboard or focus events. Deferred autofocus must first
+  verify that focus has not already entered the dialog. Asynchronous settings
+  loads merge only fields the user has not edited; they must never replace the
+  value of an active controlled input.
 - `prefers-reduced-motion` disables non-essential animation and transitions.
 
 ## Platform isolation

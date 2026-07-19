@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { APP_SETTINGS_OVERLAY_STACK_CLASS } from "../../src/components/settings/integrationSettingsDraft";
 
 test.use({
   deviceScaleFactor: 3,
@@ -309,4 +310,52 @@ test("toast and context-menu primitives stay inside compact visual viewports", a
   expect(nativeCheckboxBox!.width).toBeGreaterThanOrEqual(16);
   expect(nativeCheckboxBox!.width).toBeLessThanOrEqual(20);
   expect(nativeCheckboxLabelBox?.height).toBeGreaterThanOrEqual(43.5);
+});
+
+test("connection settings stay interactive above an open mobile workspace sheet", async ({ page }) => {
+  await page.evaluate((stackClass) => {
+    const sheet = document.createElement("div");
+    sheet.dataset.testConnectionLayer = "sheet";
+    sheet.className = "mobile-scrim";
+    sheet.innerHTML = '<section class="mobile-sheet mobile-sheet--fullscreen"></section>';
+    document.body.appendChild(sheet);
+
+    const overlay = document.createElement("div");
+    overlay.dataset.testConnectionLayer = "dialog";
+    overlay.className = `platform-dialog-overlay fixed inset-0 ${stackClass} flex items-stretch justify-center`;
+    overlay.innerHTML = '<div data-platform-dialog class="platform-dialog platform-dialog--fullscreen"><label for="connection-login">Login</label><input id="connection-login" /></div>';
+    document.body.appendChild(overlay);
+  }, APP_SETTINGS_OVERLAY_STACK_CLASS);
+
+  const sheet = page.locator('[data-test-connection-layer="sheet"]');
+  const overlay = page.locator('[data-test-connection-layer="dialog"]');
+  const login = page.getByLabel("Login", { exact: true });
+  const layers = await Promise.all([
+    sheet.evaluate((element) => Number(getComputedStyle(element).zIndex)),
+    overlay.evaluate((element) => Number(getComputedStyle(element).zIndex)),
+  ]);
+
+  expect(layers[1]).toBeGreaterThan(layers[0]);
+  await login.click();
+  await login.pressSequentially("123456");
+  await expect(login).toHaveValue("123456");
+  await expect(login).toBeFocused();
+});
+
+test("draggable chart surfaces do not enter an update loop during viewport changes", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  for (const viewport of [
+    { width: 380, height: 820 },
+    { width: 390, height: 760 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+  }
+
+  await expect(
+    page.getByRole("button", { name: /Move chart actions/ }),
+  ).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });

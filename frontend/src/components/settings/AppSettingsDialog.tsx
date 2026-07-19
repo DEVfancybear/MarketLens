@@ -28,17 +28,12 @@ import {
   type IntegrationSettingsWrite,
 } from "@/services/api/resources/integrationsApi";
 import { errorMessage } from "@/services/api/errors";
-
-const empty: IntegrationSettingsWrite = {
-  mt5: { login: "", server: "", password: "", clearPassword: false },
-  telegram: {
-    chatId: "",
-    botToken: "",
-    enabled: false,
-    clearBotToken: false,
-  },
-  discord: { webhookUrl: "", enabled: false, clearWebhook: false },
-};
+import {
+  APP_SETTINGS_OVERLAY_STACK_CLASS,
+  createEmptyIntegrationDraft,
+  mergeLoadedIntegrationSettings,
+  type IntegrationDraftField,
+} from "./integrationSettingsDraft";
 
 const fieldClassName =
   "h-11 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-3 text-base text-ink outline-none transition-[border-color,box-shadow,background-color] placeholder:text-ink-faint hover:border-terminal-border-strong focus:border-brand focus:ring-2 focus:ring-brand/20 sm:h-10 sm:text-sm";
@@ -46,7 +41,9 @@ const fieldClassName =
 export function AppSettingsDialog() {
   const [open, setOpen] = useAtom(integrationSettingsOpenAtom);
   const backendSession = useAtomValue(backendSessionAtom);
-  const [draft, setDraft] = useState<IntegrationSettingsWrite>(empty);
+  const [draft, setDraft] = useState<IntegrationSettingsWrite>(
+    createEmptyIntegrationDraft,
+  );
   const [configured, setConfigured] = useState({
     mt5: false,
     telegram: false,
@@ -59,33 +56,38 @@ export function AppSettingsDialog() {
   );
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dirtyFieldsRef = useRef(new Set<IntegrationDraftField>());
+  const loadSequenceRef = useRef(0);
+
+  const updateDraft = (
+    field: IntegrationDraftField,
+    update: (current: IntegrationSettingsWrite) => IntegrationSettingsWrite,
+  ) => {
+    dirtyFieldsRef.current.add(field);
+    setDraft(update);
+  };
 
   useEffect(() => {
-    if (!open || !backendSession) return;
+    if (!open || !backendSession) {
+      if (open) setBusy(false);
+      return;
+    }
+    const sequence = ++loadSequenceRef.current;
+    let cancelled = false;
+    dirtyFieldsRef.current.clear();
     setBusy(true);
     setMessage("");
     setMessageTone(null);
     getIntegrationSettings()
       .then((value) => {
-        setDraft({
-          mt5: {
-            login: value.mt5.login,
-            server: value.mt5.server,
-            password: "",
-            clearPassword: false,
-          },
-          telegram: {
-            chatId: value.telegram.chatId,
-            botToken: "",
-            enabled: value.telegram.enabled,
-            clearBotToken: false,
-          },
-          discord: {
-            webhookUrl: "",
-            enabled: value.discord.enabled,
-            clearWebhook: false,
-          },
-        });
+        if (cancelled || sequence !== loadSequenceRef.current) return;
+        setDraft((current) =>
+          mergeLoadedIntegrationSettings(
+            current,
+            value,
+            dirtyFieldsRef.current,
+          ),
+        );
         setConfigured({
           mt5: value.mt5.passwordConfigured,
           telegram: value.telegram.botTokenConfigured,
@@ -93,17 +95,27 @@ export function AppSettingsDialog() {
         });
       })
       .catch(() => {
+        if (cancelled || sequence !== loadSequenceRef.current) return;
         setMessage("Unable to load integration settings.");
         setMessageTone("error");
       })
-      .finally(() => setBusy(false));
+      .finally(() => {
+        if (!cancelled && sequence === loadSequenceRef.current) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [backendSession, open]);
 
   useEffect(() => {
     if (!open) return;
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (!dialog || dialog.contains(document.activeElement)) return;
+      closeButtonRef.current?.focus({ preventScroll: true });
+    });
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -144,6 +156,7 @@ export function AppSettingsDialog() {
   const applySaved = (
     value: Awaited<ReturnType<typeof saveIntegrationSettings>>,
   ) => {
+    dirtyFieldsRef.current.clear();
     setConfigured({
       mt5: value.mt5.passwordConfigured,
       telegram: value.telegram.botTokenConfigured,
@@ -208,7 +221,7 @@ export function AppSettingsDialog() {
 
   return (
     <div
-      className="platform-dialog-overlay fixed inset-0 z-[120] flex items-stretch justify-center bg-[var(--scrim)] sm:items-center sm:p-4 sm:backdrop-blur-sm"
+      className={`platform-dialog-overlay fixed inset-0 ${APP_SETTINGS_OVERLAY_STACK_CLASS} flex items-stretch justify-center bg-[var(--scrim)] sm:items-center sm:p-4 sm:backdrop-blur-sm`}
       role="presentation"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
@@ -216,6 +229,7 @@ export function AppSettingsDialog() {
     >
       <div
         ref={dialogRef}
+        data-platform-dialog
         role="dialog"
         aria-modal="true"
         aria-labelledby="integration-settings-title"
@@ -281,10 +295,10 @@ export function AppSettingsDialog() {
                     label="Login"
                     value={draft.mt5.login}
                     onChange={(value) =>
-                      setDraft({
-                        ...draft,
-                        mt5: { ...draft.mt5, login: value },
-                      })
+                      updateDraft("mt5.login", (current) => ({
+                        ...current,
+                        mt5: { ...current.mt5, login: value },
+                      }))
                     }
                     autoComplete="username"
                   />
@@ -292,10 +306,10 @@ export function AppSettingsDialog() {
                     label="Broker server"
                     value={draft.mt5.server}
                     onChange={(value) =>
-                      setDraft({
-                        ...draft,
-                        mt5: { ...draft.mt5, server: value },
-                      })
+                      updateDraft("mt5.server", (current) => ({
+                        ...current,
+                        mt5: { ...current.mt5, server: value },
+                      }))
                     }
                     autoComplete="off"
                   />
@@ -305,24 +319,24 @@ export function AppSettingsDialog() {
                   configured={configured.mt5}
                   value={draft.mt5.password}
                   onChange={(value) =>
-                    setDraft({
-                      ...draft,
+                    updateDraft("mt5.password", (current) => ({
+                      ...current,
                       mt5: {
-                        ...draft.mt5,
+                        ...current.mt5,
                         password: value,
                         clearPassword: false,
                       },
-                    })
+                    }))
                   }
                   onClear={() =>
-                    setDraft({
-                      ...draft,
+                    updateDraft("mt5.password", (current) => ({
+                      ...current,
                       mt5: {
-                        ...draft.mt5,
+                        ...current.mt5,
                         password: "",
                         clearPassword: true,
                       },
-                    })
+                    }))
                   }
                 />
               </Section>
@@ -339,24 +353,24 @@ export function AppSettingsDialog() {
                     configured={configured.telegram}
                     value={draft.telegram.botToken}
                     onChange={(value) =>
-                      setDraft({
-                        ...draft,
+                      updateDraft("telegram.botToken", (current) => ({
+                        ...current,
                         telegram: {
-                          ...draft.telegram,
+                          ...current.telegram,
                           botToken: value,
                           clearBotToken: false,
                         },
-                      })
+                      }))
                     }
                     onClear={() =>
-                      setDraft({
-                        ...draft,
+                      updateDraft("telegram.botToken", (current) => ({
+                        ...current,
                         telegram: {
-                          ...draft.telegram,
+                          ...current.telegram,
                           botToken: "",
                           clearBotToken: true,
                         },
-                      })
+                      }))
                     }
                     emptyPlaceholder="Example: 123456789:AA..."
                   />
@@ -364,10 +378,10 @@ export function AppSettingsDialog() {
                     label="Chat ID"
                     value={draft.telegram.chatId}
                     onChange={(value) =>
-                      setDraft({
-                        ...draft,
-                        telegram: { ...draft.telegram, chatId: value },
-                      })
+                      updateDraft("telegram.chatId", (current) => ({
+                        ...current,
+                        telegram: { ...current.telegram, chatId: value },
+                      }))
                     }
                     placeholder="Example: 123456789"
                     autoComplete="off"
@@ -378,10 +392,10 @@ export function AppSettingsDialog() {
                     label="Enable Telegram alerts"
                     checked={draft.telegram.enabled}
                     onChange={(value) =>
-                      setDraft({
-                        ...draft,
-                        telegram: { ...draft.telegram, enabled: value },
-                      })
+                      updateDraft("telegram.enabled", (current) => ({
+                        ...current,
+                        telegram: { ...current.telegram, enabled: value },
+                      }))
                     }
                   />
                   <TestButton
@@ -406,24 +420,24 @@ export function AppSettingsDialog() {
                   configured={configured.discord}
                   value={draft.discord.webhookUrl}
                   onChange={(value) =>
-                    setDraft({
-                      ...draft,
+                    updateDraft("discord.webhookUrl", (current) => ({
+                      ...current,
                       discord: {
-                        ...draft.discord,
+                        ...current.discord,
                         webhookUrl: value,
                         clearWebhook: false,
                       },
-                    })
+                    }))
                   }
                   onClear={() =>
-                    setDraft({
-                      ...draft,
+                    updateDraft("discord.webhookUrl", (current) => ({
+                      ...current,
                       discord: {
-                        ...draft.discord,
+                        ...current.discord,
                         webhookUrl: "",
                         clearWebhook: true,
                       },
-                    })
+                    }))
                   }
                 />
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -431,10 +445,10 @@ export function AppSettingsDialog() {
                     label="Enable Discord alerts"
                     checked={draft.discord.enabled}
                     onChange={(value) =>
-                      setDraft({
-                        ...draft,
-                        discord: { ...draft.discord, enabled: value },
-                      })
+                      updateDraft("discord.enabled", (current) => ({
+                        ...current,
+                        discord: { ...current.discord, enabled: value },
+                      }))
                     }
                   />
                   <TestButton

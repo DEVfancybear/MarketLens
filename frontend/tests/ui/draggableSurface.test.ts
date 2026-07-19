@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clampSurfaceOffset } from "../../src/hooks/useDraggableSurface";
+import {
+  clampSurfaceOffset,
+  sameSurfaceOffset,
+} from "../../src/hooks/useDraggableSurface";
 
 test("chart popup offsets clamp every edge inside shared bounds", () => {
   const base = { left: 100, top: 80, right: 200, bottom: 140 };
@@ -31,5 +34,22 @@ test("an oversized popup is centred on the constrained axis", () => {
   assert.deepEqual(
     clampSurfaceOffset({ x: 90, y: 0 }, base, bounds, 10),
     { x: -10, y: 0 },
+  );
+});
+
+test("sub-pixel measurement noise does not schedule another popup update", () => {
+  assert.equal(
+    sameSurfaceOffset(
+      { x: 12.25, y: -4.75 },
+      { x: 12.25001, y: -4.74999 },
+    ),
+    true,
+  );
+  assert.equal(
+    sameSurfaceOffset(
+      { x: 12.25, y: -4.75 },
+      { x: 12.5, y: -4.75 },
+    ),
+    false,
   );
 });

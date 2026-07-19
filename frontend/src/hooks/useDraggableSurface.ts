@@ -29,6 +29,7 @@ export type DraggableSurfaceOptions = {
 
 const DEFAULT_BOUNDS_MARGIN = 6;
 const DEFAULT_KEYBOARD_STEP = 16;
+const OFFSET_EPSILON_PX = 0.1;
 const CHART_POPUP_BOUNDS_SELECTOR = "[data-chart-popup-bounds]";
 
 function clampAxis(value: number, minimum: number, maximum: number): number {
@@ -59,8 +60,9 @@ export function clampSurfaceOffset(
   };
 }
 
-function sameOffset(left: DragOffset, right: DragOffset): boolean {
-  return left.x === right.x && left.y === right.y;
+export function sameSurfaceOffset(left: DragOffset, right: DragOffset): boolean {
+  return Math.abs(left.x - right.x) < OFFSET_EPSILON_PX &&
+    Math.abs(left.y - right.y) < OFFSET_EPSILON_PX;
 }
 
 function shiftedBack(rect: DOMRect, offset: DragOffset): SurfaceRect {
@@ -105,8 +107,9 @@ export function useDraggableSurface(
   const [dragging, setDragging] = useState(false);
 
   const setOffset = useCallback((next: DragOffset) => {
+    if (sameSurfaceOffset(offsetRef.current, next)) return;
     offsetRef.current = next;
-    setOffsetState((current) => sameOffset(current, next) ? current : next);
+    setOffsetState((current) => sameSurfaceOffset(current, next) ? current : next);
   }, []);
 
   const resetKeyRef = useRef(resetKey);
@@ -126,31 +129,37 @@ export function useDraggableSurface(
       boundsFor(element),
       boundsMargin,
     );
-    if (!sameOffset(current, next)) setOffset(next);
+    if (!sameSurfaceOffset(current, next)) setOffset(next);
   }, [boundsMargin, setOffset]);
 
   useLayoutEffect(() => {
     clampCurrentOffset();
-  });
+  }, [clampCurrentOffset]);
 
   useLayoutEffect(() => {
     const element = surfaceRef.current;
     if (!element) return;
     const bounds = element.closest<HTMLElement>(CHART_POPUP_BOUNDS_SELECTOR);
+    let frame = 0;
+    const scheduleClamp = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(clampCurrentOffset);
+    };
     const observer = typeof ResizeObserver === "undefined"
       ? null
-      : new ResizeObserver(clampCurrentOffset);
+      : new ResizeObserver(scheduleClamp);
     const visualViewport = window.visualViewport;
     observer?.observe(element);
     if (bounds) observer?.observe(bounds);
-    window.addEventListener("resize", clampCurrentOffset);
-    visualViewport?.addEventListener("resize", clampCurrentOffset);
-    visualViewport?.addEventListener("scroll", clampCurrentOffset);
+    window.addEventListener("resize", scheduleClamp);
+    visualViewport?.addEventListener("resize", scheduleClamp);
+    visualViewport?.addEventListener("scroll", scheduleClamp);
     return () => {
+      window.cancelAnimationFrame(frame);
       observer?.disconnect();
-      window.removeEventListener("resize", clampCurrentOffset);
-      visualViewport?.removeEventListener("resize", clampCurrentOffset);
-      visualViewport?.removeEventListener("scroll", clampCurrentOffset);
+      window.removeEventListener("resize", scheduleClamp);
+      visualViewport?.removeEventListener("resize", scheduleClamp);
+      visualViewport?.removeEventListener("scroll", scheduleClamp);
     };
   }, [clampCurrentOffset]);
 

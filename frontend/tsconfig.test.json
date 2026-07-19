@@ -19,6 +19,7 @@
   "include": [
     "tests/**/*.ts",
     "src/hooks/useDraggableDialog.ts",
+    "src/components/settings/integrationSettingsDraft.ts",
     "src/platform/platformPolicy.ts",
     "src/components/chart/countdownPresentation.ts",
     "src/components/chart/countdownModel.ts",
