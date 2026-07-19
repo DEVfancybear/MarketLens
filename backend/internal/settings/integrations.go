@@ -21,6 +21,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,13 +29,16 @@ import (
 type IntegrationRecord struct {
 	MT5Login, MT5Server, TelegramChatID           string
 	MT5Password, TelegramBotToken, DiscordWebhook []byte
+	MT5VerifiedAt                                 *time.Time
 	TelegramEnabled, DiscordEnabled               bool
 }
 
 type MT5IntegrationView struct {
-	Login              string `json:"login"`
-	Server             string `json:"server"`
-	PasswordConfigured bool   `json:"passwordConfigured"`
+	Login              string     `json:"login"`
+	Server             string     `json:"server"`
+	PasswordConfigured bool       `json:"passwordConfigured"`
+	Verified           bool       `json:"verified"`
+	VerifiedAt         *time.Time `json:"verifiedAt"`
 }
 type TelegramIntegrationView struct {
 	ChatID             string `json:"chatId"`
@@ -70,6 +74,8 @@ type integrationWrite struct {
 type IntegrationStore interface {
 	Get(context.Context, string) (IntegrationRecord, error)
 	Put(context.Context, string, IntegrationRecord) (IntegrationRecord, error)
+	MarkMT5Verified(context.Context, string, string, string, []byte, time.Time) (IntegrationRecord, bool, error)
+	ClearMT5Verified(context.Context, string, string, string, []byte) (bool, error)
 }
 
 type IntegrationRepo struct{ pool *pgxpool.Pool }
@@ -85,7 +91,7 @@ func (r *IntegrationRepo) Get(ctx context.Context, userID string) (IntegrationRe
 	if err != nil {
 		return IntegrationRecord{}, err
 	}
-	return scanIntegration(r.pool.QueryRow(ctx, `SELECT mt5_login, mt5_server, mt5_password_cipher, telegram_chat_id, telegram_bot_cipher, telegram_enabled, discord_webhook_cipher, discord_enabled FROM user_integrations WHERE user_id=$1`, uid))
+	return scanIntegration(r.pool.QueryRow(ctx, `SELECT mt5_login, mt5_server, mt5_password_cipher, mt5_verified_at, telegram_chat_id, telegram_bot_cipher, telegram_enabled, discord_webhook_cipher, discord_enabled FROM user_integrations WHERE user_id=$1`, uid))
 }
 
 func (r *IntegrationRepo) Put(ctx context.Context, userID string, v IntegrationRecord) (IntegrationRecord, error) {
@@ -93,13 +99,37 @@ func (r *IntegrationRepo) Put(ctx context.Context, userID string, v IntegrationR
 	if err != nil {
 		return IntegrationRecord{}, err
 	}
-	return scanIntegration(r.pool.QueryRow(ctx, `INSERT INTO user_integrations (user_id,mt5_login,mt5_server,mt5_password_cipher,telegram_chat_id,telegram_bot_cipher,telegram_enabled,discord_webhook_cipher,discord_enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(user_id) DO UPDATE SET mt5_login=EXCLUDED.mt5_login,mt5_server=EXCLUDED.mt5_server,mt5_password_cipher=EXCLUDED.mt5_password_cipher,telegram_chat_id=EXCLUDED.telegram_chat_id,telegram_bot_cipher=EXCLUDED.telegram_bot_cipher,telegram_enabled=EXCLUDED.telegram_enabled,discord_webhook_cipher=EXCLUDED.discord_webhook_cipher,discord_enabled=EXCLUDED.discord_enabled,updated_at=now() RETURNING mt5_login,mt5_server,mt5_password_cipher,telegram_chat_id,telegram_bot_cipher,telegram_enabled,discord_webhook_cipher,discord_enabled`, uid, v.MT5Login, v.MT5Server, v.MT5Password, v.TelegramChatID, v.TelegramBotToken, v.TelegramEnabled, v.DiscordWebhook, v.DiscordEnabled))
+	return scanIntegration(r.pool.QueryRow(ctx, `INSERT INTO user_integrations (user_id,mt5_login,mt5_server,mt5_password_cipher,mt5_verified_at,telegram_chat_id,telegram_bot_cipher,telegram_enabled,discord_webhook_cipher,discord_enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(user_id) DO UPDATE SET mt5_login=EXCLUDED.mt5_login,mt5_server=EXCLUDED.mt5_server,mt5_password_cipher=EXCLUDED.mt5_password_cipher,mt5_verified_at=EXCLUDED.mt5_verified_at,telegram_chat_id=EXCLUDED.telegram_chat_id,telegram_bot_cipher=EXCLUDED.telegram_bot_cipher,telegram_enabled=EXCLUDED.telegram_enabled,discord_webhook_cipher=EXCLUDED.discord_webhook_cipher,discord_enabled=EXCLUDED.discord_enabled,updated_at=now() RETURNING mt5_login,mt5_server,mt5_password_cipher,mt5_verified_at,telegram_chat_id,telegram_bot_cipher,telegram_enabled,discord_webhook_cipher,discord_enabled`, uid, v.MT5Login, v.MT5Server, v.MT5Password, v.MT5VerifiedAt, v.TelegramChatID, v.TelegramBotToken, v.TelegramEnabled, v.DiscordWebhook, v.DiscordEnabled))
+}
+
+func (r *IntegrationRepo) MarkMT5Verified(ctx context.Context, userID, login, server string, passwordCipher []byte, verifiedAt time.Time) (IntegrationRecord, bool, error) {
+	uid, err := integrationUUID(userID)
+	if err != nil {
+		return IntegrationRecord{}, false, err
+	}
+	record, err := scanIntegration(r.pool.QueryRow(ctx, `UPDATE user_integrations SET mt5_verified_at=$5,updated_at=now() WHERE user_id=$1 AND mt5_login=$2 AND mt5_server=$3 AND mt5_password_cipher=$4 RETURNING mt5_login,mt5_server,mt5_password_cipher,mt5_verified_at,telegram_chat_id,telegram_bot_cipher,telegram_enabled,discord_webhook_cipher,discord_enabled`, uid, login, server, passwordCipher, verifiedAt))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return IntegrationRecord{}, false, nil
+	}
+	return record, err == nil, err
+}
+
+func (r *IntegrationRepo) ClearMT5Verified(ctx context.Context, userID, login, server string, passwordCipher []byte) (bool, error) {
+	uid, err := integrationUUID(userID)
+	if err != nil {
+		return false, err
+	}
+	tag, err := r.pool.Exec(ctx, `UPDATE user_integrations SET mt5_verified_at=NULL,updated_at=now() WHERE user_id=$1 AND mt5_login=$2 AND mt5_server=$3 AND mt5_password_cipher=$4`, uid, login, server, passwordCipher)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 type integrationScanner interface{ Scan(...any) error }
 
 func scanIntegration(row integrationScanner) (v IntegrationRecord, err error) {
-	err = row.Scan(&v.MT5Login, &v.MT5Server, &v.MT5Password, &v.TelegramChatID, &v.TelegramBotToken, &v.TelegramEnabled, &v.DiscordWebhook, &v.DiscordEnabled)
+	err = row.Scan(&v.MT5Login, &v.MT5Server, &v.MT5Password, &v.MT5VerifiedAt, &v.TelegramChatID, &v.TelegramBotToken, &v.TelegramEnabled, &v.DiscordWebhook, &v.DiscordEnabled)
 	return
 }
 func integrationUUID(s string) (pgtype.UUID, error) {
@@ -176,6 +206,10 @@ func integrationView(v IntegrationRecord, userID string, box *SecretBox) Integra
 	out.MT5.Login = v.MT5Login
 	out.MT5.Server = v.MT5Server
 	out.MT5.PasswordConfigured = len(v.MT5Password) > 0
+	out.MT5.Verified = v.MT5VerifiedAt != nil && v.MT5Login != "" && v.MT5Server != "" && len(v.MT5Password) > 0
+	if out.MT5.Verified {
+		out.MT5.VerifiedAt = v.MT5VerifiedAt
+	}
 	out.Telegram.ChatID = v.TelegramChatID
 	out.Telegram.BotTokenConfigured = len(v.TelegramBotToken) > 0
 	out.Telegram.Enabled = v.TelegramEnabled
@@ -198,6 +232,7 @@ func (h *Handler) WithIntegrations(store IntegrationStore, box *SecretBox, worke
 func (h *Handler) registerIntegrationRoutes(router fiber.Router) {
 	router.Get("/settings/integrations", h.requireAuth, h.getIntegrations)
 	router.Put("/settings/integrations", h.requireAuth, h.putIntegrations)
+	router.Post("/settings/integrations/verify/mt5", h.requireAuth, h.verifyMT5Integration)
 	router.Post("/settings/integrations/test/:channel", h.requireAuth, h.testIntegration)
 	router.Post("/settings/integrations/deliver", h.requireAuth, h.deliverIntegration)
 	router.Post("/settings/integrations/worker-deliver", h.workerDeliverIntegration)
@@ -232,8 +267,11 @@ func (h *Handler) putIntegrations(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrInternalServerError
 	}
-	v.MT5Login = strings.TrimSpace(req.MT5.Login)
-	v.MT5Server = strings.TrimSpace(req.MT5.Server)
+	mt5Login := strings.TrimSpace(req.MT5.Login)
+	mt5Server := strings.TrimSpace(req.MT5.Server)
+	mt5CredentialsChanged := mt5Login != v.MT5Login || mt5Server != v.MT5Server || req.MT5.Password != "" || req.MT5.ClearPassword
+	v.MT5Login = mt5Login
+	v.MT5Server = mt5Server
 	v.TelegramChatID = chatID
 	v.TelegramEnabled = req.Telegram.Enabled
 	v.DiscordEnabled = req.Discord.Enabled
@@ -241,6 +279,9 @@ func (h *Handler) putIntegrations(c *fiber.Ctx) error {
 		v.MT5Password = nil
 	} else if req.MT5.Password != "" {
 		v.MT5Password, err = h.secretBox.Seal(req.MT5.Password)
+	}
+	if mt5CredentialsChanged {
+		v.MT5VerifiedAt = nil
 	}
 	if req.Telegram.ClearBotToken {
 		v.TelegramBotToken = nil

@@ -4,9 +4,15 @@ Last updated: 2026-07-19
 
 ## Current Milestone
 
-Backend persistence and Google authentication.
+Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
 
 ## Status
+
+- MT5 integration access is now **per signed-in user**. Saved credentials have separate
+  Configured/Verified states; `POST /api/v1/settings/integrations/verify/mt5` performs a bounded
+  stdin-only native login check, migration `0023_mt5_verification` persists `verifiedAt`, and
+  changing credentials invalidates verification. The Trade UI enables MT5 only after verification
+  and blocks live commands until the execution bridge reports the same login/server.
 
 - Backend-owned indicators: **generic Pine source path is active** for the
   documented historical subset, with replay candles truncated before any VM or

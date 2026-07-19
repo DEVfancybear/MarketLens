@@ -1,14 +1,17 @@
 # SMC Trading Terminal Backend
 
-The backend consists of three runtime surfaces:
+The backend consists of four runtime surfaces:
 
 1. **Go API** - the primary HTTP API server. Fiber is the selected framework target.
 2. **Python FTMO/MT5 Bridge** - a sidecar WebSocket service for broker/order integration.
 3. **MT5 Tick Stream** - a local Python WebSocket bridge plus Go consumer for realtime MT5 market
    ticks.
+4. **MT5 Credential Verifier** - a short-lived Python helper launched by the authenticated Go API
+   to verify one user's saved login/server/password.
 
-Python bridges run as separate processes alongside the Go API. They are not part of the Go Fiber
-request path.
+The two Python bridges run as separate processes alongside the Go API. The verifier is part of the
+`POST /api/v1/settings/integrations/verify/mt5` request path, receives secrets only over stdin, and
+returns a bounded sanitized account result.
 
 Backend framework decision: **Fiber**. The active Go API uses Fiber handlers and route groups.
 
@@ -61,6 +64,12 @@ the browser WebSocket `GET /api/v1/mt5/stream` upgrade, one-off quote snapshots 
 `GET /api/v1/mt5/ticks`, and chart candles from on-demand `GET /api/v1/mt5/history` responses.
 It never connects to the Python bridge directly.
 
+### MT5 Credential Verifier
+
+Configure `MT5_VERIFY_PYTHON`, `MT5_VERIFY_SCRIPT`, optional `MT5_VERIFY_TERMINAL_PATH`, and
+`MT5_VERIFY_TIMEOUT` for the Go API. The helper opens no port. Existing saved credentials remain
+Configured but unverified until the signed-in user selects **Save & Verify MT5** once.
+
 ## Configuration
 
 ### Go API
@@ -92,6 +101,8 @@ backend/
     httpserver/server.go       # HTTP app and server setup
     health/handler.go          # Health-check endpoint
     middleware/                # Shared HTTP middleware
+    settings/                  # User integrations + authenticated Verify endpoint
+    mt5verify/                 # Verifier subprocess adapter
     journal/                   # Phase 11 journal + screenshot API/repository
     storage/                   # S3-compatible pre-signed URL signer
   bridge/                      # Python MT5 WebSocket bridge (sidecar)

@@ -56,6 +56,10 @@ type Config struct {
 	MT5BridgeReadLimitBytes int64
 	MT5BridgeReconnectMin   time.Duration
 	MT5BridgeReconnectMax   time.Duration
+	MT5VerifyPython         string
+	MT5VerifyScript         string
+	MT5VerifyTerminalPath   string
+	MT5VerifyTimeout        time.Duration
 
 	ReplayEngineEnabled    bool
 	ReplayMaxBars          int
@@ -130,6 +134,10 @@ func Load() (Config, error) {
 		MT5BridgeReadLimitBytes:   getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
 		MT5BridgeReconnectMin:     getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
 		MT5BridgeReconnectMax:     getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
+		MT5VerifyPython:           getEnv("MT5_VERIFY_PYTHON", "python"),
+		MT5VerifyScript:           getEnv("MT5_VERIFY_SCRIPT", "bridge/ftmo_mt5/verify_account.py"),
+		MT5VerifyTerminalPath:     strings.TrimSpace(os.Getenv("MT5_VERIFY_TERMINAL_PATH")),
+		MT5VerifyTimeout:          getEnvDuration("MT5_VERIFY_TIMEOUT", 30*time.Second),
 		ReplayEngineEnabled:       getEnvBool("REPLAY_ENGINE_ENABLED", false),
 		ReplayMaxBars:             getEnvInt("REPLAY_MAX_BARS_PER_TRACK", 5000),
 		ReplayMaxTracks:           getEnvInt("REPLAY_MAX_TRACKS_PER_SESSION", 4),

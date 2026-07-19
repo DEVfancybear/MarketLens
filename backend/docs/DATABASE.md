@@ -1,8 +1,9 @@
 # Database Design
 
-> Status: implemented through migration `0022_alert_event_idempotency`.
+> Status: implemented through migration `0023_mt5_verification`.
 > This includes alerts, dynamic technical targets, expiration/re-arming, drawing revisions,
-> integrations, replay, journal/screenshots, simulated trading, and layout persistence.
+> per-user MT5 verification, integrations, replay, journal/screenshots, simulated trading, and
+> layout persistence.
 > See `AUTH.md` for auth, `API.md` for endpoints, and
 > `BACKEND_IMPLEMENTATION_PLAN.md` for rollout order.
 >
@@ -724,13 +725,15 @@ Server authoritative, client cache — so auth can ship before every feature is 
 0020_alert_technical_target.sql versioned fixed/dynamic technical alert geometry
 0021_alert_expiration_and_arming_revision.sql  expired lifecycle + arming revision
 0022_alert_event_idempotency.sql event arming revision + unique trigger attempt
+0023_mt5_verification.sql      nullable per-user MT5 verification timestamp
 ```
 
 `0015_journal` initially leaves `journal_entries.position_id` nullable without a foreign key because
 `replay_positions` is not interchangeable with simulator positions. `0016_simulated_trading`
-creates `sim_positions` and adds the FK. `0017`–`0022` add integrations, drawing conflict metadata,
+creates `sim_positions` and adds the FK. `0017`–`0023` add integrations, drawing conflict metadata,
 immutable alert provenance, dynamic technical targets, expiration, re-arming, and idempotent
-trigger attempts. The current development schema head is version `22`.
+trigger attempts, followed by per-user MT5 verification. The current development schema head is
+version `23`.
 
 ---
 

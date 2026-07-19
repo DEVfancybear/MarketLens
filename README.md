@@ -11,7 +11,7 @@ This repository is a monorepo with separate frontend and backend packages.
 | Path | Purpose |
 | --- | --- |
 | `frontend/` | Next.js / React / TypeScript trading terminal UI |
-| `backend/` | Go Fiber API + Python MT5 bridge sidecar |
+| `backend/` | Go Fiber API + MT5 market-data/execution sidecars and credential verifier |
 | `docs/` | Root-level monorepo documentation |
 
 ## Quick Start
@@ -49,7 +49,9 @@ Backend dev server: `http://localhost:8080`
 - The Go backend is deployed as a separate service, not inside the Vercel frontend build.
 - The production frontend is `https://tradingterminal.io.vn` (Vercel).
 - The production API is `https://api.tradingterminal.io.vn` (Cloudflare Tunnel to the Windows
-  host's Go API on `localhost:8080`). The MT5 bridge stays private on `localhost:8765`.
+  host's Go API on `localhost:8080`). The market-data sidecar stays private on `localhost:8765`;
+  the optional browser-facing execution bridge uses private `localhost:8787`; the verifier is a
+  short-lived Go child process and opens no port.
 - Root docs describe cross-project rules only. Frontend and backend implementation docs live in
   their own package folders.
 

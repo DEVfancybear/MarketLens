@@ -9,6 +9,7 @@ import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { usePushAlertSync } from "@/hooks/usePushAlertSync";
 import { usePushTriggerReconcile } from "@/hooks/usePushTriggerReconcile";
 import { useMt5Bridge } from "@/hooks/useMt5Bridge";
+import { useMt5IntegrationAccess } from "@/hooks/useMt5IntegrationAccess";
 import { useAuthSession } from "@/hooks/useAuthSession";
 import { useWorkspaceBootstrap } from "@/hooks/useWorkspaceBootstrap";
 import { useNotificationDeepLink } from "@/hooks/useNotificationDeepLink";
@@ -30,9 +31,10 @@ export function GlobalRuntime() {
   useAlertEngine(); // evaluates price alerts off the same realtime feed (no polling/sockets)
   usePushAlertSync(); // keeps server-side push worker state in sync for closed-browser alerts
   usePushTriggerReconcile(); // pulls back server-confirmed closed-browser triggers the client's own scan missed
-  useMt5Bridge(); // feature-flagged MT5 bridge runtime; disabled by default
   useAuthSession(); // bridges Firebase Google auth -> authStore (+ best-effort backend session)
   useWorkspaceBootstrap(); // applies backend settings/watchlists after backend auth
+  useMt5IntegrationAccess(); // loads verified MT5 access for the current backend user only
+  useMt5Bridge(); // connects the host-local bridge only for a verified user
   useNotificationDeepLink(); // routes notification clicks to the alert symbol
 
   // Journal is intentionally lazy-loaded by its panel (Phase 11 can include

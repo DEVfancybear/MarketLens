@@ -45,7 +45,8 @@ Implemented in this repository:
 
 Not implemented yet:
 
-- Automated validation on this development machine, because Python/MT5 is not installed here.
+- Funded/live validation; verifier unit tests and local UI integration are implemented, but no
+  stored FTMO credential is submitted automatically during QA.
 - Production hardening for long-running VPS operation.
 - Funded/live execution.
 
@@ -110,22 +111,26 @@ Bridge process responsibilities:
 
 Browser responsibilities:
 
+- Require **Save & Verify MT5** for the signed-in user before enabling MT5 execution mode.
 - Let the user explicitly choose MT5 mode.
 - Require live confirmation by default.
 - Send only typed order intents to the bridge.
 - Display bridge-confirmed account, positions, pending commands, rejects, and execution reports.
+- Block every live command unless the bridge snapshot matches the user's verified login/server.
 
 ## 5. FTMO Bridge Environment Variables
 
 Browser-safe variables already exist:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
 NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
 NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
 ```
+
+Frontend MT5 availability is per user, not an environment flag. The backend verifies saved
+credentials and returns only masked status plus `verified`/`verifiedAt`.
 
 Bridge-only variables must live outside the Next browser app:
 
@@ -209,14 +214,17 @@ $env:FTMO_BRIDGE_DRY_RUN="true"
 python -m bridge.ftmo_mt5.service
 ```
 
-In another terminal, run the web app with MT5 mode enabled:
+In another terminal, run the web app with the execution bridge URL configured:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true
 NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
 ```
+
+Sign in, open **Connections & notifications**, and select **Save & Verify MT5**. MT5 becomes
+selectable only after verification succeeds; restart/reconnect the execution bridge if the terminal
+account changed.
 
 Expected result:
 
@@ -267,8 +275,8 @@ Order flow:
 
 1. User selects MT5 mode in the web Trade Panel.
 2. User clicks Buy/Sell or close command.
-3. Browser validates feature flag, connected bridge, account snapshot, symbol info, volume, and
-   confirmation.
+3. Browser validates per-user verification, connected bridge, matching account snapshot, symbol
+   info, volume, and confirmation.
 4. Browser sends `order.place` with `clientOrderId`.
 5. For market orders, browser includes `marketPrice` for pre-trade stop-risk estimation; MT5 still
    executes with broker bid/ask.
@@ -612,28 +620,28 @@ Exit criteria:
 
 Use this order:
 
-1. `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false`: simulator still works.
-2. `npm run mock-mt5`: web connects to mock, no FTMO involved.
-3. FTMO bridge dry-run: account snapshot and positions visible; no orders sent.
-4. Wrong password: readiness false.
-5. Read-only password: readiness false and trading blocked.
-6. Wrong server: readiness false.
-7. Missing symbol mapping: order blocked.
-8. Invalid lot step: order rejected.
-9. No SL with `FTMO_REQUIRE_STOP_LOSS=true`: order rejected.
-10. Projected daily loss breach: order rejected.
-11. Demo market order: fill report and position update received.
-12. Demo SL/TP modify: bridge event updates chart levels.
-13. Demo close: position removed only after bridge event.
-14. Bridge restart: browser reconnects and receives fresh snapshots.
-15. Duplicate `clientOrderId`: no duplicate MT5 order.
+1. Signed-in user is unverified: simulator works and MT5 selection is disabled.
+2. **Save & Verify MT5** succeeds: MT5 selection becomes available for only that user.
+3. `npm run mock-mt5`: web connects to mock, no FTMO involved.
+4. FTMO bridge dry-run: matching account snapshot and positions visible; no orders sent.
+5. Wrong password: verification/readiness false.
+6. Read-only password: verification fails or trading remains blocked.
+7. Wrong server or bridge account mismatch: live commands are blocked.
+8. Missing symbol mapping: order blocked.
+9. Invalid lot step: order rejected.
+10. No SL with `FTMO_REQUIRE_STOP_LOSS=true`: order rejected.
+11. Projected daily loss breach: order rejected.
+12. Demo market order: fill report and position update received.
+13. Demo SL/TP modify: bridge event updates chart levels.
+14. Demo close: position removed only after bridge event.
+15. Bridge restart: browser reconnects and receives fresh snapshots.
+16. Duplicate `clientOrderId`: no duplicate MT5 order.
 
 ## 17. Rollback
 
 Immediate rollback:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
 FTMO_MT5_ENABLED=false
 FTMO_BRIDGE_DRY_RUN=true
 ```
@@ -641,6 +649,7 @@ FTMO_BRIDGE_DRY_RUN=true
 Operational rollback:
 
 - Stop the bridge service.
+- Change/clear saved MT5 credentials to invalidate the affected user's verification.
 - Disable MT5 AutoTrading/Algo Trading if an EA adapter is used.
 - Confirm open positions directly in MT5.
 - Use the web terminal simulator mode only.

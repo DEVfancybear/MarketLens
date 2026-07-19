@@ -65,8 +65,8 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
 _Last updated 2026-07-02 after adding the FTMO MT5 dry-run bridge._
 
 This file replaces the old Phase 1 mock-data audit. The app is now a live-data, Jotai-based
-TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and a
-feature-flagged MT5 bridge scaffold.
+TradingView-style terminal with alerting, drawing tools, simulator trading, Firebase push, and an
+authenticated per-user MT5 bridge workflow.
 
 Validation most recently run:
 
@@ -199,7 +199,7 @@ Implemented:
 - Closed simulator trades auto-journal into IndexedDB.
 - UI includes `OrderTicket`, `PositionsTable`, `RiskPanel`, `TradePanel`, and `TradeLevels`.
 
-MT5 live execution scaffold is implemented behind a disabled-by-default feature flag:
+MT5 live execution is gated by backend verification for each signed-in user:
 
 - `docs/MT5_BRIDGE_PROTOCOL.md`
 - `docs/PHASE6B_MT5_BRIDGE_PLAN.md`
@@ -223,7 +223,9 @@ Implemented:
 - `scripts/ftmo-mt5-bridge.mjs`
 - `bridge/ftmo_mt5/`
 
-MT5 remains disabled unless `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true`; simulator mode remains default.
+MT5 selection is unlocked per signed-in user only after the backend verifies that user's saved
+login, broker server, and password. Simulator mode remains the default; there is no build-wide MT5
+enable flag.
 FTMO bridge execution is currently dry-run only. It validates and audits web order intents, then
 simulates bridge-confirmed fills back to the web app. Real FTMO execution is blocked until a real
 MT5 adapter is implemented and demo-validated.
@@ -252,8 +254,10 @@ Continue Phase 6B implementation from:
 
 The next recommended milestone is hardening and demo validation:
 
-1. Run `npm run mock-mt5` and enable `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true` locally.
-2. Exercise connect/auth/reconnect, order ack/reject, execution reports, close, and close-all.
+1. Save and verify an MT5 demo account from **Connections & notifications** for the signed-in user.
+2. Run `npm run mock-mt5` for protocol-only checks or the real FTMO bridge, then exercise
+   connect/auth/reconnect, account matching, order ack/reject, execution reports, close, and
+   close-all.
 3. Add SL/TP modify UI if needed for live position management.
 4. Run `bridge/ftmo_mt5/` on Windows/VPS with MT5 terminal installed, validate terminal login,
    account snapshots, symbol metadata, MT5 `order_check`, then tiny demo execution.

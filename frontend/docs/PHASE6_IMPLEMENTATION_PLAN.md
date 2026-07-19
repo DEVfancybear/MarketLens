@@ -25,7 +25,8 @@ The phase has two parallel workstreams:
 2. **Phase 6B - MT5 bridge:** add a bridge-client architecture for account sync and real order
    routing through an external MT5 Bridge Service.
 
-Both workstreams must be feature-flagged and disabled by default until configured.
+Push remains opt-in and safe when unconfigured. MT5 keeps simulator mode as the default and is
+unlocked only for the signed-in user whose saved credentials pass backend verification.
 
 ## 2. Current Seams To Reuse
 
@@ -53,7 +54,8 @@ Both workstreams must be feature-flagged and disabled by default until configure
 
 - **Browser app stays secret-free.** Public Firebase config and public VAPID key can be exposed;
   private keys and MT5 credentials must stay in a server or bridge process.
-- **Feature flags first.** The app must build and run with Phase 6 disabled.
+- **Safe defaults first.** The app must build and run without push or MT5 configuration; MT5 access
+  defaults to unverified for every user.
 - **Simulator remains the default.** MT5 mode is opt-in, visually obvious, and reversible.
 - **Bridge is the source of truth in MT5 mode.** Local UI may show pending state, but positions,
   fills, and account equity come from bridge snapshots/events.
@@ -359,9 +361,11 @@ interface Mt5OrderRequest {
 
 ```env
 NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 ```
+
+MT5 availability is not a build-time environment flag. The frontend hydrates it from the current
+authenticated user's `verified` integration setting after **Save & Verify MT5** succeeds.
 
 Optional browser-visible session token only if the bridge uses a local/dev token:
 
@@ -504,7 +508,7 @@ Exit criteria:
 
 - App can connect/disconnect to a mock bridge.
 - Account and position snapshots update atoms.
-- Build passes with bridge disabled.
+- Build passes when the signed-in user has no verified MT5 integration.
 
 ### Milestone 4 - MT5 UI
 
@@ -555,8 +559,8 @@ Exit criteria:
 Exit criteria:
 
 - Build/typecheck/lint pass.
-- Push and MT5 can be disabled independently.
-- Rollback is possible by setting env flags off.
+- Push and per-user MT5 access can be disabled independently.
+- Rollback is possible without removing the simulator or exposing broker credentials.
 
 ## 8. Testing Plan
 
@@ -581,7 +585,7 @@ Push manual checks:
 
 MT5 manual checks with mock bridge:
 
-- Bridge disabled.
+- User has no verified MT5 integration.
 - Connect success.
 - Connect reject.
 - Reconnect after socket close.
@@ -606,7 +610,9 @@ MT5 manual checks with real bridge:
 ## 9. Rollback Plan
 
 - Push rollback: set `settings.push = false`, remove token, and leave toast/sound/browser intact.
-- MT5 rollback: set `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false`; simulator remains default.
+- MT5 rollback: clear/change the user's saved MT5 credential to invalidate verification; for a
+  system-wide stop, stop the execution bridge or use its server-side kill switch. Simulator remains
+  the default.
 - If bridge protocol changes, keep message versioning in protocol constants and reject unsupported
   versions explicitly.
 - Do not delete simulator code during Phase 6.

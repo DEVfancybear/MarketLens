@@ -1,19 +1,23 @@
 # Production build and runtime runbook
 
 This is the repeatable checklist for the production SMC Trading Terminal. The frontend is hosted
-by Vercel; the Go API, Python bridge, and logged-in MetaTrader 5 terminal run on a Windows host.
+by Vercel; the Go API, Python MT5 helpers/sidecars, and logged-in MetaTrader 5 terminal run on a
+Windows host.
 
 ```text
 Browser -> https://tradingterminal.io.vn (Vercel)
+       -> ws://localhost:8787 (optional private FTMO execution bridge)
        -> https://api.tradingterminal.io.vn (Cloudflare Tunnel)
           -> Go/Fiber API localhost:8080
-             -> Python MT5 bridge localhost:8765
+             -> Python MT5 market-data sidecar localhost:8765
+             -> short-lived MT5 verifier process (stdin/stdout, no port)
                 -> logged-in MetaTrader 5 terminal
              -> PostgreSQL (DATABASE_URL)
 ```
 
-The Python bridge must remain private on `localhost:8765`. Cloudflare Tunnel exposes only the Go
-API. Do not open router ports 8080 or 8765 and do not put MT5 credentials in Vercel or browser env.
+Both Python bridges must remain private on localhost. Cloudflare Tunnel exposes only the Go API.
+Do not open router ports 8080, 8765, or 8787 and do not put MT5 credentials in Vercel or browser
+env.
 
 ## Current production endpoints
 
@@ -22,7 +26,9 @@ API. Do not open router ports 8080 or 8765 and do not put MT5 credentials in Ver
 | Frontend | `https://tradingterminal.io.vn` | Vercel, DNS-only CNAME in Cloudflare |
 | Public API | `https://api.tradingterminal.io.vn` | Cloudflare Tunnel |
 | Go API origin | `http://localhost:8080` | This Windows host |
-| MT5 bridge | `ws://localhost:8765` | This Windows host, private only |
+| MT5 market-data sidecar | `ws://localhost:8765` | This Windows host, private only |
+| FTMO execution bridge | `ws://localhost:8787` | Browser/operator host, private only |
+| MT5 verifier | no listening port | Short-lived child of the Go API |
 
 The legacy Vercel URL may continue to resolve, but production configuration and user links should
 use `tradingterminal.io.vn`.
@@ -63,6 +69,7 @@ Current production values are:
 # Vercel Production environment
 NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn
 NEXT_PUBLIC_APP_URL=https://tradingterminal.io.vn
+NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
 
 # backend/.env on the Windows host
 APP_ENV=production
@@ -71,6 +78,10 @@ AUTH_COOKIE_SECURE=true
 CORS_ALLOWED_ORIGINS=https://tradingterminal.io.vn
 ALERT_EVALUATOR_URL=https://tradingterminal.io.vn/api/push/evaluate
 MT5_BRIDGE_WS_URL=ws://localhost:8765
+MT5_VERIFY_PYTHON=C:\path\to\python.exe
+MT5_VERIFY_SCRIPT=bridge/ftmo_mt5/verify_account.py
+MT5_VERIFY_TERMINAL_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
+MT5_VERIFY_TIMEOUT=30s
 ```
 
 Additional local/LAN origins may be appended to `CORS_ALLOWED_ORIGINS` for diagnostics. Never use
@@ -97,8 +108,10 @@ Keep `localhost` for local browser access.
 
 ## Start order on the Windows production host
 
-Start MT5 first, then the bridge, then the API. Cloudflare Tunnel may remain running while the API
-is restarted; it will return an origin error briefly until port 8080 is listening again.
+Start MT5 first, then the market-data sidecar, then the API. Verify the signed-in user's account
+before starting/restarting the optional execution bridge. Cloudflare Tunnel may remain running
+while the API is restarted; it will return an origin error briefly until port 8080 is listening
+again.
 
 ### 1. MetaTrader 5 terminal
 
@@ -107,7 +120,7 @@ live broker connection. The Python package may select a logged-in terminal autom
 `MT5_TERMINAL_PATH` explicitly only when several terminal installations exist and selection is
 ambiguous.
 
-### 2. MT5 bridge
+### 2. MT5 market-data sidecar
 
 Use the native Windows Python environment that has `MetaTrader5` and `websockets` installed. Keep
 MetaTrader 5 open, logged in, and connected to the intended account.
@@ -117,7 +130,8 @@ cd backend
 .\.venv-mt5\Scripts\python.exe -m bridge.mt5_stream.mt5_server
 ```
 
-The bridge listens on `ws://localhost:8765`. If the log contains `IPC send failed (-10001)`,
+The market-data sidecar listens on `ws://localhost:8765`. If the log contains
+`IPC send failed (-10001)`,
 restart this Python process after confirming the MT5 terminal is still logged in. A successful
 startup logs `MT5 initialized account=...` and `tick WebSocket listening`.
 
@@ -145,7 +159,25 @@ Readiness must report `"ready":true` and `"database":"up"`. The MT5 symbols resp
 report `connected:true`; its `streamSymbols` list grows when the frontend subscribes to watchlist
 symbols.
 
-### 4. Next.js UI (local diagnostic only)
+### 4. Per-user Verify and optional execution bridge
+
+Sign in, open **Connections & notifications**, and select **Save & Verify MT5**. The Go API launches
+the short-lived verifier configured by `MT5_VERIFY_*`; credentials travel to it only over stdin.
+On success, the current user's integration receives `verifiedAt` and MT5 becomes selectable.
+Changing login/server/password invalidates that verification.
+
+For execution, start or restart the private FTMO bridge after verification:
+
+```powershell
+cd backend
+python -m bridge.ftmo_mt5.service
+```
+
+The execution bridge listens on `ws://localhost:8787` by default and must report the same login and
+server verified by the current user. One bridge represents one active terminal account; other
+verified users remain isolated and their live commands are blocked on account mismatch.
+
+### 5. Next.js UI (local diagnostic only)
 
 ```powershell
 cd frontend
@@ -156,7 +188,7 @@ The local UI is available at `http://localhost:3000`. Production users use Verce
 `https://tradingterminal.io.vn`. A Vercel redeploy is required after changing `NEXT_PUBLIC_*`
 because those values are embedded in the browser bundle.
 
-### 5. Cloudflare Tunnel
+### 6. Cloudflare Tunnel
 
 The named tunnel is `tradingterminal-backend`. Its ignored runtime config follows this shape:
 
@@ -198,7 +230,7 @@ The Go API already binds all interfaces. For LAN access, allow TCP 3000 and 8080
 Firewall on the Private profile and use `http://<machine-lan-ip>:3000`.
 
 For Internet access, use the Cloudflare Tunnel described above. Router port forwarding is not
-required. Never expose port 8765 or MT5 credentials. Public HTTPS deployments must use
+required. Never expose ports 8765/8787 or MT5 credentials. Public HTTPS deployments must use
 `AUTH_COOKIE_SECURE=true`; update `CORS_ALLOWED_ORIGINS`, `NEXT_PUBLIC_API_BASE_URL`, and Firebase
 Authorized domains whenever the public frontend hostname changes.
 
@@ -222,15 +254,19 @@ Invoke-WebRequest https://api.tradingterminal.io.vn/health/ready
 Invoke-WebRequest https://api.tradingterminal.io.vn/api/v1/mt5/symbols
 ```
 
-In the browser Network panel, `symbols`, `history`, and the MT5 WebSocket should succeed. `auth/refresh`
-returning 401 before the first sign-in is expected; after Google sign-in, `/auth/google` should
-return 200 and workspace/bootstrap requests should stop returning 401.
+In the browser Network panel, `symbols`, `history`, and the market-data WebSocket should succeed.
+After Google sign-in, **Save & Verify MT5** should return a sanitized account summary; the execution
+WebSocket on 8787 is required only for live MT5 commands. `auth/refresh` returning 401 before the
+first sign-in is expected; after sign-in, `/auth/google` should return 200 and workspace/bootstrap
+requests should stop returning 401.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
 | Watchlist rows show `--` | Check bridge log for `IPC send failed`; restart bridge and confirm MT5 login. |
+| MT5 is Configured but cannot be selected | Run **Save & Verify MT5** for the signed-in user and inspect the sanitized failure message. |
+| MT5 is Verified but orders are blocked | Reconnect the execution bridge with the same login/server shown in the verified integration. |
 | `Workspace sync failed` / 401 | Use the same API hostname as the UI, clear site data, sign in again, and verify CORS/cookie settings. |
 | Google says domain not allowed | Add the exact hostname (without scheme/port) under Firebase Authentication → Authorized domains. |
 | `/api/push/alerts/sync` returns 500 | Check Next logs for Firebase Admin errors, verify service-account values, and ensure Windows time is synchronized (`w32tm /query /status`). |

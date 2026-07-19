@@ -14,6 +14,7 @@ type Handler struct {
 	requireAuth      fiber.Handler
 	integrationStore IntegrationStore
 	secretBox        *SecretBox
+	mt5Verifier      MT5Verifier
 	workerSecret     string
 	exchangeTimeZone string
 }

@@ -89,7 +89,7 @@ Transitions:
 
 | From | Event | To |
 |---|---|---|
-| `disabled` | `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true` | `disconnected` |
+| `disabled` | the authenticated user's MT5 integration is verified | `disconnected` |
 | `disconnected` | connect requested | `connecting` |
 | `connecting` | `hello` received | `authenticating` |
 | `authenticating` | `auth.ok` received | `connected` |
@@ -557,7 +557,7 @@ Initial bridge error codes:
 
 The frontend must block live commands unless all are true:
 
-- `NEXT_PUBLIC_MT5_BRIDGE_ENABLED === 'true'`.
+- The authenticated user's MT5 integration is verified and the bridge account login/server match that user.
 - Execution mode is explicitly `mt5`.
 - Connection status is `connected`.
 - Account is available and `tradeAllowed === true`.
@@ -600,14 +600,11 @@ Manual scenarios:
 
 ## 11. Rollback
 
-Rollback is configuration-first:
-
-```env
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
-```
-
-The simulator remains the default execution mode. MT5 UI should hide or show disabled status when
-the flag is off, and simulator order placement must remain unchanged.
+Rollback is user-scoped: clear the saved MT5 secret (which invalidates that
+user's verification) or switch back to simulator mode. Operators can still
+stop the local bridge or set its server-side `FTMO_MT5_ENABLED=false` kill
+switch. The simulator remains the default execution mode and must remain
+unchanged.
 
 ## 12. Market Data History Scheduling
 

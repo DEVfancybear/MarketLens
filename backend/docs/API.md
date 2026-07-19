@@ -246,12 +246,14 @@ users can remove every favorite. The update patches only
 
 MT5, Telegram, and Discord credentials are stored per user in
 `user_integrations`. Secret fields are encrypted at rest and are never returned
-by GET/PUT responses; responses expose only `*Configured` booleans.
+by GET/PUT responses; each secret is represented only by its `*Configured`
+boolean. Non-secret MT5 verification state is returned separately.
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/v1/settings/integrations` | Read masked integration status |
 | PUT | `/api/v1/settings/integrations` | Save metadata, enable flags, and optional replacement secrets |
+| POST | `/api/v1/settings/integrations/verify/mt5` | Verify the signed-in user's saved MT5 credentials |
 | POST | `/api/v1/settings/integrations/test/telegram` | Send a Telegram test message |
 | POST | `/api/v1/settings/integrations/test/discord` | Send a Discord test message |
 | POST | `/api/v1/settings/integrations/deliver` | Deliver a browser-open alert through enabled per-user channels |
@@ -260,9 +262,44 @@ by GET/PUT responses; responses expose only `*Configured` booleans.
 Blank secret strings preserve the existing secret. Set the corresponding
 `clearPassword`, `clearBotToken`, or `clearWebhook` flag to remove one.
 
+The masked MT5 response includes `login`, `server`, `passwordConfigured`,
+`verified`, and nullable `verifiedAt`. Saving a changed login/server/password or
+clearing the password invalidates only that user's previous verification.
+
+`POST /api/v1/settings/integrations/verify/mt5` has no request body. It decrypts
+the saved password inside the backend, passes credentials to the short-lived MT5
+helper over stdin, and returns a sanitized result. A successful response is:
+
+```json
+{
+  "ok": true,
+  "mt5": {
+    "login": "12345678",
+    "server": "FTMO-Server4",
+    "passwordConfigured": true,
+    "verified": true,
+    "verifiedAt": "2026-07-19T13:30:00Z"
+  },
+  "account": {
+    "login": "12345678",
+    "server": "FTMO-Server4",
+    "currency": "USD",
+    "tradeAllowed": true
+  }
+}
+```
+
+Credential rejection returns `422`; incomplete/invalid saved credentials return
+`400`; a concurrent credential change returns `409`; verifier infrastructure
+failures return `502` or `503`. Verification updates are conditional on the
+same encrypted credential row, so a slow result cannot approve credentials that
+were edited while the helper was running.
+
 MT5 credentials describe the desired local bridge account. Because the Python
 bridge owns the native terminal connection, changing them does not hot-swap a
-running bridge; reconnect/restart the bridge to apply a different account.
+running bridge; reconnect/restart the bridge to apply a different account. The
+Trade UI unlocks MT5 per user after verification, but live commands remain
+blocked until the bridge reports the same login and broker server.
 
 ## Watchlists  🔒
 

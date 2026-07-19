@@ -65,10 +65,12 @@ before execution.
 Set the frontend bridge variables in `frontend/.env.local` (the port must match the bridge):
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true
 NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
 NEXT_PUBLIC_MT5_BRIDGE_TOKEN=
 ```
+
+MT5 availability is loaded from the authenticated user's verified integration;
+there is no browser-wide enable flag.
 
 For a deterministic local websocket, run the mock bridge:
 

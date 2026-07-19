@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Per-user MT5 verification and Trade access (2026-07-19)
+- Replaced the build-wide MT5 enable switch with authenticated per-user verification persisted on
+  `user_integrations`; changing or clearing an account invalidates its prior verification.
+- Added **Save & Verify MT5** with separate Configured/Verified states and actionable failure
+  messages. MT5 becomes selectable only for the verified user, while order actions additionally
+  require a connected bridge reporting the same login and broker server.
+- Added a bounded, stdin-only MT5 verifier helper, serialized verification against the shared local
+  terminal, race-safe database updates, migration 23, and backend/frontend regression coverage.
+
 ### Fixed - Sub-pip drawing handle drag smoothness (2026-07-19)
 - Stopped quantizing drawing render-memo coordinates to four decimal places.
   On five-decimal Forex symbols, consecutive prices such as `1.14361` and
@@ -2208,7 +2217,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   validation, loss/risk guards, audit logging, failure handling, rollback, and acceptance criteria.
 
 ### Added - Phase 6B MT5 bridge implementation scaffold (2026-07-02)
-- Added feature-flagged MT5 bridge runtime behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false` by default:
+- Added the original build-wide, default-off MT5 bridge runtime switch (retired on 2026-07-19 in
+  favor of per-user verification):
   typed MT5 protocol models, WebSocket client, runtime hook, Jotai `mt5Store`, command logging,
   heartbeat/stale state, reconnect handling, and client-side order validation.
 - Added `npm run mock-mt5`, a dependency-free local mock WebSocket bridge for auth/account/symbol

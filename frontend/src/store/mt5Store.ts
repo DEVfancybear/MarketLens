@@ -7,6 +7,11 @@ import {
   disconnectMt5Bridge,
   sendMt5Command,
 } from "@/services/mt5/runtime";
+import {
+  mt5AccountMismatchReason,
+  sameMt5ExpectedAccount,
+  type Mt5ExpectedAccount,
+} from "@/services/mt5/accountAccess";
 import { isVolumeOnStep } from "@/services/mt5/symbolMapping";
 import { uid } from "@/utils/id";
 import type {
@@ -35,10 +40,11 @@ import { logAtom } from "./uiStore";
 
 const MAX_LOGS = 80;
 
-export const mt5EnabledAtom = atom(
-  process.env.NEXT_PUBLIC_MT5_BRIDGE_ENABLED === "true",
+/** Per-user execution access, hydrated from backend-verified integration settings. */
+export const mt5EnabledAtom = atom(false);
+export const mt5BridgeUrlAtom = atom(
+  process.env.NEXT_PUBLIC_MT5_BRIDGE_URL || "ws://localhost:8787",
 );
-export const mt5BridgeUrlAtom = atom(process.env.NEXT_PUBLIC_MT5_BRIDGE_URL || "");
 export const mt5RequireConfirmationAtom = atom(
   process.env.NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION !== "false",
 );
@@ -46,12 +52,10 @@ export const mt5MaxOrderVolumeAtom = atom(
   Number(process.env.NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME || 1),
 );
 export const executionModeAtom = atom<ExecutionMode>("simulator");
-export const mt5StatusAtom = atom<Mt5ConnectionStatus>(
-  process.env.NEXT_PUBLIC_MT5_BRIDGE_ENABLED === "true"
-    ? "disconnected"
-    : "disabled",
-);
+export const mt5StatusAtom = atom<Mt5ConnectionStatus>("disabled");
 export const mt5AccountAtom = atom<Mt5AccountSnapshot | null>(null);
+export const mt5ExpectedAccountAtom = atom<Mt5ExpectedAccount | null>(null);
+export const mt5VerifiedAtAtom = atom<string | null>(null);
 export const mt5RiskSnapshotAtom = atom<Mt5RiskSnapshot | null>(null);
 export const mt5PositionsAtom = atom<Mt5Position[]>([]);
 export const mt5PendingOrdersAtom = atom<Mt5PendingOrder[]>([]);
@@ -61,13 +65,92 @@ export const mt5LastErrorAtom = atom<string | null>(null);
 export const mt5CommandLogAtom = atom<Mt5CommandLogEntry[]>([]);
 export const mt5PendingCommandsAtom = atom<Mt5PendingCommand[]>([]);
 
+export const mt5ExecutionBlockReasonAtom = atom((get): string | null => {
+  if (!get(mt5EnabledAtom)) {
+    return "Verify MT5 credentials in Connections & notifications to enable MT5 execution.";
+  }
+  const expected = get(mt5ExpectedAccountAtom);
+  if (!expected) {
+    return "The verified MT5 account is unavailable. Verify the credentials again.";
+  }
+  return mt5AccountMismatchReason(expected, get(mt5AccountAtom));
+});
+
+/** Clear all user-scoped bridge data before logout or an identity change. */
+export const resetMt5IntegrationAtom = atom(null, (_get, set) => {
+  disconnectMt5Bridge();
+  set(mt5EnabledAtom, false);
+  set(mt5ExpectedAccountAtom, null);
+  set(mt5VerifiedAtAtom, null);
+  set(executionModeAtom, "simulator");
+  set(mt5StatusAtom, "disabled");
+  set(mt5AccountAtom, null);
+  set(mt5RiskSnapshotAtom, null);
+  set(mt5PositionsAtom, []);
+  set(mt5PendingOrdersAtom, []);
+  set(mt5SymbolInfoAtom, {});
+  set(mt5LastHeartbeatAtom, null);
+  set(mt5LastErrorAtom, null);
+  set(mt5CommandLogAtom, []);
+  set(mt5PendingCommandsAtom, []);
+});
+
+export const syncMt5IntegrationAtom = atom(
+  null,
+  (
+    get,
+    set,
+    value: {
+      login: string;
+      server: string;
+      verified: boolean;
+      verifiedAt?: string | null;
+    },
+  ) => {
+    const login = value.login.trim();
+    const server = value.server.trim();
+    if (!value.verified || !login || !server) {
+      set(resetMt5IntegrationAtom);
+      return;
+    }
+
+    const expected: Mt5ExpectedAccount = {
+      login,
+      server,
+      verifiedAt: value.verifiedAt ?? null,
+    };
+    const accountChanged = !sameMt5ExpectedAccount(
+      get(mt5ExpectedAccountAtom),
+      expected,
+    );
+    if (accountChanged) {
+      set(executionModeAtom, "simulator");
+      set(mt5StatusAtom, "disconnected");
+      set(mt5AccountAtom, null);
+      set(mt5RiskSnapshotAtom, null);
+      set(mt5PositionsAtom, []);
+      set(mt5PendingOrdersAtom, []);
+      set(mt5SymbolInfoAtom, {});
+      set(mt5LastHeartbeatAtom, null);
+      set(mt5LastErrorAtom, null);
+      set(mt5PendingCommandsAtom, []);
+    } else if (get(mt5StatusAtom) === "disabled") {
+      set(mt5StatusAtom, "disconnected");
+    }
+    set(mt5ExpectedAccountAtom, expected);
+    set(mt5VerifiedAtAtom, expected.verifiedAt);
+    set(mt5EnabledAtom, true);
+  },
+);
+
 export const setExecutionModeAtom = atom(
   null,
   (get, set, mode: ExecutionMode) => {
     if (mode === "mt5" && !get(mt5EnabledAtom)) {
       set(pushToastAtom, {
-        title: "MT5 bridge disabled",
-        message: "Enable NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true to use MT5 mode.",
+        title: "MT5 verification required",
+        message:
+          "Verify this user's MT5 credentials in Connections & notifications first.",
         variant: "warn",
       });
       return;
@@ -96,8 +179,8 @@ export const setMt5ErrorAtom = atom(null, (_get, set, message: string) => {
 export const connectMt5Atom = atom(null, (get, set) => {
   if (!get(mt5EnabledAtom)) {
     set(pushToastAtom, {
-      title: "MT5 bridge disabled",
-      message: "Set NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true and restart the app.",
+      title: "MT5 verification required",
+      message: "Save and verify this user's MT5 credentials before connecting.",
       variant: "warn",
     });
     return;
@@ -224,9 +307,11 @@ export const applyMt5MessageAtom = atom(null, (get, set, message: Mt5Message) =>
       });
       break;
     }
-    case "account.snapshot":
-      set(mt5AccountAtom, message.payload as Mt5AccountSnapshot);
+    case "account.snapshot": {
+      const account = message.payload as Mt5AccountSnapshot;
+      set(mt5AccountAtom, account);
       break;
+    }
     case "risk.snapshot":
       set(mt5RiskSnapshotAtom, message.payload as Mt5RiskSnapshot);
       break;
@@ -360,6 +445,7 @@ export const placeMt5OrderAtom = atom(
       executionMode: get(executionModeAtom),
       status: get(mt5StatusAtom),
       account: get(mt5AccountAtom),
+      expectedAccount: get(mt5ExpectedAccountAtom),
       symbolInfo: get(mt5SymbolInfoAtom)[order.chartSymbol],
       order,
     });
@@ -414,10 +500,11 @@ export const placeMt5OrderAtom = atom(
 export const closeMt5PositionAtom = atom(
   null,
   (get, set, request: Mt5CloseRequest): boolean => {
-    if (get(mt5StatusAtom) !== "connected") {
+    const accessError = get(mt5ExecutionBlockReasonAtom);
+    if (accessError || get(mt5StatusAtom) !== "connected") {
       set(pushToastAtom, {
         title: "MT5 close blocked",
-        message: "Bridge is not connected.",
+        message: accessError ?? "Bridge is not connected.",
         variant: "warn",
       });
       return false;
@@ -449,10 +536,11 @@ export const closeMt5PositionAtom = atom(
 export const closeAllMt5Atom = atom(
   null,
   (get, set, request: Mt5CloseAllRequest): boolean => {
-    if (get(mt5StatusAtom) !== "connected") {
+    const accessError = get(mt5ExecutionBlockReasonAtom);
+    if (accessError || get(mt5StatusAtom) !== "connected") {
       set(pushToastAtom, {
         title: "MT5 close-all blocked",
-        message: "Bridge is not connected.",
+        message: accessError ?? "Bridge is not connected.",
         variant: "warn",
       });
       return false;
@@ -484,10 +572,11 @@ export const closeAllMt5Atom = atom(
 export const modifyMt5OrderAtom = atom(
   null,
   (get, set, request: Mt5ModifyRequest): boolean => {
-    if (get(mt5StatusAtom) !== "connected") {
+    const accessError = get(mt5ExecutionBlockReasonAtom);
+    if (accessError || get(mt5StatusAtom) !== "connected") {
       set(pushToastAtom, {
         title: "MT5 modify blocked",
-        message: "Bridge is not connected.",
+        message: accessError ?? "Bridge is not connected.",
         variant: "warn",
       });
       return false;
@@ -519,10 +608,11 @@ export const modifyMt5OrderAtom = atom(
 export const cancelMt5OrderAtom = atom(
   null,
   (get, set, request: Mt5CancelRequest): boolean => {
-    if (get(mt5StatusAtom) !== "connected") {
+    const accessError = get(mt5ExecutionBlockReasonAtom);
+    if (accessError || get(mt5StatusAtom) !== "connected") {
       set(pushToastAtom, {
         title: "MT5 cancel blocked",
-        message: "Bridge is not connected.",
+        message: accessError ?? "Bridge is not connected.",
         variant: "warn",
       });
       return false;
@@ -567,6 +657,8 @@ const mt5CombinedAtom = atom((get) => ({
   lastError: get(mt5LastErrorAtom),
   commandLog: get(mt5CommandLogAtom),
   pendingCommands: get(mt5PendingCommandsAtom),
+  expectedAccount: get(mt5ExpectedAccountAtom),
+  verifiedAt: get(mt5VerifiedAtAtom),
 }));
 
 export function useMt5Store(): ReturnType<typeof getMt5State>;
@@ -591,14 +683,26 @@ function validateMt5OrderState(input: {
   executionMode: ExecutionMode;
   status: Mt5ConnectionStatus;
   account: Mt5AccountSnapshot | null;
+  expectedAccount: Mt5ExpectedAccount | null;
   symbolInfo?: Mt5SymbolInfo;
   order: Mt5OrderRequest;
 }): string | null {
-  const { enabled, executionMode, status, account, symbolInfo, order } = input;
+  const {
+    enabled,
+    executionMode,
+    status,
+    account,
+    expectedAccount,
+    symbolInfo,
+    order,
+  } = input;
   if (!enabled) return "MT5 bridge is disabled.";
   if (executionMode !== "mt5") return "Execution mode is not MT5.";
   if (status !== "connected") return "MT5 bridge is not connected.";
   if (!account) return "MT5 account snapshot is missing.";
+  if (!expectedAccount) return "MT5 account has not been verified for this user.";
+  const accountMismatch = mt5AccountMismatchReason(expectedAccount, account);
+  if (accountMismatch) return accountMismatch;
   if (!account.tradeAllowed) return "MT5 account is not allowed to trade.";
   if (!symbolInfo) return `MT5 symbol info missing for ${order.chartSymbol}.`;
   if (symbolInfo.tradeMode === "disabled") {

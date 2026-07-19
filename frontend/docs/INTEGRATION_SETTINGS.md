@@ -31,16 +31,22 @@ per-user MT5, Telegram, and Discord configuration.
   configured (required in production), forwards the
   signed token and alert payload, and Go resolves the correct user before
   decrypting and sending through that user's enabled channels.
-- MT5 login/server/password are runtime provisioning settings. The native Python
-  bridge is a host-local singleton and must reconnect or restart before a newly
-  saved account becomes active.
+- MT5 login/server/password and verification state are owned by the authenticated
+  user. Saving changed credentials invalidates only that user's prior verification.
+- **Save & Verify MT5** persists the current draft, decrypts it only inside the
+  backend, and runs a short-lived native MT5 login check. The browser receives a
+  sanitized account summary, never the stored password.
+- The native Python execution bridge remains host-local. It must reconnect or
+  restart after the terminal account changes, and its account login/server must
+  match the current user's verified integration before live orders are allowed.
 
 ## Verification
 
-Run `go test ./...`, `npm run typecheck`, `npm run lint`, and `npm run build`.
-Manually verify create, masked reload, blank-secret preservation, replacement,
-clear, draft-save-before-test, swapped Telegram-field validation, provider
-failure/success, signed-out state, and bridge restart guidance.
+Run `go test ./...`, the Python verifier tests, `npm run typecheck`, `npm run
+lint`, and `npm run build`. Manually verify MT5 success/failure, per-user
+isolation, invalidation after login/server/password changes, account mismatch,
+masked reload, blank-secret preservation, clear, notification test flows,
+signed-out state, and bridge restart guidance.
 
 ## Closed-browser scheduler
 

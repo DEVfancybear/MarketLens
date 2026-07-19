@@ -21,6 +21,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/journal"
 	"github.com/smc-trading-terminal/backend/internal/layouts"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/smc-trading-terminal/backend/internal/mt5verify"
 	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/replay"
@@ -127,9 +128,15 @@ func main() {
 		if secretErr != nil {
 			stdlog.Fatalf("integration settings encryption init error: %v", secretErr)
 		}
-		settingsHandler = settings.NewHandler(settingsStore, requireAuth).WithIntegrations(
-			settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret, cfg.ChartTimeZone,
-		)
+		settingsHandler = settings.NewHandler(settingsStore, requireAuth).
+			WithIntegrations(
+				settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret, cfg.ChartTimeZone,
+			).
+			WithMT5Verifier(mt5verify.NewCommandVerifier(
+				cfg.MT5VerifyPython,
+				[]string{cfg.MT5VerifyScript},
+				cfg.MT5VerifyTimeout,
+			))
 		watchlistsStore := watchlists.NewRepo(pool.Pool)
 		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)
 		drawingsStore := drawings.NewRepo(pool.Pool)

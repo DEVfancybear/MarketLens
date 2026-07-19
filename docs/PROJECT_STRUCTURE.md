@@ -8,7 +8,7 @@ separate runtimes, dependencies, docs, and deployment paths.
 ```text
 .
 |-- frontend/          # Next.js trading terminal UI
-|-- backend/           # Go API scaffold + Python MT5 bridge sidecar
+|-- backend/           # Go API + MT5 sidecars and credential verifier
 |-- docs/              # Root monorepo docs
 |-- .env.example       # Shared example env file
 `-- README.md          # Project entrypoint
@@ -33,7 +33,8 @@ trade simulator UI, responsive layout, and frontend test conventions.
 
 ## Backend Ownership
 
-`backend/` owns the Go API service and the Python MT5 bridge sidecar.
+`backend/` owns the Go API service, both Python MT5 sidecars, and the short-lived credential
+verifier.
 
 ```text
 backend/
@@ -42,9 +43,12 @@ backend/
 |   |-- config/        # Environment configuration
 |   |-- httpserver/    # HTTP app and server lifecycle
 |   |-- health/        # Health endpoint
+|   |-- settings/      # Per-user settings/integrations and Verify endpoint
+|   |-- mt5verify/     # Bounded stdin-only verifier process adapter
 |   `-- middleware/    # Shared HTTP middleware
-|-- bridge/            # Python MT5 WebSocket bridge (sidecar)
-|   `-- ftmo_mt5/      # FTMO broker integration
+|-- bridge/            # Python MT5 helpers and WebSocket sidecars
+|   |-- ftmo_mt5/      # FTMO execution bridge (:8787) + verify_account.py
+|   `-- mt5_stream/    # Market-data bridge (:8765)
 |-- docs/              # Backend architecture, API, and configuration docs
 |-- go.mod
 `-- README.md
@@ -56,8 +60,10 @@ routes mounted under
 `/api/v1`. New backend endpoints and middleware should continue using Fiber handlers, route groups,
 and middleware. The next backend persistence task is Phase 7: drawings and drawing templates.
 
-The Python MT5 bridge is a **sidecar service** - it runs as a separate process alongside the Go API
-and communicates over WebSockets. It is not part of the Go HTTP request path.
+The market-data (`:8765`) and execution (`:8787`) Python bridges are **sidecar services**: they run
+as separate processes and communicate over WebSockets. The verifier is different: the authenticated
+Go endpoint launches `verify_account.py` for one bounded request, sends credentials over stdin, and
+stores the resulting verification timestamp only for that user.
 
 ## Root Docs Ownership
 

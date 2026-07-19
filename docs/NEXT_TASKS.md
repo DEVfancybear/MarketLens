@@ -109,13 +109,14 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 - **Phase 6A extension - Telegram/Discord Alert Channels:** server-side external message delivery
   for browser-open and closed-browser alerts. Implemented in
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - MT5 Bridge Integration:** feature-flagged scaffold implemented: MT5 protocol types,
-  WebSocket client, store/runtime hook, mock bridge, execution-mode UI, order routing, MT5
-  positions/logs, and simulator fallback. FTMO dry-run bridge is implemented via
-  `npm run ftmo-mt5-bridge`; Python MT5 service adapter is implemented under `bridge/ftmo_mt5/` and
-  can be started with `npm run ftmo-mt5-python` after installing Python dependencies. Next: run it
-  on a Windows/VPS host with MT5 installed, validate login/snapshots/order_check, then tiny demo
-  execution. For Exness, IC Markets, and other MT5 brokers, use
+- **Phase 6B - MT5 Bridge Integration:** protocol types, WebSocket client, store/runtime hook, mock
+  bridge, execution-mode UI, order routing, positions/logs, simulator fallback, and authenticated
+  per-user **Save & Verify MT5** are implemented. MT5 selection is unlocked from the current user's
+  backend `verified` state; every live command also requires the bridge account login/server to
+  match. FTMO dry-run bridge is available via `npm run ftmo-mt5-bridge`; the Python MT5 adapter is
+  under `backend/bridge/ftmo_mt5/`. Next: validate Verify success/failure and account isolation on a
+  Windows/VPS demo terminal, then exercise snapshots, `order_check`, and tiny demo execution. For
+  Exness, IC Markets, and other MT5 brokers, use
   `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`.
 
 ---

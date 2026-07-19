@@ -27,7 +27,7 @@ The frontend must be able to:
 | Trade panel shell | `src/components/trade/TradePanel.tsx` | Hosts MT5 connection/account/diagnostics UI. |
 | Position table | `src/components/trade/PositionsTable.tsx` | Can switch between simulator positions and MT5 positions. |
 | Trade chart levels | `src/components/trade/TradeLevels.tsx` | Later renders MT5 live positions/SL/TP when mode is MT5. |
-| Global runtime | `src/components/layout/GlobalRuntime.tsx` | Mounts `useMt5Bridge()` when MT5 is enabled. |
+| Global runtime | `src/components/layout/GlobalRuntime.tsx` | Hydrates per-user verification and mounts the bridge runtime. |
 | Toast/log channels | `src/store/toastStore.ts`, `src/store/uiStore.ts` | Surface rejected orders, disconnects, and command results. |
 | Market symbols | `src/services/market-data/symbols.ts` | Provides chart symbols; Phase 6B adds broker-symbol mapping. |
 
@@ -73,11 +73,13 @@ The browser owns:
 Add placeholders to `.env.example` during implementation:
 
 ```env
-NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false
 NEXT_PUBLIC_MT5_BRIDGE_URL=ws://localhost:8787
 NEXT_PUBLIC_MT5_REQUIRE_CONFIRMATION=true
 NEXT_PUBLIC_MT5_MAX_ORDER_VOLUME=1
 ```
+
+There is no build-wide MT5 enable flag. `mt5EnabledAtom` is hydrated from the signed-in user's
+backend integration only after **Save & Verify MT5** succeeds.
 
 Development-only static token, if the bridge supports it:
 
@@ -302,8 +304,10 @@ The raw WebSocket client should live in `Mt5BridgeClient`, not inside atoms.
 
 `Mt5BridgeClient` should:
 
-- Start only when `NEXT_PUBLIC_MT5_BRIDGE_ENABLED === 'true'`.
+- Connect only after the current signed-in user has a verified MT5 integration.
 - Connect to `NEXT_PUBLIC_MT5_BRIDGE_URL`.
+- Require every bridge account snapshot to match the verified login and broker server before a
+  live command can be sent.
 - Send `auth.request` after `hello`.
 - Reconnect with exponential backoff: 1s, 2s, 5s, 10s, max 30s.
 - Send heartbeat every 5s after auth.
@@ -401,12 +405,13 @@ Exit criteria:
 - Add `Mt5BridgeClient`. **Done 2026-07-02.**
 - Add `mt5Store.ts`. **Done 2026-07-02.**
 - Add `useMt5Bridge()`. **Done 2026-07-02.**
-- Mount runtime behind feature flag. **Done 2026-07-02.**
+- Mount the runtime and replace the original build-wide gate with per-user verification.
+  **Done 2026-07-19.**
 
 Exit criteria:
 
-- App builds with MT5 disabled.
-- App connects to mock bridge when enabled.
+- App builds with MT5 unverified for the current user.
+- App connects to the mock bridge after that user is verified.
 - Account and positions snapshots update atoms.
 
 ### Milestone 2 - Connection UI
@@ -479,7 +484,7 @@ npm run build
 
 Mock bridge manual checks:
 
-- Bridge disabled.
+- User unverified.
 - Bridge URL missing.
 - Connect success.
 - Auth reject.
@@ -505,9 +510,10 @@ Real bridge demo checks:
 
 ## 17. Rollback
 
-- Set `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false`.
+- Invalidate the user's verification by changing/clearing the saved MT5 credential; stop the
+  execution bridge for a system-wide rollback.
 - Keep `executionModeAtom` defaulting to `simulator`.
-- Hide MT5-only UI when disabled.
+- Keep MT5 selection disabled for unverified users.
 - Do not delete simulator state or journal logic.
 - If bridge protocol changes, reject unsupported `version` instead of best-effort parsing.
 

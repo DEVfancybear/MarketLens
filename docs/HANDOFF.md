@@ -148,8 +148,9 @@ dialogs, hotkey system, and bottom-panel Pine Editor for source-code indicators.
 The next milestone is **Phase 6 — Push Notifications / MT5 Integration**. Phase 6A push
 notifications are implemented, including closed-browser delivery when `npm run push-worker` (or a
 cron calling `/api/push/evaluate`) runs next to the Next server. Continue with Phase 6B MT5 Bridge
-from `docs/MT5_BRIDGE_PROTOCOL.md` and `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. The first scaffold is
-implemented behind `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=false` by default.
+from `docs/MT5_BRIDGE_PROTOCOL.md` and `docs/PHASE6B_MT5_BRIDGE_PLAN.md`. MT5 access is now granted
+per signed-in user after backend credential verification; the former build-wide enable flag has
+been removed.
 
 Read in this order: `PROJECT_ARCHITECTURE.md` / `ARCHITECTURE.md` → `CURRENT_STATE.md` →
 `NEXT_TASKS.md` → `KNOWN_ISSUES.md`.
@@ -418,10 +419,11 @@ JavaScript execution path for user source. Read `docs/INDICATOR_ARCHITECTURE.md`
   same-direction ticks restart the animation. Dark-theme `--bull`/`--bear` and `chartTheme.ts`
   candles updated to TradingView's current `#089981`/`#f23645` in **both** themes. Verified with
   Playwright screenshots (dark + light) against a fresh `next dev`.
-- **Recommended next action:** Continue **Phase 6B — MT5 Bridge Integration** by running
-  `npm run mock-mt5`, enabling `NEXT_PUBLIC_MT5_BRIDGE_ENABLED=true`, and exercising connect/auth,
-  order ack/reject, execution reports, close, and close-all from the Trade Panel. Then validate a
-  real MT5 demo bridge. Phase 6A push docs: `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
+- **Recommended next action:** Continue **Phase 6B — MT5 Bridge Integration** by verifying an MT5
+  demo account for the signed-in user, running `npm run mock-mt5` for protocol checks or the real
+  bridge, and exercising connect/auth, account matching, order ack/reject, execution reports,
+  close, and close-all from the Trade Panel. Phase 6A push docs:
+  `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
 - **OANDA diagnostics:** **DEBUG LOGGING ADDED** — `MarketDataService` and `OandaProvider` now log
   key presence, routing decisions, subscription attempts, and API call results to the console. Open
   the browser console to see why forex symbols show "--". See `docs/OANDA_DEBUG_REPORT.md`.

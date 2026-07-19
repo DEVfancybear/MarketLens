@@ -92,6 +92,10 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_BRIDGE_READ_LIMIT_BYTES` | integer | `8388608` | Go consumer max WebSocket message size; large enough for MT5 symbol catalogs |
 | `MT5_BRIDGE_RECONNECT_MIN` | duration | `1s` | Go API/client minimum reconnect backoff |
 | `MT5_BRIDGE_RECONNECT_MAX` | duration | `30s` | Go API/client maximum reconnect backoff |
+| `MT5_VERIFY_PYTHON` | string | `python` | Python executable used by the authenticated per-user MT5 verifier |
+| `MT5_VERIFY_SCRIPT` | string | `bridge/ftmo_mt5/verify_account.py` | Credential verifier script path, relative to the backend working directory |
+| `MT5_VERIFY_TERMINAL_PATH` | string | empty | Optional terminal executable used only while verifying a user's MT5 account |
+| `MT5_VERIFY_TIMEOUT` | duration | `30s` | Hard timeout for one per-user MT5 credential verification attempt |
 
 Exact scheduled open/closed status requires the read-only native MQL5 helper in
 [`bridge/mt5_session`](../bridge/mt5_session/README.md). The Python package does

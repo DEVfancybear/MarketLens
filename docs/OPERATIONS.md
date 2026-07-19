@@ -72,7 +72,7 @@ Backend framework decision: **Go Fiber**. Phase 0 migrated the backend to Fiber,
 the `/api/v1/auth/*` routes. Current backend work should continue with Phase 5 settings +
 `sync/bootstrap` and follow Fiber handler/route-group conventions.
 
-## Python MT5 Bridge (Backend Sidecar)
+## Python MT5 Execution Bridge (Backend Sidecar, port 8787)
 
 Install dependencies:
 
@@ -89,6 +89,11 @@ $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"
 python -m bridge.ftmo_mt5.service
 ```
+
+MT5 availability in the web app is not controlled by a frontend feature flag. Configure the Go
+API's `MT5_VERIFY_*` variables, sign in, and use **Connections & notifications -> Save & Verify
+MT5**. Verification belongs to that user. Live commands additionally require this execution bridge
+to report the same login/server.
 
 Live mode:
 
@@ -167,7 +172,7 @@ NEXT_PUBLIC_APP_URL=https://tradingterminal.io.vn
 
 Cloudflare DNS keeps the Vercel apex CNAME in DNS-only mode. The `api` hostname is a proxied
 Cloudflare Tunnel record targeting the Go API on this Windows host. Do not expose the private MT5
-bridge on port 8765.
+market-data sidecar on port 8765 or the execution bridge on port 8787.
 
 If Vercel reports `The specified Root Directory "frontend" does not exist`, the deployment is using
 an old commit from before the monorepo split. Redeploy the latest `master` commit where the

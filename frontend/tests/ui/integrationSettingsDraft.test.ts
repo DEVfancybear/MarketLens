@@ -10,7 +10,13 @@ import type { IntegrationSettings } from "../../src/services/api/resources/integ
 
 const loaded: IntegrationSettings = {
   deliveryToken: "delivery-token",
-  mt5: { login: "server-login", server: "Broker-Demo", passwordConfigured: true },
+  mt5: {
+    login: "server-login",
+    server: "Broker-Demo",
+    passwordConfigured: true,
+    verified: false,
+    verifiedAt: null,
+  },
   telegram: { chatId: "42", botTokenConfigured: true, enabled: true },
   discord: { webhookConfigured: true, enabled: true },
 };
