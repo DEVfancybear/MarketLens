@@ -142,6 +142,24 @@ Use these Vercel settings:
 | Install Command | default or `npm install` |
 | Build Command | default or `npm run build` |
 
+Current production domain and API env:
+
+```text
+Frontend: https://tradingterminal.io.vn
+API:      https://api.tradingterminal.io.vn
+```
+
+Set these Vercel Production variables and redeploy after any change:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn
+NEXT_PUBLIC_APP_URL=https://tradingterminal.io.vn
+```
+
+Cloudflare DNS keeps the Vercel apex CNAME in DNS-only mode. The `api` hostname is a proxied
+Cloudflare Tunnel record targeting the Go API on this Windows host. Do not expose the private MT5
+bridge on port 8765.
+
 If Vercel reports `The specified Root Directory "frontend" does not exist`, the deployment is using
 an old commit from before the monorepo split. Redeploy the latest `master` commit where the
 `frontend/` folder exists.
@@ -150,6 +168,9 @@ an old commit from before the monorepo split. Redeploy the latest `master` commi
 
 Deploy the Go backend as a separate service from `backend/`. Do not include it in the Vercel
 frontend build.
+
+For the exact Windows restart order, Cloudflare Tunnel configuration, public health checks, and
+troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.
 
 ## Validation Before Push
 

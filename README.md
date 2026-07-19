@@ -47,6 +47,9 @@ Backend dev server: `http://localhost:8080`
 
 - Vercel frontend deployments must use `frontend` as the project root directory.
 - The Go backend is deployed as a separate service, not inside the Vercel frontend build.
+- The production frontend is `https://tradingterminal.io.vn` (Vercel).
+- The production API is `https://api.tradingterminal.io.vn` (Cloudflare Tunnel to the Windows
+  host's Go API on `localhost:8080`). The MT5 bridge stays private on `localhost:8765`.
 - Root docs describe cross-project rules only. Frontend and backend implementation docs live in
   their own package folders.
 

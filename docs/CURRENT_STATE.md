@@ -1,5 +1,19 @@
 # CURRENT STATE
 
+_Production deployment update 2026-07-19._
+
+- The production frontend is deployed by Vercel at `https://tradingterminal.io.vn`.
+- The production Go API is published at `https://api.tradingterminal.io.vn` through the named
+  Cloudflare Tunnel `tradingterminal-backend`; the origin remains `http://localhost:8080` on the
+  Windows host.
+- The market-data bridge remains private at `ws://localhost:8765` and connects to the locally
+  logged-in MetaTrader 5 terminal. Port 8765 is not Internet-facing.
+- Vercel Production builds must set `NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn`.
+  Firebase Authentication must authorize `tradingterminal.io.vn`, and backend CORS must include the
+  same HTTPS origin.
+- The repeatable build, restart, DNS/TLS, and verification procedure is documented in
+  `backend/docs/PRODUCTION_BUILD.md`.
+
 _Post-monorepo update 2026-07-07._
 
 This file intentionally preserves the pre-`9691bd1` project state below. Since the monorepo split:
