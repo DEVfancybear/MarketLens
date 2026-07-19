@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Production backend operator runbook (2026-07-19)
+- Added a canonical Windows production-host sequence for pull, forward-only migration, optional
+  backend-only Go build, MT5 market-data bridge/API/tunnel startup, and local/public health checks.
+- Kept the existing full Go + Next.js production build as the primary option; the backend-only path
+  is explicitly optional when the frontend is unchanged.
+- Documented Cloudflare Tunnel recovery for browser-side API network errors, preventing a healthy
+  localhost API from being mistaken for a reachable public API.
+
 ### Fixed - Per-user MT5 verification and Trade access (2026-07-19)
 - Replaced the build-wide MT5 enable switch with authenticated per-user verification persisted on
   `user_integrations`; changing or clearing an account invalidates its prior verification.

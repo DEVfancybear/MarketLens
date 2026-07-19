@@ -17,6 +17,13 @@ older references:
 
 Recent post-split work:
 
+- **Production backend operator runbook (2026-07-19):**
+  `backend/docs/PRODUCTION_BUILD.md` now contains the canonical Windows host update/restart
+  sequence: pull, `migrate up`, choose full Go+frontend or optional backend-only build, then start
+  MT5, the private market-data bridge, production Go API, and Cloudflare Tunnel before checking
+  local and public readiness. Do not remove the full frontend build option; use backend-only only
+  when the frontend is intentionally unchanged.
+
 - **Generic Pine source runtime and legacy Swing S/R removal (2026-07-19):**
   replay cutoff is enforced before backend evaluation, the submitted Pine v5
   Swing Highs/Lows script is covered as a generic source fixture, and the old

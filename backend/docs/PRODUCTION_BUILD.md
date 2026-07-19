@@ -33,7 +33,9 @@ env.
 The legacy Vercel URL may continue to resolve, but production configuration and user links should
 use `tradingterminal.io.vn`.
 
-## One-command build
+## Build options
+
+### Full production build (Go API + frontend)
 
 From the repository root in PowerShell:
 
@@ -48,6 +50,115 @@ builds the frontend again from the pushed commit with its own Production environ
 
 If the script reports a missing SDK, install Go and Node.js/npm first. The frontend dependencies
 must already be installed with `npm ci` in `frontend\`.
+
+### Backend-only production build (optional)
+
+Use this option when only the Go API, database migrations, MT5 bridge, or host configuration has
+changed and the frontend does not need a new local production artifact. It intentionally does
+**not** build or start the frontend. The full build above remains the required option after frontend
+changes or whenever a local Next.js production-build check is wanted.
+
+```powershell
+cd backend
+$env:GOTOOLCHAIN = "local"
+go build -trimpath -ldflags="-s -w" -o ".\bin\api.exe" ".\cmd\api"
+```
+
+The resulting artifact is the same `backend\bin\api.exe` produced by `build-production.ps1`.
+
+## Canonical production host update and restart
+
+Use this sequence after pulling a deployment on the Windows production host. It is deliberately
+backend-first: the hosted Vercel frontend remains unchanged unless the full build or a Vercel
+deployment is explicitly needed.
+
+### 1. Pull and migrate before starting the new API
+
+Run from the repository root. `migrate up` applies only pending migrations; it never rolls back the
+schema.
+
+```powershell
+git pull --ff-only
+
+cd backend
+go run ./cmd/migrate up
+go run ./cmd/migrate version
+cd ..
+```
+
+The version command must report `dirty=false` and the current highest migration version. Do not use
+`migrate force` or `migrate down` as part of a normal production update.
+
+### 2. Choose the build scope
+
+- Run `./build-production.ps1` for the full Go API + frontend production build.
+- Run the **Backend-only production build** above when the frontend is intentionally unchanged.
+
+Both build commands only create local ignored artifacts. Neither starts a service, modifies secrets,
+runs migrations, or deploys Vercel.
+
+### 3. Start or restart runtime services in order
+
+Use separate PowerShell sessions (or the equivalent Windows services). Before replacing a running
+API or bridge, stop its existing process cleanly in the session or service manager that started it;
+do not launch duplicate listeners on ports `8080` or `8765`.
+
+1. Start MetaTrader 5, sign in to the intended account, and wait for a live broker connection:
+
+   ```powershell
+   Start-Process "C:\Program Files\MetaTrader 5\terminal64.exe"
+   ```
+
+2. Start the private market-data bridge from `backend/`:
+
+   ```powershell
+   cd backend
+   .\.venv-mt5\Scripts\python.exe -m bridge.mt5_stream.mt5_server
+   ```
+
+   Wait for `MT5 initialized` and `tick WebSocket listening`. This bridge must remain private on
+   `localhost:8765`.
+
+3. Start the freshly built Go API from `backend/`:
+
+   ```powershell
+   cd backend
+   $env:APP_ENV = "production"
+   .\bin\api.exe
+   ```
+
+4. Start the named Cloudflare Tunnel from the repository root when it is not already installed as
+   a Windows service:
+
+   ```powershell
+   C:\Cloudflared\bin\cloudflared.exe tunnel --config .runtime-logs\cloudflared-config.yml run
+   ```
+
+   The tunnel is required for `https://api.tradingterminal.io.vn` to reach the local API. It exposes
+   only port `8080` through Cloudflare; never expose `8765` or `8787` publicly.
+
+The optional FTMO execution bridge stays separate: start it only after its user account has been
+verified, as described in [Per-user Verify and optional execution bridge](#4-per-user-verify-and-optional-execution-bridge).
+
+### 4. Verify local and public traffic
+
+Run these checks after the API and tunnel are listening. The MT5 symbols result must report
+`connected:true`.
+
+```powershell
+# Local API, database, and MT5 bridge
+Invoke-WebRequest http://localhost:8080/health
+Invoke-WebRequest http://localhost:8080/health/ready
+Invoke-WebRequest http://localhost:8080/api/v1/mt5/symbols
+
+# Public API through Cloudflare Tunnel
+Invoke-WebRequest https://api.tradingterminal.io.vn/health/ready
+Invoke-WebRequest https://api.tradingterminal.io.vn/api/v1/mt5/symbols
+```
+
+If the local checks succeed but the browser reports a network error for
+`https://api.tradingterminal.io.vn/api/v1/...`, check whether `cloudflared` is running and restart
+the tunnel in step 3. A successful local API alone cannot serve the Vercel frontend.
 
 ## Required configuration
 
