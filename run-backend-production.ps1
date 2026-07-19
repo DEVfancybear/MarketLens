@@ -493,7 +493,7 @@ function Wait-ForLogPattern {
     foreach ($path in $Paths) {
       if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
       try {
-        $logText += [System.IO.File]::ReadAllText($path)
+        $logText += Get-Content -LiteralPath $path -Raw -ErrorAction Stop
       } catch {
         $lastFailure = $_.Exception.Message
       }
