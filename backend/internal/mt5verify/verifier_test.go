@@ -130,13 +130,12 @@ func TestCommandVerifierValidatesMissingCredentialsBeforeLaunching(t *testing.T)
 }
 
 func TestCommandVerifierWaitForSharedTerminalIsContextAware(t *testing.T) {
-	verifier := helperVerifier(t, time.Second)
+	verifier := helperVerifier(t, 30*time.Millisecond)
 	verifier.gate <- struct{}{}
 	defer func() { <-verifier.gate }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-	_, err := verifier.Verify(ctx, Credentials{
+	startedAt := time.Now()
+	_, err := verifier.Verify(context.Background(), Credentials{
 		Login:    "100",
 		Server:   "FTMO-Server4",
 		Password: helperPassword,
@@ -146,6 +145,9 @@ func TestCommandVerifierWaitForSharedTerminalIsContextAware(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), helperPassword) {
 		t.Fatal("password leaked through wait cancellation error")
+	}
+	if elapsed := time.Since(startedAt); elapsed > 250*time.Millisecond {
+		t.Fatalf("gate wait exceeded verifier timeout: %v", elapsed)
 	}
 }
 

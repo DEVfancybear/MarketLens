@@ -129,20 +129,23 @@ func (v *CommandVerifier) Verify(ctx context.Context, credentials Credentials) (
 	if err != nil {
 		return Result{}, errors.New("encode MT5 verification request")
 	}
-	if v.gate != nil {
-		select {
-		case v.gate <- struct{}{}:
-			defer func() { <-v.gate }()
-		case <-ctx.Done():
-			return Result{}, fmt.Errorf("MT5 verifier wait was canceled: %w", ctx.Err())
-		}
-	}
 	timeout := v.timeout
 	if timeout <= 0 {
 		timeout = defaultTimeout
 	}
+	// The timeout is the budget for the whole verification request, including
+	// time spent waiting for another helper to release the shared terminal.
 	commandContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	if v.gate != nil {
+		select {
+		case v.gate <- struct{}{}:
+			defer func() { <-v.gate }()
+		case <-commandContext.Done():
+			return Result{}, fmt.Errorf("MT5 verifier wait was canceled: %w", commandContext.Err())
+		}
+	}
 
 	cmd := exec.CommandContext(commandContext, v.executable, v.args...)
 	cmd.Stdin = bytes.NewReader(payload)

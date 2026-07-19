@@ -28,7 +28,11 @@ import {
   verifyMt5Integration,
   type IntegrationSettingsWrite,
 } from "@/services/api/resources/integrationsApi";
-import { errorMessage, isApiError } from "@/services/api/errors";
+import {
+  describeUserFacingError,
+  errorMessage,
+  isApiError,
+} from "@/services/api/errors";
 import { syncMt5IntegrationAtom } from "@/store/mt5Store";
 import {
   APP_SETTINGS_OVERLAY_STACK_CLASS,
@@ -268,10 +272,14 @@ export function AppSettingsDialog() {
         setMt5Verification({ verified: false, verifiedAt: null });
         syncMt5Integration(unverified);
       }
+      const isTerminalConfigurationError =
+        isApiError(error) && error.code.startsWith("MT5_VERIFIER_TERMINAL_");
       setMessage(
         isApiError(error) && error.code === "dependency_unavailable"
           ? "The backend is running a Python runtime without MetaTrader5. Run build-production.ps1 and restart the API service."
-          : errorMessage(error, "MT5 verification failed."),
+          : isTerminalConfigurationError
+            ? error.message
+            : describeUserFacingError(error, "MT5 verification failed.").message,
       );
       setMessageTone("error");
     } finally {

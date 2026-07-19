@@ -57,6 +57,7 @@ type Config struct {
 	MT5BridgeReadLimitBytes int64
 	MT5BridgeReconnectMin   time.Duration
 	MT5BridgeReconnectMax   time.Duration
+	MT5TerminalPath         string
 	MT5VerifyPython         string
 	MT5VerifyManagedPython  string
 	MT5VerifyScript         string
@@ -137,6 +138,7 @@ func Load() (Config, error) {
 		MT5BridgeReadLimitBytes:   getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
 		MT5BridgeReconnectMin:     getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
 		MT5BridgeReconnectMax:     getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
+		MT5TerminalPath:           strings.TrimSpace(os.Getenv("MT5_TERMINAL_PATH")),
 		MT5VerifyPython:           resolveMT5VerifyPython(os.Getenv("MT5_VERIFY_PYTHON"), managedMT5Python),
 		MT5VerifyManagedPython:    managedMT5Python,
 		MT5VerifyScript:           resolveMT5VerifyScript(os.Getenv("MT5_VERIFY_SCRIPT")),

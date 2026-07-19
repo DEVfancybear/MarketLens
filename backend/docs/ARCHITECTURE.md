@@ -64,7 +64,9 @@ Key characteristics:
 `bridge/mt5_stream` publishes private market data on `ws://localhost:8765`; the Go API consumes it
 and exposes authenticated/public HTTP/WebSocket market-data routes to the frontend. Separately,
 `internal/mt5verify` launches `bridge/ftmo_mt5/verify_account.py` for the authenticated Verify
-endpoint. That helper has no listening port and is not the long-running execution bridge.
+endpoint. That helper has no listening port and is not the long-running execution bridge. In
+production it must target a dedicated broker terminal installation; sharing the market-data
+terminal would let a credential check switch or disconnect the live quote session.
 
 ## Request Flow
 

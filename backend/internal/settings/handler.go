@@ -10,13 +10,15 @@ import (
 )
 
 type Handler struct {
-	store            Store
-	requireAuth      fiber.Handler
-	integrationStore IntegrationStore
-	secretBox        *SecretBox
-	mt5Verifier      MT5Verifier
-	workerSecret     string
-	exchangeTimeZone string
+	store                         Store
+	requireAuth                   fiber.Handler
+	integrationStore              IntegrationStore
+	secretBox                     *SecretBox
+	mt5Verifier                   MT5Verifier
+	mt5VerifierUnavailableCode    string
+	mt5VerifierUnavailableMessage string
+	workerSecret                  string
+	exchangeTimeZone              string
 }
 
 func NewHandler(store Store, requireAuth fiber.Handler) *Handler {

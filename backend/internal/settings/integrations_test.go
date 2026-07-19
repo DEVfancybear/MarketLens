@@ -210,6 +210,67 @@ func TestVerifyMT5IntegrationFailureDoesNotMarkVerified(t *testing.T) {
 	}
 }
 
+func TestVerifyMT5IntegrationMapsVerifierTimeoutToGatewayTimeout(t *testing.T) {
+	box, _ := NewSecretBox("test-secret")
+	passwordCipher, _ := box.Seal("master-password")
+	store := &fakeIntegrationStore{row: IntegrationRecord{
+		MT5Login:    "12345678",
+		MT5Server:   "FTMO-Server4",
+		MT5Password: passwordCipher,
+	}}
+	app := fiber.New()
+	NewHandler(newFakeSettingsStore(), fakeRequireAuth).
+		WithIntegrations(store, box, "worker-secret").
+		WithMT5Verifier(&fakeMT5Verifier{err: context.DeadlineExceeded}).
+		Register(app.Group("/api/v1"))
+
+	response, err := app.Test(httptest.NewRequest(http.MethodPost, "/api/v1/settings/integrations/verify/mt5", nil))
+	if err != nil || response.StatusCode != http.StatusGatewayTimeout {
+		t.Fatalf("verify timeout status=%d err=%v", response.StatusCode, err)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "MT5_VERIFICATION_TIMEOUT" || store.markCallCount != 0 {
+		t.Fatalf("unexpected timeout response=%+v markCalls=%d", body, store.markCallCount)
+	}
+}
+
+func TestVerifyMT5IntegrationReturnsConfiguredUnavailableReason(t *testing.T) {
+	box, _ := NewSecretBox("test-secret")
+	store := &fakeIntegrationStore{}
+	app := fiber.New()
+	NewHandler(newFakeSettingsStore(), fakeRequireAuth).
+		WithIntegrations(store, box, "worker-secret").
+		WithMT5VerifierUnavailable(
+			"MT5_VERIFIER_TERMINAL_REQUIRED",
+			"A dedicated MT5 verifier terminal is required.",
+		).
+		Register(app.Group("/api/v1"))
+
+	response, err := app.Test(httptest.NewRequest(http.MethodPost, "/api/v1/settings/integrations/verify/mt5", nil))
+	if err != nil || response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("verify unavailable status=%d err=%v", response.StatusCode, err)
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "MT5_VERIFIER_TERMINAL_REQUIRED" || !strings.Contains(body.Error.Message, "dedicated") {
+		t.Fatalf("unexpected unavailable response: %+v", body)
+	}
+}
+
 func TestIntegrationHandlerInvalidatesMT5VerificationWhenCredentialsChange(t *testing.T) {
 	verifiedAt := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
 	tests := []struct {

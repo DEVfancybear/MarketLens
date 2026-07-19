@@ -64,9 +64,10 @@ func New(
 		DisableStartupMessage: true,
 		BodyLimit:             8 * 1024 * 1024,
 		ReadTimeout:           10 * time.Second,
-		WriteTimeout:          30 * time.Second,
-		IdleTimeout:           60 * time.Second,
-		ErrorHandler:          errorHandler,
+		// Leave response overhead above the verifier's 30 second hard budget.
+		WriteTimeout: 40 * time.Second,
+		IdleTimeout:  60 * time.Second,
+		ErrorHandler: errorHandler,
 	})
 
 	// Order matters: request-id first so it is available to the logger and

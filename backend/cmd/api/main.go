@@ -6,6 +6,7 @@ import (
 	stdlog "log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -131,6 +132,7 @@ func main() {
 			stdlog.Fatalf("integration settings encryption init error: %v", secretErr)
 		}
 		mt5VerifyPython := cfg.MT5VerifyPython
+		unavailableCode, unavailableMessage := mt5VerifierConfigurationIssue(cfg)
 		resolvedMT5Python, runtimeErr := mt5verify.ResolvePythonRuntime(ctx, []string{
 			cfg.MT5VerifyPython,
 			cfg.MT5VerifyManagedPython,
@@ -139,6 +141,8 @@ func main() {
 			"py",
 		}, 5*time.Second)
 		if runtimeErr != nil {
+			unavailableCode = "MT5_VERIFIER_UNAVAILABLE"
+			unavailableMessage = "The backend MT5 verifier runtime is unavailable. Rebuild and restart the backend service."
 			log.Error().
 				Err(runtimeErr).
 				Str("configured_python", cfg.MT5VerifyPython).
@@ -155,16 +159,27 @@ func main() {
 				Str("selected_python", resolvedMT5Python).
 				Str("script", cfg.MT5VerifyScript).
 				Msg("MT5 verifier runtime ready")
+			if unavailableCode != "" {
+				log.Error().
+					Str("code", unavailableCode).
+					Str("market_data_terminal", cfg.MT5TerminalPath).
+					Str("verifier_terminal", cfg.MT5VerifyTerminalPath).
+					Msg("MT5 verifier disabled by terminal isolation check")
+			}
 		}
 		settingsHandler = settings.NewHandler(settingsStore, requireAuth).
 			WithIntegrations(
 				settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret, cfg.ChartTimeZone,
-			).
-			WithMT5Verifier(mt5verify.NewCommandVerifier(
+			)
+		if unavailableCode != "" {
+			settingsHandler.WithMT5VerifierUnavailable(unavailableCode, unavailableMessage)
+		} else {
+			settingsHandler.WithMT5Verifier(mt5verify.NewCommandVerifier(
 				mt5VerifyPython,
 				[]string{cfg.MT5VerifyScript},
 				cfg.MT5VerifyTimeout,
 			))
+		}
 		watchlistsStore := watchlists.NewRepo(pool.Pool)
 		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)
 		drawingsStore := drawings.NewRepo(pool.Pool)
@@ -219,4 +234,23 @@ func main() {
 	}
 
 	fmt.Println("shutdown complete")
+}
+
+func mt5VerifierConfigurationIssue(cfg config.Config) (string, string) {
+	if !cfg.IsProduction() || !cfg.MT5StreamAPIEnabled {
+		return "", ""
+	}
+	marketDataTerminal := strings.TrimSpace(cfg.MT5TerminalPath)
+	verifierTerminal := strings.TrimSpace(cfg.MT5VerifyTerminalPath)
+	if marketDataTerminal == "" || verifierTerminal == "" {
+		return "MT5_VERIFIER_TERMINAL_REQUIRED", "MT5 verification requires a dedicated broker terminal. Set MT5_TERMINAL_PATH for market data and MT5_VERIFY_TERMINAL_PATH to a different FTMO terminal64.exe."
+	}
+	if strings.EqualFold(filepath.Clean(marketDataTerminal), filepath.Clean(verifierTerminal)) {
+		return "MT5_VERIFIER_TERMINAL_NOT_ISOLATED", "MT5_VERIFY_TERMINAL_PATH must not use the market-data terminal from MT5_TERMINAL_PATH."
+	}
+	info, err := os.Stat(verifierTerminal)
+	if err != nil || info.IsDir() {
+		return "MT5_VERIFIER_TERMINAL_UNAVAILABLE", "The configured dedicated MT5 verifier terminal is unavailable on the backend host."
+	}
+	return "", ""
 }

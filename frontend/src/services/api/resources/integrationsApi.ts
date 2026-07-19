@@ -1,4 +1,7 @@
 import { getJson, postJson, putJson } from "@/services/api/client";
+import { MT5_VERIFICATION_REQUEST_TIMEOUT_MS } from "@/services/api/timeouts";
+
+export { MT5_VERIFICATION_REQUEST_TIMEOUT_MS } from "@/services/api/timeouts";
 
 export interface IntegrationSettings {
   deliveryToken: string;
@@ -58,9 +61,17 @@ export const saveIntegrationSettings = (body: IntegrationSettingsWrite) => {
   invalidateIntegrationSettingsRequest();
   return putJson<IntegrationSettings>("settings/integrations", body);
 };
+
 export const verifyMt5Integration = () => {
   invalidateIntegrationSettingsRequest();
-  return postJson<Mt5VerificationResult>("settings/integrations/verify/mt5");
+  return postJson<Mt5VerificationResult>(
+    "settings/integrations/verify/mt5",
+    undefined,
+    {
+      timeout: MT5_VERIFICATION_REQUEST_TIMEOUT_MS,
+      retry: { limit: 0 },
+    },
+  );
 };
 export const testIntegration = (channel: "telegram" | "discord") => postJson<{ok:boolean;channel:string}>(`settings/integrations/test/${channel}`);
 export const deliverIntegrationAlert = (body: unknown) => postJson<{ok:boolean;results:Array<{ok:boolean;channel:string;error?:string}>}>("settings/integrations/deliver", body);

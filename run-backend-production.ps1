@@ -55,16 +55,33 @@ function Stop-OwnedListener {
   $connections = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
   $owners = @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
   foreach ($processId in $owners) {
-    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
-    if ($null -eq $processInfo) { throw "Port $Port is owned by PID $processId, but its command line cannot be inspected." }
-    $identity = "$($processInfo.ExecutablePath) $($processInfo.CommandLine)"
-    if ($identity.IndexOf($repoRoot, [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
-        $identity.IndexOf($Marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+    $processChain = @()
+    $currentProcessId = $processId
+    $owned = $false
+    for ($depth = 0; $depth -lt 6 -and $currentProcessId -gt 0; $depth++) {
+      $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $currentProcessId" -ErrorAction SilentlyContinue
+      if ($null -eq $processInfo) { break }
+      $processChain += $processInfo
+      $identity = "$($processInfo.ExecutablePath) $($processInfo.CommandLine)"
+      if ($identity.IndexOf($repoRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+          $identity.IndexOf($Marker, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        $owned = $true
+        break
+      }
+      if ($processInfo.ParentProcessId -eq $currentProcessId) { break }
+      $currentProcessId = $processInfo.ParentProcessId
+    }
+    if (-not $owned) {
       throw "Refusing to stop PID $processId on port $Port because it is not this repository's $Marker process."
     }
-    Write-Host "Stopping owned listener on port $Port (PID $processId)..." -ForegroundColor Yellow
-    Stop-Process -Id $processId -Force -ErrorAction Stop
-    Wait-Process -Id $processId -Timeout 10 -ErrorAction SilentlyContinue
+    $chainIds = @($processChain | Select-Object -ExpandProperty ProcessId -Unique)
+    Write-Host "Stopping owned listener on port $Port (process chain $($chainIds -join ' -> '))..." -ForegroundColor Yellow
+    foreach ($chainProcessId in $chainIds) {
+      Stop-Process -Id $chainProcessId -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($chainProcessId in $chainIds) {
+      Wait-Process -Id $chainProcessId -Timeout 10 -ErrorAction SilentlyContinue
+    }
   }
 }
 
@@ -159,7 +176,7 @@ if (-not $SkipMigrations) {
   }
 }
 
-$terminalPath = Get-BackendEnvValue "MT5_VERIFY_TERMINAL_PATH"
+$terminalPath = Get-BackendEnvValue "MT5_TERMINAL_PATH"
 if ([string]::IsNullOrWhiteSpace($terminalPath)) {
   $terminalPath = "C:\Program Files\MetaTrader 5\terminal64.exe"
 }

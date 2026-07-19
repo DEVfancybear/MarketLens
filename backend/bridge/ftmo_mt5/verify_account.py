@@ -13,6 +13,11 @@ import sys
 from typing import Any, TextIO
 
 
+DEFAULT_NATIVE_TIMEOUT_MS = 8_000
+MIN_NATIVE_TIMEOUT_MS = 1_000
+MAX_NATIVE_TIMEOUT_MS = 12_000
+
+
 MESSAGES = {
     "verified": "MT5 account verified.",
     "missing_credentials": "MT5 login, server, and password are required.",
@@ -45,6 +50,15 @@ def _safe_text(value: Any, limit: int) -> str:
     return text[:limit]
 
 
+def _native_timeout_ms() -> int:
+    """Keep both native MT5 calls inside the API's outer 30 second budget."""
+    try:
+        value = int(os.getenv("MT5_VERIFY_NATIVE_TIMEOUT_MS", ""))
+    except (TypeError, ValueError):
+        return DEFAULT_NATIVE_TIMEOUT_MS
+    return max(MIN_NATIVE_TIMEOUT_MS, min(value, MAX_NATIVE_TIMEOUT_MS))
+
+
 def verify_account(
     request: Any, mt5_module: Any | None = None
 ) -> dict[str, Any]:
@@ -72,10 +86,26 @@ def verify_account(
 
     try:
         terminal_path = os.getenv("MT5_VERIFY_TERMINAL_PATH", "").strip()
-        initialize_args = {"path": terminal_path} if terminal_path else {}
-        if not mt5.initialize(**initialize_args):
+        native_timeout_ms = _native_timeout_ms()
+        initialize_args = {"timeout": native_timeout_ms}
+        if terminal_path:
+            initialize_args["path"] = terminal_path
+        try:
+            initialized = mt5.initialize(**initialize_args)
+        except Exception:
+            initialized = False
+        if not initialized:
             return _result("initialize_failed")
-        if not mt5.login(login, password=password, server=server):
+        try:
+            logged_in = mt5.login(
+                login,
+                password=password,
+                server=server,
+                timeout=native_timeout_ms,
+            )
+        except Exception:
+            logged_in = False
+        if not logged_in:
             return _result("login_failed")
 
         account = mt5.account_info()

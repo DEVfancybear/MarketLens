@@ -291,7 +291,10 @@ helper over stdin, and returns a sanitized result. A successful response is:
 
 Credential rejection returns `422`; incomplete/invalid saved credentials return
 `400`; a concurrent credential change returns `409`; verifier infrastructure
-failures return `502` or `503`. Verification updates are conditional on the
+failures return `502` or `503`, and a bounded verifier timeout returns `504` with
+`MT5_VERIFICATION_TIMEOUT`. Production returns a terminal configuration error
+without launching the helper unless `MT5_VERIFY_TERMINAL_PATH` points to a
+dedicated installation distinct from `MT5_TERMINAL_PATH`. Verification updates are conditional on the
 same encrypted credential row, so a slow result cannot approve credentials that
 were edited while the helper was running.
 

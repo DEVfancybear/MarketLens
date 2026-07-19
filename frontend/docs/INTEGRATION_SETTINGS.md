@@ -36,6 +36,9 @@ per-user MT5, Telegram, and Discord configuration.
 - **Save & Verify MT5** persists the current draft, decrypts it only inside the
   backend, and runs a short-lived native MT5 login check. The browser receives a
   sanitized account summary, never the stored password.
+- Production verification requires a dedicated broker terminal configured with
+  `MT5_VERIFY_TERMINAL_PATH`; it must not share the market-data terminal from
+  `MT5_TERMINAL_PATH`.
 - The native Python execution bridge remains host-local. It must reconnect or
   restart after the terminal account changes, and its account login/server must
   match the current user's verified integration before live orders are allowed.

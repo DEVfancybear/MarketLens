@@ -82,8 +82,9 @@ local Next.js artifact. Both are ignored by git. Vercel builds the frontend agai
 commit with its own Production environment variables.
 
 Install 64-bit Python 3 for Windows, Go, and Node.js/npm before the first build. The script runs
-`npm ci` automatically when `frontend\node_modules` is absent. `MT5_VERIFY_TERMINAL_PATH`, when
-set, must point to an existing `terminal64.exe` or the build stops with an actionable error.
+`npm ci` automatically when `frontend\node_modules` is absent. The build validates
+`MT5_VERIFY_TERMINAL_PATH` when it is set; the production API additionally requires explicit,
+distinct market-data and verifier terminal paths before it enables account verification.
 
 Only a host that intentionally does not support MT5 may skip Python provisioning:
 
@@ -233,17 +234,25 @@ AUTH_COOKIE_SECURE=true
 CORS_ALLOWED_ORIGINS=https://tradingterminal.io.vn
 ALERT_EVALUATOR_URL=https://tradingterminal.io.vn/api/push/evaluate
 MT5_BRIDGE_WS_URL=ws://localhost:8765
+MT5_TERMINAL_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 # Leave unset/blank to use backend\.venv-mt5 created by build-production.ps1.
 MT5_VERIFY_PYTHON=
 MT5_VERIFY_SCRIPT=bridge/ftmo_mt5/verify_account.py
-MT5_VERIFY_TERMINAL_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
+MT5_VERIFY_TERMINAL_PATH=C:\Program Files\FTMO MetaTrader 5\terminal64.exe
 MT5_VERIFY_TIMEOUT=30s
+MT5_VERIFY_NATIVE_TIMEOUT_MS=8000
 ```
 
 Leaving `MT5_VERIFY_PYTHON` blank is preferred. The API treats old bare aliases such as `python` as
 automatic selection and probes each candidate with `import MetaTrader5`; a broken explicit runtime
 falls back to `backend\.venv-mt5\Scripts\python.exe`. Restart the Go API after changing any
 `MT5_VERIFY_*` value or rebuilding the venv.
+
+`MT5_TERMINAL_PATH` and `MT5_VERIFY_TERMINAL_PATH` must point to different terminal installations.
+Install the broker/FTMO terminal first and use its real `terminal64.exe` path for verification. The
+API disables verification in production when these paths are missing, identical, or the verifier
+path does not exist; this prevents a verification login from disconnecting the live market-data
+account.
 
 Additional local/LAN origins may be appended to `CORS_ALLOWED_ORIGINS` for diagnostics. Never use
 `*` because authenticated requests send cookies.
@@ -277,9 +286,9 @@ remain running while the API is restarted.
 ### 1. MetaTrader 5 terminal
 
 Start the installed `terminal64.exe`, sign in to the intended account, and wait until MT5 shows a
-live broker connection. The Python package may select a logged-in terminal automatically. Set
-`MT5_TERMINAL_PATH` explicitly only when several terminal installations exist and selection is
-ambiguous.
+live broker connection. The Python package may select a logged-in terminal automatically, but set
+`MT5_TERMINAL_PATH` explicitly whenever production account verification is enabled so the API can
+prove that the market-data and verifier terminals are isolated.
 
 ### 2. MT5 market-data sidecar
 
@@ -330,6 +339,11 @@ Sign in, open **Connections & notifications**, and select **Save & Verify MT5**.
 the short-lived verifier configured by `MT5_VERIFY_*`; credentials travel to it only over stdin.
 On success, the current user's integration receives `verifiedAt` and MT5 becomes selectable.
 Changing login/server/password invalidates that verification.
+
+`MT5_VERIFIER_TERMINAL_REQUIRED`, `MT5_VERIFIER_TERMINAL_NOT_ISOLATED`, and
+`MT5_VERIFIER_TERMINAL_UNAVAILABLE` are configuration errors: install/configure a distinct broker
+terminal and restart the backend. `MT5_VERIFICATION_TIMEOUT` means the isolated terminal did not
+complete its native login within the bounded verification window.
 
 If the response code is `dependency_unavailable`, the helper started but its selected Python could
 not import `MetaTrader5`; it is not an FTMO password or terminal-login failure. Rerun the full

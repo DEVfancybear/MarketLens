@@ -29,7 +29,7 @@ class FakeMt5:
         self.account_error = account_error
         self.initialize_calls = 0
         self.last_initialize_kwargs: dict[str, Any] = {}
-        self.login_calls: list[tuple[int, str, str]] = []
+        self.login_calls: list[tuple[int, str, str, int]] = []
         self.shutdown_calls = 0
 
     def initialize(self, **kwargs: Any) -> bool:
@@ -37,8 +37,10 @@ class FakeMt5:
         self.last_initialize_kwargs = kwargs
         return self.initialize_result
 
-    def login(self, login: int, *, password: str, server: str) -> bool:
-        self.login_calls.append((login, password, server))
+    def login(
+        self, login: int, *, password: str, server: str, timeout: int
+    ) -> bool:
+        self.login_calls.append((login, password, server, timeout))
         return self.login_result
 
     def account_info(self) -> Any | None:
@@ -86,7 +88,11 @@ class VerifyAccountTests(unittest.TestCase):
             },
         )
         self.assertEqual(mt5.initialize_calls, 1)
-        self.assertEqual(mt5.login_calls, [(12345678, PASSWORD, "FTMO-Server4")])
+        self.assertEqual(
+            mt5.login_calls,
+            [(12345678, PASSWORD, "FTMO-Server4", 8_000)],
+        )
+        self.assertEqual(mt5.last_initialize_kwargs, {"timeout": 8_000})
         self.assertEqual(mt5.shutdown_calls, 1)
         self.assertNotIn(PASSWORD, json.dumps(result))
 
@@ -100,7 +106,31 @@ class VerifyAccountTests(unittest.TestCase):
             result = verify_account(request(), mt5)
 
         self.assertTrue(result["verified"])
-        self.assertEqual(mt5.last_initialize_kwargs, {"path": terminal_path})
+        self.assertEqual(
+            mt5.last_initialize_kwargs,
+            {"path": terminal_path, "timeout": 8_000},
+        )
+
+    def test_native_timeout_is_configurable_and_safely_bounded(self) -> None:
+        cases = [
+            ("invalid", 8_000),
+            ("100", 1_000),
+            ("5000", 5_000),
+            ("60000", 12_000),
+        ]
+        for configured, expected in cases:
+            with self.subTest(configured=configured):
+                mt5 = FakeMt5(account=account())
+                with mock.patch.dict(
+                    os.environ,
+                    {"MT5_VERIFY_NATIVE_TIMEOUT_MS": configured},
+                ):
+                    result = verify_account(request(), mt5)
+                self.assertTrue(result["verified"])
+                self.assertEqual(
+                    mt5.last_initialize_kwargs["timeout"], expected
+                )
+                self.assertEqual(mt5.login_calls[0][3], expected)
 
     def test_native_failures_return_only_sanitized_messages_and_shut_down(self) -> None:
         cases = [
