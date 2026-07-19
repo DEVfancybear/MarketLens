@@ -14,6 +14,13 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Document the Google OAuth embedded-user-agent policy and production support
   checklist in `frontend/docs/AUTH_UI.md`.
 
+### Fixed - Firebase Admin auth route runtime (2026-07-19)
+- Pinned the frontend `firebase-admin` dependency to `13.5.0` so Next.js can
+  load `firebase-admin/auth` without the `jwks-rsa@4` / ESM-only `jose` runtime
+  failure that surfaced as HTTP 500 on `/api/push/alerts/status`.
+- Regenerated `frontend/package-lock.json`; a clean `npm ci` and Next.js
+  production build now complete successfully on the supported Node runtime.
+
 ### Changed - Generic Pine source support and `SWING_SR` removal (2026-07-19)
 - Treat Pine source as the common backend contract for catalog, saved, public,
   and future indicators. The runtime exposes Pine version and literal/enum

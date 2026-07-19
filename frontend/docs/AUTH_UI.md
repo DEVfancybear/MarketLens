@@ -86,6 +86,10 @@ Backend:
 - `DATABASE_URL` must point to a migrated Postgres database.
 - Firebase Admin service-account env vars must be configured.
 - CORS must include the frontend origin and allow credentials.
+- Keep `firebase-admin` pinned to `13.5.0` in the frontend. Firebase Admin 14.x
+  upgrades `jwks-rsa` to an ESM-only `jose` path that can fail when Next
+  externalizes `firebase-admin/auth` under the current Vercel/Node runtime;
+  this presents as a generic 500 on authenticated push routes.
 
 Firebase console:
 
@@ -121,6 +125,17 @@ Production support checklist:
   Settings -> Authorized domains.
 - Treat `disallowed_useragent` as an embedded-browser problem; treat
   `auth/unauthorized-domain` as Firebase configuration instead.
+
+### Authenticated push route 500s
+
+Routes that verify Firebase ID tokens import `firebase-admin/auth` at runtime.
+If `/api/push/alerts/status` (or another authenticated push route) starts
+returning 500 after a dependency update, check the deployed Node runtime and
+the resolved `firebase-admin` tree first. The supported frontend lockfile uses
+`firebase-admin@13.5.0` with CommonJS-compatible `jwks-rsa@3`; run a clean
+`npm ci` before reproducing a Vercel build. A failed Firebase token check is a
+401, while an ESM module-load failure occurs before the handler can return its
+normal response.
 
 ## Logout
 
