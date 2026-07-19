@@ -66,9 +66,12 @@ It never connects to the Python bridge directly.
 
 ### MT5 Credential Verifier
 
-Configure `MT5_VERIFY_PYTHON`, `MT5_VERIFY_SCRIPT`, optional `MT5_VERIFY_TERMINAL_PATH`, and
-`MT5_VERIFY_TIMEOUT` for the Go API. The helper opens no port. Existing saved credentials remain
-Configured but unverified until the signed-in user selects **Save & Verify MT5** once.
+Run `build-production.ps1` from the repository root to provision `backend/.venv-mt5` and its MT5
+dependencies. Leave `MT5_VERIFY_PYTHON` and `MT5_VERIFY_SCRIPT` unset unless overriding them; the
+Go API resolves the production venv and verifier script automatically. Optional
+`MT5_VERIFY_TERMINAL_PATH` and `MT5_VERIFY_TIMEOUT` still apply. The helper opens no port. Existing
+saved credentials remain Configured but unverified until the signed-in user selects
+**Save & Verify MT5** once.
 
 ## Configuration
 

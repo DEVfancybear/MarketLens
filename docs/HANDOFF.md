@@ -22,7 +22,9 @@ Recent post-split work:
   sequence: pull, `migrate up`, choose full Go+frontend or optional backend-only build, then start
   MT5, the private market-data bridge, production Go API, and Cloudflare Tunnel before checking
   local and public readiness. Do not remove the full frontend build option; use backend-only only
-  when the frontend is intentionally unchanged.
+  when the frontend is intentionally unchanged. The full build also provisions
+  `backend/.venv-mt5`; leave `MT5_VERIFY_PYTHON` unset so the Go API auto-detects it. An old explicit
+  `MT5_VERIFY_PYTHON=python` value disables that auto-detection and must be removed on the host.
 
 - **Generic Pine source runtime and legacy Swing S/R removal (2026-07-19):**
   replay cutoff is enforced before backend evaluation, the submitted Pine v5

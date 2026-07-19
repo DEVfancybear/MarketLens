@@ -12,6 +12,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Documented Cloudflare Tunnel recovery for browser-side API network errors, preventing a healthy
   localhost API from being mistaken for a reachable public API.
 
+### Fixed - Production MT5 verifier runtime (2026-07-19)
+- The full Windows production build now provisions `backend/.venv-mt5`, installs and imports-checks
+  `MetaTrader5`/`websockets`, and fails early for an invalid explicit terminal path.
+- The Go API auto-resolves the provisioned Python runtime and verifier script from supported launch
+  directories, so a clean server no longer depends on a globally registered `python` command.
+- MT5 dependency failures now show an actionable settings message, and malformed API/network errors
+  no longer crash the frontend while reading `toLowerCase()` from an undefined value.
+
 ### Fixed - Per-user MT5 verification and Trade access (2026-07-19)
 - Replaced the build-wide MT5 enable switch with authenticated per-user verification persisted on
   `user_integrations`; changing or clearing an account invalidates its prior verification.

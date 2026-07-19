@@ -125,8 +125,8 @@ function apiErrorMessage(error: ApiError): string {
   return error.message || `Request failed with status ${error.status}.`;
 }
 
-function isNetworkFailure(message: string): boolean {
-  const lower = message.toLowerCase();
+function isNetworkFailure(message: unknown): boolean {
+  const lower = typeof message === "string" ? message.toLowerCase() : "";
   return (
     lower.includes("failed to fetch") ||
     lower.includes("networkerror") ||

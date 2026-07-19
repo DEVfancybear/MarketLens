@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,8 +135,8 @@ func Load() (Config, error) {
 		MT5BridgeReadLimitBytes:   getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
 		MT5BridgeReconnectMin:     getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
 		MT5BridgeReconnectMax:     getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
-		MT5VerifyPython:           getEnv("MT5_VERIFY_PYTHON", "python"),
-		MT5VerifyScript:           getEnv("MT5_VERIFY_SCRIPT", "bridge/ftmo_mt5/verify_account.py"),
+		MT5VerifyPython:           getEnv("MT5_VERIFY_PYTHON", defaultMT5VerifyPython()),
+		MT5VerifyScript:           getEnv("MT5_VERIFY_SCRIPT", defaultMT5VerifyScript()),
 		MT5VerifyTerminalPath:     strings.TrimSpace(os.Getenv("MT5_VERIFY_TERMINAL_PATH")),
 		MT5VerifyTimeout:          getEnvDuration("MT5_VERIFY_TIMEOUT", 30*time.Second),
 		ReplayEngineEnabled:       getEnvBool("REPLAY_ENGINE_ENABLED", false),
@@ -152,6 +153,50 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// Production builds provision backend/.venv-mt5. Resolve it from the backend
+// working directory, the repository root, or next to bin/api.exe so a clean
+// Windows server does not depend on a globally registered `python` command.
+func defaultMT5VerifyPython() string {
+	if path := firstBackendRuntimeFile(filepath.Join(".venv-mt5", "Scripts", "python.exe")); path != "" {
+		return path
+	}
+	return "python"
+}
+
+func defaultMT5VerifyScript() string {
+	if path := firstBackendRuntimeFile(filepath.Join("bridge", "ftmo_mt5", "verify_account.py")); path != "" {
+		return path
+	}
+	return filepath.Join("bridge", "ftmo_mt5", "verify_account.py")
+}
+
+func firstBackendRuntimeFile(relativePath string) string {
+	candidates := []string{
+		relativePath,
+		filepath.Join("backend", relativePath),
+	}
+	if executable, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "..", relativePath))
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		absolute, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		absolute = filepath.Clean(absolute)
+		if _, ok := seen[absolute]; ok {
+			continue
+		}
+		seen[absolute] = struct{}{}
+		info, err := os.Stat(absolute)
+		if err == nil && !info.IsDir() {
+			return absolute
+		}
+	}
+	return ""
 }
 
 // AuthCookiesSecure returns the effective Secure flag for backend session

@@ -268,7 +268,11 @@ export function AppSettingsDialog() {
         setMt5Verification({ verified: false, verifiedAt: null });
         syncMt5Integration(unverified);
       }
-      setMessage(errorMessage(error, "MT5 verification failed."));
+      setMessage(
+        isApiError(error) && error.code === "dependency_unavailable"
+          ? "MT5 verification is unavailable because the backend Python runtime cannot load MetaTrader5. Configure MT5_VERIFY_PYTHON and restart the API."
+          : errorMessage(error, "MT5 verification failed."),
+      );
       setMessageTone("error");
     } finally {
       setVerifyingMt5(false);

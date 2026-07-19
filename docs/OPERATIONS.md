@@ -74,12 +74,15 @@ the `/api/v1/auth/*` routes. Current backend work should continue with Phase 5 s
 
 ## Python MT5 Execution Bridge (Backend Sidecar, port 8787)
 
-Install dependencies:
+The full Windows production build provisions the shared MT5 virtual environment and installs these
+dependencies automatically:
 
-```bash
-cd backend
-python -m pip install -r bridge/ftmo_mt5/requirements.txt
+```powershell
+.\build-production.ps1
 ```
+
+For backend development without a full build, create `backend\.venv-mt5` and install
+`bridge/ftmo_mt5/requirements.txt` into it manually.
 
 Dry-run (no MT5 required):
 
@@ -87,13 +90,13 @@ Dry-run (no MT5 required):
 cd backend
 $env:FTMO_MT5_ENABLED="true"
 $env:FTMO_BRIDGE_DRY_RUN="true"
-python -m bridge.ftmo_mt5.service
+.\.venv-mt5\Scripts\python.exe -m bridge.ftmo_mt5.service
 ```
 
-MT5 availability in the web app is not controlled by a frontend feature flag. Configure the Go
-API's `MT5_VERIFY_*` variables, sign in, and use **Connections & notifications -> Save & Verify
-MT5**. Verification belongs to that user. Live commands additionally require this execution bridge
-to report the same login/server.
+MT5 availability in the web app is not controlled by a frontend feature flag. Leave
+`MT5_VERIFY_PYTHON` unset so the Go API auto-detects the production venv, sign in, and use
+**Connections & notifications -> Save & Verify MT5**. Verification belongs to that user. Live
+commands additionally require this execution bridge to report the same login/server.
 
 Live mode:
 
@@ -106,7 +109,7 @@ $env:FTMO_MT5_LOGIN="12345678"
 $env:FTMO_MT5_PASSWORD="master-password"
 $env:FTMO_MT5_SERVER="FTMO-Server"
 $env:FTMO_MT5_TERMINAL_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
-python -m bridge.ftmo_mt5.service
+.\.venv-mt5\Scripts\python.exe -m bridge.ftmo_mt5.service
 ```
 
 ## Environment Variables

@@ -43,13 +43,26 @@ From the repository root in PowerShell:
 .\build-production.ps1
 ```
 
-The script performs a stripped Go build and a local Next.js production build. It does not start
-services, modify secrets, run migrations, deploy Vercel, or expose a port. The generated Go binary
-is `backend\bin\api.exe`; `.next` is the local Next.js artifact. Both are ignored by git. Vercel
-builds the frontend again from the pushed commit with its own Production environment variables.
+The script creates `backend\.venv-mt5` when needed, installs the declared MT5 helper requirements,
+checks that `MetaTrader5` and `websockets` import successfully, then performs a stripped Go build
+and a local Next.js production build. The Go API automatically discovers that virtual environment
+when `MT5_VERIFY_PYTHON` is unset. It does not start services, modify secrets, run migrations,
+deploy Vercel, or expose a port. The generated Go binary is `backend\bin\api.exe`; `.next` is the
+local Next.js artifact. Both are ignored by git. Vercel builds the frontend again from the pushed
+commit with its own Production environment variables.
 
-If the script reports a missing SDK, install Go and Node.js/npm first. The frontend dependencies
-must already be installed with `npm ci` in `frontend\`.
+Install 64-bit Python 3 for Windows, Go, and Node.js/npm before the first build. The script runs
+`npm ci` automatically when `frontend\node_modules` is absent. `MT5_VERIFY_TERMINAL_PATH`, when
+set, must point to an existing `terminal64.exe` or the build stops with an actionable error.
+
+Only a host that intentionally does not support MT5 may skip Python provisioning:
+
+```powershell
+.\build-production.ps1 -SkipMT5PythonSetup
+```
+
+Do not use that switch on the trading server; account verification requires the provisioned
+Python environment.
 
 ### Backend-only production build (optional)
 
@@ -64,7 +77,9 @@ $env:GOTOOLCHAIN = "local"
 go build -trimpath -ldflags="-s -w" -o ".\bin\api.exe" ".\cmd\api"
 ```
 
-The resulting artifact is the same `backend\bin\api.exe` produced by `build-production.ps1`.
+The resulting artifact is the same `backend\bin\api.exe` produced by `build-production.ps1`, but
+this backend-only command does not create or update `backend\.venv-mt5`. Run the full build at least
+once on a new server and whenever the MT5 Python requirements change.
 
 ## Canonical production host update and restart
 
@@ -189,11 +204,16 @@ AUTH_COOKIE_SECURE=true
 CORS_ALLOWED_ORIGINS=https://tradingterminal.io.vn
 ALERT_EVALUATOR_URL=https://tradingterminal.io.vn/api/push/evaluate
 MT5_BRIDGE_WS_URL=ws://localhost:8765
-MT5_VERIFY_PYTHON=C:\path\to\python.exe
+# Leave unset/blank to use backend\.venv-mt5 created by build-production.ps1.
+MT5_VERIFY_PYTHON=
 MT5_VERIFY_SCRIPT=bridge/ftmo_mt5/verify_account.py
 MT5_VERIFY_TERMINAL_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 MT5_VERIFY_TIMEOUT=30s
 ```
+
+Remove an old `MT5_VERIFY_PYTHON=python` value from the server env, or explicitly set it to
+`C:\path\to\repo\backend\.venv-mt5\Scripts\python.exe`. An explicit stale value overrides automatic
+detection. Restart the Go API after changing any `MT5_VERIFY_*` value.
 
 Additional local/LAN origins may be appended to `CORS_ALLOWED_ORIGINS` for diagnostics. Never use
 `*` because authenticated requests send cookies.
@@ -277,11 +297,15 @@ the short-lived verifier configured by `MT5_VERIFY_*`; credentials travel to it 
 On success, the current user's integration receives `verifiedAt` and MT5 becomes selectable.
 Changing login/server/password invalidates that verification.
 
+If the response code is `dependency_unavailable`, rerun the full production build, remove any stale
+`MT5_VERIFY_PYTHON=python` override, and restart the API. That code means the API could not start
+the verifier or the selected Python runtime could not import `MetaTrader5`.
+
 For execution, start or restart the private FTMO bridge after verification:
 
 ```powershell
 cd backend
-python -m bridge.ftmo_mt5.service
+.\.venv-mt5\Scripts\python.exe -m bridge.ftmo_mt5.service
 ```
 
 The execution bridge listens on `ws://localhost:8787` by default and must report the same login and
