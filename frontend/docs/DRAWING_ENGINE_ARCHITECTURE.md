@@ -1,8 +1,8 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog and
+_Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog,
 2026-07-17 for capability-driven parity, shared creation gestures, atomic transforms, and
-interaction-frame rendering._
+interaction-frame rendering, and 2026-07-19 for exact-precision render signatures._
 
 The current post-Phase 8 maintenance record is
 `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. Older dated counts in
@@ -266,6 +266,15 @@ memo-key contract without importing the browser canvas renderer. Update
 `tests/drawing/renderCulling.test.ts` whenever a new render input should affect
 pixels.
 
+Every point-bearing key uses `renderer/pointGeometrySignature.ts` and preserves
+the exact JavaScript numeric values for `time`, `price`, and optional `pressure`.
+Never use `toFixed()`, symbol display precision, or any other quantization for
+render/cache identity. Display formatting and cache identity are separate
+contracts: on a five-decimal Forex symbol, `1.14361` and `1.14362` are distinct
+frames even though both become `1.1436` at four decimals. Pointer work is already
+bounded by `PointerFrameCoalescer`, so dropping precision in the memo key only
+drops visible movement; it does not provide a valid performance optimization.
+
 `CanvasRenderer` caches the `drawingsHash` by `drawings[]` array identity. During live
 drag/resize, store drawings are intentionally unchanged while `liveHash` changes, so re-hashing all
 objects every animation frame is wasted work. Any code that mutates a drawing in place would break
@@ -278,7 +287,8 @@ temporary overlay object. Keep this copy-on-write rule intact when adding render
 > two of the 2026-06-27 bugs came from keys that ignored position —
 > `machineAnchorsSig` originally tracked only anchor *count*, so the live preview froze
 > after the first move (count stayed 2 while the point moved). Any new key that can change
-> position without changing count/id MUST hash the positions.
+> position without changing count/id MUST hash the exact positions without display-level
+> rounding.
 
 **`forceNext` (the viewport escape hatch).** On pan/zoom the drawing data is identical —
 `drawHash`, sizes, etc. are all unchanged — but every `(time,price)→pixel` mapping has

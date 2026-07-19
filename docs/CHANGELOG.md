@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Sub-pip drawing handle drag smoothness (2026-07-19)
+- Stopped quantizing drawing render-memo coordinates to four decimal places.
+  On five-decimal Forex symbols, consecutive prices such as `1.14361` and
+  `1.14362` previously shared the same signature, so live Target, Stop, Entry,
+  and generic drawing-handle frames were skipped until the fourth decimal
+  changed and the object appeared to stick or jump.
+- Centralized exact point signatures for live transforms, committed drawings,
+  pending creation previews, and projected-geometry caching. Pointer samples
+  remain animation-frame coalesced, preserving the existing CPU bound while
+  allowing every distinct market tick to repaint.
+- Added renderer regressions for one-tick (`0.00001`) live, committed, and
+  pending geometry changes; drawing, Long/Short Position, typecheck, lint,
+  benchmark, and production-build verification remain green.
+
 ### Fixed - Mobile Google sign-in guidance (2026-07-19)
 - Detect embedded mobile app browsers before opening Firebase Google Auth, so
   Zalo, Facebook, Messenger, Instagram, TikTok, Google-app, and Android WebView

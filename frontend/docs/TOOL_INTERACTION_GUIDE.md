@@ -1,6 +1,7 @@
 # TOOL INTERACTION GUIDE — Phase 4.2
 
-_Date: 2026-06-25. Updated 2026-07-17 for shared two-point gestures and atomic transforms._
+_Date: 2026-06-25. Updated 2026-07-17 for shared two-point gestures and atomic transforms,
+and 2026-07-19 for exact-precision drag rendering._
 
 ## Cursor mode
 
@@ -55,6 +56,9 @@ Right-click a drawing → menu appears at cursor:
 - Whole-object drag: all points translate by (Δtime, Δprice)
 - Pointer samples are coalesced to the display cadence; live geometry stays in transient refs
   instead of being persisted on every `pointermove`
+- Each distinct point value retains an exact render signature. Cache keys must never round to UI
+  display precision; otherwise sub-pip moves on five-decimal Forex symbols are skipped and handles
+  visibly stick or jump
 - Pointer-up flushes the exact final coordinate before commit
 - Single- and multi-drawing transforms commit through one atomic store write and one undo entry
 - Locked drawings are not selectable and cannot be dragged

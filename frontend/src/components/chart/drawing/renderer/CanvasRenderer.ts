@@ -15,6 +15,7 @@ import {
   type RenderMemoState,
 } from "./renderMemo";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
+import { pointGeometrySignature } from "./pointGeometrySignature";
 
 const VIEWPORT_FOLLOW_MS = 450;
 // Two 1080p layers at DPR 2 fit just under this budget (~64 MiB RGBA). Larger
@@ -439,15 +440,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
         ":" +
         d.points.length;
       for (let j = 0; j < d.points.length; j++) {
-        h +=
-          "," +
-          d.points[j].time.toFixed(0) +
-          "," +
-          d.points[j].price.toFixed(4) +
-          "," +
-          (Number.isFinite(d.points[j].pressure)
-            ? Number(d.points[j].pressure).toFixed(3)
-            : "-");
+        h += "," + pointGeometrySignature(d.points[j]);
       }
       // Include text/fontSize so text-only updates invalidate the memo.
       if (d.text != null) h += ":text=" + d.text;
@@ -633,13 +626,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     let h = String(pts.size);
     for (const arr of pts.values()) {
       for (const pt of arr)
-        h +=
-          "," +
-          pt.time.toFixed(0) +
-          "," +
-          pt.price.toFixed(4) +
-          "," +
-          (Number.isFinite(pt.pressure) ? Number(pt.pressure).toFixed(3) : "-");
+        h += "," + pointGeometrySignature(pt);
     }
     return h;
   }
@@ -670,7 +657,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
     if (m && m.anchors.length > 0) {
       machineAnchorsSig = String(m.anchors.length);
       for (const a of m.anchors)
-        machineAnchorsSig += "," + a.time.toFixed(0) + "," + a.price.toFixed(4);
+        machineAnchorsSig += "," + pointGeometrySignature(a);
     }
     const drawHash = drawingsHash(data.drawings);
     const liveH = liveHash(data.livePoints);

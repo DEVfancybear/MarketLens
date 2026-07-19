@@ -5,6 +5,7 @@
  * Frame-local — cleared at the start of each render frame.
  */
 import type { Drawing, Point } from "@/types";
+import { pointGeometrySignature } from "./pointGeometrySignature";
 
 export interface CachedGeometry {
   /** Projected pixel coordinates for each point. */
@@ -24,7 +25,7 @@ export class GeometryCache {
   static hash(d: Drawing): string {
     let h = d.id + ":" + d.points.length;
     for (const pt of d.points) {
-      h += "," + pt.time.toFixed(0) + "," + pt.price.toFixed(4);
+      h += "," + pointGeometrySignature(pt);
     }
     return h;
   }

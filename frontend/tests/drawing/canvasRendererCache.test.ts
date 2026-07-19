@@ -197,6 +197,168 @@ test("pending creation preview renders on the first invalidated-index frame", ()
   }
 });
 
+test("render memo preserves sub-pip live, committed, and pending geometry", () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousRaf = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "requestAnimationFrame",
+  );
+  const previousCancelRaf = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "cancelAnimationFrame",
+  );
+  let pendingFrame: FrameRequestCallback | null = null;
+  let nextFrameId = 0;
+  let ownerDocument: Document;
+  ownerDocument = {
+    createElement: () =>
+      new FakeCanvas("precision-layer", ownerDocument) as unknown as HTMLCanvasElement,
+  } as unknown as Document;
+  const canvas = new FakeCanvas("precision-main", ownerDocument);
+  const adapter = getTool("rectangle");
+  assert.ok(adapter);
+  const originalRender = adapter.render;
+  const rendered: Array<{ id: string; price: number | undefined }> = [];
+  const finePoints = (price: number) => [
+    { time: 10, price },
+    { time: 20, price: price + 0.00002 },
+  ];
+  const fineDrawing = (price: number): Drawing => ({
+    ...rectangle("fine", 0),
+    points: finePoints(price),
+  });
+  let drawings = [fineDrawing(1.14361)];
+  let livePoints: Map<string, Drawing["points"]> | null = new Map([
+    ["fine", finePoints(1.14361)],
+  ]);
+  let draggingId: string | null = "fine";
+  let machine: {
+    state: "Drawing";
+    anchors: Drawing["points"];
+    drawingTool: "rectangle";
+  } | null = null;
+
+  const restoreGlobal = (
+    name: "window" | "requestAnimationFrame" | "cancelAnimationFrame",
+    descriptor: PropertyDescriptor | undefined,
+  ) => {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else Reflect.deleteProperty(globalThis, name);
+  };
+  const runFrame = () => {
+    const callback = pendingFrame;
+    assert.ok(callback, "a render frame should be scheduled");
+    pendingFrame = null;
+    callback(performance.now());
+  };
+  const renderCount = (id: string) =>
+    rendered.filter((entry) => entry.id === id).length;
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    writable: true,
+    value: { devicePixelRatio: 1 },
+  });
+  Object.defineProperty(globalThis, "requestAnimationFrame", {
+    configurable: true,
+    writable: true,
+    value: (callback: FrameRequestCallback) => {
+      pendingFrame = callback;
+      return ++nextFrameId;
+    },
+  });
+  Object.defineProperty(globalThis, "cancelAnimationFrame", {
+    configurable: true,
+    writable: true,
+    value: () => {
+      pendingFrame = null;
+    },
+  });
+  adapter.render = (_context, drawing) => {
+    rendered.push({ id: drawing.id, price: drawing.points[0]?.price });
+  };
+
+  let loop: ReturnType<typeof createRenderLoop> | null = null;
+  try {
+    loop = createRenderLoop({
+      canvasRef: { current: canvas as unknown as HTMLCanvasElement },
+      toX: (time) => time,
+      toY: (price) => price,
+      getData: () => ({
+        drawings,
+        drawingsHidden: false,
+        selectedDrawingId: null,
+        selectedDrawingIds: new Set<string>(),
+        drawColor: "#2962ff",
+        activeTool: "rectangle",
+        machine,
+        chartReady: true,
+        livePoints,
+        draggingId,
+        hoveredId: null,
+        barIntervalSeconds: 60,
+      }),
+    });
+
+    runFrame();
+    assert.equal(renderCount("fine"), 1);
+
+    livePoints = new Map([["fine", finePoints(1.14362)]]);
+    loop.markDirty();
+    runFrame();
+    assert.equal(
+      renderCount("fine"),
+      2,
+      "a one-tick live move must repaint instead of sharing a 4-decimal hash",
+    );
+    assert.equal(rendered[rendered.length - 1]?.price, 1.14362);
+
+    livePoints = null;
+    draggingId = null;
+    loop.markDirty();
+    runFrame();
+    const committedBefore = renderCount("fine");
+
+    drawings = [fineDrawing(1.14362)];
+    loop.markDirty();
+    runFrame();
+    assert.equal(
+      renderCount("fine"),
+      committedBefore + 1,
+      "a one-tick committed move must invalidate the drawing hash",
+    );
+
+    machine = {
+      state: "Drawing",
+      anchors: finePoints(1.14361),
+      drawingTool: "rectangle",
+    };
+    loop.markDirty();
+    runFrame();
+    const pendingBefore = renderCount("__pending");
+
+    machine = {
+      state: "Drawing",
+      anchors: finePoints(1.14362),
+      drawingTool: "rectangle",
+    };
+    loop.markDirty();
+    runFrame();
+    assert.equal(
+      renderCount("__pending"),
+      pendingBefore + 1,
+      "a one-tick creation preview must invalidate the anchor signature",
+    );
+    assert.equal(rendered[rendered.length - 1]?.price, 1.14362);
+  } finally {
+    loop?.destroy();
+    adapter.render = originalRender;
+    restoreGlobal("window", previousWindow);
+    restoreGlobal("requestAnimationFrame", previousRaf);
+    restoreGlobal("cancelAnimationFrame", previousCancelRaf);
+  }
+});
+
 test("drag frames reuse DPR-scaled static layers and forced renders invalidate them", () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const previousRaf = Object.getOwnPropertyDescriptor(
