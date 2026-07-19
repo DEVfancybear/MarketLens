@@ -18,7 +18,7 @@ MESSAGES = {
     "missing_credentials": "MT5 login, server, and password are required.",
     "invalid_request": "The MT5 verification request is invalid.",
     "invalid_login": "The MT5 login must be a positive number.",
-    "dependency_unavailable": "MetaTrader 5 verification is unavailable on this server.",
+    "dependency_unavailable": "The selected Python runtime cannot import MetaTrader5. Rebuild and restart the backend API.",
     "initialize_failed": "MetaTrader 5 could not be initialized.",
     "login_failed": "MT5 rejected the login, server, or password.",
     "account_unavailable": "MT5 did not return account information.",

@@ -75,6 +75,43 @@ func NewCommandVerifier(executable string, args []string, timeout time.Duration)
 	}
 }
 
+// ResolvePythonRuntime selects the first candidate that can actually import
+// MetaTrader5. This lets production recover from a stale service-level Python
+// override while still honoring a working explicit runtime.
+func ResolvePythonRuntime(ctx context.Context, candidates []string, probeTimeout time.Duration) (string, error) {
+	if probeTimeout <= 0 {
+		probeTimeout = 5 * time.Second
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	attempted := 0
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		key := strings.ToLower(candidate)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		attempted++
+
+		probeContext, cancel := context.WithTimeout(ctx, probeTimeout)
+		cmd := exec.CommandContext(probeContext, candidate, "-c", "import MetaTrader5")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		err := cmd.Run()
+		cancel()
+		if err == nil {
+			return candidate, nil
+		}
+	}
+	if attempted == 0 {
+		return "", errors.New("no MT5 Python runtime candidate is configured")
+	}
+	return "", fmt.Errorf("none of %d MT5 Python runtime candidate(s) can import MetaTrader5", attempted)
+}
+
 // Verify sends credentials as one JSON document on stdin and accepts one
 // sanitized JSON result on stdout. Stderr is discarded because native MT5 or
 // Python diagnostics are not safe to return to API callers.
@@ -169,7 +206,7 @@ var resultMessages = map[string]string{
 	"missing_credentials":    "MT5 login, server, and password are required.",
 	"invalid_request":        "The MT5 verification request is invalid.",
 	"invalid_login":          "The MT5 login must be a positive number.",
-	"dependency_unavailable": "MetaTrader 5 verification is unavailable on this server.",
+	"dependency_unavailable": "The selected Python runtime cannot import MetaTrader5. Rebuild and restart the backend API.",
 	"initialize_failed":      "MetaTrader 5 could not be initialized.",
 	"login_failed":           "MT5 rejected the login, server, or password.",
 	"account_unavailable":    "MT5 did not return account information.",

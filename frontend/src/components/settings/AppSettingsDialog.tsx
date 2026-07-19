@@ -270,7 +270,7 @@ export function AppSettingsDialog() {
       }
       setMessage(
         isApiError(error) && error.code === "dependency_unavailable"
-          ? "MT5 verification is unavailable because the backend Python runtime cannot load MetaTrader5. Configure MT5_VERIFY_PYTHON and restart the API."
+          ? "The backend is running a Python runtime without MetaTrader5. Run build-production.ps1 and restart the API service."
           : errorMessage(error, "MT5 verification failed."),
       );
       setMessageTone("error");

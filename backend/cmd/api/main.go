@@ -6,7 +6,9 @@ import (
 	stdlog "log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smc-trading-terminal/backend/internal/alerts"
@@ -128,12 +130,38 @@ func main() {
 		if secretErr != nil {
 			stdlog.Fatalf("integration settings encryption init error: %v", secretErr)
 		}
+		mt5VerifyPython := cfg.MT5VerifyPython
+		resolvedMT5Python, runtimeErr := mt5verify.ResolvePythonRuntime(ctx, []string{
+			cfg.MT5VerifyPython,
+			cfg.MT5VerifyManagedPython,
+			"python",
+			"python.exe",
+			"py",
+		}, 5*time.Second)
+		if runtimeErr != nil {
+			log.Error().
+				Err(runtimeErr).
+				Str("configured_python", cfg.MT5VerifyPython).
+				Str("managed_python", cfg.MT5VerifyManagedPython).
+				Str("script", cfg.MT5VerifyScript).
+				Msg("MT5 verifier runtime unavailable")
+		} else {
+			mt5VerifyPython = resolvedMT5Python
+			event := log.Info()
+			if !strings.EqualFold(resolvedMT5Python, cfg.MT5VerifyPython) {
+				event = log.Warn().Str("configured_python", cfg.MT5VerifyPython)
+			}
+			event.
+				Str("selected_python", resolvedMT5Python).
+				Str("script", cfg.MT5VerifyScript).
+				Msg("MT5 verifier runtime ready")
+		}
 		settingsHandler = settings.NewHandler(settingsStore, requireAuth).
 			WithIntegrations(
 				settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret, cfg.ChartTimeZone,
 			).
 			WithMT5Verifier(mt5verify.NewCommandVerifier(
-				cfg.MT5VerifyPython,
+				mt5VerifyPython,
 				[]string{cfg.MT5VerifyScript},
 				cfg.MT5VerifyTimeout,
 			))

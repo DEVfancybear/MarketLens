@@ -17,6 +17,8 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `MetaTrader5`/`websockets`, and fails early for an invalid explicit terminal path.
 - The Go API auto-resolves the provisioned Python runtime and verifier script from supported launch
   directories, so a clean server no longer depends on a globally registered `python` command.
+- API startup now capability-probes configured, managed-venv, and PATH Python candidates and falls
+  back automatically when a stale service override cannot import `MetaTrader5`.
 - MT5 dependency failures now show an actionable settings message, and malformed API/network errors
   no longer crash the frontend while reading `toLowerCase()` from an undefined value.
 

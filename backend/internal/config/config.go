@@ -58,6 +58,7 @@ type Config struct {
 	MT5BridgeReconnectMin   time.Duration
 	MT5BridgeReconnectMax   time.Duration
 	MT5VerifyPython         string
+	MT5VerifyManagedPython  string
 	MT5VerifyScript         string
 	MT5VerifyTerminalPath   string
 	MT5VerifyTimeout        time.Duration
@@ -102,6 +103,7 @@ func Load() (Config, error) {
 
 	env := getEnv("APP_ENV", "development")
 	authCookieSecure := getEnvBool("AUTH_COOKIE_SECURE", env != "development")
+	managedMT5Python := managedMT5VerifyPython()
 	cfg := Config{
 		Port:                   getEnvInt("PORT", 8080),
 		Env:                    env,
@@ -135,8 +137,9 @@ func Load() (Config, error) {
 		MT5BridgeReadLimitBytes:   getEnvInt64("MT5_BRIDGE_READ_LIMIT_BYTES", 8*1024*1024),
 		MT5BridgeReconnectMin:     getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
 		MT5BridgeReconnectMax:     getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
-		MT5VerifyPython:           getEnv("MT5_VERIFY_PYTHON", defaultMT5VerifyPython()),
-		MT5VerifyScript:           getEnv("MT5_VERIFY_SCRIPT", defaultMT5VerifyScript()),
+		MT5VerifyPython:           resolveMT5VerifyPython(os.Getenv("MT5_VERIFY_PYTHON"), managedMT5Python),
+		MT5VerifyManagedPython:    managedMT5Python,
+		MT5VerifyScript:           resolveMT5VerifyScript(os.Getenv("MT5_VERIFY_SCRIPT")),
 		MT5VerifyTerminalPath:     strings.TrimSpace(os.Getenv("MT5_VERIFY_TERMINAL_PATH")),
 		MT5VerifyTimeout:          getEnvDuration("MT5_VERIFY_TIMEOUT", 30*time.Second),
 		ReplayEngineEnabled:       getEnvBool("REPLAY_ENGINE_ENABLED", false),
@@ -158,14 +161,55 @@ func Load() (Config, error) {
 // Production builds provision backend/.venv-mt5. Resolve it from the backend
 // working directory, the repository root, or next to bin/api.exe so a clean
 // Windows server does not depend on a globally registered `python` command.
-func defaultMT5VerifyPython() string {
-	if path := firstBackendRuntimeFile(filepath.Join(".venv-mt5", "Scripts", "python.exe")); path != "" {
-		return path
-	}
-	return "python"
+func managedMT5VerifyPython() string {
+	return firstBackendRuntimeFile(filepath.Join(".venv-mt5", "Scripts", "python.exe"))
 }
 
-func defaultMT5VerifyScript() string {
+func resolveMT5VerifyPython(configured, managed string) string {
+	configured = strings.TrimSpace(configured)
+	// Older deployments explicitly stored the generic `python` command. Treat
+	// those aliases as automatic selection so the build-managed venv wins.
+	if configured == "" || isBarePythonAlias(configured) {
+		if managed != "" {
+			return managed
+		}
+		if configured != "" {
+			return configured
+		}
+		return "python"
+	}
+	if filepath.IsAbs(configured) {
+		return filepath.Clean(configured)
+	}
+	if path := firstBackendRuntimeFile(configured); path != "" {
+		return path
+	}
+	return configured
+}
+
+func isBarePythonAlias(value string) bool {
+	if filepath.Base(value) != value || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `/\`) {
+		return false
+	}
+	switch strings.ToLower(value) {
+	case "python", "python.exe", "py", "py.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveMT5VerifyScript(configured string) string {
+	configured = strings.TrimSpace(configured)
+	if configured != "" {
+		if filepath.IsAbs(configured) {
+			return filepath.Clean(configured)
+		}
+		if path := firstBackendRuntimeFile(configured); path != "" {
+			return path
+		}
+		return configured
+	}
 	if path := firstBackendRuntimeFile(filepath.Join("bridge", "ftmo_mt5", "verify_account.py")); path != "" {
 		return path
 	}

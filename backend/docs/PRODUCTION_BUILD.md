@@ -211,9 +211,10 @@ MT5_VERIFY_TERMINAL_PATH=C:\Program Files\MetaTrader 5\terminal64.exe
 MT5_VERIFY_TIMEOUT=30s
 ```
 
-Remove an old `MT5_VERIFY_PYTHON=python` value from the server env, or explicitly set it to
-`C:\path\to\repo\backend\.venv-mt5\Scripts\python.exe`. An explicit stale value overrides automatic
-detection. Restart the Go API after changing any `MT5_VERIFY_*` value.
+Leaving `MT5_VERIFY_PYTHON` blank is preferred. The API treats old bare aliases such as `python` as
+automatic selection and probes each candidate with `import MetaTrader5`; a broken explicit runtime
+falls back to `backend\.venv-mt5\Scripts\python.exe`. Restart the Go API after changing any
+`MT5_VERIFY_*` value or rebuilding the venv.
 
 Additional local/LAN origins may be appended to `CORS_ALLOWED_ORIGINS` for diagnostics. Never use
 `*` because authenticated requests send cookies.
@@ -278,6 +279,10 @@ $env:APP_ENV = "production"
 .\bin\api.exe
 ```
 
+On startup, confirm the API logs `MT5 verifier runtime ready` and that `selected_python` points to
+`backend\.venv-mt5\Scripts\python.exe` (or another interpreter that passed the import probe). A
+`MT5 verifier runtime unavailable` log means no candidate could import `MetaTrader5`.
+
 The API binds to `:8080` (all interfaces). Verify it before opening the UI:
 
 ```powershell
@@ -297,9 +302,9 @@ the short-lived verifier configured by `MT5_VERIFY_*`; credentials travel to it 
 On success, the current user's integration receives `verifiedAt` and MT5 becomes selectable.
 Changing login/server/password invalidates that verification.
 
-If the response code is `dependency_unavailable`, rerun the full production build, remove any stale
-`MT5_VERIFY_PYTHON=python` override, and restart the API. That code means the API could not start
-the verifier or the selected Python runtime could not import `MetaTrader5`.
+If the response code is `dependency_unavailable`, the helper started but its selected Python could
+not import `MetaTrader5`; it is not an FTMO password or terminal-login failure. Rerun the full
+production build and restart the actual API service/process so it loads the new binary and venv.
 
 For execution, start or restart the private FTMO bridge after verification:
 
