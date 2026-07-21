@@ -14,6 +14,7 @@ const (
 	tokenNumber tokenKind = iota
 	tokenIdentifier
 	tokenString
+	tokenColor
 	tokenOperator
 	tokenParen
 	tokenBracket
@@ -37,6 +38,15 @@ func tokenize(input string) ([]token, error) {
 		ch := input[i]
 		if unicode.IsSpace(rune(ch)) {
 			i++
+			continue
+		}
+		if ch == '#' {
+			literal, next, ok := scanPineColorLiteral(input, i)
+			if !ok {
+				return nil, fmt.Errorf("invalid color literal %q", literal)
+			}
+			tokens = append(tokens, token{kind: tokenColor, text: literal})
+			i = next
 			continue
 		}
 		if (ch >= '0' && ch <= '9') || ch == '.' {
@@ -281,6 +291,8 @@ func (p *expressionParser) parsePrimary() (pineValue, error) {
 		return numberValue(tok.value), nil
 	case tokenString:
 		return stringValue(tok.text), nil
+	case tokenColor:
+		return colorValue(tok.text), nil
 	case tokenIdentifier:
 		if p.peek().kind == tokenParen && p.peek().text == "(" {
 			p.next()

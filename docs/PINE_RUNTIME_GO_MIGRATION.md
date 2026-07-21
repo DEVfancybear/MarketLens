@@ -1,8 +1,8 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Updated 2026-07-19 for generic Pine v5 source execution,
-replay-causal evaluation, the submitted Swing Highs/Lows fixture, and removal
-of the legacy `SWING_SR` catalog entry.
+_Date: 2026-07-09. Updated 2026-07-22 for generic Pine v5 source execution,
+replay-causal evaluation, the submitted Swing Highs/Lows fixture, removal of
+the legacy `SWING_SR` catalog entry, and shared Pine color-literal parsing.
 Scope: move indicator parsing/calculation out of the frontend and into the Go
 backend._
 
@@ -166,6 +166,19 @@ source: UDT/default fields, methods, function-local `var`, tuples, typed
 reference arrays, ascending/descending and `for ... in` loops, history,
 `ta.cum`, pivots, child `request.security()` contexts, boxes, lines, deletion,
 tables, plots, and fills.
+
+Both expression evaluators use the same scanner and recognize Pine color
+literals as one typed token.
+The accepted forms are `#RRGGBB` and `#RRGGBBAA`, with case-insensitive hex
+digits and the optional `AA` pair carrying opacity (`00` transparent, `FF`
+opaque). Literals work directly in visual calls, through assignments, as
+`input.color()` defaults, and inside `color.new()`. Malformed lengths or
+non-hex values fail with a compile diagnostic instead of being coerced.
+`color.new(base, transp)` replaces any existing literal alpha using Pine's
+transparency scale (`0` opaque, `100` invisible). This
+follows TradingView's documented [color type](https://www.tradingview.com/pine-script-docs/language/type-system/#color)
+and [color input](https://www.tradingview.com/pine-script-docs/concepts/inputs/#color-input)
+contracts.
 
 Deliberate limits:
 
@@ -678,6 +691,10 @@ Backend tests:
 - Metadata extraction for v3/v4/v5 `study()` and `indicator()`.
 - Input extraction for `input()`, `input.int`, `input.float`, `input.bool`,
   `input.color`, `input.source`, grouped inputs, and Pine `inline` row metadata.
+- Shared `#RRGGBB`/`#RRGGBBAA` expression parsing across vector and stateful
+  execution, including assignments, `input.color()` defaults, `color.new()`,
+  invalid-literal diagnostics, and source-default catalog compilation without
+  legacy color overrides.
 - Style extraction for `plot`, `hline`, `fill`, labels, lines, boxes, and tables.
 - Compile fixtures for VSA Volume, Better RSI, ADR 50 SR Pro, and the
   10-in-1 moving-average script shape.

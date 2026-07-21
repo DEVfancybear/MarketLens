@@ -90,6 +90,22 @@ func TestEveryCurrentBuiltInIsPineSourceCompiledByCommonRuntime(t *testing.T) {
 	}
 }
 
+func TestEveryCurrentBuiltInCompilesFromPineSourceDefaults(t *testing.T) {
+	candles := sampleIntradayCandles(18)
+	for _, indicatorType := range builtInPineOrder {
+		t.Run(indicatorType, func(t *testing.T) {
+			input := candles
+			if indicatorType == "FVG" {
+				input = fvgFixtureCandles()
+			}
+			response := computeBuiltInForTest(t, indicatorType, input, map[string]any{})
+			if len(response.Result.Series) == 0 {
+				t.Fatalf("%s source defaults produced no chart series: %+v", indicatorType, response.Result)
+			}
+		})
+	}
+}
+
 func TestFVGSourceUsesMiddleCloseThresholdAndSourceGeometry(t *testing.T) {
 	candles := fvgFixtureCandles()[:3]
 	config := runtimeConfig("fvg", "FVG")

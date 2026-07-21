@@ -795,15 +795,12 @@ func tokenizeStatefulExpression(text string) ([]statefulToken, error) {
 			continue
 		}
 		if char == '#' {
-			start := index
-			index++
-			for index < len(text) && ((text[index] >= '0' && text[index] <= '9') || (text[index] >= 'a' && text[index] <= 'f') || (text[index] >= 'A' && text[index] <= 'F')) {
-				index++
+			literal, next, ok := scanPineColorLiteral(text, index)
+			if !ok {
+				return nil, fmt.Errorf("invalid color literal %q", literal)
 			}
-			if index-start != 7 && index-start != 9 {
-				return nil, fmt.Errorf("invalid color literal %q", text[start:index])
-			}
-			tokens = append(tokens, statefulToken{kind: statefulTokenColor, text: text[start:index]})
+			tokens = append(tokens, statefulToken{kind: statefulTokenColor, text: literal})
+			index = next
 			continue
 		}
 		if (char >= '0' && char <= '9') || (char == '.' && index+1 < len(text) && text[index+1] >= '0' && text[index+1] <= '9') {

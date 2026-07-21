@@ -1040,6 +1040,15 @@ Pine defaults, while an explicit `color(na)` remains transparent. Intermediate
 series referenced by `request.security()` are re-evaluated in its aggregated
 child context rather than frozen from the chart timeframe.
 
+Color expressions accept Pine's `#RRGGBB` and `#RRGGBBAA` literals in both the
+vector and stateful execution paths. They remain typed colors when used
+directly, assigned to variables, supplied as `input.color()` defaults, or
+nested inside `color.new()`. The optional `AA` pair is opacity (`00`
+transparent, `FF` opaque); malformed color literals return a structured compile
+diagnostic. `color.new(base, transp)` replaces existing alpha using Pine's
+`0`-opaque to `100`-invisible transparency scale. Catalog callers do not need
+legacy top-level color fields to make source-defined defaults compile.
+
 Pine sources (`indicator()` and legacy `study()` declarations; strategy/library
 execution remains explicitly unsupported) execute sequentially on closed bars:
 OHLCV/bar-state values are

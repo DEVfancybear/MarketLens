@@ -290,6 +290,50 @@ func TestExtractMetaInputsAndStyles(t *testing.T) {
 	}
 }
 
+func TestCompilePineColorLiteralsInGenericExpressions(t *testing.T) {
+	source := `//@version=5
+indicator("Color literals")
+inputLine = input.color(#26a69a, "Input line")
+alphaLine = #ABCDEF80
+fadedLine = color.new(#33669980, 25)
+plot(close, "input", color = inputLine)
+plot(open, "alpha", color = alphaLine)
+plot(low, "faded", color = fadedLine)
+plot(high, "direct", color = #123456)`
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID:   "color-literals",
+		SourceCode: source,
+		Candles:    sampleCandles(20),
+	})
+	if len(resp.Errors) > 0 {
+		t.Fatalf("compile errors: %+v", resp.Errors)
+	}
+	if len(resp.Result.Series) != 4 {
+		t.Fatalf("series = %+v, want four generic color plots", resp.Result.Series)
+	}
+	wantColors := []string{"#26a69a", "#ABCDEF80", "rgba(51, 102, 153, 0.750)", "#123456"}
+	for index, want := range wantColors {
+		series := resp.Result.Series[index]
+		if series.Color != want || len(series.Data) != 20 {
+			t.Fatalf("series %d = %+v, want color %q and 20 points", index, series, want)
+		}
+	}
+}
+
+func TestCompileRejectsMalformedPineColorLiterals(t *testing.T) {
+	for _, literal := range []string{"#12345", "#1234567", "#GG0000"} {
+		t.Run(literal, func(t *testing.T) {
+			resp := Compile(context.Background(), CompileRequest{
+				SourceCode: "indicator(\"Invalid color\")\nlineColor = " + literal + "\nplot(close, color = lineColor)",
+				Candles:    sampleCandles(2),
+			})
+			if len(resp.Errors) == 0 || !strings.Contains(resp.Errors[0].Message, "invalid color literal") {
+				t.Fatalf("errors = %+v, want an invalid color literal diagnostic", resp.Errors)
+			}
+		})
+	}
+}
+
 func TestCompileVSAProducesColoredHistogram(t *testing.T) {
 	resp := Compile(context.Background(), CompileRequest{
 		ScriptID:   "vsa",

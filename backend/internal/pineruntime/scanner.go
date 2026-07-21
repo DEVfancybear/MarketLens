@@ -264,6 +264,33 @@ func parseNumberLiteral(input string) (float64, bool) {
 	return value, err == nil
 }
 
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') ||
+		(ch >= 'a' && ch <= 'f') ||
+		(ch >= 'A' && ch <= 'F')
+}
+
+// scanPineColorLiteral recognizes Pine's #RRGGBB and #RRGGBBAA literal forms.
+// Both the vector and stateful expression lexers use this scanner so color
+// syntax cannot diverge between the two generic execution paths.
+func scanPineColorLiteral(input string, start int) (literal string, next int, ok bool) {
+	if start < 0 || start >= len(input) || input[start] != '#' {
+		return "", start, false
+	}
+	end := start + 1
+	for end < len(input) && isHexDigit(input[end]) {
+		end++
+	}
+	digits := end - start - 1
+	return input[start:end], end, digits == 6 || digits == 8
+}
+
+func parsePineColorLiteral(input string) (string, bool) {
+	trimmed := strings.TrimSpace(input)
+	literal, next, ok := scanPineColorLiteral(trimmed, 0)
+	return literal, ok && next == len(trimmed)
+}
+
 func sourceLines(cleaned string) []sourceLine {
 	rawLines := strings.Split(cleaned, "\n")
 	lines := make([]sourceLine, 0, len(rawLines))

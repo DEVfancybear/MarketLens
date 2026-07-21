@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Common Pine color-literal compilation (2026-07-22)
+- Added shared `#RRGGBB` and `#RRGGBBAA` literal scanning to both Pine expression
+  evaluators, including assigned colors, `input.color()` defaults, and nested
+  `color.new()` calls.
+- Stopped modern catalog configurations from producing a compile diagnostic for
+  their source-defined colors. The frontend previously rejected that otherwise
+  usable response, leaving RSI and other affected indicator panes empty.
+- Added generic valid/invalid color-literal coverage and source-default runtime
+  tests for every current built-in without legacy color overrides.
+
 ### Changed - Single production backend entrypoint (2026-07-19)
 - Defined **build backend production** and **run backend** as one root command:
   `.\run-backend-production.ps1`.

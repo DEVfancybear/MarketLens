@@ -246,7 +246,7 @@ func inferInputKind(callName string, args callArguments, defaultExpression strin
 	if _, ok := parseBoolLiteral(def); ok {
 		return "bool"
 	}
-	if strings.HasPrefix(def, "color.") || regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(def) {
+	if _, ok := parsePineColorLiteral(def); strings.HasPrefix(def, "color.") || ok {
 		return "color"
 	}
 	if _, ok := unquote(def); ok {
@@ -418,8 +418,8 @@ func resolveColor(expression, fallback string) string {
 	if trimmed == "" {
 		return fallback
 	}
-	if strings.HasPrefix(trimmed, "#") && len(trimmed) == 7 {
-		return trimmed
+	if literal, ok := parsePineColorLiteral(trimmed); ok {
+		return literal
 	}
 	if color, ok := namedColors[trimmed]; ok {
 		return color
@@ -450,11 +450,12 @@ func resolveColor(expression, fallback string) string {
 }
 
 func withTransparency(color string, transparency float64) string {
-	if !strings.HasPrefix(color, "#") || len(color) != 7 {
+	literal, ok := parsePineColorLiteral(color)
+	if !ok {
 		return color
 	}
 	alpha := 1 - math.Max(0, math.Min(100, transparency))/100
-	return fmt.Sprintf("rgba(%d, %d, %d, %.3f)", hexPair(color[1:3]), hexPair(color[3:5]), hexPair(color[5:7]), alpha)
+	return fmt.Sprintf("rgba(%d, %d, %d, %.3f)", hexPair(literal[1:3]), hexPair(literal[3:5]), hexPair(literal[5:7]), alpha)
 }
 
 func hexPair(input string) int {
