@@ -5,6 +5,7 @@ import threading
 import time
 import types
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 
@@ -226,15 +227,47 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.assertEqual(payload["statuses"][1]["symbol"], "XAUUSD")
         self.assertEqual(payload["statuses"][1]["state"], "unknown")
 
-    def test_calendar_timeframe_freshness_uses_variable_windows(self) -> None:
-        tick_time = 1_800_000_000
+    def test_freshness_requires_current_bar_for_every_timeframe(self) -> None:
+        tick_time = int(datetime(2026, 7, 22, 12, tzinfo=timezone.utc).timestamp())
         mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
             time=tick_time
         )
 
+        for timeframe in (
+            "1m",
+            "3m",
+            "5m",
+            "15m",
+            "30m",
+            "1H",
+            "2H",
+            "4H",
+            "1D",
+            "1W",
+        ):
+            step = mt5_server.TIMEFRAME_SECONDS[timeframe]
+            with self.subTest(timeframe=timeframe):
+                self.assertTrue(
+                    mt5_server._rates_are_fresh(
+                        [{"time": tick_time - (step // 2)}],
+                        "NZDJPY",
+                        timeframe,
+                        step,
+                    )
+                )
+                self.assertFalse(
+                    mt5_server._rates_are_fresh(
+                        [{"time": tick_time - step}],
+                        "NZDJPY",
+                        timeframe,
+                        step,
+                    )
+                )
+
+        month_start = int(datetime(2026, 7, 1, tzinfo=timezone.utc).timestamp())
         self.assertTrue(
             mt5_server._rates_are_fresh(
-                [{"time": tick_time - (40 * 86400)}],
+                [{"time": month_start - (2 * 3600)}],
                 "NZDJPY",
                 "1M",
                 mt5_server.TIMEFRAME_SECONDS["1M"],
@@ -242,20 +275,63 @@ class Mt5ServerTickTests(unittest.TestCase):
         )
         self.assertFalse(
             mt5_server._rates_are_fresh(
-                [{"time": tick_time - (70 * 86400)}],
+                [{"time": int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())}],
                 "NZDJPY",
                 "1M",
                 mt5_server.TIMEFRAME_SECONDS["1M"],
             )
         )
+
+    def test_freshness_uses_normalized_tick_offset_and_newest_unsorted_rate(self) -> None:
+        normalized_tick = int(datetime(2026, 7, 22, 12, tzinfo=timezone.utc).timestamp())
+        mt5_server.MT5_TICK_TIME_OFFSET_SECONDS = 3600
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=normalized_tick + 3600
+        )
+
         self.assertTrue(
             mt5_server._rates_are_fresh(
-                [{"time": tick_time - (10 * 86400)}],
-                "NZDJPY",
-                "1W",
-                mt5_server.TIMEFRAME_SECONDS["1W"],
+                [
+                    {"time": normalized_tick - 300},
+                    {"time": normalized_tick - 900},
+                ],
+                "EURUSD",
+                "15m",
+                mt5_server.TIMEFRAME_SECONDS["15m"],
             )
         )
+
+    def test_monthly_freshness_handles_leap_and_year_boundaries(self) -> None:
+        for tick_dt in (
+            datetime(2024, 2, 29, 12, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 0, tzinfo=timezone.utc),
+            datetime(2026, 12, 31, 23, tzinfo=timezone.utc),
+        ):
+            tick_time = int(tick_dt.timestamp())
+            mt5_server.mt5.symbol_info_tick = lambda _symbol, time=tick_time: SimpleNamespace(
+                time=time
+            )
+            minimum = mt5_server._minimum_fresh_bar_time(
+                tick_time,
+                "1M",
+                mt5_server.TIMEFRAME_SECONDS["1M"],
+            )
+            self.assertTrue(
+                mt5_server._rates_are_fresh(
+                    [{"time": minimum}],
+                    "EURUSD",
+                    "1M",
+                    mt5_server.TIMEFRAME_SECONDS["1M"],
+                )
+            )
+            self.assertFalse(
+                mt5_server._rates_are_fresh(
+                    [{"time": minimum - 1}],
+                    "EURUSD",
+                    "1M",
+                    mt5_server.TIMEFRAME_SECONDS["1M"],
+                )
+            )
 
     def test_non_empty_stale_history_returns_without_warmup_retry(self) -> None:
         rates = [{"time": 1_700_000_000}]
@@ -280,12 +356,77 @@ class Mt5ServerTickTests(unittest.TestCase):
 
         self.assertIs(result, rates)
 
+    def test_explicit_refresh_retries_non_empty_stale_history(self) -> None:
+        tick_time = 1_800_000_900
+        stale_rates = [{"time": tick_time - 900}]
+        fresh_rates = [{"time": tick_time - 300}]
+        calls = 0
+        warmups = 0
+        mt5_server.HISTORY_SYNC_DELAY = 0
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=tick_time
+        )
+
+        def copy_from_pos(*_args: object) -> list[dict[str, int]]:
+            nonlocal calls
+            calls += 1
+            return stale_rates if calls == 1 else fresh_rates
+
+        def warmup(*_args: object) -> list[dict[str, int]]:
+            nonlocal warmups
+            warmups += 1
+            return []
+
+        mt5_server.mt5.copy_rates_from_pos = copy_from_pos
+        mt5_server.mt5.copy_rates_from = warmup
+
+        result = mt5_server.copy_rates_synced_blocking(
+            "EURUSD",
+            mt5_server.TIMEFRAME_MAP["15m"],
+            "15m",
+            100,
+            refresh=True,
+        )
+
+        self.assertIs(result, fresh_rates)
+        self.assertEqual(calls, 2)
+        self.assertEqual(warmups, 1)
+
+    def test_explicit_refresh_returns_best_stale_window_after_bounded_retries(self) -> None:
+        tick_time = 1_800_000_900
+        stale_rates = [{"time": tick_time - 900}]
+        calls = 0
+        mt5_server.HISTORY_SYNC_DELAY = 0
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=tick_time
+        )
+
+        def copy_from_pos(*_args: object) -> list[dict[str, int]]:
+            nonlocal calls
+            calls += 1
+            return stale_rates
+
+        mt5_server.mt5.copy_rates_from_pos = copy_from_pos
+        mt5_server.mt5.copy_rates_from = lambda *_args: []
+
+        result = mt5_server.copy_rates_synced_blocking(
+            "EURUSD",
+            mt5_server.TIMEFRAME_MAP["15m"],
+            "15m",
+            100,
+            refresh=True,
+        )
+
+        self.assertIs(result, stale_rates)
+        self.assertEqual(calls, 1 + mt5_server.HISTORY_SYNC_RETRIES)
+
     def test_older_history_retries_a_transient_empty_window(self) -> None:
         requested = [
             {"time": 1_700_000_000},
             {"time": 1_700_000_060},
         ]
         calls = 0
+        requested_limits: list[int] = []
 
         def copy_rates(
             _symbol: str,
@@ -295,6 +436,7 @@ class Mt5ServerTickTests(unittest.TestCase):
         ) -> list[dict[str, int]]:
             nonlocal calls
             calls += 1
+            requested_limits.append(_limit)
             return [] if calls == 1 else requested
 
         mt5_server.HISTORY_SYNC_DELAY = 0
@@ -310,6 +452,7 @@ class Mt5ServerTickTests(unittest.TestCase):
 
         self.assertIs(result, requested)
         self.assertEqual(calls, 2)
+        self.assertEqual(requested_limits, [101, 101])
 
     def test_history_around_expands_forward_and_keeps_target_context(self) -> None:
         requested_time = 1_800_000_000
@@ -389,6 +532,191 @@ class Mt5ServerWorkerTests(unittest.IsolatedAsyncioTestCase):
             mt5_server.copy_selected_rates_synced_worker = original_loader
 
         self.assertFalse(payload["has_more"])
+
+    async def test_exact_full_cursor_page_is_terminal_but_extra_probe_bar_has_more(self) -> None:
+        original_loader = mt5_server.copy_selected_rates_synced_worker
+        requested_time = 1_800_000_000
+
+        def candle(index: int) -> dict[str, float]:
+            return {
+                "time": requested_time - ((5 - index) * 60),
+                "open": 1.0,
+                "high": 1.1,
+                "low": 0.9,
+                "close": 1.05,
+                "tick_volume": 10,
+            }
+
+        for returned_count, expected_more, expected_first in (
+            (4, False, requested_time - (5 * 60)),
+            (5, True, requested_time - (4 * 60)),
+        ):
+            with self.subTest(returned_count=returned_count):
+                async def fake_loader(
+                    *_args: object,
+                    count: int = returned_count,
+                ) -> tuple[list[dict[str, float]], str]:
+                    return ([candle(index) for index in range(count)], "")
+
+                mt5_server.copy_selected_rates_synced_worker = fake_loader
+                try:
+                    payload = json.loads(
+                        await mt5_server.load_history_message(
+                            "EURUSD",
+                            "1m",
+                            4,
+                            f"hist-before-{returned_count}",
+                            before=requested_time,
+                        )
+                    )
+                finally:
+                    mt5_server.copy_selected_rates_synced_worker = original_loader
+
+                self.assertEqual(payload["has_more"], expected_more)
+                self.assertEqual(len(payload["candles"]), 4)
+                self.assertEqual(payload["candles"][0]["time"], expected_first)
+
+    async def test_empty_cursor_history_keeps_boundary_retryable(self) -> None:
+        original_loader = mt5_server.copy_selected_rates_synced_worker
+
+        async def fake_loader(*_args: object) -> tuple[list[dict[str, float]], str]:
+            return ([], "")
+
+        mt5_server.copy_selected_rates_synced_worker = fake_loader
+        try:
+            payload = json.loads(
+                await mt5_server.load_history_message(
+                    "EURUSD",
+                    "1H",
+                    100,
+                    "hist-empty-before",
+                    before=1_800_000_000,
+                )
+            )
+        finally:
+            mt5_server.copy_selected_rates_synced_worker = original_loader
+
+        self.assertNotIn("has_more", payload)
+
+    async def test_cursor_payload_filters_boundary_rows_before_counting_more(self) -> None:
+        original_loader = mt5_server.copy_selected_rates_synced_worker
+        requested_time = 1_800_000_000
+
+        async def fake_loader(*_args: object) -> tuple[list[dict[str, float]], str]:
+            return ([
+                {
+                    "time": requested_time - 120,
+                    "open": 1.0,
+                    "high": 1.1,
+                    "low": 0.9,
+                    "close": 1.05,
+                    "tick_volume": 10,
+                },
+                {
+                    # A defensive wrapper may accidentally include the cursor;
+                    # it must never turn a terminal page into has_more=true.
+                    "time": requested_time,
+                    "open": 9.0,
+                    "high": 9.1,
+                    "low": 8.9,
+                    "close": 9.05,
+                    "tick_volume": 99,
+                },
+            ], "")
+
+        mt5_server.copy_selected_rates_synced_worker = fake_loader
+        try:
+            payload = json.loads(
+                await mt5_server.load_history_message(
+                    "EURUSD",
+                    "1m",
+                    1,
+                    "hist-boundary",
+                    before=requested_time,
+                )
+            )
+        finally:
+            mt5_server.copy_selected_rates_synced_worker = original_loader
+
+        self.assertFalse(payload["has_more"])
+        self.assertEqual(
+            [candle["time"] for candle in payload["candles"]],
+            [requested_time - 120],
+        )
+
+    async def test_cursor_payload_keeps_all_boundary_rows_retryable(self) -> None:
+        original_loader = mt5_server.copy_selected_rates_synced_worker
+        requested_time = 1_800_000_000
+
+        async def fake_loader(*_args: object) -> tuple[list[dict[str, float]], str]:
+            return ([
+                {
+                    "time": requested_time,
+                    "open": 1.0,
+                    "high": 1.1,
+                    "low": 0.9,
+                    "close": 1.05,
+                    "tick_volume": 10,
+                }
+            ], "")
+
+        mt5_server.copy_selected_rates_synced_worker = fake_loader
+        try:
+            payload = json.loads(
+                await mt5_server.load_history_message(
+                    "EURUSD",
+                    "1m",
+                    1,
+                    "hist-boundary-only",
+                    before=requested_time,
+                )
+            )
+        finally:
+            mt5_server.copy_selected_rates_synced_worker = original_loader
+
+        self.assertEqual(payload["candles"], [])
+        self.assertNotIn("has_more", payload)
+
+    async def test_explicit_refresh_payload_reports_exhausted_freshness(self) -> None:
+        original_loader = mt5_server.copy_selected_rates_synced_worker
+        original_tick = mt5_server.mt5.symbol_info_tick
+        tick_time = 1_800_000_900
+
+        async def fake_loader(*_args: object) -> tuple[list[dict[str, float]], str]:
+            return ([
+                {
+                    "time": tick_time - 900,
+                    "open": 1.0,
+                    "high": 1.1,
+                    "low": 0.9,
+                    "close": 1.05,
+                    "tick_volume": 10,
+                }
+            ], "")
+
+        mt5_server.copy_selected_rates_synced_worker = fake_loader
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=tick_time
+        )
+        try:
+            payload = json.loads(
+                await mt5_server.load_history_message(
+                    "EURUSD",
+                    "15m",
+                    100,
+                    "hist-refresh",
+                    refresh=True,
+                )
+            )
+        finally:
+            mt5_server.copy_selected_rates_synced_worker = original_loader
+            mt5_server.mt5.symbol_info_tick = original_tick
+
+        self.assertTrue(payload["freshness_known"])
+        self.assertTrue(payload["stale"])
+        self.assertTrue(payload["refresh_exhausted"])
+        self.assertEqual(payload["last_bar_time"], tick_time - 900)
+        self.assertEqual(payload["minimum_fresh_bar_time"], tick_time - 899)
 
     async def test_history_around_payload_reports_requested_and_resolved_time(self) -> None:
         original_loader = mt5_server.copy_selected_rates_synced_worker

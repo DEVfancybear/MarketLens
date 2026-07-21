@@ -68,6 +68,14 @@ export interface Mt5HistorySnapshot {
   stale?: boolean;
   /** True while a background refresh is still pending. */
   refreshPending?: boolean;
+  /** Whether the bridge had an MT5 tick reference for its freshness decision. */
+  freshnessKnown?: boolean;
+  /** Latest bar-open timestamp observed in the returned window. */
+  lastBarTime?: number;
+  /** Oldest bar-open timestamp that can still be the current timeframe bar. */
+  minimumFreshBarTime?: number;
+  /** True when an explicit refresh exhausted its bounded stale-rate retries. */
+  refreshExhausted?: boolean;
   updatedAt?: string;
   lastError?: string;
 }

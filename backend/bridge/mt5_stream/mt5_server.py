@@ -86,6 +86,21 @@ class Config:
         return config
 
 
+@dataclass(frozen=True)
+class HistoryFreshness:
+    """Freshness evidence for one latest MT5 rate window.
+
+    ``known`` is false when MT5 has no live tick reference. In that case the
+    bridge must not label usable history stale merely because it cannot prove
+    which bar is current.
+    """
+
+    known: bool
+    stale: bool
+    last_bar_time: int = 0
+    minimum_fresh_bar_time: int = 0
+
+
 CLIENTS: Set[WebSocketServerProtocol] = set()
 SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
@@ -115,10 +130,9 @@ TIMEFRAME_MAP = {
     "1M": mt5.TIMEFRAME_MN1,
 }
 
-# Bar length in seconds, used to decide whether cached rates are up to date.
-# Note: "1m" is one minute; "1M" is one month. A month is variable length
-# (28-31 days), so the 31-day upper bound keeps the freshness check lenient — a
-# valid current-month bar always passes while a months-behind cache is refetched.
+# Nominal bar lengths used by freshness and Go-to look-ahead policy. "1m" is
+# one minute while "1M" is one month; monthly freshness itself is calendar
+# based in _minimum_fresh_bar_time rather than derived from this 31-day value.
 TIMEFRAME_SECONDS = {
     "1m": 60,
     "3m": 180,
@@ -140,34 +154,64 @@ HISTORY_SYNC_RETRIES = int(os.getenv("MT5_HISTORY_SYNC_RETRIES", "2"))
 HISTORY_SYNC_DELAY = max(int(os.getenv("MT5_HISTORY_SYNC_DELAY_MS", "300")), 50) / 1000
 
 
+def _minimum_fresh_bar_time(
+    tick_time: int,
+    timeframe: str,
+    tf_seconds: int,
+) -> int:
+    """Return the oldest bar-open timestamp that can still be the current bar.
+
+    Fixed-duration bars are broker aligned, so comparing age is safer than
+    snapping the UTC epoch. A current bar must have opened less than one full
+    interval before the newest MT5 tick. Monthly bars need calendar handling;
+    the two-day allowance covers broker UTC offsets around the first day without
+    accepting the previous month's bar.
+    """
+    if tick_time <= 0 or tf_seconds <= 0:
+        return 0
+    if timeframe == "1M":
+        tick_dt = datetime.fromtimestamp(tick_time, timezone.utc)
+        month_start = datetime(tick_dt.year, tick_dt.month, 1, tzinfo=timezone.utc)
+        return max(1, int(month_start.timestamp()) - (2 * 86400))
+    return max(1, tick_time - tf_seconds + 1)
+
+
+def _history_freshness(
+    rates: Any,
+    symbol: str,
+    timeframe: str,
+    tf_seconds: int,
+) -> HistoryFreshness:
+    """Assess the latest rates against MT5's newest tick for every timeframe."""
+    last_bar_time = 0
+    if rates is not None and len(rates) > 0:
+        last_bar_time = max(int(row["time"]) for row in rates)
+
+    if tf_seconds <= 0:
+        return HistoryFreshness(False, False, last_bar_time, 0)
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None or not getattr(tick, "time", 0):
+        return HistoryFreshness(False, False, last_bar_time, 0)
+
+    tick_time = normalize_mt5_tick_time(int(tick.time))
+    minimum = _minimum_fresh_bar_time(tick_time, timeframe, tf_seconds)
+    return HistoryFreshness(
+        True,
+        last_bar_time < minimum,
+        last_bar_time,
+        minimum,
+    )
+
+
 def _rates_are_fresh(
     rates: Any,
     symbol: str,
     timeframe: str,
     tf_seconds: int,
 ) -> bool:
-    """True when the last cached bar is within one bar of the current one."""
-    if rates is None or len(rates) == 0:
-        return False
-    if tf_seconds <= 0:
-        return True  # non-intraday timeframe: accept whatever MT5 returns
-    tick = mt5.symbol_info_tick(symbol)
-    if tick is None or not tick.time:
-        return True  # no live reference; don't loop forever
-    tick_time = normalize_mt5_tick_time(int(tick.time))
-    last_rate_time = int(rates[-1]["time"])
-    if timeframe == "1W":
-        # Weekly bars are broker/calendar aligned, not aligned to the Unix epoch.
-        return last_rate_time >= tick_time - (2 * 7 * 86400)
-    if timeframe == "1M":
-        # Calendar months vary from 28-31 days. Accept the current or previous
-        # monthly bar without repeatedly warming an already valid MT5 cache.
-        return last_rate_time >= tick_time - (2 * 31 * 86400)
-    current_bar = tick_time - (tick_time % tf_seconds)
-    # MetaQuotes documents copy_rates_* output as UTC bar-open seconds. Keep rate
-    # times untouched here; applying the tick offset to rates shifts candles by
-    # the workstation/broker offset and creates a false gap before live price.
-    return last_rate_time >= current_bar - tf_seconds
+    """Compatibility helper; unknown freshness is usable but not asserted."""
+    freshness = _history_freshness(rates, symbol, timeframe, tf_seconds)
+    return not freshness.known or not freshness.stale
 
 
 def copy_rates_synced_blocking(
@@ -176,6 +220,7 @@ def copy_rates_synced_blocking(
     timeframe: str,
     limit: int,
     before: int = 0,
+    refresh: bool = False,
 ) -> Any:
     """Blocking history loader for the dedicated history worker.
 
@@ -192,19 +237,23 @@ def copy_rates_synced_blocking(
         # part of the chart history; returning one transient empty page makes
         # the browser incorrectly conclude that pagination has ended.
         cursor = datetime.fromtimestamp(max(0, before - 1), timezone.utc)
-        rates = mt5.copy_rates_from(symbol, mt5_timeframe, cursor, limit)
+        # Probe one extra bar so an exactly-full terminal boundary is not
+        # mislabeled has_more=true. The response is trimmed back to limit in
+        # load_history_message.
+        probe_limit = limit + 1
+        rates = mt5.copy_rates_from(symbol, mt5_timeframe, cursor, probe_limit)
         if rates is not None and len(rates) > 0:
             return rates
         for _ in range(HISTORY_SYNC_RETRIES):
             time.sleep(HISTORY_SYNC_DELAY)
-            rates = mt5.copy_rates_from(symbol, mt5_timeframe, cursor, limit)
+            rates = mt5.copy_rates_from(symbol, mt5_timeframe, cursor, probe_limit)
             if rates is not None and len(rates) > 0:
                 return rates
         return rates
 
     tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 0)
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
-    if rates is not None and len(rates) > 0:
+    if rates is not None and len(rates) > 0 and not refresh:
         if not _rates_are_fresh(rates, symbol, timeframe, tf_seconds):
             LOG.debug(
                 "returning available MT5 history while terminal warms "
@@ -215,10 +264,19 @@ def copy_rates_synced_blocking(
             )
         return rates
 
-    # Retry only an empty response. A non-empty but slightly stale window is
-    # immediately useful for first paint, and subsequent active-chart refreshes
-    # will pick up the terminal's asynchronously warmed bars. Waiting for strict
-    # freshness here can multiply slow MT5 calls into a 60-second queue stall.
+    if rates is not None and len(rates) > 0 and _rates_are_fresh(
+        rates,
+        symbol,
+        timeframe,
+        tf_seconds,
+    ):
+        return rates
+
+    # Ordinary reads only retry empty responses. Explicit refreshes also retry a
+    # non-empty stale window so refresh=true means "read through to the current
+    # MT5 bar" for every supported timeframe. Keep the newest non-empty result
+    # as a transparent stale fallback if the bounded warm-up budget is exhausted.
+    best_rates = rates
     for _ in range(HISTORY_SYNC_RETRIES):
         mt5.copy_rates_from(
             symbol,
@@ -229,8 +287,15 @@ def copy_rates_synced_blocking(
         time.sleep(HISTORY_SYNC_DELAY)
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, limit)
         if rates is not None and len(rates) > 0:
-            return rates
-    return rates
+            best_rates = rates
+            if not refresh or _rates_are_fresh(
+                rates,
+                symbol,
+                timeframe,
+                tf_seconds,
+            ):
+                return rates
+    return best_rates
 
 
 def copy_rates_around_blocking(
@@ -300,6 +365,7 @@ async def copy_rates_synced_worker(
     timeframe: str,
     limit: int,
     before: int = 0,
+    refresh: bool = False,
 ) -> Any:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
@@ -310,6 +376,7 @@ async def copy_rates_synced_worker(
         timeframe,
         limit,
         before,
+        refresh,
     )
 
 
@@ -320,6 +387,7 @@ def copy_selected_rates_synced_blocking(
     limit: int,
     before: int = 0,
     around: int = 0,
+    refresh: bool = False,
 ) -> tuple[Any, str]:
     """Select and load one history window on the MT5-affine worker."""
     if not mt5.symbol_select(symbol, True):
@@ -339,6 +407,7 @@ def copy_selected_rates_synced_blocking(
             timeframe,
             limit,
             before,
+            refresh,
         )
     )
     if rates is None:
@@ -356,6 +425,7 @@ async def copy_selected_rates_synced_worker(
     limit: int,
     before: int = 0,
     around: int = 0,
+    refresh: bool = False,
 ) -> tuple[Any, str]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
@@ -367,6 +437,7 @@ async def copy_selected_rates_synced_worker(
         limit,
         before,
         around,
+        refresh,
     )
 
 
@@ -443,7 +514,10 @@ def estimate_mt5_tick_time_offset(symbols: tuple[str, ...]) -> int:
             continue
 
         tick_time = int(tick.time)
-        rate_time = int(rates[-1]["time"])
+        # MT5 currently returns this one-row request in chronological order,
+        # but use the newest timestamp explicitly so a wrapper/order change
+        # cannot infer a false broker offset.
+        rate_time = max(int(row["time"]) for row in rates)
         delta = tick_time - rate_time
         if 0 <= delta < 180:
             offsets[0] = offsets.get(0, 0) + 1
@@ -824,6 +898,7 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         around = int(message.get("around") or 0)
     except (TypeError, ValueError):
         around = 0
+    refresh = message.get("refresh") is True
     task_key = (id(websocket), request_id)
     previous = HISTORY_TASKS.pop(task_key, None)
     if previous is not None:
@@ -837,6 +912,7 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
             request_id,
             before,
             around,
+            refresh,
         )
     )
     HISTORY_TASKS[task_key] = task
@@ -851,6 +927,7 @@ async def send_history_response(
     request_id: str,
     before: int = 0,
     around: int = 0,
+    refresh: bool = False,
 ) -> None:
     try:
         await websocket.send(
@@ -861,6 +938,7 @@ async def send_history_response(
                 request_id,
                 before,
                 around,
+                refresh,
             )
         )
     except asyncio.CancelledError:
@@ -1064,6 +1142,7 @@ async def load_history_message(
     request_id: str = "",
     before: int = 0,
     around: int = 0,
+    refresh: bool = False,
 ) -> str:
     limit = max(1, min(int(bars or 1500), 5000))
     mt5_timeframe = TIMEFRAME_MAP.get(timeframe)
@@ -1093,10 +1172,26 @@ async def load_history_message(
         limit,
         before,
         around,
+        refresh,
     )
     if error:
         payload["error"] = error
         return json.dumps(payload, separators=(",", ":"))
+
+    # MetaQuotes currently returns rates oldest-first, but normalize the bridge
+    # boundary defensively so probe trimming and every downstream consumer use a
+    # deterministic ascending series even if a terminal wrapper changes order.
+    rates = sorted(rates, key=lambda row: int(row["time"]))
+    cursor_has_more: bool | None = None
+    if before > 0 and len(rates) > 0:
+        # Keep the strict cursor contract even if a terminal wrapper returns a
+        # boundary/future row despite the `before - 1s` request. Count and trim
+        # only bars that the caller is allowed to receive.
+        rates = [row for row in rates if int(row["time"]) < before]
+        if rates:
+            cursor_has_more = len(rates) > limit
+            if cursor_has_more:
+                rates = rates[-limit:]
 
     payload["candles"] = [
         {
@@ -1109,11 +1204,27 @@ async def load_history_message(
         }
         for row in rates
     ]
-    if before > 0:
-        # A full page means there may be more bars to the left. A short page is
-        # an explicit terminal boundary; the frontend can stop without turning
-        # a transient transport/MT5 error into permanent exhaustion.
-        payload["has_more"] = len(rates) >= limit
+    if before == 0 and around == 0:
+        freshness = _history_freshness(
+            rates,
+            symbol,
+            timeframe,
+            TIMEFRAME_SECONDS.get(timeframe, 0),
+        )
+        payload["freshness_known"] = freshness.known
+        payload["stale"] = freshness.known and freshness.stale
+        if freshness.last_bar_time > 0:
+            payload["last_bar_time"] = freshness.last_bar_time
+        if freshness.minimum_fresh_bar_time > 0:
+            payload["minimum_fresh_bar_time"] = freshness.minimum_fresh_bar_time
+        if refresh and freshness.known and freshness.stale:
+            payload["refresh_exhausted"] = True
+    if cursor_has_more is not None:
+        # The limit+1 probe distinguishes an exactly-full terminal boundary
+        # from a page that truly has another bar to the left. An empty page stays
+        # unannotated because cold MT5 history is indistinguishable from the
+        # terminal boundary and must remain retryable in the browser.
+        payload["has_more"] = cursor_has_more
     if around > 0:
         resolved = next(
             (

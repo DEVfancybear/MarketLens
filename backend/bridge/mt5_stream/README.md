@@ -85,11 +85,13 @@ single-threaded; the MT5 Python package should not be called concurrently from
 multiple runtime threads.
 
 On-demand history requests may need a cold-start refresh because MT5 downloads
-bars after the first `copy_rates_*` call. A non-empty latest window is returned
-immediately even if its newest bar is slightly stale; later active chart
-refreshes pick up the terminal's warmed bars. Empty latest and cursor-page
-responses use the bounded retry budget. The worker serializes `copy_rates_*` work, so a slow
-request does not freeze the asyncio WebSocket loop or block catalog messages.
+bars after the first `copy_rates_*` call. An ordinary request returns a non-empty
+latest window immediately for first paint, even when it is stale. A
+`history.request` with `refresh: true` also retries a non-empty stale window and
+only reports success evidence once it reaches the current MT5 bar; empty latest
+and cursor-page responses use the same bounded retry budget. The worker
+serializes `copy_rates_*` work, so a slow request does not freeze the asyncio
+WebSocket loop or block catalog messages.
 
 History `symbol_select()` and `copy_rates_*` execute together on that worker.
 The Go client can send `history.cancel` when every HTTP waiter has abandoned a
@@ -101,8 +103,11 @@ MT5 `copy_rates_*` history timestamps are already UTC bar-open seconds according
 MetaQuotes Python docs, so the bridge sends candle `time` values unchanged. Live tick timestamps are
 normalized only when the terminal exposes them with a broker/workstation offset; that keeps quote
 freshness checks in the same UTC domain as history without shifting candles and creating false
-history gaps. `1W` and `1M` freshness checks use calendar-tolerant age windows because broker weeks
-and variable-length months are not aligned to fixed Unix-epoch intervals.
+history gaps. Freshness covers every supported timeframe: `1m`, `3m`, `5m`, `15m`, `30m`, `1H`,
+`2H`, `4H`, `1D`, `1W`, and `1M`. Fixed-duration bars must open less than one full interval before
+the newest normalized MT5 tick. `1M` uses the tick's calendar-month start minus 48 hours, allowing
+broker/DST alignment without accepting the prior month's bar. When no last tick is available the
+bridge emits `freshness_known: false` instead of claiming the window is current.
 
 ## Run
 
@@ -141,10 +146,17 @@ For historical chart candles, the frontend calls
 pages, it adds `before=<first_loaded_bar_time>`. The Go API serves cached
 candles when it has enough current data; otherwise it sends a `history.request`
 message over the existing bridge WebSocket. Latest windows use
-`copy_rates_from_pos`; older pages use `copy_rates_from(..., before - 1s, limit)`
+`copy_rates_from_pos`; older pages use `copy_rates_from(..., before - 1s, limit + 1)`
 so infinite-scroll history loads bars strictly before the first loaded candle.
-Cursor responses include `has_more`; the frontend only treats an explicit false
-value as the terminal history boundary.
+Cursor reads probe `limit + 1`, return at most `limit`, and therefore distinguish
+an exactly-full terminal boundary (`has_more: false`) from a page with older data
+(`has_more: true`). Empty cursor pages omit `has_more` and remain retryable while
+MT5 warms that segment.
+
+Latest history payloads expose `freshness_known`, `stale`, `last_bar_time`, and
+`minimum_fresh_bar_time`. An explicit stale refresh that exhausts the bounded
+retry budget also sets `refresh_exhausted: true`. Cursor and Go-to payloads do
+not carry latest-window freshness evidence.
 Date navigation uses
 `GET /api/v1/mt5/history/around?symbol=EURUSD&timeframe=15m&time=<unix-seconds>&limit=600`.
 The bridge loads backward context and adaptively expands a forward range until it finds the first
@@ -169,7 +181,8 @@ machine without MT5 installed:
 python -m unittest bridge.mt5_stream.test_mt5_server -v
 ```
 
-These tests cover tick de-duplication, timestamp normalization,
+These tests cover tick de-duplication, timestamp normalization, all-timeframe
+freshness boundaries, explicit stale refresh, exact cursor probing,
 `stream.subscribe` symbol selection, and the non-blocking worker wrapper that
 keeps asyncio responsive while MT5 calls are running.
 

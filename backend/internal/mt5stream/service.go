@@ -28,6 +28,7 @@ const (
 	defaultHistoryHTTPTimeout    = 70 * time.Second
 	defaultHistoryConcurrency    = 1
 	maxRetainedTicksPerSymbol    = 512
+	maxHistoryPagesPerKey        = 256
 )
 
 // Config controls the backend API's connection to the local Python MT5 bridge.
@@ -57,6 +58,8 @@ type Service struct {
 	tickHistory        map[string][]Tick
 	marketStatuses     map[string]MarketStatus
 	history            map[string][]Candle
+	historyPages       map[string]map[int64]historyPageCoverage
+	backgroundRefresh  map[string]*backgroundHistoryRefresh
 	conn               *websocket.Conn
 	writeMu            sync.Mutex
 	pendingHistory     map[string]chan HistoryMessage
@@ -79,6 +82,25 @@ type historyFlight struct {
 	err     error
 	cancel  context.CancelFunc
 	waiters int
+}
+
+// backgroundHistoryRefresh tracks the non-blocking revalidation started after
+// serving a stale first paint. An explicit browser refresh has stronger
+// freshness semantics and cancels this best-effort request before starting its
+// own read-through, even when the two requests use different limits.
+type backgroundHistoryRefresh struct {
+	cancel context.CancelFunc
+}
+
+// historyPageCoverage records that a specific strict-before cursor was loaded
+// from MT5. The merged candle cache can contain disjoint windows after Go-to;
+// candle timestamps alone therefore cannot prove that an arbitrary cursor is
+// covered safely.
+type historyPageCoverage struct {
+	Limit     int
+	HasMore   *bool
+	FirstTime int64
+	LastTime  int64
 }
 
 func NewService(cfg Config) *Service {
@@ -105,6 +127,8 @@ func NewService(cfg Config) *Service {
 		tickHistory:        make(map[string][]Tick),
 		marketStatuses:     make(map[string]MarketStatus),
 		history:            make(map[string][]Candle),
+		historyPages:       make(map[string]map[int64]historyPageCoverage),
+		backgroundRefresh:  make(map[string]*backgroundHistoryRefresh),
 		pendingHistory:     make(map[string]chan HistoryMessage),
 		historyFlights:     make(map[string]*historyFlight),
 		historySlots:       make(chan struct{}, defaultHistoryConcurrency),
@@ -373,6 +397,14 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 			LastError: "symbol and timeframe are required",
 		}
 	}
+	if refresh && before == 0 {
+		// A stale ordinary read may have started a larger background
+		// revalidation just before the browser's authoritative refresh. Do not
+		// leave the single MT5 history slot occupied by that lower-priority
+		// request; its response could otherwise arrive after this call and make
+		// the forming bar regress.
+		s.cancelBackgroundHistoryRefresh(symbol, timeframe)
+	}
 
 	// Serve known data immediately for ordinary (non-refresh) reads. An explicit
 	// refresh request is a synchronous read-through: callers using
@@ -380,54 +412,100 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 	// Older pagination also waits for MT5 because returning a stale page would
 	// duplicate the current viewport instead of extending the left edge.
 	candles := s.cachedHistory(symbol, timeframe, limit, before)
-	if len(candles) > 0 {
-		if before > 0 && s.historyCacheCoversBefore(symbol, timeframe, before) {
-			return s.historySnapshot(symbol, timeframe, candles, "")
-		}
-		if before == 0 && !refresh && s.historyIsFresh(symbol, timeframe, candles) {
-			return s.historySnapshot(symbol, timeframe, candles, "")
-		}
-		if before == 0 && !refresh {
-			// Keep the chart responsive while MT5 warms or refreshes rates. The
-			// background request updates the Go cache; the next frontend refresh
-			// receives fresh bars without making this HTTP call wait behind the
-			// single-threaded MT5 history bridge.
-			s.refreshHistoryAsync(symbol, timeframe, limit, before)
-			snapshot := s.historySnapshot(symbol, timeframe, candles, "")
-			snapshot.Stale = true
-			snapshot.RefreshPending = true
+	if before > 0 {
+		if coverage, ok := s.cachedHistoryPage(symbol, timeframe, before, limit); ok {
+			pageCandles, hasMore := s.cachedHistoryPageCandles(symbol, timeframe, coverage, limit)
+			snapshot := s.historySnapshot(symbol, timeframe, pageCandles, "")
+			snapshot.HasMore = hasMore
 			return snapshot
 		}
+	} else if len(candles) > 0 && !refresh {
+		freshnessKnown, stale, _, _ := s.historyFreshness(symbol, timeframe, candles)
+		if freshnessKnown && !stale {
+			snapshot := s.historySnapshot(symbol, timeframe, candles, "")
+			s.annotateSnapshotFreshness(&snapshot, symbol, timeframe, candles)
+			return snapshot
+		}
+		// Keep the chart responsive while MT5 warms or refreshes rates. The
+		// background request updates the Go cache; the next frontend refresh
+		// receives fresh bars without making this HTTP call wait behind the
+		// single-threaded MT5 history bridge.
+		s.refreshHistoryAsync(symbol, timeframe, limit, before)
+		snapshot := s.historySnapshot(symbol, timeframe, candles, "")
+		snapshot.Stale = freshnessKnown && stale
+		snapshot.RefreshPending = true
+		s.annotateSnapshotFreshness(&snapshot, symbol, timeframe, candles)
+		return snapshot
 	}
 
-	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0)
+	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0, refresh)
 	if err != nil {
-		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
+		if candles := s.cachedHistory(symbol, timeframe, limit, before); before == 0 && len(candles) > 0 {
 			snapshot := s.historySnapshot(symbol, timeframe, candles, err.Error())
 			snapshot.Stale = true
+			s.annotateSnapshotFreshness(&snapshot, symbol, timeframe, candles)
 			return snapshot
 		}
 		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
+		snapshot.Stale = refresh
 		snapshot.HasMore = nil
 		return snapshot
 	}
 	if msg.Error != "" {
-		if candles := s.cachedHistory(symbol, timeframe, limit, before); len(candles) > 0 {
+		if candles := s.cachedHistory(symbol, timeframe, limit, before); before == 0 && len(candles) > 0 {
 			snapshot := s.historySnapshot(symbol, timeframe, candles, msg.Error)
 			snapshot.Stale = true
+			s.annotateSnapshotFreshness(&snapshot, symbol, timeframe, candles)
 			return snapshot
 		}
 		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, msg.Error)
+		snapshot.Stale = refresh
 		snapshot.HasMore = msg.HasMore
 		return snapshot
 	}
+
+	normalized := normalizeCandles(msg.Candles)
+	if before > 0 && len(normalized) > 0 {
+		s.recordHistoryPage(symbol, timeframe, before, limit, normalized, msg.HasMore)
+	}
+	if len(normalized) == 0 && before == 0 {
+		fallback := s.cachedHistory(symbol, timeframe, limit, 0)
+		message := "MT5 returned no latest history candles"
+		snapshot := s.historySnapshot(symbol, timeframe, fallback, message)
+		snapshot.Stale = true
+		snapshot.RefreshExhausted = refresh || msg.RefreshExhausted
+		s.applyMessageFreshness(&snapshot, msg, symbol, timeframe, fallback)
+		return snapshot
+	}
+
+	resultCandles := limitCandles(normalized, limit, before)
 	snapshot := s.historySnapshot(
 		symbol,
 		timeframe,
-		limitCandles(msg.Candles, limit, before),
+		resultCandles,
 		"",
 	)
-	snapshot.HasMore = msg.HasMore
+	snapshot.HasMore = cloneBoolPointer(msg.HasMore)
+	s.applyMessageFreshness(&snapshot, msg, symbol, timeframe, resultCandles)
+	if before == 0 && !s.historyMessageIsAuthoritative(msg, symbol, timeframe, resultCandles) {
+		stale := s.historyMessageIsStale(msg, symbol, timeframe, resultCandles)
+		snapshot.Stale = stale
+		snapshot.RefreshExhausted = msg.RefreshExhausted
+		if refresh {
+			fallback := s.cachedHistory(symbol, timeframe, limit, 0)
+			if len(fallback) > 0 {
+				snapshot.Candles = fallback
+			}
+			if stale {
+				snapshot.LastError = "MT5 history refresh did not reach the current " + timeframe + " bar"
+			} else {
+				snapshot.LastError = "MT5 history refresh could not verify the current " + timeframe + " bar"
+			}
+		} else {
+			snapshot.RefreshPending = true
+			s.refreshHistoryAsync(symbol, timeframe, limit, 0)
+		}
+	}
 	return snapshot
 }
 
@@ -454,7 +532,7 @@ func (s *Service) HistoryAround(
 		}
 	}
 
-	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, 0, requestedTime)
+	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, 0, requestedTime, false)
 	if err != nil {
 		snapshot := s.historySnapshot(symbol, timeframe, []Candle{}, err.Error())
 		snapshot.RequestedTime = requestedTime
@@ -730,17 +808,28 @@ func (s *Service) applyHistory(history HistoryMessage) {
 	}
 	history.Symbol = symbol
 	history.Timeframe = timeframe
+	history.Candles = normalizeCandles(history.Candles)
 
 	s.mu.Lock()
-	if symbol != "" && timeframe != "" && history.Error == "" {
+	// A request-scoped response is allowed to mutate the cache only while its
+	// waiter is still registered. If the waiter timed out/cancelled, MT5 may
+	// still deliver a late response after `history.cancel`; accepting it could
+	// overwrite a newer authoritative candle with an older background value.
+	// Push/preload history has no request id and remains accepted.
+	pending := s.pendingHistory[history.RequestID]
+	accepted := history.RequestID == "" || pending != nil
+	if accepted && symbol != "" && timeframe != "" && history.Error == "" {
 		key := historyKey(symbol, timeframe)
-		s.history[key] = mergeCandles(s.history[key], history.Candles)
+		if historyResponseNeedsConservativeMerge(history) {
+			s.history[key] = mergeHistoryPreservingExisting(s.history[key], history.Candles)
+		} else {
+			s.history[key] = mergeCandles(s.history[key], history.Candles)
+		}
 		s.connected = true
 		s.lastErr = ""
 		s.source = history.Source
 		s.updatedAt = time.Now().UTC()
 	}
-	pending := s.pendingHistory[history.RequestID]
 	if history.RequestID != "" {
 		delete(s.pendingHistory, history.RequestID)
 	}
@@ -752,6 +841,54 @@ func (s *Service) applyHistory(history HistoryMessage) {
 		default:
 		}
 	}
+}
+
+// A stale/unknown MT5 response can contain older OHLC values for timestamps
+// that are already cached from a newer read. Keep those existing values while
+// still retaining genuinely new timestamps for first paint/recovery.
+func historyResponseNeedsConservativeMerge(history HistoryMessage) bool {
+	if history.RefreshExhausted || (history.Stale != nil && *history.Stale) {
+		return true
+	}
+	if history.FreshnessKnown != nil && !*history.FreshnessKnown {
+		return true
+	}
+	if history.FreshnessKnown != nil && *history.FreshnessKnown {
+		if history.MinimumFreshBarTime <= 0 {
+			return true
+		}
+		lastBar := history.LastBarTime
+		if lastBar == 0 {
+			for _, candle := range history.Candles {
+				if candle.Time > lastBar {
+					lastBar = candle.Time
+				}
+			}
+		}
+		return lastBar < history.MinimumFreshBarTime
+	}
+	return false
+}
+
+func mergeHistoryPreservingExisting(existing, incoming []Candle) []Candle {
+	if len(existing) == 0 {
+		return normalizeCandles(incoming)
+	}
+	if len(incoming) == 0 {
+		return normalizeCandles(existing)
+	}
+	existingTimes := make(map[int64]struct{}, len(existing))
+	for _, candle := range existing {
+		existingTimes[candle.Time] = struct{}{}
+	}
+	newCandles := make([]Candle, 0, len(incoming))
+	for _, candle := range incoming {
+		if _, exists := existingTimes[candle.Time]; exists {
+			continue
+		}
+		newCandles = append(newCandles, candle)
+	}
+	return mergeCandles(existing, newCandles)
 }
 
 func (s *Service) setConnected() {
@@ -787,44 +924,251 @@ func (s *Service) cachedHistory(symbol, timeframe string, limit int, before int6
 	return limitCandles(s.history[historyKey(symbol, timeframe)], limit, before)
 }
 
-// historyCacheCoversBefore distinguishes a real cached page from an unrelated,
-// stale tail. A candle at or beyond the requested boundary proves the cache was
-// populated across that boundary; otherwise a synchronous bridge request is
-// required before Replay can decide that a selected UTC time is unavailable.
-func (s *Service) historyCacheCoversBefore(symbol, timeframe string, before int64) bool {
+func (s *Service) recordHistoryPage(
+	symbol, timeframe string,
+	before int64,
+	limit int,
+	candles []Candle,
+	hasMore *bool,
+) {
+	if before <= 0 || len(candles) == 0 {
+		return
+	}
+	normalized := normalizeCandles(candles)
+	if len(normalized) == 0 || normalized[len(normalized)-1].Time >= before {
+		return
+	}
+	coverage := historyPageCoverage{
+		Limit:     clampLimit(limit),
+		HasMore:   cloneBoolPointer(hasMore),
+		FirstTime: normalized[0].Time,
+		LastTime:  normalized[len(normalized)-1].Time,
+	}
+	key := historyKey(symbol, timeframe)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pages := s.historyPages[key]
+	if pages == nil {
+		pages = make(map[int64]historyPageCoverage)
+		s.historyPages[key] = pages
+	}
+	if existing, ok := pages[before]; ok && existing.Limit > coverage.Limit {
+		return
+	}
+	if _, exists := pages[before]; !exists && len(pages) >= maxHistoryPagesPerKey {
+		// Evict the farthest-left cursor first. Re-requesting it is safe and keeps
+		// the bounded map focused on the part of history users are most likely to
+		// revisit while panning.
+		var oldestCursor int64
+		first := true
+		for cursor := range pages {
+			if first || cursor < oldestCursor {
+				oldestCursor = cursor
+				first = false
+			}
+		}
+		if !first {
+			delete(pages, oldestCursor)
+		}
+	}
+	pages[before] = coverage
+}
+
+// cachedHistoryPage only trusts a cursor that was itself loaded from MT5. A
+// merged cache may contain disjoint latest/Go-to islands, so newest>=before is
+// not evidence that all candles immediately left of before were fetched.
+func (s *Service) cachedHistoryPage(
+	symbol, timeframe string,
+	before int64,
+	limit int,
+) (historyPageCoverage, bool) {
 	if before <= 0 {
-		return true
+		return historyPageCoverage{}, false
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	candles := s.history[historyKey(symbol, timeframe)]
-	return len(candles) > 0 && candles[len(candles)-1].Time >= before
+	coverage, ok := s.historyPages[historyKey(symbol, timeframe)][before]
+	if !ok || coverage.Limit < clampLimit(limit) || coverage.FirstTime <= 0 || coverage.LastTime >= before {
+		return historyPageCoverage{}, false
+	}
+	return coverage, true
 }
 
-// historyIsFresh reports whether the cached candles reach the current bar,
-// judged against the latest streamed tick for the symbol. Stale cache (last bar
-// more than one interval behind the live bar) must be re-requested so the chart
-// has no gap between history and the realtime candle.
-func (s *Service) historyIsFresh(symbol, timeframe string, candles []Candle) bool {
+func (s *Service) cachedHistoryPageCandles(
+	symbol, timeframe string,
+	coverage historyPageCoverage,
+	limit int,
+) ([]Candle, *bool) {
+	s.mu.RLock()
+	cached := append([]Candle(nil), s.history[historyKey(symbol, timeframe)]...)
+	s.mu.RUnlock()
+	requestedLimit := clampLimit(limit)
+	page := make([]Candle, 0, min(requestedLimit, len(cached)))
+	for _, candle := range cached {
+		if candle.Time >= coverage.FirstTime && candle.Time <= coverage.LastTime {
+			page = append(page, candle)
+		}
+	}
+	hasMore := cloneBoolPointer(coverage.HasMore)
+	if len(page) > requestedLimit {
+		// The exact cursor was previously loaded with a larger page. Returning
+		// only its newest subset necessarily leaves cached candles to the left,
+		// even when MT5 reported that the original larger page hit the boundary.
+		more := true
+		hasMore = &more
+		page = page[len(page)-requestedLimit:]
+	}
+	return page, hasMore
+}
+
+func cloneBoolPointer(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
+}
+
+func minimumFreshBarTime(tickTime int64, timeframe string) int64 {
 	tfSec := timeframeSeconds(timeframe)
-	if tfSec <= 0 || len(candles) == 0 {
-		return true
+	if tickTime <= 0 || tfSec <= 0 {
+		return 0
+	}
+	if timeframe == "1M" {
+		tick := time.Unix(tickTime, 0).UTC()
+		monthStart := time.Date(tick.Year(), tick.Month(), 1, 0, 0, 0, 0, time.UTC)
+		return monthStart.Add(-48 * time.Hour).Unix()
+	}
+	return tickTime - tfSec + 1
+}
+
+func (s *Service) historyFreshness(
+	symbol, timeframe string,
+	candles []Candle,
+) (known bool, stale bool, lastBar, minimum int64) {
+	for _, candle := range candles {
+		if candle.Time > lastBar {
+			lastBar = candle.Time
+		}
 	}
 	s.mu.RLock()
 	tick, ok := s.ticks[symbol]
+	connected := s.connected
 	s.mu.RUnlock()
-	if !ok || tick.Timestamp <= 0 {
-		return true // no live reference; don't force an endless refetch
+	if !connected || !ok || tick.Timestamp <= 0 || timeframeSeconds(timeframe) <= 0 {
+		return false, false, lastBar, 0
 	}
-	lastBar := candles[len(candles)-1].Time
-	if timeframe == "1W" {
-		return lastBar >= tick.Timestamp-(2*7*86400)
+	minimum = minimumFreshBarTime(tick.Timestamp, timeframe)
+	return true, lastBar < minimum, lastBar, minimum
+}
+
+// historyIsFresh reports whether the cached candles include the bar containing
+// the newest MT5 tick. Unknown freshness remains usable, but is never exposed as
+// positive freshness evidence.
+func (s *Service) historyIsFresh(symbol, timeframe string, candles []Candle) bool {
+	known, stale, _, _ := s.historyFreshness(symbol, timeframe, candles)
+	return !known || !stale
+}
+
+func (s *Service) annotateSnapshotFreshness(
+	snapshot *HistorySnapshot,
+	symbol, timeframe string,
+	candles []Candle,
+) {
+	known, stale, lastBar, minimum := s.historyFreshness(symbol, timeframe, candles)
+	snapshot.FreshnessKnown = cloneBoolPointer(&known)
+	snapshot.LastBarTime = lastBar
+	snapshot.MinimumFreshBarTime = minimum
+	if known && stale {
+		snapshot.Stale = true
 	}
-	if timeframe == "1M" {
-		return lastBar >= tick.Timestamp-(2*31*86400)
+}
+
+func (s *Service) applyMessageFreshness(
+	snapshot *HistorySnapshot,
+	msg HistoryMessage,
+	symbol, timeframe string,
+	candles []Candle,
+) {
+	if msg.FreshnessKnown == nil && msg.Stale == nil && msg.LastBarTime == 0 && msg.MinimumFreshBarTime == 0 {
+		// During a rolling deploy an older bridge omits the freshness contract.
+		// Add local evidence when a streamed tick exists; otherwise leave the
+		// fields absent so legacy clients keep their prior behavior.
+		known, stale, lastBar, minimum := s.historyFreshness(symbol, timeframe, candles)
+		if known {
+			snapshot.FreshnessKnown = cloneBoolPointer(&known)
+			snapshot.LastBarTime = lastBar
+			snapshot.MinimumFreshBarTime = minimum
+			if stale {
+				snapshot.Stale = true
+			}
+		}
+	} else {
+		snapshot.FreshnessKnown = cloneBoolPointer(msg.FreshnessKnown)
+		snapshot.LastBarTime = msg.LastBarTime
+		snapshot.MinimumFreshBarTime = msg.MinimumFreshBarTime
+		if msg.Stale != nil && *msg.Stale {
+			snapshot.Stale = true
+		}
 	}
-	currentBar := tick.Timestamp - (tick.Timestamp % tfSec)
-	return lastBar >= currentBar-tfSec
+	snapshot.RefreshExhausted = snapshot.RefreshExhausted || msg.RefreshExhausted
+}
+
+func (s *Service) historyMessageIsStale(
+	msg HistoryMessage,
+	symbol, timeframe string,
+	candles []Candle,
+) bool {
+	if msg.FreshnessKnown != nil && *msg.FreshnessKnown && msg.MinimumFreshBarTime > 0 {
+		lastBar := msg.LastBarTime
+		if lastBar == 0 {
+			for _, candle := range candles {
+				if candle.Time > lastBar {
+					lastBar = candle.Time
+				}
+			}
+		}
+		return lastBar < msg.MinimumFreshBarTime
+	}
+	if msg.Stale != nil {
+		return *msg.Stale
+	}
+	return !s.historyIsFresh(symbol, timeframe, candles)
+}
+
+func (s *Service) historyMessageIsAuthoritative(
+	msg HistoryMessage,
+	symbol, timeframe string,
+	candles []Candle,
+) bool {
+	if msg.FreshnessKnown != nil {
+		if !*msg.FreshnessKnown {
+			return false
+		}
+		lastBar := msg.LastBarTime
+		if lastBar == 0 {
+			for _, candle := range candles {
+				if candle.Time > lastBar {
+					lastBar = candle.Time
+				}
+			}
+		}
+		if msg.MinimumFreshBarTime <= 0 || lastBar < msg.MinimumFreshBarTime {
+			return false
+		}
+		return msg.Stale == nil || !*msg.Stale
+	}
+	if msg.Stale != nil {
+		return !*msg.Stale
+	}
+	known, stale, _, _ := s.historyFreshness(symbol, timeframe, candles)
+	if known {
+		return !stale
+	}
+	// A bridge predating the freshness fields has no explicit evidence. Keep
+	// rolling-upgrade compatibility; the current bridge always sends known=false
+	// when it cannot verify the latest window.
+	return true
 }
 
 func timeframeSeconds(timeframe string) int64 {
@@ -850,10 +1194,8 @@ func timeframeSeconds(timeframe string) int64 {
 	case "1W":
 		return 604800
 	case "1M":
-		// Monthly bars ("1M", not "1m"). A month is variable length (28-31 days);
-		// use the 31-day upper bound so the freshness check stays lenient: a
-		// valid current-month bar always passes, while a cache several months
-		// behind is refetched.
+		// Monthly bars ("1M", not "1m") use calendar freshness above. This
+		// nominal duration remains useful for look-ahead sizing elsewhere.
 		return 2678400
 	default:
 		return 0
@@ -883,8 +1225,9 @@ func (s *Service) requestHistory(
 	symbol, timeframe string,
 	limit int,
 	before, around int64,
+	refresh bool,
 ) (HistoryMessage, error) {
-	key := historyRequestKey(symbol, timeframe, limit, before, around)
+	key := historyRequestKey(symbol, timeframe, limit, before, around, refresh)
 	flight, leader := s.joinHistoryFlight(key)
 	if leader {
 		requestCtx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
@@ -903,6 +1246,7 @@ func (s *Service) requestHistory(
 				limit,
 				before,
 				around,
+				refresh,
 			)
 			s.finishHistoryFlight(key, flight, msg, err)
 		}()
@@ -962,22 +1306,29 @@ func (s *Service) finishHistoryFlight(key string, flight *historyFlight, msg His
 	s.mu.Unlock()
 }
 
-func (s *Service) hasHistoryFlight(key string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.historyFlights[key] != nil
-}
-
 func (s *Service) refreshHistoryAsync(symbol, timeframe string, limit int, before int64) {
-	key := historyRequestKey(symbol, timeframe, limit, before, 0)
-	if s.hasHistoryFlight(key) {
+	seriesKey := historyKey(symbol, timeframe)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
+	refresh := &backgroundHistoryRefresh{cancel: cancel}
+	s.mu.Lock()
+	if existing := s.backgroundRefresh[seriesKey]; existing != nil {
+		s.mu.Unlock()
+		cancel()
 		return
 	}
+	s.backgroundRefresh[seriesKey] = refresh
+	s.mu.Unlock()
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultHistoryRequestTimeout)
 		defer cancel()
-		if _, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0); err != nil {
+		defer func() {
+			s.mu.Lock()
+			if s.backgroundRefresh[seriesKey] == refresh {
+				delete(s.backgroundRefresh, seriesKey)
+			}
+			s.mu.Unlock()
+		}()
+		if _, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0, true); err != nil {
 			log.Debug().
 				Err(err).
 				Str("symbol", symbol).
@@ -989,11 +1340,25 @@ func (s *Service) refreshHistoryAsync(symbol, timeframe string, limit int, befor
 	}()
 }
 
+func (s *Service) cancelBackgroundHistoryRefresh(symbol, timeframe string) {
+	seriesKey := historyKey(symbol, timeframe)
+	s.mu.Lock()
+	refresh := s.backgroundRefresh[seriesKey]
+	if refresh != nil {
+		delete(s.backgroundRefresh, seriesKey)
+	}
+	s.mu.Unlock()
+	if refresh != nil && refresh.cancel != nil {
+		refresh.cancel()
+	}
+}
+
 func (s *Service) performHistoryRequest(
 	ctx context.Context,
 	symbol, timeframe string,
 	limit int,
 	before, around int64,
+	refresh bool,
 ) (HistoryMessage, error) {
 	release, err := s.acquireHistorySlot(ctx)
 	if err != nil {
@@ -1029,6 +1394,9 @@ func (s *Service) performHistoryRequest(
 	}
 	if around > 0 {
 		payload["around"] = around
+	}
+	if refresh && before == 0 && around == 0 {
+		payload["refresh"] = true
 	}
 
 	s.writeMu.Lock()
@@ -1094,9 +1462,10 @@ func historyKey(symbol, timeframe string) string {
 	return normalizeSymbol(symbol) + ":" + normalizeTimeframe(timeframe)
 }
 
-func historyRequestKey(symbol, timeframe string, limit int, before, around int64) string {
+func historyRequestKey(symbol, timeframe string, limit int, before, around int64, refresh bool) string {
 	return historyKey(symbol, timeframe) + ":" + strconv.Itoa(limit) + ":" +
-		strconv.FormatInt(before, 10) + ":" + strconv.FormatInt(around, 10)
+		strconv.FormatInt(before, 10) + ":" + strconv.FormatInt(around, 10) + ":" +
+		strconv.FormatBool(refresh)
 }
 
 func normalizeSymbol(symbol string) string {
@@ -1230,8 +1599,9 @@ func limitCandles(candles []Candle, limit int, before int64) []Candle {
 	if len(candles) == 0 {
 		return []Candle{}
 	}
-	filtered := make([]Candle, 0, len(candles))
-	for _, candle := range candles {
+	normalized := normalizeCandles(candles)
+	filtered := make([]Candle, 0, len(normalized))
+	for _, candle := range normalized {
 		if before > 0 && candle.Time >= before {
 			continue
 		}
@@ -1302,11 +1672,25 @@ func mergeCandles(existing []Candle, incoming []Candle) []Candle {
 }
 
 func sortCandlesCopy(candles []Candle) []Candle {
-	next := append([]Candle(nil), candles...)
-	sort.Slice(next, func(i, j int) bool {
-		return next[i].Time < next[j].Time
+	return normalizeCandles(candles)
+}
+
+func normalizeCandles(candles []Candle) []Candle {
+	if len(candles) == 0 {
+		return []Candle{}
+	}
+	byTime := make(map[int64]Candle, len(candles))
+	for _, candle := range candles {
+		byTime[candle.Time] = candle
+	}
+	normalized := make([]Candle, 0, len(byTime))
+	for _, candle := range byTime {
+		normalized = append(normalized, candle)
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return normalized[i].Time < normalized[j].Time
 	})
-	return next
+	return normalized
 }
 
 func firstNonEmpty(values ...string) string {

@@ -391,16 +391,18 @@ History scheduling:
   data only and must not be used to synthesize missing candles.
 - The Go service keeps a per-`symbol:timeframe` candle cache. Ordinary non-refresh requests can
   return a cached latest window immediately and revalidate it in the background. Requests with
-  `refresh=true` wait for the MT5 read-through and do not silently return the cached window as the
-  successful result; if MT5 fails, the response includes `lastError` and marks the fallback `stale`.
+  `refresh=true` wait for an MT5 read-through and do not silently accept an unverifiable or stale
+  window as success. If MT5 cannot reach the current bar, the response keeps the usable cached
+  candles, includes `lastError`, and reports `stale` and/or `refreshExhausted`.
 - Older pagination requests (`before > 0`) still wait for MT5 history because they extend the left
-  side of the visible chart. A cached slice is eligible only when its oldest candle reaches or
-  crosses the requested `before` cursor; a newer, unrelated cached tail must go back through the
-  MT5 bridge instead of returning a misleading partial page. This coverage rule is also what makes
-  Replay `Select date -> First day` resolve against the requested historical window.
-- Cursor pages include `hasMore` when the bridge can determine whether another page exists. The
-  frontend treats an unannotated empty MT5 page as retryable because a cold terminal may return an
-  empty window while downloading historical rates.
+  side of the visible chart. Go only reuses a page when that exact strict-before cursor was loaded
+  from MT5 with at least the requested limit. It also bounds the cached result to that recorded page,
+  so disjoint latest/Go-to cache islands cannot leak into pagination. This rule is also what makes
+  Replay `Select date -> First day` resolve against the requested historical window. Cursor coverage
+  metadata is bounded per symbol/timeframe; an evicted cursor is safely reloaded from MT5.
+- Cursor reads ask MT5 for `limit + 1` bars and return at most `limit`. This makes `hasMore` exact even
+  when the terminal boundary contains exactly `limit` bars. An empty page remains unannotated and
+  retryable because a cold MT5 segment cannot be distinguished safely from the true boundary.
 - Go-to requests use `/history/around` instead of guessing a pagination cursor. The Python bridge
   loads left context separately and expands its forward range across weekends/market closures;
   Go returns no resolution rather than silently clamping to the first or last cached candle.
@@ -413,7 +415,8 @@ History scheduling:
 - When every waiter abandons a request that has already reached the bridge, Go sends
   `history.cancel`. Python cancels the associated asyncio task; executor work that is still queued is
   removed before it can delay the newly selected timeframe. An MT5 call already executing cannot be
-  interrupted, but its abandoned response is no longer sent to Go.
+  interrupted. If such a response arrives anyway, Go rejects it at the pending-request boundary so it
+  cannot overwrite a newer candle.
 - The Python bridge also runs tick snapshots, live tick polling, and
   `stream.subscribe` symbol selection through the same single MT5 worker. Do
   not call `MetaTrader5` directly from the asyncio WebSocket loop; doing so can
@@ -421,18 +424,50 @@ History scheduling:
   `connected=false` with an `i/o timeout`.
 - Frontend timeframe/symbol effects should pass `AbortSignal` to the API call and abort cleanup
   requests on selection changes.
-- Weekly and monthly freshness use calendar-tolerant windows (two weeks and 62 days respectively),
-  not Unix-epoch modulo arithmetic. This avoids repeated cold-cache retries for valid broker-aligned
-  `1W` and variable-length `1M` bars.
-- Python returns the first non-empty MT5 rate window immediately. Slightly stale data is usable for
-  first paint and is revalidated by later active-chart refreshes; only empty windows consume the
-  bounded bridge retry budget. This prevents one cold symbol from holding the single MT5 worker for
-  a full chain of freshness retries.
+- Freshness is enforced consistently for `1m`, `3m`, `5m`, `15m`, `30m`, `1H`, `2H`, `4H`, `1D`,
+  `1W`, and `1M`. Fixed-duration bars are current only when their open is less than one complete
+  interval behind the newest normalized MT5 tick. Monthly freshness is calendar based: the minimum
+  accepted open is the UTC first of the tick's month minus 48 hours for broker/DST alignment.
+- Latest responses expose `freshnessKnown`, `lastBarTime`, and `minimumFreshBarTime`; stale or
+  in-progress responses additionally expose `stale`, `refreshPending`, and/or `refreshExhausted`.
+  `freshnessKnown=false` means no MT5 tick reference was available and must not be treated as proof
+  of freshness. Older bridge versions that omit the whole contract remain rolling-upgrade compatible.
+- An ordinary request returns the first non-empty MT5 window for a fast first paint. An explicit
+  `refresh=true` request also retries a non-empty stale window within the bounded bridge budget and
+  succeeds only with current-bar evidence. Empty responses are retried in both modes.
 - After a small active-chart refresh, the frontend checks whether the returned page overlaps or
   directly continues the cached tail. If it begins more than one bar interval later, the browser
-  treats the first-paint window as stale, fetches the normal full initial window with
-  `refresh=true`, and authoritatively replaces its local `symbol:timeframe` candle cache. Ordinary
-  overlapping, adjacent, and older pagination pages still merge so valid loaded history is kept.
+  treats the first-paint window as stale, fetches a full authoritative window large enough to
+  preserve already paginated depth, and replaces its local `symbol:timeframe` candle cache. Monthly
+  continuity allows the full calendar-month range. Cached selections issue one authoritative
+  refresh. A cold stale/unknown first paint escalates that first refresh to the full initial window
+  after canceling the lower-priority background read, and transient active-refresh failures receive a
+  short bounded retry before the normal timeframe interval. Indicator warm-up history for the same
+  live symbol/timeframe is invalidated after an authoritative MT5 refresh.
+
+A current latest-window response carries explicit evidence (false status flags are omitted):
+
+```json
+{
+  "connected": true,
+  "source": "mt5",
+  "symbol": "USDCHF",
+  "timeframe": "15m",
+  "freshnessKnown": true,
+  "lastBarTime": 1800000000,
+  "minimumFreshBarTime": 1799999999,
+  "candles": [
+    {
+      "time": 1800000000,
+      "open": 0.8124,
+      "high": 0.8127,
+      "low": 0.8121,
+      "close": 0.8125,
+      "volume": 842
+    }
+  ]
+}
+```
 
 Successful `/history/around` responses identify both sides of the resolution contract:
 
@@ -709,7 +744,9 @@ quotes. It must not poll `/api/v1/mt5/ticks` on an interval; `/ticks` is retaine
 for one-off snapshots, debugging, and compatibility. MT5 chart candles must come
 from `/api/v1/mt5/history` because bid/ask ticks are not a full OHLC source.
 Active MT5 charts pass `refresh=true` with a small `limit` to bypass the backend
-cache and update the latest bars from MT5 rates. A disconnected refresh boundary triggers the
+cache and update the latest bars from MT5 rates. The first refresh runs immediately for every
+timeframe (including `1W`/`1M`) and rejects stale, pending, exhausted, or explicitly unknown
+freshness without overwriting the current chart. A disconnected refresh boundary triggers the
 full-window authoritative recovery described above instead of leaving stale and warmed price
 segments in one chart series. The `streamSymbols` array from
 `/api/v1/mt5/symbols` is the confirmed live set from the Python bridge. If the browser later
@@ -721,7 +758,11 @@ should not be shown as live streamable rows.
 MT5 history candle `time` values are the UTC bar-open seconds returned by
 MetaQuotes `copy_rates_*`. Do not apply broker/local timezone offsets to candle
 times. The bridge may normalize tick timestamps before publishing them so quote
-freshness checks compare ticks and rates in the same UTC domain.
+freshness checks compare ticks and rates in the same UTC domain. This follows the official
+MetaQuotes contracts for
+[`copy_rates_from`](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrom_py),
+[`copy_rates_from_pos`](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py),
+and [`symbol_info_tick`](https://www.mql5.com/en/docs/python_metatrader5/mt5symbolinfotick_py).
 
 ---
 

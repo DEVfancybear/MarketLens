@@ -24,6 +24,7 @@ import { getMarketDataState, MAX_CANDLES_PER_SERIES } from "@/store/marketDataSt
 import { useCandles } from "@/hooks/useCandles";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
+import { invalidateIndicatorHistoryContext } from "@/services/indicatorRuntimeCache";
 import { TF_SECONDS, type Candle, type LoadMoreHistoryResult, type Timeframe } from "@/types";
 import { findRecentCandleGap, hasDiscontinuousHistoryTail } from "@/services/market-data/candleSeries";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -33,20 +34,17 @@ import {
   historyPageBars,
   initialHistoryBars,
   mt5HistoryRefreshMs,
+  mt5RefreshBars,
+  mt5TailContinuitySeconds,
 } from "@/services/market-data/historyPolicy";
 
 const MAX_BACKFILL_MISSING_BARS = 50;
+const MT5_ACTIVE_REFRESH_RETRY_DELAYS_MS = [1_000, 3_000] as const;
 
 export interface LoadedGoToHistory {
   candles: Candle[];
   requestedTime: number;
   resolvedTime: number;
-}
-
-function mt5RefreshBarsForTimeframe(timeframe: Timeframe): number {
-  if (timeframe === "1D" || timeframe === "1W" || timeframe === "1M") return 5;
-  if (timeframe === "1H" || timeframe === "2H" || timeframe === "4H") return 10;
-  return 20;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -63,6 +61,8 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
   const catalogStatus = useAtomValue(marketSymbolCatalogStatusAtom);
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
+  const mt5NeedsFullRefreshRef = useRef<string | null>(null);
+  const mt5RefreshSelectionRef = useRef<string | null>(null);
   const olderHistoryInFlightRef = useRef(false);
   const olderHistoryControllerRef = useRef<AbortController | null>(null);
   const olderHistoryGenerationRef = useRef(0);
@@ -97,8 +97,13 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     let cancelled = false;
     const key = `${symbol}:${timeframe}`;
     setHistoryReadyKey(null);
+    if (mt5RefreshSelectionRef.current !== key) {
+      mt5RefreshSelectionRef.current = key;
+      mt5NeedsFullRefreshRef.current = null;
+    }
 
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
+    if (meta?.provider !== "mt5") mt5NeedsFullRefreshRef.current = null;
     if (!symbol || !meta) {
       // The MT5 registry is hydrated asynchronously from the backend. On a cold
       // page load the chart can mount before /api/v1/mt5/symbols completes; do
@@ -138,6 +143,16 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     }
 
     const historyLimit = initialHistoryBars(timeframe);
+
+    // The active-chart effect below immediately performs one authoritative
+    // latest-window refresh for an already painted cache. Do not race it with a
+    // second, larger refresh whose later response could regress the forming bar.
+    if (hasCachedHistory && meta.provider === "mt5") {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const controller = new AbortController();
 
     // Deferring one tick avoids React Strict Mode's mount/cleanup probe from
@@ -145,19 +160,31 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     // MT5 only receives work for the selection the user actually stopped on.
     const requestTimer = window.setTimeout(() => {
       getHistoricalDataService()
-        .loadHistory(
+        .loadHistoryPage(
           {
             symbol,
             timeframe,
             limit: historyLimit,
-            refresh: hasCachedHistory || undefined,
+            refresh: meta.provider === "mt5" ? undefined : hasCachedHistory || undefined,
           },
           {
             signal: controller.signal,
           },
         )
-        .then((hist) => {
+        .then((page) => {
           if (cancelled) return;
+          const hist = page.candles;
+          if (meta.provider === "mt5") {
+            // An ordinary cold read may intentionally paint a stale/unknown
+            // window. Make the immediately-following authoritative request use
+            // the full initial limit as well, so the backend's cancellation of
+            // its lower-priority background read cannot leave us with a tiny
+            // tail-only replacement.
+            mt5NeedsFullRefreshRef.current =
+              page.authoritative === false || page.stale === true || page.refreshPending === true
+                ? key
+                : null;
+          }
           // Seed history before subscribing. For MT5, candles must come from
           // MT5 rates/history; ticks are used only for quotes/watchlist.
           getMarketDataState().setCandles(symbol, timeframe, hist);
@@ -173,6 +200,12 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
           if (!hasCachedHistory) {
             getMarketDataState().setCandles(symbol, timeframe, []);
             setCandles([]);
+          }
+          if (meta.provider === "mt5") {
+            // Let the bounded active refresh recover a cold/empty first load;
+            // otherwise historyReadyKey would remain null and no retry would run.
+            getMarketDataState().selectMarket(symbol, timeframe);
+            setHistoryReadyKey(key);
           }
           setLoading(false);
           getDefaultStore().set(
@@ -210,17 +243,20 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     let cancelled = false;
     let inFlight = false;
     let activeController: AbortController | null = null;
+    let retryAttempt = 0;
+    let retryTimer: number | null = null;
 
     const refreshLatestBars = async () => {
       if (cancelled || inFlight) return;
       inFlight = true;
       activeController = new AbortController();
       try {
+        const needsFullRefresh = mt5NeedsFullRefreshRef.current === activeKey;
         const hist = await getHistoricalDataService().loadHistory(
           {
             symbol,
             timeframe,
-            limit: mt5RefreshBarsForTimeframe(timeframe),
+            limit: mt5RefreshBars(timeframe, needsFullRefresh),
             refresh: true,
           },
           {
@@ -230,7 +266,12 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
         if (cancelled) return;
         const marketData = getMarketDataState();
         const current = marketData.getCandles(symbol, timeframe);
-        if (hasDiscontinuousHistoryTail(current, hist, TF_SECONDS[timeframe])) {
+        const discontinuous = hasDiscontinuousHistoryTail(
+          current,
+          hist,
+          mt5TailContinuitySeconds(timeframe),
+        );
+        if (discontinuous) {
           // The first MT5 request can expose a stale terminal cache while the
           // timeframe warms. A tiny latest-bars merge cannot remove that bad
           // window, so re-fetch and authoritatively replace the active cache.
@@ -238,7 +279,10 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
             {
               symbol,
               timeframe,
-              limit: initialHistoryBars(timeframe),
+              limit: Math.min(
+                MAX_CANDLES_PER_SERIES,
+                Math.max(initialHistoryBars(timeframe), current.length),
+              ),
               refresh: true,
             },
             {
@@ -246,29 +290,57 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
             },
           );
           if (cancelled) return;
-          getMarketDataState().replaceCandles(symbol, timeframe, replacement);
+          marketData.replaceCandles(symbol, timeframe, replacement);
+          // A replacement can change the entire warm-up window. Drop the
+          // indicator context only after the authoritative replacement succeeds;
+          // ordinary tail updates already change the candle-signature cache key
+          // and should not force an expensive warm-up reload every poll.
+          invalidateIndicatorHistoryContext(symbol, timeframe);
         } else {
           marketData.setCandles(symbol, timeframe, hist);
+          if (current.length === 0) {
+            invalidateIndicatorHistoryContext(symbol, timeframe);
+          }
+        }
+        mt5NeedsFullRefreshRef.current = null;
+        retryAttempt = 0;
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
         }
       } catch (err) {
         if (isAbortError(err)) return;
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
         getDefaultStore().set(logAtom, "warn", `MT5 latest bars refresh failed for ${symbol} ${timeframe}: ${message}`);
+        if (retryAttempt < MT5_ACTIVE_REFRESH_RETRY_DELAYS_MS.length && retryTimer === null) {
+          const retryDelay = MT5_ACTIVE_REFRESH_RETRY_DELAYS_MS[retryAttempt];
+          retryAttempt += 1;
+          retryTimer = window.setTimeout(() => {
+            retryTimer = null;
+            void refreshLatestBars();
+          }, retryDelay);
+        }
       } finally {
         activeController = null;
         inFlight = false;
       }
     };
 
+    // Revalidate immediately on every active MT5 selection. This turns a fast
+    // stale/unknown first paint into an authoritative window without waiting
+    // for the timeframe's periodic interval (up to five minutes on 1W/1M).
+    void refreshLatestBars();
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") {
+        retryAttempt = 0;
         void refreshLatestBars();
       }
     }, mt5HistoryRefreshMs(timeframe));
     return () => {
       cancelled = true;
       activeController?.abort();
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
       window.clearInterval(timer);
     };
   }, [activeKey, enabled, historyReadyKey, symbol, timeframe]);

@@ -153,14 +153,19 @@ type Candle struct {
 // HistoryMessage is sent by the Python bridge for either an initial preload or
 // a Go-initiated history request.
 type HistoryMessage struct {
-	Type          string   `json:"type"`
-	Source        string   `json:"source,omitempty"`
-	RequestID     string   `json:"request_id,omitempty"`
-	Symbol        string   `json:"symbol"`
-	Timeframe     string   `json:"timeframe"`
-	Candles       []Candle `json:"candles"`
-	RequestedTime int64    `json:"requested_time,omitempty"`
-	ResolvedTime  int64    `json:"resolved_time,omitempty"`
+	Type                string   `json:"type"`
+	Source              string   `json:"source,omitempty"`
+	RequestID           string   `json:"request_id,omitempty"`
+	Symbol              string   `json:"symbol"`
+	Timeframe           string   `json:"timeframe"`
+	Candles             []Candle `json:"candles"`
+	RequestedTime       int64    `json:"requested_time,omitempty"`
+	ResolvedTime        int64    `json:"resolved_time,omitempty"`
+	Stale               *bool    `json:"stale,omitempty"`
+	FreshnessKnown      *bool    `json:"freshness_known,omitempty"`
+	LastBarTime         int64    `json:"last_bar_time,omitempty"`
+	MinimumFreshBarTime int64    `json:"minimum_fresh_bar_time,omitempty"`
+	RefreshExhausted    bool     `json:"refresh_exhausted,omitempty"`
 	// HasMore is populated for cursor pages. A pointer distinguishes an
 	// explicit end-of-history from older bridge versions that omit the field.
 	HasMore *bool  `json:"has_more,omitempty"`
@@ -177,13 +182,17 @@ type HistorySnapshot struct {
 	Candles   []Candle `json:"candles"`
 	// HasMore is populated for `before` pages when the bridge can determine
 	// whether another page exists to the left.
-	HasMore        *bool     `json:"hasMore,omitempty"`
-	Stale          bool      `json:"stale,omitempty"`
-	RefreshPending bool      `json:"refreshPending,omitempty"`
-	RequestedTime  int64     `json:"requestedTime,omitempty"`
-	ResolvedTime   int64     `json:"resolvedTime,omitempty"`
-	UpdatedAt      time.Time `json:"updatedAt,omitempty"`
-	LastError      string    `json:"lastError,omitempty"`
+	HasMore             *bool     `json:"hasMore,omitempty"`
+	Stale               bool      `json:"stale,omitempty"`
+	RefreshPending      bool      `json:"refreshPending,omitempty"`
+	FreshnessKnown      *bool     `json:"freshnessKnown,omitempty"`
+	LastBarTime         int64     `json:"lastBarTime,omitempty"`
+	MinimumFreshBarTime int64     `json:"minimumFreshBarTime,omitempty"`
+	RefreshExhausted    bool      `json:"refreshExhausted,omitempty"`
+	RequestedTime       int64     `json:"requestedTime,omitempty"`
+	ResolvedTime        int64     `json:"resolvedTime,omitempty"`
+	UpdatedAt           time.Time `json:"updatedAt,omitempty"`
+	LastError           string    `json:"lastError,omitempty"`
 }
 
 type inboundMessage struct {

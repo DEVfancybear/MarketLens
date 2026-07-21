@@ -8,6 +8,7 @@ import {
   canUseLatestIndicatorRuntimeResult,
   normalizeReplayCutoff,
   normalizeReplaySessionId,
+  bumpLiveHistoryVersion,
   type IndicatorRuntimeContext,
 } from "@/services/indicatorRuntimePolicy";
 
@@ -252,6 +253,24 @@ async function resolveRuntimeCandles(
 export function subscribeIndicatorRuntimeCache(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Drop only live warm-up history affected by an authoritative MT5 refresh. */
+export function invalidateIndicatorHistoryContext(symbol: string, timeframe: Timeframe): void {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  bumpLiveHistoryVersion(symbol, timeframe);
+  for (const key of historyContextCache.keys()) {
+    try {
+      const [scope, cachedSymbol, cachedTimeframe] = JSON.parse(key) as unknown[];
+      if (scope === "live" && cachedSymbol === normalizedSymbol && cachedTimeframe === timeframe) {
+        historyContextCache.delete(key);
+      }
+    } catch {
+      // Cache keys are internal JSON tuples; discard malformed legacy entries.
+      historyContextCache.delete(key);
+    }
+  }
+  notify();
 }
 
 export function getCachedIndicatorRuntimeResult(

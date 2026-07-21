@@ -1,4 +1,4 @@
-import type { Timeframe } from "@/types";
+import { TF_SECONDS, type Timeframe } from "../../types";
 
 /** Collapses Strict Mode probes and rapid selection changes before REST starts. */
 export const HISTORY_SELECTION_DEBOUNCE_MS = 75;
@@ -59,4 +59,19 @@ export function historyPageBars(timeframe: Timeframe): number {
 
 export function mt5HistoryRefreshMs(timeframe: Timeframe): number {
   return MT5_REFRESH_MS[timeframe];
+}
+
+/** Latest MT5 refresh size; stale first paints escalate to the initial window. */
+export function mt5RefreshBars(timeframe: Timeframe, fullWindow = false): number {
+  if (fullWindow) return initialHistoryBars(timeframe);
+  if (timeframe === "1D" || timeframe === "1W" || timeframe === "1M") return 5;
+  if (timeframe === "1H" || timeframe === "2H" || timeframe === "4H") return 10;
+  return 20;
+}
+
+/** Maximum bar-open distance still considered adjacent for MT5 tail repair. */
+export function mt5TailContinuitySeconds(timeframe: Timeframe): number {
+  // Calendar months vary and broker/DST alignment can move the UTC open. Keep
+  // this separate from TF_SECONDS so fixed-duration consumers remain unchanged.
+  return timeframe === "1M" ? 32 * 86400 : TF_SECONDS[timeframe];
 }

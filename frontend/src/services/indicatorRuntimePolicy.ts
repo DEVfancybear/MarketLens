@@ -9,6 +9,24 @@ export interface IndicatorRuntimeContext {
   replayCutoff?: number;
 }
 
+const liveHistoryVersions = new Map<string, number>();
+
+function liveHistoryKey(symbol: string, timeframe: Timeframe): string {
+  return `${symbol.trim().toUpperCase()}:${timeframe}`;
+}
+
+/** Bump the live history generation so indicators cannot reuse warm-up data. */
+export function bumpLiveHistoryVersion(symbol: string, timeframe: Timeframe): number {
+  const key = liveHistoryKey(symbol, timeframe);
+  const next = (liveHistoryVersions.get(key) ?? 0) + 1;
+  liveHistoryVersions.set(key, next);
+  return next;
+}
+
+export function liveHistoryVersion(symbol: string, timeframe: Timeframe): number {
+  return liveHistoryVersions.get(liveHistoryKey(symbol, timeframe)) ?? 0;
+}
+
 /**
  * Replay timestamps are part of the data contract, rather than a UI hint.
  * Keep malformed values out of cache keys and request payloads so a failed
@@ -100,6 +118,9 @@ export function indicatorRuntimeScopeKey(
     : replayCutoff != null
       ? "replay:unsessioned"
       : "live";
+  const historyVersion = runtimeMode === "live" && context?.symbol && context.timeframe
+    ? liveHistoryVersion(context.symbol, context.timeframe)
+    : undefined;
   return [
     config.id,
     config.type,
@@ -111,6 +132,7 @@ export function indicatorRuntimeScopeKey(
     // below still includes the cutoff. Session identity keeps live and Replay
     // results (and separate Replay sessions) isolated from one another.
     runtimeMode,
+    ...(historyVersion != null ? [`history:${historyVersion}`] : []),
   ].join("|");
 }
 

@@ -15,6 +15,10 @@
 import { TF_SECONDS, type HistoryRequest, type MarketCandle, type Timeframe } from "@/types";
 import { getMarketSymbol, twelveDataSymbol } from "./symbols";
 import { getMt5History, getMt5HistoryAround } from "@/services/api/resources/mt5Api";
+import {
+  isAuthoritativeMt5HistorySnapshot,
+  mt5HistoryFreshnessError,
+} from "./mt5HistoryFreshness";
 
 const BINANCE_KLINES = "https://api.binance.com/api/v3/klines";
 const TWELVEDATA_TS = "https://api.twelvedata.com/time_series";
@@ -98,6 +102,14 @@ export interface HistoryPageResult {
   candles: MarketCandle[];
   /** For a `before` request, whether the provider has more bars to the left. */
   hasMore?: boolean;
+  /** Whether a latest MT5 window is authoritative for the current timeframe bar. */
+  authoritative?: boolean;
+  stale?: boolean;
+  refreshPending?: boolean;
+  freshnessKnown?: boolean;
+  lastBarTime?: number;
+  minimumFreshBarTime?: number;
+  refreshExhausted?: boolean;
 }
 
 export class HistoricalDataService {
@@ -236,12 +248,13 @@ export class HistoricalDataService {
     refresh?: boolean,
     options: LoadHistoryOptions = {},
   ): Promise<HistoryPageResult> {
+    const cursor = before != null && before > 0 ? before : undefined;
     let snapshot = await getMt5History(
       {
         symbol,
         timeframe,
         limit,
-        before,
+        before: cursor,
         refresh,
       },
       {
@@ -262,7 +275,7 @@ export class HistoricalDataService {
           symbol,
           timeframe,
           limit,
-          before,
+          before: cursor,
           refresh,
         },
         {
@@ -274,13 +287,17 @@ export class HistoricalDataService {
       // A provider-reported end is a valid result for a left-pagination page.
       // Without that explicit bit, treat an empty MT5 response as retryable;
       // cold terminals can briefly return an empty window while history warms.
-      if (before !== undefined && snapshot.hasMore === false && !snapshot.lastError) {
+      if (cursor !== undefined && snapshot.hasMore === false && !snapshot.lastError) {
         return { candles: [], hasMore: false };
       }
       throw new Error(snapshot.lastError || `MT5 returned no history candles for ${symbol} ${timeframe}`);
     }
-    if (snapshot.lastError && (before !== undefined || refresh)) {
+    if (snapshot.lastError && (cursor !== undefined || refresh)) {
       throw new Error(snapshot.lastError);
+    }
+    const authoritative = cursor !== undefined || isAuthoritativeMt5HistorySnapshot(snapshot);
+    if (refresh && !authoritative) {
+      throw new Error(mt5HistoryFreshnessError(snapshot, symbol, timeframe));
     }
     return {
       candles: dedupeAscending(
@@ -293,8 +310,17 @@ export class HistoricalDataService {
           volume: candle.volume,
           closed: true,
         })),
-      ).slice(-limit),
+      )
+        .filter((candle) => cursor === undefined || candle.time < cursor)
+        .slice(-limit),
       hasMore: snapshot.hasMore,
+      authoritative,
+      stale: snapshot.stale,
+      refreshPending: snapshot.refreshPending,
+      freshnessKnown: snapshot.freshnessKnown,
+      lastBarTime: snapshot.lastBarTime,
+      minimumFreshBarTime: snapshot.minimumFreshBarTime,
+      refreshExhausted: snapshot.refreshExhausted,
     };
   }
 

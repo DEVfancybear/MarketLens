@@ -6,6 +6,8 @@ import {
   historyPageBars,
   initialHistoryBars,
   mt5HistoryRefreshMs,
+  mt5RefreshBars,
+  mt5TailContinuitySeconds,
 } from "../../src/services/market-data/historyPolicy";
 import { SUPPORTED_TIMEFRAMES } from "../../src/types/marketData";
 
@@ -18,6 +20,7 @@ test("every supported timeframe has a bounded progressive history policy", () =>
     assert.equal(historyPageBars(timeframe) > 0, true);
     assert.equal(historyPageBars(timeframe) <= 1_000, true);
     assert.equal(mt5HistoryRefreshMs(timeframe) >= 3_000, true);
+    assert.equal(mt5TailContinuitySeconds(timeframe) > 0, true);
   }
 });
 
@@ -29,4 +32,21 @@ test("slow timeframes use small first paint windows and slower refreshes", () =>
   assert.equal(mt5HistoryRefreshMs("4H"), 30_000);
   assert.equal(mt5HistoryRefreshMs("1D"), 60_000);
   assert.equal(mt5HistoryRefreshMs("1W"), 300_000);
+});
+
+test("monthly MT5 tail continuity allows every calendar month length", () => {
+  assert.equal(mt5TailContinuitySeconds("15m"), 15 * 60);
+  assert.equal(mt5TailContinuitySeconds("1M"), 32 * 86400);
+});
+
+test("stale MT5 first paints escalate to the same full window for every timeframe", () => {
+  for (const timeframe of SUPPORTED_TIMEFRAMES) {
+    const expectedTail = timeframe === "1D" || timeframe === "1W" || timeframe === "1M"
+      ? 5
+      : timeframe === "1H" || timeframe === "2H" || timeframe === "4H"
+        ? 10
+        : 20;
+    assert.equal(mt5RefreshBars(timeframe), expectedTail);
+    assert.equal(mt5RefreshBars(timeframe, true), initialHistoryBars(timeframe));
+  }
 });

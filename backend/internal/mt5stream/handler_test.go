@@ -75,14 +75,18 @@ func TestSymbolsEndpointReturnsCatalogSnapshot(t *testing.T) {
 }
 
 func TestHistoryEndpointReturnsCandles(t *testing.T) {
+	freshnessKnown := true
 	app := fiber.New()
 	NewHandler(fakeSymbolSource{
 		history: HistorySnapshot{
-			Connected: true,
-			BridgeURL: "ws://localhost:8765",
-			Source:    "mt5",
-			Symbol:    "EURUSD",
-			Timeframe: "15m",
+			Connected:           true,
+			BridgeURL:           "ws://localhost:8765",
+			Source:              "mt5",
+			Symbol:              "EURUSD",
+			Timeframe:           "15m",
+			FreshnessKnown:      &freshnessKnown,
+			LastBarTime:         1800000000,
+			MinimumFreshBarTime: 1799999999,
 			Candles: []Candle{
 				{Time: 1800000000, Open: 1.1, High: 1.2, Low: 1.0, Close: 1.15, Volume: 10},
 			},
@@ -104,6 +108,9 @@ func TestHistoryEndpointReturnsCandles(t *testing.T) {
 	}
 	if !body.Connected || len(body.Candles) != 1 || body.Candles[0].Close != 1.15 {
 		t.Fatalf("unexpected history snapshot: %+v", body)
+	}
+	if body.FreshnessKnown == nil || !*body.FreshnessKnown || body.LastBarTime != 1800000000 || body.MinimumFreshBarTime != 1799999999 {
+		t.Fatalf("freshness metadata did not round-trip: %+v", body)
 	}
 }
 
