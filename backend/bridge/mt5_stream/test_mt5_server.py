@@ -7,6 +7,7 @@ import types
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class MetaTrader5Stub(types.ModuleType):
@@ -226,6 +227,83 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.assertEqual(payload["statuses"][0]["state"], "closed")
         self.assertEqual(payload["statuses"][1]["symbol"], "XAUUSD")
         self.assertEqual(payload["statuses"][1]["state"], "unknown")
+
+    def test_tick_offset_estimator_ignores_cold_multiday_m1_history(self) -> None:
+        tick_time = 2_000_000
+        stale_delta = (8 * 86400) + 50
+        ticks = {
+            symbol: SimpleNamespace(time=tick_time)
+            for symbol in ("EURUSD", "GBPUSD", "USDCHF")
+        }
+        rate_times = {
+            "EURUSD": tick_time - 50,
+            "GBPUSD": tick_time - stale_delta,
+            "USDCHF": tick_time - stale_delta,
+        }
+        mt5_server.mt5.symbol_info_tick = lambda symbol: ticks[symbol]
+        mt5_server.mt5.copy_rates_from_pos = (
+            lambda symbol, *_args: [{"time": rate_times[symbol]}]
+        )
+
+        self.assertEqual(
+            mt5_server.estimate_mt5_tick_time_offset(tuple(ticks)),
+            0,
+        )
+
+    def test_tick_offset_estimator_ignores_plausible_intraday_stale_history(self) -> None:
+        tick_time = 2_000_000
+        mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+            time=tick_time
+        )
+        mt5_server.mt5.copy_rates_from_pos = lambda *_args: [
+            {"time": tick_time - (3 * 3600) - 50}
+        ]
+
+        with patch.object(mt5_server.time, "time", return_value=tick_time):
+            self.assertEqual(
+                mt5_server.estimate_mt5_tick_time_offset(("EURUSD", "USDCHF")),
+                0,
+            )
+
+    def test_tick_offset_estimator_keeps_plausible_broker_offset(self) -> None:
+        tick_time = 2_000_000
+        for expected_offset in (3 * 3600, -5 * 3600):
+            with self.subTest(expected_offset=expected_offset):
+                mt5_server.mt5.symbol_info_tick = lambda _symbol: SimpleNamespace(
+                    time=tick_time
+                )
+                mt5_server.mt5.copy_rates_from_pos = lambda *_args: [
+                    {"time": tick_time - expected_offset - 50}
+                ]
+
+                with patch.object(
+                    mt5_server.time,
+                    "time",
+                    return_value=tick_time - expected_offset,
+                ):
+                    self.assertEqual(
+                        mt5_server.estimate_mt5_tick_time_offset(
+                            ("EURUSD", "USDCHF")
+                        ),
+                        expected_offset,
+                    )
+
+    def test_tick_offset_estimator_defaults_to_zero_on_conflicting_tie(self) -> None:
+        now = 2_000_000
+        ticks = {
+            "EURUSD": SimpleNamespace(time=now + (3 * 3600)),
+            "USDCHF": SimpleNamespace(time=now - (5 * 3600)),
+        }
+        mt5_server.mt5.symbol_info_tick = lambda symbol: ticks[symbol]
+        mt5_server.mt5.copy_rates_from_pos = lambda *_args: [
+            {"time": now - 50}
+        ]
+
+        with patch.object(mt5_server.time, "time", return_value=now):
+            self.assertEqual(
+                mt5_server.estimate_mt5_tick_time_offset(tuple(ticks)),
+                0,
+            )
 
     def test_freshness_requires_current_bar_for_every_timeframe(self) -> None:
         tick_time = int(datetime(2026, 7, 22, 12, tzinfo=timezone.utc).timestamp())

@@ -103,7 +103,10 @@ MT5 `copy_rates_*` history timestamps are already UTC bar-open seconds according
 MetaQuotes Python docs, so the bridge sends candle `time` values unchanged. Live tick timestamps are
 normalized only when the terminal exposes them with a broker/workstation offset; that keeps quote
 freshness checks in the same UTC domain as history without shifting candles and creating false
-history gaps. Freshness covers every supported timeframe: `1m`, `3m`, `5m`, `15m`, `30m`, `1H`,
+history gaps. Offset inference accepts only the civil UTC range (`-14h` through `+14h`) and returns
+zero when the strongest evidence is tied. Non-zero evidence must also normalize to within three
+minutes of the current Unix epoch, so cold multi-day and plausible intraday M1 cache rows cannot
+shift every live tick. Freshness covers every supported timeframe: `1m`, `3m`, `5m`, `15m`, `30m`, `1H`,
 `2H`, `4H`, `1D`, `1W`, and `1M`. Fixed-duration bars must open less than one full interval before
 the newest normalized MT5 tick. `1M` uses the tick's calendar-month start minus 48 hours, allowing
 broker/DST alignment without accepting the prior month's bar. When no last tick is available the
@@ -181,8 +184,8 @@ machine without MT5 installed:
 python -m unittest bridge.mt5_stream.test_mt5_server -v
 ```
 
-These tests cover tick de-duplication, timestamp normalization, all-timeframe
-freshness boundaries, explicit stale refresh, exact cursor probing,
+These tests cover tick de-duplication, bounded timestamp normalization, multi-day and intraday
+cold-history offset rejection, all-timeframe freshness boundaries, explicit stale refresh, exact cursor probing,
 `stream.subscribe` symbol selection, and the non-blocking worker wrapper that
 keeps asyncio responsive while MT5 calls are running.
 

@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 cold-start tick offset and freshness evidence (2026-07-22)
+- Rejected tick-to-M1 offset candidates outside the civil `UTC-14` through
+  `UTC+14` range. Cold terminal caches can initially return M1 rows that are
+  days old; those gaps are no longer mistaken for a broker timezone offset.
+- Defaulted to zero whenever the strongest live-symbol candidates are tied,
+  preventing conflicting terminal/cache evidence from shifting every streamed
+  tick and weakening latest candle freshness checks across every timeframe.
+- Required non-zero evidence to normalize within three minutes of the current
+  Unix epoch, rejecting plausible intraday stale-history gaps as well as
+  multi-day gaps.
+- Added regression coverage for multi-day and intraday cold history, conflicting
+  candidates, and legitimate positive/negative broker offsets.
+
 ### Fixed - Common Pine color-literal compilation (2026-07-22)
 - Added shared `#RRGGBB` and `#RRGGBBAA` literal scanning to both Pine expression
   evaluators, including assigned colors, `input.color()` defaults, and nested

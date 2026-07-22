@@ -109,6 +109,12 @@ HISTORY_TASKS: dict[tuple[int, str], asyncio.Task[None]] = {}
 MARKET_STATUSES: dict[str, dict[str, Any]] = {}
 MARKET_STATUS_PATH: Path | None = None
 MT5_TICK_TIME_OFFSET_SECONDS = 0
+# Broker/terminal UTC offsets cannot exceed the civil-time range. A larger
+# tick-to-M1 delta is stale/cold history, not a timezone offset. Without this
+# guard a cold terminal can shift every live tick by days until the bridge is
+# restarted, making latest-history freshness evidence meaningless.
+MAX_TICK_TIME_OFFSET_SECONDS = 14 * 3600
+TICK_OFFSET_CURRENTNESS_TOLERANCE_SECONDS = 180
 # The MetaTrader5 Python module is blocking and should be treated as
 # single-thread-affine. Keep every MT5 call that runs after startup on this one
 # worker thread so asyncio can still accept WebSocket handshakes, send symbol
@@ -501,9 +507,14 @@ def estimate_mt5_tick_time_offset(symbols: tuple[str, ...]) -> int:
     shift and make chart history look stale. MT5 chart candles come from
     `copy_rates_*`; use the newest M1 bar as the reference and only offset ticks
     when subtracting an hour-rounded delta makes the tick land inside that M1
-    bar. If MT5 has not warmed M1 history yet, keep offset 0.
+    bar. Reject inferred offsets outside the civil UTC range because those are
+    stale/cold M1 windows, not broker timezone offsets. If MT5 has not warmed
+    usable M1 history yet, keep offset 0. Non-zero evidence must also normalize
+    the tick close to the current Unix epoch; this prevents an intraday stale
+    M1 row from masquerading as a plausible broker offset.
     """
     offsets: dict[int, int] = {}
+    now = int(time.time())
     for symbol in symbols:
         tick = mt5.symbol_info_tick(symbol)
         if tick is None or not tick.time:
@@ -524,13 +535,23 @@ def estimate_mt5_tick_time_offset(symbols: tuple[str, ...]) -> int:
             continue
 
         rounded = int(round(delta / 3600) * 3600)
+        if abs(rounded) > MAX_TICK_TIME_OFFSET_SECONDS:
+            continue
         normalized_tick = tick_time - rounded
-        if 0 <= normalized_tick - rate_time < 180:
+        if (
+            0 <= normalized_tick - rate_time < 180
+            and abs(normalized_tick - now)
+            <= TICK_OFFSET_CURRENTNESS_TOLERANCE_SECONDS
+        ):
             offsets[rounded] = offsets.get(rounded, 0) + 1
 
     if not offsets:
         return 0
-    offset = max(offsets.items(), key=lambda item: item[1])[0]
+    # Any tie is ambiguous. Defaulting to zero is safer than shifting every
+    # symbol based on conflicting terminal/cache evidence.
+    max_votes = max(offsets.values())
+    winners = [offset for offset, votes in offsets.items() if votes == max_votes]
+    offset = winners[0] if len(winners) == 1 else 0
     LOG.info("MT5 tick time offset seconds=%d hours=%.1f", offset, offset / 3600)
     return offset
 
