@@ -75,8 +75,8 @@ func lineTargetAt(target *DynamicLineTarget, marketTime float64) technicalTarget
 		return technicalTargetAt{Reason: targetInvalid}
 	}
 	timestamp := normalizeEpochSeconds(marketTime)
-	start := float64(target.A.Time)
-	end := float64(target.B.Time)
+	start := target.A.Time
+	end := target.B.Time
 	if !finite(timestamp) || !finite(start) || !finite(end) ||
 		!validPrice(target.A.Price) || !validPrice(target.B.Price) || start == end {
 		return technicalTargetAt{Reason: targetInvalid}
@@ -275,7 +275,13 @@ func evidenceTimestamp(value float64) time.Time {
 
 func nearlyEqual(a, b float64) bool {
 	scale := math.Max(1, math.Max(math.Abs(a), math.Abs(b)))
-	return math.Abs(a-b) <= 1e-9*scale
+	// `alerts.price` and event prices are stored in numeric(20,8). A browser
+	// can legitimately send more precision than PostgreSQL retains; accepting
+	// only a relative 1e-9 tolerance turns that storage rounding into a false
+	// 400 for low-priced symbols. Keep the relative guard while allowing a
+	// small fixed envelope around the column's half-unit-in-the-last-place.
+	const numeric20Scale8HalfStep = 5.000001e-9
+	return math.Abs(a-b) <= math.Max(numeric20Scale8HalfStep, 1e-9*scale)
 }
 
 func finite(value float64) bool {

@@ -45,6 +45,7 @@ import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
 import { useFloatingSurface } from "@/hooks/useFloatingSurface";
 import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
 import { ChartPopupSurface } from "./ChartPopupSurface";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 
 /** Right-click chart context-menu state (per the spec). */
 export interface ContextMenuState {
@@ -167,10 +168,28 @@ export function ChartContextMenu({
       disabled: replayActive,
       onClick: act(() => {
         if (replayActive) return;
+        if (!Number.isFinite(state.price) || state.price <= 0) {
+          reportFrontendError(
+            new Error("The chart did not provide a valid target price."),
+            {
+              title: "Alert not created",
+              logPrefix: "Chart context alert has invalid price",
+            },
+          );
+          return;
+        }
         const candles = getDefaultStore().get(candlesAtom);
         const current = candles[candles.length - 1]?.close;
         const condition = inferCondition(state.price, current);
-        createAlert({ symbol, condition, price: state.price });
+        try {
+          createAlert({ symbol, condition, price: state.price });
+        } catch (error) {
+          reportFrontendError(error, {
+            title: "Alert not created",
+            logPrefix: "Chart context alert validation failed",
+          });
+          return;
+        }
         log(
           "info",
           `Alert created: ${symbol} ${CONDITION_SYMBOL[condition]} ${priceStr}`,

@@ -13,6 +13,8 @@ import { pushRegistrationAtom } from "@/store/notificationStore";
 import { fetchPushAlertStatus } from "@/services/notifications/push";
 import { useExternalSyncToken } from "@/hooks/useExternalSyncToken";
 import { sanitizeTechnicalAlertEvidence } from "@/services/dynamicAlertTargets";
+import { alertSymbolsEqual } from "@/services/alertSymbols";
+import { marketSymbolsAtom } from "@/store/marketSymbolStore";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -24,6 +26,7 @@ export function usePushTriggerReconcile() {
   const workspaceReady = useAtomValue(workspaceReadyAtom);
   const registration = useAtomValue(pushRegistrationAtom);
   const externalSyncToken = useExternalSyncToken();
+  const marketSymbols = useAtomValue(marketSymbolsAtom);
   const triggerAlert = useSetAtom(triggerAlertAtom);
   const expireAlert = useSetAtom(expireAlertAtom);
   const token = registration?.token ?? externalSyncToken;
@@ -50,7 +53,7 @@ export function usePushTriggerReconcile() {
         const alert = alertsRef.current.find((item) => item.id === trigger.alertId);
         if (!alert) continue;
         if (
-          alert.symbol !== trigger.symbol ||
+          !alertSymbolsEqual(alert.symbol, trigger.symbol, marketSymbols) ||
           alert.condition !== trigger.condition ||
           alert.price !== trigger.price ||
           alert.recurring !== trigger.recurring ||
@@ -73,7 +76,11 @@ export function usePushTriggerReconcile() {
         const alert = alertsRef.current.find((item) => item.id === expiration.alertId);
         if (
           !alert ||
-          alert.symbol !== expiration.symbol ||
+          !alertSymbolsEqual(
+            alert.symbol,
+            expiration.symbol,
+            marketSymbols,
+          ) ||
           alert.armingRevision !== expiration.armingRevision
         ) {
           continue;
@@ -93,5 +100,12 @@ export function usePushTriggerReconcile() {
       document.removeEventListener("visibilitychange", onVisible);
       window.clearInterval(interval);
     };
-  }, [activeSnapshotKey, expireAlert, token, triggerAlert, workspaceReady]);
+  }, [
+    activeSnapshotKey,
+    expireAlert,
+    marketSymbols,
+    token,
+    triggerAlert,
+    workspaceReady,
+  ]);
 }

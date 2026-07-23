@@ -35,6 +35,142 @@ func TestTicksSinceReturnsOrderedRetainedTicks(t *testing.T) {
 	}
 }
 
+func TestTicksResolveLegacySymbolAliasesAgainstCatalog(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.symbols = []Symbol{{Name: "BTCUSD"}}
+	service.applyTick(Tick{
+		Symbol:     "BTCUSD",
+		Bid:        64_000,
+		Ask:        64_001,
+		TimeMSC:    1_700_000_000_000,
+		ReceivedAt: 1_700_000_000_100,
+	})
+
+	snapshot := service.Ticks([]string{"BTCUSDT"})
+	if len(snapshot.Ticks) != 1 || snapshot.Ticks[0].Symbol != "BTCUSD" {
+		t.Fatalf("legacy alias did not resolve: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksResolveLegacySymbolAliasesFromCachedTicksWithoutCatalog(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.applyTick(Tick{
+		Symbol:     "BTCUSD",
+		Bid:        64_000,
+		Ask:        64_001,
+		TimeMSC:    1_700_000_000_000,
+		ReceivedAt: 1_700_000_000_100,
+	})
+
+	snapshot := service.Ticks([]string{"BTCUSDT"})
+	if len(snapshot.Ticks) != 1 || snapshot.Ticks[0].Symbol != "BTCUSD" {
+		t.Fatalf("cached legacy alias did not resolve without catalog: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksResolveUniqueBrokerSuffixFromCatalogMetadata(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.symbols = []Symbol{{
+		Name:           "BTCUSD.r",
+		CurrencyBase:   "BTC",
+		CurrencyProfit: "USD",
+	}}
+	service.applyTick(Tick{
+		Symbol:     "BTCUSD.R",
+		Bid:        64_000,
+		Ask:        64_001,
+		TimeMSC:    1_700_000_000_000,
+		ReceivedAt: 1_700_000_000_100,
+	})
+
+	snapshot := service.Ticks([]string{"BTCUSDT"})
+	if len(snapshot.Ticks) != 1 || snapshot.Ticks[0].Symbol != "BTCUSD.R" {
+		t.Fatalf("broker suffix did not resolve: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksResolveBrokerSuffixFromCatalogNameWhenCurrencyMetadataIsMissing(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.symbols = []Symbol{{Name: "EURUSDm"}}
+	service.applyTick(Tick{Symbol: "EURUSDM", Bid: 1.1, Ask: 1.2})
+
+	snapshot := service.Ticks([]string{"EURUSD"})
+	if len(snapshot.Ticks) != 1 || snapshot.Ticks[0].Symbol != "EURUSDM" {
+		t.Fatalf("inferred broker suffix did not resolve: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksResolveUniqueBrokerSuffixFromCachedTicksWithoutCatalog(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.applyTick(Tick{Symbol: "US30.CASH", Bid: 40_000, Ask: 40_001})
+
+	snapshot := service.Ticks([]string{"US30"})
+	if len(snapshot.Ticks) != 1 || snapshot.Ticks[0].Symbol != "US30.CASH" {
+		t.Fatalf("cached non-currency suffix did not resolve: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksDoNotGuessBetweenAmbiguousBrokerVariants(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.symbols = []Symbol{
+		{Name: "EURUSDm", CurrencyBase: "EUR", CurrencyProfit: "USD"},
+		{Name: "EURUSD.raw", CurrencyBase: "EUR", CurrencyProfit: "USD"},
+	}
+	service.applyTick(Tick{Symbol: "EURUSDM", Bid: 1.1, Ask: 1.2})
+	service.applyTick(Tick{Symbol: "EURUSD.RAW", Bid: 1.1, Ask: 1.2})
+
+	snapshot := service.Ticks([]string{"EURUSD"})
+	if len(snapshot.Ticks) != 0 {
+		t.Fatalf("ambiguous broker variants must fail closed: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksResolveUniqueNonCurrencyBrokerSuffixFromCatalog(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.symbols = []Symbol{
+		{Name: "US30.cash"},
+		{Name: "AAPL.r"},
+	}
+	service.applyTick(Tick{Symbol: "US30.CASH", Bid: 40_000, Ask: 40_001})
+	service.applyTick(Tick{Symbol: "AAPL.R", Bid: 190, Ask: 190.1})
+
+	snapshot := service.Ticks([]string{"US30"})
+	if len(snapshot.Ticks) != 1 || snapshot.Ticks[0].Symbol != "US30.CASH" {
+		t.Fatalf("non-currency broker suffix did not resolve: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksDoNotGuessBetweenAmbiguousNonCurrencyBrokerVariants(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.symbols = []Symbol{
+		{Name: "US30.cash"},
+		{Name: "US30.raw"},
+	}
+	service.applyTick(Tick{Symbol: "US30.CASH", Bid: 40_000, Ask: 40_001})
+	service.applyTick(Tick{Symbol: "US30.RAW", Bid: 40_000, Ask: 40_001})
+
+	snapshot := service.Ticks([]string{"US30"})
+	if len(snapshot.Ticks) != 0 {
+		t.Fatalf("ambiguous non-currency variants must fail closed: %+v", snapshot.Ticks)
+	}
+}
+
+func TestTicksSinceUnknownRequestedSymbolDoesNotReturnEveryCachedSymbol(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	service.applyTick(Tick{
+		Symbol:     "EURUSD",
+		Bid:        1.1,
+		Ask:        1.2,
+		TimeMSC:    1_700_000_000_000,
+		ReceivedAt: 1_700_000_000_100,
+	})
+
+	snapshot := service.TicksSince([]string{"USDJPY"}, 0)
+	if len(snapshot.Ticks) != 0 {
+		t.Fatalf("unknown symbol returned unrelated ticks: %+v", snapshot.Ticks)
+	}
+}
+
 func TestHistoryFreshnessRequiresCurrentBarAcrossAllTimeframes(t *testing.T) {
 	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
 	tickTime := time.Date(2026, time.July, 22, 12, 0, 0, 0, time.UTC).Unix()

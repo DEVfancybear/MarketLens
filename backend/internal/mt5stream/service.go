@@ -181,8 +181,17 @@ func (s *Service) Ticks(symbols []string) TickSnapshot {
 			ticks = append(ticks, tick)
 		}
 	} else {
+		seen := make(map[string]struct{}, len(symbols))
 		for _, symbol := range symbols {
-			if tick, ok := s.ticks[normalizeSymbol(symbol)]; ok {
+			resolved := resolveCachedSymbolLocked(normalizeSymbol(symbol), s.symbols, s.ticks)
+			if resolved == "" {
+				continue
+			}
+			if _, ok := seen[resolved]; ok {
+				continue
+			}
+			seen[resolved] = struct{}{}
+			if tick, ok := s.ticks[resolved]; ok {
 				ticks = append(ticks, tick)
 			}
 		}
@@ -209,12 +218,25 @@ func (s *Service) TicksSince(symbols []string, sinceMS int64) TickSnapshot {
 	defer s.mu.RUnlock()
 
 	requested := make(map[string]struct{}, len(symbols))
+	hasRequestedSymbol := false
 	for _, symbol := range symbols {
-		requested[normalizeSymbol(symbol)] = struct{}{}
+		normalized := normalizeSymbol(symbol)
+		if normalized == "" {
+			continue
+		}
+		hasRequestedSymbol = true
+		resolved := resolveCachedHistorySymbolLocked(
+			normalized,
+			s.symbols,
+			s.tickHistory,
+		)
+		if resolved != "" {
+			requested[resolved] = struct{}{}
+		}
 	}
 	ticks := make([]Tick, 0)
 	for symbol, history := range s.tickHistory {
-		if len(requested) > 0 {
+		if hasRequestedSymbol {
 			if _, ok := requested[symbol]; !ok {
 				continue
 			}
@@ -343,7 +365,8 @@ func (s *Service) ensureStreamSymbols(symbols []string) {
 		available[normalizeSymbol(symbol.Name)] = struct{}{}
 	}
 	missing := make([]string, 0, len(requested))
-	for _, symbol := range requested {
+	for _, rawSymbol := range requested {
+		symbol := resolveCatalogSymbolLocked(rawSymbol, s.symbols)
 		if _, ok := streamed[symbol]; ok {
 			continue
 		}
@@ -1480,6 +1503,241 @@ func normalizeSymbol(symbol string) string {
 		}
 	}
 	return string(b)
+}
+
+var legacySymbolAliases = map[string]string{
+	"BTCUSDT": "BTCUSD",
+	"ETHUSDT": "ETHUSD",
+	"ETCUSD":  "ETHUSD",
+	"XAUUSD":  "GOLD",
+}
+
+var legacySymbolAliasPairs = []struct {
+	alias     string
+	canonical string
+}{
+	{alias: "BTCUSDT", canonical: "BTCUSD"},
+	{alias: "ETHUSDT", canonical: "ETHUSD"},
+	{alias: "ETCUSD", canonical: "ETHUSD"},
+	{alias: "XAUUSD", canonical: "GOLD"},
+}
+
+func resolveCatalogSymbol(symbol string, available map[string]struct{}) string {
+	normalized := normalizeSymbol(symbol)
+	if _, ok := available[normalized]; ok {
+		return normalized
+	}
+	if alias, ok := legacySymbolAliases[normalized]; ok {
+		if _, exists := available[alias]; exists {
+			return alias
+		}
+	}
+	for _, pair := range legacySymbolAliasPairs {
+		if pair.canonical == normalized {
+			if _, exists := available[pair.alias]; exists {
+				return pair.alias
+			}
+		}
+	}
+	return normalized
+}
+
+func resolveCatalogSymbolLocked(symbol string, catalog []Symbol) string {
+	available := make(map[string]struct{}, len(catalog))
+	for _, item := range catalog {
+		available[normalizeSymbol(item.Name)] = struct{}{}
+	}
+	resolved := resolveCatalogSymbol(symbol, available)
+	if _, ok := available[resolved]; ok {
+		return resolved
+	}
+
+	matches := make(map[string]struct{})
+	requested := symbolAliasCandidates(symbol)
+	for _, item := range catalog {
+		candidate := normalizeSymbol(item.Name)
+		base := normalizeSymbol(item.CurrencyBase)
+		profit := normalizeSymbol(item.CurrencyProfit)
+		if base == "" || profit == "" {
+			base, profit, _ = inferCatalogCurrencyParts(candidate)
+		}
+		if candidate == "" || base == "" || profit == "" {
+			continue
+		}
+		identity := base + profit
+		if !matchesBrokerCurrencyIdentity(candidate, identity) {
+			continue
+		}
+		for _, requestedSymbol := range requested {
+			if matchesBrokerCurrencyIdentity(requestedSymbol, identity) {
+				matches[candidate] = struct{}{}
+				break
+			}
+		}
+	}
+	// Indices, equities, and broker CFD symbols often omit currency metadata.
+	// Resolve their recognized broker prefix/suffix only when the catalog has a
+	// single match; choosing one of several variants would route ticks to the
+	// wrong instrument.
+	for _, item := range catalog {
+		candidate := normalizeSymbol(item.Name)
+		if candidate == "" {
+			continue
+		}
+		for _, requestedSymbol := range requested {
+			if matchesBrokerSymbolVariant(candidate, requestedSymbol) ||
+				matchesBrokerSymbolVariant(requestedSymbol, candidate) {
+				matches[candidate] = struct{}{}
+				break
+			}
+		}
+	}
+	if len(matches) == 1 {
+		for candidate := range matches {
+			return candidate
+		}
+	}
+	return resolved
+}
+
+func symbolAliasCandidates(symbol string) []string {
+	normalized := normalizeSymbol(symbol)
+	if normalized == "" {
+		return nil
+	}
+	candidates := []string{normalized}
+	if direct, ok := legacySymbolAliases[normalized]; ok && direct != normalized {
+		candidates = append(candidates, direct)
+	}
+	for _, pair := range legacySymbolAliasPairs {
+		if pair.canonical == normalized && pair.alias != normalized {
+			candidates = append(candidates, pair.alias)
+		}
+	}
+	return candidates
+}
+
+func matchesBrokerCurrencyIdentity(symbol, identity string) bool {
+	return matchesBrokerSymbolVariant(symbol, identity)
+}
+
+func matchesBrokerSymbolVariant(symbol, base string) bool {
+	if symbol == base {
+		return true
+	}
+	if len(base) < 3 {
+		return false
+	}
+	if strings.HasPrefix(symbol, base) {
+		return isBrokerSymbolAffix(symbol[len(base):])
+	}
+	if strings.HasSuffix(symbol, base) {
+		return isBrokerSymbolAffix(symbol[:len(symbol)-len(base)])
+	}
+	return false
+}
+
+func isBrokerSymbolAffix(value string) bool {
+	if value == "" || len(value) > 12 {
+		return false
+	}
+	switch value {
+	case "M", "R", "A", "I", "PRO", "RAW", "ECN", "CASH", "STD", "MICRO", "MINI":
+		return true
+	}
+	switch value[0] {
+	case '.', '_', '#', '-':
+	default:
+		return false
+	}
+	for i := 1; i < len(value); i++ {
+		c := value[i]
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '.' || c == '_' || c == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func inferCatalogCurrencyParts(symbol string) (string, string, bool) {
+	if len(symbol) < 6 {
+		return "", "", false
+	}
+	for i := 0; i < 6; i++ {
+		if symbol[i] < 'A' || symbol[i] > 'Z' {
+			return "", "", false
+		}
+	}
+	if len(symbol) > 6 && !isBrokerSymbolAffix(symbol[6:]) {
+		return "", "", false
+	}
+	return symbol[:3], symbol[3:6], true
+}
+
+func resolveCachedSymbolLocked(
+	symbol string,
+	catalog []Symbol,
+	ticks map[string]Tick,
+) string {
+	resolved := resolveCatalogSymbolLocked(symbol, catalog)
+	if _, ok := ticks[resolved]; ok {
+		return resolved
+	}
+	for _, candidate := range symbolAliasCandidates(symbol) {
+		if _, ok := ticks[candidate]; ok {
+			return candidate
+		}
+	}
+	matches := make(map[string]struct{})
+	for candidate := range ticks {
+		for _, requested := range symbolAliasCandidates(symbol) {
+			if matchesBrokerSymbolVariant(candidate, requested) ||
+				matchesBrokerSymbolVariant(requested, candidate) {
+				matches[candidate] = struct{}{}
+				break
+			}
+		}
+	}
+	if len(matches) == 1 {
+		for candidate := range matches {
+			return candidate
+		}
+	}
+	return resolved
+}
+
+func resolveCachedHistorySymbolLocked(
+	symbol string,
+	catalog []Symbol,
+	history map[string][]Tick,
+) string {
+	resolved := resolveCatalogSymbolLocked(symbol, catalog)
+	if _, ok := history[resolved]; ok {
+		return resolved
+	}
+	for _, candidate := range symbolAliasCandidates(symbol) {
+		if _, ok := history[candidate]; ok {
+			return candidate
+		}
+	}
+	matches := make(map[string]struct{})
+	for candidate := range history {
+		for _, requested := range symbolAliasCandidates(symbol) {
+			if matchesBrokerSymbolVariant(candidate, requested) ||
+				matchesBrokerSymbolVariant(requested, candidate) {
+				matches[candidate] = struct{}{}
+				break
+			}
+		}
+	}
+	if len(matches) == 1 {
+		for candidate := range matches {
+			return candidate
+		}
+	}
+	return resolved
 }
 
 func normalizeMarketStatus(status MarketStatus) MarketStatus {

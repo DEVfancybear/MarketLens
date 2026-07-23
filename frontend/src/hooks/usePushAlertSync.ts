@@ -13,6 +13,12 @@ import {
   type WorkerDeliveryCredential,
   workerCredentialRetryDelay,
 } from "@/services/notifications/pushSyncPolicy";
+import { marketSymbolsAtom } from "@/store/marketSymbolStore";
+import {
+  normalizeAlertSymbol,
+  resolveAlertSymbol,
+} from "@/services/alertSymbols";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 
 export function usePushAlertSync() {
   const alerts = useAtomValue(alertsAtom);
@@ -21,6 +27,7 @@ export function usePushAlertSync() {
   const externalSyncToken = useExternalSyncToken();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
   const notificationTimeZone = useAtomValue(resolvedChartTimeZoneAtom);
+  const marketSymbols = useAtomValue(marketSymbolsAtom);
   const [credential, setCredential] = useState<WorkerDeliveryCredential>({
     status: "idle",
   });
@@ -96,10 +103,16 @@ export function usePushAlertSync() {
                 (settings.telegram && alert.telegram) ||
                 (settings.discord && alert.discord)),
           )
+          .map((alert) => ({
+            ...alert,
+            symbol:
+              resolveAlertSymbol(alert.symbol, marketSymbols) ??
+              normalizeAlertSymbol(alert.symbol),
+          }))
         : [];
 
-    const sync = (keepalive = false) =>
-      syncServerPushAlerts(
+    const sync = async (keepalive = false) => {
+      const result = await syncServerPushAlerts(
         {
           token: syncToken,
           deliveryToken: credential.token,
@@ -111,6 +124,15 @@ export function usePushAlertSync() {
         },
         { keepalive },
       );
+      if (!result.ok) {
+        reportFrontendError(new Error(result.error), {
+          title: "Alert push sync failed",
+          logPrefix: "Closed-browser alert snapshot sync failed",
+          toast: false,
+        });
+      }
+      return result;
+    };
 
     const handle = window.setTimeout(() => {
       void sync();
@@ -136,6 +158,7 @@ export function usePushAlertSync() {
     alerts,
     credential,
     externalSyncToken,
+    marketSymbols,
     notificationTimeZone,
     registration?.permission,
     registration?.token,

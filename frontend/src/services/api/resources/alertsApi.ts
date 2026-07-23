@@ -18,6 +18,8 @@ import {
   sanitizeTechnicalAlertEvidence,
   sanitizeTechnicalAlertTarget,
 } from "../../dynamicAlertTargets";
+import { normalizeAlertSymbol } from "../../alertSymbols";
+import { isAlertCondition, sanitizeAlertNote, sanitizeAlertSource } from "../../alertValidation";
 
 export interface BackendAlertChannels {
   sound: boolean;
@@ -119,61 +121,138 @@ function encodePath(value: string): string {
 
 function epochSeconds(value: string): number {
   const millis = Date.parse(value);
-  return Number.isFinite(millis) ? millis / 1000 : Date.now() / 1000;
+  return Number.isFinite(millis) ? millis / 1000 : Number.NaN;
+}
+
+function isPositiveFinite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function validChannels(value: BackendAlertChannels | undefined): boolean {
+  return Boolean(
+    value &&
+      typeof value.sound === "boolean" &&
+      typeof value.browser === "boolean" &&
+      typeof value.push === "boolean" &&
+      typeof value.telegram === "boolean" &&
+      typeof value.discord === "boolean",
+  );
 }
 
 export function backendAlertToLocal(row: BackendAlert): Alert {
+  const identity = row.clientId || row.id;
+  const symbol = normalizeAlertSymbol(row.symbol);
+  if (!identity || !symbol) {
+    throw new Error("Backend alert has an invalid identity or symbol.");
+  }
+  if (!isAlertCondition(row.condition)) {
+    throw new Error(`Backend alert ${identity} has an invalid condition.`);
+  }
+  if (!isPositiveFinite(row.price)) {
+    throw new Error(`Backend alert ${identity} has an invalid target price.`);
+  }
+  if (!["active", "triggered", "expired"].includes(row.status)) {
+    throw new Error(`Backend alert ${identity} has an invalid status.`);
+  }
+  if (
+    typeof row.enabled !== "boolean" ||
+    typeof row.locked !== "boolean" ||
+    typeof row.recurring !== "boolean" ||
+    !validChannels(row.channels)
+  ) {
+    throw new Error(`Backend alert ${identity} has invalid flags or channels.`);
+  }
   const technicalTarget = sanitizeTechnicalAlertTarget(row.technicalTarget);
   if (row.technicalTarget !== undefined && !technicalTarget) {
-    throw new Error(`Backend alert ${row.clientId || row.id} has an invalid technical target.`);
+    throw new Error(`Backend alert ${identity} has an invalid technical target.`);
+  }
+  const source = sanitizeAlertSource(row.source);
+  if (row.source !== undefined && !source) {
+    throw new Error(`Backend alert ${identity} has an invalid drawing source.`);
+  }
+  if (row.triggerPrice !== undefined && !isPositiveFinite(row.triggerPrice)) {
+    throw new Error(`Backend alert ${identity} has an invalid trigger price.`);
+  }
+  const createdAt = epochSeconds(row.createdAt);
+  const updatedAt = epochSeconds(row.updatedAt);
+  if (!isPositiveFinite(createdAt) || !isPositiveFinite(updatedAt)) {
+    throw new Error(`Backend alert ${identity} has invalid timestamps.`);
+  }
+  const triggeredAt = row.triggeredAt
+    ? epochSeconds(row.triggeredAt)
+    : undefined;
+  const expiredAt = row.expiredAt ? epochSeconds(row.expiredAt) : undefined;
+  if (
+    (triggeredAt !== undefined && !isPositiveFinite(triggeredAt)) ||
+    (expiredAt !== undefined && !isPositiveFinite(expiredAt))
+  ) {
+    throw new Error(`Backend alert ${identity} has invalid lifecycle timestamps.`);
   }
   return {
-    id: row.clientId || row.id,
-    symbol: row.symbol,
+    id: identity,
+    symbol,
     condition: row.condition,
     price: row.price,
     status: row.status,
     enabled: row.enabled,
     locked: row.locked,
-    createdAt: epochSeconds(row.createdAt),
-    updatedAt: epochSeconds(row.updatedAt),
-    triggeredAt: row.triggeredAt
-      ? epochSeconds(row.triggeredAt)
-      : undefined,
-    expiredAt: row.expiredAt
-      ? epochSeconds(row.expiredAt)
+    createdAt,
+    updatedAt,
+    triggeredAt,
+    expiredAt: expiredAt
+      ? expiredAt
       : row.status === "expired"
-        ? epochSeconds(row.updatedAt)
+        ? updatedAt
         : undefined,
     triggerPrice: row.triggerPrice,
-    note: row.note || undefined,
+    note: sanitizeAlertNote(row.note),
     recurring: row.recurring,
     sound: row.channels.sound,
     browser: row.channels.browser,
     push: row.channels.push,
     telegram: row.channels.telegram,
     discord: row.channels.discord,
-    source: row.source,
+    source,
     technicalTarget,
     armingRevision:
       typeof row.armingRevision === "number" && Number.isFinite(row.armingRevision)
         ? Math.max(1, Math.trunc(row.armingRevision))
-        : Math.max(1, Math.trunc(epochSeconds(row.updatedAt))),
+        : Math.max(1, Math.trunc(updatedAt)),
   };
 }
 
 export function backendAlertEventToLocal(
   row: BackendAlertEvent,
 ): AlertHistoryEntry {
+  const symbol = normalizeAlertSymbol(row.symbol);
+  if (!row.id || !row.alertId || !symbol) {
+    throw new Error("Backend alert event has an invalid identity or symbol.");
+  }
+  if (!isAlertCondition(row.condition)) {
+    throw new Error(`Backend alert event ${row.id} has an invalid condition.`);
+  }
+  if (
+    !isPositiveFinite(row.targetPrice) ||
+    !isPositiveFinite(row.triggerPrice)
+  ) {
+    throw new Error(`Backend alert event ${row.id} has invalid prices.`);
+  }
+  const triggerTime = epochSeconds(row.triggeredAt);
+  if (!isPositiveFinite(triggerTime)) {
+    throw new Error(`Backend alert event ${row.id} has an invalid timestamp.`);
+  }
   const evidence = sanitizeTechnicalAlertEvidence(row.evidence);
+  if (row.evidence !== undefined && !evidence) {
+    throw new Error(`Backend alert event ${row.id} has invalid evidence.`);
+  }
   return {
     id: row.id,
     alertId: row.alertId,
-    symbol: row.symbol,
+    symbol,
     condition: row.condition,
     targetPrice: row.targetPrice,
     triggerPrice: row.triggerPrice,
-    triggerTime: epochSeconds(row.triggeredAt),
+    triggerTime,
     ...(evidence ? { evidence } : {}),
   };
 }
@@ -189,17 +268,18 @@ function channels(alert: Alert): BackendAlertChannels {
 }
 
 export function localAlertToCreate(alert: Alert): BackendAlertCreate {
+  const source = sanitizeAlertSource(alert.source);
   return {
     clientId: alert.id,
-    symbol: alert.symbol,
+    symbol: normalizeAlertSymbol(alert.symbol),
     condition: alert.condition,
     price: alert.price,
-    note: alert.note,
+    note: sanitizeAlertNote(alert.note),
     recurring: alert.recurring,
     enabled: alert.enabled,
     locked: alert.locked,
     channels: channels(alert),
-    ...(alert.source ? { source: alert.source } : {}),
+    ...(source ? { source } : {}),
     ...(alert.technicalTarget ? { technicalTarget: alert.technicalTarget } : {}),
     armingRevision: alert.armingRevision,
   };
@@ -207,7 +287,7 @@ export function localAlertToCreate(alert: Alert): BackendAlertCreate {
 
 export function localAlertToPatch(alert: Alert): BackendAlertPatch {
   return {
-    symbol: alert.symbol,
+    symbol: normalizeAlertSymbol(alert.symbol),
     condition: alert.condition,
     price: alert.price,
     note: alert.note ?? "",

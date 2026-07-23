@@ -7,7 +7,7 @@
  * Pure UI over `alertStore`; the engine (mounted in GlobalRuntime) does the
  * evaluation. Live prices come from `marketDataStore` (read-only).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   X,
@@ -33,6 +33,8 @@ import {
   type AlertCondition,
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { symbolAliasCandidates } from "@/services/market-data/symbolAliases";
+import { resolveObservedSymbol } from "@/services/alertSymbols";
 import { useMarketSymbols } from "@/store/marketSymbolStore";
 import {
   getBrowserPermission,
@@ -50,6 +52,7 @@ import { fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
 import { cn } from "@/utils/cn";
 import { targetAt } from "@/services/dynamicAlertTargets";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 
 const CONDITIONS: AlertCondition[] = ["above", "below", "crossUp", "crossDown"];
 
@@ -72,10 +75,21 @@ function alertTargetText(alert: Alert): string {
 
 function useLivePrice(symbol: string): number | undefined {
   return useMarketDataStore((s) => {
-    const q = s.quotes[symbol]?.last;
-    if (q != null && Number.isFinite(q)) return q;
-    const series = s.candles[subscriptionKey(symbol, s.selectedTimeframe)];
-    return series?.[series.length - 1]?.close;
+    const observed = resolveObservedSymbol(symbol, Object.keys(s.quotes));
+    const quote = observed ? s.quotes[observed]?.last : undefined;
+    if (quote != null && Number.isFinite(quote) && quote > 0) return quote;
+
+    const candidateKeys = Object.keys(s.candles)
+      .filter((key) => key.endsWith(`:${s.selectedTimeframe}`))
+      .map((key) => key.slice(0, -(`:${s.selectedTimeframe}`).length));
+    const candleSymbol = resolveObservedSymbol(symbol, candidateKeys);
+    if (candleSymbol) {
+      const series =
+        s.candles[subscriptionKey(candleSymbol, s.selectedTimeframe)];
+      const close = series?.[series.length - 1]?.close;
+      if (close != null && Number.isFinite(close) && close > 0) return close;
+    }
+    return undefined;
   });
 }
 
@@ -139,6 +153,8 @@ export function AlertCenter() {
   const [symbol, setSymbol] = useState(chartSymbol);
   const [condition, setCondition] = useState<AlertCondition>("crossUp");
   const [price, setPrice] = useState("");
+  const priceEditedRef = useRef(false);
+  const priceSymbolRef = useRef<string | null>(null);
   const [recurring, setRecurring] = useState(false);
   const [perm, setPerm] = useState<BrowserPermission>("unsupported");
   const [externalCaps, setExternalCaps] =
@@ -146,18 +162,34 @@ export function AlertCenter() {
   const [externalError, setExternalError] = useState<string | null>(null);
 
   const livePrice = useLivePrice(symbol);
-  const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
+  const prec =
+    symbolAliasCandidates(symbol)
+      .map((candidate) => getMarketSymbol(candidate)?.pricePrecision)
+      .find((value): value is number => value !== undefined) ?? 2;
 
   // Sync the form symbol with the chart's symbol while the drawer is closed.
   useEffect(() => {
     if (!open) setSymbol(chartSymbol);
   }, [chartSymbol, open]);
 
-  // Prefill the price with the live price when the symbol changes / on open.
+  // Reset on each symbol/open context, then accept a delayed first quote until
+  // the user edits the target manually.
   useEffect(() => {
-    if (livePrice != null) setPrice(livePrice.toFixed(prec));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, open]);
+    if (!open) {
+      priceSymbolRef.current = null;
+      return;
+    }
+    const normalizedSymbol = symbol.trim().toUpperCase();
+    if (priceSymbolRef.current !== normalizedSymbol) {
+      priceSymbolRef.current = normalizedSymbol;
+      priceEditedRef.current = false;
+      setPrice(livePrice == null ? "" : livePrice.toFixed(prec));
+      return;
+    }
+    if (!priceEditedRef.current && livePrice != null) {
+      setPrice(livePrice.toFixed(prec));
+    }
+  }, [livePrice, open, prec, symbol]);
 
   useEffect(() => {
     if (open) setPerm(getBrowserPermission());
@@ -198,8 +230,28 @@ export function AlertCenter() {
   const submit = () => {
     if (replayActive) return;
     const target = Number(price);
-    if (!Number.isFinite(target) || target <= 0) return;
-    createAlert({ symbol, condition, price: target, recurring });
+    if (!symbol.trim()) {
+      reportFrontendError(new Error("Choose a market symbol first."), {
+        title: "Alert not created",
+        logPrefix: "Alert form has no symbol",
+      });
+      return;
+    }
+    if (!Number.isFinite(target) || target <= 0) {
+      reportFrontendError(new Error("Enter a target price greater than zero."), {
+        title: "Alert not created",
+        logPrefix: "Alert form has invalid target price",
+      });
+      return;
+    }
+    try {
+      createAlert({ symbol, condition, price: target, recurring });
+    } catch (error) {
+      reportFrontendError(error, {
+        title: "Alert not created",
+        logPrefix: "Alert form validation failed",
+      });
+    }
   };
 
   const enableBrowser = async () => {
@@ -413,7 +465,10 @@ export function AlertCenter() {
                   type="number"
                   inputMode="decimal"
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={(e) => {
+                    priceEditedRef.current = true;
+                    setPrice(e.target.value);
+                  }}
                   onKeyDown={(e) => e.key === "Enter" && submit()}
                   className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
                 />

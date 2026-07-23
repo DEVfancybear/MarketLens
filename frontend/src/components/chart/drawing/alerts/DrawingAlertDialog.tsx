@@ -19,6 +19,7 @@ import {
   drawingAlertSnapshot,
   drawingAlertTargets,
 } from "./drawingAlertCapabilities";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
 import {
   drawingAlertDrawingIdAtom,
   setDrawingAlertDrawingIdAtom,
@@ -66,15 +67,33 @@ export function DrawingAlertDialog() {
   }
   const target = targets.find((candidate) => candidate.id === targetId) ?? targets[0];
   const submit = () => {
-    createAlert({
-      symbol,
-      condition,
-      price: target.price,
-      recurring,
-      note: note.trim() || `${drawing.name ?? drawing.tool} · ${target.label}`,
-      source: drawingAlertSnapshot(drawing, target),
-      ...(target.technicalTarget ? { technicalTarget: target.technicalTarget } : {}),
-    });
+    if (!Number.isFinite(target.price) || target.price <= 0) {
+      reportFrontendError(
+        new Error("The drawing target does not have a valid price."),
+        {
+          title: "Alert not created",
+          logPrefix: "Drawing alert has invalid target price",
+        },
+      );
+      return;
+    }
+    try {
+      createAlert({
+        symbol,
+        condition,
+        price: target.price,
+        recurring,
+        note: note.trim() || `${drawing.name ?? drawing.tool} · ${target.label}`,
+        source: drawingAlertSnapshot(drawing, target),
+        ...(target.technicalTarget ? { technicalTarget: target.technicalTarget } : {}),
+      });
+    } catch (error) {
+      reportFrontendError(error, {
+        title: "Alert not created",
+        logPrefix: "Drawing alert validation failed",
+      });
+      return;
+    }
     close(null);
     showAlerts(true);
   };

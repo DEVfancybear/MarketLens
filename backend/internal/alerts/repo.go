@@ -258,6 +258,44 @@ FOR UPDATE`, uid, refUUID, refClientID).Scan(
 	if input.ArmingRevision != armingRevision {
 		return Alert{}, Event{}, fmt.Errorf("%w: stale armingRevision", ErrBadRequest)
 	}
+	if status == "triggered" {
+		// The closed-browser worker and an open tab can observe the same
+		// one-time crossing on adjacent ticks. Once one side commits, return the
+		// canonical event to the loser instead of surfacing a misleading 400.
+		existing, existingErr := scanEvent(tx.QueryRow(ctx, `
+SELECT id, alert_ref, symbol, condition::text, target_price, trigger_price,
+       triggered_at, delivered, COALESCE(arming_revision, 0)
+FROM alert_events
+WHERE alert_id = $1 AND arming_revision = $2
+ORDER BY triggered_at DESC, id DESC
+LIMIT 1`, selectedAlertID, input.ArmingRevision))
+		if existingErr == nil {
+			return Alert{}, existing, ErrAlreadyTriggered
+		}
+		if !errors.Is(existingErr, pgx.ErrNoRows) {
+			return Alert{}, Event{}, existingErr
+		}
+		// Events created before the arming-revision migration have a NULL
+		// revision. A triggered legacy row still has one canonical event; return
+		// it idempotently instead of turning a browser retry into a 400.
+		existing, existingErr = scanEvent(tx.QueryRow(ctx, `
+SELECT id, alert_ref, symbol, condition::text, target_price, trigger_price,
+       triggered_at, delivered, COALESCE(arming_revision, 0)
+FROM alert_events
+WHERE alert_id = $1 AND arming_revision IS NULL
+ORDER BY triggered_at DESC, id DESC
+LIMIT 1`, selectedAlertID))
+		if existingErr == nil {
+			return Alert{}, existing, ErrAlreadyTriggered
+		}
+		if !errors.Is(existingErr, pgx.ErrNoRows) {
+			return Alert{}, Event{}, existingErr
+		}
+		return Alert{}, Event{}, fmt.Errorf(
+			"%w: triggered alert is missing its canonical event",
+			ErrBadRequest,
+		)
+	}
 	if technicalTarget == nil {
 		technicalTarget = fixedTechnicalTarget(targetPrice)
 	} else if err := validateTechnicalTarget(technicalTarget); err != nil {

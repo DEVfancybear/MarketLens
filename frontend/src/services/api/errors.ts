@@ -1,9 +1,14 @@
 export interface BackendErrorEnvelope {
-  error?: {
-    code?: string;
-    message?: string;
-    details?: unknown;
-  };
+  error?:
+    | {
+        code?: string;
+        message?: string;
+        details?: unknown;
+      }
+    | string;
+  message?: string;
+  code?: string;
+  details?: unknown;
 }
 
 export class ApiError extends Error {

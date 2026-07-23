@@ -14,6 +14,7 @@ import {
   targetAt,
   technicalTargetSignature,
 } from "@/services/dynamicAlertTargets";
+import { symbolAliasCandidates } from "@/services/market-data/symbolAliases";
 import type {
   PendingPushAlertDelivery,
   PendingPushAlertTrigger,
@@ -27,7 +28,11 @@ import {
 } from "@/services/notifications/alertMessage";
 import { firebaseAdminConfigured, sendFirebasePush } from "./firebaseAdmin";
 import { sendUserIntegrationNotifications } from "./externalNotifications";
-import { listPushDevices, updatePushDevice } from "./pushAlertStore";
+import {
+  listPushDevices,
+  updatePushDevice,
+} from "./pushAlertStore";
+import { pushAlertStateCursor } from "./pushAlertStateMerge";
 import { acknowledgeCanonicalAlertTrigger } from "./canonicalAlertTrigger";
 import { persistBeforeNotification } from "./pushAlertLifecycle";
 import {
@@ -37,6 +42,7 @@ import {
 
 const RECURRING_REARM_MS = 60_000;
 const MT5_TICK_REPLAY_LOOKBACK_MS = 10 * 60_000;
+const MT5_STREAM_WARMUP_RETRY_MS = 350;
 
 interface EvaluationResult {
   devices: number;
@@ -265,8 +271,9 @@ function committedAlertState(
     oneTimeFired: !alert.recurring,
     triggerPrice: candidate.triggerPrice,
     targetPrice: candidate.targetPrice,
-    lastMarketTimestamp:
-      base?.lastMarketTimestamp ?? candidate.triggerEvidence.current.timestamp * 1000,
+    // The trigger itself is the newest broker-time cursor. Keeping the old
+    // cursor here replays the same crossing after a recurring alert re-arms.
+    lastMarketTimestamp: candidate.triggerEvidence.current.timestamp * 1000,
     triggerEvidence: candidate.triggerEvidence,
     pendingDelivery,
     expiredAt: base?.expiredAt,
@@ -284,36 +291,72 @@ function epochMillis(value: number): number {
 async function fetchMt5Price(symbol: string): Promise<PriceSnapshot | undefined> {
   const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
   const apiBase = (configuredBase || "http://localhost:8080").replace(/\/+$/, "");
-  const res = await fetch(
-    `${apiBase}/api/v1/mt5/ticks?symbols=${encodeURIComponent(symbol)}&since=${Date.now() - MT5_TICK_REPLAY_LOOKBACK_MS}`,
-    { cache: "no-store" },
-  );
-  if (!res.ok) {
-    throw new Error(`MT5 ticks request failed (${res.status} ${res.statusText})`);
+  const normalized = symbol.trim().toUpperCase();
+  const candidates = symbolAliasCandidates(normalized);
+
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const res = await fetch(
+          `${apiBase}/api/v1/mt5/ticks?symbols=${encodeURIComponent(candidate)}&since=${Date.now() - MT5_TICK_REPLAY_LOOKBACK_MS}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) {
+          throw new Error(
+            `MT5 ticks request failed (${res.status} ${res.statusText})`,
+          );
+        }
+        const body = (await res.json()) as {
+          connected?: boolean;
+          ticks?: Array<{
+            symbol?: string;
+            bid?: number;
+            ask?: number;
+            timestamp?: number;
+            time_msc?: number;
+            received_at?: number;
+          }>;
+        };
+        if (body.connected === false) return undefined;
+        const receivedTicks = normalizeMt5AlertTicks(body.ticks ?? [], candidate);
+        const receivedLatest = receivedTicks[receivedTicks.length - 1];
+        if (receivedLatest && isFreshMt5Tick(receivedLatest.receivedAt)) {
+          const ticks = orderedTechnicalPricePoints(undefined, receivedTicks);
+          const latest = ticks[ticks.length - 1];
+          if (latest) {
+            return {
+              current: latest.price,
+              ticks,
+              receivedThrough: receivedLatest.receivedAt,
+            };
+          }
+        }
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) {
+          // A cold bridge can briefly return a transport/5xx error while its
+          // on-demand symbol subscription is being installed. Retry once
+          // before falling through to the next known alias.
+          await new Promise((resolve) =>
+            setTimeout(resolve, MT5_STREAM_WARMUP_RETRY_MS),
+          );
+          continue;
+        }
+        break;
+      }
+      if (attempt === 0) {
+        // The first request also asks Go/Python to select catalog-only symbols.
+        // Give that on-demand subscription one short chance to publish its first
+        // tick instead of skipping the symbol for an entire evaluator interval.
+        await new Promise((resolve) =>
+          setTimeout(resolve, MT5_STREAM_WARMUP_RETRY_MS),
+        );
+      }
+    }
   }
-  const body = (await res.json()) as {
-    connected?: boolean;
-    ticks?: Array<{
-      symbol?: string;
-      bid?: number;
-      ask?: number;
-      timestamp?: number;
-      time_msc?: number;
-      received_at?: number;
-    }>;
-  };
-  if (body.connected === false) return undefined;
-  const receivedTicks = normalizeMt5AlertTicks(body.ticks ?? [], symbol);
-  const receivedLatest = receivedTicks[receivedTicks.length - 1];
-  if (!receivedLatest || !isFreshMt5Tick(receivedLatest.receivedAt)) return undefined;
-  const ticks = orderedTechnicalPricePoints(undefined, receivedTicks);
-  const latest = ticks[ticks.length - 1];
-  if (!latest) return undefined;
-  return {
-    current: latest.price,
-    ticks,
-    receivedThrough: receivedLatest.receivedAt,
-  };
+  if (lastError) throw lastError;
+  return undefined;
 }
 
 async function fetchCurrentPrice(symbol: string): Promise<PriceSnapshot | undefined> {
@@ -326,7 +369,15 @@ async function fetchCurrentPrice(symbol: string): Promise<PriceSnapshot | undefi
 function shouldEvaluate(device: PushDeviceRecord, alert: ServerPushAlert) {
   const signature = alertSignature(alert);
   const state = device.alertState[alert.id];
-  if (!state || state.signature !== signature) return { signature };
+  // A pending delivery owns a frozen alert snapshot. It must be drained even
+  // when the browser has already edited/re-armed the same client id; otherwise
+  // the new signature would hide the old notification forever.
+  if (
+    !state ||
+    (state.signature !== signature && state.pendingDelivery === undefined)
+  ) {
+    return { signature };
+  }
   return { signature, state };
 }
 
@@ -425,11 +476,20 @@ async function runEvaluation(
     const lastPrices = { ...device.lastPrices };
     const previousPrices = { ...device.lastPrices };
     const alertState = { ...device.alertState };
+    const alertSignatures: Record<string, string> = {};
+    const removedAlertState: Record<
+      string,
+      { signature: string; eventId?: string; cursor: number }
+    > = {};
 
     for (const alert of alertsForDevice) {
       result.alerts += 1;
       const { signature, state } = shouldEvaluate(device, alert);
-      if (state?.canonicalRejectedAt !== undefined) {
+      alertSignatures[alert.id] = signature;
+      if (
+        state?.signature === signature &&
+        state.canonicalRejectedAt !== undefined
+      ) {
         result.skipped += 1;
         result.debug?.push({
           token: device.token.slice(-8),
@@ -535,15 +595,29 @@ async function runEvaluation(
         result.debug?.push(debugEntry);
         const remaining = await deliverTriggerNotifications({
           device,
-          alert,
+          // Use the immutable snapshot captured at canonical commit. The
+          // active browser definition may have been edited since then.
+          alert: pendingDelivery.alert,
           delivery: pendingDelivery,
           canSendFirebase,
           debugEntry,
           result,
           externalCache,
         });
+        if (!remaining) {
+          removedAlertState[alert.id] = {
+            signature: state?.signature ?? signature,
+            eventId: pendingDelivery.eventId,
+            cursor: pushAlertStateCursor(state),
+          };
+        }
         if (!remaining && !device.alerts.some((item) => item.id === alert.id)) {
           delete alertState[alert.id];
+        } else if (!remaining && state?.signature !== signature) {
+          // The old event is fully delivered, but this id now represents a
+          // newly armed definition. Start that revision with a clean cursor on
+          // the next evaluator pass.
+          alertState[alert.id] = { signature };
         } else {
           alertState[alert.id] = { ...state, pendingDelivery: remaining };
         }
@@ -760,7 +834,12 @@ async function runEvaluation(
       lastPrices[alert.symbol] = acceptedCurrent;
     }
 
-    await updatePushDevice(device.token, { lastPrices, alertState });
+    await updatePushDevice(device.token, {
+      lastPrices,
+      alertState,
+      alertSignatures,
+      removedAlertState,
+    });
   }
 
   return result;

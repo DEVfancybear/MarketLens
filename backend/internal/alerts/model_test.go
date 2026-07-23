@@ -38,6 +38,67 @@ func TestNormalizeCreateDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestNormalizeCreateCanonicalizesSymbolCase(t *testing.T) {
+	input, err := normalizeCreate(CreateInput{
+		Symbol:    " eurusd.m ",
+		Condition: "above",
+		Price:     1.1,
+	})
+	if err != nil {
+		t.Fatalf("normalizeCreate: %v", err)
+	}
+	if input.Symbol != "EURUSD.M" {
+		t.Fatalf("symbol = %q, want EURUSD.M", input.Symbol)
+	}
+}
+
+func TestNormalizeCreateCountsUnicodeNoteCharacters(t *testing.T) {
+	input, err := normalizeCreate(CreateInput{
+		Symbol:    "EURUSD",
+		Condition: "above",
+		Price:     1.1,
+		Note:      strings.Repeat("á", MaxNoteLen),
+	})
+	if err != nil {
+		t.Fatalf("500 Unicode characters should validate: %v", err)
+	}
+	if utf8Length := len([]rune(input.Note)); utf8Length != MaxNoteLen {
+		t.Fatalf("note rune count = %d, want %d", utf8Length, MaxNoteLen)
+	}
+
+	_, err = normalizeCreate(CreateInput{
+		Symbol:    "EURUSD",
+		Condition: "above",
+		Price:     1.1,
+		Note:      strings.Repeat("á", MaxNoteLen+1),
+	})
+	if !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("501 Unicode characters should fail: %v", err)
+	}
+}
+
+func TestNormalizeCreateAcceptsFractionalDrawingSnapshotTime(t *testing.T) {
+	input, err := normalizeCreate(CreateInput{
+		Symbol:    "EURUSD",
+		Condition: "above",
+		Price:     1.1,
+		Source: &AlertSource{
+			Kind:        "drawing",
+			DrawingID:   "drawing-1",
+			DrawingTool: "trendline",
+			TargetID:    "dynamic:line",
+			TargetLabel: "Dynamic line",
+			SnapshotAt:  1_750_000_000_000.5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("fractional drawing snapshot should validate: %v", err)
+	}
+	if input.Source == nil || input.Source.SnapshotAt != 1_750_000_000_000.5 {
+		t.Fatalf("unexpected drawing source: %+v", input.Source)
+	}
+}
+
 func TestNormalizePatchRequiresTriggerEndpointForTriggeredStatus(t *testing.T) {
 	status := "triggered"
 	_, err := normalizePatch(PatchInput{Status: &status})
@@ -231,6 +292,25 @@ func TestTechnicalAlertTargetJSONIsBoundedAndStrict(t *testing.T) {
 		strings.Repeat("x", MaxTechnicalTargetBytes) + `"}`
 	if err := json.Unmarshal([]byte(oversized), &target); err == nil {
 		t.Fatal("oversized target must be rejected")
+	}
+}
+
+func TestTechnicalAlertTargetAcceptsFractionalAnchorSeconds(t *testing.T) {
+	var target TechnicalAlertTarget
+	err := json.Unmarshal([]byte(`{
+		"version":1,"kind":"dynamic-line",
+		"a":{"time":1750000000.5,"price":1.12},
+		"b":{"time":1750003600.25,"price":1.13},
+		"domain":"ray","interpolation":"linear"
+	}`), &target)
+	if err != nil {
+		t.Fatalf("fractional anchor JSON should decode: %v", err)
+	}
+	if err := validateTechnicalTarget(&target); err != nil {
+		t.Fatalf("fractional anchor should validate: %v", err)
+	}
+	if target.A == nil || target.A.Time != 1_750_000_000.5 {
+		t.Fatalf("unexpected fractional anchor: %+v", target.A)
 	}
 }
 

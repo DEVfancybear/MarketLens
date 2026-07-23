@@ -1,25 +1,167 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { firebaseAdminConfigured, getFirebaseFirestore } from "./firebaseAdmin";
 import { resolveStoredDeliveryToken } from "@/services/notifications/pushSyncPolicy";
 import { shouldRetainPushAlertState } from "./pushAlertDeliveryPolicy";
 import type {
+  PendingPushAlertDelivery,
+  PendingPushAlertTrigger,
   PushAlertDb,
   PushAlertSyncRequest,
   PushDeviceRecord,
   ServerPushAlert,
 } from "@/types/pushAlerts";
 import { alertArmingRevision } from "@/services/alertConditions";
-import { technicalTargetSignature } from "@/services/dynamicAlertTargets";
+import {
+  sanitizeTechnicalAlertEvidence,
+  technicalTargetSignature,
+} from "@/services/dynamicAlertTargets";
 import { sanitizePushAlertForStorage } from "@/services/pushAlertSanitizer";
 import { normalizeAlertTimeZone } from "@/services/notifications/alertMessage";
+import {
+  mergeEvaluatorState,
+  type EvaluatorStatePatch,
+} from "./pushAlertStateMerge";
 
 const DB_VERSION = 1;
 const STORE_DIR = ".data";
 const STORE_FILE = `${STORE_DIR}/push-alerts.json`;
 const COLLECTION = "pushAlertDevices";
 
+/**
+ * All local-file mutations share one queue. A per-token queue is not enough:
+ * the JSON file is one document, so two different tokens can still lose each
+ * other's updates when they read and replace the file concurrently.
+ */
+let mutationQueue: Promise<void> = Promise.resolve();
+
+function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = mutationQueue.catch(() => undefined).then(operation);
+  mutationQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 function emptyDb(): PushAlertDb {
   return { version: DB_VERSION, devices: {} };
+}
+
+function normalizePriceMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, number> = {};
+  for (const [rawSymbol, rawPrice] of Object.entries(value)) {
+    const symbol = rawSymbol.trim().toUpperCase();
+    const price = Number(rawPrice);
+    if (symbol && Number.isFinite(price) && price > 0) {
+      result[symbol] = price;
+    }
+  }
+  return result;
+}
+
+function finitePositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function sanitizePendingTrigger(value: unknown): PendingPushAlertTrigger | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Partial<PendingPushAlertTrigger>;
+  const triggerPrice = finitePositiveNumber(item.triggerPrice);
+  const targetPrice = finitePositiveNumber(item.targetPrice);
+  const triggeredAt = finitePositiveNumber(item.triggeredAt);
+  const triggerEvidence = sanitizeTechnicalAlertEvidence(item.triggerEvidence);
+  if (!triggerPrice || !targetPrice || !triggeredAt || !triggerEvidence) {
+    return undefined;
+  }
+  return { triggerPrice, targetPrice, triggeredAt, triggerEvidence };
+}
+
+function sanitizePendingDelivery(
+  value: unknown,
+): PendingPushAlertDelivery | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const item = value as Partial<PendingPushAlertDelivery>;
+  if (typeof item.eventId !== "string" || !item.eventId.trim()) return undefined;
+  const alert = sanitizePushAlertForStorage(item.alert);
+  const candidate = sanitizePendingTrigger(item.candidate);
+  if (!alert || !candidate) return undefined;
+  if (
+    typeof item.push !== "boolean" ||
+    typeof item.telegram !== "boolean" ||
+    typeof item.discord !== "boolean"
+  ) {
+    return undefined;
+  }
+  const notificationTimeZone =
+    typeof item.notificationTimeZone === "string"
+      ? normalizeAlertTimeZone(item.notificationTimeZone)
+      : undefined;
+  return {
+    eventId: item.eventId.trim(),
+    alert,
+    candidate,
+    ...(notificationTimeZone ? { notificationTimeZone } : {}),
+    push: item.push,
+    telegram: item.telegram,
+    discord: item.discord,
+  };
+}
+
+function sanitizeAlertState(
+  value: unknown,
+): PushDeviceRecord["alertState"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: PushDeviceRecord["alertState"] = {};
+  for (const [id, rawState] of Object.entries(value)) {
+    if (
+      !id.trim() ||
+      !rawState ||
+      typeof rawState !== "object" ||
+      Array.isArray(rawState)
+    ) {
+      continue;
+    }
+    const input = rawState as Partial<PushDeviceRecord["alertState"][string]>;
+    if (typeof input.signature !== "string" || !input.signature.trim()) continue;
+    const state: PushDeviceRecord["alertState"][string] = {
+      signature: input.signature,
+    };
+    for (const key of [
+      "lastTriggeredAt",
+      "lastEvaluatedAt",
+      "lastMarketTimestamp",
+      "triggerPrice",
+      "targetPrice",
+      "canonicalRejectedAt",
+      "expiredAt",
+    ] as const) {
+      const number = finitePositiveNumber(input[key]);
+      if (number !== undefined) state[key] = number;
+    }
+    if (typeof input.oneTimeFired === "boolean") {
+      state.oneTimeFired = input.oneTimeFired;
+    }
+    const evidence = sanitizeTechnicalAlertEvidence(input.triggerEvidence);
+    if (input.triggerEvidence !== undefined && !evidence) continue;
+    if (evidence) state.triggerEvidence = evidence;
+    const pendingTrigger = sanitizePendingTrigger(input.pendingTrigger);
+    if (input.pendingTrigger !== undefined && !pendingTrigger) continue;
+    if (pendingTrigger) state.pendingTrigger = pendingTrigger;
+    const pendingDelivery = sanitizePendingDelivery(input.pendingDelivery);
+    if (input.pendingDelivery !== undefined && !pendingDelivery) continue;
+    if (pendingDelivery) state.pendingDelivery = pendingDelivery;
+    if (typeof input.canonicalRejectedReason === "string") {
+      state.canonicalRejectedReason = input.canonicalRejectedReason
+        .trim()
+        .slice(0, 500);
+    }
+    result[id] = state;
+  }
+  return result;
 }
 
 async function readDb(): Promise<PushAlertDb> {
@@ -27,12 +169,23 @@ async function readDb(): Promise<PushAlertDb> {
     const raw = await readFile(STORE_FILE, "utf8");
     const parsed = JSON.parse(raw) as PushAlertDb;
     if (parsed.version !== DB_VERSION || !parsed.devices) return emptyDb();
-    for (const device of Object.values(parsed.devices)) {
+    for (const [deviceKey, rawDevice] of Object.entries(parsed.devices)) {
+      if (
+        !rawDevice ||
+        typeof rawDevice !== "object" ||
+        Array.isArray(rawDevice)
+      ) {
+        delete parsed.devices[deviceKey];
+        continue;
+      }
+      const device = rawDevice as PushDeviceRecord;
       device.alerts = Array.isArray(device.alerts)
         ? device.alerts
             .map(sanitizePushAlertForStorage)
             .filter((alert): alert is ServerPushAlert => Boolean(alert))
         : [];
+      device.lastPrices = normalizePriceMap(device.lastPrices);
+      device.alertState = sanitizeAlertState(device.alertState);
     }
     return parsed;
   } catch {
@@ -43,7 +196,7 @@ async function readDb(): Promise<PushAlertDb> {
 async function writeDb(db: PushAlertDb): Promise<void> {
   const file = STORE_FILE;
   await mkdir(STORE_DIR, { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(db, null, 2), "utf8");
   await rename(tmp, file);
 }
@@ -108,6 +261,16 @@ function pruneState(device: PushDeviceRecord): PushDeviceRecord {
   return { ...device, alertState };
 }
 
+function sanitizeAlertSnapshot(
+  alerts: readonly ServerPushAlert[],
+): ServerPushAlert[] {
+  const sanitized = alerts.map(sanitizePushAlertForStorage);
+  if (sanitized.some((alert) => alert === null)) {
+    throw new Error("invalid push alert snapshot");
+  }
+  return sanitized as ServerPushAlert[];
+}
+
 function firestoreEnabled(): boolean {
   return firebaseAdminConfigured();
 }
@@ -146,13 +309,9 @@ function fromFirestore(data: FirebaseFirestore.DocumentData): PushDeviceRecord {
     settingsTelegram: Boolean(data.settingsTelegram),
     settingsDiscord: Boolean(data.settingsDiscord),
     lastPrices:
-      data.lastPrices && typeof data.lastPrices === "object"
-        ? (data.lastPrices as Record<string, number>)
-        : {},
+      normalizePriceMap(data.lastPrices),
     alertState:
-      data.alertState && typeof data.alertState === "object"
-        ? (data.alertState as PushDeviceRecord["alertState"])
-        : {},
+      sanitizeAlertState(data.alertState),
     createdAt: Number(data.createdAt ?? Date.now()),
     updatedAt: Number(data.updatedAt ?? Date.now()),
   };
@@ -169,11 +328,10 @@ async function getFirestoreDevice(
   return fromFirestore(snap.data() ?? {});
 }
 
-async function setFirestoreDevice(device: PushDeviceRecord): Promise<void> {
-  await getFirebaseFirestore()
+function firestoreDeviceRef(token: string) {
+  return getFirebaseFirestore()
     .collection(COLLECTION)
-    .doc(tokenDocId(device.token))
-    .set(stripUndefined(device));
+    .doc(tokenDocId(token));
 }
 
 function assertDeviceOwner(device: PushDeviceRecord | undefined, userId: string): void {
@@ -182,26 +340,39 @@ function assertDeviceOwner(device: PushDeviceRecord | undefined, userId: string)
   }
 }
 
-export async function registerPushDevice(token: string, userId: string): Promise<void> {
+async function registerPushDeviceUnlocked(
+  token: string,
+  userId: string,
+): Promise<void> {
   if (firestoreEnabled()) {
-    const now = Date.now();
-    const existing = await getFirestoreDevice(token);
-    assertDeviceOwner(existing, userId);
-    await setFirestoreDevice({
-      token,
-      userId,
-      deliveryToken: existing?.deliveryToken,
-      notificationTimeZone: normalizeAlertTimeZone(
-        existing?.notificationTimeZone,
-      ),
-      alerts: existing?.alerts ?? [],
-      settingsPush: existing?.settingsPush ?? false,
-      settingsTelegram: existing?.settingsTelegram ?? false,
-      settingsDiscord: existing?.settingsDiscord ?? false,
-      lastPrices: existing?.lastPrices ?? {},
-      alertState: existing?.alertState ?? {},
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
+    const firestore = getFirebaseFirestore();
+    const ref = firestoreDeviceRef(token);
+    await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const existing = snapshot.exists
+        ? fromFirestore(snapshot.data() ?? {})
+        : undefined;
+      assertDeviceOwner(existing, userId);
+      const now = Date.now();
+      transaction.set(
+        ref,
+        stripUndefined({
+          token,
+          userId,
+          deliveryToken: existing?.deliveryToken,
+          notificationTimeZone: normalizeAlertTimeZone(
+            existing?.notificationTimeZone,
+          ),
+          alerts: existing?.alerts ?? [],
+          settingsPush: existing?.settingsPush ?? false,
+          settingsTelegram: existing?.settingsTelegram ?? false,
+          settingsDiscord: existing?.settingsDiscord ?? false,
+          lastPrices: existing?.lastPrices ?? {},
+          alertState: existing?.alertState ?? {},
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        }),
+      );
     });
     return;
   }
@@ -229,14 +400,25 @@ export async function registerPushDevice(token: string, userId: string): Promise
   await writeDb(db);
 }
 
-export async function unregisterPushDevice(token: string, userId: string): Promise<void> {
+export function registerPushDevice(token: string, userId: string): Promise<void> {
+  return serializeMutation(() => registerPushDeviceUnlocked(token, userId));
+}
+
+async function unregisterPushDeviceUnlocked(
+  token: string,
+  userId: string,
+): Promise<void> {
   if (firestoreEnabled()) {
-    const existing = await getFirestoreDevice(token);
-    assertDeviceOwner(existing, userId);
-    await getFirebaseFirestore()
-      .collection(COLLECTION)
-      .doc(tokenDocId(token))
-      .delete();
+    const firestore = getFirebaseFirestore();
+    const ref = firestoreDeviceRef(token);
+    await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const existing = snapshot.exists
+        ? fromFirestore(snapshot.data() ?? {})
+        : undefined;
+      assertDeviceOwner(existing, userId);
+      transaction.delete(ref);
+    });
     return;
   }
 
@@ -246,43 +428,56 @@ export async function unregisterPushDevice(token: string, userId: string): Promi
   await writeDb(db);
 }
 
-export async function syncPushAlerts(
+export function unregisterPushDevice(
+  token: string,
+  userId: string,
+): Promise<void> {
+  return serializeMutation(() => unregisterPushDeviceUnlocked(token, userId));
+}
+
+async function syncPushAlertsUnlocked(
   request: PushAlertSyncRequest,
   userId: string,
 ): Promise<{ stored: number }> {
+  const shouldStoreAlerts =
+    request.settingsPush ||
+    Boolean(request.settingsTelegram) ||
+    Boolean(request.settingsDiscord);
+  const alerts = shouldStoreAlerts
+    ? sanitizeAlertSnapshot(request.alerts)
+    : [];
   if (firestoreEnabled()) {
-    const now = Date.now();
-    const existing = await getFirestoreDevice(request.token);
-    assertDeviceOwner(existing, userId);
-    const shouldStoreAlerts =
-      request.settingsPush ||
-      Boolean(request.settingsTelegram) ||
-      Boolean(request.settingsDiscord);
-    const alerts = shouldStoreAlerts
-      ? request.alerts
-          .map(sanitizePushAlertForStorage)
-          .filter((alert): alert is ServerPushAlert => Boolean(alert))
-      : [];
-    const device = pruneState({
-      token: request.token,
-      userId,
-      deliveryToken: resolveStoredDeliveryToken(
-        request.deliveryToken,
-        existing?.deliveryToken,
-      ),
-      notificationTimeZone: normalizeAlertTimeZone(
-        request.notificationTimeZone ?? existing?.notificationTimeZone,
-      ),
-      alerts,
-      settingsPush: Boolean(request.settingsPush),
-      settingsTelegram: Boolean(request.settingsTelegram),
-      settingsDiscord: Boolean(request.settingsDiscord),
-      lastPrices: existing?.lastPrices ?? {},
-      alertState: mergeClientTriggerState(alerts, existing?.alertState ?? {}),
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
+    const firestore = getFirebaseFirestore();
+    const ref = firestoreDeviceRef(request.token);
+    const device = await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const existing = snapshot.exists
+        ? fromFirestore(snapshot.data() ?? {})
+        : undefined;
+      assertDeviceOwner(existing, userId);
+      const now = Date.now();
+      const next = pruneState({
+        token: request.token,
+        userId,
+        deliveryToken: resolveStoredDeliveryToken(
+          request.deliveryToken,
+          existing?.deliveryToken,
+        ),
+        notificationTimeZone: normalizeAlertTimeZone(
+          request.notificationTimeZone ?? existing?.notificationTimeZone,
+        ),
+        alerts,
+        settingsPush: Boolean(request.settingsPush),
+        settingsTelegram: Boolean(request.settingsTelegram),
+        settingsDiscord: Boolean(request.settingsDiscord),
+        lastPrices: existing?.lastPrices ?? {},
+        alertState: mergeClientTriggerState(alerts, existing?.alertState ?? {}),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      });
+      transaction.set(ref, stripUndefined(next));
+      return next;
     });
-    await setFirestoreDevice(device);
     return { stored: device.alerts.length };
   }
 
@@ -290,15 +485,6 @@ export async function syncPushAlerts(
   const now = Date.now();
   const existing = db.devices[request.token];
   assertDeviceOwner(existing, userId);
-  const shouldStoreAlerts =
-    request.settingsPush ||
-    Boolean(request.settingsTelegram) ||
-    Boolean(request.settingsDiscord);
-  const alerts = shouldStoreAlerts
-    ? request.alerts
-        .map(sanitizePushAlertForStorage)
-        .filter((alert): alert is ServerPushAlert => Boolean(alert))
-    : [];
 
   const device: PushDeviceRecord = pruneState({
     token: request.token,
@@ -323,6 +509,18 @@ export async function syncPushAlerts(
   db.devices[request.token] = device;
   await writeDb(db);
   return { stored: device.alerts.length };
+}
+
+/**
+ * A full snapshot replaces the device's alert list. Serialize writes per token
+ * so two tabs (or a pagehide flush racing the debounce) cannot read the same
+ * old document and let the older snapshot win on disk/Firestore.
+ */
+export function syncPushAlerts(
+  request: PushAlertSyncRequest,
+  userId: string,
+): Promise<{ stored: number }> {
+  return serializeMutation(() => syncPushAlertsUnlocked(request, userId));
 }
 
 export async function getPushDevice(
@@ -351,18 +549,27 @@ export async function listPushDevices(): Promise<PushDeviceRecord[]> {
   return Object.values(db.devices);
 }
 
-export async function updatePushDevice(
+async function updatePushDeviceUnlocked(
   token: string,
-  patch: Pick<PushDeviceRecord, "lastPrices" | "alertState">,
+  patch: EvaluatorStatePatch,
 ): Promise<void> {
   if (firestoreEnabled()) {
-    const existing = await getFirestoreDevice(token);
-    if (!existing) return;
-    await setFirestoreDevice({
-      ...existing,
-      lastPrices: patch.lastPrices,
-      alertState: patch.alertState,
-      updatedAt: Date.now(),
+    const firestore = getFirebaseFirestore();
+    const ref = firestoreDeviceRef(token);
+    await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists) return;
+      const existing = fromFirestore(snapshot.data() ?? {});
+      const merged = mergeEvaluatorState(existing, patch);
+      transaction.set(
+        ref,
+        stripUndefined({
+          ...existing,
+          lastPrices: merged.lastPrices,
+          alertState: merged.alertState,
+          updatedAt: Date.now(),
+        }),
+      );
     });
     return;
   }
@@ -370,11 +577,19 @@ export async function updatePushDevice(
   const db = await readDb();
   const existing = db.devices[token];
   if (!existing) return;
+  const merged = mergeEvaluatorState(existing, patch);
   db.devices[token] = {
     ...existing,
-    lastPrices: patch.lastPrices,
-    alertState: patch.alertState,
+    lastPrices: merged.lastPrices,
+    alertState: merged.alertState,
     updatedAt: Date.now(),
   };
   await writeDb(db);
+}
+
+export function updatePushDevice(
+  token: string,
+  patch: EvaluatorStatePatch,
+): Promise<void> {
+  return serializeMutation(() => updatePushDeviceUnlocked(token, patch));
 }

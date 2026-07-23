@@ -48,6 +48,11 @@ import { setSymbolAtom, symbolAtom } from "@/store/chartStore";
 import { getAlertState } from "@/store/alertStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { logAtom, setAlertCenterAtom } from "@/store/uiStore";
+import { reportFrontendError } from "@/services/feedback/errorReporter";
+import {
+  normalizeAlertSymbol,
+  resolveObservedSymbol,
+} from "@/services/alertSymbols";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import { IconButton } from "@/components/ui/IconButton";
 import { fmtPrice } from "@/utils/format";
@@ -602,10 +607,37 @@ export function Watchlist() {
     (ticker: string) => {
       if (replayActive) return;
       const store = getAlertState();
-      const quote = getMarketDataState().quotes[ticker];
+      const normalizedTicker = normalizeAlertSymbol(ticker);
+      const quotes = getMarketDataState().quotes;
+      const observedSymbol = resolveObservedSymbol(
+        normalizedTicker,
+        Object.keys(quotes),
+      );
+      const quote = observedSymbol ? quotes[observedSymbol] : undefined;
       const price = quote?.last ?? 0;
-      store.createAlert({ symbol: ticker, condition: "crossUp", price });
-      setAlertCenter(true);
+      if (!Number.isFinite(price) || price <= 0) {
+        reportFrontendError(
+          new Error(`No live MT5 price is available for ${normalizedTicker}.`),
+          {
+            title: "Alert not created",
+            logPrefix: "Watchlist alert creation skipped",
+          },
+        );
+        return;
+      }
+      try {
+        store.createAlert({
+          symbol: normalizedTicker,
+          condition: "crossUp",
+          price,
+        });
+        setAlertCenter(true);
+      } catch (error) {
+        reportFrontendError(error, {
+          title: "Alert not created",
+          logPrefix: "Watchlist alert validation failed",
+        });
+      }
     },
     [replayActive, setAlertCenter],
   );

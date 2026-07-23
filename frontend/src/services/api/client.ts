@@ -77,14 +77,54 @@ let currentIdTokenProviderForTests: (() => Promise<string | null>) | null = null
 
 async function apiErrorFromHTTP(error: HTTPError): Promise<ApiError> {
   const { response } = error;
-  try {
-    const body = (await response.clone().json()) as BackendErrorEnvelope;
-    const code = body.error?.code ?? "http_error";
-    const message = body.error?.message ?? response.statusText;
-    return new ApiError(response.status, code, message, body.error?.details);
-  } catch {
-    return new ApiError(response.status, "http_error", response.statusText);
+  const fallback =
+    response.statusText.trim() || `Request failed with status ${response.status}.`;
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  // Ky 2 pre-parses and consumes non-2xx response bodies into HTTPError.data.
+  // Only fall back to reading the response for older Ky/error instances.
+  let payload: unknown = error.data;
+  if (payload === undefined && !response.bodyUsed) {
+    try {
+      payload = contentType.includes("json")
+        ? await response.clone().json()
+        : await response.clone().text();
+    } catch {
+      payload = undefined;
+    }
   }
+  if (typeof payload === "string") {
+    const text = payload.trim();
+    const safeText =
+      text &&
+      text.length <= 1_000 &&
+      !contentType.includes("text/html") &&
+      !/^<!doctype html/i.test(text)
+        ? text
+        : "";
+    return new ApiError(response.status, "http_error", safeText || fallback);
+  }
+  const body =
+    payload && typeof payload === "object"
+      ? (payload as BackendErrorEnvelope)
+      : null;
+  if (!body) return new ApiError(response.status, "http_error", fallback);
+  if (typeof body.error === "string") {
+    return new ApiError(
+      response.status,
+      body.code ?? "http_error",
+      body.error.trim() || body.message?.trim() || fallback,
+      body.details,
+    );
+  }
+  const code = body.error?.code ?? body.code ?? "http_error";
+  const message =
+    body.error?.message?.trim() || body.message?.trim() || fallback;
+  return new ApiError(
+    response.status,
+    code,
+    message,
+    body.error?.details ?? body.details,
+  );
 }
 
 function cleanApiPath(path: string): string {

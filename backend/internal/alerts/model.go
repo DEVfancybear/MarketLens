@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -44,19 +45,21 @@ type ChannelPatch struct {
 }
 
 type AlertSource struct {
-	Kind        string `json:"kind"`
-	DrawingID   string `json:"drawingId"`
-	DrawingTool string `json:"drawingTool"`
-	TargetID    string `json:"targetId"`
-	TargetLabel string `json:"targetLabel"`
-	SnapshotAt  int64  `json:"snapshotAt"`
+	Kind        string  `json:"kind"`
+	DrawingID   string  `json:"drawingId"`
+	DrawingTool string  `json:"drawingTool"`
+	TargetID    string  `json:"targetId"`
+	TargetLabel string  `json:"targetLabel"`
+	SnapshotAt  float64 `json:"snapshotAt"`
 }
 
 // TechnicalAlertPoint is an immutable chart-time/data-price coordinate. Time
 // uses the same UTC epoch contract as drawing anchors; it is not a receive-time
-// cursor or a viewport pixel coordinate.
+// cursor or a viewport pixel coordinate. Fractional seconds are accepted because
+// chart pointer projection and broker timestamps are not guaranteed to be whole
+// seconds.
 type TechnicalAlertPoint struct {
-	Time  int64   `json:"time"`
+	Time  float64 `json:"time"`
 	Price float64 `json:"price"`
 }
 
@@ -211,7 +214,7 @@ type PushTokenInput struct {
 
 func normalizeCreate(input CreateInput) (CreateInput, error) {
 	input.ClientID = strings.TrimSpace(input.ClientID)
-	input.Symbol = strings.TrimSpace(input.Symbol)
+	input.Symbol = strings.ToUpper(strings.TrimSpace(input.Symbol))
 	input.Condition = strings.TrimSpace(input.Condition)
 	input.Note = strings.TrimSpace(input.Note)
 	if input.Symbol == "" {
@@ -223,7 +226,7 @@ func normalizeCreate(input CreateInput) (CreateInput, error) {
 	if !validPrice(input.Price) {
 		return CreateInput{}, fmt.Errorf("%w: price must be greater than zero", ErrBadRequest)
 	}
-	if len(input.Note) > MaxNoteLen {
+	if utf8.RuneCountInString(input.Note) > MaxNoteLen {
 		return CreateInput{}, fmt.Errorf("%w: note exceeds %d characters", ErrBadRequest, MaxNoteLen)
 	}
 	if input.Enabled == nil {
@@ -244,7 +247,7 @@ func normalizeCreate(input CreateInput) (CreateInput, error) {
 
 func normalizePatch(input PatchInput) (PatchInput, error) {
 	if input.Symbol != nil {
-		value := strings.TrimSpace(*input.Symbol)
+		value := strings.ToUpper(strings.TrimSpace(*input.Symbol))
 		if value == "" {
 			return PatchInput{}, fmt.Errorf("%w: symbol cannot be empty", ErrBadRequest)
 		}
@@ -262,7 +265,7 @@ func normalizePatch(input PatchInput) (PatchInput, error) {
 	}
 	if input.Note != nil {
 		value := strings.TrimSpace(*input.Note)
-		if len(value) > MaxNoteLen {
+		if utf8.RuneCountInString(value) > MaxNoteLen {
 			return PatchInput{}, fmt.Errorf("%w: note exceeds %d characters", ErrBadRequest, MaxNoteLen)
 		}
 		input.Note = &value
@@ -290,7 +293,8 @@ func validateAlertSource(source *AlertSource) error {
 	source.TargetID = strings.TrimSpace(source.TargetID)
 	source.TargetLabel = strings.TrimSpace(source.TargetLabel)
 	if source.Kind != "drawing" || source.DrawingID == "" || source.DrawingTool == "" ||
-		source.TargetID == "" || source.TargetLabel == "" || source.SnapshotAt <= 0 {
+		source.TargetID == "" || source.TargetLabel == "" || !finite(source.SnapshotAt) ||
+		source.SnapshotAt <= 0 {
 		return fmt.Errorf("%w: drawing alert source is invalid", ErrBadRequest)
 	}
 	return nil
@@ -360,8 +364,8 @@ func parallelChannelSlopes(a, b *DynamicLineTarget) bool {
 	if a.Interpolation == "log" {
 		price = math.Log
 	}
-	aSlope := (price(a.B.Price) - price(a.A.Price)) / float64(a.B.Time-a.A.Time)
-	bSlope := (price(b.B.Price) - price(b.A.Price)) / float64(b.B.Time-b.A.Time)
+	aSlope := (price(a.B.Price) - price(a.A.Price)) / (a.B.Time - a.A.Time)
+	bSlope := (price(b.B.Price) - price(b.A.Price)) / (b.B.Time - b.A.Time)
 	scale := math.Max(1, math.Max(math.Abs(aSlope), math.Abs(bSlope)))
 	const float64Epsilon = 2.220446049250313e-16
 	tolerance := float64Epsilon * 64 * scale
@@ -375,7 +379,8 @@ func validateDynamicLineTarget(target *DynamicLineTarget) error {
 	target.Kind = "dynamic-line"
 	target.Domain = strings.TrimSpace(target.Domain)
 	target.Interpolation = strings.TrimSpace(target.Interpolation)
-	if target.A.Time <= 0 || target.B.Time <= 0 || target.A.Time == target.B.Time ||
+	if !finite(target.A.Time) || !finite(target.B.Time) ||
+		target.A.Time <= 0 || target.B.Time <= 0 || target.A.Time == target.B.Time ||
 		!validPrice(target.A.Price) || !validPrice(target.B.Price) {
 		return fmt.Errorf("%w: dynamic line anchors are invalid", ErrBadRequest)
 	}

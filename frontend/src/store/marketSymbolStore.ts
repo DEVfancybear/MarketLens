@@ -9,7 +9,7 @@ import {
   marketSymbolFromMt5,
   replaceMarketSymbols,
 } from "@/services/market-data/symbols";
-import { resolveCatalogSymbolId } from "@/services/market-data/symbolAliases";
+import { resolveCatalogMarketSymbolId } from "@/services/market-data/symbolAliases";
 import type { MarketSymbol } from "@/types";
 import { setSymbolAtom, symbolAtom } from "./chartStore";
 import { logAtom } from "./uiStore";
@@ -61,9 +61,8 @@ export const refreshMt5SymbolCatalogAtom = atom(null, async (get, set) => {
         symbols[0].id;
       const currentCanStream =
         currentMeta && (currentMeta.provider !== "mt5" || currentMeta.streamable);
-      const catalogSymbolIds = new Set(symbols.map((symbol) => symbol.id));
       const resolvedCurrentSymbol = currentSymbol
-        ? resolveCatalogSymbolId(currentSymbol, catalogSymbolIds)
+        ? resolveCatalogMarketSymbolId(currentSymbol, symbols)
         : undefined;
       const preferredStreamSymbol = pickPreferredStreamSymbol(liveSymbolIds);
       const normalizedCurrentSymbol = currentSymbol.trim().toUpperCase();

@@ -1,6 +1,7 @@
 # Phase 10 Alert API Sync
 
-_Implemented 2026-07-10; lifecycle/technical-alert hardening verified 2026-07-18. Scope:
+_Implemented 2026-07-10; alert validation, MT5 symbol routing, and push concurrency
+verified 2026-07-23. Scope:
 Go alert/history/push-token persistence, immutable technical targets, lifecycle
 state, and frontend synchronization._
 
@@ -49,7 +50,9 @@ alerts persist `{kind, drawingId, drawingTool, targetId, targetLabel, snapshotAt
 through create, list, and bootstrap adapters. Patch payloads intentionally omit
 `source`, making provenance immutable after creation. The backend validates this
 metadata as provenance only; evaluation continues to use the snapshotted `price`,
-so editing or deleting a drawing cannot alter an armed alert.
+so editing or deleting a drawing cannot alter an armed alert. Snapshot and
+technical-anchor timestamps accept fractional Unix milliseconds produced by
+chart interpolation instead of rejecting otherwise valid drawing alerts.
 
 `POST /alerts/:id/trigger` is deliberately separate from generic PATCH. The
 repository transaction:
@@ -106,6 +109,22 @@ those directly with browser `updatedAt` previously made every worker evaluation
 return `price unavailable` or could include pre-arm ticks. Go stamps each tick
 with UTC receive time while preserving the original MT5 timestamps for charting.
 
+### Symbol identity and on-demand streams
+
+Alert definitions keep their user-facing symbol, while quote lookup,
+subscriptions, worker evaluation, and reconciliation resolve it to the executable
+MT5 catalog identity. Shared aliases cover legacy crypto and metal names such as
+`BTCUSDT`/`BTCUSD`, `ETHUSDT`/`ETHUSD`, legacy `ETCUSD`/`ETHUSD`, and
+`XAUUSD`/`GOLD`. A unique broker prefix or suffix also resolves variants such as
+`EURUSDm`, `EURUSD.raw`, `US30.cash`, and `AAPL.r`; ambiguous matches fail
+closed.
+
+The Go tick endpoint installs an on-demand MT5 stream subscription when the
+resolved catalog symbol was not in the initial stream. The worker performs one
+short warmup retry, then defers without advancing the alert cursor if no fresh
+tick is available. Unknown requested symbols return no ticks and can never fall
+back to unrelated cached history.
+
 ### Arming revisions and data quality
 
 Every create, edit, drag, enable, recurring-mode change, or manual re-arm
@@ -144,6 +163,12 @@ timestamp or a newly armed revision is a distinct attempt. Disabled,
 stale-revision, or non-triggering evidence still fails without inserting history.
 Triggering does not change `updatedAt` and does not accidentally create a new
 arming revision.
+
+If two valid clients race to commit the same one-time lifecycle, the loser
+receives HTTP 200 with `alreadyTriggered` and the canonical event instead of a
+misleading HTTP 400. The frontend treats that response as idempotent success and
+still refuses to revive a locally edited or deleted alert from stale response
+data.
 
 ### Canonical closed-browser order and reopen behavior
 
@@ -245,6 +270,21 @@ cannot race ahead of a trigger event. Notification settings use their own serial
 queue. API failures leave optimistic/local state intact and are reported by the
 shared frontend error reporter.
 
+Create/edit entry points share validation for symbol, condition, positive finite
+price, note/source limits, and technical-target geometry before they enqueue a
+mutation. The Go model repeats those checks, counts note length by Unicode code
+point, and normalizes prices to PostgreSQL `numeric(20,8)` precision. API error
+extraction accepts Ky's structured `HTTPError.data`, nested/string JSON, and
+plain-text responses so an actionable backend message replaces a generic
+`Request failed with status 400`.
+
+Push-alert replacement snapshots are validated all-or-nothing and serialized per
+device token in the browser. The route validates again; Firestore writes are
+transactional and the local-file fallback is serialized with atomic replacement.
+Evaluator results merge only when their definition signature still matches,
+preserving newer edits/removals, cursors, canonical events, pending deliveries,
+and completed channel progress.
+
 Anonymous users keep the previous local-only behavior. Remote writes are enabled
 only while `backendSessionAtom` is true.
 
@@ -291,9 +331,13 @@ trigger whose price is on the wrong side of its alert line.
 | --- | --- |
 | `src/services/api/resources/alertsApi.ts` | DTOs, adapters, alert/history/token resource calls |
 | `src/store/alertStore.ts` | Optimistic state, per-alert queues, migration, settings sync |
+| `src/services/alertValidation.ts` | Shared create/edit validation and note/source/technical-target limits |
+| `src/services/alertSymbols.ts` | Resolves alert symbols against the MT5 catalog without changing the stored display symbol |
+| `src/services/market-data/symbolAliases.ts` | Shared legacy alias and unique broker-prefix/suffix matching |
 | `src/server/canonicalAlertTrigger.ts` | Signed worker-to-Go canonical trigger request |
 | `src/server/pushAlertLifecycle.ts` | Enforces persistence-before-notification ordering |
 | `src/server/pushAlertDeliveryPolicy.ts` | Retains failed delivery work, builds FCM per-device work, and groups external work by canonical event/channel in-run |
+| `src/server/pushAlertStateMerge.ts` | Prevents stale evaluator writes from overwriting newer snapshot and channel state |
 | `src/services/alertConditions.ts` | Shared level/cross predicates and final trigger-price guard |
 | `src/services/market-data/mt5Price.ts` | Bid-based MT5 chart/alert price normalization |
 | `src/services/market-data/subscriptionRegistry.ts` | Independent ticker/kline ownership per MT5 symbol |
@@ -302,13 +346,20 @@ trigger whose price is on the wrong side of its alert line.
 | `src/server/pushAlertEvaluator.ts` | Closed-browser ordered MT5 tick replay, pending canonical retry, dynamic target evaluation, and expiration |
 | `src/services/dynamicAlertTargets.ts` | Shared time-indexed line/channel/Fib Channel evaluator |
 | `src/services/pushAlertSanitizer.ts` | Strict target/evidence/arming-revision validation before push persistence |
+| `src/services/notifications/pushAlertSnapshot.ts` | All-or-nothing browser push snapshot validation |
+| `src/services/notifications/pushAlertSyncQueue.ts` | Per-device replacement-snapshot serialization |
 | `src/hooks/useWorkspaceBootstrap.ts` | Applies remote alert snapshot, then opens the push runtime gate |
 | `src/services/notifications/push.ts` | Dual token registration/unregistration |
 | `src/hooks/usePushNotifications.ts` | Enables Go token sync only for backend sessions |
 | `src/hooks/usePushTriggerReconcile.ts` | Post-bootstrap closed-browser lifecycle reconciliation |
 | `src/hooks/useNotificationDeepLink.ts` | Routes FCM notification clicks to the MT5 chart symbol |
 | `tests/alerts/alertsApi.test.ts` | Adapter and method/path/body contract tests |
+| `tests/alerts/alertSymbols.test.ts` | Alias, broker suffix, ambiguity, and catalog-resolution regression tests |
 | `tests/alerts/alertConditions.test.ts` | Crossing, level, wrong-side, and MT5 Bid regression tests |
+| `tests/alerts/mt5AlertTicks.test.ts` | MT5 tick request, filtering, receive-time, and warmup regression tests |
+| `tests/alerts/pushAlertSnapshot.test.ts` | Whole-snapshot rejection and duplicate-ID regression tests |
+| `tests/alerts/pushAlertSyncQueue.test.ts` | Per-device sync ordering regression tests |
+| `tests/alerts/pushAlertStoreConcurrency.test.ts` | Concurrent snapshot/evaluator merge regression tests |
 | `tests/alerts/pushWorkspaceGate.test.ts` | Identity/bootstrap ordering gate regression test |
 | `tests/alerts/workerCanonicalTrigger.test.ts` | Worker auth/body/idempotent acknowledgement regression test |
 | `tests/alerts/pushAlertLifecycle.test.ts` | Persistence-before-delivery and delivery-failure regression test |

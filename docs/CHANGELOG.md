@@ -31,6 +31,33 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   stable, paintable viewport and report the visible/logical range when that
   contract is not reached.
 
+### Fixed - Alert sync validation and broker-symbol push delivery (2026-07-23)
+- Validated alert symbols, positive prices, notes, drawing provenance, immutable
+  technical targets, lifecycle timestamps, and trigger evidence at the browser
+  and API adapter boundaries. Dynamic drawing timestamps may remain fractional,
+  Unicode notes use the same 500-code-point limit in Go and TypeScript, and
+  PostgreSQL `numeric(20,8)` rounding no longer produces false trigger 400s.
+- Made a one-time trigger race between the open browser and closed-browser worker
+  idempotent. The losing request receives the canonical event with HTTP 200
+  instead of surfacing `Alert sync failed (400)` or dispatching a duplicate
+  browser notification.
+- Added catalog-aware alert symbol resolution across browser quotes, alert
+  subscriptions, push snapshots, MT5 tick replay, and reconciliation. Known
+  aliases (`BTCUSDT`/`BTCUSD`, `ETHUSDT`/`ETHUSD`, `XAUUSD`/`GOLD`) and unique
+  broker suffixes such as `EURUSDm`, `EURUSD.raw`, `US30.cash`, and `AAPL.r`
+  resolve consistently; ambiguous catalog variants fail closed.
+- Made the Go MT5 tick endpoints subscribe catalog-only alert symbols on demand,
+  resolve cached aliases/suffixes, deduplicate resolved requests, and return no
+  history for an unknown requested symbol instead of leaking every cached tick.
+- Hardened full push snapshots and evaluator state against concurrent browser
+  syncs and worker writes. Malformed snapshots are rejected atomically, client
+  writes are serialized per device, Firestore updates use transactions, local
+  fallback writes are atomic, and frozen pending deliveries survive alert
+  edits/removals without reactivating completed channels.
+- Added alert/push regressions for API error extraction, symbol variants, MT5
+  tick routing, snapshot validation, sync ordering, stale evaluator merges, and
+  per-channel delivery progress.
+
 ### Changed - Go 1.26.5 and Fiber 3.4 backend runtime (2026-07-22)
 - Raised the backend module requirement to Go 1.26.5 and migrated Fiber from
   v2.52.13 to v3.4.0, including the compatible v3 WebSocket contrib module.

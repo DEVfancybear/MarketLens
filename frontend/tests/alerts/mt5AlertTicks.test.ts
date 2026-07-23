@@ -53,3 +53,55 @@ test("MT5 alert tick normalization falls back to chart timestamp and rejects noi
     },
   ]);
 });
+
+test("MT5 alert ticks accept the legacy crypto alias in either direction", () => {
+  const requestedLegacy = normalizeMt5AlertTicks(
+    [
+      {
+        symbol: "BTCUSD",
+        bid: 64_000,
+        ask: 64_001,
+        timestamp: 1_700_000_002,
+      },
+    ],
+    "BTCUSDT",
+  );
+  const requestedCanonical = normalizeMt5AlertTicks(
+    [
+      {
+        symbol: "BTCUSDT",
+        bid: 64_000,
+        ask: 64_001,
+        timestamp: 1_700_000_002,
+      },
+    ],
+    "BTCUSD",
+  );
+  assert.equal(requestedLegacy.length, 1);
+  assert.equal(requestedCanonical.length, 1);
+});
+
+test("MT5 alert ticks accept broker suffixes and catalog metal aliases", () => {
+  const suffix = normalizeMt5AlertTicks(
+    [
+      {
+        symbol: "BTCUSD.r",
+        bid: 64_000,
+        timestamp: 1_700_000_002,
+      },
+    ],
+    "BTCUSDT",
+  );
+  const metal = normalizeMt5AlertTicks(
+    [
+      {
+        symbol: "GOLD",
+        bid: 2_400,
+        timestamp: 1_700_000_002,
+      },
+    ],
+    "XAUUSD",
+  );
+  assert.equal(suffix.length, 1);
+  assert.equal(metal.length, 1);
+});

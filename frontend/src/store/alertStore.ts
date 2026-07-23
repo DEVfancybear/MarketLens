@@ -35,8 +35,17 @@ import type {
   TechnicalAlertEvidence,
   TechnicalAlertTarget,
 } from "@/types/technicalAlerts";
-import { sanitizeTechnicalAlertTarget } from "@/services/dynamicAlertTargets";
+import {
+  sanitizeTechnicalAlertEvidence,
+  sanitizeTechnicalAlertTarget,
+} from "@/services/dynamicAlertTargets";
 import type { BrowserAlertTriggerAttempt } from "@/services/notifications/browserAlertTriggerQueue";
+import { normalizeAlertSymbol } from "@/services/alertSymbols";
+import {
+  isAlertCondition,
+  sanitizeAlertNote,
+  sanitizeAlertSource,
+} from "@/services/alertValidation";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -122,8 +131,16 @@ export const CONDITION_SYMBOL: Record<AlertCondition, string> = {
 const STORAGE_KEY = "alerts";
 const MAX_HISTORY = 200;
 const MAX_TRIGGERED = 50;
+export const MAX_ALERT_NOTE_LENGTH = 500;
 /** Recurring alerts re-arm after this gap so one cross doesn't fire every tick. */
 export const RECURRING_REARM_MS = 60_000;
+
+function epochMillis(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value >= 100_000_000_000 ? value : value * 1000;
+}
 
 interface PersistShape {
   alerts: Alert[];
@@ -253,13 +270,32 @@ export const createAlertAtom = atom(
   null,
   (get, set, input: CreateAlertInput): Alert => {
     const settings = get(settingsAtom);
+    const symbol = normalizeAlertSymbol(input.symbol);
+    if (!symbol) throw new Error("Cannot create an alert without a symbol.");
+    if (!isAlertCondition(input.condition)) {
+      throw new Error("Cannot create an alert with an unsupported condition.");
+    }
+    if (!Number.isFinite(input.price) || input.price <= 0) {
+      throw new Error("Cannot create an alert with an invalid target price.");
+    }
+    const rawNote = input.note?.trim() || "";
+    if ([...rawNote].length > MAX_ALERT_NOTE_LENGTH) {
+      throw new Error(
+        `Alert message cannot exceed ${MAX_ALERT_NOTE_LENGTH} characters.`,
+      );
+    }
+    const note = sanitizeAlertNote(rawNote);
+    const source = sanitizeAlertSource(input.source);
+    if (input.source !== undefined && !source) {
+      throw new Error("Cannot create an alert with invalid drawing provenance.");
+    }
     const technicalTarget = sanitizeTechnicalAlertTarget(input.technicalTarget);
     if (input.technicalTarget !== undefined && !technicalTarget) {
       throw new Error("Cannot create an alert with an invalid technical target.");
     }
     const alert: Alert = {
       id: uid("alert"),
-      symbol: input.symbol,
+      symbol,
       condition: input.condition,
       price: input.price,
       status: "active",
@@ -268,14 +304,14 @@ export const createAlertAtom = atom(
       createdAt: Date.now() / 1000,
       updatedAt: Date.now() / 1000,
       armingRevision: 1,
-      note: input.note,
+      note,
       recurring: input.recurring ?? false,
       sound: settings.sound,
       browser: settings.browser,
       push: settings.push,
       telegram: settings.telegram,
       discord: settings.discord,
-      source: input.source,
+      source,
       technicalTarget,
     };
     set(alertsAtom, [alert, ...get(alertsAtom)]);
@@ -295,13 +331,46 @@ export const updateAlertAtom = atom(
       get(triggeredAlertsAtom).find((alert) => alert.id === id) ??
       get(expiredAlertsAtom).find((alert) => alert.id === id);
     if (!existing) return;
-    let safePatch = patch;
+    let safePatch = { ...patch };
+    if (Object.prototype.hasOwnProperty.call(patch, "symbol")) {
+      const symbol = normalizeAlertSymbol(patch.symbol ?? "");
+      if (!symbol) throw new Error("Alert symbol cannot be empty.");
+      safePatch.symbol = symbol;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "condition")) {
+      if (!isAlertCondition(patch.condition)) {
+        throw new Error("Alert condition is unsupported.");
+      }
+      safePatch.condition = patch.condition;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(patch, "price") &&
+      (typeof patch.price !== "number" ||
+        !Number.isFinite(patch.price) ||
+        patch.price <= 0)
+    ) {
+      throw new Error("Alert target price must be greater than zero.");
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "note")) {
+      const rawNote = patch.note?.trim() || "";
+      if ([...rawNote].length > MAX_ALERT_NOTE_LENGTH) {
+        throw new Error(
+          `Alert message cannot exceed ${MAX_ALERT_NOTE_LENGTH} characters.`,
+        );
+      }
+      safePatch.note = sanitizeAlertNote(rawNote);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "source")) {
+      // Provenance is immutable once an alert exists. Sending it in a patch
+      // would be ignored by the backend and leave the two stores divergent.
+      throw new Error("Alert drawing provenance cannot be edited.");
+    }
     if (Object.prototype.hasOwnProperty.call(patch, "technicalTarget")) {
       const technicalTarget = sanitizeTechnicalAlertTarget(patch.technicalTarget);
       if (!technicalTarget) {
         throw new Error("Cannot update an alert with an invalid technical target.");
       }
-      safePatch = { ...patch, technicalTarget };
+      safePatch = { ...safePatch, technicalTarget };
     }
     const rearm = hasAlertArmingChange(existing, safePatch);
     const applyPatch = (alert: Alert): Alert => ({
@@ -422,6 +491,15 @@ export const triggerAlertAtom = atom(
     if (!alert || !alert.enabled || alert.status !== "active") {
       return { status: "discarded" };
     }
+    const safeEvidence =
+      evidence === undefined
+        ? undefined
+        : sanitizeTechnicalAlertEvidence(evidence);
+    if (evidence !== undefined && !safeEvidence) {
+      // Do not turn a partially migrated/invalid local cache into a canonical
+      // 400. Wait for the next real market observation instead.
+      return { status: "discarded" };
+    }
     const evaluatedTarget = targetPrice ?? alert.price;
     const validDynamicChannel =
       alert.technicalTarget?.kind === "dynamic-channel" &&
@@ -437,7 +515,7 @@ export const triggerAlertAtom = atom(
         id,
         triggerPrice,
         evaluatedTarget,
-        evidence,
+        safeEvidence,
         alert.armingRevision,
       ),
     );
@@ -449,20 +527,36 @@ export const triggerAlertAtom = atom(
       };
     }
 
+    const canonicalResponse = persisted.value;
+    const canonicalEvent = canonicalResponse?.event;
+    const canonicalTriggerPrice =
+      canonicalEvent?.triggerPrice ?? triggerPrice;
+    const canonicalTargetPrice =
+      canonicalEvent?.targetPrice ?? evaluatedTarget;
+    const canonicalEvidence =
+      sanitizeTechnicalAlertEvidence(canonicalEvent?.evidence) ?? safeEvidence;
+    const parsedCanonicalTime = canonicalEvent?.triggeredAt
+      ? Date.parse(canonicalEvent.triggeredAt) / 1000
+      : Number.NaN;
+    const fallbackTriggeredAtMs =
+      epochMillis(triggeredAtMs) ??
+      epochMillis(safeEvidence?.current.timestamp) ??
+      Date.now();
+    const canonicalTime = Number.isFinite(parsedCanonicalTime)
+      ? parsedCanonicalTime
+      : fallbackTriggeredAtMs / 1000;
+
     // The alert can be edited or deleted while the canonical request is in
     // flight. Apply the local lifecycle only if the same arming revision is
     // still active; the queued mutation order will reconcile later edits.
     const currentAlert = get(alertsAtom).find((item) => item.id === id);
-    const now =
-      (triggeredAtMs ??
-        (evidence ? evidence.current.timestamp * 1000 : Date.now())) / 1000;
     const fired: Alert = {
       ...alert,
       status: "triggered",
-      triggeredAt: now,
-      triggerPrice,
-      evaluatedTargetPrice: evaluatedTarget,
-      triggerEvidence: evidence,
+      triggeredAt: canonicalTime,
+      triggerPrice: canonicalTriggerPrice,
+      evaluatedTargetPrice: canonicalTargetPrice,
+      triggerEvidence: canonicalEvidence,
     };
     if (
       !currentAlert ||
@@ -470,32 +564,75 @@ export const triggerAlertAtom = atom(
       currentAlert.status !== "active" ||
       currentAlert.armingRevision !== alert.armingRevision
     ) {
+      if (canonicalResponse?.alreadyTriggered) {
+        return { status: "discarded" };
+      }
       // The canonical event committed before a queued local edit/delete. The
       // newer local mutation must win, but this immutable fired snapshot still
       // owns one best-effort notification attempt for the accepted crossing.
       return { status: "committed", value: fired };
     }
 
+    if (canonicalResponse?.alreadyTriggered) {
+      // Another evaluator already committed this event (usually the closed
+      // browser worker). Converge local state without sending a second browser
+      // notification and without surfacing a false "400" sync error.
+      const canonicalHistory = canonicalEvent
+        ? backendAlertEventToLocal(canonicalEvent)
+        : undefined;
+      if (
+        canonicalHistory &&
+        !get(historyAtom).some((entry) => entry.id === canonicalHistory.id)
+      ) {
+        set(historyAtom, [canonicalHistory, ...get(historyAtom)].slice(0, MAX_HISTORY));
+      }
+      const currentFired: Alert = {
+        ...currentAlert,
+        status: currentAlert.recurring ? "active" : "triggered",
+        triggeredAt: canonicalTime,
+        triggerPrice: canonicalTriggerPrice,
+        evaluatedTargetPrice: canonicalTargetPrice,
+        triggerEvidence: canonicalEvidence,
+      };
+      if (currentAlert.recurring) {
+        set(
+          alertsAtom,
+          get(alertsAtom).map((item) => (item.id === id ? currentFired : item)),
+        );
+      } else {
+        set(alertsAtom, get(alertsAtom).filter((item) => item.id !== id));
+        set(
+          triggeredAlertsAtom,
+          [currentFired, ...get(triggeredAlertsAtom).filter((item) => item.id !== id)]
+            .slice(0, MAX_TRIGGERED),
+        );
+      }
+      persist();
+      return { status: "discarded" };
+    }
+
     const currentFired: Alert = {
       ...currentAlert,
       status: "triggered",
-      triggeredAt: now,
-      triggerPrice,
-      evaluatedTargetPrice: evaluatedTarget,
-      triggerEvidence: evidence,
+      triggeredAt: canonicalTime,
+      triggerPrice: canonicalTriggerPrice,
+      evaluatedTargetPrice: canonicalTargetPrice,
+      triggerEvidence: canonicalEvidence,
     };
     const entry: AlertHistoryEntry = {
-      id: uid("alh"),
+      id: canonicalEvent?.id ?? uid("alh"),
       alertId: alert.id,
       symbol: alert.symbol,
       condition: alert.condition,
-      targetPrice: evaluatedTarget,
-      triggerPrice,
-      triggerTime: now,
-      evidence,
+      targetPrice: canonicalTargetPrice,
+      triggerPrice: canonicalTriggerPrice,
+      triggerTime: canonicalTime,
+      evidence: canonicalEvidence,
     };
 
-    set(historyAtom, [entry, ...get(historyAtom)].slice(0, MAX_HISTORY));
+    if (!get(historyAtom).some((item) => item.id === entry.id)) {
+      set(historyAtom, [entry, ...get(historyAtom)].slice(0, MAX_HISTORY));
+    }
 
     if (currentAlert.recurring) {
       // Stay armed; just stamp the last trigger time (engine re-arm gate).
@@ -505,10 +642,10 @@ export const triggerAlertAtom = atom(
           a.id === id
             ? {
                 ...a,
-                triggeredAt: now,
-                triggerPrice,
-                evaluatedTargetPrice: evaluatedTarget,
-                triggerEvidence: evidence,
+                triggeredAt: canonicalTime,
+                triggerPrice: canonicalTriggerPrice,
+                evaluatedTargetPrice: canonicalTargetPrice,
+                triggerEvidence: canonicalEvidence,
               }
             : a,
         ),
@@ -625,22 +762,52 @@ export const hydrateAtom = atom(null, (_get, set) => {
   const saved = localStore.get<PersistShape | null>(STORAGE_KEY, null);
   if (!saved) return;
   const migrate = (a: Alert): Alert | undefined => {
+    const symbol = normalizeAlertSymbol(a.symbol ?? "");
+    if (
+      !symbol ||
+      !isAlertCondition(a.condition) ||
+      !Number.isFinite(a.price) ||
+      a.price <= 0
+    ) {
+      return undefined;
+    }
     const technicalTarget = sanitizeTechnicalAlertTarget(a.technicalTarget);
     if (a.technicalTarget !== undefined && !technicalTarget) return undefined;
+    const source = sanitizeAlertSource(a.source);
+    const triggerEvidence = sanitizeTechnicalAlertEvidence(a.triggerEvidence);
+    const note = sanitizeAlertNote(a.note);
+    const createdAt =
+      typeof a.createdAt === "number" && Number.isFinite(a.createdAt) && a.createdAt > 0
+        ? a.createdAt
+        : Date.now() / 1000;
+    const updatedAt =
+      typeof a.updatedAt === "number" && Number.isFinite(a.updatedAt) && a.updatedAt > 0
+        ? a.updatedAt
+        : createdAt;
     return {
       ...a,
+      symbol,
+      condition: a.condition,
       enabled: a.enabled ?? true,
       locked: a.locked ?? false,
-      updatedAt: a.updatedAt ?? a.createdAt ?? Date.now() / 1000,
+      createdAt,
+      updatedAt,
       armingRevision: Math.max(
         1,
-        Math.trunc(a.armingRevision ?? a.updatedAt ?? a.createdAt ?? 1),
+        Math.trunc(
+          typeof a.armingRevision === "number" && Number.isFinite(a.armingRevision)
+            ? a.armingRevision
+            : updatedAt,
+        ),
       ),
       sound: a.sound ?? true,
       browser: a.browser ?? false,
       push: a.push ?? false,
       telegram: a.telegram ?? false,
       discord: a.discord ?? false,
+      note,
+      source,
+      triggerEvidence,
       technicalTarget,
     };
   };
@@ -650,7 +817,25 @@ export const hydrateAtom = atom(null, (_get, set) => {
   set(alertsAtom, migrateAll(saved.alerts ?? []));
   set(triggeredAlertsAtom, migrateAll(saved.triggeredAlerts ?? []));
   set(expiredAlertsAtom, migrateAll(saved.expiredAlerts ?? []));
-  set(historyAtom, saved.history ?? []);
+  set(
+    historyAtom,
+    (saved.history ?? [])
+      .map((entry) => ({
+        ...entry,
+        symbol: normalizeAlertSymbol(entry.symbol ?? ""),
+      }))
+      .filter(
+        (entry) =>
+          entry.symbol &&
+          isAlertCondition(entry.condition) &&
+          Number.isFinite(entry.targetPrice) &&
+          entry.targetPrice > 0 &&
+          Number.isFinite(entry.triggerPrice) &&
+          entry.triggerPrice > 0 &&
+          Number.isFinite(entry.triggerTime) &&
+          entry.triggerTime > 0,
+      ),
+  );
   set(settingsAtom, { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) });
 });
 
@@ -719,15 +904,37 @@ export const applyRemoteAlertsAtom = atom(
         );
       }
       for (const alert of migratedTriggered) {
+        const triggerPrice = alert.triggerPrice ?? alert.price;
+        const evidence = sanitizeTechnicalAlertEvidence(alert.triggerEvidence);
+        const needsCrossingEvidence =
+          alert.condition === "crossUp" || alert.condition === "crossDown";
+        if (
+          !Number.isFinite(triggerPrice) ||
+          triggerPrice <= 0 ||
+          (needsCrossingEvidence && !evidence)
+        ) {
+          // A legacy cache can contain a visually triggered row without the
+          // evidence required by the canonical endpoint. Do not recreate it as
+          // an active remote alert and then emit a misleading 400 on startup.
+          reportFrontendError(
+            new Error(`Legacy triggered alert ${alert.id} has incomplete evidence.`),
+            {
+              title: "Alert migration skipped",
+              logPrefix: "Invalid legacy triggered alert",
+              toast: false,
+            },
+          );
+          continue;
+        }
         queueAlertSync(get, alert.id, "migrate triggered create", () =>
           createRemoteAlert(localAlertToCreate(alert)),
         );
         queueAlertSync(get, alert.id, "migrate triggered event", () =>
           triggerRemoteAlert(
             alert.id,
-            alert.triggerPrice ?? alert.price,
+            triggerPrice,
             alert.evaluatedTargetPrice,
-            alert.triggerEvidence,
+            evidence,
             alert.armingRevision,
           ),
         );

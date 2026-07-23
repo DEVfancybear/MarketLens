@@ -12,9 +12,12 @@ import {
   useAlertStore,
   CONDITION_LABEL,
   CONDITION_SYMBOL,
+  MAX_ALERT_NOTE_LENGTH,
   type AlertCondition,
 } from '@/store/alertStore';
 import { getMarketSymbol } from '@/services/market-data/symbols';
+import { symbolAliasCandidates } from '@/services/market-data/symbolAliases';
+import { reportFrontendError } from '@/services/feedback/errorReporter';
 import { useDraggableDialog } from '@/hooks/useDraggableDialog';
 import { cn } from '@/utils/cn';
 
@@ -80,7 +83,10 @@ export function AlertEditDialog() {
 
   if (typeof document === 'undefined' || !editingId || !alert) return null;
 
-  const prec = getMarketSymbol(alert.symbol)?.pricePrecision ?? 2;
+  const prec =
+    symbolAliasCandidates(alert.symbol)
+      .map((candidate) => getMarketSymbol(candidate)?.pricePrecision)
+      .find((value): value is number => value !== undefined) ?? 2;
   const geometryLocked = Boolean(
     alert.technicalTarget && alert.technicalTarget.kind !== "fixed-price",
   );
@@ -88,22 +94,36 @@ export function AlertEditDialog() {
 
   const save = () => {
     const target = Number(price);
-    if (!Number.isFinite(target) || target <= 0) return;
-    updateAlert(alert.id, {
-      condition,
-      price: target,
-      note: note.trim() || undefined,
-      recurring,
-      enabled,
-      sound,
-      browser,
-      push,
-      telegram,
-      discord,
-      ...(alert.technicalTarget?.kind === "fixed-price"
-        ? { technicalTarget: { version: 1 as const, kind: "fixed-price" as const, price: target } }
-        : {}),
-    });
+    if (!Number.isFinite(target) || target <= 0) {
+      reportFrontendError(new Error("Enter a target price greater than zero."), {
+        title: "Alert not updated",
+        logPrefix: "Alert edit form has invalid target price",
+      });
+      return;
+    }
+    try {
+      updateAlert(alert.id, {
+        condition,
+        price: target,
+        note: note.trim() || undefined,
+        recurring,
+        enabled,
+        sound,
+        browser,
+        push,
+        telegram,
+        discord,
+        ...(alert.technicalTarget?.kind === "fixed-price"
+          ? { technicalTarget: { version: 1 as const, kind: "fixed-price" as const, price: target } }
+          : {}),
+      });
+    } catch (error) {
+      reportFrontendError(error, {
+        title: "Alert not updated",
+        logPrefix: "Alert edit form validation failed",
+      });
+      return;
+    }
     close();
   };
 
@@ -167,7 +187,13 @@ export function AlertEditDialog() {
             <span className="text-2xs text-ink-faint">Message (optional)</span>
             <input
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e) =>
+                setNote(
+                  [...e.target.value]
+                    .slice(0, MAX_ALERT_NOTE_LENGTH)
+                    .join(""),
+                )
+              }
               placeholder="Shown in the notification"
               className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
             />

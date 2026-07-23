@@ -4,7 +4,7 @@ TradingView-style price and technical drawing alert runtime. This document refle
 frontend code, including browser notifications, sound, Firebase push, external Telegram/Discord
 dispatch paths, immutable drawing targets, and the closed-browser push evaluator.
 
-_Updated: 2026-07-18_
+_Updated: 2026-07-23_
 
 ## Goals
 
@@ -17,6 +17,11 @@ _Updated: 2026-07-18_
 - Open-browser and push evaluation share the same target/evidence contract; the Go API verifies
   trigger evidence before persistence and notification delivery.
 - Finite dynamic domains transition to an explicit `expired` lifecycle and can be re-armed.
+- Alert symbols resolve through one MT5 catalog/alias contract in browser-open,
+  closed-browser, and reconciliation paths; ambiguous broker variants never
+  select an instrument arbitrarily.
+- A push-alert sync is a validated full snapshot. Invalid rows cannot partially
+  replace the device snapshot or prune valid pending delivery work.
 
 ## TradingView Compatibility Contract
 
@@ -134,7 +139,9 @@ coexist without clobbering each other.
 | Dynamic evaluation | `src/services/dynamicAlertTargets.ts` | Data-coordinate target interpolation, domain checks, signed-distance conditions, and evidence normalization. |
 | Runtime hook | `src/hooks/useAlertEngine.ts` | Connects market ticks to pure evaluation and alert store actions. |
 | Push evaluator | `src/server/pushAlertEvaluator.ts`, `src/server/canonicalAlertTrigger.ts`, `src/server/pushAlertLifecycle.ts` | Ordered MT5 replay, transient/ambiguous canonical retries, alert-specific rejection quarantine, FCM retries per device, and Telegram/Discord grouping per canonical event/channel within one evaluator run. |
-| Server verification | `backend/internal/alerts/technical_evaluator.go`, `backend/internal/alerts/handler.go` | Recomputes technical targets and validates trigger evidence before persistence. |
+| Symbol identity | `src/services/alertSymbols.ts`, `src/services/market-data/symbolAliases.ts`, `backend/internal/mt5stream/service.go` | Normalization, legacy aliases, unique broker suffix resolution, dynamic MT5 subscriptions, and fail-closed ambiguity handling. |
+| Push snapshot/state | `src/services/notifications/pushAlertSnapshot.ts`, `src/services/notifications/pushAlertSyncQueue.ts`, `src/server/pushAlertStateMerge.ts`, `src/server/pushAlertStore.ts` | All-or-nothing snapshot validation, ordered device sync, transactional/atomic persistence, and conflict-safe evaluator cursor/delivery merges. |
+| Server verification | `backend/internal/alerts/model.go`, `backend/internal/alerts/technical_evaluator.go`, `backend/internal/alerts/repo.go`, `backend/internal/alerts/handler.go` | Validates create/patch/trigger payloads, recomputes technical targets, and persists idempotent canonical events. |
 | Dispatch | `src/services/notifications/notify.ts` | Fans a trigger out to enabled channels. |
 | Toast | `src/store/toastStore.ts`, `src/components/notifications/Toaster.tsx` | In-app notification stack. |
 | Sound | `src/services/notifications/sound.ts` | Web Audio chime. |
@@ -196,6 +203,23 @@ New alerts skip cross detection on their first evaluation so stale previous pric
 immediate false cross. Above/below alerts can trigger immediately if the current price already meets
 the condition.
 
+### Symbol identity and MT5 routing
+
+Alert records keep a normalized uppercase symbol, but the broker catalog remains
+authoritative for the executable MT5 id. Resolution applies exact ids first,
+then bounded legacy aliases (`BTCUSDT`/`BTCUSD`, `ETHUSDT`/`ETHUSD`,
+`XAUUSD`/`GOLD`), then a unique metadata-backed or recognized broker
+prefix/suffix match such as `EURUSDm`, `EURUSD.raw`, `US30.cash`, or `AAPL.r`.
+If more than one catalog item matches, resolution returns no instrument rather
+than borrowing a quote from an arbitrary account-specific variant.
+
+The same contract is used for form prefills, watchlist quick alerts, live alert
+subscriptions, push snapshots, worker tick filtering, and post-push
+reconciliation. The Go MT5 service resolves the requested id before installing
+an on-demand stream subscription and when reading the current/history caches.
+An unknown requested symbol produces an empty filtered result; it never falls
+back to every cached symbol.
+
 ### Dynamic drawing evaluation
 
 For a dynamic target, the evaluator first resolves `targetAt(marketTime)` and
@@ -210,6 +234,28 @@ freshness/order cursor.
 The browser sends normalized evidence and `armingRevision` with a trigger. The
 Go API recomputes the target/condition from the persisted immutable payload and
 uses the accepted market timestamp for `triggeredAt`.
+
+### Validation and canonical retry behavior
+
+Create/edit entry points require a non-empty normalized symbol and a finite
+positive target before mutating state. Shared sanitizers bound notes by Unicode
+code points, validate drawing provenance and technical geometry, and reject
+malformed persisted rows instead of silently changing their meaning. Fractional
+chart/broker timestamps remain valid through TypeScript, JSON, Go, and
+PostgreSQL. Fixed-price comparisons allow only the half-step needed for
+PostgreSQL `numeric(20,8)` rounding.
+
+The API client extracts plain-text, top-level, and nested JSON error messages,
+including Ky responses whose body has already been parsed into
+`HTTPError.data`. A genuine 4xx therefore reports its backend reason instead of
+the generic `Request failed with status 400`.
+
+If the open browser and worker observe the same one-time crossing, the alert row
+lock makes one transaction canonical. A later request for the same arming
+revision returns HTTP 200 with `alreadyTriggered` and the stored event. The
+browser converges its lifecycle/history without sending the notification a
+second time; an edit or delete that completed while the request was in flight
+still wins locally.
 
 ## Chart Integration
 
@@ -243,6 +289,15 @@ state is updated can lose a provider attempt, while a crash after provider
 acceptance, concurrent workers, or simultaneous browser resync can duplicate or
 drop non-atomic work. PostgreSQL lifecycle/history remain idempotent and cannot
 re-arm or redraw the one-time alert.
+
+Browser push sync validates the entire replacement snapshot before sending it
+and serializes requests for each device token. The server repeats validation,
+uses Firestore transactions in production, and serializes atomic temporary-file
+replacement in the local fallback. Evaluator writes merge against the current
+alert signature and cursor: a stale worker cannot overwrite an edited
+definition, remove a newer event, or turn a completed destination back on. A
+frozen pending delivery may outlive the active definition until all requested
+destinations finish.
 
 ## Persistence
 

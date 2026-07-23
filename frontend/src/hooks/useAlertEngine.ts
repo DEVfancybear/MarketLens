@@ -9,7 +9,12 @@ import {
   RECURRING_REARM_MS,
   type Alert,
 } from "@/store/alertStore";
-import { getMarketSymbol } from "@/services/market-data/symbols";
+import { marketSymbolsAtom } from "@/store/marketSymbolStore";
+import {
+  normalizeAlertSymbol,
+  resolveAlertSymbol,
+} from "@/services/alertSymbols";
+import { symbolAliasCandidates } from "@/services/market-data/symbolAliases";
 import {
   alertArmingRevision,
   previousPriceForRevision,
@@ -25,9 +30,11 @@ import { workspaceReadyAtom } from "@/store/authStore";
 
 function latestPrice(symbol: string): { price: number; timestamp: number } | undefined {
   const marketData = getMarketDataState();
-  const quote = marketData.quotes[symbol];
-  if (quote && Number.isFinite(quote.last)) {
-    return { price: quote.last, timestamp: quote.timestamp };
+  for (const candidate of symbolAliasCandidates(normalizeAlertSymbol(symbol))) {
+    const quote = marketData.quotes[candidate];
+    if (quote && Number.isFinite(quote.last) && quote.last > 0) {
+      return { price: quote.last, timestamp: quote.timestamp };
+    }
   }
   return undefined;
 }
@@ -45,8 +52,17 @@ function revisionOf(alert: Alert): string {
 /** Evaluates alert revisions only from consecutive live MT5 prices. */
 export function useAlertEngine() {
   const workspaceReady = useAtomValue(workspaceReadyAtom);
+  const marketSymbols = useAtomValue(marketSymbolsAtom);
+  const marketCatalogKey = marketSymbols
+    .map((symbol) =>
+      [symbol.id, symbol.base ?? "", symbol.quote ?? ""].join(":"),
+    )
+    .sort()
+    .join(",");
   const alertSymbolsKey = useAlertStore((state) => {
-    const symbols = new Set(state.alerts.map((alert) => alert.symbol));
+    const symbols = new Set(
+      state.alerts.map((alert) => normalizeAlertSymbol(alert.symbol)),
+    );
     return [...symbols].sort().join(",");
   });
   const subscribedSymbolsRef = useRef<Set<string>>(new Set());
@@ -57,11 +73,14 @@ export function useAlertEngine() {
   // watch-listed. marketDataStore reference-counts shared subscriptions.
   useEffect(() => {
     const symbols = alertSymbolsKey ? alertSymbolsKey.split(",") : [];
-    const desired = new Set(symbols);
+    const desired = new Set<string>();
     const subscribed = subscribedSymbolsRef.current;
 
-    for (const symbol of symbols) {
-      if (subscribed.has(symbol) || !getMarketSymbol(symbol)) continue;
+    for (const requestedSymbol of symbols) {
+      const symbol = resolveAlertSymbol(requestedSymbol, marketSymbols);
+      if (!symbol) continue;
+      desired.add(symbol);
+      if (subscribed.has(symbol)) continue;
       getMarketDataState().subscribe({ symbol, channels: ["ticker"] });
       subscribed.add(symbol);
     }
@@ -70,8 +89,9 @@ export function useAlertEngine() {
       if (desired.has(symbol)) continue;
       getMarketDataState().unsubscribe(symbol);
       subscribed.delete(symbol);
+      previousPriceRef.current.delete(symbol);
     }
-  }, [alertSymbolsKey]);
+  }, [alertSymbolsKey, marketCatalogKey, marketSymbols]);
 
   useEffect(() => {
     const subscribed = subscribedSymbolsRef.current;
@@ -89,7 +109,6 @@ export function useAlertEngine() {
       revisionByAlertRef.current.clear();
       return;
     }
-
     const isCurrent = (candidate: BrowserAlertTriggerCandidate): boolean => {
       const current = getAlertState().alerts.find(
         (alert) => alert.id === candidate.alertId,
@@ -124,28 +143,31 @@ export function useAlertEngine() {
       const now = Date.now();
       const prices = new Map<string, { price: number; timestamp: number }>();
       for (const alert of alerts) {
-        if (prices.has(alert.symbol)) continue;
-        const snapshot = latestPrice(alert.symbol);
-        if (snapshot !== undefined) prices.set(alert.symbol, snapshot);
+        const symbol = resolveAlertSymbol(alert.symbol, marketSymbols);
+        if (!symbol || prices.has(symbol)) continue;
+        const snapshot = latestPrice(symbol);
+        if (snapshot !== undefined) prices.set(symbol, snapshot);
       }
 
       for (const alert of alerts) {
         if (!alert.enabled) continue;
-        const current = prices.get(alert.symbol);
+        const symbol = resolveAlertSymbol(alert.symbol, marketSymbols);
+        if (!symbol) continue;
+        const current = prices.get(symbol);
         if (!current) continue;
 
         const revision = revisionOf(alert);
         const previous = previousPriceForRevision(
           revision,
           revisionByAlertRef.current.get(alert.id),
-          previousPriceRef.current.get(alert.symbol)?.price,
+          previousPriceRef.current.get(symbol)?.price,
         );
         const rearmBlocked =
           alert.recurring &&
           alert.triggeredAt !== undefined &&
           now - alert.triggeredAt * 1000 < RECURRING_REARM_MS;
 
-        const previousPoint = previousPriceRef.current.get(alert.symbol);
+        const previousPoint = previousPriceRef.current.get(symbol);
         const evaluated = evaluateAlert(
           alert,
           previous,
@@ -189,5 +211,5 @@ export function useAlertEngine() {
       unsubscribe();
       triggerQueue.dispose();
     };
-  }, [workspaceReady]);
+  }, [marketCatalogKey, marketSymbols, workspaceReady]);
 }

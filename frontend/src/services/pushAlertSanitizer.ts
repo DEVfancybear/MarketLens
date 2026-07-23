@@ -3,12 +3,22 @@ import {
   sanitizeTechnicalAlertEvidence,
   sanitizeTechnicalAlertTarget,
 } from "./dynamicAlertTargets";
+import { normalizeAlertSymbol } from "./alertSymbols";
 
 /** Fail-closed sanitizer shared by push sync and persisted push-device reads. */
 export function sanitizePushAlertForStorage(value: unknown): ServerPushAlert | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const alert = value as Partial<ServerPushAlert>;
-  if (!alert.id || !alert.symbol) return null;
+  if (
+    typeof alert.id !== "string" ||
+    typeof alert.symbol !== "string" ||
+    !alert.id.trim() ||
+    !alert.symbol.trim()
+  ) {
+    return null;
+  }
+  const id = alert.id.trim();
+  const symbol = normalizeAlertSymbol(alert.symbol);
   if (typeof alert.price !== "number" || !Number.isFinite(alert.price) || alert.price <= 0) {
     return null;
   }
@@ -20,36 +30,73 @@ export function sanitizePushAlertForStorage(value: unknown): ServerPushAlert | n
   ) {
     return null;
   }
+  const updatedAt =
+    alert.updatedAt === undefined
+      ? Date.now()
+      : typeof alert.updatedAt === "number" &&
+          Number.isFinite(alert.updatedAt) &&
+          alert.updatedAt > 0
+        ? alert.updatedAt
+        : undefined;
+  if (updatedAt === undefined) return null;
+  const armingRevision =
+    alert.armingRevision === undefined
+      ? Math.max(1, Math.trunc(updatedAt))
+      : typeof alert.armingRevision === "number" &&
+          Number.isFinite(alert.armingRevision) &&
+          alert.armingRevision > 0
+        ? Math.max(1, Math.trunc(alert.armingRevision))
+        : undefined;
+  if (armingRevision === undefined) return null;
   const sanitized: ServerPushAlert = {
-    id: String(alert.id),
-    symbol: String(alert.symbol).toUpperCase(),
+    id,
+    symbol,
     condition: alert.condition,
     price: alert.price,
     recurring: Boolean(alert.recurring),
-    updatedAt: typeof alert.updatedAt === "number" && Number.isFinite(alert.updatedAt)
-      ? alert.updatedAt
-      : Date.now(),
-    armingRevision:
-      typeof alert.armingRevision === "number" && Number.isFinite(alert.armingRevision)
-        ? Math.max(1, Math.trunc(alert.armingRevision))
-        : typeof alert.updatedAt === "number" && Number.isFinite(alert.updatedAt)
-          ? Math.max(1, Math.trunc(alert.updatedAt))
-          : Date.now(),
+    updatedAt,
+    armingRevision,
     push: Boolean(alert.push),
     telegram: Boolean(alert.telegram),
     discord: Boolean(alert.discord),
   };
-  if (alert.note) sanitized.note = String(alert.note).slice(0, 240);
-  if (typeof alert.lastTriggeredAt === "number" && Number.isFinite(alert.lastTriggeredAt)) {
+  if (alert.note !== undefined) {
+    if (typeof alert.note !== "string") return null;
+    const note = [...alert.note.trim()].slice(0, 240).join("");
+    if (note) sanitized.note = note;
+  }
+  if (alert.lastTriggeredAt !== undefined) {
+    if (
+      typeof alert.lastTriggeredAt !== "number" ||
+      !Number.isFinite(alert.lastTriggeredAt) ||
+      alert.lastTriggeredAt <= 0
+    ) {
+      return null;
+    }
     sanitized.lastTriggeredAt = alert.lastTriggeredAt;
   }
-  if (typeof alert.triggerPrice === "number" && Number.isFinite(alert.triggerPrice)) {
+  if (alert.triggerPrice !== undefined) {
+    if (
+      typeof alert.triggerPrice !== "number" ||
+      !Number.isFinite(alert.triggerPrice) ||
+      alert.triggerPrice <= 0
+    ) {
+      return null;
+    }
     sanitized.triggerPrice = alert.triggerPrice;
   }
-  if (typeof alert.targetPrice === "number" && Number.isFinite(alert.targetPrice)) {
+  if (alert.targetPrice !== undefined) {
+    if (
+      typeof alert.targetPrice !== "number" ||
+      !Number.isFinite(alert.targetPrice) ||
+      alert.targetPrice <= 0
+    ) {
+      return null;
+    }
     sanitized.targetPrice = alert.targetPrice;
   }
   const triggerEvidence = sanitizeTechnicalAlertEvidence(alert.triggerEvidence);
+  if (alert.triggerEvidence !== undefined && !triggerEvidence) return null;
   if (triggerEvidence) sanitized.triggerEvidence = triggerEvidence;
   const technicalTarget = sanitizeTechnicalAlertTarget(alert.technicalTarget);
   // A supplied but malformed geometry must never degrade into a legacy scalar

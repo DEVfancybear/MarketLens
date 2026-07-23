@@ -70,6 +70,15 @@ func TestEvaluateTechnicalAlertGoldenFixedEqualityRules(t *testing.T) {
 	}
 }
 
+func TestNearlyEqualAcceptsNumericScaleRounding(t *testing.T) {
+	if !nearlyEqual(0.000012345, 0.00001235) {
+		t.Fatal("numeric(20,8) rounding should not reject a low-priced target")
+	}
+	if nearlyEqual(0.00001235, 0.00001236) {
+		t.Fatal("a full numeric(20,8) price step must remain unequal")
+	}
+}
+
 func TestEvaluateTechnicalAlertGoldenChannelOperators(t *testing.T) {
 	lower := evaluatorLine(100, 100, 200, 100, "infinite", "linear")
 	upper := evaluatorLine(100, 120, 200, 120, "infinite", "linear")
@@ -150,7 +159,7 @@ func assertTargetAt(t *testing.T, target *TechnicalAlertTarget, timestamp float6
 	}
 }
 
-func evaluatorLine(aTime int64, aPrice float64, bTime int64, bPrice float64, domain, interpolation string) *TechnicalAlertTarget {
+func evaluatorLine(aTime float64, aPrice float64, bTime float64, bPrice float64, domain, interpolation string) *TechnicalAlertTarget {
 	return &TechnicalAlertTarget{
 		Version: 1, Kind: "dynamic-line",
 		A:      &TechnicalAlertPoint{Time: aTime, Price: aPrice},

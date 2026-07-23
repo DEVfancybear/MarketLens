@@ -1,6 +1,6 @@
 # PHASE 6A PUSH NOTIFICATIONS
 
-_Implemented 2026-07-01; canonical lifecycle ordering hardened 2026-07-18._
+_Implemented 2026-07-01; MT5 symbol and snapshot concurrency hardened 2026-07-23._
 
 ## Scope
 
@@ -44,10 +44,12 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/services/firebase/client.ts` | Initializes browser Firebase Messaging only when configured/supported. |
 | `src/services/notifications/push.ts` | Capability checks, token registration, token deletion, push send request. |
 | `src/hooks/usePushNotifications.ts` | React hook used by Alert Center to enable/disable push. |
-| `src/hooks/usePushAlertSync.ts` | Syncs push-enabled active alerts to the server store. |
+| `src/hooks/usePushAlertSync.ts` | Resolves broker symbols and syncs complete push-enabled alert snapshots to the server store. |
 | `src/hooks/useExternalSyncToken.ts` | Shared stable per-browser token for Telegram/Discord-only sync (no FCM registration needed). |
 | `src/hooks/usePushTriggerReconcile.ts` | Pulls back server-confirmed triggers the client's own chart-timeframe-bound scan couldn't see. |
 | `src/services/notifications/notify.ts` | Adds the push delivery channel after existing channels. |
+| `src/services/notifications/pushAlertSnapshot.ts` | Validates all-or-nothing replacement snapshots before upload. |
+| `src/services/notifications/pushAlertSyncQueue.ts` | Serializes replacement-snapshot writes for each device token. |
 | `src/app/api/push/send/route.ts` | Server-side FCM sender using `firebase-admin`. |
 | `src/app/api/push/register/route.ts` | Persists browser FCM tokens for closed-browser evaluation. |
 | `src/app/api/push/unregister/route.ts` | Removes a token from the server store. |
@@ -55,8 +57,9 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/app/api/push/alerts/status/route.ts` | Returns confirmed server-side triggers for a device token, for client reconciliation. |
 | `src/app/api/push/evaluate/route.ts` | Evaluates server-stored alerts and sends FCM. |
 | `src/app/firebase-messaging-sw.js/route.ts` | Dynamic service worker with public Firebase config injected from env. |
-| `src/server/pushAlertStore.ts` | Firestore-backed server store for tokens and alert snapshots, with local file fallback when Firebase Admin is not configured. |
-| `src/server/pushAlertEvaluator.ts` | Server-side price polling, pending trigger retry, and alert evaluation. |
+| `src/server/pushAlertStore.ts` | Transactional Firestore store, with serialized atomic local-file fallback, for tokens and alert snapshots. |
+| `src/server/pushAlertStateMerge.ts` | Merges evaluator results without overwriting newer definitions, cursors, events, or channel progress. |
+| `src/server/pushAlertEvaluator.ts` | MT5 tick replay, warmup, pending trigger retry, and alert evaluation. |
 | `src/server/canonicalAlertTrigger.ts` | Service-authenticated worker acknowledgement to Go/PostgreSQL. |
 | `src/server/pushAlertLifecycle.ts` | Enforces canonical persistence before notification delivery. |
 | `src/server/pushAlertDeliveryPolicy.ts` | Retains failed delivery work, creates FCM per-device work, and groups Telegram/Discord by canonical event/channel in-run. |
@@ -105,17 +108,10 @@ CRON_SECRET=
 DISABLE_PUSH_WORKER=true
 ```
 
-Optional server-side market data values:
-
-```env
-OANDA_API_KEY=
-OANDA_ACCOUNT_ID=
-OANDA_PRACTICE=true
-TWELVEDATA_API_KEY=
-```
-
-Crypto symbols use public Binance REST prices and do not require a key. Forex/metals/indices use
-OANDA when configured and fall back to TwelveData when available.
+Closed-browser market data comes only from the Go MT5 endpoint selected by
+`NEXT_PUBLIC_API_BASE_URL` (or `http://localhost:8080` in local development).
+The evaluator never substitutes Binance, OANDA, or TwelveData for an MT5 alert,
+so the Go API and MT5 bridge must be connected.
 
 ## Closed-Browser Worker
 
@@ -162,18 +158,18 @@ includes per-alert condition, target, previous price, current/open/high/low wind
 blocked/skipped reason without exposing the full FCM token. When a push is accepted by FCM, the
 debug entry includes `messageId`.
 
-For Binance crypto symbols, server-side evaluation reads the latest 60 one-minute candles and
-aggregates high/low from the alert's last server evaluation time to now. This lets an external cron
-catch alerts whose price touched the level between runs even if current spot price has already moved
-back. Non-Binance symbols fall back to current-price polling unless a richer server-side quote
-source is added later.
-Server-side `crossUp` / `crossDown` use the same range-crossing rule as browser-open alerts:
-`low <= target && high >= target` for up crosses and `high >= target && low <= target` for down
-crosses.
+The worker requests the Go service's retained MT5 ticks since its receive-time
+cursor and replays consecutive Bid observations. It does not infer crossings
+from candle high/low. If a catalog symbol is not in the initial stream, the first
+tick request installs an on-demand subscription and the worker performs one
+short warmup retry before deferring to the next evaluator interval.
 
-If an alert is armed in the middle of a one-minute candle, the worker still includes that candle's
-high/low because closed-browser mode has no tick stream. This favors catching touches between cron
-runs; browser-open mode uses a stricter post-arm observed range to avoid false triggers.
+Symbol routing is shared with the browser: known legacy aliases and a unique
+broker prefix/suffix resolve to the executable catalog id, while ambiguous
+variants fail closed. Returned ticks are filtered back to that broker identity,
+must carry a fresh backend `received_at`, and retain their MT5 market timestamp
+for dynamic drawing projection. An unknown requested symbol cannot receive
+unrelated cached history.
 
 Alert sync sends the alert's persisted `updatedAt` timestamp, not the time of the sync request.
 This prevents opening the app or re-syncing push alerts from resetting the server evaluation window
@@ -182,6 +178,15 @@ and missing a touch that happened just before the cron run.
 The browser also flushes the latest push-alert snapshot with `fetch(..., { keepalive: true })` on
 `pagehide` / hidden visibility. This protects the closed-browser worker path when the user creates
 or edits an alert and then closes the tab before the normal sync debounce completes.
+
+Each browser sync is a complete device snapshot. The browser and route reject
+the whole write if any alert is malformed or IDs are duplicated; no partial
+filter may accidentally prune otherwise valid server alerts. Per-device browser
+writes are serialized. Firestore mutations use transactions, while the local
+fallback serializes all mutations and atomically renames a unique temporary
+file. Evaluator state merges preserve newer alert definitions and already
+completed channel progress while retaining a frozen failed delivery after the
+active one-time alert disappears.
 
 Server push sends a data-first Web Push payload with `title` and `body` mirrored into `data`, an
 absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
@@ -223,8 +228,10 @@ losing pushes for any realistically long closed-browser window.
   Check the Go log for `backend alert evaluator scheduler started` and the Next
   access log for successful `POST /api/push/evaluate`. If using the Next fallback,
   check for `[push-worker] in-process closed-browser evaluation started` instead.
-- Missing server-side market data credentials: Binance crypto alerts still work; OANDA/TwelveData
-  symbols are skipped until server credentials are configured.
+- MT5 bridge disconnected, stale, or symbol unresolved: the worker skips the
+  alert instead of substituting another market source. Check
+  `/api/v1/mt5/status`, the symbol catalog, dynamic stream subscriptions, and
+  `/api/v1/mt5/ticks?symbol=<broker-symbol>`.
 
 ## Manual Test Checklist
 

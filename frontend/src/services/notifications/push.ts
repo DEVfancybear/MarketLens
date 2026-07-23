@@ -3,7 +3,6 @@ import type { Alert } from "@/store/alertStore";
 import type { PushPermission, PushRegistration } from "@/store/notificationStore";
 import type {
   PushAlertReconcileStatus,
-  ServerPushAlert,
 } from "@/types/pushAlerts";
 import {
   getFirebaseConfigStatus,
@@ -16,6 +15,8 @@ import {
 } from "@/services/api/resources/alertsApi";
 import { currentIdToken } from "@/services/auth/firebaseAuth";
 import { NOTIFICATION_PERMISSION_BLOCKED_MESSAGE } from "./browser";
+import { PushAlertSyncQueue } from "./pushAlertSyncQueue";
+import { buildPushAlertSnapshot } from "./pushAlertSnapshot";
 
 export interface PushCapability {
   supported: boolean;
@@ -43,15 +44,23 @@ async function postJson(
     if (!idToken) {
       return { ok: false, error: "Sign in is required for remote push notifications." };
     }
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify(body),
-      keepalive: init?.keepalive,
-    });
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), 15_000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(body),
+        keepalive: init?.keepalive,
+        signal: controller.signal,
+      });
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
     if (!res.ok) {
       const payload = (await res.json().catch(() => null)) as
         | { error?: string }
@@ -81,6 +90,8 @@ const FIREBASE_ENV_LABEL: Record<string, string> = {
   appId: "NEXT_PUBLIC_FIREBASE_APP_ID",
   messagingSenderId: "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
 };
+
+const pushAlertSyncQueue = new PushAlertSyncQueue();
 
 function waitForServiceWorkerActive(
   registration: ServiceWorkerRegistration,
@@ -261,39 +272,22 @@ export async function syncServerPushAlerts({
   settingsDiscord?: boolean;
   alerts: Alert[];
 }, init?: Pick<RequestInit, "keepalive">): Promise<{ ok: true } | { ok: false; error: string }> {
-  const serverAlerts: ServerPushAlert[] = alerts.map((alert) => ({
-    id: alert.id,
-    symbol: alert.symbol,
-    condition: alert.condition,
-    price: alert.price,
-    note: alert.note,
-    recurring: alert.recurring,
-    updatedAt: Math.round((alert.updatedAt ?? alert.createdAt) * 1000),
-    armingRevision: alert.armingRevision,
-    lastTriggeredAt:
-      alert.triggeredAt === undefined
-        ? undefined
-        : Math.round(alert.triggeredAt * 1000),
-    triggerPrice: alert.triggerPrice,
-    targetPrice: alert.evaluatedTargetPrice,
-    triggerEvidence: alert.triggerEvidence,
-    push: alert.push,
-    telegram: alert.telegram,
-    discord: alert.discord,
-    technicalTarget: alert.technicalTarget,
-  }));
-  return postJson(
-    "/api/push/alerts/sync",
-    {
-      token,
-      deliveryToken,
-      notificationTimeZone,
-      settingsPush,
-      settingsTelegram,
-      settingsDiscord,
-      alerts: serverAlerts,
-    },
-    init,
+  const snapshot = buildPushAlertSnapshot(alerts);
+  if (!snapshot.ok) return snapshot;
+  return pushAlertSyncQueue.enqueue(token, () =>
+    postJson(
+      "/api/push/alerts/sync",
+      {
+        token,
+        deliveryToken,
+        notificationTimeZone,
+        settingsPush,
+        settingsTelegram,
+        settingsDiscord,
+        alerts: snapshot.alerts,
+      },
+      init,
+    ),
   );
 }
 

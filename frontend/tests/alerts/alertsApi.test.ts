@@ -179,6 +179,32 @@ test("alert and push resource methods use the Phase 10 API routes", async (t) =>
   });
 });
 
+test("alert API surfaces the backend 400 reason instead of a generic status", async (t) => {
+  const api = await loadApi();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        error: "alerts: bad request: drawing alert source is invalid",
+      }),
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const createBody = api.localAlertToCreate(
+    api.backendAlertToLocal(backendAlert()),
+  );
+  await assert.rejects(
+    api.createAlert(createBody),
+    /drawing alert source is invalid/i,
+  );
+});
+
 test("drawing alert provenance round-trips on create and stays immutable on patch", async () => {
   const { backendAlertToLocal, localAlertToCreate, localAlertToPatch } = await loadApi();
   const local = backendAlertToLocal({ ...backendAlert(), source: drawingSource });
@@ -202,5 +228,35 @@ test("backend adapter fails closed on malformed technical geometry", async () =>
       },
     }),
     /invalid technical target/i,
+  );
+});
+
+test("backend adapter rejects malformed rows before they can re-sync", async () => {
+  const { backendAlertEventToLocal, backendAlertToLocal } = await loadApi();
+  assert.throws(
+    () => backendAlertToLocal({ ...backendAlert(), symbol: " ", price: 0 }),
+    /identity or symbol/i,
+  );
+  assert.throws(
+    () =>
+      backendAlertToLocal({
+        ...backendAlert(),
+        source: { ...drawingSource, snapshotAt: Number.NaN },
+      }),
+    /invalid drawing source/i,
+  );
+  assert.throws(
+    () =>
+      backendAlertEventToLocal({
+        id: "event-1",
+        alertId: "alert-1",
+        symbol: "EURUSD",
+        condition: "crossUp",
+        targetPrice: 1.125,
+        triggerPrice: 1.126,
+        triggeredAt: "not-a-date",
+        delivered: false,
+      }),
+    /invalid timestamp/i,
   );
 });

@@ -1,4 +1,5 @@
 import { mt5ChartPrice } from "./mt5Price";
+import { symbolsShareBrokerIdentity } from "./symbolAliases";
 
 export interface Mt5AlertTickInput {
   symbol?: string;
@@ -33,10 +34,14 @@ export function normalizeMt5AlertTicks(
   values: readonly Mt5AlertTickInput[],
   symbol: string,
 ): NormalizedMt5AlertTick[] {
-  const normalizedSymbol = symbol.trim().toUpperCase();
   return values
     .map((value, index) => {
-      if (value.symbol?.trim().toUpperCase() !== normalizedSymbol) return null;
+      if (
+        !value.symbol ||
+        !symbolsShareBrokerIdentity(symbol, value.symbol)
+      ) {
+        return null;
+      }
       const price = mt5ChartPrice(Number(value.bid), Number(value.ask));
       const timestamp = finitePositive(value.time_msc)
         ? value.time_msc

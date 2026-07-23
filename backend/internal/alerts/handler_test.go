@@ -140,6 +140,15 @@ func (f *fakeStore) Trigger(_ context.Context, userID, ref string, input Trigger
 		if normalized.ArmingRevision != item.ArmingRevision {
 			return Alert{}, Event{}, ErrBadRequest
 		}
+		if item.Status == "triggered" {
+			for _, existing := range f.events[userID] {
+				if existing.AlertID == externalRef(*item) &&
+					existing.ArmingRevision == normalized.ArmingRevision {
+					return Alert{}, existing, ErrAlreadyTriggered
+				}
+			}
+			return Alert{}, Event{}, ErrBadRequest
+		}
 		target := item.TechnicalTarget
 		if target == nil {
 			target = fixedTechnicalTarget(item.Price)
@@ -592,6 +601,39 @@ func TestWorkerTriggerPersistsLifecycleBeforeDeliveryAndRetriesIdempotently(t *t
 	}
 	if !retry.OK || !retry.AlreadyTriggered || len(store.events["user-1"]) != 1 {
 		t.Fatalf("retry was not idempotent: response=%+v events=%d", retry, len(store.events["user-1"]))
+	}
+
+	// An open browser can observe the same one-time crossing on the next tick
+	// after the worker has already committed it. That losing request is also an
+	// idempotent acknowledgement, not a user-visible 400.
+	resp = doRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/v1/alerts/worker-alert-1/trigger",
+		fmt.Sprintf(`{
+			"triggerPrice":63900,"targetPrice":64000,
+			"current":{"price":63900,"timestamp":1752836831.125},
+			"armingRevision":%d
+		}`, created.ArmingRevision),
+	)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("competing browser trigger status = %d, want 200", resp.StatusCode)
+	}
+	var competing struct {
+		AlreadyTriggered bool  `json:"alreadyTriggered"`
+		Event            Event `json:"event"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&competing); err != nil {
+		t.Fatalf("decode competing trigger response: %v", err)
+	}
+	if !competing.AlreadyTriggered || competing.Event.ID == "" ||
+		len(store.events["user-1"]) != 1 {
+		t.Fatalf(
+			"competing trigger was not idempotent: response=%+v events=%d",
+			competing,
+			len(store.events["user-1"]),
+		)
 	}
 
 	// Reopening the browser hydrates from this snapshot. A one-time alert that
