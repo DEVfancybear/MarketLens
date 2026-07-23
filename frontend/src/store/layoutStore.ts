@@ -21,10 +21,16 @@ import {
   rightOpenAtom,
 } from "./uiStore";
 import {
+  activeChartSlotAtom,
   chartLayoutPresetAtom,
+  chartPanesAtom,
+  normalizeChartPanes,
   replayLayoutModeAtom,
-  setChartLayoutPresetAtom,
-  setReplayLayoutModeAtom,
+  restoreChartLayoutStateAtom,
+  updatePaneSelection,
+  visibleChartSlots,
+  type ChartLayoutPreset,
+  type ReplayLayoutMode,
 } from "./replayLayoutStore";
 import {
   createLayout,
@@ -54,11 +60,21 @@ function validTimeframe(value: string | undefined): value is Timeframe {
 function capture(get: Getter, drawingContextId = get(drawingLayoutIdAtom)): SavedLayoutState {
   const chartId = get(drawingChartIdAtom);
   const symbol = get(symbolAtom);
+  const timeframe = get(timeframeAtom);
+  const activeChartSlot = get(activeChartSlotAtom);
   return {
     version: 1,
     drawingContextId,
     chartLayoutPreset: get(chartLayoutPresetAtom),
     replayLayoutMode: get(replayLayoutModeAtom),
+    chartPanes: structuredClone(
+      updatePaneSelection(
+        get(chartPanesAtom),
+        activeChartSlot,
+        { symbol, timeframe },
+      ),
+    ),
+    activeChartSlot,
     indicators: structuredClone(get(indicatorsAtom)),
     drawings: structuredClone(
       rebindDrawingsToSyncContext(get(drawingsAtom), {
@@ -111,15 +127,43 @@ export const applyRemoteLayoutsAtom = atom(
 export const loadLayoutAtom = atom(null, (_get, set, layout: BackendLayout) => {
   const state = layout.state;
   if (!state || state.version !== 1) throw new Error("Unsupported layout snapshot");
-  set(setChartLayoutPresetAtom, state.chartLayoutPreset);
-  set(setReplayLayoutModeAtom, state.replayLayoutMode);
+  const timeframe = validTimeframe(layout.timeframe) ? layout.timeframe : _get(timeframeAtom);
+  const fallback = {
+    symbol: layout.symbol?.trim() || _get(symbolAtom),
+    timeframe,
+  };
+  const validPresets: ChartLayoutPreset[] = [
+    "single",
+    "two_horizontal",
+    "two_vertical",
+    "grid_2x2",
+  ];
+  const preset = validPresets.includes(state.chartLayoutPreset)
+    ? state.chartLayoutPreset
+    : "single";
+  const replayMode: ReplayLayoutMode =
+    state.replayLayoutMode === "all_charts" ? "all_charts" : "single_chart";
+  const panes = normalizeChartPanes(state.chartPanes, fallback);
+  const visibleSlots = visibleChartSlots(preset);
+  const activeChartSlot = visibleSlots.includes(state.activeChartSlot ?? 0)
+    ? state.activeChartSlot ?? 0
+    : visibleSlots[0] ?? 0;
+  const activePane = panes.find((pane) => pane.slot === activeChartSlot) ?? panes[0]!;
+  set(restoreChartLayoutStateAtom, {
+    preset,
+    replayMode,
+    panes,
+    activeSlot: activeChartSlot,
+    fallback,
+  });
   set(applySavedPanelLayoutAtom, state.panels);
   set(setDrawingLayoutContextAtom, {
     layoutId: state.drawingContextId || layout.id,
+    chartId: activePane.id,
   });
   set(applySavedChartLayoutAtom, {
-    symbol: layout.symbol,
-    timeframe: validTimeframe(layout.timeframe) ? layout.timeframe : undefined,
+    symbol: activePane.symbol || fallback.symbol,
+    timeframe: activePane.timeframe,
     indicators: state.indicators,
     drawings: state.drawings,
   });
@@ -136,6 +180,7 @@ export const createCurrentLayoutAtom = atom(
   null,
   async (get, set, input: { name: string; isDefault?: boolean }) => {
     const drawingContextId = uid("layout-scope");
+    const chartId = get(drawingChartIdAtom);
     const item = await createLayout(
       writeFor(get, input.name, input.isDefault === true, drawingContextId),
     );
@@ -144,7 +189,7 @@ export const createCurrentLayoutAtom = atom(
       : get(layoutsAtom);
     set(layoutsAtom, sortLayouts([...current, item]));
     set(activeLayoutIdAtom, item.id);
-    set(adoptDrawingLayoutContextAtom, { layoutId: drawingContextId });
+    set(adoptDrawingLayoutContextAtom, { layoutId: drawingContextId, chartId });
     return item;
   },
 );
@@ -176,6 +221,9 @@ export const deleteActiveLayoutAtom = atom(null, async (get, set) => {
   const id = get(activeLayoutIdAtom);
   if (!id) throw new Error("Select a saved layout first");
   await deleteLayout(id);
-  set(layoutsAtom, get(layoutsAtom).filter((item) => item.id !== id));
-  set(activeLayoutIdAtom, null);
+  const remaining = sortLayouts(get(layoutsAtom).filter((item) => item.id !== id));
+  set(layoutsAtom, remaining);
+  const fallback = remaining.find((item) => item.isDefault) ?? remaining[0];
+  if (fallback) set(loadLayoutAtom, fallback);
+  else set(activeLayoutIdAtom, null);
 });

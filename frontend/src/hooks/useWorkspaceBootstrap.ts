@@ -38,6 +38,7 @@ import {
   applyRemoteLayoutsAtom,
   loadDefaultLayoutAtom,
 } from "@/store/layoutStore";
+import { resetChartLayoutStateAtom } from "@/store/replayLayoutStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
 import { createWatchlist as createRemoteWatchlist } from "@/services/api/resources/watchlistsApi";
 import {
@@ -78,6 +79,7 @@ export function useWorkspaceBootstrap(): void {
   const resetPushNotifications = useSetAtom(resetNotificationsToDefaultsAtom);
   const applyLayouts = useSetAtom(applyRemoteLayoutsAtom);
   const loadDefaultLayout = useSetAtom(loadDefaultLayoutAtom);
+  const resetChartLayout = useSetAtom(resetChartLayoutStateAtom);
   const setWorkspaceReady = useSetAtom(setWorkspaceReadyAtom);
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
@@ -96,6 +98,7 @@ export function useWorkspaceBootstrap(): void {
           resetAlerts();
           applyWatchlists([]);
           applyLayouts([]);
+          resetChartLayout();
           resetChartWorkspace({ clearLocal: true });
           resetTrade();
           resetPushNotifications();
@@ -104,6 +107,7 @@ export function useWorkspaceBootstrap(): void {
           // hydration hook ran before this effect, so rehydrate after resetting
           // the SSR-safe atoms without deleting the cache.
           resetChartWorkspace({ clearLocal: false });
+          resetChartLayout();
           hydrateChart();
         }
         log("info", "Workspace reset to defaults");
@@ -198,6 +202,7 @@ export function useWorkspaceBootstrap(): void {
     backendSessionResolved,
     log,
     resetAlerts,
+    resetChartLayout,
     resetChartWorkspace,
     resetPushNotifications,
     resetSmc,

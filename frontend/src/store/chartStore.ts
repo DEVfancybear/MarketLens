@@ -592,8 +592,25 @@ export const crosshairAtom = atom<{
 export const setDrawingLayoutContextAtom = atom(
   null,
   (_get, set, context: { layoutId: string; chartId?: string }) => {
-    set(drawingLayoutIdAtom, context.layoutId || DEFAULT_DRAWING_LAYOUT_ID);
-    set(drawingChartIdAtom, context.chartId || DEFAULT_DRAWING_CHART_ID);
+    const layoutId = context.layoutId || DEFAULT_DRAWING_LAYOUT_ID;
+    const chartId = context.chartId || DEFAULT_DRAWING_CHART_ID;
+    const symbol = _get(symbolAtom);
+    const registry = mergeDrawingSyncRegistry(
+      readDrawingRegistry(symbol),
+      _get(drawingsAtom),
+      syncContext(_get, symbol),
+    );
+    set(drawingLayoutIdAtom, layoutId);
+    set(drawingChartIdAtom, chartId);
+    set(
+      drawingsAtom,
+      selectDrawingsForSyncContext(registry, { symbol, layoutId, chartId }),
+    );
+    set(selectedDrawingIdAtom, null);
+    set(selectedDrawingIdsAtom, new Set());
+    if (symbol && _get(backendSessionAtom)) {
+      void set(loadDrawingsForSymbolAtom, symbol);
+    }
   },
 );
 

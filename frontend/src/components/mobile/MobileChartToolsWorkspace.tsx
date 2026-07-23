@@ -181,7 +181,13 @@ export function MobileChartToolsWorkspace({
       defaultValue: activeLayout?.name ?? "My layout",
     }).then((value) => {
       const name = value?.trim();
-      if (name) void runLayoutAction(() => createLayout({ name, isDefault: layouts.length === 0 }), `Layout saved: ${name}`);
+      if (name) void runLayoutAction(
+        () => createLayout({
+          name,
+          isDefault: !layouts.some((layout) => layout.isDefault),
+        }),
+        `Layout saved: ${name}`,
+      );
     });
   };
 

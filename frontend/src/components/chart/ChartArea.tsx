@@ -37,12 +37,18 @@ import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
 import type { Candle, IndicatorConfig } from "@/types";
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
-export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {}) {
+export function ChartArea({
+  mobileControls,
+  slot = 0,
+}: {
+  mobileControls?: ReactNode;
+  slot?: number;
+} = {}) {
   const replay = useReplayClientProjection();
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
     enabled: !replay.snapshot && replay.connection !== "connecting",
   });
-  const candles = useChartSeries();
+  const candles = useChartSeries(slot);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
@@ -209,6 +215,7 @@ export function ChartArea({ mobileControls }: { mobileControls?: ReactNode } = {
           onLoadMoreHistory={benchmarkCandles ? undefined : loadOlderCandles}
           onReady={setMainChart}
           timeZone={chartTimeZone}
+          replayTrackSlot={slot}
         >
           <SmcLayer />
           <TradeLevels />

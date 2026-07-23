@@ -18,7 +18,9 @@ import { backendSessionAtom, setBackendSessionAtom } from "@/store/authStore";
 import { setActiveToolAtom, symbolAtom, timeframeAtom } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
 import {
+  activeChartSlotAtom,
   chartLayoutPresetAtom,
+  chartPanesAtom,
   replayLayoutModeAtom,
 } from "@/store/replayLayoutStore";
 import {
@@ -77,6 +79,8 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
   const timeframe = useAtomValue(timeframeAtom);
   const layoutPreset = useAtomValue(chartLayoutPresetAtom);
   const replayMode = useAtomValue(replayLayoutModeAtom);
+  const panes = useAtomValue(chartPanesAtom);
+  const activeSlot = useAtomValue(activeChartSlotAtom);
   const projection = useReplayClientProjection();
   const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
@@ -225,6 +229,8 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
           { symbol, chartTimeframe: timeframe },
           replayMode,
           layoutPreset,
+          1,
+          { panes, activeSlot },
         ));
     void request.catch(() => {
       // Surface the projection/store error in the full Replay workspace. Do not
@@ -233,9 +239,11 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
     });
   }, [
     active,
+    activeSlot,
     cancelSelection,
     candidateSeries,
     layoutPreset,
+    panes,
     projection.snapshot,
     replayMode,
     requestReplayWorkspace,

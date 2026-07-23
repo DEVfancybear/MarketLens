@@ -111,6 +111,7 @@ export function TopToolbar() {
   const makeActiveLayoutDefault = useSetAtom(makeActiveLayoutDefaultAtom);
   const deleteActiveLayout = useSetAtom(deleteActiveLayoutAtom);
   const activeLayout = layouts.find((layout) => layout.id === activeLayoutId);
+  const hasDefaultLayout = layouts.some((layout) => layout.isDefault);
   const snapshot = useChartSnapshotActions();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
 
@@ -125,6 +126,36 @@ export function TopToolbar() {
     },
     [doLog],
   );
+
+  const saveCurrentLayout = useCallback(() => {
+    if (!backendSession) {
+      doLog("warn", "Sign in to save layouts");
+      return;
+    }
+    void requestPrompt({
+      title: "Save layout",
+      label: "Layout name",
+      defaultValue: activeLayout?.name ?? "My layout",
+    }).then((value) => {
+      const name = value?.trim();
+      if (!name) return;
+      void runLayoutAction(
+        () => createCurrentLayout({
+          name,
+          isDefault: !hasDefaultLayout,
+        }),
+        `Layout saved: ${name}`,
+      );
+    });
+  }, [
+    activeLayout?.name,
+    backendSession,
+    createCurrentLayout,
+    doLog,
+    hasDefaultLayout,
+    requestPrompt,
+    runLayoutAction,
+  ]);
 
   const toggleReplay = () => {
     if (replaySelection !== "idle") {
@@ -156,11 +187,27 @@ export function TopToolbar() {
       } else if (event.shiftKey && !event.altKey) {
         event.preventDefault();
         void copySnapshot();
+      } else if (!event.altKey && !event.shiftKey && activeLayout) {
+        event.preventDefault();
+        void runLayoutAction(
+          overwriteActiveLayout,
+          `Layout updated: ${activeLayout.name}`,
+        );
+      } else if (!event.altKey && !event.shiftKey) {
+        event.preventDefault();
+        saveCurrentLayout();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [copySnapshot, downloadSnapshot]);
+  }, [
+    activeLayout,
+    copySnapshot,
+    downloadSnapshot,
+    overwriteActiveLayout,
+    runLayoutAction,
+    saveCurrentLayout,
+  ]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -215,15 +262,21 @@ export function TopToolbar() {
       {/* Persisted layouts plus visual chart presets. */}
       <Dropdown
         width={230}
-        trigger={() => (
-          <button className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink">
+        trigger={(open) => (
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-label={activeLayout?.name ? `Layout: ${activeLayout.name}` : "Layout"}
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70"
+          >
             <LayoutIcon size={14} />
             {activeLayout?.name ?? "Layout"}
           </button>
         )}
       >
         {(close) => (
-          <div>
+          <div role="menu" aria-label="Layout">
             {backendSession && (
               <>
                 <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
@@ -254,24 +307,13 @@ export function TopToolbar() {
                 <MenuItem
                   onClick={() => {
                     close();
-                    void requestPrompt({
-                      title: "Save layout",
-                      label: "Layout name",
-                      defaultValue: activeLayout?.name ?? "My layout",
-                    }).then((value) => {
-                      const name = value?.trim();
-                      if (!name) return;
-                      void runLayoutAction(
-                        () => createCurrentLayout({ name, isDefault: layouts.length === 0 }),
-                        `Layout saved: ${name}`,
-                      );
-                    });
+                    saveCurrentLayout();
                   }}
                 >
                   Save current as…
                 </MenuItem>
                 <MenuItem
-                  className={!activeLayout ? "cursor-not-allowed opacity-40" : undefined}
+                  disabled={!activeLayout}
                   onClick={activeLayout ? () => {
                     void runLayoutAction(overwriteActiveLayout, `Layout updated: ${activeLayout.name}`);
                     close();
@@ -280,7 +322,7 @@ export function TopToolbar() {
                   Update selected
                 </MenuItem>
                 <MenuItem
-                  className={!activeLayout || activeLayout.isDefault ? "cursor-not-allowed opacity-40" : undefined}
+                  disabled={!activeLayout || activeLayout.isDefault}
                   onClick={activeLayout && !activeLayout.isDefault ? () => {
                     void runLayoutAction(makeActiveLayoutDefault, `Default layout: ${activeLayout.name}`);
                     close();
@@ -289,7 +331,8 @@ export function TopToolbar() {
                   Make selected default
                 </MenuItem>
                 <MenuItem
-                  className={!activeLayout ? "cursor-not-allowed opacity-40 text-red-400" : "text-red-400"}
+                  disabled={!activeLayout}
+                  className="text-red-400"
                   onClick={activeLayout ? () => {
                     const name = activeLayout.name;
                     close();
@@ -325,13 +368,15 @@ export function TopToolbar() {
               <MenuItem
                 key={preset}
                 active={chartLayoutPreset === preset}
+                role="menuitemradio"
+                aria-checked={chartLayoutPreset === preset}
                 onClick={() => {
                   setChartLayoutPreset(preset as ChartLayoutPreset);
                   close();
                 }}
               >
                 <span className="flex-1">{label}</span>
-                {chartLayoutPreset === preset && <span>✓</span>}
+                {chartLayoutPreset === preset && <span aria-hidden="true">✓</span>}
               </MenuItem>
             ))}
             <div className="my-1 border-t border-terminal-border" />
@@ -340,18 +385,28 @@ export function TopToolbar() {
             </div>
             <MenuItem
               active={replayLayoutMode === "single_chart"}
-              onClick={() => setReplayLayoutMode("single_chart")}
+              role="menuitemradio"
+              aria-checked={replayLayoutMode === "single_chart"}
+              onClick={() => {
+                setReplayLayoutMode("single_chart");
+                close();
+              }}
             >
               <span className="flex-1">Current chart</span>
-              {replayLayoutMode === "single_chart" && <span>✓</span>}
+              {replayLayoutMode === "single_chart" && <span aria-hidden="true">✓</span>}
             </MenuItem>
             <MenuItem
               active={replayLayoutMode === "all_charts"}
-              className={chartLayoutPreset === "single" ? "cursor-not-allowed opacity-40" : undefined}
-              onClick={chartLayoutPreset === "single" ? undefined : () => setReplayLayoutMode("all_charts")}
+              role="menuitemradio"
+              aria-checked={replayLayoutMode === "all_charts"}
+              disabled={chartLayoutPreset === "single"}
+              onClick={chartLayoutPreset === "single" ? undefined : () => {
+                setReplayLayoutMode("all_charts");
+                close();
+              }}
             >
               <span className="flex-1">All charts</span>
-              {replayLayoutMode === "all_charts" && <span>✓</span>}
+              {replayLayoutMode === "all_charts" && <span aria-hidden="true">✓</span>}
             </MenuItem>
           </div>
         )}

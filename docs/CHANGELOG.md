@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - TradingView-style multi-chart layouts and Replay scope (2026-07-22)
+- Activated the Layout menu with real Single, 2 Horizontal, 2 Vertical, and
+  Grid 2x2 chart workspaces on desktop and mobile. Each pane retains its own
+  symbol/timeframe, hidden panes survive arrangement changes, and selecting a
+  preview transfers the interactive chart and drawing context to that pane.
+- Extended authenticated saved-layout snapshots with arrangement, all pane
+  markets, active pane, Replay scope, panels, indicators, and drawing context.
+  Save, update, make-default, default bootstrap, confirmed delete/fallback, and
+  `Ctrl+S` now follow the selected layout lifecycle.
+- Added Current chart and All charts Replay scopes. Synchronized layouts create
+  one ordered backend track per visible pane, while a current-chart session
+  safely maps any active UI pane to the backend's required slot zero.
+- Added keyboard/ARIA states plus focused unit and Playwright regression
+  coverage. Architecture and maintenance rules are documented in
+  `frontend/docs/CHART_LAYOUT_ARCHITECTURE.md`.
+
 ### Fixed - MT5 cold-start tick offset and freshness evidence (2026-07-22)
 - Rejected tick-to-M1 offset candidates outside the civil `UTC-14` through
   `UTC+14` range. Cold terminal caches can initially return M1 rows that are

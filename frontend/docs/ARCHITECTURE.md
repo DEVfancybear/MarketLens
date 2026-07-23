@@ -69,6 +69,8 @@ Important atom modules:
 | `watchlistStore` | watchlist lists, active list, sections, symbol order, sorting |
 | `alertStore` | alerts, triggered alerts, history, alert settings, selected/editing alert |
 | `notificationStore` | Firebase push registration and permission state |
+| `layoutStore` | Backend-saved workspace snapshots, active/default layout, capture, and restore |
+| `replayLayoutStore` | Multi-chart arrangement, per-pane market state, active pane, and Replay scope |
 | `replayClientStore` | read-only backend Replay snapshot, revealed bars, connection/error state |
 | `replayTradingClientStore` | isolated backend Replay account/order/fill/position projection |
 | `tradeStore` | simulator positions, order prefill, equity, latest trade market |
@@ -134,6 +136,21 @@ clicks are collapsed before any HTTP work begins.
 History reloads, replay window replacements, symbol/timeframe changes, and non-incremental data
 changes must use full `setData()`.
 
+## Chart Layout Flow
+
+`ChartLayoutWorkspace` renders the selected one-, two-, or four-chart CSS grid on both desktop and
+mobile. The active slot mounts the complete interactive `ChartArea`; inactive slots render
+read-only `PriceChart` previews with independent symbol/timeframe subscriptions. Four stable pane
+records remain allocated so hiding charts does not discard their market selection.
+
+The existing `chartStore` symbol/timeframe atoms represent the active pane for toolbar
+compatibility. Pane activation switches the drawing chart context and mirrors that pane into the
+active atoms; subsequent selection changes sync back into `replayLayoutStore`.
+
+Authenticated saved layouts persist the arrangement, active slot, all pane markets, Replay scope,
+indicators, drawing context, and panel state through the typed layouts API. The default snapshot is
+loaded during workspace bootstrap. See `CHART_LAYOUT_ARCHITECTURE.md`.
+
 ## Replay Safety
 
 `useChartSeries()` is the candle source for chart renderers, indicators, and SMC. During Replay it
@@ -176,8 +193,8 @@ display the previous user's workspace.
   `pushNotifications`, chart/timezone preferences, interval favorites, and drawing tool favorites.
 - IndexedDB: journal entries and screenshots through `services/storage.ts`.
 - Backend: auth/session, settings, sync bootstrap, Phase 6 watchlists, MT5 data APIs, Phase 7
-  drawings/drawing templates/drawing tool favorites, Phase 8 indicator presets, and Phase 9 Pine
-  scripts are live;
+  drawings/drawing templates/drawing tool favorites, Phase 8 indicator presets, Phase 9 Pine
+  scripts, and saved layouts are live;
   remaining authenticated workspace persistence is pending per resource.
 
 ## Rendering And Overlays
@@ -208,6 +225,7 @@ Mounted from `GlobalRuntime`:
 
 - `AUTH_UI.md`
 - `BACKEND_API_SYNC_ARCHITECTURE.md`
+- `CHART_LAYOUT_ARCHITECTURE.md`
 - `CHART_VISUAL_PROFILE.md`
 - `CHART_TIME_NAVIGATION_ARCHITECTURE.md`
 - `DRAWING_ENGINE_ARCHITECTURE.md`

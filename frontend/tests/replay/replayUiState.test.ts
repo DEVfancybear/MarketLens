@@ -25,6 +25,43 @@ test("selection sends the requested UTC time and lets the backend validate it", 
   assert.deepEqual(input.tracks, [{ slot: 0, symbol: "EURUSD", chartTimeframe: "15m" }]);
 });
 
+test("single-chart replay keeps backend slots contiguous when pane 3 is active", () => {
+  const input = replaySessionInputAt(
+    1_700_000_000,
+    { symbol: "USDJPY", chartTimeframe: "5m" },
+    "single_chart",
+    "grid_2x2",
+    1,
+    {
+      activeSlot: 2,
+      panes: [
+        {
+          id: "main",
+          slot: 0,
+          symbol: "EURUSD",
+          timeframe: "15m",
+          initialized: true,
+        },
+        {
+          id: "chart-2",
+          slot: 1,
+          symbol: "GBPUSD",
+          timeframe: "1H",
+          initialized: true,
+        },
+        {
+          id: "chart-3",
+          slot: 2,
+          symbol: "USDJPY",
+          timeframe: "5m",
+          initialized: true,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(input.tracks, [{ slot: 0, symbol: "USDJPY", chartTimeframe: "5m" }]);
+});
+
 test("Replay Auto interval matches TradingView single and synchronized layouts", () => {
   const track = (chartTimeframe: string, baseIntervalSeconds = 60) => ({
     chartTimeframe,

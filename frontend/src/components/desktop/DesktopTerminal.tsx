@@ -3,7 +3,7 @@
 import { TerminalLayout } from "@/components/layout/TerminalLayout";
 import { TopToolbar } from "@/components/toolbar/TopToolbar";
 import { DrawingToolbar } from "@/components/toolbar/DrawingToolbar";
-import { ChartArea } from "@/components/chart/ChartArea";
+import { ChartLayoutWorkspace } from "@/components/chart/ChartLayoutWorkspace";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
@@ -20,7 +20,7 @@ export function DesktopTerminal() {
         leftRail={<DrawingToolbar />}
         chart={
           <ChartPerformanceProfiler>
-            <ChartArea />
+            <ChartLayoutWorkspace />
           </ChartPerformanceProfiler>
         }
         watchlist={<RightSidebar />}

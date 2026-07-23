@@ -1,7 +1,8 @@
 # SMC Trading Terminal - Frontend
 
-TradingView-style web terminal focused on Smart Money Concept backtesting, replay, chart drawing,
-Pine-like indicators, alerting, simulated trading, journaling, and analytics.
+TradingView-style web terminal focused on Smart Money Concept backtesting, multi-chart saved
+layouts, synchronized replay, chart drawing, Pine-like indicators, alerting, simulated trading,
+journaling, and analytics.
 
 ## Current Stack
 
@@ -52,6 +53,7 @@ Focused tests live under `frontend/tests/` and compile to `.test-build/`:
 
 ```bash
 npm run test:chart
+npm run test:replay
 npm run test:watchlist
 npm run test:position
 npm run test:trade
@@ -151,5 +153,6 @@ See:
 
 - `docs/AUTH_UI.md`
 - `docs/BACKEND_API_SYNC_ARCHITECTURE.md`
+- `docs/CHART_LAYOUT_ARCHITECTURE.md`
 - `docs/ARCHITECTURE.md`
 - `docs/MT5_POSITION_SIZING.md`

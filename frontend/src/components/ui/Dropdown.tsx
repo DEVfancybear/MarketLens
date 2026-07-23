@@ -209,17 +209,27 @@ export function MenuItem({
   onClick,
   children,
   className,
+  disabled = false,
+  role,
+  "aria-checked": ariaChecked,
 }: {
   active?: boolean;
   onClick?: () => void;
   children: React.ReactNode;
   className?: string;
+  disabled?: boolean;
+  role?: "menuitem" | "menuitemradio" | "menuitemcheckbox";
+  "aria-checked"?: boolean;
 }) {
   return (
     <button
+      type="button"
+      role={role}
+      aria-checked={ariaChecked}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex min-h-8 w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+        "flex min-h-8 w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs font-medium text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted",
         active && "bg-brand/10 text-brand",
         className,
       )}

@@ -2,6 +2,7 @@ import { deleteJson, getJson, postJson, putJson } from "../client";
 import type { Drawing, IndicatorConfig } from "@/types";
 import type {
   ChartLayoutPreset,
+  ChartPaneState,
   ReplayLayoutMode,
 } from "@/store/replayLayoutStore";
 import type { BottomTab } from "@/store/uiStore";
@@ -12,6 +13,9 @@ export interface SavedLayoutState {
   drawingContextId?: string;
   chartLayoutPreset: ChartLayoutPreset;
   replayLayoutMode: ReplayLayoutMode;
+  /** Per-pane markets are retained even while a smaller arrangement hides them. */
+  chartPanes?: ChartPaneState[];
+  activeChartSlot?: number;
   indicators: IndicatorConfig[];
   drawings: Drawing[];
   panels: {

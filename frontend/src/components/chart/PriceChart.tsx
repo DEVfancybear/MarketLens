@@ -37,6 +37,7 @@ import {
 } from "@/store/chartStore";
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
+import { activeChartSlotAtom } from "@/store/replayLayoutStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import {
@@ -221,6 +222,11 @@ export function PriceChart({
   onLoadMoreHistory,
   onReady,
   timeZone,
+  symbolOverride,
+  timeframeOverride,
+  replayTrackSlot = 0,
+  interactive = true,
+  registerAsMain = true,
 }: {
   candles: Candle[];
   indicatorsOverride?: IndicatorConfig[];
@@ -228,6 +234,11 @@ export function PriceChart({
   onLoadMoreHistory?: () => Promise<LoadMoreHistoryResult | void> | LoadMoreHistoryResult | void;
   onReady?: (chart: IChartApi | null) => void;
   timeZone?: string;
+  symbolOverride?: string;
+  timeframeOverride?: Timeframe;
+  replayTrackSlot?: number;
+  interactive?: boolean;
+  registerAsMain?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -268,23 +279,31 @@ export function PriceChart({
   const gridVisible = useAtomValue(gridVisibleAtom);
   const replayProjection = useReplayClientProjection();
   const replaySnapshot = replayProjection.snapshot;
-  const replaySessionId = replaySnapshot?.id ?? null;
+  const activeChartSlot = useAtomValue(activeChartSlotAtom);
+  const replayTrack = replaySnapshot?.mode === "single_chart"
+    ? replayTrackSlot === activeChartSlot
+      ? replaySnapshot.tracks[0]
+      : undefined
+    : replaySnapshot?.tracks.find((track) => track.slot === replayTrackSlot);
+  const replaySessionId = replayTrack ? replaySnapshot?.id ?? null : null;
   activeReplaySessionRef.current = replaySessionId;
-  const replayActive = Boolean(replaySnapshot);
-  const replayPlaying = replaySnapshot?.status === "playing";
+  const replayActive = Boolean(replayTrack);
+  const replayPlaying = replayActive && replaySnapshot?.status === "playing";
   const replaySpeed = replaySnapshot?.speed ?? 1;
-  const symbol = useAtomValue(symbolAtom);
-  const timeframe = useAtomValue(timeframeAtom);
+  const storedSymbol = useAtomValue(symbolAtom);
+  const storedTimeframe = useAtomValue(timeframeAtom);
+  const symbol = symbolOverride ?? storedSymbol;
+  const timeframe = timeframeOverride ?? storedTimeframe;
   const indicatorRuntimeContext = useMemo<IndicatorRuntimeContext>(() => {
     const context: IndicatorRuntimeContext = { symbol, timeframe };
     if (!replayActive || !replaySessionId) return context;
     const replayCutoff = replayCutoffFromVisibleThrough(
-      replaySnapshot?.tracks[0]?.visibleThrough,
+      replayTrack?.visibleThrough,
     );
     return replayCutoff == null
       ? { ...context, replaySessionId }
       : { ...context, replaySessionId, replayCutoff };
-  }, [replayActive, replaySessionId, replaySnapshot?.tracks, symbol, timeframe]);
+  }, [replayActive, replaySessionId, replayTrack?.visibleThrough, symbol, timeframe]);
   const storedIndicators = useAtomValue(indicatorsAtom);
   const indicators = indicatorsOverride ?? storedIndicators;
   const setCrosshair = useSetAtom(setCrosshairAtom);
@@ -381,7 +400,7 @@ export function PriceChart({
     const chartContainer = containerRef.current;
     const initialBounds = chartContainer.getBoundingClientRect();
     const defaultViewport = timeScaleDefaults(timeframe);
-    setMainChartDefaultViewport(defaultViewport);
+    if (registerAsMain) setMainChartDefaultViewport(defaultViewport);
     appliedTimeframeRef.current = timeframe;
     const chart = createChart(chartContainer, {
       autoSize: false,
@@ -405,16 +424,16 @@ export function PriceChart({
       },
       crosshair: crosshairOptions(theme),
       handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: true,
+        mouseWheel: interactive,
+        pressedMouseMove: interactive,
+        horzTouchDrag: interactive,
+        vertTouchDrag: interactive,
       },
       handleScale: {
-        mouseWheel: true,
-        pinch: true,
-        axisPressedMouseMove: true,
-        axisDoubleClickReset: true,
+        mouseWheel: interactive,
+        pinch: interactive,
+        axisPressedMouseMove: interactive,
+        axisDoubleClickReset: interactive,
       },
       kineticScroll: {
         // TradingView desktop pan stops when the mouse is released. Keep touch
@@ -431,7 +450,7 @@ export function PriceChart({
     viewportControllerRef.current = viewportController;
     candleSeriesRef.current = candleSeries;
     setReady(true);
-    setMainChart(chart);
+    if (registerAsMain) setMainChart(chart);
     onReady?.(chart);
 
     let disposed = false;
@@ -440,14 +459,18 @@ export function PriceChart({
       if (source === "input") viewportController.beginUserInteraction();
       scheduleVersionBump();
     });
-    const uninstallBenchmarkHarness = installChartBenchmarkHarness(chart, () => candlesRef.current.length);
-    const uninstallInteractionHarness = installChartInteractionTestHarness({
-      chart,
-      viewport: viewportController,
-      candleCount: () => candlesRef.current.length,
-      firstCandleTime: () => candlesRef.current[0]?.time ?? null,
-      lastCrosshairTime: () => lastCrosshairTimeRef.current,
-    });
+    const uninstallBenchmarkHarness = interactive
+      ? installChartBenchmarkHarness(chart, () => candlesRef.current.length)
+      : () => undefined;
+    const uninstallInteractionHarness = interactive
+      ? installChartInteractionTestHarness({
+          chart,
+          viewport: viewportController,
+          candleCount: () => candlesRef.current.length,
+          firstCandleTime: () => candlesRef.current[0]?.time ?? null,
+          lastCrosshairTime: () => lastCrosshairTimeRef.current,
+        })
+      : () => undefined;
 
     const handleCrosshairMove: Parameters<IChartApi["subscribeCrosshairMove"]>[0] = (param) => {
       if (disposed) return;
@@ -478,7 +501,7 @@ export function PriceChart({
       chart.resize(Math.floor(bounds.width), Math.floor(bounds.height));
       scheduleVersionBump();
     });
-    chart.subscribeCrosshairMove(handleCrosshairMove);
+    if (interactive) chart.subscribeCrosshairMove(handleCrosshairMove);
     ro.observe(chartContainer);
 
     const indStore = indSeriesRef.current;
@@ -491,7 +514,7 @@ export function PriceChart({
       uninstallInteractionHarness();
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
-      chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      if (interactive) chart.unsubscribeCrosshairMove(handleCrosshairMove);
       if (bumpRafRef.current !== null) {
         cancelAnimationFrame(bumpRafRef.current);
         bumpRafRef.current = null;
@@ -510,7 +533,7 @@ export function PriceChart({
       }
       chartRef.current = null;
       candleSeriesRef.current = null;
-      setMainChart(null);
+      if (registerAsMain) setMainChart(null);
       onReady?.(null);
       viewportController.destroy();
       viewportControllerRef.current = null;
@@ -581,7 +604,7 @@ export function PriceChart({
     const timeframeChanged = appliedTimeframeRef.current !== timeframe;
     const defaultViewport = timeScaleDefaults(timeframe);
     if (timeframeChanged) {
-      setMainChartDefaultViewport(defaultViewport);
+      if (registerAsMain) setMainChartDefaultViewport(defaultViewport);
       appliedTimeframeRef.current = timeframe;
     }
     chart.applyOptions({
@@ -611,7 +634,7 @@ export function PriceChart({
       crosshair: crosshairOptions(theme),
     });
     candleSeriesRef.current?.applyOptions(candlestickOptions(theme, precision));
-  }, [theme, gridVisible, timeframe, precision, timeZone]);
+  }, [gridVisible, precision, registerAsMain, theme, timeZone, timeframe]);
 
   // ---- Push candle data ----
   useEffect(() => {
@@ -1296,7 +1319,7 @@ export function PriceChart({
     <div
       data-testid="price-chart-root"
       className="relative h-full min-w-0 w-full overflow-hidden"
-      onContextMenu={onContextMenu}
+      onContextMenu={interactive ? onContextMenu : undefined}
     >
       <div ref={containerRef} className="h-full w-full" />
       {ctx && <ChartContextObj.Provider value={ctx}>{children}</ChartContextObj.Provider>}
@@ -1334,7 +1357,7 @@ export function PriceChart({
         );
       })}
       {priceMarker && <CurrentPriceMarker marker={priceMarker} precision={precision} symbol={symbol} />}
-      {menu && <ChartContextMenu state={menu} onClose={() => setMenu(null)} />}
+      {interactive && menu && <ChartContextMenu state={menu} onClose={() => setMenu(null)} />}
     </div>
   );
 }

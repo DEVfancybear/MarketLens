@@ -49,6 +49,10 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   switch and cannot reactivate a browser engine. Fast playback batches authoritative intervals once
   per second, publishes ordered bar batches, and uses incremental chart interpolation; Auto interval
   and session replacement now work consistently across timeframe/layout changes.
+- The Layout menu now renders real one-, two-, and four-chart workspaces. Stable pane records retain
+  per-chart symbol/timeframe state, authenticated layout snapshots restore the active pane and full
+  workspace state, and Replay supports current-chart or synchronized all-chart tracks. See
+  `frontend/docs/CHART_LAYOUT_ARCHITECTURE.md`.
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.
 - Backend MT5 streaming is local-only: run `python -m bridge.mt5_stream.mt5_server` from

@@ -1,6 +1,6 @@
 # Replay Architecture
 
-_Updated after Replay selection, indicator causality, viewport, and mobile hardening: 2026-07-18._
+_Updated after multi-chart Replay scope and track mapping: 2026-07-22._
 
 ## Authority boundary
 
@@ -28,6 +28,7 @@ Replay controls / UTC selection candidate
 | `services/replay/replaySocket.ts` | WebSocket transport, reconnect/gap recovery, serialized versioned commands |
 | `store/replayClientStore.ts` | Read-only latest server snapshot, revealed bars, connection/error projection |
 | `store/replayTradingClientStore.ts` | Read-only trading projection plus backend command wrappers |
+| `store/replayLayoutStore.ts` | Visible pane state, current/all-chart scope, and UI-to-backend track mapping |
 | `hooks/useChartSeries.ts` | Select live candles or server-revealed Replay bars |
 | `components/replay/*` | Presentation controls, UTC candidate selection, dashboard, and lifecycle gate |
 | `components/chart/replayViewport.ts` | Presentation-only viewport and coordinate geometry |
@@ -40,6 +41,26 @@ Replay controls / UTC selection candidate
 `ReplayClientRuntime` closes the session on logout or kill-switch activation and
 recreates it when synchronized layout configuration changes. It never schedules
 market steps. `GlobalRuntime` mounts transport lifecycle only.
+
+## Layout scope and track mapping
+
+The Layout menu exposes `Current chart` and `All charts`. Current-chart scope
+creates one track for the active visible pane; inactive panes continue to show
+live data. All-chart scope creates one ordered track per visible pane and is
+disabled for the single-chart arrangement.
+
+UI pane slots are stable so hidden charts can retain symbol/timeframe state.
+Backend session tracks have a stricter contract: slots must be contiguous from
+zero. `replayTracksForLayout()` first builds UI tracks, then
+`replayTracksForBackend()` maps a one-chart session to backend slot zero even
+when the selected UI pane is slot 1, 2, or 3. `PriceChart` and
+`useChartSeries()` map that single server track back to
+`activeChartSlotAtom`. Multi-chart tracks retain visible slot order.
+
+Changing the desired tracks causes `ReplayClientRuntime` to replace the session
+configuration. The actor still owns the shared simulated time and advances all
+tracks atomically. Pane and saved-layout lifecycle details are documented in
+`CHART_LAYOUT_ARCHITECTURE.md`.
 
 ## Selection and commands
 

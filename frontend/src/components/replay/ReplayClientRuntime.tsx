@@ -5,8 +5,11 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { backendSessionAtom } from "@/store/authStore";
 import { symbolAtom, timeframeAtom } from "@/store/chartStore";
 import {
+  activeChartSlotAtom,
   chartLayoutPresetAtom,
+  chartPanesAtom,
   replayLayoutModeAtom,
+  replayTracksForBackend,
   replayTracksForLayout,
 } from "@/store/replayLayoutStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
@@ -28,6 +31,8 @@ export function ReplayClientRuntime(): null {
   const timeframe = useAtomValue(timeframeAtom);
   const layoutPreset = useAtomValue(chartLayoutPresetAtom);
   const replayMode = useAtomValue(replayLayoutModeAtom);
+  const panes = useAtomValue(chartPanesAtom);
+  const activeSlot = useAtomValue(activeChartSlotAtom);
   const projection = useReplayClientProjection();
   const cancelSelection = useSetAtom(cancelReplaySelectionAtom);
   const replacingRef = useRef(false);
@@ -67,10 +72,20 @@ export function ReplayClientRuntime(): null {
     if (!backendSession || !isReplayBackendV1Enabled() || !snapshot || replacingRef.current) {
       return;
     }
-    const wantedTracks = replayTracksForLayout(replayMode, layoutPreset, {
-      symbol,
-      chartTimeframe: timeframe,
-    });
+    const wantedTracks = replayTracksForBackend(
+      replayMode,
+      replayTracksForLayout(
+        replayMode,
+        layoutPreset,
+        {
+          symbol,
+          chartTimeframe: timeframe,
+          slot: activeSlot,
+        },
+        panes,
+        activeSlot,
+      ),
+    );
     const configurationMatches = snapshot.mode === replayMode &&
       snapshot.tracks.length === wantedTracks.length &&
       snapshot.tracks.every((track, index) =>
@@ -99,7 +114,9 @@ export function ReplayClientRuntime(): null {
     });
   }, [
     backendSession,
+    activeSlot,
     layoutPreset,
+    panes,
     projection.snapshot,
     replayMode,
     symbol,

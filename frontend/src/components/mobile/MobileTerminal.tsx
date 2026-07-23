@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { BarChart3, ChartCandlestick, List, Menu, WalletCards } from "lucide-react";
-import { ChartArea } from "@/components/chart/ChartArea";
+import { ChartLayoutWorkspace } from "@/components/chart/ChartLayoutWorkspace";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
 import { MobileSheet } from "./MobileSheet";
 import { MobileSymbolPicker } from "./MobileSymbolPicker";
@@ -91,7 +91,7 @@ export function MobileTerminal() {
             <MobileTimeframeBar />
             <div className="mobile-chart" aria-label="Interactive price chart">
               <ChartPerformanceProfiler>
-                <ChartArea
+                <ChartLayoutWorkspace
                   mobileControls={(
                     <MobileChartActions
                       openDrawing={() => openSurface("draw")}

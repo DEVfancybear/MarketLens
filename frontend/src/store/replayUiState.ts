@@ -4,7 +4,9 @@ import { atom } from "jotai";
 import type { CreateReplaySessionInput } from "@/services/api/resources/replayApi";
 import {
   replayTracksForLayout,
+  replayTracksForBackend,
   type ChartLayoutPreset,
+  type ChartPaneState,
   type ReplayLayoutMode,
 } from "./replayLayoutStore";
 import { TF_SECONDS, type Timeframe } from "../types";
@@ -73,13 +75,26 @@ export function replaySessionInputAt(
   mode: ReplayLayoutMode,
   preset: ChartLayoutPreset,
   speed = 1,
+  layout?: {
+    panes: readonly ChartPaneState[];
+    activeSlot: number;
+  },
 ): CreateReplaySessionInput {
   return {
     mode,
     start: { kind: "time", time: new Date(timeSeconds * 1000).toISOString() },
     replayInterval: "auto",
     speed,
-    tracks: replayTracksForLayout(mode, preset, active),
+    tracks: replayTracksForBackend(
+      mode,
+      replayTracksForLayout(
+        mode,
+        preset,
+        { ...active, slot: layout?.activeSlot },
+        layout?.panes,
+        layout?.activeSlot,
+      ),
+    ),
     trading: {
       enabled: true,
       startingEquity: "10000",

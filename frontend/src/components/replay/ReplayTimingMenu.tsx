@@ -13,7 +13,9 @@ import { backendSessionAtom } from "@/store/authStore";
 import { symbolAtom, timeframeAtom } from "@/store/chartStore";
 import { setBottomTabAtom } from "@/store/uiStore";
 import {
+  activeChartSlotAtom,
   chartLayoutPresetAtom,
+  chartPanesAtom,
   replayLayoutModeAtom,
 } from "@/store/replayLayoutStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
@@ -45,6 +47,8 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
   const timeframe = useAtomValue(timeframeAtom);
   const layoutPreset = useAtomValue(chartLayoutPresetAtom);
   const replayMode = useAtomValue(replayLayoutModeAtom);
+  const panes = useAtomValue(chartPanesAtom);
+  const activeSlot = useAtomValue(activeChartSlotAtom);
   const beginSelect = useSetAtom(beginReplaySelectionAtom);
   const beginReselect = useSetAtom(beginReplayReselectionAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
@@ -64,7 +68,14 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
     if (!canReplay) return;
     setBottomTab("replay");
     void startReplaySession(
-      replaySessionInputAt(time, { symbol, chartTimeframe: timeframe }, replayMode, layoutPreset),
+      replaySessionInputAt(
+        time,
+        { symbol, chartTimeframe: timeframe },
+        replayMode,
+        layoutPreset,
+        1,
+        { panes, activeSlot },
+      ),
     ).catch(() => undefined);
   };
 

@@ -1,8 +1,8 @@
 # SMC Trading Terminal
 
 TradingView-style trading terminal for Smart Money Concept traders. The platform includes a
-browser charting workspace, drawing tools, Pine-style indicators, replay mode, a trade simulator,
-journaling, analytics, and a Go API backend.
+multi-chart workspace with saved layouts, drawing tools, Pine-style indicators, synchronized
+replay mode, a trade simulator, journaling, analytics, and a Go API backend.
 
 This repository is a monorepo with separate frontend and backend packages.
 
