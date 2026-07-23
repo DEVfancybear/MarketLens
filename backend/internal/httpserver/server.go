@@ -3,13 +3,12 @@ package httpserver
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/rs/zerolog/log"
 	"github.com/smc-trading-terminal/backend/internal/alerts"
 	"github.com/smc-trading-terminal/backend/internal/auth"
@@ -60,10 +59,12 @@ func New(
 	pineRuntimeHandler *pineruntime.Handler,
 ) *Server {
 	app := fiber.New(fiber.Config{
-		AppName:               "smc-trading-backend",
-		DisableStartupMessage: true,
-		BodyLimit:             8 * 1024 * 1024,
-		ReadTimeout:           10 * time.Second,
+		AppName:   "smc-trading-backend",
+		BodyLimit: 8 * 1024 * 1024,
+		// All request bodies handled by this API are JSON or WebSocket frames.
+		// Avoid fasthttp's eager multipart parsing on an unsupported media path.
+		DisablePreParseMultipartForm: true,
+		ReadTimeout:                  10 * time.Second,
 		// Leave response overhead above the verifier's 30 second hard budget.
 		WriteTimeout: 40 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -78,10 +79,20 @@ func New(
 	app.Use(middleware.SecurityHeaders())
 	app.Use(middleware.RequireAllowedOrigin(cfg.CORSAllowedOrigins))
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     strings.Join(cfg.CORSAllowedOrigins, ","),
+		AllowOrigins:     cfg.CORSAllowedOrigins,
 		AllowCredentials: true,
-		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-		AllowHeaders:     "Content-Type,Authorization",
+		AllowMethods: []string{
+			fiber.MethodGet,
+			fiber.MethodPost,
+			fiber.MethodPut,
+			fiber.MethodPatch,
+			fiber.MethodDelete,
+			fiber.MethodOptions,
+		},
+		AllowHeaders: []string{
+			fiber.HeaderContentType,
+			fiber.HeaderAuthorization,
+		},
 	}))
 
 	// Avoid the typed-nil interface trap: pass a nil Pinger (not a non-nil
@@ -141,25 +152,11 @@ func New(
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	errCh := make(chan error, 1)
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
-
-	go func() {
-		log.Info().Int("port", s.cfg.Port).Str("env", s.cfg.Env).Msg("starting HTTP server")
-		// Listen returns nil once ShutdownWithContext completes, so a graceful
-		// stop does not surface as an error here.
-		if err := s.app.Listen(addr); err != nil {
-			errCh <- err
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		log.Info().Msg("shutting down server...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return s.app.ShutdownWithContext(shutdownCtx)
-	case err := <-errCh:
-		return err
-	}
+	log.Info().Int("port", s.cfg.Port).Str("env", s.cfg.Env).Msg("starting HTTP server")
+	return s.app.Listen(addr, fiber.ListenConfig{
+		DisableStartupMessage: true,
+		GracefulContext:       ctx,
+		ShutdownTimeout:       10 * time.Second,
+	})
 }

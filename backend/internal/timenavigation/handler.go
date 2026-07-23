@@ -1,6 +1,6 @@
 package timenavigation
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 type resolveRequest struct {
 	Shortcut   string `json:"shortcut"`
@@ -9,12 +9,12 @@ type resolveRequest struct {
 
 func RegisterRoutes(router fiber.Router, exchangeTimeZones ...string) {
 	group := router.Group("/chart/time-navigation")
-	group.Get("/shortcuts", func(c *fiber.Ctx) error {
+	group.Get("/shortcuts", func(c fiber.Ctx) error {
 		return c.JSON(Catalog(exchangeTimeZones...))
 	})
-	group.Post("/resolve", func(c *fiber.Ctx) error {
+	group.Post("/resolve", func(c fiber.Ctx) error {
 		var request resolveRequest
-		if err := c.BodyParser(&request); err != nil {
+		if err := c.Bind().Body(&request); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
 		}
 		resolution, err := Resolve(request.Shortcut, request.AnchorTime)

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/url"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -39,7 +39,7 @@ func (h *Handler) Register(router fiber.Router) {
 	f.Put("/", h.replaceToolFavorites)
 }
 
-func (h *Handler) list(c *fiber.Ctx) error {
+func (h *Handler) list(c fiber.Ctx) error {
 	symbol := c.Query("symbol")
 	if decoded, err := url.QueryUnescape(symbol); err == nil {
 		symbol = decoded
@@ -51,7 +51,7 @@ func (h *Handler) list(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) create(c *fiber.Ctx) error {
+func (h *Handler) create(c fiber.Ctx) error {
 	var req DrawingWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -63,7 +63,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(d)
 }
 
-func (h *Handler) replace(c *fiber.Ctx) error {
+func (h *Handler) replace(c fiber.Ctx) error {
 	var req DrawingWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -75,7 +75,7 @@ func (h *Handler) replace(c *fiber.Ctx) error {
 	return c.JSON(d)
 }
 
-func (h *Handler) patch(c *fiber.Ctx) error {
+func (h *Handler) patch(c fiber.Ctx) error {
 	var req DrawingPatch
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -87,14 +87,14 @@ func (h *Handler) patch(c *fiber.Ctx) error {
 	return c.JSON(d)
 }
 
-func (h *Handler) delete(c *fiber.Ctx) error {
+func (h *Handler) delete(c fiber.Ctx) error {
 	if err := h.store.Delete(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) batch(c *fiber.Ctx) error {
+func (h *Handler) batch(c fiber.Ctx) error {
 	var req BatchRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -106,7 +106,7 @@ func (h *Handler) batch(c *fiber.Ctx) error {
 	return c.JSON(resp)
 }
 
-func (h *Handler) listTemplates(c *fiber.Ctx) error {
+func (h *Handler) listTemplates(c fiber.Ctx) error {
 	items, err := h.store.ListTemplates(c.Context(), userID(c))
 	if err != nil {
 		return apiError(err)
@@ -114,7 +114,7 @@ func (h *Handler) listTemplates(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) saveTemplate(c *fiber.Ctx) error {
+func (h *Handler) saveTemplate(c fiber.Ctx) error {
 	var req DrawingTemplateWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -126,7 +126,7 @@ func (h *Handler) saveTemplate(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(t)
 }
 
-func (h *Handler) updateTemplate(c *fiber.Ctx) error {
+func (h *Handler) updateTemplate(c fiber.Ctx) error {
 	var req DrawingTemplateWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -138,14 +138,14 @@ func (h *Handler) updateTemplate(c *fiber.Ctx) error {
 	return c.JSON(t)
 }
 
-func (h *Handler) deleteTemplate(c *fiber.Ctx) error {
+func (h *Handler) deleteTemplate(c fiber.Ctx) error {
 	if err := h.store.DeleteTemplate(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) getToolFavorites(c *fiber.Ctx) error {
+func (h *Handler) getToolFavorites(c fiber.Ctx) error {
 	favs, err := h.store.GetToolFavorites(c.Context(), userID(c))
 	if err != nil {
 		return apiError(err)
@@ -153,7 +153,7 @@ func (h *Handler) getToolFavorites(c *fiber.Ctx) error {
 	return c.JSON(favs)
 }
 
-func (h *Handler) replaceToolFavorites(c *fiber.Ctx) error {
+func (h *Handler) replaceToolFavorites(c fiber.Ctx) error {
 	var req DrawingToolFavoritesWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -165,7 +165,7 @@ func (h *Handler) replaceToolFavorites(c *fiber.Ctx) error {
 	return c.JSON(favs)
 }
 
-func userID(c *fiber.Ctx) string {
+func userID(c fiber.Ctx) string {
 	id, _ := c.Locals(auth.LocalUserID).(string)
 	return id
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
 
@@ -57,7 +57,7 @@ func (f *fakeStore) Delete(_ context.Context, _ string, id string) error {
 	return ErrNotFound
 }
 
-func layoutAuth(c *fiber.Ctx) error {
+func layoutAuth(c fiber.Ctx) error {
 	c.Locals(auth.LocalUserID, "user-1")
 	return c.Next()
 }

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -167,7 +167,7 @@ func itoa(n int) string { return string(rune('0' + n)) }
 
 func newTestApp(store Store, asUser string) *fiber.App {
 	app := fiber.New()
-	mw := func(c *fiber.Ctx) error {
+	mw := func(c fiber.Ctx) error {
 		c.Locals(auth.LocalUserID, asUser)
 		return c.Next()
 	}

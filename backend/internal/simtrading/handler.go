@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
 
@@ -28,14 +28,14 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Post("/positions/:id/close", h.closePosition)
 	g.Get("/accounts/:id/analytics", h.analytics)
 }
-func (h *Handler) listAccounts(c *fiber.Ctx) error {
+func (h *Handler) listAccounts(c fiber.Ctx) error {
 	v, e := h.store.ListAccounts(c.Context(), userID(c))
 	if e != nil {
 		return apiError(e)
 	}
 	return c.JSON(v)
 }
-func (h *Handler) createAccount(c *fiber.Ctx) error {
+func (h *Handler) createAccount(c fiber.Ctx) error {
 	var in AccountWrite
 	if e := json.Unmarshal(c.Body(), &in); e != nil {
 		return fiber.NewError(400, "invalid request body")
@@ -46,7 +46,7 @@ func (h *Handler) createAccount(c *fiber.Ctx) error {
 	}
 	return c.Status(201).JSON(v)
 }
-func (h *Handler) updateAccount(c *fiber.Ctx) error {
+func (h *Handler) updateAccount(c fiber.Ctx) error {
 	var in AccountWrite
 	if e := json.Unmarshal(c.Body(), &in); e != nil {
 		return fiber.NewError(400, "invalid request body")
@@ -57,27 +57,27 @@ func (h *Handler) updateAccount(c *fiber.Ctx) error {
 	}
 	return c.JSON(v)
 }
-func (h *Handler) deleteAccount(c *fiber.Ctx) error {
+func (h *Handler) deleteAccount(c fiber.Ctx) error {
 	if e := h.store.DeleteAccount(c.Context(), userID(c), c.Params("id")); e != nil {
 		return apiError(e)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
-func (h *Handler) resetAccount(c *fiber.Ctx) error {
+func (h *Handler) resetAccount(c fiber.Ctx) error {
 	v, e := h.store.ResetAccount(c.Context(), userID(c), c.Params("id"))
 	if e != nil {
 		return apiError(e)
 	}
 	return c.JSON(v)
 }
-func (h *Handler) listPositions(c *fiber.Ctx) error {
+func (h *Handler) listPositions(c fiber.Ctx) error {
 	v, e := h.store.ListPositions(c.Context(), userID(c), c.Params("id"), c.Query("status"))
 	if e != nil {
 		return apiError(e)
 	}
 	return c.JSON(v)
 }
-func (h *Handler) upsertPosition(c *fiber.Ctx) error {
+func (h *Handler) upsertPosition(c fiber.Ctx) error {
 	var in PositionWrite
 	if e := json.Unmarshal(c.Body(), &in); e != nil {
 		return fiber.NewError(400, "invalid request body")
@@ -88,7 +88,7 @@ func (h *Handler) upsertPosition(c *fiber.Ctx) error {
 	}
 	return c.Status(201).JSON(v)
 }
-func (h *Handler) closePosition(c *fiber.Ctx) error {
+func (h *Handler) closePosition(c fiber.Ctx) error {
 	var in struct {
 		AccountID string `json:"accountId"`
 		PositionWrite
@@ -106,14 +106,14 @@ func (h *Handler) closePosition(c *fiber.Ctx) error {
 	}
 	return c.JSON(v)
 }
-func (h *Handler) analytics(c *fiber.Ctx) error {
+func (h *Handler) analytics(c fiber.Ctx) error {
 	v, e := h.store.Analytics(c.Context(), userID(c), c.Params("id"))
 	if e != nil {
 		return apiError(e)
 	}
 	return c.JSON(v)
 }
-func userID(c *fiber.Ctx) string { id, _ := c.Locals(auth.LocalUserID).(string); return id }
+func userID(c fiber.Ctx) string { id, _ := c.Locals(auth.LocalUserID).(string); return id }
 func apiError(err error) error {
 	if errors.Is(err, ErrBadRequest) {
 		return fiber.NewError(400, err.Error())

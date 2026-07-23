@@ -5,13 +5,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestRequireAllowedOrigin(t *testing.T) {
 	app := fiber.New()
 	app.Use(RequireAllowedOrigin([]string{"https://app.example.com"}))
-	app.Post("/change", func(c *fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
+	app.Post("/change", func(c fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
 
 	for _, tc := range []struct {
 		name, origin string
@@ -40,7 +40,7 @@ func TestRequireAllowedOrigin(t *testing.T) {
 func TestSecurityHeaders(t *testing.T) {
 	app := fiber.New()
 	app.Use(SecurityHeaders())
-	app.Get("/", func(c *fiber.Ctx) error { return c.SendString("ok") })
+	app.Get("/", func(c fiber.Ctx) error { return c.SendString("ok") })
 	res, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestSecurityHeaders(t *testing.T) {
 func TestRequireAllowedOriginBlocksCrossOriginWebSocket(t *testing.T) {
 	app := fiber.New()
 	app.Use(RequireAllowedOrigin([]string{"https://app.example.com"}))
-	app.Get("/stream", func(c *fiber.Ctx) error { return c.SendStatus(http.StatusSwitchingProtocols) })
+	app.Get("/stream", func(c fiber.Ctx) error { return c.SendStatus(http.StatusSwitchingProtocols) })
 	req := httptest.NewRequest(http.MethodGet, "/stream", nil)
 	req.Header.Set("Origin", "https://evil.example")
 	req.Header.Set("Upgrade", "websocket")

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Pinger is the subset of the DB pool the readiness probe needs. Keeping it an
@@ -32,7 +32,7 @@ func RegisterRoutes(app *fiber.App, db Pinger) {
 	app.Get("/health/ready", readinessHandler(db))
 }
 
-func handleHealth(c *fiber.Ctx) error {
+func handleHealth(c fiber.Ctx) error {
 	return c.JSON(HealthResponse{
 		Status:    "ok",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -40,7 +40,7 @@ func handleHealth(c *fiber.Ctx) error {
 }
 
 func readinessHandler(db Pinger) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		now := time.Now().UTC().Format(time.RFC3339)
 
 		if db == nil {

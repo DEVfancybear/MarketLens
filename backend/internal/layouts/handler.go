@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
 
@@ -25,7 +25,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Delete("/:id", h.delete)
 }
 
-func (h *Handler) list(c *fiber.Ctx) error {
+func (h *Handler) list(c fiber.Ctx) error {
 	items, err := h.store.List(c.Context(), userID(c))
 	if err != nil {
 		return apiError(err)
@@ -33,7 +33,7 @@ func (h *Handler) list(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) create(c *fiber.Ctx) error {
+func (h *Handler) create(c fiber.Ctx) error {
 	var input Write
 	if err := json.Unmarshal(c.Body(), &input); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -45,7 +45,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(item)
 }
 
-func (h *Handler) update(c *fiber.Ctx) error {
+func (h *Handler) update(c fiber.Ctx) error {
 	var input Write
 	if err := json.Unmarshal(c.Body(), &input); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -57,14 +57,14 @@ func (h *Handler) update(c *fiber.Ctx) error {
 	return c.JSON(item)
 }
 
-func (h *Handler) delete(c *fiber.Ctx) error {
+func (h *Handler) delete(c fiber.Ctx) error {
 	if err := h.store.Delete(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func userID(c *fiber.Ctx) string {
+func userID(c fiber.Ctx) string {
 	id, _ := c.Locals(auth.LocalUserID).(string)
 	return id
 }

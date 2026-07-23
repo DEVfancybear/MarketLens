@@ -20,7 +20,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -242,14 +242,14 @@ func (h *Handler) registerIntegrationRoutes(router fiber.Router) {
 	router.Post("/settings/integrations/deliver", h.requireAuth, h.deliverIntegration)
 	router.Post("/settings/integrations/worker-deliver", h.workerDeliverIntegration)
 }
-func (h *Handler) getIntegrations(c *fiber.Ctx) error {
+func (h *Handler) getIntegrations(c fiber.Ctx) error {
 	v, err := h.integrationStore.Get(c.Context(), userID(c))
 	if err != nil {
 		return fiber.ErrInternalServerError
 	}
 	return c.JSON(integrationView(v, userID(c), h.secretBox))
 }
-func (h *Handler) putIntegrations(c *fiber.Ctx) error {
+func (h *Handler) putIntegrations(c fiber.Ctx) error {
 	var req integrationWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(400, "invalid request body")
@@ -360,7 +360,7 @@ func validDiscordWebhook(raw string) bool {
 	host := strings.ToLower(u.Hostname())
 	return (host == "discord.com" || host == "discordapp.com") && strings.HasPrefix(u.Path, "/api/webhooks/")
 }
-func (h *Handler) testIntegration(c *fiber.Ctx) error {
+func (h *Handler) testIntegration(c fiber.Ctx) error {
 	v, err := h.integrationStore.Get(c.Context(), userID(c))
 	if err != nil {
 		return fiber.ErrInternalServerError
@@ -395,7 +395,7 @@ type workerDeliveryRequest struct {
 	Channels      struct{ Telegram, Discord bool } `json:"channels"`
 }
 
-func (h *Handler) deliverIntegration(c *fiber.Ctx) error {
+func (h *Handler) deliverIntegration(c fiber.Ctx) error {
 	var in integrationDeliveryRequest
 	if err := json.Unmarshal(c.Body(), &in); err != nil || in.Message.Symbol == "" {
 		return fiber.NewError(400, "invalid alert message")
@@ -409,7 +409,7 @@ func (h *Handler) deliverIntegration(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true, "results": h.deliverResults(v, in)})
 }
 
-func (h *Handler) workerDeliverIntegration(c *fiber.Ctx) error {
+func (h *Handler) workerDeliverIntegration(c fiber.Ctx) error {
 	if h.workerSecret == "" || !hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret)) {
 		return fiber.ErrUnauthorized
 	}

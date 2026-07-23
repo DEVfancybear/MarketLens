@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/apierror"
 )
 
 func TestErrorHandlerPreservesTypedAPIErrorCode(t *testing.T) {
 	app := fiber.New(fiber.Config{ErrorHandler: errorHandler})
-	app.Get("/", func(*fiber.Ctx) error {
+	app.Get("/", func(fiber.Ctx) error {
 		return apierror.New(422, "data_point_unavailable", "unavailable")
 	})
 	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
@@ -31,7 +31,7 @@ func TestErrorHandlerPreservesTypedAPIErrorCode(t *testing.T) {
 
 func TestErrorHandlerIncludesTypedAPIErrorDetails(t *testing.T) {
 	app := fiber.New(fiber.Config{ErrorHandler: errorHandler})
-	app.Get("/", func(*fiber.Ctx) error {
+	app.Get("/", func(fiber.Ctx) error {
 		return apierror.NewWithDetails(409, "version_conflict", "refresh", map[string]any{"currentVersion": 9})
 	})
 	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))

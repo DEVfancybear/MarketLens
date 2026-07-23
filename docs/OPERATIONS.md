@@ -73,8 +73,8 @@ go test ./...
 go build -o bin/api ./cmd/api
 ```
 
-Production backend builds must use Go 1.26.5 or newer; `backend/go.mod` pins this toolchain because
-Go 1.26.4 has a `crypto/tls` vulnerability.
+Production backend builds must use Go 1.26.5 or newer; the `go 1.26.5` directive in
+`backend/go.mod` makes that minimum explicit because Go 1.26.4 has a `crypto/tls` vulnerability.
 
 Backend dev server: `http://localhost:8080`
 

@@ -15,7 +15,7 @@ schema/API truth is maintained in `DATABASE.md` and `API.md`.
 
 | Purpose                | Module                                             |
 | ---------------------- | -------------------------------------------------- |
-| HTTP framework         | `github.com/gofiber/fiber/v2`                      |
+| HTTP framework         | `github.com/gofiber/fiber/v3`                      |
 | Postgres driver + pool | `github.com/jackc/pgx/v5` (`/pgxpool`)             |
 | Migrations             | `github.com/golang-migrate/migrate/v4`             |
 | Type-safe queries      | `sqlc` (dev tool; generates into `internal/db/gen`)|

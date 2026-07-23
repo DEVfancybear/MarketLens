@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/apierror"
 )
 

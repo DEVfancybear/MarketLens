@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	objectstorage "github.com/smc-trading-terminal/backend/internal/storage"
@@ -41,7 +41,7 @@ func (h *Handler) Register(router fiber.Router) {
 	s.Delete("/:id", h.deleteScreenshot)
 }
 
-func (h *Handler) list(c *fiber.Ctx) error {
+func (h *Handler) list(c fiber.Ctx) error {
 	filter := ListFilter{Symbol: c.Query("symbol"), Tag: c.Query("tag")}
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
@@ -64,7 +64,7 @@ func (h *Handler) list(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) get(c *fiber.Ctx) error {
+func (h *Handler) get(c fiber.Ctx) error {
 	item, err := h.store.Get(c.Context(), userID(c), c.Params("id"))
 	if err != nil {
 		return apiError(err)
@@ -72,7 +72,7 @@ func (h *Handler) get(c *fiber.Ctx) error {
 	return c.JSON(item)
 }
 
-func (h *Handler) create(c *fiber.Ctx) error {
+func (h *Handler) create(c fiber.Ctx) error {
 	var in CreateInput
 	if err := json.Unmarshal(c.Body(), &in); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -84,7 +84,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(item)
 }
 
-func (h *Handler) update(c *fiber.Ctx) error {
+func (h *Handler) update(c fiber.Ctx) error {
 	var in UpdateInput
 	if err := json.Unmarshal(c.Body(), &in); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -96,14 +96,14 @@ func (h *Handler) update(c *fiber.Ctx) error {
 	return c.JSON(item)
 }
 
-func (h *Handler) delete(c *fiber.Ctx) error {
+func (h *Handler) delete(c fiber.Ctx) error {
 	if err := h.store.Delete(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) uploadURL(c *fiber.Ctx) error {
+func (h *Handler) uploadURL(c fiber.Ctx) error {
 	if h.signer == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "object storage is not configured")
 	}
@@ -127,7 +127,7 @@ func (h *Handler) uploadURL(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"uploadUrl": url, "storageKey": storageKey, "expiresIn": 600})
 }
 
-func (h *Handler) createScreenshot(c *fiber.Ctx) error {
+func (h *Handler) createScreenshot(c fiber.Ctx) error {
 	var in ScreenshotInput
 	if err := json.Unmarshal(c.Body(), &in); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -139,7 +139,7 @@ func (h *Handler) createScreenshot(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(item)
 }
 
-func (h *Handler) getScreenshot(c *fiber.Ctx) error {
+func (h *Handler) getScreenshot(c fiber.Ctx) error {
 	if h.signer == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "object storage is not configured")
 	}
@@ -154,7 +154,7 @@ func (h *Handler) getScreenshot(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"url": url, "expiresAt": time.Now().UTC().Add(15 * time.Minute)})
 }
 
-func (h *Handler) deleteScreenshot(c *fiber.Ctx) error {
+func (h *Handler) deleteScreenshot(c fiber.Ctx) error {
 	if err := h.store.DeleteScreenshot(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
@@ -169,7 +169,7 @@ func newStorageKey(userID, ext string) (string, error) {
 	return fmt.Sprintf("users/%s/journal/%s%s", userID, hex.EncodeToString(buf), ext), nil
 }
 
-func userID(c *fiber.Ctx) string {
+func userID(c fiber.Ctx) string {
 	id, _ := c.Locals(auth.LocalUserID).(string)
 	return id
 }

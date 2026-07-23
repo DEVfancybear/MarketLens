@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog/log"
 
 	"github.com/smc-trading-terminal/backend/internal/mt5verify"
@@ -32,7 +32,7 @@ func (h *Handler) WithMT5VerifierUnavailable(code, message string) *Handler {
 	return h
 }
 
-func (h *Handler) verifyMT5Integration(c *fiber.Ctx) error {
+func (h *Handler) verifyMT5Integration(c fiber.Ctx) error {
 	if h.mt5Verifier == nil {
 		code := h.mt5VerifierUnavailableCode
 		if code == "" {
@@ -123,7 +123,7 @@ func (h *Handler) verifyMT5Integration(c *fiber.Ctx) error {
 	})
 }
 
-func mt5VerificationError(c *fiber.Ctx, status int, code, message string) error {
+func mt5VerificationError(c fiber.Ctx, status int, code, message string) error {
 	return c.Status(status).JSON(fiber.Map{
 		"ok": false,
 		"error": fiber.Map{

@@ -36,8 +36,9 @@ prove the absence of every vulnerability.
 ## Dependency/runtime requirements
 
 - Frontend dependencies are locked and must pass `npm audit --audit-level=low` with zero findings.
-- Backend builds must use Go 1.26.5 or newer. `backend/go.mod` pins `toolchain go1.26.5` because
-  Go 1.26.4 contains a `crypto/tls` vulnerability detected by `govulncheck`.
+- Backend builds must use Go 1.26.5 or newer. The `go 1.26.5` directive in `backend/go.mod`
+  makes that minimum explicit because Go 1.26.4 contains a `crypto/tls` vulnerability detected
+  by `govulncheck`.
 
 ## Secrets that are intentionally public today
 

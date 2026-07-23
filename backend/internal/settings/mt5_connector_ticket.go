@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 const (
@@ -136,7 +136,7 @@ func (s *mt5ConnectorTicketStore) makeRoomLocked(userID string) {
 	}
 }
 
-func (h *Handler) issueMT5ConnectorTicket(c *fiber.Ctx) error {
+func (h *Handler) issueMT5ConnectorTicket(c fiber.Ctx) error {
 	record, err := h.integrationStore.Get(c.Context(), userID(c))
 	if err != nil {
 		return fiber.ErrInternalServerError
@@ -165,7 +165,7 @@ func (h *Handler) issueMT5ConnectorTicket(c *fiber.Ctx) error {
 	})
 }
 
-func (h *Handler) validateMT5ConnectorTicket(c *fiber.Ctx) error {
+func (h *Handler) validateMT5ConnectorTicket(c fiber.Ctx) error {
 	if h.mt5ConnectorTickets == nil || len(c.Body()) > 4096 {
 		return mt5ConnectorTicketUnauthorized(c)
 	}
@@ -204,6 +204,6 @@ func (h *Handler) validateMT5ConnectorTicket(c *fiber.Ctx) error {
 	})
 }
 
-func mt5ConnectorTicketUnauthorized(c *fiber.Ctx) error {
+func mt5ConnectorTicketUnauthorized(c fiber.Ctx) error {
 	return mt5VerificationError(c, fiber.StatusUnauthorized, "MT5_CONNECTOR_TICKET_INVALID", "The MT5 Connector pairing ticket is invalid or expired")
 }

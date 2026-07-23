@@ -3,7 +3,7 @@ package workspace
 import (
 	"context"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/alerts"
 	"github.com/smc-trading-terminal/backend/internal/auth"
@@ -105,7 +105,7 @@ type bootstrapResponse struct {
 	Layouts          []layouts.Layout             `json:"layouts"`
 }
 
-func (h *Handler) bootstrap(c *fiber.Ctx) error {
+func (h *Handler) bootstrap(c fiber.Ctx) error {
 	userID, _ := c.Locals(auth.LocalUserID).(string)
 
 	doc, err := h.settings.Get(c.Context(), userID)

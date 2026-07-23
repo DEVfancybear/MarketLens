@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -372,7 +372,7 @@ func TestDrawingHandlerErrorMapping(t *testing.T) {
 
 func newDrawingTestApp(store Store, asUser string) *fiber.App {
 	app := fiber.New()
-	mw := func(c *fiber.Ctx) error {
+	mw := func(c fiber.Ctx) error {
 		c.Locals(auth.LocalUserID, asUser)
 		c.Locals(auth.LocalSessionID, "session-1")
 		return c.Next()

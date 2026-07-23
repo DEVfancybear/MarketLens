@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/contrib/websocket"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/contrib/v3/websocket"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/apierror"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -45,7 +45,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Get("/:id/report", h.report)
 	g.Post("/:id/fork", h.fork)
 	g.Get("/:id/tracks/:trackId/bars", h.bars)
-	g.Use("/:id/stream", func(c *fiber.Ctx) error {
+	g.Use("/:id/stream", func(c fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
@@ -54,7 +54,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Get("/:id/stream", websocket.New(h.stream))
 }
 
-func (h *Handler) fork(c *fiber.Ctx) error {
+func (h *Handler) fork(c fiber.Ctx) error {
 	var input ForkSessionInput
 	if err := json.Unmarshal(c.Body(), &input); err != nil {
 		return fiber.NewError(400, "invalid request body")
@@ -66,7 +66,7 @@ func (h *Handler) fork(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(snapshot)
 }
 
-func (h *Handler) report(c *fiber.Ctx) error {
+func (h *Handler) report(c fiber.Ctx) error {
 	report, err := h.service.Report(c.Context(), replayUserID(c), c.Params("id"))
 	if err != nil {
 		return replayAPIError(err)
@@ -82,7 +82,7 @@ func (h *Handler) report(c *fiber.Ctx) error {
 	}
 	return c.JSON(report)
 }
-func (h *Handler) create(c *fiber.Ctx) error {
+func (h *Handler) create(c fiber.Ctx) error {
 	var input CreateSessionInput
 	if err := json.Unmarshal(c.Body(), &input); err != nil {
 		return fiber.NewError(400, "invalid request body")
@@ -96,14 +96,14 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusAccepted).JSON(snapshot)
 }
-func (h *Handler) get(c *fiber.Ctx) error {
+func (h *Handler) get(c fiber.Ctx) error {
 	snapshot, err := h.service.Get(c.Context(), replayUserID(c), c.Params("id"))
 	if err != nil {
 		return replayAPIError(err)
 	}
 	return c.JSON(snapshot)
 }
-func (h *Handler) close(c *fiber.Ctx) error {
+func (h *Handler) close(c fiber.Ctx) error {
 	if h.engine != nil {
 		snapshot, err := h.engine.Close(c.Context(), replayUserID(c), c.Params("id"))
 		if err != nil {
@@ -118,7 +118,7 @@ func (h *Handler) close(c *fiber.Ctx) error {
 	return c.JSON(snapshot)
 }
 
-func (h *Handler) command(c *fiber.Ctx) error {
+func (h *Handler) command(c fiber.Ctx) error {
 	if h.engine == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "replay clock is unavailable")
 	}
@@ -133,7 +133,7 @@ func (h *Handler) command(c *fiber.Ctx) error {
 	return c.JSON(result)
 }
 
-func (h *Handler) events(c *fiber.Ctx) error {
+func (h *Handler) events(c fiber.Ctx) error {
 	if h.engine == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "replay clock is unavailable")
 	}
@@ -146,7 +146,7 @@ func (h *Handler) events(c *fiber.Ctx) error {
 	return c.JSON(events)
 }
 
-func (h *Handler) bars(c *fiber.Ctx) error {
+func (h *Handler) bars(c fiber.Ctx) error {
 	bars, err := h.service.Bars(c.Context(), replayUserID(c), c.Params("id"), c.Params("trackId"), c.Query("timeframe"))
 	if err != nil {
 		return replayAPIError(err)
@@ -198,7 +198,7 @@ func (h *Handler) stream(c *websocket.Conn) {
 		}
 	}
 }
-func replayUserID(c *fiber.Ctx) string { id, _ := c.Locals(auth.LocalUserID).(string); return id }
+func replayUserID(c fiber.Ctx) string { id, _ := c.Locals(auth.LocalUserID).(string); return id }
 func replayAPIError(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):

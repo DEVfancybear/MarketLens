@@ -3,7 +3,8 @@ package middleware
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -11,7 +12,7 @@ import (
 // the previous net/http middleware logged (method, path, status, latency) and
 // adding the request id from the requestid middleware.
 func Logging() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		start := time.Now()
 
 		err := c.Next()
@@ -21,7 +22,7 @@ func Logging() fiber.Handler {
 		status := requestStatus(c.Response().StatusCode(), err)
 
 		event := log.Info()
-		if id, ok := c.Locals("requestid").(string); ok && id != "" {
+		if id := requestid.FromContext(c); id != "" {
 			event = event.Str("request_id", id)
 		}
 		event.

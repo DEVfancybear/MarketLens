@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/config"
 )
@@ -31,11 +31,11 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Delete("/sessions", h.requireAuth, h.revokeAllSessions)
 }
 
-func (h *Handler) google(c *fiber.Ctx) error {
+func (h *Handler) google(c fiber.Ctx) error {
 	var req struct {
 		IDToken string `json:"idToken"`
 	}
-	if err := c.BodyParser(&req); err != nil {
+	if err := c.Bind().Body(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
 	if req.IDToken == "" {
@@ -54,7 +54,7 @@ func (h *Handler) google(c *fiber.Ctx) error {
 	})
 }
 
-func (h *Handler) refresh(c *fiber.Ctx) error {
+func (h *Handler) refresh(c fiber.Ctx) error {
 	raw := c.Cookies(RefreshCookieName)
 	if raw == "" {
 		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
@@ -72,7 +72,7 @@ func (h *Handler) refresh(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) logout(c *fiber.Ctx) error {
+func (h *Handler) logout(c fiber.Ctx) error {
 	sessionID, _ := c.Locals(LocalSessionID).(string)
 	if err := h.svc.Logout(c.Context(), sessionID); err != nil {
 		return authError(err)
@@ -81,7 +81,7 @@ func (h *Handler) logout(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) me(c *fiber.Ctx) error {
+func (h *Handler) me(c fiber.Ctx) error {
 	userID, _ := c.Locals(LocalUserID).(string)
 	user, err := h.svc.GetUser(c.Context(), userID)
 	if err != nil {
@@ -91,7 +91,7 @@ func (h *Handler) me(c *fiber.Ctx) error {
 	return c.JSON(userJSON(user))
 }
 
-func (h *Handler) revokeAllSessions(c *fiber.Ctx) error {
+func (h *Handler) revokeAllSessions(c fiber.Ctx) error {
 	userID, _ := c.Locals(LocalUserID).(string)
 	if err := h.svc.RevokeAllSessions(c.Context(), userID); err != nil {
 		return authError(err)

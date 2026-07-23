@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
 
@@ -40,7 +40,7 @@ func (f *fakeSessionService) Fork(context.Context, string, string, time.Time) (S
 
 func TestReplayRoutesRequireAuthBeforeDatasetPreparation(t *testing.T) {
 	service := &fakeSessionService{}
-	requireAuth := func(c *fiber.Ctx) error {
+	requireAuth := func(c fiber.Ctx) error {
 		userID := c.Get("X-Test-User")
 		if userID == "" {
 			return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")

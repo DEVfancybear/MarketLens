@@ -3,7 +3,7 @@ package auth
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/config"
 )
@@ -22,7 +22,7 @@ const (
 // SetAuthCookies writes the access + refresh tokens as hardened cookies:
 // HttpOnly, SameSite=Lax, and Secure according to the environment/configured
 // override. Max-Age mirrors each token's TTL.
-func SetAuthCookies(c *fiber.Ctx, cfg config.Config, access, refresh string) {
+func SetAuthCookies(c fiber.Ctx, cfg config.Config, access, refresh string) {
 	secure := cfg.AuthCookiesSecure()
 
 	c.Cookie(&fiber.Cookie{
@@ -47,7 +47,7 @@ func SetAuthCookies(c *fiber.Ctx, cfg config.Config, access, refresh string) {
 
 // ClearAuthCookies expires both auth cookies (logout). Path/flags must match the
 // originals for the browser to overwrite them.
-func ClearAuthCookies(c *fiber.Ctx, cfg config.Config) {
+func ClearAuthCookies(c fiber.Ctx, cfg config.Config) {
 	secure := cfg.AuthCookiesSecure()
 	expired := time.Now().Add(-time.Hour)
 

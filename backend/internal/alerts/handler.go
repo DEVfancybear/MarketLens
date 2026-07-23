@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -51,7 +51,7 @@ func (h *Handler) Register(router fiber.Router) {
 	p.Delete("/:token", h.deletePushToken)
 }
 
-func (h *Handler) list(c *fiber.Ctx) error {
+func (h *Handler) list(c fiber.Ctx) error {
 	items, err := h.store.List(c.Context(), userID(c), c.Query("status"))
 	if err != nil {
 		return apiError(err)
@@ -59,7 +59,7 @@ func (h *Handler) list(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) create(c *fiber.Ctx) error {
+func (h *Handler) create(c fiber.Ctx) error {
 	var req CreateInput
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -71,7 +71,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(item)
 }
 
-func (h *Handler) patch(c *fiber.Ctx) error {
+func (h *Handler) patch(c fiber.Ctx) error {
 	var req PatchInput
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -86,14 +86,14 @@ func (h *Handler) patch(c *fiber.Ctx) error {
 	return c.JSON(item)
 }
 
-func (h *Handler) delete(c *fiber.Ctx) error {
+func (h *Handler) delete(c fiber.Ctx) error {
 	if err := h.store.Delete(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) trigger(c *fiber.Ctx) error {
+func (h *Handler) trigger(c fiber.Ctx) error {
 	var req TriggerInput
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -117,7 +117,7 @@ type workerTriggerRequest struct {
 	TriggerInput
 }
 
-func (h *Handler) workerTrigger(c *fiber.Ctx) error {
+func (h *Handler) workerTrigger(c fiber.Ctx) error {
 	if h.workerSecret == "" || h.verifyDeliveryToken == nil ||
 		!hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret)) {
 		return fiber.ErrUnauthorized
@@ -151,7 +151,7 @@ func (h *Handler) workerTrigger(c *fiber.Ctx) error {
 	})
 }
 
-func (h *Handler) events(c *fiber.Ctx) error {
+func (h *Handler) events(c fiber.Ctx) error {
 	items, err := h.store.ListEvents(c.Context(), userID(c), c.Params("id"), queryLimit(c))
 	if err != nil {
 		return apiError(err)
@@ -159,7 +159,7 @@ func (h *Handler) events(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) history(c *fiber.Ctx) error {
+func (h *Handler) history(c fiber.Ctx) error {
 	items, err := h.store.ListHistory(c.Context(), userID(c), queryLimit(c))
 	if err != nil {
 		return apiError(err)
@@ -167,14 +167,14 @@ func (h *Handler) history(c *fiber.Ctx) error {
 	return c.JSON(items)
 }
 
-func (h *Handler) clearHistory(c *fiber.Ctx) error {
+func (h *Handler) clearHistory(c fiber.Ctx) error {
 	if err := h.store.ClearHistory(c.Context(), userID(c)); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) upsertPushToken(c *fiber.Ctx) error {
+func (h *Handler) upsertPushToken(c fiber.Ctx) error {
 	var req PushTokenInput
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -186,7 +186,7 @@ func (h *Handler) upsertPushToken(c *fiber.Ctx) error {
 	return c.JSON(item)
 }
 
-func (h *Handler) deletePushToken(c *fiber.Ctx) error {
+func (h *Handler) deletePushToken(c fiber.Ctx) error {
 	token, err := url.PathUnescape(c.Params("token"))
 	if err != nil {
 		token = c.Params("token")
@@ -210,7 +210,7 @@ func emptyPatch(req PatchInput) bool {
 		req.Channels.Telegram == nil && req.Channels.Discord == nil
 }
 
-func queryLimit(c *fiber.Ctx) int {
+func queryLimit(c fiber.Ctx) int {
 	limit, err := strconv.Atoi(c.Query("limit"))
 	if err != nil {
 		return MaxHistory
@@ -218,7 +218,7 @@ func queryLimit(c *fiber.Ctx) int {
 	return normalizeLimit(limit)
 }
 
-func userID(c *fiber.Ctx) string {
+func userID(c fiber.Ctx) string {
 	id, _ := c.Locals(auth.LocalUserID).(string)
 	return id
 }

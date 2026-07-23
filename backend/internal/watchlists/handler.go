@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/url"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -31,7 +31,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Delete("/:id/symbols/:symbol", h.removeSymbol)
 }
 
-func (h *Handler) list(c *fiber.Ctx) error {
+func (h *Handler) list(c fiber.Ctx) error {
 	lists, err := h.store.List(c.Context(), userID(c))
 	if err != nil {
 		return apiError(err)
@@ -39,7 +39,7 @@ func (h *Handler) list(c *fiber.Ctx) error {
 	return c.JSON(lists)
 }
 
-func (h *Handler) create(c *fiber.Ctx) error {
+func (h *Handler) create(c fiber.Ctx) error {
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -53,7 +53,7 @@ func (h *Handler) create(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(w)
 }
 
-func (h *Handler) update(c *fiber.Ctx) error {
+func (h *Handler) update(c fiber.Ctx) error {
 	var req struct {
 		Name     *string `json:"name"`
 		Position *int    `json:"position"`
@@ -74,14 +74,14 @@ func (h *Handler) update(c *fiber.Ctx) error {
 	return c.JSON(w)
 }
 
-func (h *Handler) delete(c *fiber.Ctx) error {
+func (h *Handler) delete(c fiber.Ctx) error {
 	if err := h.store.Delete(c.Context(), userID(c), c.Params("id")); err != nil {
 		return apiError(err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
-func (h *Handler) setActive(c *fiber.Ctx) error {
+func (h *Handler) setActive(c fiber.Ctx) error {
 	var req struct {
 		ID string `json:"id"`
 	}
@@ -98,7 +98,7 @@ func (h *Handler) setActive(c *fiber.Ctx) error {
 	return c.JSON(w)
 }
 
-func (h *Handler) replaceLayout(c *fiber.Ctx) error {
+func (h *Handler) replaceLayout(c fiber.Ctx) error {
 	var req WatchlistLayout
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -110,7 +110,7 @@ func (h *Handler) replaceLayout(c *fiber.Ctx) error {
 	return c.JSON(w)
 }
 
-func (h *Handler) addSymbol(c *fiber.Ctx) error {
+func (h *Handler) addSymbol(c fiber.Ctx) error {
 	var req struct {
 		Symbol string `json:"symbol"`
 	}
@@ -124,7 +124,7 @@ func (h *Handler) addSymbol(c *fiber.Ctx) error {
 	return c.JSON(w)
 }
 
-func (h *Handler) removeSymbol(c *fiber.Ctx) error {
+func (h *Handler) removeSymbol(c fiber.Ctx) error {
 	// Symbols can contain characters that must survive URL encoding.
 	symbol, err := url.PathUnescape(c.Params("symbol"))
 	if err != nil {
@@ -137,7 +137,7 @@ func (h *Handler) removeSymbol(c *fiber.Ctx) error {
 	return c.JSON(w)
 }
 
-func userID(c *fiber.Ctx) string {
+func userID(c fiber.Ctx) string {
 	id, _ := c.Locals(auth.LocalUserID).(string)
 	return id
 }

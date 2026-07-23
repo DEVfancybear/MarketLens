@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Go 1.26.5 and Fiber 3.4 backend runtime (2026-07-22)
+- Raised the backend module requirement to Go 1.26.5 and migrated Fiber from
+  v2.52.13 to v3.4.0, including the compatible v3 WebSocket contrib module.
+- Migrated handlers to the native Fiber v3 context interface, unified body
+  binding, typed request-ID access, slice-based CORS configuration, and the v3
+  test configuration API.
+- Adopted Fiber's native graceful-listen context and disabled eager multipart
+  parsing for this JSON/WebSocket-only API, while retaining the existing body
+  and request timeout limits.
+
 ### Added - TradingView-style multi-chart layouts and Replay scope (2026-07-22)
 - Activated the Layout menu with real Single, 2 Horizontal, 2 Vertical, and
   Grid 2x2 chart workspaces on desktop and mobile. Each pane retains its own

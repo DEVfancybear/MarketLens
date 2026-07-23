@@ -1,6 +1,6 @@
 package auth
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 // Locals keys populated by RequireAuth.
 const (
@@ -13,7 +13,7 @@ const (
 // c.Locals; on any failure it returns 401 (formatted by the central
 // ErrorHandler into the standard error envelope).
 func RequireAuth(tokens *TokenService) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		raw := c.Cookies(AccessCookieName)
 		if raw == "" {
 			return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")

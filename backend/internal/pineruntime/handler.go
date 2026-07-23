@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type Handler struct {
@@ -45,7 +45,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/indicator-runtime/compute", h.computeIndicator)
 }
 
-func (h *Handler) indicatorCatalog(c *fiber.Ctx) error {
+func (h *Handler) indicatorCatalog(c fiber.Ctx) error {
 	response, err := builtInIndicatorCatalog()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(IndicatorCatalogResponse{
@@ -56,7 +56,7 @@ func (h *Handler) indicatorCatalog(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
-func (h *Handler) indicatorDefinition(c *fiber.Ctx) error {
+func (h *Handler) indicatorDefinition(c fiber.Ctx) error {
 	var req IndicatorDefinitionRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -73,7 +73,7 @@ func (h *Handler) indicatorDefinition(c *fiber.Ctx) error {
 	})
 }
 
-func (h *Handler) meta(c *fiber.Ctx) error {
+func (h *Handler) meta(c fiber.Ctx) error {
 	var req MetaRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -90,7 +90,7 @@ func (h *Handler) meta(c *fiber.Ctx) error {
 	})
 }
 
-func (h *Handler) inputs(c *fiber.Ctx) error {
+func (h *Handler) inputs(c fiber.Ctx) error {
 	var req InputsRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -98,7 +98,7 @@ func (h *Handler) inputs(c *fiber.Ctx) error {
 	return c.JSON(InputsResponse{Inputs: ExtractInputs(req.SourceCode), Errors: []RuntimeError{}})
 }
 
-func (h *Handler) styles(c *fiber.Ctx) error {
+func (h *Handler) styles(c fiber.Ctx) error {
 	var req StylesRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -106,7 +106,7 @@ func (h *Handler) styles(c *fiber.Ctx) error {
 	return c.JSON(StylesResponse{Styles: ExtractStyles(req.SourceCode), Errors: []RuntimeError{}})
 }
 
-func (h *Handler) compile(c *fiber.Ctx) error {
+func (h *Handler) compile(c fiber.Ctx) error {
 	var req CompileRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -138,7 +138,7 @@ func (h *Handler) compile(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
-func (h *Handler) computeIndicator(c *fiber.Ctx) error {
+func (h *Handler) computeIndicator(c fiber.Ctx) error {
 	var req IndicatorRuntimeRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -37,7 +37,7 @@ func (h *Handler) Register(router fiber.Router) {
 	}
 }
 
-func (h *Handler) get(c *fiber.Ctx) error {
+func (h *Handler) get(c fiber.Ctx) error {
 	doc, err := h.store.Get(c.Context(), userID(c))
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
@@ -45,7 +45,7 @@ func (h *Handler) get(c *fiber.Ctx) error {
 	return c.JSON(doc)
 }
 
-func (h *Handler) replace(c *fiber.Ctx) error {
+func (h *Handler) replace(c fiber.Ctx) error {
 	doc, err := parseDocument(c.Body())
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
@@ -57,7 +57,7 @@ func (h *Handler) replace(c *fiber.Ctx) error {
 	return c.JSON(doc)
 }
 
-func (h *Handler) patch(c *fiber.Ctx) error {
+func (h *Handler) patch(c fiber.Ctx) error {
 	patch, err := parsePatch(c.Body())
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
@@ -72,7 +72,7 @@ func (h *Handler) patch(c *fiber.Ctx) error {
 	return c.JSON(doc)
 }
 
-func (h *Handler) getFavoriteTimeframes(c *fiber.Ctx) error {
+func (h *Handler) getFavoriteTimeframes(c fiber.Ctx) error {
 	doc, err := h.store.Get(c.Context(), userID(c))
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
@@ -80,7 +80,7 @@ func (h *Handler) getFavoriteTimeframes(c *fiber.Ctx) error {
 	return c.JSON(FavoriteTimeframesFromDocument(doc))
 }
 
-func (h *Handler) replaceFavoriteTimeframes(c *fiber.Ctx) error {
+func (h *Handler) replaceFavoriteTimeframes(c fiber.Ctx) error {
 	var req FavoriteTimeframesWrite
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
@@ -96,7 +96,7 @@ func (h *Handler) replaceFavoriteTimeframes(c *fiber.Ctx) error {
 	return c.JSON(FavoriteTimeframesFromDocument(doc))
 }
 
-func userID(c *fiber.Ctx) string {
+func userID(c fiber.Ctx) string {
 	id, _ := c.Locals(auth.LocalUserID).(string)
 	return id
 }

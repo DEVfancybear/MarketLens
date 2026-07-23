@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	objectstorage "github.com/smc-trading-terminal/backend/internal/storage"
 )
@@ -54,7 +54,7 @@ func (s *handlerSigner) PresignGet(key string, _ time.Duration) (string, error) 
 
 func journalTestApp(store Store, signer objectstorage.Signer) *fiber.App {
 	app := fiber.New()
-	requireAuth := func(c *fiber.Ctx) error {
+	requireAuth := func(c fiber.Ctx) error {
 		c.Locals(auth.LocalUserID, "11111111-1111-4111-8111-111111111111")
 		return c.Next()
 	}
@@ -68,7 +68,7 @@ func doRequest(t *testing.T, app *fiber.App, method, path, body string) *http.Re
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 0})
 	if err != nil {
 		t.Fatal(err)
 	}

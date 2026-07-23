@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
@@ -192,7 +192,7 @@ func newSettingsTestApp(store Store) *fiber.App {
 	return app
 }
 
-func fakeRequireAuth(c *fiber.Ctx) error {
+func fakeRequireAuth(c fiber.Ctx) error {
 	c.Locals(auth.LocalUserID, "user-1")
 	c.Locals(auth.LocalSessionID, "session-1")
 	return c.Next()

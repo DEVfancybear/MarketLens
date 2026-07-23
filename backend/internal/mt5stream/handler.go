@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/contrib/websocket"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/contrib/v3/websocket"
+	"github.com/gofiber/fiber/v3"
 )
 
 type SymbolSource interface {
@@ -46,7 +46,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Get("/market-status", h.marketStatus)
 	g.Get("/history/around", h.historyAround)
 	g.Get("/history", h.history)
-	g.Use("/stream", func(c *fiber.Ctx) error {
+	g.Use("/stream", func(c fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
@@ -55,7 +55,7 @@ func (h *Handler) Register(router fiber.Router) {
 	g.Get("/stream", websocket.New(h.stream))
 }
 
-func (h *Handler) historyAround(c *fiber.Ctx) error {
+func (h *Handler) historyAround(c fiber.Ctx) error {
 	symbol := normalizeSymbol(c.Query("symbol"))
 	timeframe := c.Query("timeframe", "15m")
 	limit := parseIntQuery(c.Query("limit"), 600)
@@ -94,7 +94,7 @@ func (h *Handler) historyAround(c *fiber.Ctx) error {
 	return c.JSON(snapshot)
 }
 
-func (h *Handler) symbols(c *fiber.Ctx) error {
+func (h *Handler) symbols(c fiber.Ctx) error {
 	if h == nil || h.source == nil {
 		return c.JSON(Snapshot{
 			Connected: false,
@@ -113,7 +113,7 @@ func (h *Handler) symbols(c *fiber.Ctx) error {
 	return c.JSON(snapshot)
 }
 
-func (h *Handler) ticks(c *fiber.Ctx) error {
+func (h *Handler) ticks(c fiber.Ctx) error {
 	if h == nil || h.source == nil {
 		return c.JSON(TickSnapshot{
 			Connected: false,
@@ -136,7 +136,7 @@ func (h *Handler) ticks(c *fiber.Ctx) error {
 	return c.JSON(snapshot)
 }
 
-func (h *Handler) marketStatus(c *fiber.Ctx) error {
+func (h *Handler) marketStatus(c fiber.Ctx) error {
 	symbols := parseSymbolsQuery(c.Query("symbols"))
 	if h == nil || h.source == nil {
 		return c.JSON(unavailableMarketStatusSnapshot(
@@ -173,7 +173,7 @@ func unavailableMarketStatusSnapshot(symbols []string, message string) MarketSta
 	}
 }
 
-func (h *Handler) history(c *fiber.Ctx) error {
+func (h *Handler) history(c fiber.Ctx) error {
 	if h == nil || h.source == nil {
 		return c.JSON(HistorySnapshot{
 			Connected: false,

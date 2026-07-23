@@ -1,6 +1,6 @@
 package httpserver
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 // errorBody is the inner payload of the standard error envelope from API.md:
 //
@@ -18,11 +18,11 @@ type errorResponse struct {
 // WriteError writes the standard error envelope with the given HTTP status.
 // code is the stable machine-readable slug (e.g. "unauthorized"); message is
 // the human-readable detail.
-func WriteError(c *fiber.Ctx, status int, code, message string) error {
+func WriteError(c fiber.Ctx, status int, code, message string) error {
 	return WriteErrorWithDetails(c, status, code, message, nil)
 }
 
-func WriteErrorWithDetails(c *fiber.Ctx, status int, code, message string, details any) error {
+func WriteErrorWithDetails(c fiber.Ctx, status int, code, message string, details any) error {
 	return c.Status(status).JSON(errorResponse{Error: errorBody{Code: code, Message: message, Details: details}})
 }
 
@@ -52,7 +52,7 @@ func codeForStatus(status int) string {
 // errorHandler is Fiber's central error handler. It normalizes any handler
 // error (including *fiber.Error) into the standard error envelope so clients
 // always see the same shape.
-func errorHandler(c *fiber.Ctx, err error) error {
+func errorHandler(c fiber.Ctx, err error) error {
 	status := fiber.StatusInternalServerError
 	message := "internal server error"
 

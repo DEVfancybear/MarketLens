@@ -4,13 +4,13 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // SecurityHeaders applies browser hardening to every API response. CSP is left
 // to the frontend because this service returns JSON and websocket traffic only.
 func SecurityHeaders() fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
 		c.Set(fiber.HeaderXFrameOptions, "DENY")
 		c.Set(fiber.HeaderReferrerPolicy, "no-referrer")
@@ -32,7 +32,7 @@ func RequireAllowedOrigin(origins []string) fiber.Handler {
 		}
 	}
 
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		isWebSocket := strings.EqualFold(strings.TrimSpace(c.Get(fiber.HeaderUpgrade)), "websocket")
 		if isSafeMethod(c.Method()) && !isWebSocket {
 			return c.Next()

@@ -41,7 +41,7 @@ Backend dev server: `http://localhost:8080`
 | Layer | Technology |
 | --- | --- |
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS, Jotai, Lightweight Charts |
-| Backend | Go 1.22, Fiber, zerolog |
+| Backend | Go 1.26.5, Fiber 3.4, zerolog |
 
 ## Deployment Notes
 
