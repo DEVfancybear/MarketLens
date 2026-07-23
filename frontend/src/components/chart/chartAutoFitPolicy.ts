@@ -6,6 +6,8 @@ export interface AutoFitDecisionInput {
   alreadyFitted: boolean;
   lastAutoFitLength: number;
   structuralDataWindowChange: boolean;
+  /** The replacement shares no candle times with the previous window. */
+  dataWindowReset: boolean;
   replayActive: boolean;
 }
 
@@ -29,11 +31,21 @@ export function decideAutoFitCandleWindow({
   alreadyFitted,
   lastAutoFitLength,
   structuralDataWindowChange,
+  dataWindowReset,
   replayActive,
 }: AutoFitDecisionInput): AutoFitDecision {
   if (nextLength <= 0) return { fitContent: false, markComplete: false };
 
   const enoughHistory = nextLength >= MIN_COMPLETE_AUTO_FIT_BARS;
+  // `setData()` preserves the current logical range. That is desirable for a
+  // history prepend, but a disjoint replacement (fixture activation, symbol
+  // swap, or a recovered session with a new timeline) leaves the viewport far
+  // outside the new series. Treat it as a fresh initial load even if the old
+  // series had already completed its one-time fit.
+  if (dataWindowReset) {
+    return { fitContent: true, markComplete: enoughHistory };
+  }
+
   const partialWindowExpandedToHistory =
     !replayActive &&
     structuralDataWindowChange &&

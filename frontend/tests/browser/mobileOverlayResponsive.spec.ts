@@ -153,6 +153,36 @@ test("drawing settings use an adaptive mobile sheet without distorted controls",
   await page.screenshot({ path: testInfo.outputPath("drawing-settings-mobile.png") });
 });
 
+test("drawing toolbar palettes stay viewport-fixed and clear of their trigger", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() =>
+    Boolean(window.__drawingInteractionTest && window.__chartInteractionTest),
+  );
+  await page.evaluate(() => window.__drawingInteractionTest?.clear());
+  await createRectangle(page);
+
+  const toolbar = page.locator("[data-drawing-toolbar]");
+  await toolbar.getByRole("button", { name: "Line color", exact: true }).click();
+  const popover = page.locator("[data-drawing-toolbar-popover]");
+  await expect(popover).toBeVisible();
+  await expect.poll(() => popover.evaluate((element) => element.parentElement === document.body))
+    .toBe(true);
+
+  const toolbarBox = await toolbar.boundingBox();
+  const popoverBox = await popover.boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(popoverBox).not.toBeNull();
+  expect(popoverBox!.x).toBeGreaterThanOrEqual(12);
+  expect(popoverBox!.x + popoverBox!.width).toBeLessThanOrEqual(308);
+  expect(popoverBox!.y).toBeGreaterThanOrEqual(12);
+  expect(popoverBox!.y + popoverBox!.height).toBeLessThanOrEqual(556);
+  expect(
+    popoverBox!.y >= toolbarBox!.y + toolbarBox!.height + 4 ||
+      popoverBox!.y + popoverBox!.height <= toolbarBox!.y - 4,
+  ).toBe(true);
+});
+
 test("drawing settings tabs keep their fields inside the mobile sheet", async ({ page }, testInfo) => {
   await createRectangle(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -220,8 +250,11 @@ test("adaptive dialog remains reachable at compact portrait and landscape sizes"
       expect(popoverBox).not.toBeNull();
       expect(popoverBox!.x).toBeGreaterThanOrEqual(12);
       expect(popoverBox!.x + popoverBox!.width).toBeLessThanOrEqual(308);
-      expect(colorBox?.width).toBe(40);
-      expect(colorBox?.height).toBe(40);
+      expect(popoverBox!.width).toBeGreaterThanOrEqual(270);
+      expect(colorBox?.width).toBe(44);
+      expect(colorBox?.height).toBe(44);
+      await expect(popover).toHaveAttribute("data-color-popover", "true");
+      await expect(popover.locator("xpath=ancestor::*[@role='dialog']")).toHaveCount(0);
       await popover.locator("[data-color-option]").first().click();
 
       await dialog.getByRole("button", { name: "Template", exact: true }).click();

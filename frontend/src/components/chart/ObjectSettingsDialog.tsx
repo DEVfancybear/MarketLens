@@ -485,10 +485,10 @@ export function ObjectSettingsDialog() {
               {(settings.tabs as readonly Tab[]).map(textTabBtn)}
             </div>
 
-            <div data-dialog-body className="min-h-[420px] flex-1 overflow-y-auto px-5 py-5">
+            <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
               {tab === "text" && (
                 <>
-                  <div className="mb-4 flex items-center gap-2">
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
                     <div className="relative">
                       <Swatch
                         color={drawing.textColor ?? drawing.color}
@@ -1645,7 +1645,7 @@ export function ObjectSettingsDialog() {
           {/* --------------------------------------------------- TEXT */}
           {tab === "text" && hasTextTab && (
             <>
-              <div className="mb-3 flex items-center gap-2">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
                 <div className="relative">
                   <Swatch
                     color={drawing.textColor ?? drawing.color}
@@ -1695,8 +1695,8 @@ export function ObjectSettingsDialog() {
                 className="w-full resize-none rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
               />
               {isShape && (
-                <div className="mt-3 flex items-center gap-3">
-                  <span className="text-xs text-ink-faint">Text alignment</span>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <span className="min-w-full text-xs text-ink-faint sm:min-w-0">Text alignment</span>
                   <Select
                     value={drawing.textVAlign ?? "middle"}
                     options={V_ALIGN}

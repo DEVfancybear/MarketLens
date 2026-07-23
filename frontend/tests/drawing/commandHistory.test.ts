@@ -112,6 +112,34 @@ test("a batch property command groups several drawing changes into one history e
   assert.deepEqual(state.drawings.get("b")?.group, group);
 });
 
+test("a batch property command can publish execute, undo, and redo atomically", () => {
+  const state = drawingState();
+  const history = new CommandManager();
+  state.add(fixture("a"));
+  state.add(fixture("b"));
+  const writes: string[][] = [];
+  const batchUpdate = (updates: readonly { id: string; patch: Partial<Drawing> }[]) => {
+    writes.push(updates.map((update) => update.id));
+    for (const update of updates) state.update(update);
+  };
+
+  history.execute(new BatchPropertyChangeCommand(state.update, [
+    { id: "a", newProps: { color: "#f23645" }, oldProps: { color: "#2962ff" } },
+    { id: "b", newProps: { color: "#f23645" }, oldProps: { color: "#2962ff" } },
+  ], "Change Drawing Colors", batchUpdate));
+  assert.deepEqual(writes, [["a", "b"]]);
+  assert.equal(state.drawings.get("a")?.color, "#f23645");
+  assert.equal(state.drawings.get("b")?.color, "#f23645");
+  assert.equal(history.undo(), true);
+  assert.deepEqual(writes, [["a", "b"], ["b", "a"]]);
+  assert.equal(state.drawings.get("a")?.color, "#2962ff");
+  assert.equal(state.drawings.get("b")?.color, "#2962ff");
+  assert.equal(history.redo(), true);
+  assert.deepEqual(writes, [["a", "b"], ["b", "a"], ["a", "b"]]);
+  assert.equal(state.drawings.get("a")?.color, "#f23645");
+  assert.equal(state.drawings.get("b")?.color, "#f23645");
+});
+
 test("a grouped move writes once per execute, undo, and redo and restores full patches", () => {
   const state = drawingState();
   const history = new CommandManager();

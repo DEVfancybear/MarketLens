@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Copy,
   Lock,
@@ -84,13 +85,18 @@ export function DrawingSettingsToolbar() {
   const [menu, setMenu] = useState<Menu>(null);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
-  const drawing = drawings.find((d) => d.id === selectedId) ?? null;
+  const selectedDrawings = drawings.filter((item) => bulk.selectedIds.has(item.id));
+  const drawing = drawings.find((item) => item.id === selectedId)
+    ?? selectedDrawings[0]
+    ?? null;
+  const multipleSelected = selectedDrawings.length > 1;
+  const selectionKey = [...bulk.selectedIds].sort().join("|");
 
   // Close any open popover when the selection changes / clears.
   useEffect(() => {
     setMenu(null);
     setTemplateDialogOpen(false);
-  }, [selectedId]);
+  }, [selectedId, selectionKey]);
 
   const moreItems = useDrawingActions(drawing, () => setMenu(null));
 
@@ -100,9 +106,40 @@ export function DrawingSettingsToolbar() {
     updateDrawing({ id: drawing.id, patch: p });
 
   const settings = getDrawingSettingsSchema(drawing.tool);
-  const showLine = settings.hasFeature("line");
-  const showFill = settings.hasFeature("fill");
-  const isTextTool = settings.profile === "text";
+  const actionScope = multipleSelected
+    ? { kind: "selected" } as const
+    : { kind: "object", drawingId: drawing.id } as const;
+  const actionTargets = multipleSelected ? selectedDrawings : [drawing];
+  const targetSettings = actionTargets.map((item) =>
+    getDrawingSettingsSchema(item.tool));
+  const showLine = !multipleSelected && settings.hasFeature("line");
+  const showFill = targetSettings.some((item) => item.hasFeature("fill"));
+  const isTextTool = targetSettings.every((item) => item.profile === "text");
+  const sharedColor = commonValue(actionTargets.map((item) =>
+    getDrawingSettingsSchema(item.tool).profile === "text"
+      ? item.textColor ?? item.color
+      : item.color));
+  const fillTargets = actionTargets.filter((item) =>
+    getDrawingSettingsSchema(item.tool).hasFeature("fill"));
+  const fillColors = fillTargets.map((item) => item.fillColor);
+  const sharedFillColor = commonValue(fillColors);
+  const mixedFillColors = fillColors.some((value) =>
+    !Object.is(value, fillColors[0]));
+  const allLocked = actionTargets.every((item) => item.locked === true);
+  const applyPrimaryColor = (color: string) => bulk.applyPatch(
+    actionScope,
+    (item) => getDrawingSettingsSchema(item.tool).profile === "text"
+      ? { color, textColor: color }
+      : { color },
+    actionTargets.length > 1 ? "Change Drawing Colors" : "Change Drawing Color",
+  );
+  const applyFillColor = (color: string | null) => bulk.applyPatch(
+    actionScope,
+    (item) => getDrawingSettingsSchema(item.tool).hasFeature("fill")
+      ? { fillColor: color ?? undefined }
+      : null,
+    fillTargets.length > 1 ? "Change Fill Colors" : "Change Fill Color",
+  );
   // Templates are scoped to the selected object's style family (TradingView
   // won't offer a text preset for a trendline).
   const family = settings.templateFamily;
@@ -133,8 +170,16 @@ export function DrawingSettingsToolbar() {
         <Sep />
 
       {/* Stroke / text colour — pencil for line & shape tools, "T" for text */}
+      {multipleSelected && (
+        <span
+          data-drawing-selection-count
+          className="mx-1 whitespace-nowrap rounded-md bg-brand/15 px-2 py-1 text-[11px] font-semibold text-brand"
+        >
+          {selectedDrawings.length} selected
+        </span>
+      )}
       <ToolbarButton
-        label={isTextTool ? "Text color" : "Line color"}
+        label={multipleSelected ? "Selected drawing color" : isTextTool ? "Text color" : "Line color"}
         active={menu === "color"}
         onClick={() => setMenu(menu === "color" ? null : "color")}
       >
@@ -142,22 +187,25 @@ export function DrawingSettingsToolbar() {
           {isTextTool ? <Type size={15} /> : <Pencil size={15} />}
           <span
             className="absolute -bottom-1 left-1/2 h-1 w-3.5 -translate-x-1/2 rounded-full"
-            style={{ background: drawing.color }}
+            style={{
+              background: sharedColor
+                ?? "linear-gradient(90deg, #2962ff 0 50%, #ab47bc 50%)",
+            }}
           />
         </span>
       </ToolbarButton>
       {menu === "color" && (
         <ColorPopover
-          value={drawing.color}
+          value={sharedColor}
           onPick={(c) => {
-            if (c) patch({ color: c });
+            if (c) applyPrimaryColor(c);
             setMenu(null);
           }}
         />
       )}
 
       {/* Font size (text / emoji) */}
-      {isTextTool && (
+      {isTextTool && !multipleSelected && (
         <>
           <ToolbarButton
             label="Font size"
@@ -202,16 +250,20 @@ export function DrawingSettingsToolbar() {
               <PaintBucket size={15} />
               <span
                 className="absolute -bottom-1 left-1/2 h-1 w-3.5 -translate-x-1/2 rounded-full"
-                style={{ background: drawing.fillColor ?? "transparent" }}
+                style={{
+                  background: mixedFillColors
+                    ? "linear-gradient(90deg, #2962ff 0 50%, #ab47bc 50%)"
+                    : sharedFillColor ?? "transparent",
+                }}
               />
             </span>
           </ToolbarButton>
           {menu === "fill" && (
             <ColorPopover
-              value={drawing.fillColor ?? "#2962ff"}
+              value={sharedFillColor}
               allowNone
               onPick={(c) => {
-                patch({ fillColor: c ?? undefined });
+                applyFillColor(c);
                 setMenu(null);
               }}
             />
@@ -321,6 +373,8 @@ export function DrawingSettingsToolbar() {
         </>
       )}
 
+      {!multipleSelected && (
+        <>
       <Sep />
       {/* Settings — opens the object's full settings dialog (every tool). */}
       <ToolbarButton
@@ -394,32 +448,34 @@ export function DrawingSettingsToolbar() {
       >
         <Copy size={15} />
       </ToolbarButton>
+        </>
+      )}
       {/* Lock */}
       <ToolbarButton
-        label={drawing.locked ? "Unlock" : "Lock"}
-        active={!!drawing.locked}
-        onClick={() => bulk.toggleLock({ kind: "object", drawingId: drawing.id })}
+        label={allLocked ? multipleSelected ? "Unlock selected" : "Unlock" : multipleSelected ? "Lock selected" : "Lock"}
+        active={allLocked}
+        onClick={() => bulk.toggleLock(actionScope)}
       >
-        {drawing.locked ? <Unlock size={15} /> : <Lock size={15} />}
+        {allLocked ? <Unlock size={15} /> : <Lock size={15} />}
       </ToolbarButton>
       {/* Delete */}
       <ToolbarButton
-        label="Delete"
+        label={multipleSelected ? "Delete selected" : "Delete"}
         danger
-        onClick={() => bulk.remove({ kind: "object", drawingId: drawing.id })}
+        onClick={() => bulk.remove(actionScope)}
       >
         <Trash2 size={15} />
       </ToolbarButton>
 
       {/* More — overflow menu (same actions as right-click) */}
-      <ToolbarButton
+      {!multipleSelected && <ToolbarButton
         label="More"
         active={menu === "more"}
         onClick={() => setMenu(menu === "more" ? null : "more")}
       >
         <MoreHorizontal size={15} />
-      </ToolbarButton>
-      {menu === "more" && (
+      </ToolbarButton>}
+      {!multipleSelected && menu === "more" && (
         <Popover>
           {moreItems.map((it, i) =>
             "divider" in it && it.divider ? (
@@ -487,7 +543,7 @@ function ToolbarButton({
 /** A popover anchored below the toolbar. */
 function Popover({ children }: { children: React.ReactNode }) {
   const mobile = useTerminalPlatform() === "mobile";
-  return (
+  const surface = (
     <ChartPopupSurface
       dragLabel="Move drawing options"
       showDragHandle={mobile}
@@ -497,6 +553,12 @@ function Popover({ children }: { children: React.ReactNode }) {
       {children}
     </ChartPopupSurface>
   );
+  // Mobile popovers use fixed viewport positioning. Portalling them prevents
+  // the translated drawing toolbar from becoming their fixed containing block,
+  // which otherwise pulls the palette back over the toolbar itself.
+  return mobile && typeof document !== "undefined"
+    ? createPortal(surface, document.body)
+    : surface;
 }
 
 function ColorPopover({
@@ -504,13 +566,13 @@ function ColorPopover({
   onPick,
   allowNone,
 }: {
-  value: string;
+  value?: string;
   onPick: (c: string | null) => void;
   allowNone?: boolean;
 }) {
   return (
     <Popover>
-      <div className="grid grid-cols-4 gap-1.5 p-1">
+      <div data-color-grid className="grid grid-cols-4 gap-1.5 p-1">
         {COLORS.map((c) => (
           <button
             data-color-option
@@ -532,7 +594,7 @@ function ColorPopover({
         <label className="flex items-center gap-1.5 text-[10px] text-ink-muted">
           <input
             type="color"
-            value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#2962ff"}
+            value={/^#[0-9a-f]{6}$/i.test(value ?? "") ? value : "#2962ff"}
             onChange={(e) => onPick(e.target.value)}
             className="h-5 w-6 cursor-pointer rounded border border-terminal-border bg-transparent p-0"
           />
@@ -549,4 +611,9 @@ function ColorPopover({
       </div>
     </Popover>
   );
+}
+
+function commonValue<T>(values: readonly T[]): T | undefined {
+  if (values.length === 0) return undefined;
+  return values.every((value) => Object.is(value, values[0])) ? values[0] : undefined;
 }

@@ -8,6 +8,16 @@ export type DrawingBulkScope =
 
 export type DrawingBulkProperty = "visible" | "locked";
 
+export type DrawingBulkPatch =
+  | Partial<Drawing>
+  | ((drawing: Drawing) => Partial<Drawing> | null);
+
+export interface DrawingBulkPatchChange {
+  id: string;
+  newProps: Partial<Drawing>;
+  oldProps: Partial<Drawing>;
+}
+
 export function resolveDrawingBulkTargets(
   drawings: readonly Drawing[],
   selectedIds: ReadonlySet<string>,
@@ -23,6 +33,34 @@ export function resolveDrawingBulkTargets(
     case "all":
       return [...drawings];
   }
+}
+
+/**
+ * Builds reversible per-object changes for a bulk style action. A patch factory
+ * can skip incompatible drawings (for example, fill colour on a line tool),
+ * while old values are retained so the whole action can be undone in one step.
+ */
+export function buildDrawingBulkPatchChanges(
+  drawings: readonly Drawing[],
+  patch: DrawingBulkPatch,
+): DrawingBulkPatchChange[] {
+  const patchFactory = typeof patch === "function" ? patch : () => patch;
+
+  return drawings.flatMap((drawing) => {
+    const newProps = patchFactory(drawing);
+    if (!newProps) return [];
+
+    const keys = Object.keys(newProps) as Array<keyof Drawing>;
+    if (
+      keys.length === 0 ||
+      keys.every((key) => Object.is(drawing[key], newProps[key]))
+    ) return [];
+
+    const oldProps = Object.fromEntries(
+      keys.map((key) => [key, drawing[key]]),
+    ) as Partial<Drawing>;
+    return [{ id: drawing.id, newProps, oldProps }];
+  });
 }
 
 /** Mixed sets converge to the active state; a second invocation toggles all off. */

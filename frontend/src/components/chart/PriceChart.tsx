@@ -203,11 +203,31 @@ function logicalRangeAfterDataReplacement(
   const previousFirstTime = previous[0]?.time;
   if (previousFirstTime == null) return range;
   const nextIndexOfPreviousFirst = next.findIndex((candle) => candle.time === previousFirstTime);
-  if (nextIndexOfPreviousFirst <= 0) return range;
+  if (nextIndexOfPreviousFirst < 0) return null;
+  if (nextIndexOfPreviousFirst === 0) return range;
   return {
     from: (Number(range.from) + nextIndexOfPreviousFirst) as Logical,
     to: (Number(range.to) + nextIndexOfPreviousFirst) as Logical,
   };
+}
+
+function candleWindowsOverlap(
+  previous: readonly Candle[],
+  next: readonly Candle[],
+): boolean {
+  const previousFirst = previous[0]?.time;
+  const previousLast = previous.at(-1)?.time;
+  const nextFirst = next[0]?.time;
+  const nextLast = next.at(-1)?.time;
+  if (
+    previousFirst == null ||
+    previousLast == null ||
+    nextFirst == null ||
+    nextLast == null
+  ) {
+    return false;
+  }
+  return previousFirst <= nextLast && nextFirst <= previousLast;
 }
 
 /**
@@ -260,6 +280,7 @@ export function PriceChart({
   const appliedTimeframeRef = useRef<Timeframe | null>(null);
   const bumpRafRef = useRef<number | null>(null);
   const candleAnimationRafRef = useRef<number | null>(null);
+  const autoFitRafRef = useRef<number | null>(null);
   const replayViewportInitRafRef = useRef<number | null>(null);
   const historyPrependViewportRafRef = useRef<number | null>(null);
   const renderedLatestCandleRef = useRef<Candle | null>(null);
@@ -380,6 +401,8 @@ export function PriceChart({
     lastLoadMoreFirstTimeRef.current = null;
     indicatorViewportRef.current = null;
     visibleLogicalRangeRef.current = null;
+    fittedRef.current = false;
+    lastAutoFitLengthRef.current = 0;
     const chart = chartRef.current;
     if (chart) resetPriceScalePan(chart);
     if (historyPrependViewportRafRef.current !== null) {
@@ -530,6 +553,10 @@ export function PriceChart({
       if (candleAnimationRafRef.current !== null) {
         cancelAnimationFrame(candleAnimationRafRef.current);
         candleAnimationRafRef.current = null;
+      }
+      if (autoFitRafRef.current !== null) {
+        cancelAnimationFrame(autoFitRafRef.current);
+        autoFitRafRef.current = null;
       }
       if (replayViewportInitRafRef.current !== null) {
         cancelAnimationFrame(replayViewportInitRafRef.current);
@@ -717,8 +744,12 @@ export function PriceChart({
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
     const replayBurst = replayPlaying && sameTheme ? replayAppendedCandles(prev, candles) : null;
     const structuralDataWindowChange = sameTheme && prev.length > 0 && candles.length > 0 && updatePlan === "replace";
+    const dataWindowReset =
+      structuralDataWindowChange && !candleWindowsOverlap(prev, candles);
     const visibleRangeBeforeReplace =
-      structuralDataWindowChange && fittedRef.current ? chartRef.current?.timeScale().getVisibleLogicalRange() : null;
+      structuralDataWindowChange && !dataWindowReset && fittedRef.current
+        ? chartRef.current?.timeScale().getVisibleLogicalRange()
+        : null;
     candleByTimeRef.current = updateCandleLookup(candleByTimeRef.current, candles, updatePlan);
 
     if (replayActive && !replayPlaying && renderedCandleCountRef.current !== candles.length) {
@@ -843,6 +874,7 @@ export function PriceChart({
       alreadyFitted: fittedRef.current,
       lastAutoFitLength: lastAutoFitLengthRef.current,
       structuralDataWindowChange,
+      dataWindowReset,
       replayActive,
     });
 
@@ -870,9 +902,47 @@ export function PriceChart({
       });
       replayViewportInitRafRef.current = frame;
     } else if (autoFit.fitContent) {
-      viewportControllerRef.current?.fitContent("initial-fit");
       lastAutoFitLengthRef.current = candles.length;
       fittedRef.current = autoFit.markComplete;
+      const viewport = viewportControllerRef.current;
+      if (dataWindowReset && viewport) {
+        // The indicator effects run after this candle effect. A disjoint candle
+        // replacement can therefore coexist for one commit with indicator
+        // series from the old timeline; fitting synchronously would include
+        // those stale points and keep the new candles offscreen after cleanup.
+        // Defer one frame so all series have reconciled, while retaining the
+        // usual revision/data guards against overriding newer user input.
+        if (autoFitRafRef.current !== null) {
+          cancelAnimationFrame(autoFitRafRef.current);
+        }
+        const scheduledSnapshot = viewport.snapshot();
+        const expectedFirstTime = candles[0]?.time;
+        const expectedLastTime = candles.at(-1)?.time;
+        const frame = requestAnimationFrame(() => {
+          if (autoFitRafRef.current !== frame) return;
+          autoFitRafRef.current = null;
+          const currentCandles = candlesRef.current;
+          const currentViewport = viewport.snapshot();
+          const supersededByProgrammaticWrite =
+            currentViewport.programmaticWrites !== scheduledSnapshot.programmaticWrites;
+          const supersededByUserInput =
+            currentViewport.revision !== scheduledSnapshot.revision &&
+            currentViewport.cause === "user";
+          if (
+            viewportControllerRef.current !== viewport ||
+            supersededByProgrammaticWrite ||
+            supersededByUserInput ||
+            currentCandles[0]?.time !== expectedFirstTime ||
+            currentCandles.at(-1)?.time !== expectedLastTime
+          ) {
+            return;
+          }
+          viewport.fitContent("initial-fit");
+        });
+        autoFitRafRef.current = frame;
+      } else {
+        viewport?.fitContent("initial-fit");
+      }
     } else if (
       replayActive &&
       shouldRealignReplayViewport(chartRef.current?.timeScale().getVisibleLogicalRange(), candles.length)

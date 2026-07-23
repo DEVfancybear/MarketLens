@@ -1,4 +1,7 @@
 import { Check, ChevronDown } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useFloatingSurface } from "../../../../hooks/useFloatingSurface";
 import type { LineStyle } from "../../../../types/drawing";
 import { cn } from "../../../../utils/cn";
 
@@ -19,17 +22,64 @@ export function CheckBox({ checked, onChange }: { checked: boolean; onChange: (v
 }
 
 export function Swatch({ color, opacity, onClick }: { color: string | undefined; opacity?: number; onClick: () => void }) {
-  return <button aria-label="Choose color" onClick={(event) => { event.stopPropagation(); onClick(); }} className="relative h-[34px] w-[34px] shrink-0 overflow-hidden rounded-md border border-terminal-border-strong" style={{ backgroundImage: "linear-gradient(45deg,#555 25%,transparent 25%,transparent 75%,#555 75%,#555),linear-gradient(45deg,#555 25%,transparent 25%,transparent 75%,#555 75%,#555)", backgroundSize: "8px 8px", backgroundPosition: "0 0,4px 4px" }}>
+  return <button type="button" aria-label="Choose color" onClick={(event) => { event.stopPropagation(); event.currentTarget.focus(); onClick(); }} className="relative h-[34px] w-[34px] shrink-0 overflow-hidden rounded-md border border-terminal-border-strong" style={{ backgroundImage: "linear-gradient(45deg,#555 25%,transparent 25%,transparent 75%,#555 75%,#555),linear-gradient(45deg,#555 25%,transparent 25%,transparent 75%,#555 75%,#555)", backgroundSize: "8px 8px", backgroundPosition: "0 0,4px 4px" }}>
     <span className="absolute inset-0" style={{ background: color && color !== "none" ? color : "transparent", opacity: opacity ?? 1 }} />
   </button>;
 }
 
 export function ColorPopover({ value, opacity, onPick, onOpacity, allowNone, onClose }: { value: string | undefined; opacity?: number; onPick: (c: string | null) => void; onOpacity?: (o: number) => void; allowNone?: boolean; onClose: () => void }) {
-  return <div className="mobile-popover absolute right-0 top-full z-30 mt-1 w-[184px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating" onClick={(event) => event.stopPropagation()}>
-    <div className="grid grid-cols-6 gap-1.5">{COLORS.map((color) => <button data-color-option aria-label={`Use ${color}`} key={color} onClick={() => { onPick(color); onClose(); }} className="relative h-5 w-5 rounded border border-terminal-border-strong" style={{ background: color }}>{value?.toLowerCase() === color.toLowerCase() && <Check size={11} className="absolute inset-0 m-auto text-black/70" />}</button>)}</div>
+  const anchorElement = useRef<HTMLElement | null>(
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  const [anchor, setAnchor] = useState(() => {
+    const bounds = anchorElement.current?.getBoundingClientRect();
+    return { x: bounds?.left ?? 8, y: (bounds?.bottom ?? 8) + 6 };
+  });
+  const { surfaceRef, layout } = useFloatingSurface(anchor, 8);
+
+  useLayoutEffect(() => {
+    const updateAnchor = () => {
+      const bounds = anchorElement.current?.getBoundingClientRect();
+      if (!bounds) return;
+      const next = { x: bounds.left, y: bounds.bottom + 6 };
+      setAnchor((current) =>
+        current.x === next.x && current.y === next.y ? current : next);
+    };
+    updateAnchor();
+    window.addEventListener("scroll", updateAnchor, true);
+    window.addEventListener("pointermove", updateAnchor, { passive: true });
+    window.addEventListener("resize", updateAnchor);
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener("scroll", updateAnchor);
+    return () => {
+      window.removeEventListener("scroll", updateAnchor, true);
+      window.removeEventListener("pointermove", updateAnchor);
+      window.removeEventListener("resize", updateAnchor);
+      visualViewport?.removeEventListener("scroll", updateAnchor);
+    };
+  }, []);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(<div
+    ref={surfaceRef}
+    data-color-popover
+    role="group"
+    aria-label="Color palette"
+    className="mobile-popover fixed z-[1500] w-[184px] overflow-y-auto rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
+    style={{
+      left: layout.x,
+      top: layout.y,
+      maxWidth: layout.maxWidth || undefined,
+      maxHeight: layout.maxHeight || undefined,
+    }}
+    onClick={(event) => event.stopPropagation()}
+  >
+    <div data-color-grid className="grid grid-cols-6 gap-1.5">{COLORS.map((color) => <button data-color-option aria-label={`Use ${color}`} key={color} onClick={() => { onPick(color); onClose(); }} className="relative h-5 w-5 rounded border border-terminal-border-strong" style={{ background: color }}>{value?.toLowerCase() === color.toLowerCase() && <Check size={11} className="absolute inset-0 m-auto text-black/70" />}</button>)}</div>
     {onOpacity && <div className="mt-2 flex items-center gap-2"><span className="text-2xs text-ink-faint">Opacity</span><input aria-label="Opacity" type="range" min={0} max={100} value={Math.round((opacity ?? 1) * 100)} onChange={(event) => onOpacity(Number(event.target.value) / 100)} className="flex-1 accent-brand" /><span className="w-8 text-right text-2xs text-ink-muted">{Math.round((opacity ?? 1) * 100)}%</span></div>}
     <div className="mt-2 flex items-center gap-2 border-t border-terminal-border-strong pt-2"><label className="flex items-center gap-1.5 text-2xs text-ink-faint"><input aria-label="Custom color" type="color" value={/^#[0-9a-f]{6}$/i.test(value ?? "") ? value : "#2962ff"} onChange={(event) => onPick(event.target.value)} className="h-5 w-6 cursor-pointer rounded border border-terminal-border-strong bg-transparent p-0" />Custom</label>{allowNone && <button onClick={() => { onPick(null); onClose(); }} className="ml-auto rounded px-1.5 py-0.5 text-2xs text-ink-faint hover:bg-terminal-hover hover:text-ink">No color</button>}</div>
-  </div>;
+  </div>, document.body);
 }
 
 export function LineWidget({ color, width, style, open, onToggle, onWidth, onStyle, onClose }: { color: string; width: number; style: LineStyle; open: boolean; onToggle: () => void; onWidth: (w: number) => void; onStyle: (s: LineStyle) => void; onClose: () => void }) {

@@ -360,10 +360,12 @@ test("selected and all drawing bulk actions are single undoable transactions", a
     { x: pane.x + pane.width * 0.73, y: pane.y + pane.height * 0.37 },
   ];
   await page.getByRole("button", { name: "Keep drawing", exact: true }).click();
-  await page.getByRole("button", { name: "Trend line", exact: true }).click();
-  await page.getByRole("button", { name: /^Trendline\b/ }).click();
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
   for (const point of points) await page.mouse.click(point.x, point.y);
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.tool))
+    .toEqual(["rectangle", "rectangle"]);
 
   await page.getByRole("button", { name: "Object tree", exact: true }).click();
   const tree = page.locator("[data-object-tree]");
@@ -374,6 +376,38 @@ test("selected and all drawing bulk actions are single undoable transactions", a
     await expect(tree.getByRole("button", { name: "Lock selected", exact: true })).toBeEnabled();
   };
   await selectBoth();
+  const floatingToolbar = page.locator("[data-drawing-toolbar][data-chart-popup]");
+  await expect(floatingToolbar.locator("[data-drawing-selection-count]")).toHaveText("2 selected");
+  await floatingToolbar.getByRole("button", { name: "Selected drawing color", exact: true }).click();
+  const colorPopover = floatingToolbar.locator("[data-drawing-toolbar-popover]");
+  await expect(colorPopover).toBeVisible();
+  await colorPopover.locator("[data-color-option]").nth(2).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.color))
+    .toEqual(["#ef5350", "#ef5350"]);
+  await expect.poll(async () => (await drawingSnapshot(page)).history.lastUndoLabel)
+    .toBe("Change Drawing Colors");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.color))
+    .toEqual(["#2962ff", "#2962ff"]);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.color))
+    .toEqual(["#ef5350", "#ef5350"]);
+
+  await floatingToolbar.getByRole("button", { name: "Background color", exact: true }).click();
+  const fillPopover = floatingToolbar.locator("[data-drawing-toolbar-popover]");
+  await expect(fillPopover).toBeVisible();
+  await fillPopover.locator("[data-color-option]").nth(3).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.fillColor))
+    .toEqual(["#ff9800", "#ff9800"]);
+  await expect.poll(async () => (await drawingSnapshot(page)).history.lastUndoLabel)
+    .toBe("Change Fill Colors");
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.fillColor))
+    .toEqual([undefined, undefined]);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.fillColor))
+    .toEqual(["#ff9800", "#ff9800"]);
+
   await tree.getByRole("button", { name: "Lock selected", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.every((drawing) => drawing.locked)).toBe(true);
   await page.keyboard.press("Control+z");
@@ -413,7 +447,6 @@ test("shared coordinate editor updates anchors in one undoable transaction", asy
   await page.mouse.click(start.x, start.y);
   await page.mouse.click(end.x, end.y);
   const created = await drawingSnapshot(page);
-  const original = created.drawings[0].points;
   const projected = await page.evaluate(
     (id) => window.__drawingInteractionTest!.projectDrawing(id),
     created.drawings[0].id,
@@ -427,6 +460,10 @@ test("shared coordinate editor updates anchors in one undoable transaction", asy
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Trendline settings" });
   await dialog.getByRole("tab", { name: "coordinates", exact: true }).click();
+  // Capture the state the settings transaction actually opened with. Drawing
+  // persistence may canonicalize click-projected floats between creation and
+  // opening the editor by a few ULPs.
+  const original = (await drawingSnapshot(page)).drawings[0].points;
   const nextPrice = original[0].price + 1.25;
   const nextTime = original[0].time + 60;
   await dialog.getByRole("spinbutton", { name: "Point 1 price", exact: true }).fill(String(nextPrice));

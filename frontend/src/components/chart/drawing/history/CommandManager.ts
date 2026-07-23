@@ -256,13 +256,28 @@ export class BatchPropertyChangeCommand implements Command {
     private updateFn: (arg: { id: string; patch: Partial<Drawing> }) => void,
     private changes: readonly DrawingPropertyChange[],
     readonly label = "Change Objects",
+    private batchUpdateFn?: BatchDrawingUpdate,
   ) {}
   execute() {
+    if (this.batchUpdateFn) {
+      this.batchUpdateFn(this.changes.map((change) => ({
+        id: change.id,
+        patch: change.newProps,
+      })));
+      return;
+    }
     for (const change of this.changes) {
       this.updateFn({ id: change.id, patch: change.newProps });
     }
   }
   undo() {
+    if (this.batchUpdateFn) {
+      this.batchUpdateFn([...this.changes].reverse().map((change) => ({
+        id: change.id,
+        patch: change.oldProps,
+      })));
+      return;
+    }
     for (const change of [...this.changes].reverse()) {
       this.updateFn({ id: change.id, patch: change.oldProps });
     }

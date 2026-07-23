@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Drawing } from "../../src/types/drawing";
 import {
+  buildDrawingBulkPatchChanges,
   drawingBulkActionLabel,
   nextDrawingBulkPropertyValue,
   resolveDrawingBulkTargets,
@@ -35,4 +36,49 @@ test("bulk lock and visibility toggles converge mixed state then invert a unifor
   assert.equal(nextDrawingBulkPropertyValue([drawing("a", undefined, { visible: false }), drawing("b", undefined, { visible: false })], "visible"), true);
   assert.equal(drawingBulkActionLabel("visible", false), "Hide Drawings");
   assert.equal(drawingBulkActionLabel("locked", false), "Unlock Drawings");
+});
+
+test("bulk style patches keep per-object undo values and skip incompatible or unchanged drawings", () => {
+  const source = [
+    drawing("line", undefined, { color: "#2962ff" }),
+    drawing("text", undefined, { tool: "text", color: "#2962ff", textColor: undefined }),
+    drawing("same", undefined, { color: "#f23645" }),
+  ];
+
+  const changes = buildDrawingBulkPatchChanges(source, (item) => {
+    if (item.id === "same") return { color: "#f23645" };
+    if (item.tool === "text") return { color: "#f23645", textColor: "#f23645" };
+    return { color: "#f23645" };
+  });
+
+  assert.deepEqual(changes, [
+    {
+      id: "line",
+      newProps: { color: "#f23645" },
+      oldProps: { color: "#2962ff" },
+    },
+    {
+      id: "text",
+      newProps: { color: "#f23645", textColor: "#f23645" },
+      oldProps: { color: "#2962ff", textColor: undefined },
+    },
+  ]);
+});
+
+test("bulk fill patches clear only compatible drawings that currently have a fill", () => {
+  const source = [
+    drawing("line"),
+    drawing("filled", undefined, { tool: "rectangle", fillColor: "#ff9800" }),
+    drawing("empty", undefined, { tool: "rectangle", fillColor: undefined }),
+  ];
+
+  const changes = buildDrawingBulkPatchChanges(source, (item) =>
+    item.tool === "rectangle" ? { fillColor: undefined } : null,
+  );
+
+  assert.deepEqual(changes, [{
+    id: "filled",
+    newProps: { fillColor: undefined },
+    oldProps: { fillColor: "#ff9800" },
+  }]);
 });

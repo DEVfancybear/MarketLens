@@ -851,6 +851,14 @@ export function DrawingLayer() {
           const candles =
             ctxRef.current?.candles ?? getDefaultStore().get(candlesAtom);
           const rect = canvasRef.current?.getBoundingClientRect();
+          const mainPaneRect =
+            ctxRef.current?.chart.panes()[0]?.getHTMLElement()?.getBoundingClientRect();
+          const projectedCenter = mainPaneRect
+            ? fromEvent(new PointerEvent("pointermove", {
+                clientX: mainPaneRect.left + mainPaneRect.width / 2,
+                clientY: mainPaneRect.top + mainPaneRect.height / 2,
+              }))
+            : null;
           const candleSignature = candles.length >= 2
             ? `${candles.length}:${candles[0].time}:${candles[candles.length - 1].time}`
             : "";
@@ -860,6 +868,7 @@ export function DrawingLayer() {
             !!rect &&
             rect.width > 0 &&
             rect.height > 0 &&
+            !!projectedCenter &&
             candleSignature.length > 0;
           const frameSignature = ready
             ? [
@@ -875,6 +884,20 @@ export function DrawingLayer() {
             ? stableFrames + 1
             : 0;
           previousFrameSignature = frameSignature;
+        }
+        if (stableFrames < 8) {
+          const chartSnapshot = window.__chartInteractionTest?.snapshot();
+          const currentCandles =
+            ctxRef.current?.candles ?? getDefaultStore().get(candlesAtom);
+          throw new Error(
+            [
+              "Drawing interaction fixture did not reach a paintable viewport",
+              `candles=${currentCandles.length}`,
+              `canvas=${JSON.stringify(canvasRef.current?.getBoundingClientRect().toJSON() ?? null)}`,
+              `visibleRange=${JSON.stringify(chartSnapshot?.visibleTimeRange ?? null)}`,
+              `logicalRange=${JSON.stringify(chartSnapshot?.viewport.logicalRange ?? null)}`,
+            ].join("; "),
+          );
         }
       },
       changeSymbol: (nextSymbol) => setSymbol(nextSymbol),

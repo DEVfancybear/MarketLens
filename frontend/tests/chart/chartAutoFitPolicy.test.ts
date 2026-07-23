@@ -12,6 +12,7 @@ test("fits a first partial realtime candle without marking initial fit complete"
     alreadyFitted: false,
     lastAutoFitLength: 0,
     structuralDataWindowChange: true,
+    dataWindowReset: false,
     replayActive: false,
   });
 
@@ -25,6 +26,7 @@ test("does not refit every tick while partial candle count is unchanged", () => 
     alreadyFitted: false,
     lastAutoFitLength: 1,
     structuralDataWindowChange: false,
+    dataWindowReset: false,
     replayActive: false,
   });
 
@@ -38,6 +40,7 @@ test("refits when REST history expands a partial realtime window", () => {
     alreadyFitted: false,
     lastAutoFitLength: 1,
     structuralDataWindowChange: true,
+    dataWindowReset: false,
     replayActive: false,
   });
 
@@ -51,6 +54,21 @@ test("marks initial fit complete when the first dataset is history-sized", () =>
     alreadyFitted: false,
     lastAutoFitLength: 0,
     structuralDataWindowChange: true,
+    dataWindowReset: false,
+    replayActive: false,
+  });
+
+  assert.deepEqual(decision, { fitContent: true, markComplete: true });
+});
+
+test("refits an already-fitted chart when the replacement timeline is disjoint", () => {
+  const decision = decideAutoFitCandleWindow({
+    previousLength: 1500,
+    nextLength: 500,
+    alreadyFitted: true,
+    lastAutoFitLength: 1500,
+    structuralDataWindowChange: true,
+    dataWindowReset: true,
     replayActive: false,
   });
 

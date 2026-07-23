@@ -1146,11 +1146,21 @@ body {
   }
 
   .mobile-popover [data-color-option] {
-    width: 40px !important;
-    min-width: 40px !important;
-    height: 40px !important;
-    min-height: 40px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
     border-radius: 8px;
+  }
+
+  .mobile-popover [data-color-grid] {
+    grid-template-columns: repeat(5, minmax(0, 44px));
+    justify-content: start;
+  }
+
+  .mobile-popover[data-color-popover] {
+    width: 270px !important;
+    max-width: calc(100vw - 24px) !important;
   }
 
   .platform-dialog [data-coordinate-editor] input {

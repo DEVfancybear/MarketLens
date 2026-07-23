@@ -4,6 +4,33 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Multi-drawing colors and responsive settings palette (2026-07-23)
+- Kept the floating drawing toolbar available for Ctrl/Cmd multi-selections and
+  added capability-aware line/text and fill color actions across every selected
+  object. Mixed colors are explicit, incompatible fill targets are skipped, and
+  each bulk change is one atomic undo/redo transaction.
+- Portalled drawing-settings color palettes outside the dialog overflow boundary
+  and clamped them to the Visual Viewport, fixing the left-edge clipping shown
+  by compact dialogs.
+- Portalled mobile drawing-toolbar palettes to the document viewport so a
+  translated toolbar cannot become their fixed-position containing block and
+  pull the palette back over its own trigger.
+- Wrapped dense text controls and alignment fields, removed the standalone Text
+  dialog's fixed body height, and standardized mobile palette targets at 44px
+  with a five-column compact layout.
+- Added bulk patch/history unit regressions plus browser assertions for
+  multi-selection stroke/fill history, compact palette bounds, and non-overlap
+  between mobile palettes and their triggers.
+
+### Fixed - Disjoint chart data-window replacement (2026-07-23)
+- Refit the chart after a structural candle replacement when the previous and
+  next time windows do not overlap, deferring the fit until stale indicator
+  series are removed. Drawing gestures now receive valid time/price projections
+  immediately after fixture, symbol, or timeframe data swaps.
+- Strengthened the development drawing harness so browser tests wait for a
+  stable, paintable viewport and report the visible/logical range when that
+  contract is not reached.
+
 ### Changed - Go 1.26.5 and Fiber 3.4 backend runtime (2026-07-22)
 - Raised the backend module requirement to Go 1.26.5 and migrated Fiber from
   v2.52.13 to v3.4.0, including the compatible v3 WebSocket contrib module.
