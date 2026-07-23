@@ -4,6 +4,7 @@ import type {
   LogicalRange,
   Time,
 } from "lightweight-charts";
+import { resetPriceScalePan } from "./chartPriceScalePan";
 
 export type ChartViewportCause =
   | "user"
@@ -141,7 +142,7 @@ export class ChartViewportController {
       timeScale.applyOptions(defaults);
       timeScale.resetTimeScale();
       timeScale.scrollToRealTime();
-      this.chart.priceScale("right", 0).applyOptions({ autoScale: true });
+      resetPriceScalePan(this.chart);
     });
   }
 

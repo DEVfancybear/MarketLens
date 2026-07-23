@@ -29,7 +29,8 @@ function fakeChart(initial: LogicalRange = { from: 10, to: 40 } as LogicalRange)
   };
   const chart = {
     timeScale: () => timeScale,
-    priceScale: () => ({ applyOptions: () => {} }),
+    panes: () => [{ getHTMLElement: () => null }],
+    priceScale: () => ({ setAutoScale: () => {} }),
   } as unknown as IChartApi;
   return {
     chart,

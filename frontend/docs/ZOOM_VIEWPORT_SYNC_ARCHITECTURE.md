@@ -150,6 +150,17 @@ Desktop pan behavior:
 
 - `handleScroll.pressedMouseMove` must stay enabled so users can drag the chart
   horizontally with the mouse.
+- Lightweight Charts does not vertically pan a pane while its price scale is
+  in auto-scale mode. `chartPriceScalePan.ts` therefore handles primary
+  `pointerdown` in the capture phase and calls `setAutoScale(false)` for the
+  pane under the pointer before the library processes the drag. Keep this
+  pane-local so dragging an indicator does not change the candle pane.
+- Symbol/timeframe changes and the chart Reset action must call
+  `resetPriceScalePan()` to restore auto-scale on every pane. This preserves
+  initial fitting for new data while retaining manual vertical position after
+  an ordinary user drag.
+- Secondary mouse buttons and non-primary pointers must not change price-scale
+  mode. Overlay interactions outside the native pane must also remain ignored.
 - `kineticScroll.mouse` must stay disabled. TradingView-style desktop pan stops
   when the mouse is released; mouse inertia makes the chart coast too far and
   feels like the chart is "trôi tuột".

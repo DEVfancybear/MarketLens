@@ -100,6 +100,7 @@ import { installChartInteractionTestHarness } from "./chartInteractionTestHarnes
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
 import { crosshairTimeToTimestamp } from "./crosshairSynchronization";
 import { removeChartAfterCurrentStack } from "./chartLifecycle";
+import { beginPriceScalePan, resetPriceScalePan } from "./chartPriceScalePan";
 import { resolveIndicatorSeriesWritePlan, type IndicatorWritePoint } from "@/services/indicatorSeriesWritePlan";
 import { indicatorPointsInViewport, resolveCandleViewport, type CandleViewport } from "@/services/candleViewport";
 import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
@@ -379,6 +380,8 @@ export function PriceChart({
     lastLoadMoreFirstTimeRef.current = null;
     indicatorViewportRef.current = null;
     visibleLogicalRangeRef.current = null;
+    const chart = chartRef.current;
+    if (chart) resetPriceScalePan(chart);
     if (historyPrependViewportRafRef.current !== null) {
       cancelAnimationFrame(historyPrependViewportRafRef.current);
       historyPrependViewportRafRef.current = null;
@@ -459,6 +462,10 @@ export function PriceChart({
       if (source === "input") viewportController.beginUserInteraction();
       scheduleVersionBump();
     });
+    const handlePriceScalePanStart = (event: PointerEvent) => {
+      if (interactive) beginPriceScalePan(chart, event);
+    };
+    chartContainer.addEventListener("pointerdown", handlePriceScalePanStart, true);
     const uninstallBenchmarkHarness = interactive
       ? installChartBenchmarkHarness(chart, () => candlesRef.current.length)
       : () => undefined;
@@ -514,6 +521,7 @@ export function PriceChart({
       uninstallInteractionHarness();
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
+      chartContainer.removeEventListener("pointerdown", handlePriceScalePanStart, true);
       if (interactive) chart.unsubscribeCrosshairMove(handleCrosshairMove);
       if (bumpRafRef.current !== null) {
         cancelAnimationFrame(bumpRafRef.current);

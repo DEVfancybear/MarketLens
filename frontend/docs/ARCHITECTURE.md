@@ -206,6 +206,10 @@ chart context. Store time/price/domain coordinates, never persisted pixels.
 Viewport invalidation is shared through the chart context/version and helper utilities documented in
 `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
 
+Native pane drags switch only the pane under the primary pointer from automatic to manual price
+scaling, enabling TradingView-style vertical pan. Symbol/timeframe changes and Reset restore
+automatic scaling across panes.
+
 ## Runtime Loops
 
 Mounted from `GlobalRuntime`:
