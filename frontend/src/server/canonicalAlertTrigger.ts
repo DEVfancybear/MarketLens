@@ -24,6 +24,7 @@ function responseFailureIsRetryable(status: number): boolean {
   return (
     status === 401 ||
     status === 403 ||
+    status === 404 ||
     status === 408 ||
     status === 425 ||
     status === 429 ||

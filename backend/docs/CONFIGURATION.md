@@ -54,13 +54,16 @@ but server credentials must never use a `NEXT_PUBLIC_` prefix.
 | Variable | Default | Purpose |
 |---|---|---|
 | `ALERT_EVALUATOR_ENABLED` | `true` | Run the scheduler inside the persistent Go API process |
-| `ALERT_EVALUATOR_URL` | `http://localhost:3000/api/push/evaluate` | Next evaluator endpoint; set to the production frontend URL when deployed |
+| `ALERT_EVALUATOR_URL` | Development: `http://localhost:3000/api/push/evaluate`; production: first non-local HTTPS CORS origin + `/api/push/evaluate` | Next evaluator endpoint; an explicit production URL remains recommended |
 | `ALERT_EVALUATOR_INTERVAL` | `15s` | Delay between sequential evaluation calls |
 | `ALERT_EVALUATOR_TIMEOUT` | `30s` | HTTP timeout for one evaluation |
 | `PUSH_WORKER_SECRET` | empty in dev | Shared evaluator/service authentication; use 32+ random bytes whenever the evaluator is enabled; required in production |
 
 The scheduler runs one immediate tick, never overlaps its own calls, and stops
-with the API context. External cron providers are fallback-only.
+with the API context. A production process no longer silently calls localhost
+when the frontend is remote: if no explicit URL is set, it derives the endpoint
+from the first non-local HTTPS `CORS_ALLOWED_ORIGINS` entry and fails startup
+when neither source is usable. External cron providers are fallback-only.
 
 ## MT5 Tick Stream
 

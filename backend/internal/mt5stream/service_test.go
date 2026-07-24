@@ -35,6 +35,25 @@ func TestTicksSinceReturnsOrderedRetainedTicks(t *testing.T) {
 	}
 }
 
+func TestTicksSinceRetainsMoreThanOneShortSchedulerGap(t *testing.T) {
+	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
+	const count = 1024
+	for i := 0; i < count; i++ {
+		service.applyTick(Tick{
+			Symbol:     "BTCUSD",
+			Bid:        64_000 + float64(i)/100,
+			Ask:        64_001 + float64(i)/100,
+			TimeMSC:    int64(1_700_000_000_000 + i),
+			ReceivedAt: int64(1_700_000_000_000 + i),
+		})
+	}
+
+	snapshot := service.TicksSince([]string{"BTCUSD"}, 0)
+	if len(snapshot.Ticks) != count {
+		t.Fatalf("retained ticks = %d, want %d", len(snapshot.Ticks), count)
+	}
+}
+
 func TestTicksResolveLegacySymbolAliasesAgainstCatalog(t *testing.T) {
 	service := NewService(Config{Enabled: true, BridgeURL: "ws://localhost:8765"})
 	service.symbols = []Symbol{{Name: "BTCUSD"}}

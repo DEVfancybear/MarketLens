@@ -721,6 +721,98 @@ func TestWorkerTriggerAcceptsDynamicTrendlineCrossEvidence(t *testing.T) {
 	}
 }
 
+func TestWorkerSnapshotReturnsCanonicalEnabledActiveAlerts(t *testing.T) {
+	store := newFakeStore()
+	active, err := store.Create(context.Background(), "user-1", CreateInput{
+		ClientID:  "worker-snapshot-trendline",
+		Symbol:    "BTCUSD",
+		Condition: "crossUp",
+		Price:     64_900,
+		Channels: &Channels{
+			Telegram: true,
+			Discord:  true,
+		},
+		TechnicalTarget: &TechnicalAlertTarget{
+			Version:       1,
+			Kind:          "dynamic-line",
+			A:             &TechnicalAlertPoint{Time: 1_750_000_000, Price: 64_800},
+			B:             &TechnicalAlertPoint{Time: 1_750_000_060, Price: 64_900},
+			Domain:        "ray",
+			Interpolation: "linear",
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed active alert: %v", err)
+	}
+	disabled, err := store.Create(context.Background(), "user-1", CreateInput{
+		ClientID:  "worker-snapshot-disabled",
+		Symbol:    "EURUSD",
+		Condition: "above",
+		Price:     1.2,
+	})
+	if err != nil {
+		t.Fatalf("seed disabled alert: %v", err)
+	}
+	for i := range store.alerts["user-1"] {
+		if store.alerts["user-1"][i].ClientID == disabled.ClientID {
+			store.alerts["user-1"][i].Enabled = false
+		}
+	}
+	if disabled.ClientID == active.ClientID {
+		t.Fatal("test alerts unexpectedly share an id")
+	}
+
+	app := fiber.New()
+	NewHandler(store, fakeRequireAuth).
+		WithWorkerTrigger("worker-secret", func(token string) (string, error) {
+			if token != "token-user-1" {
+				return "", errors.New("invalid delivery token")
+			}
+			return "user-1", nil
+		}).
+		Register(app.Group("/api/v1"))
+
+	resp := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/alerts/worker-snapshot",
+		"worker-secret",
+		`{"deliveryToken":"token-user-1"}`,
+	)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("worker snapshot status = %d, want 200", resp.StatusCode)
+	}
+	var body struct {
+		OK     bool    `json:"ok"`
+		Alerts []Alert `json:"alerts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode worker snapshot: %v", err)
+	}
+	if !body.OK || len(body.Alerts) != 1 {
+		t.Fatalf("worker snapshot = %+v, want one enabled active alert", body)
+	}
+	got := body.Alerts[0]
+	if got.ClientID != active.ClientID ||
+		got.TechnicalTarget == nil ||
+		got.TechnicalTarget.Kind != "dynamic-line" ||
+		!got.Channels.Telegram ||
+		!got.Channels.Discord {
+		t.Fatalf("worker snapshot lost canonical alert fields: %+v", got)
+	}
+
+	unauthorized := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/alerts/worker-snapshot",
+		"wrong-secret",
+		`{"deliveryToken":"token-user-1"}`,
+	)
+	if unauthorized.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("worker snapshot wrong secret status = %d, want 401", unauthorized.StatusCode)
+	}
+}
+
 func TestWorkerTriggerFailsClosedWithoutServerSecret(t *testing.T) {
 	app := fiber.New()
 	NewHandler(newFakeStore(), fakeRequireAuth).
@@ -754,9 +846,26 @@ func doRequest(t *testing.T, app *fiber.App, method, path, body string) *http.Re
 
 func doWorkerRequest(t *testing.T, app *fiber.App, workerSecret, body string) *http.Response {
 	t.Helper()
+	return doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/alerts/worker-trigger",
+		workerSecret,
+		body,
+	)
+}
+
+func doWorkerPathRequest(
+	t *testing.T,
+	app *fiber.App,
+	path string,
+	workerSecret string,
+	body string,
+) *http.Response {
+	t.Helper()
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/alerts/worker-trigger",
+		path,
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")

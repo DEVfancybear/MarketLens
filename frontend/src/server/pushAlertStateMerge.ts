@@ -24,6 +24,12 @@ export type EvaluatorStatePatch = Pick<
    * edited after the snapshot was read.
    */
   alertSignatures?: Record<string, string>;
+  /**
+   * Signatures loaded from PostgreSQL for this owner. Unlike the browser-owned
+   * alert list, these may safely establish cursor state for an alert that the
+   * last pagehide sync did not include.
+   */
+  authoritativeAlertSignatures?: Record<string, string>;
   removedAlertState?: Record<string, RemovedEvaluatorState>;
 };
 
@@ -97,6 +103,9 @@ export function mergeEvaluatorState(
     const current = alertState[id];
     const expected = expectedSignatures.get(id);
     const incomingSignature = patch.alertSignatures?.[id];
+    const authoritative =
+      incomingSignature !== undefined &&
+      patch.authoritativeAlertSignatures?.[id] === incomingSignature;
     if (incomingSignature && incoming.signature !== incomingSignature) {
       // Never persist a state under a different definition than the snapshot
       // that produced it.
@@ -106,7 +115,8 @@ export function mergeEvaluatorState(
       incomingSignature &&
       !expected &&
       !current &&
-      !incoming.pendingDelivery
+      !incoming.pendingDelivery &&
+      !authoritative
     ) {
       // The browser removed this alert after the evaluator snapshot was read.
       // Only a canonically committed delivery retry may outlive the definition.

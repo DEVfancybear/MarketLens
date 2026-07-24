@@ -161,6 +161,21 @@ test("canonical worker trigger distinguishes transient transport and server fail
     acknowledgeCanonicalAlertTrigger("signed", alert, candidate, {
       workerSecret: "secret",
       fetchImpl: async () =>
+        new Response(JSON.stringify({ error: "alert is still being created" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        }),
+    }),
+    (error: unknown) =>
+      error instanceof CanonicalTriggerPersistenceError &&
+      error.status === 404 &&
+      error.retryable === true,
+  );
+
+  await assert.rejects(
+    acknowledgeCanonicalAlertTrigger("signed", alert, candidate, {
+      workerSecret: "secret",
+      fetchImpl: async () =>
         new Response("truncated", {
           status: 200,
           headers: { "Content-Type": "application/json" },

@@ -116,6 +116,8 @@ MarketDataService/provider stream
   -> bootstrap / legacy reconciliation converge silently
 
 Closed-browser worker
+  -> POST /api/v1/alerts/worker-snapshot (worker secret + signed user token)
+  -> use enabled active PostgreSQL definitions; browser snapshot is outage fallback
   -> replay ordered MT5 ticks and freeze trigger evidence
   -> POST /api/v1/alerts/worker-trigger (worker secret + signed user token)
   -> retain the frozen candidate after transient/ambiguous canonical failure
@@ -138,7 +140,7 @@ coexist without clobbering each other.
 | Fixed evaluation | `src/services/alertEngine.ts` | Level/cross condition helpers with no React or I/O dependency. |
 | Dynamic evaluation | `src/services/dynamicAlertTargets.ts` | Data-coordinate target interpolation, domain checks, signed-distance conditions, and evidence normalization. |
 | Runtime hook | `src/hooks/useAlertEngine.ts` | Connects market ticks to pure evaluation and alert store actions. |
-| Push evaluator | `src/server/pushAlertEvaluator.ts`, `src/server/canonicalAlertTrigger.ts`, `src/server/pushAlertLifecycle.ts` | Ordered MT5 replay, transient/ambiguous canonical retries, alert-specific rejection quarantine, FCM retries per device, and Telegram/Discord grouping per canonical event/channel within one evaluator run. |
+| Push evaluator | `src/server/pushAlertEvaluator.ts`, `src/server/canonicalAlertSnapshot.ts`, `src/server/canonicalAlertTrigger.ts`, `src/server/pushAlertLifecycle.ts` | PostgreSQL-owned active definitions, ordered MT5 replay, transient/ambiguous canonical retries, alert-specific rejection quarantine, FCM retries per device, and Telegram/Discord grouping per canonical event/channel within one evaluator run. |
 | Symbol identity | `src/services/alertSymbols.ts`, `src/services/market-data/symbolAliases.ts`, `backend/internal/mt5stream/service.go` | Normalization, legacy aliases, unique broker suffix resolution, dynamic MT5 subscriptions, and fail-closed ambiguity handling. |
 | Push snapshot/state | `src/services/notifications/pushAlertSnapshot.ts`, `src/services/notifications/pushAlertSyncQueue.ts`, `src/server/pushAlertStateMerge.ts`, `src/server/pushAlertStore.ts` | All-or-nothing snapshot validation, ordered device sync, transactional/atomic persistence, and conflict-safe evaluator cursor/delivery merges. |
 | Server verification | `backend/internal/alerts/model.go`, `backend/internal/alerts/technical_evaluator.go`, `backend/internal/alerts/repo.go`, `backend/internal/alerts/handler.go` | Validates create/patch/trigger payloads, recomputes technical targets, and persists idempotent canonical events. |
@@ -197,7 +199,10 @@ interface Alert {
 The price source is the live MT5 ticker quote. Cross detection uses per-symbol
 previous-price memory in the runtime hook, not persisted state. The server push
 worker persists its own per-device cursor and replays recent MT5 ticks so a
-cross between worker polls is not lost.
+cross between worker polls is not lost. Go retains up to 4,096 ordered ticks per
+symbol and the Next evaluator requests at most the most recent hour, giving
+scheduler restarts and short deployment gaps a substantially wider recovery
+window than the original 512-tick/10-minute path.
 
 New alerts skip cross detection on their first evaluation so stale previous prices cannot trigger an
 immediate false cross. Above/below alerts can trigger immediately if the current price already meets
@@ -299,6 +304,13 @@ definition, remove a newer event, or turn a completed destination back on. A
 frozen pending delivery may outlive the active definition until all requested
 destinations finish.
 
+The evaluator does not treat the browser-owned alert array as the lifecycle
+source of truth. For every signed owner it loads enabled `active` definitions
+from PostgreSQL through the service-authenticated worker snapshot endpoint.
+Canonical signatures may establish evaluator cursor state even when a final
+`pagehide` sync was missed. If that endpoint is temporarily unavailable, the
+last validated browser snapshot remains a durable fallback for that run.
+
 ## Persistence
 
 `alerts`, `triggeredAlerts`, `history`, and `settings` persist under localStorage key `alerts`.
@@ -308,7 +320,7 @@ For anonymous users, localStorage remains the durable cache. For an authenticate
 session, the Go API/PostgreSQL alert record and event history are authoritative.
 Browser-open triggers commit through the per-alert API queue before local lifecycle
 and notification dispatch. Closed-browser triggers commit through the worker-only
-endpoint before FCM/Telegram/Discord dispatch. A failed acknowledgement is
+snapshot/trigger endpoints before FCM/Telegram/Discord dispatch. A failed acknowledgement is
 retained as `pendingTrigger` for transient, ambiguous, and invalid/truncated
 protocol responses and retried even when the market later closes. Only
 alert-specific permanent 4xx failures quarantine that signature until a
@@ -316,6 +328,8 @@ successful browser sync supplies corrected state. Bootstrap
 therefore already classifies a one-time fired alert as
 `triggered`; token-keyed `usePushTriggerReconcile` remains a fallback for legacy
 worker state and open-tab cache convergence, not the lifecycle writer.
+An alert-specific 404 is retryable because optimistic browser creation can make
+the first worker pass arrive just before the PostgreSQL create transaction.
 
 Migration `0022_alert_event_idempotency` stores `arming_revision` on events and
 uniquely identifies an attempt by `(alert_id, arming_revision, triggered_at)`.

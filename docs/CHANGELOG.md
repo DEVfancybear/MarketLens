@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Closed-browser trendline alerts missing Telegram/Discord delivery (2026-07-24)
+- Made PostgreSQL the closed-browser worker's alert-definition source through a
+  service-authenticated, signed-owner `/api/v1/alerts/worker-snapshot` route.
+  Evaluator cursors can now survive a missed final browser sync, while the last
+  validated browser snapshot remains an outage fallback.
+- Made canonical trigger 404s retryable so optimistic alert creation cannot
+  permanently quarantine a worker candidate that arrives just before the Go
+  create transaction. Recurring alerts also seed recovery from their canonical
+  trigger lifecycle.
+- Removed the production scheduler's silent localhost default by deriving the
+  evaluator endpoint from the first non-local HTTPS CORS origin when no explicit
+  URL is configured, with fail-fast URL validation.
+- Increased retained MT5 history from 512 to 4,096 ticks per symbol and expanded
+  the evaluator replay lookback from ten minutes to one hour.
+- Added regressions for canonical snapshot authentication/filtering and drawing
+  payloads, creation-race retry classification, canonical cursor merges,
+  production URL derivation, and scheduler-gap tick retention.
+
 ### Changed - Multi-drawing colors and responsive settings palette (2026-07-23)
 - Kept the floating drawing toolbar available for Ctrl/Cmd multi-selections and
   added capability-aware line/text and fill color actions across every selected

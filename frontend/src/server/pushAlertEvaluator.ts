@@ -34,6 +34,7 @@ import {
 } from "./pushAlertStore";
 import { pushAlertStateCursor } from "./pushAlertStateMerge";
 import { acknowledgeCanonicalAlertTrigger } from "./canonicalAlertTrigger";
+import { fetchCanonicalActiveAlerts } from "./canonicalAlertSnapshot";
 import { persistBeforeNotification } from "./pushAlertLifecycle";
 import {
   createPendingPushAlertDelivery,
@@ -41,7 +42,7 @@ import {
 } from "./pushAlertDeliveryPolicy";
 
 const RECURRING_REARM_MS = 60_000;
-const MT5_TICK_REPLAY_LOOKBACK_MS = 10 * 60_000;
+const MT5_TICK_REPLAY_LOOKBACK_MS = 60 * 60_000;
 const MT5_STREAM_WARMUP_RETRY_MS = 350;
 
 interface EvaluationResult {
@@ -92,6 +93,22 @@ type ExternalDeliveryResult = {
   error?: string;
 };
 type ExternalDeliveryCache = Map<string, Promise<ExternalDeliveryResult>>;
+interface EvaluationDevice {
+  device: PushDeviceRecord;
+  alerts: ServerPushAlert[];
+  canonical: boolean;
+}
+
+function alertHasEnabledDestination(
+  device: PushDeviceRecord,
+  alert: ServerPushAlert,
+): boolean {
+  return Boolean(
+    (device.settingsPush && alert.push) ||
+      (device.settingsTelegram && alert.telegram) ||
+      (device.settingsDiscord && alert.discord),
+  );
+}
 
 export function alertSignature(alert: ServerPushAlert): string {
   return `${alertArmingRevision(
@@ -376,6 +393,31 @@ function shouldEvaluate(device: PushDeviceRecord, alert: ServerPushAlert) {
     !state ||
     (state.signature !== signature && state.pendingDelivery === undefined)
   ) {
+    if (
+      alert.lastTriggeredAt !== undefined &&
+      alert.triggerPrice !== undefined
+    ) {
+      const lifecycleCursor = Math.max(
+        alert.lastTriggeredAt,
+        alert.updatedAt,
+      );
+      return {
+        signature,
+        state: {
+          signature,
+          lastTriggeredAt: alert.lastTriggeredAt,
+          // A later edit may have re-armed this definition without clearing
+          // legacy recurring trigger fields. Never replay observations from
+          // before the latest canonical definition timestamp.
+          lastEvaluatedAt: lifecycleCursor,
+          lastMarketTimestamp: lifecycleCursor,
+          oneTimeFired: !alert.recurring,
+          triggerPrice: alert.triggerPrice,
+          targetPrice: alert.targetPrice,
+          triggerEvidence: alert.triggerEvidence,
+        },
+      };
+    }
     return { signature };
   }
   return { signature, state };
@@ -415,9 +457,43 @@ async function runEvaluation(
 
   const devices = await listPushDevices();
   result.devices = devices.length;
+  const canonicalByOwner = new Map<string, Promise<ServerPushAlert[]>>();
+  const reportedSnapshotFailures = new Set<string>();
+  const evaluationDevices: EvaluationDevice[] = await Promise.all(
+    devices.map(async (device) => {
+      const token = device.deliveryToken?.trim();
+      if (
+        !token ||
+        (!device.settingsPush &&
+          !device.settingsTelegram &&
+          !device.settingsDiscord)
+      ) {
+        return { device, alerts: device.alerts, canonical: false };
+      }
+      try {
+        let request = canonicalByOwner.get(token);
+        if (!request) {
+          request = fetchCanonicalActiveAlerts(token);
+          canonicalByOwner.set(token, request);
+        }
+        const alerts = (await request).filter((alert) =>
+          alertHasEnabledDestination(device, alert),
+        );
+        return { device, alerts, canonical: true };
+      } catch (error) {
+        if (!reportedSnapshotFailures.has(token)) {
+          reportedSnapshotFailures.add(token);
+          result.errors.push(
+            `${device.token.slice(-8)}: canonical alert snapshot unavailable; using durable browser fallback (${error instanceof Error ? error.message : "request failed"}).`,
+          );
+        }
+        return { device, alerts: device.alerts, canonical: false };
+      }
+    }),
+  );
 
   const symbols = new Set<string>();
-  for (const device of devices) {
+  for (const { device, alerts } of evaluationDevices) {
     if (
       !device.deliveryToken ||
       !device.settingsPush &&
@@ -426,7 +502,7 @@ async function runEvaluation(
     ) {
       continue;
     }
-    for (const alert of device.alerts) symbols.add(alert.symbol);
+    for (const alert of alerts) symbols.add(alert.symbol);
   }
 
   const prices: Record<string, PriceSnapshot> = {};
@@ -444,8 +520,12 @@ async function runEvaluation(
   );
 
   const now = Date.now();
-  for (const device of devices) {
-    const alertsForDevice = [...device.alerts];
+  for (const evaluationDevice of evaluationDevices) {
+    const { device } = evaluationDevice;
+    const alertsForDevice = [...evaluationDevice.alerts];
+    const authoritativeIds = evaluationDevice.canonical
+      ? new Set(alertsForDevice.map((alert) => alert.id))
+      : undefined;
     const activeIds = new Set(alertsForDevice.map((alert) => alert.id));
     for (const state of Object.values(device.alertState)) {
       const retained = state.pendingDelivery?.alert;
@@ -477,6 +557,8 @@ async function runEvaluation(
     const previousPrices = { ...device.lastPrices };
     const alertState = { ...device.alertState };
     const alertSignatures: Record<string, string> = {};
+    const authoritativeAlertSignatures: Record<string, string> | undefined =
+      evaluationDevice.canonical ? {} : undefined;
     const removedAlertState: Record<
       string,
       { signature: string; eventId?: string; cursor: number }
@@ -486,6 +568,9 @@ async function runEvaluation(
       result.alerts += 1;
       const { signature, state } = shouldEvaluate(device, alert);
       alertSignatures[alert.id] = signature;
+      if (authoritativeIds?.has(alert.id) && authoritativeAlertSignatures) {
+        authoritativeAlertSignatures[alert.id] = signature;
+      }
       if (
         state?.signature === signature &&
         state.canonicalRejectedAt !== undefined
@@ -611,7 +696,10 @@ async function runEvaluation(
             cursor: pushAlertStateCursor(state),
           };
         }
-        if (!remaining && !device.alerts.some((item) => item.id === alert.id)) {
+        if (
+          !remaining &&
+          !evaluationDevice.alerts.some((item) => item.id === alert.id)
+        ) {
           delete alertState[alert.id];
         } else if (!remaining && state?.signature !== signature) {
           // The old event is fully delivered, but this id now represents a
@@ -838,6 +926,7 @@ async function runEvaluation(
       lastPrices,
       alertState,
       alertSignatures,
+      authoritativeAlertSignatures,
       removedAlertState,
     });
   }

@@ -27,7 +27,7 @@ const (
 	defaultHistoryRequestTimeout = 60 * time.Second
 	defaultHistoryHTTPTimeout    = 70 * time.Second
 	defaultHistoryConcurrency    = 1
-	maxRetainedTicksPerSymbol    = 512
+	maxRetainedTicksPerSymbol    = 4096
 	maxHistoryPagesPerKey        = 256
 )
 

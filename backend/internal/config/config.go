@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -105,6 +106,8 @@ func Load() (Config, error) {
 	env := getEnv("APP_ENV", "development")
 	authCookieSecure := getEnvBool("AUTH_COOKIE_SECURE", env != "development")
 	managedMT5Python := managedMT5VerifyPython()
+	corsAllowedOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
+	alertEvaluatorEnabled := getEnvBool("ALERT_EVALUATOR_ENABLED", true)
 	cfg := Config{
 		Port:                   getEnvInt("PORT", 8080),
 		Env:                    env,
@@ -112,8 +115,8 @@ func Load() (Config, error) {
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
 		AuthJWTSecret:          os.Getenv("AUTH_JWT_SECRET"),
 		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
-		AlertEvaluatorEnabled:  getEnvBool("ALERT_EVALUATOR_ENABLED", true),
-		AlertEvaluatorURL:      getEnv("ALERT_EVALUATOR_URL", "http://localhost:3000/api/push/evaluate"),
+		AlertEvaluatorEnabled:  alertEvaluatorEnabled,
+		AlertEvaluatorURL:      getEnv("ALERT_EVALUATOR_URL", defaultAlertEvaluatorURL(env, corsAllowedOrigins)),
 		AlertEvaluatorInterval: getEnvDuration("ALERT_EVALUATOR_INTERVAL", 15*time.Second),
 		AlertEvaluatorTimeout:  getEnvDuration("ALERT_EVALUATOR_TIMEOUT", 30*time.Second),
 		AuthAccessTTL:          getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
@@ -123,7 +126,7 @@ func Load() (Config, error) {
 		// The private key is stored \n-escaped (same as the frontend push key);
 		// restore the real newlines so it parses as PEM.
 		FirebasePrivateKey:        strings.ReplaceAll(os.Getenv("FIREBASE_PRIVATE_KEY"), `\n`, "\n"),
-		CORSAllowedOrigins:        splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		CORSAllowedOrigins:        corsAllowedOrigins,
 		ChartTimeZone:             strings.TrimSpace(getEnv("CHART_TIME_ZONE", "Asia/Ho_Chi_Minh")),
 		ObjectStorageEndpoint:     os.Getenv("OBJECT_STORAGE_ENDPOINT"),
 		ObjectStorageBucket:       os.Getenv("OBJECT_STORAGE_BUCKET"),
@@ -266,6 +269,11 @@ func (c Config) validate() error {
 			return err
 		}
 	}
+	if c.AlertEvaluatorEnabled {
+		if err := validateAlertEvaluatorURL(c.AlertEvaluatorURL); err != nil {
+			return err
+		}
+	}
 	// Never assemble authentication with an empty or guessable HMAC key, even
 	// in development. A dev server is often reachable from the local network.
 	if c.DatabaseURL != "" && c.FirebaseConfigured() && len(c.AuthJWTSecret) < 32 {
@@ -293,6 +301,9 @@ func (c Config) validate() error {
 		"FIREBASE_CLIENT_EMAIL": c.FirebaseClientEmail,
 		"FIREBASE_PRIVATE_KEY":  c.FirebasePrivateKey,
 		"PUSH_WORKER_SECRET":    c.PushWorkerSecret,
+	}
+	if c.AlertEvaluatorEnabled {
+		required["ALERT_EVALUATOR_URL"] = c.AlertEvaluatorURL
 	}
 
 	var missing []string
@@ -325,6 +336,35 @@ func validateCORSOrigin(raw string) error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
 		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("CORS_ALLOWED_ORIGINS contains an invalid absolute origin: %q", raw)
+	}
+	return nil
+}
+
+func defaultAlertEvaluatorURL(env string, origins []string) string {
+	if strings.TrimSpace(env) == "development" {
+		return "http://localhost:3000/api/push/evaluate"
+	}
+	for _, raw := range origins {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" {
+			continue
+		}
+		host := strings.TrimSpace(strings.ToLower(u.Hostname()))
+		ip := net.ParseIP(host)
+		if host == "localhost" || (ip != nil && ip.IsLoopback()) {
+			continue
+		}
+		return strings.TrimRight(raw, "/") + "/api/push/evaluate"
+	}
+	return ""
+}
+
+func validateAlertEvaluatorURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+		return fmt.Errorf("ALERT_EVALUATOR_URL must be an absolute HTTP(S) URL: %q", raw)
 	}
 	return nil
 }

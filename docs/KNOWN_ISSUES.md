@@ -59,6 +59,13 @@ sends, real Telegram test send) rather than guessing. Found and fixed, in order:
    already returns a one-time alert as triggered; token-keyed reconciliation is
    retained only for legacy worker records and open-tab cache convergence.
 
+   **Superseded again 2026-07-24:** the evaluator now hydrates enabled active
+   definitions from PostgreSQL through `/api/v1/alerts/worker-snapshot` before
+   replay. A missed browser `pagehide` snapshot can no longer hide an alert from
+   Telegram/Discord evaluation. Production scheduler defaults derive from the
+   deployed HTTPS CORS origin instead of localhost, canonical 404 creation races
+   retry, and the MT5 recovery window is 4,096 ticks/up to one hour.
+
 **Debugging tools that worked well and are worth reusing:** `POST /api/push/evaluate?debug=1` with
 the `x-push-worker-secret` header (per-alert condition/target/high/low/met/blocked without exposing
 tokens); a small Node script using `@next/env`'s `loadEnvConfig()` + `firebase-admin` to read

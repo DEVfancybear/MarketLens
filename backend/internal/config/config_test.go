@@ -76,3 +76,20 @@ func TestValidateRejectsWeakJWTWhenAuthConfigured(t *testing.T) {
 		t.Fatal("validate() accepted a weak JWT secret")
 	}
 }
+
+func TestDefaultAlertEvaluatorURLUsesProductionHTTPSOrigin(t *testing.T) {
+	got := defaultAlertEvaluatorURL(
+		"production",
+		[]string{"http://localhost:3000", "https://tradingterminal.io.vn"},
+	)
+	if got != "https://tradingterminal.io.vn/api/push/evaluate" {
+		t.Fatalf("default evaluator URL = %q", got)
+	}
+}
+
+func TestDefaultAlertEvaluatorURLKeepsLocalDevelopment(t *testing.T) {
+	got := defaultAlertEvaluatorURL("development", []string{"http://localhost:3000"})
+	if got != "http://localhost:3000/api/push/evaluate" {
+		t.Fatalf("development evaluator URL = %q", got)
+	}
+}

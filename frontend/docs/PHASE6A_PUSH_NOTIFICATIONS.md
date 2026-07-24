@@ -120,6 +120,11 @@ so the Go API and MT5 bridge must be connected.
 `ALERT_EVALUATOR_INTERVAL`. Keep `DISABLE_PUSH_WORKER=true` so Next does not
 evaluate the same alert in parallel.
 
+In production, set `ALERT_EVALUATOR_URL` explicitly to the deployed frontend
+when practical. If omitted, the backend derives
+`https://<first non-local CORS origin>/api/push/evaluate`; it no longer falls
+back silently to localhost when the frontend is remote.
+
 If the Go scheduler is unavailable, `src/instrumentation.ts` can start the same
 evaluator inside a persistent Next process:
 
@@ -163,6 +168,14 @@ cursor and replays consecutive Bid observations. It does not infer crossings
 from candle high/low. If a catalog symbol is not in the initial stream, the first
 tick request installs an on-demand subscription and the worker performs one
 short warmup retry before deferring to the next evaluator interval.
+The Go service retains up to 4,096 ticks per symbol and the evaluator caps its
+request to the most recent hour.
+
+Before replay, the worker uses the signed delivery token plus
+`PUSH_WORKER_SECRET` to load enabled active alerts from
+`POST /api/v1/alerts/worker-snapshot`. PostgreSQL is therefore authoritative
+even when closing the browser races or misses its final push snapshot. The last
+validated browser snapshot is used only when that canonical read is unavailable.
 
 Symbol routing is shared with the browser: known legacy aliases and a unique
 broker prefix/suffix resolve to the executable catalog id, while ambiguous

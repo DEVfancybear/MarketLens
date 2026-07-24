@@ -287,3 +287,25 @@ test("a removed alert cannot regain cursor-only state from a stale worker", () =
   });
   assert.equal(merged.alertState[value.id], undefined);
 });
+
+test("a canonical backend snapshot may establish state for an alert missing from the browser snapshot", () => {
+  const value = alert();
+  const alertSignature = signature(value);
+  const incoming = {
+    signature: alertSignature,
+    lastEvaluatedAt: 1_700_000_030_000,
+    lastMarketTimestamp: 1_700_000_029_500,
+  };
+  const merged = mergeEvaluatorState(
+    device([], {}),
+    {
+      lastPrices: { EURUSD: 1.11 },
+      alertState: { [value.id]: incoming },
+      alertSignatures: { [value.id]: alertSignature },
+      authoritativeAlertSignatures: { [value.id]: alertSignature },
+    },
+  );
+
+  assert.deepEqual(merged.alertState[value.id], incoming);
+  assert.equal(merged.lastPrices.EURUSD, 1.11);
+});

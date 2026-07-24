@@ -34,6 +34,7 @@ func (h *Handler) WithWorkerTrigger(
 }
 
 func (h *Handler) Register(router fiber.Router) {
+	router.Post("/alerts/worker-snapshot", h.workerSnapshot)
 	router.Post("/alerts/worker-trigger", h.workerTrigger)
 
 	g := router.Group("/alerts", h.requireAuth)
@@ -117,19 +118,60 @@ type workerTriggerRequest struct {
 	TriggerInput
 }
 
-func (h *Handler) workerTrigger(c fiber.Ctx) error {
-	if h.workerSecret == "" || h.verifyDeliveryToken == nil ||
-		!hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret)) {
+type workerSnapshotRequest struct {
+	DeliveryToken string `json:"deliveryToken"`
+}
+
+func (h *Handler) workerRequestAuthorized(c fiber.Ctx) bool {
+	return h.workerSecret != "" && h.verifyDeliveryToken != nil &&
+		hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret))
+}
+
+func (h *Handler) workerOwner(deliveryToken string) (string, error) {
+	uid, err := h.verifyDeliveryToken(strings.TrimSpace(deliveryToken))
+	if err != nil || strings.TrimSpace(uid) == "" {
+		return "", fiber.ErrUnauthorized
+	}
+	return strings.TrimSpace(uid), nil
+}
+
+func (h *Handler) workerSnapshot(c fiber.Ctx) error {
+	if !h.workerRequestAuthorized(c) {
 		return fiber.ErrUnauthorized
 	}
+	var req workerSnapshotRequest
+	if err := json.Unmarshal(c.Body(), &req); err != nil ||
+		strings.TrimSpace(req.DeliveryToken) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid worker snapshot request")
+	}
+	uid, err := h.workerOwner(req.DeliveryToken)
+	if err != nil {
+		return err
+	}
+	items, err := h.store.List(c.Context(), uid, "active")
+	if err != nil {
+		return apiError(err)
+	}
+	enabled := make([]Alert, 0, len(items))
+	for _, item := range items {
+		if item.Enabled {
+			enabled = append(enabled, item)
+		}
+	}
+	return c.JSON(fiber.Map{"ok": true, "alerts": enabled})
+}
 
+func (h *Handler) workerTrigger(c fiber.Ctx) error {
+	if !h.workerRequestAuthorized(c) {
+		return fiber.ErrUnauthorized
+	}
 	var req workerTriggerRequest
 	if err := json.Unmarshal(c.Body(), &req); err != nil || strings.TrimSpace(req.AlertID) == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid worker trigger request")
 	}
-	uid, err := h.verifyDeliveryToken(strings.TrimSpace(req.DeliveryToken))
-	if err != nil || strings.TrimSpace(uid) == "" {
-		return fiber.ErrUnauthorized
+	uid, err := h.workerOwner(req.DeliveryToken)
+	if err != nil {
+		return err
 	}
 
 	item, event, err := h.store.Trigger(c.Context(), uid, req.AlertID, req.TriggerInput)
