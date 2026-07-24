@@ -121,3 +121,17 @@ test("viewport reset is one controller transaction", () => {
   assert.equal(fake.resetCalls(), 2);
   controller.destroy();
 });
+
+test("market changes use the same latest-price reset without masquerading as a user reset", () => {
+  const fake = fakeChart();
+  const controller = new ChartViewportController(fake.chart);
+  controller.reset(
+    { rightOffset: 8, barSpacing: 8, minBarSpacing: 1.5 },
+    "market-change",
+  );
+
+  assert.equal(controller.snapshot().cause, "market-change");
+  assert.equal(controller.snapshot().programmaticWrites, 1);
+  assert.equal(fake.resetCalls(), 2);
+  controller.destroy();
+});

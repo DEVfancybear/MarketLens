@@ -29,7 +29,7 @@ import {
   clearIndicatorsAtom,
   drawColorAtom,
   addDrawingAtom,
-  indicatorsAtom,
+  activeIndicatorsAtom,
   symbolAtom,
 } from "@/store/chartStore";
 import {
@@ -92,7 +92,7 @@ export function MobileChartToolsWorkspace({
   const fullscreen = useAtomValue(fullscreenAtom);
   const symbol = useAtomValue(symbolAtom);
   const candles = useAtomValue(candlesAtom);
-  const indicators = useAtomValue(indicatorsAtom);
+  const indicators = useAtomValue(activeIndicatorsAtom);
   const drawColor = useAtomValue(drawColorAtom);
   const smc = useAtomValue(smcSettingsAtom);
   const backendSession = useAtomValue(backendSessionAtom);

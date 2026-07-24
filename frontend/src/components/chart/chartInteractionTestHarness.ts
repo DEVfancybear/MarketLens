@@ -11,6 +11,8 @@ export interface ChartInteractionSnapshot {
   visibleTimeRange: IRange<Time> | null;
   viewport: ReturnType<ChartViewportController["snapshot"]>;
   barSpacing: number;
+  priceScaleRanges: Array<IRange<number> | null>;
+  priceScaleAutoScale: boolean[];
 }
 
 declare global {
@@ -53,6 +55,12 @@ export function installChartInteractionTestHarness({
       visibleTimeRange: chart.timeScale().getVisibleRange(),
       viewport: viewport.snapshot(),
       barSpacing: chart.timeScale().options().barSpacing,
+      priceScaleRanges: chart.panes().map((_pane, index) =>
+        chart.priceScale("right", index).getVisibleRange()
+      ),
+      priceScaleAutoScale: chart.panes().map((_pane, index) =>
+        chart.priceScale("right", index).options().autoScale
+      ),
     }),
     prependHistory: (count) => {
       window.dispatchEvent(new CustomEvent("chart-benchmark-prepend", {

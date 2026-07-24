@@ -153,7 +153,6 @@ export function useWorkspaceBootstrap(): void {
         if (cancelled) return;
         applyUI(bootstrap.settings.ui);
         applySmc(bootstrap.settings.smc);
-        applyChartSettings(bootstrap.settings.chart);
         applyNotifications(bootstrap.settings.notifications);
         applyAlerts({
           alerts: bootstrap.alerts,
@@ -166,7 +165,12 @@ export function useWorkspaceBootstrap(): void {
         applyPineScripts(bootstrap.pineScripts);
         applyIndicators(bootstrap.indicators);
         applyLayouts(bootstrap.layouts);
-        if (!loadDefaultLayout()) loadActiveDrawings();
+        const loadedDefaultLayout = loadDefaultLayout();
+        // A default layout restores its arrangement and pane payload first, but
+        // the user's latest active symbol is a separate account preference and
+        // must win on an automatic bootstrap/refresh.
+        applyChartSettings(bootstrap.settings.chart);
+        if (!loadedDefaultLayout) loadActiveDrawings();
         setWorkspaceReady(true);
         log("info", "Workspace synced from backend");
       })

@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-11_
+_Last updated: 2026-07-24_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -138,6 +138,10 @@ Programmatic viewport behavior:
 - Shortcut, Go-to date, auto-fit, history restore, replay recovery, reset, and
   benchmark writes must call controller methods instead of `ITimeScaleApi`
   mutation methods directly.
+- The first non-empty live window after a symbol or timeframe change uses the
+  controller's `market-change` reset. This restores default spacing, scrolls to
+  real time, and re-enables price auto-scale so a new market opens around its
+  current price instead of inheriting an offscreen/manual viewport.
 - The controller records `revision`, `programmaticWrites`, `cause`, and the
   current logical range. Equal targets are acknowledged without incrementing
   the write count.
@@ -151,10 +155,13 @@ Desktop pan behavior:
 - `handleScroll.pressedMouseMove` must stay enabled so users can drag the chart
   horizontally with the mouse.
 - Lightweight Charts does not vertically pan a pane while its price scale is
-  in auto-scale mode. `chartPriceScalePan.ts` therefore handles primary
-  `pointerdown` in the capture phase and calls `setAutoScale(false)` for the
-  pane under the pointer before the library processes the drag. Keep this
-  pane-local so dragging an indicator does not change the candle pane.
+  in auto-scale mode. `chartPriceScalePan.ts` arms a possible gesture on primary
+  `pointerdown`, then calls `setAutoScale(false)` for that pane on the first
+  real capture-phase `pointermove`. A click without movement must leave
+  auto-scale enabled.
+- Pointer up/cancel and window blur end the armed gesture. A later move with no
+  primary button also clears stale ownership, which prevents a missed release
+  from leaving plot interaction stuck after repeated drags.
 - Symbol/timeframe changes and the chart Reset action must call
   `resetPriceScalePan()` to restore auto-scale on every pane. This preserves
   initial fitting for new data while retaining manual vertical position after
@@ -253,12 +260,12 @@ coordCache.nextFrame()
 The cache key is only `time` or `price`, not viewport. Reusing it across frames
 will freeze drawings at old pixel coordinates.
 
-`DrawingLayer.toX()` also keeps a separate whitespace-projection fallback cache.
-That cache is keyed by `ChartContext.version`, candle count, and the projected
-anchor candle. It exists because `timeScale().timeToCoordinate()` returns `null`
-for drawing points placed beyond loaded candles, while TradingView still keeps
-position boxes, rays, and extended objects visually attached in right-side
-whitespace. Do not replace this with raw pixel persistence.
+`drawingTimeToCoordinate()` owns the shared whitespace projection used by the
+interactive `DrawingLayer` and inactive multi-chart preview layers. It exists
+because `timeScale().timeToCoordinate()` returns `null` for drawing points
+placed beyond loaded candles, while TradingView still keeps position boxes,
+rays, and extended objects visually attached in right-side whitespace. Do not
+replace this with raw pixel persistence or fork another preview-only projector.
 
 ## 10.1 Drawing Culling
 

@@ -4,6 +4,23 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Chart restore, pan stability, markers, and multi-pane ownership (2026-07-24)
+- Persisted the authenticated user's latest symbol in the backend chart settings
+  slice, protected pending writes across refresh, flushed them before sign-out,
+  and made the preference win after automatic default-layout restoration.
+- Reset live symbol/timeframe changes to the latest-price viewport with default
+  spacing and price auto-scale, removing the need to press Reset after each
+  market selection.
+- Deferred manual price-scale mode until the first real plot-drag movement and
+  cleared gesture ownership on release, cancel, blur, or missing mouse buttons,
+  preventing repeated vertical pan sessions from becoming stuck.
+- Restored the visible symbol chip and live candle-close countdown on current
+  price markers, including read-only panes in multi-chart layouts.
+- Made new drawings and indicators pane-owned, canceled transient tools/editors
+  on pane activation, retained explicit opt-in sync scopes, and rendered cached
+  read-only drawings in inactive panes so objects no longer appear to move with
+  active-chart focus.
+
 ### Fixed - Watchlist drag/drop layout sync race (2026-07-24)
 - Serialized full-layout API writes per watchlist in the frontend while keeping
   different watchlists independent and allowing later writes to continue after

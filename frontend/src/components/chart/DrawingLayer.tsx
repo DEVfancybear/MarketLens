@@ -9,6 +9,8 @@ import {
   drawingsAtom,
   activeToolAtom,
   drawColorAtom,
+  drawingChartIdAtom,
+  drawingLayoutIdAtom,
   drawingToolPreferencesAtom,
   selectedDrawingIdAtom,
   selectedDrawingIdsAtom,
@@ -66,8 +68,7 @@ import { reconcileDrawingLifecycle } from "./drawing/lifecycle/drawingLifecycle"
 import { resolveSelectionTextOverlay } from "./drawing/overlays/drawingOverlayTargets";
 import { isDrawingVisibleAtTimeframe } from "./drawing/visibility/drawingIntervalVisibility";
 import {
-  candleIndexAtOrBefore,
-  extrapolateTimeCoordinate,
+  drawingTimeToCoordinate,
   resolveCandleBarIntervalSeconds,
 } from "./drawing/coordinates/drawingCoordinates";
 import { mt5SymbolInfoAtom } from "@/store/mt5Store";
@@ -107,6 +108,8 @@ export function DrawingLayer() {
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const drawingLayoutId = useAtomValue(drawingLayoutIdAtom);
+  const drawingChartId = useAtomValue(drawingChartIdAtom);
   const barIntervalSeconds = useMemo(
     () => resolveCandleBarIntervalSeconds(candles, TF_SECONDS[timeframe], 60),
     [candles, timeframe],
@@ -169,96 +172,13 @@ export function DrawingLayer() {
   const toX = useCallback((time: number) => {
     const chart = ctxRef.current?.chart;
     if (!chart) return null;
-    const ts = chart.timeScale();
-    const rawX = ts.timeToCoordinate(time as UTCTimestamp);
     const candles = ctxRef.current?.candles ?? getDefaultStore().get(candlesAtom);
-    const firstTime = candles[0]?.time;
-    const lastTime = candles[candles.length - 1]?.time;
-    // In-range drawing anchors may be intentionally between bars; retain the
-    // chart's direct coordinate. Position creation stores its right edge on an
-    // actual candle, so session gaps do not rely on the misleading gap mapping.
-    if (
-      rawX != null &&
-      firstTime != null &&
-      lastTime != null &&
-      time >= firstTime &&
-      time <= lastTime
-    ) {
-      return rawX;
-    }
-    if (candles.length < 2) return rawX;
-    const floorIndex = candleIndexAtOrBefore(candles, time);
-    const configuredInterval = resolveCandleBarIntervalSeconds(
+    return drawingTimeToCoordinate(
+      chart,
       candles,
       TF_SECONDS[getDefaultStore().get(timeframeAtom)],
-      60,
-    );
-    // Outside the loaded series, anchor at the nearest known candle and extend
-    // using logical bar spacing rather than wall-clock candle gaps.
-    let i = Math.min(
-      candles.length - 1,
-      Math.max(0, floorIndex ?? candles.length - 1),
-    );
-    let cx: number | null = null;
-    for (; i >= 0; i--) {
-      cx = ts.timeToCoordinate(candles[i].time as UTCTimestamp);
-      if (cx != null) break;
-    }
-    if (cx == null) {
-      for (
-        i = Math.min(candles.length - 1, (floorIndex ?? 0) + 1);
-        i < candles.length;
-        i++
-      ) {
-        cx = ts.timeToCoordinate(candles[i].time as UTCTimestamp);
-        if (cx != null) break;
-      }
-    }
-    if (cx == null) return null;
-    // Reference = another projected candle, used only for logical pixel width.
-    let px: number | null = null;
-    let j = i - 1;
-    for (; j >= 0; j--) {
-      px = ts.timeToCoordinate(candles[j].time as UTCTimestamp);
-      if (px != null) break;
-    }
-    if (px == null) {
-      for (j = i + 1; j < candles.length; j++) {
-        px = ts.timeToCoordinate(candles[j].time as UTCTimestamp);
-        if (px != null) break;
-      }
-    }
-    if (px == null) {
-      const barSpacing = ts.options().barSpacing;
-      return extrapolateTimeCoordinate({
-        time,
-        anchorTime: candles[i].time,
-        anchorX: cx,
-        referenceTime: candles[i].time - configuredInterval,
-        referenceX: cx - barSpacing,
-        indexSpan: 1,
-        barIntervalSeconds: configuredInterval,
-      }) ?? cx;
-    }
-    // Normalize the pair so the anchor is the later logical candle.
-    if (j > i) {
-      [i, j] = [j, i];
-      [cx, px] = [px, cx];
-    }
-    const span = i - j;
-    const observedInterval = (candles[i].time - candles[j].time) / span || 1;
-    const iv = Number.isFinite(configuredInterval) && configuredInterval > 0
-      ? configuredInterval
-      : observedInterval;
-    return extrapolateTimeCoordinate({
       time,
-      anchorTime: candles[i].time,
-      anchorX: cx,
-      referenceTime: candles[j].time,
-      referenceX: px,
-      indexSpan: span,
-      barIntervalSeconds: iv,
-    });
+    );
   }, []);
   const toY = useCallback(
     (price: number) =>
@@ -718,7 +638,7 @@ export function DrawingLayer() {
     onTextPlace: handleTextPlace,
     snapPoint,
     freezeChart,
-    cancellationKey: symbol,
+    cancellationKey: `${symbol}:${drawingLayoutId}:${drawingChartId}`,
   });
 
   useEffect(() => {

@@ -22,7 +22,7 @@ import {
   drawColorAtom,
   candlesAtom,
   drawingsAtom,
-  indicatorsAtom,
+  activeIndicatorsAtom,
   addDrawingAtom,
   clearIndicatorsAtom,
 } from "@/store/chartStore";
@@ -88,7 +88,7 @@ export function ChartContextMenu({
   const drawColor = useAtomValue(drawColorAtom);
   const drawings = useAtomValue(drawingsAtom);
   const drawingsCount = drawings.length;
-  const indicators = useAtomValue(indicatorsAtom);
+  const indicators = useAtomValue(activeIndicatorsAtom);
   const indicatorsCount = indicators.length;
   const bulk = useDrawingBulkActions();
   const clearIndicators = useSetAtom(clearIndicatorsAtom);

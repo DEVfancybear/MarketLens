@@ -1,6 +1,11 @@
 import type { Drawing, DrawingSyncBinding, DrawingSyncMode } from "../../../../types";
 
-export const DEFAULT_DRAWING_SYNC_MODE: DrawingSyncMode = "global";
+/**
+ * New objects belong to the pane where they were created unless the user
+ * explicitly opts into one of the synchronization scopes.
+ */
+export const DEFAULT_DRAWING_SYNC_MODE: DrawingSyncMode = "chart-only";
+export const DRAWING_SYNC_MODE_VERSION = 2;
 export const DEFAULT_DRAWING_CHART_ID = "main";
 export const DEFAULT_DRAWING_LAYOUT_ID = "workspace";
 
@@ -14,6 +19,19 @@ export function normalizeDrawingSyncMode(value: unknown): DrawingSyncMode {
   return value === "chart-only" || value === "layout-symbol" || value === "global"
     ? value
     : DEFAULT_DRAWING_SYNC_MODE;
+}
+
+/** Migrates the former implicit global default without changing versioned choices. */
+export function resolveDrawingSyncModeSetting(
+  value: unknown,
+  version: unknown,
+): { mode: DrawingSyncMode; needsMigration: boolean } {
+  const mode = normalizeDrawingSyncMode(value);
+  const needsMigration = Number(version) !== DRAWING_SYNC_MODE_VERSION;
+  return {
+    mode: needsMigration && mode === "global" ? DEFAULT_DRAWING_SYNC_MODE : mode,
+    needsMigration,
+  };
 }
 
 export function drawingSyncBinding(

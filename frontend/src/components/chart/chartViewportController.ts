@@ -9,6 +9,7 @@ import { resetPriceScalePan } from "./chartPriceScalePan";
 export type ChartViewportCause =
   | "user"
   | "initial-fit"
+  | "market-change"
   | "history-prepend"
   | "replay-realign"
   | "time-navigation"
@@ -136,8 +137,11 @@ export class ChartViewportController {
     return this.write(cause, () => this.chart.timeScale().fitContent());
   }
 
-  reset(defaults: ChartViewportDefaults): boolean {
-    return this.write("reset", () => {
+  reset(
+    defaults: ChartViewportDefaults,
+    cause: "reset" | "market-change" = "reset",
+  ): boolean {
+    return this.write(cause, () => {
       const timeScale = this.chart.timeScale();
       timeScale.applyOptions(defaults);
       timeScale.resetTimeScale();

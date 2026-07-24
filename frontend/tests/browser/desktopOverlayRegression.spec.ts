@@ -225,14 +225,17 @@ test.describe("desktop overlay boundaries", () => {
   });
 
   test("current price marker stays inside the live price-scale geometry", async ({ page }) => {
+    const lastFixtureOpen = 1_704_067_200 + 899 * 60;
+    await page.clock.setFixedTime(new Date((lastFixtureOpen + 30) * 1000));
     const chartRoot = page.getByTestId("price-chart-root");
     const priceMarker = page.getByTestId("current-price-marker");
     await expect(chartRoot).toBeVisible();
     await expect(priceMarker).toBeVisible();
+    await expect(page.getByTestId("current-price-symbol")).toHaveText("EURUSD");
     await expect(page.getByTestId("current-price-value")).not.toBeEmpty();
-    // This benchmark intentionally uses historical candles and has no live MT5
-    // session snapshot, so the stale-safe countdown must stay hidden.
-    await expect(page.getByTestId("current-price-countdown")).toHaveCount(0);
+    // Until an authoritative MT5 open/closed status arrives, a current candle
+    // keeps the clock fallback instead of dropping the countdown row.
+    await expect(page.getByTestId("current-price-countdown")).not.toBeEmpty();
     await expect(priceMarker).toHaveAttribute("data-symbol", "EURUSD");
 
     await expectMarkerInsidePriceScale(page);

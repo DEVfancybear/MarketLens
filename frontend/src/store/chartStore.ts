@@ -23,6 +23,11 @@ import {
 import type { Mt5SymbolInfo } from "@/types/mt5";
 import { localStore } from "@/services/storage";
 import { createSettingsMutationQueue } from "@/services/api/settingsMutationQueue";
+import { patchSettings } from "@/services/api/resources/settingsApi";
+import {
+  normalizeChartSymbol,
+  resolveCurrentChartSymbol,
+} from "@/services/chartSettingsPersistence";
 import {
   deleteDrawingTemplate,
   listDrawings,
@@ -99,13 +104,23 @@ import {
   DEFAULT_DRAWING_CHART_ID,
   DEFAULT_DRAWING_LAYOUT_ID,
   DEFAULT_DRAWING_SYNC_MODE,
+  DRAWING_SYNC_MODE_VERSION,
   drawingSyncBinding,
   drawingSyncMode,
   mergeDrawingSyncRegistry,
-  normalizeDrawingSyncMode,
+  resolveDrawingSyncModeSetting,
   selectDrawingsForSyncContext,
   type DrawingSyncContext,
 } from "@/components/chart/drawing/persistence/drawingSyncScope";
+import {
+  bindIndicatorToChart,
+  mergeIndicatorLayoutRegistry,
+  rebindIndicatorsToLayout,
+  scopeLegacyIndicatorsToChart,
+  selectIndicatorsForChart,
+  selectIndicatorsForLayout,
+  type IndicatorChartContext,
+} from "@/components/chart/indicators/indicatorChartScope";
 import {
   applyDrawingBatchUpdates,
   type DrawingPatchUpdate,
@@ -184,6 +199,9 @@ const TEMPLATES_KEY = "drawingTemplates";
 const PINE_SCRIPTS_KEY = "pineScripts";
 const DRAWING_TOOL_PREFERENCES_KEY = "drawingToolPreferences";
 const DRAWING_SYNC_MODE_KEY = "drawingSyncMode";
+const DRAWING_SYNC_MODE_VERSION_KEY = "drawingSyncModeVersion";
+const CURRENT_SYMBOL_KEY = "currentChartSymbol";
+const CURRENT_SYMBOL_PENDING_KEY = "currentChartSymbolPending";
 
 type AtomGet = Getter;
 type AtomSet = Setter;
@@ -243,8 +261,21 @@ function syncContext(get: AtomGet, symbol = get(symbolAtom)): DrawingSyncContext
   };
 }
 
+function indicatorContext(get: AtomGet): IndicatorChartContext {
+  return {
+    layoutId: get(drawingLayoutIdAtom),
+    chartId: get(drawingChartIdAtom),
+  };
+}
+
 function readDrawingRegistry(symbol: string): Drawing[] {
   return decodeDrawingList(localStore.get<unknown>(drawingsKey(symbol), [])).drawings;
+}
+
+export function getCachedDrawingsForContext(
+  context: DrawingSyncContext,
+): Drawing[] {
+  return selectDrawingsForSyncContext(readDrawingRegistry(context.symbol), context);
 }
 
 function persistDrawingRegistry(symbol: string, registry: Drawing[]) {
@@ -295,8 +326,11 @@ function clearLocalChartWorkspace() {
   localStore.remove(PINE_SCRIPTS_KEY);
   localStore.remove(TEMPLATES_KEY);
   localStore.remove(DRAWING_SYNC_MODE_KEY);
+  localStore.remove(DRAWING_SYNC_MODE_VERSION_KEY);
   localStore.remove(DRAWING_TOOL_PREFERENCES_KEY);
   localStore.remove(CHART_TIME_ZONE_STORAGE_KEY);
+  localStore.remove(CURRENT_SYMBOL_KEY);
+  localStore.remove(CURRENT_SYMBOL_PENDING_KEY);
   if (typeof window === "undefined") return;
   for (const key of Object.keys(window.localStorage)) {
     if (key.startsWith("drawings:")) {
@@ -477,6 +511,7 @@ function ensureDrawingOutboxHydrated() {
 
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {
+    void chartSettingsSync.flush();
     ensureDrawingOutboxHydrated();
     drawingSyncQueue.preserveAndCancel();
   });
@@ -588,6 +623,10 @@ export const crosshairAtom = atom<{
   time: number;
   candle: Candle | null;
 } | null>(null);
+/** Active-pane projection of the account-wide indicator preset registry. */
+export const activeIndicatorsAtom = atom((get) =>
+  selectIndicatorsForChart(get(indicatorsAtom), indicatorContext(get)),
+);
 
 export const setDrawingLayoutContextAtom = atom(
   null,
@@ -617,8 +656,18 @@ export const setDrawingLayoutContextAtom = atom(
 export const adoptDrawingLayoutContextAtom = atom(
   null,
   (_get, set, context: { layoutId: string; chartId?: string }) => {
+    const previousLayoutId = _get(drawingLayoutIdAtom);
     const layoutId = context.layoutId || DEFAULT_DRAWING_LAYOUT_ID;
     const chartId = context.chartId || DEFAULT_DRAWING_CHART_ID;
+    const reboundIndicators = rebindIndicatorsToLayout(
+      selectIndicatorsForLayout(_get(indicatorsAtom), previousLayoutId),
+      { layoutId, chartId },
+    );
+    const indicatorRegistry = mergeIndicatorLayoutRegistry(
+      _get(indicatorsAtom),
+      reboundIndicators,
+      previousLayoutId,
+    );
     set(drawingLayoutIdAtom, layoutId);
     set(drawingChartIdAtom, chartId);
     const nextContext = { symbol: _get(symbolAtom), layoutId, chartId };
@@ -635,6 +684,7 @@ export const adoptDrawingLayoutContextAtom = atom(
       return next;
     });
     set(drawingsAtom, drawings);
+    commitIndicators(_get, set, indicatorRegistry);
     persistLocalDrawings(_get, nextContext.symbol, drawings);
     for (const drawing of changed) {
       queueDrawingUpsert(_get, set, nextContext.symbol, drawing);
@@ -647,7 +697,11 @@ export const setNewDrawingSyncModeAtom = atom(
   (_get, set, mode: DrawingSyncMode) => {
     set(newDrawingSyncModeAtom, mode);
     localStore.set(DRAWING_SYNC_MODE_KEY, mode);
-    queueChartSettings(_get, set, { drawingSyncMode: mode });
+    localStore.set(DRAWING_SYNC_MODE_VERSION_KEY, DRAWING_SYNC_MODE_VERSION);
+    queueChartSettings(_get, set, {
+      drawingSyncMode: mode,
+      drawingSyncModeVersion: DRAWING_SYNC_MODE_VERSION,
+    });
   },
 );
 
@@ -714,7 +768,10 @@ export const applyRemoteIndicatorsAtom = atom(
       clearTimeout(indicatorSyncTimer);
       indicatorSyncTimer = null;
     }
-    const indicators = rows.map(backendIndicatorToLocal);
+    const indicators = scopeLegacyIndicatorsToChart(
+      rows.map(backendIndicatorToLocal),
+      indicatorContext(_get),
+    );
     set(indicatorsAtom, indicators);
     localStore.set("indicators", indicators);
   },
@@ -725,12 +782,49 @@ export const applyRemoteChartSettingsAtom = atom(
   (_get, set, payload: unknown) => {
     chartSettingsSync.cancelPending();
     const settings = isRecord(payload) ? payload : {};
+    const remoteSymbol = normalizeChartSymbol(settings.symbol) || "EURUSD";
+    const localSymbol = normalizeChartSymbol(
+      localStore.get<unknown>(CURRENT_SYMBOL_KEY, ""),
+    );
+    const symbolWritePending = localStore.get<boolean>(
+      CURRENT_SYMBOL_PENDING_KEY,
+      false,
+    );
+    const symbol = resolveCurrentChartSymbol({
+      remote: remoteSymbol,
+      local: localSymbol,
+      localWritePending: symbolWritePending,
+    });
     const timeZone = normalizeChartTimeZone(settings.timeZone);
     const drawingToolPreferences = decodeDrawingToolPreferences(
       settings.drawingToolPreferences,
     );
-    const drawingSyncMode = normalizeDrawingSyncMode(settings.drawingSyncMode);
+    const {
+      mode: drawingSyncMode,
+      needsMigration: drawingSyncModeNeedsMigration,
+    } = resolveDrawingSyncModeSetting(
+      settings.drawingSyncMode,
+      settings.drawingSyncModeVersion,
+    );
 
+    if (symbol !== _get(symbolAtom)) {
+      drawingLoadGuard.cancel();
+      set(symbolAtom, symbol);
+      set(candlesAtom, []);
+      set(loadingAtom, true);
+      const registry = decodeDrawingsAtBoundary(
+        symbol,
+        localStore.get<unknown>(drawingsKey(symbol), []),
+        "local",
+      );
+      set(
+        drawingsAtom,
+        selectDrawingsForSyncContext(registry, syncContext(_get, symbol)),
+      );
+      void set(loadDrawingsForSymbolAtom, symbol);
+      set(selectedDrawingIdAtom, null);
+      set(selectedDrawingIdsAtom, new Set());
+    }
     set(chartTimeZoneAtom, timeZone);
     set(
       resolvedChartTimeZoneAtom,
@@ -738,9 +832,22 @@ export const applyRemoteChartSettingsAtom = atom(
     );
     set(drawingToolPreferencesAtom, drawingToolPreferences);
     set(newDrawingSyncModeAtom, drawingSyncMode);
+    localStore.set(CURRENT_SYMBOL_KEY, symbol);
     localStore.set(CHART_TIME_ZONE_STORAGE_KEY, timeZone);
     localStore.set(DRAWING_TOOL_PREFERENCES_KEY, drawingToolPreferences);
     localStore.set(DRAWING_SYNC_MODE_KEY, drawingSyncMode);
+    localStore.set(DRAWING_SYNC_MODE_VERSION_KEY, DRAWING_SYNC_MODE_VERSION);
+    if (drawingSyncModeNeedsMigration) {
+      queueChartSettings(_get, set, {
+        drawingSyncMode,
+        drawingSyncModeVersion: DRAWING_SYNC_MODE_VERSION,
+      });
+    }
+    if (symbolWritePending && symbol === remoteSymbol) {
+      localStore.remove(CURRENT_SYMBOL_PENDING_KEY);
+    } else if (symbolWritePending) {
+      queueChartSettings(_get, set, { symbol });
+    }
   },
 );
 
@@ -757,12 +864,20 @@ export const applySavedChartLayoutAtom = atom(
       timeframe?: Timeframe;
       drawings: Drawing[];
       indicators: IndicatorConfig[];
+      persistSymbol?: boolean;
     },
   ) => {
-    const symbol = snapshot.symbol?.trim() || get(symbolAtom);
+    const symbol = normalizeChartSymbol(snapshot.symbol) || get(symbolAtom);
     const timeframe = snapshot.timeframe ?? get(timeframeAtom);
     const marketChanged = symbol !== get(symbolAtom) || timeframe !== get(timeframeAtom);
     set(symbolAtom, symbol);
+    if (snapshot.persistSymbol !== false) {
+      localStore.set(CURRENT_SYMBOL_KEY, symbol);
+      if (get(backendSessionAtom)) {
+        localStore.set(CURRENT_SYMBOL_PENDING_KEY, true);
+      }
+      queueChartSettings(get, set, { symbol });
+    }
     set(timeframeAtom, timeframe);
     const snapshotDrawings = decodeDrawingsAtBoundary(symbol, snapshot.drawings ?? [], "layout");
     const context = syncContext(get, symbol);
@@ -772,10 +887,19 @@ export const applySavedChartLayoutAtom = atom(
     const byId = new Map(snapshotDrawings.map((drawing) => [drawing.id, drawing]));
     for (const drawing of localGlobal) byId.set(drawing.id, drawing);
     const drawings = selectDrawingsForSyncContext([...byId.values()], context);
+    const layoutIndicators = scopeLegacyIndicatorsToChart(
+      snapshot.indicators ?? [],
+      indicatorContext(get),
+    );
+    const indicatorRegistry = mergeIndicatorLayoutRegistry(
+      get(indicatorsAtom),
+      layoutIndicators,
+      context.layoutId,
+    );
     set(drawingsAtom, structuredClone(drawings));
-    set(indicatorsAtom, structuredClone(snapshot.indicators ?? []));
+    set(indicatorsAtom, structuredClone(indicatorRegistry));
     persistLocalDrawings(get, symbol, drawings);
-    localStore.set("indicators", snapshot.indicators ?? []);
+    localStore.set("indicators", indicatorRegistry);
     set(selectedDrawingIdAtom, null);
     set(selectedDrawingIdsAtom, new Set());
     set(editingIndicatorIdAtom, null);
@@ -798,9 +922,15 @@ export const applyRemotePineScriptsAtom = atom(
 // ---------------------------------------------------------------------------
 
 export const setSymbolAtom = atom(null, (_get, set, symbol: string) => {
-  if (symbol === _get(symbolAtom)) return;
+  symbol = normalizeChartSymbol(symbol);
+  if (!symbol || symbol === _get(symbolAtom)) return;
   drawingLoadGuard.cancel();
   set(symbolAtom, symbol);
+  localStore.set(CURRENT_SYMBOL_KEY, symbol);
+  if (_get(backendSessionAtom)) {
+    localStore.set(CURRENT_SYMBOL_PENDING_KEY, true);
+  }
+  queueChartSettings(_get, set, { symbol });
   set(candlesAtom, []);
   set(loadingAtom, true);
   const registry = decodeDrawingsAtBoundary(
@@ -1206,7 +1336,10 @@ export const selectAllAtom = atom(null, (_get, set) => {
 });
 
 export const addIndicatorAtom = atom(null, (_get, set, definition: IndicatorRuntimeDefinition) => {
-  const cfg = indicatorConfigFromDefinition(definition, uid("ind"));
+  const cfg = bindIndicatorToChart(
+    indicatorConfigFromDefinition(definition, uid("ind")),
+    indicatorContext(_get),
+  );
   const indicators = [..._get(indicatorsAtom), cfg];
   commitIndicators(_get, set, indicators);
 });
@@ -1214,15 +1347,27 @@ export const addIndicatorAtom = atom(null, (_get, set, definition: IndicatorRunt
 export const toggleIndicatorAtom = atom(
   null,
   (_get, set, definition: IndicatorRuntimeDefinition) => {
-    const current = _get(indicatorsAtom);
-    const has = current.some((indicator) => indicator.type === definition.type);
+    const registry = _get(indicatorsAtom);
+    const current = _get(activeIndicatorsAtom);
+    const matches = current.filter(
+      (indicator) => indicator.type === definition.type,
+    );
+    const has = matches.length > 0;
     const indicators = has
-      ? current.filter((indicator) => indicator.type !== definition.type)
-      : [...current, indicatorConfigFromDefinition(definition, uid("ind"))];
+      ? registry.filter(
+          (indicator) => !matches.some((match) => match.id === indicator.id),
+        )
+      : [
+          ...registry,
+          bindIndicatorToChart(
+            indicatorConfigFromDefinition(definition, uid("ind")),
+            indicatorContext(_get),
+          ),
+        ];
     if (has) {
-      current
-        .filter((indicator) => indicator.type === definition.type)
-        .forEach((indicator) => queueIndicatorDelete(_get, set, indicator.id));
+      matches.forEach((indicator) =>
+        queueIndicatorDelete(_get, set, indicator.id),
+      );
     }
     commitIndicators(_get, set, indicators);
   },
@@ -1246,11 +1391,15 @@ export const removeIndicatorAtom = atom(null, (_get, set, id: string) => {
 });
 
 export const clearIndicatorsAtom = atom(null, (_get, set) => {
-  _get(indicatorsAtom).forEach((indicator) =>
+  const active = _get(activeIndicatorsAtom);
+  const activeIds = new Set(active.map((indicator) => indicator.id));
+  active.forEach((indicator) =>
     queueIndicatorDelete(_get, set, indicator.id),
   );
-  set(indicatorsAtom, []);
-  localStore.set("indicators", []);
+  const indicators = _get(indicatorsAtom).filter(
+    (indicator) => !activeIds.has(indicator.id),
+  );
+  commitIndicators(_get, set, indicators);
 });
 
 async function sourceIndicatorDefinition(
@@ -1366,12 +1515,13 @@ export const addCustomIndicatorFromScriptAtom = atom(
       return;
     }
     const cfg = await customIndicatorConfig(fullScript);
-    const current = _get(indicatorsAtom);
+    const registry = _get(indicatorsAtom);
+    const current = _get(activeIndicatorsAtom);
     const existing = current.find(
       (item) => item.scriptId === fullScript.id,
     );
     const indicators = existing
-      ? current.map((item) =>
+      ? registry.map((item) =>
           item.id === existing.id
             ? {
                 ...cfg,
@@ -1379,10 +1529,11 @@ export const addCustomIndicatorFromScriptAtom = atom(
                 visible: true,
                 inputValues: existing.inputValues,
                 styleValues: existing.styleValues,
+                chartScope: existing.chartScope,
               }
             : item,
         )
-      : [...current, cfg];
+      : [...registry, bindIndicatorToChart(cfg, indicatorContext(_get))];
     persistIndicators(_get, set, indicators);
   },
 );
@@ -1400,24 +1551,26 @@ export const addCustomIndicatorFromSourceAtom = atom(
       name: arg.name.trim() || definition.name,
       sourceCode: arg.sourceCode,
     });
-    const current = _get(indicatorsAtom);
+    const registry = _get(indicatorsAtom);
+    const current = _get(activeIndicatorsAtom);
     const existing = arg.scriptId
       ? current.find(
           (item) => item.scriptId === arg.scriptId,
         )
       : undefined;
     const indicators = existing
-      ? current.map((item) =>
+      ? registry.map((item) =>
           item.id === existing.id
             ? {
                 ...cfg,
                 id: existing.id,
                 inputValues: existing.inputValues,
                 styleValues: existing.styleValues,
+                chartScope: existing.chartScope,
               }
             : item,
         )
-      : [...current, cfg];
+      : [...registry, bindIndicatorToChart(cfg, indicatorContext(_get))];
     persistIndicators(_get, set, indicators);
   },
 );
@@ -1566,6 +1719,14 @@ export const deleteTemplateAtom = atom(
 );
 
 export const hydrateAtom = atom(null, (_get, set) => {
+  const storedSymbol = normalizeChartSymbol(
+    localStore.get<unknown>(CURRENT_SYMBOL_KEY, ""),
+  );
+  if (storedSymbol && storedSymbol !== _get(symbolAtom)) {
+    set(symbolAtom, storedSymbol);
+    set(candlesAtom, []);
+    set(loadingAtom, true);
+  }
   const symbol = _get(symbolAtom);
   const registry = decodeDrawingsAtBoundary(
     symbol,
@@ -1576,7 +1737,12 @@ export const hydrateAtom = atom(null, (_get, set) => {
     drawingsAtom,
     selectDrawingsForSyncContext(registry, syncContext(_get, symbol)),
   );
-  set(indicatorsAtom, localStore.get<IndicatorConfig[]>("indicators", []));
+  const indicators = scopeLegacyIndicatorsToChart(
+    localStore.get<IndicatorConfig[]>("indicators", []),
+    indicatorContext(_get),
+  );
+  set(indicatorsAtom, indicators);
+  localStore.set("indicators", indicators);
   set(
     pineScriptsAtom,
     localStore.get<CustomIndicatorScript[]>(PINE_SCRIPTS_KEY, []),
@@ -1597,13 +1763,16 @@ export const hydrateAtom = atom(null, (_get, set) => {
     resolvedChartTimeZoneAtom,
     storedTimeZone === EXCHANGE_TIME_ZONE_ID ? "UTC" : storedTimeZone,
   );
-  const syncMode = localStore.get<unknown>(DRAWING_SYNC_MODE_KEY, DEFAULT_DRAWING_SYNC_MODE);
+  const { mode: syncMode } = resolveDrawingSyncModeSetting(
+    localStore.get<unknown>(DRAWING_SYNC_MODE_KEY, DEFAULT_DRAWING_SYNC_MODE),
+    localStore.get<unknown>(DRAWING_SYNC_MODE_VERSION_KEY, 0),
+  );
   set(
     newDrawingSyncModeAtom,
-    syncMode === "chart-only" || syncMode === "layout-symbol" || syncMode === "global"
-      ? syncMode
-      : DEFAULT_DRAWING_SYNC_MODE,
+    syncMode,
   );
+  localStore.set(DRAWING_SYNC_MODE_KEY, syncMode);
+  localStore.set(DRAWING_SYNC_MODE_VERSION_KEY, DRAWING_SYNC_MODE_VERSION);
 });
 
 export const resetChartWorkspaceToDefaultsAtom = atom(
@@ -1656,7 +1825,7 @@ export const chartStateAtom = atom((get) => ({
   candles: get(candlesAtom),
   loading: get(loadingAtom),
   drawings: get(drawingsAtom),
-  indicators: get(indicatorsAtom),
+  indicators: get(activeIndicatorsAtom),
   pineScripts: get(pineScriptsAtom),
   pineEditorScriptId: get(pineEditorScriptIdAtom),
   pineEditorTitle: get(pineEditorTitleAtom),
@@ -1677,6 +1846,25 @@ export const chartStateAtom = atom((get) => ({
 
 export function getChartState() {
   return getDefaultStore().get(chartStateAtom);
+}
+
+/** Flush the latest chart preference while the authenticated session still exists. */
+export async function flushChartSettings(): Promise<void> {
+  await chartSettingsSync.flush();
+  const symbolPending = localStore.get<boolean>(
+    CURRENT_SYMBOL_PENDING_KEY,
+    false,
+  );
+  const symbol = normalizeChartSymbol(
+    localStore.get<unknown>(CURRENT_SYMBOL_KEY, ""),
+  );
+  if (!symbolPending || !symbol) return;
+
+  // The generic queue reports errors through its callback so normal controls
+  // remain non-blocking. Sign-out is a durability boundary: issue one final
+  // idempotent write that can reject before the backend session is destroyed.
+  await patchSettings({ chart: { symbol } });
+  localStore.remove(CURRENT_SYMBOL_PENDING_KEY);
 }
 
 // ---------------------------------------------------------------------------

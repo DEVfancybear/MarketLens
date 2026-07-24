@@ -17,6 +17,13 @@ export type IndicatorInputValues = Record<string, IndicatorInputValue>;
 export type IndicatorStyleValue = string | number | boolean;
 export type IndicatorStyleValues = Record<string, IndicatorStyleValue>;
 
+export interface IndicatorChartScope {
+  /** Stable saved-layout/drawing context identity. */
+  layoutId: string;
+  /** Stable multi-chart pane identity inside the layout. */
+  chartId: string;
+}
+
 export interface IndicatorConfig {
   id: string;
   type: IndicatorType;
@@ -41,6 +48,8 @@ export interface IndicatorConfig {
   styleValues?: IndicatorStyleValues;
   /** Backend-derived execution requirement; never inferred from source in the browser. */
   requiresHistoryContext?: boolean;
+  /** Pane ownership. Missing legacy values are rebound to the active chart on load. */
+  chartScope?: IndicatorChartScope;
 }
 
 /** A single computed indicator value keyed by time. */

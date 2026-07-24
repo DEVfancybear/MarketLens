@@ -1,6 +1,6 @@
 # Chart Layout Architecture
 
-_Updated 2026-07-22._
+_Updated 2026-07-24._
 
 ## Scope and behavior contract
 
@@ -34,8 +34,10 @@ References:
 
 `ChartLayoutWorkspace` is the shared desktop/mobile renderer. The active slot
 mounts the complete interactive `ChartArea`; inactive slots mount real,
-read-only `PriceChart` previews. A preview has its own history/subscription and
-becomes the interactive chart when the user activates it.
+read-only `PriceChart` previews plus a non-interactive drawing canvas. A preview
+has its own history/subscription, pane-scoped indicators, current-price
+symbol/countdown marker, and drawing projection, then becomes the interactive
+chart when the user activates it.
 
 ## State ownership
 
@@ -43,7 +45,7 @@ becomes the interactive chart when the user activates it.
 | --- | --- |
 | `store/replayLayoutStore.ts` | Arrangement, four stable pane records, active slot, Replay scope, and track mapping |
 | `components/chart/ChartLayoutWorkspace.tsx` | Grid rendering, preview market data, pane activation, and active-chart focus treatment |
-| `store/chartStore.ts` | Active chart symbol/timeframe plus indicator and drawing state |
+| `store/chartStore.ts` | Active symbol/timeframe bridge plus pane-scoped indicator and drawing registries |
 | `store/layoutStore.ts` | Capture, restore, create, update, default, and delete saved snapshots |
 | `services/api/resources/layoutsApi.ts` | Typed backend layout DTOs and CRUD calls |
 | `components/toolbar/TopToolbar.tsx` | Desktop Layout menu and `Ctrl+S` behavior |
@@ -83,8 +85,35 @@ When the active selection changes, it is written back to that pane.
 
 Stable pane IDs are also drawing chart IDs. This prevents switching panes from
 mixing drawing scopes even though the interactive chart component is remounted.
-Indicators currently remain layout-wide and are rendered consistently in the
-active chart and previews.
+The same IDs own `IndicatorConfig.chartScope`; indicators created in one pane
+are filtered out of sibling panes. Legacy indicator presets without a scope are
+bound to the active pane once at the persistence boundary.
+
+Drawing creation defaults to `chart-only`. `layout-symbol` and `global` remain
+explicit user-selected synchronization modes. Version 2 of the chart setting
+migrates the former implicit `global` default without overriding later
+versioned choices. Inactive panes project their own cached drawing slice so an
+object remains visible in its source pane while another pane is active.
+
+Pane activation always closes transient drawing/indicator editors and returns
+the active drawing tool to Cursor before changing context. The drawing
+interaction cancellation key includes symbol, layout ID, and pane ID; an
+unfinished Long Position or any other tool therefore cannot continue in the
+new pane.
+
+## Active symbol persistence
+
+`settings.chart.symbol` is the authenticated user's latest active symbol.
+`setSymbolAtom` writes a local pending marker immediately and queues the backend
+patch. The pending local value wins during a refresh until the bootstrap value
+acknowledges it; sign-out explicitly flushes the settings queue before ending
+the backend session.
+
+Automatic bootstrap restores a default layout's arrangement first, then applies
+the current-symbol account preference. Consequently a default layout cannot
+force EURUSD on every reload. EURUSD is the backend default only for an account
+that has never selected a symbol. Explicitly loading a saved layout still
+adopts and persists that layout's active symbol.
 
 ## Saved layout lifecycle
 
@@ -96,7 +125,7 @@ the workspace to one chart and `single_chart` Replay scope.
 
 - arrangement and Replay scope;
 - all four pane records and the active slot;
-- indicator configuration;
+- pane-scoped indicator configuration for every chart in the layout;
 - drawings rebound to a stable `drawingContextId`;
 - panel sizes, open states, and bottom-panel tab;
 - top-level symbol/timeframe compatibility fields for older snapshots.
@@ -160,6 +189,8 @@ Focused coverage:
 - `tests/replay/replayUiState.test.ts`
 - `tests/browser/chartLayoutWorkspace.spec.ts`
 - `tests/browser/desktopOverlayRegression.spec.ts`
+- `tests/chart/indicatorChartScope.test.ts`
+- `tests/chart/chartSettingsPersistence.test.ts`
 
 Recommended gates:
 

@@ -66,7 +66,7 @@ func TestEmptyDocumentUsesCollapsedBottomAndDisabledSMC(t *testing.T) {
 	}
 
 	chart := object(t, doc.Chart)
-	if chart["timeZone"] != "exchange" || chart["drawingSyncMode"] != "global" {
+	if chart["symbol"] != "EURUSD" || chart["timeZone"] != "exchange" || chart["drawingSyncMode"] != "chart-only" || chart["drawingSyncModeVersion"] != float64(2) {
 		t.Fatalf("chart preferences should have stable defaults, got %#v", chart)
 	}
 	drawing, ok := chart["drawingToolPreferences"].(map[string]any)
@@ -97,7 +97,7 @@ func TestNormalizeDocumentBackfillsDefaultWorkspaceState(t *testing.T) {
 	}
 
 	chart := object(t, doc.Chart)
-	if chart["timeZone"] != "exchange" || chart["drawingSyncMode"] != "global" {
+	if chart["symbol"] != "EURUSD" || chart["timeZone"] != "exchange" || chart["drawingSyncMode"] != "chart-only" || chart["drawingSyncModeVersion"] != float64(2) {
 		t.Fatalf("missing chart settings should be backfilled, got %#v", chart)
 	}
 }

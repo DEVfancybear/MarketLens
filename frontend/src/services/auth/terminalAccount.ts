@@ -2,6 +2,7 @@ import { backendLogout } from "@/services/auth/authClient";
 import { signOutUser } from "@/services/auth/firebaseAuth";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { AuthUser } from "@/store/authStore";
+import { flushChartSettings } from "@/store/chartStore";
 
 export function authUserInitials(user: AuthUser | null): string {
   if (!user) return "?";
@@ -14,6 +15,14 @@ export function authUserInitials(user: AuthUser | null): string {
 
 export async function signOutFromTerminal() {
   try {
+    try {
+      await flushChartSettings();
+    } catch (error) {
+      reportFrontendError(error, {
+        title: "Chart preference sync failed",
+        logPrefix: "Chart preference sync failed before sign-out",
+      });
+    }
     try {
       await backendLogout();
     } catch (error) {

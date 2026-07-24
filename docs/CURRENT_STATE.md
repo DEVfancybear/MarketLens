@@ -37,11 +37,12 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`. Backend settings/bootstrap/watchlists now exist;
   remaining workspace slices are Phase 7+ and authenticated persistence should stay feature-flagged
   until each resource endpoint ships.
-- Frontend now consumes `GET /api/v1/sync/bootstrap` after backend auth and applies server UI
-  settings, SMC settings, notification defaults, and watchlists into Jotai atoms. Watchlist
-  list/symbol/section/reorder/active-list mutations now call backend Phase 6 APIs in authenticated
-  mode; browser localStorage is no longer a watchlist source of truth. Settings write-back and
-  future workspace resources are still pending.
+- Frontend consumes `GET /api/v1/sync/bootstrap` after backend auth and applies server UI,
+  chart, SMC, notification, watchlist, drawing, indicator, and layout resources into Jotai
+  atoms. The chart settings slice persists the user's current symbol and drawing defaults;
+  a local pending marker protects a just-selected symbol across refresh and sign-out flushes
+  that write before ending the backend session. Browser localStorage is no longer a watchlist
+  source of truth.
 - Backend Replay migration Phases 0-6 are complete. Authenticated Replay now uses only the Go actor,
   server-revealed bars, server aggregation, and isolated server trading ledger. The legacy frontend
   replay clock/store/engine and replay history/MTF/trade-processing paths were physically deleted;
@@ -51,7 +52,9 @@ This file intentionally preserves the pre-`9691bd1` project state below. Since t
   and session replacement now work consistently across timeframe/layout changes.
 - The Layout menu now renders real one-, two-, and four-chart workspaces. Stable pane records retain
   per-chart symbol/timeframe state, authenticated layout snapshots restore the active pane and full
-  workspace state, and Replay supports current-chart or synchronized all-chart tracks. See
+  workspace state, indicators and default drawings remain owned by their source pane, inactive
+  panes render read-only drawing overlays, and Replay supports current-chart or synchronized
+  all-chart tracks. See
   `frontend/docs/CHART_LAYOUT_ARCHITECTURE.md`.
 - Watchlist UI/store received a TradingView-style menu, rename mode, section rows, symbol
   drag/drop, and draggable section divider rows; see `frontend/docs/WATCHLIST_ARCHITECTURE.md`.

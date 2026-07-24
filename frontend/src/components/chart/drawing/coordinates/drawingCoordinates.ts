@@ -1,4 +1,5 @@
 import type { Candle, Point } from "../../../../types";
+import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 
 export interface TimeCoordinateExtrapolation {
   time: number;
@@ -83,6 +84,117 @@ export function extrapolateTimeCoordinate({
 
   const projected = anchorX + ((time - anchorTime) / secondsPerBar) * pixelsPerBar;
   return Number.isFinite(projected) ? projected : null;
+}
+
+/**
+ * Project drawing timestamps through the chart's logical bar spacing.
+ *
+ * Lightweight Charts returns null for future whitespace and can map session
+ * gaps by wall-clock duration. Drawings instead own bar-relative geometry, so
+ * active and read-only multi-chart layers share this exact projection.
+ */
+export function drawingTimeToCoordinate(
+  chart: IChartApi,
+  candles: readonly Candle[],
+  configuredInterval: number | undefined,
+  time: number,
+): number | null {
+  const timeScale = chart.timeScale();
+  const rawX = timeScale.timeToCoordinate(time as UTCTimestamp);
+  const firstTime = candles[0]?.time;
+  const lastTime = candles[candles.length - 1]?.time;
+  if (
+    rawX != null &&
+    firstTime != null &&
+    lastTime != null &&
+    time >= firstTime &&
+    time <= lastTime
+  ) {
+    return rawX;
+  }
+  if (candles.length < 2) return rawX;
+
+  const floorIndex = candleIndexAtOrBefore(candles, time);
+  const interval = resolveCandleBarIntervalSeconds(
+    candles,
+    configuredInterval,
+    60,
+  );
+  let anchorIndex = Math.min(
+    candles.length - 1,
+    Math.max(0, floorIndex ?? candles.length - 1),
+  );
+  let anchorX: number | null = null;
+  for (; anchorIndex >= 0; anchorIndex--) {
+    anchorX = timeScale.timeToCoordinate(
+      candles[anchorIndex].time as UTCTimestamp,
+    );
+    if (anchorX != null) break;
+  }
+  if (anchorX == null) {
+    for (
+      anchorIndex = Math.min(candles.length - 1, (floorIndex ?? 0) + 1);
+      anchorIndex < candles.length;
+      anchorIndex++
+    ) {
+      anchorX = timeScale.timeToCoordinate(
+        candles[anchorIndex].time as UTCTimestamp,
+      );
+      if (anchorX != null) break;
+    }
+  }
+  if (anchorX == null) return null;
+
+  let referenceX: number | null = null;
+  let referenceIndex = anchorIndex - 1;
+  for (; referenceIndex >= 0; referenceIndex--) {
+    referenceX = timeScale.timeToCoordinate(
+      candles[referenceIndex].time as UTCTimestamp,
+    );
+    if (referenceX != null) break;
+  }
+  if (referenceX == null) {
+    for (
+      referenceIndex = anchorIndex + 1;
+      referenceIndex < candles.length;
+      referenceIndex++
+    ) {
+      referenceX = timeScale.timeToCoordinate(
+        candles[referenceIndex].time as UTCTimestamp,
+      );
+      if (referenceX != null) break;
+    }
+  }
+  if (referenceX == null) {
+    const barSpacing = timeScale.options().barSpacing;
+    return extrapolateTimeCoordinate({
+      time,
+      anchorTime: candles[anchorIndex].time,
+      anchorX,
+      referenceTime: candles[anchorIndex].time - interval,
+      referenceX: anchorX - barSpacing,
+      indexSpan: 1,
+      barIntervalSeconds: interval,
+    }) ?? anchorX;
+  }
+
+  if (referenceIndex > anchorIndex) {
+    [anchorIndex, referenceIndex] = [referenceIndex, anchorIndex];
+    [anchorX, referenceX] = [referenceX, anchorX];
+  }
+  const indexSpan = anchorIndex - referenceIndex;
+  const observedInterval =
+    (candles[anchorIndex].time - candles[referenceIndex].time) / indexSpan || 1;
+  return extrapolateTimeCoordinate({
+    time,
+    anchorTime: candles[anchorIndex].time,
+    anchorX,
+    referenceTime: candles[referenceIndex].time,
+    referenceX,
+    indexSpan,
+    barIntervalSeconds:
+      Number.isFinite(interval) && interval > 0 ? interval : observedInterval,
+  });
 }
 
 export function updateDrawingPoint(

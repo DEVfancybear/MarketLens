@@ -11,7 +11,7 @@ import { ChevronDown, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   editingIndicatorIdAtom,
-  indicatorsAtom,
+  activeIndicatorsAtom,
   setEditingIndicatorAtom,
   updateIndicatorAtom,
 } from "@/store/chartStore";
@@ -209,7 +209,7 @@ function groupStyleDefinitions(fields: PineStyleDefinition[]) {
 
 export function IndicatorSettingsDialog() {
   const editingId = useAtomValue(editingIndicatorIdAtom);
-  const indicators = useAtomValue(indicatorsAtom);
+  const indicators = useAtomValue(activeIndicatorsAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const updateIndicator = useSetAtom(updateIndicatorAtom);
   const { dialogRef, dialogStyle, dragHandleProps, dragHandleClassName } =

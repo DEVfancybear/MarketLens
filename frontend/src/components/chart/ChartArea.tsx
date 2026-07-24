@@ -10,7 +10,7 @@ import {
   symbolAtom,
   timeframeAtom,
   loadingAtom,
-  indicatorsAtom,
+  activeIndicatorsAtom,
   crosshairAtom,
 } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -52,7 +52,7 @@ export function ChartArea({
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);
-  const indicators = useAtomValue(indicatorsAtom);
+  const indicators = useAtomValue(activeIndicatorsAtom);
   const crosshair = useAtomValue(crosshairAtom);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
   const [chartTimeZone, setChartTimeZone] = useState<string | undefined>();

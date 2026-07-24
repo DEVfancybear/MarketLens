@@ -5,9 +5,14 @@ import type { ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Loader2 } from "lucide-react";
 import {
+  drawingsAtom,
   drawingLayoutIdAtom,
+  getCachedDrawingsForContext,
   indicatorsAtom,
+  setActiveToolAtom,
   setDrawingLayoutContextAtom,
+  setEditingDrawingAtom,
+  setEditingIndicatorAtom,
   setSymbolAtom,
   setTimeframeAtom,
   symbolAtom,
@@ -32,7 +37,9 @@ import { getMarketSymbol } from "@/services/market-data/symbols";
 import { initialHistoryBars } from "@/services/market-data/historyPolicy";
 import { cn } from "@/utils/cn";
 import type { Candle } from "@/types";
+import { selectIndicatorsForChart } from "./indicators/indicatorChartScope";
 import { ChartArea } from "./ChartArea";
+import { DrawingPreviewLayer } from "./DrawingPreviewLayer";
 import { PriceChart } from "./PriceChart";
 
 export function ChartLayoutWorkspace({
@@ -51,6 +58,9 @@ export function ChartLayoutWorkspace({
   const setSymbol = useSetAtom(setSymbolAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
   const setDrawingContext = useSetAtom(setDrawingLayoutContextAtom);
+  const setActiveTool = useSetAtom(setActiveToolAtom);
+  const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
+  const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const previousActiveSlot = useRef(activeSlot);
 
   const slots = useMemo(() => visibleChartSlots(preset), [preset]);
@@ -60,6 +70,9 @@ export function ChartLayoutWorkspace({
     const switchedPane = previousActiveSlot.current !== activeSlot;
     previousActiveSlot.current = activeSlot;
     if (switchedPane && activePane?.initialized) {
+      setActiveTool("cursor");
+      setEditingDrawing(null);
+      setEditingIndicator(null);
       setDrawingContext({ layoutId: drawingLayoutId, chartId: activePane.id });
       if (activePane.symbol && activePane.symbol !== symbol) {
         setSymbol(activePane.symbol);
@@ -77,7 +90,10 @@ export function ChartLayoutWorkspace({
     activePane?.timeframe,
     activeSlot,
     drawingLayoutId,
+    setActiveTool,
     setDrawingContext,
+    setEditingDrawing,
+    setEditingIndicator,
     setSymbol,
     setTimeframe,
     symbol,
@@ -87,6 +103,11 @@ export function ChartLayoutWorkspace({
 
   const activatePane = useCallback((pane: ChartPaneState) => {
     if (pane.slot === activeSlot) return;
+    // A drawing/indicator gesture belongs to the pane where it started. Close
+    // transient editor/tool state before changing the active store projection.
+    setActiveTool("cursor");
+    setEditingDrawing(null);
+    setEditingIndicator(null);
     setDrawingContext({ layoutId: drawingLayoutId, chartId: pane.id });
     setActiveSlot(pane.slot);
     if (pane.initialized && pane.symbol && pane.symbol !== symbol) {
@@ -99,7 +120,10 @@ export function ChartLayoutWorkspace({
     activeSlot,
     drawingLayoutId,
     setActiveSlot,
+    setActiveTool,
     setDrawingContext,
+    setEditingDrawing,
+    setEditingIndicator,
     setSymbol,
     setTimeframe,
     symbol,
@@ -134,7 +158,11 @@ export function ChartLayoutWorkspace({
             {active ? (
               <ChartArea slot={slot} mobileControls={mobileControls} />
             ) : (
-              <ChartPreviewPane pane={pane} onActivate={() => activatePane(pane)} />
+              <ChartPreviewPane
+                pane={pane}
+                drawingLayoutId={drawingLayoutId}
+                onActivate={() => activatePane(pane)}
+              />
             )}
           </section>
         );
@@ -145,12 +173,33 @@ export function ChartLayoutWorkspace({
 
 function ChartPreviewPane({
   pane,
+  drawingLayoutId,
   onActivate,
 }: {
   pane: ChartPaneState;
+  drawingLayoutId: string;
   onActivate: () => void;
 }) {
-  const indicators = useAtomValue(indicatorsAtom);
+  const indicatorRegistry = useAtomValue(indicatorsAtom);
+  const activeDrawingRevision = useAtomValue(drawingsAtom);
+  const indicators = useMemo(
+    () =>
+      selectIndicatorsForChart(indicatorRegistry, {
+        layoutId: drawingLayoutId,
+        chartId: pane.id,
+      }),
+    [drawingLayoutId, indicatorRegistry, pane.id],
+  );
+  const drawings = useMemo(() => {
+    // Active drawing mutations are persisted synchronously. Subscribing to the
+    // active slice invalidates this read-only projection for sibling panes.
+    void activeDrawingRevision;
+    return getCachedDrawingsForContext({
+      symbol: pane.symbol,
+      layoutId: drawingLayoutId,
+      chartId: pane.id,
+    });
+  }, [activeDrawingRevision, drawingLayoutId, pane.id, pane.symbol]);
   const { candles, loading } = usePaneMarketData(pane);
   const displayedCandles = useChartSeries(pane.slot, candles);
   const last = displayedCandles[displayedCandles.length - 1];
@@ -166,7 +215,13 @@ function ChartPreviewPane({
         replayTrackSlot={pane.slot}
         interactive={false}
         registerAsMain={false}
-      />
+      >
+        <DrawingPreviewLayer
+          drawings={drawings}
+          symbol={pane.symbol}
+          timeframe={pane.timeframe}
+        />
+      </PriceChart>
       <div className="pointer-events-none absolute left-2 top-2 z-20 rounded-lg border border-terminal-border bg-terminal-panel/82 px-2 py-1.5 text-[10px] shadow-terminal backdrop-blur">
         <div className="flex items-center gap-1 text-ink-muted">
           <strong className="text-xs text-ink">{pane.symbol || "Chart"}</strong>

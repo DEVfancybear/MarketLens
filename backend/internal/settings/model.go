@@ -13,7 +13,7 @@ var (
 
 	defaultUIJSON    = json.RawMessage(`{"theme":"dark","panels":{"right":320,"bottom":240,"left":52},"bottomTab":"replay","rightOpen":true,"rightPanelTab":"watchlist","bottomOpen":false,"fullscreen":false,"alertCenterOpen":false,"gridVisible":true}`)
 	defaultSMCJSON   = json.RawMessage(`{"structure":false,"fvg":false,"orderBlocks":false,"liquidity":false,"displacement":false,"sessions":false,"killzones":false,"swings":false}`)
-	defaultChartJSON = json.RawMessage(`{"timeZone":"exchange","drawingSyncMode":"global","drawingToolPreferences":{"version":1,"keepDrawing":false,"magnetEnabled":false,"magnetMode":"weak","toolDefaults":{}}}`)
+	defaultChartJSON = json.RawMessage(`{"symbol":"EURUSD","timeZone":"exchange","drawingSyncMode":"chart-only","drawingSyncModeVersion":2,"drawingToolPreferences":{"version":1,"keepDrawing":false,"magnetEnabled":false,"magnetMode":"weak","toolDefaults":{}}}`)
 )
 
 const chartFavoriteTimeframesKey = "favoriteTimeframes"

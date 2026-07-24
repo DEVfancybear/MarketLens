@@ -41,6 +41,10 @@ import {
   type SavedLayoutState,
 } from "@/services/api/resources/layoutsApi";
 import { rebindDrawingsToSyncContext } from "@/components/chart/drawing/persistence/drawingSyncScope";
+import {
+  rebindIndicatorsToLayout,
+  selectIndicatorsForLayout,
+} from "@/components/chart/indicators/indicatorChartScope";
 import { uid } from "@/utils/id";
 
 export const layoutsAtom = atom<BackendLayout[]>([]);
@@ -75,7 +79,15 @@ function capture(get: Getter, drawingContextId = get(drawingLayoutIdAtom)): Save
       ),
     ),
     activeChartSlot,
-    indicators: structuredClone(get(indicatorsAtom)),
+    indicators: structuredClone(
+      rebindIndicatorsToLayout(
+        selectIndicatorsForLayout(
+          get(indicatorsAtom),
+          get(drawingLayoutIdAtom),
+        ),
+        { layoutId: drawingContextId, chartId },
+      ),
+    ),
     drawings: structuredClone(
       rebindDrawingsToSyncContext(get(drawingsAtom), {
         symbol,
@@ -124,55 +136,71 @@ export const applyRemoteLayoutsAtom = atom(
   },
 );
 
-export const loadLayoutAtom = atom(null, (_get, set, layout: BackendLayout) => {
-  const state = layout.state;
-  if (!state || state.version !== 1) throw new Error("Unsupported layout snapshot");
-  const timeframe = validTimeframe(layout.timeframe) ? layout.timeframe : _get(timeframeAtom);
-  const fallback = {
-    symbol: layout.symbol?.trim() || _get(symbolAtom),
-    timeframe,
-  };
-  const validPresets: ChartLayoutPreset[] = [
-    "single",
-    "two_horizontal",
-    "two_vertical",
-    "grid_2x2",
-  ];
-  const preset = validPresets.includes(state.chartLayoutPreset)
-    ? state.chartLayoutPreset
-    : "single";
-  const replayMode: ReplayLayoutMode =
-    state.replayLayoutMode === "all_charts" ? "all_charts" : "single_chart";
-  const panes = normalizeChartPanes(state.chartPanes, fallback);
-  const visibleSlots = visibleChartSlots(preset);
-  const activeChartSlot = visibleSlots.includes(state.activeChartSlot ?? 0)
-    ? state.activeChartSlot ?? 0
-    : visibleSlots[0] ?? 0;
-  const activePane = panes.find((pane) => pane.slot === activeChartSlot) ?? panes[0]!;
-  set(restoreChartLayoutStateAtom, {
-    preset,
-    replayMode,
-    panes,
-    activeSlot: activeChartSlot,
-    fallback,
-  });
-  set(applySavedPanelLayoutAtom, state.panels);
-  set(setDrawingLayoutContextAtom, {
-    layoutId: state.drawingContextId || layout.id,
-    chartId: activePane.id,
-  });
-  set(applySavedChartLayoutAtom, {
-    symbol: activePane.symbol || fallback.symbol,
-    timeframe: activePane.timeframe,
-    indicators: state.indicators,
-    drawings: state.drawings,
-  });
-  set(activeLayoutIdAtom, layout.id);
-});
+export const loadLayoutAtom = atom(
+  null,
+  (
+    _get,
+    set,
+    request: BackendLayout | { layout: BackendLayout; persistSymbol?: boolean },
+  ) => {
+    const wrapped = "layout" in request;
+    const layout = wrapped ? request.layout : request;
+    const persistSymbol = wrapped ? request.persistSymbol : true;
+    const state = layout.state;
+    if (!state || state.version !== 1) {
+      throw new Error("Unsupported layout snapshot");
+    }
+    const timeframe = validTimeframe(layout.timeframe)
+      ? layout.timeframe
+      : _get(timeframeAtom);
+    const fallback = {
+      symbol: layout.symbol?.trim() || _get(symbolAtom),
+      timeframe,
+    };
+    const validPresets: ChartLayoutPreset[] = [
+      "single",
+      "two_horizontal",
+      "two_vertical",
+      "grid_2x2",
+    ];
+    const preset = validPresets.includes(state.chartLayoutPreset)
+      ? state.chartLayoutPreset
+      : "single";
+    const replayMode: ReplayLayoutMode =
+      state.replayLayoutMode === "all_charts" ? "all_charts" : "single_chart";
+    const panes = normalizeChartPanes(state.chartPanes, fallback);
+    const visibleSlots = visibleChartSlots(preset);
+    const activeChartSlot = visibleSlots.includes(state.activeChartSlot ?? 0)
+      ? state.activeChartSlot ?? 0
+      : visibleSlots[0] ?? 0;
+    const activePane =
+      panes.find((pane) => pane.slot === activeChartSlot) ?? panes[0]!;
+    set(restoreChartLayoutStateAtom, {
+      preset,
+      replayMode,
+      panes,
+      activeSlot: activeChartSlot,
+      fallback,
+    });
+    set(applySavedPanelLayoutAtom, state.panels);
+    set(setDrawingLayoutContextAtom, {
+      layoutId: state.drawingContextId || layout.id,
+      chartId: activePane.id,
+    });
+    set(applySavedChartLayoutAtom, {
+      symbol: activePane.symbol || fallback.symbol,
+      timeframe: activePane.timeframe,
+      indicators: state.indicators,
+      drawings: state.drawings,
+      persistSymbol,
+    });
+    set(activeLayoutIdAtom, layout.id);
+  },
+);
 
 export const loadDefaultLayoutAtom = atom(null, (get, set) => {
   const layout = get(layoutsAtom).find((item) => item.isDefault);
-  if (layout) set(loadLayoutAtom, layout);
+  if (layout) set(loadLayoutAtom, { layout, persistSymbol: false });
   return Boolean(layout);
 });
 

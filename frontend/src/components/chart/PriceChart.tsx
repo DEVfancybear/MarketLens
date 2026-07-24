@@ -25,7 +25,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import {
   symbolAtom,
   timeframeAtom,
-  indicatorsAtom,
+  activeIndicatorsAtom,
   setCrosshairAtom,
   updateIndicatorAtom,
   removeIndicatorAtom,
@@ -100,7 +100,12 @@ import { installChartInteractionTestHarness } from "./chartInteractionTestHarnes
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
 import { crosshairTimeToTimestamp } from "./crosshairSynchronization";
 import { removeChartAfterCurrentStack } from "./chartLifecycle";
-import { beginPriceScalePan, resetPriceScalePan } from "./chartPriceScalePan";
+import {
+  beginPriceScalePan,
+  continuePriceScalePan,
+  endPriceScalePan,
+  resetPriceScalePan,
+} from "./chartPriceScalePan";
 import { resolveIndicatorSeriesWritePlan, type IndicatorWritePoint } from "@/services/indicatorSeriesWritePlan";
 import { indicatorPointsInViewport, resolveCandleViewport, type CandleViewport } from "@/services/candleViewport";
 import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
@@ -272,6 +277,7 @@ export function PriceChart({
   const paneLayoutSignatureRef = useRef("");
   const fittedRef = useRef(false);
   const lastAutoFitLengthRef = useRef(0);
+  const pendingMarketViewportResetRef = useRef(true);
   const initializedReplaySessionRef = useRef<string | null>(null);
   const activeReplaySessionRef = useRef<string | null>(null);
   const prevCandlesRef = useRef<Candle[]>([]);
@@ -326,7 +332,7 @@ export function PriceChart({
       ? { ...context, replaySessionId }
       : { ...context, replaySessionId, replayCutoff };
   }, [replayActive, replaySessionId, replayTrack?.visibleThrough, symbol, timeframe]);
-  const storedIndicators = useAtomValue(indicatorsAtom);
+  const storedIndicators = useAtomValue(activeIndicatorsAtom);
   const indicators = indicatorsOverride ?? storedIndicators;
   const setCrosshair = useSetAtom(setCrosshairAtom);
   const updateIndicator = useSetAtom(updateIndicatorAtom);
@@ -352,7 +358,10 @@ export function PriceChart({
   const countdown = useCountdown(
     timeframe,
     candles[candles.length - 1]?.time,
-    marketSymbol?.provider === "mt5" ? sessionStatus ?? null : undefined,
+    // Missing status means the backend has not supplied an authoritative
+    // session feed yet; retain the candle-clock fallback instead of hiding the
+    // countdown. An explicit closed/unknown status still suppresses it.
+    marketSymbol?.provider === "mt5" ? sessionStatus : undefined,
   );
   const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
   const precision = marketSymbol?.pricePrecision ?? 2;
@@ -403,8 +412,13 @@ export function PriceChart({
     visibleLogicalRangeRef.current = null;
     fittedRef.current = false;
     lastAutoFitLengthRef.current = 0;
+    pendingMarketViewportResetRef.current = true;
     const chart = chartRef.current;
     if (chart) resetPriceScalePan(chart);
+    if (autoFitRafRef.current !== null) {
+      cancelAnimationFrame(autoFitRafRef.current);
+      autoFitRafRef.current = null;
+    }
     if (historyPrependViewportRafRef.current !== null) {
       cancelAnimationFrame(historyPrependViewportRafRef.current);
       historyPrependViewportRafRef.current = null;
@@ -488,7 +502,18 @@ export function PriceChart({
     const handlePriceScalePanStart = (event: PointerEvent) => {
       if (interactive) beginPriceScalePan(chart, event);
     };
+    const handlePriceScalePanMove = (event: PointerEvent) => {
+      if (interactive) continuePriceScalePan(chart, event);
+    };
+    const handlePriceScalePanEnd = (event: PointerEvent) => {
+      if (interactive) endPriceScalePan(chart, event);
+    };
+    const handlePriceScalePanBlur = () => endPriceScalePan(chart);
     chartContainer.addEventListener("pointerdown", handlePriceScalePanStart, true);
+    chartContainer.addEventListener("pointermove", handlePriceScalePanMove, true);
+    window.addEventListener("pointerup", handlePriceScalePanEnd, true);
+    window.addEventListener("pointercancel", handlePriceScalePanEnd, true);
+    window.addEventListener("blur", handlePriceScalePanBlur);
     const uninstallBenchmarkHarness = interactive
       ? installChartBenchmarkHarness(chart, () => candlesRef.current.length)
       : () => undefined;
@@ -545,6 +570,11 @@ export function PriceChart({
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
       chartContainer.removeEventListener("pointerdown", handlePriceScalePanStart, true);
+      chartContainer.removeEventListener("pointermove", handlePriceScalePanMove, true);
+      window.removeEventListener("pointerup", handlePriceScalePanEnd, true);
+      window.removeEventListener("pointercancel", handlePriceScalePanEnd, true);
+      window.removeEventListener("blur", handlePriceScalePanBlur);
+      endPriceScalePan(chart);
       if (interactive) chart.unsubscribeCrosshairMove(handleCrosshairMove);
       if (bumpRafRef.current !== null) {
         cancelAnimationFrame(bumpRafRef.current);
@@ -884,7 +914,20 @@ export function PriceChart({
       candles.length,
     );
 
-    if (initializeReplayViewport && replaySessionId) {
+    const resetToLatestMarket =
+      pendingMarketViewportResetRef.current &&
+      candles.length > 0 &&
+      !replayActive;
+
+    if (resetToLatestMarket) {
+      pendingMarketViewportResetRef.current = false;
+      lastAutoFitLengthRef.current = candles.length;
+      fittedRef.current = true;
+      viewportControllerRef.current?.reset(
+        timeScaleDefaults(timeframe),
+        "market-change",
+      );
+    } else if (initializeReplayViewport && replaySessionId) {
       initializedReplaySessionRef.current = replaySessionId;
       lastAutoFitLengthRef.current = candles.length;
       fittedRef.current = true;
@@ -958,7 +1001,17 @@ export function PriceChart({
       });
     }
     scheduleVersionBump();
-  }, [candles, theme, replayActive, replaySessionId, replayPlaying, replaySpeed, scheduleVersionBump]);
+  }, [
+    candles,
+    replayActive,
+    replayPlaying,
+    replaySessionId,
+    replaySpeed,
+    scheduleVersionBump,
+    symbol,
+    theme,
+    timeframe,
+  ]);
 
   // ---- Overlay indicators (backend-runtime results) ----
   const overlayIndicators = useMemo(
@@ -1546,7 +1599,7 @@ function CurrentPriceMarker({
       data-symbol={symbol}
       role="group"
       aria-label={accessibleLabel}
-      className="pointer-events-none absolute right-0 z-30 flex flex-col overflow-hidden rounded-l-[3px] border-l border-white/30 font-mono font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
+      className="pointer-events-none absolute right-0 z-30 flex flex-col overflow-visible rounded-l-[3px] border-l border-white/30 font-mono font-semibold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
       style={{
         top: marker.y,
         transform: "translateY(-9.5px)",
@@ -1556,6 +1609,17 @@ function CurrentPriceMarker({
         ? `${symbol} · ${formattedPrice} · Next bar: ${marker.countdown}`
         : `${symbol} · ${formattedPrice}`}
     >
+      <div
+        data-testid="current-price-symbol"
+        className="absolute right-full top-0 flex h-[19px] items-center whitespace-nowrap rounded-l-[3px] pl-1.5 pr-1 text-[10px]"
+        style={{ backgroundColor: marker.color }}
+      >
+        {symbol}
+        <span
+          className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
+          style={{ borderRightColor: marker.color }}
+        />
+      </div>
       <div
         data-testid="current-price-value"
         className="flex h-[19px] items-center justify-end whitespace-nowrap px-1.5 text-[11px] tabular-nums"
