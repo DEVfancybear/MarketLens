@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Push token registration aborts (2026-07-24)
+- Stopped routing production Firestore device mutations through the global
+  serialization queue required only by the local JSON fallback, preventing a
+  busy evaluator pass from starving an unrelated FCM token registration.
+- Added one bounded retry for the idempotent registration request and normalized
+  browser timeout/abort exceptions, so the Alert Center no longer exposes
+  `signal is aborted without reason`.
+- Added regressions for transient abort recovery, final timeout messaging, and
+  non-retryable server rejections.
+
 ### Fixed - Closed-browser trendline alerts missing Telegram/Discord delivery (2026-07-24)
 - Made PostgreSQL the closed-browser worker's alert-definition source through a
   service-authenticated, signed-owner `/api/v1/alerts/worker-snapshot` route.

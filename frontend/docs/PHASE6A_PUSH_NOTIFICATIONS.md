@@ -201,6 +201,13 @@ file. Evaluator state merges preserve newer alert definitions and already
 completed channel progress while retaining a frozen failed delivery after the
 active one-time alert disappears.
 
+FCM token registration is idempotent and receives one bounded retry for a
+transient network/timeout abort. Production Firestore mutations are not placed
+behind the global queue required by the single local JSON file, so an evaluator
+pass for other devices cannot starve a registration request. Final aborts are
+reported as a stable timeout message instead of exposing the browser-specific
+`signal is aborted without reason` text.
+
 Server push sends a data-first Web Push payload with `title` and `body` mirrored into `data`, an
 absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
 the background notification.
@@ -230,6 +237,8 @@ losing pushes for any realistically long closed-browser window.
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.
 - Unsupported browser/service worker: Push toggle is disabled.
 - Permission denied: Push toggle is disabled until the user changes browser site settings.
+- Push registration timeout: the client retries once; if both attempts time out,
+  verify the Vercel function can reach Firestore and try the Push toggle again.
 - Missing Firebase Admin env: token registration falls back to local `.data/push-alerts.json`, but
   `/api/push/send` and `/api/push/evaluate` cannot send FCM.
 - Browser-open FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.

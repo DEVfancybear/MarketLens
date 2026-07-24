@@ -17,6 +17,11 @@ import { currentIdToken } from "@/services/auth/firebaseAuth";
 import { NOTIFICATION_PERMISSION_BLOCKED_MESSAGE } from "./browser";
 import { PushAlertSyncQueue } from "./pushAlertSyncQueue";
 import { buildPushAlertSnapshot } from "./pushAlertSnapshot";
+import {
+  postAuthenticatedPushJson,
+  pushRequestErrorMessage,
+  type PushPostResult,
+} from "./pushRequest";
 
 export interface PushCapability {
   supported: boolean;
@@ -37,41 +42,28 @@ export interface PushSendPayload {
 async function postJson(
   url: string,
   body: unknown,
-  init?: Pick<RequestInit, "keepalive">,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  init?: Pick<RequestInit, "keepalive"> & {
+    timeoutMs?: number;
+    retries?: number;
+    retryDelayMs?: number;
+  },
+): Promise<PushPostResult> {
   try {
     const idToken = await currentIdToken();
     if (!idToken) {
       return { ok: false, error: "Sign in is required for remote push notifications." };
     }
-    const controller = new AbortController();
-    const timeout = globalThis.setTimeout(() => controller.abort(), 15_000);
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(body),
-        keepalive: init?.keepalive,
-        signal: controller.signal,
-      });
-    } finally {
-      globalThis.clearTimeout(timeout);
-    }
-    if (!res.ok) {
-      const payload = (await res.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      return { ok: false, error: payload?.error ?? `HTTP ${res.status}` };
-    }
-    return { ok: true };
+    return postAuthenticatedPushJson(url, body, {
+      idToken,
+      keepalive: init?.keepalive,
+      timeoutMs: init?.timeoutMs,
+      retries: init?.retries,
+      retryDelayMs: init?.retryDelayMs,
+    });
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Request failed.",
+      error: pushRequestErrorMessage(error),
     };
   }
 }
@@ -215,7 +207,16 @@ export async function registerPushToken(
   }
 
   const now = Date.now();
-  const registered = await postJson("/api/push/register", { token });
+  const registered = await postJson(
+    "/api/push/register",
+    { token },
+    {
+      // Registration is idempotent. One retry covers a slow Firestore cold
+      // start or an auth/network abort without duplicating notification sends.
+      retries: 1,
+      retryDelayMs: 250,
+    },
+  );
   if (!registered.ok) {
     throw new Error(`Push token server registration failed: ${registered.error}`);
   }

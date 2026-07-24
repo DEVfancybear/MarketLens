@@ -44,6 +44,16 @@ function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
+/**
+ * Firestore transactions already serialize conflicting writes per document and
+ * can safely run mutations for different devices concurrently. The global
+ * queue is required only by the single local JSON fallback; applying it to
+ * Firestore lets a large evaluator pass block an unrelated token registration.
+ */
+function runStorageMutation<T>(operation: () => Promise<T>): Promise<T> {
+  return firestoreEnabled() ? operation() : serializeMutation(operation);
+}
+
 function emptyDb(): PushAlertDb {
   return { version: DB_VERSION, devices: {} };
 }
@@ -401,7 +411,7 @@ async function registerPushDeviceUnlocked(
 }
 
 export function registerPushDevice(token: string, userId: string): Promise<void> {
-  return serializeMutation(() => registerPushDeviceUnlocked(token, userId));
+  return runStorageMutation(() => registerPushDeviceUnlocked(token, userId));
 }
 
 async function unregisterPushDeviceUnlocked(
@@ -432,7 +442,7 @@ export function unregisterPushDevice(
   token: string,
   userId: string,
 ): Promise<void> {
-  return serializeMutation(() => unregisterPushDeviceUnlocked(token, userId));
+  return runStorageMutation(() => unregisterPushDeviceUnlocked(token, userId));
 }
 
 async function syncPushAlertsUnlocked(
@@ -520,7 +530,7 @@ export function syncPushAlerts(
   request: PushAlertSyncRequest,
   userId: string,
 ): Promise<{ stored: number }> {
-  return serializeMutation(() => syncPushAlertsUnlocked(request, userId));
+  return runStorageMutation(() => syncPushAlertsUnlocked(request, userId));
 }
 
 export async function getPushDevice(
@@ -591,5 +601,5 @@ export function updatePushDevice(
   token: string,
   patch: EvaluatorStatePatch,
 ): Promise<void> {
-  return serializeMutation(() => updatePushDeviceUnlocked(token, patch));
+  return runStorageMutation(() => updatePushDeviceUnlocked(token, patch));
 }
