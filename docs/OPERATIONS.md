@@ -183,6 +183,37 @@ NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn
 NEXT_PUBLIC_APP_URL=https://tradingterminal.io.vn
 ```
 
+Push registration and closed-browser evaluation additionally require both the
+Firebase Web app values and the matching server-only service-account values:
+
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=...
+
+FIREBASE_PROJECT_ID=...
+FIREBASE_CLIENT_EMAIL=...
+FIREBASE_PRIVATE_KEY=... # preserve escaped \n newlines
+PUSH_WORKER_SECRET=...   # same value as the Go backend
+```
+
+`NEXT_PUBLIC_FIREBASE_PROJECT_ID` and `FIREBASE_PROJECT_ID` must identify the
+same Firebase project. Create that project's default Firestore database and
+grant the service account read/write access (for example
+`roles/datastore.user`). `PUSH_WORKER_SECRET` authenticates evaluator traffic;
+it is not used by the browser's `/api/push/register` request.
+
+After changing any Vercel variable, redeploy Production. An unauthenticated
+`POST /api/push/register` returning `401` proves only that the route exists. A
+real signed-in Push toggle must receive `200`. A `503` with
+`Push registration ... Firebase` means the route reached its bounded Firebase
+operation; inspect the Vercel function log entry prefixed `[push/register]`
+for its safe error code. The route never logs the Firebase bearer token, FCM
+token, or user id.
+
 Cloudflare DNS keeps the Vercel apex CNAME in DNS-only mode. The `api` hostname is a proxied
 Cloudflare Tunnel record targeting the Go API on this Windows host. Do not expose the private MT5
 market-data sidecar on port 8765 or the execution bridge on port 8787.

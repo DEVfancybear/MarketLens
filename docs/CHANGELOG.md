@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Production Push registration stalls (2026-07-24)
+- Switched Firebase Admin Firestore calls used by the serverless push store to
+  the supported HTTP/1.1 REST transport, avoiding stalled gRPC channel setup
+  during Vercel cold starts.
+- Removed the extra per-request Firebase Auth revocation lookup while retaining
+  signed ID-token validation, matching the canonical Go API authentication
+  behavior.
+- Bounded `/api/push/register` at eight seconds and now distinguish a retryable
+  Firebase/storage outage (`503`) from token ownership conflict (`409`), with
+  safe server logs that never include bearer tokens, FCM tokens, or user ids.
+- Added regressions for network-independent token verification and server
+  operation deadlines, and documented the production Firestore/IAM checks.
+
 ### Fixed - Push token registration aborts (2026-07-24)
 - Stopped routing production Firestore device mutations through the global
   serialization queue required only by the local JSON fallback, preventing a

@@ -28,6 +28,13 @@ const STORE_DIR = ".data";
 const STORE_FILE = `${STORE_DIR}/push-alerts.json`;
 const COLLECTION = "pushAlertDevices";
 
+export class PushDeviceOwnershipError extends Error {
+  constructor() {
+    super("push device belongs to another user");
+    this.name = "PushDeviceOwnershipError";
+  }
+}
+
 /**
  * All local-file mutations share one queue. A per-token queue is not enough:
  * the JSON file is one document, so two different tokens can still lose each
@@ -346,7 +353,7 @@ function firestoreDeviceRef(token: string) {
 
 function assertDeviceOwner(device: PushDeviceRecord | undefined, userId: string): void {
   if (device?.userId && device.userId !== userId) {
-    throw new Error("push device belongs to another user");
+    throw new PushDeviceOwnershipError();
   }
 }
 

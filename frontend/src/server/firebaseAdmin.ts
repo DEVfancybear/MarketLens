@@ -1,6 +1,6 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { initializeFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 
 export interface FirebasePushMessage {
@@ -23,8 +23,8 @@ export function firebaseAdminConfigured(): boolean {
 }
 
 export function ensureFirebaseAdmin() {
-  if (getApps().length > 0) return;
-  initializeApp({
+  if (getApps().length > 0) return getApp();
+  return initializeApp({
     credential: cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
@@ -34,13 +34,15 @@ export function ensureFirebaseAdmin() {
 }
 
 export function getFirebaseFirestore() {
-  ensureFirebaseAdmin();
-  return getFirestore();
+  const app = ensureFirebaseAdmin();
+  // All push-store calls are unary reads/writes or transactions. Prefer the
+  // HTTP/1.1 transport so serverless cold starts do not depend on a long-lived
+  // gRPC channel. initializeFirestore is idempotent for the same app/settings.
+  return initializeFirestore(app, { preferRest: true });
 }
 
 export function getFirebaseAdminAuth() {
-  ensureFirebaseAdmin();
-  return getAuth();
+  return getAuth(ensureFirebaseAdmin());
 }
 
 function appUrl(symbol?: string): string {
@@ -60,13 +62,13 @@ function appUrl(symbol?: string): string {
 export async function sendFirebasePush(
   message: FirebasePushMessage,
 ): Promise<string> {
-  ensureFirebaseAdmin();
+  const app = ensureFirebaseAdmin();
   const data = {
     ...(message.data ?? {}),
     title: message.title,
     body: message.body,
   };
-  return getMessaging().send({
+  return getMessaging(app).send({
     token: message.token,
     data,
     webpush: {

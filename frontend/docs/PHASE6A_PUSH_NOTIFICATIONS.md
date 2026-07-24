@@ -208,6 +208,16 @@ pass for other devices cannot starve a registration request. Final aborts are
 reported as a stable timeout message instead of exposing the browser-specific
 `signal is aborted without reason` text.
 
+The Firebase Admin Firestore client uses its HTTP/1.1 REST transport for these
+unary reads, writes, and transactions. This avoids making a Vercel/serverless
+cold start depend on a persistent gRPC channel. Push routes still verify the
+Firebase ID token's signature, issuer, audience, and expiry, but do not request
+a per-call revocation lookup; this matches the canonical Go API and removes an
+otherwise mandatory Firebase Auth network round trip. `/api/push/register` has
+an 8-second server deadline, returns retryable `503` responses for Firebase
+timeouts/storage outages, and returns non-retryable `409` only when a device
+token is already owned by another user.
+
 Server push sends a data-first Web Push payload with `title` and `body` mirrored into `data`, an
 absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
 the background notification.
@@ -237,8 +247,11 @@ losing pushes for any realistically long closed-browser window.
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.
 - Unsupported browser/service worker: Push toggle is disabled.
 - Permission denied: Push toggle is disabled until the user changes browser site settings.
-- Push registration timeout: the client retries once; if both attempts time out,
-  verify the Vercel function can reach Firestore and try the Push toggle again.
+- Push registration timeout/`503`: the client retries once. Verify that the
+  Vercel server-only Firebase service account belongs to the same project as
+  the Web app, that the default Firestore database exists, and that the service
+  account can read/write it. Then redeploy and inspect the safe
+  `[push/register]` code in Vercel logs.
 - Missing Firebase Admin env: token registration falls back to local `.data/push-alerts.json`, but
   `/api/push/send` and `/api/push/evaluate` cannot send FCM.
 - Browser-open FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
