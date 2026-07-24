@@ -1,6 +1,6 @@
 # Watchlist Architecture
 
-Last updated: 2026-07-09
+Last updated: 2026-07-24
 
 ## Goal
 
@@ -13,6 +13,7 @@ for watchlist lists, active list, symbols, sections, or reorder state.
 - `frontend/src/components/watchlist/Watchlist.tsx`
 - `frontend/src/store/watchlistStore.ts`
 - `frontend/src/store/watchlistLayout.ts`
+- `frontend/src/store/watchlistSyncQueue.ts`
 - `frontend/src/hooks/useMarketDataBootstrap.ts`
 - `frontend/src/services/api/resources/watchlistsApi.ts`
 
@@ -202,8 +203,20 @@ Implemented Phase 6 write-through:
 - Symbol/section drag-drop reorder: optimistic local layout update, then
   `PUT /api/v1/watchlists/:id/layout`.
 
+Full-layout writes are concurrency-safe at both persistence boundaries:
+
+- `WatchlistSyncQueue` captures each immutable layout payload and serializes writes per watchlist.
+  A failed request does not poison the queue, and different watchlists can still sync in parallel.
+- Backend `ReplaceLayout` locks the owned parent watchlist row with `SELECT ... FOR UPDATE` before
+  deleting and reinserting symbols/sections. Concurrent tabs or devices therefore cannot interleave
+  replacement transactions and collide with `UNIQUE (watchlist_id, symbol)`.
+- Regression coverage in `frontend/tests/watchlist/watchlistSyncQueue.test.ts` verifies same-list
+  ordering, recovery after a failed write, and independent progress for different lists.
+
 Known Phase 6 limits:
 
-- Conflict handling for multiple browser tabs/devices is still pending.
+- Revision-aware conflict detection for multiple browser tabs/devices is still pending. Writes are
+  serialized safely, but concurrent clients currently use transaction-order last-write-wins
+  semantics.
 - The compatibility `POST/DELETE /symbols` endpoints remain for older clients, but the frontend uses
   the full-layout endpoint for every modern watchlist gesture.

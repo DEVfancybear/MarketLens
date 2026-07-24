@@ -365,6 +365,14 @@ Use `PUT /api/v1/watchlists/:id/layout` for add/remove/clear symbol,
 section add/rename/delete, and drag/drop reorder. It is the common persistence
 path for TradingView-style watchlist gestures.
 
+The frontend serializes full-layout writes per watchlist, while allowing
+different watchlists to sync independently. The backend additionally locks the
+owned `watchlists` row with `SELECT ... FOR UPDATE` before its transactional
+delete-and-reinsert. This prevents overlapping layout replacements from
+interleaving or producing a `watchlist_symbols` unique-constraint `500`.
+Cross-device conflict resolution is currently transaction-order
+last-write-wins; revision-based conflict responses are not yet implemented.
+
 ---
 
 ## MT5 Tick Stream

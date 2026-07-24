@@ -29,6 +29,7 @@ import {
   type SectionInsertMode,
   type WatchlistSectionMoveTarget,
 } from "./watchlistLayout";
+import { WatchlistSyncQueue } from "./watchlistSyncQueue";
 
 export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
 export type SortDir = "asc" | "desc";
@@ -68,6 +69,7 @@ type MoveSectionPayload = {
 };
 
 const DEFAULT_LIST_ID = "default";
+const remoteLayoutSyncQueue = new WatchlistSyncQueue();
 
 const DEFAULT_LIST: WatchlistList = {
   id: DEFAULT_LIST_ID,
@@ -338,7 +340,10 @@ function syncSanitizedRemoteLayouts(
 
 async function replaceRemoteLayoutFromLocal(list: WatchlistList): Promise<void> {
   if (!isServerWatchlistId(list.id)) return;
-  await replaceRemoteWatchlistLayout(list.id, remoteLayoutPayload(list));
+  const payload = remoteLayoutPayload(list);
+  await remoteLayoutSyncQueue.enqueue(list.id, () =>
+    replaceRemoteWatchlistLayout(list.id, payload).then(() => undefined),
+  );
 }
 
 async function replaceLocalListWithRemote(

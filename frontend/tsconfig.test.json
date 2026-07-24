@@ -64,6 +64,7 @@
     "src/services/alertConditions.ts",
     "src/services/notifications/deepLink.ts",
     "src/store/watchlistLayout.ts",
+    "src/store/watchlistSyncQueue.ts",
     "src/services/indicatorStoreModel.ts",
     "src/utils/time.ts",
     "src/services/privateWorkspaceAccess.ts",

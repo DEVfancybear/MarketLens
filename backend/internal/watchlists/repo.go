@@ -264,9 +264,13 @@ SET active_watchlist_id = EXCLUDED.active_watchlist_id,
 func (r *Repo) ReplaceLayout(ctx context.Context, userID, id string, layout WatchlistLayout) (Watchlist, error) {
 	symbols := normalizeSymbols(layout.Symbols)
 	sections := normalizeSections(layout.Sections, len(symbols))
-	uid, wid, err := r.ownedIDs(ctx, userID, id)
+	uid, err := parseUUID(userID)
 	if err != nil {
 		return Watchlist{}, err
+	}
+	wid, err := parseUUID(id)
+	if err != nil {
+		return Watchlist{}, ErrNotFound
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -274,6 +278,22 @@ func (r *Repo) ReplaceLayout(ctx context.Context, userID, id string, layout Watc
 		return Watchlist{}, err
 	}
 	defer tx.Rollback(ctx) // no-op after Commit
+
+	// Replacing a layout is a delete-and-reinsert operation. Serialize it on
+	// the parent row so rapid drag/drop writes (or writes from another tab)
+	// cannot interleave and collide with UNIQUE (watchlist_id, symbol).
+	var lockedID pgtype.UUID
+	err = tx.QueryRow(ctx, `
+SELECT id
+FROM watchlists
+WHERE id = $1 AND user_id = $2
+FOR UPDATE`, wid, uid).Scan(&lockedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Watchlist{}, ErrNotFound
+	}
+	if err != nil {
+		return Watchlist{}, err
+	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM watchlist_symbols WHERE watchlist_id = $1`, wid); err != nil {
 		return Watchlist{}, err

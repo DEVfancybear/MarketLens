@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Watchlist drag/drop layout sync race (2026-07-24)
+- Serialized full-layout API writes per watchlist in the frontend while keeping
+  different watchlists independent and allowing later writes to continue after
+  an earlier request fails.
+- Locked the owned watchlist row before the backend layout transaction deletes
+  and reinserts symbols/sections, preventing overlapping requests from hitting
+  `UNIQUE (watchlist_id, symbol)` and returning `500`.
+- Added watchlist sync-queue regressions and documented the remaining
+  transaction-order last-write-wins behavior across tabs/devices.
+
 ### Fixed - Production Push registration stalls (2026-07-24)
 - Switched Firebase Admin Firestore calls used by the serverless push store to
   the supported HTTP/1.1 REST transport, avoiding stalled gRPC channel setup
