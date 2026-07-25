@@ -1,4 +1,5 @@
 import {
+  type AutoscaleInfo,
   type ColorType,
   type CrosshairMode,
   type DeepPartial,
@@ -8,7 +9,7 @@ import {
   type TimeScaleOptions,
 } from "lightweight-charts";
 import type { Theme } from "@/store/uiStore";
-import type { Timeframe } from "@/types";
+import type { IndicatorSeries, Timeframe } from "@/types";
 import { BAR_SPACING, chartColors, makeTickMarkFormatter } from "./chartTheme";
 
 // Keep this policy module runtime-independent from Lightweight Charts. Version
@@ -25,6 +26,62 @@ export const MIN_BAR_SPACING = 1.5;
 export const PRICE_SCALE_MIN_WIDTH = 74;
 export const MAIN_PRICE_SCALE_MARGINS = { top: 0.08, bottom: 0.08 } as const;
 export const INDICATOR_PANE_HEIGHT = 124;
+export const VOLUME_TYPICAL_BAR_FRACTION = 0.25;
+const MIN_VOLUME_SCALE_SAMPLES = 5;
+
+export function indicatorSeriesPriceFormatOptions(series: IndicatorSeries) {
+  const type = series.valueFormat;
+  if (type === "volume" || type === "percent") {
+    return {
+      priceFormat: {
+        type,
+        ...(series.precision == null
+          ? {}
+          : { precision: series.precision, minMove: 1 / 10 ** series.precision }),
+      },
+    };
+  }
+  if (series.precision == null) return {};
+  return {
+    priceFormat: {
+      type: "price" as const,
+      precision: series.precision,
+      minMove: 1 / 10 ** series.precision,
+    },
+  };
+}
+
+/**
+ * Reserve stable headroom for volume panes based on the typical visible bar.
+ * A quiet symbol whose largest bar is only slightly above its median should
+ * not render as a solid wall, while genuine spikes remain fully visible.
+ */
+export function volumeScaleCeiling(points: readonly { value: number }[]): number | undefined {
+  const values = points
+    .map((point) => point.value)
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((left, right) => left - right);
+  if (values.length < MIN_VOLUME_SCALE_SAMPLES) return undefined;
+  const middle = Math.floor(values.length / 2);
+  const median = values.length % 2 === 0
+    ? (values[middle - 1] + values[middle]) / 2
+    : values[middle];
+  return median / VOLUME_TYPICAL_BAR_FRACTION;
+}
+
+export function volumeAutoscaleInfo(
+  original: AutoscaleInfo | null,
+  ceiling: number | undefined,
+): AutoscaleInfo | null {
+  if (!original?.priceRange || ceiling == null || !Number.isFinite(ceiling)) return original;
+  return {
+    ...original,
+    priceRange: {
+      minValue: Math.min(0, original.priceRange.minValue),
+      maxValue: Math.max(ceiling, original.priceRange.maxValue),
+    },
+  };
+}
 
 export function getDefaultBarSpacing(timeframe: Timeframe): number {
   return BAR_SPACING[timeframe] ?? 8;

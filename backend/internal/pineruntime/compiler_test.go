@@ -350,6 +350,9 @@ func TestCompileVSAProducesColoredHistogram(t *testing.T) {
 	if series.Type != "histogram" {
 		t.Fatalf("expected histogram, got %+v", series.Type)
 	}
+	if series.ValueFormat != "volume" {
+		t.Fatalf("expected common volume presentation contract, got %q", series.ValueFormat)
+	}
 	colors := map[string]bool{}
 	for _, point := range series.Data {
 		if point.Color != nil {
@@ -358,6 +361,26 @@ func TestCompileVSAProducesColoredHistogram(t *testing.T) {
 	}
 	if len(colors) < 3 {
 		t.Fatalf("expected multiple VSA palette colors, got %+v", colors)
+	}
+}
+
+func TestCompilePropagatesCommonOutputFormatAndPrecision(t *testing.T) {
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID: "formatted-output",
+		SourceCode: `//@version=5
+indicator("Formatted", format=format.percent, precision=3)
+plot(close)`,
+		Candles: sampleCandles(8),
+		StyleOverrides: map[string]InputValue{
+			outputPrecisionStyleKey: "4",
+		},
+	})
+	if len(resp.Errors) > 0 || len(resp.Result.Series) != 1 {
+		t.Fatalf("compile response = %+v", resp)
+	}
+	series := resp.Result.Series[0]
+	if series.ValueFormat != "percent" || series.Precision == nil || *series.Precision != 4 {
+		t.Fatalf("series presentation = %+v, want percent precision 4", series)
 	}
 }
 
@@ -419,7 +442,7 @@ func TestCompileLineBreakPlotDoesNotBridgeNaGaps(t *testing.T) {
 	source := `//@version=5
 indicator("Line break")
 x = close > 100 ? close : na
-plot(x, style=linebr, linewidth=3, color=color.red, title="Break Plot")`
+plot(x, style=plot.style_linebr, linewidth=3, color=color.red, title="Break Plot")`
 	candles := sampleCandles(12)
 	for index := range candles {
 		if index >= 4 && index <= 7 {

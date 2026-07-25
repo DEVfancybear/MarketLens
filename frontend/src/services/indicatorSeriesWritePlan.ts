@@ -53,3 +53,15 @@ export function resolveIndicatorSeriesWritePlan(
 
   return "replace";
 }
+
+/**
+ * An empty native pane has no price range. Its first real write must restore
+ * autoscale explicitly so the series is visible immediately even when the
+ * pane inherited a transient/manual scale state during creation.
+ */
+export function shouldInitializeIndicatorPaneAutoScale(
+  previous: readonly IndicatorWritePoint[],
+  next: readonly IndicatorWritePoint[],
+): boolean {
+  return previous.length === 0 && next.length > 0;
+}

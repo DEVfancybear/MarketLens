@@ -6,6 +6,7 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  type AutoscaleInfoProvider,
   type IChartApi,
   type ISeriesApi,
   type Logical,
@@ -51,11 +52,14 @@ import {
   candlestickOptions,
   crosshairOptions,
   gridOptions,
+  indicatorSeriesPriceFormatOptions,
   layoutOptions,
   mainPriceScaleOptions,
   panePriceScaleOptions,
   timeScaleDefaults,
   timeScaleOptions,
+  volumeAutoscaleInfo,
+  volumeScaleCeiling,
 } from "./chartVisualProfile";
 import { computeCachedIndicator } from "@/services/indicatorComputationCache";
 import { getChartOptimizationDecision } from "@/services/chartOptimizationRollout";
@@ -106,7 +110,11 @@ import {
   endPriceScalePan,
   resetPriceScalePan,
 } from "./chartPriceScalePan";
-import { resolveIndicatorSeriesWritePlan, type IndicatorWritePoint } from "@/services/indicatorSeriesWritePlan";
+import {
+  resolveIndicatorSeriesWritePlan,
+  shouldInitializeIndicatorPaneAutoScale,
+  type IndicatorWritePoint,
+} from "@/services/indicatorSeriesWritePlan";
 import { indicatorPointsInViewport, resolveCandleViewport, type CandleViewport } from "@/services/candleViewport";
 import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
 
@@ -135,15 +143,14 @@ type ProjectedIndicatorLabel = {
   y: number;
 };
 
-function seriesPriceFormatOptions(series: IndicatorSeries) {
-  if (series.precision == null) return {};
-  return {
-    priceFormat: {
-      type: "price" as const,
-      precision: series.precision,
-      minMove: 1 / 10 ** series.precision,
-    },
-  };
+function indicatorSeriesAutoscaleOptions(
+  series: IndicatorSeries,
+  getVolumeCeiling: () => number | undefined,
+) {
+  if (series.type !== "histogram" || series.valueFormat !== "volume") return {};
+  const autoscaleInfoProvider: AutoscaleInfoProvider = (original) =>
+    volumeAutoscaleInfo(original(), getVolumeCeiling());
+  return { autoscaleInfoProvider };
 }
 
 function indicatorStructureSignature(series: readonly IndicatorSeries[]) {
@@ -160,6 +167,7 @@ function indicatorStyleSignature(series: IndicatorSeries) {
     series.lineVisible ?? "",
     series.lastValueVisible ?? "",
     series.precision ?? "",
+    series.valueFormat ?? "",
   ].join(":");
 }
 
@@ -274,6 +282,7 @@ export function PriceChart({
   const indStructureRef = useRef<Map<string, string>>(new Map());
   const indStyleRef = useRef<Map<string, string>>(new Map());
   const indDataRef = useRef<Map<string, IndicatorWritePoint[]>>(new Map());
+  const indVolumeCeilingRef = useRef<Map<string, number>>(new Map());
   const paneLayoutSignatureRef = useRef("");
   const fittedRef = useRef(false);
   const lastAutoFitLengthRef = useRef(0);
@@ -563,6 +572,7 @@ export function PriceChart({
     const indStructureStore = indStructureRef.current;
     const indStyleStore = indStyleRef.current;
     const indDataStore = indDataRef.current;
+    const indVolumeCeilingStore = indVolumeCeilingRef.current;
     return () => {
       disposed = true;
       ro.disconnect();
@@ -606,6 +616,7 @@ export function PriceChart({
       indStructureStore.clear();
       indStyleStore.clear();
       indDataStore.clear();
+      indVolumeCeilingStore.clear();
       setReady(false);
       removeChartAfterCurrentStack(chart);
     };
@@ -1094,6 +1105,7 @@ export function PriceChart({
       indStructureRef.current.clear();
       indStyleRef.current.clear();
       indDataRef.current.clear();
+      indVolumeCeilingRef.current.clear();
       while (chart.panes().length > 1) {
         chart.removePane(chart.panes().length - 1);
       }
@@ -1130,6 +1142,9 @@ export function PriceChart({
         for (const key of [...indDataRef.current.keys()]) {
           if (key.startsWith(`${id}:`)) indDataRef.current.delete(key);
         }
+        for (const key of [...indVolumeCeilingRef.current.keys()]) {
+          if (key.startsWith(`${id}:`)) indVolumeCeilingRef.current.delete(key);
+        }
       }
     }
 
@@ -1141,7 +1156,12 @@ export function PriceChart({
       if (!series || structureChanged) {
         incrementChartPerformanceCounter("series.indicator.created", result.series.length);
         series?.forEach((s) => chart.removeSeries(s));
-        series = result.series.map((s) => {
+        series = result.series.map((s, seriesIndex) => {
+          const cacheKey = `${cfg.id}:${seriesIndex}`;
+          const presentationOptions = {
+            ...indicatorSeriesPriceFormatOptions(s),
+            ...indicatorSeriesAutoscaleOptions(s, () => indVolumeCeilingRef.current.get(cacheKey)),
+          };
           if (s.type === "baselineFill") {
             return chart.addSeries(
               BaselineSeries,
@@ -1156,7 +1176,7 @@ export function PriceChart({
                 lineVisible: s.lineVisible ?? false,
                 priceLineVisible: false,
                 lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-                ...seriesPriceFormatOptions(s),
+                ...presentationOptions,
               },
               paneIndex,
             );
@@ -1169,7 +1189,7 @@ export function PriceChart({
                   color: s.color,
                   priceLineVisible: false,
                   lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-                  ...seriesPriceFormatOptions(s),
+                  ...presentationOptions,
                 },
                 paneIndex,
               )
@@ -1182,7 +1202,7 @@ export function PriceChart({
                   priceLineVisible: false,
                   lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
                   crosshairMarkerVisible: cfg.separatePane,
-                  ...seriesPriceFormatOptions(s),
+                  ...presentationOptions,
                 },
                 paneIndex,
               );
@@ -1195,12 +1215,19 @@ export function PriceChart({
         for (const key of [...indDataRef.current.keys()]) {
           if (key.startsWith(`${cfg.id}:`)) indDataRef.current.delete(key);
         }
+        for (const key of [...indVolumeCeilingRef.current.keys()]) {
+          if (key.startsWith(`${cfg.id}:`)) indVolumeCeilingRef.current.delete(key);
+        }
       }
       result.series.forEach((s, idx) => {
         const cacheKey = `${cfg.id}:${idx}`;
         const styleSignature = indicatorStyleSignature(s);
         if (!structureChanged && indStyleRef.current.get(cacheKey) !== styleSignature) {
           incrementChartPerformanceCounter("series.indicator.applyOptions.calls");
+          const presentationOptions = {
+            ...indicatorSeriesPriceFormatOptions(s),
+            ...indicatorSeriesAutoscaleOptions(s, () => indVolumeCeilingRef.current.get(cacheKey)),
+          };
           if (s.type === "baselineFill") {
             series![idx].applyOptions({
               baseValue: { type: "price", price: s.baseValue ?? 0 },
@@ -1210,7 +1237,7 @@ export function PriceChart({
               bottomFillColor2: s.fillBelowBase ? s.color : "rgba(0, 0, 0, 0)",
               lineVisible: s.lineVisible ?? false,
               lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-              ...seriesPriceFormatOptions(s),
+              ...presentationOptions,
             });
           } else {
             series![idx].applyOptions({
@@ -1218,13 +1245,13 @@ export function PriceChart({
               ...(s.type === "histogram"
                 ? {
                     lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-                    ...seriesPriceFormatOptions(s),
+                    ...presentationOptions,
                   }
                 : {
                     lineWidth: s.lineWidth ?? 2,
                     lineStyle: s.lineStyle ?? 0,
                     lastValueVisible: s.lastValueVisible ?? cfg.separatePane,
-                    ...seriesPriceFormatOptions(s),
+                    ...presentationOptions,
                   }),
             });
           }
@@ -1256,7 +1283,18 @@ export function PriceChart({
           },
           { candles: candles.length, indicator: cfg.type },
         );
-        const plan = resolveIndicatorSeriesWritePlan(indDataRef.current.get(cacheKey) ?? [], projected);
+        const previous = indDataRef.current.get(cacheKey) ?? [];
+        const plan = resolveIndicatorSeriesWritePlan(previous, projected);
+        const initializePaneAutoScale = cfg.separatePane &&
+          shouldInitializeIndicatorPaneAutoScale(previous, projected);
+        const ceiling = s.type === "histogram" && s.valueFormat === "volume"
+          ? volumeScaleCeiling(projected)
+          : undefined;
+        if (ceiling == null) indVolumeCeilingRef.current.delete(cacheKey);
+        else indVolumeCeilingRef.current.set(cacheKey, ceiling);
+        // Autoscale providers read the same projected snapshot synchronously
+        // when Lightweight Charts processes the following series write.
+        indDataRef.current.set(cacheKey, projected);
         if (plan === "replace") {
           measureChartSeriesWrite("indicator", "setData", projected.length, () => series![idx].setData(projected));
         } else if (plan === "append" || plan === "update-latest") {
@@ -1267,7 +1305,9 @@ export function PriceChart({
         } else {
           incrementChartPerformanceCounter("series.indicator.skipped");
         }
-        indDataRef.current.set(cacheKey, projected);
+        if (initializePaneAutoScale) {
+          chart.priceScale("right", paneIndex).setAutoScale(true);
+        }
       });
     }
   }, [

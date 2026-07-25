@@ -60,6 +60,7 @@ export interface LinePoint {
 }
 
 export type IndicatorSeriesType = 'line' | 'histogram' | 'baselineFill';
+export type IndicatorValueFormat = 'price' | 'volume' | 'percent';
 export type IndicatorLineWidth = 1 | 2 | 3 | 4;
 export type IndicatorLineStyle = 0 | 1 | 2 | 3 | 4;
 
@@ -68,6 +69,8 @@ export interface IndicatorSeries {
   color: string;
   data: LinePoint[];
   type?: IndicatorSeriesType;
+  /** Script-level output format normalized by the common Pine runtime. */
+  valueFormat?: IndicatorValueFormat;
   lineWidth?: IndicatorLineWidth;
   lineStyle?: IndicatorLineStyle;
   baseValue?: number;

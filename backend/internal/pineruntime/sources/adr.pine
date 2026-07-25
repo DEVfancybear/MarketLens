@@ -7,5 +7,11 @@ adr = request.security(syminfo.tickerid, "D", ta.sma(high - low, length)[1], loo
 dayHigh = request.security(syminfo.tickerid, "D", high, lookahead = barmerge.lookahead_off)
 dayLow = request.security(syminfo.tickerid, "D", low, lookahead = barmerge.lookahead_off)
 mid = (dayHigh + dayLow) / 2
-plot(mid + adr / 2, "adr-high", color = highColor, linewidth = 2)
-plot(mid - adr / 2, "adr-low", color = lowColor, linewidth = 2)
+newDay = ta.change(time("D")) != 0
+adrHigh = mid + adr / 2
+adrLow = mid - adr / 2
+// ADR levels are independent daily ranges. Leave the first bar of each day
+// empty and use line-break plots so the renderer never joins two daily levels
+// with a misleading vertical/diagonal edge.
+plot(newDay ? na : adrHigh, "adr-high", color = highColor, linewidth = 2, style = plot.style_linebr)
+plot(newDay ? na : adrLow, "adr-low", color = lowColor, linewidth = 2, style = plot.style_linebr)

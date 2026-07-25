@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveIndicatorSeriesWritePlan } from "../../src/services/indicatorSeriesWritePlan";
+import {
+  resolveIndicatorSeriesWritePlan,
+  shouldInitializeIndicatorPaneAutoScale,
+} from "../../src/services/indicatorSeriesWritePlan";
 
 const point = (time: number, value = time, color?: string) => ({ time, value, color });
 
@@ -41,4 +44,11 @@ test("indicator write plan replaces historical corrections and window changes", 
     resolveIndicatorSeriesWritePlan([point(1), point(2)], [point(2), point(3)]),
     "replace",
   );
+});
+
+test("indicator pane initializes autoscale exactly on its first non-empty write", () => {
+  const points = [{ time: 100, value: 62.3 }];
+  assert.equal(shouldInitializeIndicatorPaneAutoScale([], points), true);
+  assert.equal(shouldInitializeIndicatorPaneAutoScale(points, points), false);
+  assert.equal(shouldInitializeIndicatorPaneAutoScale([], []), false);
 });

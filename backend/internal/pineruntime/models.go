@@ -68,19 +68,24 @@ type LinePoint struct {
 }
 
 type IndicatorSeries struct {
-	Key                  string      `json:"key"`
-	Color                string      `json:"color"`
-	Data                 []LinePoint `json:"data"`
-	Type                 string      `json:"type,omitempty"`
-	LineWidth            *int        `json:"lineWidth,omitempty"`
-	LineStyle            *int        `json:"lineStyle,omitempty"`
-	BaseValue            *float64    `json:"baseValue,omitempty"`
-	FillBelowBase        *bool       `json:"fillBelowBase,omitempty"`
-	LastValueVisible     *bool       `json:"lastValueVisible,omitempty"`
-	StatusLineVisible    *bool       `json:"statusLineVisible,omitempty"`
-	ExtendToVisibleRange *bool       `json:"extendToVisibleRange,omitempty"`
-	LineVisible          *bool       `json:"lineVisible,omitempty"`
-	Precision            *int        `json:"precision,omitempty"`
+	Key   string      `json:"key"`
+	Color string      `json:"color"`
+	Data  []LinePoint `json:"data"`
+	Type  string      `json:"type,omitempty"`
+	// ValueFormat is the normalized script-level display format. Keeping this
+	// semantic in the common runtime contract lets every symbol and every
+	// renderer present volume/percent outputs consistently without inspecting
+	// script names or formulas in the browser.
+	ValueFormat          string   `json:"valueFormat,omitempty"`
+	LineWidth            *int     `json:"lineWidth,omitempty"`
+	LineStyle            *int     `json:"lineStyle,omitempty"`
+	BaseValue            *float64 `json:"baseValue,omitempty"`
+	FillBelowBase        *bool    `json:"fillBelowBase,omitempty"`
+	LastValueVisible     *bool    `json:"lastValueVisible,omitempty"`
+	StatusLineVisible    *bool    `json:"statusLineVisible,omitempty"`
+	ExtendToVisibleRange *bool    `json:"extendToVisibleRange,omitempty"`
+	LineVisible          *bool    `json:"lineVisible,omitempty"`
+	Precision            *int     `json:"precision,omitempty"`
 	// Vector drawing compilation uses these internal fields to apply Pine's
 	// global object limits in per-bar/source creation order. They intentionally
 	// stay out of the transport contract.

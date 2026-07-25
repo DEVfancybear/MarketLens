@@ -1,6 +1,6 @@
 # Indicator architecture
 
-_Updated: 2026-07-18._
+_Updated: 2026-07-26._
 
 Indicators are backend-defined and backend-executed. The browser does not own
 an indicator catalog, formulas, defaults, input schemas, style schemas, or
@@ -103,6 +103,31 @@ chart; the browser must not substitute a local clock or a viewport edge.
 The frontend may contain generic display policy, such as rendering a
 `baselineFill` series or formatting a timeframe input. It must not contain a
 list of catalog names or select behavior based on a catalog type.
+
+### Common output presentation
+
+Pine declaration properties are part of the runtime-to-renderer contract, not
+frontend guesses based on a symbol or script name. The compiler normalizes
+`indicator(..., format = ...)` to the series `valueFormat` (`price`, `volume`,
+or `percent`) and carries optional declaration/style precision on every output
+series. `PriceChart` maps those fields to the native chart price formatter for
+catalog and saved-source indicators identically.
+
+Histogram series declared with `format.volume` also use one shared visual
+profile: the visible median bar targets 25% of the pane while the actual
+maximum remains in range. This prevents normal volume from filling the pane on
+high-nominal symbols without fixed, symbol-specific divisors.
+
+Every separate indicator pane restores autoscale when its series changes from
+empty to non-empty. Async first results (for example RSI warm-up/runtime data)
+therefore become visible on their first write even if the pane temporarily had
+no native price range. Subsequent writes preserve the user's scale state.
+
+Sparse Pine plots retain their discontinuities. In particular,
+`plot.style_linebr` is emitted as a line-break series, so `na` values do not
+create connecting vertical or diagonal edges between independent segments.
+Reference `hline()` and `fill()` primitives remain backend-defined source
+outputs; RSI's 70/50/30 levels and range fill require no renderer special case.
 
 ## Runtime and cache policy
 

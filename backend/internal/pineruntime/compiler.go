@@ -8,6 +8,57 @@ import (
 	"strings"
 )
 
+const outputPrecisionStyleKey = "__output.precision"
+
+func normalizedIndicatorValueFormat(value any) string {
+	raw, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "format.volume", "volume":
+		return "volume"
+	case "format.percent", "percent":
+		return "percent"
+	case "format.price", "price":
+		return "price"
+	default:
+		// format.inherit and absent/unknown future values intentionally leave
+		// the chart renderer's normal output format untouched.
+		return ""
+	}
+}
+
+func indicatorOutputPrecision(meta ScriptMeta, styles map[string]InputValue) *int {
+	value := meta.Properties["precision"]
+	if override, ok := styles[outputPrecisionStyleKey]; ok {
+		if text, isString := override.(string); !isString || !strings.EqualFold(strings.TrimSpace(text), "default") {
+			value = override
+		}
+	}
+	number, ok := runtimeNumericValue(value)
+	if !ok {
+		return nil
+	}
+	precision := int(math.Max(0, math.Min(8, math.Round(number))))
+	return &precision
+}
+
+func applyIndicatorOutputPresentation(result *IndicatorResult, meta ScriptMeta, styles map[string]InputValue) {
+	valueFormat := normalizedIndicatorValueFormat(meta.Properties["format"])
+	precision := indicatorOutputPrecision(meta, styles)
+	if valueFormat == "" && precision == nil {
+		return
+	}
+	for index := range result.Series {
+		result.Series[index].ValueFormat = valueFormat
+		if precision != nil {
+			seriesPrecision := *precision
+			result.Series[index].Precision = &seriesPrecision
+		}
+	}
+}
+
 func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 	meta := ExtractMeta(req.SourceCode)
 	id := req.ScriptID
@@ -75,6 +126,7 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 		resp.Result = result
 		resp.Result.ID = id
 		resp.Errors = append(resp.Errors, errors...)
+		applyIndicatorOutputPresentation(&resp.Result, meta, req.StyleOverrides)
 		if req.ReplayCutoff != nil {
 			resp.Result = clampIndicatorResultToReplay(resp.Result, *req.ReplayCutoff)
 		}
@@ -147,6 +199,7 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 	if len(resp.Result.Series) == 0 && len(resp.Result.Labels) == 0 && resp.Result.Dashboard == nil && len(resp.Errors) == 0 {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "No supported plot(), hline(), fill(), or drawing object output found"})
 	}
+	applyIndicatorOutputPresentation(&resp.Result, meta, req.StyleOverrides)
 	if req.ReplayCutoff != nil {
 		resp.Result = clampIndicatorResultToReplay(resp.Result, *req.ReplayCutoff)
 	}

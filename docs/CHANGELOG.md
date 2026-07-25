@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Common indicator pane presentation (2026-07-26)
+- Propagated Pine declaration `format` and `precision` through the common
+  runtime result contract, giving volume and percent outputs the same native
+  formatting for every symbol without frontend indicator-name dispatch.
+- Added shared volume-pane autoscaling based on the visible median bar, while
+  preserving real spikes, so high-nominal symbols no longer render normal
+  volume as a nearly solid histogram.
+- Restored autoscale on the first non-empty write to every separate indicator
+  pane, eliminating the transient blank RSI pane after an asynchronous load.
+- Recognized modern `plot.style_linebr` syntax and made ADR daily levels
+  explicitly discontinuous, preventing false vertical connectors at day
+  boundaries.
+- Added RSI 70/50/30 reference bands and background fill through ordinary Pine
+  `hline()`/`fill()` output, plus runtime and frontend regression coverage for
+  all presentation contracts.
+
 ### Fixed - Chart restore, pan stability, markers, and multi-pane ownership (2026-07-24)
 - Persisted the authenticated user's latest symbol in the backend chart settings
   slice, protected pending writes across refresh, flushed them before sign-out,
@@ -71,7 +87,6 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added regressions for canonical snapshot authentication/filtering and drawing
   payloads, creation-race retry classification, canonical cursor merges,
   production URL derivation, and scheduler-gap tick retention.
-
 ### Changed - Multi-drawing colors and responsive settings palette (2026-07-23)
 - Kept the floating drawing toolbar available for Ctrl/Cmd multi-selections and
   added capability-aware line/text and fill color actions across every selected

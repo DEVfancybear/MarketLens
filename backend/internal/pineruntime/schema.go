@@ -522,7 +522,9 @@ func plotType(expression string) string {
 
 func plotLineBreak(expression string) bool {
 	key := strings.ToLower(strings.TrimSpace(expression))
-	return key == "linebr" || strings.Contains(key, ".linebr")
+	return key == "linebr" ||
+		strings.HasSuffix(key, ".linebr") ||
+		strings.HasSuffix(key, ".style_linebr")
 }
 
 func hlineVariableName(line string) string {

@@ -106,6 +106,68 @@ func TestEveryCurrentBuiltInCompilesFromPineSourceDefaults(t *testing.T) {
 	}
 }
 
+func TestADRDailyLevelsDoNotBridgeSessionChanges(t *testing.T) {
+	response := computeBuiltInForTest(
+		t,
+		"ADR",
+		sampleIntradayCandles(18),
+		runtimeConfig("runtime-adr-segments", "ADR"),
+	)
+	if len(response.Result.Series) < 4 {
+		t.Fatalf("ADR should emit independent daily high/low segments, got %+v", response.Result.Series)
+	}
+	for _, series := range response.Result.Series {
+		if series.Type != "line" || len(series.Data) < 2 {
+			t.Fatalf("ADR segment = %+v, want a drawable line segment", series)
+		}
+		day := series.Data[0].Time / 86400
+		for _, point := range series.Data[1:] {
+			if point.Time/86400 != day {
+				t.Fatalf("ADR segment %q bridges UTC days: %+v", series.Key, series.Data)
+			}
+		}
+		if series.StatusLineVisible == nil || *series.StatusLineVisible {
+			t.Fatalf("ADR helper segment should not duplicate status values: %+v", series)
+		}
+	}
+}
+
+func TestRSIEmitsOscillatorDataAndReferenceBands(t *testing.T) {
+	response := computeBuiltInForTest(
+		t,
+		"RSI",
+		sampleCandles(160),
+		runtimeConfig("runtime-rsi-bands", "RSI"),
+	)
+	references := map[string]bool{}
+	hasFill := false
+	hasRSI := false
+	for _, series := range response.Result.Series {
+		switch series.Key {
+		case "Upper Band", "Middle Band", "Lower Band":
+			references[series.Key] = series.ExtendToVisibleRange != nil && *series.ExtendToVisibleRange
+		case "rsi":
+			hasRSI = len(series.Data) > 0
+			for _, point := range series.Data {
+				if point.Value < 0 || point.Value > 100 {
+					t.Fatalf("RSI value outside oscillator bounds: %+v", point)
+				}
+			}
+		}
+		if series.Type == "baselineFill" {
+			hasFill = true
+		}
+	}
+	if !hasRSI || !hasFill || len(references) != 3 {
+		t.Fatalf("RSI presentation is incomplete: series=%+v references=%+v", response.Result.Series, references)
+	}
+	for key, extended := range references {
+		if !extended {
+			t.Fatalf("RSI reference %q must extend through the visible pane", key)
+		}
+	}
+}
+
 func TestFVGSourceUsesMiddleCloseThresholdAndSourceGeometry(t *testing.T) {
 	candles := fvgFixtureCandles()[:3]
 	config := runtimeConfig("fvg", "FVG")
