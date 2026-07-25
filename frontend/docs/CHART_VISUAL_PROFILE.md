@@ -135,13 +135,12 @@ For MT5 symbols it also passes the latest authoritative broker-session status.
 The hook updates independently of quote arrival every 250ms, while
 `countdownModel` owns boundary calculation:
 
-- MT5 renders the countdown only while a fresh status is `open`,
-  `scheduledOpen` is true, and its session boundary and TTL are still in the
-  future. `closed`, `unknown`, missing, or expired status hides the countdown
-  row instead of guessing from tick age. The clock advances from the backend's
-  UTC observation using elapsed browser time, so workstation clock skew cannot
-  move the boundary. Providers without an authoritative session feed retain the
-  candle-based fallback.
+- MT5 prefers the broker observation clock when it is available. Missing,
+  unknown, closed, or expired session status falls back to the browser clock,
+  so a temporary session-feed outage cannot remove timers from every chart.
+  `countdownModel` still anchors the timer to the latest concrete candle and
+  rejects that timer as soon as the candle's own close has elapsed, so a stale
+  candle cannot invent countdowns while its market is closed.
 
 - `1m` through `1W` advance by their fixed duration from the source candle
   anchor. This preserves the broker's actual daily and weekly session alignment

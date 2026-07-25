@@ -549,9 +549,14 @@ text behavior.
 - **Rendering**: `InfoLineTool.ts` draws the segment plus a TradingView-style dark panel containing
   price change / percent / tick span, bar count + elapsed time + pixel distance, and angle.
 - **Panel sizing**: the panel measures its three row labels with the active canvas font, expands
-  from the TradingView-like minimum width as needed, clamps to the chart viewport, and ellipsizes
-  only if the viewport is too narrow. Do not return to a fixed-width-only panel; long
+  from a compact minimum width as needed, clamps to the chart viewport, and ellipsizes only if the
+  viewport is too narrow. Its 66px dark surface uses a subtle border, shadow, and drawing-color
+  accent instead of a large translucent gray card. Do not return to a fixed-width-only panel; long
   bars/time/distance rows overflow when the user draws from right to left.
+- **Panel placement**: prefer the free side of the line and vertically center the panel on that
+  endpoint. If the right endpoint is too close to the price scale, attach to the left endpoint;
+  only use an above/below midpoint fallback when neither side fits. This keeps the stats visually
+  connected to the drawing and avoids covering the candles beneath the entire segment.
 - **Data sources**: price values come from the drawing points; bars use
   `Projector.barIntervalSeconds` supplied by the chart composition root; distance and angle come
   from projected canvas coordinates so they reflect the current chart zoom/pan. The adapter does

@@ -17,18 +17,19 @@ import {
   twoPointAnchors,
 } from "./lineGeometry";
 
-const PANEL_MIN_W = 246;
-const PANEL_H = 92;
-const PANEL_PAD = 12;
-const PANEL_ROW_H = 28;
-const PANEL_TEXT_X = 40;
-const PANEL_RIGHT_PAD = 14;
-const PANEL_CULL_W = 360;
+const PANEL_MIN_W = 204;
+const PANEL_MAX_W = 320;
+const PANEL_H = 66;
+const PANEL_PAD_Y = 6;
+const PANEL_ROW_H = 18;
+const PANEL_ICON_X = 10;
+const PANEL_TEXT_X = 32;
+const PANEL_RIGHT_PAD = 10;
 // Reserve the right price scale / current-price label strip. The drawing canvas
 // spans the full chart container, so panels must be clipped before this zone.
 const RIGHT_PRICE_SCALE_GUARD = 112;
 const PANEL_EDGE_PAD = 6;
-const PANEL_ANCHOR_GAP = 16;
+const PANEL_ANCHOR_GAP = 8;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -71,20 +72,27 @@ function panelPosition(
 ): { x: number; y: number } {
   const usableRight = usablePanelRight(proj);
   const midX = (x1 + x2) / 2;
-  const lineLeft = Math.min(x1, x2);
-  const lineRight = Math.max(x1, x2);
-  const rightOfLine = lineRight + PANEL_ANCHOR_GAP;
-  const leftOfLine = lineLeft - panelWidth - PANEL_ANCHOR_GAP;
-  const below = Math.max(y1, y2) + 16;
-  const above = Math.min(y1, y2) - PANEL_H - 16;
-  const preferredY = below + PANEL_H <= proj.height - 6 ? below : above;
+  const leftPoint = x1 <= x2 ? { x: x1, y: y1 } : { x: x2, y: y2 };
+  const rightPoint = x1 <= x2 ? { x: x2, y: y2 } : { x: x1, y: y1 };
+  const rightOfLine = rightPoint.x + PANEL_ANCHOR_GAP;
+  const leftOfLine = leftPoint.x - panelWidth - PANEL_ANCHOR_GAP;
   const centered = midX - panelWidth / 2;
-  const preferredX =
-    rightOfLine + panelWidth <= usableRight - PANEL_EDGE_PAD
-      ? rightOfLine
-      : leftOfLine >= PANEL_EDGE_PAD
-        ? leftOfLine
-        : centered;
+  const fitsRight = rightOfLine + panelWidth <= usableRight - PANEL_EDGE_PAD;
+  const fitsLeft = leftOfLine >= PANEL_EDGE_PAD;
+  const preferredX = fitsRight ? rightOfLine : fitsLeft ? leftOfLine : centered;
+  let preferredY: number;
+  if (fitsRight || fitsLeft) {
+    const anchorY = fitsRight ? rightPoint.y : leftPoint.y;
+    preferredY = anchorY - PANEL_H / 2;
+  } else {
+    const below = Math.max(y1, y2) + PANEL_ANCHOR_GAP;
+    const above = Math.min(y1, y2) - PANEL_H - PANEL_ANCHOR_GAP;
+    preferredY = below + PANEL_H <= proj.height - PANEL_EDGE_PAD
+      ? below
+      : above >= PANEL_EDGE_PAD
+        ? above
+        : (y1 + y2) / 2 - PANEL_H / 2;
+  }
   return {
     x: clamp(
       preferredX,
@@ -147,48 +155,49 @@ function drawInfoIcon(
   g: CanvasRenderingContext2D,
   kind: "price" | "bars" | "angle",
   x: number,
-  y: number,
+  centerY: number,
 ) {
   g.save();
-  g.strokeStyle = "#f0f3fa";
-  g.fillStyle = "#f0f3fa";
-  g.lineWidth = 1.2;
+  g.strokeStyle = "#b2b5be";
+  g.lineWidth = 1.25;
+  g.lineCap = "round";
+  g.lineJoin = "round";
   g.setLineDash([]);
   if (kind === "price") {
     g.beginPath();
-    g.moveTo(x + 7, y + 5);
-    g.lineTo(x + 7, y + 19);
-    g.moveTo(x + 3, y + 8);
-    g.lineTo(x + 7, y + 4);
-    g.lineTo(x + 11, y + 8);
-    g.moveTo(x + 3, y + 16);
-    g.lineTo(x + 7, y + 20);
-    g.lineTo(x + 11, y + 16);
+    g.moveTo(x + 7, centerY - 6);
+    g.lineTo(x + 7, centerY + 6);
+    g.moveTo(x + 4, centerY - 3);
+    g.lineTo(x + 7, centerY - 6);
+    g.lineTo(x + 10, centerY - 3);
+    g.moveTo(x + 4, centerY + 3);
+    g.lineTo(x + 7, centerY + 6);
+    g.lineTo(x + 10, centerY + 3);
     g.stroke();
   } else if (kind === "bars") {
     g.beginPath();
-    g.moveTo(x + 1, y + 12);
-    g.lineTo(x + 14, y + 12);
-    g.moveTo(x + 1, y + 7);
-    g.lineTo(x + 1, y + 17);
-    g.moveTo(x + 14, y + 7);
-    g.lineTo(x + 14, y + 17);
-    g.moveTo(x + 4, y + 8);
-    g.lineTo(x + 1, y + 12);
-    g.lineTo(x + 4, y + 16);
-    g.moveTo(x + 11, y + 8);
-    g.lineTo(x + 14, y + 12);
-    g.lineTo(x + 11, y + 16);
+    g.moveTo(x + 1, centerY);
+    g.lineTo(x + 14, centerY);
+    g.moveTo(x + 1, centerY - 5);
+    g.lineTo(x + 1, centerY + 5);
+    g.moveTo(x + 14, centerY - 5);
+    g.lineTo(x + 14, centerY + 5);
+    g.moveTo(x + 4, centerY - 3);
+    g.lineTo(x + 1, centerY);
+    g.lineTo(x + 4, centerY + 3);
+    g.moveTo(x + 11, centerY - 3);
+    g.lineTo(x + 14, centerY);
+    g.lineTo(x + 11, centerY + 3);
     g.stroke();
   } else {
     g.beginPath();
-    g.moveTo(x + 2, y + 18);
-    g.lineTo(x + 15, y + 18);
-    g.moveTo(x + 3, y + 18);
-    g.lineTo(x + 12, y + 8);
+    g.moveTo(x + 1, centerY + 5);
+    g.lineTo(x + 14, centerY + 5);
+    g.moveTo(x + 2, centerY + 5);
+    g.lineTo(x + 11, centerY - 5);
     g.stroke();
     g.beginPath();
-    g.arc(x + 3, y + 18, 8, -0.8, 0);
+    g.arc(x + 2, centerY + 5, 6, -0.82, 0);
     g.stroke();
   }
   g.restore();
@@ -218,7 +227,7 @@ function renderInfoPanel(
     },
     {
       icon: "bars" as const,
-      text: `${bars} bars (${fmtDuration(elapsed)}), distance: ${distance} px`,
+      text: `${bars} bars (${fmtDuration(elapsed)}), ${distance} px`,
     },
     {
       icon: "angle" as const,
@@ -227,13 +236,14 @@ function renderInfoPanel(
   ];
 
   g.save();
-  g.font = canvasFont(12, { weight: 600 });
+  g.font = canvasFont(11, { weight: 500 });
   const measuredTextWidth = Math.max(
     ...rows.map((row) => g.measureText(row.text).width),
   );
   const usableRight = usablePanelRight(proj);
   const maxPanelWidth = Math.max(80, usableRight - PANEL_EDGE_PAD * 2);
   const panelWidth = Math.min(
+    PANEL_MAX_W,
     maxPanelWidth,
     Math.max(
       Math.min(PANEL_MIN_W, maxPanelWidth),
@@ -250,21 +260,39 @@ function renderInfoPanel(
   g.rect(0, 0, usableRight, proj.height);
   g.clip();
 
-  drawRoundedRect(g, pos.x, pos.y, panelWidth, PANEL_H, 3);
-  g.fillStyle = "rgba(70, 70, 70, 0.92)";
+  g.shadowColor = "rgba(0, 0, 0, 0.35)";
+  g.shadowBlur = 8;
+  g.shadowOffsetY = 2;
+  drawRoundedRect(g, pos.x, pos.y, panelWidth, PANEL_H, 4);
+  g.fillStyle = "rgba(19, 23, 34, 0.96)";
   g.fill();
+  g.shadowColor = "transparent";
+  g.shadowBlur = 0;
+  g.shadowOffsetY = 0;
+  g.strokeStyle = "rgba(255, 255, 255, 0.14)";
+  g.lineWidth = 1;
+  g.stroke();
+
+  g.beginPath();
+  g.moveTo(pos.x + 1.5, pos.y + 7);
+  g.lineTo(pos.x + 1.5, pos.y + PANEL_H - 7);
+  g.strokeStyle = d.color;
+  g.globalAlpha = 0.9;
+  g.lineWidth = 2;
+  g.stroke();
+  g.globalAlpha = 1;
 
   g.fillStyle = "#f0f3fa";
   g.textBaseline = "middle";
   g.textAlign = "left";
 
   rows.forEach((row, index) => {
-    const rowY = pos.y + PANEL_PAD + index * PANEL_ROW_H;
-    drawInfoIcon(g, row.icon, pos.x + 12, rowY - 2);
+    const rowY = pos.y + PANEL_PAD_Y + PANEL_ROW_H / 2 + index * PANEL_ROW_H;
+    drawInfoIcon(g, row.icon, pos.x + PANEL_ICON_X, rowY);
     g.fillText(
       fitText(g, row.text, availableTextWidth),
       pos.x + PANEL_TEXT_X,
-      rowY + 10,
+      rowY,
     );
   });
   g.restore();
@@ -313,10 +341,10 @@ const plugin: DrawingToolPlugin = {
       y2 = toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return null;
     return {
-      x: Math.min(x1, x2) - 12,
-      y: Math.min(y1, y2) - PANEL_H - 28,
-      w: Math.abs(x2 - x1) + PANEL_CULL_W + 24,
-      h: Math.abs(y2 - y1) + PANEL_H + 56,
+      x: Math.min(x1, x2) - PANEL_MAX_W - PANEL_ANCHOR_GAP - PANEL_EDGE_PAD,
+      y: Math.min(y1, y2) - PANEL_H - PANEL_ANCHOR_GAP - PANEL_EDGE_PAD,
+      w: Math.abs(x2 - x1) + 2 * (PANEL_MAX_W + PANEL_ANCHOR_GAP + PANEL_EDGE_PAD),
+      h: Math.abs(y2 - y1) + 2 * (PANEL_H + PANEL_ANCHOR_GAP + PANEL_EDGE_PAD),
     };
   },
 };

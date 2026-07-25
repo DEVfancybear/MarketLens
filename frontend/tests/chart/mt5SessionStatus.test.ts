@@ -127,30 +127,37 @@ test("disconnect invalidation clears only statuses owned by MT5", () => {
   });
 });
 
-test("countdown uses the UTC observation clock and stops at expiry or session close", () => {
+test("countdown prefers the UTC observation clock and falls back when status is unavailable", () => {
   const open = session();
 
   assert.equal(countdownClockNow(undefined, 5_005), 5_005);
-  assert.equal(countdownClockNow(null, 5_005), null);
+  assert.equal(countdownClockNow(null, 5_005), 5_005);
   assert.equal(countdownClockNow(open, 5_005), 1_005);
-  assert.equal(countdownClockNow(open, 5_008), null);
+  assert.equal(countdownClockNow(open, 5_008), 1_008);
   assert.equal(
     countdownClockNow(session("mt5", { sessionCloseAt: undefined, nextTransitionAt: undefined }), 5_010),
-    null,
+    1_010,
   );
-  assert.equal(countdownClockNow(session("mt5", { state: "closed" }), 5_001), null);
+  assert.equal(countdownClockNow(session("mt5", { state: "closed" }), 5_001), 1_001);
   assert.equal(
     countdownClockNow(
       session("mt5", { scheduledOpen: false }),
       5_001,
     ),
-    null,
+    1_001,
   );
   assert.equal(
     countdownClockNow(
       session("mt5", { sessionCloseAt: undefined, nextTransitionAt: undefined }),
       5_001,
     ),
-    null,
+    1_001,
+  );
+  assert.equal(
+    countdownClockNow(
+      session("mt5", { state: "unknown", observedAt: 0, serverTime: 0 }),
+      5_001,
+    ),
+    5_001,
   );
 });

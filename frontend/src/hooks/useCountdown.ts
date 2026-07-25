@@ -20,10 +20,6 @@ export function useCountdown(
   useEffect(() => {
     const tick = () => {
       const now = countdownClockNow(sessionStatus, Date.now() / 1000);
-      if (now == null) {
-        setCountdown(null);
-        return;
-      }
       const boundary = nextBarCloseTime(tf, now, barOpenTime);
       setCountdown(boundary == null ? null : formatCountdown(Math.ceil(boundary - now)));
     };

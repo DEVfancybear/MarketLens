@@ -23,6 +23,8 @@ const toY = (price: number) => (price - 1) * 1_000;
 function recordingContext() {
   const methodCalls: string[] = [];
   const renderedText: string[] = [];
+  const canvasCalls: Array<{ method: string; args: unknown[] }> = [];
+  const propertyWrites: Array<{ property: string; value: unknown }> = [];
   const target: Record<string, unknown> = {
     canvas: { width: 800, height: 600 },
     measureText: (text: string) => ({
@@ -33,27 +35,32 @@ function recordingContext() {
     fillText: (text: string) => {
       methodCalls.push("fillText");
       renderedText.push(text);
+      canvasCalls.push({ method: "fillText", args: [text] });
     },
   };
   const context = new Proxy(target, {
     get(object, property) {
       if (property in object) return object[property as string];
-      return (..._args: unknown[]) => methodCalls.push(String(property));
+      return (...args: unknown[]) => {
+        methodCalls.push(String(property));
+        canvasCalls.push({ method: String(property), args });
+      };
     },
     set(object, property, value) {
       object[property as string] = value;
+      propertyWrites.push({ property: String(property), value });
       return true;
     },
   }) as unknown as CanvasRenderingContext2D;
-  return { context, methodCalls, renderedText };
+  return { context, methodCalls, renderedText, canvasCalls, propertyWrites };
 }
 
-function projector(barIntervalSeconds: number): Projector {
+function projector(barIntervalSeconds: number, width = 800, height = 600): Projector {
   return {
     toX,
     toY,
-    width: 800,
-    height: 600,
+    width,
+    height,
     barIntervalSeconds,
   };
 }
@@ -76,6 +83,57 @@ test("Info Line renders in isolation and derives bar count from its projector", 
   assert.ok(
     oneMinute.renderedText.some((text) => text.startsWith("15 bars (15m)")),
     `expected a 15-bar row, received ${JSON.stringify(oneMinute.renderedText)}`,
+  );
+});
+
+test("Info Line uses a compact endpoint-anchored panel with accessible contrast", () => {
+  const adapter = getTool("infoLine");
+  assert.ok(adapter);
+
+  const recording = recordingContext();
+  adapter.render(recording.context, fixture, projector(300), false);
+
+  const firstPanelArc = recording.canvasCalls.find(
+    ({ method }) => method === "arcTo",
+  );
+  assert.ok(firstPanelArc);
+  const [, top, , bottom, radius] = firstPanelArc.args as number[];
+  assert.equal(Math.round(bottom - top), 66);
+  assert.equal(radius, 4);
+  assert.ok(
+    Math.abs(top - (toY(fixture.points[1].price)! - 33)) < 0.001,
+    `expected the panel to center on the right endpoint, received top=${top}`,
+  );
+  assert.ok(
+    recording.propertyWrites.some(
+      ({ property, value }) =>
+        property === "fillStyle" && value === "rgba(19, 23, 34, 0.96)",
+    ),
+  );
+  assert.ok(
+    recording.renderedText.some((text) => text.includes("3 bars (15m), 60 px")),
+  );
+  assert.ok(recording.renderedText.every((text) => !text.includes("distance:")));
+});
+
+test("Info Line panel stays inside compact chart panes and ellipsizes long rows", () => {
+  const adapter = getTool("infoLine");
+  assert.ok(adapter);
+
+  const recording = recordingContext();
+  adapter.render(recording.context, fixture, projector(60, 180, 80), false);
+
+  const firstPanelArc = recording.canvasCalls.find(
+    ({ method }) => method === "arcTo",
+  );
+  assert.ok(firstPanelArc);
+  const [right, top, , bottom] = firstPanelArc.args as number[];
+  assert.ok(right <= 90, `panel crossed the compact pane guard: right=${right}`);
+  assert.ok(top >= 6, `panel crossed the pane top: top=${top}`);
+  assert.ok(bottom <= 74, `panel crossed the pane bottom: bottom=${bottom}`);
+  assert.ok(
+    recording.renderedText.some((text) => text.endsWith("...")),
+    `expected a compact ellipsis, received ${JSON.stringify(recording.renderedText)}`,
   );
 });
 

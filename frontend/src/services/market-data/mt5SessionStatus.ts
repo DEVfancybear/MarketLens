@@ -174,15 +174,19 @@ export function isMarketSessionOpenForCountdown(
 }
 
 /**
- * `undefined` means the provider has no authoritative session feed and retains
- * the candle-based fallback. `null` means a required status is unavailable.
+ * Prefer the broker observation clock when it is usable, but never make the
+ * chart countdown depend on the optional session-status feed. The countdown
+ * model is already anchored to one concrete candle and rejects an elapsed
+ * candle, so falling back to the browser clock cannot manufacture timers while
+ * a market is closed.
  */
 export function countdownClockNow(
   status: MarketSessionStatus | null | undefined,
   clientNow: number,
-): number | null {
-  if (status === undefined) return clientNow;
-  if (status === null) return null;
+): number {
+  if (status == null || status.observedAt <= 0 || status.receivedAt <= 0) {
+    return clientNow;
+  }
   const now = marketSessionNow(status, clientNow);
-  return isMarketSessionOpenForCountdown(status, now) ? now : null;
+  return Number.isFinite(now) && now >= 0 ? now : clientNow;
 }

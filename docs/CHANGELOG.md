@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Resilient chart countdowns and compact Info Line UI (2026-07-26)
+- Kept the live candle-close countdown visible across every chart and layout
+  when the optional MT5 session feed is missing, unknown, closed, or expired,
+  while retaining broker-observation time whenever it remains usable.
+- Preserved the stale-candle guard so the clock fallback cannot manufacture a
+  new countdown after the latest concrete candle has already closed.
+- Reworked the Info Line measurement panel into a compact, high-contrast
+  endpoint overlay that automatically switches sides near the price scale and
+  ellipsizes safely inside narrow multi-chart panes.
+- Added countdown/session unit coverage, compact-pane Info Line regressions,
+  and an updated browser visual snapshot for the shared chart UI.
+
 ### Fixed - Common indicator pane presentation (2026-07-26)
 - Propagated Pine declaration `format` and `precision` through the common
   runtime result contract, giving volume and percent outputs the same native
