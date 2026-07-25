@@ -1,6 +1,5 @@
 import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { initializeFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 
 export interface FirebasePushMessage {
@@ -31,14 +30,6 @@ export function ensureFirebaseAdmin() {
       privateKey: privateKey(),
     }),
   });
-}
-
-export function getFirebaseFirestore() {
-  const app = ensureFirebaseAdmin();
-  // All push-store calls are unary reads/writes or transactions. Prefer the
-  // HTTP/1.1 transport so serverless cold starts do not depend on a long-lived
-  // gRPC channel. initializeFirestore is idempotent for the same app/settings.
-  return initializeFirestore(app, { preferRest: true });
 }
 
 export function getFirebaseAdminAuth() {

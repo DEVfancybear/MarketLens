@@ -36,6 +36,11 @@ func (h *Handler) WithWorkerTrigger(
 func (h *Handler) Register(router fiber.Router) {
 	router.Post("/alerts/worker-snapshot", h.workerSnapshot)
 	router.Post("/alerts/worker-trigger", h.workerTrigger)
+	router.Post("/push/worker-devices/ensure", h.workerEnsurePushDevice)
+	router.Post("/push/worker-devices/get", h.workerGetPushDevice)
+	router.Get("/push/worker-devices", h.workerListPushDevices)
+	router.Post("/push/worker-devices/put", h.workerPutPushDevice)
+	router.Post("/push/worker-devices/delete", h.workerDeletePushDevice)
 
 	g := router.Group("/alerts", h.requireAuth)
 	g.Get("/", h.list)
@@ -123,7 +128,11 @@ type workerSnapshotRequest struct {
 }
 
 func (h *Handler) workerRequestAuthorized(c fiber.Ctx) bool {
-	return h.workerSecret != "" && h.verifyDeliveryToken != nil &&
+	return h.workerServiceAuthorized(c) && h.verifyDeliveryToken != nil
+}
+
+func (h *Handler) workerServiceAuthorized(c fiber.Ctx) bool {
+	return h.workerSecret != "" &&
 		hmac.Equal([]byte(c.Get("x-push-worker-secret")), []byte(h.workerSecret))
 }
 
@@ -191,6 +200,79 @@ func (h *Handler) workerTrigger(c fiber.Ctx) error {
 		"alert":            item,
 		"event":            event,
 	})
+}
+
+func (h *Handler) workerEnsurePushDevice(c fiber.Ctx) error {
+	if !h.workerServiceAuthorized(c) {
+		return fiber.ErrUnauthorized
+	}
+	var req PushDeviceOwnerInput
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid push device request")
+	}
+	device, err := h.store.EnsurePushDevice(c.Context(), req.FirebaseUID, req.Token)
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(fiber.Map{"ok": true, "device": device})
+}
+
+func (h *Handler) workerGetPushDevice(c fiber.Ctx) error {
+	if !h.workerServiceAuthorized(c) {
+		return fiber.ErrUnauthorized
+	}
+	var req PushDeviceOwnerInput
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid push device request")
+	}
+	device, err := h.store.GetPushDevice(c.Context(), req.FirebaseUID, req.Token)
+	if errors.Is(err, ErrNotFound) {
+		return c.JSON(fiber.Map{"ok": true, "device": nil})
+	}
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(fiber.Map{"ok": true, "device": device})
+}
+
+func (h *Handler) workerListPushDevices(c fiber.Ctx) error {
+	if !h.workerServiceAuthorized(c) {
+		return fiber.ErrUnauthorized
+	}
+	devices, err := h.store.ListPushDevices(c.Context())
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(fiber.Map{"ok": true, "devices": devices})
+}
+
+func (h *Handler) workerPutPushDevice(c fiber.Ctx) error {
+	if !h.workerServiceAuthorized(c) {
+		return fiber.ErrUnauthorized
+	}
+	var req PushDevicePutInput
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid push device state request")
+	}
+	device, err := h.store.PutPushDevice(c.Context(), req)
+	if err != nil {
+		return apiError(err)
+	}
+	return c.JSON(fiber.Map{"ok": true, "device": device})
+}
+
+func (h *Handler) workerDeletePushDevice(c fiber.Ctx) error {
+	if !h.workerServiceAuthorized(c) {
+		return fiber.ErrUnauthorized
+	}
+	var req PushDeviceOwnerInput
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid push device request")
+	}
+	if err := h.store.DeletePushDevice(c.Context(), req.FirebaseUID, req.Token); err != nil {
+		return apiError(err)
+	}
+	return c.JSON(fiber.Map{"ok": true})
 }
 
 func (h *Handler) events(c fiber.Ctx) error {
@@ -271,6 +353,8 @@ func apiError(err error) error {
 		return fiber.NewError(fiber.StatusNotFound, "not found")
 	case errors.Is(err, ErrBadRequest):
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrConflict):
+		return fiber.NewError(fiber.StatusConflict, err.Error())
 	default:
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
 	}

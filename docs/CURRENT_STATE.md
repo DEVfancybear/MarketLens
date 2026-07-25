@@ -178,8 +178,8 @@ Push architecture:
 ```text
 browser alert store + FCM token
   -> /api/push/register + /api/push/alerts/sync
-  -> Firestore pushAlertDevices collection (or local .data fallback)
-  -> npm run push-worker
+  -> Go worker API -> PostgreSQL push_tokens
+  -> Go scheduler (or npm run push-worker fallback)
   -> /api/push/evaluate
   -> Firebase Admin FCM send
 ```
@@ -274,9 +274,10 @@ The next recommended milestone is hardening and demo validation:
 
 ## 9. Known Operational Notes
 
-- Firestore collection `pushAlertDevices` is the production/serverless store for push alert sync.
-- `.data/push-alerts.json` is only a local fallback when Firebase Admin is not configured and should
-  not be committed if created locally.
+- PostgreSQL `push_tokens` owns FCM registration, alert snapshots, evaluator
+  cursors, and pending delivery state. Migration `0025` adds these fields.
+- `PUSH_WORKER_SECRET` must match between Go and Next so server-only device
+  state operations fail closed.
 - Firebase Admin values must stay server-only and must not use `NEXT_PUBLIC_*`.
 - MT5 credentials must remain in the bridge service, never in browser code.
 - Phase 6B must keep simulator mode as the default and leave it functional when MT5 is disabled.

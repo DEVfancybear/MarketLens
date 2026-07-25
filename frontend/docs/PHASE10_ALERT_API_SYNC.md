@@ -279,8 +279,9 @@ plain-text responses so an actionable backend message replaces a generic
 `Request failed with status 400`.
 
 Push-alert replacement snapshots are validated all-or-nothing and serialized per
-device token in the browser. The route validates again; Firestore writes are
-transactional and the local-file fallback is serialized with atomic replacement.
+device token in the browser. The route validates again and persists through the
+service-authenticated Go worker API into PostgreSQL `push_tokens`.
+`state_version` compare-and-swap retries serialize browser/evaluator races.
 Evaluator results merge only when their definition signature still matches,
 preserving newer edits/removals, cursors, canonical events, pending deliveries,
 and completed channel progress.

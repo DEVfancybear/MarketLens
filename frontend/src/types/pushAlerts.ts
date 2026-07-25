@@ -73,6 +73,8 @@ export interface PendingPushAlertDelivery {
 
 export interface PushDeviceRecord {
   token: string;
+  /** PostgreSQL optimistic-lock version used by evaluator/browser sync writes. */
+  version?: number;
   /** Firebase UID that owns this token; optional only for legacy records. */
   userId?: string;
   deliveryToken?: string;

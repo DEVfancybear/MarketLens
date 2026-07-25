@@ -423,9 +423,8 @@ function shouldEvaluate(device: PushDeviceRecord, alert: ServerPushAlert) {
   return { signature, state };
 }
 
-// Serializes evaluate calls within this process: the in-process worker's
-// setInterval and an overlapping manual/cron call otherwise both read
-// Firestore before either write lands, sending the same trigger twice.
+// Serializes evaluate calls within this process. PostgreSQL optimistic
+// versions and canonical trigger idempotency protect cross-instance overlaps.
 let inFlight: Promise<EvaluationResult> | null = null;
 
 export function evaluatePushAlerts(
@@ -922,7 +921,7 @@ async function runEvaluation(
       lastPrices[alert.symbol] = acceptedCurrent;
     }
 
-    await updatePushDevice(device.token, {
+    await updatePushDevice(device, {
       lastPrices,
       alertState,
       alertSignatures,

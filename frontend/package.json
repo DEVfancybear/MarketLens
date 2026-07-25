@@ -11,6 +11,7 @@
     "ftmo-mt5-bridge": "node scripts/ftmo-mt5-bridge.mjs",
     "ftmo-mt5-python": "cd ../backend && python -m bridge.ftmo_mt5.service",
     "push-worker": "node scripts/push-alert-worker.mjs",
+    "migrate:push-firestore": "node scripts/migrate-push-firestore-to-postgres.mjs",
     "check:position-drag": "tsc -p tsconfig.test.json && node --test .test-build/tests/position/positionGeometry.test.js .test-build/tests/position/positionProjectedGeometry.test.js",
     "check:position-hit": "tsc -p tsconfig.test.json && node --test .test-build/tests/position/positionHitResolution.test.js",
     "check:shape-text-editor": "tsc -p tsconfig.test.json && node --test .test-build/tests/drawing/adapterBehavior.test.js",

@@ -23,6 +23,11 @@ type Store interface {
 	Snapshot(ctx context.Context, userID string) (Snapshot, error)
 	UpsertPushToken(ctx context.Context, userID string, input PushTokenInput) (PushToken, error)
 	DeletePushToken(ctx context.Context, userID, token string) error
+	EnsurePushDevice(ctx context.Context, firebaseUID, token string) (PushDevice, error)
+	GetPushDevice(ctx context.Context, firebaseUID, token string) (PushDevice, error)
+	ListPushDevices(ctx context.Context) ([]PushDevice, error)
+	PutPushDevice(ctx context.Context, input PushDevicePutInput) (PushDevice, error)
+	DeletePushDevice(ctx context.Context, firebaseUID, token string) error
 }
 
 type Repo struct {

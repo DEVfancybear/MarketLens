@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof ServerOperationTimeoutError) {
       logRegistrationFailure("deadline exceeded", error);
       return serviceUnavailable(
-        "Push registration timed out while contacting Firebase. Please try again.",
+        "Push registration timed out while contacting the database. Please try again.",
       );
     }
     logRegistrationFailure("unexpected failure", error);

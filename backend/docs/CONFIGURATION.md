@@ -41,13 +41,17 @@ The bucket CORS policy must allow `PUT` and `GET` from the frontend origin and a
 
 ### Phase 10 push responsibility
 
-The Go API does not send FCM notifications. It stores authenticated device-token ownership in
-PostgreSQL through `/api/v1/push/tokens`; Phase 10 therefore needs `DATABASE_URL` and the normal
-Firebase Admin authentication configuration, but no additional Go push secret.
+The Go API does not send FCM notifications. It stores authenticated token
+ownership plus closed-browser device/evaluator state in PostgreSQL
+`push_tokens`. Browser ownership uses `/api/v1/push/tokens`; Next uses
+service-authenticated `/api/v1/push/worker-devices*` endpoints. The shared
+`PUSH_WORKER_SECRET` is therefore required for registration sync and evaluation.
 
-The Next server evaluates closed-browser alerts and sends FCM. Configure it from
-`frontend/.env.example`. The same Firebase project/service account can be used in both env files,
-but server credentials must never use a `NEXT_PUBLIC_` prefix.
+The Next server evaluates closed-browser alerts and sends FCM. Firebase Admin
+is used only for ID-token verification and FCM delivery; Firestore is not
+required. Configure Next from `frontend/.env.example`. The same Firebase
+project/service account can be used in both env files, but server credentials
+must never use a `NEXT_PUBLIC_` prefix.
 
 ## Closed-browser alert scheduler
 

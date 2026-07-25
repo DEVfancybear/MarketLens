@@ -211,8 +211,8 @@ export async function registerPushToken(
     "/api/push/register",
     { token },
     {
-      // Registration is idempotent. One retry covers a slow Firestore cold
-      // start or an auth/network abort without duplicating notification sends.
+      // Registration is idempotent. One retry covers a backend cold start or
+      // an auth/network abort without duplicating notification sends.
       retries: 1,
       retryDelayMs: 250,
     },

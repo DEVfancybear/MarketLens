@@ -15,13 +15,17 @@ import (
 var (
 	ErrNotFound         = errors.New("alerts: not found")
 	ErrBadRequest       = errors.New("alerts: bad request")
+	ErrConflict         = errors.New("alerts: conflict")
 	ErrAlreadyTriggered = fmt.Errorf("%w: trigger already persisted", ErrBadRequest)
 )
 
 const (
-	MaxHistory  = 200
-	MaxNoteLen  = 500
-	MaxTokenLen = 4096
+	MaxHistory             = 200
+	MaxNoteLen             = 500
+	MaxTokenLen            = 4096
+	MaxDeliveryTokenLen    = 16384
+	MaxPushAlertsJSONBytes = 2 * 1024 * 1024
+	MaxPushStateJSONBytes  = 2 * 1024 * 1024
 	// MaxTechnicalTargetBytes bounds the immutable geometry snapshot accepted at
 	// the API boundary. The version-1 DTO is intentionally small; this leaves
 	// room for future optional metadata without accepting arbitrary JSON blobs.
@@ -210,6 +214,36 @@ type PushTokenInput struct {
 	FCMToken   string `json:"fcmToken"`
 	Platform   string `json:"platform"`
 	Permission string `json:"permission"`
+}
+
+// PushDevice is the PostgreSQL-backed equivalent of the former Firestore
+// pushAlertDevices document. JSON payloads stay opaque to Go because the Next
+// evaluator owns their versioned alert/state contract.
+type PushDevice struct {
+	Token                string          `json:"token"`
+	UserID               string          `json:"userId,omitempty"`
+	DeliveryToken        string          `json:"deliveryToken,omitempty"`
+	NotificationTimeZone string          `json:"notificationTimeZone"`
+	Alerts               json.RawMessage `json:"alerts"`
+	SettingsPush         bool            `json:"settingsPush"`
+	SettingsTelegram     bool            `json:"settingsTelegram"`
+	SettingsDiscord      bool            `json:"settingsDiscord"`
+	LastPrices           json.RawMessage `json:"lastPrices"`
+	AlertState           json.RawMessage `json:"alertState"`
+	CreatedAt            int64           `json:"createdAt"`
+	UpdatedAt            int64           `json:"updatedAt"`
+	Version              int64           `json:"version"`
+}
+
+type PushDevicePutInput struct {
+	FirebaseUID     string     `json:"firebaseUid,omitempty"`
+	ExpectedVersion int64      `json:"expectedVersion"`
+	Device          PushDevice `json:"device"`
+}
+
+type PushDeviceOwnerInput struct {
+	FirebaseUID string `json:"firebaseUid"`
+	Token       string `json:"token"`
 }
 
 func normalizeCreate(input CreateInput) (CreateInput, error) {
@@ -434,6 +468,48 @@ func normalizePushToken(input PushTokenInput) (PushTokenInput, error) {
 		return PushTokenInput{}, fmt.Errorf("%w: unsupported permission %q", ErrBadRequest, input.Permission)
 	}
 	return input, nil
+}
+
+func normalizePushDevice(device PushDevice) (PushDevice, error) {
+	device.Token = strings.TrimSpace(device.Token)
+	device.DeliveryToken = strings.TrimSpace(device.DeliveryToken)
+	device.NotificationTimeZone = strings.TrimSpace(device.NotificationTimeZone)
+	if device.Token == "" || len(device.Token) > MaxTokenLen {
+		return PushDevice{}, fmt.Errorf("%w: push device token is invalid", ErrBadRequest)
+	}
+	if len(device.DeliveryToken) > MaxDeliveryTokenLen {
+		return PushDevice{}, fmt.Errorf("%w: delivery token is too long", ErrBadRequest)
+	}
+	if device.NotificationTimeZone == "" {
+		device.NotificationTimeZone = "UTC"
+	}
+	if len(device.NotificationTimeZone) > 80 {
+		return PushDevice{}, fmt.Errorf("%w: notification time zone is too long", ErrBadRequest)
+	}
+	if err := validJSONContainer(device.Alerts, '[', MaxPushAlertsJSONBytes, "alerts"); err != nil {
+		return PushDevice{}, err
+	}
+	if err := validJSONContainer(device.LastPrices, '{', MaxPushStateJSONBytes, "lastPrices"); err != nil {
+		return PushDevice{}, err
+	}
+	if err := validJSONContainer(device.AlertState, '{', MaxPushStateJSONBytes, "alertState"); err != nil {
+		return PushDevice{}, err
+	}
+	if device.Version <= 0 {
+		return PushDevice{}, fmt.Errorf("%w: push device version is invalid", ErrBadRequest)
+	}
+	return device, nil
+}
+
+func validJSONContainer(value json.RawMessage, prefix byte, maxBytes int, field string) error {
+	if len(value) == 0 || len(value) > maxBytes || !json.Valid(value) {
+		return fmt.Errorf("%w: %s is invalid", ErrBadRequest, field)
+	}
+	trimmed := bytes.TrimSpace(value)
+	if len(trimmed) == 0 || trimmed[0] != prefix {
+		return fmt.Errorf("%w: %s has the wrong JSON type", ErrBadRequest, field)
+	}
+	return nil
 }
 
 func validCondition(condition string) bool {

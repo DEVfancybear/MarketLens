@@ -1248,6 +1248,18 @@ state instead of an infinite retry loop.
 | POST   | `/api/v1/push/tokens`      | Register/refresh `{ fcmToken, platform, permission }` |
 | DELETE | `/api/v1/push/tokens/:tok` | Unregister a device token                          |
 
+Next's closed-browser worker uses service-authenticated PostgreSQL device
+routes. Every request requires `x-push-worker-secret`; browser code must never
+call them directly.
+
+| Method | Path                                 | Purpose |
+| ------ | ------------------------------------ | ------- |
+| POST   | `/api/v1/push/worker-devices/ensure` | Create/return a Firebase-owned device row |
+| POST   | `/api/v1/push/worker-devices/get`    | Read one owned device, or one worker device |
+| GET    | `/api/v1/push/worker-devices`        | List devices requiring evaluator work |
+| POST   | `/api/v1/push/worker-devices/put`    | Compare-and-swap a complete device snapshot |
+| POST   | `/api/v1/push/worker-devices/delete` | Delete an owned device row |
+
 ---
 
 ## Journal  protected, implemented

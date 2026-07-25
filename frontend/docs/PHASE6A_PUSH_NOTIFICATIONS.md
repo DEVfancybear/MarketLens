@@ -57,7 +57,7 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/app/api/push/alerts/status/route.ts` | Returns confirmed server-side triggers for a device token, for client reconciliation. |
 | `src/app/api/push/evaluate/route.ts` | Evaluates server-stored alerts and sends FCM. |
 | `src/app/firebase-messaging-sw.js/route.ts` | Dynamic service worker with public Firebase config injected from env. |
-| `src/server/pushAlertStore.ts` | Transactional Firestore store, with serialized atomic local-file fallback, for tokens and alert snapshots. |
+| `src/server/pushAlertStore.ts` | PostgreSQL worker-API adapter for tokens, snapshots, and evaluator state, with optimistic-write retries. |
 | `src/server/pushAlertStateMerge.ts` | Merges evaluator results without overwriting newer definitions, cursors, events, or channel progress. |
 | `src/server/pushAlertEvaluator.ts` | MT5 tick replay, warmup, pending trigger retry, and alert evaluation. |
 | `src/server/canonicalAlertTrigger.ts` | Service-authenticated worker acknowledgement to Go/PostgreSQL. |
@@ -195,28 +195,25 @@ or edits an alert and then closes the tab before the normal sync debounce comple
 Each browser sync is a complete device snapshot. The browser and route reject
 the whole write if any alert is malformed or IDs are duplicated; no partial
 filter may accidentally prune otherwise valid server alerts. Per-device browser
-writes are serialized. Firestore mutations use transactions, while the local
-fallback serializes all mutations and atomically renames a unique temporary
-file. Evaluator state merges preserve newer alert definitions and already
-completed channel progress while retaining a frozen failed delivery after the
-active one-time alert disappears.
+writes are serialized. PostgreSQL `state_version` compare-and-swap writes retry
+after a concurrent browser/evaluator update. Evaluator state merges preserve
+newer alert definitions and already completed channel progress while retaining
+a frozen failed delivery after the active one-time alert disappears.
 
 FCM token registration is idempotent and receives one bounded retry for a
-transient network/timeout abort. Production Firestore mutations are not placed
-behind the global queue required by the single local JSON file, so an evaluator
-pass for other devices cannot starve a registration request. Final aborts are
-reported as a stable timeout message instead of exposing the browser-specific
-`signal is aborted without reason` text.
+transient network/timeout abort. Next persists through the Go worker API and
+PostgreSQL, so Firestore quota and transport availability are not part of the
+registration path. Final aborts are reported as a stable timeout message
+instead of exposing the browser-specific `signal is aborted without reason`
+text.
 
-The Firebase Admin Firestore client uses its HTTP/1.1 REST transport for these
-unary reads, writes, and transactions. This avoids making a Vercel/serverless
-cold start depend on a persistent gRPC channel. Push routes still verify the
+Push routes still verify the
 Firebase ID token's signature, issuer, audience, and expiry, but do not request
 a per-call revocation lookup; this matches the canonical Go API and removes an
 otherwise mandatory Firebase Auth network round trip. `/api/push/register` has
-an 8-second server deadline, returns retryable `503` responses for Firebase
-timeouts/storage outages, and returns non-retryable `409` only when a device
-token is already owned by another user.
+an 8-second server deadline, returns retryable `503` responses for worker
+API/database outages, and returns non-retryable `409` only when a device token
+is already owned by another user.
 
 Server push sends a data-first Web Push payload with `title` and `body` mirrored into `data`, an
 absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
@@ -247,13 +244,12 @@ losing pushes for any realistically long closed-browser window.
 - Missing public Firebase env: Alert Center shows Push setup status with missing env names.
 - Unsupported browser/service worker: Push toggle is disabled.
 - Permission denied: Push toggle is disabled until the user changes browser site settings.
-- Push registration timeout/`503`: the client retries once. Verify that the
-  Vercel server-only Firebase service account belongs to the same project as
-  the Web app, that the default Firestore database exists, and that the service
-  account can read/write it. Then redeploy and inspect the safe
+- Push registration timeout/`503`: the client retries once. Verify migration
+  `0025`, `NEXT_PUBLIC_API_BASE_URL`, PostgreSQL readiness, and that
+  `PUSH_WORKER_SECRET` matches in Go and Next. Then inspect the safe
   `[push/register]` code in Vercel logs.
-- Missing Firebase Admin env: token registration falls back to local `.data/push-alerts.json`, but
-  `/api/push/send` and `/api/push/evaluate` cannot send FCM.
+- Missing Firebase Admin env: ID-token verification and FCM send fail closed;
+  PostgreSQL remains the only device-state store.
 - Browser-open FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.
 - Closed-browser FCM send error: the worker retains that device's pending FCM work and retries it without reactivating the alert.
 - `Subscription failed - no active Service Worker`: unregister old service workers / clear site data
@@ -301,18 +297,16 @@ worker. Alert definitions/history are stored in PostgreSQL `alerts` and
 `alert_events`; FCM ownership is stored in `push_tokens`. Enabling a token with
 an active backend session writes `POST /api/v1/push/tokens`.
 
-When Firebase Admin env is configured, closed-browser evaluator cursors, pending
-trigger candidates, and alert snapshots remain in Firestore collection
-`pushAlertDevices`. PostgreSQL is authoritative for lifecycle and history. The
-worker must first call `/api/v1/alerts/worker-trigger` with the shared worker
-secret and signed user token. Both a new commit and an idempotent
+Closed-browser evaluator cursors, pending trigger candidates, browser alert
+snapshots, and token ownership are stored in PostgreSQL `push_tokens`.
+PostgreSQL is also authoritative for alert lifecycle and history. The worker
+must first call `/api/v1/alerts/worker-trigger` with the shared worker secret
+and signed user token. Both a new commit and an idempotent
 `alreadyTriggered` acknowledgement may drain
 FCM work per device and Telegram/Discord work per event/channel within the run;
 this prevents an ambiguous commit response from losing delivery. Transient/global
 failures remain pending, alert-specific permanent rejections are quarantined
 until browser resync, and no channel is sent before commit. See
 `PHASE10_ALERT_API_SYNC.md` for the canonical flow;
-token-keyed reconciliation is now fallback cache convergence.
-
-When Firebase Admin env is missing, local development falls back to `.data/push-alerts.json`.
-That fallback is not suitable for Vercel/serverless persistence and should not be committed.
+token-keyed reconciliation is now fallback cache convergence. Firebase Admin
+remains responsible only for verifying browser identity and sending FCM.

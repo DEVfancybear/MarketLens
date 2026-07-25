@@ -66,6 +66,11 @@ sends, real Telegram test send) rather than guessing. Found and fixed, in order:
    deployed HTTPS CORS origin instead of localhost, canonical 404 creation races
    retry, and the MT5 recovery window is 4,096 ticks/up to one hour.
 
+   **Storage superseded 2026-07-26:** push-device snapshots, cursors, and
+   pending delivery state moved from Firestore to PostgreSQL `push_tokens`
+   through service-authenticated worker endpoints. Firestore quota and
+   transport debugging no longer applies to the active implementation.
+
 **Debugging tools that worked well and are worth reusing:** `POST /api/push/evaluate?debug=1` with
 the `x-push-worker-secret` header (per-alert condition/target/high/low/met/blocked without exposing
 tokens); a small Node script using `@next/env`'s `loadEnvConfig()` + `firebase-admin` to read

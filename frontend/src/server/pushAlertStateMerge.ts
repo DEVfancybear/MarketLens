@@ -74,9 +74,9 @@ function mergeMatchingDeliveryProgress(
 }
 
 /**
- * Merge evaluator cursors instead of blindly replacing the whole device
- * document. Firestore transactions can retry after a concurrent browser sync;
- * a retry must not re-install an older evaluator snapshot over the newer
+ * Merge evaluator cursors instead of blindly replacing the whole device row.
+ * PostgreSQL compare-and-swap writes can retry after a concurrent browser
+ * sync; a retry must not re-install an older evaluator snapshot over the newer
  * alert definition/state.
  */
 export function mergeEvaluatorState(

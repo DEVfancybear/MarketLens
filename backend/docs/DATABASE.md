@@ -186,10 +186,11 @@ CREATE INDEX idx_sessions_user ON sessions(user_id) WHERE revoked_at IS NULL;
 CREATE UNIQUE INDEX idx_sessions_token ON sessions(refresh_token_hash);
 ```
 
-### 5.4 `push_tokens` (FCM)
+### 5.4 `push_tokens` (FCM and closed-browser evaluator state)
 
-Mirrors the frontend `pushNotifications` store: one `PushRegistration { token, permission,
-createdAt, updatedAt }` per browser.
+One row per browser/external delivery identity. Besides FCM ownership, migration
+`0025` stores the complete device snapshot and durable evaluator state formerly
+kept in Firestore.
 
 ```sql
 CREATE TYPE push_platform AS ENUM ('web', 'android', 'ios');
@@ -200,8 +201,18 @@ CREATE TABLE push_tokens (
   fcm_token    text NOT NULL,
   platform     push_platform NOT NULL DEFAULT 'web',
   permission   text,                          -- 'granted' | 'denied' | 'default'
+  delivery_token text,
+  notification_time_zone text NOT NULL DEFAULT 'UTC',
+  alerts       jsonb NOT NULL DEFAULT '[]',
+  settings_push boolean NOT NULL DEFAULT false,
+  settings_telegram boolean NOT NULL DEFAULT false,
+  settings_discord boolean NOT NULL DEFAULT false,
+  last_prices  jsonb NOT NULL DEFAULT '{}',
+  alert_state  jsonb NOT NULL DEFAULT '{}',
+  state_version bigint NOT NULL DEFAULT 1,
   created_at   timestamptz NOT NULL DEFAULT now(),
   last_seen_at timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
   UNIQUE (fcm_token)
 );
 CREATE INDEX idx_push_tokens_user ON push_tokens(user_id);

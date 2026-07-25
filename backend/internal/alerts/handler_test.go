@@ -20,15 +20,17 @@ type fakeStore struct {
 	alerts   map[string][]Alert
 	events   map[string][]Event
 	tokens   map[string]PushToken
+	devices  map[string]PushDevice
 	seq      int
 	lastUser string
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		alerts: map[string][]Alert{},
-		events: map[string][]Event{},
-		tokens: map[string]PushToken{},
+		alerts:  map[string][]Alert{},
+		events:  map[string][]Event{},
+		tokens:  map[string]PushToken{},
+		devices: map[string]PushDevice{},
 	}
 }
 
@@ -258,6 +260,61 @@ func (f *fakeStore) DeletePushToken(_ context.Context, userID, token string) err
 		return ErrNotFound
 	}
 	delete(f.tokens, token)
+	return nil
+}
+
+func (f *fakeStore) EnsurePushDevice(_ context.Context, firebaseUID, token string) (PushDevice, error) {
+	f.lastUser = firebaseUID
+	if item, ok := f.devices[token]; ok {
+		return item, nil
+	}
+	now := time.Unix(int64(len(f.devices)+300), 0).UTC().UnixMilli()
+	item := PushDevice{
+		Token: token, UserID: "user-1", NotificationTimeZone: "UTC",
+		Alerts: json.RawMessage(`[]`), LastPrices: json.RawMessage(`{}`),
+		AlertState: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now, Version: 1,
+	}
+	f.devices[token] = item
+	return item, nil
+}
+
+func (f *fakeStore) GetPushDevice(_ context.Context, firebaseUID, token string) (PushDevice, error) {
+	f.lastUser = firebaseUID
+	item, ok := f.devices[token]
+	if !ok {
+		return PushDevice{}, ErrNotFound
+	}
+	return item, nil
+}
+
+func (f *fakeStore) ListPushDevices(_ context.Context) ([]PushDevice, error) {
+	out := make([]PushDevice, 0, len(f.devices))
+	for _, item := range f.devices {
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) PutPushDevice(_ context.Context, input PushDevicePutInput) (PushDevice, error) {
+	current, ok := f.devices[input.Device.Token]
+	if !ok {
+		return PushDevice{}, ErrNotFound
+	}
+	if current.Version != input.ExpectedVersion {
+		return PushDevice{}, ErrConflict
+	}
+	input.Device.Version++
+	input.Device.UpdatedAt++
+	f.devices[input.Device.Token] = input.Device
+	return input.Device, nil
+}
+
+func (f *fakeStore) DeletePushDevice(_ context.Context, firebaseUID, token string) error {
+	f.lastUser = firebaseUID
+	if _, ok := f.devices[token]; !ok {
+		return ErrNotFound
+	}
+	delete(f.devices, token)
 	return nil
 }
 
@@ -822,6 +879,115 @@ func TestWorkerTriggerFailsClosedWithoutServerSecret(t *testing.T) {
 	resp := doWorkerRequest(t, app, "", `{"deliveryToken":"token","alertId":"alert-1"}`)
 	if resp.StatusCode != fiber.StatusUnauthorized {
 		t.Fatalf("blank worker configuration status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestPostgresPushDeviceWorkerRoutesAndOptimisticWrites(t *testing.T) {
+	store := newFakeStore()
+	app := fiber.New()
+	NewHandler(store, fakeRequireAuth).
+		WithWorkerTrigger("worker-secret", func(string) (string, error) {
+			return "user-1", nil
+		}).
+		Register(app.Group("/api/v1"))
+
+	ensure := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/push/worker-devices/ensure",
+		"worker-secret",
+		`{"firebaseUid":"firebase-user-1","token":"fcm-token-1"}`,
+	)
+	if ensure.StatusCode != fiber.StatusOK {
+		t.Fatalf("ensure push device status = %d, want 200", ensure.StatusCode)
+	}
+	var ensured struct {
+		OK     bool       `json:"ok"`
+		Device PushDevice `json:"device"`
+	}
+	if err := json.NewDecoder(ensure.Body).Decode(&ensured); err != nil {
+		t.Fatalf("decode ensured push device: %v", err)
+	}
+	if !ensured.OK || ensured.Device.Version != 1 {
+		t.Fatalf("ensured push device = %+v", ensured)
+	}
+
+	ensured.Device.SettingsPush = true
+	ensured.Device.Alerts = json.RawMessage(`[{"id":"alert-1"}]`)
+	putBody, err := json.Marshal(PushDevicePutInput{
+		FirebaseUID:     "firebase-user-1",
+		ExpectedVersion: ensured.Device.Version,
+		Device:          ensured.Device,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/push/worker-devices/put",
+		"worker-secret",
+		string(putBody),
+	)
+	if put.StatusCode != fiber.StatusOK {
+		t.Fatalf("put push device status = %d, want 200", put.StatusCode)
+	}
+	var updated struct {
+		Device PushDevice `json:"device"`
+	}
+	if err := json.NewDecoder(put.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated push device: %v", err)
+	}
+	if updated.Device.Version != 2 || !updated.Device.SettingsPush {
+		t.Fatalf("updated push device = %+v", updated.Device)
+	}
+
+	stale := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/push/worker-devices/put",
+		"worker-secret",
+		string(putBody),
+	)
+	if stale.StatusCode != fiber.StatusConflict {
+		t.Fatalf("stale push device write status = %d, want 409", stale.StatusCode)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/push/worker-devices", nil)
+	listReq.Header.Set("x-push-worker-secret", "worker-secret")
+	listResp, err := app.Test(listReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Devices []PushDevice `json:"devices"`
+	}
+	if listResp.StatusCode != fiber.StatusOK ||
+		json.NewDecoder(listResp.Body).Decode(&listed) != nil ||
+		len(listed.Devices) != 1 {
+		t.Fatalf("listed push devices status=%d body=%+v", listResp.StatusCode, listed)
+	}
+
+	deleted := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/push/worker-devices/delete",
+		"worker-secret",
+		`{"firebaseUid":"firebase-user-1","token":"fcm-token-1"}`,
+	)
+	if deleted.StatusCode != fiber.StatusOK || len(store.devices) != 0 {
+		t.Fatalf("delete push device status=%d count=%d", deleted.StatusCode, len(store.devices))
+	}
+
+	unauthorized := doWorkerPathRequest(
+		t,
+		app,
+		"/api/v1/push/worker-devices/ensure",
+		"wrong-secret",
+		`{"firebaseUid":"firebase-user-1","token":"fcm-token-2"}`,
+	)
+	if unauthorized.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("wrong worker secret status = %d, want 401", unauthorized.StatusCode)
 	}
 }
 

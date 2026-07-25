@@ -201,18 +201,17 @@ PUSH_WORKER_SECRET=...   # same value as the Go backend
 ```
 
 `NEXT_PUBLIC_FIREBASE_PROJECT_ID` and `FIREBASE_PROJECT_ID` must identify the
-same Firebase project. Create that project's default Firestore database and
-grant the service account read/write access (for example
-`roles/datastore.user`). `PUSH_WORKER_SECRET` authenticates evaluator traffic;
-it is not used by the browser's `/api/push/register` request.
+same Firebase project. Firestore is not used by Push Alert storage.
+`PUSH_WORKER_SECRET` must match the Go backend because Next uses its protected
+worker API to persist device and evaluator state in PostgreSQL.
 
 After changing any Vercel variable, redeploy Production. An unauthenticated
 `POST /api/push/register` returning `401` proves only that the route exists. A
-real signed-in Push toggle must receive `200`. A `503` with
-`Push registration ... Firebase` means the route reached its bounded Firebase
-operation; inspect the Vercel function log entry prefixed `[push/register]`
-for its safe error code. The route never logs the Firebase bearer token, FCM
-token, or user id.
+real signed-in Push toggle must receive `200`. A `503` mentioning push
+registration storage means the Next route could not reach the protected Go
+worker API or PostgreSQL; verify migration `0025`, `NEXT_PUBLIC_API_BASE_URL`,
+and the shared `PUSH_WORKER_SECRET`. The route never logs the Firebase bearer
+token, FCM token, or user id.
 
 Cloudflare DNS keeps the Vercel apex CNAME in DNS-only mode. The `api` hostname is a proxied
 Cloudflare Tunnel record targeting the Go API on this Windows host. Do not expose the private MT5
@@ -226,6 +225,29 @@ an old commit from before the monorepo split. Redeploy the latest `master` commi
 
 Deploy the Go backend as a separate service from `backend/`. Do not include it in the Vercel
 frontend build.
+
+For the Firestore-to-PostgreSQL Push Alert rollout, deploy the backend first so
+migration `0025` and `/api/v1/push/worker-devices/*` are live, verify the shared
+`PUSH_WORKER_SECRET`, then import existing Firestore documents before deploying
+the frontend:
+
+```powershell
+cd frontend
+
+# Reads and validates only; PostgreSQL is not changed.
+npm run migrate:push-firestore
+
+# Imports pushAlertDevices through the protected Go worker API.
+npm run migrate:push-firestore -- --apply
+```
+
+The command needs `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`,
+`FIREBASE_PRIVATE_KEY`, `NEXT_PUBLIC_API_BASE_URL`, and `PUSH_WORKER_SECRET` in
+its process environment. Do not delete the Firestore collection until the
+apply run reports zero failures and the new evaluator has been verified.
+Existing `push_tokens` rows are also backfilled with empty snapshots and
+version `1`; any device not present in Firestore fills its PostgreSQL snapshot
+on the next signed-in push registration/sync.
 
 For the runner contract, exceptional switches, manual recovery, Cloudflare Tunnel configuration,
 and troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.

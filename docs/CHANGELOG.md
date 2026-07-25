@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Push alert state moved from Firestore to PostgreSQL (2026-07-26)
+- Extended `push_tokens` with device settings, browser alert snapshots,
+  evaluator cursors, pending delivery state, notification timezone, and an
+  optimistic state version.
+- Added service-authenticated Go worker endpoints for push-device
+  ensure/get/list/update/delete operations and switched every Next push route
+  plus the closed-browser evaluator to those PostgreSQL endpoints.
+- Retained Firebase Admin only for signed ID-token verification and FCM
+  delivery, removing Firestore quota/IAM/network dependencies from push
+  registration and evaluation.
+- Added compare-and-swap retries so browser snapshot sync and overlapping
+  evaluator instances cannot overwrite newer device state.
+- Added a dry-run-by-default `migrate:push-firestore` command to preserve
+  existing `pushAlertDevices` records during the production cutover.
+
 ### Fixed - Watchlist manual reorder and backend order sync (2026-07-26)
 - Restored symbol drag/drop within the same section and across section
   boundaries by targeting symbols by ticker plus before/after edge instead of

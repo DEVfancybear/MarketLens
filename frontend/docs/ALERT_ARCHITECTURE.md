@@ -297,12 +297,12 @@ re-arm or redraw the one-time alert.
 
 Browser push sync validates the entire replacement snapshot before sending it
 and serializes requests for each device token. The server repeats validation,
-uses Firestore transactions in production, and serializes atomic temporary-file
-replacement in the local fallback. Evaluator writes merge against the current
-alert signature and cursor: a stale worker cannot overwrite an edited
-definition, remove a newer event, or turn a completed destination back on. A
-frozen pending delivery may outlive the active definition until all requested
-destinations finish.
+then persists it through the service-authenticated Go worker API into
+PostgreSQL. Device writes use `state_version` compare-and-swap retries.
+Evaluator writes merge against the current alert signature and cursor: a stale
+worker cannot overwrite an edited definition, remove a newer event, or turn a
+completed destination back on. A frozen pending delivery may outlive the active
+definition until all requested destinations finish.
 
 The evaluator does not treat the browser-owned alert array as the lifecycle
 source of truth. For every signed owner it loads enabled `active` definitions
