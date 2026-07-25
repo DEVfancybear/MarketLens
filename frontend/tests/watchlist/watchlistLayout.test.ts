@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  materializeDisplayedSymbolOrder,
   moveSectionInList,
   moveSymbolInList,
+  moveSymbolRelativeToSymbolInList,
   moveSymbolToSectionInList,
   moveSymbolToUnsectionedStartInList,
   removeSectionFromList,
   removeSymbolFromList,
   renameSectionInList,
+  resolveDisplayedSymbolDropTarget,
   resolveSectionDropMode,
   sanitizeListForCatalog,
 } from "../../src/store/watchlistLayout";
@@ -81,6 +84,74 @@ test("drops a symbol before a section and shifts the section header", () => {
 
   assert.deepEqual(result.symbols, ["BTCUSDT", "XAUUSD", "GBPUSD", "USDCAD"]);
   assert.equal(result.sections[0].index, 2);
+});
+
+test("materializes a sorted view without changing section membership", () => {
+  const result = materializeDisplayedSymbolOrder(list(), [
+    "BTCUSDT",
+    "USDCAD",
+    "GBPUSD",
+    "XAUUSD",
+  ]);
+
+  assert.deepEqual(result.symbols, ["BTCUSDT", "USDCAD", "GBPUSD", "XAUUSD"]);
+  assert.equal(result.sections[0].index, 1);
+});
+
+test("resolves a drop boundary from the displayed order rather than raw indexes", () => {
+  const displayed = ["BTCUSDT", "USDCAD", "GBPUSD", "XAUUSD"];
+
+  assert.deepEqual(resolveDisplayedSymbolDropTarget("USDCAD", false, displayed), {
+    ticker: "USDCAD",
+    index: 1,
+    edge: "before",
+  });
+  assert.deepEqual(resolveDisplayedSymbolDropTarget("USDCAD", true, displayed), {
+    ticker: "USDCAD",
+    index: 2,
+    edge: "after",
+  });
+  assert.equal(resolveDisplayedSymbolDropTarget("MISSING", true, displayed), null);
+});
+
+test("reorders symbols inside the same section by ticker and edge", () => {
+  const movedDown = moveSymbolRelativeToSymbolInList(
+    list(),
+    "GBPUSD",
+    "XAUUSD",
+    "after",
+  );
+  assert.deepEqual(movedDown.symbols, ["BTCUSDT", "USDCAD", "XAUUSD", "GBPUSD"]);
+  assert.equal(movedDown.sections[0].index, 1);
+
+  const movedUp = moveSymbolRelativeToSymbolInList(
+    movedDown,
+    "GBPUSD",
+    "USDCAD",
+    "before",
+  );
+  assert.deepEqual(movedUp.symbols, ["BTCUSDT", "GBPUSD", "USDCAD", "XAUUSD"]);
+  assert.equal(movedUp.sections[0].index, 1);
+});
+
+test("keeps the correct side of a section divider at symbol boundaries", () => {
+  const movedOutside = moveSymbolRelativeToSymbolInList(
+    list(),
+    "XAUUSD",
+    "BTCUSDT",
+    "after",
+  );
+  assert.deepEqual(movedOutside.symbols, ["BTCUSDT", "XAUUSD", "GBPUSD", "USDCAD"]);
+  assert.equal(movedOutside.sections[0].index, 2);
+
+  const movedInside = moveSymbolRelativeToSymbolInList(
+    list(),
+    "BTCUSDT",
+    "GBPUSD",
+    "before",
+  );
+  assert.deepEqual(movedInside.symbols, ["BTCUSDT", "GBPUSD", "USDCAD", "XAUUSD"]);
+  assert.equal(movedInside.sections[0].index, 0);
 });
 
 test("removing a symbol before a section shifts the section left", () => {

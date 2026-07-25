@@ -1,6 +1,6 @@
 # Watchlist Architecture
 
-Last updated: 2026-07-24
+Last updated: 2026-07-26
 
 ## Goal
 
@@ -95,6 +95,7 @@ Pure section/order rules live in `watchlistLayout.ts`:
 - section delete without deleting symbols
 - symbol removal with section-index repair
 - symbol drag/drop before a section or inside a section
+- ticker/edge-based same-section reorder after materializing any active sort
 - section divider drag/drop before/after symbols or other section dividers
 - token-based section targeting when multiple sections share the same symbol index
 
@@ -171,6 +172,8 @@ top drop strip moves it back outside all sections.
 
 The Sort by menu is live for both plain and sectioned lists:
 
+- `Custom order` renders the canonical backend symbol order and is selected
+  automatically after any symbol or section reorder.
 - `Symbol name` sorts alphabetically.
 - `Last price`, `Change`, `Change %`, and `Volume` sort from realtime quote data.
 - Clicking the active sort key toggles `asc`/`desc`.
@@ -202,6 +205,15 @@ Implemented Phase 6 write-through:
   `PUT /api/v1/watchlists/:id/layout`.
 - Symbol/section drag-drop reorder: optimistic local layout update, then
   `PUT /api/v1/watchlists/:id/layout`.
+
+Drag/drop does not use a sorted row's canonical array index as its destination.
+The UI sends the target ticker plus its `before`/`after` edge, first materializes
+the complete visible order inside the existing section boundaries, and then
+moves the symbol in layout-token space. This keeps the correct side of a section
+divider and avoids same-section off-by-one errors. The resulting layout request
+also includes `sortKey: "manual"` and `sortDir: "asc"`; the backend updates sort
+metadata, symbols, and section rows under the same parent-row lock and database
+transaction.
 
 Full-layout writes are concurrency-safe at both persistence boundaries:
 

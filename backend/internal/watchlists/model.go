@@ -26,6 +26,8 @@ type WatchlistSection struct {
 type WatchlistLayout struct {
 	Symbols  []string           `json:"symbols"`
 	Sections []WatchlistSection `json:"sections"`
+	SortKey  *string            `json:"sortKey,omitempty"`
+	SortDir  *string            `json:"sortDir,omitempty"`
 }
 
 // Watchlist is a named list with ordered symbols and section dividers.

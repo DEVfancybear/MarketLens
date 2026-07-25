@@ -317,7 +317,11 @@ ALTER TABLE watchlists
   ADD COLUMN sort_dir text NOT NULL DEFAULT 'asc';
 ```
 
-`sort_key` is one of `symbol`, `price`, `change`, `changeAbs`, or `volume`.
+Migration `0024_watchlist_manual_order` adds `manual` to the accepted sort keys.
+In this mode, `watchlist_symbols.position` is the visible order; every reorder
+stores it together with section positions and indexes in one layout transaction.
+
+`sort_key` is one of `manual`, `symbol`, `price`, `change`, `changeAbs`, or `volume`.
 `sort_dir` is `asc` or `desc`. The frontend still computes live price/change
 ordering from realtime quotes, but the selected sort mode is restored from the
 backend on refresh and across devices.

@@ -9,6 +9,16 @@ const quotes: Record<string, MarketQuote> = {
   CCC: { symbol: "CCC", last: 1, change: -1, changePct: -5, volume: 10, timestamp: 1 },
 };
 
+test("manual sorting preserves the persisted backend order", () => {
+  const customEntries = [entries[2], entries[0], entries[1]];
+  assert.deepEqual(
+    sortWatchlistSymbols(customEntries, "manual", "desc", quotes).map(
+      (entry) => entry.ticker,
+    ),
+    ["CCC", "AAA", "BBB"],
+  );
+});
+
 test("shared watchlist sorting keeps missing quotes last in both directions", () => {
   assert.deepEqual(
     sortWatchlistSymbols(entries, "price", "asc", quotes).map((entry) => entry.ticker),

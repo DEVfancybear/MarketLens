@@ -20,7 +20,7 @@ export interface BackendWatchlist {
   sections?: BackendWatchlistSection[];
   shared?: boolean;
   active?: boolean;
-  sortKey?: "symbol" | "price" | "change" | "changeAbs" | "volume";
+  sortKey?: "manual" | "symbol" | "price" | "change" | "changeAbs" | "volume";
   sortDir?: "asc" | "desc";
 }
 
@@ -28,7 +28,7 @@ export interface UpdateWatchlistPayload {
   name?: string;
   position?: number;
   shared?: boolean;
-  sortKey?: "symbol" | "price" | "change" | "changeAbs" | "volume";
+  sortKey?: "manual" | "symbol" | "price" | "change" | "changeAbs" | "volume";
   sortDir?: "asc" | "desc";
 }
 
@@ -38,6 +38,8 @@ export interface ReplaceWatchlistLayoutPayload {
     title: string;
     index: number;
   }>;
+  sortKey?: "manual" | "symbol" | "price" | "change" | "changeAbs" | "volume";
+  sortDir?: "asc" | "desc";
 }
 
 interface DeleteWatchlistResponse {

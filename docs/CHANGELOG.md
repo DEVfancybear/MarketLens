@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Watchlist manual reorder and backend order sync (2026-07-26)
+- Restored symbol drag/drop within the same section and across section
+  boundaries by targeting symbols by ticker plus before/after edge instead of
+  mixing sorted display positions with canonical array indexes.
+- Materialized the visible per-section order before each manual move and added
+  a persisted `Custom order` sort mode, so dragging while sorted by Last,
+  Change, or Symbol immediately produces the order shown by the drop marker.
+- Persisted symbol order, section order/indexes, and manual sort metadata in one
+  serialized backend layout transaction, with frontend, API, and migration
+  regressions covering same-section and section-boundary moves.
+
 ### Fixed - Resilient chart countdowns and compact Info Line UI (2026-07-26)
 - Kept the live candle-close countdown visible across every chart and layout
   when the optional MT5 session feed is missing, unknown, closed, or expired,

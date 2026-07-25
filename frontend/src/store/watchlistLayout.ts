@@ -4,6 +4,12 @@ import { uid } from "../utils/id";
 import type { WatchlistList, WatchlistSection } from "./watchlistStore";
 
 export type SectionInsertMode = "before-section" | "inside-section";
+export type SymbolDropEdge = "before" | "after";
+export interface DisplayedSymbolDropTarget {
+  ticker: string;
+  index: number;
+  edge: SymbolDropEdge;
+}
 export type WatchlistSectionMoveTarget =
   | { kind: "start" }
   | { kind: "symbol-boundary"; index: number }
@@ -20,6 +26,20 @@ export function normalizeSectionTitle(title: string): string {
 export function clampSectionIndex(index: number, symbolCount: number): number {
   if (!Number.isFinite(index)) return symbolCount;
   return Math.max(0, Math.min(symbolCount, Math.round(index)));
+}
+
+export function resolveDisplayedSymbolDropTarget(
+  ticker: string,
+  after: boolean,
+  displayedOrder: readonly string[],
+): DisplayedSymbolDropTarget | null {
+  const displayIndex = displayedOrder.indexOf(ticker);
+  if (displayIndex < 0) return null;
+  return {
+    ticker,
+    index: displayIndex + (after ? 1 : 0),
+    edge: after ? "after" : "before",
+  };
 }
 
 export function resolveSectionDropMode(
@@ -186,6 +206,93 @@ function fromLayoutTokens(
   }
 
   return { ...list, symbols, sections };
+}
+
+/**
+ * Turns the currently rendered order into the canonical symbol order before a
+ * manual reorder. The renderer only sorts inside section boundaries, so the
+ * existing section indexes remain valid.
+ */
+export function materializeDisplayedSymbolOrder(
+  list: WatchlistList,
+  displayedOrder: readonly string[] | undefined,
+): WatchlistList {
+  if (!displayedOrder?.length) return list;
+
+  const available = new Set(list.symbols);
+  const seen = new Set<string>();
+  const symbols: string[] = [];
+  for (const ticker of displayedOrder) {
+    if (!available.has(ticker) || seen.has(ticker)) continue;
+    seen.add(ticker);
+    symbols.push(ticker);
+  }
+  for (const ticker of list.symbols) {
+    if (seen.has(ticker)) continue;
+    seen.add(ticker);
+    symbols.push(ticker);
+  }
+
+  if (
+    symbols.length === list.symbols.length &&
+    symbols.every((ticker, index) => ticker === list.symbols[index])
+  ) {
+    return list;
+  }
+  return { ...list, symbols };
+}
+
+/**
+ * Moves a symbol next to another symbol in token space. Unlike raw array-index
+ * moves, this preserves the exact side of a section divider at boundaries.
+ */
+export function moveSymbolRelativeToSymbolInList(
+  list: WatchlistList,
+  ticker: string,
+  targetTicker: string,
+  edge: SymbolDropEdge,
+): WatchlistList {
+  if (!list.symbols.includes(ticker) || !list.symbols.includes(targetTicker)) {
+    return list;
+  }
+  if (ticker === targetTicker) return list;
+
+  const tokens = toLayoutTokens(list);
+  const movingToken = tokens.find(
+    (token) => token.kind === "symbol" && token.ticker === ticker,
+  );
+  if (!movingToken) return list;
+
+  const tokensWithoutSymbol = tokens.filter(
+    (token) => token.kind !== "symbol" || token.ticker !== ticker,
+  );
+  const targetIndex = tokensWithoutSymbol.findIndex(
+    (token) => token.kind === "symbol" && token.ticker === targetTicker,
+  );
+  if (targetIndex < 0) return list;
+
+  const insertIndex = edge === "after" ? targetIndex + 1 : targetIndex;
+  return fromLayoutTokens(list, [
+    ...tokensWithoutSymbol.slice(0, insertIndex),
+    movingToken,
+    ...tokensWithoutSymbol.slice(insertIndex),
+  ]);
+}
+
+/** Applies a row-to-row drag against the order the user was actually viewing. */
+export function moveDisplayedSymbolRelativeInList(
+  list: WatchlistList,
+  ticker: string,
+  targetTicker: string,
+  edge: SymbolDropEdge,
+  displayedOrder: readonly string[],
+): WatchlistList {
+  return moveSymbolRelativeToSymbolInList(
+    materializeDisplayedSymbolOrder(list, displayedOrder),
+    ticker,
+    targetTicker,
+    edge,
+  );
 }
 
 function tokenIndexForSymbolBoundary(

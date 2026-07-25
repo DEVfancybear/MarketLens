@@ -51,6 +51,7 @@ import { sortWatchlistSymbols } from "@/store/watchlistSort";
 import { MobileSheet } from "./MobileSheet";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "manual", label: "Custom order" },
   { key: "symbol", label: "Symbol" },
   { key: "price", label: "Price" },
   { key: "change", label: "Change %" },
@@ -247,7 +248,7 @@ export function MobileMarkets({ onOpenChart }: { onOpenChart: () => void }) {
           <button type="button" className="mobile-icon-button" aria-label="Manage watchlists" onClick={() => setManageOpen(true)}><ListFilter size={20} /></button>
         </div>
       </header>
-      <div className="mobile-market-summary"><Star size={16} /><span>{symbols.length} instruments</span><span>{SORT_OPTIONS.find((option) => option.key === sortKey)?.label} {sortDir === "asc" ? "↑" : "↓"}</span><span className="ml-auto text-bull">Live</span></div>
+      <div className="mobile-market-summary"><Star size={16} /><span>{symbols.length} instruments</span><span>{SORT_OPTIONS.find((option) => option.key === sortKey)?.label}{sortKey === "manual" ? "" : ` ${sortDir === "asc" ? "↑" : "↓"}`}</span><span className="ml-auto text-bull">Live</span></div>
       <div className="mobile-market-list">
         {marketRows.length === 0 && (
           <div className="mobile-empty-state mobile-market-empty"><strong>This watchlist is empty</strong><span>Search the MT5 catalog to add your first instrument.</span><button type="button" aria-label="Find a market to add" onClick={() => setSearchOpen(true)}><Search size={17} />Search markets</button></div>
@@ -319,7 +320,7 @@ export function MobileMarkets({ onOpenChart }: { onOpenChart: () => void }) {
             </section>
             <section>
               <div className="mobile-workspace-section-heading"><span><ArrowDownAZ size={17} /></span><div><h3>Sort instruments</h3><p>Tap the active field again to reverse direction</p></div></div>
-              <div className="mobile-sort-options">{SORT_OPTIONS.map((option) => <button key={option.key} type="button" aria-pressed={sortKey === option.key} className={cn(sortKey === option.key && "is-active")} onClick={() => setSort(option.key)}>{option.label}{sortKey === option.key && <span>{sortDir === "asc" ? "↑" : "↓"}</span>}</button>)}</div>
+              <div className="mobile-sort-options">{SORT_OPTIONS.map((option) => <button key={option.key} type="button" aria-pressed={sortKey === option.key} className={cn(sortKey === option.key && "is-active")} onClick={() => setSort(option.key)}>{option.label}{sortKey === option.key && option.key !== "manual" && <span>{sortDir === "asc" ? "↑" : "↓"}</span>}</button>)}</div>
             </section>
             <section>
               <div className="mobile-workspace-section-heading"><span><ListFilter size={17} /></span><div><h3>Sections</h3><p>Group and reorder the shared watchlist</p></div></div>

@@ -17,7 +17,9 @@ import { uid } from "@/utils/id";
 import {
   clampSectionIndex,
   createWatchlistSection,
+  materializeDisplayedSymbolOrder,
   moveSectionInList,
+  moveDisplayedSymbolRelativeInList,
   moveSymbolInList,
   moveSymbolToSectionInList,
   moveSymbolToUnsectionedStartInList,
@@ -27,11 +29,19 @@ import {
   renameSectionInList,
   sanitizeListForCatalog,
   type SectionInsertMode,
+  type SymbolDropEdge,
   type WatchlistSectionMoveTarget,
 } from "./watchlistLayout";
 import { WatchlistSyncQueue } from "./watchlistSyncQueue";
+import { createRemoteWatchlistLayoutPayload } from "./watchlistPersistence";
 
-export type SortKey = "symbol" | "price" | "change" | "changeAbs" | "volume";
+export type SortKey =
+  | "manual"
+  | "symbol"
+  | "price"
+  | "change"
+  | "changeAbs"
+  | "volume";
 export type SortDir = "asc" | "desc";
 
 export interface WatchlistSection {
@@ -58,14 +68,18 @@ type SymbolUpdate = string[] | ((prev: string[]) => string[]);
 type AddSectionPayload = string | { title: string; index?: number };
 type MoveSymbolPayload = {
   ticker: string;
-  index: number;
+  index?: number;
   mode?: SectionInsertMode;
   targetSectionId?: string;
+  targetTicker?: string;
+  edge?: SymbolDropEdge;
+  displayedOrder?: readonly string[];
   unsectionedStart?: boolean;
 };
 type MoveSectionPayload = {
   sectionId: string;
   target: WatchlistSectionMoveTarget;
+  displayedOrder?: readonly string[];
 };
 
 const DEFAULT_LIST_ID = "default";
@@ -82,7 +96,8 @@ const DEFAULT_LIST: WatchlistList = {
 };
 
 function cleanSortKey(input: unknown, fallback: SortKey = "symbol"): SortKey {
-  return input === "symbol" ||
+  return input === "manual" ||
+    input === "symbol" ||
     input === "price" ||
     input === "change" ||
     input === "changeAbs" ||
@@ -290,16 +305,6 @@ function runRemoteSync(
   void work().catch((error) => logRemoteSyncError(action, error));
 }
 
-function remoteLayoutPayload(list: WatchlistList) {
-  return {
-    symbols: list.symbols,
-    sections: list.sections.map((section) => ({
-      title: section.title,
-      index: section.index,
-    })),
-  };
-}
-
 function currentCatalogSet(): Set<string> {
   return new Set(getAllMarketSymbols().map((symbol) => symbol.id.toUpperCase()));
 }
@@ -316,8 +321,8 @@ function sanitizeListsForCatalog(
 function listLayoutChanged(a: WatchlistList, b: WatchlistList): boolean {
   return (
     a.symbols.join("\0") !== b.symbols.join("\0") ||
-    JSON.stringify(remoteLayoutPayload(a).sections) !==
-      JSON.stringify(remoteLayoutPayload(b).sections)
+    JSON.stringify(createRemoteWatchlistLayoutPayload(a).sections) !==
+      JSON.stringify(createRemoteWatchlistLayoutPayload(b).sections)
   );
 }
 
@@ -340,7 +345,7 @@ function syncSanitizedRemoteLayouts(
 
 async function replaceRemoteLayoutFromLocal(list: WatchlistList): Promise<void> {
   if (!isServerWatchlistId(list.id)) return;
-  const payload = remoteLayoutPayload(list);
+  const payload = createRemoteWatchlistLayoutPayload(list);
   await remoteLayoutSyncQueue.enqueue(list.id, () =>
     replaceRemoteWatchlistLayout(list.id, payload).then(() => undefined),
   );
@@ -724,19 +729,36 @@ export const moveWatchlistSymbolAtom = atom(
   null,
   (get, set, payload: MoveSymbolPayload) => {
     const activeId = get(activeWatchlistIdAtom);
-    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
-      payload.unsectionedStart
-        ? moveSymbolToUnsectionedStartInList(list, payload.ticker)
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => {
+      const baseline = materializeDisplayedSymbolOrder(list, payload.displayedOrder);
+      const moved = payload.unsectionedStart
+        ? moveSymbolToUnsectionedStartInList(baseline, payload.ticker)
         : payload.targetSectionId
-        ? moveSymbolToSectionInList(
-            list,
-            payload.ticker,
-            payload.targetSectionId,
-            payload.mode,
-          )
-        : moveSymbolInList(list, payload.ticker, payload.index, payload.mode),
-    );
+          ? moveSymbolToSectionInList(
+              baseline,
+              payload.ticker,
+              payload.targetSectionId,
+              payload.mode,
+            )
+          : payload.targetTicker && payload.edge
+            ? moveDisplayedSymbolRelativeInList(
+                list,
+                payload.ticker,
+                payload.targetTicker,
+                payload.edge,
+                payload.displayedOrder ?? list.symbols,
+              )
+            : moveSymbolInList(
+                baseline,
+                payload.ticker,
+                payload.index ?? 0,
+                payload.mode,
+              );
+      return { ...moved, sortKey: "manual", sortDir: "asc" };
+    });
     set(watchlistListsAtom, lists);
+    set(watchlistSortKeyAtom, "manual");
+    set(watchlistSortDirAtom, "asc");
     persist(lists, activeId);
     const nextList = activeList(lists, activeId);
 
@@ -750,10 +772,14 @@ export const moveWatchlistSectionAtom = atom(
   null,
   (get, set, payload: MoveSectionPayload) => {
     const activeId = get(activeWatchlistIdAtom);
-    const lists = updateActive(get(watchlistListsAtom), activeId, (list) =>
-      moveSectionInList(list, payload.sectionId, payload.target),
-    );
+    const lists = updateActive(get(watchlistListsAtom), activeId, (list) => {
+      const baseline = materializeDisplayedSymbolOrder(list, payload.displayedOrder);
+      const moved = moveSectionInList(baseline, payload.sectionId, payload.target);
+      return { ...moved, sortKey: "manual", sortDir: "asc" };
+    });
     set(watchlistListsAtom, lists);
+    set(watchlistSortKeyAtom, "manual");
+    set(watchlistSortDirAtom, "asc");
     persist(lists, activeId);
     const nextList = activeList(lists, activeId);
 
@@ -766,7 +792,8 @@ export const moveWatchlistSectionAtom = atom(
 export const setWatchlistSortAtom = atom(null, (get, set, key: SortKey) => {
   const curKey = get(watchlistSortKeyAtom);
   const curDir = get(watchlistSortDirAtom);
-  const nextDir: SortDir = curKey === key && curDir === "asc" ? "desc" : "asc";
+  const nextDir: SortDir =
+    key === "manual" ? "asc" : curKey === key && curDir === "asc" ? "desc" : "asc";
   const activeId = get(activeWatchlistIdAtom);
   const current = get(activeWatchlistAtom);
   set(watchlistSortKeyAtom, key);

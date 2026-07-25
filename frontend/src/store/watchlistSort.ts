@@ -31,6 +31,7 @@ export function sortWatchlistSymbols(
   sortDir: SortDir,
   quotes: Record<string, MarketQuote>,
 ): SortableWatchlistSymbol[] {
+  if (sortKey === "manual") return [...entries];
   const direction = sortDir === "asc" ? 1 : -1;
   return [...entries].sort((a, b) => {
     if (sortKey === "symbol") {

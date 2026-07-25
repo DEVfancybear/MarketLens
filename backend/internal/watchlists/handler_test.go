@@ -128,6 +128,12 @@ func (f *fakeStore) ReplaceLayout(_ context.Context, userID, id string, layout W
 	}
 	f.byUser[userID][i].Symbols = symbols
 	f.byUser[userID][i].Sections = sections
+	if layout.SortKey != nil {
+		f.byUser[userID][i].SortKey = *layout.SortKey
+	}
+	if layout.SortDir != nil {
+		f.byUser[userID][i].SortDir = *layout.SortDir
+	}
 	return f.byUser[userID][i], nil
 }
 
@@ -219,13 +225,13 @@ func TestWatchlistCRUDFlow(t *testing.T) {
 	}
 
 	// replace full layout
-	resp, body = do(t, app, http.MethodPut, "/api/v1/watchlists/"+created.ID+"/layout", `{"symbols":["EURUSD","BTCUSDT"],"sections":[{"title":"SECTION 1","index":1}]}`)
+	resp, body = do(t, app, http.MethodPut, "/api/v1/watchlists/"+created.ID+"/layout", `{"symbols":["EURUSD","BTCUSDT"],"sections":[{"title":"SECTION 1","index":1}],"sortKey":"manual","sortDir":"asc"}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("replaceLayout status=%d body=%s", resp.StatusCode, body)
 	}
 	var layout Watchlist
 	json.Unmarshal([]byte(body), &layout)
-	if len(layout.Symbols) != 2 || layout.Symbols[0] != "EURUSD" || len(layout.Sections) != 1 || layout.Sections[0].Index != 1 {
+	if len(layout.Symbols) != 2 || layout.Symbols[0] != "EURUSD" || len(layout.Sections) != 1 || layout.Sections[0].Index != 1 || layout.SortKey != "manual" {
 		t.Fatalf("unexpected layout: %+v", layout)
 	}
 

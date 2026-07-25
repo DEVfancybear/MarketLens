@@ -357,13 +357,17 @@ Full-layout write:
 ```json
 {
   "symbols": ["EURUSD", "XAUUSD"],
-  "sections": [{ "title": "SECTION 1", "index": 1 }]
+  "sections": [{ "title": "SECTION 1", "index": 1 }],
+  "sortKey": "manual",
+  "sortDir": "asc"
 }
 ```
 
 Use `PUT /api/v1/watchlists/:id/layout` for add/remove/clear symbol,
 section add/rename/delete, and drag/drop reorder. It is the common persistence
-path for TradingView-style watchlist gestures.
+path for TradingView-style watchlist gestures. `sortKey` and `sortDir` are
+optional for compatibility; current clients include them so a drag/drop layout
+and its `manual` display mode commit atomically.
 
 The frontend serializes full-layout writes per watchlist, while allowing
 different watchlists to sync independently. The backend additionally locks the

@@ -67,6 +67,10 @@ import {
   sortWatchlistSymbols,
   type SortableWatchlistSymbol,
 } from "@/store/watchlistSort";
+import {
+  resolveDisplayedSymbolDropTarget,
+  type SymbolDropEdge,
+} from "@/store/watchlistLayout";
 
 const GRID =
   "grid grid-cols-[minmax(0,1fr)_minmax(60px,74px)_minmax(46px,58px)_minmax(46px,56px)] items-center gap-x-1.5";
@@ -75,13 +79,18 @@ type DisplayRow =
   | { kind: "section"; section: WatchlistSection }
   | { kind: "symbol"; ticker: string; index: number };
 
-type SymbolDropEdge = "before" | "after";
 type SectionDropEdge = "before" | "after";
 type WatchlistDragKind = "symbol" | "section";
 type WatchlistDropTarget =
   | { kind: "unsectioned"; key: string }
   | { kind: "section"; key: string; sectionId: string; edge?: SectionDropEdge }
-  | { kind: "symbol"; key: string; index: number; edge: SymbolDropEdge };
+  | {
+      kind: "symbol";
+      key: string;
+      ticker?: string;
+      index: number;
+      edge: SymbolDropEdge;
+    };
 type WatchlistDragBase = {
   startX: number;
   startY: number;
@@ -188,7 +197,9 @@ export function Watchlist() {
   const ordered = useMemo<SortableWatchlistSymbol[]>(() => {
     const list = symbols.map((ticker, index) => ({ ticker, index }));
     const quoteSnapshot =
-      sortKey === "symbol" ? {} : getMarketDataState().quotes;
+      sortKey === "manual" || sortKey === "symbol"
+        ? {}
+        : getMarketDataState().quotes;
     return sortWatchlistSymbols(list, sortKey, sortDir, quoteSnapshot);
   }, [symbols, sortKey, sortDir]);
 
@@ -202,7 +213,9 @@ export function Watchlist() {
     }
 
     const quoteSnapshot =
-      sortKey === "symbol" ? {} : getMarketDataState().quotes;
+      sortKey === "manual" || sortKey === "symbol"
+        ? {}
+        : getMarketDataState().quotes;
     const rows: DisplayRow[] = [];
     const sortedSections = [...sections].sort((a, b) => a.index - b.index);
     const pushSymbols = (from: number, to: number) => {
@@ -225,6 +238,12 @@ export function Watchlist() {
     pushSymbols(cursor, symbols.length);
     return rows;
   }, [ordered, sections, sortDir, sortKey, symbols]);
+
+  const displayedSymbolOrder = useMemo(
+    () =>
+      displayRows.flatMap((row) => (row.kind === "symbol" ? [row.ticker] : [])),
+    [displayRows],
+  );
 
   const commitRename = useCallback(() => {
     renameWatchlist(renameDraft);
@@ -347,15 +366,20 @@ export function Watchlist() {
 
       const symbol = closest<HTMLElement>("[data-watchlist-symbol-index]");
       if (symbol?.dataset.watchlistSymbolIndex) {
-        const rowIndex = Number(symbol.dataset.watchlistSymbolIndex);
-        if (!Number.isFinite(rowIndex)) return null;
+        const ticker = symbol.dataset.watchlistSymbol;
+        if (!ticker) return null;
         const rect = symbol.getBoundingClientRect();
         const after = clientY > rect.top + rect.height / 2;
+        const resolved = resolveDisplayedSymbolDropTarget(
+          ticker,
+          after,
+          displayedSymbolOrder,
+        );
+        if (!resolved) return null;
         return {
           kind: "symbol",
-          key: `symbol-${symbol.dataset.watchlistSymbol ?? rowIndex}-${after ? "after" : "before"}`,
-          index: rowIndex + (after ? 1 : 0),
-          edge: after ? "after" : "before",
+          key: `symbol-${ticker}-${after ? "after" : "before"}`,
+          ...resolved,
         };
       }
 
@@ -398,7 +422,7 @@ export function Watchlist() {
 
       return null;
     },
-    [symbols.length],
+    [displayedSymbolOrder, symbols.length],
   );
 
   const applyPointerDrop = useCallback(
@@ -406,7 +430,11 @@ export function Watchlist() {
       if (!target) return;
       if (state.kind === "section") {
         if (target.kind === "unsectioned") {
-          moveSection({ sectionId: state.sectionId, target: { kind: "start" } });
+          moveSection({
+            sectionId: state.sectionId,
+            target: { kind: "start" },
+            displayedOrder: displayedSymbolOrder,
+          });
           return;
         }
         if (target.kind === "section") {
@@ -417,12 +445,14 @@ export function Watchlist() {
               sectionId: target.sectionId,
               edge: target.edge ?? "after",
             },
+            displayedOrder: displayedSymbolOrder,
           });
           return;
         }
         moveSection({
           sectionId: state.sectionId,
           target: { kind: "symbol-boundary", index: target.index },
+          displayedOrder: displayedSymbolOrder,
         });
         return;
       }
@@ -432,6 +462,7 @@ export function Watchlist() {
           ticker: state.ticker,
           index: 0,
           mode: "before-section",
+          displayedOrder: displayedSymbolOrder,
           unsectionedStart: true,
         });
         return;
@@ -441,13 +472,20 @@ export function Watchlist() {
           ticker: state.ticker,
           index: 0,
           mode: "inside-section",
+          displayedOrder: displayedSymbolOrder,
           targetSectionId: target.sectionId,
         });
         return;
       }
-      moveSymbol({ ticker: state.ticker, index: target.index, mode: "inside-section" });
+      if (!target.ticker) return;
+      moveSymbol({
+        ticker: state.ticker,
+        targetTicker: target.ticker,
+        edge: target.edge,
+        displayedOrder: displayedSymbolOrder,
+      });
     },
-    [moveSection, moveSymbol],
+    [displayedSymbolOrder, moveSection, moveSymbol],
   );
 
   const updateDropTarget = useCallback((target: WatchlistDropTarget | null) => {
@@ -1360,6 +1398,7 @@ function SortMenu({
   onSort: (k: SortKey) => void;
 }) {
   const opts: { key: SortKey; label: string }[] = [
+    { key: "manual", label: "Custom order" },
     { key: "symbol", label: "Symbol name" },
     { key: "price", label: "Last price" },
     { key: "changeAbs", label: "Change" },

@@ -264,6 +264,22 @@ SET active_watchlist_id = EXCLUDED.active_watchlist_id,
 func (r *Repo) ReplaceLayout(ctx context.Context, userID, id string, layout WatchlistLayout) (Watchlist, error) {
 	symbols := normalizeSymbols(layout.Symbols)
 	sections := normalizeSections(layout.Sections, len(symbols))
+	sortKey := layout.SortKey
+	if sortKey != nil {
+		normalized, ok := normalizeSortKey(*sortKey)
+		if !ok {
+			return Watchlist{}, fmt.Errorf("%w: invalid sort key", ErrBadRequest)
+		}
+		sortKey = &normalized
+	}
+	sortDir := layout.SortDir
+	if sortDir != nil {
+		normalized, ok := normalizeSortDir(*sortDir)
+		if !ok {
+			return Watchlist{}, fmt.Errorf("%w: invalid sort direction", ErrBadRequest)
+		}
+		sortDir = &normalized
+	}
 	uid, err := parseUUID(userID)
 	if err != nil {
 		return Watchlist{}, err
@@ -293,6 +309,16 @@ FOR UPDATE`, wid, uid).Scan(&lockedID)
 	}
 	if err != nil {
 		return Watchlist{}, err
+	}
+	if sortKey != nil || sortDir != nil {
+		if _, err := tx.Exec(ctx, `
+UPDATE watchlists
+SET sort_key = COALESCE($2::text, sort_key),
+    sort_dir = COALESCE($3::text, sort_dir),
+    updated_at = now()
+WHERE id = $1`, wid, sortKey, sortDir); err != nil {
+			return Watchlist{}, err
+		}
 	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM watchlist_symbols WHERE watchlist_id = $1`, wid); err != nil {
@@ -491,7 +517,7 @@ func normalizeSections(input []WatchlistSection, symbolCount int) []WatchlistSec
 
 func normalizeSortKey(input string) (string, bool) {
 	switch strings.TrimSpace(input) {
-	case "symbol", "price", "change", "changeAbs", "volume":
+	case "manual", "symbol", "price", "change", "changeAbs", "volume":
 		return strings.TrimSpace(input), true
 	default:
 		return "", false
