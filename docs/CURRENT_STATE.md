@@ -1,5 +1,21 @@
 # CURRENT STATE
 
+_Auth/Push hardening update 2026-07-26._
+
+- Frontend auth bootstrap uses one `POST /api/v1/auth/session`; an initial
+  `/auth/me` or `/auth/refresh` 401 probe is no longer expected. While backend
+  deployment is deferred, only a session `404`/`405` falls back once to the
+  legacy `/auth/google` exchange.
+- Backend auth requires verified Google identities, emits
+  HttpOnly/Secure/SameSite=Strict cookies, atomically rotates refresh tokens,
+  validates JWT issuer/audience/TTL, rejects unsafe cookie requests without an
+  allowed Origin, and rate-limits session establishment.
+- Next `POST /api/push/alerts/sync` has an eight-second end-to-end deadline:
+  retry `503`, do not retry device-ownership `409`.
+- Deploy the backend first, then the Vercel frontend. The maintained details
+  are in `backend/docs/AUTH.md`, `backend/docs/PRODUCTION_BUILD.md`,
+  `docs/SECURITY.md`, and `docs/OPERATIONS.md`.
+
 _Production deployment update 2026-07-19._
 
 - The production frontend is deployed by Vercel at `https://tradingterminal.io.vn`.

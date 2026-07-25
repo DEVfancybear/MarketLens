@@ -14,14 +14,15 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/config"
 )
 
-// idTokenVerifier is the slice of the Firebase auth client the verifier uses.
+// idTokenVerifier is the revocation-aware slice of the Firebase auth client
+// the verifier uses.
 // Abstracted so the claim-mapping logic can be unit-tested without real
 // credentials or network access. *fbauth.Client satisfies it.
 type idTokenVerifier interface {
-	VerifyIDToken(ctx context.Context, idToken string) (*fbauth.Token, error)
+	VerifyIDTokenAndCheckRevoked(ctx context.Context, idToken string) (*fbauth.Token, error)
 }
 
-// Verifier validates Firebase ID tokens and maps them to an internal Identity.
+// Verifier validates non-revoked Firebase ID tokens and maps them to an internal Identity.
 type Verifier struct {
 	client idTokenVerifier
 }

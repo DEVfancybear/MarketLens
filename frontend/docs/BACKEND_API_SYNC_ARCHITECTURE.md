@@ -22,8 +22,9 @@ Current backend code has:
 
 - Fiber server in `backend/internal/httpserver/server.go`.
 - `/health` and `/health/ready`.
-- Google auth/session API: `/api/v1/auth/google`, `/api/v1/auth/me`, `/api/v1/auth/refresh`,
-  `/api/v1/auth/logout`, `/api/v1/auth/sessions`.
+- Google auth/session API: preferred `/api/v1/auth/session`, compatibility
+  `/api/v1/auth/google`, plus `/api/v1/auth/me`, `/api/v1/auth/refresh`,
+  `/api/v1/auth/logout`, and `/api/v1/auth/sessions`.
 - Settings API: `GET/PUT/PATCH /api/v1/settings`.
 - Sync bootstrap: `GET /api/v1/sync/bootstrap`.
 
@@ -75,7 +76,7 @@ frontend/src/services/api/
   client.ts               # ky instance, credentials, JSON/error normalization
   errors.ts               # ApiError, typed error helpers
   resources/
-    authApi.ts            # implemented: /auth/me, /auth/refresh, /auth/google, /auth/logout
+    authApi.ts            # implemented: /auth/session, /auth/me, /auth/refresh, /auth/google, /auth/logout
     settingsApi.ts        # implemented: GET/PUT/PATCH /settings
     syncApi.ts            # implemented: GET /sync/bootstrap
     watchlistsApi.ts      # implemented: GET/POST/PATCH/DELETE lists + add/remove symbols
@@ -230,22 +231,24 @@ Large or symbol-scoped resources are intentionally lazy:
 Recommended frontend startup order:
 
 1. Firebase client auth resolves.
-2. `backendMe()` checks backend session.
-3. If access expired, `POST /api/v1/auth/refresh` rotates backend cookies.
-4. If no backend session but Firebase token exists, exchange token through `POST /api/v1/auth/google`.
-5. Call `GET /api/v1/sync/bootstrap`.
-6. Apply settings first.
-7. Apply watchlists.
-8. Apply Pine scripts before custom indicators when Phase 9 is available.
-9. Apply indicators.
-10. Apply drawing templates.
-11. Apply alerts and notification settings.
-12. Apply layouts metadata.
-13. Lazy-load current symbol drawings.
+2. Obtain a fresh Firebase ID token.
+3. Call `POST /api/v1/auth/session` once. The backend verifies the Firebase user, then reuses,
+   rotates, or creates only the matching backend session.
+4. Call `GET /api/v1/sync/bootstrap`.
+5. Apply settings first.
+6. Apply watchlists.
+7. Apply Pine scripts before custom indicators when Phase 9 is available.
+8. Apply indicators.
+9. Apply drawing templates.
+10. Apply alerts and notification settings.
+11. Apply layouts metadata.
+12. Lazy-load current symbol drawings.
 
-The same refresh/exchange order is also used after startup by the shared API client whenever a
-resource call returns `401`; the auth endpoints themselves are excluded from recovery to prevent
-recursive retries.
+After startup, the shared API client handles a protected-resource `401` by trying
+`/auth/refresh`, then `/auth/session` with a fresh Firebase token, and retrying the original request
+once. During a rolling deploy, only `/auth/session` `404`/`405` falls back once to
+`/auth/google`; security and upstream failure statuses never bypass the new endpoint. Auth
+endpoints are excluded from recovery to prevent recursive retries.
 
 All atom updates from bootstrap should happen in one orchestration action so the UI does not render
 half-local, half-remote state.
@@ -419,7 +422,8 @@ login.
 
 Frontend remote mode should not be enabled globally until each required slice exists:
 
-- `POST /api/v1/auth/google` - implemented and wired in frontend
+- `POST /api/v1/auth/session` - implemented and wired as the one-call bootstrap/recovery exchange
+- `POST /api/v1/auth/google` - retained as a compatibility login/register endpoint
 - `POST /api/v1/auth/logout` - implemented and wired in frontend
 - `GET /api/v1/auth/me` - implemented and wired in frontend
 - `POST /api/v1/auth/refresh` - implemented and wired in frontend

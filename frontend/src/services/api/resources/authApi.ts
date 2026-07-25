@@ -1,5 +1,5 @@
-import { getJson, isBackendApiConfigured, postJson } from "@/services/api/client";
-import { isUnauthorizedApiError } from "@/services/api/errors";
+import { getJson, isBackendApiConfigured, postJson } from "../client";
+import { ApiError, isUnauthorizedApiError } from "../errors";
 
 export interface BackendUser {
   id: string;
@@ -61,22 +61,25 @@ export async function backendLogout(): Promise<void> {
 }
 
 /**
- * Ensure the browser has a usable backend session for the current Firebase
- * identity. Existing cookies are preferred, then refresh, then Firebase token
- * exchange. This avoids creating a new backend session on every app reload.
+ * Ensure the browser has a backend session for the exact current Firebase
+ * identity. The backend reuses a matching access cookie, rotates a matching
+ * refresh cookie, or creates a session in one request.
  */
 export async function ensureBackendGoogleSession(
   idToken: string,
 ): Promise<ExchangeResult | null> {
   if (!backendAuthConfigured()) return null;
-
-  const existing = await backendMe();
-  if (existing) return { user: existing, isNewUser: false };
-
-  if (await backendRefresh()) {
-    const refreshed = await backendMe();
-    if (refreshed) return { user: refreshed, isNewUser: false };
+  try {
+    return await postJson<ExchangeResult>("auth/session", { idToken });
+  } catch (error) {
+    if (
+      !(error instanceof ApiError) ||
+      (error.status !== 404 && error.status !== 405)
+    ) {
+      throw error;
+    }
+    // Temporary rolling-deploy compatibility for a frontend that reaches an
+    // older backend. Security/credential failures must never bypass session.
+    return exchangeGoogleToken(idToken);
   }
-
-  return exchangeGoogleToken(idToken);
 }

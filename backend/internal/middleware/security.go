@@ -23,7 +23,8 @@ func SecurityHeaders() fiber.Handler {
 // RequireAllowedOrigin is CSRF protection for cookie-authenticated mutations.
 // CORS controls whether a browser exposes a response; it does not stop a
 // browser from sending a cross-origin form request. Non-browser clients that do
-// not send Origin remain supported for workers and health tooling.
+// not send Origin remain supported for workers and health tooling, but an
+// unsafe request carrying browser cookies must always prove its origin.
 func RequireAllowedOrigin(origins []string) fiber.Handler {
 	allowed := make(map[string]struct{}, len(origins))
 	for _, raw := range origins {
@@ -39,6 +40,9 @@ func RequireAllowedOrigin(origins []string) fiber.Handler {
 		}
 		raw := strings.TrimSpace(c.Get(fiber.HeaderOrigin))
 		if raw == "" {
+			if strings.TrimSpace(c.Get(fiber.HeaderCookie)) != "" {
+				return fiber.NewError(fiber.StatusForbidden, "origin required")
+			}
 			return c.Next()
 		}
 		if _, ok := allowed[normalizeOrigin(raw)]; !ok {

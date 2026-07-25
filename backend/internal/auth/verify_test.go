@@ -15,7 +15,7 @@ type fakeVerifier struct {
 	err error
 }
 
-func (f fakeVerifier) VerifyIDToken(_ context.Context, _ string) (*fbauth.Token, error) {
+func (f fakeVerifier) VerifyIDTokenAndCheckRevoked(_ context.Context, _ string) (*fbauth.Token, error) {
 	return f.tok, f.err
 }
 
@@ -45,6 +45,21 @@ func TestVerifyGoogleToken_VerificationError(t *testing.T) {
 	}
 }
 
+func TestVerifyGoogleToken_IdentityProviderUnavailable(t *testing.T) {
+	v := &Verifier{client: fakeVerifier{err: context.DeadlineExceeded}}
+
+	id, err := v.VerifyGoogleToken(context.Background(), "valid-shape-token")
+	if !errors.Is(err, ErrIdentityProviderUnavailable) {
+		t.Fatalf("want ErrIdentityProviderUnavailable, got %v", err)
+	}
+	if errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("provider outage must not be classified as unauthorized: %v", err)
+	}
+	if id != (Identity{}) {
+		t.Fatalf("want zero Identity on failure, got %+v", id)
+	}
+}
+
 func TestVerifyGoogleToken_MapsClaims(t *testing.T) {
 	tok := &fbauth.Token{
 		UID: "firebase-uid-123",
@@ -58,6 +73,7 @@ func TestVerifyGoogleToken_MapsClaims(t *testing.T) {
 	tok.Firebase.Identities = map[string]interface{}{
 		"google.com": []interface{}{"google-sub-999"},
 	}
+	tok.Firebase.SignInProvider = "google.com"
 
 	v := &Verifier{client: fakeVerifier{tok: tok}}
 
@@ -79,20 +95,55 @@ func TestVerifyGoogleToken_MapsClaims(t *testing.T) {
 	}
 }
 
-func TestVerifyGoogleToken_ProviderUIDFallsBackToUID(t *testing.T) {
-	// No google.com identities block → ProviderUID falls back to the Firebase uid.
+func TestVerifyGoogleToken_RejectsMissingGoogleIdentity(t *testing.T) {
 	tok := &fbauth.Token{
 		UID:    "firebase-uid-abc",
-		Claims: map[string]interface{}{"email": "x@example.com"},
+		Claims: map[string]interface{}{"email": "x@example.com", "email_verified": true},
 	}
+	tok.Firebase.SignInProvider = "google.com"
 
 	v := &Verifier{client: fakeVerifier{tok: tok}}
-
 	id, err := v.VerifyGoogleToken(context.Background(), "valid")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, ErrUnauthorized) || id != (Identity{}) {
+		t.Fatalf("want rejected zero identity, got id=%+v err=%v", id, err)
 	}
-	if id.ProviderUID != "firebase-uid-abc" {
-		t.Fatalf("want ProviderUID fallback to uid, got %q", id.ProviderUID)
+}
+
+func TestVerifyGoogleToken_RejectsNonGoogleOrUnverifiedIdentity(t *testing.T) {
+	tests := []struct {
+		name       string
+		provider   string
+		emailValid bool
+	}{
+		{name: "non Google provider", provider: "password", emailValid: true},
+		{name: "unverified email", provider: "google.com", emailValid: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tok := &fbauth.Token{
+				UID: "firebase-uid-abc",
+				Claims: map[string]interface{}{
+					"email":          "x@example.com",
+					"email_verified": tc.emailValid,
+				},
+			}
+			tok.Firebase.SignInProvider = tc.provider
+			tok.Firebase.Identities = map[string]interface{}{
+				"google.com": []interface{}{"google-sub"},
+			}
+			v := &Verifier{client: fakeVerifier{tok: tok}}
+			id, err := v.VerifyGoogleToken(context.Background(), "valid")
+			if !errors.Is(err, ErrUnauthorized) || id != (Identity{}) {
+				t.Fatalf("want rejected zero identity, got id=%+v err=%v", id, err)
+			}
+		})
+	}
+}
+
+func TestVerifyGoogleToken_RejectsOversizedTokenBeforeVerification(t *testing.T) {
+	v := &Verifier{client: fakeVerifier{tok: &fbauth.Token{UID: "should-not-be-used"}}}
+	id, err := v.VerifyGoogleToken(context.Background(), string(make([]byte, MaxIDTokenLength+1)))
+	if !errors.Is(err, ErrUnauthorized) || id != (Identity{}) {
+		t.Fatalf("want rejected zero identity, got id=%+v err=%v", id, err)
 	}
 }

@@ -76,6 +76,13 @@ function unauthorized(): MockBackendResponse {
   };
 }
 
+function notFound(): MockBackendResponse {
+  return {
+    status: 404,
+    body: { error: { code: "not_found", message: "Not found." } },
+  };
+}
+
 test("GET requests refresh the backend session and retry once", async (t) => {
   const { getJson } = await loadClient();
   const mock = installFetchMock(t, [
@@ -182,7 +189,7 @@ test("401 recovery falls back to Firebase token exchange when refresh fails", as
     [
       ["GET", "/api/v1/watchlists"],
       ["POST", "/api/v1/auth/refresh"],
-      ["POST", "/api/v1/auth/google"],
+      ["POST", "/api/v1/auth/session"],
       ["GET", "/api/v1/watchlists"],
     ],
   );
@@ -190,18 +197,135 @@ test("401 recovery falls back to Firebase token exchange when refresh fails", as
   mock.assertComplete();
 });
 
+test("401 recovery supports a backend that does not have auth/session yet", async (t) => {
+  const {
+    __setCurrentIdTokenProviderForTests,
+    getJson,
+  } = await loadClient();
+  __setCurrentIdTokenProviderForTests(async () => "firebase-id-token");
+  const mock = installFetchMock(t, [
+    unauthorized(),
+    unauthorized(),
+    notFound(),
+    { status: 200, body: { user: { id: "user-1" }, isNewUser: false } },
+    { status: 200, body: [{ id: "list-1", name: "Watchlist" }] },
+  ]);
+
+  const result = await getJson<Array<{ id: string; name: string }>>("watchlists");
+
+  assert.deepEqual(result, [{ id: "list-1", name: "Watchlist" }]);
+  assert.deepEqual(
+    mock.calls.map((call) => [call.method, call.path]),
+    [
+      ["GET", "/api/v1/watchlists"],
+      ["POST", "/api/v1/auth/refresh"],
+      ["POST", "/api/v1/auth/session"],
+      ["POST", "/api/v1/auth/google"],
+      ["GET", "/api/v1/watchlists"],
+    ],
+  );
+  mock.assertComplete();
+});
+
+test("auth bootstrap establishes the backend session in one request", async (t) => {
+  const { ensureBackendGoogleSession } = await import(
+    "../../src/services/api/resources/authApi"
+  );
+  const user = {
+    id: "user-1",
+    email: "trader@example.com",
+    displayName: "Trader",
+    photoUrl: null,
+    createdAt: "2026-07-26T00:00:00Z",
+  };
+  const mock = installFetchMock(t, [
+    { status: 200, body: { user, isNewUser: false } },
+  ]);
+
+  assert.deepEqual(await ensureBackendGoogleSession("firebase-id-token"), {
+    user,
+    isNewUser: false,
+  });
+  assert.deepEqual(
+    mock.calls.map((call) => [call.method, call.path, call.body]),
+    [
+      [
+        "POST",
+        "/api/v1/auth/session",
+        { idToken: "firebase-id-token" },
+      ],
+    ],
+  );
+  assert.equal(mock.calls[0].credentials, "include");
+  mock.assertComplete();
+});
+
+test("auth bootstrap uses legacy exchange only when session endpoint is absent", async (t) => {
+  const { ensureBackendGoogleSession } = await import(
+    "../../src/services/api/resources/authApi"
+  );
+  const user = {
+    id: "user-1",
+    email: "trader@example.com",
+    displayName: "Trader",
+    photoUrl: null,
+    createdAt: "2026-07-26T00:00:00Z",
+  };
+  const mock = installFetchMock(t, [
+    notFound(),
+    { status: 200, body: { user, isNewUser: false } },
+  ]);
+
+  assert.deepEqual(await ensureBackendGoogleSession("firebase-id-token"), {
+    user,
+    isNewUser: false,
+  });
+  assert.deepEqual(
+    mock.calls.map((call) => [call.method, call.path]),
+    [
+      ["POST", "/api/v1/auth/session"],
+      ["POST", "/api/v1/auth/google"],
+    ],
+  );
+  mock.assertComplete();
+});
+
+test("auth bootstrap never bypasses a session credential rejection", async (t) => {
+  const { ensureBackendGoogleSession } = await import(
+    "../../src/services/api/resources/authApi"
+  );
+  const mock = installFetchMock(t, [unauthorized()]);
+
+  await assert.rejects(
+    () => ensureBackendGoogleSession("rejected-token"),
+    { name: "ApiError", status: 401 },
+  );
+  assert.deepEqual(
+    mock.calls.map((call) => [call.method, call.path]),
+    [["POST", "/api/v1/auth/session"]],
+  );
+  mock.assertComplete();
+});
+
 test("auth endpoints do not recurse into session recovery", async (t) => {
   const { postJson } = await loadClient();
-  const mock = installFetchMock(t, [unauthorized()]);
+  const mock = installFetchMock(t, [unauthorized(), unauthorized()]);
 
   await assert.rejects(
     () => postJson("auth/google", { idToken: "bad-token" }),
     { name: "ApiError", status: 401 },
   );
+  await assert.rejects(
+    () => postJson("auth/session", { idToken: "bad-token" }),
+    { name: "ApiError", status: 401 },
+  );
 
   assert.deepEqual(
     mock.calls.map((call) => [call.method, call.path]),
-    [["POST", "/api/v1/auth/google"]],
+    [
+      ["POST", "/api/v1/auth/google"],
+      ["POST", "/api/v1/auth/session"],
+    ],
   );
   mock.assertComplete();
 });

@@ -38,8 +38,8 @@ var _ auth.UserUpserter = (*Repo)(nil)
 // Returns (user, isNewUser). isNewUser is true only when a brand-new user row was
 // created.
 func (r *Repo) UpsertFromIdentity(ctx context.Context, id auth.Identity) (auth.User, bool, error) {
-	if id.Email == "" {
-		return auth.User{}, false, fmt.Errorf("%w: token has no email", auth.ErrUnauthorized)
+	if id.Email == "" || !id.EmailVerified || id.UID == "" || id.ProviderUID == "" {
+		return auth.User{}, false, fmt.Errorf("%w: incomplete or unverified identity", auth.ErrUnauthorized)
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -64,6 +64,9 @@ func (r *Repo) UpsertFromIdentity(ctx context.Context, id auth.Identity) (auth.U
 			EmailVerified: id.EmailVerified,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return auth.User{}, false, fmt.Errorf("%w: user is not active", auth.ErrUnauthorized)
+			}
 			return auth.User{}, false, err
 		}
 		if _, err := q.UpdateIdentityProfile(ctx, gen.UpdateIdentityProfileParams{
@@ -96,6 +99,9 @@ func (r *Repo) UpsertFromIdentity(ctx context.Context, id auth.Identity) (auth.U
 			EmailVerified: id.EmailVerified,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return auth.User{}, false, fmt.Errorf("%w: user is not active", auth.ErrUnauthorized)
+			}
 			return auth.User{}, false, err
 		}
 	case errors.Is(gerr, pgx.ErrNoRows):
@@ -137,6 +143,9 @@ func (r *Repo) GetUser(ctx context.Context, userID string) (auth.User, error) {
 	}
 	user, err := r.q.GetUserByID(ctx, uid)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return auth.User{}, fmt.Errorf("%w: user is not active", auth.ErrUnauthorized)
+		}
 		return auth.User{}, err
 	}
 	return toAuthUser(user), nil

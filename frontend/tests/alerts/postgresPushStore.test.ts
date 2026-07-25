@@ -153,3 +153,48 @@ test("browser sync retries a PostgreSQL version conflict without losing state", 
   assert.deepEqual(putVersions, [1, 2]);
   assert.equal(getCalls, 2);
 });
+
+test("browser sync cancellation aborts the in-flight PostgreSQL request", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const originalSecret = process.env.PUSH_WORKER_SECRET;
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.test";
+  process.env.PUSH_WORKER_SECRET = "worker-secret";
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalBase === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    else process.env.NEXT_PUBLIC_API_BASE_URL = originalBase;
+    if (originalSecret === undefined) delete process.env.PUSH_WORKER_SECRET;
+    else process.env.PUSH_WORKER_SECRET = originalSecret;
+  });
+
+  let observedAbort = false;
+  globalThis.fetch = async (_input, init) => {
+    const requestSignal = init?.signal;
+    return new Promise<Response>((_resolve, reject) => {
+      requestSignal?.addEventListener(
+        "abort",
+        () => {
+          observedAbort = true;
+          reject(requestSignal.reason ?? new Error("aborted"));
+        },
+        { once: true },
+      );
+    });
+  };
+
+  const controller = new AbortController();
+  const pending = syncPushAlerts(
+    {
+      token: "fcm-token-123456789",
+      settingsPush: true,
+      alerts: [],
+    },
+    "firebase-user-1",
+    { signal: controller.signal },
+  );
+  controller.abort(new Error("route deadline"));
+
+  await assert.rejects(pending, /route deadline/);
+  assert.equal(observedAbort, true);
+});

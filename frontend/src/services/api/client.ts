@@ -133,7 +133,11 @@ function cleanApiPath(path: string): string {
 
 function shouldAttemptSessionRecovery(path: string): boolean {
   const cleanPath = cleanApiPath(path);
-  return cleanPath !== "auth/refresh" && cleanPath !== "auth/google";
+  return (
+    cleanPath !== "auth/refresh" &&
+    cleanPath !== "auth/google" &&
+    cleanPath !== "auth/session"
+  );
 }
 
 async function refreshBackendSession(): Promise<boolean> {
@@ -162,11 +166,28 @@ async function exchangeFirebaseSession(): Promise<boolean> {
             mod.currentIdToken(),
           );
       if (!idToken) return false;
-      await apiClient.post(apiUrl("auth/google"), {
-        json: { idToken },
-        retry: { limit: 0 },
-        timeout: 15_000,
-      });
+      try {
+        await apiClient.post(apiUrl("auth/session"), {
+          json: { idToken },
+          retry: { limit: 0 },
+          timeout: 15_000,
+        });
+      } catch (error) {
+        if (
+          !(error instanceof HTTPError) ||
+          (error.response.status !== 404 && error.response.status !== 405)
+        ) {
+          throw error;
+        }
+        // Rolling-deploy compatibility only. Remove after every backend has
+        // /auth/session; never fall back on 401/403/429/5xx because those are
+        // real auth/security/availability decisions.
+        await apiClient.post(apiUrl("auth/google"), {
+          json: { idToken },
+          retry: { limit: 0 },
+          timeout: 15_000,
+        });
+      }
       return true;
     } catch {
       return false;

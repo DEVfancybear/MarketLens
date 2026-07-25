@@ -1,12 +1,19 @@
 # Current Progress
 
-Last updated: 2026-07-19
+Last updated: 2026-07-26
 
 ## Current Milestone
 
 Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
 
 ## Status
+
+- Auth bootstrap/security: the frontend now uses one `POST /api/v1/auth/session` exchange instead
+  of expected 401 probes. Google provider/email verification, Strict/Secure cookies, fixed JWT
+  issuer/audience, atomic refresh rotation, cookie-aware Origin checks, disabled-user rejection,
+  and auth rate limiting are active. PostgreSQL push alert sync is bounded to eight seconds with
+  retryable `503` versus ownership `409`. See `backend/docs/AUTH.md`, `docs/SECURITY.md`, and
+  `docs/CHANGELOG.md` for the current contract.
 
 - MT5 integration access is now **per signed-in user**. Saved credentials have separate
   Configured/Verified states; `POST /api/v1/settings/integrations/verify/mt5` performs a bounded
@@ -42,7 +49,7 @@ Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
   `0002_auth` migrations, sqlc-generated queries for users/identities/sessions. Live Neon smoke has
   verified auth-table migration and login/register flow.
 - Backend auth: **Phases 2, 3 & 4 complete** — Firebase verification + session/token services +
-  **Google login/register endpoints** (`POST /api/v1/auth/google|refresh|logout`, `GET /auth/me`,
+  **Google login/register endpoints** (`POST /api/v1/auth/session|google|refresh|logout`, `GET /auth/me`,
   `DELETE /auth/sessions`), `RequireAuth` middleware, CORS. 17 auth tests (incl. full flow via
   `app.Test`). Live Neon + Firebase smoke passed: first login creates the user, second login reuses
   it, `/auth/me`, `/auth/refresh`, and `/auth/logout` all pass.
@@ -58,7 +65,10 @@ Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
   Current backend task: **Phase 7 - drawings** (+ drawing_templates).
 - Backend framework: **Fiber** — Phase 0 migrated the code off stdlib `net/http`.
 
-## Completed Since Commit `9691bd1`
+## Historical completion log since commit `9691bd1`
+
+The entries below preserve the implementation state at the time each phase landed. They are not
+the current auth/security contract; use the maintained documents linked above for operations.
 
 - **Backend Phase 6 (Watchlists):** `0004_watchlists` migration (`watchlists` + `watchlist_symbols`)
   plus `0005_watchlist_layout` (`watchlist_sections`, `watchlist_preferences`, `watchlists.shared`);

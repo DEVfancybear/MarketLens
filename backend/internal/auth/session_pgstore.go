@@ -2,9 +2,11 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smc-trading-terminal/backend/internal/db/gen"
@@ -45,17 +47,44 @@ func (p *PgSessionStore) CreateSession(ctx context.Context, params CreateSession
 func (p *PgSessionStore) GetSessionByHash(ctx context.Context, refreshHash string) (Session, error) {
 	row, err := p.q.GetSessionByHash(ctx, refreshHash)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Session{}, errSessionNotFound
+		}
 		return Session{}, err
 	}
 	return toDomainSession(row), nil
 }
 
-func (p *PgSessionStore) RevokeSession(ctx context.Context, sessionID string) error {
+func (p *PgSessionStore) RotateSession(
+	ctx context.Context,
+	oldRefreshHash string,
+	replacement CreateSessionParams,
+	rotatedAt time.Time,
+) (Session, error) {
+	row, err := p.q.RotateSession(ctx, gen.RotateSessionParams{
+		OldRefreshHash: oldRefreshHash,
+		NewRefreshHash: replacement.RefreshHash,
+		UserAgent:      nullString(replacement.UserAgent),
+		Ip:             parseIP(replacement.IP),
+		ExpiresAt:      pgTimestamptz(replacement.ExpiresAt),
+		RotatedAt:      pgTimestamptz(rotatedAt),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Session{}, ErrSessionReuse
+	}
+	if err != nil {
+		return Session{}, err
+	}
+	return toDomainSession(row), nil
+}
+
+func (p *PgSessionStore) RevokeSession(ctx context.Context, sessionID string) (bool, error) {
 	uid, err := toPgUUID(sessionID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return p.q.RevokeSession(ctx, uid)
+	rows, err := p.q.RevokeSession(ctx, uid)
+	return rows > 0, err
 }
 
 func (p *PgSessionStore) RevokeAllUserSessions(ctx context.Context, userID string) error {

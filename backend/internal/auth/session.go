@@ -18,6 +18,8 @@ import (
 // layer maps it to 401.
 var ErrSessionReuse = errors.New("refresh token reuse detected")
 
+var errSessionNotFound = errors.New("refresh session not found")
+
 // Session is the domain view of a refresh-token session row.
 type Session struct {
 	ID        string
@@ -41,7 +43,16 @@ type CreateSessionParams struct {
 type SessionStore interface {
 	CreateSession(ctx context.Context, p CreateSessionParams) (Session, error)
 	GetSessionByHash(ctx context.Context, refreshHash string) (Session, error)
-	RevokeSession(ctx context.Context, sessionID string) error
+	RotateSession(
+		ctx context.Context,
+		oldRefreshHash string,
+		replacement CreateSessionParams,
+		rotatedAt time.Time,
+	) (Session, error)
+	// RevokeSession returns whether this call changed an active session. A false
+	// result lets rotation detect a concurrent replay instead of minting two
+	// descendants from one single-use refresh token.
+	RevokeSession(ctx context.Context, sessionID string) (bool, error)
 	RevokeAllUserSessions(ctx context.Context, userID string) error
 }
 
@@ -83,7 +94,10 @@ func (s *SessionService) Create(ctx context.Context, userID, userAgent, ip strin
 func (s *SessionService) Rotate(ctx context.Context, rawRefresh, userAgent, ip string) (CreatedSession, error) {
 	sess, err := s.store.GetSessionByHash(ctx, hashToken(rawRefresh))
 	if err != nil {
-		return CreatedSession{}, fmt.Errorf("%w: unknown refresh token", ErrUnauthorized)
+		if errors.Is(err, errSessionNotFound) {
+			return CreatedSession{}, fmt.Errorf("%w: unknown refresh token", ErrUnauthorized)
+		}
+		return CreatedSession{}, err
 	}
 
 	if sess.RevokedAt != nil {
@@ -93,20 +107,43 @@ func (s *SessionService) Rotate(ctx context.Context, rawRefresh, userAgent, ip s
 		return CreatedSession{}, ErrSessionReuse
 	}
 
-	if !sess.ExpiresAt.IsZero() && s.now().After(sess.ExpiresAt) {
-		_ = s.store.RevokeSession(ctx, sess.ID)
+	rotatedAt := s.now()
+	if !sess.ExpiresAt.IsZero() && rotatedAt.After(sess.ExpiresAt) {
+		_, _ = s.store.RevokeSession(ctx, sess.ID)
 		return CreatedSession{}, fmt.Errorf("%w: refresh token expired", ErrUnauthorized)
 	}
 
-	if err := s.store.RevokeSession(ctx, sess.ID); err != nil {
+	raw, err := generateRefreshToken()
+	if err != nil {
 		return CreatedSession{}, err
 	}
-	return s.mint(ctx, sess.UserID, userAgent, ip)
+	expiresAt := rotatedAt.Add(s.refreshTTL)
+	replacement, err := s.store.RotateSession(ctx, hashToken(rawRefresh), CreateSessionParams{
+		UserID:      sess.UserID,
+		RefreshHash: hashToken(raw),
+		UserAgent:   userAgent,
+		IP:          ip,
+		ExpiresAt:   expiresAt,
+	}, rotatedAt)
+	if errors.Is(err, ErrSessionReuse) {
+		_ = s.store.RevokeAllUserSessions(ctx, sess.UserID)
+		return CreatedSession{}, ErrSessionReuse
+	}
+	if err != nil {
+		return CreatedSession{}, err
+	}
+	return CreatedSession{
+		SessionID:    replacement.ID,
+		UserID:       replacement.UserID,
+		RefreshToken: raw,
+		ExpiresAt:    replacement.ExpiresAt,
+	}, nil
 }
 
 // Revoke revokes a single session (logout on this device).
 func (s *SessionService) Revoke(ctx context.Context, sessionID string) error {
-	return s.store.RevokeSession(ctx, sessionID)
+	_, err := s.store.RevokeSession(ctx, sessionID)
+	return err
 }
 
 // RevokeAll revokes every active session for a user (sign out everywhere).

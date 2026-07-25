@@ -115,17 +115,24 @@ Range response:
 
 See `AUTH.md` for the full flow and token model.
 
-### `POST /api/v1/auth/google`
+All three session-establishment endpoints accept only Firebase ID tokens whose current provider is
+Google, whose Google provider subject is present, and whose email is verified. The auth request
+body is capped at a 16 KiB ID token. `/auth/session`, `/auth/google`, and `/auth/refresh` share a
+limit of 120 requests per five minutes per client IP.
+
+### `POST /api/v1/auth/google` (compatibility)
 
 Login **or** register with a Google account. First sign-in creates the user; later sign-ins reuse
-it. No auth required (this is where you get authed).
+it. This compatibility endpoint always creates a new backend session. New browser bootstrap code
+must use `/auth/session` so it can safely reuse/rotate an existing matching session.
 
 **Request**
 ```json
 { "idToken": "<firebase-id-token>" }
 ```
 
-**Response** `200 OK` — sets `access_token` + `refresh_token` httpOnly cookies.
+**Response** `200 OK` — sets `access_token` + `refresh_token` HttpOnly, Secure,
+SameSite=Strict cookies.
 ```json
 {
   "user": {
@@ -140,12 +147,35 @@ it. No auth required (this is where you get authed).
 ```
 Errors: `401 unauthorized` (invalid/expired ID token), `429 rate_limited`.
 
+### `POST /api/v1/auth/session`
+
+Preferred browser bootstrap endpoint. Accepts the same `{ "idToken": "..." }` body as
+`/auth/google`, verifies the current Google/Firebase identity, and then performs exactly one of:
+
+- reuse a valid access cookie belonging to that same user;
+- atomically rotate a matching refresh cookie; or
+- create a new backend session.
+
+Returns the same `user` and `isNewUser` response as `/auth/google`. Invalid, revoked, disabled,
+non-Google, or unverified-email Firebase identities return `401`; oversized tokens return `400`;
+repeated auth attempts return `429`. A transient Firebase revocation-check timeout, quota response,
+network error, or upstream 5xx returns retryable `503`. Cookies are emitted only for the
+rotate/create branches. A valid matching access session returns `200` without rewriting either
+cookie.
+
+If Firebase user B calls this endpoint while browser cookies still belong to user A, A's access
+cookie is never reused for B. A rotated mismatched refresh descendant is revoked before B receives
+a newly created session.
+
 ### `POST /api/v1/auth/refresh`
 
 Rotates the refresh token and issues a fresh access token. Requires the `refresh_token` cookie.
 
 **Response** `200 OK` — new cookies set. Body: `{ "ok": true }`.
-Errors: `401` (missing/revoked/reused refresh token → all sessions revoked).
+Rotation is a single PostgreSQL lock/revoke/insert operation, so two concurrent requests cannot
+both mint a descendant. Errors: `401` for missing/unknown/expired refresh tokens; replay of an
+already-revoked token also returns `401` and revokes all active sessions for that user. Disabled or
+deleted users cannot refresh.
 
 ### `POST /api/v1/auth/logout`  🔒
 
@@ -158,6 +188,10 @@ Revokes the current session and clears both cookies. `200 { "ok": true }`.
 ### `DELETE /api/v1/auth/sessions`  🔒
 
 Sign out of every device (revoke all sessions). `200 { "ok": true }`.
+
+Auth cookies are `HttpOnly; Secure; SameSite=Strict`. The access cookie uses `Path=/`; the refresh
+cookie uses `Path=/api/v1/auth`. Unsafe requests carrying cookies require an allowed `Origin`;
+missing/disallowed origins return `403`. See `AUTH.md` for JWT issuer/audience and deployment rules.
 
 ---
 
@@ -1259,6 +1293,20 @@ call them directly.
 | GET    | `/api/v1/push/worker-devices`        | List devices requiring evaluator work |
 | POST   | `/api/v1/push/worker-devices/put`    | Compare-and-swap a complete device snapshot |
 | POST   | `/api/v1/push/worker-devices/delete` | Delete an owned device row |
+
+The browser-facing Next route `POST /api/push/alerts/sync` is intentionally outside the Go
+`/api/v1` prefix. It verifies the Firebase bearer token, validates the complete device snapshot,
+then calls the worker-device API with an eight-second end-to-end deadline:
+
+- `200`: snapshot committed, including the resulting state version;
+- `400`/`413`: malformed, duplicate, or oversized snapshot;
+- `401`: Firebase identity missing/invalid;
+- `409`: the FCM device token belongs to another Firebase user (not retryable);
+- `503` plus `Retry-After: 1`: PostgreSQL/worker transport unavailable or deadline exceeded
+  (retryable).
+
+The deadline abort signal is propagated to the in-flight Go worker request. Logs include only a
+safe error name/code and never bearer tokens, FCM tokens, alert payloads, or user IDs.
 
 ---
 

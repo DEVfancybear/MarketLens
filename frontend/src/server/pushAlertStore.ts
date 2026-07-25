@@ -22,6 +22,10 @@ import {
 const WORKER_TIMEOUT_MS = 10_000;
 const MAX_WRITE_ATTEMPTS = 3;
 
+interface PushStoreRequestOptions {
+  signal?: AbortSignal;
+}
+
 export class PushDeviceOwnershipError extends Error {
   constructor() {
     super("push device belongs to another user");
@@ -44,11 +48,18 @@ function backendBase(): string {
 
 async function workerRequest<T>(
   path: string,
-  init: { method?: "GET" | "POST"; body?: unknown } = {},
+  init: {
+    method?: "GET" | "POST";
+    body?: unknown;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<T> {
   const secret = process.env.PUSH_WORKER_SECRET?.trim();
   if (!secret) throw new Error("PUSH_WORKER_SECRET is not configured.");
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) abortFromCaller();
+  else init.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timeout = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS);
   try {
     const response = await fetch(
@@ -73,6 +84,7 @@ async function workerRequest<T>(
     return (await response.json()) as T;
   } finally {
     clearTimeout(timeout);
+    init.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -303,11 +315,12 @@ function pruneState(device: PushDeviceRecord): PushDeviceRecord {
 async function ensurePushDevice(
   token: string,
   firebaseUid: string,
+  options: PushStoreRequestOptions = {},
 ): Promise<PushDeviceRecord> {
   try {
     const response = await workerRequest<{ ok: true; device: unknown }>(
       "/ensure",
-      { body: { firebaseUid, token } },
+      { body: { firebaseUid, token }, signal: options.signal },
     );
     return decodePushDevice(response.device);
   } catch (error) {
@@ -321,6 +334,7 @@ async function ensurePushDevice(
 async function putPushDevice(
   device: PushDeviceRecord,
   firebaseUid?: string,
+  options: PushStoreRequestOptions = {},
 ): Promise<PushDeviceRecord> {
   const expectedVersion = finitePositiveNumber(device.version);
   if (!expectedVersion) {
@@ -332,6 +346,7 @@ async function putPushDevice(
       expectedVersion,
       device,
     },
+    signal: options.signal,
   });
   return decodePushDevice(response.device);
 }
@@ -339,33 +354,43 @@ async function putPushDevice(
 export async function registerPushDevice(
   token: string,
   userId: string,
+  options: PushStoreRequestOptions = {},
 ): Promise<void> {
-  await ensurePushDevice(token, userId);
+  await ensurePushDevice(token, userId, options);
 }
 
 export async function unregisterPushDevice(
   token: string,
   userId: string,
+  options: PushStoreRequestOptions = {},
 ): Promise<void> {
   await workerRequest<{ ok: true }>("/delete", {
     body: { firebaseUid: userId, token },
+    signal: options.signal,
   });
 }
 
 export async function getPushDevice(
   token: string,
   userId?: string,
+  options: PushStoreRequestOptions = {},
 ): Promise<PushDeviceRecord | undefined> {
   const response = await workerRequest<{ ok: true; device: unknown | null }>(
     "/get",
-    { body: { ...(userId ? { firebaseUid: userId } : {}), token } },
+    {
+      body: { ...(userId ? { firebaseUid: userId } : {}), token },
+      signal: options.signal,
+    },
   );
   return response.device ? decodePushDevice(response.device) : undefined;
 }
 
-export async function listPushDevices(): Promise<PushDeviceRecord[]> {
+export async function listPushDevices(
+  options: PushStoreRequestOptions = {},
+): Promise<PushDeviceRecord[]> {
   const response = await workerRequest<{ ok: true; devices: unknown[] }>("", {
     method: "GET",
+    signal: options.signal,
   });
   if (!Array.isArray(response.devices)) {
     throw new Error("Backend returned an invalid push device list.");
@@ -376,6 +401,7 @@ export async function listPushDevices(): Promise<PushDeviceRecord[]> {
 export async function syncPushAlerts(
   request: PushAlertSyncRequest,
   userId: string,
+  options: PushStoreRequestOptions = {},
 ): Promise<{ stored: number }> {
   const shouldStoreAlerts =
     request.settingsPush ||
@@ -389,8 +415,8 @@ export async function syncPushAlerts(
   }
   const snapshot = sanitized as ServerPushAlert[];
   let current =
-    (await getPushDevice(request.token, userId)) ??
-    (await ensurePushDevice(request.token, userId));
+    (await getPushDevice(request.token, userId, options)) ??
+    (await ensurePushDevice(request.token, userId, options));
 
   for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
     const now = Date.now();
@@ -411,11 +437,11 @@ export async function syncPushAlerts(
       updatedAt: now,
     });
     try {
-      await putPushDevice(next, userId);
+      await putPushDevice(next, userId, options);
       return { stored: snapshot.length };
     } catch (error) {
       if (!(error instanceof PushDeviceConflictError)) throw error;
-      const refreshed = await getPushDevice(request.token, userId);
+      const refreshed = await getPushDevice(request.token, userId, options);
       if (!refreshed) throw new PushDeviceOwnershipError();
       current = refreshed;
     }
@@ -426,6 +452,7 @@ export async function syncPushAlerts(
 export async function updatePushDevice(
   snapshot: PushDeviceRecord,
   patch: EvaluatorStatePatch,
+  options: PushStoreRequestOptions = {},
 ): Promise<void> {
   let current = snapshot;
   for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
@@ -435,11 +462,11 @@ export async function updatePushDevice(
         ...current,
         ...merged,
         updatedAt: Date.now(),
-      });
+      }, undefined, options);
       return;
     } catch (error) {
       if (!(error instanceof PushDeviceConflictError)) throw error;
-      const refreshed = await getPushDevice(current.token);
+      const refreshed = await getPushDevice(current.token, undefined, options);
       if (!refreshed) return;
       current = refreshed;
     }

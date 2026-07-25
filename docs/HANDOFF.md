@@ -17,6 +17,19 @@ older references:
 
 Recent post-split work:
 
+- **Auth bootstrap/security and Push sync hardening (2026-07-26):**
+  New frontend code calls `POST /api/v1/auth/session` once to reuse, rotate, or
+  create only the backend session matching the verified Google/Firebase user.
+  Cookies are HttpOnly/Secure/SameSite=Strict; JWT issuer/audience/TTL are
+  bounded; refresh rotation is atomic; unsafe cookie requests require an
+  allowed Origin; auth establishment is rate-limited. Push alert sync has an
+  eight-second deadline and reports retryable worker/database failures as
+  `503`, ownership conflicts as `409`. Backend-first is preferred; when backend
+  deployment is explicitly deferred, only session `404`/`405` falls back once
+  to `/auth/google`. Use
+  `backend/docs/AUTH.md`, `docs/SECURITY.md`, and `docs/OPERATIONS.md` as the
+  maintained contracts; older phase notes below are historical.
+
 - **Production backend operator runbook (2026-07-19):**
   Treat the phrases **build backend production** and **run backend** as exactly
   `.\run-backend-production.ps1` from the repository root, with no switches in the normal case.

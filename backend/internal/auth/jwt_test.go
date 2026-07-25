@@ -48,7 +48,7 @@ func TestParseAccess_Expired(t *testing.T) {
 }
 
 func TestParseAccess_WrongSecret(t *testing.T) {
-	tok, err := testTokenService(15 * time.Minute).MintAccess("user-1", "sess-1")
+	tok, err := testTokenService(15*time.Minute).MintAccess("user-1", "sess-1")
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -75,5 +75,26 @@ func TestParseAccess_RejectsNoneAlg(t *testing.T) {
 
 	if _, err := testTokenService(15 * time.Minute).ParseAccess(signed); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("want ErrUnauthorized for none-alg token, got %v", err)
+	}
+}
+
+func TestParseAccess_RejectsForeignAudienceWithValidSignature(t *testing.T) {
+	ts := testTokenService(15 * time.Minute)
+	claims := accessTokenClaims{
+		SessionID: "sess-1",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    accessTokenIssuer,
+			Subject:   "user-1",
+			Audience:  jwt.ClaimStrings{"another-service"},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(ts.secret)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if _, err := ts.ParseAccess(signed); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("want ErrUnauthorized for foreign audience, got %v", err)
 	}
 }

@@ -207,13 +207,26 @@ registration path. Final aborts are reported as a stable timeout message
 instead of exposing the browser-specific `signal is aborted without reason`
 text.
 
-Push routes still verify the
-Firebase ID token's signature, issuer, audience, and expiry, but do not request
-a per-call revocation lookup; this matches the canonical Go API and removes an
-otherwise mandatory Firebase Auth network round trip. `/api/push/register` has
+Push routes still verify the Firebase ID token's signature, issuer, audience,
+and expiry, but do not request a per-call revocation lookup. The Go auth session
+exchange performs that revocation/disabled-user check once when establishing
+the backend session; Push routes avoid adding the same Firebase RPC to every
+registration/snapshot call. `/api/push/register` has
 an 8-second server deadline, returns retryable `503` responses for worker
 API/database outages, and returns non-retryable `409` only when a device token
 is already owned by another user.
+
+`/api/push/alerts/sync` applies the same eight-second end-to-end deadline to the complete browser
+snapshot and propagates cancellation into the Go worker request. It returns:
+
+- `200` after the PostgreSQL compare-and-swap succeeds;
+- `400`/`413` for an invalid, duplicate, or oversized snapshot;
+- `401` for a missing/invalid Firebase identity;
+- non-retryable `409` when the FCM token belongs to another user;
+- retryable `503` with `Retry-After: 1` for a worker/database outage or deadline.
+
+Do not map storage failures to `403`: that status is reserved for authorization/origin failures
+and causes the browser to make the wrong recovery decision.
 
 Server push sends a data-first Web Push payload with `title` and `body` mirrored into `data`, an
 absolute `fcmOptions.link`, and high urgency headers. The service worker is responsible for showing
@@ -248,6 +261,10 @@ losing pushes for any realistically long closed-browser window.
   `0025`, `NEXT_PUBLIC_API_BASE_URL`, PostgreSQL readiness, and that
   `PUSH_WORKER_SECRET` matches in Go and Next. Then inspect the safe
   `[push/register]` code in Vercel logs.
+- Push alert sync timeout/`503`: safe to retry; verify the same worker/database path. The server
+  aborts the in-flight request before the browser's 15-second API timeout.
+- Push alert sync `409`: the token belongs to a different Firebase user. Sign out, clear the site's
+  notification/service-worker state, then register again under the intended account; do not loop.
 - Missing Firebase Admin env: ID-token verification and FCM send fail closed;
   PostgreSQL remains the only device-state store.
 - Browser-open FCM send error: the app logs `Push notification failed: ...`; alert history remains intact.

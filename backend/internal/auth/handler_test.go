@@ -63,6 +63,11 @@ func (f *fakeRepo) GetUser(_ context.Context, userID string) (User, error) {
 }
 
 func newTestApp(isNewUser bool) *fiber.App {
+	app, _, _ := newTestAppWithDependencies(isNewUser)
+	return app
+}
+
+func newTestAppWithDependencies(isNewUser bool) (*fiber.App, *fakeSessionStore, *fakeRepo) {
 	cfg := config.Config{
 		Env:            "development",
 		AuthJWTSecret:  "test-secret-at-least-32-bytes-long-xx",
@@ -70,13 +75,15 @@ func newTestApp(isNewUser bool) *fiber.App {
 		AuthRefreshTTL: 720 * time.Hour,
 	}
 	tokens := NewTokenService(cfg)
-	sessions := NewSessionService(newFakeStore(), cfg)
-	svc := NewService(fakeGoogleVerifier{}, newFakeRepo(isNewUser), sessions, tokens)
+	store := newFakeStore()
+	repo := newFakeRepo(isNewUser)
+	sessions := NewSessionService(store, cfg)
+	svc := NewService(fakeGoogleVerifier{}, repo, sessions, tokens)
 	h := NewHandler(svc, tokens, cfg)
 
 	app := fiber.New()
 	h.Register(app.Group("/api/v1"))
-	return app
+	return app, store, repo
 }
 
 func cookieValue(resp *http.Response, name string) string {
@@ -86,6 +93,15 @@ func cookieValue(resp *http.Response, name string) string {
 		}
 	}
 	return ""
+}
+
+func responseCookie(resp *http.Response, name string) *http.Cookie {
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }
 
 func TestAuthFlow_GoogleLoginMeRefreshLogout(t *testing.T) {
@@ -119,6 +135,14 @@ func TestAuthFlow_GoogleLoginMeRefreshLogout(t *testing.T) {
 	refresh := cookieValue(resp, RefreshCookieName)
 	if access == "" || refresh == "" {
 		t.Fatalf("expected both cookies, got access=%q refresh=%q", access, refresh)
+	}
+	if cookie := responseCookie(resp, AccessCookieName); cookie == nil ||
+		!cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("access cookie is not HttpOnly/SameSite=Strict: %+v", cookie)
+	}
+	if cookie := responseCookie(resp, RefreshCookieName); cookie == nil ||
+		!cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("refresh cookie is not HttpOnly/SameSite=Strict: %+v", cookie)
 	}
 
 	// 2. GET /auth/me with the access cookie → 200 user.
@@ -190,6 +214,102 @@ func TestAuthGoogle_MissingToken(t *testing.T) {
 	}
 }
 
+func TestAuthSession_ReusesThenRotatesWithoutProbeFailures(t *testing.T) {
+	app, store, _ := newTestAppWithDependencies(false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/session",
+		strings.NewReader(`{"idToken":"good-token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create session status = %d, want 200", resp.StatusCode)
+	}
+	access := cookieValue(resp, AccessCookieName)
+	refresh := cookieValue(resp, RefreshCookieName)
+	if access == "" || refresh == "" || store.seq != 1 {
+		t.Fatalf("expected one new cookie session, access=%t refresh=%t sessions=%d", access != "", refresh != "", store.seq)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/session",
+		strings.NewReader(`{"idToken":"good-token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: AccessCookieName, Value: access})
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: refresh})
+	resp, _ = app.Test(req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reuse session status = %d, want 200", resp.StatusCode)
+	}
+	if store.seq != 1 {
+		t.Fatalf("valid access cookie created an unnecessary session; sessions=%d", store.seq)
+	}
+	if cookieValue(resp, AccessCookieName) != "" || cookieValue(resp, RefreshCookieName) != "" {
+		t.Fatal("valid access reuse should not rewrite auth cookies")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/session",
+		strings.NewReader(`{"idToken":"good-token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: AccessCookieName, Value: "expired-or-invalid"})
+	req.AddCookie(&http.Cookie{Name: RefreshCookieName, Value: refresh})
+	resp, _ = app.Test(req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("rotate session status = %d, want 200", resp.StatusCode)
+	}
+	if cookieValue(resp, AccessCookieName) == "" || cookieValue(resp, RefreshCookieName) == "" {
+		t.Fatal("refresh rotation should replace both auth cookies")
+	}
+	if store.seq != 2 {
+		t.Fatalf("refresh rotation sessions=%d, want 2", store.seq)
+	}
+}
+
+func TestAuthSession_RejectsInvalidOrOversizedFirebaseToken(t *testing.T) {
+	app := newTestApp(false)
+	for _, tc := range []struct {
+		name, token string
+		want        int
+	}{
+		{name: "invalid", token: "nope", want: http.StatusUnauthorized},
+		{name: "oversized", token: strings.Repeat("x", MaxIDTokenLength+1), want: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]string{"idToken": tc.token})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/session", strings.NewReader(string(body)))
+			req.Header.Set("Content-Type", "application/json")
+			resp, _ := app.Test(req)
+			if resp.StatusCode != tc.want {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.want)
+			}
+		})
+	}
+}
+
+func TestAuthSession_RateLimitsRepeatedAttempts(t *testing.T) {
+	app := newTestApp(false)
+	for attempt := 0; attempt < authRateLimitMax; attempt++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/session",
+			strings.NewReader(`{"idToken":"nope"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("CF-Connecting-IP", "203.0.113.10")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", attempt+1, resp.StatusCode)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/session",
+		strings.NewReader(`{"idToken":"nope"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("CF-Connecting-IP", "203.0.113.10")
+	resp, _ := app.Test(req)
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("rate-limited status = %d, want 429", resp.StatusCode)
+	}
+}
+
 func TestAuthRefresh_NoCookie(t *testing.T) {
 	app := newTestApp(false)
 
@@ -197,5 +317,13 @@ func TestAuthRefresh_NoCookie(t *testing.T) {
 	resp, _ := app.Test(req)
 	if resp.StatusCode != 401 {
 		t.Fatalf("refresh (no cookie) status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestAuthError_IdentityProviderUnavailableIsRetryable(t *testing.T) {
+	err := authError(ErrIdentityProviderUnavailable)
+	fiberErr, ok := err.(*fiber.Error)
+	if !ok || fiberErr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("authError = %#v, want Fiber 503", err)
 	}
 }

@@ -18,6 +18,21 @@ type fakeSessionStore struct {
 	revokeAllCalls int
 }
 
+// staleReadStore simulates two rotations that both read the original session
+// before either conditional revoke becomes visible.
+type staleReadStore struct {
+	*fakeSessionStore
+	staleHash    string
+	staleSession Session
+}
+
+func (s *staleReadStore) GetSessionByHash(ctx context.Context, hash string) (Session, error) {
+	if hash == s.staleHash {
+		return s.staleSession, nil
+	}
+	return s.fakeSessionStore.GetSessionByHash(ctx, hash)
+}
+
 func newFakeStore() *fakeSessionStore {
 	return &fakeSessionStore{byID: map[string]*Session{}, byHash: map[string]string{}}
 }
@@ -34,17 +49,37 @@ func (f *fakeSessionStore) CreateSession(_ context.Context, p CreateSessionParam
 func (f *fakeSessionStore) GetSessionByHash(_ context.Context, hash string) (Session, error) {
 	id, ok := f.byHash[hash]
 	if !ok {
-		return Session{}, errors.New("not found")
+		return Session{}, errSessionNotFound
 	}
 	return *f.byID[id], nil
 }
 
-func (f *fakeSessionStore) RevokeSession(_ context.Context, id string) error {
+func (f *fakeSessionStore) RotateSession(
+	ctx context.Context,
+	oldRefreshHash string,
+	replacement CreateSessionParams,
+	_ time.Time,
+) (Session, error) {
+	id, ok := f.byHash[oldRefreshHash]
+	if !ok {
+		return Session{}, errSessionNotFound
+	}
+	old := f.byID[id]
+	if old.RevokedAt != nil {
+		return Session{}, ErrSessionReuse
+	}
+	now := time.Now()
+	old.RevokedAt = &now
+	return f.CreateSession(ctx, replacement)
+}
+
+func (f *fakeSessionStore) RevokeSession(_ context.Context, id string) (bool, error) {
 	if s, ok := f.byID[id]; ok && s.RevokedAt == nil {
 		now := time.Now()
 		s.RevokedAt = &now
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func (f *fakeSessionStore) RevokeAllUserSessions(_ context.Context, userID string) error {
@@ -124,6 +159,40 @@ func TestSessionRotate_ReuseRevokesFamily(t *testing.T) {
 	live, _ := store.GetSessionByHash(context.Background(), hashToken(rotated.RefreshToken))
 	if live.RevokedAt == nil {
 		t.Fatal("family revocation should revoke the active session too")
+	}
+}
+
+func TestSessionRotate_ConcurrentStaleReadCannotMintSecondDescendant(t *testing.T) {
+	base := newFakeStore()
+	svc := newTestSessionService(base, 720*time.Hour)
+	created, err := svc.Create(context.Background(), "user-1", "agent", "ip")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	original, err := base.GetSessionByHash(context.Background(), hashToken(created.RefreshToken))
+	if err != nil {
+		t.Fatalf("get original: %v", err)
+	}
+	stale := &staleReadStore{
+		fakeSessionStore: base,
+		staleHash:        hashToken(created.RefreshToken),
+		staleSession:     original,
+	}
+	svc.store = stale
+
+	first, err := svc.Rotate(context.Background(), created.RefreshToken, "agent", "ip")
+	if err != nil {
+		t.Fatalf("first rotate: %v", err)
+	}
+	if _, err := svc.Rotate(context.Background(), created.RefreshToken, "agent", "ip"); !errors.Is(err, ErrSessionReuse) {
+		t.Fatalf("want ErrSessionReuse for concurrent loser, got %v", err)
+	}
+	if base.seq != 2 {
+		t.Fatalf("session count = %d, want one descendant only", base.seq)
+	}
+	descendant, err := base.GetSessionByHash(context.Background(), hashToken(first.RefreshToken))
+	if err != nil || descendant.RevokedAt == nil {
+		t.Fatalf("concurrent replay should revoke the active descendant: %+v err=%v", descendant, err)
 	}
 }
 

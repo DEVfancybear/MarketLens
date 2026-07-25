@@ -6,12 +6,24 @@ prove the absence of every vulnerability.
 
 ## Authentication and browser requests
 
-- Go API mutations reject a browser `Origin` that is not in `CORS_ALLOWED_ORIGINS`.
+- Go API mutations reject a browser `Origin` that is not in `CORS_ALLOWED_ORIGINS`; unsafe
+  cookie-bearing requests with no `Origin` are rejected as well.
 - Credentialed CORS never accepts `*`; origins must be complete `http://` or `https://` origins
   without a path, query, fragment, or user-info component.
-- Access and refresh cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` outside development.
+- Access and refresh cookies are `HttpOnly`, `SameSite=Strict`, and `Secure`; production refuses
+  to start if `AUTH_COOKIE_SECURE=false`.
 - `AUTH_JWT_SECRET` must contain at least 32 characters whenever database/Firebase authentication
-  is assembled, and in every production environment.
+  is assembled. Access JWTs require the expected issuer, audience, HS256 algorithm, and bounded TTL.
+- Firebase login accepts only Google sign-in identities with verified email and a stable Google
+  provider subject. The one-call `/auth/session` endpoint refuses to reuse cookies from a different
+  Firebase user.
+- Backend session establishment checks Firebase revocation/disabled-user state with an eight-second
+  upstream deadline. Invalid/revoked identities return `401`; transient upstream failures return
+  retryable `503`.
+- Refresh-token replacement is an atomic PostgreSQL lock/revoke/insert operation. Concurrent replay
+  cannot mint two descendants, and disabled/deleted users cannot refresh.
+- Auth establishment endpoints have a per-client in-process rate limit. Keep a Cloudflare/WAF rate
+  limit enabled as the distributed outer layer.
 - Next push-device endpoints require a Firebase ID token. Device records are associated with the
   Firebase UID, preventing one signed-in user from managing another user's token.
 
@@ -35,10 +47,23 @@ prove the absence of every vulnerability.
 
 ## Dependency/runtime requirements
 
-- Frontend dependencies are locked and must pass `npm audit --audit-level=low` with zero findings.
+- Frontend runtime dependencies are locked and must pass
+  `npm audit --omit=dev --audit-level=low` with zero findings. Run the full `npm audit` as an
+  informational second gate. As of 2026-07-26, its remaining findings are confined to the ESLint
+  development dependency chain: forcing ESLint 10 breaks the React plugin bundled by
+  `eslint-config-next@16.2.12`, and forcing one `brace-expansion` major breaks Minimatch. These
+  packages are not included in the production bundle; remove this temporary exception as soon as
+  the Next ESLint stack supports the fixed major.
+- Next, Firebase, PostCSS, Sharp, `fast-xml-parser`, and `protobufjs` are pinned/resolved to patched
+  versions in `frontend/package-lock.json`. Do not remove the PostCSS/Sharp overrides without a
+  clean production audit and build.
 - Backend builds must use Go 1.26.5 or newer. The `go 1.26.5` directive in `backend/go.mod`
   makes that minimum explicit because Go 1.26.4 contains a `crypto/tls` vulnerability detected
   by `govulncheck`.
+- Run `govulncheck ./...` for every backend dependency change. The release gate is zero reachable
+  symbol/package vulnerabilities. A module-only warning is acceptable only when
+  `go mod why <vulnerable-package>` proves the main module does not need that package; record it in
+  the release notes rather than silently suppressing it.
 
 ## Secrets that are intentionally public today
 
@@ -52,7 +77,8 @@ proxy before production use.
 ```bash
 cd frontend
 npm ci
-npm audit --audit-level=low
+npm audit --omit=dev --audit-level=low
+npm audit
 npm run typecheck
 npm run lint
 npm run build
@@ -60,7 +86,9 @@ npm run build
 cd ../backend
 go test ./...
 go vet ./...
+govulncheck ./...
 ```
 
 Set production secrets, verify `CORS_ALLOWED_ORIGINS` contains only the deployed frontend origin,
-and confirm the runtime reports Go 1.26.5 or newer before exposing the service publicly.
+confirm the runtime reports Go 1.26.5 or newer, and retain the scan output with the release evidence
+before exposing the service publicly.

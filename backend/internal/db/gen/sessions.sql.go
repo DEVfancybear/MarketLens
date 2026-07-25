@@ -80,14 +80,84 @@ func (q *Queries) RevokeAllUserSessions(ctx context.Context, userID pgtype.UUID)
 	return err
 }
 
-const revokeSession = `-- name: RevokeSession :exec
+const revokeSession = `-- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = now()
 WHERE id = $1 AND revoked_at IS NULL
 `
 
-func (q *Queries) RevokeSession(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, revokeSession, id)
-	return err
+func (q *Queries) RevokeSession(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const rotateSession = `-- name: RotateSession :one
+WITH current_session AS (
+  SELECT id, user_id
+  FROM sessions
+  WHERE sessions.refresh_token_hash = $5
+    AND sessions.revoked_at IS NULL
+    AND sessions.expires_at > $6
+  FOR UPDATE
+),
+revoked AS (
+  UPDATE sessions AS s
+  SET revoked_at = $6
+  FROM current_session AS current
+  WHERE s.id = current.id
+    AND s.revoked_at IS NULL
+  RETURNING s.user_id
+)
+INSERT INTO sessions (
+  user_id,
+  refresh_token_hash,
+  user_agent,
+  ip,
+  expires_at
+)
+SELECT
+  user_id,
+  $1,
+  $2,
+  $3,
+  $4
+FROM revoked
+RETURNING id, user_id, refresh_token_hash, user_agent, ip, expires_at, revoked_at, created_at, last_used_at
+`
+
+type RotateSessionParams struct {
+	NewRefreshHash string             `json:"new_refresh_hash"`
+	UserAgent      *string            `json:"user_agent"`
+	Ip             *netip.Addr        `json:"ip"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	OldRefreshHash string             `json:"old_refresh_hash"`
+	RotatedAt      pgtype.Timestamptz `json:"rotated_at"`
+}
+
+func (q *Queries) RotateSession(ctx context.Context, arg RotateSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, rotateSession,
+		arg.NewRefreshHash,
+		arg.UserAgent,
+		arg.Ip,
+		arg.ExpiresAt,
+		arg.OldRefreshHash,
+		arg.RotatedAt,
+	)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RefreshTokenHash,
+		&i.UserAgent,
+		&i.Ip,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+	)
+	return i, err
 }
 
 const touchSession = `-- name: TouchSession :exec

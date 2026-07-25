@@ -261,9 +261,14 @@ exported to child processes only and are never written into `.env`.
 Additional local/LAN origins may be appended to `CORS_ALLOWED_ORIGINS` for diagnostics. Never use
 `*` because authenticated requests send cookies.
 
-For a local HTTP-only production-mode run, use `AUTH_COOKIE_SECURE=false`. For any HTTPS public
-deployment, omit it or set `AUTH_COOKIE_SECURE=true`. A `Secure` cookie cannot be sent over plain
-HTTP.
+Production refuses to start with `AUTH_COOKIE_SECURE=false`. For local HTTP diagnostics, run with
+`APP_ENV=development`; for every production run, omit `AUTH_COOKIE_SECURE` (the default is true) or
+set it explicitly to `true`. A Secure cookie cannot be sent over plain HTTP.
+
+The current frontend and API hostnames are different origins but the same site, so
+`SameSite=Strict` cookies remain valid. If the frontend moves away from the
+`tradingterminal.io.vn` registrable domain, do not loosen the cookie flag as a quick fix: redesign
+and retest the cross-site CSRF boundary first.
 
 The frontend Google sign-in values are public Firebase web-app settings and must be present in the
 env file used at build time:
@@ -437,10 +442,23 @@ Invoke-WebRequest https://api.tradingterminal.io.vn/api/v1/mt5/symbols
 
 In the browser Network panel, `symbols`, `history`, and the market-data WebSocket should succeed.
 After Google sign-in, **Connect & Verify MT5** should return a sanitized account summary. The
-packaged Connector on `127.0.0.1:8787` is required only for live MT5 commands. `auth/refresh`
-returning 401 before the
-first sign-in is expected; after sign-in, `/auth/google` should return 200 and workspace/bootstrap
-requests should stop returning 401.
+packaged Connector on `127.0.0.1:8787` is required only for live MT5 commands.
+
+Auth bootstrap should make one `POST /api/v1/auth/session` request:
+
+- `200` with existing matching access cookie: session reused, no cookie rewrite required;
+- `200` with expired access + valid matching refresh: refresh rotated and both cookies rewritten;
+- `200` without usable backend cookies: a new session is created;
+- `400`: malformed/oversized ID token body;
+- `401`: invalid/revoked/disabled, non-Google, or unverified-email Firebase identity;
+- `429`: auth rate limit reached.
+- `503`: the bounded Firebase revocation check is temporarily unavailable; retry with backoff.
+
+An initial `GET /auth/me` or `POST /auth/refresh` 401 probe is no longer expected. After
+`/auth/session` returns 200, `/api/v1/sync/bootstrap` and other protected requests must stop
+returning 401. If the frontend is intentionally released before this backend, the temporary
+compatibility sequence is `/auth/session` `404`/`405` followed by one `/auth/google` `200`; other
+statuses must never trigger fallback.
 
 ## Troubleshooting
 
@@ -449,9 +467,11 @@ requests should stop returning 401.
 | Watchlist rows show `--` | Check bridge log for `IPC send failed`; restart bridge and confirm MT5 login. |
 | MT5 is Configured but cannot be selected | Run **Connect & Verify MT5** for the signed-in user and inspect the sanitized failure message. |
 | MT5 is Verified but orders are blocked | Open the verified account in FTMO MT5, run the downloaded Connector, and allow Local Network Access for the site. |
-| `Workspace sync failed` / 401 | Use the same API hostname as the UI, clear site data, sign in again, and verify CORS/cookie settings. |
+| `Workspace sync failed` / 401 | Inspect `POST /api/v1/auth/session`. Verify the Firebase project matches on frontend/backend, CORS includes the exact frontend origin, cookies are Secure/Strict, and Windows time is correct. Clear site data and sign in again only after fixing configuration. |
 | Google says domain not allowed | Add the exact hostname (without scheme/port) under Firebase Authentication → Authorized domains. |
-| `/api/push/alerts/sync` returns 500 | Check Next logs for Firebase Admin errors, verify service-account values, and ensure Windows time is synchronized (`w32tm /query /status`). |
+| `/api/push/alerts/sync` returns 401 | Firebase bearer token is missing/invalid; verify the frontend and Next Firebase projects match. |
+| `/api/push/alerts/sync` returns 409 | The FCM token is owned by another Firebase user; sign out, clear site notification data/service worker state, then register under the intended account. Do not blindly retry. |
+| `/api/push/alerts/sync` returns 503 | The eight-second Next deadline expired or the Go worker/PostgreSQL path is unavailable. Verify migration `0025`, public API reachability, database readiness, and matching `PUSH_WORKER_SECRET`; retry is safe. |
 | Firebase `ACCESS_TOKEN_EXPIRED` | Synchronize Windows Time with an NTP peer, then restart Next. |
 | `/health/ready` says database down | Verify `DATABASE_URL`, network access, and migration version before restarting the API. |
 

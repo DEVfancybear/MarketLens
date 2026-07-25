@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -53,19 +54,28 @@ type LoginResult struct {
 	RefreshToken string
 }
 
-// LoginWithGoogle verifies the Firebase ID token, upserts the user, opens a
-// session, and mints an access token.
-func (s *Service) LoginWithGoogle(ctx context.Context, idToken, userAgent, ip string) (LoginResult, error) {
+// resolveGoogleUser verifies the Firebase ID token and resolves its canonical
+// backend user without opening a new backend session.
+func (s *Service) resolveGoogleUser(ctx context.Context, idToken string) (User, bool, error) {
 	identity, err := s.verifier.VerifyGoogleToken(ctx, idToken)
 	if err != nil {
-		return LoginResult{}, err // ErrUnauthorized
+		return User{}, false, err // ErrUnauthorized
 	}
 
 	user, isNew, err := s.users.UpsertFromIdentity(ctx, identity)
 	if err != nil {
-		return LoginResult{}, err
+		return User{}, false, err
 	}
+	return user, isNew, nil
+}
 
+// openSession creates a backend session for an already-verified user.
+func (s *Service) openSession(
+	ctx context.Context,
+	user User,
+	isNew bool,
+	userAgent, ip string,
+) (LoginResult, error) {
 	sess, err := s.sessions.Create(ctx, user.ID, userAgent, ip)
 	if err != nil {
 		return LoginResult{}, err
@@ -84,6 +94,66 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken, userAgent, ip st
 	}, nil
 }
 
+// LoginWithGoogle verifies the Firebase ID token, upserts the user, opens a
+// session, and mints an access token.
+func (s *Service) LoginWithGoogle(ctx context.Context, idToken, userAgent, ip string) (LoginResult, error) {
+	user, isNew, err := s.resolveGoogleUser(ctx, idToken)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	return s.openSession(ctx, user, isNew, userAgent, ip)
+}
+
+// EnsureGoogleSession establishes a backend session for the supplied Firebase
+// identity without the client's former me -> refresh -> login probe sequence.
+// A valid access cookie is reused only when it belongs to the same Firebase
+// user. Otherwise a matching refresh cookie is rotated, with a new session
+// created only as the final fallback.
+func (s *Service) EnsureGoogleSession(
+	ctx context.Context,
+	idToken, rawAccess, rawRefresh, userAgent, ip string,
+) (LoginResult, error) {
+	user, isNew, err := s.resolveGoogleUser(ctx, idToken)
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	if rawAccess != "" {
+		claims, parseErr := s.tokens.ParseAccess(rawAccess)
+		if parseErr == nil && claims.UserID == user.ID {
+			return LoginResult{User: user, IsNewUser: isNew}, nil
+		}
+	}
+
+	if rawRefresh != "" {
+		rotated, rotateErr := s.sessions.Rotate(ctx, rawRefresh, userAgent, ip)
+		switch {
+		case rotateErr == nil && rotated.UserID == user.ID:
+			access, mintErr := s.tokens.MintAccess(rotated.UserID, rotated.SessionID)
+			if mintErr != nil {
+				return LoginResult{}, mintErr
+			}
+			return LoginResult{
+				User:         user,
+				IsNewUser:    isNew,
+				AccessToken:  access,
+				RefreshToken: rotated.RefreshToken,
+			}, nil
+		case rotateErr == nil:
+			// The browser changed Firebase accounts while retaining another
+			// user's refresh cookie. Revoke the just-rotated session before
+			// opening the correct user's session.
+			if revokeErr := s.sessions.Revoke(ctx, rotated.SessionID); revokeErr != nil {
+				return LoginResult{}, revokeErr
+			}
+		case !errors.Is(rotateErr, ErrUnauthorized) && !errors.Is(rotateErr, ErrSessionReuse):
+			return LoginResult{}, rotateErr
+		}
+	}
+
+	return s.openSession(ctx, user, isNew, userAgent, ip)
+}
+
 // TokenPair is a freshly issued access + refresh token pair.
 type TokenPair struct {
 	AccessToken  string
@@ -95,6 +165,16 @@ type TokenPair struct {
 func (s *Service) Refresh(ctx context.Context, rawRefresh, userAgent, ip string) (TokenPair, error) {
 	sess, err := s.sessions.Rotate(ctx, rawRefresh, userAgent, ip)
 	if err != nil {
+		return TokenPair{}, err
+	}
+	if _, err := s.users.GetUser(ctx, sess.UserID); err != nil {
+		// Rotation already created a descendant session. Revoke it when the
+		// account is disabled/deleted or the user lookup fails so it cannot be
+		// retried into a usable access token later.
+		_ = s.sessions.Revoke(ctx, sess.SessionID)
+		if errors.Is(err, ErrUnauthorized) {
+			return TokenPair{}, err
+		}
 		return TokenPair{}, err
 	}
 	access, err := s.tokens.MintAccess(sess.UserID, sess.SessionID)

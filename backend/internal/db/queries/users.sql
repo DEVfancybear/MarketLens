@@ -1,5 +1,5 @@
 -- name: GetUserByID :one
-SELECT * FROM users WHERE id = $1;
+SELECT * FROM users WHERE id = $1 AND status = 'active';
 
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
@@ -15,7 +15,7 @@ SET display_name   = $2,
     photo_url      = $3,
     email_verified = $4,
     last_login_at  = now()
-WHERE id = $1
+WHERE id = $1 AND status = 'active'
 RETURNING *;
 
 -- name: TouchUserLastLogin :exec

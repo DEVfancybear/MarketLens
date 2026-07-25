@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -24,34 +25,75 @@ func NewHandler(svc *Service, tokens *TokenService, cfg config.Config) *Handler 
 // group). Protected routes are guarded by RequireAuth.
 func (h *Handler) Register(router fiber.Router) {
 	g := router.Group("/auth")
-	g.Post("/google", h.google)
-	g.Post("/refresh", h.refresh)
+	rateLimit := newAuthRateLimiter()
+	g.Post("/session", rateLimit, h.session)
+	g.Post("/google", rateLimit, h.google)
+	g.Post("/refresh", rateLimit, h.refresh)
 	g.Post("/logout", h.requireAuth, h.logout)
 	g.Get("/me", h.requireAuth, h.me)
 	g.Delete("/sessions", h.requireAuth, h.revokeAllSessions)
 }
 
 func (h *Handler) google(c fiber.Ctx) error {
-	var req struct {
-		IDToken string `json:"idToken"`
-	}
-	if err := c.Bind().Body(&req); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
-	}
-	if req.IDToken == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "idToken is required")
+	idToken, err := bindIDToken(c)
+	if err != nil {
+		return err
 	}
 
-	res, err := h.svc.LoginWithGoogle(c.Context(), req.IDToken, c.Get("User-Agent"), c.IP())
+	res, err := h.svc.LoginWithGoogle(c.Context(), idToken, c.Get("User-Agent"), c.IP())
 	if err != nil {
 		return authError(err)
 	}
 
 	SetAuthCookies(c, h.cfg, res.AccessToken, res.RefreshToken)
-	return c.JSON(fiber.Map{
+	return c.JSON(loginJSON(res))
+}
+
+// session establishes the backend cookie session in one request. It validates
+// the current Firebase identity before reusing either backend cookie, which
+// prevents a Firebase account switch from inheriting another user's workspace.
+func (h *Handler) session(c fiber.Ctx) error {
+	idToken, err := bindIDToken(c)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.svc.EnsureGoogleSession(
+		c.Context(),
+		idToken,
+		c.Cookies(AccessCookieName),
+		c.Cookies(RefreshCookieName),
+		c.Get("User-Agent"),
+		c.IP(),
+	)
+	if err != nil {
+		return authError(err)
+	}
+	if res.AccessToken != "" && res.RefreshToken != "" {
+		SetAuthCookies(c, h.cfg, res.AccessToken, res.RefreshToken)
+	}
+	return c.JSON(loginJSON(res))
+}
+
+func bindIDToken(c fiber.Ctx) (string, error) {
+	var req struct {
+		IDToken string `json:"idToken"`
+	}
+	if err := c.Bind().Body(&req); err != nil {
+		return "", fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	req.IDToken = strings.TrimSpace(req.IDToken)
+	if req.IDToken == "" || len(req.IDToken) > MaxIDTokenLength {
+		return "", fiber.NewError(fiber.StatusBadRequest, "valid idToken is required")
+	}
+	return req.IDToken, nil
+}
+
+func loginJSON(res LoginResult) fiber.Map {
+	return fiber.Map{
 		"user":      userJSON(res.User),
 		"isNewUser": res.IsNewUser,
-	})
+	}
 }
 
 func (h *Handler) refresh(c fiber.Ctx) error {
@@ -117,6 +159,8 @@ func authError(err error) error {
 	switch {
 	case errors.Is(err, ErrUnauthorized), errors.Is(err, ErrSessionReuse):
 		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
+	case errors.Is(err, ErrIdentityProviderUnavailable):
+		return fiber.NewError(fiber.StatusServiceUnavailable, "identity provider unavailable")
 	default:
 		return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
 	}

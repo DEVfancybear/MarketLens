@@ -4,6 +4,39 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Auth bootstrap security and bounded PostgreSQL Push sync (2026-07-26)
+- Replaced the browser's expected `me -> refresh -> google` startup probes with
+  one `POST /api/v1/auth/session` call that verifies the Firebase identity
+  before reusing, rotating, or creating the matching backend session.
+- Added a rollout-only fallback to `/auth/google` for `/auth/session` `404/405`
+  so the frontend remains compatible when backend deployment is intentionally
+  deferred; credential, origin, rate-limit, and 5xx failures never fall back.
+- Restricted login to verified Google provider identities, blocked
+  cross-Firebase-user cookie inheritance, and prevented disabled/deleted users
+  from logging in, updating, resolving `/auth/me`, or refreshing.
+- Added an eight-second Firebase revocation/disabled-user check during backend
+  session establishment, with retryable `503` classification for transient
+  upstream failure instead of a misleading credential `401`.
+- Hardened backend JWTs with fixed HS256, issuer, audience, issued-at, token
+  size, and TTL checks; changed auth cookies to HttpOnly/Secure/SameSite=Strict
+  with production fail-fast validation.
+- Made refresh rotation one atomic PostgreSQL lock/revoke/insert operation so a
+  concurrent replay cannot mint two descendants; revoked all active user
+  sessions when a used refresh token is replayed.
+- Added cookie-aware Origin enforcement for unsafe requests and a
+  120-requests-per-five-minutes auth establishment limit with loopback-only
+  trust of Cloudflare's client-IP header.
+- Bounded `/api/push/alerts/sync` to eight seconds, propagated cancellation to
+  the Go worker API, and separated retryable storage/deadline `503` responses
+  from non-retryable device ownership `409` responses without logging identity
+  or token payloads.
+- Updated runtime dependencies to patched Next/Firebase/PostCSS/Sharp and Go
+  module releases. Production npm audit and reachable Go vulnerability scans
+  now report zero findings; the remaining full npm audit warning is isolated
+  to the non-production ESLint dependency chain.
+- Added the release/deploy/verification/rollback checklist in
+  `docs/AUTH_PUSH_SECURITY_RELEASE_2026-07-26.md`.
+
 ### Changed - Push alert state moved from Firestore to PostgreSQL (2026-07-26)
 - Extended `push_tokens` with device settings, browser alert snapshots,
   evaluator cursors, pending delivery state, notification timezone, and an

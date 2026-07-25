@@ -14,17 +14,21 @@ func TestRequireAllowedOrigin(t *testing.T) {
 	app.Post("/change", func(c fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
 
 	for _, tc := range []struct {
-		name, origin string
-		want         int
+		name, origin, cookie string
+		want                 int
 	}{
 		{name: "allowed browser", origin: "https://app.example.com", want: http.StatusNoContent},
 		{name: "cross site blocked", origin: "https://evil.example", want: http.StatusForbidden},
 		{name: "worker without origin", want: http.StatusNoContent},
+		{name: "cookie mutation without origin blocked", cookie: "access_token=secret", want: http.StatusForbidden},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/change", nil)
 			if tc.origin != "" {
 				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.cookie != "" {
+				req.Header.Set("Cookie", tc.cookie)
 			}
 			res, err := app.Test(req)
 			if err != nil {

@@ -213,6 +213,11 @@ worker API or PostgreSQL; verify migration `0025`, `NEXT_PUBLIC_API_BASE_URL`,
 and the shared `PUSH_WORKER_SECRET`. The route never logs the Firebase bearer
 token, FCM token, or user id.
 
+`POST /api/push/alerts/sync` has an eight-second server deadline. Treat `503`
+as retryable worker/database unavailability and `409` as a non-retryable
+device-ownership conflict. The Next log entry is sanitized and must not be
+expanded to include the request body, Firebase UID, bearer token, or FCM token.
+
 Cloudflare DNS keeps the Vercel apex CNAME in DNS-only mode. The `api` hostname is a proxied
 Cloudflare Tunnel record targeting the Go API on this Windows host. Do not expose the private MT5
 market-data sidecar on port 8765 or the execution bridge on port 8787.
@@ -248,6 +253,16 @@ apply run reports zero failures and the new evaluator has been verified.
 Existing `push_tokens` rows are also backfilled with empty snapshots and
 version `1`; any device not present in Firestore fills its PostgreSQL snapshot
 on the next signed-in push registration/sync.
+
+Backend-first remains the preferred auth hardening rollout. If backend deployment is explicitly
+deferred, the new frontend treats only `/auth/session` `404`/`405` as an older-backend signal and
+falls back once to `/auth/google`. This keeps login available, but the one-call session matching,
+revocation check, atomic rotation, Strict-cookie, Origin, and rate-limit changes are not active in
+production until the backend is deployed. Never fall back on `400`, `401`, `403`, `429`, or `5xx`.
+
+After the backend is eventually deployed, verify one `/auth/session` `200` precedes protected
+bootstrap calls and the legacy fallback disappears. Frontend rollback remains safe because the new
+backend retains `/auth/google`, `/auth/refresh`, and `/auth/me`.
 
 For the runner contract, exceptional switches, manual recovery, Cloudflare Tunnel configuration,
 and troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.

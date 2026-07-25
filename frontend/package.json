@@ -47,7 +47,7 @@
   "dependencies": {
     "@tanstack/react-query": "5.66.0",
     "clsx": "2.1.1",
-    "firebase": "^12.15.0",
+    "firebase": "^12.16.0",
     "firebase-admin": "13.5.0",
     "framer-motion": "12.0.6",
     "idb": "8.0.1",
@@ -55,7 +55,7 @@
     "ky": "^2.0.2",
     "lightweight-charts": "5.2.0",
     "lucide-react": "0.474.0",
-    "next": "^16.2.10",
+    "next": "^16.2.12",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "tailwind-merge": "3.0.1"
@@ -67,13 +67,14 @@
     "@types/react-dom": "19.0.3",
     "autoprefixer": "10.4.20",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.10",
-    "postcss": "8.5.10",
+    "eslint-config-next": "16.2.12",
+    "postcss": "8.5.23",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.3"
   },
   "overrides": {
-    "postcss": "8.5.10",
+    "postcss": "8.5.23",
+    "sharp": "0.35.0",
     "uuid": "11.1.1"
   }
 }

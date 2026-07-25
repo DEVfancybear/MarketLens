@@ -20,7 +20,7 @@ const (
 )
 
 // SetAuthCookies writes the access + refresh tokens as hardened cookies:
-// HttpOnly, SameSite=Lax, and Secure according to the environment/configured
+// HttpOnly, SameSite=Strict, and Secure according to the environment/configured
 // override. Max-Age mirrors each token's TTL.
 func SetAuthCookies(c fiber.Ctx, cfg config.Config, access, refresh string) {
 	secure := cfg.AuthCookiesSecure()
@@ -32,7 +32,7 @@ func SetAuthCookies(c fiber.Ctx, cfg config.Config, access, refresh string) {
 		MaxAge:   int(cfg.AuthAccessTTL.Seconds()),
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
 	c.Cookie(&fiber.Cookie{
 		Name:     RefreshCookieName,
@@ -41,7 +41,7 @@ func SetAuthCookies(c fiber.Ctx, cfg config.Config, access, refresh string) {
 		MaxAge:   int(cfg.AuthRefreshTTL.Seconds()),
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
 }
 
@@ -59,7 +59,7 @@ func ClearAuthCookies(c fiber.Ctx, cfg config.Config) {
 		Expires:  expired,
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
 	c.Cookie(&fiber.Cookie{
 		Name:     RefreshCookieName,
@@ -69,6 +69,6 @@ func ClearAuthCookies(c fiber.Ctx, cfg config.Config) {
 		Expires:  expired,
 		HTTPOnly: true,
 		Secure:   secure,
-		SameSite: "Lax",
+		SameSite: "Strict",
 	})
 }

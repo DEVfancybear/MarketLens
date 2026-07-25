@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestAuthCookiesSecure(t *testing.T) {
 	t.Run("manual development config defaults false", func(t *testing.T) {
@@ -70,10 +73,33 @@ func TestValidateRejectsWeakJWTWhenAuthConfigured(t *testing.T) {
 	cfg := Config{
 		Env: "development", ChartTimeZone: "UTC", DatabaseURL: "postgres://example",
 		FirebaseProjectID: "project", FirebaseClientEmail: "service@example.com", FirebasePrivateKey: "key",
-		AuthJWTSecret: "short", CORSAllowedOrigins: []string{"http://localhost:3000"},
+		AuthJWTSecret: "short", AuthAccessTTL: 15 * time.Minute, AuthRefreshTTL: 30 * 24 * time.Hour,
+		CORSAllowedOrigins: []string{"http://localhost:3000"},
 	}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("validate() accepted a weak JWT secret")
+	}
+}
+
+func TestValidateRejectsUnsafeAuthDurations(t *testing.T) {
+	base := Config{
+		Env: "development", ChartTimeZone: "UTC", DatabaseURL: "postgres://example",
+		FirebaseProjectID: "project", FirebaseClientEmail: "service@example.com", FirebasePrivateKey: "key",
+		AuthJWTSecret:      "test-secret-at-least-32-bytes-long-xxxx",
+		CORSAllowedOrigins: []string{"http://localhost:3000"},
+		AuthAccessTTL:      15 * time.Minute, AuthRefreshTTL: 30 * 24 * time.Hour,
+	}
+
+	tooLongAccess := base
+	tooLongAccess.AuthAccessTTL = 2 * time.Hour
+	if err := tooLongAccess.validate(); err == nil {
+		t.Fatal("validate() accepted an excessive access-token lifetime")
+	}
+
+	tooLongRefresh := base
+	tooLongRefresh.AuthRefreshTTL = 365 * 24 * time.Hour
+	if err := tooLongRefresh.validate(); err == nil {
+		t.Fatal("validate() accepted an excessive refresh-token lifetime")
 	}
 }
 

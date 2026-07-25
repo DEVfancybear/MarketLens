@@ -276,8 +276,16 @@ func (c Config) validate() error {
 	}
 	// Never assemble authentication with an empty or guessable HMAC key, even
 	// in development. A dev server is often reachable from the local network.
-	if c.DatabaseURL != "" && c.FirebaseConfigured() && len(c.AuthJWTSecret) < 32 {
-		return fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 characters when authentication is configured")
+	if c.DatabaseURL != "" && c.FirebaseConfigured() {
+		if len(c.AuthJWTSecret) < 32 {
+			return fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 characters when authentication is configured")
+		}
+		if c.AuthAccessTTL < time.Minute || c.AuthAccessTTL > time.Hour {
+			return fmt.Errorf("AUTH_ACCESS_TTL must be between 1m and 1h when authentication is configured")
+		}
+		if c.AuthRefreshTTL <= c.AuthAccessTTL || c.AuthRefreshTTL > 90*24*time.Hour {
+			return fmt.Errorf("AUTH_REFRESH_TTL must be longer than AUTH_ACCESS_TTL and at most 2160h")
+		}
 	}
 
 	storageValues := []string{c.ObjectStorageBucket, c.ObjectStorageAccessKey, c.ObjectStorageSecretKey}
@@ -326,6 +334,9 @@ func (c Config) validate() error {
 	}
 	if len(c.PushWorkerSecret) < 32 {
 		return fmt.Errorf("PUSH_WORKER_SECRET must contain at least 32 characters")
+	}
+	if !c.AuthCookiesSecure() {
+		return fmt.Errorf("AUTH_COOKIE_SECURE cannot be disabled in production")
 	}
 	return nil
 }

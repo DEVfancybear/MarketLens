@@ -14,20 +14,33 @@ SignInButton
   -> Firebase Google popup
   -> onAuthStateChanged
   -> useAuthSession()
-  -> GET  /api/v1/auth/me        (reuse existing backend cookie when valid)
-  -> POST /api/v1/auth/refresh   (rotate cookies if access expired)
-  -> POST /api/v1/auth/google    (login/register with Firebase ID token)
+  -> POST /api/v1/auth/session   (reuse, rotate, or create the matching session)
   -> authStore.backendSession = true
 ```
 
-The `/auth/google` call receives `{ idToken }`, sets backend `access_token` and `refresh_token`
-httpOnly cookies, and returns `{ user, isNewUser }`.
+The `/auth/session` call receives `{ idToken }`, verifies that the Firebase identity and backend
+cookies belong to the same user, sets cookies only when creation/rotation is needed, and returns
+`{ user, isNewUser }`. This avoids the expected-but-noisy `me -> refresh -> google` 401 probes and
+prevents a Firebase account switch from inheriting another user's backend workspace.
+
+Expected startup Network sequence:
+
+1. Firebase restores or signs in the Google user.
+2. The UI sends exactly one `POST /api/v1/auth/session`.
+3. After `200`, protected workspace/bootstrap requests begin.
+
+Do not reintroduce a startup `GET /auth/me` probe. A missing backend cookie is normal before the
+first exchange and would turn that probe into a misleading `401`. `/auth/google` remains a backend
+compatibility endpoint. During a rolling deploy only, a `404`/`405` from `/auth/session` falls back
+once to `/auth/google` so the frontend can run against an older backend. No other status may use
+that fallback: `400`, `401`, `403`, `429`, and `5xx` are real validation/security/availability
+decisions.
 
 During normal API use, `src/services/api/client.ts` owns session recovery for every backend resource
 wrapper (`getJson`, `postJson`, `putJson`, `patchJson`, `deleteJson`). When an authenticated call
 returns `401`, the client first attempts `POST /api/v1/auth/refresh`; if refresh is unavailable but
 Firebase still has a current user, it exchanges a fresh Firebase ID token through
-`POST /api/v1/auth/google`, then retries the original request once. The auth endpoints themselves do
+`POST /api/v1/auth/session`, then retries the original request once. The auth endpoints themselves do
 not trigger this recovery path, which avoids recursive login loops.
 
 In local development the backend API defaults to `http://localhost:8080` when
@@ -44,7 +57,7 @@ workspace sync must require `backendSession === true`.
 | `src/services/auth/browserAuthPolicy.ts` | Rejects embedded app browsers before Google returns `disallowed_useragent` |
 | `src/services/api/client.ts` | Shared `ky` backend client with `credentials: "include"` |
 | `src/services/api/errors.ts` | `ApiError` and backend error-envelope helpers |
-| `src/services/api/resources/authApi.ts` | Auth resource calls: `/auth/me`, `/auth/refresh`, `/auth/google`, `/auth/logout` |
+| `src/services/api/resources/authApi.ts` | Auth calls: `/auth/session`, `/auth/me`, `/auth/refresh`, `/auth/google`, `/auth/logout` |
 | `src/services/auth/authClient.ts` | Compatibility re-export for auth resource calls |
 | `src/store/authStore.ts` | Jotai atoms: user/status/error/backendSession |
 | `src/hooks/useAuthSession.ts` | Firebase-to-backend session bridge mounted in `GlobalRuntime` |
@@ -85,7 +98,12 @@ Backend:
 
 - `DATABASE_URL` must point to a migrated Postgres database.
 - Firebase Admin service-account env vars must be configured.
-- CORS must include the frontend origin and allow credentials.
+- `AUTH_JWT_SECRET` must contain at least 32 characters.
+- CORS must include the exact frontend origin and allow credentials; never use `*`.
+- Production cookies are `HttpOnly; Secure; SameSite=Strict`. The current frontend/API subdomains
+  are same-site, so cross-origin credentialed requests still carry them.
+- `/auth/session`, `/auth/google`, and `/auth/refresh` allow 120 requests per five minutes per
+  client IP. A `429` is a real rate-limit response, not an instruction to loop faster.
 - Keep `firebase-admin` pinned to `13.5.0` in the frontend. Firebase Admin 14.x
   upgrades `jwks-rsa` to an ESM-only `jose` path that can fail when Next
   externalizes `firebase-admin/auth` under the current Vercel/Node runtime;
@@ -146,6 +164,19 @@ the resolved `firebase-admin` tree first. The supported frontend lockfile uses
 `npm ci` before reproducing a Vercel build. A failed Firebase token check is a
 401, while an ESM module-load failure occurs before the handler can return its
 normal response.
+
+### Auth bootstrap troubleshooting
+
+| Response | Meaning | Action |
+| --- | --- | --- |
+| `/auth/session` `200` | Backend session reused, rotated, or created | Continue; cookies may be unchanged on reuse |
+| `/auth/session` `400` | Missing/malformed body or ID token larger than 16 KiB | Fix the client request; do not retry unchanged |
+| `/auth/session` `401` | Invalid/expired token, non-Google provider, or unverified Google email | Refresh Firebase auth/sign in again; confirm both tiers use the same Firebase project |
+| `/auth/session` `403` | Missing/disallowed `Origin` on a cookie-bearing mutation | Fix `CORS_ALLOWED_ORIGINS` and the deployed frontend hostname |
+| `/auth/session` `404`/`405` | Older backend does not implement the endpoint | Frontend falls back once to `/auth/google`; deploy backend later to activate the hardened flow |
+| `/auth/session` `429` | More than 120 auth attempts in five minutes for that client IP | Stop automatic retries and wait for the window |
+| `/auth/session` `503` | Firebase revocation/disabled-user check timed out or its upstream API is unavailable | Retry with bounded backoff; do not clear valid local state as if credentials were rejected |
+| Protected API still `401` after session `200` | Browser did not retain/send the access cookie | Check HTTPS, `credentials:"include"`, cookie domain/path, and same-site topology |
 
 ## Logout
 

@@ -43,7 +43,7 @@ schema change.
 │          │◄─────────────────────────────────────│  signInWithPopup    │
 │          │   3. Firebase user + ID token (JWT)   └─────────────────────┘
 │          │
-│          │   4. POST /api/v1/auth/google { idToken }
+│          │   4. POST /api/v1/auth/session { idToken }
 │          │─────────────────────────────────────► ┌─────────────────────┐
 │          │                                        │  Go Fiber API       │
 │          │                                        │  5. verify ID token │
@@ -53,7 +53,7 @@ schema change.
 │          │                                        │     auth_identity   │
 │          │                                        │  7. create session, │
 │          │                                        │     mint JWTs       │
-│          │   8. Set-Cookie: access + refresh      └─────────────────────┘
+│          │   8. optional Set-Cookie on create/rotate └─────────────────────┘
 │          │◄─────────────────────────────────────  { user }
 │          │
 │          │   9. subsequent API calls send the httpOnly access cookie
@@ -64,12 +64,15 @@ schema change.
    `signInWithRedirect` on mobile) and reads `await user.getIdToken()`.
 4. Frontend POSTs the Firebase **ID token** to the backend. Nothing else — no profile is trusted
    from the client; the backend derives identity from the verified token only.
-5. Backend verifies the ID token signature, `aud` (Firebase project id), `iss`, and expiry.
+5. Backend verifies the ID token signature, `aud` (Firebase project id), `iss`, expiry, revocation,
+   and Firebase disabled-user state with an eight-second upstream deadline.
 6. Backend **upserts**: find `auth_identities` by `(provider='google', provider_uid=sub)`. If found →
    existing user (login). If not → create `users` row + `auth_identities` row (register). Email,
    name, picture come from the verified token claims.
-7. Backend creates a `sessions` row and mints an **access JWT** + **refresh token**.
-8. Tokens are returned as **httpOnly, Secure, SameSite=Lax cookies**. The response body carries the
+7. Backend resolves the matching backend session in one operation: reuse a valid access cookie for
+   the same user, atomically rotate a matching refresh cookie, or create a new session.
+8. New/rotated tokens are returned as **HttpOnly, Secure, SameSite=Strict cookies**. When the
+   access cookie is reused, the response does not rewrite cookies. The body always carries the
    public user object for the UI.
 9. Every authenticated request carries the access cookie; middleware validates it.
 
@@ -83,14 +86,18 @@ schema change.
 | Access token  | Backend JWT     | 15 min   | httpOnly cookie `access_token`  | authorize API calls              |
 | Refresh token | opaque random   | 30 days  | httpOnly cookie `refresh_token`; **SHA-256 hash** in `sessions` | rotate access token |
 
-- **Access JWT** is stateless, signed with `AUTH_JWT_SECRET` (HS256) — claims: `sub` (user id),
-  `sid` (session id), `iat`, `exp`. Never stored in DB.
+- **Access JWT** is stateless, signed with `AUTH_JWT_SECRET` (HS256) — required claims include
+  `iss=tradingterminal-api`, `aud=tradingterminal-web`, `sub` (user id), `sid` (session id),
+  `iat`, and `exp`. Tokens longer than 8 KiB are rejected before parsing. Access JWTs are never
+  stored in DB.
 - **Refresh token** is a 256-bit random string. Only its SHA-256 hash is stored
-  (`sessions.refresh_token_hash`), so a DB leak can't be replayed. Rotated on every refresh
-  (old row `revoked_at` set, new row inserted) — reuse of a revoked token = session theft → revoke
-  all of the user's sessions.
-- Cookies: `HttpOnly; Secure; SameSite=Lax; Path=/`. `Secure` is relaxed to off only when
-  `APP_ENV=development` over http://localhost.
+  (`sessions.refresh_token_hash`), so a database leak cannot directly replay it. Rotation locks,
+  revokes, and inserts the replacement in one PostgreSQL statement. Concurrent use therefore
+  produces at most one descendant; reuse of a revoked token is treated as theft and revokes all
+  active sessions for that user.
+- Cookies: `HttpOnly; Secure; SameSite=Strict; Path=/`. `Secure` is relaxed to off only when
+  `APP_ENV=development` over local HTTP. The refresh cookie has the narrower
+  `Path=/api/v1/auth`. Production refuses to start if `AUTH_COOKIE_SECURE=false`.
 
 ---
 
@@ -100,7 +107,8 @@ Full request/response shapes in `API.md` §Auth. Summary:
 
 | Method | Path                     | Auth      | Purpose                                            |
 | ------ | ------------------------ | --------- | -------------------------------------------------- |
-| POST   | `/api/v1/auth/google`    | none      | Verify Firebase ID token → login **or** register   |
+| POST   | `/api/v1/auth/session`   | Firebase  | Preferred browser bootstrap: reuse, rotate, or create the matching session |
+| POST   | `/api/v1/auth/google`    | Firebase  | Compatibility login/register endpoint; always creates a session |
 | POST   | `/api/v1/auth/refresh`   | refresh   | Rotate refresh token, issue new access token       |
 | POST   | `/api/v1/auth/logout`    | access    | Revoke current session, clear cookies              |
 | GET    | `/api/v1/auth/me`        | access    | Return the current user                            |
@@ -111,13 +119,23 @@ Full request/response shapes in `API.md` §Auth. Summary:
 ## 5. Backend verification
 
 Go package `firebase.google.com/go/v4/auth` verifies ID tokens against Google's rotating public keys
-with the project's service-account credentials (the same ones already used for push in
-`firebaseAdmin.ts` — `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`).
+with the project's service-account credentials (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`,
+`FIREBASE_PRIVATE_KEY`). The auth service then requires all of the following before resolving a
+backend user:
+
+- Firebase `sign_in_provider` is exactly `google.com`;
+- `firebase.identities["google.com"]` contains a stable provider subject;
+- `email` is present and `email_verified` is `true`;
+- the trimmed ID token is no larger than 16 KiB.
+
+The client-supplied profile, email, or UID is never trusted. Disabled/deleted backend users are
+excluded from login, `/auth/me`, profile update, and refresh lookup.
 
 ```go
 // internal/auth/verify.go (sketch)
 client, _ := firebaseApp.Auth(ctx)
-tok, err := client.VerifyIDToken(ctx, idToken)   // checks sig, aud, iss, exp, revocation
+tok, err := client.VerifyIDTokenAndCheckRevoked(ctx, idToken)
+// checks signature, audience, issuer, expiry, revocation, and disabled-user state
 if err != nil { return unauthorized }
 uid   := tok.UID                     // -> auth_identities.provider_uid / firebase_uid
 email := tok.Claims["email"].(string)
@@ -128,7 +146,10 @@ pic   := tok.Claims["picture"]
 If pulling the Firebase Admin SDK into Go is undesirable, the fallback is manual JWKS verification:
 fetch `https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com`,
 validate `RS256`, `aud == projectId`, `iss == https://securetoken.google.com/<projectId>`, `exp`.
-The Admin SDK is preferred — it also handles key rotation and token revocation checks.
+The Admin SDK is preferred because it handles signing-key rotation and the session exchange checks
+Firebase revocation/disabled state. That check requires an upstream RPC and is capped at eight
+seconds: invalid/revoked identities return `401`; transient Firebase network, quota, or 5xx failures
+return retryable `503`. Durable access is still owned and revoked by the PostgreSQL backend session.
 
 ---
 
@@ -137,7 +158,7 @@ The Admin SDK is preferred — it also handles key rotation and token revocation
 ```
 internal/
   auth/
-    handler.go     # POST /google, /refresh, /logout, GET /me — Fiber handlers
+    handler.go     # POST /session, /google, /refresh, /logout, GET /me — Fiber handlers
     service.go     # upsert user, create/rotate session (no HTTP concerns)
     verify.go      # Firebase ID-token verification
     jwt.go         # mint/parse access JWTs
@@ -159,7 +180,7 @@ Implemented pieces:
 ```
 src/services/auth/
   firebaseAuth.ts     # GoogleAuthProvider, signInWithPopup, getIdToken, signOut
-  authClient.ts       # POST /auth/google, /refresh, /logout, GET /me (credentials: 'include')
+  authClient.ts       # POST /auth/session, /google, /refresh, /logout, GET /me
 src/store/authStore.ts  # Jotai atoms: userAtom, authStatusAtom ('anonymous'|'authenticating'|'authed')
 src/components/auth/
   SignInButton.tsx    # "Sign in with Google" button (lucide Google-mark / brand asset)
@@ -171,13 +192,36 @@ src/components/auth/
   once signed in it becomes the avatar/`UserMenu`.
 - **App stays usable anonymous** — auth unlocks cross-device sync (`DATABASE.md` §11), it does not
   gate the chart. On sign-in the local workspace uploads once.
-- Access token lives only in the httpOnly cookie; the frontend never reads it in JS (XSS-safe).
-  React Query calls use `credentials: 'include'`. A `401` triggers a silent `/auth/refresh`; if that
-  also fails, drop to anonymous.
+- Access token lives only in the HttpOnly cookie; the frontend never reads it in JavaScript.
+  API calls use `credentials: 'include'`. Initial Firebase bootstrap calls `/auth/session` exactly
+  once, so a signed-in user does not produce expected `me -> refresh -> google` 401 probes.
+  During a rolling deploy only, `/auth/session` `404`/`405` falls back once to the retained
+  `/auth/google` endpoint; no validation, authorization, rate-limit, or 5xx response falls back.
+  A later protected API `401` triggers `/auth/refresh`; if refresh fails while Firebase still has a
+  user, the client retries `/auth/session` once and then retries the original request once.
 
 ---
 
-## 8. Environment variables
+## 8. Request security controls
+
+- `/auth/session`, `/auth/google`, and `/auth/refresh` share a fixed-window limit of 120 requests
+  per five minutes per client IP. Behind the loopback Cloudflare Tunnel, the limiter trusts
+  `CF-Connecting-IP`; it never trusts that header from a non-loopback peer.
+- Unsafe cookie-bearing requests (`POST`, `PUT`, `PATCH`, `DELETE`, and WebSocket upgrades) require
+  an `Origin` in `CORS_ALLOWED_ORIGINS`. A missing `Origin` with cookies is rejected with `403`.
+  Server-to-server requests without browser cookies may omit `Origin`.
+- `SameSite=Strict` is safe for the current frontend/API split because
+  `tradingterminal.io.vn` and `api.tradingterminal.io.vn` are the same site. If either hostname
+  moves to a different registrable domain, redesign the session/CSRF boundary before loosening the
+  cookie policy.
+- The application limiter is defense-in-depth for one API process. Keep a distributed Cloudflare
+  WAF/rate-limit rule in front of production auth endpoints.
+- Firebase revocation is checked only when establishing/re-establishing a backend session, not on
+  every protected resource call. Backend access JWTs remain bounded by the short access TTL.
+
+---
+
+## 9. Environment variables
 
 Frontend (client, already partly present — add Auth-specific keys):
 
@@ -203,20 +247,29 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000
 APP_ENV=development                # toggles Secure cookie flag
 ```
 
+Auth startup validation requires:
+
+- `AUTH_JWT_SECRET` at least 32 characters whenever database + Firebase auth are configured;
+- `AUTH_ACCESS_TTL` between `1m` and `1h`;
+- `AUTH_REFRESH_TTL` longer than the access TTL and no more than `2160h` (90 days);
+- exact absolute CORS origins, never `*`;
+- secure cookies in production.
+
 > In the Firebase console: **Authentication → Sign-in method → enable Google**, and add the app's
 > domains (localhost + prod) to **Authorized domains**.
 
 ---
 
-## 9. Security checklist
+## 10. Security checklist
 
 - [x] Verify ID token **server-side** every time — never trust client-sent email/uid.
-- [x] httpOnly + Secure + SameSite=Lax cookies; no tokens in localStorage.
-- [x] Refresh-token rotation with reuse detection → revoke session family on reuse.
-- [ ] Store only the SHA-256 **hash** of refresh tokens.
-- [ ] Rate-limit `/auth/google` and `/auth/refresh` (per-IP) to blunt token-stuffing.
-- [ ] Strict CORS allow-list (`CORS_ALLOWED_ORIGINS`), `credentials: true`.
-- [ ] CSRF: SameSite=Lax covers top-level nav; for defense-in-depth add a double-submit CSRF token on
-      state-changing requests if cookies are ever loosened to `SameSite=None`.
-- [ ] Short access-token TTL (15 min) bounds stolen-token lifetime.
+- [x] Check Firebase token revocation/disabled state during backend session establishment.
+- [x] Accept only verified Google identities with a stable Google provider subject.
+- [x] HttpOnly + Secure + SameSite=Strict cookies; no backend token in localStorage.
+- [x] Store only the SHA-256 **hash** of refresh tokens.
+- [x] Atomic refresh-token rotation with reuse detection → revoke the user's sessions on reuse.
+- [x] Rate-limit `/auth/session`, `/auth/google`, and `/auth/refresh` per client IP.
+- [x] Strict CORS allow-list plus Origin enforcement for cookie-authenticated mutations.
+- [x] Bound JWT algorithms, issuer, audience, token sizes, and access/refresh TTLs.
+- [x] Refuse disabled/deleted backend users during login, lookup, update, and refresh.
 - [ ] Log auth events (login, refresh, logout, reuse-detected) with zerolog.

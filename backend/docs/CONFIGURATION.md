@@ -10,11 +10,11 @@ Copy `backend/.env.example` to `backend/.env` for local development.
 | --- | --- | --- | --- |
 | `PORT` | integer | `8080` | TCP port the HTTP server listens on |
 | `APP_ENV` | string | `development` | Runtime environment; production enables required-secret checks and secure cookies |
-| `AUTH_COOKIE_SECURE` | boolean | `false` in development, `true` otherwise | Override the session-cookie `Secure` flag; set `false` only for local HTTP, keep `true` behind HTTPS |
+| `AUTH_COOKIE_SECURE` | boolean | `false` in development, `true` otherwise | Override the session-cookie `Secure` flag; production rejects `false`, so use local HTTP only with `APP_ENV=development` |
 | `DATABASE_URL` | string | empty | PostgreSQL used by migrations, workspace sync, alerts, history, and push-token ownership |
 | `AUTH_JWT_SECRET` | string | empty | Backend access/refresh token secret; use at least 32 random bytes in production |
-| `AUTH_ACCESS_TTL` | duration | `15m` | Access-token lifetime |
-| `AUTH_REFRESH_TTL` | duration | `720h` | Refresh-token lifetime |
+| `AUTH_ACCESS_TTL` | duration | `15m` | Access-token lifetime; must be `1m..1h` when auth is configured |
+| `AUTH_REFRESH_TTL` | duration | `720h` | Refresh-token lifetime; must exceed access TTL and be no more than `2160h` (90 days) |
 | `FIREBASE_PROJECT_ID` | string | empty | Firebase Admin project used to verify ID tokens |
 | `FIREBASE_CLIENT_EMAIL` | string | empty | Firebase Admin service-account email |
 | `FIREBASE_PRIVATE_KEY` | string | empty | Firebase Admin PEM; escaped `\n` newlines are supported |
@@ -27,6 +27,23 @@ Copy `backend/.env.example` to `backend/.env` for local development.
 | `OBJECT_STORAGE_SECRET_KEY` | string | empty | S3-compatible secret key (server only) |
 | `OBJECT_STORAGE_SESSION_TOKEN` | string | empty | Optional temporary credential session token |
 | `OBJECT_STORAGE_PATH_STYLE` | boolean | `false` | Use `/bucket/key` URLs; normally true for local MinIO |
+
+### Authentication boundary
+
+Production must use an exact HTTPS frontend origin such as
+`CORS_ALLOWED_ORIGINS=https://tradingterminal.io.vn`; do not include paths and never use `*`.
+The API uses this list for both credentialed CORS and CSRF Origin enforcement. Unsafe requests with
+browser cookies and no `Origin` are rejected. Server-to-server requests without cookies may omit
+the header.
+
+Access/refresh cookies are always `HttpOnly` and `SameSite=Strict`; production additionally requires
+`Secure`. `tradingterminal.io.vn` and `api.tradingterminal.io.vn` are separate origins but remain
+the same site, so Strict cookies work for the current topology.
+
+`POST /api/v1/auth/session`, `/auth/google`, and `/auth/refresh` are limited to 120 requests per
+five minutes per client IP in each API process. Keep an outer Cloudflare/WAF rule for distributed
+rate limiting. Google session establishment also performs a Firebase revocation/disabled-user RPC
+with an eight-second deadline; transient upstream failure returns retryable `503`.
 
 ### Phase 11 screenshot storage
 
@@ -46,6 +63,11 @@ ownership plus closed-browser device/evaluator state in PostgreSQL
 `push_tokens`. Browser ownership uses `/api/v1/push/tokens`; Next uses
 service-authenticated `/api/v1/push/worker-devices*` endpoints. The shared
 `PUSH_WORKER_SECRET` is therefore required for registration sync and evaluation.
+
+Next's `POST /api/push/alerts/sync` stops after eight seconds, aborts the underlying worker request,
+and returns retryable `503` for Go/PostgreSQL transport failures. A `409` means the device token is
+owned by another Firebase user and must not be retried. Both Go and Next must receive the exact
+same 32+ character `PUSH_WORKER_SECRET`.
 
 The Next server evaluates closed-browser alerts and sends FCM. Firebase Admin
 is used only for ID-token verification and FCM delivery; Firestore is not

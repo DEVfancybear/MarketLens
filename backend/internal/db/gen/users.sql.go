@@ -68,7 +68,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, email_verified, display_name, photo_url, status, last_login_at, created_at, updated_at FROM users WHERE id = $1
+SELECT id, email, email_verified, display_name, photo_url, status, last_login_at, created_at, updated_at FROM users WHERE id = $1 AND status = 'active'
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
@@ -103,7 +103,7 @@ SET display_name   = $2,
     photo_url      = $3,
     email_verified = $4,
     last_login_at  = now()
-WHERE id = $1
+WHERE id = $1 AND status = 'active'
 RETURNING id, email, email_verified, display_name, photo_url, status, last_login_at, created_at, updated_at
 `
 

@@ -2,11 +2,18 @@ package auth
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/smc-trading-terminal/backend/internal/config"
+)
+
+const (
+	accessTokenIssuer   = "tradingterminal-api"
+	accessTokenAudience = "tradingterminal-web"
+	maxAccessTokenLen   = 8_192
 )
 
 // AccessClaims is the verified payload of a backend access token.
@@ -42,7 +49,9 @@ func (t *TokenService) MintAccess(userID, sessionID string) (string, error) {
 	claims := accessTokenClaims{
 		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    accessTokenIssuer,
 			Subject:   userID,
+			Audience:  jwt.ClaimStrings{accessTokenAudience},
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(t.accessTTL)),
 		},
@@ -59,10 +68,17 @@ func (t *TokenService) MintAccess(userID, sessionID string) (string, error) {
 // returns its claims. Any failure — bad signature, wrong method, expired,
 // missing claims — returns ErrUnauthorized.
 func (t *TokenService) ParseAccess(tokenString string) (AccessClaims, error) {
+	tokenString = strings.TrimSpace(tokenString)
+	if tokenString == "" || len(tokenString) > maxAccessTokenLen {
+		return AccessClaims{}, fmt.Errorf("%w: invalid token length", ErrUnauthorized)
+	}
 	var claims accessTokenClaims
 	_, err := jwt.ParseWithClaims(tokenString, &claims,
 		func(*jwt.Token) (interface{}, error) { return t.secret, nil },
 		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithIssuer(accessTokenIssuer),
+		jwt.WithAudience(accessTokenAudience),
+		jwt.WithIssuedAt(),
 	)
 	if err != nil {
 		return AccessClaims{}, fmt.Errorf("%w: %v", ErrUnauthorized, err)
