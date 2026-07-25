@@ -3,6 +3,7 @@ package pineruntime
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,14 @@ type evalContext struct {
 	functions      map[string]pineFunction
 	inputOverrides map[string]InputValue
 	assignments    []pineAssignment
+	symbol         pineSymbolInfo
+}
+
+type pineSymbolInfo struct {
+	tickerID string
+	kind     string
+	mintick  float64
+	timezone string
 }
 
 type pineAssignment struct {
@@ -428,9 +437,15 @@ func inferTimeframePeriod(candles []Candle) string {
 	}
 }
 
-func formatPineDate(seconds float64) string {
+func formatPineDate(seconds float64, timezone string) string {
 	if !usable(seconds) {
 		return ""
 	}
-	return time.Unix(int64(seconds), 0).UTC().Format("2006-01-02")
+	location := time.UTC
+	if strings.TrimSpace(timezone) != "" {
+		if loaded, err := time.LoadLocation(strings.TrimSpace(timezone)); err == nil {
+			location = loaded
+		}
+	}
+	return time.Unix(int64(seconds), 0).In(location).Format("2006-01-02")
 }

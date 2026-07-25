@@ -49,6 +49,20 @@ test("backend definition creates a complete indicator instance without a type sw
   assert.equal(config.requiresHistoryContext, true);
 });
 
+test("series-color plots do not manufacture a scalar default override", () => {
+  const dynamicDefinition: IndicatorRuntimeDefinition = {
+    ...definition,
+    styles: [{
+      ...definition.styles[0],
+      key: "plot:palette",
+      supportsColor: false,
+    }],
+  };
+  const config = indicatorConfigFromDefinition(dynamicDefinition, "dynamic-color");
+  assert.equal(config.styleValues?.["plot:palette.visible"], true);
+  assert.equal(config.styleValues?.["plot:palette.color"], undefined);
+});
+
 test("backend legacy bindings hydrate old presets while modern values win", () => {
   const oldPreset: IndicatorConfig = {
     id: "legacy",

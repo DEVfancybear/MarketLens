@@ -386,6 +386,7 @@ func scalarContextAt(context *evalContext, index int) *evalContext {
 		variables:      map[string]pineValue{},
 		functions:      context.functions,
 		inputOverrides: context.inputOverrides,
+		symbol:         context.symbol,
 	}
 	if index >= 0 && index < len(context.candles) {
 		scalar.candles = []Candle{context.candles[index]}

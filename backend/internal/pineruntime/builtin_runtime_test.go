@@ -83,7 +83,7 @@ func TestEveryCurrentBuiltInIsPineSourceCompiledByCommonRuntime(t *testing.T) {
 				t.Fatalf("%s result = %+v", indicatorType, response.Result)
 			}
 			source, ok, err := builtInPineSource(indicatorType)
-			if err != nil || !ok || !strings.Contains(source, "indicator(") {
+			if err != nil || !ok || (!strings.Contains(source, "indicator(") && !strings.Contains(source, "study(")) {
 				t.Fatalf("%s is not source-backed: ok=%v err=%v", indicatorType, ok, err)
 			}
 		})
@@ -113,11 +113,13 @@ func TestADRDailyLevelsDoNotBridgeSessionChanges(t *testing.T) {
 		sampleIntradayCandles(18),
 		runtimeConfig("runtime-adr-segments", "ADR"),
 	)
-	if len(response.Result.Series) < 4 {
-		t.Fatalf("ADR should emit independent daily high/low segments, got %+v", response.Result.Series)
-	}
+	lineSegments := 0
 	for _, series := range response.Result.Series {
-		if series.Type != "line" || len(series.Data) < 2 {
+		if series.Type != "line" {
+			continue
+		}
+		lineSegments++
+		if len(series.Data) < 2 {
 			t.Fatalf("ADR segment = %+v, want a drawable line segment", series)
 		}
 		day := series.Data[0].Time / 86400
@@ -126,8 +128,37 @@ func TestADRDailyLevelsDoNotBridgeSessionChanges(t *testing.T) {
 				t.Fatalf("ADR segment %q bridges UTC days: %+v", series.Key, series.Data)
 			}
 		}
-		if series.StatusLineVisible == nil || *series.StatusLineVisible {
-			t.Fatalf("ADR helper segment should not duplicate status values: %+v", series)
+	}
+	if lineSegments < 4 || len(response.Result.Labels) < 2 || response.Result.Dashboard == nil {
+		t.Fatalf("ADR parity output incomplete: lines=%d labels=%d dashboard=%+v", lineSegments, len(response.Result.Labels), response.Result.Dashboard)
+	}
+}
+
+func TestADRCryptoUsesSymbolUnitsAndTickPrecision(t *testing.T) {
+	response := ComputeIndicatorRuntime(context.Background(), IndicatorRuntimeRequest{
+		IndicatorType: "ADR",
+		IndicatorID:   "runtime-adr-crypto",
+		Timeframe:     "15m",
+		Symbol:        "BTCUSD",
+		SymbolType:    "crypto",
+		Mintick:       0.1,
+		Timezone:      "UTC",
+		Config:        map[string]any{},
+		Candles:       sampleIntradayCandles(18),
+	})
+	if len(response.Errors) > 0 {
+		t.Fatalf("ADR crypto errors: %+v", response.Errors)
+	}
+	if response.Result.Dashboard == nil || response.Result.Dashboard.Subtitle != "pts" {
+		t.Fatalf("ADR dashboard must use crypto point units: %+v", response.Result.Dashboard)
+	}
+	if len(response.Result.Labels) < 2 {
+		t.Fatalf("ADR crypto labels missing: %+v", response.Result.Labels)
+	}
+	for _, label := range response.Result.Labels[len(response.Result.Labels)-2:] {
+		value := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(label.Text, "ADR H50"), "ADR L50"))
+		if value == "" || !strings.Contains(value, ".") {
+			t.Fatalf("ADR label does not use market tick precision: %+v", label)
 		}
 	}
 }
@@ -144,9 +175,9 @@ func TestRSIEmitsOscillatorDataAndReferenceBands(t *testing.T) {
 	hasRSI := false
 	for _, series := range response.Result.Series {
 		switch series.Key {
-		case "Upper Band", "Middle Band", "Lower Band":
+		case "Low", "High", "Second low", "Second high", "40 line", "60 line":
 			references[series.Key] = series.ExtendToVisibleRange != nil && *series.ExtendToVisibleRange
-		case "rsi":
+		case "RSI":
 			hasRSI = len(series.Data) > 0
 			for _, point := range series.Data {
 				if point.Value < 0 || point.Value > 100 {
@@ -158,7 +189,7 @@ func TestRSIEmitsOscillatorDataAndReferenceBands(t *testing.T) {
 			hasFill = true
 		}
 	}
-	if !hasRSI || !hasFill || len(references) != 3 {
+	if !hasRSI || !hasFill || len(references) != 6 {
 		t.Fatalf("RSI presentation is incomplete: series=%+v references=%+v", response.Result.Series, references)
 	}
 	for key, extended := range references {

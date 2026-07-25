@@ -62,7 +62,8 @@ Go runtime supports the chart-visible subset currently needed by VSA Volume,
 Better RSI, ADR-style object-heavy scripts, and multi-moving-average overlays:
 
 - Plot/hline/fill output.
-- Per-bar color series and histogram plots.
+- Per-bar color series and histogram plots. Scalar Style defaults/legacy
+  overrides do not replace an evaluated series-color palette.
 - Pine `linebr` plots split into independent line segments at `na` gaps.
 - Pine `hline`/`fill` reference outputs marked with `extendToVisibleRange` so
   frontend chart panes can project them onto the active logical viewport,
@@ -77,6 +78,9 @@ Better RSI, ADR-style object-heavy scripts, and multi-moving-average overlays:
   `ta.vwma`, plus common OHLC sources including `hlcc4`.
 - Mutable Pine drawing objects compiled into immutable chart output:
   `line.new/set_*`, `box.new/set_*`, `label.new/set_*`, and `table.new/cell`.
+- Market-aware `syminfo.tickerid/type/mintick/timezone`, tick-precision string
+  formatting, and timezone-aware `str.format_time()` from the common runtime
+  request context.
 
 The previous `frontend/src/services/pineScript.ts` fallback has been deleted.
 Unsupported language features must now be added to Go or reported as backend

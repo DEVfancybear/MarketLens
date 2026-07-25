@@ -3,6 +3,12 @@ import type { Candle, IndicatorConfig, Timeframe } from "@/types";
 export interface IndicatorRuntimeContext {
   symbol?: string;
   timeframe?: Timeframe;
+  /** Pine `syminfo.type`, sourced from the backend-owned market catalog. */
+  symbolType?: string;
+  /** Pine `syminfo.mintick`, sourced from the active provider symbol. */
+  mintick?: number;
+  /** Exchange/chart timezone used by Pine time formatting when available. */
+  timezone?: string;
   /** Backend Replay session identity. Omitted for the live chart. */
   replaySessionId?: string;
   /** Latest candle timestamp that an indicator is allowed to observe. */
@@ -127,6 +133,9 @@ export function indicatorRuntimeScopeKey(
     indicatorRuntimeHash(stableIndicatorRuntimeJSON(config)),
     context?.symbol ?? "",
     context?.timeframe ?? "",
+    context?.symbolType ?? "",
+    context?.mintick ?? "",
+    context?.timezone ?? "",
     // Keep the cutoff out of the scope key so a forward Replay can safely use
     // the previous result as a temporary fallback. The exact candle cache key
     // below still includes the cutoff. Session identity keeps live and Replay

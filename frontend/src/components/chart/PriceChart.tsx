@@ -331,8 +331,15 @@ export function PriceChart({
   const storedTimeframe = useAtomValue(timeframeAtom);
   const symbol = symbolOverride ?? storedSymbol;
   const timeframe = timeframeOverride ?? storedTimeframe;
+  const marketSymbol = getMarketSymbol(symbol);
   const indicatorRuntimeContext = useMemo<IndicatorRuntimeContext>(() => {
-    const context: IndicatorRuntimeContext = { symbol, timeframe };
+    const context: IndicatorRuntimeContext = {
+      symbol,
+      timeframe,
+      symbolType: marketSymbol?.assetClass,
+      mintick: marketSymbol?.tickSize,
+      timezone: timeZone && timeZone !== "exchange" ? timeZone : undefined,
+    };
     if (!replayActive || !replaySessionId) return context;
     const replayCutoff = replayCutoffFromVisibleThrough(
       replayTrack?.visibleThrough,
@@ -340,7 +347,16 @@ export function PriceChart({
     return replayCutoff == null
       ? { ...context, replaySessionId }
       : { ...context, replaySessionId, replayCutoff };
-  }, [replayActive, replaySessionId, replayTrack?.visibleThrough, symbol, timeframe]);
+  }, [
+    marketSymbol?.assetClass,
+    marketSymbol?.tickSize,
+    replayActive,
+    replaySessionId,
+    replayTrack?.visibleThrough,
+    symbol,
+    timeframe,
+    timeZone,
+  ]);
   const storedIndicators = useAtomValue(activeIndicatorsAtom);
   const indicators = indicatorsOverride ?? storedIndicators;
   const setCrosshair = useSetAtom(setCrosshairAtom);
@@ -360,7 +376,6 @@ export function PriceChart({
   const [indicatorLabels, setIndicatorLabels] = useState<ProjectedIndicatorLabel[]>([]);
   const [indicatorDashboards, setIndicatorDashboards] = useState<IndicatorDashboard[]>([]);
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
-  const marketSymbol = getMarketSymbol(symbol);
   const sessionStatus = useMarketDataStore(
     (s) => s.marketSessions[symbol.trim().toUpperCase()],
   );

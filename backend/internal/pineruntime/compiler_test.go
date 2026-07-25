@@ -288,6 +288,10 @@ func TestExtractMetaInputsAndStyles(t *testing.T) {
 	if len(styles) < 8 {
 		t.Fatalf("expected RSI plot/hline/fill styles, got %d", len(styles))
 	}
+	vsaStyles := ExtractStyles(vsaSource)
+	if len(vsaStyles) != 2 || vsaStyles[0].SupportsColor || !vsaStyles[1].SupportsColor {
+		t.Fatalf("VSA dynamic/static color editability = %+v", vsaStyles)
+	}
 }
 
 func TestCompilePineColorLiteralsInGenericExpressions(t *testing.T) {
@@ -339,6 +343,9 @@ func TestCompileVSAProducesColoredHistogram(t *testing.T) {
 		ScriptID:   "vsa",
 		SourceCode: vsaSource,
 		Candles:    sampleCandles(160),
+		// Simulate an old instance whose UI persisted the former schema
+		// fallback. A scalar value must not erase the Pine palette.
+		StyleOverrides: map[string]InputValue{"plot:1.color": "#2962ff"},
 	})
 	if len(resp.Errors) > 0 {
 		t.Fatalf("compile errors: %+v", resp.Errors)
@@ -361,6 +368,29 @@ func TestCompileVSAProducesColoredHistogram(t *testing.T) {
 	}
 	if len(colors) < 3 {
 		t.Fatalf("expected multiple VSA palette colors, got %+v", colors)
+	}
+}
+
+func TestCompileUsesMarketContextForSyminfo(t *testing.T) {
+	resp := Compile(context.Background(), CompileRequest{
+		ScriptID: "symbol-context",
+		SourceCode: `//@version=5
+indicator("Symbol context")
+value = syminfo.type == "crypto" ? syminfo.mintick : 0
+plot(value, title="Tick")`,
+		Symbol:     "BTCUSD",
+		SymbolType: "crypto",
+		Mintick:    0.1,
+		Timezone:   "UTC",
+		Candles:    sampleCandles(3),
+	})
+	if len(resp.Errors) > 0 || len(resp.Result.Series) != 1 {
+		t.Fatalf("compile response = %+v", resp)
+	}
+	for _, point := range resp.Result.Series[0].Data {
+		if point.Value != 0.1 {
+			t.Fatalf("syminfo context was not propagated: %+v", resp.Result.Series[0])
+		}
 	}
 }
 

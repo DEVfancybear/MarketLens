@@ -423,13 +423,19 @@ func resolveIdentifier(name string, context *evalContext) (pineValue, error) {
 	case "timeframe.period":
 		return stringValue(inferTimeframePeriod(context.candles)), nil
 	case "syminfo.mintick":
-		return numberValue(inferMintick(context.candles)), nil
+		return numberValue(contextMintick(context)), nil
 	case "syminfo.timezone":
+		if context.symbol.timezone != "" {
+			return stringValue(context.symbol.timezone), nil
+		}
 		return stringValue("UTC"), nil
 	case "syminfo.type":
+		if context.symbol.kind != "" {
+			return stringValue(context.symbol.kind), nil
+		}
 		return stringValue("forex"), nil
 	case "syminfo.tickerid":
-		return stringValue(""), nil
+		return stringValue(context.symbol.tickerID), nil
 	case "hl2":
 		return pairAverage(context.candles, "high", "low"), nil
 	case "hlc3":
@@ -456,6 +462,7 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 			variables:      map[string]pineValue{},
 			functions:      context.functions,
 			inputOverrides: context.inputOverrides,
+			symbol:         context.symbol,
 		}
 		for key, value := range context.variables {
 			fnContext.variables[key] = value
@@ -568,7 +575,14 @@ func evaluateCall(name string, args []callArg, context *evalContext) (pineValue,
 		if len(args) == 0 {
 			return stringValue(""), nil
 		}
-		return stringValue(formatPineDate(getAt(args[0].value, len(context.candles)-1, len(context.candles)))), nil
+		timezone := context.symbol.timezone
+		if len(args) > 2 && args[2].value.kind == kindString {
+			timezone = args[2].value.text
+		}
+		return stringValue(formatPineDate(
+			getAt(args[0].value, len(context.candles)-1, len(context.candles)),
+			timezone,
+		)), nil
 	case "math.abs", "abs":
 		return mapNumeric(byNameOrIndex("", 0), len(context.candles), math.Abs), nil
 	case "math.max", "max":
@@ -1045,7 +1059,7 @@ func formatPineTextValue(value pineValue, format pineValue, index int, context *
 	}
 	switch formatName {
 	case "format.mintick":
-		return fmt.Sprintf("%.*f", inferPricePrecision(context.candles), point)
+		return fmt.Sprintf("%.*f", mintickPrecision(contextMintick(context)), point)
 	case "#":
 		return fmt.Sprintf("%.0f", point)
 	case "#.#":
@@ -1081,6 +1095,29 @@ func inferPricePrecision(candles []Candle) int {
 
 func inferMintick(candles []Candle) float64 {
 	return 1 / math.Pow10(inferPricePrecision(candles))
+}
+
+func contextMintick(context *evalContext) float64 {
+	if context != nil && usable(context.symbol.mintick) && context.symbol.mintick > 0 {
+		return context.symbol.mintick
+	}
+	if context == nil {
+		return 0.01
+	}
+	return inferMintick(context.candles)
+}
+
+func mintickPrecision(mintick float64) int {
+	if !usable(mintick) || mintick <= 0 {
+		return 2
+	}
+	for precision := 0; precision <= 8; precision++ {
+		scaled := mintick * math.Pow10(precision)
+		if math.Abs(scaled-math.Round(scaled)) < 1e-8 {
+			return precision
+		}
+	}
+	return 8
 }
 
 func functionParameterNames(raw string) []string {

@@ -1,0 +1,28 @@
+//@version=4
+study(title = "VSA Wyckoff Volume", shorttitle = "VSA Wyckoff Volume", format = format.volume, resolution = "")
+
+showMA = input(defval = false, title = "Show Volume Moving Average")
+lengthVolumeMA = input(defval = 20, title = "Length of MA applied on Volume", type = input.integer)
+ratioUltraVolume = input(defval = 2.2, title = "Ultra High Volume Ratio", type = input.float)
+ratioVeryHighVolume = input(defval = 1.8, title = "Very High Volume Ratio", type = input.float)
+ratioHighVolume = input(defval = 1.2, title = "High Volume Ratio", type = input.float)
+ratioNormalVolume = input(defval = 0.8, title = "Normal Volume Ratio", type = input.float)
+ratioLowVolume = input(defval = 0.4, title = "Low Volume Ratio", type = input.float)
+
+float volumeMA = 0
+volumeMA := nz(volumeMA[1]) + (volume - nz(volumeMA[1])) / lengthVolumeMA
+ultraHighVolumeMin = volumeMA * ratioUltraVolume
+veryHighVolumeMin = volumeMA * ratioVeryHighVolume
+highVolumeMin = volumeMA * ratioHighVolume
+normalVolumeMin = volumeMA * ratioNormalVolume
+lowVolumeMin = volumeMA * ratioLowVolume
+
+volUltraHigh = volume >= ultraHighVolumeMin
+volVeryHigh = volume >= veryHighVolumeMin and volume < ultraHighVolumeMin
+volHigh = volume >= highVolumeMin and volume < veryHighVolumeMin
+volNormal = volume >= normalVolumeMin and volume < highVolumeMin
+volLow = volume >= lowVolumeMin and volume < normalVolumeMin
+palette = volUltraHigh ? color.purple : volVeryHigh ? color.red : volHigh ? color.orange : volNormal ? color.green : volLow ? color.blue : color.silver
+
+plot(volume, "Volume", palette, 1, plot.style_columns, transp = 0)
+plot(showMA ? volumeMA : na, "Volume MA", color.green, 2, plot.style_line)

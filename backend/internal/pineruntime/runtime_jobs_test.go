@@ -109,6 +109,52 @@ func TestIndicatorRuntimeKeySeparatesReplayBoundaryFromLive(t *testing.T) {
 	}
 }
 
+func TestRuntimeKeysIncludePineMarketContext(t *testing.T) {
+	compileRequest := CompileRequest{
+		SourceCode: `indicator("Market context"); plot(syminfo.mintick)`,
+		Symbol:     "BTCUSD",
+		SymbolType: "crypto",
+		Mintick:    0.1,
+		Timezone:   "UTC",
+		Candles:    sampleCandles(5),
+	}
+	cryptoCompileKey, err := compileRuntimeKey(compileRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compileRequest.SymbolType = "forex"
+	compileRequest.Mintick = 0.00001
+	forexCompileKey, err := compileRuntimeKey(compileRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cryptoCompileKey == forexCompileKey {
+		t.Fatal("direct compile cache ignored Pine market context")
+	}
+
+	runtimeRequest := IndicatorRuntimeRequest{
+		IndicatorType: "ADR",
+		Symbol:        "BTCUSD",
+		SymbolType:    "crypto",
+		Mintick:       0.1,
+		Timezone:      "UTC",
+		Candles:       sampleCandles(5),
+	}
+	cryptoRuntimeKey, err := indicatorRuntimeKey(runtimeRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRequest.SymbolType = "forex"
+	runtimeRequest.Mintick = 0.00001
+	forexRuntimeKey, err := indicatorRuntimeKey(runtimeRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cryptoRuntimeKey == forexRuntimeKey {
+		t.Fatal("indicator runtime cache ignored Pine market context")
+	}
+}
+
 func TestCompileRuntimeKeySeparatesReplayBoundaryFromLive(t *testing.T) {
 	request := CompileRequest{
 		SourceCode: `indicator("Replay key"); plot(close)`,

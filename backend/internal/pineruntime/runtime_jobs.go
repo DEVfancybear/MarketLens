@@ -234,6 +234,10 @@ func compileRuntimeKey(req CompileRequest) (string, error) {
 	return hashRuntimeRequest(struct {
 		SourceCode     string                `json:"sourceCode"`
 		Timeframe      string                `json:"timeframe,omitempty"`
+		Symbol         string                `json:"symbol,omitempty"`
+		SymbolType     string                `json:"symbolType,omitempty"`
+		Mintick        float64               `json:"mintick,omitempty"`
+		Timezone       string                `json:"timezone,omitempty"`
 		Candles        []Candle              `json:"candles"`
 		Truncated      bool                  `json:"truncated,omitempty"`
 		InputOverrides map[string]InputValue `json:"inputOverrides,omitempty"`
@@ -242,6 +246,10 @@ func compileRuntimeKey(req CompileRequest) (string, error) {
 	}{
 		SourceCode:     req.SourceCode,
 		Timeframe:      req.Timeframe,
+		Symbol:         req.Symbol,
+		SymbolType:     req.SymbolType,
+		Mintick:        req.Mintick,
+		Timezone:       req.Timezone,
 		Candles:        candles,
 		Truncated:      truncated,
 		InputOverrides: req.InputOverrides,
@@ -267,6 +275,10 @@ func indicatorRuntimeKey(req IndicatorRuntimeRequest) (string, error) {
 		IndicatorType string         `json:"indicatorType"`
 		SourceCode    string         `json:"sourceCode,omitempty"`
 		Timeframe     string         `json:"timeframe,omitempty"`
+		Symbol        string         `json:"symbol,omitempty"`
+		SymbolType    string         `json:"symbolType,omitempty"`
+		Mintick       float64        `json:"mintick,omitempty"`
+		Timezone      string         `json:"timezone,omitempty"`
 		Config        map[string]any `json:"config,omitempty"`
 		Candles       []Candle       `json:"candles"`
 		Truncated     bool           `json:"truncated,omitempty"`
@@ -275,6 +287,10 @@ func indicatorRuntimeKey(req IndicatorRuntimeRequest) (string, error) {
 		IndicatorType: req.IndicatorType,
 		SourceCode:    indicatorSourceCode(req),
 		Timeframe:     req.Timeframe,
+		Symbol:        req.Symbol,
+		SymbolType:    req.SymbolType,
+		Mintick:       req.Mintick,
+		Timezone:      req.Timezone,
 		Config:        runtimeConfigForKey(req.Config),
 		Candles:       candles,
 		Truncated:     truncated,

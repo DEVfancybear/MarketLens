@@ -352,7 +352,22 @@ func (vm *statefulVM) evaluateField(expression *statefulFieldExpr, scope *statef
 		case "barstate.isrealtime":
 			return statefulBool(false), nil
 		case "syminfo.tickerid":
-			return statefulString(""), nil
+			return statefulString(strings.TrimSpace(vm.request.Symbol)), nil
+		case "syminfo.type":
+			if kind := strings.TrimSpace(vm.request.SymbolType); kind != "" {
+				return statefulString(kind), nil
+			}
+			return statefulString("forex"), nil
+		case "syminfo.mintick":
+			if vm.request.Mintick > 0 {
+				return statefulNumber(vm.request.Mintick), nil
+			}
+			return statefulNumber(inferMintick(vm.candles)), nil
+		case "syminfo.timezone":
+			if timezone := strings.TrimSpace(vm.request.Timezone); timezone != "" {
+				return statefulString(timezone), nil
+			}
+			return statefulString("UTC"), nil
 		}
 		if identifier.name == "xloc" || identifier.name == "position" || identifier.name == "size" || identifier.name == "format" || identifier.name == "line" || identifier.name == "box" || identifier.name == "label" {
 			return statefulString(qualified), nil

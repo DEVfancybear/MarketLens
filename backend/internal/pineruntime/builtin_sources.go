@@ -29,7 +29,7 @@ type builtInPineDefinition struct {
 }
 
 var builtInPineOrder = []string{
-	"SMA", "EMA", "VWAP", "RSI", "MACD", "ADR", "FVG",
+	"SMA", "EMA", "VWAP", "VSA", "RSI", "MACD", "ADR", "FVG",
 }
 
 func objectStyle(key, title, target, color string, width, lineStyle int) StyleDefinition {
@@ -76,11 +76,18 @@ var builtInPineCatalog = map[string]builtInPineDefinition{
 		styleDefaults: map[string]string{"plot:1": "lineColor"},
 		hiddenInputs:  map[string]bool{"lineColor": true},
 	},
+	"VSA": {
+		path:         "sources/vsa.pine",
+		description:  "Wyckoff volume classification with per-bar volume palette",
+		configInputs: map[string]string{"lengthVolumeMA": "length"},
+		inputAliases: map[string]string{"length": "lengthVolumeMA"},
+		styleAliases: map[string]string{"builtin:primary": "plot:1", "builtin:secondary": "plot:2"},
+	},
 	"RSI": {
 		path:          "sources/rsi.pine",
-		description:   "Momentum oscillator",
-		configInputs:  map[string]string{"length": "length", "lineColor": "color"},
-		inputAliases:  map[string]string{"length": "length"},
+		description:   "Better RSI oscillator with reference bands, overbought/oversold emphasis, and cycler state",
+		configInputs:  map[string]string{"myPeriod": "length", "lineColor": "color"},
+		inputAliases:  map[string]string{"length": "myPeriod"},
 		styleAliases:  map[string]string{"builtin:primary": "plot:1"},
 		styleDefaults: map[string]string{"plot:1": "lineColor"},
 		hiddenInputs:  map[string]bool{"lineColor": true},
@@ -101,14 +108,24 @@ var builtInPineCatalog = map[string]builtInPineDefinition{
 	},
 	"ADR": {
 		path:        "sources/adr.pine",
-		description: "Average daily range levels",
+		description: "ADR 50 support/resistance levels, zones, labels, distances, and dashboard",
 		configInputs: map[string]string{
-			"length": "length", "highColor": "color", "lowColor": "color2",
+			"adrPeriod": "length", "colHigh": "color", "colLow": "color2",
 		},
-		inputAliases:  map[string]string{"length": "length"},
-		styleAliases:  map[string]string{"builtin:primary": "plot:1", "builtin:secondary": "plot:2"},
-		styleDefaults: map[string]string{"plot:1": "highColor", "plot:2": "lowColor"},
-		hiddenInputs:  map[string]bool{"highColor": true, "lowColor": true},
+		inputAliases: map[string]string{"length": "adrPeriod"},
+		styleColorInputs: map[string]string{
+			"builtin:adr-high": "colHigh",
+			"builtin:adr-low":  "colLow",
+		},
+		styleFieldInputs: map[string]map[string]string{
+			"builtin:adr-high": {"lineWidth": "lineWidth"},
+			"builtin:adr-low":  {"lineWidth": "lineWidth"},
+		},
+		hiddenInputs: map[string]bool{"colHigh": true, "colLow": true, "lineWidth": true},
+		styles: []StyleDefinition{
+			objectStyle("builtin:adr-high", "ADR H50", "line", "#f44336", 2, 0),
+			objectStyle("builtin:adr-low", "ADR L50", "line", "#4caf50", 2, 0),
+		},
 	},
 	"FVG": {
 		path:        "sources/fvg_luxalgo.pine",
@@ -301,6 +318,10 @@ func indicatorCompileRequest(request IndicatorRuntimeRequest) (CompileRequest, e
 			ScriptID:       runtimeResultID(request.IndicatorID, "indicator"),
 			SourceCode:     source,
 			Timeframe:      request.Timeframe,
+			Symbol:         request.Symbol,
+			SymbolType:     request.SymbolType,
+			Mintick:        request.Mintick,
+			Timezone:       request.Timezone,
 			Candles:        request.Candles,
 			InputOverrides: runtimeNestedValues(config, "inputValues"),
 			StyleOverrides: runtimeNestedValues(config, "styleValues"),
@@ -372,6 +393,10 @@ func builtInCompileRequest(request IndicatorRuntimeRequest) (CompileRequest, err
 		ScriptID:       runtimeResultID(request.IndicatorID, "builtin"),
 		SourceCode:     source,
 		Timeframe:      request.Timeframe,
+		Symbol:         request.Symbol,
+		SymbolType:     request.SymbolType,
+		Mintick:        request.Mintick,
+		Timezone:       request.Timezone,
 		Candles:        request.Candles,
 		InputOverrides: inputs,
 		StyleOverrides: styles,

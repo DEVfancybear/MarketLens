@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - TradingView indicator parity and expanded Pine context (2026-07-26)
+- Replaced the simplified catalog ADR with the object-driven ADR 50 SR Pro
+  source, including independent daily H50/L50 lines, zones, right-edge labels,
+  distance/completion values, and the fixed top-right dashboard.
+- Upgraded catalog RSI to the Better RSI presentation with 20/30/40/60/70/80
+  reference levels, purple range fill, emphasized overbought/oversold segments,
+  and the stateful color cycler at the configurable middle level.
+- Added VSA Wyckoff Volume to the backend-defined catalog and preserved its
+  ultra-high through low per-bar palette even for old instances containing a
+  previously generated scalar Style color.
+- Extended the common runtime request/cache contract with ticker, asset class,
+  minimum tick, and timezone metadata. Pine `syminfo.type`,
+  `syminfo.mintick`, `syminfo.tickerid`, `syminfo.timezone`,
+  `format.mintick`, and `str.format_time()` now use active market context.
+- Made style extraction evaluate source/input color defaults, honor
+  `editable=false`, recognize positional plot styles and fill titles, and avoid
+  exposing a single color override for series-color plots.
+
 ### Fixed - Auth bootstrap security and bounded PostgreSQL Push sync (2026-07-26)
 - Replaced the browser's expected `me -> refresh -> google` startup probes with
   one `POST /api/v1/auth/session` call that verifies the Firebase identity

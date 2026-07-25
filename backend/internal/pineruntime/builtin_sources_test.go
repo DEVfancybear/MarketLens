@@ -19,7 +19,7 @@ func TestBuiltInPineCatalogIsCompleteAndHasParseableMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s source: %v", indicatorType, err)
 		}
-		if !ok || !strings.Contains(source, "indicator(") {
+		if !ok || (!strings.Contains(source, "indicator(") && !strings.Contains(source, "study(")) {
 			t.Fatalf("%s is not backed by Pine indicator source", indicatorType)
 		}
 		if meta := ExtractMeta(source); strings.TrimSpace(meta.Name) == "" {
@@ -92,6 +92,10 @@ func TestBuiltInCompileRequestMapsLegacyConfigToPineInputsAndStyles(t *testing.T
 		IndicatorType: "MACD",
 		IndicatorID:   "  chart-macd  ",
 		Timeframe:     "5m",
+		Symbol:        "BTCUSD",
+		SymbolType:    "crypto",
+		Mintick:       0.1,
+		Timezone:      "UTC",
 		Config: map[string]any{
 			"length": 8, "length2": 5, "length3": 21,
 			"color": "#111111", "color2": "#222222",
@@ -108,6 +112,9 @@ func TestBuiltInCompileRequestMapsLegacyConfigToPineInputsAndStyles(t *testing.T
 	}
 	if request.ScriptID != "chart-macd" || request.Timeframe != "5m" || len(request.Candles) != 3 {
 		t.Fatalf("request identity/context not preserved: %+v", request)
+	}
+	if request.Symbol != "BTCUSD" || request.SymbolType != "crypto" || request.Mintick != 0.1 || request.Timezone != "UTC" {
+		t.Fatalf("request market context not preserved: %+v", request)
 	}
 	wants := map[string]InputValue{
 		"fastLength": 8, "signalLength": 5, "slowLength": 21,

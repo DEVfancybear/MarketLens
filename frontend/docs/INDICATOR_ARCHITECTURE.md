@@ -127,7 +127,19 @@ Sparse Pine plots retain their discontinuities. In particular,
 `plot.style_linebr` is emitted as a line-break series, so `na` values do not
 create connecting vertical or diagonal edges between independent segments.
 Reference `hline()` and `fill()` primitives remain backend-defined source
-outputs; RSI's 70/50/30 levels and range fill require no renderer special case.
+outputs; Better RSI's six levels, range fill, emphasized segments, and
+per-bar cycler colors require no renderer special case.
+
+Series-color plots retain their per-bar palette. Schema extraction does not
+create a scalar color field for those plots, and the compiler ignores stale
+single-color overrides from older persisted instances when the evaluated Pine
+color is a series. Static plot colors remain editable normally.
+
+Runtime requests also carry backend-catalog market metadata: ticker, asset
+class, minimum tick, and timezone. These values back Pine `syminfo.*`,
+`format.mintick`, and time formatting for both built-ins and saved source. They
+are included in frontend and backend cache identities so a result calculated
+under forex point semantics cannot be reused for a crypto or index symbol.
 
 ## Runtime and cache policy
 
@@ -136,8 +148,9 @@ outputs; RSI's 70/50/30 levels and range fill require no renderer special case.
   the visible projection, while runtime history can extend behind it.
 - Pine source is never inspected in the browser. The backend declares whether
   an indicator needs extended history through `requiresHistoryContext`.
-- Cache keys include the complete dynamic config, symbol, timeframe, and OHLCV
-  content, so forming-bar corrections invalidate every indicator consistently.
+- Cache keys include the complete dynamic config, symbol metadata, timeframe,
+  and OHLCV content, so forming-bar corrections or market-context changes
+  invalidate every indicator consistently.
 - Replay cache keys also include the session identity and cutoff. A cached
   result is a valid temporary fallback only when its cutoff is less than or
   equal to the requested cutoff in the same Replay session. Live and Replay

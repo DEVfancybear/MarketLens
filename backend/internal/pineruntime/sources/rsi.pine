@@ -1,10 +1,32 @@
 //@version=5
-indicator("Relative Strength Index", overlay = false)
-length = input.int(14, "Length", minval = 1, maxval = 500)
-lineColor = input.color(#26a69a, "Color")
-rsi = ta.rsi(close, length)
-upperBand = hline(70, "Upper Band", color = color.new(#787b86, 35), linestyle = hline.style_dashed)
-middleBand = hline(50, "Middle Band", color = color.new(#787b86, 70), linestyle = hline.style_dotted)
-lowerBand = hline(30, "Lower Band", color = color.new(#787b86, 35), linestyle = hline.style_dashed)
-fill(upperBand, lowerBand, color = color.new(#7e57c2, 92), title = "RSI Background")
-plot(rsi, "rsi", color = lineColor, linewidth = 2)
+indicator("Better RSI", overlay = false)
+myPeriod = input.int(14, "Period", minval = 1, maxval = 500)
+src = input.source(close, "Source")
+showCycler = input.bool(true, "Show cycler?")
+lvl = input.float(50, "Cycler level on plot")
+lineColor = input.color(color.white, "RSI Color")
+
+myRSI = ta.rsi(src, myPeriod)
+firstColor = color.new(color.white, 10)
+secondColor = color.new(color.orange, 50)
+thirdColor = color.gray
+
+h30 = hline(30, "Low", firstColor, hline.style_dashed)
+h70 = hline(70, "High", firstColor, hline.style_dashed)
+h20 = hline(20, "Second low", secondColor, hline.style_solid)
+h80 = hline(80, "Second high", secondColor, hline.style_solid)
+h40 = hline(40, "40 line", thirdColor, hline.style_dashed)
+h60 = hline(60, "60 line", thirdColor, hline.style_dashed)
+fill(h30, h70, color.new(color.fuchsia, 90), "Background color")
+
+plot(myRSI, "RSI", lineColor, 2)
+plot(myRSI >= 70 or myRSI <= 30 ? myRSI : na, "Oversold color", color.red, 3, plot.style_linebr)
+
+cycler = na
+cycler := if myRSI > 69 or myRSI < 31
+    myRSI > 69 ? 1 : 2
+else
+    (nz(cycler[1]) == 1 and myRSI < 39) or (nz(cycler[1]) == 2 and myRSI > 61) ? 0 : nz(cycler[1])
+
+cyclerColor = cycler == 0 ? color.white : cycler == 1 ? color.lime : color.red
+plot(showCycler ? lvl : na, "Cycler colors", cyclerColor, 2)

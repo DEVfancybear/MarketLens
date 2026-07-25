@@ -41,6 +41,7 @@ func evaluateRequestSecurityExpression(expression string, context *evalContext) 
 		variables:      map[string]pineValue{},
 		functions:      context.functions,
 		inputOverrides: context.inputOverrides,
+		symbol:         context.symbol,
 	}
 	assignedNames := make(map[string]struct{}, len(context.assignments))
 	for _, assignment := range context.assignments {

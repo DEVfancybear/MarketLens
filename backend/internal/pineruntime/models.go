@@ -176,6 +176,10 @@ type CompileRequest struct {
 	ScriptID       string                `json:"scriptId,omitempty"`
 	SourceCode     string                `json:"sourceCode"`
 	Timeframe      string                `json:"timeframe,omitempty"`
+	Symbol         string                `json:"symbol,omitempty"`
+	SymbolType     string                `json:"symbolType,omitempty"`
+	Mintick        float64               `json:"mintick,omitempty"`
+	Timezone       string                `json:"timezone,omitempty"`
 	Candles        []Candle              `json:"candles"`
 	InputOverrides map[string]InputValue `json:"inputOverrides,omitempty"`
 	StyleOverrides map[string]InputValue `json:"styleOverrides,omitempty"`
@@ -237,6 +241,10 @@ type IndicatorRuntimeRequest struct {
 	IndicatorID   string         `json:"indicatorId,omitempty"`
 	SourceCode    string         `json:"sourceCode,omitempty"`
 	Timeframe     string         `json:"timeframe,omitempty"`
+	Symbol        string         `json:"symbol,omitempty"`
+	SymbolType    string         `json:"symbolType,omitempty"`
+	Mintick       float64        `json:"mintick,omitempty"`
+	Timezone      string         `json:"timezone,omitempty"`
 	Config        map[string]any `json:"config,omitempty"`
 	Candles       []Candle       `json:"candles"`
 	// ReplayCutoff limits calculation to the replay evaluation boundary supplied

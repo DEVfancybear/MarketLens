@@ -527,6 +527,72 @@ func plotLineBreak(expression string) bool {
 		strings.HasSuffix(key, ".style_linebr")
 }
 
+func visualEditable(args callArguments) bool {
+	raw := strings.TrimSpace(args.named["editable"])
+	if raw == "" {
+		return true
+	}
+	editable, ok := parseBoolLiteral(raw)
+	return !ok || editable
+}
+
+func sourceAssignmentExpressions(cleaned string) map[string]string {
+	assignments := map[string]string{}
+	for _, line := range sourceLines(cleaned) {
+		match := assignmentMatch(line.text)
+		if len(match) == 0 {
+			continue
+		}
+		assignments[match[1]] = strings.TrimSpace(match[3])
+	}
+	return assignments
+}
+
+var colorSeriesDependencyPattern = regexp.MustCompile(
+	`(?i)(?:^|[^A-Za-z0-9_.])(?:open|high|low|close|volume|time|bar_index|` +
+		`hl2|hlc3|ohlc4|hlcc4|barstate\.[A-Za-z_]+|ta\.[A-Za-z_]+|request\.[A-Za-z_]+)(?:$|[^A-Za-z0-9_.])`,
+)
+
+var colorIdentifierPattern = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+
+// A single Style color override cannot represent a Pine series-color palette.
+// Detect series-dependent color expressions so the UI does not manufacture a
+// fallback override that flattens all per-bar colors into one color.
+func plotColorMayVary(cleaned, expression string) bool {
+	assignments := sourceAssignmentExpressions(cleaned)
+	var visit func(string, map[string]bool) bool
+	visit = func(raw string, visiting map[string]bool) bool {
+		text := strings.TrimSpace(raw)
+		if text == "" {
+			return false
+		}
+		if strings.Contains(text, "?") ||
+			regexp.MustCompile(`(?i)^\s*if\b`).MatchString(text) ||
+			colorSeriesDependencyPattern.MatchString(text) {
+			return true
+		}
+		for _, identifier := range colorIdentifierPattern.FindAllString(text, -1) {
+			if visiting[identifier] {
+				continue
+			}
+			dependency, exists := assignments[identifier]
+			if !exists {
+				continue
+			}
+			next := make(map[string]bool, len(visiting)+1)
+			for key, value := range visiting {
+				next[key] = value
+			}
+			next[identifier] = true
+			if visit(dependency, next) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(expression, map[string]bool{})
+}
+
 func hlineVariableName(line string) string {
 	match := regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*hline\s*\(`).FindStringSubmatch(line)
 	if len(match) == 0 {
@@ -537,8 +603,28 @@ func hlineVariableName(line string) string {
 
 func intPtr(value int) *int { return &value }
 
+func schemaColorContext(cleaned string) *evalContext {
+	context := &evalContext{
+		candles: []Candle{{
+			Time: 1, Open: 1, High: 1, Low: 1, Close: 1, Volume: 1,
+		}},
+		variables: map[string]pineValue{},
+		functions: map[string]pineFunction{},
+		symbol:    pineSymbolInfo{kind: "forex", mintick: 0.00001, timezone: "UTC"},
+	}
+	errors := []RuntimeError{}
+	readAssignments(cleaned, context, &errors)
+	return context
+}
+
+func schemaDefaultColor(context *evalContext, expression, fallback string) string {
+	color, _ := resolvePlotColor(expression, context, fallback)
+	return color
+}
+
 func ExtractStyles(source string) []StyleDefinition {
 	cleaned := normalizeSource(source)
+	colorContext := schemaColorContext(cleaned)
 	defs := []StyleDefinition{}
 	for index, body := range findCallBodies(cleaned, "plot") {
 		args := parseCallArguments(body)
@@ -558,19 +644,24 @@ func ExtractStyles(source string) []StyleDefinition {
 		if widthExpr == "" && len(args.positional) > 3 {
 			widthExpr = args.positional[3]
 		}
-		pt := plotType(args.named["style"])
+		styleExpr := args.named["style"]
+		if styleExpr == "" && len(args.positional) > 4 {
+			styleExpr = args.positional[4]
+		}
+		pt := plotType(styleExpr)
+		editable := visualEditable(args)
 		defs = append(defs, StyleDefinition{
 			Key:               styleKey("plot", fmt.Sprint(index+1)),
 			Title:             title,
 			Target:            "plot",
 			Group:             "Plots",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(colorExpr, defaultColors[index%len(defaultColors)]),
+			DefaultColor:      schemaDefaultColor(colorContext, colorExpr, defaultColors[index%len(defaultColors)]),
 			DefaultLineWidth:  intPtr(lineWidth(widthExpr, 2)),
 			DefaultLineStyle:  intPtr(lineStyle(args.named["linestyle"])),
-			SupportsColor:     true,
-			SupportsLineWidth: pt != "histogram",
-			SupportsLineStyle: pt != "histogram",
+			SupportsColor:     editable && !plotColorMayVary(cleaned, colorExpr),
+			SupportsLineWidth: editable && pt != "histogram",
+			SupportsLineStyle: editable && pt != "histogram",
 		})
 	}
 
@@ -609,18 +700,19 @@ func ExtractStyles(source string) []StyleDefinition {
 		if widthExpr == "" && len(args.positional) > 4 {
 			widthExpr = args.positional[4]
 		}
+		editable := visualEditable(args)
 		defs = append(defs, StyleDefinition{
 			Key:               styleKey("hline", id),
 			Title:             title,
 			Target:            "hline",
 			Group:             "Horizontal Lines",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(colorExpr, defaultColors[(len(defs)+hlineIndex)%len(defaultColors)]),
+			DefaultColor:      schemaDefaultColor(colorContext, colorExpr, defaultColors[(len(defs)+hlineIndex)%len(defaultColors)]),
 			DefaultLineWidth:  intPtr(lineWidth(widthExpr, 1)),
 			DefaultLineStyle:  intPtr(lineStyle(styleExpr)),
-			SupportsColor:     true,
-			SupportsLineWidth: true,
-			SupportsLineStyle: true,
+			SupportsColor:     editable,
+			SupportsLineWidth: editable,
+			SupportsLineStyle: editable,
 		})
 	}
 
@@ -629,8 +721,8 @@ func ExtractStyles(source string) []StyleDefinition {
 		title := fmt.Sprintf("Fill %d", index+1)
 		if value, ok := unquote(args.named["title"]); ok {
 			title = value
-		} else if len(args.positional) > 4 {
-			if value, ok := unquote(args.positional[4]); ok {
+		} else if len(args.positional) > 3 {
+			if value, ok := unquote(args.positional[3]); ok {
 				title = value
 			}
 		}
@@ -638,14 +730,15 @@ func ExtractStyles(source string) []StyleDefinition {
 		if colorExpr == "" && len(args.positional) > 2 {
 			colorExpr = args.positional[2]
 		}
+		editable := visualEditable(args)
 		defs = append(defs, StyleDefinition{
 			Key:               styleKey("fill", fmt.Sprint(index+1)),
 			Title:             title,
 			Target:            "fill",
 			Group:             "Fills",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(colorExpr, "#e040fb"),
-			SupportsColor:     true,
+			DefaultColor:      schemaDefaultColor(colorContext, colorExpr, "#e040fb"),
+			SupportsColor:     editable,
 			SupportsLineWidth: false,
 			SupportsLineStyle: false,
 		})
@@ -661,7 +754,7 @@ func ExtractStyles(source string) []StyleDefinition {
 			Target:            "line",
 			Group:             "Drawing Objects",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(colorExpr, defaultColors[(len(defs)+index)%len(defaultColors)]),
+			DefaultColor:      schemaDefaultColor(colorContext, colorExpr, defaultColors[(len(defs)+index)%len(defaultColors)]),
 			DefaultLineWidth:  intPtr(lineWidth(widthExpr, 2)),
 			DefaultLineStyle:  intPtr(lineStyle(rawArg(call.args, "style", 7))),
 			SupportsColor:     true,
@@ -676,7 +769,7 @@ func ExtractStyles(source string) []StyleDefinition {
 			Target:            "box",
 			Group:             "Drawing Objects",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(rawArg(call.args, "bgcolor", 9), resolveColor("color.blue", defaultColors[0])),
+			DefaultColor:      schemaDefaultColor(colorContext, rawArg(call.args, "bgcolor", 9), resolveColor("color.blue", defaultColors[0])),
 			SupportsColor:     true,
 			SupportsLineWidth: false,
 			SupportsLineStyle: false,
@@ -689,7 +782,7 @@ func ExtractStyles(source string) []StyleDefinition {
 			Target:            "label",
 			Group:             "Drawing Objects",
 			DefaultVisible:    true,
-			DefaultColor:      resolveColor(rawArg(call.args, "textcolor", 7), "#ffffff"),
+			DefaultColor:      schemaDefaultColor(colorContext, rawArg(call.args, "textcolor", 7), "#ffffff"),
 			SupportsColor:     true,
 			SupportsLineWidth: false,
 			SupportsLineStyle: false,

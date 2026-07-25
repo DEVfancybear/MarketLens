@@ -987,6 +987,10 @@ Request:
   "indicatorId": "ind_abc",
   "sourceCode": "optional Pine source for a saved/public script",
   "timeframe": "15m",
+  "symbol": "BTCUSD",
+  "symbolType": "crypto",
+  "mintick": 0.1,
+  "timezone": "UTC",
   "config": {
     "type": "catalog-or-script-key",
     "inputValues": { "period": 25 },
@@ -1015,6 +1019,9 @@ The common compiler sorts/deduplicates candles, caps the supplied window at
 backend resolves embedded source by `indicatorType`. Both paths invoke the same
 `Compile` function. Backend definitions also expose legacy property bindings so
 old persisted presets can be hydrated without frontend type-name dispatch.
+The optional market fields supply Pine `syminfo.tickerid`, `syminfo.type`,
+`syminfo.mintick`, and `syminfo.timezone`; they are part of runtime cache
+identity and should come from the active provider symbol catalog.
 
 ### Replay no-lookahead boundary
 
@@ -1071,6 +1078,10 @@ Compile request:
   "scriptId": "ind_abc",
   "sourceCode": "//@version=5\nindicator(\"VSA\")\nplot(volume)",
   "timeframe": "15m",
+  "symbol": "BTCUSD",
+  "symbolType": "crypto",
+  "mintick": 0.1,
+  "timezone": "UTC",
   "replayCutoff": 1783420800,
   "candles": [
     { "time": 1783420800, "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 100 }
@@ -1135,6 +1146,10 @@ transparent, `FF` opaque); malformed color literals return a structured compile
 diagnostic. `color.new(base, transp)` replaces existing alpha using Pine's
 `0`-opaque to `100`-invisible transparency scale. Catalog callers do not need
 legacy top-level color fields to make source-defined defaults compile.
+Plots whose evaluated color is a series retain their per-bar palette even when
+an older caller supplies one scalar Style color. Definition extraction marks
+those plots as not supporting the current single-color editor, preventing new
+instances from manufacturing a palette-destroying default override.
 
 Pine sources (`indicator()` and legacy `study()` declarations; strategy/library
 execution remains explicitly unsupported) execute sequentially on closed bars:

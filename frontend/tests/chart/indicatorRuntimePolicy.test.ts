@@ -55,6 +55,24 @@ test("latest runtime fallback is scoped by symbol, timeframe, and dynamic config
   );
 });
 
+test("runtime scope includes Pine market metadata", () => {
+  const base = { symbol: "BTCUSD", timeframe: "15m" as const };
+  assert.notEqual(
+    indicatorRuntimeScopeKey(indicator, {
+      ...base,
+      symbolType: "crypto",
+      mintick: 0.1,
+      timezone: "UTC",
+    }),
+    indicatorRuntimeScopeKey(indicator, {
+      ...base,
+      symbolType: "forex",
+      mintick: 0.00001,
+      timezone: "UTC",
+    }),
+  );
+});
+
 test("replay visibleThrough is normalized to safe UNIX seconds", () => {
   const visibleThrough = "2026-07-17T19:00:00.999Z";
   assert.equal(
