@@ -22,6 +22,16 @@ export function createReplayCandleProjector(): ReplayCandleProjector {
   };
 }
 
+/** Keep the live frame visible until the first authoritative Replay batch lands. */
+export function replaySeriesOrLive(
+  liveCandles: Candle[],
+  replayBars: ReplayBar[] | undefined,
+  project: ReplayCandleProjector,
+): Candle[] {
+  if (!replayBars?.length) return liveCandles;
+  return replayBars.map(project);
+}
+
 /** Keep the animation just shorter than the backend clock period. */
 export function replayCandleAnimationDuration(speed: number): number {
   const safeSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1;

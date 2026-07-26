@@ -48,6 +48,8 @@ import { ChartArea } from "./ChartArea";
 import { DrawingPreviewLayer } from "./DrawingPreviewLayer";
 import { PriceChart } from "./PriceChart";
 import {
+  persistPaneLiveSeries,
+  restorePaneLiveSeries,
   selectPaneLiveSeries,
   type ChartSeriesSnapshot,
 } from "./paneSeriesRetention";
@@ -123,6 +125,8 @@ export function ChartLayoutWorkspace({
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const previousActiveSlot = useRef(activeSlot);
   const renderedSeriesByPane = useRef(new Map<string, ChartSeriesSnapshot>());
+  const persistedSeriesMarkerByPane = useRef(new Map<string, string>());
+  const [, refreshRetainedSeries] = useState(0);
 
   const slots = useMemo(() => visibleChartSlots(preset), [preset]);
   const activePane = panes.find((pane) => pane.slot === activeSlot) ?? panes[0];
@@ -191,15 +195,60 @@ export function ChartLayoutWorkspace({
     timeframe,
   ]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let restored = false;
+    for (const pane of panes) {
+      if (!pane.initialized || !pane.symbol) continue;
+      const current = renderedSeriesByPane.current.get(pane.id);
+      if (
+        current?.source === "live" &&
+        current.symbol === pane.symbol &&
+        current.timeframe === pane.timeframe &&
+        current.candles.length > 0
+      ) {
+        continue;
+      }
+      const cached = restorePaneLiveSeries(
+        window.sessionStorage,
+        drawingLayoutId,
+        pane,
+      );
+      if (!cached) continue;
+      renderedSeriesByPane.current.set(pane.id, cached);
+      restored = true;
+    }
+    if (restored) refreshRetainedSeries((revision) => revision + 1);
+  }, [drawingLayoutId, panes]);
+
   const rememberRenderedSeries = useCallback(
-    (paneId: string, snapshot: ChartSeriesSnapshot) => {
+    (pane: ChartPaneState, snapshot: ChartSeriesSnapshot) => {
       // Replay bars are authoritative only for their owning session. Retaining
       // them as a live fallback would leak historical data into a pane after
       // Replay exits or changes scope.
       if (snapshot.source !== "live") return;
-      renderedSeriesByPane.current.set(paneId, snapshot);
+      renderedSeriesByPane.current.set(pane.id, snapshot);
+      const last = snapshot.candles.at(-1);
+      const marker = [
+        snapshot.symbol,
+        snapshot.timeframe,
+        snapshot.candles.length,
+        last?.time ?? "",
+      ].join(":");
+      if (
+        typeof window !== "undefined" &&
+        persistedSeriesMarkerByPane.current.get(pane.id) !== marker
+      ) {
+        persistedSeriesMarkerByPane.current.set(pane.id, marker);
+        persistPaneLiveSeries(
+          window.sessionStorage,
+          drawingLayoutId,
+          pane,
+          snapshot,
+        );
+      }
     },
-    [],
+    [drawingLayoutId],
   );
 
   return (
@@ -234,8 +283,9 @@ export function ChartLayoutWorkspace({
                 slot={slot}
                 chartId={pane.id}
                 mobileControls={mobileControls}
+                retainedLiveSeries={renderedSeriesByPane.current.get(pane.id)}
                 onSeriesSnapshot={(snapshot) =>
-                  rememberRenderedSeries(pane.id, snapshot)
+                  rememberRenderedSeries(pane, snapshot)
                 }
               />
             ) : (
@@ -243,6 +293,9 @@ export function ChartLayoutWorkspace({
                 pane={pane}
                 drawingLayoutId={drawingLayoutId}
                 retainedSeries={renderedSeriesByPane.current.get(pane.id)}
+                onSeriesSnapshot={(snapshot) =>
+                  rememberRenderedSeries(pane, snapshot)
+                }
                 onActivate={() => activatePane(pane)}
               />
             )}
@@ -264,11 +317,13 @@ function ChartPreviewPane({
   pane,
   drawingLayoutId,
   retainedSeries,
+  onSeriesSnapshot,
   onActivate,
 }: {
   pane: ChartPaneState;
   drawingLayoutId: string;
   retainedSeries?: ChartSeriesSnapshot;
+  onSeriesSnapshot: (snapshot: ChartSeriesSnapshot) => void;
   onActivate: () => void;
 }) {
   const replay = useReplayClientProjection();
@@ -305,6 +360,22 @@ function ChartPreviewPane({
   );
   const last = displayedCandles[displayedCandles.length - 1];
   const market = getMarketSymbol(pane.symbol);
+
+  useEffect(() => {
+    if (replayOwnsPane || candles.length === 0) return;
+    onSeriesSnapshot({
+      symbol: pane.symbol,
+      timeframe: pane.timeframe,
+      candles,
+      source: "live",
+    });
+  }, [
+    candles,
+    onSeriesSnapshot,
+    pane.symbol,
+    pane.timeframe,
+    replayOwnsPane,
+  ]);
 
   return (
     <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-[var(--chart-bg)]">

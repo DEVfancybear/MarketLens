@@ -4,6 +4,7 @@ import type { IChartApi } from "lightweight-charts";
 import type { ReactNode } from "react";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useChartSeries } from "@/hooks/useChartSeries";
+import { useCandles } from "@/hooks/useCandles";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useAtomValue } from "jotai";
 import { workspaceReadyAtom } from "@/store/authStore";
@@ -36,7 +37,10 @@ import {
 } from "@/services/chartBenchmarkFixtures";
 import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
 import type { Candle, IndicatorConfig } from "@/types";
-import type { ChartSeriesSnapshot } from "./paneSeriesRetention";
+import {
+  selectPaneLiveSeries,
+  type ChartSeriesSnapshot,
+} from "./paneSeriesRetention";
 
 const EMPTY_CANDLES: Candle[] = [];
 
@@ -45,24 +49,35 @@ export function ChartArea({
   mobileControls,
   slot = 0,
   chartId = "main",
+  retainedLiveSeries,
   onSeriesSnapshot,
 }: {
   mobileControls?: ReactNode;
   slot?: number;
   chartId?: string;
+  retainedLiveSeries?: ChartSeriesSnapshot;
   onSeriesSnapshot?: (snapshot: ChartSeriesSnapshot) => void;
 } = {}) {
   const replay = useReplayClientProjection();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
   const replayOwnsChart = Boolean(
     replay.snapshot?.tracks.some((track) => track.slot === slot),
   );
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
     enabled: workspaceReady && !replayOwnsChart,
   });
-  const candles = useChartSeries(slot, workspaceReady ? undefined : EMPTY_CANDLES);
-  const symbol = useAtomValue(symbolAtom);
-  const timeframe = useAtomValue(timeframeAtom);
+  const keyedLiveCandles = useCandles(symbol, timeframe) as Candle[];
+  const liveCandles = selectPaneLiveSeries(
+    { symbol, timeframe },
+    keyedLiveCandles,
+    retainedLiveSeries,
+  );
+  const candles = useChartSeries(
+    slot,
+    workspaceReady ? liveCandles : EMPTY_CANDLES,
+  );
   const loading = useAtomValue(loadingAtom);
   const indicators = useAtomValue(activeIndicatorsAtom);
   const crosshair = useAtomValue(crosshairAtom);

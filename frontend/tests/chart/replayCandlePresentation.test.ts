@@ -7,6 +7,7 @@ import {
   replayAppendedCandles,
   replayCandleAnimationDuration,
   replayCandleAnimationStart,
+  replaySeriesOrLive,
 } from "../../src/components/chart/replayCandlePresentation";
 
 function bar(overrides: Partial<ReplayBar> = {}): ReplayBar {
@@ -28,6 +29,21 @@ test("replay projection preserves unchanged candle identities", () => {
   const projected = project(first);
   assert.equal(project(first), projected);
   assert.notEqual(project(bar()), projected);
+});
+
+test("Replay keeps the live frame visible until its first bars arrive", () => {
+  const live = [{
+    time: 1_700_000_000,
+    open: 100,
+    high: 102,
+    low: 99,
+    close: 101,
+    volume: 10,
+  }];
+  const project = createReplayCandleProjector();
+  assert.equal(replaySeriesOrLive(live, undefined, project), live);
+  assert.equal(replaySeriesOrLive(live, [], project), live);
+  assert.notEqual(replaySeriesOrLive(live, [bar()], project), live);
 });
 
 test("a newly appended replay candle grows from its open", () => {

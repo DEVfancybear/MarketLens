@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Candle continuity across layout, Replay, and browser refresh (2026-07-26)
+- Kept the active pane's last coherent live frame when a layout transition
+  temporarily empties its keyed market-data series; retention now protects both
+  the interactive chart and read-only sibling panes.
+- Kept live candles visible until the first authoritative Replay bar batch is
+  ready instead of rendering an empty track during the ownership handoff.
+- Added a bounded, 24-hour session cache scoped by drawing layout, pane,
+  symbol, and timeframe. A browser refresh paints up to 600 recent live candles
+  immediately while the backend history request revalidates the pane.
+- Persisted only live frames and required an exact scope match, preventing
+  Replay bars or another pane's symbol/timeframe from leaking into a chart.
+
 ### Fixed - Atomic, low-latency Replay activation and pane ownership (2026-07-26)
 - Kept the current live/Replay candles visible while a new session is prepared,
   then activated its snapshot and revealed bars in one client-store update so

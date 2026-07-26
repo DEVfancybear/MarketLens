@@ -231,7 +231,12 @@ forces the next request to fail, and verifies that the same-symbol,
 different-timeframe pane repaints after the automatic retry.
 `paneSeriesRetention.test.ts` additionally proves that an empty keyed cache
 uses only the matching live frame, that authoritative keyed candles replace it,
-and that Replay/other-symbol data can never leak into the fallback.
+and that Replay/other-symbol data can never leak into the fallback. The same
+retention path now feeds active charts as well as previews. A bounded
+`sessionStorage` frame is keyed by drawing layout, pane, symbol, and timeframe,
+so a browser refresh can paint candles immediately while the authoritative
+history request warms; cached frames expire after 24 hours and Replay frames
+are never persisted.
 
 Recommended gates:
 

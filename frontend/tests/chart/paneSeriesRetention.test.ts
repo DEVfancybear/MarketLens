@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectPaneLiveSeries } from "../../src/components/chart/paneSeriesRetention";
+import {
+  persistPaneLiveSeries,
+  restorePaneLiveSeries,
+  selectPaneLiveSeries,
+} from "../../src/components/chart/paneSeriesRetention";
 import type { Candle } from "../../src/types";
 import type { ChartPaneState } from "../../src/store/replayLayoutStore";
 
@@ -67,5 +71,70 @@ test("Replay or another symbol can never leak into the live pane fallback", () =
       source: "live",
     }),
     [],
+  );
+});
+
+test("a bounded live frame survives browser refresh for the exact pane key", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  };
+  persistPaneLiveSeries(storage, "layout-1", pane, {
+    symbol: pane.symbol,
+    timeframe: pane.timeframe,
+    candles: retained,
+    source: "live",
+  }, 10_000);
+
+  assert.deepEqual(
+    restorePaneLiveSeries(storage, "layout-1", pane, 11_000),
+    {
+      symbol: pane.symbol,
+      timeframe: pane.timeframe,
+      candles: retained,
+      source: "live",
+    },
+  );
+  assert.equal(
+    restorePaneLiveSeries(storage, "another-layout", pane, 11_000),
+    undefined,
+  );
+  assert.equal(
+    restorePaneLiveSeries(
+      storage,
+      "layout-1",
+      { ...pane, symbol: "BTCUSD" },
+      11_000,
+    ),
+    undefined,
+  );
+});
+
+test("expired or Replay frames are never restored as live candles", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+  };
+  persistPaneLiveSeries(storage, "layout-1", pane, {
+    symbol: pane.symbol,
+    timeframe: pane.timeframe,
+    candles: retained,
+    source: "replay",
+  }, 10_000);
+  assert.equal(values.size, 0);
+
+  persistPaneLiveSeries(storage, "layout-1", pane, {
+    symbol: pane.symbol,
+    timeframe: pane.timeframe,
+    candles: retained,
+    source: "live",
+  }, 10_000);
+  assert.equal(
+    restorePaneLiveSeries(storage, "layout-1", pane, 86_410_001),
+    undefined,
   );
 });

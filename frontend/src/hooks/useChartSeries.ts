@@ -7,6 +7,7 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useCandles } from "@/hooks/useCandles";
 import {
   createReplayCandleProjector,
+  replaySeriesOrLive,
   type ReplayCandleProjector,
 } from "@/components/chart/replayCandlePresentation";
 import type { Candle } from "@/types";
@@ -32,6 +33,6 @@ export function useChartSeries(
 
   return useMemo(() => {
     if (!trackId) return liveCandles;
-    return (replayBars ?? []).map(projectorRef.current!);
+    return replaySeriesOrLive(liveCandles, replayBars, projectorRef.current!);
   }, [liveCandles, replayBars, trackId]);
 }
