@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { Ban, Download, Pencil, RotateCcw, X } from "lucide-react";
+import { Ban, BookOpen, Download, Pencil, RotateCcw, X } from "lucide-react";
 import { OrderTicket } from "@/components/trade/OrderTicket";
 import { ExecutionModeSwitch } from "@/components/trade/ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "@/components/trade/ExecutionConnectionStatus";
 import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
+import { Mt5EaSetupGuide } from "@/components/trade/Mt5EaSetupGuide";
 import {
   cancelPendingAtom,
   closePositionAtom,
@@ -25,6 +26,8 @@ import {
 import { useReplayTrading } from "@/store/replayTradingClientStore";
 import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
 import { makeClientCommandId } from "@/services/execution/identifiers";
+import { executionEaDistribution } from "@/services/execution/eaDistribution";
+import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
@@ -36,6 +39,7 @@ type TradeTab = "ticket" | "positions" | "activity";
 export function MobileTradeScreen() {
   useSimTradingPersistence();
   const [tab, setTab] = useState<TradeTab>("ticket");
+  const [showEaGuide, setShowEaGuide] = useState(false);
   const positions = useAtomValue(positionsAtom);
   const equity = useAtomValue(equityAtom);
   const starting = useAtomValue(startingEquityAtom);
@@ -46,6 +50,13 @@ export function MobileTradeScreen() {
   const reset = useSetAtom(resetPersistedTradeAtom);
   const replay = useReplayTrading();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
+  const eaDistribution = executionEaDistribution();
+  const {
+    pairing,
+    pairingFailed,
+    pairingLoading,
+    createPairingToken,
+  } = useExecutionPairingToken();
   const replayMode = replay.active && executionMode === "simulator";
   const simulatorOpen = positions.filter((item) => item.status === "open" || item.status === "pending");
   const activeEquity = replayMode
@@ -93,6 +104,10 @@ export function MobileTradeScreen() {
     <div className="mobile-execution-bar"><ExecutionModeSwitch />{executionMode === "mt5" && <ExecutionConnectionStatus />}</div>
     <div className="mobile-kpi-row mobile-kpi-row--trade"><div><small>Open positions</small><strong>{openCount}</strong></div><div><small>Open P/L</small><strong className={pnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(pnl)}</strong></div><div><small>Return</small><strong className={returnPct >= 0 ? "text-bull" : "text-bear"}>{returnPct >= 0 ? "+" : ""}{returnPct.toFixed(2)}%</strong></div></div>
     <div className="mobile-trade-account-actions">
+      <button type="button" onClick={() => setShowEaGuide(true)}>
+        <BookOpen size={17} />
+        Cài MT5 EA
+      </button>
       {executionMode === "simulator" && <button type="button" onClick={resetAccount}><RotateCcw size={17} />Reset account</button>}
       {replayMode && <button type="button" onClick={() => void exportReplayReport()}><Download size={17} />Export replay report</button>}
     </div>
@@ -102,6 +117,18 @@ export function MobileTradeScreen() {
       {tab === "positions" && <MobilePositionList simulatorPositions={simulatorOpen} requestPrompt={requestPrompt} requestConfirm={requestConfirm} />}
       {tab === "activity" && <div className="mobile-bridge-workspace"><ExecutionConnectionStatus /><Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Select an execution account to inspect account-scoped events.</span></div>}</div>}
     </div>
+    <Mt5EaSetupGuide
+      open={showEaGuide}
+      onClose={() => setShowEaGuide(false)}
+      downloadUrl={eaDistribution.downloadUrl}
+      checksumUrl={eaDistribution.checksumUrl}
+      gatewayUrl={eaDistribution.gatewayUrl}
+      webRequestOrigin={eaDistribution.webRequestOrigin}
+      pairing={pairing}
+      pairingLoading={pairingLoading}
+      pairingFailed={pairingFailed}
+      onGeneratePairingToken={createPairingToken}
+    />
     {dialog}
   </section>;
 }

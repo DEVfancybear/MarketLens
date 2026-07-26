@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/utils/cn";
@@ -22,6 +30,109 @@ export type PlatformConfirmOptions = {
   cancelLabel?: string;
   tone?: "default" | "danger";
 };
+
+export type PlatformContentDialogProps = {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  description?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  size?: "medium" | "large";
+  closeLabel?: string;
+};
+
+export function PlatformContentDialog({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  size = "medium",
+  closeLabel = "Close",
+}: PlatformContentDialogProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useDialogLifecycle(onClose, closeRef, dialogRef, open);
+
+  if (typeof document === "undefined" || !open) return null;
+
+  return createPortal(
+    <div
+      className="platform-dialog-overlay fixed inset-0 z-[1400] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      data-chart-ui
+      data-platform-dialog
+      role="presentation"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className={cn(
+          "platform-dialog flex max-h-[calc(100dvh-24px)] w-full max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating",
+          size === "large" ? "sm:w-[780px]" : "sm:w-[520px]",
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        onPointerDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <div
+          data-dialog-header
+          className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b border-terminal-border px-4 sm:px-5"
+        >
+          <div className="min-w-0 py-3">
+            <h2
+              id={titleId}
+              className="text-lg font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-xl"
+            >
+              {title}
+            </h2>
+            {description && (
+              <p
+                id={descriptionId}
+                className="mt-1 text-[11px] leading-4 text-ink-muted sm:text-xs"
+              >
+                {description}
+              </p>
+            )}
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-ink-muted hover:bg-terminal-hover hover:text-ink focus-ring"
+            onClick={onClose}
+            aria-label={closeLabel}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div
+          data-dialog-body
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5"
+        >
+          {children}
+        </div>
+        {footer && (
+          <div
+            data-dialog-footer
+            className="flex shrink-0 justify-end gap-2 border-t border-terminal-border px-4 py-3 sm:px-5"
+          >
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 type PromptRequest = {
   kind: "prompt";
@@ -269,11 +380,13 @@ function useDialogLifecycle(
   onCancel: () => void,
   focusRef: RefObject<HTMLElement | null>,
   dialogRef: RefObject<HTMLElement | null>,
+  enabled = true,
 ) {
   const cancelRef = useRef(onCancel);
   cancelRef.current = onCancel;
 
   useEffect(() => {
+    if (!enabled) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focus = () => {
       const element = focusRef?.current;
@@ -309,5 +422,5 @@ function useDialogLifecycle(
       window.removeEventListener("keydown", onKeyDown, true);
       previousFocus?.focus();
     };
-  }, [dialogRef, focusRef]);
+  }, [dialogRef, enabled, focusRef]);
 }

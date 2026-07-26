@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   Activity,
+  BookOpen,
   Check,
   CircleOff,
   Clipboard,
@@ -21,6 +22,7 @@ import { PositionsTable } from "./PositionsTable";
 import { ExecutionModeSwitch } from "./ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "./ExecutionConnectionStatus";
 import { Mt5CommandLog } from "./Mt5CommandLog";
+import { Mt5EaSetupGuide } from "./Mt5EaSetupGuide";
 import {
   activeSimAccountAtom,
   equityAtom,
@@ -44,13 +46,12 @@ import { fmtMoney } from "@/utils/format";
 import type { ExecutionAccountSummary } from "@/types/execution";
 import {
   getExecutionInstruments,
-  issueExecutionPairingToken,
   upsertExecutionSymbolMapping,
   type ExecutionAccountInstrumentsWire,
-  type ExecutionPairingToken,
 } from "@/services/api/resources/executionApi";
 import { symbolAtom } from "@/store/chartStore";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
+import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
 
 type WorkspaceTab = "positions" | "copy" | "activity";
 
@@ -176,9 +177,7 @@ export function TradeWorkspace() {
 
 function ExecutionAccountRail() {
   const [showSetup, setShowSetup] = useState(false);
-  const [pairing, setPairing] = useState<ExecutionPairingToken | null>(null);
-  const [pairingError, setPairingError] = useState<string | null>(null);
-  const [pairingLoading, setPairingLoading] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const executionMode = useAtomValue(executionModeAtom);
   const simAccount = useAtomValue(activeSimAccountAtom);
   const simEquity = useAtomValue(equityAtom);
@@ -187,6 +186,12 @@ function ExecutionAccountRail() {
   const selectGateway = useSetAtom(selectedExecutionAccountIdAtom);
   const setMode = useSetAtom(setExecutionModeAtom);
   const eaDistribution = executionEaDistribution();
+  const {
+    pairing,
+    pairingFailed,
+    pairingLoading,
+    createPairingToken,
+  } = useExecutionPairingToken();
 
   const simulator: ExecutionAccountSummary = {
     id: `simulator:${simAccount?.id ?? "local"}`,
@@ -210,19 +215,6 @@ function ExecutionAccountRail() {
     }
     selectGateway(account.id);
     if (account.venueKind === "metatrader5") setMode("mt5");
-  };
-
-  const createPairingToken = async () => {
-    setPairingLoading(true);
-    setPairingError(null);
-    try {
-      setPairing(await issueExecutionPairingToken());
-    } catch {
-      setPairing(null);
-      setPairingError("Could not issue a pairing token. Try again.");
-    } finally {
-      setPairingLoading(false);
-    }
   };
 
   return (
@@ -288,6 +280,14 @@ function ExecutionAccountRail() {
               </a>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowGuide(true)}
+            className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-2.5 text-[10px] font-semibold text-brand transition-colors hover:border-brand/50 hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+          >
+            <BookOpen size={12} aria-hidden="true" />
+            Hướng dẫn cài đặt
+          </button>
           <div className="mt-2 rounded-lg border border-terminal-border bg-terminal-bg p-2">
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold text-ink">EA gateway URL</span>
@@ -339,9 +339,9 @@ function ExecutionAccountRail() {
               Generate 5-minute token
             </button>
           )}
-          {pairingError && (
+          {pairingFailed && (
             <span className="mt-2 block text-[9px] text-bear">
-              {pairingError}
+              Could not issue a pairing token. Try again.
             </span>
           )}
         </div>
@@ -410,6 +410,18 @@ function ExecutionAccountRail() {
         One MT5 terminal runs one account. Attach the same EA to every terminal
         to populate this list.
       </div>
+      <Mt5EaSetupGuide
+        open={showGuide}
+        onClose={() => setShowGuide(false)}
+        downloadUrl={eaDistribution.downloadUrl}
+        checksumUrl={eaDistribution.checksumUrl}
+        gatewayUrl={eaDistribution.gatewayUrl}
+        webRequestOrigin={eaDistribution.webRequestOrigin}
+        pairing={pairing}
+        pairingLoading={pairingLoading}
+        pairingFailed={pairingFailed}
+        onGeneratePairingToken={createPairingToken}
+      />
     </aside>
   );
 }

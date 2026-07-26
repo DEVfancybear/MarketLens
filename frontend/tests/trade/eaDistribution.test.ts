@@ -4,6 +4,7 @@ import {
   resolveExecutionEaChecksumUrl,
   resolveExecutionEaDownloadUrl,
   resolveExecutionEaGatewayUrl,
+  resolveExecutionEaWebRequestOrigin,
 } from "../../src/services/execution/eaDistribution";
 
 test("EA release uses same-origin public assets by default", () => {
@@ -94,5 +95,18 @@ test("EA gateway rejects plain HTTP outside a loopback host", () => {
       configuredUrl: "http://127.0.0.1:8790",
     }),
     "http://127.0.0.1:8790",
+  );
+});
+
+test("EA WebRequest allow-list uses only the trusted gateway origin", () => {
+  assert.equal(
+    resolveExecutionEaWebRequestOrigin(
+      "https://api.example.com/execution-ea",
+    ),
+    "https://api.example.com",
+  );
+  assert.equal(
+    resolveExecutionEaWebRequestOrigin("javascript:alert(1)"),
+    "",
   );
 });

@@ -61,7 +61,18 @@ export function resolveExecutionEaGatewayUrl(options: {
   return `${apiOrigin}/execution-ea`;
 }
 
+export function resolveExecutionEaWebRequestOrigin(gatewayUrl: string): string {
+  const safeGateway = safeGatewayUrl(gatewayUrl);
+  if (!safeGateway) return "";
+  return new URL(safeGateway).origin;
+}
+
 export function executionEaDistribution() {
+  const gatewayUrl = resolveExecutionEaGatewayUrl({
+    configuredUrl: process.env.NEXT_PUBLIC_EXECUTION_EA_URL,
+    apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+  });
+
   return {
     downloadUrl: resolveExecutionEaDownloadUrl(
       process.env.NEXT_PUBLIC_EXECUTION_EA_DOWNLOAD_URL,
@@ -69,9 +80,7 @@ export function executionEaDistribution() {
     checksumUrl: resolveExecutionEaChecksumUrl(
       process.env.NEXT_PUBLIC_EXECUTION_EA_CHECKSUM_URL,
     ),
-    gatewayUrl: resolveExecutionEaGatewayUrl({
-      configuredUrl: process.env.NEXT_PUBLIC_EXECUTION_EA_URL,
-      apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
-    }),
+    gatewayUrl,
+    webRequestOrigin: resolveExecutionEaWebRequestOrigin(gatewayUrl),
   };
 }
