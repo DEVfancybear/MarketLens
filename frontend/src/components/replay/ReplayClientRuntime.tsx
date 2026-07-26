@@ -11,6 +11,7 @@ import {
   replayLayoutModeAtom,
   replayTracksForBackend,
   replayTracksForLayout,
+  visibleChartSlots,
 } from "@/store/replayLayoutStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { isReplayBackendV1Enabled } from "@/services/replay/backendReplayFlag";
@@ -73,20 +74,32 @@ export function ReplayClientRuntime(): null {
     if (!backendSession || !isReplayBackendV1Enabled() || !snapshot || replacingRef.current) {
       return;
     }
+    const visibleSlots = visibleChartSlots(layoutPreset);
+    const snapshotOwnerSlot = snapshot.mode === "single_chart"
+      ? snapshot.tracks[0]?.slot
+      : undefined;
+    const replayOwnerSlot = replayMode === "single_chart" &&
+        snapshotOwnerSlot !== undefined &&
+        visibleSlots.includes(snapshotOwnerSlot)
+      ? snapshotOwnerSlot
+      : activeSlot;
+    const ownerPane = panes.find((pane) => pane.slot === replayOwnerSlot);
+    const activeSelection = replayMode === "single_chart" && ownerPane?.initialized
+      ? { symbol: ownerPane.symbol, chartTimeframe: ownerPane.timeframe }
+      : { symbol, chartTimeframe: timeframe };
     const layoutTracks = replayTracksForLayout(
-        replayMode,
-        layoutPreset,
-        {
-          symbol,
-          chartTimeframe: timeframe,
-          slot: activeSlot,
-        },
-        panes,
-        activeSlot,
-      ).map((track) => ({
-        ...track,
-        required: replayMode === "single_chart" || track.slot === activeSlot,
-      }));
+      replayMode,
+      layoutPreset,
+      {
+        ...activeSelection,
+        slot: replayOwnerSlot,
+      },
+      panes,
+      replayOwnerSlot,
+    ).map((track) => ({
+      ...track,
+      required: replayMode === "single_chart" || track.slot === replayOwnerSlot,
+    }));
     const wantedTracks = replayTracksForBackend(
       replayMode,
       layoutTracks,

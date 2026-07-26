@@ -99,7 +99,20 @@ func (r *Repo) Prepare(ctx context.Context, userID string, prepared PreparedSess
 	if err := tx.Commit(ctx); err != nil {
 		return SessionSnapshot{}, err
 	}
-	return r.getByIDs(ctx, uid, session.ID)
+	snapshot, err := r.getByIDs(ctx, uid, session.ID)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	initialBarsBySlot := make(map[int][]ReplayBar, len(prepared.Tracks))
+	for _, track := range prepared.Tracks {
+		initialBarsBySlot[track.Slot] = track.InitialBars
+	}
+	for index := range snapshot.Tracks {
+		if bars, ok := initialBarsBySlot[snapshot.Tracks[index].Slot]; ok {
+			snapshot.Tracks[index].InitialBars = append([]ReplayBar(nil), bars...)
+		}
+	}
+	return snapshot, nil
 }
 
 func (r *Repo) Get(ctx context.Context, userID, sessionID string) (SessionSnapshot, error) {
@@ -257,6 +270,7 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	type forkTrackState struct {
 		selected  gen.ReplayDatasetBar
 		aggregate aggregateState
+		bars      []ReplayBar
 	}
 	states := make([]forkTrackState, len(tracks))
 	for i, track := range tracks {
@@ -281,11 +295,11 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 		for _, row := range rows {
 			bars = append(bars, sourceBarFromRow(row))
 		}
-		_, aggregate, aggregateErr := aggregateRevealedBars(track.ChartTimeframe, bars)
+		revealedBars, aggregate, aggregateErr := aggregateRevealedBars(track.ChartTimeframe, bars)
 		if aggregateErr != nil {
 			return SessionSnapshot{}, aggregateErr
 		}
-		states[i] = forkTrackState{selected: selected, aggregate: aggregate}
+		states[i] = forkTrackState{selected: selected, aggregate: aggregate, bars: revealedBars}
 	}
 	forked, err := q.CreateReplaySession(ctx, gen.CreateReplaySessionParams{
 		UserID: uid, Mode: source.Mode, Speed: source.Speed, ReplayIntervalSeconds: source.ReplayIntervalSeconds,
@@ -320,7 +334,20 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	if err := tx.Commit(ctx); err != nil {
 		return SessionSnapshot{}, err
 	}
-	return r.getByIDs(ctx, uid, forked.ID)
+	snapshot, err := r.getByIDs(ctx, uid, forked.ID)
+	if err != nil {
+		return SessionSnapshot{}, err
+	}
+	initialBarsBySlot := make(map[int][]ReplayBar, len(tracks))
+	for index, track := range tracks {
+		initialBarsBySlot[int(track.Slot)] = states[index].bars
+	}
+	for index := range snapshot.Tracks {
+		if bars, ok := initialBarsBySlot[snapshot.Tracks[index].Slot]; ok {
+			snapshot.Tracks[index].InitialBars = append([]ReplayBar(nil), bars...)
+		}
+	}
+	return snapshot, nil
 }
 
 type forkTrackWindow struct {

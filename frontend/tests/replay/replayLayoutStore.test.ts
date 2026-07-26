@@ -85,7 +85,7 @@ test("current-chart replay targets the active chart slot", () => {
   }, [], 2);
   assert.equal(tracks.length, 1);
   assert.equal(tracks[0]?.slot, 2);
-  assert.equal(replayTracksForBackend("single_chart", tracks)[0]?.slot, 0);
+  assert.equal(replayTracksForBackend("single_chart", tracks)[0]?.slot, 2);
 });
 
 test("all-chart backend tracks keep pane slots after unavailable siblings are removed", () => {
@@ -118,7 +118,7 @@ test("all-chart backend tracks keep pane slots after unavailable siblings are re
   }
 });
 
-test("expanding to multi-chart enables synchronized Replay and pane drops are slot-specific", () => {
+test("expanding to multi-chart keeps Current chart Replay until All charts is explicit", () => {
   const store = createStore();
   store.set(chartPanesAtom, updatePaneSelection(createInitialChartPanes(), 0, {
     symbol: "EURUSD",
@@ -126,7 +126,7 @@ test("expanding to multi-chart enables synchronized Replay and pane drops are sl
   }));
   store.set(setChartLayoutPresetAtom, "grid_2x2");
   assert.equal(store.get(chartLayoutPresetAtom), "grid_2x2");
-  assert.equal(store.get(replayLayoutModeAtom), "all_charts");
+  assert.equal(store.get(replayLayoutModeAtom), "single_chart");
 
   store.set(dropSymbolOnChartPaneAtom, {
     slot: 2,

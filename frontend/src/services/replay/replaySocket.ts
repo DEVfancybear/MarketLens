@@ -10,6 +10,7 @@ import {
   type CreateReplaySessionInput,
   type ReplayCommandInput,
   type ReplayCommandResult,
+  type ReplayBar,
   type ReplayEventEnvelope,
   type ReplaySessionSnapshot,
 } from "@/services/api/resources/replayApi";
@@ -26,6 +27,55 @@ import {
 import { replayErrorMessage } from "./replayErrorMessage";
 import { TrailingReplayCommand } from "./trailingReplayCommand";
 
+type ReplayBarsByTrack = Record<string, ReplayBar[]>;
+
+interface PreparedReplayProjection {
+  snapshot: ReplaySessionSnapshot;
+  barsByTrack: ReplayBarsByTrack;
+}
+
+function snapshotWithoutInitialBars(
+  snapshot: ReplaySessionSnapshot,
+): ReplaySessionSnapshot {
+  if (!snapshot.tracks.some((track) => track.initialBars !== undefined)) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    tracks: snapshot.tracks.map((track) => {
+      const next = { ...track };
+      delete next.initialBars;
+      return next;
+    }),
+  };
+}
+
+async function prepareReplayProjection(
+  snapshot: ReplaySessionSnapshot,
+): Promise<PreparedReplayProjection> {
+  const hasEmbeddedBars = snapshot.tracks.every((track) =>
+    Array.isArray(track.initialBars)
+  );
+  if (hasEmbeddedBars) {
+    return {
+      snapshot: snapshotWithoutInitialBars(snapshot),
+      barsByTrack: Object.fromEntries(
+        snapshot.tracks.map((track) => [track.id, [...track.initialBars!]]),
+      ),
+    };
+  }
+
+  const responses = await Promise.all(snapshot.tracks.map((track) =>
+    getReplayTrackBars(snapshot.id, track.id)
+  ));
+  return {
+    snapshot: snapshotWithoutInitialBars(snapshot),
+    barsByTrack: Object.fromEntries(
+      responses.map((response) => [response.trackId, response.bars]),
+    ),
+  };
+}
+
 export class ReplaySocket {
   private socket: WebSocket | null = null;
   private stopped = false;
@@ -37,14 +87,15 @@ export class ReplaySocket {
     private readonly store: ReplayClientStore = replayClientStore,
   ) {}
 
-  async connect(): Promise<void> {
+  async connect(prepared?: PreparedReplayProjection): Promise<void> {
     this.stopped = false;
     this.store.setConnection("connecting");
     try {
-      const snapshot = await getReplaySession(this.sessionId);
-      this.store.replaceSnapshot(snapshot);
-      await this.hydrateBars(snapshot);
-      this.open(snapshot);
+      const projection = prepared ?? await prepareReplayProjection(
+        await getReplaySession(this.sessionId),
+      );
+      this.store.replaceSession(projection.snapshot, projection.barsByTrack);
+      this.open(projection.snapshot);
     } catch (error) {
       this.store.setConnection(
         "error",
@@ -95,10 +146,11 @@ export class ReplaySocket {
   private async reconnect(): Promise<void> {
     if (this.stopped) return;
     try {
-      const snapshot = await getReplaySession(this.sessionId);
-      this.store.replaceSnapshot(snapshot);
-      await this.hydrateBars(snapshot);
-      this.open(snapshot);
+      const projection = await prepareReplayProjection(
+        await getReplaySession(this.sessionId),
+      );
+      this.store.replaceSession(projection.snapshot, projection.barsByTrack);
+      this.open(projection.snapshot);
     } catch (error) {
       this.store.setConnection("error", replayErrorMessage(error, "Replay reconnect failed"));
       this.reconnectTimer = setTimeout(() => void this.reconnect(), 3000);
@@ -107,9 +159,10 @@ export class ReplaySocket {
 
   private async handle(event: ReplayEventEnvelope): Promise<void> {
     if (event.type === "snapshot") {
-      const snapshot = event.payload as ReplaySessionSnapshot;
-      this.store.replaceSnapshot(snapshot);
-      await this.hydrateBars(snapshot);
+      const projection = await prepareReplayProjection(
+        event.payload as ReplaySessionSnapshot,
+      );
+      this.store.replaceSession(projection.snapshot, projection.barsByTrack);
       return;
     }
     const result = this.store.applyEvent(event);
@@ -143,13 +196,10 @@ export class ReplaySocket {
   }
 
   private async replaceFromServer(): Promise<void> {
-    const snapshot = await getReplaySession(this.sessionId);
-    this.store.replaceSnapshot(snapshot);
-    await this.hydrateBars(snapshot);
-  }
-
-  private async hydrateBars(snapshot: ReplaySessionSnapshot): Promise<void> {
-    await Promise.all(snapshot.tracks.map((track) => this.hydrateTrack(track.id)));
+    const projection = await prepareReplayProjection(
+      await getReplaySession(this.sessionId),
+    );
+    this.store.replaceSession(projection.snapshot, projection.barsByTrack);
   }
 
   private async hydrateTrack(trackId: string): Promise<void> {
@@ -167,6 +217,13 @@ const REPLAY_CONTROL_IDLE_MS = 300;
 function commandKey(type: string): string {
   commandSequence += 1;
   return `replay:${type}:${Date.now().toString(36)}:${commandSequence}`;
+}
+
+async function hydrateSnapshotBars(snapshot: ReplaySessionSnapshot): Promise<void> {
+  await Promise.all(snapshot.tracks.map(async (track) => {
+    const response = await getReplayTrackBars(snapshot.id, track.id);
+    replayClientStore.replaceBars(response.sessionId, response.trackId, response.bars);
+  }));
 }
 
 export async function sendVersionedReplayCommand(
@@ -195,25 +252,19 @@ export async function sendVersionedReplayCommand(
   );
 }
 
-async function hydrateSnapshotBars(snapshot: ReplaySessionSnapshot): Promise<void> {
-  await Promise.all(snapshot.tracks.map(async (track) => {
-    const response = await getReplayTrackBars(snapshot.id, track.id);
-    replayClientStore.replaceBars(response.sessionId, response.trackId, response.bars);
-  }));
-}
-
 async function activateSnapshot(
   snapshot: ReplaySessionSnapshot,
   expectedLifecycle: number,
 ): Promise<void> {
+  const prepared = await prepareReplayProjection(snapshot);
   if (expectedLifecycle !== lifecycleVersion) {
     await closeReplaySession(snapshot.id).catch(() => undefined);
     return;
   }
-  replayClientStore.replaceSnapshot(snapshot);
+  activeSocket?.stop();
   const socket = new ReplaySocket(snapshot.id);
   activeSocket = socket;
-  await socket.connect();
+  await socket.connect(prepared);
 }
 
 /** Create the only active backend-owned Replay session. */
@@ -225,7 +276,7 @@ export async function startReplaySession(
   const previousId = replayClientStore.getState().snapshot?.id;
   activeSocket?.stop();
   activeSocket = null;
-  replayClientStore.clear();
+  replayClientStore.setUnavailableTracks([]);
   replayClientStore.setConnection("connecting");
   if (previousId) void closeReplaySession(previousId).catch(() => undefined);
 
@@ -254,6 +305,7 @@ export async function startReplaySession(
     }
   } catch (error) {
     if (expectedLifecycle !== lifecycleVersion) return;
+    replayClientStore.clear();
     replayClientStore.setConnection(
       "error",
       replayErrorMessage(error, "Replay session could not be created"),
@@ -288,9 +340,16 @@ export function runReplayCommand(
     }
     const result = await sendVersionedReplayCommand(snapshot.id, type, payload);
     if (replayClientStore.getState().snapshot?.id !== requestedSessionId) return;
-    replayClientStore.replaceSnapshot(result.snapshot);
-    if (type === "step" || type === "seek" || type === "restart") {
-      await hydrateSnapshotBars(result.snapshot);
+    const transportConnected = activeSocket !== null &&
+      replayClientStore.getState().connection === "connected";
+    if (!transportConnected) {
+      // The actor publishes ordered socket events before replying. Publishing
+      // the response snapshot here could still reach the store first, mark the
+      // in-flight events duplicate, and force a bars GET after every Step.
+      replayClientStore.replaceSnapshot(result.snapshot);
+      if (type === "step" || type === "seek" || type === "restart") {
+        await hydrateSnapshotBars(result.snapshot);
+      }
     }
   };
   const next = commandQueue.then(run, run);
@@ -392,8 +451,6 @@ export async function forkActiveReplay(time: string): Promise<void> {
   replayClientStore.setConnection("connecting");
   try {
     const snapshot = await forkReplaySession(current.id, time);
-    activeSocket?.stop();
-    activeSocket = null;
     await activateSnapshot(snapshot, expectedLifecycle);
     void closeReplaySession(current.id).catch(() => undefined);
   } catch (error) {

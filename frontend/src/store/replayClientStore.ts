@@ -70,6 +70,9 @@ export class ReplayClientStore {
     ) {
       return;
     }
+    if (current?.id !== snapshot.id) {
+      this.controlOverrides = {};
+    }
     const trackIds = new Set(snapshot.tracks.map((track) => track.id));
     const barsByTrack = Object.fromEntries(
       Object.entries(this.projection.barsByTrack).filter(([trackId]) => trackIds.has(trackId)),
@@ -78,6 +81,38 @@ export class ReplayClientStore {
       ...this.projection,
       snapshot: this.applyControlOverrides(snapshot),
       barsByTrack,
+      error: null,
+    };
+    this.emit();
+  }
+
+  /**
+   * Publish a new session only after all of its revealed bars are ready. This
+   * prevents React from ever observing a Replay snapshot whose charts are still
+   * empty, while preserving the previous live/Replay candles during preparation.
+   */
+  replaceSession(
+    snapshot: ReplaySessionSnapshot,
+    barsByTrack: Record<string, ReplayBar[]>,
+  ): void {
+    const current = this.projection.snapshot;
+    if (
+      current?.id === snapshot.id &&
+      snapshot.lastEventSeq < current.lastEventSeq
+    ) {
+      return;
+    }
+    this.controlOverrides = {};
+    const trackIds = new Set(snapshot.tracks.map((track) => track.id));
+    const nextBars = Object.fromEntries(
+      Object.entries(barsByTrack)
+        .filter(([trackId]) => trackIds.has(trackId))
+        .map(([trackId, bars]) => [trackId, [...bars]]),
+    );
+    this.projection = {
+      ...this.projection,
+      snapshot,
+      barsByTrack: nextBars,
       error: null,
     };
     this.emit();
@@ -170,10 +205,9 @@ export class ReplayClientStore {
     } else if (event.type === "track.reset") {
       const payload = event.payload as { trackId?: string };
       if (!payload.trackId) return "invalid";
-      this.projection = {
-        ...this.projection,
-        barsByTrack: { ...this.projection.barsByTrack, [payload.trackId]: [] },
-      };
+      // Keep the last coherent chart visible until HTTP hydration replaces it.
+      // The reset event and hydration are serialized by ReplaySocket, so no new
+      // upsert can be merged into this retained pre-seek projection.
     } else if (event.type === "state.changed") {
       const payload = event.payload as {
         status?: ReplaySessionSnapshot["status"];

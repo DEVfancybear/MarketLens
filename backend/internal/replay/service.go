@@ -177,7 +177,7 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 			initialRows[rowIndex] = sourceBar{Seq: int64(rowIndex), Time: bar.Time, IntervalSeconds: track.sourceSeconds,
 				Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: bar.Volume}
 		}
-		_, initialAggregate, aggregateErr := aggregateRevealedBars(track.input.ChartTimeframe, initialRows)
+		initialBars, initialAggregate, aggregateErr := aggregateRevealedBars(track.input.ChartTimeframe, initialRows)
 		if aggregateErr != nil {
 			return SessionSnapshot{}, aggregateErr
 		}
@@ -186,7 +186,8 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 			ChartTimeframe: track.input.ChartTimeframe, SourceTimeframe: track.sourceTimeframe, IntervalSeconds: track.sourceSeconds,
 			RequestedStart: selectionTime, CursorSeq: cursor, VisibleThrough: selected,
 			Checksum:   datasetChecksum("mt5", track.input.Symbol, track.sourceTimeframe, track.sourceSeconds, bars),
-			SnapshotAt: history.UpdatedAt.UTC(), SourceMeta: meta, AggregateState: marshalAggregateState(initialAggregate), Bars: bars,
+			SnapshotAt: history.UpdatedAt.UTC(), SourceMeta: meta, AggregateState: marshalAggregateState(initialAggregate),
+			Bars: bars, InitialBars: initialBars,
 		}
 		if prepared.SnapshotAt.IsZero() {
 			prepared.SnapshotAt = time.Now().UTC()

@@ -323,7 +323,6 @@ export const setAlertChartOwnerAtom = atom(
 export const setChartLayoutPresetAtom = atom(
   null,
   (get, set, preset: ChartLayoutPreset) => {
-    const previousPreset = get(chartLayoutPresetAtom);
     const panes = initializePanesForPreset(
       get(chartPanesAtom),
       preset,
@@ -337,10 +336,6 @@ export const setChartLayoutPresetAtom = atom(
     set(chartLayoutPresetAtom, preset);
     if (preset === "single") {
       set(replayLayoutModeAtom, "single_chart");
-    } else if (previousPreset === "single") {
-      // A newly expanded workspace should replay every visible pane by
-      // default. "Current chart" remains available as an explicit scope.
-      set(replayLayoutModeAtom, "all_charts");
     }
   },
 );
@@ -431,12 +426,11 @@ export function replayTracksForLayout(
 }
 
 /**
- * Single-chart Replay keeps its historical backend slot-zero contract. An
- * all-chart request preserves layout slots so an unavailable sibling can be
- * isolated without shifting every remaining track onto the wrong pane.
+ * Preserve layout slots for both Replay scopes. A single-chart session must
+ * remain pinned to the pane where it was created when another pane is focused.
  */
 export function replayTracksForBackend(
-  mode: ReplayLayoutMode,
+  _mode: ReplayLayoutMode,
   tracks: ReadonlyArray<{
     slot: number;
     symbol: string;
@@ -446,6 +440,6 @@ export function replayTracksForBackend(
 ) {
   return tracks.map((track) => ({
     ...track,
-    slot: mode === "single_chart" ? 0 : track.slot,
+    slot: track.slot,
   }));
 }

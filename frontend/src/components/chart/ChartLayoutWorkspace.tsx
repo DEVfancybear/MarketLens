@@ -31,6 +31,7 @@ import {
 } from "@/store/replayLayoutStore";
 import { useCandles } from "@/hooks/useCandles";
 import { useChartSeries } from "@/hooks/useChartSeries";
+import { useReplayClientProjection } from "@/store/replayClientStore";
 import { getMarketDataState } from "@/store/marketDataStore";
 import { marketSymbolsAtom } from "@/store/marketSymbolStore";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
@@ -198,6 +199,10 @@ function ChartPreviewPane({
   drawingLayoutId: string;
   onActivate: () => void;
 }) {
+  const replay = useReplayClientProjection();
+  const replayOwnsPane = Boolean(
+    replay.snapshot?.tracks.some((track) => track.slot === pane.slot),
+  );
   const indicatorRegistry = useAtomValue(indicatorsAtom);
   const activeDrawingRevision = useAtomValue(drawingsAtom);
   const indicators = useMemo(
@@ -218,7 +223,10 @@ function ChartPreviewPane({
       chartId: pane.id,
     });
   }, [activeDrawingRevision, drawingLayoutId, pane.id, pane.symbol]);
-  const { candles, loading } = usePaneMarketData(pane);
+  const { candles, loading } = usePaneMarketData(
+    pane,
+    !replayOwnsPane && replay.connection !== "connecting",
+  );
   const displayedCandles = useChartSeries(pane.slot, candles);
   const last = displayedCandles[displayedCandles.length - 1];
   const market = getMarketSymbol(pane.symbol);
@@ -275,7 +283,7 @@ function ChartPreviewPane({
   );
 }
 
-function usePaneMarketData(pane: ChartPaneState): {
+function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
   candles: Candle[];
   loading: boolean;
 } {
@@ -288,6 +296,10 @@ function usePaneMarketData(pane: ChartPaneState): {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     if (
       !workspaceReady ||
       !pane.initialized ||
@@ -329,7 +341,14 @@ function usePaneMarketData(pane: ChartPaneState): {
       controller.abort();
       marketData.unsubscribe(pane.symbol, pane.timeframe);
     };
-  }, [catalogSize, pane.initialized, pane.symbol, pane.timeframe, workspaceReady]);
+  }, [
+    catalogSize,
+    enabled,
+    pane.initialized,
+    pane.symbol,
+    pane.timeframe,
+    workspaceReady,
+  ]);
 
   return {
     candles: workspaceReady ? candles : [],

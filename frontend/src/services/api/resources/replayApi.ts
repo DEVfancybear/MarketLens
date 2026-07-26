@@ -23,6 +23,11 @@ export interface ReplayTrackSnapshot {
   cursorSeq: number;
   visibleThrough: string;
   dataset: ReplayDatasetSnapshot;
+  /**
+   * Present on create/fork responses so the client can switch snapshots and
+   * revealed candles in one render. Ordinary snapshots omit this field.
+   */
+  initialBars?: ReplayBar[];
 }
 
 export interface ReplayBar {

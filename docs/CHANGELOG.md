@@ -4,6 +4,23 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Atomic, low-latency Replay activation and pane ownership (2026-07-26)
+- Kept the current live/Replay candles visible while a new session is prepared,
+  then activated its snapshot and revealed bars in one client-store update so
+  charts never render an intermediate empty series.
+- Embedded the initially revealed aggregate bars in create/fork responses,
+  removing the redundant snapshot GET and one bars GET per track. Connected
+  Step commands now consume their ordered WebSocket events without reloading
+  the complete revealed history after every click.
+- Paused competing live-history requests only while dataset creation is in
+  progress and stopped inactive Replay panes from fetching unused live history.
+- Made `Current chart` the safe default for expanded layouts, preserved the
+  owning pane slot in single-chart backend sessions, and kept all non-owner
+  panes on live data when focus moves. `All charts` remains an explicit scope.
+- Added delayed-response browser coverage proving candles never reach zero,
+  create activation performs no follow-up snapshot/bars GET, sparse all-chart
+  slots remain stable, and Current-chart Replay does not migrate on pane focus.
+
 ### Extended - Pine v6 Pivot Hilo runtime compatibility (2026-07-26)
 - Migrated the submitted GPL Pivot Hilo Support/Resistance R5.4 source from
   Pine v4 to Pine v6 with typed inputs, namespaced math/TA calls, explicit

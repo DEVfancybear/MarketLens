@@ -72,6 +72,10 @@ type TrackSnapshot struct {
 	CursorSeq      int64           `json:"cursorSeq"`
 	VisibleThrough time.Time       `json:"visibleThrough"`
 	Dataset        DatasetSnapshot `json:"dataset"`
+	// InitialBars is populated only by session creation/fork responses. It lets
+	// the browser activate the snapshot and its revealed candles atomically,
+	// without an additional request per chart.
+	InitialBars []ReplayBar `json:"initialBars,omitempty"`
 }
 
 type RevealedBarsSnapshot struct {
@@ -238,6 +242,7 @@ type PreparedTrack struct {
 	SourceMeta      []byte
 	AggregateState  []byte
 	Bars            []Bar
+	InitialBars     []ReplayBar
 }
 
 type PreparedSession struct {

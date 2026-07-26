@@ -88,6 +88,9 @@ func TestServiceCreatePinsPausedSingleChartDataset(t *testing.T) {
 	if store.prepared.StartTime != start || len(store.prepared.Tracks) != 1 || len(store.prepared.Tracks[0].Checksum) != 64 {
 		t.Fatalf("unexpected prepared session: %#v", store.prepared)
 	}
+	if got := len(store.prepared.Tracks[0].InitialBars); got != 2 {
+		t.Fatalf("create response should embed the two initially revealed bars, got %d", got)
+	}
 }
 
 func TestServiceCreateHistoryLookaheadCrossesWeekendForPlayback(t *testing.T) {

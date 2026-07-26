@@ -51,8 +51,11 @@ export function ChartArea({
 } = {}) {
   const replay = useReplayClientProjection();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
+  const replayOwnsChart = Boolean(
+    replay.snapshot?.tracks.some((track) => track.slot === slot),
+  );
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
-    enabled: workspaceReady && !replay.snapshot && replay.connection !== "connecting",
+    enabled: workspaceReady && !replayOwnsChart && replay.connection !== "connecting",
   });
   const candles = useChartSeries(slot, workspaceReady ? undefined : EMPTY_CANDLES);
   const symbol = useAtomValue(symbolAtom);
@@ -164,9 +167,6 @@ export function ChartArea({
         : indicators,
     [benchmarkIndicators, benchmarkProfile, indicators],
   );
-  const replayOwnsChart = Boolean(replay.snapshot) ||
-    replay.connection === "connecting" ||
-    replay.connection === "recovering";
   const showLoading = benchmarkCandles
     ? false
     : replayOwnsChart

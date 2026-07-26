@@ -38,7 +38,6 @@ import {
 } from "@/store/chartStore";
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
-import { activeChartSlotAtom } from "@/store/replayLayoutStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { indicatorResultValueText } from "@/services/indicatorStyle";
 import {
@@ -316,12 +315,9 @@ export function PriceChart({
   const gridVisible = useAtomValue(gridVisibleAtom);
   const replayProjection = useReplayClientProjection();
   const replaySnapshot = replayProjection.snapshot;
-  const activeChartSlot = useAtomValue(activeChartSlotAtom);
-  const replayTrack = replaySnapshot?.mode === "single_chart"
-    ? replayTrackSlot === activeChartSlot
-      ? replaySnapshot.tracks[0]
-      : undefined
-    : replaySnapshot?.tracks.find((track) => track.slot === replayTrackSlot);
+  const replayTrack = replaySnapshot?.tracks.find(
+    (track) => track.slot === replayTrackSlot,
+  );
   const replaySessionId = replayTrack ? replaySnapshot?.id ?? null : null;
   activeReplaySessionRef.current = replaySessionId;
   const replayActive = Boolean(replayTrack);

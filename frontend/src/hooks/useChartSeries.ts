@@ -3,7 +3,6 @@
 import { useMemo, useRef } from "react";
 import { useAtomValue } from "jotai";
 import { symbolAtom, timeframeAtom } from "@/store/chartStore";
-import { activeChartSlotAtom } from "@/store/replayLayoutStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useCandles } from "@/hooks/useCandles";
 import {
@@ -24,16 +23,11 @@ export function useChartSeries(
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const keyedLiveCandles = useCandles(symbol, timeframe) as Candle[];
-  const activeSlot = useAtomValue(activeChartSlotAtom);
   const liveCandles = liveCandlesOverride ?? keyedLiveCandles;
   const projection = useReplayClientProjection();
   const projectorRef = useRef<ReplayCandleProjector | null>(null);
   projectorRef.current ??= createReplayCandleProjector();
-  const trackId = projection.snapshot?.mode === "single_chart"
-    ? slot === activeSlot
-      ? projection.snapshot.tracks[0]?.id
-      : undefined
-    : projection.snapshot?.tracks.find((track) => track.slot === slot)?.id;
+  const trackId = projection.snapshot?.tracks.find((track) => track.slot === slot)?.id;
   const replayBars = trackId ? projection.barsByTrack[trackId] : undefined;
 
   return useMemo(() => {

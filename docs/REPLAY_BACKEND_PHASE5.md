@@ -34,9 +34,13 @@ mode, keeping fills and positions isolated to the selected chart.
 
 The Layout menu now stores a one-, two-, or four-slot preset and exposes
 `Current chart` versus `All charts` replay scope. The feature-flagged replay
-controller sends the corresponding ordered track list. In synchronized mode,
-every track keeps its stable layout slot and the currently active pane is
-marked as the required track.
+controller sends the corresponding ordered track list. Expanding a layout
+keeps `Current chart` as the default; synchronized `All charts` Replay requires
+an explicit scope choice. Every track keeps its stable layout slot in both
+modes. This pins a single-chart session to the pane where it was created when
+focus moves to a sibling, while non-owner panes continue receiving live data.
+In synchronized mode, the currently active pane is marked as the required
+track.
 
 Dataset availability errors include `slot`, `symbol`, `chartTimeframe`,
 `firstAvailableTime`, and `lastAvailableTime`. If an optional sibling is
@@ -48,6 +52,27 @@ only track in `single_chart` mode are never silently removed.
 
 Changing layout or scope closes and recreates the shadow session instead of
 mutating an existing session's track set.
+
+## Activation and playback latency
+
+Create and fork responses include an optional `initialBars` projection on each
+track. It is response-only and is not stored in the session snapshot rows. The
+frontend prepares all fallback bars first (for compatibility with an older
+backend), strips that transport field, and publishes the snapshot plus every
+track's bars atomically. The previous live or Replay projection stays visible
+through dataset preparation, so a slow MT5 history read cannot blank a chart.
+
+The optimized create path is one HTTP request instead of create plus a
+redundant session GET plus one bars GET per track. A four-pane session therefore
+drops from six activation requests to one. While the backend owns an active
+WebSocket, Step/Play state is applied from its ordered events rather than
+re-fetching all revealed bars after each command. Seek/Restart retains the last
+coherent projection until its authoritative reset hydration arrives.
+
+During create/fork preparation the chart temporarily pauses competing live
+history reads but continues rendering cached candles. Once connected, only
+panes owned by Replay stop their live-history subscriptions; sibling panes in
+`Current chart` mode remain live.
 
 ## Configuration and verification
 

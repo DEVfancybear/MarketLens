@@ -141,17 +141,38 @@ test("progressive bar upserts replace only the revealed aggregate", () => {
   assert.deepEqual(store.getState().barsByTrack["track-1"], [revealedBar]);
 });
 
-test("track reset clears revealed bars until HTTP hydration", () => {
+test("track reset retains the coherent chart until HTTP hydration", () => {
   const store = new ReplayClientStore();
   store.replaceSnapshot(snapshot());
-  store.replaceBars("session-1", "track-1", [{
+  const bars = [{
     time: "2026-05-01T10:00:00Z", open: 1, high: 2, low: 1, close: 1.5, volume: 10, complete: true,
-  }]);
+  }];
+  store.replaceBars("session-1", "track-1", bars);
   assert.equal(store.applyEvent({
     sessionId: "session-1", eventSeq: 1, version: 2,
     simulatedTime: "2026-05-01T09:30:00Z", type: "track.reset", payload: { trackId: "track-1" },
   }), "applied");
-  assert.deepEqual(store.getState().barsByTrack["track-1"], []);
+  assert.deepEqual(store.getState().barsByTrack["track-1"], bars);
+});
+
+test("session activation emits one projection with its bars already present", () => {
+  const store = new ReplayClientStore();
+  const next = snapshot();
+  const bars = [{
+    time: "2026-05-01T10:00:00Z", open: 1, high: 2, low: 1, close: 1.5, volume: 10, complete: true,
+  }];
+  const observed: Array<{ sessionId?: string; barCount: number }> = [];
+  store.subscribe((projection) => {
+    observed.push({
+      sessionId: projection.snapshot?.id,
+      barCount: projection.barsByTrack["track-1"]?.length ?? 0,
+    });
+  });
+
+  store.replaceSession(next, { "track-1": bars });
+
+  assert.deepEqual(observed, [{ sessionId: "session-1", barCount: 1 }]);
+  assert.deepEqual(store.getState().barsByTrack["track-1"], bars);
 });
 
 test("high-speed bar batches are applied as one ordered projection event", () => {

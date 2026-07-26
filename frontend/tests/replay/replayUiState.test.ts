@@ -30,7 +30,7 @@ test("selection sends the requested UTC time and lets the backend validate it", 
   }]);
 });
 
-test("single-chart replay keeps backend slots contiguous when pane 3 is active", () => {
+test("single-chart replay preserves the owning pane when pane 3 is active", () => {
   const input = replaySessionInputAt(
     1_700_000_000,
     { symbol: "USDJPY", chartTimeframe: "5m" },
@@ -65,7 +65,7 @@ test("single-chart replay keeps backend slots contiguous when pane 3 is active",
     },
   );
   assert.deepEqual(input.tracks, [{
-    slot: 0,
+    slot: 2,
     symbol: "USDJPY",
     chartTimeframe: "5m",
     required: true,

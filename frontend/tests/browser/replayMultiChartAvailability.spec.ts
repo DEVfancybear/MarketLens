@@ -32,7 +32,7 @@ function replaySnapshot(input: ReplayCreateRequest) {
   return {
     id: "replay-multi",
     status: "paused" as const,
-    mode: "all_charts" as const,
+    mode: input.mode,
     generation: 1,
     version: 1,
     lastEventSeq: 0,
@@ -49,6 +49,7 @@ function replaySnapshot(input: ReplayCreateRequest) {
       chartTimeframe: track.chartTimeframe,
       cursorSeq: 4,
       visibleThrough: input.start.time,
+      initialBars: replayBars(input.start.time, track.slot),
       dataset: {
         id: `dataset-${track.slot}`,
         dataKind: "bars" as const,
@@ -87,9 +88,11 @@ async function openLayoutMenu(page: Page) {
   await page.getByRole("button", { name: "Layout", exact: true }).click();
 }
 
-test("multi-chart Replay isolates an unavailable sibling without shifting pane slots", async ({ page }) => {
+test("multi-chart Replay isolates unavailable siblings and pins Current chart ownership", async ({ page }) => {
   const createRequests: ReplayCreateRequest[] = [];
   let snapshot: ReturnType<typeof replaySnapshot> | null = null;
+  let snapshotFetches = 0;
+  let barsFetches = 0;
 
   await page.route("**/api/v1/mt5/symbols", async (route) => {
     await fulfillJson(route, {
@@ -164,15 +167,20 @@ test("multi-chart Replay isolates an unavailable sibling without shifting pane s
         return;
       }
       snapshot = replaySnapshot(input);
+      // Make the transition long enough to catch a transient empty chart. The
+      // old implementation published the snapshot before hydrating its bars.
+      await new Promise((resolve) => setTimeout(resolve, 450));
       await fulfillJson(route, snapshot, 202);
       return;
     }
     if (request.method() === "GET" && path.endsWith("/replay/sessions/replay-multi")) {
+      snapshotFetches += 1;
       await fulfillJson(route, snapshot);
       return;
     }
     const barsMatch = path.match(/\/tracks\/track-(\d+)\/bars$/);
     if (request.method() === "GET" && barsMatch && snapshot) {
+      barsFetches += 1;
       const slot = Number(barsMatch[1]);
       await fulfillJson(route, {
         sessionId: snapshot.id,
@@ -193,7 +201,7 @@ test("multi-chart Replay isolates an unavailable sibling without shifting pane s
     }, 500);
   });
 
-  await page.goto("/?chartFixture=900&chartFixtureTail=500&chartBenchmarkProfile=phase2", {
+  await page.goto("/", {
     waitUntil: "domcontentloaded",
     timeout: 45_000,
   });
@@ -202,11 +210,21 @@ test("multi-chart Replay isolates an unavailable sibling without shifting pane s
   await page.getByRole("menuitemradio", { name: /Grid 2/ }).click();
   await expect(page.locator('[data-chart-layout="grid_2x2"] [data-chart-slot]')).toHaveCount(4);
   await page.getByRole("button", { name: /^Activate chart 3:/ }).click();
+  await openLayoutMenu(page);
+  await page.getByRole("menuitemradio", { name: "All charts", exact: true }).click();
 
   await page.waitForFunction(() => Boolean(window.__replaySelectionTest));
   await page.evaluate(() => window.__replaySelectionTest!.begin());
   const selector = page.getByRole("slider", { name: "Replay start bar" });
   await expect(selector).toBeVisible();
+  const transitionCounts = page.evaluate(async () => {
+    const counts: number[] = [];
+    for (let index = 0; index < 40; index += 1) {
+      counts.push(window.__chartInteractionTest?.snapshot().candleCount ?? 0);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return counts;
+  });
   await selector.press("Enter");
 
   await expect.poll(() => createRequests.length).toBe(2);
@@ -221,4 +239,25 @@ test("multi-chart Replay isolates an unavailable sibling without shifting pane s
     "data-active-chart",
     "true",
   );
+  expect(Math.min(...await transitionCounts)).toBeGreaterThan(0);
+  expect(snapshotFetches).toBe(0);
+  expect(barsFetches).toBe(0);
+
+  await openLayoutMenu(page);
+  await page.getByRole("menuitemradio", { name: "Current chart", exact: true }).click();
+  await expect.poll(() => createRequests.length).toBe(3);
+  expect(createRequests[2]?.mode).toBe("single_chart");
+  expect(createRequests[2]?.tracks.map((track) => track.slot)).toEqual([2]);
+  await expect.poll(async () =>
+    page.evaluate(() => window.__chartInteractionTest!.snapshot().candleCount),
+  ).toBe(5);
+
+  await page.getByRole("button", { name: /^Activate chart 2:/ }).click();
+  await expect.poll(async () =>
+    page.evaluate(() => window.__chartInteractionTest!.snapshot().candleCount),
+  ).toBeGreaterThan(5);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  expect(createRequests).toHaveLength(3);
 });
