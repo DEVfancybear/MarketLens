@@ -349,6 +349,7 @@ pub struct EaSessionResponse {
     pub session_token: String,
     pub account_id: AccountId,
     pub expires_at_ms: u64,
+    pub server_time_ms: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -553,6 +554,21 @@ mod tests {
           "tradeAllowed":true,"terminalBuild":1
         }"#;
         assert!(serde_json::from_str::<EaAccountSnapshot>(invalid).is_err());
+    }
+
+    #[test]
+    fn ea_session_response_exposes_gateway_clock_in_camel_case() {
+        let value = serde_json::to_value(EaSessionResponse {
+            protocol_version: EXECUTION_PROTOCOL_VERSION,
+            session_id: SessionId::new("session-1"),
+            session_token: "session-token".into(),
+            account_id: AccountId::new("mt5_account"),
+            expires_at_ms: 2_000,
+            server_time_ms: 1_000,
+        })
+        .expect("serialize session response");
+        assert_eq!(value["serverTimeMs"], 1_000);
+        assert!(value.get("server_time_ms").is_none());
     }
 
     #[test]

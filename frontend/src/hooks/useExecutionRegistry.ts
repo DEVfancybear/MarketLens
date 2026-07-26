@@ -31,6 +31,10 @@ import {
   mt5StatusAtom,
 } from "@/store/mt5Store";
 import { pushToastAtom } from "@/store/toastStore";
+import {
+  backendSessionAtom,
+  backendSessionResolvedAtom,
+} from "@/store/authStore";
 import type {
   Mt5CancelRequest,
   Mt5CloseAllRequest,
@@ -49,8 +53,13 @@ export function useExecutionRegistry() {
   const setMt5Account = useSetAtom(mt5AccountAtom);
   const setMt5Status = useSetAtom(mt5StatusAtom);
   const setLastHeartbeat = useSetAtom(mt5LastHeartbeatAtom);
+  const backendSession = useAtomValue(backendSessionAtom);
+  const backendSessionResolved = useAtomValue(backendSessionResolvedAtom);
 
   useEffect(() => {
+    // Auth bootstrap and the execution registry mount together. Wait for the
+    // httpOnly backend session instead of creating an avoidable initial 401.
+    if (!backendSessionResolved || !backendSession) return;
     let cancelled = false;
     let running = false;
     const refresh = async () => {
@@ -78,7 +87,7 @@ export function useExecutionRegistry() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [applyAccounts]);
+  }, [applyAccounts, backendSession, backendSessionResolved]);
 
   useEffect(() => {
     if (!selected || selected.venueKind !== "metatrader5") {
@@ -89,7 +98,7 @@ export function useExecutionRegistry() {
     }
     const updatedAt = selected.updatedAt ?? 0;
     const fresh = Date.now() - updatedAt < 30_000;
-    const connected = selected.status === "ready" && fresh;
+    const connected = backendSession && selected.status === "ready" && fresh;
     setMt5Status(connected ? "connected" : selected.status === "offline" ? "disconnected" : "stale");
     setLastHeartbeat(updatedAt || null);
     setMt5Account({
@@ -109,11 +118,21 @@ export function useExecutionRegistry() {
       tradeAllowed: connected && selected.tradeAllowed,
       updatedAt,
     });
-  }, [selected, setLastHeartbeat, setMt5Account, setMt5Status]);
+  }, [
+    backendSession,
+    selected,
+    setLastHeartbeat,
+    setMt5Account,
+    setMt5Status,
+  ]);
 
   useEffect(() => {
     const store = getDefaultStore();
-    if (!selected || selected.venueKind !== "metatrader5") {
+    if (
+      !backendSession ||
+      !selected ||
+      selected.venueKind !== "metatrader5"
+    ) {
       store.set(mt5PositionsAtom, []);
       store.set(mt5PendingOrdersAtom, []);
       return;
@@ -266,7 +285,7 @@ export function useExecutionRegistry() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [selected]);
+  }, [backendSession, selected]);
 
   useEffect(() => {
     const store = getDefaultStore();

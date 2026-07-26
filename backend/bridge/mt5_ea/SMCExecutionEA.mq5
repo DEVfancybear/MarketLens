@@ -1,5 +1,5 @@
 #property copyright "SMC Trading Terminal"
-#property version   "1.10"
+#property version   "1.20"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
@@ -29,6 +29,10 @@ string g_command_messages[];
 ulong g_last_snapshot_at = 0;
 bool g_request_in_flight = false;
 int g_instrument_cursor = 0;
+ulong g_gateway_time_at_sync_ms = 0;
+ulong g_gateway_time_sync_tick_ms = 0;
+int g_flush_failure_count = 0;
+ulong g_next_flush_retry_at = 0;
 
 int OnInit()
 {
@@ -122,11 +126,22 @@ void OnTimer()
       return;
    }
 
+   // Poll first so every event and heartbeat uses the gateway's UTC clock.
+   // This also lets command outcomes be acknowledged in the same timer cycle.
+   PollCommands();
+   if(g_session_token == "")
+   {
+      g_request_in_flight = false;
+      return;
+   }
+
    // An empty event batch is also the account heartbeat. This keeps account
    // identity and equity fresh without running HTTP inside trade callbacks.
-   if(ArraySize(g_events) > 0 || GetTickCount64() - g_last_snapshot_at >= 10000)
+   ulong monotonic_now = GetTickCount64();
+   if(monotonic_now >= g_next_flush_retry_at &&
+      (ArraySize(g_events) > 0 ||
+       monotonic_now - g_last_snapshot_at >= 10000))
       FlushEvents();
-   PollCommands();
    g_request_in_flight = false;
 }
 
@@ -180,6 +195,7 @@ bool RegisterSession()
       return false;
    }
 
+   SyncGatewayClockFromJson(response);
    g_session_token = session_token;
    g_account_id = account_id;
    if(!SaveSessionCache())
@@ -205,10 +221,11 @@ void PollCommands()
    }
    if(status < 200 || status >= 300)
    {
-      PrintFormat("SMCExecutionEA: poll failed, HTTP=%d", status);
+      LogHttpFailure("poll", status, response);
       return;
    }
 
+   SyncGatewayClockFromJson(response);
    int cursor = 0;
    string command;
    while(NextCommandObject(response, cursor, command))
@@ -626,12 +643,18 @@ void FlushEvents()
    }
    if(status < 200 || status >= 300)
    {
-      PrintFormat("SMCExecutionEA: event flush failed, HTTP=%d", status);
+      g_flush_failure_count++;
+      int exponent = MathMin(g_flush_failure_count - 1, 5);
+      ulong retry_delay_ms = (ulong)(1000 * (1 << exponent));
+      g_next_flush_retry_at = GetTickCount64() + retry_delay_ms;
+      LogHttpFailure("event flush", status, response);
       return;
    }
 
    ArrayResize(g_events, 0);
    g_last_snapshot_at = GetTickCount64();
+   g_flush_failure_count = 0;
+   g_next_flush_retry_at = 0;
 }
 
 string PositionSnapshotsJson()
@@ -671,7 +694,9 @@ string PositionSnapshotsJson()
          DecimalText(PositionGetDouble(POSITION_SWAP)),
          PositionGetInteger(POSITION_MAGIC),
          JsonEscape(PositionGetString(POSITION_COMMENT)),
-         (ulong)PositionGetInteger(POSITION_TIME_MSC), observed_at);
+         NormalizeBrokerTimestampMs(
+            (ulong)PositionGetInteger(POSITION_TIME_MSC)),
+         observed_at);
       if(appended > 0)
          output += ",";
       output += snapshot;
@@ -726,7 +751,9 @@ string PendingOrderSnapshotsJson()
          DecimalText(OrderGetDouble(ORDER_PRICE_OPEN)),
          stop_json, target_json, OrderGetInteger(ORDER_MAGIC),
          JsonEscape(OrderGetString(ORDER_COMMENT)),
-         (ulong)OrderGetInteger(ORDER_TIME_SETUP_MSC), observed_at);
+         NormalizeBrokerTimestampMs(
+            (ulong)OrderGetInteger(ORDER_TIME_SETUP_MSC)),
+         observed_at);
       if(appended > 0)
          output += ",";
       output += snapshot;
@@ -884,6 +911,11 @@ int HttpJson(const string method, const string path, const string body,
 void BufferEvent(const string event_json)
 {
    int size = ArraySize(g_events);
+   for(int index = 0; index < size; index++)
+   {
+      if(g_events[index] == event_json)
+         return;
+   }
    if(size >= MAX_BUFFERED_EVENTS)
    {
       // Preserve bounded memory. Command outcomes can be reconstructed from
@@ -1177,6 +1209,10 @@ void ResetSession(const string reason)
    PrintFormat("SMCExecutionEA: %s; pairing again.", reason);
    g_session_token = "";
    g_account_id = "";
+   g_gateway_time_at_sync_ms = 0;
+   g_gateway_time_sync_tick_ms = 0;
+   g_flush_failure_count = 0;
+   g_next_flush_retry_at = 0;
    FileDelete(SessionCacheFile(), 0);
 }
 
@@ -1370,8 +1406,52 @@ string JsonNullableUlong(const ulong value)
 
 ulong EpochMilliseconds()
 {
-   datetime now = TimeTradeServer();
+   if(g_gateway_time_at_sync_ms > 0)
+      return g_gateway_time_at_sync_ms +
+             (GetTickCount64() - g_gateway_time_sync_tick_ms);
+
+   datetime now = TimeGMT();
    if(now <= 0)
-      now = TimeCurrent();
+      now = TimeLocal() + TimeGMTOffset();
    return (ulong)now * 1000;
+}
+
+ulong NormalizeBrokerTimestampMs(const ulong broker_time_ms)
+{
+   if(broker_time_ms == 0)
+      return 0;
+   datetime broker_now = TimeTradeServer();
+   if(broker_now <= 0)
+      return broker_time_ms;
+   long corrected = (long)broker_time_ms +
+                    ((long)EpochMilliseconds() - (long)broker_now * 1000);
+   return corrected > 0 ? (ulong)corrected : broker_time_ms;
+}
+
+void SyncGatewayClockFromJson(const string response)
+{
+   string server_time;
+   if(!JsonNumber(response, "serverTimeMs", server_time))
+      return;
+   long parsed = StringToInteger(server_time);
+   if(parsed <= 0)
+      return;
+   g_gateway_time_at_sync_ms = (ulong)parsed;
+   g_gateway_time_sync_tick_ms = GetTickCount64();
+}
+
+void LogHttpFailure(const string operation, const int status,
+                    const string response)
+{
+   string safe = response;
+   StringReplace(safe, "\r", " ");
+   StringReplace(safe, "\n", " ");
+   StringReplace(safe, "\t", " ");
+   if(StringLen(safe) > 512)
+      safe = StringSubstr(safe, 0, 512) + "...";
+   if(safe == "")
+      PrintFormat("SMCExecutionEA: %s failed, HTTP=%d", operation, status);
+   else
+      PrintFormat("SMCExecutionEA: %s failed, HTTP=%d, response=%s",
+                  operation, status, safe);
 }

@@ -45,6 +45,7 @@ const SESSION_ABSOLUTE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const MAX_COMMANDS_PER_ACCOUNT: usize = 128;
 const MAX_COMMANDS_PER_POLL: usize = 16;
 const MAX_EA_EVENTS_PER_BATCH: usize = 128;
+const MAX_LEGACY_EA_CLOCK_SKEW_MS: u64 = 24 * 60 * 60 * 1_000;
 const COMMAND_LEASE: Duration = Duration::from_secs(15);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
@@ -576,6 +577,7 @@ impl GatewayState {
             session_token: raw_token,
             account_id,
             expires_at_ms,
+            server_time_ms: now,
         })
     }
 
@@ -756,6 +758,7 @@ impl GatewayState {
             session_token: raw_token,
             account_id,
             expires_at_ms,
+            server_time_ms: now,
         })
     }
 
@@ -1984,7 +1987,7 @@ async fn poll_commands(
 async fn accept_events(
     State(state): State<GatewayState>,
     headers: HeaderMap,
-    Json(batch): Json<EaEventBatch>,
+    Json(mut batch): Json<EaEventBatch>,
 ) -> Result<Json<AcceptedView>, ApiError> {
     let session = state.authenticate(&headers).await?;
     if batch.protocol_version != EXECUTION_PROTOCOL_VERSION {
@@ -2001,8 +2004,17 @@ async fn accept_events(
             "EA account identity changed; create a new session",
         ));
     }
+    let normalized_timestamps = normalize_legacy_ea_clock_skew(&mut batch, now_ms());
+    if normalized_timestamps > 0 {
+        warn!(
+            account_id = %session.account_id,
+            session_id = %session.session_id,
+            normalized_timestamps,
+            "normalized legacy MT5 broker clock skew"
+        );
+    }
     validate_event_batch(&batch)?;
-    let events = batch.events;
+    let events = normalize_events(batch.events)?;
     let instruments = batch.instruments;
     let positions = batch.positions;
     let pending_orders = batch.pending_orders;
@@ -3000,18 +3012,63 @@ fn validate_event_batch(batch: &EaEventBatch) -> Result<(), ApiError> {
     for order in &batch.pending_orders {
         validate_pending_order_snapshot(order)?;
     }
-    let mut identities = HashSet::with_capacity(batch.events.len());
     for event in &batch.events {
         validate_ea_event(event)?;
+    }
+    Ok(())
+}
+
+fn normalize_legacy_ea_clock_skew(batch: &mut EaEventBatch, received_at_ms: u64) -> usize {
+    fn normalize(timestamp: &mut u64, received_at_ms: u64) -> bool {
+        let maximum = received_at_ms.saturating_add(MAX_LEGACY_EA_CLOCK_SKEW_MS);
+        if *timestamp > received_at_ms.saturating_add(60_000) && *timestamp <= maximum {
+            *timestamp = received_at_ms;
+            return true;
+        }
+        false
+    }
+
+    let mut normalized = 0;
+    for instrument in &mut batch.instruments {
+        normalized += normalize(&mut instrument.observed_at_ms, received_at_ms) as usize;
+    }
+    for position in &mut batch.positions {
+        normalized += normalize(&mut position.observed_at_ms, received_at_ms) as usize;
+    }
+    for order in &mut batch.pending_orders {
+        normalized += normalize(&mut order.observed_at_ms, received_at_ms) as usize;
+    }
+    for event in &mut batch.events {
+        match event {
+            EaEvent::CommandAccepted { occurred_at_ms, .. }
+            | EaEvent::CommandRejected { occurred_at_ms, .. }
+            | EaEvent::CommandUnknown { occurred_at_ms, .. }
+            | EaEvent::TradeTransaction { occurred_at_ms, .. } => {
+                normalized += normalize(occurred_at_ms, received_at_ms) as usize;
+            }
+        }
+    }
+    normalized
+}
+
+fn normalize_events(events: Vec<EaEvent>) -> Result<Vec<EaEvent>, ApiError> {
+    let mut unique = Vec::with_capacity(events.len());
+    for event in events {
+        if !unique.contains(&event) {
+            unique.push(event);
+        }
+    }
+    let mut identities = HashSet::with_capacity(unique.len());
+    for event in &unique {
         if !identities.insert(event_identity(event)) {
             return Err(ApiError::new(
-                StatusCode::BAD_REQUEST,
-                "EA_EVENT_DUPLICATE",
-                "EA event batch contains a duplicate event",
+                StatusCode::CONFLICT,
+                "EA_EVENT_CONFLICT",
+                "EA event batch contains conflicting outcomes for one broker event",
             ));
         }
     }
-    Ok(())
+    Ok(unique)
 }
 
 fn validate_ea_event(event: &EaEvent) -> Result<(), ApiError> {
@@ -3668,7 +3725,7 @@ mod tests {
     }
 
     #[test]
-    fn ea_event_batch_rejects_invalid_tickets_and_duplicate_outcomes() {
+    fn ea_event_batch_rejects_invalid_tickets_and_deduplicates_exact_outcomes() {
         let invalid = EaEventBatch {
             protocol_version: EXECUTION_PROTOCOL_VERSION,
             account: snapshot("123456", "Example-Live"),
@@ -3695,11 +3752,25 @@ mod tests {
             occurred_at_ms: now_ms(),
         };
         let duplicate = EaEventBatch {
-            events: vec![outcome.clone(), outcome],
+            events: vec![outcome.clone(), outcome.clone()],
             ..invalid
         };
-        let error = validate_event_batch(&duplicate).expect_err("duplicate outcome must fail");
-        assert_eq!(error.body.code, "EA_EVENT_DUPLICATE");
+        validate_event_batch(&duplicate).expect("exact duplicate is idempotent");
+        let events = normalize_events(duplicate.events).expect("deduplicate exact outcome");
+        assert_eq!(events.len(), 1);
+        assert_eq!(event_identity(&events[0]), event_identity(&outcome));
+
+        let conflict = vec![
+            outcome.clone(),
+            EaEvent::CommandRejected {
+                command_id: CommandId::new("command-2"),
+                retcode: 10013,
+                message: "different result".into(),
+                occurred_at_ms: now_ms() + 1,
+            },
+        ];
+        let error = normalize_events(conflict).expect_err("conflicting outcome must fail");
+        assert_eq!(error.body.code, "EA_EVENT_CONFLICT");
     }
 
     #[test]
@@ -3771,6 +3842,62 @@ mod tests {
         let request = session_request(PAIR_TOKEN, snapshot("123456", "Broker-Live"));
         assert_eq!(request.account.mode, AccountMode::Live);
         validate_session_request(&request).expect("Live accounts must be supported");
+    }
+
+    #[tokio::test]
+    async fn session_response_exposes_gateway_utc_clock() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let before = now_ms();
+        let (_, session) = paired(&state, OWNER_A, PAIR_TOKEN).await;
+        let after = now_ms();
+        assert!((before..=after).contains(&session.server_time_ms));
+    }
+
+    #[test]
+    fn heartbeat_rejects_a_clock_more_than_one_minute_in_the_future() {
+        let mut instrument = instrument_snapshot();
+        instrument.observed_at_ms = now_ms() + 120_000;
+        let batch = EaEventBatch {
+            protocol_version: EXECUTION_PROTOCOL_VERSION,
+            account: snapshot("123456", "Broker-Live"),
+            instruments: vec![instrument],
+            positions: Vec::new(),
+            pending_orders: Vec::new(),
+            portfolio_snapshot_complete: true,
+            events: Vec::new(),
+        };
+        let error = validate_event_batch(&batch).expect_err("future clock must fail closed");
+        assert_eq!(error.body.code, "INSTRUMENT_TIME_INVALID");
+    }
+
+    #[test]
+    fn heartbeat_normalizes_legacy_broker_clock_skew_but_rejects_extreme_future_time() {
+        let received_at_ms = now_ms();
+        let mut instrument = instrument_snapshot();
+        instrument.observed_at_ms = received_at_ms + 7 * 60 * 60 * 1_000;
+        let mut batch = EaEventBatch {
+            protocol_version: EXECUTION_PROTOCOL_VERSION,
+            account: snapshot("123456", "Broker-Live"),
+            instruments: vec![instrument],
+            positions: Vec::new(),
+            pending_orders: Vec::new(),
+            portfolio_snapshot_complete: true,
+            events: Vec::new(),
+        };
+        assert_eq!(
+            normalize_legacy_ea_clock_skew(&mut batch, received_at_ms),
+            1
+        );
+        assert_eq!(batch.instruments[0].observed_at_ms, received_at_ms);
+        validate_event_batch(&batch).expect("bounded legacy broker skew is normalized");
+
+        batch.instruments[0].observed_at_ms = received_at_ms + MAX_LEGACY_EA_CLOCK_SKEW_MS + 1;
+        assert_eq!(
+            normalize_legacy_ea_clock_skew(&mut batch, received_at_ms),
+            0
+        );
+        let error = validate_event_batch(&batch).expect_err("extreme future clock must fail");
+        assert_eq!(error.body.code, "INSTRUMENT_TIME_INVALID");
     }
 
     #[test]
@@ -3985,14 +4112,17 @@ mod tests {
                 positions: Vec::new(),
                 pending_orders: Vec::new(),
                 portfolio_snapshot_complete: true,
-                events: vec![execution_domain::EaEvent::CommandAccepted {
-                    command_id: CommandId::new("cmd-1"),
-                    broker_order_id: Some("100001".into()),
-                    broker_deal_id: None,
-                    retcode: 10009,
-                    message: "done".into(),
-                    occurred_at_ms: now_ms(),
-                }],
+                events: vec![
+                    execution_domain::EaEvent::CommandAccepted {
+                        command_id: CommandId::new("cmd-1"),
+                        broker_order_id: Some("100001".into()),
+                        broker_deal_id: None,
+                        retcode: 10009,
+                        message: "done".into(),
+                        occurred_at_ms: now_ms(),
+                    };
+                    2
+                ],
             }),
         )
         .await
