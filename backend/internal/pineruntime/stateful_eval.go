@@ -685,20 +685,53 @@ func (vm *statefulVM) callFunction(function *statefulFunction, call *statefulCal
 
 func (vm *statefulVM) constructRecord(typeDef *statefulType, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
 	record := &statefulRecord{typeName: typeDef.name, fields: map[string]statefulValue{}}
+	fieldIndexes := make(map[string]int, len(typeDef.fields))
 	for index, field := range typeDef.fields {
-		value := statefulNA()
-		if index < len(call.arguments) {
-			evaluated, err := vm.evaluate(call.arguments[index].expression, scope)
-			if err != nil {
-				return statefulNA(), err
+		fieldIndexes[field.name] = index
+	}
+	values := make([]statefulValue, len(typeDef.fields))
+	assigned := make([]bool, len(typeDef.fields))
+	nextPositional := 0
+	namedSeen := false
+	for _, argument := range call.arguments {
+		fieldIndex := -1
+		if argument.name == "" {
+			if namedSeen {
+				return statefulNA(), fmt.Errorf("%s.new() positional argument cannot follow a named argument", typeDef.name)
 			}
-			value = evaluated
-		} else if field.defaultExp != nil {
-			evaluated, err := vm.evaluate(field.defaultExp, scope)
-			if err != nil {
-				return statefulNA(), err
+			if nextPositional >= len(typeDef.fields) {
+				return statefulNA(), fmt.Errorf("%s.new() received too many arguments", typeDef.name)
 			}
-			value = evaluated
+			fieldIndex = nextPositional
+			nextPositional++
+		} else {
+			namedSeen = true
+			var exists bool
+			fieldIndex, exists = fieldIndexes[argument.name]
+			if !exists {
+				return statefulNA(), fmt.Errorf("%s.new() has no field %q", typeDef.name, argument.name)
+			}
+		}
+		if assigned[fieldIndex] {
+			return statefulNA(), fmt.Errorf("%s.new() field %q was assigned more than once", typeDef.name, typeDef.fields[fieldIndex].name)
+		}
+		evaluated, err := vm.evaluate(argument.expression, scope)
+		if err != nil {
+			return statefulNA(), err
+		}
+		values[fieldIndex], assigned[fieldIndex] = evaluated, true
+	}
+	for index, field := range typeDef.fields {
+		value := values[index]
+		if !assigned[index] {
+			value = statefulNA()
+			if field.defaultExp != nil {
+				evaluated, err := vm.evaluate(field.defaultExp, scope)
+				if err != nil {
+					return statefulNA(), err
+				}
+				value = evaluated
+			}
 		}
 		record.fields[field.name] = cloneStatefulValue(value)
 	}

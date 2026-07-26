@@ -1,8 +1,9 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Updated 2026-07-22 for generic Pine v5 source execution,
+_Date: 2026-07-09. Updated 2026-07-26 for generic Pine v5 source execution,
 replay-causal evaluation, the submitted Swing Highs/Lows fixture, removal of
-the legacy `SWING_SR` catalog entry, and shared Pine color-literal parsing.
+the legacy `SWING_SR` catalog entry, shared Pine color-literal parsing, and
+named/defaulted UDT construction.
 Scope: move indicator parsing/calculation out of the frontend and into the Go
 backend._
 
@@ -282,6 +283,8 @@ catalog name:
 - `input()` values with `group` metadata and color overrides;
 - multiline string concatenation and escaped newlines;
 - a `pattern` user-defined type with fields and `pattern.new()` construction;
+- positional or named UDT constructor fields, with omitted declarations using
+  their field defaults and invalid field assignments failing closed;
 - `ta.pivothigh()` / `ta.pivotlow()` confirmation windows and history access;
 - numeric-to-boolean conditions used by Pine v5;
 - ternary selection of a nullable UDT;
@@ -290,7 +293,10 @@ catalog name:
 
 The fixture must compile through the same endpoint as any saved/public source,
 emit a swing label only after the complete right-hand pivot window exists, and
-never emit a label after a replay cutoff. Its LuxAlgo copyright and
+never emit a label after a replay cutoff. Regression data also forces a real
+Shooting Star match so the selected UDT title, description tooltip,
+transparent label background, style, and input color override are checked
+instead of validating only `None` labels. Its LuxAlgo copyright and
 CC BY-NC-SA 4.0 attribution are retained in the fixture; the runtime does not
 claim or publish the source as an original built-in catalog implementation.
 

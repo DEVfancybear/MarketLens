@@ -1187,10 +1187,13 @@ The regression source
 `backend/internal/pineruntime/testdata/swing_high_low_luxalgo.pine` is the
 user-provided Pine v5 Swing Highs/Lows script. It exercises multiline string
 continuations/escaped newlines, grouped inputs, a `pattern` UDT and
-`pattern.new()`, pivot confirmation/history, nullable UDT ternaries, and
-`label.new()` style/text-color/tooltip properties. It is compiled through this
-generic endpoint, not registered as `SWING_SR`. LuxAlgo attribution and the
-CC BY-NC-SA 4.0 notice remain in the fixture.
+`pattern.new()`, positional/named UDT fields with declaration defaults, pivot
+confirmation/history, nullable UDT ternaries, and `label.new()`
+style/text-color/tooltip properties. Regression coverage includes an actual
+Shooting Star match, its dynamic description tooltip, input color overrides,
+and Replay cutoff causality. It is compiled through this generic endpoint, not
+registered as `SWING_SR`. LuxAlgo attribution and the CC BY-NC-SA 4.0 notice
+remain in the fixture.
 
 ---
 

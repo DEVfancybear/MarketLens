@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Extended - Pine UDT and Swing High/Low compatibility (2026-07-26)
+- Extended the common stateful Pine VM so user-defined type constructors accept
+  positional and named field arguments, preserve omitted field defaults, and
+  reject unknown, duplicate, excess, or positionally misplaced arguments.
+- Strengthened the submitted LuxAlgo Swing Highs/Lows regression fixture with
+  generic input-schema assertions and a real Shooting Star pivot case covering
+  UDT field selection, dynamic label text, transparent backgrounds, style,
+  color overrides, and multiline tooltip metadata.
+
 ### Fixed - TradingView indicator parity and expanded Pine context (2026-07-26)
 - Replaced the simplified catalog ADR with the object-driven ADR 50 SR Pro
   source, including independent daily H50/L50 lines, zones, right-edge labels,

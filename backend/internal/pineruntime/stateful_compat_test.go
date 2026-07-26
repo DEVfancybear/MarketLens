@@ -3,6 +3,7 @@ package pineruntime
 import (
 	"context"
 	_ "embed"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,126 @@ func TestSubmittedSwingHighLowReplayStopsAtConfirmationBar(t *testing.T) {
 	}
 	if len(response.Result.Labels) != 0 {
 		t.Fatalf("pivot was emitted before its right-hand confirmation window: %+v", response.Result.Labels)
+	}
+}
+
+func TestSubmittedSwingHighLowPreservesPatternFieldsAndTooltip(t *testing.T) {
+	candles := []Candle{
+		{Time: 100, Open: 6, High: 8, Low: 5, Close: 6.5, Volume: 1},
+		{Time: 160, Open: 6, High: 10, Low: 5.5, Close: 7, Volume: 1},
+		{Time: 220, Open: 7, High: 8, Low: 6, Close: 6.5, Volume: 1},
+	}
+	response := Compile(context.Background(), CompileRequest{
+		ScriptID:   "submitted-swing-pattern",
+		SourceCode: swingHighLowLuxAlgoSource,
+		Candles:    candles,
+		InputOverrides: map[string]InputValue{
+			"length":    1,
+			"swinghCss": "#ff00ff",
+		},
+	})
+	if len(response.Errors) != 0 {
+		t.Fatalf("submitted source compile errors: %+v", response.Errors)
+	}
+	if len(response.Result.Labels) != 1 {
+		t.Fatalf("submitted source pattern labels = %+v", response.Result.Labels)
+	}
+	label := response.Result.Labels[0]
+	if label.Time == nil || *label.Time != 160 || label.Price != 10 ||
+		label.Text != "LH\nShooting Star" || label.Color != "#ff00ff" ||
+		label.BackgroundColor != "transparent" || label.Style != "label.style_label_down" {
+		t.Fatalf("submitted source pattern label = %+v", label)
+	}
+	if !strings.Contains(label.Tooltip, "shooting star") || !strings.Contains(label.Tooltip, "formed in an uptrend") {
+		t.Fatalf("submitted source pattern tooltip = %q", label.Tooltip)
+	}
+}
+
+func TestSubmittedSwingHighLowExposesGenericInputSchema(t *testing.T) {
+	inputs := ExtractInputs(swingHighLowLuxAlgoSource)
+	if len(inputs) != 3 {
+		t.Fatalf("submitted source inputs = %+v", inputs)
+	}
+	if inputs[0].Key != "length" || inputs[0].Kind != "int" || inputs[0].DefaultValue != 21 {
+		t.Fatalf("length input = %+v", inputs[0])
+	}
+	for index, want := range []struct {
+		key   string
+		title string
+		color string
+	}{
+		{key: "swinghCss", title: "Swing High", color: "#f44336"},
+		{key: "swinglCss", title: "Swing Low", color: "#00897b"},
+	} {
+		got := inputs[index+1]
+		if got.Key != want.key || got.Title != want.title || got.Kind != "color" ||
+			got.DefaultValue != want.color || got.Group != "Style" {
+			t.Fatalf("style input %d = %+v, want %+v", index, got, want)
+		}
+	}
+}
+
+func TestStatefulUDTConstructorSupportsNamedFieldsAndDefaults(t *testing.T) {
+	response := Compile(context.Background(), CompileRequest{
+		SourceCode: `//@version=5
+indicator("Named UDT", overlay=true)
+type marker
+    string title = "default"
+    float price = 1
+marker current = marker.new(price = high, title = "named")
+if barstate.islast
+    label.new(bar_index, current.price, current.title)`,
+		Candles: []Candle{{Time: 100, High: 7}},
+	})
+	if len(response.Errors) != 0 {
+		t.Fatalf("named UDT compile errors: %+v", response.Errors)
+	}
+	if len(response.Result.Labels) != 1 || response.Result.Labels[0].Text != "named" || response.Result.Labels[0].Price != 7 {
+		t.Fatalf("named UDT labels = %+v", response.Result.Labels)
+	}
+
+	defaultResponse := Compile(context.Background(), CompileRequest{
+		SourceCode: `//@version=5
+indicator("Default UDT", overlay=true)
+type marker
+    string title = "default"
+    float price = 3
+marker current = marker.new(title = "partial")
+if barstate.islast
+    label.new(bar_index, current.price, current.title)`,
+		Candles: []Candle{{Time: 100, High: 7}},
+	})
+	if len(defaultResponse.Errors) != 0 {
+		t.Fatalf("default UDT compile errors: %+v", defaultResponse.Errors)
+	}
+	if len(defaultResponse.Result.Labels) != 1 ||
+		defaultResponse.Result.Labels[0].Text != "partial" ||
+		defaultResponse.Result.Labels[0].Price != 3 {
+		t.Fatalf("default UDT labels = %+v", defaultResponse.Result.Labels)
+	}
+}
+
+func TestStatefulUDTConstructorRejectsInvalidFieldArguments(t *testing.T) {
+	for name, constructor := range map[string]string{
+		"unknown field":          `marker.new(missing = 1)`,
+		"duplicate field":        `marker.new("first", title = "second")`,
+		"too many arguments":     `marker.new("first", 2, 3)`,
+		"positional after named": `marker.new(title = "first", 2)`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := Compile(context.Background(), CompileRequest{
+				SourceCode: `//@version=5
+indicator("Invalid UDT")
+type marker
+    string title = "default"
+    float price = 1
+marker current = ` + constructor,
+				Candles: []Candle{{Time: 100, High: 7}},
+			})
+			if len(response.Errors) == 0 {
+				t.Fatalf("invalid constructor compiled: %s", constructor)
+			}
+		})
 	}
 }
 
