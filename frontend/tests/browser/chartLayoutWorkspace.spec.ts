@@ -231,6 +231,81 @@ test.describe("TradingView-style chart layouts", () => {
     }
   });
 
+  test("a cold inactive timeframe recovers after an aborted load and a transient history error", async ({ page }) => {
+    await page.unroute("**/api/v1/mt5/history?*");
+    let oneHourRequests = 0;
+
+    await page.route("**/api/v1/mt5/history?*", async (route) => {
+      const requestUrl = new URL(route.request().url());
+      const timeframe = requestUrl.searchParams.get("timeframe") ?? "15m";
+      if (timeframe === "1H") {
+        oneHourRequests += 1;
+        if (oneHourRequests === 1) {
+          // Keep the active-chart request in flight long enough to switch panes.
+          // Its AbortSignal must not poison the preview's recovery request.
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+        } else if (oneHourRequests === 2) {
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "temporary MT5 history warm-up failure" }),
+          });
+          return;
+        }
+      }
+
+      const step = timeframe === "1H" ? 60 * 60 : 15 * 60;
+      const lastOpen = 1_704_067_200 + 899 * 60;
+      const candles = Array.from({ length: 120 }, (_, index) => {
+        const time = lastOpen - (119 - index) * step;
+        const open = 1.2 + index * 0.00005;
+        const close = open + (index % 2 === 0 ? 0.00003 : -0.00002);
+        return {
+          time,
+          open,
+          high: Math.max(open, close) + 0.00004,
+          low: Math.min(open, close) - 0.00004,
+          close,
+          volume: 100 + index,
+        };
+      });
+      try {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            connected: true,
+            bridgeUrl: "playwright",
+            source: "playwright",
+            symbol: "EURUSD",
+            timeframe,
+            candles,
+            hasMore: true,
+          }),
+        });
+      } catch {
+        // The first request is deliberately aborted when its chart becomes
+        // inactive. Playwright may reject fulfillment after that cancellation.
+      }
+    });
+
+    await chooseArrangement(page, "2 Horizontal");
+    await page.getByRole("button", { name: /^Activate chart 2:/ }).click();
+    await page.getByRole("button", { name: "Select interval", exact: true }).click();
+    await page.getByRole("button", { name: /^1 hour(?: |$)/ }).click();
+    await expect.poll(() => oneHourRequests).toBe(1);
+
+    await page.getByRole("button", { name: /^Activate chart 1:/ }).click();
+
+    await expect.poll(() => oneHourRequests, { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+    const recoveredPane = page.locator('[data-chart-slot="1"]');
+    await expect(
+      recoveredPane.getByRole("button", { name: "Activate chart 2: EURUSD 1H", exact: true }),
+    ).toBeVisible();
+    await expect(recoveredPane.getByText(/^O 1\./)).toBeVisible();
+    await expect(page.locator('[data-chart-slot="0"]')).toContainText("15m");
+  });
+
   test("drawings and pending tools remain owned by their source pane", async ({ page }) => {
     await chooseArrangement(page, "2 Horizontal");
     await page.waitForFunction(() =>

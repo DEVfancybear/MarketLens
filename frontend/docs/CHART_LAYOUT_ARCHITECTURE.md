@@ -39,6 +39,15 @@ has its own history/subscription, pane-scoped indicators, current-price
 symbol/countdown marker, and drawing projection, then becomes the interactive
 chart when the user activates it.
 
+Cold preview history is loaded through one shared low-priority queue because
+the MT5 bridge exposes one history slot. Each queued task rechecks the
+symbol/timeframe cache before calling the API, so duplicate symbols at the same
+interval share the first successful result while duplicate symbols at different
+intervals remain isolated. Pane changes abort obsolete tasks. A visible empty
+pane retries transient HTTP, bridge warm-up, and empty-history failures with
+capped backoff and pane-specific jitter until candles arrive; one temporary
+failure therefore cannot leave that pane permanently blank.
+
 The same slot contract applies to symbol drag/drop in every preset. Watchlist
 pointer dragging resolves the chart section under the cursor, shows a
 pane-local drop preview, then updates only that pane's symbol while preserving
@@ -209,6 +218,11 @@ Focused coverage:
 - `tests/browser/desktopOverlayRegression.spec.ts`
 - `tests/chart/indicatorChartScope.test.ts`
 - `tests/chart/chartSettingsPersistence.test.ts`
+
+The layout browser suite includes a cold-history recovery regression that
+switches a chart from active to preview while its first request is in flight,
+forces the next request to fail, and verifies that the same-symbol,
+different-timeframe pane repaints after the automatic retry.
 
 Recommended gates:
 

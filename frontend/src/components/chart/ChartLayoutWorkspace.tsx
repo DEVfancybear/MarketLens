@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
 import { Loader2 } from "lucide-react";
 import { workspaceReadyAtom } from "@/store/authStore";
 import {
@@ -34,6 +34,7 @@ import { useChartSeries } from "@/hooks/useChartSeries";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { getMarketDataState } from "@/store/marketDataStore";
 import { marketSymbolsAtom } from "@/store/marketSymbolStore";
+import { logAtom } from "@/store/uiStore";
 import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
 import { getMarketSymbol } from "@/services/market-data/symbols";
@@ -46,6 +47,55 @@ import { AlertOverlay } from "./AlertOverlay";
 import { ChartArea } from "./ChartArea";
 import { DrawingPreviewLayer } from "./DrawingPreviewLayer";
 import { PriceChart } from "./PriceChart";
+
+const PANE_HISTORY_RETRY_DELAYS_MS = [600, 1_800, 4_000, 10_000, 30_000] as const;
+
+// MT5 serves history through one bridge slot. Serializing read-only pane loads
+// avoids filling the backend's request queue when a saved 2x2 layout restores
+// several cold symbol/timeframe pairs at once. Active-chart history keeps its
+// independent, higher-priority path.
+let paneHistoryQueue: Promise<void> = Promise.resolve();
+
+function isAbortError(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof DOMException) return error.name === "AbortError";
+  return (error as { name?: string }).name === "AbortError";
+}
+
+function abortError(): DOMException {
+  return new DOMException("The pane history request was aborted", "AbortError");
+}
+
+function waitForPaneHistoryRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(abortError());
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function enqueuePaneHistory<T>(
+  signal: AbortSignal,
+  task: () => Promise<T>,
+): Promise<T> {
+  const run = async () => {
+    if (signal.aborted) throw abortError();
+    return task();
+  };
+  const result = paneHistoryQueue.then(run, run);
+  paneHistoryQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
 
 export function ChartLayoutWorkspace({
   mobileControls,
@@ -300,11 +350,12 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
       setLoading(false);
       return;
     }
+    const market = pane.symbol ? getMarketSymbol(pane.symbol) : undefined;
     if (
       !workspaceReady ||
       !pane.initialized ||
       !pane.symbol ||
-      !getMarketSymbol(pane.symbol)
+      !market
     ) return;
     const marketData = getMarketDataState();
     const controller = new AbortController();
@@ -317,21 +368,72 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
 
     if (marketData.getCandles(pane.symbol, pane.timeframe).length === 0) {
       setLoading(true);
-      void getHistoricalDataService()
-        .loadHistory(
-          {
-            symbol: pane.symbol,
-            timeframe: pane.timeframe,
-            limit: initialHistoryBars(pane.timeframe),
-          },
-          { signal: controller.signal },
-        )
-        .then((history) => {
-          if (!controller.signal.aborted) {
+      void (async () => {
+        let retryAttempt = 0;
+        let loggedFailure = false;
+
+        while (
+          !controller.signal.aborted &&
+          marketData.getCandles(pane.symbol, pane.timeframe).length === 0
+        ) {
+          try {
+            const loadHistory = async () => {
+              const cached = marketData.getCandles(pane.symbol, pane.timeframe) as Candle[];
+              if (cached.length > 0) return cached;
+              return getHistoricalDataService().loadHistory(
+                {
+                  symbol: pane.symbol,
+                  timeframe: pane.timeframe,
+                  limit: initialHistoryBars(pane.timeframe),
+                },
+                { signal: controller.signal },
+              );
+            };
+            const history =
+              market.provider === "mt5"
+                ? await enqueuePaneHistory(controller.signal, loadHistory)
+                : await loadHistory();
+            if (controller.signal.aborted) return;
+            if (history.length === 0) {
+              throw new Error(`No history candles returned for ${pane.symbol} ${pane.timeframe}`);
+            }
             marketData.setCandles(pane.symbol, pane.timeframe, history);
+            return;
+          } catch (error) {
+            if (controller.signal.aborted || isAbortError(error)) return;
+            if (!loggedFailure) {
+              loggedFailure = true;
+              const message = error instanceof Error ? error.message : String(error);
+              getDefaultStore().set(
+                logAtom,
+                "warn",
+                `Pane history load failed for ${pane.symbol} ${pane.timeframe}; retrying: ${message}`,
+              );
+            }
+            const retryDelay =
+              PANE_HISTORY_RETRY_DELAYS_MS[
+                Math.min(retryAttempt, PANE_HISTORY_RETRY_DELAYS_MS.length - 1)
+              ];
+            retryAttempt += 1;
+            // Pane-specific jitter prevents several cold panes from retrying in
+            // lockstep after the backend bridge reconnects.
+            await waitForPaneHistoryRetry(
+              retryDelay + pane.slot * 125,
+              controller.signal,
+            );
+          }
+        }
+      })()
+        .catch((error) => {
+          if (!controller.signal.aborted && !isAbortError(error)) {
+            const message = error instanceof Error ? error.message : String(error);
+            getDefaultStore().set(
+              logAtom,
+              "warn",
+              `Pane history recovery stopped for ${pane.symbol} ${pane.timeframe}: ${message}`,
+            );
           }
         })
-        .catch(() => undefined)
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
@@ -345,6 +447,7 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
     catalogSize,
     enabled,
     pane.initialized,
+    pane.slot,
     pane.symbol,
     pane.timeframe,
     workspaceReady,
