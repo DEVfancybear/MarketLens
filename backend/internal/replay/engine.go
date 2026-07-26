@@ -399,6 +399,7 @@ func (a *sessionActor) apply(ctx context.Context, input CommandInput) (CommandRe
 		input.ActorOwner = a.engine.owner
 		input.ActorLeaseUntil = time.Now().UTC().Add(a.engine.leaseTTL)
 	}
+	input.RuntimeTrading = a.snapshot.Trading
 	return a.engine.store.ApplyCommand(ctx, a.userID, a.sessionID, input)
 }
 

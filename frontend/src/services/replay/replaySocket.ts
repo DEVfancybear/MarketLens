@@ -213,6 +213,10 @@ let lifecycleVersion = 0;
 let commandSequence = 0;
 let commandQueue = Promise.resolve<unknown>(undefined);
 const REPLAY_CONTROL_IDLE_MS = 300;
+// Discrete toolbar actions should leave the browser in the same frame. Keep a
+// tiny trailing window so double-clicks can still coalesce without adding the
+// old 300 ms tax before every backend-owned Play or Step.
+const REPLAY_ACTION_IDLE_MS = 24;
 
 function commandKey(type: string): string {
   commandSequence += 1;
@@ -374,7 +378,7 @@ async function refreshAfterOptimisticControlFailure(
 }
 
 const playbackCommand = new TrailingReplayCommand<boolean>(
-  REPLAY_CONTROL_IDLE_MS,
+  REPLAY_ACTION_IDLE_MS,
   (_current, incoming) => incoming,
   async (playing) => {
     const sessionId = replayClientStore.getState().snapshot?.id;
@@ -425,7 +429,7 @@ export function setActiveReplaySpeed(speed: number): Promise<void> {
 }
 
 const restartCommand = new TrailingReplayCommand<string>(
-  REPLAY_CONTROL_IDLE_MS,
+  REPLAY_ACTION_IDLE_MS,
   (_current, incoming) => incoming,
   async (sessionId) => {
     if (replayClientStore.getState().snapshot?.id === sessionId) {
@@ -502,7 +506,7 @@ async function executeReplayStep(count: number): Promise<void> {
 }
 
 const stepCommand = new TrailingReplayCommand<{ count: number; pauseFirst: boolean }>(
-  REPLAY_CONTROL_IDLE_MS,
+  REPLAY_ACTION_IDLE_MS,
   (current, incoming) => ({
     count: (current?.count ?? 0) + incoming.count,
     pauseFirst: Boolean(current?.pauseFirst || incoming.pauseFirst),

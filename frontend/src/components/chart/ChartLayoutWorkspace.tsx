@@ -47,6 +47,10 @@ import { AlertOverlay } from "./AlertOverlay";
 import { ChartArea } from "./ChartArea";
 import { DrawingPreviewLayer } from "./DrawingPreviewLayer";
 import { PriceChart } from "./PriceChart";
+import {
+  selectPaneLiveSeries,
+  type ChartSeriesSnapshot,
+} from "./paneSeriesRetention";
 
 const PANE_HISTORY_RETRY_DELAYS_MS = [600, 1_800, 4_000, 10_000, 30_000] as const;
 
@@ -118,6 +122,7 @@ export function ChartLayoutWorkspace({
   const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const previousActiveSlot = useRef(activeSlot);
+  const renderedSeriesByPane = useRef(new Map<string, ChartSeriesSnapshot>());
 
   const slots = useMemo(() => visibleChartSlots(preset), [preset]);
   const activePane = panes.find((pane) => pane.slot === activeSlot) ?? panes[0];
@@ -186,6 +191,17 @@ export function ChartLayoutWorkspace({
     timeframe,
   ]);
 
+  const rememberRenderedSeries = useCallback(
+    (paneId: string, snapshot: ChartSeriesSnapshot) => {
+      // Replay bars are authoritative only for their owning session. Retaining
+      // them as a live fallback would leak historical data into a pane after
+      // Replay exits or changes scope.
+      if (snapshot.source !== "live") return;
+      renderedSeriesByPane.current.set(paneId, snapshot);
+    },
+    [],
+  );
+
   return (
     <div
       data-chart-layout={preset}
@@ -218,11 +234,15 @@ export function ChartLayoutWorkspace({
                 slot={slot}
                 chartId={pane.id}
                 mobileControls={mobileControls}
+                onSeriesSnapshot={(snapshot) =>
+                  rememberRenderedSeries(pane.id, snapshot)
+                }
               />
             ) : (
               <ChartPreviewPane
                 pane={pane}
                 drawingLayoutId={drawingLayoutId}
+                retainedSeries={renderedSeriesByPane.current.get(pane.id)}
                 onActivate={() => activatePane(pane)}
               />
             )}
@@ -243,10 +263,12 @@ export function ChartLayoutWorkspace({
 function ChartPreviewPane({
   pane,
   drawingLayoutId,
+  retainedSeries,
   onActivate,
 }: {
   pane: ChartPaneState;
   drawingLayoutId: string;
+  retainedSeries?: ChartSeriesSnapshot;
   onActivate: () => void;
 }) {
   const replay = useReplayClientProjection();
@@ -275,9 +297,12 @@ function ChartPreviewPane({
   }, [activeDrawingRevision, drawingLayoutId, pane.id, pane.symbol]);
   const { candles, loading } = usePaneMarketData(
     pane,
-    !replayOwnsPane && replay.connection !== "connecting",
+    !replayOwnsPane,
   );
-  const displayedCandles = useChartSeries(pane.slot, candles);
+  const displayedCandles = useChartSeries(
+    pane.slot,
+    selectPaneLiveSeries(pane, candles, retainedSeries),
+  );
   const last = displayedCandles[displayedCandles.length - 1];
   const market = getMarketSymbol(pane.symbol);
 

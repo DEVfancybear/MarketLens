@@ -120,17 +120,23 @@ actor clock (speed + elapsed time)
 - The server emits a finalized overlap candle plus newly revealed candles in one
   batch. The frontend finalizes that overlap first and animates only the new
   candles, avoiding repeated full-series `setData()` calls.
-- Empty trading ledgers take a one-query fast path. Deterministic row-by-row
-  processing remains enabled whenever pending orders or non-zero positions
-  exist.
+- Empty trading ledgers reuse the actor's last authoritative projection. The
+  common Step/clock transaction also builds its response from the session and
+  track rows already locked for mutation, removing seven read-only database
+  round trips. Deterministic row-by-row processing remains enabled whenever
+  pending orders or non-zero positions exist.
 - Speed slider traffic is coalesced latest-wins so Play cannot sit behind stale
-  `set_speed` requests. Paused/completed/reconnected views always snap back to
+  `set_speed` requests. Discrete Play/Step/Restart controls use a 24 ms window
+  instead of 300 ms. Paused/completed/reconnected views always snap back to
   authoritative data.
 
 Observed local PostgreSQL validation after the fast path showed successive
 clock commits approximately 1.24-1.44 seconds apart instead of the previous
 multi-second/per-row stall; a test session advanced continuously to its dataset
 end. Exact latency still depends on database location and active trading state.
+The 2026-07-26 production regression measured a paused one-bar Step at about
+6.2 seconds before the actor-projection optimization; production verification
+must remeasure this same interaction after deployment.
 
 Passed on 2026-07-11:
 

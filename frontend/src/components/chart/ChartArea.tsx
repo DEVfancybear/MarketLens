@@ -36,6 +36,7 @@ import {
 } from "@/services/chartBenchmarkFixtures";
 import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
 import type { Candle, IndicatorConfig } from "@/types";
+import type { ChartSeriesSnapshot } from "./paneSeriesRetention";
 
 const EMPTY_CANDLES: Candle[] = [];
 
@@ -44,10 +45,12 @@ export function ChartArea({
   mobileControls,
   slot = 0,
   chartId = "main",
+  onSeriesSnapshot,
 }: {
   mobileControls?: ReactNode;
   slot?: number;
   chartId?: string;
+  onSeriesSnapshot?: (snapshot: ChartSeriesSnapshot) => void;
 } = {}) {
   const replay = useReplayClientProjection();
   const workspaceReady = useAtomValue(workspaceReadyAtom);
@@ -55,7 +58,7 @@ export function ChartArea({
     replay.snapshot?.tracks.some((track) => track.slot === slot),
   );
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
-    enabled: workspaceReady && !replayOwnsChart && replay.connection !== "connecting",
+    enabled: workspaceReady && !replayOwnsChart,
   });
   const candles = useChartSeries(slot, workspaceReady ? undefined : EMPTY_CANDLES);
   const symbol = useAtomValue(symbolAtom);
@@ -155,6 +158,30 @@ export function ChartArea({
       : candles,
     [benchmarkCandles, benchmarkStartIndex, benchmarkVisibleCount, candles],
   );
+
+  useEffect(() => {
+    if (
+      benchmarkCandles ||
+      !onSeriesSnapshot ||
+      !symbol ||
+      displayedCandles.length === 0
+    ) {
+      return;
+    }
+    onSeriesSnapshot({
+      symbol,
+      timeframe,
+      candles: displayedCandles,
+      source: replayOwnsChart ? "replay" : "live",
+    });
+  }, [
+    benchmarkCandles,
+    displayedCandles,
+    onSeriesSnapshot,
+    replayOwnsChart,
+    symbol,
+    timeframe,
+  ]);
 
   const meta = getMarketSymbol(symbol);
   const precision = meta?.pricePrecision ?? 2;

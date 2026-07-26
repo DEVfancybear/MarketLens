@@ -192,10 +192,11 @@ Changing symbol, timeframe, layout, or Replay scope while a session exists
 creates a replacement backend session at the current authoritative simulated
 time. The replacement preserves speed and account configuration, requests Auto
 interval again, reconnects the event stream, and hydrates only the replacement
-track bars. `useMarketData` remains disabled during this handoff, while
-`ChartArea` treats Replay's own projection/connection as the loading authority.
-This prevents the perpetual provider-loading spinner previously seen when
-switching from `15m` to `5m` inside Replay.
+track bars. The old coherent series remains visible until snapshot and bars are
+published atomically. Live market data stops only after the pane has an owning
+Replay track; a global `connecting` state never pauses Current-chart siblings.
+This prevents both the perpetual provider-loading spinner and blank panes while
+switching timeframe/layout or preparing Replay.
 
 Old sessions whose stored interval no longer matches Auto are normalized with a
 versioned `set_replay_interval` command. This keeps the same behavior across all
@@ -228,27 +229,28 @@ chart and the analytics equity chart.
 
 ## Performance guardrails
 
-The common no-order/no-position case performs one active-ledger-state query per
-track and skips all per-source-row order, bracket, and mark-to-market queries.
-This is critical because one 10x `15m` clock batch can reveal roughly 150 source
-`1m` rows. Active orders or positions still use deterministic row-by-row ledger
-processing so fills and brackets cannot skip intermediate prices.
+The actor carries its last authoritative trading projection into each command.
+For Step/clock frames with no pending order or non-zero position, the repository
+reuses that projection plus the session/track rows already locked for the
+transition. The common path therefore skips the active-ledger query, the
+duplicate session/track snapshot reads, and four ledger snapshot reads. Active
+orders or positions still use deterministic row-by-row processing so fills and
+brackets cannot skip intermediate prices.
 
-Interactive controls use a 300 ms trailing idle window. Speed and Play/Pause are
-latest-wins, rapid Step counts are summed, and repeated Restart clicks are
-coalesced. Status/speed update immediately through narrow optimistic overrides;
-commands remain serialized and versioned after the idle window. Pending input
-is canceled on replacement/Exit, and responses for inactive sessions are
-ignored. `step`, `seek`, and `restart` explicitly rehydrate bars; ordinary Play
-ticks rely on ordered socket events and do not issue a full bars request per
-update.
+Discrete Play/Pause, Step, and Restart controls use a 24 ms trailing window, so
+they dispatch within the next browser frame while rapid presses still coalesce.
+The noisy speed slider retains a 300 ms latest-wins window. Step counts are
+summed, status/speed update through narrow optimistic overrides, commands stay
+serialized/versioned, and pending input is canceled on replacement/Exit.
+Connected Step and ordinary Play ticks rely on ordered socket events and do not
+reload the full revealed history after each update.
 
 ## Market and trading isolation
 
-While a Replay session is active or preparing:
+While a Replay session is active:
 
-- `useMarketData` does not request provider history, refresh MT5 chart bars, or
-  backfill gaps for the chart;
+- `useMarketData` stops provider history, MT5 refresh, and gap backfill only for
+  panes with an owning Replay track; Current-chart siblings remain live;
 - chart, indicators, and SMC consume only `useChartSeries()`;
 - `useTradeRuntime` does not feed the normal simulator ledger;
 - MT5 execution is disabled and the order ticket uses the isolated Replay

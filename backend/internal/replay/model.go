@@ -179,6 +179,10 @@ type CommandInput struct {
 	Payload         json.RawMessage `json:"payload,omitempty"`
 	ActorOwner      string          `json:"-"`
 	ActorLeaseUntil time.Time       `json:"-"`
+	// RuntimeTrading carries the actor's last authoritative ledger projection
+	// into the repository. Cursor-only commands can reuse it instead of issuing
+	// four read-only ledger queries before every Replay frame.
+	RuntimeTrading *TradingSnapshot `json:"-"`
 }
 
 type ForkSessionInput struct {

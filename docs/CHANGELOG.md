@@ -17,6 +17,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Made `Current chart` the safe default for expanded layouts, preserved the
   owning pane slot in single-chart backend sessions, and kept all non-owner
   panes on live data when focus moves. `All charts` remains an explicit scope.
+- Kept every non-owner pane's live feed running while a Replay session prepares.
+  The active chart now hands its last coherent live series to the read-only
+  preview before focus changes, so switching among symbols/timeframes cannot
+  produce a blank inactive pane in any arrangement.
+- Reused the actor's authoritative idle trading projection and already-locked
+  session/track rows for ordinary Replay steps. This removes seven read-only
+  PostgreSQL round trips from the common no-order/no-position frame while
+  retaining the deterministic ledger path whenever trading state is active.
+- Reduced the trailing window for discrete Play, Restart, and Step actions from
+  300 ms to 24 ms; the speed slider keeps the larger coalescing window.
 - Added delayed-response browser coverage proving candles never reach zero,
   create activation performs no follow-up snapshot/bars GET, sparse all-chart
   slots remain stable, and Current-chart Replay does not migrate on pane focus.

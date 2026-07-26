@@ -48,6 +48,13 @@ pane retries transient HTTP, bridge warm-up, and empty-history failures with
 capped backoff and pane-specific jitter until candles arrive; one temporary
 failure therefore cannot leave that pane permanently blank.
 
+When the active `ChartArea` becomes a read-only preview, it records the last
+coherent live series under the stable pane ID. The preview renders that series
+only while its exact symbol/timeframe cache is empty, then yields immediately
+to keyed market data. Replay projections are never retained as live fallback.
+This handoff covers all four arrangements and removes the active-to-inactive
+blank frame without hard-coding any symbol.
+
 The same slot contract applies to symbol drag/drop in every preset. Watchlist
 pointer dragging resolves the chart section under the cursor, shows a
 pane-local drop preview, then updates only that pane's symbol while preserving
@@ -97,8 +104,8 @@ When the active selection changes, it is written back to that pane.
 - Snapshot normalization validates slot numbers, IDs, symbols, and timeframes,
   and guarantees unique stable IDs.
 - Selecting `single` forces Replay scope back to `single_chart`.
-- Expanding from `single` to any multi-chart preset defaults Replay to
-  `all_charts`; `Current chart` remains an explicit user-selectable scope.
+- Expanding from `single` keeps the safe `single_chart` Replay scope.
+  `All charts` is always an explicit user choice.
 
 Stable pane IDs are also drawing chart IDs. This prevents switching panes from
 mixing drawing scopes even though the interactive chart component is remounted.
@@ -181,11 +188,10 @@ tracks and maps them to visible panes.
 | `single_chart` | Active visible pane only |
 | `all_charts` | Every visible pane in slot order |
 
-The Go Replay service requires track slots contiguous from zero. An active UI
-pane can be slot 1, 2, or 3 after a saved-layout restore, so
-`replayTracksForBackend()` remaps a one-chart session to backend slot zero.
-`PriceChart` and `useChartSeries()` map that track back to the active UI slot.
-All-chart layouts already produce ordered, contiguous tracks.
+Replay track slots preserve the layout slot exactly. A Current-chart session
+created from UI pane 1, 2, or 3 therefore remains pinned to that pane even when
+focus moves elsewhere. `PriceChart` and `useChartSeries()` select a Replay track
+only by the exact pane slot; unmatched panes continue to render live data.
 
 Changing arrangement, active market state, or Replay scope causes
 `ReplayClientRuntime` to compare the desired track configuration and recreate
@@ -223,6 +229,9 @@ The layout browser suite includes a cold-history recovery regression that
 switches a chart from active to preview while its first request is in flight,
 forces the next request to fail, and verifies that the same-symbol,
 different-timeframe pane repaints after the automatic retry.
+`paneSeriesRetention.test.ts` additionally proves that an empty keyed cache
+uses only the matching live frame, that authoritative keyed candles replace it,
+and that Replay/other-symbol data can never leak into the fallback.
 
 Recommended gates:
 

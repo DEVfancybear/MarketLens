@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -126,7 +127,10 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 	if len(tracks) < 1 || len(tracks) > 4 {
 		return CommandResult{}, nil, fmt.Errorf("replay: expected between one and four tracks, got %d", len(tracks))
 	}
-	ledger := &ledgerRuntime{db: tx, sessionID: sid}
+	var ledger *ledgerRuntime
+	if !canReuseIdleTradingProjection(input) {
+		ledger = &ledgerRuntime{db: tx, sessionID: sid}
+	}
 	drafts, changed, err := applyRuntimeTransitionTracks(ctx, q, &session, tracks, input, ledger)
 	if err != nil {
 		return CommandResult{}, nil, err
@@ -189,10 +193,14 @@ func (r *Repo) applyCommand(ctx context.Context, beginner commandBeginner, userI
 		}
 	}
 
-	snapshot, err := snapshotWithQueries(ctx, q, tx, uid, sid)
-	if err != nil {
-		return CommandResult{}, nil, err
+	trading := input.RuntimeTrading
+	if trading == nil || tradeChangedInDrafts(drafts) {
+		trading, err = loadTradingSnapshot(ctx, tx, sid)
+		if err != nil {
+			return CommandResult{}, nil, err
+		}
 	}
+	snapshot := snapshotFromRuntimeRows(session, tracks, trading)
 	result := CommandResult{CommandID: uuidString(command.ID), Status: "applied", Snapshot: snapshot}
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
@@ -231,6 +239,28 @@ func tradeChangedInDrafts(drafts []eventDraft) bool {
 		}
 	}
 	return false
+}
+
+func canReuseIdleTradingProjection(input CommandInput) bool {
+	commandType := strings.ToLower(strings.TrimSpace(input.Type))
+	if commandType != "step" && commandType != "__clock_step" {
+		return false
+	}
+	trading := input.RuntimeTrading
+	if trading == nil {
+		return false
+	}
+	for _, order := range trading.Orders {
+		if order.Status == "pending" || order.Status == "partially_filled" {
+			return false
+		}
+	}
+	for _, position := range trading.Positions {
+		if math.Abs(position.NetQuantity) > 1e-12 {
+			return false
+		}
+	}
+	return true
 }
 
 func claimRuntimeActor(session *gen.ReplaySession, input CommandInput) (bool, error) {
@@ -973,6 +1003,45 @@ func duplicateCommandResult(command gen.ReplayCommand) (CommandResult, []EventEn
 	}
 	result.Duplicate = true
 	return result, nil, nil
+}
+
+func snapshotFromRuntimeRows(
+	session gen.ReplaySession,
+	tracks []gen.ListReplayTracksForSessionForUpdateRow,
+	trading *TradingSnapshot,
+) SessionSnapshot {
+	out := sessionSnapshot(session)
+	out.Tracks = make([]TrackSnapshot, 0, len(tracks))
+	for _, track := range tracks {
+		checksum := ""
+		if track.ChecksumSha256 != nil {
+			checksum = *track.ChecksumSha256
+		}
+		out.Tracks = append(out.Tracks, TrackSnapshot{
+			ID:             uuidString(track.ID),
+			Slot:           int(track.Slot),
+			Symbol:         track.Symbol,
+			Provider:       track.Provider,
+			MarketCalendar: marketCalendarFor(track.Provider, track.Symbol),
+			ChartTimeframe: track.ChartTimeframe,
+			CursorSeq:      track.CursorSeq,
+			VisibleThrough: track.VisibleThrough.Time,
+			Dataset: DatasetSnapshot{
+				ID:                  uuidString(track.DatasetID),
+				DataKind:            string(track.DataKind),
+				SourceTimeframe:     track.SourceTimeframe,
+				BaseIntervalSeconds: int(track.BaseIntervalSeconds),
+				FirstAvailableTime:  track.FirstTime.Time,
+				LastAvailableTime:   track.LastTime.Time,
+				SnapshotAt:          track.SnapshotAt.Time,
+				RowCount:            int(track.RowCount),
+				ChecksumSHA256:      checksum,
+				Status:              string(track.DatasetStatus),
+			},
+		})
+	}
+	out.Trading = trading
+	return out
 }
 
 func snapshotWithQueries(ctx context.Context, q *gen.Queries, db tradingDB, uid, sid pgtype.UUID) (SessionSnapshot, error) {

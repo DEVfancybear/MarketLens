@@ -391,6 +391,42 @@ func TestRuntimeRejectsInvalidSpeed(t *testing.T) {
 	}
 }
 
+func TestCursorStepReusesOnlyAnIdleActorTradingProjection(t *testing.T) {
+	idle := &TradingSnapshot{
+		Orders:    []ReplayOrder{},
+		Positions: []ReplayPosition{},
+	}
+	if !canReuseIdleTradingProjection(CommandInput{
+		Type: "step", RuntimeTrading: idle,
+	}) {
+		t.Fatal("idle Step should reuse the actor trading projection")
+	}
+	if !canReuseIdleTradingProjection(CommandInput{
+		Type: "__clock_step", RuntimeTrading: idle,
+	}) {
+		t.Fatal("idle clock Step should reuse the actor trading projection")
+	}
+	if canReuseIdleTradingProjection(CommandInput{
+		Type: "step",
+		RuntimeTrading: &TradingSnapshot{Orders: []ReplayOrder{{
+			Status: "pending",
+		}}},
+	}) {
+		t.Fatal("pending orders require deterministic ledger processing")
+	}
+	if canReuseIdleTradingProjection(CommandInput{
+		Type: "step",
+		RuntimeTrading: &TradingSnapshot{Positions: []ReplayPosition{{
+			NetQuantity: 1,
+		}}},
+	}) {
+		t.Fatal("open positions require deterministic ledger processing")
+	}
+	if canReuseIdleTradingProjection(CommandInput{Type: "seek", RuntimeTrading: idle}) {
+		t.Fatal("non-Step commands must keep their existing ledger path")
+	}
+}
+
 func TestRuntimeStepStopsAtConfiguredEndTime(t *testing.T) {
 	bars, session, track := runtimeFixture()
 	session.EndTime = bars.bars[3].OpenTime
