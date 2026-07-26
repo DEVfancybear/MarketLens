@@ -1,5 +1,10 @@
 # CURRENT STATE
 
+> Trade execution update (2026-07-26): the FTMO verifier, stored MT5
+> credentials, downloadable Connector, and browser loopback execution path
+> described in the older snapshot below have been removed. Use
+> `TRADE_EXECUTION_ARCHITECTURE.md` for current state.
+
 _Auth/Push hardening update 2026-07-26._
 
 - Frontend auth bootstrap uses one `POST /api/v1/auth/session`; an initial

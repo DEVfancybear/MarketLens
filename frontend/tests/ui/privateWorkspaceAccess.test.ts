@@ -14,7 +14,6 @@ import type { BottomTab } from "../../src/store/uiStore";
 
 const bottomTabs: { key: BottomTab; label: string }[] = [
   { key: "replay", label: "Replay" },
-  { key: "trade", label: "Trade" },
   { key: "journal", label: "Journal" },
   { key: "analytics", label: "Analytics" },
   { key: "pine", label: "Pine Editor" },
@@ -48,13 +47,12 @@ test("bottom panel hides private workspace tabs for signed-out users", () => {
   );
   assert.deepEqual(
     visibleBottomPanelTabs(bottomTabs, "authed").map((tab) => tab.key),
-    ["replay", "trade", "journal", "analytics", "pine", "logs"],
+    ["replay", "journal", "analytics", "pine", "logs"],
   );
 });
 
 test("signed-out users are moved away from private bottom panel tabs", () => {
   assert.equal(fallbackBottomTabForAuth("pine", "anonymous"), "replay");
-  assert.equal(fallbackBottomTabForAuth("trade", "anonymous"), "replay");
   assert.equal(fallbackBottomTabForAuth("journal", "anonymous"), "replay");
   assert.equal(fallbackBottomTabForAuth("analytics", "anonymous"), "replay");
   assert.equal(fallbackBottomTabForAuth("logs", "anonymous"), "replay");

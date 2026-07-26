@@ -16,6 +16,7 @@ import {
   Star,
   ListTree,
   ChartCandlestick,
+  WalletCards,
 } from "lucide-react";
 import { SymbolSearch } from "./SymbolSearch";
 import { useAlertStore } from "@/store/alertStore";
@@ -53,6 +54,8 @@ import {
   toggleAlertCenterAtom,
   rightPanelTabAtom,
   showRightPanelTabAtom,
+  desktopWorkspaceAtom,
+  setDesktopWorkspaceAtom,
 } from "@/store/uiStore";
 import { cn } from "@/utils/cn";
 import { useChartSnapshotActions } from "@/hooks/useChartSnapshotActions";
@@ -90,10 +93,12 @@ export function TopToolbar() {
   const theme = useAtomValue(themeAtom);
   const rightOpen = useAtomValue(rightOpenAtom);
   const rightPanelTab = useAtomValue(rightPanelTabAtom);
+  const desktopWorkspace = useAtomValue(desktopWorkspaceAtom);
   const fullscreen = useAtomValue(fullscreenAtom);
   const toggleTheme = useSetAtom(toggleThemeAtom);
   const toggleRight = useSetAtom(toggleRightAtom);
   const showRightPanelTab = useSetAtom(showRightPanelTabAtom);
+  const setDesktopWorkspace = useSetAtom(setDesktopWorkspaceAtom);
   const setFullscreen = useSetAtom(setFullscreenAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
   const doLog = useSetAtom(logAtom);
@@ -231,7 +236,46 @@ export function TopToolbar() {
         </div>
       </div>
 
-      <div className="flex h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]">
+      <nav
+        aria-label="Desktop workspace"
+        className="flex h-10 shrink-0 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1"
+      >
+        <button
+          type="button"
+          aria-current={desktopWorkspace === "chart" ? "page" : undefined}
+          onClick={() => setDesktopWorkspace("chart")}
+          className={cn(
+            "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+            desktopWorkspace === "chart"
+              ? "bg-terminal-raised text-ink shadow-sm"
+              : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
+          )}
+        >
+          <ChartCandlestick size={14} />
+          Chart
+        </button>
+        <button
+          type="button"
+          aria-current={desktopWorkspace === "trade" ? "page" : undefined}
+          onClick={() => setDesktopWorkspace("trade")}
+          className={cn(
+            "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+            desktopWorkspace === "trade"
+              ? "bg-brand/15 text-brand"
+              : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
+          )}
+        >
+          <WalletCards size={14} />
+          Trade
+        </button>
+      </nav>
+
+      <div
+        className={cn(
+          "h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]",
+          desktopWorkspace === "chart" ? "flex" : "hidden",
+        )}
+      >
       <SymbolSearch />
 
       <div className="mx-1 h-5 w-px bg-terminal-border" />
@@ -241,7 +285,12 @@ export function TopToolbar() {
 
       </div>
 
-      <div className="flex h-10 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/55 p-1">
+      <div
+        className={cn(
+          "h-10 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/55 p-1",
+          desktopWorkspace === "chart" ? "flex" : "hidden",
+        )}
+      >
       <IndicatorMenu />
       <SmcMenu />
       <ChartSettingsMenu />
@@ -413,6 +462,13 @@ export function TopToolbar() {
       </Dropdown>
       </div>
 
+      {desktopWorkspace === "trade" && (
+        <div className="hidden min-w-0 items-center gap-2 text-[10px] text-ink-faint lg:flex">
+          <span className="h-1.5 w-1.5 rounded-full bg-bull" aria-hidden="true" />
+          Common execution workspace · MT5 EA and native venue adapters
+        </div>
+      )}
+
       <div className="ml-auto flex h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/45 p-1">
         <ConnectionBadge />
         <div className="h-5 w-px bg-terminal-border" />
@@ -429,71 +485,75 @@ export function TopToolbar() {
             </span>
           )}
         </button>
-        <Dropdown
-          align="right"
-          width={238}
-          trigger={(open) => (
-            <IconButton label="Take a snapshot" active={open}>
-              <Camera size={15} />
+        {desktopWorkspace === "chart" && (
+          <>
+            <Dropdown
+              align="right"
+              width={238}
+              trigger={(open) => (
+                <IconButton label="Take a snapshot" active={open}>
+                  <Camera size={15} />
+                </IconButton>
+              )}
+            >
+              {(close) => (
+                <div className="py-1">
+                  <div className="px-3 pb-1 pt-1 text-[11px] font-semibold text-ink-muted">
+                    Take a snapshot
+                  </div>
+                  <MenuItem
+                    onClick={() => {
+                      close();
+                      void downloadSnapshot();
+                    }}
+                    className="h-8 text-[12px] font-semibold"
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <Download size={15} />
+                      <span className="truncate">Download image</span>
+                    </span>
+                    <span className="ml-auto shrink-0 text-[10px] text-ink-faint">
+                      Ctrl + Alt + S
+                    </span>
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      close();
+                      void copySnapshot();
+                    }}
+                    className="h-8 text-[12px] font-semibold"
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <Copy size={15} />
+                      <span className="truncate">Copy image</span>
+                    </span>
+                    <span className="ml-auto shrink-0 text-[10px] text-ink-faint">
+                      Ctrl + Shift + S
+                    </span>
+                  </MenuItem>
+                </div>
+              )}
+            </Dropdown>
+            <IconButton
+              label="Toggle watchlist"
+              onClick={toggleRight}
+              active={rightOpen}
+            >
+              {rightOpen ? (
+                <PanelRightClose size={15} />
+              ) : (
+                <PanelRightOpen size={15} />
+              )}
             </IconButton>
-          )}
-        >
-          {(close) => (
-            <div className="py-1">
-              <div className="px-3 pb-1 pt-1 text-[11px] font-semibold text-ink-muted">
-                Take a snapshot
-              </div>
-              <MenuItem
-                onClick={() => {
-                  close();
-                  void downloadSnapshot();
-                }}
-                className="h-8 text-[12px] font-semibold"
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <Download size={15} />
-                  <span className="truncate">Download image</span>
-                </span>
-                <span className="ml-auto shrink-0 text-[10px] text-ink-faint">
-                  Ctrl + Alt + S
-                </span>
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  close();
-                  void copySnapshot();
-                }}
-                className="h-8 text-[12px] font-semibold"
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <Copy size={15} />
-                  <span className="truncate">Copy image</span>
-                </span>
-                <span className="ml-auto shrink-0 text-[10px] text-ink-faint">
-                  Ctrl + Shift + S
-                </span>
-              </MenuItem>
-            </div>
-          )}
-        </Dropdown>
-        <IconButton
-          label="Toggle watchlist"
-          onClick={toggleRight}
-          active={rightOpen}
-        >
-          {rightOpen ? (
-            <PanelRightClose size={15} />
-          ) : (
-            <PanelRightOpen size={15} />
-          )}
-        </IconButton>
-        <IconButton
-          label="Object tree"
-          onClick={() => showRightPanelTab("objects")}
-          active={rightOpen && rightPanelTab === "objects"}
-        >
-          <ListTree size={15} />
-        </IconButton>
+            <IconButton
+              label="Object tree"
+              onClick={() => showRightPanelTab("objects")}
+              active={rightOpen && rightPanelTab === "objects"}
+            >
+              <ListTree size={15} />
+            </IconButton>
+          </>
+        )}
         <IconButton label="Theme" onClick={toggleTheme}>
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>

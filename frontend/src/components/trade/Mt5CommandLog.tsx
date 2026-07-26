@@ -23,7 +23,7 @@ export function Mt5CommandLog() {
       </div>
       <div className="h-14 overflow-auto px-2 py-1 text-[10px]">
         {logs.length === 0 ? (
-          <div className="py-2 text-ink-faint">No MT5 bridge events yet.</div>
+          <div className="py-2 text-ink-faint">No execution events yet.</div>
         ) : (
           logs.slice(0, 12).map((entry) => (
             <div key={entry.id} className="flex gap-2 leading-5">

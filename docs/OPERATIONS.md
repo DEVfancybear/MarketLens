@@ -1,5 +1,9 @@
 # Operations
 
+> Trade execution update (2026-07-26): do not use the legacy Save & Verify MT5,
+> FTMO terminal provisioning, or Connector operations retained later in this
+> historical document. Use `TRADE_PRODUCTION_SECURITY_RUNBOOK.md`.
+
 Day-to-day commands for developing, testing, and deploying the monorepo.
 
 Security hardening and the production release checklist are documented in

@@ -58,7 +58,15 @@ export const pushToastAtom = atom(null, (_get, set, input: PushToastInput) => {
     createdAt: Date.now(),
     duration: input.duration ?? DEFAULT_DURATION,
   };
-  set(toastsAtom, (prev) => [toast, ...prev].slice(0, MAX_TOASTS));
+  set(toastsAtom, (prev) => {
+    const duplicate = prev.some(
+      (current) =>
+        current.title === toast.title &&
+        current.message === toast.message &&
+        current.variant === toast.variant,
+    );
+    return duplicate ? prev : [toast, ...prev].slice(0, MAX_TOASTS);
+  });
 });
 
 export const dismissToastAtom = atom(null, (_get, set, id: string) => {

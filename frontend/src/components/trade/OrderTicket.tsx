@@ -36,7 +36,10 @@ import {
   formatTicketSize,
   parseTicketNumber,
 } from "./tradeTicketMath";
-import { makeClientOrderId, normalizeMt5Side } from "@/services/mt5/protocol";
+import {
+  makeClientCommandId,
+  normalizeOrderSide,
+} from "@/services/execution/identifiers";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { on } from "@/utils/bus";
 import { cn } from "@/utils/cn";
@@ -49,7 +52,11 @@ import { useReplayClientProjection } from "@/store/replayClientStore";
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
 
 /** Order ticket: type, entry/SL/TP, risk%, with live position sizing. */
-export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
+export function OrderTicket({
+  variant = "desktop",
+}: {
+  variant?: "desktop" | "mobile" | "workspace";
+}) {
   const symbol = useAtomValue(symbolAtom);
   const price = useAtomValue(priceAtom);
   const equity = useAtomValue(equityAtom);
@@ -184,10 +191,10 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     const sideMetrics = calculateMt5MetricsForSide(side);
     const volume = normalizePositionVolume(sideMetrics.positionSize, info);
     return {
-      clientOrderId: makeClientOrderId(),
+      clientOrderId: makeClientCommandId(),
       chartSymbol: symbol,
       brokerSymbol: info?.brokerSymbol ?? symbol,
-      side: normalizeMt5Side(side),
+      side: normalizeOrderSide(side),
       type,
       volume,
       price: type === "market" ? undefined : parseTicketNumber(entry),
@@ -228,7 +235,7 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     if (executionMode === "mt5") {
       const info = mt5SymbolInfo[symbol];
       const request: Mt5CloseAllRequest = {
-        clientOrderId: makeClientOrderId("mt5_close_all"),
+        clientOrderId: makeClientCommandId("exec_close_all"),
         chartSymbol: symbol,
         brokerSymbol: info?.brokerSymbol ?? symbol,
       };
@@ -310,9 +317,7 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
     executionMode === "mt5"
       ? [
           `MT5 max lot: ${sizingSymbolInfo.maxLot}`,
-          sizingSymbolInfo.maxLotReason ? `cap: ${sizingSymbolInfo.maxLotReason}` : undefined,
           sizingSymbolInfo.brokerMaxLot != null ? `broker max: ${sizingSymbolInfo.brokerMaxLot}` : undefined,
-          sizingSymbolInfo.bridgeMaxLot != null ? `bridge max: ${sizingSymbolInfo.bridgeMaxLot}` : undefined,
           "Risk = stop loss + round-trip commission",
           "Volume is floored to the broker lot step",
         ]
@@ -344,7 +349,11 @@ export function OrderTicket({ variant = "desktop" }: { variant?: "desktop" | "mo
   return (
     <div className={cn(
       "flex shrink-0 flex-col bg-terminal-panel",
-      variant === "desktop" ? "w-[272px] border-r border-terminal-border" : "mobile-order-ticket w-full",
+      variant === "desktop"
+        ? "w-[272px] border-r border-terminal-border"
+        : variant === "workspace"
+          ? "h-full w-[336px] overflow-y-auto border-l border-terminal-border"
+          : "mobile-order-ticket w-full",
     )}>
       <div className="flex h-11 items-center justify-between border-b border-terminal-border bg-terminal-panel-2/60 px-3">
         <div className="flex items-center gap-2">

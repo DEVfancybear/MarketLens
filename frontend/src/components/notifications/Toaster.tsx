@@ -1,8 +1,8 @@
 "use client";
 /**
- * Toaster (Phase 2) — fixed top-right stack of transient toasts from
+ * Toaster (Phase 2) — fixed bottom-right stack of transient toasts from
  * `toastStore`. Each toast auto-dismisses after its `duration`; hovering is not
- * required. Responsive: on narrow screens it spans the width near the top.
+ * required. Responsive: on narrow screens it spans the width near the bottom.
  * Mounted once at the terminal root.
  */
 import { useEffect } from "react";

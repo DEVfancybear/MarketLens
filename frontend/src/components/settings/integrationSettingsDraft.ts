@@ -7,9 +7,6 @@ import type {
 export const APP_SETTINGS_OVERLAY_STACK_CLASS = "z-[1400]";
 
 export type IntegrationDraftField =
-  | "mt5.login"
-  | "mt5.server"
-  | "mt5.password"
   | "telegram.chatId"
   | "telegram.botToken"
   | "telegram.enabled"
@@ -18,7 +15,6 @@ export type IntegrationDraftField =
 
 export function createEmptyIntegrationDraft(): IntegrationSettingsWrite {
   return {
-    mt5: { login: "", server: "", password: "", clearPassword: false },
     telegram: {
       chatId: "",
       botToken: "",
@@ -39,14 +35,6 @@ export function mergeLoadedIntegrationSettings(
   dirtyFields: ReadonlySet<IntegrationDraftField>,
 ): IntegrationSettingsWrite {
   return {
-    mt5: {
-      login: dirtyFields.has("mt5.login") ? current.mt5.login : loaded.mt5.login,
-      server: dirtyFields.has("mt5.server") ? current.mt5.server : loaded.mt5.server,
-      password: dirtyFields.has("mt5.password") ? current.mt5.password : "",
-      clearPassword: dirtyFields.has("mt5.password")
-        ? current.mt5.clearPassword
-        : false,
-    },
     telegram: {
       chatId: dirtyFields.has("telegram.chatId")
         ? current.telegram.chatId

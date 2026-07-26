@@ -38,12 +38,12 @@ test("network failures explain backend connectivity", () => {
   assert.match(described.message, /NEXT_PUBLIC_API_BASE_URL/);
 });
 
-test("timeouts explain backend and MT5 bridge readiness", () => {
+test("timeouts explain backend and Rust execution gateway readiness", () => {
   const timeout = new Error("Request timed out");
   timeout.name = "TimeoutError";
   const described = describeUserFacingError(timeout, "History load failed");
 
-  assert.match(described.message, /Go API and MT5 bridge/);
+  assert.match(described.message, /Go API and Rust execution gateway/);
 });
 
 test("Firebase auth codes map to setup actions", () => {

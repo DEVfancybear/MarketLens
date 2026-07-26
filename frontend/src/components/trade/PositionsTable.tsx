@@ -7,12 +7,13 @@ import {
 } from "@/store/tradeStore";
 import {
   closeMt5PositionAtom,
+  cancelMt5OrderAtom,
   executionModeAtom,
   mt5PendingOrdersAtom,
   mt5PositionsAtom,
 } from "@/store/mt5Store";
 import { getMarketSymbol } from "@/services/market-data/symbols";
-import { makeClientOrderId } from "@/services/mt5/protocol";
+import { makeClientCommandId } from "@/services/execution/identifiers";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -30,6 +31,7 @@ export function PositionsTable() {
   const closePosition = useSetAtom(closePositionAtom);
   const cancelPending = useSetAtom(cancelPendingAtom);
   const closeMt5Position = useSetAtom(closeMt5PositionAtom);
+  const cancelMt5Order = useSetAtom(cancelMt5OrderAtom);
   const replayTrading = useReplayTrading();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
 
@@ -64,7 +66,7 @@ export function PositionsTable() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-3 py-8 text-center text-ink-faint">
-                  No MT5 positions. Connect the bridge and send a live order from the ticket.
+                  No broker positions. Connect the EA and send a live order from the ticket.
                 </td>
               </tr>
             )}
@@ -92,7 +94,29 @@ export function PositionsTable() {
                       {order.tp ? fmtPrice(order.tp, prec) : "-"}
                     </td>
                     <td className="text-right text-ink-faint">-</td>
-                    <td />
+                    <td className="text-right">
+                      <button
+                        onClick={() => {
+                          void requestConfirm({
+                            title: `Cancel pending order ${order.ticket}?`,
+                            description:
+                              "The cancellation will be sent to the broker account.",
+                            confirmLabel: "Cancel order",
+                            tone: "danger",
+                          }).then((accepted) => {
+                            if (!accepted) return;
+                            cancelMt5Order({
+                              clientOrderId: makeClientCommandId("exec_cancel"),
+                              ticket: order.ticket,
+                            });
+                          });
+                        }}
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
+                        title="Cancel pending order"
+                      >
+                        <Ban size={12} />
+                      </button>
+                    </td>
                   </tr>
                 );
               }
@@ -143,7 +167,7 @@ export function PositionsTable() {
                         }).then((accepted) => {
                           if (!accepted) return;
                           closeMt5Position({
-                            clientOrderId: makeClientOrderId("mt5_close"),
+                            clientOrderId: makeClientCommandId("exec_close"),
                             ticket: position.ticket,
                           });
                         });

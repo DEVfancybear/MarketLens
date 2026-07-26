@@ -894,7 +894,7 @@ body {
 
 .toast-stack {
   right: max(12px, env(safe-area-inset-right));
-  top: max(12px, env(safe-area-inset-top));
+  bottom: max(12px, env(safe-area-inset-bottom));
   max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
   overflow-x: hidden;
   overflow-y: auto;

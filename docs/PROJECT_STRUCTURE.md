@@ -1,5 +1,10 @@
 # Project Structure
 
+> Trade execution update (2026-07-26): current paths are
+> `backend/execution`, `backend/internal/execution`, and
+> `backend/bridge/mt5_ea`. Legacy verifier/Connector paths mentioned below have
+> been deleted.
+
 This repository is organized as a monorepo. The frontend and backend are independent packages with
 separate runtimes, dependencies, docs, and deployment paths.
 

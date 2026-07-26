@@ -62,8 +62,8 @@ export function LiveOrderConfirmDialog({
             </div>
           )}
           <div className="rounded-xl border border-bear/30 bg-bear/10 px-3 py-2.5 text-xs leading-5 text-bear">
-            MT5 bridge state is authoritative. The app will wait for bridge events before updating
-            live positions.
+            The broker account is authoritative. The app waits for signed EA execution events
+            before updating live positions.
           </div>
         </div>
         <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border p-4 pb-[max(16px,env(safe-area-inset-bottom))]">

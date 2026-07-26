@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +26,10 @@ type Config struct {
 	AuthCookieSecure *bool
 
 	DatabaseURL string
+
+	ExecutionEAURL      string
+	ExecutionAdminURL   string
+	ExecutionAdminToken string
 
 	AuthJWTSecret          string
 	PushWorkerSecret       string
@@ -59,11 +62,6 @@ type Config struct {
 	MT5BridgeReconnectMin   time.Duration
 	MT5BridgeReconnectMax   time.Duration
 	MT5TerminalPath         string
-	MT5VerifyPython         string
-	MT5VerifyManagedPython  string
-	MT5VerifyScript         string
-	MT5VerifyTerminalPath   string
-	MT5VerifyTimeout        time.Duration
 
 	ReplayEngineEnabled    bool
 	ReplayMaxBars          int
@@ -105,7 +103,6 @@ func Load() (Config, error) {
 
 	env := getEnv("APP_ENV", "development")
 	authCookieSecure := getEnvBool("AUTH_COOKIE_SECURE", env != "development")
-	managedMT5Python := managedMT5VerifyPython()
 	corsAllowedOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
 	alertEvaluatorEnabled := getEnvBool("ALERT_EVALUATOR_ENABLED", true)
 	cfg := Config{
@@ -113,6 +110,9 @@ func Load() (Config, error) {
 		Env:                    env,
 		AuthCookieSecure:       &authCookieSecure,
 		DatabaseURL:            os.Getenv("DATABASE_URL"),
+		ExecutionEAURL:         getEnv("EXECUTION_EA_URL", "http://127.0.0.1:8790"),
+		ExecutionAdminURL:      getEnv("EXECUTION_ADMIN_URL", "http://127.0.0.1:8791"),
+		ExecutionAdminToken:    os.Getenv("EXECUTION_ADMIN_TOKEN"),
 		AuthJWTSecret:          os.Getenv("AUTH_JWT_SECRET"),
 		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
 		AlertEvaluatorEnabled:  alertEvaluatorEnabled,
@@ -142,11 +142,6 @@ func Load() (Config, error) {
 		MT5BridgeReconnectMin:     getEnvDuration("MT5_BRIDGE_RECONNECT_MIN", time.Second),
 		MT5BridgeReconnectMax:     getEnvDuration("MT5_BRIDGE_RECONNECT_MAX", 30*time.Second),
 		MT5TerminalPath:           strings.TrimSpace(os.Getenv("MT5_TERMINAL_PATH")),
-		MT5VerifyPython:           resolveMT5VerifyPython(os.Getenv("MT5_VERIFY_PYTHON"), managedMT5Python),
-		MT5VerifyManagedPython:    managedMT5Python,
-		MT5VerifyScript:           resolveMT5VerifyScript(os.Getenv("MT5_VERIFY_SCRIPT")),
-		MT5VerifyTerminalPath:     strings.TrimSpace(os.Getenv("MT5_VERIFY_TERMINAL_PATH")),
-		MT5VerifyTimeout:          getEnvDuration("MT5_VERIFY_TIMEOUT", 30*time.Second),
 		ReplayEngineEnabled:       getEnvBool("REPLAY_ENGINE_ENABLED", false),
 		ReplayMaxBars:             getEnvInt("REPLAY_MAX_BARS_PER_TRACK", 5000),
 		ReplayMaxTracks:           getEnvInt("REPLAY_MAX_TRACKS_PER_SESSION", 4),
@@ -161,91 +156,6 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
-}
-
-// Production builds provision backend/.venv-mt5. Resolve it from the backend
-// working directory, the repository root, or next to bin/api.exe so a clean
-// Windows server does not depend on a globally registered `python` command.
-func managedMT5VerifyPython() string {
-	return firstBackendRuntimeFile(filepath.Join(".venv-mt5", "Scripts", "python.exe"))
-}
-
-func resolveMT5VerifyPython(configured, managed string) string {
-	configured = strings.TrimSpace(configured)
-	// Older deployments explicitly stored the generic `python` command. Treat
-	// those aliases as automatic selection so the build-managed venv wins.
-	if configured == "" || isBarePythonAlias(configured) {
-		if managed != "" {
-			return managed
-		}
-		if configured != "" {
-			return configured
-		}
-		return "python"
-	}
-	if filepath.IsAbs(configured) {
-		return filepath.Clean(configured)
-	}
-	if path := firstBackendRuntimeFile(configured); path != "" {
-		return path
-	}
-	return configured
-}
-
-func isBarePythonAlias(value string) bool {
-	if filepath.Base(value) != value || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `/\`) {
-		return false
-	}
-	switch strings.ToLower(value) {
-	case "python", "python.exe", "py", "py.exe":
-		return true
-	default:
-		return false
-	}
-}
-
-func resolveMT5VerifyScript(configured string) string {
-	configured = strings.TrimSpace(configured)
-	if configured != "" {
-		if filepath.IsAbs(configured) {
-			return filepath.Clean(configured)
-		}
-		if path := firstBackendRuntimeFile(configured); path != "" {
-			return path
-		}
-		return configured
-	}
-	if path := firstBackendRuntimeFile(filepath.Join("bridge", "ftmo_mt5", "verify_account.py")); path != "" {
-		return path
-	}
-	return filepath.Join("bridge", "ftmo_mt5", "verify_account.py")
-}
-
-func firstBackendRuntimeFile(relativePath string) string {
-	candidates := []string{
-		relativePath,
-		filepath.Join("backend", relativePath),
-	}
-	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "..", relativePath))
-	}
-	seen := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		absolute, err := filepath.Abs(candidate)
-		if err != nil {
-			continue
-		}
-		absolute = filepath.Clean(absolute)
-		if _, ok := seen[absolute]; ok {
-			continue
-		}
-		seen[absolute] = struct{}{}
-		info, err := os.Stat(absolute)
-		if err == nil && !info.IsDir() {
-			return absolute
-		}
-	}
-	return ""
 }
 
 // AuthCookiesSecure returns the effective Secure flag for backend session
@@ -287,6 +197,17 @@ func (c Config) validate() error {
 			return fmt.Errorf("AUTH_REFRESH_TTL must be longer than AUTH_ACCESS_TTL and at most 2160h")
 		}
 	}
+	if strings.TrimSpace(c.ExecutionAdminToken) != "" {
+		if len(c.ExecutionAdminToken) < 32 {
+			return fmt.Errorf("EXECUTION_ADMIN_TOKEN must contain at least 32 characters")
+		}
+		if err := validateLoopbackServiceURL("EXECUTION_EA_URL", c.ExecutionEAURL); err != nil {
+			return err
+		}
+		if err := validateLoopbackServiceURL("EXECUTION_ADMIN_URL", c.ExecutionAdminURL); err != nil {
+			return err
+		}
+	}
 
 	storageValues := []string{c.ObjectStorageBucket, c.ObjectStorageAccessKey, c.ObjectStorageSecretKey}
 	storageSet := 0
@@ -309,6 +230,7 @@ func (c Config) validate() error {
 		"FIREBASE_CLIENT_EMAIL": c.FirebaseClientEmail,
 		"FIREBASE_PRIVATE_KEY":  c.FirebasePrivateKey,
 		"PUSH_WORKER_SECRET":    c.PushWorkerSecret,
+		"EXECUTION_ADMIN_TOKEN": c.ExecutionAdminToken,
 	}
 	if c.AlertEvaluatorEnabled {
 		required["ALERT_EVALUATOR_URL"] = c.AlertEvaluatorURL
@@ -337,6 +259,21 @@ func (c Config) validate() error {
 	}
 	if !c.AuthCookiesSecure() {
 		return fmt.Errorf("AUTH_COOKIE_SECURE cannot be disabled in production")
+	}
+	return nil
+}
+
+func validateLoopbackServiceURL(name, raw string) error {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" || u.Hostname() == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("%s must be an absolute loopback HTTP URL", name)
+	}
+	host := strings.ToLower(u.Hostname())
+	ip := net.ParseIP(host)
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return fmt.Errorf("%s must use localhost or a loopback IP", name)
 	}
 	return nil
 }

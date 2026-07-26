@@ -1,5 +1,10 @@
 # Backend Documentation
 
+> Trade execution documentation moved to
+> `../../docs/TRADE_EXECUTION_ARCHITECTURE.md` and
+> `../../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`. Older verifier/Connector
+> references in phase snapshots are historical and are not runtime guidance.
+
 Documentation for the SMC Trading Terminal Go API server.
 
 Backend framework decision: Fiber. Current code includes health/readiness,

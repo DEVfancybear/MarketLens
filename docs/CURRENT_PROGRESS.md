@@ -1,5 +1,9 @@
 # Current Progress
 
+> Trade execution update (2026-07-26): legacy MT5 verification/Connector
+> milestones below are historical. Current implementation and remaining native
+> venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
+
 Last updated: 2026-07-26
 
 ## Current Milestone

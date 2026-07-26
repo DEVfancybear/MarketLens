@@ -92,7 +92,7 @@ export function describeUserFacingError(
     return {
       title,
       message:
-        "The backend did not respond in time. Check that the Go API and MT5 bridge are running, then try again.",
+        "The backend did not respond in time. Check that the Go API and Rust execution gateway are running, then try again.",
       technical: maybe.message,
     };
   }

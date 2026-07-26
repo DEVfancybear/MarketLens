@@ -28,7 +28,7 @@ import {
 } from "@/store/chartStore";
 import { placeOrderAtom, setOrderPrefillAtom } from "@/store/tradeStore";
 import { executionModeAtom } from "@/store/mt5Store";
-import { setBottomTabAtom, logAtom } from "@/store/uiStore";
+import { logAtom, setDesktopWorkspaceAtom } from "@/store/uiStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
 import {
   watchlistSymbolsAtom,
@@ -94,7 +94,7 @@ export function ChartContextMenu({
   const clearIndicators = useSetAtom(clearIndicatorsAtom);
   const place = useSetAtom(placeOrderAtom);
   const setOrderPrefill = useSetAtom(setOrderPrefillAtom);
-  const setBottomTab = useSetAtom(setBottomTabAtom);
+  const setDesktopWorkspace = useSetAtom(setDesktopWorkspaceAtom);
   const log = useSetAtom(logAtom);
   const createAlert = useAlertStore((s) => s.createAlert);
   const replayActive = Boolean(useReplayClientProjection().snapshot);
@@ -148,7 +148,7 @@ export function ChartContextMenu({
   const prefillOrSimOrder = (side: "long" | "short", type: "limit" | "stop") => {
     if (executionMode === "mt5") {
       setOrderPrefill({ source: "context-menu", side, type, price: state.price });
-      setBottomTab("trade");
+      if (!mobile) setDesktopWorkspace("trade");
       return;
     }
     place({
@@ -158,7 +158,7 @@ export function ChartContextMenu({
       price: state.price,
       quantity: 1,
     });
-    setBottomTab("trade");
+    if (!mobile) setDesktopWorkspace("trade");
   };
 
   const items: MenuItem[] = [
@@ -237,7 +237,7 @@ export function ChartContextMenu({
           type: "limit",
           price: state.price,
         });
-        setBottomTab("trade");
+        if (!mobile) setDesktopWorkspace("trade");
       }),
     },
     { divider: true },

@@ -1,124 +1,97 @@
 # SMC Trading Terminal Backend
 
-The backend consists of four runtime surfaces:
+The production backend has four deliberately separated surfaces:
 
-1. **Go API** - the primary HTTP API server. Fiber is the selected framework target.
-2. **Python FTMO/MT5 Bridge** - a sidecar WebSocket service for broker/order integration.
-3. **MT5 Tick Stream** - a local Python WebSocket bridge plus Go consumer for realtime MT5 market
-   ticks.
-4. **MT5 Credential Verifier** - a short-lived Python helper launched by the authenticated Go API
-   to verify one user's saved login/server/password.
+1. **Go API/BFF (`:8080`)** authenticates users, injects the owner identity into
+   execution calls, owns ordinary CRUD, replay, alerts, and browser market data.
+2. **Rust execution gateway (`:8790`, `:8791`)** owns deterministic risk checks,
+   copy routing, per-target idempotency, durable commands/events, and venue
+   adapter boundaries. Both listeners bind to loopback. Port `8791` is internal
+   admin traffic only; Go relays an exact allow-list of public EA routes to
+   `8790`.
+3. **Common MT5 EA** is attached once per terminal/account. It supports FTMO,
+   Exness, and other MT5 brokers without broker-specific binaries or passwords.
+4. **MT5 market-data sidecar (`:8765`)** is private and read-only. It is not an
+   order connector and cannot authorize execution.
 
-The two Python bridges run as separate processes alongside the Go API. The verifier is part of the
-`POST /api/v1/settings/integrations/verify/mt5` request path, receives secrets only over stdin, and
-returns a bounded sanitized account result.
+Demo and Live MT5 accounts follow the same path. A broker's own
+`trade_allowed`, Algo Trading, symbol rules, and the server-side risk policy
+still fail closed.
 
-Backend framework decision: **Fiber**. The active Go API uses Fiber handlers and route groups.
+## Production
 
-## Quick Start
+From the repository root, the only normal production command is:
 
-### Go API
-
-```bash
-# Install dependencies
-go mod tidy
-
-# Run the server
-go run ./cmd/api
+```powershell
+.\run-backend-production.ps1
 ```
 
-Default server: `http://localhost:8080`
+The runner builds both `backend/bin/api.exe` and
+`backend/bin/execution-gateway.exe`, applies migrations before replacement,
+starts the private market-data process, starts Rust before Go, and verifies all
+health gates. See the repository `AGENTS.md` for recovery-switch policy.
 
-On the Windows production host, **build backend production** and **run backend** both mean running
-`.\run-backend-production.ps1` from the repository root. It is the canonical pull/build/migrate/
-restart/health-check entrypoint; direct commands in this README are for development or recovery.
+Required execution configuration:
 
-### Python MT5 Bridge
-
-Run these commands from `backend/`:
-
-```bash
-# Install dependencies
-python -m pip install -r bridge/ftmo_mt5/requirements.txt
-
-# Dry-run (no MT5 required)
-python -m bridge.ftmo_mt5.service
+```dotenv
+DATABASE_URL=postgres://...
+EXECUTION_GATEWAY_BIND=127.0.0.1:8790
+EXECUTION_ADMIN_BIND=127.0.0.1:8791
+EXECUTION_EA_URL=http://127.0.0.1:8790
+EXECUTION_ADMIN_URL=http://127.0.0.1:8791
+EXECUTION_ADMIN_TOKEN=at-least-32-random-characters
+EXECUTION_DATABASE_MAX_CONNECTIONS=10
 ```
 
-### MT5 Tick Stream
+The public EA URL is the existing Go API path, for example
+`https://api.tradingterminal.io.vn/execution-ea`. Go forwards only the exact
+health/session/poll/event allow-list to `:8790`. Never publish either Rust port
+directly or place `EXECUTION_ADMIN_TOKEN` in the browser or EA.
 
-Run these commands from `backend/` on a Windows host with MT5 installed:
+## MT5 account setup
 
-```bash
-# Install stream bridge dependencies
-python -m pip install -r bridge/mt5_stream/requirements.txt
+1. Copy `bridge/mt5_ea/SMCExecutionEA.ex5` into the terminal's Experts folder.
+2. Add the public EA URL to MT5's WebRequest allow-list.
+3. Attach the EA to one chart and enter the five-minute one-time pairing token
+   generated in the Trade workspace.
+4. Enable Algo Trading.
 
-# Start local MT5 tick WebSocket bridge on ws://localhost:8765
-python -m bridge.mt5_stream.mt5_server
+MT5 supports one active account per terminal, so run one terminal per account.
+The same EA binary is used for all brokers. The derived account identity is
+tenant-bound and stable for `owner + server + login`; raw credentials are never
+stored.
 
-# In a second terminal, consume the stream from Go
-go run ./cmd/mt5-stream
+## Development checks
 
-# Or run the API and let FE call /api/v1/mt5/symbols, /stream, /ticks, and /history
-go run ./cmd/api
+```powershell
+go test ./internal/execution ./internal/settings ./internal/config ./internal/httpserver ./cmd/api
 ```
 
-The frontend reads the full MT5 catalog from `GET /api/v1/mt5/symbols`, live watchlist prices from
-the browser WebSocket `GET /api/v1/mt5/stream` upgrade, one-off quote snapshots from
-`GET /api/v1/mt5/ticks`, and chart candles from on-demand `GET /api/v1/mt5/history` responses.
-It never connects to the Python bridge directly.
+```powershell
+cargo test --manifest-path execution/Cargo.toml --workspace --all-targets
+```
 
-### MT5 Credential Verifier
+Compile the EA with MetaEditor and require `0 errors, 0 warnings`.
 
-Run `build-production.ps1` from the repository root to provision `backend/.venv-mt5` and its MT5
-dependencies. Leave `MT5_VERIFY_PYTHON` and `MT5_VERIFY_SCRIPT` unset unless overriding them; the
-Go API resolves the production venv and verifier script automatically. The canonical production
-runner discovers a broker terminal and maintains a separate portable verifier clone under
-`backend/.data`. If no FTMO installation exists, it downloads and validates FTMO's officially
-signed installer first; `MT5_VERIFY_TERMINAL_PATH` remains an optional operator override.
-`MT5_VERIFY_TIMEOUT` still applies. The helper opens no port. Existing saved credentials remain
-configured but unverified until the signed-in user selects **Connect & Verify MT5** once.
-
-## Configuration
-
-### Go API
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PORT` | `8080` | HTTP listen port |
-| `APP_ENV` | `development` | Runtime environment |
-
-Database, authentication, replay, MT5, and Phase 11 object-storage variables are documented in
-[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Journal CRUD works without object storage;
-screenshot uploads require an S3/R2/MinIO bucket with browser CORS enabled.
-
-### Python MT5 Bridge
-
-See `bridge/ftmo_mt5/README.md` for full configuration reference.
-
-### MT5 Tick Stream
-
-See `bridge/mt5_stream/README.md` for full configuration reference.
-
-## Project Structure
+## Structure
 
 ```text
 backend/
-  cmd/api/main.go              # Go API entry point
-  internal/
-    config/config.go           # Environment config
-    httpserver/server.go       # HTTP app and server setup
-    health/handler.go          # Health-check endpoint
-    middleware/                # Shared HTTP middleware
-    settings/                  # User integrations + authenticated Verify endpoint
-    mt5verify/                 # Verifier subprocess adapter
-    journal/                   # Phase 11 journal + screenshot API/repository
-    storage/                   # S3-compatible pre-signed URL signer
-  bridge/                      # Python MT5 WebSocket bridge (sidecar)
-    ftmo_mt5/                  # FTMO broker integration
-    mt5_stream/                # Local MT5 tick streaming bridge
-  cmd/mt5-stream/main.go       # Go MT5 tick stream consumer
-  docs/                        # Backend architecture and API docs
+  cmd/api/                    Go API entry point
+  internal/execution/         authenticated BFF for Rust admin API
+  execution/
+    crates/execution-domain/  versioned broker-neutral types
+    crates/execution-engine/  deterministic risk and copy routing
+    crates/execution-adapters/ venue adapter contract
+    crates/execution-gateway/ durable EA/admin gateway
+  bridge/mt5_ea/              common broker-neutral MT5 EA
+  bridge/mt5_stream/          private read-only market-data process
+  migrations/0026_*           execution platform schema
+  migrations/0027_*           irreversible legacy credential removal
 ```
 
-New backend code should use Fiber handlers, route groups, and middleware after Phase 0 migration.
+The historical FTMO Connector/verifier code and routes no longer exist.
+
+See `../docs/TRADE_EXECUTION_ARCHITECTURE.md` and
+`../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md` for the detailed broker-neutral
+design, threat model, production gates, and native-venue enablement policy.

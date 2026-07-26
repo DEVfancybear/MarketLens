@@ -1,5 +1,10 @@
 # HANDOFF
 
+> Trade execution handoff (2026-07-26): never restore or follow the old FTMO
+> verifier/Connector workflow below. Continue from
+> `TRADE_EXECUTION_ARCHITECTURE.md` and
+> `TRADE_PRODUCTION_SECURITY_RUNBOOK.md`.
+
 _Post-monorepo update 2026-07-06._
 
 This handoff keeps the full pre-`9691bd1` history below. Apply these path changes before following

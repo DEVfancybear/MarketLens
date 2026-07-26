@@ -8,12 +8,11 @@ import { useMt5SymbolCatalog } from "@/hooks/useMt5SymbolCatalog";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { usePushAlertSync } from "@/hooks/usePushAlertSync";
 import { usePushTriggerReconcile } from "@/hooks/usePushTriggerReconcile";
-import { useMt5Bridge } from "@/hooks/useMt5Bridge";
-import { useMt5IntegrationAccess } from "@/hooks/useMt5IntegrationAccess";
 import { useAuthSession } from "@/hooks/useAuthSession";
 import { useWorkspaceBootstrap } from "@/hooks/useWorkspaceBootstrap";
 import { useChartLayoutPersistence } from "@/hooks/useChartLayoutPersistence";
 import { useNotificationDeepLink } from "@/hooks/useNotificationDeepLink";
+import { useExecutionRegistry } from "@/hooks/useExecutionRegistry";
 import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
 import { hydratePushAtom } from "@/store/notificationStore";
@@ -36,9 +35,8 @@ export function GlobalRuntime() {
   useAuthSession(); // bridges Firebase Google auth -> authStore (+ best-effort backend session)
   useWorkspaceBootstrap(); // applies backend settings/watchlists after backend auth
   useChartLayoutPersistence(); // autosaves/restores the active multi-chart projection
-  useMt5IntegrationAccess(); // loads verified MT5 access for the current backend user only
-  useMt5Bridge(); // connects the host-local bridge only for a verified user
   useNotificationDeepLink(); // routes notification clicks to the alert symbol
+  useExecutionRegistry(); // hydrates multi-account execution state through authenticated BFF
 
   // Journal is intentionally lazy-loaded by its panel (Phase 11 can include
   // screenshot metadata); the small alert stores still hydrate globally.

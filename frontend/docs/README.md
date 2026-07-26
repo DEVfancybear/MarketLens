@@ -1,5 +1,10 @@
 # Frontend Documentation
 
+> Trade execution update (2026-07-26): removed MT5 verification/Connector
+> documents in older index rows are superseded by
+> `../../docs/TRADE_EXECUTION_ARCHITECTURE.md`. Trade is now a top-level
+> workspace.
+
 Architecture and maintenance documentation for the TradingView-style frontend.
 
 ## Core Architecture

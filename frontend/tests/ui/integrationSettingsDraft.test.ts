@@ -10,46 +10,44 @@ import type { IntegrationSettings } from "../../src/services/api/resources/integ
 
 const loaded: IntegrationSettings = {
   deliveryToken: "delivery-token",
-  mt5: {
-    login: "server-login",
-    server: "Broker-Demo",
-    passwordConfigured: true,
-    verified: false,
-    verifiedAt: null,
+  telegram: {
+    chatId: "100",
+    botTokenConfigured: true,
+    enabled: true,
   },
-  telegram: { chatId: "42", botTokenConfigured: true, enabled: true },
-  discord: { webhookConfigured: true, enabled: true },
+  discord: {
+    webhookConfigured: true,
+    enabled: true,
+  },
 };
 
-test("late integration loads preserve fields already edited by the user", () => {
+test("late hydration preserves edited notification fields", () => {
   const current = createEmptyIntegrationDraft();
-  current.mt5.login = "typed-login";
-  current.mt5.server = "typed-server";
-  const dirty = new Set<IntegrationDraftField>(["mt5.login", "mt5.server"]);
+  current.telegram.chatId = "typed-chat";
+  current.discord.enabled = false;
+  const dirty = new Set<IntegrationDraftField>([
+    "telegram.chatId",
+    "discord.enabled",
+  ]);
 
   const merged = mergeLoadedIntegrationSettings(current, loaded, dirty);
 
-  assert.equal(merged.mt5.login, "typed-login");
-  assert.equal(merged.mt5.server, "typed-server");
-  assert.equal(merged.telegram.chatId, "42");
+  assert.equal(merged.telegram.chatId, "typed-chat");
   assert.equal(merged.telegram.enabled, true);
-  assert.equal(merged.discord.enabled, true);
+  assert.equal(merged.discord.enabled, false);
 });
 
-test("loaded settings reset unsaved secrets without clearing active secret edits", () => {
+test("late hydration preserves an edited secret without exposing stored secrets", () => {
   const current = createEmptyIntegrationDraft();
-  current.mt5.password = "new-password";
-  current.telegram.botToken = "stale-token";
-  current.telegram.clearBotToken = true;
+  current.telegram.botToken = "new-token";
+  current.telegram.clearBotToken = false;
 
   const merged = mergeLoadedIntegrationSettings(
     current,
     loaded,
-    new Set<IntegrationDraftField>(["mt5.password"]),
+    new Set<IntegrationDraftField>(["telegram.botToken"]),
   );
 
-  assert.equal(merged.mt5.password, "new-password");
-  assert.equal(merged.telegram.botToken, "");
-  assert.equal(merged.telegram.clearBotToken, false);
+  assert.equal(merged.telegram.botToken, "new-token");
   assert.equal(merged.discord.webhookUrl, "");
 });

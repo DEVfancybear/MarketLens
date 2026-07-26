@@ -1,5 +1,10 @@
 # Backend Architecture
 
+> Execution note (2026-07-26): legacy `mt5verify`, FTMO Connector, and stored
+> terminal-credential sections below are superseded and must not be followed.
+> The current Go BFF + Rust gateway + common EA design is in
+> `../../docs/TRADE_EXECUTION_ARCHITECTURE.md`.
+
 ## Overview
 
 The backend has four relevant runtime components:

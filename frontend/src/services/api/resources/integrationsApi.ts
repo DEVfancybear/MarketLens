@@ -1,53 +1,19 @@
 import { getJson, postJson, putJson } from "@/services/api/client";
-import { MT5_VERIFICATION_REQUEST_TIMEOUT_MS } from "@/services/api/timeouts";
-
-export { MT5_VERIFICATION_REQUEST_TIMEOUT_MS } from "@/services/api/timeouts";
 
 export interface IntegrationSettings {
   deliveryToken: string;
-  mt5: {
-    login: string;
-    server: string;
-    passwordConfigured: boolean;
-    verified: boolean;
-    verifiedAt: string | null;
-  };
   telegram: { chatId: string; botTokenConfigured: boolean; enabled: boolean };
   discord: { webhookConfigured: boolean; enabled: boolean };
 }
 
-export interface Mt5VerifiedAccount {
-  login: string;
-  server: string;
-  name?: string;
-  company?: string;
-  currency?: string;
-  leverage?: number;
-  tradeAllowed: boolean;
-}
-
-export interface Mt5VerificationResult {
-  ok: true;
-  mt5: IntegrationSettings["mt5"];
-  account: Mt5VerifiedAccount;
-}
-
-export interface Mt5ConnectorTicket {
-  ok: true;
-  ticket: string;
-  expiresAt: number;
-  account: { login: string; server: string };
-}
-
 export interface IntegrationSettingsWrite {
-  mt5: { login: string; server: string; password: string; clearPassword: boolean };
   telegram: { chatId: string; botToken: string; enabled: boolean; clearBotToken: boolean };
   discord: { webhookUrl: string; enabled: boolean; clearWebhook: boolean };
 }
 
 let pendingSettingsRequest: Promise<IntegrationSettings> | null = null;
 
-/** Coalesce the global MT5 access hydration and a simultaneously opened dialog. */
+/** Coalesce concurrent notification integration settings requests. */
 export function getIntegrationSettings(): Promise<IntegrationSettings> {
   if (pendingSettingsRequest) return pendingSettingsRequest;
   const request = getJson<IntegrationSettings>("settings/integrations");
@@ -69,24 +35,5 @@ export const saveIntegrationSettings = (body: IntegrationSettingsWrite) => {
   return putJson<IntegrationSettings>("settings/integrations", body);
 };
 
-export const verifyMt5Integration = () => {
-  invalidateIntegrationSettingsRequest();
-  return postJson<Mt5VerificationResult>(
-    "settings/integrations/verify/mt5",
-    undefined,
-    {
-      timeout: MT5_VERIFICATION_REQUEST_TIMEOUT_MS,
-      retry: { limit: 0 },
-    },
-  );
-};
-
-/** Issue a one-use pairing ticket for the signed-in user's verified account. */
-export const createMt5ConnectorTicket = () =>
-  postJson<Mt5ConnectorTicket>(
-    "settings/integrations/mt5/connector-ticket",
-    undefined,
-    { retry: { limit: 0 } },
-  );
 export const testIntegration = (channel: "telegram" | "discord") => postJson<{ok:boolean;channel:string}>(`settings/integrations/test/${channel}`);
 export const deliverIntegrationAlert = (body: unknown) => postJson<{ok:boolean;results:Array<{ok:boolean;channel:string;error?:string}>}>("settings/integrations/deliver", body);

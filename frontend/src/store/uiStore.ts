@@ -6,6 +6,7 @@ import { backendSessionAtom } from "./authStore";
 import { DEFAULT_PANELS, DEFAULT_UI_SETTINGS } from "./workspaceDefaults";
 
 export type Theme = "dark" | "light";
+export type DesktopWorkspace = "chart" | "trade";
 
 export function applyThemeToDocument(theme: Theme): void {
   if (typeof document === "undefined") return;
@@ -19,7 +20,6 @@ export type RightPanelTab = "watchlist" | "objects";
 /** Which bottom-panel tab is active. */
 export type BottomTab =
   | "replay"
-  | "trade"
   | "journal"
   | "analytics"
   | "pine"
@@ -37,6 +37,7 @@ export interface PanelSizes {
 /** Shape exposed by the compatibility hook / getUIState(). */
 export interface UIState {
   theme: Theme;
+  desktopWorkspace: DesktopWorkspace;
   panels: PanelSizes;
   bottomTab: BottomTab;
   rightOpen: boolean;
@@ -68,6 +69,7 @@ type PersistedUISettings = Pick<
 // Individual state atoms
 // ---------------------------------------------------------------------------
 export const themeAtom = atom<Theme>("dark");
+export const desktopWorkspaceAtom = atom<DesktopWorkspace>("chart");
 export const panelsAtom = atom<PanelSizes>({ ...DEFAULT_PANELS });
 export const bottomTabAtom = atom<BottomTab>("replay");
 export const rightOpenAtom = atom<boolean>(true);
@@ -92,6 +94,7 @@ const logIdAtom = atom(0);
 // ---------------------------------------------------------------------------
 export const uiStateAtom = atom<UIState>((get) => ({
   theme: get(themeAtom),
+  desktopWorkspace: get(desktopWorkspaceAtom),
   panels: get(panelsAtom),
   bottomTab: get(bottomTabAtom),
   rightOpen: get(rightOpenAtom),
@@ -112,6 +115,38 @@ export const setThemeAtom = atom(null, (get, set, theme: Theme) => {
   applyThemeToDocument(theme);
   queueRemoteUISettings(get, set, { theme });
 });
+
+/**
+ * Top-level desktop workspaces are URL-addressable. Trade intentionally lives
+ * outside the resizable bottom panel, so chart state can remain mounted only
+ * when the user is working on the chart and browser Back restores the prior
+ * workspace predictably.
+ */
+export const setDesktopWorkspaceAtom = atom(
+  null,
+  (_get, set, workspace: DesktopWorkspace) => {
+    set(desktopWorkspaceAtom, workspace);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (workspace === "trade") url.searchParams.set("workspace", "trade");
+    else url.searchParams.delete("workspace");
+    window.history.pushState(
+      { ...window.history.state, smcDesktopWorkspace: workspace },
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  },
+);
+
+/** Reconcile Back/Forward navigation without creating another history entry. */
+export const syncDesktopWorkspaceFromLocationAtom = atom(
+  null,
+  (_get, set, search?: string) => {
+    const currentSearch =
+      search ?? (typeof window !== "undefined" ? window.location.search : "");
+    set(desktopWorkspaceAtom, desktopWorkspaceFromSearch(currentSearch));
+  },
+);
 
 export const toggleGridAtom = atom(null, (get, set) => {
   const gridVisible = !get(gridVisibleAtom);
@@ -211,8 +246,20 @@ export const hydrateAtom = atom(null, (get, set) => {
     persistedUISettings(get),
   );
   applyUISettings(set, persisted);
+  set(
+    desktopWorkspaceAtom,
+    desktopWorkspaceFromSearch(
+      typeof window !== "undefined" ? window.location.search : "",
+    ),
+  );
   applyThemeToDocument(persisted.theme);
 });
+
+export function desktopWorkspaceFromSearch(search: string): DesktopWorkspace {
+  return new URLSearchParams(search).get("workspace") === "trade"
+    ? "trade"
+    : "chart";
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -246,7 +293,6 @@ function normalizeTheme(value: unknown, fallback: Theme): Theme {
 
 function normalizeBottomTab(value: unknown, fallback: BottomTab): BottomTab {
   return value === "replay" ||
-    value === "trade" ||
     value === "journal" ||
     value === "analytics" ||
     value === "pine" ||
@@ -349,7 +395,6 @@ export const applySavedPanelLayoutAtom = atom(
     const panels = sanitizePanels(snapshot?.sizes, get(panelsAtom));
     const bottomTab: BottomTab = [
       "replay",
-      "trade",
       "journal",
       "analytics",
       "pine",
@@ -375,6 +420,7 @@ export const resetUIToDefaultsAtom = atom(null, (_get, set) => {
   uiSettingsSync.cancelPending();
   const panels = { ...DEFAULT_PANELS };
   set(themeAtom, "dark");
+  set(desktopWorkspaceAtom, "chart");
   set(panelsAtom, panels);
   set(bottomTabAtom, "replay");
   set(rightOpenAtom, true);
@@ -391,6 +437,7 @@ export function getUIState() {
   const store = getDefaultStore();
   return {
     theme: store.get(themeAtom),
+    desktopWorkspace: store.get(desktopWorkspaceAtom),
     panels: store.get(panelsAtom),
     bottomTab: store.get(bottomTabAtom),
     rightOpen: store.get(rightOpenAtom),

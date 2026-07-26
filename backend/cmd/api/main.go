@@ -6,10 +6,7 @@ import (
 	stdlog "log"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/smc-trading-terminal/backend/internal/alerts"
@@ -19,12 +16,12 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/db/gen"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
+	"github.com/smc-trading-terminal/backend/internal/execution"
 	"github.com/smc-trading-terminal/backend/internal/httpserver"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/journal"
 	"github.com/smc-trading-terminal/backend/internal/layouts"
 	"github.com/smc-trading-terminal/backend/internal/mt5stream"
-	"github.com/smc-trading-terminal/backend/internal/mt5verify"
 	"github.com/smc-trading-terminal/backend/internal/pineruntime"
 	"github.com/smc-trading-terminal/backend/internal/pinescripts"
 	"github.com/smc-trading-terminal/backend/internal/replay"
@@ -92,6 +89,7 @@ func main() {
 	var replayHandler *replay.Handler
 	var journalHandler *journal.Handler
 	var simTradingHandler *simtrading.Handler
+	var executionHandler *execution.Handler
 	var pineScriptsStore *pinescripts.Repo
 	var screenshotSigner objectstorage.Signer
 	if cfg.ObjectStorageConfigured() {
@@ -131,55 +129,10 @@ func main() {
 		if secretErr != nil {
 			stdlog.Fatalf("integration settings encryption init error: %v", secretErr)
 		}
-		mt5VerifyPython := cfg.MT5VerifyPython
-		unavailableCode, unavailableMessage := mt5VerifierConfigurationIssue(cfg)
-		resolvedMT5Python, runtimeErr := mt5verify.ResolvePythonRuntime(ctx, []string{
-			cfg.MT5VerifyPython,
-			cfg.MT5VerifyManagedPython,
-			"python",
-			"python.exe",
-			"py",
-		}, 5*time.Second)
-		if runtimeErr != nil {
-			unavailableCode = "MT5_VERIFIER_UNAVAILABLE"
-			unavailableMessage = mt5VerifierUnavailableMessage
-			log.Error().
-				Err(runtimeErr).
-				Str("configured_python", cfg.MT5VerifyPython).
-				Str("managed_python", cfg.MT5VerifyManagedPython).
-				Str("script", cfg.MT5VerifyScript).
-				Msg("MT5 verifier runtime unavailable")
-		} else {
-			mt5VerifyPython = resolvedMT5Python
-			event := log.Info()
-			if !strings.EqualFold(resolvedMT5Python, cfg.MT5VerifyPython) {
-				event = log.Warn().Str("configured_python", cfg.MT5VerifyPython)
-			}
-			event.
-				Str("selected_python", resolvedMT5Python).
-				Str("script", cfg.MT5VerifyScript).
-				Msg("MT5 verifier runtime ready")
-			if unavailableCode != "" {
-				log.Error().
-					Str("code", unavailableCode).
-					Str("market_data_terminal", cfg.MT5TerminalPath).
-					Str("verifier_terminal", cfg.MT5VerifyTerminalPath).
-					Msg("MT5 verifier disabled by terminal isolation check")
-			}
-		}
 		settingsHandler = settings.NewHandler(settingsStore, requireAuth).
 			WithIntegrations(
 				settings.NewIntegrationRepo(pool.Pool), secretBox, cfg.PushWorkerSecret, cfg.ChartTimeZone,
 			)
-		if unavailableCode != "" {
-			settingsHandler.WithMT5VerifierUnavailable(unavailableCode, unavailableMessage)
-		} else {
-			settingsHandler.WithMT5Verifier(mt5verify.NewCommandVerifier(
-				mt5VerifyPython,
-				[]string{cfg.MT5VerifyScript},
-				cfg.MT5VerifyTimeout,
-			))
-		}
 		watchlistsStore := watchlists.NewRepo(pool.Pool)
 		watchlistsHandler = watchlists.NewHandler(watchlistsStore, requireAuth)
 		drawingsStore := drawings.NewRepo(pool.Pool)
@@ -196,6 +149,23 @@ func main() {
 		workspaceHandler = workspace.NewHandler(settingsStore, watchlistsStore, drawingsStore, indicatorsStore, pineScriptsStore, alertsStore, layoutsStore, requireAuth)
 		journalHandler = journal.NewHandler(journal.NewRepo(pool.Pool), screenshotSigner, requireAuth)
 		simTradingHandler = simtrading.NewHandler(simtrading.NewRepo(pool.Pool), requireAuth)
+		if cfg.ExecutionAdminToken != "" {
+			executionClient, executionErr := execution.NewClient(
+				cfg.ExecutionAdminURL,
+				cfg.ExecutionAdminToken,
+			)
+			if executionErr != nil {
+				stdlog.Fatalf("execution gateway client init error: %v", executionErr)
+			}
+			executionEAProxy, executionEAErr := execution.NewEAProxy(cfg.ExecutionEAURL)
+			if executionEAErr != nil {
+				stdlog.Fatalf("execution EA proxy init error: %v", executionEAErr)
+			}
+			executionHandler = execution.NewHandler(executionClient, requireAuth).
+				WithEAProxy(executionEAProxy)
+		} else {
+			log.Warn().Msg("execution API routes disabled: EXECUTION_ADMIN_TOKEN not configured")
+		}
 		if cfg.ReplayEngineEnabled {
 			replayStore := replay.NewRepo(pool.Pool)
 			replayService := replay.NewService(replayStore, mt5Service, cfg.ReplayMaxBars, cfg.ReplayMaxTracks)
@@ -224,6 +194,7 @@ func main() {
 		workspaceHandler,
 		journalHandler,
 		simTradingHandler,
+		executionHandler,
 		replayHandler,
 		mt5Handler,
 		pineRuntimeHandler,
@@ -235,24 +206,3 @@ func main() {
 
 	fmt.Println("shutdown complete")
 }
-
-func mt5VerifierConfigurationIssue(cfg config.Config) (string, string) {
-	if !cfg.IsProduction() || !cfg.MT5StreamAPIEnabled {
-		return "", ""
-	}
-	marketDataTerminal := strings.TrimSpace(cfg.MT5TerminalPath)
-	verifierTerminal := strings.TrimSpace(cfg.MT5VerifyTerminalPath)
-	if marketDataTerminal == "" || verifierTerminal == "" {
-		return "MT5_VERIFIER_UNAVAILABLE", mt5VerifierUnavailableMessage
-	}
-	if strings.EqualFold(filepath.Clean(marketDataTerminal), filepath.Clean(verifierTerminal)) {
-		return "MT5_VERIFIER_UNAVAILABLE", mt5VerifierUnavailableMessage
-	}
-	info, err := os.Stat(verifierTerminal)
-	if err != nil || info.IsDir() {
-		return "MT5_VERIFIER_UNAVAILABLE", mt5VerifierUnavailableMessage
-	}
-	return "", ""
-}
-
-const mt5VerifierUnavailableMessage = "MT5 verification is temporarily unavailable. Please try again later."

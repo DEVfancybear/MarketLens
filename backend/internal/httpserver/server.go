@@ -15,6 +15,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/config"
 	"github.com/smc-trading-terminal/backend/internal/db"
 	"github.com/smc-trading-terminal/backend/internal/drawings"
+	"github.com/smc-trading-terminal/backend/internal/execution"
 	"github.com/smc-trading-terminal/backend/internal/health"
 	"github.com/smc-trading-terminal/backend/internal/indicators"
 	"github.com/smc-trading-terminal/backend/internal/journal"
@@ -54,6 +55,7 @@ func New(
 	workspaceHandler *workspace.Handler,
 	journalHandler *journal.Handler,
 	simTradingHandler *simtrading.Handler,
+	executionHandler *execution.Handler,
 	replayHandler *replay.Handler,
 	mt5Handler *mt5stream.Handler,
 	pineRuntimeHandler *pineruntime.Handler,
@@ -102,6 +104,9 @@ func New(
 		pinger = pool
 	}
 	health.RegisterRoutes(app, pinger)
+	if executionHandler != nil {
+		executionHandler.RegisterPublic(app)
+	}
 
 	api := app.Group("/api/v1")
 	timenavigation.RegisterRoutes(api, cfg.ChartTimeZone)
@@ -137,6 +142,9 @@ func New(
 	}
 	if simTradingHandler != nil {
 		simTradingHandler.Register(api)
+	}
+	if executionHandler != nil {
+		executionHandler.Register(api)
 	}
 	if replayHandler != nil {
 		replayHandler.Register(api)

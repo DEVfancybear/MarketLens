@@ -1,5 +1,10 @@
 # Configuration
 
+> Execution note (2026-07-26): all legacy `MT5_VERIFY_*`, Connector, and
+> per-user terminal-password settings below are obsolete and removed from the
+> runtime. Use `../.env.example` and
+> `../../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`.
+
 The backend reads configuration from environment variables.
 
 ## Go API

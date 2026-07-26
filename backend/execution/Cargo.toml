@@ -1,0 +1,42 @@
+[workspace]
+members = [
+  "crates/execution-domain",
+  "crates/execution-engine",
+  "crates/execution-adapters",
+  "crates/execution-gateway",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["json"] }
+execution-adapters = { path = "crates/execution-adapters" }
+execution-domain = { path = "crates/execution-domain" }
+execution-engine = { path = "crates/execution-engine" }
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx-core = { version = "=0.8.6", default-features = false, features = [
+  "_rt-tokio",
+  "_tls-rustls-ring-webpki",
+  "json",
+  "rust_decimal",
+  "uuid",
+] }
+sqlx-postgres = { version = "=0.8.6", default-features = false, features = [
+  "json",
+  "rust_decimal",
+  "uuid",
+] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4"] }

@@ -129,6 +129,7 @@ func newMinimalServer(cfg config.Config) *Server {
 		nil, // workspace
 		nil, // journal
 		nil, // simulated trading
+		nil, // execution
 		nil, // replay
 		nil, // MT5 stream
 		nil, // Pine runtime

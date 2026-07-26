@@ -71,6 +71,8 @@
     "src/services/privateWorkspaceAccess.ts",
     "src/services/auth/browserAuthPolicy.ts",
     "src/services/mt5/accountAccess.ts",
+    "src/services/execution/copyRouting.ts",
+    "src/types/execution.ts",
     "src/components/toolbar/indicatorSettingsInputRows.ts"
   ]
 }

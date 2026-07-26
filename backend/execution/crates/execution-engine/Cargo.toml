@@ -1,0 +1,10 @@
+[package]
+name = "execution-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+execution-domain.workspace = true
+rust_decimal.workspace = true

@@ -1,5 +1,9 @@
 # NEXT TASKS
 
+> Trade execution update (2026-07-26): older Phase 6 verifier/Connector tasks
+> are cancelled, not pending. The only native-venue completion sequence is the
+> fail-closed plan in `TRADE_EXECUTION_ARCHITECTURE.md`.
+
 _Post-monorepo update 2026-07-06._
 
 ## Deferred indicator-event alerts

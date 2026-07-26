@@ -16,7 +16,7 @@ import { fmtMoney } from "@/utils/format";
 import { useAtomValue, useSetAtom } from "jotai";
 import { RotateCcw } from "lucide-react";
 import { ExecutionModeSwitch } from "./ExecutionModeSwitch";
-import { Mt5ConnectionPanel } from "./Mt5ConnectionPanel";
+import { ExecutionConnectionStatus } from "./ExecutionConnectionStatus";
 import { Mt5CommandLog } from "./Mt5CommandLog";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
 import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
@@ -90,7 +90,7 @@ export function TradePanel() {
               )}
             </>
           )}
-          {executionMode === "mt5" && <Mt5ConnectionPanel />}
+          {executionMode === "mt5" && <ExecutionConnectionStatus />}
         </div>
         <PositionsTable />
         <Mt5CommandLog />

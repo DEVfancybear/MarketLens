@@ -1,5 +1,11 @@
 # Production build and runtime runbook
 
+> Superseded for trade execution (2026-07-26): do not use the legacy verifier,
+> downloadable Connector, or port 8787 instructions retained in this historical
+> runbook. The canonical command remains `.\run-backend-production.ps1`; the
+> current execution topology and gates are in
+> `../../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`.
+
 This is the repeatable checklist for the production SMC Trading Terminal. The frontend is hosted
 by Vercel; the Go API, Python MT5 helpers/sidecars, and logged-in MetaTrader 5 terminal run on a
 Windows host.

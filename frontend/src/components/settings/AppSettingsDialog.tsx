@@ -12,11 +12,9 @@ import {
   Check,
   CheckCircle2,
   CircleAlert,
-  Download,
   Loader2,
   MessageCircle,
   Send,
-  ServerCog,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -26,24 +24,15 @@ import {
   getIntegrationSettings,
   saveIntegrationSettings,
   testIntegration,
-  verifyMt5Integration,
   type IntegrationSettingsWrite,
 } from "@/services/api/resources/integrationsApi";
-import { errorMessage, isApiError } from "@/services/api/errors";
-import { syncMt5IntegrationAtom } from "@/store/mt5Store";
-import { MT5_CONNECTOR_DOWNLOAD_URL } from "@/services/mt5/connectorDownload";
+import { errorMessage } from "@/services/api/errors";
 import {
   APP_SETTINGS_OVERLAY_STACK_CLASS,
   createEmptyIntegrationDraft,
   mergeLoadedIntegrationSettings,
   type IntegrationDraftField,
 } from "./integrationSettingsDraft";
-import {
-  MT5_CONNECT_ACTION_LABEL,
-  MT5_CONNECTOR_RUNNING_NOTE,
-  MT5_SETUP_NOTE,
-  mt5VerificationErrorMessage,
-} from "./mt5VerificationPresentation";
 
 const fieldClassName =
   "h-11 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-3 text-base text-ink outline-none transition-[border-color,box-shadow,background-color] placeholder:text-ink-faint hover:border-terminal-border-strong focus:border-brand focus:ring-2 focus:ring-brand/20 sm:h-10 sm:text-sm";
@@ -52,28 +41,20 @@ export function AppSettingsDialog() {
   const [open, setOpen] = useAtom(integrationSettingsOpenAtom);
   const backendSession = useAtomValue(backendSessionAtom);
   const userID = useAtomValue(authUserAtom)?.uid ?? null;
-  const syncMt5Integration = useSetAtom(syncMt5IntegrationAtom);
   const [draft, setDraft] = useState<IntegrationSettingsWrite>(
     createEmptyIntegrationDraft,
   );
   const [configured, setConfigured] = useState({
-    mt5: false,
     telegram: false,
     discord: false,
   });
-  const [mt5Verification, setMt5Verification] = useState<{
-    verified: boolean;
-    verifiedAt: string | null;
-  }>({ verified: false, verifiedAt: null });
   const [busy, setBusy] = useState(false);
-  const [verifyingMt5, setVerifyingMt5] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error" | null>(
     null,
   );
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const mt5VerificationStatusId = useId();
   const dirtyFieldsRef = useRef(new Set<IntegrationDraftField>());
   const loadSequenceRef = useRef(0);
   const sessionIdentityRef = useRef<string | null>(null);
@@ -109,13 +90,8 @@ export function AppSettingsDialog() {
           ),
         );
         setConfigured({
-          mt5: value.mt5.passwordConfigured,
           telegram: value.telegram.botTokenConfigured,
           discord: value.discord.webhookConfigured,
-        });
-        setMt5Verification({
-          verified: value.mt5.verified,
-          verifiedAt: value.mt5.verifiedAt,
         });
       })
       .catch(() => {
@@ -175,11 +151,6 @@ export function AppSettingsDialog() {
     };
   }, [open, setOpen]);
 
-  const mt5CredentialsDirty = (
-    ["mt5.login", "mt5.server", "mt5.password"] as IntegrationDraftField[]
-  ).some((field) => dirtyFieldsRef.current.has(field));
-  const mt5Verified = mt5Verification.verified && !mt5CredentialsDirty;
-
   if (!open) return null;
 
   const applySaved = (
@@ -187,22 +158,11 @@ export function AppSettingsDialog() {
   ) => {
     dirtyFieldsRef.current.clear();
     setConfigured({
-      mt5: value.mt5.passwordConfigured,
       telegram: value.telegram.botTokenConfigured,
       discord: value.discord.webhookConfigured,
     });
-    setMt5Verification({
-      verified: value.mt5.verified,
-      verifiedAt: value.mt5.verifiedAt,
-    });
-    syncMt5Integration(value.mt5);
     setDraft((current) => ({
       ...current,
-      mt5: {
-        ...current.mt5,
-        password: "",
-        clearPassword: false,
-      },
       telegram: {
         ...current.telegram,
         botToken: "",
@@ -233,53 +193,6 @@ export function AppSettingsDialog() {
       );
       setMessageTone("error");
     } finally {
-      setBusy(false);
-    }
-  };
-
-  const verifyMt5 = async () => {
-    const operationIdentity = sessionIdentityRef.current;
-    let savedMt5: Awaited<
-      ReturnType<typeof saveIntegrationSettings>
-    >["mt5"] | null = null;
-    setBusy(true);
-    setVerifyingMt5(true);
-    setMessage("");
-    setMessageTone(null);
-    try {
-      const saved = await saveIntegrationSettings(draft);
-      if (!operationIdentity || sessionIdentityRef.current !== operationIdentity) return;
-      savedMt5 = saved.mt5;
-      applySaved(saved);
-      const result = await verifyMt5Integration();
-      if (sessionIdentityRef.current !== operationIdentity) return;
-      setMt5Verification({
-        verified: result.mt5.verified,
-        verifiedAt: result.mt5.verifiedAt,
-      });
-      syncMt5Integration(result.mt5);
-      setMessage(
-        `MT5 login ${result.account.login} on ${result.account.server} verified successfully. ${MT5_CONNECTOR_RUNNING_NOTE}`,
-      );
-      setMessageTone("success");
-    } catch (error) {
-      if (
-        savedMt5 &&
-        isApiError(error) &&
-        [400, 409, 422].includes(error.status)
-      ) {
-        const unverified = {
-          ...savedMt5,
-          verified: false,
-          verifiedAt: null,
-        };
-        setMt5Verification({ verified: false, verifiedAt: null });
-        syncMt5Integration(unverified);
-      }
-      setMessage(mt5VerificationErrorMessage(error));
-      setMessageTone("error");
-    } finally {
-      setVerifyingMt5(false);
       setBusy(false);
     }
   };
@@ -373,124 +286,6 @@ export function AppSettingsDialog() {
               disabled={busy}
               className="m-0 min-w-0 space-y-4 border-0 p-0 sm:space-y-5"
             >
-              <Section
-                icon={<ServerCog size={18} />}
-                title="MetaTrader 5"
-                note={MT5_SETUP_NOTE}
-                configured={configured.mt5}
-                verified={mt5Verified}
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label="Login"
-                    value={draft.mt5.login}
-                    onChange={(value) =>
-                      updateDraft("mt5.login", (current) => ({
-                        ...current,
-                        mt5: { ...current.mt5, login: value },
-                      }))
-                    }
-                    autoComplete="username"
-                  />
-                  <Input
-                    label="Broker server"
-                    value={draft.mt5.server}
-                    onChange={(value) =>
-                      updateDraft("mt5.server", (current) => ({
-                        ...current,
-                        mt5: { ...current.mt5, server: value },
-                      }))
-                    }
-                    autoComplete="off"
-                  />
-                </div>
-                <Secret
-                  label="Password"
-                  configured={configured.mt5}
-                  value={draft.mt5.password}
-                  onChange={(value) =>
-                    updateDraft("mt5.password", (current) => ({
-                      ...current,
-                      mt5: {
-                        ...current.mt5,
-                        password: value,
-                        clearPassword: false,
-                      },
-                    }))
-                  }
-                  onClear={() =>
-                    updateDraft("mt5.password", (current) => ({
-                      ...current,
-                      mt5: {
-                        ...current.mt5,
-                        password: "",
-                        clearPassword: true,
-                      },
-                    }))
-                  }
-                />
-                <div className="flex flex-col gap-3 rounded-xl border border-terminal-border bg-terminal-bg/55 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div
-                    id={mt5VerificationStatusId}
-                    className={`flex min-w-0 items-start gap-2 text-xs leading-5 ${
-                      mt5Verified
-                        ? "text-bull"
-                        : mt5CredentialsDirty
-                          ? "text-choch"
-                          : "text-ink-muted"
-                    }`}
-                    role="status"
-                    aria-live="polite"
-                    aria-atomic="true"
-                  >
-                    {mt5Verified ? (
-                      <CheckCircle2 className="mt-0.5 shrink-0" size={15} aria-hidden="true" />
-                    ) : (
-                      <ShieldCheck className="mt-0.5 shrink-0" size={15} aria-hidden="true" />
-                    )}
-                    <span>
-                      {mt5Verified
-                        ? `Verified for login ${draft.mt5.login} on ${draft.mt5.server}. ${MT5_CONNECTOR_RUNNING_NOTE}`
-                        : mt5CredentialsDirty
-                          ? "These account changes are not verified yet. Save and verify them before using MT5."
-                          : configured.mt5
-                            ? "Credentials are saved, but verification is required before MT5 can be selected."
-                            : "Enter the MT5 login, exact broker server, and master password to verify the account."}
-                    </span>
-                  </div>
-                  <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
-                    <a
-                      href={MT5_CONNECTOR_DOWNLOAD_URL}
-                      download
-                      className="flex h-11 items-center justify-center gap-2 rounded-xl border border-terminal-border-strong bg-terminal-panel px-4 text-sm font-semibold text-ink transition-colors hover:border-brand/45 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
-                    >
-                      <Download size={15} aria-hidden="true" />
-                      Download Connector
-                    </a>
-                    <button
-                      type="button"
-                      disabled={
-                        busy ||
-                        !draft.mt5.login.trim() ||
-                        !draft.mt5.server.trim() ||
-                        draft.mt5.clearPassword ||
-                        !(configured.mt5 || draft.mt5.password.trim())
-                      }
-                      onClick={() => void verifyMt5()}
-                      aria-describedby={mt5VerificationStatusId}
-                      className="flex h-11 items-center justify-center gap-2 rounded-xl border border-brand/35 bg-brand/10 px-4 text-sm font-semibold text-brand transition-colors hover:border-brand/60 hover:bg-brand/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {verifyingMt5 ? (
-                        <Loader2 size={15} className="animate-spin" aria-hidden="true" />
-                      ) : (
-                        <ShieldCheck size={15} aria-hidden="true" />
-                      )}
-                      {MT5_CONNECT_ACTION_LABEL}
-                    </button>
-                  </div>
-                </div>
-              </Section>
-
               <Section
                 icon={<Send size={18} />}
                 title="Telegram"

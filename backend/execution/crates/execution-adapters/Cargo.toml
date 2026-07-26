@@ -1,0 +1,16 @@
+[package]
+name = "execution-adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+execution-domain.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rust_decimal.workspace = true
+tokio.workspace = true

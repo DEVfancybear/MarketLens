@@ -69,6 +69,38 @@ func TestValidateRejectsUnsafeCORSOrigins(t *testing.T) {
 	}
 }
 
+func TestValidateExecutionServicesRemainLoopbackOnly(t *testing.T) {
+	for _, eaURL := range []string{
+		"https://127.0.0.1:8790",
+		"http://example.com:8790",
+		"http://user@127.0.0.1:8790",
+	} {
+		t.Run(eaURL, func(t *testing.T) {
+			cfg := Config{
+				Env:                    "development",
+				ChartTimeZone:          "UTC",
+				ExecutionEAURL:         eaURL,
+				ExecutionAdminURL:      "http://127.0.0.1:8791",
+				ExecutionAdminToken:    "execution-admin-secret-at-least-32-bytes",
+				CORSAllowedOrigins:     []string{"http://localhost:3000"},
+				AlertEvaluatorInterval: 15 * time.Second,
+				AlertEvaluatorTimeout:  30 * time.Second,
+				MT5BridgeDialTimeout:   10 * time.Second,
+				MT5BridgeReconnectMin:  time.Second,
+				MT5BridgeReconnectMax:  30 * time.Second,
+				ReplayCleanupInterval:  time.Hour,
+				ReplaySessionRetention: 30 * 24 * time.Hour,
+				ReplayDatasetRetention: 7 * 24 * time.Hour,
+				ReplayDisconnectGrace:  5 * time.Second,
+				ReplayActorLeaseTTL:    5 * time.Second,
+			}
+			if err := cfg.validate(); err == nil {
+				t.Fatalf("validate() accepted unsafe execution EA URL %q", eaURL)
+			}
+		})
+	}
+}
+
 func TestValidateRejectsWeakJWTWhenAuthConfigured(t *testing.T) {
 	cfg := Config{
 		Env: "development", ChartTimeZone: "UTC", DatabaseURL: "postgres://example",

@@ -70,7 +70,7 @@ import {
 import { resolveCandleBarIntervalSeconds } from "@/components/chart/drawing/coordinates/drawingCoordinates";
 import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
-import { logAtom, setBottomTabAtom } from "./uiStore";
+import { logAtom, setDesktopWorkspaceAtom } from "./uiStore";
 import { backendSessionAtom } from "./authStore";
 import {
   decodeDrawingList,
@@ -1136,7 +1136,7 @@ export const addDrawingAtom = atom(
     });
     if (prefill) {
       set(setOrderPrefillAtom, prefill);
-      set(setBottomTabAtom, "trade");
+      set(setDesktopWorkspaceAtom, "trade");
       set(
         logAtom,
         "info",

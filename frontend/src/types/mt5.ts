@@ -12,45 +12,6 @@ export type Mt5ConnectionStatus =
 
 export type Mt5AccountMode = "demo" | "live" | "unknown";
 
-export interface Mt5Message<T = unknown> {
-  id?: string;
-  type: string;
-  version: 1;
-  ts: number;
-  payload: T;
-}
-
-export interface Mt5HelloPayload {
-  bridgeId: string;
-  bridgeVersion: string;
-  serverTime: number;
-  accountMode: Mt5AccountMode;
-}
-
-export interface Mt5AuthRequest {
-  clientName: string;
-  token?: string;
-}
-
-export interface Mt5AuthOkPayload {
-  sessionId: string;
-  expiresAt?: number;
-}
-
-export interface Mt5AuthRejectPayload {
-  reason: string;
-}
-
-export interface Mt5ErrorPayload {
-  code: string;
-  message: string;
-  requestId?: string;
-}
-
-export interface Mt5HeartbeatPayload {
-  ts: number;
-}
-
 export interface Mt5AccountSnapshot {
   accountId: string;
   broker: string;
@@ -67,7 +28,7 @@ export interface Mt5AccountSnapshot {
   updatedAt: number;
 }
 
-/** Optional FTMO/Position Sizer portfolio-risk snapshot from the bridge. */
+/** Optional broker-account portfolio-risk snapshot. */
 export interface Mt5RiskSnapshot {
   accountSize?: number;
   accountSizeSource?: "fixed" | "equity";
@@ -94,8 +55,6 @@ export interface Mt5SymbolInfo {
   minLot: number;
   maxLot: number;
   brokerMaxLot?: number;
-  bridgeMaxLot?: number;
-  maxLotReason?: "broker" | "bridge";
   tickSize?: number;
   tickValue?: number;
   /** MT5 exposes direction-specific values for a tick.  Brokers may leave
@@ -233,20 +192,11 @@ export interface Mt5ExecutionReport {
   executedAt: number;
 }
 
-export type Mt5ClientCommandPayload =
-  | Mt5AuthRequest
-  | Mt5OrderRequest
-  | Mt5ModifyRequest
-  | Mt5CloseRequest
-  | Mt5CloseAllRequest
-  | Mt5CancelRequest
-  | Mt5HeartbeatPayload;
-
 export interface Mt5CommandLogEntry {
   id: string;
   time: number;
   level: "info" | "warn" | "error";
-  direction: "client" | "bridge";
+  direction: "client" | "gateway" | "agent";
   type: string;
   message: string;
   requestId?: string;
@@ -258,5 +208,5 @@ export interface Mt5PendingCommand {
   type: string;
   clientOrderId?: string;
   sentAt: number;
-  status: "sent" | "acked";
+  status: "sent" | "acked" | "partial" | "unknown" | "rejected";
 }

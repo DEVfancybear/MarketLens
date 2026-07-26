@@ -15,15 +15,13 @@ import {
 import { cn } from "@/utils/cn";
 import { fmtDateTime } from "@/utils/time";
 import { ReplayPanel } from "@/components/replay/ReplayPanel";
-import { TradePanel } from "@/components/trade/TradePanel";
 import { JournalPanel } from "@/components/journal/JournalPanel";
 import { AnalyticsPanel } from "@/components/analytics/AnalyticsPanel";
 import { PineEditor } from "@/components/pine/PineEditor";
-import { Activity, BookOpen, Bot, ChartNoAxesCombined, ScrollText, WalletCards, type LucideIcon } from "lucide-react";
+import { Activity, BookOpen, Bot, ChartNoAxesCombined, ScrollText, type LucideIcon } from "lucide-react";
 
 const TABS: { key: BottomTab; label: string; icon: LucideIcon }[] = [
   { key: "replay", label: "Replay", icon: Activity },
-  { key: "trade", label: "Trade", icon: WalletCards },
   { key: "journal", label: "Journal", icon: BookOpen },
   { key: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { key: "pine", label: "Pine Editor", icon: Bot },
@@ -77,7 +75,6 @@ export function BottomPanel() {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {effectiveTab === "replay" && <ReplayPanel />}
-        {effectiveTab === "trade" && <TradePanel />}
         {effectiveTab === "journal" && <JournalPanel />}
         {effectiveTab === "analytics" && <AnalyticsPanel />}
         {effectiveTab === "pine" && <PineEditor />}

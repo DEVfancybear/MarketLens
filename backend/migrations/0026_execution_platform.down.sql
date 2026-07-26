@@ -1,0 +1,16 @@
+DROP TRIGGER IF EXISTS trg_execution_audit_no_update ON execution_audit_log;
+DROP FUNCTION IF EXISTS prevent_execution_audit_mutation();
+DROP TABLE IF EXISTS execution_audit_log;
+DROP TABLE IF EXISTS execution_risk_policies;
+DROP TABLE IF EXISTS execution_symbol_mappings;
+DROP TABLE IF EXISTS execution_pending_orders;
+DROP TABLE IF EXISTS execution_positions;
+DROP TABLE IF EXISTS execution_instruments;
+DROP TABLE IF EXISTS execution_ea_sessions;
+DROP TABLE IF EXISTS execution_pairing_tokens;
+DROP TABLE IF EXISTS execution_events;
+DROP TABLE IF EXISTS execution_target_commands;
+DROP TABLE IF EXISTS execution_commands;
+DROP TABLE IF EXISTS execution_copy_targets;
+DROP TABLE IF EXISTS execution_copy_groups;
+DROP TABLE IF EXISTS execution_accounts;

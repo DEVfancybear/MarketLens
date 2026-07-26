@@ -1,5 +1,10 @@
 # Database Design
 
+> Execution schema note (2026-07-26): the migration head is now `0027`.
+> Migrations `0026` and `0027` add the broker-neutral execution ledger and
+> remove legacy MT5 credential columns. Older verification sections below are
+> historical only.
+
 > Status: implemented through migration `0023_mt5_verification`.
 > This includes alerts, dynamic technical targets, expiration/re-arming, drawing revisions,
 > per-user MT5 verification, integrations, replay, journal/screenshots, simulated trading, and

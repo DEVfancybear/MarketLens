@@ -5,7 +5,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { Ban, Download, Pencil, RotateCcw, X } from "lucide-react";
 import { OrderTicket } from "@/components/trade/OrderTicket";
 import { ExecutionModeSwitch } from "@/components/trade/ExecutionModeSwitch";
-import { Mt5ConnectionPanel } from "@/components/trade/Mt5ConnectionPanel";
+import { ExecutionConnectionStatus } from "@/components/trade/ExecutionConnectionStatus";
 import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
 import {
   cancelPendingAtom,
@@ -24,14 +24,14 @@ import {
 } from "@/store/mt5Store";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
 import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
-import { makeClientOrderId } from "@/services/mt5/protocol";
+import { makeClientCommandId } from "@/services/execution/identifiers";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import type { Position } from "@/types";
 import { usePlatformDialog, type PlatformConfirmOptions, type PlatformPromptOptions } from "@/components/ui/PlatformDialog";
 
-type TradeTab = "ticket" | "positions" | "bridge";
+type TradeTab = "ticket" | "positions" | "activity";
 
 export function MobileTradeScreen() {
   useSimTradingPersistence();
@@ -90,17 +90,17 @@ export function MobileTradeScreen() {
 
   return <section className="mobile-screen mobile-trade-screen">
     <header className="mobile-screen-header"><div><small>EXECUTION</small><h1>Trade desk</h1></div><div className="mobile-equity"><small>Equity</small><strong>{fmtMoney(activeEquity)}</strong></div></header>
-    <div className="mobile-execution-bar"><ExecutionModeSwitch />{executionMode === "mt5" && <Mt5ConnectionPanel />}</div>
+    <div className="mobile-execution-bar"><ExecutionModeSwitch />{executionMode === "mt5" && <ExecutionConnectionStatus />}</div>
     <div className="mobile-kpi-row mobile-kpi-row--trade"><div><small>Open positions</small><strong>{openCount}</strong></div><div><small>Open P/L</small><strong className={pnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(pnl)}</strong></div><div><small>Return</small><strong className={returnPct >= 0 ? "text-bull" : "text-bear"}>{returnPct >= 0 ? "+" : ""}{returnPct.toFixed(2)}%</strong></div></div>
     <div className="mobile-trade-account-actions">
       {executionMode === "simulator" && <button type="button" onClick={resetAccount}><RotateCcw size={17} />Reset account</button>}
       {replayMode && <button type="button" onClick={() => void exportReplayReport()}><Download size={17} />Export replay report</button>}
     </div>
-    <div className="mobile-segmented mobile-segmented--three"><button type="button" onClick={() => setTab("ticket")} className={cn(tab === "ticket" && "is-active")}>Order ticket</button><button type="button" onClick={() => setTab("positions")} className={cn(tab === "positions" && "is-active")}>Positions</button><button type="button" onClick={() => setTab("bridge")} className={cn(tab === "bridge" && "is-active")}>Bridge</button></div>
+    <div className="mobile-segmented mobile-segmented--three"><button type="button" onClick={() => setTab("ticket")} className={cn(tab === "ticket" && "is-active")}>Order ticket</button><button type="button" onClick={() => setTab("positions")} className={cn(tab === "positions" && "is-active")}>Positions</button><button type="button" onClick={() => setTab("activity")} className={cn(tab === "activity" && "is-active")}>Activity</button></div>
     <div className="mobile-trade-content">
       {tab === "ticket" && <OrderTicket variant="mobile" />}
       {tab === "positions" && <MobilePositionList simulatorPositions={simulatorOpen} requestPrompt={requestPrompt} requestConfirm={requestConfirm} />}
-      {tab === "bridge" && <div className="mobile-bridge-workspace">{executionMode !== "mt5" && <Mt5ConnectionPanel />}<Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Enable and select MT5 to inspect the execution bridge.</span></div>}</div>}
+      {tab === "activity" && <div className="mobile-bridge-workspace"><ExecutionConnectionStatus /><Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Select an execution account to inspect account-scoped events.</span></div>}</div>}
     </div>
     {dialog}
   </section>;
@@ -142,7 +142,7 @@ function MobilePositionList({
               confirmLabel: "Close position",
               tone: "danger",
             }).then((accepted) => {
-              if (accepted) closeMt5({ clientOrderId: makeClientOrderId("mt5_close"), ticket: position.ticket });
+              if (accepted) closeMt5({ clientOrderId: makeClientCommandId("exec_close"), ticket: position.ticket });
             });
           }}><X size={17} />Close</button></div>
         </article>;

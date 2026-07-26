@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .npm-cache/
+.tools/
 
 # Next.js build output
 .next/
@@ -41,8 +42,10 @@ npm-debug.log*
 # Go
 backend/vendor/
 backend/dist/
+target/
 .gocache/
 .gotmp/
+.cache/
 *.exe
 *.exe~
 *.dll
