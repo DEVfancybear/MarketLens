@@ -236,6 +236,13 @@ func TestServiceCreateRejectsSessionWithoutAnyPlayableFutureRow(t *testing.T) {
 	if !errors.Is(err, ErrDataUnavailable) {
 		t.Fatalf("error=%v want ErrDataUnavailable", err)
 	}
+	var unavailable *DataUnavailableError
+	if !errors.As(err, &unavailable) ||
+		unavailable.Slot != 0 ||
+		unavailable.Symbol != "EURUSD" ||
+		unavailable.ChartTimeframe != "15m" {
+		t.Fatalf("availability error did not identify its track: %#v", err)
+	}
 	if len(store.prepared.Tracks) != 0 {
 		t.Fatalf("dead Replay session was persisted: %#v", store.prepared)
 	}
@@ -299,16 +306,36 @@ func TestAutoReplayIntervalMatchesChartResolutionForEveryTimeframe(t *testing.T)
 	}
 }
 
-func TestServiceCreateRejectsInvalidSynchronizedSlotsAndQuota(t *testing.T) {
-	service := NewService(&fakeStore{}, &fakeHistory{}, 100, 2)
-	input := CreateSessionInput{Mode: "all_charts", Start: StartInput{Kind: "time", Time: time.Now().UTC()}, Tracks: []TrackInput{
+func TestServiceCreatePreservesSparseLayoutSlotsAndRejectsDuplicatesAndQuota(t *testing.T) {
+	start := time.Now().UTC().Truncate(time.Minute)
+	history := &fakeHistory{
+		snapshot: mt5stream.Snapshot{Symbols: []mt5stream.Symbol{
+			{Name: "EURUSD"}, {Name: "GBPUSD"}, {Name: "USDJPY"},
+		}},
+		result: mt5stream.HistorySnapshot{Candles: []mt5stream.Candle{
+			{Time: start.Add(-time.Minute).Unix(), Open: 1, High: 2, Low: .5, Close: 1.2},
+			{Time: start.Unix(), Open: 1.2, High: 2, Low: 1, Close: 1.5},
+			{Time: start.Add(time.Minute).Unix(), Open: 1.5, High: 2, Low: 1, Close: 1.8},
+		}},
+	}
+	store := &fakeStore{}
+	service := NewService(store, history, 100, 2)
+	input := CreateSessionInput{Mode: "all_charts", Start: StartInput{Kind: "time", Time: start}, Tracks: []TrackInput{
 		{Slot: 0, Symbol: "EURUSD", ChartTimeframe: "1m"},
 		{Slot: 2, Symbol: "GBPUSD", ChartTimeframe: "1m"},
 	}}
-	if _, err := service.Create(context.Background(), "user", input); !errors.Is(err, ErrBadRequest) {
-		t.Fatalf("expected slot validation error, got %v", err)
+	if _, err := service.Create(context.Background(), "user", input); err != nil {
+		t.Fatalf("sparse layout slots should be accepted: %v", err)
 	}
-	input.Tracks = append(input.Tracks, TrackInput{Slot: 2, Symbol: "USDJPY", ChartTimeframe: "1m"})
+	if got := []int{store.prepared.Tracks[0].Slot, store.prepared.Tracks[1].Slot}; got[0] != 0 || got[1] != 2 {
+		t.Fatalf("prepared slots=%v want [0 2]", got)
+	}
+	input.Tracks[1].Slot = 0
+	if _, err := service.Create(context.Background(), "user", input); !errors.Is(err, ErrBadRequest) {
+		t.Fatalf("expected duplicate slot validation error, got %v", err)
+	}
+	input.Tracks[1].Slot = 2
+	input.Tracks = append(input.Tracks, TrackInput{Slot: 3, Symbol: "USDJPY", ChartTimeframe: "1m"})
 	if _, err := service.Create(context.Background(), "user", input); !errors.Is(err, ErrBadRequest) {
 		t.Fatalf("expected quota error, got %v", err)
 	}

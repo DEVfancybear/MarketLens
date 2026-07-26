@@ -200,3 +200,19 @@ test("authoritative snapshots replace the isolated replay trading ledger", () =>
   assert.equal(store.getState().snapshot?.trading?.fills[0].datasetSeq, 11);
   assert.equal(store.getState().snapshot?.trading?.orders[0].status, "filled");
 });
+
+test("unavailable layout tracks survive snapshot activation and clear on exit", () => {
+  const store = new ReplayClientStore();
+  store.setUnavailableTracks([{
+    slot: 0,
+    symbol: "ADAUSD",
+    chartTimeframe: "15m",
+    firstAvailableTime: "2024-08-05T02:11:00.000Z",
+    lastAvailableTime: "2024-08-08T13:39:00.000Z",
+  }]);
+  store.replaceSnapshot(snapshot());
+  assert.equal(store.getState().unavailableTracks[0]?.symbol, "ADAUSD");
+
+  store.clear();
+  assert.deepEqual(store.getState().unavailableTracks, []);
+});

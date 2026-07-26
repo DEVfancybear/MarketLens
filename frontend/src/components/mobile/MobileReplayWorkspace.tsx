@@ -225,7 +225,14 @@ export function MobileReplayWorkspace({
     (position) => Math.abs(position.netQuantity) > 1e-12,
   ).length ?? 0;
   const equity = snapshot.trading?.account.equity;
-  const feedback = commandError ?? projection.error ?? snapshot.pauseReason ?? null;
+  const partialReplayMessage = projection.unavailableTracks.length > 0
+    ? `${projection.unavailableTracks.map((item) => item.symbol).join(", ")} remain live because no Replay bar exists at this time.`
+    : null;
+  const feedback = commandError ??
+    projection.error ??
+    partialReplayMessage ??
+    snapshot.pauseReason ??
+    null;
 
   return (
     <section

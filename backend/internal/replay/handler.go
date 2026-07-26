@@ -206,9 +206,19 @@ func replayAPIError(err error) error {
 	case errors.Is(err, ErrDataUnavailable):
 		var unavailable *DataUnavailableError
 		if errors.As(err, &unavailable) {
-			return apierror.NewWithDetails(422, "data_point_unavailable", "the requested replay data point is unavailable", map[string]any{
-				"firstAvailableTime": unavailable.FirstAvailable, "lastAvailableTime": unavailable.LastAvailable,
-			})
+			details := map[string]any{}
+			if !unavailable.FirstAvailable.IsZero() {
+				details["firstAvailableTime"] = unavailable.FirstAvailable
+			}
+			if !unavailable.LastAvailable.IsZero() {
+				details["lastAvailableTime"] = unavailable.LastAvailable
+			}
+			if unavailable.Symbol != "" {
+				details["slot"] = unavailable.Slot
+				details["symbol"] = unavailable.Symbol
+				details["chartTimeframe"] = unavailable.ChartTimeframe
+			}
+			return apierror.NewWithDetails(422, "data_point_unavailable", "the requested replay data point is unavailable", details)
 		}
 		return apierror.New(422, "data_point_unavailable", "the requested replay data point is unavailable")
 	case errors.Is(err, ErrDatasetPreparation):

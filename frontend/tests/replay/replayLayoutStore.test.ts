@@ -88,6 +88,36 @@ test("current-chart replay targets the active chart slot", () => {
   assert.equal(replayTracksForBackend("single_chart", tracks)[0]?.slot, 0);
 });
 
+test("all-chart backend tracks keep pane slots after unavailable siblings are removed", () => {
+  const layouts: ChartLayoutPreset[] = [
+    "two_horizontal",
+    "two_vertical",
+    "grid_2x2",
+  ];
+  for (const preset of layouts) {
+    const tracks = replayTracksForLayout(
+      "all_charts",
+      preset,
+      { symbol: "USDINR", chartTimeframe: "15m", slot: 1 },
+      initializePanesForPreset(
+        updatePaneSelection(createInitialChartPanes(), 0, {
+          symbol: "ADAUSD",
+          timeframe: "15m",
+        }),
+        preset,
+        1,
+      ),
+      1,
+    );
+    const withoutFirstPane = tracks.filter((track) => track.slot !== 0);
+    assert.deepEqual(
+      replayTracksForBackend("all_charts", withoutFirstPane).map((track) => track.slot),
+      visibleChartSlots(preset).filter((slot) => slot !== 0),
+      preset,
+    );
+  }
+});
+
 test("expanding to multi-chart enables synchronized Replay and pane drops are slot-specific", () => {
   const store = createStore();
   store.set(chartPanesAtom, updatePaneSelection(createInitialChartPanes(), 0, {

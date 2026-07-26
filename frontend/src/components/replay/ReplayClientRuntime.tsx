@@ -19,6 +19,7 @@ import {
   runReplayCommand,
   startReplaySession,
 } from "@/services/replay/replaySocket";
+import { replayTrackIdentity } from "@/services/replay/replayAvailability";
 import {
   cancelReplaySelectionAtom,
   replayAutoIntervalSeconds,
@@ -72,9 +73,7 @@ export function ReplayClientRuntime(): null {
     if (!backendSession || !isReplayBackendV1Enabled() || !snapshot || replacingRef.current) {
       return;
     }
-    const wantedTracks = replayTracksForBackend(
-      replayMode,
-      replayTracksForLayout(
+    const layoutTracks = replayTracksForLayout(
         replayMode,
         layoutPreset,
         {
@@ -84,15 +83,28 @@ export function ReplayClientRuntime(): null {
         },
         panes,
         activeSlot,
-      ),
+      ).map((track) => ({
+        ...track,
+        required: replayMode === "single_chart" || track.slot === activeSlot,
+      }));
+    const wantedTracks = replayTracksForBackend(
+      replayMode,
+      layoutTracks,
+    );
+    const activeTracks = new Set(snapshot.tracks.map(replayTrackIdentity));
+    const unavailableTracks = new Set(
+      projection.unavailableTracks.map(replayTrackIdentity),
+    );
+    const requiredTrackUnavailable = wantedTracks.some(
+      (track) => track.required && unavailableTracks.has(replayTrackIdentity(track)),
     );
     const configurationMatches = snapshot.mode === replayMode &&
-      snapshot.tracks.length === wantedTracks.length &&
-      snapshot.tracks.every((track, index) =>
-        track.slot === wantedTracks[index]?.slot &&
-        track.symbol === wantedTracks[index]?.symbol &&
-        track.chartTimeframe === wantedTracks[index]?.chartTimeframe
-      );
+      !requiredTrackUnavailable &&
+      snapshot.tracks.length + projection.unavailableTracks.length === wantedTracks.length &&
+      wantedTracks.every((track) => {
+        const identity = replayTrackIdentity(track);
+        return activeTracks.has(identity) || unavailableTracks.has(identity);
+      });
     if (configurationMatches) return;
 
     replacingRef.current = true;
@@ -118,6 +130,7 @@ export function ReplayClientRuntime(): null {
     layoutPreset,
     panes,
     projection.snapshot,
+    projection.unavailableTracks,
     replayMode,
     symbol,
     timeframe,

@@ -20,8 +20,7 @@ import {
 } from "@/store/replayLayoutStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
-  forkActiveReplay,
-  runReplayCommand,
+  moveActiveReplayTo,
   startReplaySession,
 } from "@/services/replay/replaySocket";
 import { parseDateInput } from "@/utils/time";
@@ -85,11 +84,7 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
       return;
     }
     const iso = new Date(time * 1000).toISOString();
-    const movingBackward = time < Date.parse(snapshot.simulatedTime) / 1000;
-    const command = movingBackward
-      ? forkActiveReplay(iso)
-      : runReplayCommand("seek", { time: iso });
-    void command.catch(() => undefined);
+    void moveActiveReplayTo(iso).catch(() => undefined);
   };
 
   const selectBar = () => {

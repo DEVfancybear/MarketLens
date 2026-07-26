@@ -1,6 +1,9 @@
 import { isApiError } from "../api/errors";
 
 interface ReplayAvailabilityDetails {
+  slot?: unknown;
+  symbol?: unknown;
+  chartTimeframe?: unknown;
   firstAvailableTime?: unknown;
   lastAvailableTime?: unknown;
 }
@@ -14,20 +17,35 @@ export function replayErrorMessage(
     const details = availabilityDetails(error.details);
     const first = formatUtc(details?.firstAvailableTime);
     const last = formatUtc(details?.lastAvailableTime);
+    const subject = availabilitySubject(details);
+    const unavailable = subject
+      ? `${subject} has no Replay data at the selected time.`
+      : "Replay data is unavailable at the selected time.";
 
     if (first && last) {
-      return `Replay data is unavailable at the selected time. Choose a bar in the available UTC range: ${first} to ${last}.`;
+      return `${unavailable} Available UTC range: ${first} to ${last}.`;
     }
     if (first) {
-      return `Replay data is unavailable at the selected time. Choose a UTC bar at or after ${first}.`;
+      return `${unavailable} Choose a UTC bar at or after ${first}.`;
     }
     if (last) {
-      return `Replay data is unavailable at the selected time. Choose a UTC bar at or before ${last}.`;
+      return `${unavailable} Choose a UTC bar at or before ${last}.`;
     }
-    return "Replay data is unavailable at the selected time. Choose another UTC bar and try again.";
+    return `${unavailable} Choose another UTC bar and try again.`;
   }
 
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function availabilitySubject(details: ReplayAvailabilityDetails | null): string | null {
+  if (typeof details?.symbol !== "string" || !details.symbol.trim()) {
+    return null;
+  }
+  const chart = Number.isInteger(details.slot) ? `Chart ${Number(details.slot) + 1}, ` : "";
+  const timeframe = typeof details.chartTimeframe === "string" && details.chartTimeframe.trim()
+    ? ` ${details.chartTimeframe.trim()}`
+    : "";
+  return `${chart}${details.symbol.trim().toUpperCase()}${timeframe}`;
 }
 
 function availabilityDetails(value: unknown): ReplayAvailabilityDetails | null {

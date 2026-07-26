@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Loader2 } from "lucide-react";
+import { workspaceReadyAtom } from "@/store/authStore";
 import {
   drawingsAtom,
   drawingLayoutIdAtom,
@@ -283,10 +284,16 @@ function usePaneMarketData(pane: ChartPaneState): {
   // preview that mounted during the cold-start window retries once symbols are
   // available instead of remaining blank until the pane is activated.
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
+  const workspaceReady = useAtomValue(workspaceReadyAtom);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!pane.initialized || !pane.symbol || !getMarketSymbol(pane.symbol)) return;
+    if (
+      !workspaceReady ||
+      !pane.initialized ||
+      !pane.symbol ||
+      !getMarketSymbol(pane.symbol)
+    ) return;
     const marketData = getMarketDataState();
     const controller = new AbortController();
     getMarketDataService();
@@ -322,7 +329,10 @@ function usePaneMarketData(pane: ChartPaneState): {
       controller.abort();
       marketData.unsubscribe(pane.symbol, pane.timeframe);
     };
-  }, [catalogSize, pane.initialized, pane.symbol, pane.timeframe]);
+  }, [catalogSize, pane.initialized, pane.symbol, pane.timeframe, workspaceReady]);
 
-  return { candles, loading };
+  return {
+    candles: workspaceReady ? candles : [],
+    loading: workspaceReady && loading,
+  };
 }

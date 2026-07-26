@@ -28,6 +28,7 @@ type TrackInput struct {
 	Slot           int    `json:"slot"`
 	Symbol         string `json:"symbol"`
 	ChartTimeframe string `json:"chartTimeframe"`
+	Required       bool   `json:"required,omitempty"`
 }
 
 type CreateSessionInput struct {
@@ -204,6 +205,9 @@ func (e *VersionConflictError) Unwrap() error { return ErrVersionConflict }
 type DataUnavailableError struct {
 	FirstAvailable time.Time
 	LastAvailable  time.Time
+	Slot           int
+	Symbol         string
+	ChartTimeframe string
 }
 
 func (e *DataUnavailableError) Error() string { return ErrDataUnavailable.Error() }

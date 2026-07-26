@@ -348,7 +348,10 @@ func resolveReplayStepTarget(
 			})
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
-					return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time}
+					return nil, false, &DataUnavailableError{
+						FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time,
+						Slot: int(track.Slot), Symbol: track.Symbol, ChartTimeframe: track.ChartTimeframe,
+					}
 				}
 				return nil, false, err
 			}
@@ -550,12 +553,18 @@ func applySynchronizedSeek(
 		track := &tracks[i]
 		lastAvailable := track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)
 		if target.Before(track.FirstTime.Time) || !target.Before(lastAvailable) {
-			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: lastAvailable}
+			return nil, false, &DataUnavailableError{
+				FirstAvailable: track.FirstTime.Time, LastAvailable: lastAvailable,
+				Slot: int(track.Slot), Symbol: track.Symbol, ChartTimeframe: track.ChartTimeframe,
+			}
 		}
 		selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: lastAvailable}
+				return nil, false, &DataUnavailableError{
+					FirstAvailable: track.FirstTime.Time, LastAvailable: lastAvailable,
+					Slot: int(track.Slot), Symbol: track.Symbol, ChartTimeframe: track.ChartTimeframe,
+				}
 			}
 			return nil, false, err
 		}
@@ -790,11 +799,19 @@ func applyRuntimeTransition(ctx context.Context, q runtimeBarQueries, session *g
 			}
 		}
 		if target.Before(track.FirstTime.Time) || !target.Before(track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds)*time.Second)) {
-			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)}
+			return nil, false, &DataUnavailableError{
+				FirstAvailable: track.FirstTime.Time,
+				LastAvailable:  track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second),
+				Slot:           int(track.Slot), Symbol: track.Symbol, ChartTimeframe: track.ChartTimeframe,
+			}
 		}
 		selected, err := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(target)})
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second)}
+			return nil, false, &DataUnavailableError{
+				FirstAvailable: track.FirstTime.Time,
+				LastAvailable:  track.LastTime.Time.Add(time.Duration(track.BaseIntervalSeconds) * time.Second),
+				Slot:           int(track.Slot), Symbol: track.Symbol, ChartTimeframe: track.ChartTimeframe,
+			}
 		}
 		if err != nil {
 			return nil, false, err

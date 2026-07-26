@@ -6,6 +6,7 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { useChartSeries } from "@/hooks/useChartSeries";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useAtomValue } from "jotai";
+import { workspaceReadyAtom } from "@/store/authStore";
 import {
   symbolAtom,
   timeframeAtom,
@@ -36,6 +37,8 @@ import {
 import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
 import type { Candle, IndicatorConfig } from "@/types";
 
+const EMPTY_CANDLES: Candle[] = [];
+
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea({
   mobileControls,
@@ -47,10 +50,11 @@ export function ChartArea({
   chartId?: string;
 } = {}) {
   const replay = useReplayClientProjection();
+  const workspaceReady = useAtomValue(workspaceReadyAtom);
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
-    enabled: !replay.snapshot && replay.connection !== "connecting",
+    enabled: workspaceReady && !replay.snapshot && replay.connection !== "connecting",
   });
-  const candles = useChartSeries(slot);
+  const candles = useChartSeries(slot, workspaceReady ? undefined : EMPTY_CANDLES);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const loading = useAtomValue(loadingAtom);

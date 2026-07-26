@@ -163,6 +163,8 @@ export interface CreateReplaySessionInput {
     slot: number;
     symbol: string;
     chartTimeframe: string;
+    /** Client-only recovery policy; ignored by older backends. */
+    required?: boolean;
   }>;
   trading?: {
     enabled: boolean;

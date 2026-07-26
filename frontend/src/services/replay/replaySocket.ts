@@ -18,6 +18,11 @@ import {
   type ReplayClientStore,
 } from "@/store/replayClientStore";
 import { withReplayVersionRetry } from "./replayCommandRetry";
+import {
+  recoverableReplayTrack,
+  replayTrackIdentity,
+  type ReplayUnavailableTrack,
+} from "./replayAvailability";
 import { replayErrorMessage } from "./replayErrorMessage";
 import { TrailingReplayCommand } from "./trailingReplayCommand";
 
@@ -224,9 +229,29 @@ export async function startReplaySession(
   replayClientStore.setConnection("connecting");
   if (previousId) void closeReplaySession(previousId).catch(() => undefined);
 
+  let request = input;
+  const unavailableTracks: ReplayUnavailableTrack[] = [];
   try {
-    const snapshot = await createReplaySession(input);
-    await activateSnapshot(snapshot, expectedLifecycle);
+    while (true) {
+      try {
+        const snapshot = await createReplaySession(request);
+        await activateSnapshot(snapshot, expectedLifecycle);
+        return;
+      } catch (error) {
+        const unavailable = recoverableReplayTrack(error, request);
+        if (!unavailable || expectedLifecycle !== lifecycleVersion) throw error;
+        const identity = replayTrackIdentity(unavailable);
+        const remaining = request.tracks.filter((track) =>
+          replayTrackIdentity(track) !== identity
+        );
+        if (remaining.length === request.tracks.length || remaining.length === 0) {
+          throw error;
+        }
+        unavailableTracks.push(unavailable);
+        replayClientStore.setUnavailableTracks(unavailableTracks);
+        request = { ...request, tracks: remaining };
+      }
+    }
   } catch (error) {
     if (expectedLifecycle !== lifecycleVersion) return;
     replayClientStore.setConnection(
@@ -380,6 +405,21 @@ export async function forkActiveReplay(time: string): Promise<void> {
     }
     throw error;
   }
+}
+
+/** Navigate forward in place and fork only when time actually moves backward. */
+export function moveActiveReplayTo(time: string): Promise<void> {
+  const snapshot = replayClientStore.getState().snapshot;
+  if (!snapshot) return Promise.reject(new Error("Replay session is unavailable"));
+  const target = Date.parse(time);
+  const current = Date.parse(snapshot.simulatedTime);
+  if (!Number.isFinite(target)) {
+    return Promise.reject(new Error("Replay time is invalid"));
+  }
+  if (target === current) return Promise.resolve();
+  return target < current
+    ? forkActiveReplay(new Date(target).toISOString())
+    : runReplayCommand("seek", { time: new Date(target).toISOString() });
 }
 
 async function executeReplayStep(count: number): Promise<void> {

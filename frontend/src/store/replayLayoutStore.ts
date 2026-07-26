@@ -431,17 +431,21 @@ export function replayTracksForLayout(
 }
 
 /**
- * The backend requires track slots to be contiguous from zero. In
- * `single_chart` mode the visible pane can be slot 2/3 in the UI, but it is
- * still represented by the single backend track at slot zero. The client maps
- * that track back to `activeChartSlotAtom` when rendering.
+ * Single-chart Replay keeps its historical backend slot-zero contract. An
+ * all-chart request preserves layout slots so an unavailable sibling can be
+ * isolated without shifting every remaining track onto the wrong pane.
  */
 export function replayTracksForBackend(
   mode: ReplayLayoutMode,
-  tracks: ReadonlyArray<{ slot: number; symbol: string; chartTimeframe: string }>,
+  tracks: ReadonlyArray<{
+    slot: number;
+    symbol: string;
+    chartTimeframe: string;
+    required?: boolean;
+  }>,
 ) {
-  return tracks.map((track, index) => ({
+  return tracks.map((track) => ({
     ...track,
-    slot: mode === "single_chart" ? 0 : index,
+    slot: mode === "single_chart" ? 0 : track.slot,
   }));
 }

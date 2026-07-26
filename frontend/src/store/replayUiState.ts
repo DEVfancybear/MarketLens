@@ -80,21 +80,24 @@ export function replaySessionInputAt(
     activeSlot: number;
   },
 ): CreateReplaySessionInput {
+  const activeSlot = layout?.activeSlot ?? 0;
+  const layoutTracks = replayTracksForLayout(
+    mode,
+    preset,
+    { ...active, slot: activeSlot },
+    layout?.panes,
+    activeSlot,
+  ).map((track) => ({
+    ...track,
+    required: mode === "single_chart" || track.slot === activeSlot,
+  }));
+
   return {
     mode,
     start: { kind: "time", time: new Date(timeSeconds * 1000).toISOString() },
     replayInterval: "auto",
     speed,
-    tracks: replayTracksForBackend(
-      mode,
-      replayTracksForLayout(
-        mode,
-        preset,
-        { ...active, slot: layout?.activeSlot },
-        layout?.panes,
-        layout?.activeSlot,
-      ),
-    ),
+    tracks: replayTracksForBackend(mode, layoutTracks),
     trading: {
       enabled: true,
       startingEquity: "10000",

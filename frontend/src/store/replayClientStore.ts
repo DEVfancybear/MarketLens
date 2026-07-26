@@ -6,6 +6,7 @@ import type {
   ReplayEventEnvelope,
   ReplaySessionSnapshot,
 } from "@/services/api/resources/replayApi";
+import type { ReplayUnavailableTrack } from "@/services/replay/replayAvailability";
 
 export type ReplayConnectionState =
   | "idle"
@@ -22,6 +23,7 @@ export interface ReplayClientProjection {
   barsByTrack: Record<string, ReplayBar[]>;
   connection: ReplayConnectionState;
   error: string | null;
+  unavailableTracks: ReplayUnavailableTrack[];
 }
 
 type Listener = (projection: ReplayClientProjection) => void;
@@ -33,6 +35,7 @@ export class ReplayClientStore {
     barsByTrack: {},
     connection: "idle",
     error: null,
+    unavailableTracks: [],
   };
   private listeners = new Set<Listener>();
   private controlOverrides: ReplayControlOverrides = {};
@@ -48,6 +51,14 @@ export class ReplayClientStore {
 
   setConnection(connection: ReplayConnectionState, error: string | null = null): void {
     this.projection = { ...this.projection, connection, error };
+    this.emit();
+  }
+
+  setUnavailableTracks(unavailableTracks: ReplayUnavailableTrack[]): void {
+    this.projection = {
+      ...this.projection,
+      unavailableTracks: unavailableTracks.map((track) => ({ ...track })),
+    };
     this.emit();
   }
 
@@ -97,7 +108,13 @@ export class ReplayClientStore {
 
   clear(): void {
     this.controlOverrides = {};
-    this.projection = { snapshot: null, barsByTrack: {}, connection: "idle", error: null };
+    this.projection = {
+      snapshot: null,
+      barsByTrack: {},
+      connection: "idle",
+      error: null,
+      unavailableTracks: [],
+    };
     this.emit();
   }
 

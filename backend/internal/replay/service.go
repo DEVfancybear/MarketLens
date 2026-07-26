@@ -3,6 +3,7 @@ package replay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -86,19 +87,21 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 	if input.Mode == "single_chart" && trackCount != 1 {
 		return SessionSnapshot{}, fmt.Errorf("%w: single_chart mode requires exactly one track", ErrBadRequest)
 	}
-	if input.Mode == "all_charts" && trackCount < 2 {
-		return SessionSnapshot{}, fmt.Errorf("%w: all_charts mode requires at least two tracks", ErrBadRequest)
-	}
 	if input.EndTime != nil && input.EndTime.Before(input.Start.Time) {
 		return SessionSnapshot{}, fmt.Errorf("%w: endTime precedes start time", ErrBadRequest)
 	}
 
 	normalized := make([]normalizedTrackInput, 0, trackCount)
 	catalog := s.history.Snapshot()
-	for i, raw := range input.Tracks {
-		if raw.Slot != i {
-			return SessionSnapshot{}, fmt.Errorf("%w: track slots must be unique and contiguous from 0", ErrBadRequest)
+	seenSlots := make(map[int]struct{}, trackCount)
+	for _, raw := range input.Tracks {
+		if raw.Slot < 0 || raw.Slot >= 4 {
+			return SessionSnapshot{}, fmt.Errorf("%w: track slots must be between 0 and 3", ErrBadRequest)
 		}
+		if _, duplicate := seenSlots[raw.Slot]; duplicate {
+			return SessionSnapshot{}, fmt.Errorf("%w: track slots must be unique", ErrBadRequest)
+		}
+		seenSlots[raw.Slot] = struct{}{}
 		raw.Symbol = strings.ToUpper(strings.TrimSpace(raw.Symbol))
 		tf, chartSeconds, ok := normalizeTimeframe(raw.ChartTimeframe)
 		if raw.Symbol == "" || !ok {
@@ -133,24 +136,35 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 			selectionTime,
 		)
 		if normalizeErr != nil {
-			return SessionSnapshot{}, normalizeErr
+			return SessionSnapshot{}, replayTrackAvailabilityError(normalizeErr, track.input)
 		}
 		if len(bars) == 0 {
 			if history.LastError != "" {
 				return SessionSnapshot{}, fmt.Errorf("%w: slot %d: %s", ErrDatasetPreparation, track.input.Slot, history.LastError)
 			}
-			return SessionSnapshot{}, fmt.Errorf("%w: no candles returned for slot %d", ErrDataUnavailable, track.input.Slot)
+			return SessionSnapshot{}, &DataUnavailableError{
+				Slot: track.input.Slot, Symbol: track.input.Symbol, ChartTimeframe: track.input.ChartTimeframe,
+			}
 		}
 		availableEnd := bars[len(bars)-1].Time.Add(time.Duration(track.sourceSeconds) * time.Second)
 		if selectionTime.Before(bars[0].Time) || !selectionTime.Before(availableEnd) {
-			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
+			return SessionSnapshot{}, &DataUnavailableError{
+				FirstAvailable: bars[0].Time, LastAvailable: availableEnd,
+				Slot: track.input.Slot, Symbol: track.input.Symbol, ChartTimeframe: track.input.ChartTimeframe,
+			}
 		}
 		if input.EndTime != nil && input.EndTime.After(availableEnd) {
-			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
+			return SessionSnapshot{}, &DataUnavailableError{
+				FirstAvailable: bars[0].Time, LastAvailable: availableEnd,
+				Slot: track.input.Slot, Symbol: track.input.Symbol, ChartTimeframe: track.input.ChartTimeframe,
+			}
 		}
 		cursor, selected, found := barAtOrBefore(bars, selectionTime)
 		if !found {
-			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: bars[0].Time, LastAvailable: availableEnd}
+			return SessionSnapshot{}, &DataUnavailableError{
+				FirstAvailable: bars[0].Time, LastAvailable: availableEnd,
+				Slot: track.input.Slot, Symbol: track.input.Symbol, ChartTimeframe: track.input.ChartTimeframe,
+			}
 		}
 		if i == 0 {
 			sharedStart = selected
@@ -192,6 +206,20 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 		Mode: input.Mode, Speed: input.Speed, ReplayIntervalSeconds: replayInterval,
 		StartTime: sharedStart, EndTime: input.EndTime, Config: config, Tracks: preparedTracks, Trading: preparedTrading,
 	})
+}
+
+func replayTrackAvailabilityError(err error, track TrackInput) error {
+	var unavailable *DataUnavailableError
+	if !errors.As(err, &unavailable) {
+		return err
+	}
+	return &DataUnavailableError{
+		FirstAvailable: unavailable.FirstAvailable,
+		LastAvailable:  unavailable.LastAvailable,
+		Slot:           track.Slot,
+		Symbol:         track.Symbol,
+		ChartTimeframe: track.ChartTimeframe,
+	}
 }
 
 // replayHistoryWindow keeps the original 70/30 history/future split for normal

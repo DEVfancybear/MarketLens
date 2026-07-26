@@ -2,9 +2,10 @@
 
 import { useMemo, useRef } from "react";
 import { useAtomValue } from "jotai";
-import { candlesAtom } from "@/store/chartStore";
+import { symbolAtom, timeframeAtom } from "@/store/chartStore";
 import { activeChartSlotAtom } from "@/store/replayLayoutStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
+import { useCandles } from "@/hooks/useCandles";
 import {
   createReplayCandleProjector,
   type ReplayCandleProjector,
@@ -20,9 +21,11 @@ export function useChartSeries(
   slot = 0,
   liveCandlesOverride?: Candle[],
 ): Candle[] {
-  const storedLiveCandles = useAtomValue(candlesAtom);
+  const symbol = useAtomValue(symbolAtom);
+  const timeframe = useAtomValue(timeframeAtom);
+  const keyedLiveCandles = useCandles(symbol, timeframe) as Candle[];
   const activeSlot = useAtomValue(activeChartSlotAtom);
-  const liveCandles = liveCandlesOverride ?? storedLiveCandles;
+  const liveCandles = liveCandlesOverride ?? keyedLiveCandles;
   const projection = useReplayClientProjection();
   const projectorRef = useRef<ReplayCandleProjector | null>(null);
   projectorRef.current ??= createReplayCandleProjector();

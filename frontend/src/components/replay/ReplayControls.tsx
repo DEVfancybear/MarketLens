@@ -10,6 +10,7 @@ import {
   Play,
   Power,
   RotateCcw,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -171,6 +172,20 @@ export function ReplayControls() {
       >
         <Power size={13} /> Exit Replay
       </button>
+      {projection.unavailableTracks.length > 0 && (
+        <span
+          data-testid="replay-live-track-warning"
+          role="status"
+          aria-live="polite"
+          className="ml-2 inline-flex items-center gap-1 rounded border border-choch/35 bg-choch/10 px-2 py-1 text-2xs text-choch"
+          title={projection.unavailableTracks
+            .map((track) => `Chart ${track.slot + 1}: ${track.symbol} ${track.chartTimeframe}`)
+            .join("\n")}
+        >
+          <TriangleAlert size={12} aria-hidden="true" />
+          {projection.unavailableTracks.map((track) => track.symbol).join(", ")} remain live
+        </span>
+      )}
       {projection.error && <span className="ml-2 text-2xs text-bear">{projection.error}</span>}
     </div>
   );

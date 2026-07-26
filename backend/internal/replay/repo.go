@@ -243,7 +243,12 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	}
 	trackWindows := make([]forkTrackWindow, len(tracks))
 	for i, track := range tracks {
-		trackWindows[i] = forkTrackWindow{FirstAvailable: track.FirstTime.Time, ChartTimeframe: track.ChartTimeframe}
+		trackWindows[i] = forkTrackWindow{
+			FirstAvailable: track.FirstTime.Time,
+			ChartTimeframe: track.ChartTimeframe,
+			Slot:           int(track.Slot),
+			Symbol:         track.Symbol,
+		}
 	}
 	resolvedTarget, err := resolveForkTarget(target, source.SimulatedTime.Time, trackWindows)
 	if err != nil {
@@ -257,7 +262,13 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 	for i, track := range tracks {
 		selected, selectErr := q.FindReplayDatasetBarAtOrBefore(ctx, gen.FindReplayDatasetBarAtOrBeforeParams{DatasetID: track.DatasetID, OpenTime: timestamp(resolvedTarget)})
 		if errors.Is(selectErr, pgx.ErrNoRows) {
-			return SessionSnapshot{}, &DataUnavailableError{FirstAvailable: track.FirstTime.Time, LastAvailable: source.SimulatedTime.Time}
+			return SessionSnapshot{}, &DataUnavailableError{
+				FirstAvailable: track.FirstTime.Time,
+				LastAvailable:  source.SimulatedTime.Time,
+				Slot:           int(track.Slot),
+				Symbol:         track.Symbol,
+				ChartTimeframe: track.ChartTimeframe,
+			}
 		}
 		if selectErr != nil {
 			return SessionSnapshot{}, selectErr
@@ -315,6 +326,8 @@ func (r *Repo) Fork(ctx context.Context, userID, sessionID string, target time.T
 type forkTrackWindow struct {
 	FirstAvailable time.Time
 	ChartTimeframe string
+	Slot           int
+	Symbol         string
 }
 
 // resolveForkTarget maps a chart bucket timestamp back to the first source row
@@ -340,7 +353,13 @@ func resolveForkTarget(target, lastAvailable time.Time, tracks []forkTrackWindow
 			return time.Time{}, err
 		}
 		if !targetBucket.Equal(firstBucket) {
-			return time.Time{}, &DataUnavailableError{FirstAvailable: first, LastAvailable: lastAvailable.UTC()}
+			return time.Time{}, &DataUnavailableError{
+				FirstAvailable: first,
+				LastAvailable:  lastAvailable.UTC(),
+				Slot:           track.Slot,
+				Symbol:         track.Symbol,
+				ChartTimeframe: track.ChartTimeframe,
+			}
 		}
 		if first.After(resolved) {
 			resolved = first

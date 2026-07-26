@@ -28,7 +28,7 @@ import {
   useReplayClientProjection,
 } from "@/store/replayClientStore";
 import {
-  forkActiveReplay,
+  moveActiveReplayTo,
   startReplaySession,
 } from "@/services/replay/replaySocket";
 import { fmtDateTime } from "@/utils/time";
@@ -223,7 +223,7 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
     cancelSelection();
     setBottomTab("replay");
     const request = projection.snapshot
-      ? forkActiveReplay(new Date(candle.time * 1000).toISOString())
+      ? moveActiveReplayTo(new Date(candle.time * 1000).toISOString())
       : startReplaySession(replaySessionInputAt(
           candle.time,
           { symbol, chartTimeframe: timeframe },

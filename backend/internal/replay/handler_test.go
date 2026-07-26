@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -71,5 +72,38 @@ func TestReplayRoutesRequireAuthBeforeDatasetPreparation(t *testing.T) {
 	}
 	if response.StatusCode != fiber.StatusAccepted || service.creates != 1 || service.createUser != "user-123" {
 		t.Fatalf("status=%d creates=%d user=%q", response.StatusCode, service.creates, service.createUser)
+	}
+}
+
+func TestReplayDataUnavailableErrorIncludesExactTrackIdentity(t *testing.T) {
+	first := time.Date(2024, 8, 5, 2, 11, 0, 0, time.UTC)
+	last := time.Date(2024, 8, 8, 13, 39, 0, 0, time.UTC)
+	err := replayAPIError(&DataUnavailableError{
+		FirstAvailable: first,
+		LastAvailable:  last,
+		Slot:           0,
+		Symbol:         "ADAUSD",
+		ChartTimeframe: "15m",
+	})
+	transport, ok := err.(interface {
+		HTTPStatus() int
+		ErrorCode() string
+		ErrorDetails() any
+	})
+	if !ok {
+		t.Fatalf("transport error type=%T", err)
+	}
+	if transport.HTTPStatus() != 422 || transport.ErrorCode() != "data_point_unavailable" {
+		t.Fatalf("status=%d code=%q", transport.HTTPStatus(), transport.ErrorCode())
+	}
+	want := map[string]any{
+		"firstAvailableTime": first,
+		"lastAvailableTime":  last,
+		"slot":               0,
+		"symbol":             "ADAUSD",
+		"chartTimeframe":     "15m",
+	}
+	if !reflect.DeepEqual(transport.ErrorDetails(), want) {
+		t.Fatalf("details=%#v want %#v", transport.ErrorDetails(), want)
 	}
 }

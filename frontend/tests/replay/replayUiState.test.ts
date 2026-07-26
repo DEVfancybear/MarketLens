@@ -22,7 +22,12 @@ test("selection sends the requested UTC time and lets the backend validate it", 
     "single",
   );
   assert.equal(input.start.time, new Date(1_700_000_000 * 1000).toISOString());
-  assert.deepEqual(input.tracks, [{ slot: 0, symbol: "EURUSD", chartTimeframe: "15m" }]);
+  assert.deepEqual(input.tracks, [{
+    slot: 0,
+    symbol: "EURUSD",
+    chartTimeframe: "15m",
+    required: true,
+  }]);
 });
 
 test("single-chart replay keeps backend slots contiguous when pane 3 is active", () => {
@@ -59,7 +64,51 @@ test("single-chart replay keeps backend slots contiguous when pane 3 is active",
       ],
     },
   );
-  assert.deepEqual(input.tracks, [{ slot: 0, symbol: "USDJPY", chartTimeframe: "5m" }]);
+  assert.deepEqual(input.tracks, [{
+    slot: 0,
+    symbol: "USDJPY",
+    chartTimeframe: "5m",
+    required: true,
+  }]);
+});
+
+test("all-chart replay marks only the active pane as required for every multi layout", () => {
+  for (const preset of ["two_horizontal", "two_vertical", "grid_2x2"] as const) {
+    const input = replaySessionInputAt(
+      1_700_000_000,
+      { symbol: "USDINR", chartTimeframe: "15m" },
+      "all_charts",
+      preset,
+      1,
+      {
+        activeSlot: 1,
+        panes: [
+          {
+            id: "main",
+            slot: 0,
+            symbol: "ADAUSD",
+            timeframe: "15m",
+            initialized: true,
+          },
+          {
+            id: "chart-2",
+            slot: 1,
+            symbol: "USDINR",
+            timeframe: "15m",
+            initialized: true,
+          },
+        ],
+      },
+    );
+    assert.deepEqual(
+      input.tracks.map(({ slot, required }) => ({ slot, required })),
+      Array.from({ length: preset === "grid_2x2" ? 4 : 2 }, (_, slot) => ({
+        slot,
+        required: slot === 1,
+      })),
+      preset,
+    );
+  }
 });
 
 test("Replay Auto interval matches TradingView single and synchronized layouts", () => {

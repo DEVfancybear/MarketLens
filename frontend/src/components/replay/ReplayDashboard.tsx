@@ -8,8 +8,7 @@ import { smcSnapshotAtom } from "@/store/smcStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { useChartSeries } from "@/hooks/useChartSeries";
 import {
-  forkActiveReplay,
-  runReplayCommand,
+  moveActiveReplayTo,
 } from "@/services/replay/replaySocket";
 import { fmtDateTime, parseDateInput } from "@/utils/time";
 import { fmtPrice } from "@/utils/format";
@@ -48,10 +47,7 @@ export function ReplayDashboard() {
     const time = parseDateInput(dateInput);
     if (time == null) return;
     const iso = new Date(time * 1000).toISOString();
-    const command = time < Date.parse(snapshot.simulatedTime) / 1000
-      ? forkActiveReplay(iso)
-      : runReplayCommand("seek", { time: iso });
-    void command.catch(() => undefined);
+    void moveActiveReplayTo(iso).catch(() => undefined);
   };
 
   if (!snapshot) {
