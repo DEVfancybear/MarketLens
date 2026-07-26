@@ -4,6 +4,27 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Improved - Progressive MT5 chart cold load (2026-07-27)
+- Replaced the blank, full-window wait on a previously unseen MT5
+  symbol/timeframe with a bounded viewport seed followed by a full `countBack`
+  backfill. The policy is timeframe-based for every symbol; for example, a
+  cold `1M` chart paints after 24 native monthly bars instead of waiting for
+  all 60 initial bars.
+- Reused the existing Go single-flight/cache path for the background fill and
+  exposed `refreshPending` even when the first seed is already current.
+  Repeated browser polls therefore read memory and cannot enqueue duplicate
+  MT5 history jobs.
+- Changed the active chart to poll a pending backfill without `refresh=true`.
+  This prevents a browser refresh from cancelling the Go request while the
+  uninterruptible native MT5 call still occupies the sole history worker.
+  Once the full window is ready, it atomically replaces the viewport seed and
+  invalidates indicator warm-up context.
+- Kept strict-before pagination and Replay dataset loading on their full-window
+  paths; progressive loading applies only to a cold latest-window chart read.
+- Added an end-to-end Go service regression for `XRPUSD 1M` covering the
+  24-bar first paint, one 60-bar background fill, and the completed cached
+  response.
+
 ### Fixed - MT5 outcome reconciliation and Trade activity feedback (2026-07-27)
 - Stopped treating a delivered command whose EA acknowledgement timed out as a
   broker rejection. It now becomes `unknown` with

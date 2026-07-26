@@ -5,6 +5,7 @@ import {
   HISTORY_SELECTION_DEBOUNCE_MS,
   historyPageBars,
   initialHistoryBars,
+  mt5ActiveHistoryRequest,
   mt5HistoryRefreshMs,
   mt5RefreshBars,
   mt5TailContinuitySeconds,
@@ -49,4 +50,19 @@ test("stale MT5 first paints escalate to the same full window for every timefram
     assert.equal(mt5RefreshBars(timeframe), expectedTail);
     assert.equal(mt5RefreshBars(timeframe, true), initialHistoryBars(timeframe));
   }
+});
+
+test("pending MT5 backfill polls the full cache without cancelling native work", () => {
+  assert.deepEqual(mt5ActiveHistoryRequest("1M", true, true), {
+    limit: 60,
+    refresh: undefined,
+  });
+  assert.deepEqual(mt5ActiveHistoryRequest("1M", true, false), {
+    limit: 60,
+    refresh: true,
+  });
+  assert.deepEqual(mt5ActiveHistoryRequest("15m", false, false), {
+    limit: 20,
+    refresh: true,
+  });
 });

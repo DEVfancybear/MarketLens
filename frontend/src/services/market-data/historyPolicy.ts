@@ -69,6 +69,23 @@ export function mt5RefreshBars(timeframe: Timeframe, fullWindow = false): number
   return 20;
 }
 
+export function mt5ActiveHistoryRequest(
+  timeframe: Timeframe,
+  fullWindow: boolean,
+  backfillPending: boolean,
+): { limit: number; refresh: true | undefined } {
+  if (backfillPending) {
+    return {
+      limit: initialHistoryBars(timeframe),
+      refresh: undefined,
+    };
+  }
+  return {
+    limit: mt5RefreshBars(timeframe, fullWindow),
+    refresh: true,
+  };
+}
+
 /** Maximum bar-open distance still considered adjacent for MT5 tail repair. */
 export function mt5TailContinuitySeconds(timeframe: Timeframe): number {
   // Calendar months vary and broker/DST alignment can move the UTC open. Keep

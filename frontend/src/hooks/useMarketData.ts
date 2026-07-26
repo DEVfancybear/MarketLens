@@ -33,6 +33,7 @@ import {
   HISTORY_SELECTION_DEBOUNCE_MS,
   historyPageBars,
   initialHistoryBars,
+  mt5ActiveHistoryRequest,
   mt5HistoryRefreshMs,
   mt5RefreshBars,
   mt5TailContinuitySeconds,
@@ -40,6 +41,7 @@ import {
 
 const MAX_BACKFILL_MISSING_BARS = 50;
 const MT5_ACTIVE_REFRESH_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+const MT5_PENDING_BACKFILL_POLL_MS = 750;
 
 export interface LoadedGoToHistory {
   candles: Candle[];
@@ -62,6 +64,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
   const catalogSize = useAtomValue(marketSymbolsAtom).length;
   const backfilledGapsRef = useRef<Set<string>>(new Set());
   const mt5NeedsFullRefreshRef = useRef<string | null>(null);
+  const mt5BackfillPendingRef = useRef<string | null>(null);
   const mt5RefreshSelectionRef = useRef<string | null>(null);
   const olderHistoryInFlightRef = useRef(false);
   const olderHistoryControllerRef = useRef<AbortController | null>(null);
@@ -100,10 +103,14 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     if (mt5RefreshSelectionRef.current !== key) {
       mt5RefreshSelectionRef.current = key;
       mt5NeedsFullRefreshRef.current = null;
+      mt5BackfillPendingRef.current = null;
     }
 
     const meta = symbol ? getMarketSymbol(symbol) : undefined;
-    if (meta?.provider !== "mt5") mt5NeedsFullRefreshRef.current = null;
+    if (meta?.provider !== "mt5") {
+      mt5NeedsFullRefreshRef.current = null;
+      mt5BackfillPendingRef.current = null;
+    }
     if (!symbol || !meta) {
       // The MT5 registry is hydrated asynchronously from the backend. On a cold
       // page load the chart can mount before /api/v1/mt5/symbols completes; do
@@ -184,6 +191,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
               page.authoritative === false || page.stale === true || page.refreshPending === true
                 ? key
                 : null;
+            mt5BackfillPendingRef.current = page.refreshPending === true ? key : null;
           }
           // Seed history before subscribing. For MT5, candles must come from
           // MT5 rates/history; ticks are used only for quotes/watchlist.
@@ -252,19 +260,45 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
       activeController = new AbortController();
       try {
         const needsFullRefresh = mt5NeedsFullRefreshRef.current === activeKey;
-        const hist = await getHistoricalDataService().loadHistory(
+        const waitsForBackfill = mt5BackfillPendingRef.current === activeKey;
+        const request = mt5ActiveHistoryRequest(timeframe, needsFullRefresh, waitsForBackfill);
+        const page = await getHistoricalDataService().loadHistoryPage(
           {
             symbol,
             timeframe,
-            limit: mt5RefreshBars(timeframe, needsFullRefresh),
-            refresh: true,
+            limit: request.limit,
+            // A cold first paint already owns a full-window background fill in
+            // the backend. Poll its in-memory snapshot instead of issuing an
+            // explicit refresh that cannot interrupt the native MT5 call and
+            // would only queue behind it.
+            refresh: request.refresh,
           },
           {
             signal: activeController.signal,
           },
         );
         if (cancelled) return;
+        if (waitsForBackfill && page.refreshPending) {
+          if (retryTimer === null) {
+            retryTimer = window.setTimeout(() => {
+              retryTimer = null;
+              void refreshLatestBars();
+            }, MT5_PENDING_BACKFILL_POLL_MS);
+          }
+          return;
+        }
+        const hist = page.candles;
         const marketData = getMarketDataState();
+        if (waitsForBackfill) {
+          // The background request used the original countBack window, so its
+          // completed snapshot is a safe full replacement for the viewport seed.
+          marketData.replaceCandles(symbol, timeframe, hist);
+          invalidateIndicatorHistoryContext(symbol, timeframe);
+          mt5BackfillPendingRef.current = null;
+          mt5NeedsFullRefreshRef.current = null;
+          retryAttempt = 0;
+          return;
+        }
         const current = marketData.getCandles(symbol, timeframe);
         const discontinuous = hasDiscontinuousHistoryTail(
           current,

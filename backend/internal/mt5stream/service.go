@@ -31,6 +31,20 @@ const (
 	maxHistoryPagesPerKey        = 256
 )
 
+var firstPaintHistoryLimits = map[string]int{
+	"1m":  300,
+	"3m":  300,
+	"5m":  300,
+	"15m": 240,
+	"30m": 200,
+	"1H":  180,
+	"2H":  160,
+	"4H":  120,
+	"1D":  90,
+	"1W":  52,
+	"1M":  24,
+}
+
 // Config controls the backend API's connection to the local Python MT5 bridge.
 type Config struct {
 	Enabled        bool
@@ -447,6 +461,7 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		if freshnessKnown && !stale {
 			snapshot := s.historySnapshot(symbol, timeframe, candles, "")
 			s.annotateSnapshotFreshness(&snapshot, symbol, timeframe, candles)
+			snapshot.RefreshPending = s.backgroundHistoryRefreshPending(symbol, timeframe)
 			return snapshot
 		}
 		// Keep the chart responsive while MT5 warms or refreshes rates. The
@@ -461,7 +476,11 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 		return snapshot
 	}
 
-	msg, err := s.requestHistory(ctx, symbol, timeframe, limit, before, 0, refresh)
+	requestLimit := limit
+	if before == 0 && !refresh && len(candles) == 0 {
+		requestLimit = firstPaintHistoryLimit(timeframe, limit)
+	}
+	msg, err := s.requestHistory(ctx, symbol, timeframe, requestLimit, before, 0, refresh)
 	if err != nil {
 		if candles := s.cachedHistory(symbol, timeframe, limit, before); before == 0 && len(candles) > 0 {
 			snapshot := s.historySnapshot(symbol, timeframe, candles, err.Error())
@@ -510,6 +529,15 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 	)
 	snapshot.HasMore = cloneBoolPointer(msg.HasMore)
 	s.applyMessageFreshness(&snapshot, msg, symbol, timeframe, resultCandles)
+	if before == 0 && !refresh && requestLimit < limit {
+		// A cold native timeframe can make MT5 download/build its entire series
+		// before returning. Request only enough bars to paint a useful viewport,
+		// then fill the caller's complete countBack window on the existing
+		// single-flight background path. Repeated HTTP polls keep serving the
+		// seed from memory and never enqueue duplicate MT5 work.
+		snapshot.RefreshPending = true
+		s.refreshHistoryAsync(symbol, timeframe, limit, 0)
+	}
 	if before == 0 && !s.historyMessageIsAuthoritative(msg, symbol, timeframe, resultCandles) {
 		stale := s.historyMessageIsStale(msg, symbol, timeframe, resultCandles)
 		snapshot.Stale = stale
@@ -1376,6 +1404,12 @@ func (s *Service) cancelBackgroundHistoryRefresh(symbol, timeframe string) {
 	}
 }
 
+func (s *Service) backgroundHistoryRefreshPending(symbol, timeframe string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.backgroundRefresh[historyKey(symbol, timeframe)] != nil
+}
+
 func (s *Service) performHistoryRequest(
 	ctx context.Context,
 	symbol, timeframe string,
@@ -1483,6 +1517,15 @@ func (s *Service) acquireHistorySlot(ctx context.Context) (func(), error) {
 
 func historyKey(symbol, timeframe string) string {
 	return normalizeSymbol(symbol) + ":" + normalizeTimeframe(timeframe)
+}
+
+func firstPaintHistoryLimit(timeframe string, requested int) int {
+	requested = clampLimit(requested)
+	limit := firstPaintHistoryLimits[normalizeTimeframe(timeframe)]
+	if limit <= 0 || requested <= limit {
+		return requested
+	}
+	return limit
 }
 
 func historyRequestKey(symbol, timeframe string, limit int, before, around int64, refresh bool) string {

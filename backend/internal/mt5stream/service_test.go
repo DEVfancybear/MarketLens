@@ -545,6 +545,79 @@ func TestHistoryRefreshReadsThroughCacheSynchronously(t *testing.T) {
 	}
 }
 
+func TestColdMonthlyHistoryPaintsSeedThenBackfillsRequestedWindow(t *testing.T) {
+	bridge := newHistoryBridgeHarness(t)
+	service := NewService(Config{
+		Enabled:     true,
+		BridgeURL:   bridge.url,
+		DialTimeout: time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(ctx)
+	waitForServiceConnection(t, service)
+	service.applyTick(Tick{Symbol: "XRPUSD", Timestamp: 60, TimeMSC: 60_000})
+
+	done := make(chan HistorySnapshot, 1)
+	go func() {
+		done <- service.History(context.Background(), "XRPUSD", "1M", 60, 0, false)
+	}()
+
+	seedRequest := <-bridge.requests
+	if got := int(seedRequest["limit"].(float64)); got != 24 {
+		t.Fatalf("cold 1M seed limit = %d, want 24", got)
+	}
+	fresh := false
+	known := true
+	seed := make([]Candle, 24)
+	for i := range seed {
+		seed[i] = Candle{Time: int64(i + 1), Close: float64(i + 1)}
+	}
+	bridge.replies <- HistoryMessage{
+		Type: "history", Source: "mt5", RequestID: fmt.Sprint(seedRequest["id"]),
+		Symbol: "XRPUSD", Timeframe: "1M", Candles: seed,
+		Stale: &fresh, FreshnessKnown: &known, LastBarTime: 24, MinimumFreshBarTime: 24,
+	}
+
+	firstPaint := <-done
+	if len(firstPaint.Candles) != 24 || !firstPaint.RefreshPending {
+		t.Fatalf("cold first paint = %+v, want 24 candles with backfill pending", firstPaint)
+	}
+
+	var backfillRequest map[string]any
+	select {
+	case backfillRequest = <-bridge.requests:
+	case <-time.After(time.Second):
+		t.Fatal("full monthly backfill was not requested")
+	}
+	if got := int(backfillRequest["limit"].(float64)); got != 60 {
+		t.Fatalf("monthly backfill limit = %d, want 60", got)
+	}
+	if backfillRequest["refresh"] != true {
+		t.Fatalf("monthly backfill refresh = %v, want true", backfillRequest["refresh"])
+	}
+
+	full := make([]Candle, 60)
+	for i := range full {
+		full[i] = Candle{Time: int64(i + 1), Close: float64(i + 1)}
+	}
+	bridge.replies <- HistoryMessage{
+		Type: "history", Source: "mt5", RequestID: fmt.Sprint(backfillRequest["id"]),
+		Symbol: "XRPUSD", Timeframe: "1M", Candles: full,
+		Stale: &fresh, FreshnessKnown: &known, LastBarTime: 60, MinimumFreshBarTime: 60,
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		cached := service.History(context.Background(), "XRPUSD", "1M", 60, 0, false)
+		if len(cached.Candles) == 60 && !cached.RefreshPending {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("full monthly backfill did not replace the first-paint seed")
+}
+
 func TestHistoryRefreshRetainsCacheWhenBridgeExhaustsStaleRates(t *testing.T) {
 	bridge := newHistoryBridgeHarness(t)
 	service := NewService(Config{Enabled: true, BridgeURL: bridge.url, DialTimeout: time.Second})
@@ -778,10 +851,10 @@ func TestCanceledCoalescedWaiterDoesNotCancelActiveWaiter(t *testing.T) {
 	firstDone := make(chan HistorySnapshot, 1)
 	secondDone := make(chan HistorySnapshot, 1)
 	go func() {
-		firstDone <- service.History(firstCtx, "NZDJPY", "4H", 400, 0, false)
+		firstDone <- service.History(firstCtx, "NZDJPY", "4H", 100, 0, false)
 	}()
 	go func() {
-		secondDone <- service.History(context.Background(), "NZDJPY", "4H", 400, 0, false)
+		secondDone <- service.History(context.Background(), "NZDJPY", "4H", 100, 0, false)
 	}()
 
 	request := <-bridge.requests
