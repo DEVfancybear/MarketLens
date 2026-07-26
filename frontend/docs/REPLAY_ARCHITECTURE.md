@@ -209,10 +209,13 @@ Replacing or forking a session changes track identity. The client intentionally
 drops bars from the old track before hydrating the replacement, so a First day
 fork can produce the valid sequence `many bars -> empty -> one bar`. The empty
 window resets Replay viewport initialization. The first non-empty window then
-uses a deterministic 120-logical-bar span with the current right offset and is
-marked initialized for that session/reset. It must not call `fitContent()` on a
-single candle, because Lightweight Charts expands that candle across most of
-the plot.
+uses a deterministic adaptive span and is marked initialized for that
+session/reset. The range includes the revealed data plus symmetric whitespace,
+has a 40-logical-bar minimum for sparse First-day sessions, and caps deep
+history at the latest 120 bars. It must not call `fitContent()` on a single
+candle, because Lightweight Charts expands that candle across most of the plot;
+it also must not force a 50–60-bar window into 120 bars, because that creates a
+large empty block that looks like missing candles.
 
 The initialization requestAnimationFrame is replaceable and is canceled on an
 empty reset or chart cleanup. Before applying it checks the active frame,
@@ -297,6 +300,8 @@ OHLC interpolation bounds, normal-speed single append, and high-speed append.
 It also includes stale paginated-history refresh, partial first-bucket forks,
 mobile touch/keyboard selection, compact landscape, session-expiry cleanup, and
 the active `Select bar -> Select date -> First day` empty-to-one-bar viewport.
+The browser regression also activates a 60-bar partial Replay window and
+asserts that every revealed candle fits inside a sub-80-bar logical range.
 Indicator regressions cover the backend FVG and generic primitive cutoff,
 invalid boundaries, HTTP contract, live-vs-Replay cache keys, causal rewind
 fallbacks, and frontend series/label/magnet clipping.

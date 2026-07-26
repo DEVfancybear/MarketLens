@@ -6,6 +6,7 @@ export type LogicalRangeLike = {
 };
 
 export const REPLAY_VIEWPORT_FALLBACK_SPAN_BARS = 120;
+export const REPLAY_VIEWPORT_MIN_SPAN_BARS = 40;
 
 export function shouldInitializeReplayViewport(
   activeSessionId: string | null | undefined,
@@ -83,18 +84,18 @@ export function latestReplayLogicalRange(
   if (dataLength <= 0) return null;
   const currentSpan = isFiniteLogicalRange(currentRange)
     ? currentRange.to - currentRange.from
-    : REPLAY_VIEWPORT_FALLBACK_SPAN_BARS;
+    : initialReplaySpan(dataLength, rightOffset);
   const span = Math.max(10, currentSpan);
   const to = dataLength - 1 + rightOffset;
   return { from: to - span, to };
 }
 
 /**
- * Give a newly activated Replay session a stable candle width even when its
- * first hydrated window contains only one bar. `fitContent()` makes that lone
- * bar fill most of the chart, while reusing the post-reset range preserves the
- * same collapsed spacing. New sessions therefore start from a deterministic
- * history-sized logical span; subsequent seeks may preserve the user's zoom.
+ * Give a newly activated Replay session a stable candle width without
+ * manufacturing a large empty history area. Sparse first-day sessions retain
+ * a 40-bar minimum so one candle stays readable; partially revealed sessions
+ * use their actual data length plus symmetric whitespace; deep histories stay
+ * capped to the latest 120-bar TradingView-style window.
  */
 export function initialReplayLogicalRange(
   dataLength: number,
@@ -102,5 +103,15 @@ export function initialReplayLogicalRange(
 ): LogicalRangeLike | null {
   if (dataLength <= 0) return null;
   const to = dataLength - 1 + rightOffset;
-  return { from: to - REPLAY_VIEWPORT_FALLBACK_SPAN_BARS, to };
+  return { from: to - initialReplaySpan(dataLength, rightOffset), to };
+}
+
+function initialReplaySpan(dataLength: number, rightOffset: number): number {
+  return Math.min(
+    REPLAY_VIEWPORT_FALLBACK_SPAN_BARS,
+    Math.max(
+      REPLAY_VIEWPORT_MIN_SPAN_BARS,
+      dataLength - 1 + Math.max(0, rightOffset) * 2,
+    ),
+  );
 }

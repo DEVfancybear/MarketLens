@@ -83,7 +83,7 @@ async function installReplayBackend(page: Page) {
     "replay-initial",
     "track-initial",
     "2026-07-13T18:05:00.000Z",
-    120,
+    60,
   );
   const firstDay = replaySnapshot(
     "replay-first-day",
@@ -91,7 +91,7 @@ async function installReplayBackend(page: Page) {
     FIRST_AVAILABLE_TIME,
     1,
   );
-  const initialBars = replayBars(120, "2026-07-12T12:15:00.000Z");
+  const initialBars = replayBars(60, "2026-07-13T03:20:00.000Z");
   const firstDayBars = replayBars(1, FIRST_AVAILABLE_TIME);
   let forkRequestTime: string | null = null;
 
@@ -181,8 +181,26 @@ test("active Replay First day keeps one candle readable and never touches a disp
 
   const selector = page.getByRole("slider", { name: "Replay start bar" });
   await expect(selector).toBeVisible();
+  await page.evaluate((initialStart) => {
+    window.dispatchEvent(new CustomEvent("chart-benchmark-replay", {
+      detail: { count: initialStart + 60 },
+    }));
+  }, INITIAL_START);
   await selector.press("Enter");
   await expect(page.getByRole("button", { name: "Select time", exact: true }).first()).toBeVisible();
+  await expect.poll(async () =>
+    page.evaluate(() => window.__chartInteractionTest!.snapshot().candleCount),
+  ).toBe(60);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  const partialRange = await page.evaluate(() =>
+    window.__chartInteractionTest!.snapshot().viewport.logicalRange,
+  );
+  expect(partialRange).not.toBeNull();
+  expect(Number(partialRange!.from)).toBeLessThanOrEqual(0);
+  expect(Number(partialRange!.to)).toBeGreaterThanOrEqual(59);
+  expect(Number(partialRange!.to) - Number(partialRange!.from)).toBeLessThan(80);
 
   await page.getByRole("button", { name: "Select time", exact: true }).first().click();
   await page.getByRole("button", { name: "Select date...", exact: true }).click();

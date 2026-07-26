@@ -15,6 +15,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   immediately while the backend history request revalidates the pane.
 - Persisted only live frames and required an exact scope match, preventing
   Replay bars or another pane's symbol/timeframe from leaking into a chart.
+- Replaced Replay's unconditional 120-bar initial viewport with an adaptive
+  40–120-bar span. A partially revealed 50–60-bar session now fills the chart
+  instead of reserving a large empty block that looks like missing candles,
+  while a one-bar First-day session remains readable without over-zooming.
 
 ### Fixed - Atomic, low-latency Replay activation and pane ownership (2026-07-26)
 - Kept the current live/Replay candles visible while a new session is prepared,

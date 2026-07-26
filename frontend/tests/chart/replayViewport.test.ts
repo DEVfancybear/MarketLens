@@ -18,9 +18,14 @@ test("a newly hydrated Replay session initializes its viewport exactly once", ()
   assert.equal(shouldInitializeReplayViewport(null, "fork-1", 1), false);
 });
 
-test("a first-day Replay candle uses a history-sized logical span", () => {
-  assert.deepEqual(initialReplayLogicalRange(1, 8), { from: -112, to: 8 });
+test("a first-day Replay candle keeps a readable minimum logical span", () => {
+  assert.deepEqual(initialReplayLogicalRange(1, 8), { from: -32, to: 8 });
   assert.equal(initialReplayLogicalRange(0, 8), null);
+});
+
+test("a partial Replay history fills the viewport without fake missing candles", () => {
+  assert.deepEqual(initialReplayLogicalRange(60, 8), { from: -8, to: 67 });
+  assert.deepEqual(initialReplayLogicalRange(120, 8), { from: 7, to: 127 });
 });
 
 test("replay viewport detects future whitespace after cursor jumps backward", () => {
@@ -46,7 +51,7 @@ test("latest replay logical range keeps the replay cursor candle in view", () =>
 test("latest replay logical range has a deterministic fallback when current range is unavailable", () => {
   const next = latestReplayLogicalRange(50, null, 8);
 
-  assert.deepEqual(next, { from: -63, to: 57 });
+  assert.deepEqual(next, { from: -8, to: 57 });
 });
 
 test("selection geometry converts a coordinate time to a UTC candidate only", () => {
