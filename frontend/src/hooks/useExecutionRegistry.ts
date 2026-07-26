@@ -5,9 +5,11 @@ import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
 import {
   getExecutionAccountState,
   getExecutionAccounts,
+  getExecutionInstruments,
   routeExecutionOrder,
   submitExecutionCommand,
 } from "@/services/api/resources/executionApi";
+import { projectExecutionInstrumentsToMt5Symbols } from "@/services/execution/instrumentProjection";
 import { buildExecutionOrderRequest } from "@/services/execution/orderRouting";
 import {
   buildCancelOrderCommand,
@@ -29,6 +31,7 @@ import {
   mt5PendingOrdersAtom,
   mt5PositionsAtom,
   mt5StatusAtom,
+  mt5SymbolInfoAtom,
 } from "@/store/mt5Store";
 import { pushToastAtom } from "@/store/toastStore";
 import {
@@ -43,7 +46,7 @@ import type {
   Mt5OrderRequest,
 } from "@/types/mt5";
 
-const REFRESH_INTERVAL_MS = 5_000;
+const REFRESH_INTERVAL_MS = 2_000;
 const STATE_REFRESH_INTERVAL_MS = 2_000;
 
 /** Hydrates the broker-neutral account registry through the authenticated BFF. */
@@ -125,6 +128,49 @@ export function useExecutionRegistry() {
     setMt5Account,
     setMt5Status,
   ]);
+
+  useEffect(() => {
+    const store = getDefaultStore();
+    store.set(mt5SymbolInfoAtom, {});
+    if (
+      !backendSession ||
+      !selected ||
+      selected.venueKind !== "metatrader5"
+    ) {
+      return;
+    }
+    let cancelled = false;
+    let running = false;
+    const accountId = selected.id;
+    const refresh = async () => {
+      if (running || document.visibilityState === "hidden") return;
+      running = true;
+      try {
+        const registry = await getExecutionInstruments(accountId);
+        if (cancelled || registry.accountId !== accountId) return;
+        store.set(
+          mt5SymbolInfoAtom,
+          projectExecutionInstrumentsToMt5Symbols(registry),
+        );
+      } catch {
+        // Preserve the current account's last safe catalog during a transient
+        // read outage. Account changes clear it before any new request starts.
+      } finally {
+        running = false;
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(refresh, REFRESH_INTERVAL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [backendSession, selected]);
 
   useEffect(() => {
     const store = getDefaultStore();

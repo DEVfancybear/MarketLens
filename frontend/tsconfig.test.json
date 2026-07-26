@@ -73,6 +73,7 @@
     "src/services/mt5/accountAccess.ts",
     "src/services/execution/copyRouting.ts",
     "src/services/execution/eaDistribution.ts",
+    "src/services/execution/instrumentProjection.ts",
     "src/types/execution.ts",
     "src/components/toolbar/indicatorSettingsInputRows.ts"
   ]

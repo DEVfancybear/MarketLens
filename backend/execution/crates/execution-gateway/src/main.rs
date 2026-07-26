@@ -2324,18 +2324,24 @@ async fn list_accounts(
                 COALESCE(
                     floor(extract(epoch FROM accounts.last_seen_at) * 1000)::bigint,
                     0
-                ) AS last_seen_at_ms,
-                EXISTS (
-                    SELECT 1
-                    FROM execution_ea_sessions sessions
-                    WHERE sessions.user_id = accounts.user_id
-                      AND sessions.account_id = accounts.id
-                      AND sessions.revoked_at IS NULL
-                      AND sessions.expires_at > now()
-                      AND sessions.absolute_expires_at > now()
-                      AND sessions.last_seen_at > now() - interval '15 minutes'
-                ) AS connected
+                ) AS account_last_seen_at_ms,
+                floor(
+                    extract(epoch FROM active_session.last_seen_at) * 1000
+                )::bigint AS session_last_seen_at_ms,
+                active_session.last_seen_at IS NOT NULL AS connected
             FROM execution_accounts accounts
+            LEFT JOIN LATERAL (
+                SELECT sessions.last_seen_at
+                FROM execution_ea_sessions sessions
+                WHERE sessions.user_id = accounts.user_id
+                  AND sessions.account_id = accounts.id
+                  AND sessions.revoked_at IS NULL
+                  AND sessions.expires_at > now()
+                  AND sessions.absolute_expires_at > now()
+                  AND sessions.last_seen_at > now() - interval '15 minutes'
+                ORDER BY sessions.last_seen_at DESC
+                LIMIT 1
+            ) active_session ON true
             WHERE accounts.user_id = $1
               AND accounts.status <> 'disabled'
             ORDER BY accounts.updated_at DESC, accounts.id
@@ -2356,10 +2362,14 @@ async fn list_accounts(
                 connected: row
                     .try_get("connected")
                     .map_err(|error| ApiError::database("decode account connection", error))?,
-                last_seen_at_ms: row
-                    .try_get::<i64, _>("last_seen_at_ms")
-                    .map_err(|error| ApiError::database("decode account heartbeat", error))?
-                    as u64,
+                last_seen_at_ms: effective_last_seen_at_ms(
+                    row.try_get::<i64, _>("account_last_seen_at_ms")
+                        .map_err(|error| ApiError::database("decode account heartbeat", error))?
+                        as u64,
+                    row.try_get::<Option<i64>, _>("session_last_seen_at_ms")
+                        .map_err(|error| ApiError::database("decode EA session heartbeat", error))?
+                        .map(|value| value as u64),
+                ),
                 account: row
                     .try_get::<sqlx::types::Json<EaAccountSnapshot>, _>("metadata")
                     .map_err(|error| ApiError::database("decode account snapshot", error))?
@@ -3744,6 +3754,15 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+fn effective_last_seen_at_ms(
+    account_last_seen_at_ms: u64,
+    session_last_seen_at_ms: Option<u64>,
+) -> u64 {
+    session_last_seen_at_ms
+        .map(|session| session.max(account_last_seen_at_ms))
+        .unwrap_or(account_last_seen_at_ms)
+}
+
 async fn shutdown_signal() {
     if let Err(error) = tokio::signal::ctrl_c().await {
         warn!(%error, "failed to install Ctrl+C handler");
@@ -3975,6 +3994,13 @@ mod tests {
         assert!(execution_transport_enabled(VenueKind::MetaTrader5));
         assert!(!execution_transport_enabled(VenueKind::BinanceSpot));
         assert!(!execution_transport_enabled(VenueKind::BinanceUsdM));
+    }
+
+    #[test]
+    fn account_liveness_uses_the_freshest_authenticated_ea_activity() {
+        assert_eq!(effective_last_seen_at_ms(1_000, Some(2_000)), 2_000);
+        assert_eq!(effective_last_seen_at_ms(3_000, Some(2_000)), 3_000);
+        assert_eq!(effective_last_seen_at_ms(4_000, None), 4_000);
     }
 
     fn instrument_snapshot() -> EaInstrumentSnapshot {

@@ -137,6 +137,8 @@ export interface ExecutionInstrumentWire {
   minQuantity: string;
   maxQuantity: string;
   priceTick: string;
+  tickValuePerQuantity?: string | null;
+  minStopDistance?: string | null;
   tradeAllowed: boolean;
 }
 
