@@ -49,6 +49,11 @@ creates one track for the active visible pane; inactive panes continue to show
 live data. All-chart scope creates one ordered track per visible pane and is
 disabled for the single-chart arrangement.
 
+Expanding a single chart into any multi-chart preset selects `All charts` by
+default, while retaining `Current chart` as an explicit option. This behavior
+is shared by 2-horizontal, 2-vertical, and 2x2 layouts rather than special-cased
+for four panes.
+
 UI pane slots are stable so hidden charts can retain symbol/timeframe state.
 Backend session tracks have a stricter contract: slots must be contiguous from
 zero. `replayTracksForLayout()` first builds UI tracks, then

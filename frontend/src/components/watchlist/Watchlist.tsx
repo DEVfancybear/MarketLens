@@ -44,7 +44,22 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { getMarketDataState } from "@/store/marketDataStore";
 import { useQuote } from "@/hooks/useQuote";
-import { setSymbolAtom, symbolAtom } from "@/store/chartStore";
+import {
+  drawingLayoutIdAtom,
+  setActiveToolAtom,
+  setDrawingLayoutContextAtom,
+  setEditingDrawingAtom,
+  setEditingIndicatorAtom,
+  setSymbolAtom,
+  setTimeframeAtom,
+  symbolAtom,
+  timeframeAtom,
+} from "@/store/chartStore";
+import {
+  chartPanesAtom,
+  chartSymbolDropPreviewAtom,
+  dropSymbolOnChartPaneAtom,
+} from "@/store/replayLayoutStore";
 import { getAlertState } from "@/store/alertStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import { logAtom, setAlertCenterAtom } from "@/store/uiStore";
@@ -82,6 +97,7 @@ type DisplayRow =
 type SectionDropEdge = "before" | "after";
 type WatchlistDragKind = "symbol" | "section";
 type WatchlistDropTarget =
+  | { kind: "chart"; key: string; slot: number }
   | { kind: "unsectioned"; key: string }
   | { kind: "section"; key: string; sectionId: string; edge?: SectionDropEdge }
   | {
@@ -156,9 +172,19 @@ export function Watchlist() {
   const removeSection = useSetAtom(removeWatchlistSectionAtom);
   const moveSection = useSetAtom(moveWatchlistSectionAtom);
   const moveSymbol = useSetAtom(moveWatchlistSymbolAtom);
+  const panes = useAtomValue(chartPanesAtom);
+  const activeTimeframe = useAtomValue(timeframeAtom);
+  const drawingLayoutId = useAtomValue(drawingLayoutIdAtom);
+  const dropSymbolOnChartPane = useSetAtom(dropSymbolOnChartPaneAtom);
+  const setChartDropPreview = useSetAtom(chartSymbolDropPreviewAtom);
 
   const activeSymbol = useAtomValue(symbolAtom);
   const setSymbol = useSetAtom(setSymbolAtom);
+  const setTimeframe = useSetAtom(setTimeframeAtom);
+  const setActiveTool = useSetAtom(setActiveToolAtom);
+  const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
+  const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
+  const setDrawingContext = useSetAtom(setDrawingLayoutContextAtom);
   const setAlertCenter = useSetAtom(setAlertCenterAtom);
 
   const [renaming, setRenaming] = useState(false);
@@ -333,6 +359,14 @@ export function Watchlist() {
         return null;
       };
 
+      if (dragKind === "symbol") {
+        const chart = closest<HTMLElement>("[data-chart-slot]");
+        const slot = Number(chart?.dataset.chartSlot);
+        if (chart && Number.isInteger(slot)) {
+          return { kind: "chart", key: `chart-${slot}`, slot };
+        }
+      }
+
       const unsectioned = closest<HTMLElement>("[data-watchlist-drop='unsectioned']");
       if (unsectioned) {
         return { kind: "unsectioned", key: "unsectioned-start" };
@@ -428,6 +462,25 @@ export function Watchlist() {
   const applyPointerDrop = useCallback(
     (state: WatchlistDragState, target: WatchlistDropTarget | null) => {
       if (!target) return;
+      if (target.kind === "chart") {
+        if (state.kind !== "symbol") return;
+        const pane = panes.find((candidate) => candidate.slot === target.slot);
+        if (!pane) return;
+        const timeframe = pane.initialized
+          ? pane.timeframe
+          : activeTimeframe;
+        setActiveTool("cursor");
+        setEditingDrawing(null);
+        setEditingIndicator(null);
+        setDrawingContext({ layoutId: drawingLayoutId, chartId: pane.id });
+        dropSymbolOnChartPane({
+          slot: target.slot,
+          selection: { symbol: state.ticker, timeframe },
+        });
+        setSymbol(state.ticker);
+        setTimeframe(timeframe);
+        return;
+      }
       if (state.kind === "section") {
         if (target.kind === "unsectioned") {
           moveSection({
@@ -485,14 +538,34 @@ export function Watchlist() {
         displayedOrder: displayedSymbolOrder,
       });
     },
-    [displayedSymbolOrder, moveSection, moveSymbol],
+    [
+      activeTimeframe,
+      displayedSymbolOrder,
+      drawingLayoutId,
+      dropSymbolOnChartPane,
+      moveSection,
+      moveSymbol,
+      panes,
+      setActiveTool,
+      setDrawingContext,
+      setEditingDrawing,
+      setEditingIndicator,
+      setSymbol,
+      setTimeframe,
+    ],
   );
 
   const updateDropTarget = useCallback((target: WatchlistDropTarget | null) => {
     if (dropTargetRef.current?.key === target?.key) return;
     dropTargetRef.current = target;
     setDropTarget(target);
-  }, []);
+    const drag = dragStateRef.current;
+    setChartDropPreview(
+      target?.kind === "chart" && drag?.kind === "symbol"
+        ? { slot: target.slot, symbol: drag.ticker }
+        : null,
+    );
+  }, [setChartDropPreview]);
 
   const moveDragGhost = useCallback((x: number, y: number) => {
     dragGhostPointRef.current = { x, y };
@@ -513,7 +586,13 @@ export function Watchlist() {
     dragFrameRef.current = null;
   }, []);
 
-  useEffect(() => cancelDragGhostFrame, [cancelDragGhostFrame]);
+  useEffect(
+    () => () => {
+      cancelDragGhostFrame();
+      setChartDropPreview(null);
+    },
+    [cancelDragGhostFrame, setChartDropPreview],
+  );
 
   useEffect(() => {
     if (!dragState) return;

@@ -16,6 +16,8 @@ export interface SavedLayoutState {
   /** Per-pane markets are retained even while a smaller arrangement hides them. */
   chartPanes?: ChartPaneState[];
   activeChartSlot?: number;
+  /** Per-layout alert line ownership; alert evaluation itself remains account-wide. */
+  alertChartOwners?: Record<string, string>;
   indicators: IndicatorConfig[];
   drawings: Drawing[];
   panels: {

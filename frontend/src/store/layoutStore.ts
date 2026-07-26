@@ -22,9 +22,11 @@ import {
 } from "./uiStore";
 import {
   activeChartSlotAtom,
+  alertChartOwnersAtom,
   chartLayoutPresetAtom,
   chartPanesAtom,
   normalizeChartPanes,
+  normalizePersistedChartWorkspaceLayout,
   replayLayoutModeAtom,
   restoreChartLayoutStateAtom,
   updatePaneSelection,
@@ -79,6 +81,7 @@ function capture(get: Getter, drawingContextId = get(drawingLayoutIdAtom)): Save
       ),
     ),
     activeChartSlot,
+    alertChartOwners: { ...get(alertChartOwnersAtom) },
     indicators: structuredClone(
       rebindIndicatorsToLayout(
         selectIndicatorsForLayout(
@@ -181,6 +184,7 @@ export const loadLayoutAtom = atom(
       panes,
       activeSlot: activeChartSlot,
       fallback,
+      alertChartOwners: state.alertChartOwners,
     });
     set(applySavedPanelLayoutAtom, state.panels);
     set(setDrawingLayoutContextAtom, {
@@ -195,6 +199,58 @@ export const loadLayoutAtom = atom(
       persistSymbol,
     });
     set(activeLayoutIdAtom, layout.id);
+  },
+);
+
+export const loadPersistedWorkspaceLayoutAtom = atom(
+  null,
+  (
+    get,
+    set,
+    input:
+      | unknown
+      | {
+          workspaceLayout: unknown;
+          symbol?: unknown;
+        },
+  ) => {
+    const wrapped =
+      Boolean(input) &&
+      typeof input === "object" &&
+      !Array.isArray(input) &&
+      Object.prototype.hasOwnProperty.call(input, "workspaceLayout");
+    const request = wrapped
+      ? (input as { workspaceLayout: unknown; symbol?: unknown })
+      : { workspaceLayout: input, symbol: undefined };
+    const remoteSymbol =
+      typeof request.symbol === "string" ? request.symbol.trim() : "";
+    const fallback = {
+      symbol: remoteSymbol || get(symbolAtom),
+      timeframe: get(timeframeAtom),
+    };
+    const workspace = normalizePersistedChartWorkspaceLayout(
+      request.workspaceLayout,
+      fallback,
+    );
+    if (!workspace) return null;
+    set(restoreChartLayoutStateAtom, {
+      preset: workspace.chartLayoutPreset,
+      replayMode: workspace.replayLayoutMode,
+      panes: workspace.chartPanes,
+      activeSlot: workspace.activeChartSlot,
+      fallback,
+      alertChartOwners: workspace.alertChartOwners,
+    });
+    const activePane =
+      workspace.chartPanes.find(
+        (pane) => pane.slot === workspace.activeChartSlot,
+      ) ?? workspace.chartPanes[0];
+    if (!activePane) return null;
+    set(setDrawingLayoutContextAtom, {
+      layoutId: get(drawingLayoutIdAtom),
+      chartId: activePane.id,
+    });
+    return activePane;
   },
 );
 

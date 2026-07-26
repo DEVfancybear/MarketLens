@@ -40,9 +40,11 @@ import type { Candle, IndicatorConfig } from "@/types";
 export function ChartArea({
   mobileControls,
   slot = 0,
+  chartId = "main",
 }: {
   mobileControls?: ReactNode;
   slot?: number;
+  chartId?: string;
 } = {}) {
   const replay = useReplayClientProjection();
   const { loadOlderCandles, loadCandlesAroundTime } = useMarketData({
@@ -219,8 +221,8 @@ export function ChartArea({
         >
           <SmcLayer />
           <TradeLevels />
-          <AlertLines />
-          <AlertOverlay />
+          <AlertLines chartId={chartId} symbol={symbol} />
+          <AlertOverlay chartId={chartId} symbol={symbol} />
           <DrawingLayer />
           <ReplaySelectionLayer candidates={displayedCandles} />
         </PriceChart>

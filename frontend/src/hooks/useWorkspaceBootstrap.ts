@@ -31,12 +31,14 @@ import {
   hydrateAtom as hydrateChartAtom,
   loadActiveSymbolDrawingsAtom,
   resetChartWorkspaceToDefaultsAtom,
+  setTimeframeAtom,
 } from "@/store/chartStore";
 import { resetTradeAtom } from "@/store/tradeStore";
 import { resetNotificationsToDefaultsAtom } from "@/store/notificationStore";
 import {
   applyRemoteLayoutsAtom,
   loadDefaultLayoutAtom,
+  loadPersistedWorkspaceLayoutAtom,
 } from "@/store/layoutStore";
 import { resetChartLayoutStateAtom } from "@/store/replayLayoutStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
@@ -79,6 +81,10 @@ export function useWorkspaceBootstrap(): void {
   const resetPushNotifications = useSetAtom(resetNotificationsToDefaultsAtom);
   const applyLayouts = useSetAtom(applyRemoteLayoutsAtom);
   const loadDefaultLayout = useSetAtom(loadDefaultLayoutAtom);
+  const loadPersistedWorkspaceLayout = useSetAtom(
+    loadPersistedWorkspaceLayoutAtom,
+  );
+  const setTimeframe = useSetAtom(setTimeframeAtom);
   const resetChartLayout = useSetAtom(resetChartLayoutStateAtom);
   const setWorkspaceReady = useSetAtom(setWorkspaceReadyAtom);
   const log = useSetAtom(logAtom);
@@ -163,14 +169,30 @@ export function useWorkspaceBootstrap(): void {
         applyWatchlists(watchlists);
         applyDrawingTemplates(bootstrap.drawingTemplates);
         applyPineScripts(bootstrap.pineScripts);
-        applyIndicators(bootstrap.indicators);
         applyLayouts(bootstrap.layouts);
-        const loadedDefaultLayout = loadDefaultLayout();
-        // A default layout restores its arrangement and pane payload first, but
-        // the user's latest active symbol is a separate account preference and
-        // must win on an automatic bootstrap/refresh.
-        applyChartSettings(bootstrap.settings.chart);
-        if (!loadedDefaultLayout) loadActiveDrawings();
+        const chartSettings = bootstrap.settings.chart;
+        const persistedPane = loadPersistedWorkspaceLayout({
+          workspaceLayout: chartSettings.workspaceLayout,
+          symbol: chartSettings.symbol,
+        });
+        if (persistedPane) {
+          // The current workspace is newer than a saved/default layout and owns
+          // both the active market and stable pane identity.
+          applyChartSettings({
+            ...chartSettings,
+            symbol: persistedPane.symbol,
+          });
+          setTimeframe(persistedPane.timeframe);
+          applyIndicators(bootstrap.indicators);
+          loadActiveDrawings();
+        } else {
+          applyIndicators(bootstrap.indicators);
+          const loadedDefaultLayout = loadDefaultLayout();
+          // A default layout restores its arrangement and pane payload first,
+          // but the latest active symbol remains an account preference.
+          applyChartSettings(chartSettings);
+          if (!loadedDefaultLayout) loadActiveDrawings();
+        }
         setWorkspaceReady(true);
         log("info", "Workspace synced from backend");
       })
@@ -199,6 +221,7 @@ export function useWorkspaceBootstrap(): void {
     applyLayouts,
     loadActiveDrawings,
     loadDefaultLayout,
+    loadPersistedWorkspaceLayout,
     applySmc,
     applyUI,
     applyWatchlists,
@@ -213,6 +236,7 @@ export function useWorkspaceBootstrap(): void {
     resetTrade,
     resetUI,
     setWorkspaceReady,
+    setTimeframe,
     user,
   ]);
 }

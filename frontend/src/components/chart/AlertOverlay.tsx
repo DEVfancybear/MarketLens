@@ -20,7 +20,6 @@ import { X } from "lucide-react";
 import { useChartCtx } from "./ChartContext";
 import { useAtomValue } from "jotai";
 import { getDefaultStore } from "jotai";
-import { symbolAtom } from "@/store/chartStore";
 import {
   useAlertStore,
   getAlertState,
@@ -28,10 +27,20 @@ import {
   CONDITION_SYMBOL,
   type Alert,
 } from "@/store/alertStore";
+import {
+  alertChartOwnersAtom,
+  chartLayoutPresetAtom,
+  chartPanesAtom,
+} from "@/store/replayLayoutStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { selectAlertsForChart } from "@/services/alertChartScope";
 import { fmtPrice } from "@/utils/format";
 import { AlertContextMenu, type AlertMenuState } from "./AlertContextMenu";
-import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
+import {
+  alertLineRegistry,
+  alertLineRegistryKey,
+  draggingAlertIds,
+} from "./alertLineRegistry";
 import { conditionForTargetSide } from "@/services/alertConditions";
 import { setChartInteractionLocked } from "./chartInteractionLock";
 import { getMarketDataState, marketDataTickAtom } from "@/store/marketDataStore";
@@ -56,14 +65,24 @@ function projectedAlertPrice(alert: Alert, marketTime: number): number | null {
 }
 
 /** Recompute the condition while dragging, keeping the alert's family (level vs cross). */
-export function AlertOverlay() {
+export function AlertOverlay({
+  chartId,
+  symbol,
+  interactive = true,
+}: {
+  chartId: string;
+  symbol: string;
+  interactive?: boolean;
+}) {
   const ctx = useChartCtx();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const symbol = useAtomValue(symbolAtom);
   useAtomValue(marketDataTickAtom);
   const alerts = useAlertStore((s) => s.alerts);
+  const panes = useAtomValue(chartPanesAtom);
+  const preset = useAtomValue(chartLayoutPresetAtom);
+  const owners = useAtomValue(alertChartOwnersAtom);
   const selectedId = useAlertStore((s) => s.selectedAlertId);
   const selectAlert = useAlertStore((s) => s.selectAlert);
   const updateAlert = useAlertStore((s) => s.updateAlert);
@@ -71,14 +90,23 @@ export function AlertOverlay() {
   const duplicateAlert = useAlertStore((s) => s.duplicateAlert);
   const editAlert = useAlertStore((s) => s.editAlert);
 
-  const symbolAlerts = alerts.filter((a) => a.symbol === symbol);
+  const symbolAlerts = selectAlertsForChart(alerts, {
+    chartId,
+    symbol,
+    panes,
+    preset,
+    owners,
+  });
+  const scopedAlertsKey = symbolAlerts
+    .map((alert) => `${alert.id}:${alert.updatedAt}:${alert.enabled ? 1 : 0}`)
+    .join("|");
 
   // Stash render data in refs so the draw callback always reads the latest values
   // without depending on symbolAlerts (which changes reference on every render).
-  const alertsRef = useRef(alerts);
+  const alertsRef = useRef(symbolAlerts);
   const symbolRef = useRef(symbol);
   const selectedIdRef = useRef(selectedId);
-  alertsRef.current = alerts;
+  alertsRef.current = symbolAlerts;
   symbolRef.current = symbol;
   selectedIdRef.current = selectedId;
 
@@ -139,7 +167,7 @@ export function AlertOverlay() {
     const latestAlerts = alertsRef.current;
     const latestSymbol = symbolRef.current;
     const latestSelectedId = selectedIdRef.current;
-    const filtered = latestAlerts.filter((a) => a.symbol === latestSymbol);
+    const filtered = latestAlerts;
     const marketTime = getMarketDataState().quotes[latestSymbol]?.timestamp ?? Date.now();
 
     if (ALERT_DEBUG) {
@@ -232,7 +260,7 @@ export function AlertOverlay() {
   // Repaint on data/selection/hover/drag/pan-zoom changes…
   useEffect(() => {
     draw();
-  }, [draw, alerts.length]);
+  }, [draw, scopedAlertsKey]);
 
   // Backup: direct Zustand subscription ensures draw fires even if React
   // batches the re-render in a way that misses the effect trigger.
@@ -276,6 +304,7 @@ export function AlertOverlay() {
 
   // ---------------------------------------------------------------- keyboard
   useEffect(() => {
+    if (!interactive) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -290,10 +319,11 @@ export function AlertOverlay() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, deleteAlert, selectAlert]);
+  }, [deleteAlert, interactive, selectAlert, selectedId]);
 
   // ------------------------------------------------------- click-outside deselect
   useEffect(() => {
+    if (!interactive) return;
     const onDown = (e: PointerEvent) => {
       if (menu) return; // menu has its own outside handling
       const root = containerRef.current;
@@ -314,7 +344,7 @@ export function AlertOverlay() {
     };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
-  }, [menu, selectAlert]);
+  }, [interactive, menu, selectAlert]);
 
   if (!ctx) return null;
 
@@ -399,7 +429,9 @@ export function AlertOverlay() {
       const newY = toY(newPrice);
       if (newY != null) target.style.top = `${newY - HIT_PX}px`;
       // Update native line in real-time so it follows the cursor.
-      const nativeLine = alertLineRegistry.get(a.id);
+      const nativeLine = alertLineRegistry.get(
+        alertLineRegistryKey(chartId, a.id),
+      );
       if (nativeLine) {
         try {
           nativeLine.applyOptions({ price: newPrice });
@@ -482,7 +514,7 @@ export function AlertOverlay() {
           style={{ pointerEvents: "none" }}
         />
 
-        {menu && (
+        {interactive && menu && (
           <AlertContextMenu
             state={menu}
             onClose={() => setMenu(null)}
@@ -496,7 +528,7 @@ export function AlertOverlay() {
 
       {/* Delete button — rendered outside the pointer-events:none container
           so it reliably receives clicks (same root cause as the hit strips). */}
-      {(() => {
+      {interactive && (() => {
         const sel = symbolAlerts.find((a) => a.id === selectedId && !a.locked);
         if (!sel) return null;
         const selectedPrice = displayPrice(sel);
@@ -509,10 +541,11 @@ export function AlertOverlay() {
               const id = sel.id;
               const store = getAlertState();
               store.deleteAlert(id);
-              const line = alertLineRegistry.get(id);
+              const registryKey = alertLineRegistryKey(chartId, id);
+              const line = alertLineRegistry.get(registryKey);
               if (line && ctx) {
                 ctx.candleSeries.removePriceLine(line);
-                alertLineRegistry.delete(id);
+                alertLineRegistry.delete(registryKey);
               }
             }}
             className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110 z-50"
@@ -528,7 +561,7 @@ export function AlertOverlay() {
 
       {/* Hit strips rendered OUTSIDE the pointer-events:none container
           so they reliably receive pointer events in all browsers. */}
-      {symbolAlerts.map((a) => {
+      {interactive && symbolAlerts.map((a) => {
         const price = displayPrice(a);
         const y = price == null ? null : toY(price);
         if (y == null) return null;

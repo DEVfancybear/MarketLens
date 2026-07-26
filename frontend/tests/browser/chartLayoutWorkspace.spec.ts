@@ -19,19 +19,32 @@ test.describe("TradingView-style chart layouts", () => {
         body: JSON.stringify({
           connected: true,
           source: "playwright",
-          count: 1,
-          streamSymbols: ["EURUSD"],
-          symbols: [{
-            name: "EURUSD",
-            description: "Euro / US Dollar",
-            visible: true,
-            digits: 5,
-            point: 0.00001,
-            spread: 0,
-            trade_mode: 4,
-            currency_base: "EUR",
-            currency_profit: "USD",
-          }],
+          count: 2,
+          streamSymbols: ["EURUSD", "GBPUSD"],
+          symbols: [
+            {
+              name: "EURUSD",
+              description: "Euro / US Dollar",
+              visible: true,
+              digits: 5,
+              point: 0.00001,
+              spread: 0,
+              trade_mode: 4,
+              currency_base: "EUR",
+              currency_profit: "USD",
+            },
+            {
+              name: "GBPUSD",
+              description: "British Pound / US Dollar",
+              visible: true,
+              digits: 5,
+              point: 0.00001,
+              spread: 0,
+              trade_mode: 4,
+              currency_base: "GBP",
+              currency_profit: "USD",
+            },
+          ],
         }),
       });
     });
@@ -158,6 +171,44 @@ test.describe("TradingView-style chart layouts", () => {
     await openLayoutMenu(page);
     await expect(page.getByRole("menuitemradio", { name: "All charts", exact: true }))
       .toHaveAttribute("aria-checked", "true");
+  });
+
+  test("dragging a watchlist symbol targets the hovered pane without changing sibling panes", async ({ page }) => {
+    await page.getByRole("button", { name: "Add symbol" }).click();
+    await page.getByPlaceholder("Search symbol").fill("GBPUSD");
+    await page.getByRole("button", { name: /GBPUSD/ }).click();
+    await chooseArrangement(page, "2 Horizontal");
+
+    const source = page.locator('[data-watchlist-symbol="GBPUSD"]');
+    const target = page.locator('[data-chart-slot="1"]');
+    const sourceBox = await source.boundingBox();
+    const targetBox = await target.boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
+
+    await page.mouse.move(
+      sourceBox!.x + sourceBox!.width / 2,
+      sourceBox!.y + sourceBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      sourceBox!.x + sourceBox!.width / 2 - 12,
+      sourceBox!.y + sourceBox!.height / 2,
+      { steps: 2 },
+    );
+    await page.mouse.move(
+      targetBox!.x + targetBox!.width / 2,
+      targetBox!.y + targetBox!.height / 2,
+      { steps: 8 },
+    );
+    await expect(target.getByText("Drop GBPUSD on Chart 2")).toBeVisible();
+    await page.mouse.up();
+
+    await expect(target).toHaveAttribute("data-active-chart", "true");
+    await expect(target.getByTestId("current-price-symbol")).toHaveText("GBPUSD");
+    await expect(
+      page.locator('[data-chart-slot="0"]').getByTestId("current-price-symbol"),
+    ).toHaveText("EURUSD");
   });
 
   test("every pane exposes its symbol and live candle countdown", async ({ page }) => {

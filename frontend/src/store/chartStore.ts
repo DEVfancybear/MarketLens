@@ -243,6 +243,13 @@ function queueChartSettings(
   });
 }
 
+export const persistChartWorkspaceLayoutAtom = atom(
+  null,
+  (get, set, workspaceLayout: unknown) => {
+    queueChartSettings(get, set, { workspaceLayout });
+  },
+);
+
 function commitDrawingToolPreferences(
   get: AtomGet,
   set: AtomSet,

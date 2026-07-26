@@ -12,6 +12,7 @@ import { useMt5Bridge } from "@/hooks/useMt5Bridge";
 import { useMt5IntegrationAccess } from "@/hooks/useMt5IntegrationAccess";
 import { useAuthSession } from "@/hooks/useAuthSession";
 import { useWorkspaceBootstrap } from "@/hooks/useWorkspaceBootstrap";
+import { useChartLayoutPersistence } from "@/hooks/useChartLayoutPersistence";
 import { useNotificationDeepLink } from "@/hooks/useNotificationDeepLink";
 import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
@@ -33,6 +34,7 @@ export function GlobalRuntime() {
   usePushTriggerReconcile(); // pulls back server-confirmed closed-browser triggers the client's own scan missed
   useAuthSession(); // bridges Firebase Google auth -> authStore (+ best-effort backend session)
   useWorkspaceBootstrap(); // applies backend settings/watchlists after backend auth
+  useChartLayoutPersistence(); // autosaves/restores the active multi-chart projection
   useMt5IntegrationAccess(); // loads verified MT5 access for the current backend user only
   useMt5Bridge(); // connects the host-local bridge only for a verified user
   useNotificationDeepLink(); // routes notification clicks to the alert symbol

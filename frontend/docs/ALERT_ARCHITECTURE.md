@@ -272,6 +272,22 @@ The chart uses two layers:
   native price line immediately through the shared alert-line registry, then commits the store change
   on release.
 
+In multi-chart layouts, alert evaluation remains account/symbol-wide but line
+presentation is chart-local. Creating or cloning an alert records the stable
+pane ID in `alertChartOwnersAtom`; current-workspace and saved-layout snapshots
+persist that map. `AlertLines` also mounts in read-only preview panes, so a line
+created on chart 1 remains visibly anchored there after chart 2 becomes active.
+Legacy alerts without ownership deterministically bind to the first visible
+pane with the same symbol.
+
+Preview panes mount `AlertOverlay` in a canvas-only read-only mode as well, so
+dynamic drawing alerts remain visible without exposing drag, delete, keyboard,
+or context-menu actions on an inactive chart.
+
+The native line registry key is the composite `chartId + alertId`. This prevents
+one pane's mount/unmount or drag from mutating a same-ID line owned by another
+chart.
+
 Selection state is `selectedAlertIdAtom`. Locked alerts render but cannot be dragged or deleted.
 Disabled alerts render dimmed and are skipped by evaluation.
 

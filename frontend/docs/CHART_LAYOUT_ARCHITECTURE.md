@@ -1,6 +1,6 @@
 # Chart Layout Architecture
 
-_Updated 2026-07-24._
+_Updated 2026-07-26._
 
 ## Scope and behavior contract
 
@@ -39,11 +39,17 @@ has its own history/subscription, pane-scoped indicators, current-price
 symbol/countdown marker, and drawing projection, then becomes the interactive
 chart when the user activates it.
 
+The same slot contract applies to symbol drag/drop in every preset. Watchlist
+pointer dragging resolves the chart section under the cursor, shows a
+pane-local drop preview, then updates only that pane's symbol while preserving
+its interval. The target pane becomes active; sibling panes and watchlist order
+are unchanged.
+
 ## State ownership
 
 | Module | Responsibility |
 | --- | --- |
-| `store/replayLayoutStore.ts` | Arrangement, four stable pane records, active slot, Replay scope, and track mapping |
+| `store/replayLayoutStore.ts` | Arrangement, four stable pane records, active slot, Replay scope, chart drop state, alert-line ownership, and track mapping |
 | `components/chart/ChartLayoutWorkspace.tsx` | Grid rendering, preview market data, pane activation, and active-chart focus treatment |
 | `store/chartStore.ts` | Active symbol/timeframe bridge plus pane-scoped indicator and drawing registries |
 | `store/layoutStore.ts` | Capture, restore, create, update, default, and delete saved snapshots |
@@ -82,6 +88,8 @@ When the active selection changes, it is written back to that pane.
 - Snapshot normalization validates slot numbers, IDs, symbols, and timeframes,
   and guarantees unique stable IDs.
 - Selecting `single` forces Replay scope back to `single_chart`.
+- Expanding from `single` to any multi-chart preset defaults Replay to
+  `all_charts`; `Current chart` remains an explicit user-selectable scope.
 
 Stable pane IDs are also drawing chart IDs. This prevents switching panes from
 mixing drawing scopes even though the interactive chart component is remounted.
@@ -101,7 +109,7 @@ interaction cancellation key includes symbol, layout ID, and pane ID; an
 unfinished Long Position or any other tool therefore cannot continue in the
 new pane.
 
-## Active symbol persistence
+## Current workspace persistence
 
 `settings.chart.symbol` is the authenticated user's latest active symbol.
 `setSymbolAtom` writes a local pending marker immediately and queues the backend
@@ -109,11 +117,18 @@ patch. The pending local value wins during a refresh until the bootstrap value
 acknowledges it; sign-out explicitly flushes the settings queue before ending
 the backend session.
 
-Automatic bootstrap restores a default layout's arrangement first, then applies
-the current-symbol account preference. Consequently a default layout cannot
-force EURUSD on every reload. EURUSD is the backend default only for an account
-that has never selected a symbol. Explicitly loading a saved layout still
-adopts and persists that layout's active symbol.
+`settings.chart.workspaceLayout` autosaves the complete current projection for
+all supported presets: arrangement, Replay scope, four pane records, active
+slot, and chart-local alert ownership. The chart-settings mutation queue
+coalesces rapid changes and `flushChartSettings()` drains it before backend
+logout. On the next authenticated bootstrap this current workspace wins over a
+default saved layout, so a 2-horizontal, 2-vertical, or 2x2 session reopens
+exactly as the user left it. A default saved layout is used only when an account
+does not yet have a current-workspace snapshot.
+
+EURUSD remains the backend default only for an account that has never selected
+a symbol. Explicitly loading a saved layout still adopts and persists that
+layout's active symbol.
 
 ## Saved layout lifecycle
 
@@ -125,6 +140,7 @@ the workspace to one chart and `single_chart` Replay scope.
 
 - arrangement and Replay scope;
 - all four pane records and the active slot;
+- per-layout alert-line chart ownership;
 - pane-scoped indicator configuration for every chart in the layout;
 - drawings rebound to a stable `drawingContextId`;
 - panel sizes, open states, and bottom-panel tab;
@@ -178,6 +194,8 @@ projection rules.
   label.
 - Inactive previews use a full-pane activation button with a visible keyboard
   focus ring.
+- A watchlist drag shows a high-contrast, pointer-transparent drop target on
+  only the hovered chart.
 - The Layout trigger reports `aria-haspopup="menu"` and its expanded state.
 - Destructive delete uses the shared confirmation dialog.
 

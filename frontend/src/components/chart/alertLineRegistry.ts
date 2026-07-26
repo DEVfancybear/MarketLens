@@ -1,12 +1,16 @@
 import type { IPriceLine } from "lightweight-charts";
 
 /**
- * Shared registry of native alert price lines, keyed by alert ID.
+ * Shared registry of native alert price lines, keyed by chart + alert ID.
  * AlertLines writes to it; AlertOverlay reads during drag to update
  * the native line's price in real-time so the trendline follows the
  * cursor smoothly (TradingView behaviour).
  */
 export const alertLineRegistry = new Map<string, IPriceLine>();
+
+export function alertLineRegistryKey(chartId: string, alertId: string): string {
+  return `${chartId}\u0000${alertId}`;
+}
 
 /**
  * Alert IDs currently being dragged by AlertOverlay. AlertLines' reconciliation

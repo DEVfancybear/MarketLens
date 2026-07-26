@@ -20,6 +20,7 @@ import {
 } from "@/store/chartStore";
 import {
   activeChartSlotAtom,
+  chartSymbolDropPreviewAtom,
   chartLayoutPresetAtom,
   chartPanesAtom,
   setActiveChartSlotAtom,
@@ -38,6 +39,8 @@ import { initialHistoryBars } from "@/services/market-data/historyPolicy";
 import { cn } from "@/utils/cn";
 import type { Candle } from "@/types";
 import { selectIndicatorsForChart } from "./indicators/indicatorChartScope";
+import { AlertLines } from "./AlertLines";
+import { AlertOverlay } from "./AlertOverlay";
 import { ChartArea } from "./ChartArea";
 import { DrawingPreviewLayer } from "./DrawingPreviewLayer";
 import { PriceChart } from "./PriceChart";
@@ -50,6 +53,7 @@ export function ChartLayoutWorkspace({
   const preset = useAtomValue(chartLayoutPresetAtom);
   const panes = useAtomValue(chartPanesAtom);
   const activeSlot = useAtomValue(activeChartSlotAtom);
+  const chartDropPreview = useAtomValue(chartSymbolDropPreviewAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
   const drawingLayoutId = useAtomValue(drawingLayoutIdAtom);
@@ -153,16 +157,29 @@ export function ChartLayoutWorkspace({
             className={cn(
               "relative min-h-0 min-w-0 overflow-hidden bg-[var(--chart-bg)]",
               active && preset !== "single" && "z-[1] ring-1 ring-inset ring-brand",
+              chartDropPreview?.slot === slot &&
+                "z-[2] ring-2 ring-inset ring-brand",
             )}
           >
             {active ? (
-              <ChartArea slot={slot} mobileControls={mobileControls} />
+              <ChartArea
+                slot={slot}
+                chartId={pane.id}
+                mobileControls={mobileControls}
+              />
             ) : (
               <ChartPreviewPane
                 pane={pane}
                 drawingLayoutId={drawingLayoutId}
                 onActivate={() => activatePane(pane)}
               />
+            )}
+            {chartDropPreview?.slot === slot && (
+              <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-brand/10 backdrop-blur-[1px]">
+                <div className="rounded-lg border border-brand/60 bg-terminal-raised/95 px-3 py-2 text-xs font-semibold text-ink shadow-terminal">
+                  Drop {chartDropPreview.symbol} on Chart {slot + 1}
+                </div>
+              </div>
             )}
           </section>
         );
@@ -216,6 +233,12 @@ function ChartPreviewPane({
         interactive={false}
         registerAsMain={false}
       >
+        <AlertLines chartId={pane.id} symbol={pane.symbol} />
+        <AlertOverlay
+          chartId={pane.id}
+          symbol={pane.symbol}
+          interactive={false}
+        />
         <DrawingPreviewLayer
           drawings={drawings}
           symbol={pane.symbol}

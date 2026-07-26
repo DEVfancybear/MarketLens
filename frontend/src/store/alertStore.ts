@@ -46,6 +46,12 @@ import {
   sanitizeAlertNote,
   sanitizeAlertSource,
 } from "@/services/alertValidation";
+import {
+  activeChartSlotAtom,
+  alertChartOwnersAtom,
+  chartPanesAtom,
+  setAlertChartOwnerAtom,
+} from "./replayLayoutStore";
 
 /** Incremented on every mutation so external subscribers (e.g. AlertOverlay canvas) can react. */
 export const alertTickAtom = atom<number>(0);
@@ -315,6 +321,14 @@ export const createAlertAtom = atom(
       technicalTarget,
     };
     set(alertsAtom, [alert, ...get(alertsAtom)]);
+    const activeSlot = get(activeChartSlotAtom);
+    const activePane = get(chartPanesAtom).find(
+      (pane) => pane.slot === activeSlot,
+    );
+    set(setAlertChartOwnerAtom, {
+      alertId: alert.id,
+      chartId: activePane?.id,
+    });
     persist();
     queueAlertSync(get, alert.id, "create", () =>
       createRemoteAlert(localAlertToCreate(alert)),
@@ -429,6 +443,7 @@ export const deleteAlertAtom = atom(null, (get, set, id: string) => {
   set(expiredAlertsAtom, get(expiredAlertsAtom).filter((a) => a.id !== id));
   if (get(selectedAlertIdAtom) === id) set(selectedAlertIdAtom, null);
   if (get(editingAlertIdAtom) === id) set(editingAlertIdAtom, null);
+  set(setAlertChartOwnerAtom, { alertId: id, chartId: null });
   persist();
   queueAlertSync(get, id, "delete", () => deleteRemoteAlert(id));
 });
@@ -455,6 +470,10 @@ export const duplicateAlertAtom = atom(
       triggerEvidence: undefined,
     };
     set(alertsAtom, [clone, ...get(alertsAtom)]);
+    set(setAlertChartOwnerAtom, {
+      alertId: clone.id,
+      chartId: get(alertChartOwnersAtom)[src.id],
+    });
     set(selectedAlertIdAtom, clone.id);
     persist();
     queueAlertSync(get, clone.id, "duplicate", () =>
@@ -981,6 +1000,7 @@ export const resetAlertsToDefaultsAtom = atom(null, (_get, set) => {
   set(settingsAtom, DEFAULT_SETTINGS);
   set(selectedAlertIdAtom, null);
   set(editingAlertIdAtom, null);
+  set(alertChartOwnersAtom, {});
   localStore.remove(STORAGE_KEY);
   set(alertTickAtom, Date.now());
 });
@@ -1005,6 +1025,9 @@ export const removeAlertAtom = atom(null, (get, set, id: string) => {
 export const clearAlertsAtom = atom(null, (_get, set) => {
   const ids = _get(alertsAtom).map((alert) => alert.id);
   set(alertsAtom, []);
+  for (const id of ids) {
+    set(setAlertChartOwnerAtom, { alertId: id, chartId: null });
+  }
   persist();
   for (const id of ids) {
     queueAlertSync(_get, id, "clear active", () => deleteRemoteAlert(id));

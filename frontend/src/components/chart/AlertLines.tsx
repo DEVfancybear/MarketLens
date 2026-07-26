@@ -3,11 +3,20 @@ import { useEffect, useRef } from "react";
 import type { IPriceLine, ISeriesApi } from "lightweight-charts";
 import { useChartCtx } from "./ChartContext";
 import { useAtomValue } from "jotai";
-import { symbolAtom } from "@/store/chartStore";
 import { useAlertStore, CONDITION_SYMBOL } from "@/store/alertStore";
+import {
+  alertChartOwnersAtom,
+  chartLayoutPresetAtom,
+  chartPanesAtom,
+} from "@/store/replayLayoutStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { selectAlertsForChart } from "@/services/alertChartScope";
 import { fmtPrice } from "@/utils/format";
-import { alertLineRegistry, draggingAlertIds } from "./alertLineRegistry";
+import {
+  alertLineRegistry,
+  alertLineRegistryKey,
+  draggingAlertIds,
+} from "./alertLineRegistry";
 import { alertLineRenderKey } from "@/services/alertConditions";
 
 /**
@@ -22,18 +31,31 @@ import { alertLineRenderKey } from "@/services/alertConditions";
  * This guarantees that every active alert for the current symbol ALWAYS shows
  * a visible horizontal line — the core TradingView behaviour the user expects.
  */
-export function AlertLines() {
+export function AlertLines({
+  chartId,
+  symbol,
+}: {
+  chartId: string;
+  symbol: string;
+}) {
   const ctx = useChartCtx();
-  const symbol = useAtomValue(symbolAtom);
   const alerts = useAlertStore((s) => s.alerts);
+  const panes = useAtomValue(chartPanesAtom);
+  const preset = useAtomValue(chartLayoutPresetAtom);
+  const owners = useAtomValue(alertChartOwnersAtom);
   const linesRef = useRef<Map<string, IPriceLine>>(new Map());
   // Stable ref to the candle series — never changes after chart init.
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   if (ctx?.candleSeries) seriesRef.current = ctx.candleSeries;
 
-  const symbolAlerts = alerts.filter(
+  const symbolAlerts = selectAlertsForChart(alerts, {
+    chartId,
+    symbol,
+    panes,
+    preset,
+    owners,
+  }).filter(
     (a) =>
-      a.symbol === symbol &&
       a.enabled &&
       (!a.technicalTarget || a.technicalTarget.kind === "fixed-price"),
   );
@@ -62,7 +84,7 @@ export function AlertLines() {
       const alert = symbolAlerts.find((a) => a.id === id);
       if (!alert || (alert.price !== line.options().price && !draggingAlertIds.has(id))) {
         series.removePriceLine(line);
-        alertLineRegistry.delete(id);
+        alertLineRegistry.delete(alertLineRegistryKey(chartId, id));
         existing.delete(id);
       }
     }
@@ -80,13 +102,13 @@ export function AlertLines() {
         title: label,
       });
       existing.set(a.id, line);
-      alertLineRegistry.set(a.id, line);
+      alertLineRegistry.set(alertLineRegistryKey(chartId, a.id), line);
     }
 
     return () => {
       for (const [id, line] of existing) {
         series.removePriceLine(line);
-        alertLineRegistry.delete(id);
+        alertLineRegistry.delete(alertLineRegistryKey(chartId, id));
       }
       existing.clear();
     };

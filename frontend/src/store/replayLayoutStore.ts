@@ -25,6 +25,21 @@ export interface ActiveChartSelection {
   timeframe: Timeframe;
 }
 
+export interface ChartSymbolDropPreview {
+  slot: number;
+  symbol: string;
+}
+
+export interface PersistedChartWorkspaceLayout {
+  version: 1;
+  chartLayoutPreset: ChartLayoutPreset;
+  replayLayoutMode: ReplayLayoutMode;
+  chartPanes: ChartPaneState[];
+  activeChartSlot: number;
+  /** Alert presentation ownership is layout-specific, while alert evaluation remains account-wide. */
+  alertChartOwners: Record<string, string>;
+}
+
 export const MAX_CHART_PANES = 4;
 const DEFAULT_TIMEFRAME: Timeframe = "15m";
 
@@ -121,6 +136,79 @@ export function updatePaneSelection(
   );
 }
 
+function isChartLayoutPreset(value: unknown): value is ChartLayoutPreset {
+  return (
+    value === "single" ||
+    value === "two_horizontal" ||
+    value === "two_vertical" ||
+    value === "grid_2x2"
+  );
+}
+
+function normalizeAlertChartOwners(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const owners: Record<string, string> = {};
+  for (const [alertId, chartId] of Object.entries(value)) {
+    const normalizedAlertId = alertId.trim();
+    const normalizedChartId =
+      typeof chartId === "string" ? chartId.trim() : "";
+    if (normalizedAlertId && normalizedChartId) {
+      owners[normalizedAlertId] = normalizedChartId;
+    }
+  }
+  return owners;
+}
+
+function normalizeAlertChartOwnersForPanes(
+  value: unknown,
+  panes: readonly ChartPaneState[],
+): Record<string, string> {
+  const paneIds = new Set(panes.map((pane) => pane.id));
+  return Object.fromEntries(
+    Object.entries(normalizeAlertChartOwners(value)).filter(([, chartId]) =>
+      paneIds.has(chartId),
+    ),
+  );
+}
+
+export function normalizePersistedChartWorkspaceLayout(
+  value: unknown,
+  fallback: ActiveChartSelection,
+): PersistedChartWorkspaceLayout | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Partial<PersistedChartWorkspaceLayout>;
+  if (source.version !== 1 || !isChartLayoutPreset(source.chartLayoutPreset)) {
+    return null;
+  }
+  const chartLayoutPreset = source.chartLayoutPreset;
+  const visible = visibleChartSlots(chartLayoutPreset);
+  const requestedActive = Number.isInteger(source.activeChartSlot)
+    ? Number(source.activeChartSlot)
+    : 0;
+  const activeChartSlot = visible.includes(requestedActive)
+    ? requestedActive
+    : visible[0] ?? 0;
+  const chartPanes = initializePanesForPreset(
+    normalizeChartPanes(source.chartPanes, fallback),
+    chartLayoutPreset,
+    activeChartSlot,
+  );
+  return {
+    version: 1,
+    chartLayoutPreset,
+    replayLayoutMode:
+      source.replayLayoutMode === "all_charts" && chartLayoutPreset !== "single"
+        ? "all_charts"
+        : "single_chart",
+    chartPanes,
+    activeChartSlot,
+    alertChartOwners: normalizeAlertChartOwnersForPanes(
+      source.alertChartOwners,
+      chartPanes,
+    ),
+  };
+}
+
 export function initializePanesForPreset(
   panes: readonly ChartPaneState[],
   preset: ChartLayoutPreset,
@@ -152,6 +240,8 @@ export const chartLayoutPresetAtom = atom<ChartLayoutPreset>("single");
 export const replayLayoutModeAtom = atom<ReplayLayoutMode>("single_chart");
 export const chartPanesAtom = atom<ChartPaneState[]>(createInitialChartPanes());
 export const activeChartSlotAtom = atom(0);
+export const chartSymbolDropPreviewAtom = atom<ChartSymbolDropPreview | null>(null);
+export const alertChartOwnersAtom = atom<Record<string, string>>({});
 
 /** Return the anonymous/local workspace to the same one-chart baseline as TradingView. */
 export const resetChartLayoutStateAtom = atom(null, (_get, set) => {
@@ -159,6 +249,8 @@ export const resetChartLayoutStateAtom = atom(null, (_get, set) => {
   set(replayLayoutModeAtom, "single_chart");
   set(chartPanesAtom, createInitialChartPanes());
   set(activeChartSlotAtom, 0);
+  set(chartSymbolDropPreviewAtom, null);
+  set(alertChartOwnersAtom, {});
 });
 
 export const setActiveChartSlotAtom = atom(
@@ -188,9 +280,50 @@ export const syncActiveChartPaneAtom = atom(
   },
 );
 
+export const dropSymbolOnChartPaneAtom = atom(
+  null,
+  (
+    get,
+    set,
+    input: {
+      slot: number;
+      selection: ActiveChartSelection;
+    },
+  ) => {
+    if (!visibleChartSlots(get(chartLayoutPresetAtom)).includes(input.slot)) return;
+    set(
+      chartPanesAtom,
+      updatePaneSelection(get(chartPanesAtom), input.slot, input.selection),
+    );
+    set(activeChartSlotAtom, input.slot);
+    set(chartSymbolDropPreviewAtom, null);
+  },
+);
+
+export const setAlertChartOwnerAtom = atom(
+  null,
+  (
+    get,
+    set,
+    input: {
+      alertId: string;
+      chartId?: string | null;
+    },
+  ) => {
+    const alertId = input.alertId.trim();
+    if (!alertId) return;
+    const next = { ...get(alertChartOwnersAtom) };
+    const chartId = input.chartId?.trim();
+    if (chartId) next[alertId] = chartId;
+    else delete next[alertId];
+    set(alertChartOwnersAtom, next);
+  },
+);
+
 export const setChartLayoutPresetAtom = atom(
   null,
   (get, set, preset: ChartLayoutPreset) => {
+    const previousPreset = get(chartLayoutPresetAtom);
     const panes = initializePanesForPreset(
       get(chartPanesAtom),
       preset,
@@ -202,7 +335,13 @@ export const setChartLayoutPresetAtom = atom(
       set(activeChartSlotAtom, visible[0] ?? 0);
     }
     set(chartLayoutPresetAtom, preset);
-    if (preset === "single") set(replayLayoutModeAtom, "single_chart");
+    if (preset === "single") {
+      set(replayLayoutModeAtom, "single_chart");
+    } else if (previousPreset === "single") {
+      // A newly expanded workspace should replay every visible pane by
+      // default. "Current chart" remains available as an explicit scope.
+      set(replayLayoutModeAtom, "all_charts");
+    }
   },
 );
 
@@ -229,6 +368,7 @@ export const restoreChartLayoutStateAtom = atom(
       panes?: readonly Partial<ChartPaneState>[];
       activeSlot?: number;
       fallback: ActiveChartSelection;
+      alertChartOwners?: Record<string, string>;
     },
   ) => {
     const visible = visibleChartSlots(input.preset);
@@ -252,6 +392,11 @@ export const restoreChartLayoutStateAtom = atom(
         ? "all_charts"
         : "single_chart",
     );
+    set(
+      alertChartOwnersAtom,
+      normalizeAlertChartOwnersForPanes(input.alertChartOwners, panes),
+    );
+    set(chartSymbolDropPreviewAtom, null);
   },
 );
 
