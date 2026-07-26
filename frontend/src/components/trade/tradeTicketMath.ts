@@ -28,3 +28,12 @@ export function formatTicketSize(value: number, precision = 4): string {
 export function formatTicketRatio(value: number): string {
   return Number.isFinite(value) && value > 0 ? value.toFixed(2) : "-";
 }
+
+export type TicketLotMode = "auto" | "manual";
+
+export function ticketLotOverride(
+  mode: TicketLotMode,
+  value: string,
+): number | undefined {
+  return mode === "manual" ? parseTicketNumber(value) : undefined;
+}

@@ -35,6 +35,8 @@ import {
   formatTicketRatio,
   formatTicketSize,
   parseTicketNumber,
+  ticketLotOverride,
+  type TicketLotMode,
 } from "./tradeTicketMath";
 import {
   makeClientCommandId,
@@ -94,6 +96,7 @@ export function OrderTicket({
     useState<Mt5CommissionType>("currency");
   const [plannedSide, setPlannedSide] = useState<Side | null>(null);
   const [mt5Lot, setMt5Lot] = useState("");
+  const [mt5LotMode, setMt5LotMode] = useState<TicketLotMode>("auto");
   const [pendingLive, setPendingLive] = useState<
     | { kind: "order"; order: Mt5OrderRequest }
     | { kind: "closeAll"; request: Mt5CloseAllRequest }
@@ -143,7 +146,7 @@ export function OrderTicket({
       bidPrice: quote?.bid,
       askPrice: quote?.ask,
       symbolInfo: sizingSymbolInfo,
-      volumeOverride: parseTicketNumber(mt5Lot),
+      volumeOverride: ticketLotOverride(mt5LotMode, mt5Lot),
     }),
     [
       accountBasis,
@@ -156,6 +159,7 @@ export function OrderTicket({
       mt5Account?.freeMargin,
       mt5Account?.leverage,
       mt5Lot,
+      mt5LotMode,
       mt5RiskSnapshot?.openRiskAtStops,
       quote?.ask,
       quote?.bid,
@@ -268,6 +272,7 @@ export function OrderTicket({
     sl,
     tp,
     mt5Lot,
+    mt5LotMode,
     risk,
     riskUnit,
     accountBasis,
@@ -308,8 +313,10 @@ export function OrderTicket({
       setRisk(formatPercent(prefill.riskPct));
     }
     if (prefill.quantity != null && Number.isFinite(prefill.quantity)) {
+      setMt5LotMode("manual");
       setMt5Lot(formatPositionVolume(prefill.quantity, sizingSymbolInfo));
     } else if (prefill.source === "position-drawing") {
+      setMt5LotMode("auto");
       setMt5Lot("");
     }
   };
@@ -475,12 +482,36 @@ export function OrderTicket({
           </div>
         )}
         {executionMode === "mt5" && (
-          <TradeInput
-            label="Lot"
-            value={mt5Lot}
-            onChange={setMt5Lot}
-            placeholder="Auto"
-          />
+          <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-2">
+            <InlineSelect
+              label="Lot mode"
+              value={mt5LotMode}
+              onChange={(value) => {
+                const mode = value as TicketLotMode;
+                if (mode === "manual" && !mt5Lot) {
+                  setMt5Lot(
+                    formatPositionVolume(metrics.positionSize, sizingSymbolInfo),
+                  );
+                }
+                setMt5LotMode(mode);
+              }}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "manual", label: "Manual" },
+              ]}
+            />
+            <TradeInput
+              label={mt5LotMode === "auto" ? "Calculated lot" : "Manual lot"}
+              value={
+                mt5LotMode === "auto"
+                  ? formatPositionVolume(metrics.positionSize, sizingSymbolInfo)
+                  : mt5Lot
+              }
+              onChange={setMt5Lot}
+              placeholder="0"
+              readOnly={mt5LotMode === "auto"}
+            />
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-terminal-border bg-terminal-border text-2xs">
@@ -511,6 +542,14 @@ export function OrderTicket({
             className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-4 text-amber-200"
           >
             {formatSizingWarning(sizingWarnings[0])}
+          </div>
+        )}
+        {executionMode === "mt5" && mt5LotMode === "manual" && (
+          <div
+            role="status"
+            className="rounded-lg border border-brand/25 bg-brand/10 px-2.5 py-2 text-[10px] leading-4 text-ink-muted"
+          >
+            Manual lot overrides Risk %. The actual money risk is shown above.
           </div>
         )}
 
@@ -559,11 +598,13 @@ function TradeInput({
   value,
   onChange,
   placeholder,
+  readOnly = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -575,7 +616,8 @@ function TradeInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
+        readOnly={readOnly}
+        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint read-only:cursor-default read-only:bg-terminal-panel-2 read-only:text-ink-muted focus:border-brand focus:ring-2 focus:ring-brand/15"
       />
     </label>
   );

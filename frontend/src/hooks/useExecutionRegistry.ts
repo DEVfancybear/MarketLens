@@ -9,7 +9,10 @@ import {
   routeExecutionOrder,
   submitExecutionCommand,
 } from "@/services/api/resources/executionApi";
-import { projectExecutionInstrumentsToMt5Symbols } from "@/services/execution/instrumentProjection";
+import {
+  projectExecutionInstrumentsToMt5Symbols,
+  retainStableMt5SymbolCatalog,
+} from "@/services/execution/instrumentProjection";
 import { buildExecutionOrderRequest } from "@/services/execution/orderRouting";
 import {
   buildCancelOrderCommand,
@@ -53,6 +56,8 @@ const STATE_REFRESH_INTERVAL_MS = 2_000;
 export function useExecutionRegistry() {
   const applyAccounts = useSetAtom(applyExecutionAccountsAtom);
   const selected = useAtomValue(selectedExecutionAccountAtom);
+  const selectedAccountId = selected?.id ?? null;
+  const selectedVenueKind = selected?.venueKind ?? null;
   const setMt5Account = useSetAtom(mt5AccountAtom);
   const setMt5Status = useSetAtom(mt5StatusAtom);
   const setLastHeartbeat = useSetAtom(mt5LastHeartbeatAtom);
@@ -134,23 +139,23 @@ export function useExecutionRegistry() {
     store.set(mt5SymbolInfoAtom, {});
     if (
       !backendSession ||
-      !selected ||
-      selected.venueKind !== "metatrader5"
+      !selectedAccountId ||
+      selectedVenueKind !== "metatrader5"
     ) {
       return;
     }
     let cancelled = false;
     let running = false;
-    const accountId = selected.id;
+    const accountId = selectedAccountId;
     const refresh = async () => {
       if (running || document.visibilityState === "hidden") return;
       running = true;
       try {
         const registry = await getExecutionInstruments(accountId);
         if (cancelled || registry.accountId !== accountId) return;
-        store.set(
-          mt5SymbolInfoAtom,
-          projectExecutionInstrumentsToMt5Symbols(registry),
+        const projected = projectExecutionInstrumentsToMt5Symbols(registry);
+        store.set(mt5SymbolInfoAtom, (current) =>
+          retainStableMt5SymbolCatalog(current, projected),
         );
       } catch {
         // Preserve the current account's last safe catalog during a transient
@@ -170,7 +175,7 @@ export function useExecutionRegistry() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [backendSession, selected]);
+  }, [backendSession, selectedAccountId, selectedVenueKind]);
 
   useEffect(() => {
     const store = getDefaultStore();

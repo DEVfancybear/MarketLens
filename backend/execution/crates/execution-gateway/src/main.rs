@@ -12,11 +12,12 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use execution_adapters::{AdapterError, EaCommandQueue};
 use execution_domain::{
-    AccountId, AccountMode, AccountStatus, CopyAllocation, CopyTarget, EXECUTION_PROTOCOL_VERSION,
-    EaAccountSnapshot, EaCommand, EaEvent, EaEventBatch, EaInstrumentSnapshot,
-    EaPendingOrderSnapshot, EaPollResponse, EaPositionSnapshot, EaSessionRequest,
-    EaSessionResponse, ExecutionAccount, InstrumentSpec, OrderIntent, RiskPolicy, RouteRejectCode,
-    RouteTargetContext, RouteWarning, SessionId, Side, TargetRouteResult, VenueKind,
+    AccountId, AccountMode, AccountStatus, CancelOrderCommand, ClosePositionCommand,
+    CopyAllocation, CopyTarget, EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent,
+    EaEventBatch, EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot,
+    EaSessionRequest, EaSessionResponse, ExecutionAccount, InstrumentSpec, ModifyPositionCommand,
+    OrderIntent, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder,
+    SessionId, Side, TargetRouteResult, VenueKind,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -47,6 +48,7 @@ const MAX_COMMANDS_PER_POLL: usize = 16;
 const MAX_EA_EVENTS_PER_BATCH: usize = 128;
 const MAX_LEGACY_EA_CLOCK_SKEW_MS: u64 = 24 * 60 * 60 * 1_000;
 const COMMAND_LEASE: Duration = Duration::from_secs(15);
+const COMMAND_DELIVERY_TTL: Duration = Duration::from_secs(2 * 60);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_ACTIVE_PAIRING_TOKENS_PER_OWNER: usize = 5;
@@ -83,6 +85,7 @@ struct PairingGrant {
 #[derive(Clone)]
 struct QueuedCommand {
     command: EaCommand,
+    queued_at_ms: u64,
     leased_until_ms: u64,
     delivery_count: u32,
 }
@@ -174,6 +177,48 @@ struct CommandOutcomeView {
     broker_order_id: Option<String>,
     broker_deal_id: Option<String>,
     updated_at_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EaPollResponseView {
+    protocol_version: u16,
+    commands: Vec<EaPollCommandView>,
+    server_time_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum EaPollCommandView {
+    Place {
+        #[serde(flatten)]
+        order: RoutedOrder,
+    },
+    ModifyPosition {
+        #[serde(flatten)]
+        command: ModifyPositionCommand,
+    },
+    ClosePosition {
+        #[serde(flatten)]
+        command: ClosePositionCommand,
+    },
+    CancelOrder {
+        #[serde(flatten)]
+        command: CancelOrderCommand,
+    },
+    Sync,
+}
+
+impl From<EaCommand> for EaPollCommandView {
+    fn from(value: EaCommand) -> Self {
+        match value {
+            EaCommand::Place { order } => Self::Place { order },
+            EaCommand::ModifyPosition { command } => Self::ModifyPosition { command },
+            EaCommand::ClosePosition { command } => Self::ClosePosition { command },
+            EaCommand::CancelOrder { command } => Self::CancelOrder { command },
+            EaCommand::Sync => Self::Sync,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -2078,6 +2123,7 @@ impl EaCommandQueue for GatewayState {
         }
         queue.push_back(QueuedCommand {
             command,
+            queued_at_ms: now_ms(),
             leased_until_ms: 0,
             delivery_count: 0,
         });
@@ -2137,7 +2183,7 @@ async fn create_ea_session(
 async fn poll_commands(
     State(state): State<GatewayState>,
     headers: HeaderMap,
-) -> Result<Json<EaPollResponse>, ApiError> {
+) -> Result<Json<EaPollResponseView>, ApiError> {
     let session = state.authenticate(&headers).await?;
     if let Some(database) = &state.inner.database {
         let owner_uuid = parse_owner_id(&session.owner_id)?;
@@ -2148,6 +2194,84 @@ async fn poll_commands(
                 "EA session identity is invalid",
             )
         })?;
+        let mut transaction = database
+            .begin()
+            .await
+            .map_err(|error| ApiError::database("begin EA command poll", error))?;
+        let expired_parent_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            WITH expired AS (
+                UPDATE execution_target_commands
+                SET status = 'failed',
+                    reject_code = 'DELIVERY_EXPIRED',
+                    reject_message = 'EA did not acknowledge the command before its delivery deadline',
+                    terminal_ack_at = now(),
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE user_id = $1
+                  AND target_account_id = $2
+                  AND terminal_ack_at IS NULL
+                  AND status IN ('ready', 'queued', 'unknown')
+                  AND created_at <= now() - ($3 * interval '1 millisecond')
+                RETURNING id, parent_command_id
+            ),
+            audited AS (
+                INSERT INTO execution_audit_log (
+                    user_id, actor_type, actor_id, action,
+                    resource_type, resource_id, details
+                )
+                SELECT
+                    $1, 'service', 'execution-gateway', 'command.delivery_expired',
+                    'execution_target_command', expired.id,
+                    jsonb_build_object(
+                        'accountId', $2,
+                        'parentCommandId', expired.parent_command_id,
+                        'deliveryTtlMs', $3
+                    )
+                FROM expired
+                RETURNING sequence
+            )
+            SELECT DISTINCT parent_command_id
+            FROM expired
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .bind(COMMAND_DELIVERY_TTL.as_millis() as i64)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("expire stale EA commands", error))?;
+        if !expired_parent_ids.is_empty() {
+            sqlx::query(
+                r#"
+                UPDATE execution_commands parent
+                SET status = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM execution_target_commands target
+                            WHERE target.user_id = parent.user_id
+                              AND target.parent_command_id = parent.id
+                              AND target.terminal_ack_at IS NULL
+                        ) THEN 'submitted'
+                        ELSE 'partially_rejected'
+                    END,
+                    updated_at = now()
+                WHERE parent.user_id = $1
+                  AND parent.id = ANY($2)
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(&expired_parent_ids)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("finalize expired EA commands", error))?;
+            warn!(
+                account_id = %session.account_id,
+                expired_commands = expired_parent_ids.len(),
+                "expired stale EA commands before polling"
+            );
+        }
         let rows = sqlx::query(
             r#"
             WITH candidates AS (
@@ -2157,6 +2281,7 @@ async fn poll_commands(
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
+                  AND created_at > now() - ($6 * interval '1 millisecond')
                   AND next_attempt_at <= now()
                   AND (lease_expires_at IS NULL OR lease_expires_at <= now())
                 ORDER BY created_at, id
@@ -2179,7 +2304,8 @@ async fn poll_commands(
         .bind(MAX_COMMANDS_PER_POLL as i64)
         .bind(session_uuid)
         .bind(COMMAND_LEASE.as_millis() as i64)
-        .fetch_all(database)
+        .bind(COMMAND_DELIVERY_TTL.as_millis() as i64)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| ApiError::database("lease EA commands", error))?;
         let mut commands = Vec::with_capacity(rows.len());
@@ -2199,9 +2325,13 @@ async fn poll_commands(
                     "command scope validation failed",
                 ));
             }
-            commands.push(command);
+            commands.push(command.into());
         }
-        return Ok(Json(EaPollResponse {
+        transaction
+            .commit()
+            .await
+            .map_err(|error| ApiError::database("commit EA command poll", error))?;
+        return Ok(Json(EaPollResponseView {
             protocol_version: EXECUTION_PROTOCOL_VERSION,
             commands,
             server_time_ms: now_ms(),
@@ -2210,6 +2340,7 @@ async fn poll_commands(
     let mut commands = state.inner.commands.lock().await;
     let queue = commands.entry(session.account_id).or_default();
     let now = now_ms();
+    queue.retain(|queued| !command_delivery_expired(queued.queued_at_ms, now));
     let lease_until_ms = now + COMMAND_LEASE.as_millis() as u64;
     let mut leased = Vec::with_capacity(MAX_COMMANDS_PER_POLL);
     for queued in queue.iter_mut() {
@@ -2218,12 +2349,12 @@ async fn poll_commands(
         }
         queued.leased_until_ms = lease_until_ms;
         queued.delivery_count = queued.delivery_count.saturating_add(1);
-        leased.push(queued.command.clone());
+        leased.push(queued.command.clone().into());
         if leased.len() == MAX_COMMANDS_PER_POLL {
             break;
         }
     }
-    Ok(Json(EaPollResponse {
+    Ok(Json(EaPollResponseView {
         protocol_version: EXECUTION_PROTOCOL_VERSION,
         commands: leased,
         server_time_ms: now,
@@ -3754,6 +3885,10 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+fn command_delivery_expired(queued_at_ms: u64, now_ms: u64) -> bool {
+    now_ms.saturating_sub(queued_at_ms) >= COMMAND_DELIVERY_TTL.as_millis() as u64
+}
+
 fn effective_last_seen_at_ms(
     account_last_seen_at_ms: u64,
     session_last_seen_at_ms: Option<u64>,
@@ -4001,6 +4136,19 @@ mod tests {
         assert_eq!(effective_last_seen_at_ms(1_000, Some(2_000)), 2_000);
         assert_eq!(effective_last_seen_at_ms(3_000, Some(2_000)), 3_000);
         assert_eq!(effective_last_seen_at_ms(4_000, None), 4_000);
+    }
+
+    #[test]
+    fn ea_poll_wire_flattens_routed_commands_for_mql_consumers() {
+        let command = place_command(AccountId::new("mt5_account"), "child-command");
+        let json =
+            serde_json::to_value(EaPollCommandView::from(command)).expect("serialize poll command");
+
+        assert_eq!(json["type"], "place");
+        assert_eq!(json["commandId"], "child-command");
+        assert_eq!(json["targetAccountId"], "mt5_account");
+        assert_eq!(json["venueSymbol"], "EURUSD");
+        assert!(json.get("order").is_none());
     }
 
     fn instrument_snapshot() -> EaInstrumentSnapshot {
@@ -4434,6 +4582,45 @@ mod tests {
                 .await
                 .get(&session.account_id)
                 .is_some_and(VecDeque::is_empty)
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_drops_unacknowledged_commands_after_delivery_deadline() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let (_account, session) = paired(&state, OWNER_A, PAIR_TOKEN).await;
+        state
+            .enqueue(
+                &session.account_id,
+                place_command(session.account_id.clone(), "cmd-expired"),
+            )
+            .await
+            .expect("enqueue");
+        {
+            let mut queues = state.inner.commands.lock().await;
+            queues
+                .get_mut(&session.account_id)
+                .expect("queue")
+                .front_mut()
+                .expect("command")
+                .queued_at_ms = now_ms().saturating_sub(COMMAND_DELIVERY_TTL.as_millis() as u64);
+        }
+
+        let response = poll_commands(State(state.clone()), bearer(&session.session_token))
+            .await
+            .expect("poll")
+            .0;
+        assert!(response.commands.is_empty());
+        assert!(
+            state
+                .inner
+                .commands
+                .lock()
+                .await
+                .get(&session.account_id)
+                .expect("queue")
+                .is_empty(),
+            "expired commands must never be delivered later"
         );
     }
 

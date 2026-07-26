@@ -1,5 +1,5 @@
 #property copyright "SMC Trading Terminal"
-#property version   "1.20"
+#property version   "1.21"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
@@ -227,12 +227,17 @@ void PollCommands()
 
    SyncGatewayClockFromJson(response);
    int cursor = 0;
+   int command_count = 0;
    string command;
    while(NextCommandObject(response, cursor, command))
    {
+      command_count++;
       string type;
       if(!JsonString(command, "type", type))
+      {
+         Print("SMCExecutionEA: ignored command without a type.");
          continue;
+      }
       if(type == "place")
          ExecutePlaceCommand(command);
       else if(type == "modifyPosition")
@@ -243,7 +248,13 @@ void PollCommands()
          ExecuteCancelOrderCommand(command);
       else if(type == "sync")
          g_last_snapshot_at = 0;
+      else
+         PrintFormat("SMCExecutionEA: ignored unsupported command type '%s'.",
+                     type);
    }
+   if(command_count > 0)
+      PrintFormat("SMCExecutionEA: processed %d gateway command(s).",
+                  command_count);
 }
 
 void ExecutePlaceCommand(const string command)
@@ -1283,15 +1294,30 @@ ENUM_ORDER_TYPE_FILLING ResolveFillingMode(const string symbol)
 
 bool NextCommandObject(const string json, int &cursor, string &object)
 {
-   int marker = StringFind(json, "\"type\":\"", cursor);
-   if(marker < 0)
-      return false;
-   int start = marker;
-   while(start >= 0 && StringSubstr(json, start, 1) != "{")
-      start--;
-   if(start < 0)
+   if(cursor <= 0)
+   {
+      int commands_at = StringFind(json, "\"commands\"");
+      if(commands_at < 0)
+         return false;
+      cursor = StringFind(json, "[", commands_at);
+      if(cursor < 0)
+         return false;
+      cursor++;
+   }
+
+   while(cursor < StringLen(json))
+   {
+      string current = StringSubstr(json, cursor, 1);
+      if(current == "]")
+         return false;
+      if(current == "{")
+         break;
+      cursor++;
+   }
+   if(cursor >= StringLen(json))
       return false;
 
+   int start = cursor;
    int depth = 0;
    bool quoted = false;
    bool escaped = false;

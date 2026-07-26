@@ -6,6 +6,7 @@ import {
   formatTicketRatio,
   formatTicketSize,
   parseTicketNumber,
+  ticketLotOverride,
 } from "../../src/components/trade/tradeTicketMath";
 
 test("trade ticket parses formatted prices with thousands separators", () => {
@@ -55,4 +56,9 @@ test("risk math and ticket formatters do not surface NaN for invalid drafts", ()
   assert.equal(formatTicketSize(metrics.positionSize), "0.1593");
   assert.equal(metrics.rewardAmount, 0);
   assert.equal(formatTicketRatio(metrics.riskReward), "-");
+});
+
+test("risk percent owns sizing in auto mode and manual mode is explicit", () => {
+  assert.equal(ticketLotOverride("auto", "0.01"), undefined);
+  assert.equal(ticketLotOverride("manual", "0.01"), 0.01);
 });

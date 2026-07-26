@@ -307,3 +307,32 @@ test("account-basis and stop-distance warnings remain explicit", () => {
   assert.equal(missingTickValue.positionSize, 0);
   assert.equal(missingTickValue.warnings.includes("TICK_VALUE_UNAVAILABLE"), true);
 });
+
+test("FTMO BTCUSD 0.1 percent risk floors to 0.09 lot without an override", () => {
+  const metrics = calculateMt5PositionSizer({
+    entryPrice: 64_357.63,
+    stopPrice: 63_857.96,
+    targetPrice: 64_857.3,
+    side: "long",
+    riskValue: 0.1,
+    riskUnit: "%",
+    balance: 45_791.09,
+    accountBasis: "balance",
+    symbolInfo: {
+      chartSymbol: "BTCUSD",
+      brokerSymbol: "BTCUSD",
+      point: 0.01,
+      tickSize: 0.01,
+      tickValue: 0.01,
+      tickValueLoss: 0.01,
+      tickValueProfit: 0.01,
+      minLot: 0.01,
+      maxLot: 5,
+      lotStep: 0.01,
+    },
+  });
+
+  assert.equal(metrics.targetRisk, 45.79);
+  assert.equal(metrics.positionSize, 0.09);
+  assert.equal(metrics.riskAmount, 44.97);
+});

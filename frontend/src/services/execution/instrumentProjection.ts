@@ -45,6 +45,35 @@ export function projectExecutionInstrumentsToMt5Symbols(
   return Object.fromEntries(projected);
 }
 
+/** Keeps the previous object identity when a heartbeat only changes fetch time. */
+export function retainStableMt5SymbolCatalog(
+  current: Record<string, Mt5SymbolInfo>,
+  next: Record<string, Mt5SymbolInfo>,
+): Record<string, Mt5SymbolInfo> {
+  const currentKeys = Object.keys(current).sort();
+  const nextKeys = Object.keys(next).sort();
+  if (
+    currentKeys.length !== nextKeys.length ||
+    currentKeys.some((key, index) => key !== nextKeys[index])
+  ) {
+    return next;
+  }
+  for (const key of currentKeys) {
+    if (!sameSymbolInfo(current[key], next[key])) return next;
+  }
+  return current;
+}
+
+function sameSymbolInfo(
+  left: Mt5SymbolInfo | undefined,
+  right: Mt5SymbolInfo | undefined,
+): boolean {
+  if (!left || !right) return left === right;
+  const { updatedAt: _leftUpdatedAt, ...leftStable } = left;
+  const { updatedAt: _rightUpdatedAt, ...rightStable } = right;
+  return JSON.stringify(leftStable) === JSON.stringify(rightStable);
+}
+
 function projectInstrument(
   chartSymbol: string,
   instrument: ExecutionInstrumentWire,
