@@ -1,5 +1,5 @@
 #property copyright "SMC Trading Terminal"
-#property version   "1.21"
+#property version   "1.22"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
@@ -10,6 +10,7 @@ input int    HttpTimeoutMs    = 5000;
 input long   MagicNumber      = 26072026;
 
 const int PROTOCOL_VERSION = 1;
+const string EA_VERSION = "1.22";
 const int MAX_BUFFERED_EVENTS = 128;
 const int MAX_JOURNAL_COMMANDS = 4096;
 const int MAX_INSTRUMENTS_PER_HEARTBEAT = 32;
@@ -869,7 +870,7 @@ string AccountSnapshotJson()
       "\"mode\":\"%s\",\"currency\":\"%s\","
       "\"balance\":\"%.8f\",\"equity\":\"%.8f\",\"margin\":\"%.8f\","
       "\"freeMargin\":\"%.8f\",\"leverage\":%d,\"tradeAllowed\":%s,"
-      "\"terminalBuild\":%d}",
+      "\"terminalBuild\":%d,\"eaVersion\":\"%s\"}",
       AccountInfoInteger(ACCOUNT_LOGIN),
       JsonEscape(AccountInfoString(ACCOUNT_COMPANY)),
       JsonEscape(AccountInfoString(ACCOUNT_SERVER)),
@@ -881,7 +882,8 @@ string AccountSnapshotJson()
       AccountInfoDouble(ACCOUNT_MARGIN_FREE),
       (int)AccountInfoInteger(ACCOUNT_LEVERAGE),
       AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) ? "true" : "false",
-      (int)TerminalInfoInteger(TERMINAL_BUILD)
+      (int)TerminalInfoInteger(TERMINAL_BUILD),
+      EA_VERSION
    );
 }
 

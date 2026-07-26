@@ -416,6 +416,11 @@ function ExecutionAccountRail() {
                   <span className="mt-0.5 block truncate text-[9px] uppercase tracking-wide text-ink-faint">
                     {account.brokerCode} · {account.mode}
                   </span>
+                  {account.statusReason === "ea_update_required" && (
+                    <span className="mt-1 block text-[9px] font-semibold text-bear">
+                      Update SMCExecutionEA to 1.22+
+                    </span>
+                  )}
                   <span className="mt-2 flex items-center justify-between gap-2">
                     <span className="truncate text-[9px] text-ink-faint">
                       {account.server ?? account.externalAccountRef}

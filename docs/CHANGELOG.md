@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 command poll liveness and EA version gating (2026-07-27)
+- Replaced the 15-minute generic EA-session readiness check with a dedicated,
+  persisted `last_poll_at` signal. An account is executable only while its EA
+  has completed a command poll within the last 15 seconds; event heartbeats
+  alone can no longer make a non-polling terminal appear `READY`.
+- Added fail-closed EA release telemetry and minimum-version gating.
+  `SMCExecutionEA 1.22` reports `eaVersion` in every account snapshot. Missing
+  or older versions appear blocked with an actionable update message and
+  cannot receive Place, modify, close, or cancel commands.
+- Distinguished commands that were never delivered
+  (`DELIVERY_UNAVAILABLE`, `attempt_count=0`, no `first_delivered_at`) from
+  commands delivered but not acknowledged (`DELIVERY_EXPIRED`). Delivery
+  expiry now uses the first delivery timestamp once one exists.
+- Added migration `0028_execution_ea_poll_liveness`, Rust and Go version-gate
+  regressions, and a verified EA 1.22 download artifact.
+
 ### Fixed - Candle continuity across layout, Replay, and browser refresh (2026-07-26)
 - Kept the active pane's last coherent live frame when a layout transition
   temporarily empties its keyed market-data series; retention now protects both

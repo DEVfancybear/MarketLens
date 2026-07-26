@@ -330,6 +330,8 @@ pub struct EaAccountSnapshot {
     pub leverage: u32,
     pub trade_allowed: bool,
     pub terminal_build: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ea_version: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -533,6 +535,7 @@ mod tests {
             leverage: 100,
             trade_allowed: true,
             terminal_build: 5000,
+            ea_version: Some("1.22".into()),
         }
     }
 
@@ -543,6 +546,7 @@ mod tests {
         assert_eq!(value["balance"], "10000.00");
         assert_eq!(value["freeMargin"], "9850.25");
         assert_eq!(value["tradeAllowed"], true);
+        assert_eq!(value["eaVersion"], "1.22");
     }
 
     #[test]

@@ -79,6 +79,18 @@ expiry and an absolute expiry, and are revocable. The raw bearer token exists
 only in the terminal sandbox. The EA refuses public plain HTTP gateway URLs;
 HTTP is accepted only for loopback development.
 
+Session activity and execution readiness are deliberately different signals.
+Any authenticated EA request refreshes session expiry, but only a completely
+successful `POST /v1/ea/poll` records `last_poll_at`. An MT5 account is
+executable only while that poll timestamp is no more than 15 seconds old.
+Consequently, event heartbeats or portfolio snapshots cannot hide a broken
+command channel.
+
+Each account snapshot also includes the common EA release version. The current
+minimum is `1.22`; a missing, malformed, or older version is blocked before
+command creation. This additive wire field allows a future EA release to raise
+the minimum without introducing broker-specific protocol forks.
+
 ## Order and copy-routing flow
 
 1. The browser builds one canonical order intent and explicitly selected target
@@ -87,9 +99,10 @@ HTTP is accepted only for loopback development.
 3. Rust loads each target by the composite owner/account boundary.
 4. The target canonical symbol is resolved through its server-persisted mapping
    to an instrument reported by that exact account.
-5. Rust checks account readiness, terminal trade permission, symbol policy,
-   quote freshness, stop direction/distance, quantity units, broker min/max/step
-   constraints, and account risk limits.
+5. Rust checks a fresh successful EA command poll, minimum EA version, account
+   readiness, terminal trade permission, symbol policy, quote freshness, stop
+   direction/distance, quantity units, broker min/max/step constraints, and
+   account risk limits.
 6. Every accepted target receives a target-scoped command ID and idempotency
    key. A rejected target does not cancel or hide other target results.
 7. PostgreSQL stores the command before delivery. Polling leases rather than
@@ -100,6 +113,17 @@ HTTP is accepted only for loopback development.
    historical MT5 state. It never blindly repeats an unknown submission.
 9. EA events, portfolio snapshots, command outcomes, and security audit records
    are persisted before the API reports success.
+
+Delivery has two distinct terminal failures:
+
+- `DELIVERY_UNAVAILABLE`: no successful EA poll leased the command before its
+  bounded delivery deadline. `attempt_count=0` and `first_delivered_at IS NULL`
+  are authoritative evidence that MT5 never received it.
+- `DELIVERY_EXPIRED`: the command was leased to the EA at least once, but no
+  terminal command outcome was acknowledged before the deadline.
+
+These states must not be described as broker rejections. Neither state is
+automatically replayed after the deadline.
 
 Copy allocation modes share the same route:
 
@@ -165,6 +189,7 @@ An enum or trait stub is not considered production Binance support.
 | Demo and Live | implemented | identical path; no mode block |
 | Multi-target order copy | implemented | independent Rust risk and outcome per target |
 | Persistent commands/events/audit | implemented | PostgreSQL required; no in-memory production |
+| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.22+ |
 | Modify/close/cancel | implemented | owner/resource validation before queue |
 | Native Binance | disabled | signing, secure secret storage, clock sync, filters, rate limits, portfolio sync, reconciliation, and sandbox/live certification required |
 

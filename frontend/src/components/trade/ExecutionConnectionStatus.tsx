@@ -49,6 +49,11 @@ export function ExecutionConnectionStatus() {
         {selected.label}
       </span>
       <span className="text-ink-faint">{selected.brokerCode}</span>
+      {selected.statusReason === "ea_update_required" && (
+        <span className="font-semibold text-bear">
+          {selected.eaVersion ? `EA ${selected.eaVersion} → ` : ""}Update 1.22+
+        </span>
+      )}
       {selected.equity != null && (
         <span className="tabular font-semibold text-ink">
           {fmtMoney(selected.equity)}

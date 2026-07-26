@@ -29,6 +29,8 @@ export interface ExecutionAccountSummary {
   equity?: number;
   tradeAllowed: boolean;
   updatedAt?: number;
+  eaVersion?: string;
+  statusReason?: "ea_update_required" | "broker_trading_disabled";
 }
 
 export type CopyAllocationMode =

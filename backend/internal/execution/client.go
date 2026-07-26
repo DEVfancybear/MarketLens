@@ -47,6 +47,7 @@ type gatewaySnapshot struct {
 	Balance      json.Number `json:"balance"`
 	Equity       json.Number `json:"equity"`
 	TradeAllowed bool        `json:"tradeAllowed"`
+	EAVersion    string      `json:"eaVersion"`
 }
 
 type Account struct {
@@ -63,6 +64,8 @@ type Account struct {
 	Equity             *float64 `json:"equity,omitempty"`
 	TradeAllowed       bool     `json:"tradeAllowed"`
 	UpdatedAt          int64    `json:"updatedAt"`
+	EAVersion          string   `json:"eaVersion,omitempty"`
+	StatusReason       string   `json:"statusReason,omitempty"`
 }
 
 type PairingToken struct {
@@ -137,10 +140,15 @@ func (c *Client) ListAccounts(ctx context.Context, ownerID string) ([]Account, e
 	accounts := make([]Account, 0, len(raw))
 	for _, item := range raw {
 		status := "offline"
-		if item.Connected && item.Account.TradeAllowed {
+		statusReason := ""
+		if item.Connected && !eaVersionSupported(item.Account.EAVersion) {
+			status = "blocked"
+			statusReason = "ea_update_required"
+		} else if item.Connected && item.Account.TradeAllowed {
 			status = "ready"
 		} else if item.Connected {
 			status = "blocked"
+			statusReason = "broker_trading_disabled"
 		}
 		accounts = append(accounts, Account{
 			ID:                 item.AccountID,
@@ -156,9 +164,34 @@ func (c *Client) ListAccounts(ctx context.Context, ownerID string) ([]Account, e
 			Equity:             numberPointer(item.Account.Equity),
 			TradeAllowed:       item.Account.TradeAllowed,
 			UpdatedAt:          item.LastSeenAtMS,
+			EAVersion:          item.Account.EAVersion,
+			StatusReason:       statusReason,
 		})
 	}
 	return accounts, nil
+}
+
+func eaVersionSupported(value string) bool {
+	core := strings.TrimSpace(value)
+	if index := strings.IndexAny(core, "-+"); index >= 0 {
+		core = core[:index]
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) < 2 || len(parts) > 3 {
+		return false
+	}
+	version := [3]int{}
+	for index, part := range parts {
+		parsed, err := strconv.Atoi(part)
+		if err != nil || parsed < 0 {
+			return false
+		}
+		version[index] = parsed
+	}
+	if version[0] != 1 {
+		return version[0] > 1
+	}
+	return version[1] >= 22
 }
 
 func (c *Client) IssuePairingToken(

@@ -49,6 +49,8 @@ const MAX_EA_EVENTS_PER_BATCH: usize = 128;
 const MAX_LEGACY_EA_CLOCK_SKEW_MS: u64 = 24 * 60 * 60 * 1_000;
 const COMMAND_LEASE: Duration = Duration::from_secs(15);
 const COMMAND_DELIVERY_TTL: Duration = Duration::from_secs(2 * 60);
+const EA_POLL_FRESHNESS: Duration = Duration::from_secs(15);
+const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 22, 0);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_ACTIVE_PAIRING_TOKENS_PER_OWNER: usize = 5;
@@ -1574,6 +1576,7 @@ impl GatewayState {
                 accounts.balance,
                 accounts.equity,
                 accounts.trade_allowed,
+                accounts.metadata->>'eaVersion' AS ea_version,
                 floor(extract(epoch FROM accounts.updated_at) * 1000)::bigint
                     AS updated_at_ms,
                 instruments.snapshot,
@@ -1595,7 +1598,8 @@ impl GatewayState {
                       AND sessions.revoked_at IS NULL
                       AND sessions.expires_at > now()
                       AND sessions.absolute_expires_at > now()
-                      AND sessions.last_seen_at > now() - interval '15 minutes'
+                      AND sessions.last_poll_at >
+                          now() - ($4 * interval '1 millisecond')
                 ) AS connected
             FROM execution_accounts accounts
             LEFT JOIN execution_symbol_mappings mappings
@@ -1618,6 +1622,7 @@ impl GatewayState {
         .bind(owner_uuid)
         .bind(target.account_id.as_str())
         .bind(canonical_symbol.trim())
+        .bind(EA_POLL_FRESHNESS.as_millis() as i64)
         .fetch_optional(database)
         .await
         .map_err(|error| ApiError::database("load order route target", error))?;
@@ -1635,6 +1640,11 @@ impl GatewayState {
         let connected: bool = row
             .try_get("connected")
             .map_err(|error| ApiError::database("decode route connection", error))?;
+        let supported_ea = ea_version_supported(
+            row.try_get::<Option<String>, _>("ea_version")
+                .map_err(|error| ApiError::database("decode EA version", error))?
+                .as_deref(),
+        );
         let stored_status: String = row
             .try_get("status")
             .map_err(|error| ApiError::database("decode route status", error))?;
@@ -1657,10 +1667,12 @@ impl GatewayState {
         } else {
             None
         };
-        let account_status = if connected {
-            parse_account_status(&stored_status)
-        } else {
+        let account_status = if !connected {
             AccountStatus::Offline
+        } else if !supported_ea {
+            AccountStatus::Blocked
+        } else {
+            parse_account_status(&stored_status)
         };
         Ok(Some(RouteTargetContext {
             account: ExecutionAccount {
@@ -1954,6 +1966,7 @@ impl EaCommandQueue for GatewayState {
                 r#"
                 SELECT
                     user_id,
+                    metadata->>'eaVersion' AS ea_version,
                     EXISTS (
                         SELECT 1
                         FROM execution_ea_sessions sessions
@@ -1962,6 +1975,8 @@ impl EaCommandQueue for GatewayState {
                           AND sessions.revoked_at IS NULL
                           AND sessions.expires_at > now()
                           AND sessions.absolute_expires_at > now()
+                          AND sessions.last_poll_at >
+                              now() - ($2 * interval '1 millisecond')
                     ) AS connected
                 FROM execution_accounts
                 WHERE id = $1 AND status <> 'disabled'
@@ -1969,6 +1984,7 @@ impl EaCommandQueue for GatewayState {
                 "#,
             )
             .bind(account_id.as_str())
+            .bind(EA_POLL_FRESHNESS.as_millis() as i64)
             .fetch_optional(&mut *transaction)
             .await
             .map_err(|error| {
@@ -1986,6 +2002,18 @@ impl EaCommandQueue for GatewayState {
             })?;
             if !connected {
                 return Err(AdapterError::AccountOffline);
+            }
+            let ea_version = account_row
+                .try_get::<Option<String>, _>("ea_version")
+                .map_err(|error| {
+                    error!(%error, "failed to decode target EA version");
+                    AdapterError::Transport("command repository unavailable".into())
+                })?;
+            if !ea_version_supported(ea_version.as_deref()) {
+                return Err(AdapterError::Rejected(format!(
+                    "SMCExecutionEA {}.{} or newer is required",
+                    MIN_SUPPORTED_EA_VERSION.0, MIN_SUPPORTED_EA_VERSION.1
+                )));
             }
 
             let pending_count = sqlx::query_scalar::<_, i64>(
@@ -2140,9 +2168,10 @@ async fn health(State(state): State<GatewayState>) -> Result<Json<HealthView>, A
             WHERE revoked_at IS NULL
               AND expires_at > now()
               AND absolute_expires_at > now()
-              AND last_seen_at > now() - interval '15 minutes'
+              AND last_poll_at > now() - ($1 * interval '1 millisecond')
             "#,
         )
+        .bind(EA_POLL_FRESHNESS.as_millis() as i64)
         .fetch_one(database)
         .await
         .map_err(|error| ApiError::database("execution health query", error))?;
@@ -2203,8 +2232,16 @@ async fn poll_commands(
             WITH expired AS (
                 UPDATE execution_target_commands
                 SET status = 'failed',
-                    reject_code = 'DELIVERY_EXPIRED',
-                    reject_message = 'EA did not acknowledge the command before its delivery deadline',
+                    reject_code = CASE
+                        WHEN first_delivered_at IS NULL
+                            THEN 'DELIVERY_UNAVAILABLE'
+                        ELSE 'DELIVERY_EXPIRED'
+                    END,
+                    reject_message = CASE
+                        WHEN first_delivered_at IS NULL
+                            THEN 'EA did not poll before the command delivery deadline'
+                        ELSE 'EA did not acknowledge the command before its delivery deadline'
+                    END,
                     terminal_ack_at = now(),
                     lease_owner = NULL,
                     lease_expires_at = NULL,
@@ -2213,7 +2250,8 @@ async fn poll_commands(
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
-                  AND created_at <= now() - ($3 * interval '1 millisecond')
+                  AND COALESCE(first_delivered_at, created_at) <=
+                      now() - ($3 * interval '1 millisecond')
                 RETURNING id, parent_command_id
             ),
             audited AS (
@@ -2281,7 +2319,8 @@ async fn poll_commands(
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
-                  AND created_at > now() - ($6 * interval '1 millisecond')
+                  AND COALESCE(first_delivered_at, created_at) >
+                      now() - ($6 * interval '1 millisecond')
                   AND next_attempt_at <= now()
                   AND (lease_expires_at IS NULL OR lease_expires_at <= now())
                 ORDER BY created_at, id
@@ -2326,6 +2365,27 @@ async fn poll_commands(
                 ));
             }
             commands.push(command.into());
+        }
+        let poll_update = sqlx::query(
+            r#"
+            UPDATE execution_ea_sessions
+            SET last_poll_at = now()
+            WHERE id = $1
+              AND user_id = $2
+              AND account_id = $3
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(session_uuid)
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("record EA poll liveness", error))?;
+        if poll_update.rows_affected() != 1 {
+            return Err(ApiError::unauthorized(
+                "EA session was revoked during command polling",
+            ));
         }
         transaction
             .commit()
@@ -2457,20 +2517,21 @@ async fn list_accounts(
                     0
                 ) AS account_last_seen_at_ms,
                 floor(
-                    extract(epoch FROM active_session.last_seen_at) * 1000
+                    extract(epoch FROM active_session.last_poll_at) * 1000
                 )::bigint AS session_last_seen_at_ms,
-                active_session.last_seen_at IS NOT NULL AS connected
+                active_session.last_poll_at IS NOT NULL AS connected
             FROM execution_accounts accounts
             LEFT JOIN LATERAL (
-                SELECT sessions.last_seen_at
+                SELECT sessions.last_poll_at
                 FROM execution_ea_sessions sessions
                 WHERE sessions.user_id = accounts.user_id
                   AND sessions.account_id = accounts.id
                   AND sessions.revoked_at IS NULL
                   AND sessions.expires_at > now()
                   AND sessions.absolute_expires_at > now()
-                  AND sessions.last_seen_at > now() - interval '15 minutes'
-                ORDER BY sessions.last_seen_at DESC
+                  AND sessions.last_poll_at >
+                      now() - ($2 * interval '1 millisecond')
+                ORDER BY sessions.last_poll_at DESC
                 LIMIT 1
             ) active_session ON true
             WHERE accounts.user_id = $1
@@ -2479,6 +2540,7 @@ async fn list_accounts(
             "#,
         )
         .bind(owner_uuid)
+        .bind(EA_POLL_FRESHNESS.as_millis() as i64)
         .fetch_all(database)
         .await
         .map_err(|error| ApiError::database("list execution accounts", error))?;
@@ -3889,6 +3951,27 @@ fn command_delivery_expired(queued_at_ms: u64, now_ms: u64) -> bool {
     now_ms.saturating_sub(queued_at_ms) >= COMMAND_DELIVERY_TTL.as_millis() as u64
 }
 
+fn parse_ea_version(value: &str) -> Option<(u32, u32, u32)> {
+    let core = value
+        .trim()
+        .split_once(['-', '+'])
+        .map_or(value.trim(), |(core, _)| core);
+    let mut segments = core.split('.');
+    let major = segments.next()?.parse().ok()?;
+    let minor = segments.next()?.parse().ok()?;
+    let patch = segments.next().unwrap_or("0").parse().ok()?;
+    if segments.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+fn ea_version_supported(value: Option<&str>) -> bool {
+    value
+        .and_then(parse_ea_version)
+        .is_some_and(|version| version >= MIN_SUPPORTED_EA_VERSION)
+}
+
 fn effective_last_seen_at_ms(
     account_last_seen_at_ms: u64,
     session_last_seen_at_ms: Option<u64>,
@@ -4016,6 +4099,7 @@ mod tests {
             leverage: 100,
             trade_allowed: true,
             terminal_build: 5000,
+            ea_version: Some("1.22".into()),
         }
     }
 
@@ -4136,6 +4220,16 @@ mod tests {
         assert_eq!(effective_last_seen_at_ms(1_000, Some(2_000)), 2_000);
         assert_eq!(effective_last_seen_at_ms(3_000, Some(2_000)), 3_000);
         assert_eq!(effective_last_seen_at_ms(4_000, None), 4_000);
+    }
+
+    #[test]
+    fn ea_version_gate_accepts_current_and_future_releases_only() {
+        assert!(!ea_version_supported(None));
+        assert!(!ea_version_supported(Some("1.21")));
+        assert!(!ea_version_supported(Some("invalid")));
+        assert!(ea_version_supported(Some("1.22")));
+        assert!(ea_version_supported(Some("1.22.1")));
+        assert!(ea_version_supported(Some("2.0.0")));
     }
 
     #[test]

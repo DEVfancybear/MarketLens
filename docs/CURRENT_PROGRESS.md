@@ -1,10 +1,10 @@
 # Current Progress
 
-> Trade execution update (2026-07-26): legacy MT5 verification/Connector
+> Trade execution update (2026-07-27): legacy MT5 verification/Connector
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-07-26
+Last updated: 2026-07-27
 
 ## Current Milestone
 
@@ -19,11 +19,11 @@ Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
   retryable `503` versus ownership `409`. See `backend/docs/AUTH.md`, `docs/SECURITY.md`, and
   `docs/CHANGELOG.md` for the current contract.
 
-- MT5 integration access is now **per signed-in user**. Saved credentials have separate
-  Configured/Verified states; `POST /api/v1/settings/integrations/verify/mt5` performs a bounded
-  stdin-only native login check, migration `0023_mt5_verification` persists `verifiedAt`, and
-  changing credentials invalidates verification. The Trade UI enables MT5 only after verification
-  and blocks live commands until the execution bridge reports the same login/server.
+- MT5 execution is now **per signed-in user and broker-neutral** through the
+  common EA. No MT5 password is stored. Migration
+  `0028_execution_ea_poll_liveness` separates generic session activity from a
+  successful command poll; only EA 1.22+ with a poll in the last 15 seconds can
+  appear `READY` or receive Live/Demo commands.
 
 - Backend-owned indicators: **generic Pine source path is active** for the
   documented historical subset, with replay candles truncated before any VM or

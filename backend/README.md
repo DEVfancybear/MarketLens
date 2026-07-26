@@ -62,6 +62,18 @@ The same EA binary is used for all brokers. The derived account identity is
 tenant-bound and stable for `owner + server + login`; raw credentials are never
 stored.
 
+The production minimum is `SMCExecutionEA 1.22`. The EA reports its version in
+the account heartbeat, while Rust records a separate successful command-poll
+timestamp. The Trade workspace reports `READY` only when the EA version is
+supported and the last successful poll is at most 15 seconds old. A terminal
+that can send heartbeats but cannot poll commands is therefore not executable.
+
+After an EA release, replace the `.ex5` in every terminal, refresh the
+Navigator, remove the old EA instance from its chart, and attach the new one.
+The cached account session remains valid when the broker login/server did not
+change. The UI shows the observed EA version and blocks orders until the
+upgrade is active.
+
 ## Development checks
 
 ```powershell
@@ -91,6 +103,7 @@ backend/
   bridge/mt5_stream/          private read-only market-data process
   migrations/0026_*           execution platform schema
   migrations/0027_*           irreversible legacy credential removal
+  migrations/0028_*           successful EA command-poll liveness
 ```
 
 The historical FTMO Connector/verifier code and routes no longer exist.

@@ -34,6 +34,19 @@ func TestClientAcceptsLoopbackAdminURL(t *testing.T) {
 	}
 }
 
+func TestEAVersionGateFailsClosedForMissingAndOldAgents(t *testing.T) {
+	for _, value := range []string{"", "1.21", "invalid", "1.22.0.1"} {
+		if eaVersionSupported(value) {
+			t.Fatalf("eaVersionSupported(%q) = true, want false", value)
+		}
+	}
+	for _, value := range []string{"1.22", "1.22.1", "1.23.0", "2.0.0"} {
+		if !eaVersionSupported(value) {
+			t.Fatalf("eaVersionSupported(%q) = false, want true", value)
+		}
+	}
+}
+
 func TestClientScopesAccountActionsAndKeepsAdminTokenServerSide(t *testing.T) {
 	const token = "admin-token-with-at-least-32-characters"
 	const owner = "11111111-1111-4111-8111-111111111111"

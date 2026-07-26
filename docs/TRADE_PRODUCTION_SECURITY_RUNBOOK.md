@@ -64,6 +64,11 @@ Before release, verify:
   owner;
 - EA sessions are hashed at rest and bound to the exact MT5 identity;
 - only one current EA session controls an account after re-pairing.
+- account readiness requires `last_poll_at` from a completely successful
+  command poll within 15 seconds; generic session/event activity is
+  insufficient;
+- the reported EA version is `1.22` or newer before any Place or lifecycle
+  command can be created.
 
 ## Risk and loss-prevention checks
 
@@ -107,6 +112,8 @@ Alert on:
 - command queue saturation;
 - stale account/instrument snapshots;
 - sustained EA disconnects;
+- stale/missing `last_poll_at` while event heartbeats remain fresh;
+- missing, malformed, or unsupported EA versions;
 - repeated broker rejects;
 - unknown submissions older than the reconciliation SLO;
 - audit insert failures;
@@ -156,7 +163,7 @@ the public `.ex5`, SHA-256 checksum, and a manifest binding the binary to the
 current source. `build-production.ps1` verifies all three before building the
 frontend and fails closed on a missing, stale, or modified release.
 
-Apply migrations in a controlled environment and verify `version=27,
+Apply migrations in a controlled environment and verify `version=28,
 dirty=false` before serving execution traffic. The canonical production runner
 owns build, migration, restart, and health gates:
 
@@ -166,11 +173,34 @@ owns build, migration, restart, and health gates:
 
 Do not use recovery switches during a normal release.
 
+Migration `0028_execution_ea_poll_liveness` intentionally leaves existing
+sessions with `last_poll_at=NULL`. After restart, each healthy EA establishes
+readiness on its first successful poll. Existing EA releases below 1.22 remain
+blocked until their `.ex5` is replaced; do not bypass this gate by editing
+account status in PostgreSQL.
+
+## Command delivery triage
+
+Use the target command row, not the browser's `202 Accepted`, to identify the
+execution boundary:
+
+| Evidence | Meaning | Action |
+| --- | --- | --- |
+| `attempt_count=0`, `first_delivered_at IS NULL` | Gateway never delivered the command to EA | Check `last_poll_at`, EA version, poll HTTP status, relay and deployment uptime |
+| `attempt_count>0`, no `terminal_ack_at` | EA received one or more leases but no outcome was persisted | Check EA Experts log, local idempotency journal and events HTTP response |
+| `status=failed`, `reject_code=DELIVERY_UNAVAILABLE` | Delivery deadline passed before any EA lease | Do not claim MT5/broker rejection; restore poll health and create a new user-authorized order |
+| `status=failed`, `reject_code=DELIVERY_EXPIRED` | Delivered but not acknowledged before the deadline | Reconcile MT5 active/history state before any new order |
+| `status=accepted/filled/cancelled` with broker IDs | EA outcome is persisted | Reconcile browser portfolio against broker state |
+
+Never resend a failed command by changing its database status. A replacement
+order requires a new command ID and explicit user action after the prior
+outcome has been reconciled.
+
 ## Live canary
 
 1. Pair one dedicated Live account with minimum balance/exposure.
-2. Verify account identity, server, currency, mode, equity, and trade permission
-   in the UI.
+2. Verify account identity, server, currency, mode, equity, trade permission,
+   EA version `1.22+`, and a fresh successful poll (`READY`) in the UI.
 3. Map exactly one low-risk symbol.
 4. Place the broker-minimum order with a protective stop.
 5. Verify command IDs in browser activity, PostgreSQL, EA journal, MT5 order,
