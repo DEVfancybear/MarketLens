@@ -90,7 +90,11 @@ func (vm *statefulVM) executeIf(statement *statefulIfStmt, scope *statefulScope)
 		if err != nil {
 			return statefulNA(), err
 		}
-		if statefulTruthy(condition) {
+		truthy, err := vm.booleanValue(condition)
+		if err != nil {
+			return statefulNA(), err
+		}
+		if truthy {
 			return vm.executeBlock(branch.body, scope)
 		}
 	}
@@ -176,7 +180,11 @@ func (vm *statefulVM) evaluate(expression statefulExpr, scope *statefulScope) (s
 			return statefulNA(), err
 		}
 		if value.operator == "not" {
-			return statefulBool(!statefulTruthy(operand)), nil
+			truthy, err := vm.booleanValue(operand)
+			if err != nil {
+				return statefulNA(), err
+			}
+			return statefulBool(!truthy), nil
 		}
 		number := statefulNumeric(operand)
 		if !statefulUsable(number) {
@@ -188,11 +196,33 @@ func (vm *statefulVM) evaluate(expression statefulExpr, scope *statefulScope) (s
 		if err != nil {
 			return statefulNA(), err
 		}
-		if value.operator == "and" && !statefulTruthy(left) {
-			return statefulBool(false), nil
-		}
-		if value.operator == "or" && statefulTruthy(left) {
-			return statefulBool(true), nil
+		if value.operator == "and" || value.operator == "or" {
+			leftTruthy, err := vm.booleanValue(left)
+			if err != nil {
+				return statefulNA(), err
+			}
+			// Pine v6 evaluates logical operators lazily. Earlier versions
+			// evaluate both operands even when the left side decides the result.
+			if vm.version >= 6 {
+				if value.operator == "and" && !leftTruthy {
+					return statefulBool(false), nil
+				}
+				if value.operator == "or" && leftTruthy {
+					return statefulBool(true), nil
+				}
+			}
+			right, err := vm.evaluate(value.right, scope)
+			if err != nil {
+				return statefulNA(), err
+			}
+			rightTruthy, err := vm.booleanValue(right)
+			if err != nil {
+				return statefulNA(), err
+			}
+			if value.operator == "and" {
+				return statefulBool(leftTruthy && rightTruthy), nil
+			}
+			return statefulBool(leftTruthy || rightTruthy), nil
 		}
 		right, err := vm.evaluate(value.right, scope)
 		if err != nil {
@@ -204,7 +234,11 @@ func (vm *statefulVM) evaluate(expression statefulExpr, scope *statefulScope) (s
 		if err != nil {
 			return statefulNA(), err
 		}
-		if statefulTruthy(condition) {
+		truthy, err := vm.booleanValue(condition)
+		if err != nil {
+			return statefulNA(), err
+		}
+		if truthy {
 			return vm.evaluate(value.whenTrue, scope)
 		}
 		return vm.evaluate(value.whenFalse, scope)
@@ -226,6 +260,40 @@ func (vm *statefulVM) evaluate(expression statefulExpr, scope *statefulScope) (s
 		return vm.evaluateCall(value, scope)
 	default:
 		return statefulNA(), fmt.Errorf("unsupported expression")
+	}
+}
+
+func (vm *statefulVM) booleanValue(value statefulValue) (bool, error) {
+	if vm.version >= 6 && value.kind != statefulValueBool {
+		return false, fmt.Errorf("Pine v6 condition expects bool, got %s", statefulKindName(value.kind))
+	}
+	return statefulTruthy(value), nil
+}
+
+func statefulKindName(kind statefulValueKind) string {
+	switch kind {
+	case statefulValueNA:
+		return "na"
+	case statefulValueNumber:
+		return "number"
+	case statefulValueBool:
+		return "bool"
+	case statefulValueString:
+		return "string"
+	case statefulValueColor:
+		return "color"
+	case statefulValueTuple:
+		return "tuple"
+	case statefulValueRecord:
+		return "UDT"
+	case statefulValueArray:
+		return "array"
+	case statefulValueObject:
+		return "drawing"
+	case statefulValuePlot:
+		return "plot"
+	default:
+		return "unknown"
 	}
 }
 
@@ -329,7 +397,7 @@ func (vm *statefulVM) resolveIdentifier(name string, scope *statefulScope) (stat
 		return statefulNA(), nil
 	case "barstate":
 		return statefulString("barstate"), nil
-	case "syminfo", "xloc", "position", "size", "format", "line", "box", "label", "table", "array", "color", "math", "str", "ta", "request":
+	case "syminfo", "xloc", "position", "size", "format", "line", "box", "label", "table", "array", "color", "math", "str", "ta", "request", "plot", "shape", "location", "extend":
 		return statefulString(name), nil
 	default:
 		return statefulNA(), fmt.Errorf("unknown identifier %q", name)
@@ -369,7 +437,7 @@ func (vm *statefulVM) evaluateField(expression *statefulFieldExpr, scope *statef
 			}
 			return statefulString("UTC"), nil
 		}
-		if identifier.name == "xloc" || identifier.name == "position" || identifier.name == "size" || identifier.name == "format" || identifier.name == "line" || identifier.name == "box" || identifier.name == "label" {
+		if identifier.name == "xloc" || identifier.name == "position" || identifier.name == "size" || identifier.name == "format" || identifier.name == "line" || identifier.name == "box" || identifier.name == "label" || identifier.name == "plot" || identifier.name == "shape" || identifier.name == "location" || identifier.name == "extend" {
 			return statefulString(qualified), nil
 		}
 	}
@@ -477,6 +545,30 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 			return statefulNA(), err
 		}
 		return statefulNumber(math.Abs(statefulNumeric(value))), nil
+	case "math.exp", "exp":
+		return vm.numericUnary(call, scope, math.Exp)
+	case "math.cos", "cos":
+		return vm.numericUnary(call, scope, math.Cos)
+	case "math.sqrt", "sqrt":
+		return vm.numericUnary(call, scope, math.Sqrt)
+	case "math.round", "round":
+		return vm.numericUnary(call, scope, math.Round)
+	case "math.floor", "floor":
+		return vm.numericUnary(call, scope, math.Floor)
+	case "int":
+		return vm.numericUnary(call, scope, math.Trunc)
+	case "float":
+		return vm.numericUnary(call, scope, func(value float64) float64 { return value })
+	case "bool":
+		value, err := vm.callArgument(call, scope, "", 0)
+		if err != nil {
+			return statefulNA(), err
+		}
+		return statefulBool(statefulTruthy(value)), nil
+	case "ta.sma", "sma", "ta.ema", "ema", "ta.rma", "rma", "ta.wma", "wma", "ta.vwma", "vwma":
+		return vm.evaluateMovingAverage(name, call, scope)
+	case "ta.valuewhen", "valuewhen":
+		return vm.evaluateValueWhen(call, scope)
 	case "ta.cum", "cum":
 		value, err := vm.callArgument(call, scope, "", 0)
 		if err != nil {
@@ -484,9 +576,9 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 		}
 		point := statefulNumeric(value)
 		if statefulUsable(point) {
-			vm.cumulativeCalls[call] += point
+			vm.cumulativeCalls[statefulCallSite{call: call, scope: scope}] += point
 		}
-		return statefulNumber(vm.cumulativeCalls[call]), nil
+		return statefulNumber(vm.cumulativeCalls[statefulCallSite{call: call, scope: scope}]), nil
 	case "ta.pivothigh", "pivothigh":
 		return vm.evaluatePivot(call, scope, "high")
 	case "ta.pivotlow", "pivotlow":
@@ -551,6 +643,10 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 		return vm.constructBox(call, scope)
 	case "line.new":
 		return vm.constructLine(call, scope)
+	case "line.get_x2":
+		return vm.lineCoordinate(call, scope, "x2")
+	case "line.set_x2":
+		return vm.setLineCoordinate(call, scope, "x2")
 	case "label.new":
 		return vm.constructLabel(call, scope)
 	case "table.new":
@@ -568,7 +664,7 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 
 func statefulNamespace(name string) bool {
 	switch name {
-	case "input", "array", "math", "ta", "color", "str", "request", "box", "line", "label", "table":
+	case "input", "array", "math", "ta", "color", "str", "request", "box", "line", "label", "table", "plot", "shape", "location", "extend":
 		return true
 	default:
 		return false
@@ -652,13 +748,14 @@ func (vm *statefulVM) methodIndex(call *statefulCallExpr, scope *statefulScope) 
 }
 
 func (vm *statefulVM) callFunction(function *statefulFunction, call *statefulCallExpr, caller *statefulScope, receiver *statefulValue) (statefulValue, error) {
-	persistent := vm.functionState[function]
+	site := statefulCallSite{call: call, scope: caller}
+	persistent := vm.functionState[site]
 	if persistent == nil {
 		persistent = newStatefulScope(vm.global)
-		vm.functionState[function] = persistent
+		vm.functionState[site] = persistent
 	}
-	local := newStatefulScope(persistent)
-	local.varScope = persistent
+	local := persistent
+	vm.functionLastBar[site] = vm.bar
 	argumentIndex := 0
 	for index, parameter := range function.parameters {
 		var value statefulValue
@@ -865,6 +962,110 @@ func (vm *statefulVM) numericReduce(call *statefulCallExpr, scope *statefulScope
 		point = reducer(point, other)
 	}
 	return statefulNumber(point), nil
+}
+
+func (vm *statefulVM) numericUnary(call *statefulCallExpr, scope *statefulScope, operation func(float64) float64) (statefulValue, error) {
+	value, err := vm.callArgument(call, scope, "", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	point := statefulNumeric(value)
+	if !statefulUsable(point) {
+		return statefulNA(), nil
+	}
+	return statefulNumber(operation(point)), nil
+}
+
+func (vm *statefulVM) evaluateMovingAverage(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	source, err := vm.callArgument(call, scope, "source", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	lengthValue, err := vm.callArgument(call, scope, "length", 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	length := int(math.Max(1, math.Round(statefulNumeric(lengthValue))))
+	site := statefulCallSite{call: call, scope: scope}
+	state := vm.numericCalls[site]
+	if state == nil {
+		state = &statefulNumericCall{lastBar: -1}
+		vm.numericCalls[site] = state
+	}
+	for state.lastBar+1 < vm.bar {
+		state.values = append(state.values, math.NaN())
+		state.volumes = append(state.volumes, math.NaN())
+		state.lastBar++
+	}
+	point := statefulNumeric(source)
+	volume := math.NaN()
+	if vm.bar >= 0 && vm.bar < len(vm.candles) {
+		volume = vm.candles[vm.bar].Volume
+	}
+	if state.lastBar == vm.bar {
+		state.values[vm.bar] = point
+		state.volumes[vm.bar] = volume
+	} else {
+		state.values = append(state.values, point)
+		state.volumes = append(state.volumes, volume)
+		state.lastBar = vm.bar
+	}
+	var values []float64
+	switch name {
+	case "ta.sma", "sma":
+		values = rollingAverage(state.values, length)
+	case "ta.ema", "ema":
+		values = exponentialAverage(state.values, length)
+	case "ta.rma", "rma":
+		values = runningMovingAverage(state.values, length)
+	case "ta.wma", "wma":
+		values = weightedMovingAverage(state.values, length)
+	case "ta.vwma", "vwma":
+		values = volumeWeightedMovingAverage(state.values, state.volumes, length)
+	default:
+		return statefulNA(), fmt.Errorf("unsupported moving average %s()", name)
+	}
+	if vm.bar < 0 || vm.bar >= len(values) || !statefulUsable(values[vm.bar]) {
+		return statefulNA(), nil
+	}
+	return statefulNumber(values[vm.bar]), nil
+}
+
+func (vm *statefulVM) evaluateValueWhen(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	condition, err := vm.callArgument(call, scope, "condition", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	truthy, err := vm.booleanValue(condition)
+	if err != nil {
+		return statefulNA(), err
+	}
+	source, err := vm.callArgument(call, scope, "source", 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	occurrenceValue, err := vm.callArgument(call, scope, "occurrence", 2)
+	if err != nil {
+		return statefulNA(), err
+	}
+	occurrence := int(math.Max(0, math.Round(statefulNumeric(occurrenceValue))))
+	site := statefulCallSite{call: call, scope: scope}
+	state := vm.valueWhenCalls[site]
+	if state == nil {
+		state = &statefulValueWhenCall{lastBar: -1}
+		vm.valueWhenCalls[site] = state
+	}
+	if state.lastBar != vm.bar {
+		if truthy {
+			state.values = append(state.values, cloneStatefulValue(source))
+		}
+		state.lastBar = vm.bar
+	}
+	index := len(state.values) - 1 - occurrence
+	if index < 0 || index >= len(state.values) {
+		return statefulNA(), nil
+	}
+	return cloneStatefulValue(state.values[index]), nil
 }
 
 func (vm *statefulVM) evaluatePivot(call *statefulCallExpr, scope *statefulScope, kind string) (statefulValue, error) {
@@ -1125,6 +1326,47 @@ func (vm *statefulVM) constructLine(call *statefulCallExpr, scope *statefulScope
 	return statefulValue{kind: statefulValueObject, object: object}, nil
 }
 
+func (vm *statefulVM) lineCoordinate(call *statefulCallExpr, scope *statefulScope, coordinate string) (statefulValue, error) {
+	value, err := vm.callArgument(call, scope, "id", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	if value.kind != statefulValueObject || value.object == nil || value.object.kind != statefulLineObject || value.object.deleted {
+		return statefulNA(), nil
+	}
+	switch coordinate {
+	case "x2":
+		return statefulNumber(value.object.x2), nil
+	default:
+		return statefulNA(), fmt.Errorf("unsupported line coordinate %s", coordinate)
+	}
+}
+
+func (vm *statefulVM) setLineCoordinate(call *statefulCallExpr, scope *statefulScope, coordinate string) (statefulValue, error) {
+	value, err := vm.callArgument(call, scope, "id", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	if value.kind != statefulValueObject || value.object == nil || value.object.kind != statefulLineObject || value.object.deleted {
+		return statefulNA(), nil
+	}
+	coordinateValue, err := vm.callArgument(call, scope, coordinate, 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	point := statefulNumeric(coordinateValue)
+	if !statefulUsable(point) {
+		return statefulNA(), nil
+	}
+	switch coordinate {
+	case "x2":
+		value.object.x2 = point
+	default:
+		return statefulNA(), fmt.Errorf("unsupported line coordinate %s", coordinate)
+	}
+	return statefulNA(), nil
+}
+
 func (vm *statefulVM) constructLabel(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
 	object := vm.newObject(statefulLabelObject)
 	var err error
@@ -1250,11 +1492,19 @@ func (vm *statefulVM) evaluateTableCell(object *statefulObject, call *statefulCa
 }
 
 func (vm *statefulVM) evaluatePlot(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
-	plot := vm.plotCalls[call]
+	site := statefulCallSite{call: call, scope: scope}
+	plot := vm.plotCalls[site]
 	if plot == nil {
 		vm.nextPlotID++
-		plot = &statefulPlot{id: vm.nextPlotID, name: vm.assigningName, lastBar: -1, declared: true}
-		vm.plotCalls[call] = plot
+		name := vm.textArgument(call, scope, "title", 1, vm.assigningName)
+		style := vm.textArgument(call, scope, "style", 4, "plot.style_line")
+		width := int(math.Max(1, math.Round(vm.numberArgumentOr(call, scope, "linewidth", 3, 1))))
+		offset := int(math.Round(vm.numberArgumentOr(call, scope, "offset", 7, 0)))
+		plot = &statefulPlot{
+			id: vm.nextPlotID, name: name, style: style, width: width,
+			offset: offset, lastBar: -1, declared: true,
+		}
+		vm.plotCalls[site] = plot
 		if !vm.outputSuppressed {
 			vm.plots = append(vm.plots, plot)
 		}
@@ -1263,7 +1513,7 @@ func (vm *statefulVM) evaluatePlot(call *statefulCallExpr, scope *statefulScope)
 	if err != nil {
 		return statefulNA(), err
 	}
-	color := vm.colorArgument(call, scope, "color", 1, defaultColors[0])
+	color := vm.colorArgument(call, scope, "color", 2, defaultColors[0])
 	for plot.lastBar+1 < vm.bar {
 		plot.values = append(plot.values, math.NaN())
 		plot.colors = append(plot.colors, "")
@@ -1292,11 +1542,12 @@ func (vm *statefulVM) evaluateFill(call *statefulCallExpr, scope *statefulScope)
 	if first.kind != statefulValuePlot || second.kind != statefulValuePlot {
 		return statefulNA(), fmt.Errorf("fill() expects plot handles")
 	}
-	fill := vm.fillCalls[call]
+	site := statefulCallSite{call: call, scope: scope}
+	fill := vm.fillCalls[site]
 	if fill == nil {
 		vm.nextFillID++
 		fill = &statefulFill{id: vm.nextFillID, first: first.plot, second: second.plot, lastBar: -1}
-		vm.fillCalls[call] = fill
+		vm.fillCalls[site] = fill
 		if !vm.outputSuppressed {
 			vm.fills = append(vm.fills, fill)
 		}
@@ -1316,7 +1567,8 @@ func (vm *statefulVM) evaluateFill(call *statefulCallExpr, scope *statefulScope)
 }
 
 func (vm *statefulVM) evaluateSecurity(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
-	if cached, ok := vm.securityCalls[call]; ok {
+	site := statefulCallSite{call: call, scope: scope}
+	if cached, ok := vm.securityCalls[site]; ok {
 		if vm.bar >= 0 && vm.bar < len(cached.values) {
 			return cloneStatefulValue(cached.values[vm.bar]), nil
 		}
@@ -1382,7 +1634,7 @@ func (vm *statefulVM) evaluateSecurity(call *statefulCallExpr, scope *statefulSc
 	if targetSeconds > 0 {
 		mapped = mapStatefulSecurityValues(vm.candles, targetCandles, targetValues, targetSeconds)
 	}
-	vm.securityCalls[call] = statefulSecurityResult{values: mapped}
+	vm.securityCalls[site] = statefulSecurityResult{values: mapped}
 	if vm.bar >= 0 && vm.bar < len(mapped) {
 		return cloneStatefulValue(mapped[vm.bar]), nil
 	}

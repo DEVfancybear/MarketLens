@@ -86,10 +86,29 @@ type statefulTableCell struct {
 type statefulPlot struct {
 	id       int
 	name     string
+	style    string
+	width    int
+	offset   int
 	values   []float64
 	colors   []string
 	lastBar  int
 	declared bool
+}
+
+type statefulNumericCall struct {
+	values  []float64
+	volumes []float64
+	lastBar int
+}
+
+type statefulValueWhenCall struct {
+	values  []statefulValue
+	lastBar int
+}
+
+type statefulCallSite struct {
+	call  *statefulCallExpr
+	scope *statefulScope
 }
 
 type statefulFill struct {
@@ -192,14 +211,18 @@ type statefulVM struct {
 	objects          []*statefulObject
 	plots            []*statefulPlot
 	fills            []*statefulFill
-	plotCalls        map[*statefulCallExpr]*statefulPlot
-	fillCalls        map[*statefulCallExpr]*statefulFill
-	securityCalls    map[*statefulCallExpr]statefulSecurityResult
-	functionState    map[*statefulFunction]*statefulScope
-	cumulativeCalls  map[*statefulCallExpr]float64
+	plotCalls        map[statefulCallSite]*statefulPlot
+	fillCalls        map[statefulCallSite]*statefulFill
+	securityCalls    map[statefulCallSite]statefulSecurityResult
+	functionState    map[statefulCallSite]*statefulScope
+	functionLastBar  map[statefulCallSite]int
+	numericCalls     map[statefulCallSite]*statefulNumericCall
+	valueWhenCalls   map[statefulCallSite]*statefulValueWhenCall
+	cumulativeCalls  map[statefulCallSite]float64
 	nextObjectID     int
 	nextPlotID       int
 	nextFillID       int
+	version          int
 	outputSuppressed bool
 }
 
@@ -210,11 +233,15 @@ func newStatefulVM(ctx context.Context, program *statefulProgram, request Compil
 		request:         request,
 		candles:         candles,
 		global:          newStatefulScope(nil),
-		plotCalls:       map[*statefulCallExpr]*statefulPlot{},
-		fillCalls:       map[*statefulCallExpr]*statefulFill{},
-		securityCalls:   map[*statefulCallExpr]statefulSecurityResult{},
-		functionState:   map[*statefulFunction]*statefulScope{},
-		cumulativeCalls: map[*statefulCallExpr]float64{},
+		plotCalls:       map[statefulCallSite]*statefulPlot{},
+		fillCalls:       map[statefulCallSite]*statefulFill{},
+		securityCalls:   map[statefulCallSite]statefulSecurityResult{},
+		functionState:   map[statefulCallSite]*statefulScope{},
+		functionLastBar: map[statefulCallSite]int{},
+		numericCalls:    map[statefulCallSite]*statefulNumericCall{},
+		valueWhenCalls:  map[statefulCallSite]*statefulValueWhenCall{},
+		cumulativeCalls: map[statefulCallSite]float64{},
+		version:         ExtractMeta(request.SourceCode).Version,
 	}
 }
 
@@ -275,6 +302,14 @@ func (vm *statefulVM) run() error {
 func (vm *statefulVM) commitBar() {
 	for _, cell := range vm.global.cells {
 		cell.history = append(cell.history, cloneStatefulValue(cell.value))
+	}
+	for call, scope := range vm.functionState {
+		if vm.functionLastBar[call] != vm.bar {
+			continue
+		}
+		for _, cell := range scope.cells {
+			cell.history = append(cell.history, cloneStatefulValue(cell.value))
+		}
 	}
 }
 
@@ -417,14 +452,30 @@ func (vm *statefulVM) plotSeries(plot *statefulPlot) (IndicatorSeries, bool) {
 		if index < len(plot.colors) && plot.colors[index] != "" && plot.colors[index] != "transparent" {
 			color = plot.colors[index]
 		}
-		if index < len(vm.candles) && statefulUsable(value) {
-			data = append(data, LinePoint{Time: vm.candles[index].Time, Value: value})
+		target := index + plot.offset
+		if target >= 0 && target < len(vm.candles) && statefulUsable(value) {
+			point := LinePoint{Time: vm.candles[target].Time, Value: value}
+			if index < len(plot.colors) && plot.colors[index] != "" {
+				pointColor := plot.colors[index]
+				point.Color = &pointColor
+			}
+			data = append(data, point)
 		}
 	}
 	if len(data) == 0 || color == "" {
 		return IndicatorSeries{}, false
 	}
-	return IndicatorSeries{Key: fmt.Sprintf("stateful:plot:%d:%s", plot.id, plot.name), Type: "line", Color: color, Data: data}, true
+	width := plot.width
+	if width <= 0 {
+		width = 1
+	}
+	return IndicatorSeries{
+		Key:       fmt.Sprintf("stateful:plot:%d:%s", plot.id, plot.name),
+		Type:      plotType(plot.style),
+		Color:     color,
+		Data:      data,
+		LineWidth: &width,
+	}, true
 }
 
 func (vm *statefulVM) fillSeries(fill *statefulFill) []IndicatorSeries {

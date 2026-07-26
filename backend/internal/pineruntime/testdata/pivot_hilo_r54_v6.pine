@@ -1,0 +1,204 @@
+// Pivot Hilo Support n Resistance Levels R5.4
+// Original work Copyright 2017, 2018 JustUncleL
+// Licensed under the GNU General Public License, version 3 or later.
+// Migrated to Pine Script v6 for the common SMC Pine runtime.
+
+//@version=6
+indicator(
+    title = "Pivot Hilo Support n Resistance Levels R5.4",
+    shorttitle = "PVTLVLS R5.4",
+    overlay = true,
+    max_bars_back = 50,
+    max_lines_count = 500,
+    max_labels_count = 500)
+
+// Pivot and level settings.
+showPivots = input.bool(true, "Show Pivot Points", group = "Pivots")
+useAutoStrength = input.bool(false, "Use Auto Strength Pivot Points", group = "Pivots")
+leftStrength = input.int(5, "Pivot Length Left Hand Side", minval = 1, group = "Pivots")
+rightStrength = input.int(5, "Pivot Length Right Hand Side", minval = 1, group = "Pivots")
+confirmationBars = input.int(1, "When to start Printing Pivot (0 = no wait, 1 = wait for candle close)", minval = 0, maxval = 1, group = "Pivots")
+useRenko = input.bool(false, "Use Renko Style Pivots (open/close for high/low)", group = "Pivots")
+idealOnly = input.bool(false, "Show Only Ideal Pivots (handy for Renko and HA)", group = "Pivots")
+showSwingLabels = input.bool(false, "Show HH, LL, LH, HL markers on Pivot Points", group = "Pivots")
+thirdLevelSwings = input.bool(false, "Filter HH, LL, LH, HL to Third Level Swings", group = "Pivots")
+highlightPivot = input.bool(false, "Highlight Pivot with Coloured Marker", group = "Pivots")
+
+showSRLevels = input.bool(true, "Show S/R Level Extensions", group = "Levels")
+showChannel = input.bool(false, "Show Levels as a Fractal Chaos Channel", group = "Levels")
+maxLevelLength = input.int(0, "Maximum S/R Level Extension Length", minval = 0, group = "Levels")
+
+showFractalBreaks = input.bool(false, "Show Fractal Break Alert Arrows", group = "Breaks")
+filterFractalBreaks = input.bool(false, "Apply MA Filter to Fractal Break Alerts", group = "Breaks")
+
+useMAFilter = input.bool(false, "Use MA Filter on Pivots", group = "Moving averages")
+fastMAType = input.string("EMA", "Fast MA Type", options = ["SMA", "EMA", "WMA", "VWMA", "Smooth SMA", "DEMA", "TEMA", "Hull MA", "ZeroLag EMA", "Triangular MA", "SuperSmooth MA"], group = "Moving averages")
+fastMALength = input.int(21, "Fast MA - Length", minval = 1, group = "Moving averages")
+fastMASource = input.source(close, "Fast MA - Source", group = "Moving averages")
+slowMAType = input.string("EMA", "Slow MA Type", options = ["SMA", "EMA", "WMA", "VWMA", "Smooth SMA", "DEMA", "TEMA", "Hull MA", "ZeroLag EMA", "Triangular MA", "SuperSmooth MA"], group = "Moving averages")
+slowMALength = input.int(55, "Slow MA - Length", minval = 1, group = "Moving averages")
+slowMASource = input.source(close, "Slow MA - Source", group = "Moving averages")
+showMAs = input.bool(false, "Show MA Lines", group = "Moving averages")
+
+highSource = useRenko ? math.max(close, open) : high
+lowSource = useRenko ? math.min(close, open) : low
+
+superSmoother(float source, int length) =>
+    float a1 = math.exp(-1.414 * 3.14159 / length)
+    float b1 = 2.0 * a1 * math.cos(1.414 * 3.14159 / length)
+    float c2 = b1
+    float c3 = -a1 * a1
+    float c1 = 1.0 - c2 - c3
+    float result = 0.0
+    result := c1 * (source + nz(source[1])) / 2.0 + c2 * nz(result[1]) + c3 * nz(result[2])
+    result
+
+smoothedMA(float source, int length) =>
+    float result = 0.0
+    float initial = ta.sma(source, length)
+    result := na(result[1]) ? initial : (result[1] * (length - 1) + source) / length
+    result
+
+zeroLagEMA(float source, int length) =>
+    int lag = int(math.round((length - 1) / 2.0))
+    float adjusted = source + (source - source[lag])
+    ta.ema(adjusted, length)
+
+doubleEMA(float source, int length) =>
+    float first = ta.ema(source, length)
+    2.0 * first - ta.ema(first, length)
+
+tripleEMA(float source, int length) =>
+    float first = ta.ema(source, length)
+    3.0 * (first - ta.ema(first, length)) + ta.ema(ta.ema(first, length), length)
+
+maVariant(string variantType, float source, int length) =>
+    float emaValue = ta.ema(source, length)
+    float wmaValue = ta.wma(source, length)
+    float vwmaValue = ta.vwma(source, length)
+    float smoothValue = smoothedMA(source, length)
+    float demaValue = doubleEMA(source, length)
+    float temaValue = tripleEMA(source, length)
+    int halfLength = int(math.max(1.0, math.round(length / 2.0)))
+    int rootLength = int(math.max(1.0, math.round(math.sqrt(length))))
+    float hullValue = ta.wma(2.0 * ta.wma(source, halfLength) - wmaValue, rootLength)
+    float superValue = superSmoother(source, length)
+    float zeroLagValue = zeroLagEMA(source, length)
+    float smaValue = ta.sma(source, length)
+    float triangularValue = ta.sma(smaValue, length)
+    variantType == "EMA" ? emaValue :
+      variantType == "WMA" ? wmaValue :
+      variantType == "VWMA" ? vwmaValue :
+      variantType == "Smooth SMA" ? smoothValue :
+      variantType == "DEMA" ? demaValue :
+      variantType == "TEMA" ? temaValue :
+      variantType == "Hull MA" ? hullValue :
+      variantType == "SuperSmooth MA" ? superValue :
+      variantType == "ZeroLag EMA" ? zeroLagValue :
+      variantType == "Triangular MA" ? triangularValue : smaValue
+
+idealPivotHigh(float source, int leftBars, int rightBars) =>
+    bool valid = true
+    for index = rightBars to leftBars + rightBars - 1
+        valid := valid and source[index] > source[index + 1]
+    for index = 0 to rightBars - 1
+        valid := valid and source[index] < source[index + 1]
+    valid ? source[rightBars] : na
+
+idealPivotLow(float source, int leftBars, int rightBars) =>
+    bool valid = true
+    for index = rightBars to leftBars + rightBars - 1
+        valid := valid and source[index] < source[index + 1]
+    for index = 0 to rightBars - 1
+        valid := valid and source[index] > source[index + 1]
+    valid ? source[rightBars] : na
+
+fastMA = maVariant(fastMAType, fastMASource, fastMALength)
+slowMA = maVariant(slowMAType, slowMASource, slowMALength)
+plot(showMAs ? fastMA : na, title = "Fast MA", color = color.new(color.lime, 15), linewidth = 2)
+plot(showMAs and fastMALength <= slowMALength ? slowMA : na, title = "Slow MA", color = color.new(color.gray, 15), linewidth = 2)
+
+autoEMA = ta.ema(close, 21)
+pivotLeft = useAutoStrength ? (close > autoEMA ? leftStrength : leftStrength + 1) : leftStrength
+pivotRight = useAutoStrength ? (close < autoEMA ? rightStrength : rightStrength + 1) : rightStrength
+
+rawPivotHigh = useMAFilter and (fastMALength > slowMALength or fastMA < slowMA) ? na : (idealOnly ? idealPivotHigh(highSource, pivotLeft, pivotRight) : ta.pivothigh(highSource, pivotLeft, pivotRight))
+rawPivotLow = useMAFilter and (fastMALength > slowMALength or fastMA > slowMA) ? na : (idealOnly ? idealPivotLow(lowSource, pivotLeft, pivotRight) : ta.pivotlow(lowSource, pivotLeft, pivotRight))
+pivotHigh = rawPivotHigh[confirmationBars]
+pivotLow = rawPivotLow[confirmationBars]
+hasPivotHigh = not na(pivotHigh)
+hasPivotLow = not na(pivotLow)
+
+high0 = ta.valuewhen(hasPivotHigh, highSource[pivotRight + confirmationBars], 0)
+high1 = ta.valuewhen(hasPivotHigh, highSource[pivotRight + confirmationBars], 1)
+high2 = ta.valuewhen(hasPivotHigh, highSource[pivotRight + confirmationBars], 2)
+high3 = ta.valuewhen(hasPivotHigh, highSource[pivotRight + confirmationBars], 3)
+higherHigh = hasPivotHigh and (thirdLevelSwings ? high1 < high0 and high2 < high0 and high3 < high0 : high1 < high0)
+lowerHigh = hasPivotHigh and (thirdLevelSwings ? high1 > high0 and high2 > high0 and high3 > high0 : high1 > high0)
+
+low0 = ta.valuewhen(hasPivotLow, lowSource[pivotRight + confirmationBars], 0)
+low1 = ta.valuewhen(hasPivotLow, lowSource[pivotRight + confirmationBars], 1)
+low2 = ta.valuewhen(hasPivotLow, lowSource[pivotRight + confirmationBars], 2)
+low3 = ta.valuewhen(hasPivotLow, lowSource[pivotRight + confirmationBars], 3)
+higherLow = hasPivotLow and (thirdLevelSwings ? low1 < low0 and low2 < low0 and low3 < low0 : low1 < low0)
+lowerLow = hasPivotLow and (thirdLevelSwings ? low1 > low0 and low2 > low0 and low3 > low0 : low1 > low0)
+anySwing = higherHigh or lowerHigh or higherLow or lowerLow
+
+pivotX = bar_index - (pivotRight + confirmationBars)
+if showSwingLabels and higherHigh
+    label.new(pivotX, high0, "HH", color = color(na), style = label.style_label_down, textcolor = color.green)
+if showSwingLabels and lowerHigh
+    label.new(pivotX, high0, "LH", color = color(na), style = label.style_label_down, textcolor = color.maroon)
+if showSwingLabels and higherLow
+    label.new(pivotX, low0, "HL", color = color(na), style = label.style_label_up, textcolor = color.green)
+if showSwingLabels and lowerLow
+    label.new(pivotX, low0, "LL", color = color(na), style = label.style_label_up, textcolor = color.maroon)
+
+if showPivots and not showSwingLabels and hasPivotHigh
+    label.new(pivotX, pivotHigh, "●", color = color(na), style = label.style_none, textcolor = color.green)
+if showPivots and not showSwingLabels and hasPivotLow
+    label.new(pivotX, pivotLow, "●", color = color(na), style = label.style_none, textcolor = color.maroon)
+if highlightPivot and (hasPivotHigh or hasPivotLow)
+    label.new(pivotX, hasPivotHigh ? pivotHigh : pivotLow, "◆", color = color(na), style = label.style_none, textcolor = color.orange)
+
+int highCount = 0
+int lowCount = 0
+highCount := hasPivotHigh ? 0 : nz(highCount[1]) + 1
+lowCount := hasPivotLow ? 0 : nz(lowCount[1]) + 1
+
+float activeHigh = na
+float activeLow = na
+activeHigh := hasPivotHigh ? highSource[pivotRight + confirmationBars] : activeHigh[1]
+activeLow := hasPivotLow ? lowSource[pivotRight + confirmationBars] : activeLow[1]
+highLevelColor = activeHigh != activeHigh[1] ? color(na) : color.maroon
+lowLevelColor = activeLow != activeLow[1] ? color(na) : color.green
+
+var line currentHighLine = na
+var line currentLowLine = na
+if not showChannel and showSRLevels
+    if hasPivotHigh and nz(activeHigh[1]) != activeHigh
+        currentHighLine := line.new(pivotX, activeHigh, bar_index, activeHigh, extend = extend.none, width = 1, color = color.maroon, style = line.style_solid)
+    if not na(currentHighLine) and not na(activeHigh) and line.get_x2(currentHighLine) != bar_index
+        line.set_x2(currentHighLine, bar_index)
+    if hasPivotLow and nz(activeLow[1]) != activeLow
+        currentLowLine := line.new(pivotX, activeLow, bar_index, activeLow, extend = extend.none, width = 1, color = color.green, style = line.style_solid)
+    if not na(currentLowLine) and not na(activeLow) and line.get_x2(currentLowLine) != bar_index
+        line.set_x2(currentLowLine, bar_index)
+
+simpleOffset = -(rightStrength + confirmationBars)
+plot(showSRLevels and not showChannel and (maxLevelLength == 0 or highCount < maxLevelLength) ? activeHigh : na, title = "Top Levels", color = highLevelColor, linewidth = 1, offset = simpleOffset)
+plot(showSRLevels and not showChannel and (maxLevelLength == 0 or lowCount < maxLevelLength) ? activeLow : na, title = "Bottom Levels", color = lowLevelColor, linewidth = 1, offset = simpleOffset)
+plot(showSRLevels and showChannel ? activeHigh : na, title = "Top Chaos Channel", color = color.green, linewidth = 1, style = plot.style_stepline)
+plot(showSRLevels and showChannel ? activeLow : na, title = "Bottom Chaos Channel", color = color.maroon, linewidth = 1, style = plot.style_stepline)
+
+buyBreak = close > activeHigh and open <= activeHigh and (not filterFractalBreaks or (fastMALength > slowMALength or fastMA > slowMA) and close > fastMA)
+sellBreak = close < activeLow and open >= activeLow and (not filterFractalBreaks or (fastMALength > slowMALength or fastMA < slowMA) and close < fastMA)
+if showFractalBreaks and buyBreak
+    label.new(bar_index, low, "▲", color = color(na), style = label.style_label_up, textcolor = color.lime)
+if showFractalBreaks and sellBreak
+    label.new(bar_index, high, "▼", color = color(na), style = label.style_label_down, textcolor = color.red)
+
+alertcondition(buyBreak or sellBreak, title = "Fractal Break Arrow", message = "Alert")
+alertcondition(buyBreak, title = "Fractal Break Long", message = "Long")
+alertcondition(sellBreak, title = "Fractal Break Short", message = "Short")
+alertcondition(anySwing, title = "Any Swing", message = "AnySwing")

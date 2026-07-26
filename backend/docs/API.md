@@ -1176,10 +1176,11 @@ execution semantics are not implemented. Formatting, z-order, polylines, and
 behind-chart behavior remain metadata-only compatibility gaps. Features on the
 explicit unsupported list fail closed; other syntax is supported only where
 covered by compiler diagnostics and regression fixtures. Input changes trigger
-a fresh historical evaluation. Missing/pre-v5 annotations and v6 return an
-explicit compatibility warning; versions newer than v6 fail closed. Pine
-v5/v6 semantic differences beyond the supported subset are not otherwise
-version-gated.
+a fresh historical evaluation. Missing/pre-v5 annotations and v6 return
+explicit compatibility warnings; versions newer than v6 fail closed. Within
+the supported subset, Pine v6 requires boolean conditions and evaluates
+`and`/`or` lazily, while Pine v5 retains numeric truthiness and eager logical
+evaluation for compatibility.
 
 ### Generic Swing Highs/Lows fixture
 
@@ -1194,6 +1195,22 @@ Shooting Star match, its dynamic description tooltip, input color overrides,
 and Replay cutoff causality. It is compiled through this generic endpoint, not
 registered as `SWING_SR`. LuxAlgo attribution and the CC BY-NC-SA 4.0 notice
 remain in the fixture.
+
+### Generic Pivot Hilo R5.4 Pine v6 fixture
+
+`backend/internal/pineruntime/testdata/pivot_hilo_r54_v6.pine` is the
+GPL-attributed Pine v6 migration of the submitted Pivot Hilo Support and
+Resistance Levels R5.4 source. It exercises typed/grouped inputs, `ta.*` and
+`math.*`, explicit boolean conditions, lazy logical evaluation, automatic and
+ideal pivots, MA variants, `ta.valuewhen()` HH/LH/HL/LL classification,
+function-local history, mutable line endpoints, plot style/width/offset
+metadata, labels, and break markers. It compiles through this generic endpoint
+without a catalog or indicator-name branch.
+
+Pine v6 runs against the supplied closed-bar snapshot. Realtime rollback and
+`varip` semantics are not implemented. `alertcondition()` declarations produce
+an explicit nonblocking alert-delivery diagnostic while supported chart
+primitives are still returned.
 
 ---
 

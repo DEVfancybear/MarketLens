@@ -3,6 +3,8 @@ package pineruntime
 import (
 	"context"
 	_ "embed"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
@@ -13,6 +15,9 @@ import (
 //
 //go:embed testdata/swing_high_low_luxalgo.pine
 var swingHighLowLuxAlgoSource string
+
+//go:embed testdata/pivot_hilo_r54_v6.pine
+var pivotHiloR54V6Source string
 
 func TestSubmittedSwingHighLowPineCompilesWithWrappedExpressions(t *testing.T) {
 	highs := []float64{1, 2, 5, 3, 2, 4, 6, 3, 2}
@@ -209,6 +214,187 @@ marker current = ` + constructor,
 				t.Fatalf("invalid constructor compiled: %s", constructor)
 			}
 		})
+	}
+}
+
+func TestSubmittedPivotHiloMigratesToPineV6CommonRuntime(t *testing.T) {
+	candles := make([]Candle, 180)
+	for index := range candles {
+		center := 100 + math.Sin(float64(index)*0.31)*9 + math.Sin(float64(index)*0.07)*4
+		closeValue := center + math.Sin(float64(index)*0.83)*0.6
+		candles[index] = Candle{
+			Time:   int64(100 + index*3600),
+			Open:   center,
+			High:   center + 1.4,
+			Low:    center - 1.4,
+			Close:  closeValue,
+			Volume: 100 + float64(index%17)*10,
+		}
+	}
+	response := Compile(context.Background(), CompileRequest{
+		ScriptID:   "submitted-pivot-hilo-v6",
+		SourceCode: pivotHiloR54V6Source,
+		Candles:    candles,
+		InputOverrides: map[string]InputValue{
+			"leftStrength":    2,
+			"rightStrength":   2,
+			"fastMALength":    5,
+			"slowMALength":    8,
+			"showMAs":         true,
+			"showSwingLabels": true,
+		},
+	})
+	if len(response.Errors) != 0 {
+		t.Fatalf("submitted v6 Pivot Hilo compile errors: %+v", response.Errors)
+	}
+	if len(response.UnsupportedFeatures) != 1 || response.UnsupportedFeatures[0] != "alert event delivery" {
+		t.Fatalf("submitted v6 Pivot Hilo unsupported features: %+v", response.UnsupportedFeatures)
+	}
+	if response.Meta.Version != 6 ||
+		response.Meta.Name != "Pivot Hilo Support n Resistance Levels R5.4" ||
+		response.Meta.ShortTitle != "PVTLVLS R5.4" ||
+		!response.Meta.Overlay {
+		t.Fatalf("submitted v6 Pivot Hilo metadata = %+v", response.Meta)
+	}
+	if len(ExtractInputs(pivotHiloR54V6Source)) < 20 {
+		t.Fatalf("submitted v6 Pivot Hilo input schema is incomplete")
+	}
+	if len(response.Result.Series) < 4 {
+		t.Fatalf("submitted v6 Pivot Hilo series = %d, labels = %+v", len(response.Result.Series), response.Result.Labels)
+	}
+	foundMutableLevel := false
+	for _, series := range response.Result.Series {
+		if strings.HasPrefix(series.Key, "stateful:line:") && len(series.Data) == 2 &&
+			series.Data[1].Time > series.Data[0].Time {
+			foundMutableLevel = true
+		}
+	}
+	if !foundMutableLevel {
+		t.Fatalf("submitted v6 Pivot Hilo emitted no mutable S/R line: %+v", response.Result.Series)
+	}
+	if len(response.Result.Labels) < 4 {
+		t.Fatalf("submitted v6 Pivot Hilo labels = %+v", response.Result.Labels)
+	}
+	foundSwing := false
+	for _, label := range response.Result.Labels {
+		switch label.Text {
+		case "HH", "LH", "HL", "LL":
+			foundSwing = true
+		}
+	}
+	if !foundSwing {
+		t.Fatalf("submitted v6 Pivot Hilo emitted no swing classification: %+v", response.Result.Labels)
+	}
+
+	idealResponse := Compile(context.Background(), CompileRequest{
+		ScriptID:   "submitted-pivot-hilo-v6-ideal",
+		SourceCode: pivotHiloR54V6Source,
+		Candles:    candles,
+		InputOverrides: map[string]InputValue{
+			"leftStrength":    2,
+			"rightStrength":   2,
+			"fastMALength":    5,
+			"slowMALength":    8,
+			"idealOnly":       true,
+			"showSwingLabels": true,
+		},
+	})
+	if len(idealResponse.Errors) != 0 || len(idealResponse.Result.Labels) < 4 {
+		t.Fatalf("submitted v6 Pivot Hilo ideal-pivot response = %+v", idealResponse)
+	}
+}
+
+func TestStatefulFunctionCallSitesKeepIndependentTAHistory(t *testing.T) {
+	source := `//@version=6
+indicator("Function call-site history")
+smooth(float value, int length) =>
+    ta.ema(value, length)
+fast = smooth(close, 2)
+slow = smooth(close * 10, 3)
+plot(fast, "Fast")
+plot(slow, "Slow")`
+	response := Compile(context.Background(), CompileRequest{
+		SourceCode: source,
+		Candles: []Candle{
+			{Time: 100, Close: 1},
+			{Time: 200, Close: 2},
+			{Time: 300, Close: 3},
+			{Time: 400, Close: 4},
+		},
+	})
+	if len(response.Errors) != 0 {
+		t.Fatalf("function call-site compile errors: %+v", response.Errors)
+	}
+	lastValues := map[string]float64{}
+	for _, series := range response.Result.Series {
+		if len(series.Data) != 0 {
+			lastValues[series.Key] = series.Data[len(series.Data)-1].Value
+		}
+	}
+	var fast, slow float64
+	for key, value := range lastValues {
+		switch {
+		case key == "Fast" || strings.Contains(key, ":Fast"):
+			fast = value
+		case key == "Slow" || strings.Contains(key, ":Slow"):
+			slow = value
+		}
+	}
+	if math.Abs(fast-3.5185185185) > 1e-9 {
+		t.Fatalf("fast call-site EMA = %.12f, series = %+v", fast, response.Result.Series)
+	}
+	if math.Abs(slow-31.25) > 1e-9 {
+		t.Fatalf("slow call-site EMA = %.12f, series = %+v", slow, response.Result.Series)
+	}
+}
+
+func TestStatefulPineV6RequiresExplicitBooleanConditions(t *testing.T) {
+	source := func(version int) string {
+		return fmt.Sprintf(`//@version=%d
+indicator("Boolean version")
+type marker
+    bool active
+if close
+    label.new(bar_index, high, "numeric")`, version)
+	}
+	v6 := Compile(context.Background(), CompileRequest{
+		SourceCode: source(6),
+		Candles:    []Candle{{Time: 100, High: 2, Close: 1}},
+	})
+	if len(v6.Errors) == 0 || !strings.Contains(v6.Errors[0].Message, "expects bool") {
+		t.Fatalf("Pine v6 numeric condition response = %+v", v6)
+	}
+	v5 := Compile(context.Background(), CompileRequest{
+		SourceCode: source(5),
+		Candles:    []Candle{{Time: 100, High: 2, Close: 1}},
+	})
+	if len(v5.Errors) != 0 || len(v5.Result.Labels) != 1 {
+		t.Fatalf("Pine v5 implicit numeric condition response = %+v", v5)
+	}
+}
+
+func TestStatefulPineV6UsesLazyLogicalEvaluation(t *testing.T) {
+	source := func(version int) string {
+		return fmt.Sprintf(`//@version=%d
+indicator("Lazy logical")
+var values = array.new<float>(0)
+safe = values.size() != 0 and values.get(0) > 0
+if safe
+    label.new(bar_index, high, "value")`, version)
+	}
+	v6 := Compile(context.Background(), CompileRequest{
+		SourceCode: source(6),
+		Candles:    []Candle{{Time: 100, High: 2}},
+	})
+	if len(v6.Errors) != 0 {
+		t.Fatalf("Pine v6 lazy condition response = %+v", v6)
+	}
+	v5 := Compile(context.Background(), CompileRequest{
+		SourceCode: source(5),
+		Candles:    []Candle{{Time: 100, High: 2}},
+	})
+	if len(v5.Errors) == 0 || !strings.Contains(v5.Errors[0].Message, "out of bounds") {
+		t.Fatalf("Pine v5 strict condition response = %+v", v5)
 	}
 }
 

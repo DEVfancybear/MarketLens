@@ -90,7 +90,7 @@ func Compile(ctx context.Context, req CompileRequest) CompileResponse {
 	} else if meta.Version < 5 {
 		resp.Warnings = append(resp.Warnings, RuntimeError{Message: fmt.Sprintf("legacy Pine v%d syntax is accepted through the compatibility subset; v5/v6 semantics are preferred", meta.Version)})
 	} else if meta.Version == 6 {
-		resp.Warnings = append(resp.Warnings, RuntimeError{Message: "Pine v6 syntax is accepted with the documented v5-compatible historical subset"})
+		resp.Warnings = append(resp.Warnings, RuntimeError{Message: "Pine v6 runs in documented closed-bar compatibility mode; realtime rollback and varip semantics remain unsupported"})
 	}
 	if blocked := blockingUnsupportedFeatures(req.SourceCode); len(blocked) > 0 {
 		resp.Errors = append(resp.Errors, RuntimeError{Message: "unsupported Pine features: " + strings.Join(blocked, ", ")})

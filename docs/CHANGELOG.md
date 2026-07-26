@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Extended - Pine v6 Pivot Hilo runtime compatibility (2026-07-26)
+- Migrated the submitted GPL Pivot Hilo Support/Resistance R5.4 source from
+  Pine v4 to Pine v6 with typed inputs, namespaced math/TA calls, explicit
+  boolean conditions, `color.new()` transparency, and simple plot offsets.
+- Added Pine v6 execution semantics to the common stateful VM: boolean-only
+  conditions, lazy `and`/`or`, call-site-isolated function/local history,
+  stateful SMA/EMA/RMA/WMA/VWMA, `ta.valuewhen()`, numeric math/casts, mutable
+  `line.get_x2()`/`line.set_x2()`, and plot title/style/width/offset metadata.
+- Preserved Pivot Hilo MA variants, automatic/ideal pivots, confirmed
+  HH/LH/HL/LL labels, pivot markers, mutable and historical S/R levels, chaos
+  channels, fractal-break markers, Replay causality, and GPL attribution.
+  Alert declarations compile but event delivery remains an explicit diagnostic.
+
 ### Extended - Pine UDT and Swing High/Low compatibility (2026-07-26)
 - Extended the common stateful Pine VM so user-defined type constructors accept
   positional and named field arguments, preserve omitted field defaults, and

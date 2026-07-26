@@ -1,9 +1,11 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Updated 2026-07-26 for generic Pine v5 source execution,
+_Date: 2026-07-09. Updated 2026-07-26 for generic Pine v5/v6 source execution,
 replay-causal evaluation, the submitted Swing Highs/Lows fixture, removal of
 the legacy `SWING_SR` catalog entry, shared Pine color-literal parsing, and
-named/defaulted UDT construction.
+named/defaulted UDT construction. The submitted Pivot Hilo R5.4 fixture is
+migrated from Pine v4 to Pine v6 and exercises version-aware boolean semantics,
+stateful TA/math calls, function-local history, mutable S/R lines, and plots.
 Scope: move indicator parsing/calculation out of the frontend and into the Go
 backend._
 
@@ -48,7 +50,7 @@ Implemented on 2026-07-09:
 | Separate pane rendering | Native LWC panes in `frontend/src/components/chart/PriceChart.tsx` |
 | Script persistence | Backend Phase 9 `/api/v1/pine-scripts` |
 | Replay boundary | Backend `replayCutoff` normalization shared by catalog and user source |
-| Generic fixture parity | Pine v5 Swing Highs/Lows UDT/pivot/label regression fixture |
+| Generic fixture parity | Pine v5 Swing Highs/Lows plus Pine v6 Pivot Hilo regression fixtures |
 
 Frontend chart rendering now uses `frontend/src/services/pineRuntimeCache.ts`.
 CUSTOM indicators no longer call the compiler synchronously from
@@ -299,6 +301,30 @@ transparent label background, style, and input color override are checked
 instead of validating only `None` labels. Its LuxAlgo copyright and
 CC BY-NC-SA 4.0 attribution are retained in the fixture; the runtime does not
 claim or publish the source as an original built-in catalog implementation.
+
+### Submitted Pivot Hilo R5.4 Pine v6 fixture
+
+`backend/internal/pineruntime/testdata/pivot_hilo_r54_v6.pine` is the
+GPL-attributed migration of the submitted Pine v4 Pivot Hilo Support and
+Resistance Levels R5.4 source. The migration deliberately targets Pine v6:
+
+- `study()` and untyped `input()` calls become `indicator()` and typed inputs;
+- legacy global TA/math functions become `ta.*` and `math.*`;
+- numeric truthiness becomes explicit boolean pivot-presence checks;
+- `transp` is replaced by `color.new()`;
+- plot offsets remain simple input-derived integers, while dynamic swing
+  annotations use `label.new()` coordinates; and
+- the original automatic/ideal pivot branches, MA variants, `ta.valuewhen()`
+  HH/LH/HL/LL classification, mutable support/resistance lines, channel plots,
+  break markers, and alert declarations remain represented.
+
+The common stateful VM selects boolean semantics from `ScriptMeta.Version`.
+Pine v6 conditions require booleans and `and`/`or` short-circuit lazily; Pine
+v5 retains numeric truthiness and eager logical evaluation for compatibility.
+Stateful moving averages, `ta.valuewhen()`, function-local history, line
+endpoint mutation, and plot style/width/offset metadata are evaluated without
+an indicator-name branch. Alert event delivery remains an explicit nonblocking
+diagnostic; the chart primitives still compile.
 
 ## Runtime API
 
@@ -722,6 +748,10 @@ Backend tests:
 - The submitted Swing Highs/Lows v5 fixture compiles through the generic path,
   preserves multiline descriptions and label properties, confirms pivots only
   after their right-hand window, and produces no future labels under replay.
+- The submitted Pivot Hilo R5.4 fixture compiles as Pine v6 through the same
+  generic path, covers automatic and ideal pivots plus MA branches, and checks
+  `ta.valuewhen()`, mutable line endpoints, plot offsets, explicit boolean
+  conditions, and lazy logical evaluation.
 - Declaration-property coverage records named and positional literal/enum
   values (`shorttitle`, format/precision/scale, lookback/object limits,
   timeframe gaps, and `calc_bars_count`) as metadata. Tests separately cover
