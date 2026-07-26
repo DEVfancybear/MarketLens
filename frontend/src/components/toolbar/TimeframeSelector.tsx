@@ -56,7 +56,7 @@ export function TimeframeSelector({
           <button
             type="button"
             aria-label="Select interval"
-            title="Select interval"
+            title="Select interval (type a number or press ,)"
             className={cn(
               "flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
               open && "bg-brand/10 text-brand",

@@ -18,6 +18,7 @@ import { useSetAtom } from "jotai";
 import { hydrateAtom as hydrateAlertsAtom } from "@/store/alertStore";
 import { hydratePushAtom } from "@/store/notificationStore";
 import { useEffect } from "react";
+import { QuickTimeframeSwitcher } from "@/components/toolbar/QuickTimeframeSwitcher";
 
 /**
  * Headless component that mounts global runtime integrations. Replay timing is
@@ -48,5 +49,10 @@ export function GlobalRuntime() {
     hydratePush();
   }, [hydrateAlerts, hydratePush]);
 
-  return <ReplayClientRuntime />;
+  return (
+    <>
+      <ReplayClientRuntime />
+      <QuickTimeframeSwitcher />
+    </>
+  );
 }

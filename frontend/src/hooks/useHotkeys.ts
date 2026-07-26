@@ -30,7 +30,8 @@ import { loadIndicatorCatalog } from "@/services/indicatorDefinitions";
  *   Space        play/pause           R       restart replay
  *   →  / ←       next / prev candle   B / S   buy / sell
  *   Shift+→/←    ±10 candles          X       close position
- *   1–9          switch drawing tools
+ *   Shift+1–9    switch drawing tools
+ *   Digit / ,     open quick interval switcher (QuickTimeframeSwitcher)
  *   Alt+T/H/J/V/C line tools; Alt+Shift+R rectangle
  *   Ctrl/Cmd+Z   undo (prevents browser tab-close)
  *   Ctrl/I       toggle backend-designated primary indicator
@@ -88,7 +89,10 @@ export function useHotkeys() {
 
       // --- Manifest-owned drawing tool shortcuts ---
       const shortcutTool = getDrawingToolForShortcut({
-        key: e.key,
+        key:
+          e.shiftKey && /^Digit[0-9]$/.test(e.code)
+            ? e.code.slice("Digit".length)
+            : e.key,
         altKey: e.altKey,
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,

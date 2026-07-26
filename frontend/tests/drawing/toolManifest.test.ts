@@ -118,9 +118,9 @@ test("creation and style families are derived from the manifest", () => {
   }
 });
 
-test("numeric and modifier drawing shortcuts are derived from manifest chords", () => {
-  assert.equal(getDrawingToolForShortcut({ key: "1" }), "cursor");
-  assert.equal(getDrawingToolForShortcut({ key: "7" }), "fibRetracement");
+test("shift-number and modifier drawing shortcuts are derived from manifest chords", () => {
+  assert.equal(getDrawingToolForShortcut({ key: "1", shiftKey: true }), "cursor");
+  assert.equal(getDrawingToolForShortcut({ key: "7", shiftKey: true }), "fibRetracement");
   assert.equal(getDrawingToolForShortcut({ key: "T", altKey: true }), "trendline");
   assert.equal(getDrawingToolForShortcut({ key: "h", altKey: true }), "horizontal");
   assert.equal(
@@ -128,7 +128,7 @@ test("numeric and modifier drawing shortcuts are derived from manifest chords", 
     "rectangle",
   );
   assert.equal(getDrawingToolForShortcut({ key: "t" }), undefined);
-  assert.equal(getDrawingToolForShortcut({ key: "1", shiftKey: true }), undefined);
+  assert.equal(getDrawingToolForShortcut({ key: "1" }), undefined);
   assert.equal(getDrawingToolForShortcut({ key: "1", ctrlKey: true }), undefined);
   assert.equal(
     formatDrawingToolShortcut({ key: "r", altKey: true, shiftKey: true }),

@@ -6,6 +6,7 @@ import {
   addFavoriteTimeframe,
   customIntervalToTimeframe,
   normalizeFavoriteTimeframes,
+  resolveTimeframeShortcut,
   toggleFavoriteTimeframe,
   visibleToolbarTimeframes,
 } from "../../src/components/toolbar/timeframeSelectorModel";
@@ -70,4 +71,32 @@ test("custom interval dialog rejects unsupported values", () => {
   assert.equal(customIntervalToTimeframe("range", "1"), null);
   assert.equal(customIntervalToTimeframe("minutes", "1.5"), null);
   assert.equal(customIntervalToTimeframe("minutes", ""), null);
+});
+
+test("quick timeframe shortcut resolves TradingView-style interval input", () => {
+  assert.equal(resolveTimeframeShortcut("1"), "1m");
+  assert.equal(resolveTimeframeShortcut("15"), "15m");
+  assert.equal(resolveTimeframeShortcut("60"), "1H");
+  assert.equal(resolveTimeframeShortcut("120"), "2H");
+  assert.equal(resolveTimeframeShortcut("240"), "4H");
+  assert.equal(resolveTimeframeShortcut("1440"), "1D");
+  assert.equal(resolveTimeframeShortcut("2H"), "2H");
+  assert.equal(resolveTimeframeShortcut("4h"), "4H");
+  assert.equal(resolveTimeframeShortcut("1D"), "1D");
+  assert.equal(resolveTimeframeShortcut("1d"), "1D");
+  assert.equal(resolveTimeframeShortcut("1W"), "1W");
+  assert.equal(resolveTimeframeShortcut("1M"), "1M");
+  assert.equal(resolveTimeframeShortcut("1m"), "1m");
+  assert.equal(resolveTimeframeShortcut(" 30m "), "30m");
+});
+
+test("quick timeframe shortcut rejects unavailable or malformed intervals", () => {
+  assert.equal(resolveTimeframeShortcut("10"), null);
+  assert.equal(resolveTimeframeShortcut("3H"), null);
+  assert.equal(resolveTimeframeShortcut("12D"), null);
+  assert.equal(resolveTimeframeShortcut("0"), null);
+  assert.equal(resolveTimeframeShortcut("-1"), null);
+  assert.equal(resolveTimeframeShortcut("1MM"), null);
+  assert.equal(resolveTimeframeShortcut("M"), null);
+  assert.equal(resolveTimeframeShortcut(""), null);
 });

@@ -14,6 +14,7 @@ Covered contracts include:
 - Integration-settings late-load merging and secret reset behavior.
 - Draggable popup sub-pixel stability, preventing layout/update feedback loops.
 - Timeframe favorite/custom-interval behavior.
+- TradingView-style quick timeframe parsing, aliases, and rejected input.
 - Private workspace access and bottom-workspace defaults.
 - Indicator inline-row grouping, user-facing errors and session recovery.
 
@@ -46,5 +47,11 @@ npm run test:chart-browser
   geometry at 1366px and after resizing to 1100px.
 - Go To exposes only the supported single-date flow; Custom range remains
   absent.
+
+`tests/browser/timeframeHotkey.spec.ts` verifies:
+
+- Digit and comma activation of the quick interval prompt.
+- Continued multi-digit input, valid alias application, and invalid states.
+- Editable-field isolation and `Shift+number` drawing shortcut compatibility.
 
 Chart/drawing browser specs continue to cover viewport synchronization and pointer drawing behavior.

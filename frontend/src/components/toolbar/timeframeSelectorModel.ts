@@ -126,6 +126,49 @@ export function customIntervalToTimeframe(
   return map[key] ?? null;
 }
 
+/**
+ * Resolve TradingView-style quick interval input.
+ *
+ * Bare numbers are minutes, while H/D/W/M select hours, days, weeks, and
+ * months. Minute aliases for the supported higher intervals let users type
+ * familiar values such as 60 or 240 without exposing unsupported custom bars.
+ */
+export function resolveTimeframeShortcut(value: string): Timeframe | null {
+  const match = value.trim().match(/^(\d+)([mMhHdDwW]?)$/);
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  if (!Number.isInteger(amount) || amount <= 0) return null;
+
+  const unit = match[2];
+  if (unit === "M") return customIntervalToTimeframe("months", String(amount));
+
+  switch (unit.toLowerCase()) {
+    case "":
+    case "m": {
+      const minuteAliases: Record<number, Timeframe> = {
+        60: "1H",
+        120: "2H",
+        240: "4H",
+        1440: "1D",
+      };
+      return (
+        customIntervalToTimeframe("minutes", String(amount)) ??
+        minuteAliases[amount] ??
+        null
+      );
+    }
+    case "h":
+      return customIntervalToTimeframe("hours", String(amount));
+    case "d":
+      return customIntervalToTimeframe("days", String(amount));
+    case "w":
+      return customIntervalToTimeframe("weeks", String(amount));
+    default:
+      return null;
+  }
+}
+
 function byTimeframeOrder(a: Timeframe, b: Timeframe): number {
   return (TIMEFRAME_ORDER.get(a) ?? 0) - (TIMEFRAME_ORDER.get(b) ?? 0);
 }
