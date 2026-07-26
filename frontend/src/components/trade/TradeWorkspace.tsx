@@ -11,10 +11,12 @@ import {
   Copy,
   Download,
   FileCheck2,
+  KeyRound,
   LoaderCircle,
   Plus,
   Radio,
   Server,
+  Settings2,
   ShieldCheck,
 } from "lucide-react";
 import { OrderTicket } from "./OrderTicket";
@@ -23,6 +25,7 @@ import { ExecutionModeSwitch } from "./ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "./ExecutionConnectionStatus";
 import { Mt5CommandLog } from "./Mt5CommandLog";
 import { Mt5EaSetupGuide } from "./Mt5EaSetupGuide";
+import { ExecutionAccountManagementDialog } from "./ExecutionAccountManagementDialog";
 import {
   activeSimAccountAtom,
   equityAtom,
@@ -178,6 +181,8 @@ export function TradeWorkspace() {
 function ExecutionAccountRail() {
   const [showSetup, setShowSetup] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [managedAccount, setManagedAccount] =
+    useState<ExecutionAccountSummary | null>(null);
   const executionMode = useAtomValue(executionModeAtom);
   const simAccount = useAtomValue(activeSimAccountAtom);
   const simEquity = useAtomValue(equityAtom);
@@ -325,6 +330,19 @@ function ExecutionAccountRail() {
               <code className="mt-1 block break-all select-all text-[9px] text-ink">
                 {pairing.token}
               </code>
+              <button
+                type="button"
+                disabled={pairingLoading}
+                onClick={() => void createPairingToken()}
+                className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-lg border border-bull/30 px-2 text-[9px] font-semibold text-bull transition-colors hover:bg-bull/10 disabled:opacity-60 focus-ring"
+              >
+                {pairingLoading ? (
+                  <LoaderCircle size={11} className="animate-spin" />
+                ) : (
+                  <KeyRound size={11} />
+                )}
+                Generate another token
+              </button>
             </div>
           ) : (
             <button
@@ -353,19 +371,25 @@ function ExecutionAccountRail() {
               ? executionMode === "simulator"
               : executionMode === "mt5" && account.id === selectedGatewayId;
           return (
-            <button
-              type="button"
+            <div
               key={account.id}
-              onClick={() => select(account)}
-              aria-pressed={active}
               className={cn(
-                "w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+                "relative w-full rounded-xl border transition-colors",
                 active
                   ? "border-brand/50 bg-brand/10"
                   : "border-terminal-border bg-terminal-panel-2/45 hover:border-terminal-border-strong hover:bg-terminal-hover",
               )}
             >
-              <div className="flex items-start gap-2.5">
+              <button
+                type="button"
+                onClick={() => select(account)}
+                aria-pressed={active}
+                className={cn(
+                  "w-full p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
+                  account.venueKind !== "simulator" && "pr-10",
+                )}
+              >
+                <span className="flex items-start gap-2.5">
                 <span
                   className={cn(
                     "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
@@ -401,8 +425,20 @@ function ExecutionAccountRail() {
                     </span>
                   </span>
                 </span>
-              </div>
-            </button>
+                </span>
+              </button>
+              {account.venueKind !== "simulator" && (
+                <button
+                  type="button"
+                  onClick={() => setManagedAccount(account)}
+                  aria-label={`Quản lý ${account.label}`}
+                  title="Quản lý account"
+                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-ring"
+                >
+                  <Settings2 size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
@@ -420,6 +456,14 @@ function ExecutionAccountRail() {
         pairing={pairing}
         pairingLoading={pairingLoading}
         pairingFailed={pairingFailed}
+        onGeneratePairingToken={createPairingToken}
+      />
+      <ExecutionAccountManagementDialog
+        account={managedAccount}
+        pairing={pairing}
+        pairingFailed={pairingFailed}
+        pairingLoading={pairingLoading}
+        onClose={() => setManagedAccount(null)}
         onGeneratePairingToken={createPairingToken}
       />
     </aside>

@@ -18,6 +18,10 @@ type fakeGateway struct {
 	pairingOwner      string
 	pairingTTL        int
 	pairingCalls      int
+	disconnectOwner   string
+	disconnectAccount string
+	removeOwner       string
+	removeAccount     string
 	orderOwner        string
 	stateOwner        string
 	stateAccount      string
@@ -95,6 +99,26 @@ func (f *fakeGateway) IssuePairingToken(
 	return PairingToken{Token: "secret", ExpiresAtMS: 123}, f.err
 }
 
+func (f *fakeGateway) DisconnectAccount(
+	_ context.Context,
+	ownerID string,
+	accountID string,
+) error {
+	f.disconnectOwner = ownerID
+	f.disconnectAccount = accountID
+	return f.err
+}
+
+func (f *fakeGateway) RemoveAccount(
+	_ context.Context,
+	ownerID string,
+	accountID string,
+) error {
+	f.removeOwner = ownerID
+	f.removeAccount = accountID
+	return f.err
+}
+
 func testApp(gateway Gateway) *fiber.App {
 	app := fiber.New()
 	requireAuth := func(c fiber.Ctx) error {
@@ -167,6 +191,56 @@ func TestPairingUsesAuthenticatedOwnerAndNoStore(t *testing.T) {
 	}
 	if response.Header.Get(fiber.HeaderCacheControl) != "no-store" {
 		t.Fatal("pairing token response must disable caching")
+	}
+}
+
+func TestAccountManagementAlwaysUsesAuthenticatedOwner(t *testing.T) {
+	gateway := &fakeGateway{}
+	app := testApp(gateway)
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/api/v1/execution/accounts/mt5_account/disconnect"},
+		{method: http.MethodDelete, path: "/api/v1/execution/accounts/mt5_account"},
+	} {
+		response, err := app.Test(httptest.NewRequest(test.method, test.path, nil))
+		if err != nil {
+			t.Fatalf("%s %s: %v", test.method, test.path, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s %s status = %d, want 200", test.method, test.path, response.StatusCode)
+		}
+		if response.Header.Get(fiber.HeaderCacheControl) != "no-store" {
+			t.Fatalf("%s %s must disable caching", test.method, test.path)
+		}
+	}
+	const owner = "11111111-1111-4111-8111-111111111111"
+	if gateway.disconnectOwner != owner || gateway.disconnectAccount != "mt5_account" {
+		t.Fatalf("unexpected disconnect scope: owner=%q account=%q", gateway.disconnectOwner, gateway.disconnectAccount)
+	}
+	if gateway.removeOwner != owner || gateway.removeAccount != "mt5_account" {
+		t.Fatalf("unexpected remove scope: owner=%q account=%q", gateway.removeOwner, gateway.removeAccount)
+	}
+}
+
+func TestAccountManagementRejectsInvalidIdentifierBeforeGateway(t *testing.T) {
+	gateway := &fakeGateway{}
+	response, err := testApp(gateway).Test(httptest.NewRequest(
+		http.MethodDelete,
+		"/api/v1/execution/accounts/not%20safe",
+		nil,
+	))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.StatusCode)
+	}
+	if gateway.removeOwner != "" {
+		t.Fatal("invalid account id must not reach the gateway")
 	}
 }
 

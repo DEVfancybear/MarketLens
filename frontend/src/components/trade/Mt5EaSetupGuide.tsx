@@ -177,6 +177,19 @@ export function Mt5EaSetupGuide({
               <code className="mt-2 block break-all rounded-lg bg-terminal-bg px-2.5 py-2 text-[10px] text-ink">
                 {pairing.token}
               </code>
+              <button
+                type="button"
+                disabled={pairingLoading}
+                onClick={() => void onGeneratePairingToken()}
+                className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-bull/30 px-2.5 text-[10px] font-semibold text-bull hover:bg-bull/10 disabled:cursor-not-allowed disabled:opacity-60 focus-ring"
+              >
+                {pairingLoading ? (
+                  <LoaderCircle size={12} className="animate-spin" />
+                ) : (
+                  <KeyRound size={12} />
+                )}
+                Tạo token mới
+              </button>
             </div>
           ) : (
             <button

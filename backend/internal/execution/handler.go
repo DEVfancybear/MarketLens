@@ -16,6 +16,8 @@ import (
 type Gateway interface {
 	ListAccounts(ctx context.Context, ownerID string) ([]Account, error)
 	IssuePairingToken(ctx context.Context, ownerID string, expiresInSeconds int) (PairingToken, error)
+	DisconnectAccount(ctx context.Context, ownerID string, accountID string) error
+	RemoveAccount(ctx context.Context, ownerID string, accountID string) error
 	RouteOrder(ctx context.Context, ownerID string, order OrderRequest) (json.RawMessage, error)
 	AccountState(ctx context.Context, ownerID string, accountID string) (json.RawMessage, error)
 	AccountInstruments(ctx context.Context, ownerID string, accountID string) (json.RawMessage, error)
@@ -42,6 +44,8 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/execution/accounts", h.requireAuth, h.listAccounts)
 	router.Get("/execution/account-state", h.requireAuth, h.accountState)
 	router.Get("/execution/instruments", h.requireAuth, h.accountInstruments)
+	router.Post("/execution/accounts/:accountId/disconnect", h.requireAuth, h.disconnectAccount)
+	router.Delete("/execution/accounts/:accountId", h.requireAuth, h.removeAccount)
 	router.Post("/execution/symbol-mappings", h.requireAuth, h.upsertSymbolMapping)
 	router.Post("/execution/pairing-tokens", h.requireAuth, h.issuePairingToken)
 	router.Post("/execution/orders", h.requireAuth, h.routeOrder)
@@ -216,6 +220,42 @@ func (h *Handler) listAccounts(c fiber.Ctx) error {
 	}{Accounts: accounts})
 }
 
+func (h *Handler) disconnectAccount(c fiber.Ctx) error {
+	accountID := c.Params("accountId")
+	if !validExecutionIdentifier(accountID, 96) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid accountId")
+	}
+	if err := h.gateway.DisconnectAccount(
+		c.Context(),
+		authenticatedUserID(c),
+		accountID,
+	); err != nil {
+		return gatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(struct {
+		OK bool `json:"ok"`
+	}{OK: true})
+}
+
+func (h *Handler) removeAccount(c fiber.Ctx) error {
+	accountID := c.Params("accountId")
+	if !validExecutionIdentifier(accountID, 96) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid accountId")
+	}
+	if err := h.gateway.RemoveAccount(
+		c.Context(),
+		authenticatedUserID(c),
+		accountID,
+	); err != nil {
+		return gatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(struct {
+		OK bool `json:"ok"`
+	}{OK: true})
+}
+
 func (h *Handler) issuePairingToken(c fiber.Ctx) error {
 	var request struct {
 		ExpiresInSeconds int `json:"expiresInSeconds"`
@@ -298,6 +338,8 @@ func gatewayHTTPError(err error) error {
 	var gatewayErr *GatewayError
 	if errors.As(err, &gatewayErr) {
 		switch gatewayErr.Status {
+		case fiber.StatusNotFound:
+			return fiber.NewError(fiber.StatusNotFound, "execution account was not found")
 		case fiber.StatusTooManyRequests:
 			return fiber.NewError(fiber.StatusTooManyRequests, "too many active pairing tokens")
 		case fiber.StatusBadRequest, fiber.StatusConflict:

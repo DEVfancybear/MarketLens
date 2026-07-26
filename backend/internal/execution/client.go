@@ -184,6 +184,47 @@ func (c *Client) IssuePairingToken(
 	return token, err
 }
 
+func (c *Client) DisconnectAccount(
+	ctx context.Context,
+	ownerID string,
+	accountID string,
+) error {
+	return c.manageAccount(ctx, "/v1/admin/accounts/disconnect", ownerID, accountID)
+}
+
+func (c *Client) RemoveAccount(
+	ctx context.Context,
+	ownerID string,
+	accountID string,
+) error {
+	return c.manageAccount(ctx, "/v1/admin/accounts/remove", ownerID, accountID)
+}
+
+func (c *Client) manageAccount(
+	ctx context.Context,
+	path string,
+	ownerID string,
+	accountID string,
+) error {
+	body := struct {
+		OwnerID   string `json:"ownerId"`
+		AccountID string `json:"accountId"`
+	}{
+		OwnerID:   ownerID,
+		AccountID: accountID,
+	}
+	var response struct {
+		OK bool `json:"ok"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, c.resolve(path), body, &response); err != nil {
+		return err
+	}
+	if !response.OK {
+		return errors.New("execution gateway returned an invalid account action acknowledgement")
+	}
+	return nil
+}
+
 func (c *Client) RouteOrder(
 	ctx context.Context,
 	ownerID string,

@@ -1,4 +1,4 @@
-import { getJson, postJson } from "@/services/api/client";
+import { deleteJson, getJson, postJson } from "@/services/api/client";
 import type { ExecutionAccountSummary } from "@/types/execution";
 import type { ExecutionOrderWireRequest } from "@/services/execution/orderRouting";
 
@@ -29,6 +29,23 @@ export const issueExecutionPairingToken = (
   postJson<ExecutionPairingToken>("execution/pairing-tokens", {
     expiresInSeconds,
   });
+
+export const disconnectExecutionAccount = (
+  accountId: string,
+): Promise<{ ok: true }> =>
+  postJson<{ ok: true }>(
+    `execution/accounts/${encodeURIComponent(accountId)}/disconnect`,
+    undefined,
+    { retry: { limit: 0 } },
+  );
+
+export const removeExecutionAccount = (
+  accountId: string,
+): Promise<{ ok: true }> =>
+  deleteJson<{ ok: true }>(
+    `execution/accounts/${encodeURIComponent(accountId)}`,
+    { retry: { limit: 0 } },
+  );
 
 export type ExecutionTargetSubmission =
   | {

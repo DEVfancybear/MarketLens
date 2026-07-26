@@ -66,7 +66,7 @@ struct GatewayInner {
     commands: Mutex<HashMap<AccountId, VecDeque<QueuedCommand>>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct EaSession {
     session_id: SessionId,
     account_id: AccountId,
@@ -143,6 +143,13 @@ struct AccountStateQuery {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AccountInstrumentsQuery {
+    owner_id: String,
+    account_id: AccountId,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AccountActionRequest {
     owner_id: String,
     account_id: AccountId,
 }
@@ -296,6 +303,8 @@ async fn main() {
         .route("/v1/admin/instruments", get(account_instruments))
         .route("/v1/admin/symbol-mappings", post(upsert_symbol_mapping))
         .route("/v1/admin/pairing-tokens", post(issue_pairing_token))
+        .route("/v1/admin/accounts/disconnect", post(disconnect_account))
+        .route("/v1/admin/accounts/remove", post(remove_account))
         .route("/v1/admin/orders", post(route_admin_order))
         .route("/v1/admin/commands", post(queue_command))
         .layer(DefaultBodyLimit::max(256 * 1024))
@@ -527,6 +536,221 @@ impl GatewayState {
         (grant.expires_at_ms > now_ms()).then_some(grant)
     }
 
+    async fn manage_account(
+        &self,
+        owner_id: &str,
+        account_id: &AccountId,
+        remove: bool,
+    ) -> Result<(), ApiError> {
+        validate_identifier("accountId", account_id.as_str(), 96)?;
+        if let Some(database) = &self.inner.database {
+            let owner_uuid = parse_owner_id(owner_id)?;
+            let mut transaction = database
+                .begin()
+                .await
+                .map_err(|error| ApiError::database("begin account management", error))?;
+            let account_exists = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT id
+                FROM execution_accounts
+                WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
+                FOR UPDATE
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("authorize account management", error))?
+            .is_some();
+            if !account_exists {
+                return Err(ApiError::new(
+                    StatusCode::NOT_FOUND,
+                    "TARGET_ACCOUNT_NOT_FOUND",
+                    "target account was not found for this owner",
+                ));
+            }
+
+            sqlx::query(
+                r#"
+                UPDATE execution_ea_sessions
+                SET revoked_at = COALESCE(revoked_at, now())
+                WHERE user_id = $1 AND account_id = $2
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("revoke account sessions", error))?;
+
+            // A reconnect must never replay work that was still waiting in the
+            // durable queue when the user explicitly disconnected the account.
+            sqlx::query(
+                r#"
+                WITH stopped AS (
+                    UPDATE execution_target_commands
+                    SET status = 'failed',
+                        reject_code = $3,
+                        reject_message = $4,
+                        terminal_ack_at = COALESCE(terminal_ack_at, now()),
+                        lease_owner = NULL,
+                        lease_expires_at = NULL,
+                        updated_at = now()
+                    WHERE user_id = $1
+                      AND target_account_id = $2
+                      AND terminal_ack_at IS NULL
+                      AND status IN ('ready', 'queued', 'unknown')
+                    RETURNING parent_command_id
+                ),
+                affected_parents AS (
+                    SELECT DISTINCT parent_command_id FROM stopped
+                )
+                UPDATE execution_commands parent
+                SET status = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM execution_target_commands target
+                            WHERE target.user_id = parent.user_id
+                              AND target.parent_command_id = parent.id
+                              AND target.terminal_ack_at IS NULL
+                        ) THEN 'submitted'
+                        ELSE 'partially_rejected'
+                    END,
+                    updated_at = now()
+                FROM affected_parents
+                WHERE parent.user_id = $1
+                  AND parent.id = affected_parents.parent_command_id
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(if remove {
+                "ACCOUNT_REMOVED"
+            } else {
+                "ACCOUNT_DISCONNECTED"
+            })
+            .bind(if remove {
+                "account was removed before execution"
+            } else {
+                "account was disconnected before execution"
+            })
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("stop queued account commands", error))?;
+
+            if remove {
+                sqlx::query(
+                    "DELETE FROM execution_copy_groups WHERE user_id = $1 AND source_account_id = $2",
+                )
+                .bind(owner_uuid)
+                .bind(account_id.as_str())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("remove source copy routes", error))?;
+                sqlx::query(
+                    "DELETE FROM execution_copy_targets WHERE user_id = $1 AND account_id = $2",
+                )
+                .bind(owner_uuid)
+                .bind(account_id.as_str())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("remove target copy routes", error))?;
+                for statement in [
+                    "DELETE FROM execution_positions WHERE user_id = $1 AND account_id = $2",
+                    "DELETE FROM execution_pending_orders WHERE user_id = $1 AND account_id = $2",
+                    "DELETE FROM execution_risk_policies WHERE user_id = $1 AND account_id = $2",
+                    "DELETE FROM execution_instruments WHERE user_id = $1 AND account_id = $2",
+                    "DELETE FROM execution_ea_sessions WHERE user_id = $1 AND account_id = $2",
+                ] {
+                    sqlx::query(statement)
+                        .bind(owner_uuid)
+                        .bind(account_id.as_str())
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(|error| {
+                            ApiError::database("remove account runtime data", error)
+                        })?;
+                }
+            }
+
+            sqlx::query(
+                r#"
+                UPDATE execution_accounts
+                SET status = $3,
+                    trade_allowed = CASE WHEN $4 THEN false ELSE trade_allowed END,
+                    last_seen_at = CASE WHEN $4 THEN NULL ELSE last_seen_at END,
+                    updated_at = now()
+                WHERE user_id = $1 AND id = $2
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(if remove { "disabled" } else { "offline" })
+            .bind(remove)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("update managed account", error))?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO execution_audit_log (
+                    user_id, actor_type, actor_id, action,
+                    resource_type, resource_id, details
+                )
+                VALUES (
+                    $1, 'user', $1::text, $3,
+                    'execution_account', $2,
+                    jsonb_build_object('queuedCommandsStopped', true)
+                )
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(if remove {
+                "account.removed"
+            } else {
+                "account.disconnected"
+            })
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("audit account management", error))?;
+
+            transaction
+                .commit()
+                .await
+                .map_err(|error| ApiError::database("commit account management", error))?;
+            return Ok(());
+        }
+
+        let owns_account = self
+            .inner
+            .accounts
+            .lock()
+            .await
+            .get(account_id)
+            .is_some_and(|account| account.owner_id == owner_id);
+        if !owns_account {
+            return Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "TARGET_ACCOUNT_NOT_FOUND",
+                "target account was not found for this owner",
+            ));
+        }
+        self.inner
+            .sessions
+            .lock()
+            .await
+            .retain(|_, session| session.owner_id != owner_id || &session.account_id != account_id);
+        self.inner.commands.lock().await.remove(account_id);
+        if remove {
+            self.inner.accounts.lock().await.remove(account_id);
+        } else if let Some(account) = self.inner.accounts.lock().await.get_mut(account_id) {
+            account.connected = false;
+        }
+        Ok(())
+    }
+
     async fn create_session(
         &self,
         request: EaSessionRequest,
@@ -547,7 +771,11 @@ impl GatewayState {
         let now = now_ms();
         let expires_at_ms = now + SESSION_TTL.as_millis() as u64;
         self.prune_sessions(now).await;
-        self.inner.sessions.lock().await.insert(
+        let mut sessions = self.inner.sessions.lock().await;
+        sessions.retain(|_, session| {
+            session.owner_id != grant.owner_id || session.account_id != account_id
+        });
+        sessions.insert(
             token_hash,
             EaSession {
                 session_id: session_id.clone(),
@@ -556,6 +784,7 @@ impl GatewayState {
                 expires_at_ms,
             },
         );
+        drop(sessions);
         self.inner.accounts.lock().await.insert(
             account_id.clone(),
             EaAccountView {
@@ -779,6 +1008,13 @@ impl GatewayState {
                   AND revoked_at IS NULL
                   AND expires_at > now()
                   AND absolute_expires_at > now()
+                  AND EXISTS (
+                    SELECT 1
+                    FROM execution_accounts accounts
+                    WHERE accounts.user_id = execution_ea_sessions.user_id
+                      AND accounts.id = execution_ea_sessions.account_id
+                      AND accounts.status <> 'disabled'
+                  )
                 RETURNING
                     id,
                     user_id::text AS owner_id,
@@ -849,7 +1085,7 @@ impl GatewayState {
                     metadata = $12,
                     last_seen_at = now(),
                     updated_at = now()
-                WHERE user_id = $1 AND id = $2
+                WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
                 "#,
             )
             .bind(owner_uuid)
@@ -880,16 +1116,24 @@ impl GatewayState {
             }
             return Ok(());
         }
-        self.inner.accounts.lock().await.insert(
-            account_id.clone(),
-            EaAccountView {
-                account_id: account_id.clone(),
-                owner_id: owner_id.to_owned(),
-                connected: true,
-                last_seen_at_ms: now_ms(),
-                account,
-            },
-        );
+        let mut accounts = self.inner.accounts.lock().await;
+        let Some(existing) = accounts.get_mut(account_id) else {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "ACCOUNT_SESSION_MISMATCH",
+                "EA account is not owned by this session",
+            ));
+        };
+        if existing.owner_id != owner_id {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "ACCOUNT_SESSION_MISMATCH",
+                "EA account is not owned by this session",
+            ));
+        }
+        existing.connected = true;
+        existing.last_seen_at_ms = now_ms();
+        existing.account = account;
         Ok(())
     }
 
@@ -1321,7 +1565,9 @@ impl GatewayState {
             LEFT JOIN execution_risk_policies policy
               ON policy.user_id = accounts.user_id
              AND policy.account_id = accounts.id
-            WHERE accounts.user_id = $1 AND accounts.id = $2
+            WHERE accounts.user_id = $1
+              AND accounts.status <> 'disabled'
+              AND accounts.id = $2
             "#,
         )
         .bind(owner_uuid)
@@ -1457,7 +1703,7 @@ impl GatewayState {
             return Ok(None);
         };
         sqlx::query_scalar::<_, Option<Decimal>>(
-            "SELECT equity FROM execution_accounts WHERE user_id = $1 AND id = $2",
+            "SELECT equity FROM execution_accounts WHERE user_id = $1 AND id = $2 AND status <> 'disabled'",
         )
         .bind(owner_uuid)
         .bind(account_id.as_str())
@@ -1673,7 +1919,7 @@ impl EaCommandQueue for GatewayState {
                           AND sessions.absolute_expires_at > now()
                     ) AS connected
                 FROM execution_accounts
-                WHERE id = $1
+                WHERE id = $1 AND status <> 'disabled'
                 FOR UPDATE
                 "#,
             )
@@ -2091,6 +2337,7 @@ async fn list_accounts(
                 ) AS connected
             FROM execution_accounts accounts
             WHERE accounts.user_id = $1
+              AND accounts.status <> 'disabled'
             ORDER BY accounts.updated_at DESC, accounts.id
             "#,
         )
@@ -2133,6 +2380,32 @@ async fn list_accounts(
     Ok(Json(accounts))
 }
 
+async fn disconnect_account(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<AccountActionRequest>,
+) -> Result<Json<AcceptedView>, ApiError> {
+    require_admin(&state, &headers)?;
+    parse_owner_id(&request.owner_id)?;
+    state
+        .manage_account(&request.owner_id, &request.account_id, false)
+        .await?;
+    Ok(Json(AcceptedView { ok: true }))
+}
+
+async fn remove_account(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<AccountActionRequest>,
+) -> Result<Json<AcceptedView>, ApiError> {
+    require_admin(&state, &headers)?;
+    parse_owner_id(&request.owner_id)?;
+    state
+        .manage_account(&request.owner_id, &request.account_id, true)
+        .await?;
+    Ok(Json(AcceptedView { ok: true }))
+}
+
 async fn account_state(
     State(state): State<GatewayState>,
     headers: HeaderMap,
@@ -2146,7 +2419,7 @@ async fn account_state(
             r#"
             SELECT EXISTS (
                 SELECT 1 FROM execution_accounts
-                WHERE user_id = $1 AND id = $2
+                WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
             )
             "#,
         )
@@ -2317,7 +2590,7 @@ async fn account_instruments(
         r#"
         SELECT EXISTS (
             SELECT 1 FROM execution_accounts
-            WHERE user_id = $1 AND id = $2
+            WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
         )
         "#,
     )
@@ -2687,7 +2960,7 @@ async fn queue_command(
             r#"
             SELECT EXISTS (
                 SELECT 1 FROM execution_accounts
-                WHERE user_id = $1 AND id = $2
+                WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
             )
             "#,
         )
@@ -4180,6 +4453,133 @@ mod tests {
         .await
         .expect_err("cross-owner target must fail");
         assert_eq!(error.status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn account_disconnect_is_owner_scoped_and_revokes_session_and_queue() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let (_, session) = paired(&state, OWNER_A, PAIR_TOKEN).await;
+        state
+            .enqueue(
+                &session.account_id,
+                place_command(session.account_id.clone(), "cmd-disconnect"),
+            )
+            .await
+            .expect("enqueue");
+
+        let cross_owner = state
+            .manage_account(OWNER_B, &session.account_id, false)
+            .await
+            .expect_err("another owner must not disconnect the account");
+        assert_eq!(cross_owner.status, StatusCode::NOT_FOUND);
+        state
+            .authenticate(&bearer(&session.session_token))
+            .await
+            .expect("cross-owner attempt must not revoke the session");
+
+        state
+            .manage_account(OWNER_A, &session.account_id, false)
+            .await
+            .expect("owner disconnect");
+        let revoked = state
+            .authenticate(&bearer(&session.session_token))
+            .await
+            .expect_err("disconnected bearer must be revoked");
+        assert_eq!(revoked.status, StatusCode::UNAUTHORIZED);
+        assert!(
+            state
+                .inner
+                .commands
+                .lock()
+                .await
+                .get(&session.account_id)
+                .is_none(),
+            "disconnect must discard commands that could replay after reconnect"
+        );
+        assert!(
+            !state
+                .inner
+                .accounts
+                .lock()
+                .await
+                .get(&session.account_id)
+                .expect("account remains registered")
+                .connected
+        );
+    }
+
+    #[tokio::test]
+    async fn account_remove_hides_runtime_state_and_pairing_restores_it() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let (account, session) = paired(&state, OWNER_A, PAIR_TOKEN).await;
+        state
+            .manage_account(OWNER_A, &session.account_id, true)
+            .await
+            .expect("owner remove");
+        assert!(
+            !state
+                .inner
+                .accounts
+                .lock()
+                .await
+                .contains_key(&session.account_id),
+            "removed account must disappear from the registry"
+        );
+        assert!(
+            state
+                .authenticate(&bearer(&session.session_token))
+                .await
+                .is_err(),
+            "removed session must not remain usable"
+        );
+        let stale_heartbeat = state
+            .touch_account(OWNER_A, &session.account_id, account.clone())
+            .await
+            .expect_err("an in-flight stale session must not recreate a removed account");
+        assert_eq!(stale_heartbeat.status, StatusCode::FORBIDDEN);
+
+        let replacement_token = "replacement-pairing-token-with-at-least-32-characters";
+        state
+            .insert_pairing_token(replacement_token, OWNER_A, DEFAULT_PAIRING_TTL)
+            .await
+            .expect("issue replacement token");
+        let replacement = state
+            .create_session(session_request(replacement_token, account))
+            .await
+            .expect("same broker identity can be paired again");
+        assert_eq!(replacement.account_id, session.account_id);
+        state
+            .authenticate(&bearer(&replacement.session_token))
+            .await
+            .expect("replacement session is active");
+    }
+
+    #[tokio::test]
+    async fn pairing_rotation_revokes_the_previous_account_session() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let (account, first) = paired(&state, OWNER_A, PAIR_TOKEN).await;
+        let replacement_token = "rotated-pairing-token-with-at-least-32-characters";
+        state
+            .insert_pairing_token(replacement_token, OWNER_A, DEFAULT_PAIRING_TTL)
+            .await
+            .expect("issue replacement token");
+        let second = state
+            .create_session(session_request(replacement_token, account))
+            .await
+            .expect("rotate session");
+
+        assert_eq!(first.account_id, second.account_id);
+        assert!(
+            state
+                .authenticate(&bearer(&first.session_token))
+                .await
+                .is_err(),
+            "old session must be revoked after the new EA pairs"
+        );
+        state
+            .authenticate(&bearer(&second.session_token))
+            .await
+            .expect("new session remains active");
     }
 
     #[tokio::test]

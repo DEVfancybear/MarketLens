@@ -2,12 +2,21 @@
 
 import { useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { Ban, BookOpen, Download, Pencil, RotateCcw, X } from "lucide-react";
+import {
+  Ban,
+  BookOpen,
+  Download,
+  Pencil,
+  RotateCcw,
+  Settings2,
+  X,
+} from "lucide-react";
 import { OrderTicket } from "@/components/trade/OrderTicket";
 import { ExecutionModeSwitch } from "@/components/trade/ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "@/components/trade/ExecutionConnectionStatus";
 import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
 import { Mt5EaSetupGuide } from "@/components/trade/Mt5EaSetupGuide";
+import { ExecutionAccountManagementDialog } from "@/components/trade/ExecutionAccountManagementDialog";
 import {
   cancelPendingAtom,
   closePositionAtom,
@@ -28,6 +37,7 @@ import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
 import { makeClientCommandId } from "@/services/execution/identifiers";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
+import { selectedExecutionAccountAtom } from "@/store/executionRegistryStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
@@ -40,6 +50,7 @@ export function MobileTradeScreen() {
   useSimTradingPersistence();
   const [tab, setTab] = useState<TradeTab>("ticket");
   const [showEaGuide, setShowEaGuide] = useState(false);
+  const [showAccountManagement, setShowAccountManagement] = useState(false);
   const positions = useAtomValue(positionsAtom);
   const equity = useAtomValue(equityAtom);
   const starting = useAtomValue(startingEquityAtom);
@@ -47,6 +58,7 @@ export function MobileTradeScreen() {
   const mt5Account = useAtomValue(mt5AccountAtom);
   const mt5Positions = useAtomValue(mt5PositionsAtom);
   const mt5Pending = useAtomValue(mt5PendingOrdersAtom);
+  const selectedExecutionAccount = useAtomValue(selectedExecutionAccountAtom);
   const reset = useSetAtom(resetPersistedTradeAtom);
   const replay = useReplayTrading();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
@@ -108,6 +120,15 @@ export function MobileTradeScreen() {
         <BookOpen size={17} />
         Cài MT5 EA
       </button>
+      {executionMode === "mt5" && selectedExecutionAccount && (
+        <button
+          type="button"
+          onClick={() => setShowAccountManagement(true)}
+        >
+          <Settings2 size={17} />
+          Quản lý account
+        </button>
+      )}
       {executionMode === "simulator" && <button type="button" onClick={resetAccount}><RotateCcw size={17} />Reset account</button>}
       {replayMode && <button type="button" onClick={() => void exportReplayReport()}><Download size={17} />Export replay report</button>}
     </div>
@@ -127,6 +148,14 @@ export function MobileTradeScreen() {
       pairing={pairing}
       pairingLoading={pairingLoading}
       pairingFailed={pairingFailed}
+      onGeneratePairingToken={createPairingToken}
+    />
+    <ExecutionAccountManagementDialog
+      account={showAccountManagement ? selectedExecutionAccount : null}
+      pairing={pairing}
+      pairingLoading={pairingLoading}
+      pairingFailed={pairingFailed}
+      onClose={() => setShowAccountManagement(false)}
       onGeneratePairingToken={createPairingToken}
     />
     {dialog}
