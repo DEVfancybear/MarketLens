@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 queued-command poll HTTP 500 (2026-07-27)
+- Fixed a Rust wire-contract mismatch where an absent optional order price was
+  persisted as JSON `null` but rejected when PostgreSQL decoded the same
+  command for EA delivery. This caused `/v1/ea/poll` to return HTTP 500 only
+  while a Place command was queued, leaving `attempt_count=0`.
+- Added one strict, shared nullable-decimal codec across execution-domain
+  account, instrument, risk, routing, portfolio, and lifecycle fields. Decimal
+  values remain lossless JSON strings; missing fields and explicit `null` are
+  accepted, while JSON floating-point numbers remain rejected.
+- Added domain round-trip coverage and a gateway regression using the exact
+  persisted Limit-order payload shape that failed in production. This is a
+  backend-only compatibility fix; EA 1.22 remains the required release.
+
 ### Fixed - MT5 command poll liveness and EA version gating (2026-07-27)
 - Replaced the 15-minute generic EA-session readiness check with a dedicated,
   persisted `last_poll_at` signal. An account is executable only while its EA

@@ -192,6 +192,12 @@ execution boundary:
 | `status=failed`, `reject_code=DELIVERY_EXPIRED` | Delivered but not acknowledged before the deadline | Reconcile MT5 active/history state before any new order |
 | `status=accepted/filled/cancelled` with broker IDs | EA outcome is persisted | Reconcile browser portfolio against broker state |
 
+If poll returns HTTP 500 only when a command is queued and the row remains at
+`attempt_count=0`, inspect command-payload decoding before investigating MT5.
+Optional price fields may be missing or explicit JSON `null`, but every
+non-null monetary value must remain a decimal string. Never rewrite the stored
+payload or mark it delivered by hand.
+
 Never resend a failed command by changing its database status. A replacement
 order requires a new command ID and explicit user action after the prior
 outcome has been reconciled.

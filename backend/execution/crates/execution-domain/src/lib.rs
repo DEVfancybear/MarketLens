@@ -4,6 +4,37 @@ use std::fmt::{Display, Formatter};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// Strict JSON codec for optional monetary values.
+///
+/// Values are encoded as decimal strings to avoid binary floating-point loss,
+/// while both a missing field (`#[serde(default)]`) and an explicit JSON `null`
+/// decode to `None`. The upstream rust_decimal `str_option` helper does not
+/// accept explicit `null`, even though it serializes `None` as `null`.
+pub mod nullable_decimal_string {
+    use rust_decimal::Decimal;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<Decimal>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(decimal) => serializer.serialize_some(&decimal.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<String>::deserialize(deserializer)?
+            .map(|value| value.parse::<Decimal>().map_err(D::Error::custom))
+            .transpose()
+    }
+}
+
 pub const EXECUTION_PROTOCOL_VERSION: u16 = 1;
 
 macro_rules! string_id {
@@ -124,7 +155,7 @@ pub struct CopyTarget {
     pub account_id: AccountId,
     pub enabled: bool,
     pub allocation: CopyAllocation,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub max_quantity: Option<Decimal>,
 }
 
@@ -138,13 +169,13 @@ pub struct OrderIntent {
     pub side: Side,
     pub kind: OrderKind,
     pub sizing: OrderSizing,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub limit_price: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_price: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_loss: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub take_profit: Option<Decimal>,
     #[serde(default)]
     pub metadata: BTreeMap<String, String>,
@@ -163,9 +194,9 @@ pub struct ExecutionAccount {
     pub mode: AccountMode,
     pub status: AccountStatus,
     pub currency: String,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub balance: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub equity: Option<Decimal>,
     pub trade_allowed: bool,
     pub updated_at_ms: u64,
@@ -185,9 +216,9 @@ pub struct InstrumentSpec {
     pub max_quantity: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
     pub price_tick: Decimal,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub tick_value_per_quantity: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub min_stop_distance: Option<Decimal>,
     pub trade_allowed: bool,
 }
@@ -196,7 +227,7 @@ pub struct InstrumentSpec {
 #[serde(rename_all = "camelCase")]
 pub struct RiskPolicy {
     pub max_risk_per_trade_basis_points: u32,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub max_order_quantity: Option<Decimal>,
     pub require_stop_loss: bool,
     #[serde(default)]
@@ -224,7 +255,7 @@ pub struct RouteTargetContext {
     pub instrument: InstrumentSpec,
     pub policy: RiskPolicy,
     pub copy_target: CopyTarget,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub reference_price: Option<Decimal>,
 }
 
@@ -244,13 +275,13 @@ pub struct RoutedOrder {
     #[serde(with = "rust_decimal::serde::str")]
     pub quantity: Decimal,
     pub quantity_unit: QuantityUnit,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub limit_price: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_price: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_loss: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub take_profit: Option<Decimal>,
     #[serde(default)]
     pub warnings: Vec<RouteWarning>,
@@ -393,9 +424,9 @@ pub struct EaEventBatch {
 #[serde(rename_all = "camelCase")]
 pub struct EaInstrumentSnapshot {
     pub spec: InstrumentSpec,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub bid: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub ask: Option<Decimal>,
     pub observed_at_ms: u64,
 }
@@ -413,9 +444,9 @@ pub struct EaPositionSnapshot {
     pub open_price: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
     pub current_price: Decimal,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_loss: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub take_profit: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::str")]
     pub profit: Decimal,
@@ -441,9 +472,9 @@ pub struct EaPendingOrderSnapshot {
     pub quantity: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
     pub price: Decimal,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_loss: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub take_profit: Option<Decimal>,
     pub magic: i64,
     pub comment: String,
@@ -458,9 +489,9 @@ pub struct ModifyPositionCommand {
     pub idempotency_key: IdempotencyKey,
     pub target_account_id: AccountId,
     pub broker_position_id: String,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub stop_loss: Option<Decimal>,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub take_profit: Option<Decimal>,
 }
 
@@ -471,7 +502,7 @@ pub struct ClosePositionCommand {
     pub idempotency_key: IdempotencyKey,
     pub target_account_id: AccountId,
     pub broker_position_id: String,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "nullable_decimal_string")]
     pub quantity: Option<Decimal>,
     pub deviation_points: u32,
 }
@@ -520,6 +551,12 @@ pub enum EaEvent {
 mod tests {
     use super::*;
     use rust_decimal::Decimal;
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct NullableDecimalFixture {
+        #[serde(default, with = "nullable_decimal_string")]
+        value: Option<Decimal>,
+    }
 
     fn account() -> EaAccountSnapshot {
         EaAccountSnapshot {
@@ -597,6 +634,29 @@ mod tests {
         assert_eq!(value["type"], "closePosition");
         assert_eq!(value["command"]["quantity"], "0.5");
         assert_eq!(value["command"]["brokerPositionId"], "123456");
+    }
+
+    #[test]
+    fn nullable_decimal_string_round_trips_null_missing_and_strings_strictly() {
+        let explicit_null = serde_json::from_str::<NullableDecimalFixture>(r#"{"value":null}"#)
+            .expect("explicit null must decode");
+        let missing = serde_json::from_str::<NullableDecimalFixture>(r#"{}"#)
+            .expect("missing optional decimal must decode");
+        let decimal = serde_json::from_str::<NullableDecimalFixture>(r#"{"value":"0.26"}"#)
+            .expect("decimal string must decode");
+
+        assert_eq!(explicit_null.value, None);
+        assert_eq!(missing.value, None);
+        assert_eq!(decimal.value, Some(Decimal::new(26, 2)));
+        assert_eq!(
+            serde_json::to_value(explicit_null).expect("serialize null"),
+            serde_json::json!({ "value": null })
+        );
+        assert_eq!(
+            serde_json::to_value(decimal).expect("serialize decimal"),
+            serde_json::json!({ "value": "0.26" })
+        );
+        assert!(serde_json::from_str::<NullableDecimalFixture>(r#"{"value":0.26}"#).is_err());
     }
 
     #[test]

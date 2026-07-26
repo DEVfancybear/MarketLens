@@ -260,7 +260,7 @@ struct AdminCommandRequest {
 struct AdminOrderTarget {
     account_id: AccountId,
     allocation: CopyAllocation,
-    #[serde(default, with = "rust_decimal::serde::str_option")]
+    #[serde(default, with = "execution_domain::nullable_decimal_string")]
     max_quantity: Option<Decimal>,
 }
 
@@ -4243,6 +4243,39 @@ mod tests {
         assert_eq!(json["targetAccountId"], "mt5_account");
         assert_eq!(json["venueSymbol"], "EURUSD");
         assert!(json.get("order").is_none());
+    }
+
+    #[test]
+    fn durable_place_payload_decodes_before_ea_poll_delivery() {
+        let payload = r#"{
+          "type":"place",
+          "order":{
+            "kind":"limit",
+            "side":"buy",
+            "quantity":"0.26",
+            "stopLoss":"64293.70",
+            "warnings":[],
+            "commandId":"exec_cmd_child:mt5_account",
+            "stopPrice":null,
+            "venueKind":"metaTrader5",
+            "brokerCode":"ftmo-global-markets-ltd",
+            "limitPrice":"64466.48",
+            "takeProfit":"64819.91",
+            "venueSymbol":"BTCUSD",
+            "quantityUnit":"lots",
+            "idempotencyKey":"exec_cmd_child:mt5_account",
+            "canonicalSymbol":"BTCUSD",
+            "parentCommandId":"exec_cmd_child",
+            "targetAccountId":"mt5_account"
+          }
+        }"#;
+        let command = serde_json::from_str::<EaCommand>(payload)
+            .expect("durable routed order must decode for polling");
+        let wire = serde_json::to_value(EaPollCommandView::from(command))
+            .expect("decoded durable order must flatten for MQL");
+        assert_eq!(wire["type"], "place");
+        assert_eq!(wire["quantity"], "0.26");
+        assert_eq!(wire["limitPrice"], "64466.48");
     }
 
     fn instrument_snapshot() -> EaInstrumentSnapshot {

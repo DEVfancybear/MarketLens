@@ -7,7 +7,9 @@ market data, Pine execution, or ordinary application CRUD.
 ## Crates
 
 - `execution-domain`: versioned account, order, portfolio, command, and EA wire
-  types. Monetary and quantity fields use decimal strings.
+  types. Monetary and quantity fields use decimal strings. Optional decimals
+  accept either a missing field or explicit JSON `null`; numeric JSON values
+  remain invalid to prevent floating-point loss.
 - `execution-engine`: deterministic per-target normalization and risk routing.
 - `execution-adapters`: the shared venue contract, MT5 queue adapter, and native
   API adapter boundary.

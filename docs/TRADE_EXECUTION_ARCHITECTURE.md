@@ -163,7 +163,8 @@ broker instrument.
 New brokers share:
 
 - `OrderIntent`, `RoutedOrder`, account and portfolio domain types;
-- decimal-string wire values;
+- strict decimal-string wire values, with missing or explicit JSON `null`
+  accepted only for optional decimal fields;
 - the deterministic execution engine;
 - risk policy and copy-allocation logic;
 - command IDs, idempotency, events, and audit schemas;
