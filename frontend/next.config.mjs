@@ -49,6 +49,23 @@ const nextConfig = {
   async headers() {
     return [
       {
+        source: "/downloads/SMCExecutionEA.ex5",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "application/octet-stream",
+          },
+          {
+            key: "Content-Disposition",
+            value: 'attachment; filename="SMCExecutionEA.ex5"',
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=300, must-revalidate",
+          },
+        ],
+      },
+      {
         source: "/:path*",
         headers: [
           {

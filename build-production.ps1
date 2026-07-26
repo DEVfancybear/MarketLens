@@ -23,6 +23,7 @@ $gatewayArtifactName = if ($StageApi) { "execution-gateway.next.exe" } else { "e
 $gatewayArtifact = Join-Path $backendDir "bin\$gatewayArtifactName"
 $executionManifest = Join-Path $backendDir "execution\Cargo.toml"
 $builtGateway = Join-Path $backendDir "execution\target\release\execution-gateway.exe"
+$eaPublishScript = Join-Path $backendDir "bridge\mt5_ea\Publish-SMCExecutionEA.ps1"
 
 if (-not $SkipMT5PythonSetup) {
   if ($env:OS -ne "Windows_NT") {
@@ -118,6 +119,9 @@ if (-not (Test-Path -LiteralPath $builtGateway -PathType Leaf)) {
 Copy-Item -LiteralPath $builtGateway -Destination $gatewayArtifact -Force
 
 if (-not $BackendOnly) {
+  Write-Host "Verifying downloadable MT5 EA release..." -ForegroundColor Cyan
+  & $eaPublishScript -VerifyOnly
+
   Write-Host "Building Next.js frontend..." -ForegroundColor Cyan
   Push-Location $frontendDir
   try {

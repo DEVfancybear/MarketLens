@@ -145,8 +145,16 @@ npm run build
 npm audit --omit=dev
 ```
 
-Compile `backend/bridge/mt5_ea/SMCExecutionEA.mq5` with MetaEditor and require
-`0 errors, 0 warnings`.
+Compile and publish the downloadable EA on the trusted Windows build host:
+
+```powershell
+.\backend\bridge\mt5_ea\Publish-SMCExecutionEA.ps1
+```
+
+The publisher requires MetaEditor to report `0 errors, 0 warnings`. It creates
+the public `.ex5`, SHA-256 checksum, and a manifest binding the binary to the
+current source. `build-production.ps1` verifies all three before building the
+frontend and fails closed on a missing, stale, or modified release.
 
 Apply migrations in a controlled environment and verify `version=27,
 dirty=false` before serving execution traffic. The canonical production runner

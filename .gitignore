@@ -54,6 +54,7 @@ target/
 *.test
 *.out
 *.ex5
+!frontend/public/downloads/SMCExecutionEA.ex5
 *.compile.log
 go.work
 go.work.sum

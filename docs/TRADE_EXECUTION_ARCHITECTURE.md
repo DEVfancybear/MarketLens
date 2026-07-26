@@ -57,6 +57,12 @@ One MT5 terminal can have one active login. Multi-account support therefore
 runs one terminal instance per account and attaches the same
 `SMCExecutionEA.ex5` to each instance.
 
+Users download the common compiled EA directly from the authenticated Trade
+workspace. The same-origin `/downloads/SMCExecutionEA.ex5` release is packaged
+with a SHA-256 checksum and a manifest binding the compiled binary to the
+current `.mq5` source. Repository or backend filesystem paths are never exposed
+as installation instructions.
+
 The first connection uses a 256-bit, owner-bound, one-use pairing token with a
 maximum ten-minute lifetime. Rust derives a stable account ID from the
 authenticated owner, MT5 server, and login. This means:

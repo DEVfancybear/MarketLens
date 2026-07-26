@@ -8,6 +8,8 @@ import {
   CircleOff,
   Clipboard,
   Copy,
+  Download,
+  FileCheck2,
   LoaderCircle,
   Plus,
   Radio,
@@ -48,10 +50,9 @@ import {
   type ExecutionPairingToken,
 } from "@/services/api/resources/executionApi";
 import { symbolAtom } from "@/store/chartStore";
+import { executionEaDistribution } from "@/services/execution/eaDistribution";
 
 type WorkspaceTab = "positions" | "copy" | "activity";
-const EXECUTION_EA_URL =
-  process.env.NEXT_PUBLIC_EXECUTION_EA_URL || "http://127.0.0.1:8790";
 
 export function TradeWorkspace() {
   const [tab, setTab] = useState<WorkspaceTab>("positions");
@@ -185,6 +186,7 @@ function ExecutionAccountRail() {
   const selectedGatewayId = useAtomValue(selectedExecutionAccountIdAtom);
   const selectGateway = useSetAtom(selectedExecutionAccountIdAtom);
   const setMode = useSetAtom(setExecutionModeAtom);
+  const eaDistribution = executionEaDistribution();
 
   const simulator: ExecutionAccountSummary = {
     id: `simulator:${simAccount?.id ?? "local"}`,
@@ -252,9 +254,40 @@ function ExecutionAccountRail() {
             enter a one-time pairing token. The account appears here
             automatically.
           </span>
-          <code className="mt-2 block rounded bg-terminal-bg px-2 py-1 text-[9px] text-brand">
-            backend/bridge/mt5_ea/SMCExecutionEA.ex5
-          </code>
+          <div className="mt-2 overflow-hidden rounded-lg border border-brand/25 bg-terminal-bg">
+            <div className="flex items-center gap-2 p-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                <Download size={15} aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <strong className="block truncate text-[10px] text-ink">
+                  SMCExecutionEA.ex5
+                </strong>
+                <span className="block text-[8px] text-ink-faint">
+                  One common EA for all MT5 brokers
+                </span>
+              </span>
+            </div>
+            <a
+              href={eaDistribution.downloadUrl}
+              download="SMCExecutionEA.ex5"
+              className="mx-2 mb-2 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand px-2.5 text-[10px] font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-terminal-bg"
+            >
+              <Download size={12} aria-hidden="true" />
+              Download MT5 EA
+            </a>
+            <div className="flex items-center justify-between gap-2 border-t border-terminal-border px-2 py-1.5 text-[8px] text-ink-faint">
+              <span>Compiled release</span>
+              <a
+                href={eaDistribution.checksumUrl}
+                download="SMCExecutionEA.sha256.txt"
+                className="inline-flex items-center gap-1 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+              >
+                <FileCheck2 size={10} aria-hidden="true" />
+                SHA-256
+              </a>
+            </div>
+          </div>
           <div className="mt-2 rounded-lg border border-terminal-border bg-terminal-bg p-2">
             <div className="flex items-center justify-between gap-2">
               <span className="font-semibold text-ink">EA gateway URL</span>
@@ -263,14 +296,14 @@ function ExecutionAccountRail() {
                 className="rounded p-1 text-brand hover:bg-brand/10"
                 aria-label="Copy EA gateway URL"
                 onClick={() =>
-                  void navigator.clipboard.writeText(EXECUTION_EA_URL)
+                  void navigator.clipboard.writeText(eaDistribution.gatewayUrl)
                 }
               >
                 <Clipboard size={12} />
               </button>
             </div>
             <code className="mt-1 block break-all select-all text-[9px] text-brand">
-              {EXECUTION_EA_URL}
+              {eaDistribution.gatewayUrl}
             </code>
           </div>
           {pairing ? (

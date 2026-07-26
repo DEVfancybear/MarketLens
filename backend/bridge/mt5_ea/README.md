@@ -8,8 +8,9 @@ transactions.
 
 ## Install
 
-1. Copy `SMCExecutionEA.mq5` into `MQL5/Experts/SMC/`.
-2. Compile it in MetaEditor and attach it to one chart in each terminal.
+1. In the Trade workspace, select **Add → Download MT5 EA**.
+2. Copy `SMCExecutionEA.ex5` into `MQL5/Experts/SMC/`, refresh the Navigator,
+   and attach it to one chart in each terminal.
 3. In MT5, add the gateway origin under **Tools → Options → Expert Advisors →
    Allow WebRequest for listed URL**.
 4. Enter the public HTTPS gateway URL and a short-lived pairing token.
@@ -36,3 +37,18 @@ gateway derives a stable account ID from `server + login`.
 - MetaTrader `WebRequest` is synchronous and requires an allow-listed URL. The
   EA therefore cannot be truly zero-click; the one-time allow-list step is a
   platform constraint.
+
+## Publish a release
+
+Maintainers compile and publish the downloadable artifact on a trusted Windows
+host:
+
+```powershell
+.\backend\bridge\mt5_ea\Publish-SMCExecutionEA.ps1
+```
+
+The publisher requires MetaEditor to report `0 errors, 0 warnings`, then writes
+the `.ex5`, SHA-256 checksum, and source/binary release manifest to
+`frontend/public/downloads`. The frontend production build runs the publisher
+in verification-only mode and fails if the source, binary, manifest, or
+checksum do not match.

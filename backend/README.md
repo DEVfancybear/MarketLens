@@ -50,7 +50,8 @@ directly or place `EXECUTION_ADMIN_TOKEN` in the browser or EA.
 
 ## MT5 account setup
 
-1. Copy `bridge/mt5_ea/SMCExecutionEA.ex5` into the terminal's Experts folder.
+1. In the Trade workspace, select **Add → Download MT5 EA** and copy the
+   downloaded `SMCExecutionEA.ex5` into the terminal's Experts folder.
 2. Add the public EA URL to MT5's WebRequest allow-list.
 3. Attach the EA to one chart and enter the five-minute one-time pairing token
    generated in the Trade workspace.
@@ -71,7 +72,9 @@ go test ./internal/execution ./internal/settings ./internal/config ./internal/ht
 cargo test --manifest-path execution/Cargo.toml --workspace --all-targets
 ```
 
-Compile the EA with MetaEditor and require `0 errors, 0 warnings`.
+Publish the EA with `bridge/mt5_ea/Publish-SMCExecutionEA.ps1`. It requires
+MetaEditor to report `0 errors, 0 warnings` and produces a verified frontend
+download plus SHA-256 checksum.
 
 ## Structure
 
