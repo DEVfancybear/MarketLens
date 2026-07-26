@@ -195,6 +195,8 @@ export interface Mt5ExecutionReport {
 export interface Mt5CommandLogEntry {
   id: string;
   time: number;
+  accountId?: string;
+  dedupeKey?: string;
   level: "info" | "warn" | "error";
   direction: "client" | "gateway" | "agent";
   type: string;

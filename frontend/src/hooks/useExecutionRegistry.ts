@@ -19,6 +19,10 @@ import {
   buildClosePositionCommand,
   buildModifyPositionCommand,
 } from "@/services/execution/lifecycleCommands";
+import {
+  isTerminalExecutionOutcome,
+  presentExecutionOutcome,
+} from "@/services/execution/outcomePresentation";
 import { setExecutionRuntimeHandlers } from "@/services/execution/runtime";
 import {
   applyExecutionAccountsAtom,
@@ -58,6 +62,7 @@ export function useExecutionRegistry() {
   const selected = useAtomValue(selectedExecutionAccountAtom);
   const selectedAccountId = selected?.id ?? null;
   const selectedVenueKind = selected?.venueKind ?? null;
+  const selectedAccountLabel = selected?.label ?? "MT5 account";
   const setMt5Account = useSetAtom(mt5AccountAtom);
   const setMt5Status = useSetAtom(mt5StatusAtom);
   const setLastHeartbeat = useSetAtom(mt5LastHeartbeatAtom);
@@ -181,8 +186,8 @@ export function useExecutionRegistry() {
     const store = getDefaultStore();
     if (
       !backendSession ||
-      !selected ||
-      selected.venueKind !== "metatrader5"
+      !selectedAccountId ||
+      selectedVenueKind !== "metatrader5"
     ) {
       store.set(mt5PositionsAtom, []);
       store.set(mt5PendingOrdersAtom, []);
@@ -192,14 +197,16 @@ export function useExecutionRegistry() {
     let running = false;
     const mountedAt = Date.now();
     const seenOutcomeKeys = new Set<string>();
+    const accountId = selectedAccountId;
+    const accountLabel = selectedAccountLabel;
     store.set(mt5PositionsAtom, []);
     store.set(mt5PendingOrdersAtom, []);
     const refresh = async () => {
       if (running || document.visibilityState === "hidden") return;
       running = true;
       try {
-        const state = await getExecutionAccountState(selected.id);
-        if (cancelled || state.accountId !== selected.id) return;
+        const state = await getExecutionAccountState(accountId);
+        if (cancelled || state.accountId !== accountId) return;
         store.set(
           mt5PositionsAtom,
           state.positions.map((position) => ({
@@ -256,7 +263,12 @@ export function useExecutionRegistry() {
             );
             if (related.length === 0) return command;
             const successful = related.filter((outcome) =>
-              ["accepted", "filled", "cancelled"].includes(outcome.status),
+              [
+                "accepted",
+                "partially_filled",
+                "filled",
+                "cancelled",
+              ].includes(outcome.status),
             ).length;
             const failed = related.filter((outcome) =>
               ["failed", "rejected"].includes(outcome.status),
@@ -281,47 +293,32 @@ export function useExecutionRegistry() {
           }),
         );
         for (const outcome of outcomes) {
-          if (
-            ![
-              "accepted",
-              "filled",
-              "cancelled",
-              "failed",
-              "rejected",
-              "unknown",
-            ].includes(outcome.status)
-          ) {
-            continue;
-          }
+          if (!isTerminalExecutionOutcome(outcome.status)) continue;
           const outcomeKey = `${outcome.commandId}:${outcome.status}:${outcome.updatedAtMs}`;
           if (seenOutcomeKeys.has(outcomeKey)) continue;
           seenOutcomeKeys.add(outcomeKey);
-          const isFailure =
-            outcome.status === "failed" || outcome.status === "rejected";
-          const isUnknown = outcome.status === "unknown";
+          const presentation = presentExecutionOutcome(
+            outcome,
+            accountLabel,
+          );
           store.set(addMt5LogAtom, {
-            level: isFailure ? "error" : isUnknown ? "warn" : "info",
+            accountId,
+            dedupeKey: outcomeKey,
+            level: presentation.level,
             direction: "agent",
             type: `command.${outcome.status}`,
             message:
               outcome.message ??
-              `${outcome.commandId} ${outcome.status} by ${selected.label}`,
+              `${outcome.commandId} ${outcome.status} by ${accountLabel}`,
             requestId: outcome.commandId,
             clientOrderId: outcome.parentCommandId,
             time: outcome.updatedAtMs,
           });
-          if (outcome.updatedAtMs >= mountedAt && (isFailure || isUnknown)) {
-            store.set(pushToastAtom, {
-              title: isFailure
-                ? `Broker rejected command on ${selected.label}`
-                : `Broker outcome unknown on ${selected.label}`,
-              message:
-                outcome.message ??
-                (isFailure
-                  ? "The execution agent reported that the broker rejected this command."
-                  : "The execution agent will reconcile this command and will not blindly resubmit it."),
-              variant: isFailure ? "error" : "warn",
-            });
+          if (
+            outcome.updatedAtMs >= mountedAt &&
+            presentation.toast
+          ) {
+            store.set(pushToastAtom, presentation.toast);
           }
         }
       } catch {
@@ -336,7 +333,12 @@ export function useExecutionRegistry() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [backendSession, selected]);
+  }, [
+    backendSession,
+    selectedAccountId,
+    selectedAccountLabel,
+    selectedVenueKind,
+  ]);
 
   useEffect(() => {
     const store = getDefaultStore();

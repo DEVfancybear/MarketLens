@@ -4,6 +4,28 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 outcome reconciliation and Trade activity feedback (2026-07-27)
+- Stopped treating a delivered command whose EA acknowledgement timed out as a
+  broker rejection. It now becomes `unknown` with
+  `DELIVERY_OUTCOME_UNKNOWN`, is never redelivered after its deadline, and
+  remains open for a late EA accepted/rejected acknowledgement.
+- Added migration `0029_execution_delivery_outcome_unknown` to recover existing
+  `DELIVERY_EXPIRED` rows. A late broker acknowledgement can now replace the
+  legacy failure, clear its stale delivery error, and finalize the parent
+  command without requiring a duplicate order.
+- Added account-scoped, deduplicated Activity history. Clear records a
+  per-account cutoff, so the two-second state refresh cannot restore cleared
+  outcomes; switching account no longer mixes execution logs.
+- Replaced the fixed-height MT5 log plus misleading empty panel with a
+  full-height Activity feed containing timestamps, severity, event type, and
+  complete messages.
+- Added success notifications for accepted, filled, partially filled, and
+  cancelled MT5 outcomes. Delivery timeouts now show a sticky reconciliation
+  warning instead of “Broker rejected”, while commands never delivered remain
+  a distinct error.
+- Added frontend outcome/activity regressions and a Rust migration contract
+  regression.
+
 ### Fixed - MT5 queued-command poll HTTP 500 (2026-07-27)
 - Fixed a Rust wire-contract mismatch where an absent optional order price was
   persisted as JSON `null` but rejected when PostgreSQL decoded the same
@@ -28,8 +50,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   cannot receive Place, modify, close, or cancel commands.
 - Distinguished commands that were never delivered
   (`DELIVERY_UNAVAILABLE`, `attempt_count=0`, no `first_delivered_at`) from
-  commands delivered but not acknowledged (`DELIVERY_EXPIRED`). Delivery
-  expiry now uses the first delivery timestamp once one exists.
+  commands delivered but awaiting reconciliation
+  (`DELIVERY_OUTCOME_UNKNOWN`). Delivery expiry uses the first delivery
+  timestamp once one exists.
 - Added migration `0028_execution_ea_poll_liveness`, Rust and Go version-gate
   regressions, and a verified EA 1.22 download artifact.
 

@@ -189,7 +189,7 @@ execution boundary:
 | `attempt_count=0`, `first_delivered_at IS NULL` | Gateway never delivered the command to EA | Check `last_poll_at`, EA version, poll HTTP status, relay and deployment uptime |
 | `attempt_count>0`, no `terminal_ack_at` | EA received one or more leases but no outcome was persisted | Check EA Experts log, local idempotency journal and events HTTP response |
 | `status=failed`, `reject_code=DELIVERY_UNAVAILABLE` | Delivery deadline passed before any EA lease | Do not claim MT5/broker rejection; restore poll health and create a new user-authorized order |
-| `status=failed`, `reject_code=DELIVERY_EXPIRED` | Delivered but not acknowledged before the deadline | Reconcile MT5 active/history state before any new order |
+| `status=unknown`, `reject_code=DELIVERY_OUTCOME_UNKNOWN` | Delivered but not acknowledged before the deadline; MT5 may already have executed it | Do not resend. Reconcile MT5 active orders, positions, and history while allowing a late EA acknowledgement to finalize the command |
 | `status=accepted/filled/cancelled` with broker IDs | EA outcome is persisted | Reconcile browser portfolio against broker state |
 
 If poll returns HTTP 500 only when a command is queued and the row remains at
@@ -201,6 +201,12 @@ payload or mark it delivered by hand.
 Never resend a failed command by changing its database status. A replacement
 order requires a new command ID and explicit user action after the prior
 outcome has been reconciled.
+
+Migration `0029_execution_delivery_outcome_unknown` changes legacy
+`status=failed, reject_code=DELIVERY_EXPIRED` rows to the reconcilable unknown
+state. The Trade UI must show a sticky “check MT5” warning for both shapes
+during a rolling deployment and must reserve “Broker rejected” for a confirmed
+EA rejection.
 
 ## Live canary
 

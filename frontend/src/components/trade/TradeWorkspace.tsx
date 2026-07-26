@@ -157,11 +157,7 @@ export function TradeWorkspace() {
           {tab === "copy" && <CopyRoutingPanel />}
           {tab === "activity" && (
             <div className="flex min-h-0 flex-1 flex-col">
-              <Mt5CommandLog />
-              <div className="flex flex-1 items-center justify-center px-6 text-center text-xs text-ink-faint">
-                Rust gateway events will appear here per account with a shared
-                idempotency key and an independent result for every target.
-              </div>
+              <Mt5CommandLog variant="activity" />
             </div>
           )}
         </div>

@@ -114,16 +114,20 @@ the minimum without introducing broker-specific protocol forks.
 9. EA events, portfolio snapshots, command outcomes, and security audit records
    are persisted before the API reports success.
 
-Delivery has two distinct terminal failures:
+Delivery has two distinct deadline outcomes:
 
 - `DELIVERY_UNAVAILABLE`: no successful EA poll leased the command before its
   bounded delivery deadline. `attempt_count=0` and `first_delivered_at IS NULL`
-  are authoritative evidence that MT5 never received it.
-- `DELIVERY_EXPIRED`: the command was leased to the EA at least once, but no
-  terminal command outcome was acknowledged before the deadline.
+  are authoritative evidence that MT5 never received it; this is terminal.
+- `DELIVERY_OUTCOME_UNKNOWN`: the command was leased to the EA at least once,
+  but no terminal command outcome was acknowledged before the deadline. It is
+  not redelivered, remains nonterminal for reconciliation, and a late EA
+  acknowledgement may safely resolve it to accepted or failed.
 
-These states must not be described as broker rejections. Neither state is
-automatically replayed after the deadline.
+Neither state is a broker rejection, and neither is automatically replayed
+after the deadline. Migration `0029_execution_delivery_outcome_unknown`
+converts the legacy `DELIVERY_EXPIRED` failure representation to the
+reconcilable state.
 
 Copy allocation modes share the same route:
 

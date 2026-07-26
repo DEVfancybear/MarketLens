@@ -104,6 +104,7 @@ backend/
   migrations/0026_*           execution platform schema
   migrations/0027_*           irreversible legacy credential removal
   migrations/0028_*           successful EA command-poll liveness
+  migrations/0029_*           unknown delivery-outcome reconciliation
 ```
 
 The historical FTMO Connector/verifier code and routes no longer exist.

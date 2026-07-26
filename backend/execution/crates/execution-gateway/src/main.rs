@@ -1441,6 +1441,8 @@ impl GatewayState {
                         r#"
                         UPDATE execution_target_commands
                         SET status = $4,
+                            reject_code = NULL,
+                            reject_message = NULL,
                             broker_order_id = COALESCE($5, broker_order_id),
                             broker_deal_id = COALESCE($6, broker_deal_id),
                             terminal_ack_at = COALESCE(terminal_ack_at, now()),
@@ -1452,7 +1454,8 @@ impl GatewayState {
                           AND id = $3
                           AND (
                             terminal_ack_at IS NULL OR
-                            status = $4
+                            status = $4 OR
+                            (status = 'failed' AND reject_code = 'DELIVERY_EXPIRED')
                           )
                         "#,
                     )
@@ -2231,18 +2234,26 @@ async fn poll_commands(
             r#"
             WITH expired AS (
                 UPDATE execution_target_commands
-                SET status = 'failed',
+                SET status = CASE
+                        WHEN first_delivered_at IS NULL
+                            THEN 'failed'
+                        ELSE 'unknown'
+                    END,
                     reject_code = CASE
                         WHEN first_delivered_at IS NULL
                             THEN 'DELIVERY_UNAVAILABLE'
-                        ELSE 'DELIVERY_EXPIRED'
+                        ELSE 'DELIVERY_OUTCOME_UNKNOWN'
                     END,
                     reject_message = CASE
                         WHEN first_delivered_at IS NULL
                             THEN 'EA did not poll before the command delivery deadline'
-                        ELSE 'EA did not acknowledge the command before its delivery deadline'
+                        ELSE 'EA acknowledgement timed out; reconcile MT5 because the command may have executed'
                     END,
-                    terminal_ack_at = now(),
+                    terminal_ack_at = CASE
+                        WHEN first_delivered_at IS NULL
+                            THEN now()
+                        ELSE NULL
+                    END,
                     lease_owner = NULL,
                     lease_expires_at = NULL,
                     updated_at = now()
@@ -2250,6 +2261,10 @@ async fn poll_commands(
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
+                  AND (
+                      first_delivered_at IS NULL OR
+                      reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'
+                  )
                   AND COALESCE(first_delivered_at, created_at) <=
                       now() - ($3 * interval '1 millisecond')
                 RETURNING id, parent_command_id
@@ -4276,6 +4291,21 @@ mod tests {
         assert_eq!(wire["type"], "place");
         assert_eq!(wire["quantity"], "0.26");
         assert_eq!(wire["limitPrice"], "64466.48");
+    }
+
+    #[test]
+    fn delivery_outcome_migration_reopens_late_ack_reconciliation() {
+        let migration =
+            include_str!("../../../../migrations/0029_execution_delivery_outcome_unknown.up.sql");
+
+        assert!(migration.contains("status = 'unknown'"));
+        assert!(migration.contains("reject_code = 'DELIVERY_OUTCOME_UNKNOWN'"));
+        assert!(migration.contains("terminal_ack_at = NULL"));
+        assert!(migration.contains("reject_code = 'DELIVERY_EXPIRED'"));
+        assert!(
+            !migration.contains("SET status = 'failed'"),
+            "delivered commands must not be represented as broker failures"
+        );
     }
 
     fn instrument_snapshot() -> EaInstrumentSnapshot {

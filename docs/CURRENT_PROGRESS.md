@@ -23,7 +23,9 @@ Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
   common EA. No MT5 password is stored. Migration
   `0028_execution_ea_poll_liveness` separates generic session activity from a
   successful command poll; only EA 1.22+ with a poll in the last 15 seconds can
-  appear `READY` or receive Live/Demo commands.
+  appear `READY` or receive Live/Demo commands. Migration
+  `0029_execution_delivery_outcome_unknown` keeps delivered-but-unacknowledged
+  orders reconcilable without redelivery or a false broker-rejection status.
 
 - Backend-owned indicators: **generic Pine source path is active** for the
   documented historical subset, with replay candles truncated before any VM or

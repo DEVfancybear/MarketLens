@@ -3,6 +3,12 @@ import { atom, getDefaultStore } from "jotai";
 import { useAtomValue } from "jotai";
 import { useMemo } from "react";
 import { sendExecutionCommand } from "@/services/execution/runtime";
+import {
+  clearExecutionActivityForAccount,
+  EXECUTION_ACTIVITY_CLEAR_STORAGE_KEY,
+  parseExecutionActivityClearCutoffs,
+  shouldAppendExecutionActivity,
+} from "@/services/execution/activityLog";
 import { isVolumeOnStep } from "@/services/mt5/symbolMapping";
 import { selectedExecutionAccountAtom } from "./executionRegistryStore";
 import { uid } from "@/utils/id";
@@ -48,6 +54,9 @@ export const mt5LastHeartbeatAtom = atom<number | null>(null);
 export const mt5LastErrorAtom = atom<string | null>(null);
 export const mt5CommandLogAtom = atom<Mt5CommandLogEntry[]>([]);
 export const mt5PendingCommandsAtom = atom<Mt5PendingCommand[]>([]);
+const mt5LogClearCutoffAtom = atom<Record<string, number>>(
+  loadExecutionActivityClearCutoffs(),
+);
 
 export const mt5ExecutionBlockReasonAtom = atom((get): string | null => {
   const account = get(selectedExecutionAccountAtom);
@@ -75,8 +84,25 @@ export const setExecutionModeAtom = atom(
   },
 );
 
-export const clearMt5LogAtom = atom(null, (_get, set) => {
-  set(mt5CommandLogAtom, []);
+export const clearMt5LogAtom = atom(null, (get, set, accountId?: string) => {
+  const scope = accountId ?? get(selectedExecutionAccountAtom)?.id;
+  if (!scope) {
+    set(mt5CommandLogAtom, []);
+    return;
+  }
+  const cutoff = get(mt5CommandLogAtom)
+    .filter((entry) => entry.accountId === scope)
+    .reduce((latest, entry) => Math.max(latest, entry.time), Date.now());
+  set(mt5LogClearCutoffAtom, (current) => {
+    const next = parseExecutionActivityClearCutoffs(
+      JSON.stringify({ ...current, [scope]: cutoff }),
+    );
+    persistExecutionActivityClearCutoffs(next);
+    return next;
+  });
+  set(mt5CommandLogAtom, (current) =>
+    clearExecutionActivityForAccount(current, scope),
+  );
 });
 
 export const addMt5LogAtom = atom(
@@ -86,21 +112,30 @@ export const addMt5LogAtom = atom(
     set,
     entry: Omit<Mt5CommandLogEntry, "id" | "time"> & { time?: number },
   ) => {
-    set(mt5CommandLogAtom, (prev) =>
-      [
-        {
-          id: uid("mt5log"),
-          time: entry.time ?? Date.now(),
-          level: entry.level,
-          direction: entry.direction,
-          type: entry.type,
-          message: entry.message,
-          requestId: entry.requestId,
-          clientOrderId: entry.clientOrderId,
-        },
-        ...prev,
-      ].slice(0, MAX_LOGS),
-    );
+    const accountId =
+      entry.accountId ?? get(selectedExecutionAccountAtom)?.id;
+    const time = entry.time ?? Date.now();
+    set(mt5CommandLogAtom, (prev) => {
+      const next = {
+        id: uid("mt5log"),
+        time,
+        accountId,
+        dedupeKey: entry.dedupeKey,
+        level: entry.level,
+        direction: entry.direction,
+        type: entry.type,
+        message: entry.message,
+        requestId: entry.requestId,
+        clientOrderId: entry.clientOrderId,
+      };
+      return shouldAppendExecutionActivity(
+        prev,
+        next,
+        get(mt5LogClearCutoffAtom),
+      )
+        ? [next, ...prev].slice(0, MAX_LOGS)
+        : prev;
+    });
   },
 );
 
@@ -416,4 +451,30 @@ function validateMt5Stops(
     return `${side} stops invalid: SL must be above entry and TP below entry.`;
   }
   return null;
+}
+
+function loadExecutionActivityClearCutoffs(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    return parseExecutionActivityClearCutoffs(
+      window.localStorage.getItem(EXECUTION_ACTIVITY_CLEAR_STORAGE_KEY),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistExecutionActivityClearCutoffs(
+  cutoffs: Record<string, number>,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      EXECUTION_ACTIVITY_CLEAR_STORAGE_KEY,
+      JSON.stringify(cutoffs),
+    );
+  } catch {
+    // Local persistence is best effort; the in-memory cutoff still prevents
+    // the active poll loop from restoring cleared rows.
+  }
 }
