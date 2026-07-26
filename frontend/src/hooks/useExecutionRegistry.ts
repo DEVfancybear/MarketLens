@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
 import {
   getExecutionAccountState,
+  getExecutionAccountLayout,
   getExecutionAccounts,
   getExecutionInstruments,
   routeExecutionOrder,
@@ -26,6 +27,7 @@ import {
 import { setExecutionRuntimeHandlers } from "@/services/execution/runtime";
 import {
   applyExecutionAccountsAtom,
+  applyExecutionAccountLayoutAtom,
   copyTargetsAtom,
   executionAccountsAtom,
   selectedExecutionAccountAtom,
@@ -59,6 +61,7 @@ const STATE_REFRESH_INTERVAL_MS = 2_000;
 /** Hydrates the broker-neutral account registry through the authenticated BFF. */
 export function useExecutionRegistry() {
   const applyAccounts = useSetAtom(applyExecutionAccountsAtom);
+  const applyAccountLayout = useSetAtom(applyExecutionAccountLayoutAtom);
   const selected = useAtomValue(selectedExecutionAccountAtom);
   const selectedAccountId = selected?.id ?? null;
   const selectedVenueKind = selected?.venueKind ?? null;
@@ -79,8 +82,14 @@ export function useExecutionRegistry() {
       if (running || document.visibilityState === "hidden") return;
       running = true;
       try {
-        const accounts = await getExecutionAccounts();
-        if (!cancelled) applyAccounts(accounts);
+        const [accounts, layout] = await Promise.all([
+          getExecutionAccounts(),
+          getExecutionAccountLayout(),
+        ]);
+        if (!cancelled) {
+          applyAccounts(accounts);
+          applyAccountLayout(layout);
+        }
       } catch {
         // Preserve the last known registry during a transient BFF/gateway
         // outage. Account freshness drives status below; no order is unlocked
@@ -100,7 +109,12 @@ export function useExecutionRegistry() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [applyAccounts, backendSession, backendSessionResolved]);
+  }, [
+    applyAccountLayout,
+    applyAccounts,
+    backendSession,
+    backendSessionResolved,
+  ]);
 
   useEffect(() => {
     if (!selected || selected.venueKind !== "metatrader5") {

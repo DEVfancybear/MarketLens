@@ -67,6 +67,7 @@ struct GatewayInner {
     pairing_tokens: Mutex<HashMap<[u8; 32], PairingGrant>>,
     sessions: Mutex<HashMap<[u8; 32], EaSession>>,
     accounts: Mutex<HashMap<AccountId, EaAccountView>>,
+    account_layouts: Mutex<HashMap<String, AccountLayoutView>>,
     commands: Mutex<HashMap<AccountId, VecDeque<QueuedCommand>>>,
 }
 
@@ -115,6 +116,22 @@ struct HealthView {
 #[serde(rename_all = "camelCase")]
 struct AcceptedView {
     ok: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountLayoutView {
+    item_ids: Vec<String>,
+    revision: u64,
+    updated_at_ms: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AccountLayoutRequest {
+    owner_id: String,
+    item_ids: Vec<String>,
+    expected_revision: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -346,6 +363,10 @@ async fn main() {
     let admin_app = Router::new()
         .route("/health", get(health))
         .route("/v1/admin/accounts", get(list_accounts))
+        .route(
+            "/v1/admin/account-layout",
+            get(account_layout).post(update_account_layout),
+        )
         .route("/v1/admin/account-state", get(account_state))
         .route("/v1/admin/instruments", get(account_instruments))
         .route("/v1/admin/symbol-mappings", post(upsert_symbol_mapping))
@@ -458,6 +479,7 @@ impl GatewayState {
                 pairing_tokens: Mutex::new(HashMap::new()),
                 sessions: Mutex::new(HashMap::new()),
                 accounts: Mutex::new(HashMap::new()),
+                account_layouts: Mutex::new(HashMap::new()),
                 commands: Mutex::new(HashMap::new()),
             }),
         }
@@ -2598,6 +2620,238 @@ async fn list_accounts(
     Ok(Json(accounts))
 }
 
+async fn account_layout(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Query(query): Query<OwnerQuery>,
+) -> Result<Json<AccountLayoutView>, ApiError> {
+    require_admin(&state, &headers)?;
+    let owner_uuid = parse_owner_id(&query.owner_id)?;
+    if let Some(database) = &state.inner.database {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                item_ids,
+                revision,
+                floor(extract(epoch FROM updated_at) * 1000)::bigint AS updated_at_ms
+            FROM execution_account_layouts
+            WHERE user_id = $1
+            "#,
+        )
+        .bind(owner_uuid)
+        .fetch_optional(database)
+        .await
+        .map_err(|error| ApiError::database("load execution account layout", error))?;
+        return Ok(Json(match row {
+            Some(row) => {
+                AccountLayoutView {
+                    item_ids: row.try_get("item_ids").map_err(|error| {
+                        ApiError::database("decode account layout items", error)
+                    })?,
+                    revision: row.try_get::<i64, _>("revision").map_err(|error| {
+                        ApiError::database("decode account layout revision", error)
+                    })? as u64,
+                    updated_at_ms: row.try_get::<i64, _>("updated_at_ms").map_err(|error| {
+                        ApiError::database("decode account layout timestamp", error)
+                    })? as u64,
+                }
+            }
+            None => AccountLayoutView {
+                item_ids: Vec::new(),
+                revision: 0,
+                updated_at_ms: 0,
+            },
+        }));
+    }
+    Ok(Json(
+        state
+            .inner
+            .account_layouts
+            .lock()
+            .await
+            .get(&query.owner_id)
+            .cloned()
+            .unwrap_or(AccountLayoutView {
+                item_ids: Vec::new(),
+                revision: 0,
+                updated_at_ms: 0,
+            }),
+    ))
+}
+
+async fn update_account_layout(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<AccountLayoutRequest>,
+) -> Result<Json<AccountLayoutView>, ApiError> {
+    require_admin(&state, &headers)?;
+    let owner_uuid = parse_owner_id(&request.owner_id)?;
+    validate_account_layout_items(&request.item_ids)?;
+    let now = now_ms();
+    if let Some(database) = &state.inner.database {
+        let broker_ids = request
+            .item_ids
+            .iter()
+            .filter(|item| !item.starts_with("simulator:"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let owned_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM execution_accounts
+            WHERE user_id = $1
+              AND status <> 'disabled'
+              AND id = ANY($2)
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(&broker_ids)
+        .fetch_one(database)
+        .await
+        .map_err(|error| ApiError::database("authorize account layout items", error))?;
+        if owned_count as usize != broker_ids.len() {
+            return Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "ACCOUNT_LAYOUT_ITEM_NOT_FOUND",
+                "one or more account layout items do not belong to this owner",
+            ));
+        }
+
+        let mut transaction = database
+            .begin()
+            .await
+            .map_err(|error| ApiError::database("begin account layout update", error))?;
+        let owner_exists = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE id = $1 AND status = 'active' FOR UPDATE",
+        )
+        .bind(owner_uuid)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("lock account layout owner", error))?
+        .is_some();
+        if !owner_exists {
+            return Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "OWNER_NOT_FOUND",
+                "active owner was not found",
+            ));
+        }
+        let current_revision = sqlx::query_scalar::<_, i64>(
+            "SELECT revision FROM execution_account_layouts WHERE user_id = $1 FOR UPDATE",
+        )
+        .bind(owner_uuid)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("lock account layout", error))?
+        .unwrap_or(0);
+        if current_revision as u64 != request.expected_revision {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "ACCOUNT_LAYOUT_REVISION_CONFLICT",
+                "account layout changed on another client; refresh and retry",
+            ));
+        }
+        let next_revision = current_revision + 1;
+        let row = sqlx::query(
+            r#"
+            INSERT INTO execution_account_layouts (
+                user_id, item_ids, revision, updated_at
+            )
+            VALUES ($1, $2, $3, now())
+            ON CONFLICT (user_id) DO UPDATE
+            SET item_ids = EXCLUDED.item_ids,
+                revision = EXCLUDED.revision,
+                updated_at = now()
+            RETURNING
+                item_ids,
+                revision,
+                floor(extract(epoch FROM updated_at) * 1000)::bigint AS updated_at_ms
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(&request.item_ids)
+        .bind(next_revision)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("save account layout", error))?;
+        sqlx::query(
+            r#"
+            INSERT INTO execution_audit_log (
+                user_id, actor_type, actor_id, action,
+                resource_type, resource_id, details
+            )
+            VALUES (
+                $1, 'user', $1::text,
+                'account.layout_updated',
+                'execution_account_layout',
+                $1::text,
+                jsonb_build_object(
+                    'revision', $2::bigint,
+                    'itemCount', $3::integer
+                )
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(next_revision)
+        .bind(request.item_ids.len() as i32)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("audit account layout update", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| ApiError::database("commit account layout update", error))?;
+        return Ok(Json(AccountLayoutView {
+            item_ids: row
+                .try_get("item_ids")
+                .map_err(|error| ApiError::database("decode saved account layout items", error))?,
+            revision: row.try_get::<i64, _>("revision").map_err(|error| {
+                ApiError::database("decode saved account layout revision", error)
+            })? as u64,
+            updated_at_ms: row.try_get::<i64, _>("updated_at_ms").map_err(|error| {
+                ApiError::database("decode saved account layout timestamp", error)
+            })? as u64,
+        }));
+    }
+
+    let accounts = state.inner.accounts.lock().await;
+    let broker_ids = request
+        .item_ids
+        .iter()
+        .filter(|item| !item.starts_with("simulator:"));
+    if broker_ids.clone().any(|item| {
+        !accounts.values().any(|account| {
+            account.owner_id == request.owner_id && account.account_id.as_str() == item
+        })
+    }) {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "ACCOUNT_LAYOUT_ITEM_NOT_FOUND",
+            "one or more account layout items do not belong to this owner",
+        ));
+    }
+    drop(accounts);
+    let mut layouts = state.inner.account_layouts.lock().await;
+    let current_revision = layouts
+        .get(&request.owner_id)
+        .map_or(0, |layout| layout.revision);
+    if current_revision != request.expected_revision {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "ACCOUNT_LAYOUT_REVISION_CONFLICT",
+            "account layout changed on another client; refresh and retry",
+        ));
+    }
+    let layout = AccountLayoutView {
+        item_ids: request.item_ids,
+        revision: current_revision + 1,
+        updated_at_ms: now,
+    };
+    layouts.insert(request.owner_id, layout.clone());
+    Ok(Json(layout))
+}
+
 async fn disconnect_account(
     State(state): State<GatewayState>,
     headers: HeaderMap,
@@ -3383,6 +3637,39 @@ fn validate_identifier(field: &'static str, value: &str, maximum: usize) -> Resu
     Ok(())
 }
 
+fn validate_account_layout_items(item_ids: &[String]) -> Result<(), ApiError> {
+    if item_ids.len() > 129 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "ACCOUNT_LAYOUT_TOO_LARGE",
+            "account layout contains too many items",
+        ));
+    }
+    let mut unique = HashSet::with_capacity(item_ids.len());
+    let mut simulator_count = 0;
+    for item_id in item_ids {
+        validate_identifier("itemId", item_id, 128)?;
+        if !unique.insert(item_id.as_str()) {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "ACCOUNT_LAYOUT_DUPLICATE",
+                "account layout item ids must be unique",
+            ));
+        }
+        if item_id.starts_with("simulator:") {
+            simulator_count += 1;
+        }
+    }
+    if simulator_count > 1 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "ACCOUNT_LAYOUT_SIMULATOR_DUPLICATE",
+            "account layout may contain only one simulator",
+        ));
+    }
+    Ok(())
+}
+
 fn adapter_submission_error(error: AdapterError) -> (&'static str, String) {
     match error {
         AdapterError::AccountOffline => ("ACCOUNT_OFFLINE", "target account is offline".into()),
@@ -4136,6 +4423,15 @@ mod tests {
         headers
     }
 
+    fn admin_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-execution-admin-token",
+            ADMIN_TOKEN.parse().expect("valid admin token header"),
+        );
+        headers
+    }
+
     fn place_command(account_id: AccountId, command_id: &str) -> EaCommand {
         EaCommand::Place {
             order: RoutedOrder {
@@ -4221,6 +4517,67 @@ mod tests {
             )
             .await
             .expect("test state without PostgreSQL may safely no-op");
+    }
+
+    #[test]
+    fn account_layout_validation_rejects_duplicates_and_multiple_simulators() {
+        assert!(
+            validate_account_layout_items(&["mt5_account".into(), "mt5_account".into(),]).is_err()
+        );
+        assert!(
+            validate_account_layout_items(&["simulator:first".into(), "simulator:second".into(),])
+                .is_err()
+        );
+        assert!(
+            validate_account_layout_items(&["mt5_account".into(), "simulator:local".into(),])
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn account_layout_is_owner_scoped_and_revision_checked_in_memory() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let saved = update_account_layout(
+            State(state.clone()),
+            admin_headers(),
+            Json(AccountLayoutRequest {
+                owner_id: OWNER_A.into(),
+                item_ids: vec!["simulator:local".into()],
+                expected_revision: 0,
+            }),
+        )
+        .await
+        .expect("initial layout saves")
+        .0;
+        assert_eq!(saved.revision, 1);
+        assert_eq!(saved.item_ids, vec!["simulator:local"]);
+
+        let other = account_layout(
+            State(state.clone()),
+            admin_headers(),
+            Query(OwnerQuery {
+                owner_id: OWNER_B.into(),
+            }),
+        )
+        .await
+        .expect("other owner layout loads")
+        .0;
+        assert_eq!(other.revision, 0);
+        assert!(other.item_ids.is_empty());
+
+        let stale = update_account_layout(
+            State(state),
+            admin_headers(),
+            Json(AccountLayoutRequest {
+                owner_id: OWNER_A.into(),
+                item_ids: vec!["simulator:local".into()],
+                expected_revision: 0,
+            }),
+        )
+        .await
+        .expect_err("stale revision must fail");
+        assert_eq!(stale.status, StatusCode::CONFLICT);
+        assert_eq!(stale.body.code, "ACCOUNT_LAYOUT_REVISION_CONFLICT");
     }
 
     #[test]

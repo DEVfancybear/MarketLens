@@ -73,6 +73,17 @@ type PairingToken struct {
 	ExpiresAtMS int64  `json:"expiresAtMs"`
 }
 
+type AccountLayout struct {
+	ItemIDs     []string `json:"itemIds"`
+	Revision    uint64   `json:"revision"`
+	UpdatedAtMS int64    `json:"updatedAtMs"`
+}
+
+type AccountLayoutUpdate struct {
+	ItemIDs          []string `json:"itemIds"`
+	ExpectedRevision uint64   `json:"expectedRevision"`
+}
+
 type OrderRequest struct {
 	Intent  json.RawMessage `json:"intent"`
 	Targets json.RawMessage `json:"targets"`
@@ -169,6 +180,41 @@ func (c *Client) ListAccounts(ctx context.Context, ownerID string) ([]Account, e
 		})
 	}
 	return accounts, nil
+}
+
+func (c *Client) AccountLayout(ctx context.Context, ownerID string) (AccountLayout, error) {
+	endpoint := c.resolve("/v1/admin/account-layout")
+	query := endpoint.Query()
+	query.Set("ownerId", ownerID)
+	endpoint.RawQuery = query.Encode()
+	var layout AccountLayout
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &layout)
+	return layout, err
+}
+
+func (c *Client) UpdateAccountLayout(
+	ctx context.Context,
+	ownerID string,
+	request AccountLayoutUpdate,
+) (AccountLayout, error) {
+	body := struct {
+		OwnerID          string   `json:"ownerId"`
+		ItemIDs          []string `json:"itemIds"`
+		ExpectedRevision uint64   `json:"expectedRevision"`
+	}{
+		OwnerID:          ownerID,
+		ItemIDs:          request.ItemIDs,
+		ExpectedRevision: request.ExpectedRevision,
+	}
+	var layout AccountLayout
+	err := c.doJSON(
+		ctx,
+		http.MethodPost,
+		c.resolve("/v1/admin/account-layout"),
+		body,
+		&layout,
+	)
+	return layout, err
 }
 
 func eaVersionSupported(value string) bool {

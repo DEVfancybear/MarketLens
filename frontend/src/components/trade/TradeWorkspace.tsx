@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useEffect, useRef, useState } from "react";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   Activity,
   BookOpen,
@@ -11,6 +11,7 @@ import {
   Copy,
   Download,
   FileCheck2,
+  GripVertical,
   KeyRound,
   LoaderCircle,
   Plus,
@@ -40,6 +41,8 @@ import {
 } from "@/store/mt5Store";
 import {
   copyTargetsAtom,
+  executionAccountLayoutAtom,
+  executionAccountLayoutPendingAtom,
   executionAccountsAtom,
   selectedExecutionAccountIdAtom,
   setCopyTargetAtom,
@@ -49,12 +52,20 @@ import { fmtMoney } from "@/utils/format";
 import type { ExecutionAccountSummary } from "@/types/execution";
 import {
   getExecutionInstruments,
+  getExecutionAccountLayout,
+  updateExecutionAccountLayout,
   upsertExecutionSymbolMapping,
   type ExecutionAccountInstrumentsWire,
 } from "@/services/api/resources/executionApi";
 import { symbolAtom } from "@/store/chartStore";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
+import {
+  mergeExecutionAccountLayout,
+  moveExecutionAccountItem,
+  type AccountDropEdge,
+} from "@/services/execution/accountLayout";
+import { pushToastAtom } from "@/store/toastStore";
 
 type WorkspaceTab = "positions" | "copy" | "activity";
 
@@ -183,6 +194,27 @@ function ExecutionAccountRail() {
   const simAccount = useAtomValue(activeSimAccountAtom);
   const simEquity = useAtomValue(equityAtom);
   const gatewayAccounts = useAtomValue(executionAccountsAtom);
+  const [accountLayout, setAccountLayout] = useAtom(executionAccountLayoutAtom);
+  const [layoutPending, setLayoutPending] = useAtom(
+    executionAccountLayoutPendingAtom,
+  );
+  const pushToast = useSetAtom(pushToastAtom);
+  const dragSession = useRef<{
+    pointerId: number;
+    sourceId: string;
+    startY: number;
+    active: boolean;
+  } | null>(null);
+  const dropTargetRef = useRef<{
+    id: string;
+    edge: AccountDropEdge;
+  } | null>(null);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: string;
+    edge: AccountDropEdge;
+  } | null>(null);
+  const [reorderAnnouncement, setReorderAnnouncement] = useState("");
   const selectedGatewayId = useAtomValue(selectedExecutionAccountIdAtom);
   const selectGateway = useSetAtom(selectedExecutionAccountIdAtom);
   const setMode = useSetAtom(setExecutionModeAtom);
@@ -207,7 +239,79 @@ function ExecutionAccountRail() {
     equity: simEquity,
     tradeAllowed: true,
   };
-  const accounts = [simulator, ...gatewayAccounts];
+  const accounts = mergeExecutionAccountLayout(
+    [simulator, ...gatewayAccounts],
+    accountLayout.itemIds,
+  );
+
+  const saveLayout = async (itemIds: string[]) => {
+    if (layoutPending) return;
+    const previous = accountLayout;
+    setLayoutPending(true);
+    setAccountLayout({ itemIds, revision: previous.revision });
+    try {
+      const saved = await updateExecutionAccountLayout(
+        itemIds,
+        previous.revision,
+      );
+      setLayoutPending(false);
+      setAccountLayout(saved);
+      setReorderAnnouncement("Account order saved.");
+    } catch {
+      try {
+        const latest = await getExecutionAccountLayout();
+        setLayoutPending(false);
+        setAccountLayout(latest);
+      } catch {
+        setLayoutPending(false);
+        setAccountLayout(previous);
+      }
+      pushToast({
+        title: "Account order was not saved",
+        message:
+          "The order changed elsewhere or the execution service is unavailable. The latest server order was restored.",
+        variant: "error",
+      });
+    }
+  };
+
+  const finishDrag = (pointerId: number) => {
+    const session = dragSession.current;
+    if (!session || session.pointerId !== pointerId) return;
+    const target = dropTargetRef.current;
+    if (session.active && target) {
+      const next = moveExecutionAccountItem(
+        accounts.map((account) => account.id),
+        session.sourceId,
+        target.id,
+        target.edge,
+      );
+      void saveLayout(next);
+    }
+    dragSession.current = null;
+    dropTargetRef.current = null;
+    setDraggedId(null);
+    setDropTarget(null);
+  };
+
+  const keyboardMove = (accountId: string, direction: -1 | 1) => {
+    if (layoutPending) return;
+    const itemIds = accounts.map((account) => account.id);
+    const index = itemIds.indexOf(accountId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= itemIds.length) return;
+    const next = moveExecutionAccountItem(
+      itemIds,
+      accountId,
+      itemIds[targetIndex],
+      direction < 0 ? "before" : "after",
+    );
+    const account = accounts[index];
+    setReorderAnnouncement(
+      `${account.label} moved ${direction < 0 ? "up" : "down"}.`,
+    );
+    void saveLayout(next);
+  };
 
   const select = (account: ExecutionAccountSummary) => {
     if (account.venueKind === "simulator") {
@@ -225,6 +329,7 @@ function ExecutionAccountRail() {
           <div className="text-xs font-bold text-ink">Accounts</div>
           <div className="text-[9px] text-ink-faint">
             {accounts.length} execution {accounts.length === 1 ? "target" : "targets"}
+            {layoutPending && " · syncing order…"}
           </div>
         </div>
         <button
@@ -236,6 +341,9 @@ function ExecutionAccountRail() {
           Add
         </button>
       </div>
+      <span className="sr-only" aria-live="polite">
+        {reorderAnnouncement}
+      </span>
       {showSetup && (
         <div className="mx-2 mt-2 rounded-xl border border-brand/25 bg-brand/5 p-3 text-[10px] leading-4 text-ink-muted">
           <strong className="block text-[11px] text-ink">
@@ -369,19 +477,82 @@ function ExecutionAccountRail() {
           return (
             <div
               key={account.id}
+              data-execution-account-id={account.id}
               className={cn(
-                "relative w-full rounded-xl border transition-colors",
+                "relative w-full rounded-xl border transition-[border-color,background-color,opacity,transform]",
                 active
                   ? "border-brand/50 bg-brand/10"
                   : "border-terminal-border bg-terminal-panel-2/45 hover:border-terminal-border-strong hover:bg-terminal-hover",
+                draggedId === account.id && "scale-[0.99] opacity-50",
+                dropTarget?.id === account.id &&
+                  dropTarget.edge === "before" &&
+                  "before:absolute before:-top-1 before:left-2 before:right-2 before:z-10 before:h-0.5 before:rounded-full before:bg-brand",
+                dropTarget?.id === account.id &&
+                  dropTarget.edge === "after" &&
+                  "after:absolute after:-bottom-1 after:left-2 after:right-2 after:z-10 after:h-0.5 after:rounded-full after:bg-brand",
               )}
             >
+              <button
+                type="button"
+                disabled={layoutPending}
+                aria-label={`Reorder ${account.label}. Drag or use Arrow Up and Arrow Down.`}
+                title="Drag to reorder · Arrow Up/Down"
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                  event.preventDefault();
+                  keyboardMove(account.id, event.key === "ArrowUp" ? -1 : 1);
+                }}
+                onPointerDown={(event) => {
+                  if (layoutPending || event.button !== 0) return;
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  dragSession.current = {
+                    pointerId: event.pointerId,
+                    sourceId: account.id,
+                    startY: event.clientY,
+                    active: false,
+                  };
+                  setDraggedId(account.id);
+                }}
+                onPointerMove={(event) => {
+                  const session = dragSession.current;
+                  if (!session || session.pointerId !== event.pointerId) return;
+                  if (!session.active && Math.abs(event.clientY - session.startY) < 4) {
+                    return;
+                  }
+                  session.active = true;
+                  const element = document
+                    .elementFromPoint(event.clientX, event.clientY)
+                    ?.closest<HTMLElement>("[data-execution-account-id]");
+                  const targetId = element?.dataset.executionAccountId;
+                  if (!element || !targetId || targetId === session.sourceId) {
+                    dropTargetRef.current = null;
+                    setDropTarget(null);
+                    return;
+                  }
+                  const bounds = element.getBoundingClientRect();
+                  const target = {
+                    id: targetId,
+                    edge:
+                      event.clientY < bounds.top + bounds.height / 2
+                        ? ("before" as const)
+                        : ("after" as const),
+                  };
+                  dropTargetRef.current = target;
+                  setDropTarget(target);
+                }}
+                onPointerUp={(event) => finishDrag(event.pointerId)}
+                onPointerCancel={(event) => finishDrag(event.pointerId)}
+                className="absolute left-1 top-1/2 z-10 flex h-8 w-6 -translate-y-1/2 touch-none items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink disabled:cursor-wait disabled:opacity-40 focus-ring cursor-grab active:cursor-grabbing"
+              >
+                <GripVertical size={13} aria-hidden="true" />
+              </button>
               <button
                 type="button"
                 onClick={() => select(account)}
                 aria-pressed={active}
                 className={cn(
-                  "w-full p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
+                  "w-full py-3 pl-8 pr-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
                   account.venueKind !== "simulator" && "pr-10",
                 )}
               >

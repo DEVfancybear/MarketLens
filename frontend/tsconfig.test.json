@@ -76,6 +76,7 @@
     "src/services/execution/eaDistribution.ts",
     "src/services/execution/instrumentProjection.ts",
     "src/services/execution/outcomePresentation.ts",
+    "src/services/execution/accountLayout.ts",
     "src/types/execution.ts",
     "src/components/toolbar/indicatorSettingsInputRows.ts"
   ]

@@ -15,6 +15,8 @@ import (
 
 type Gateway interface {
 	ListAccounts(ctx context.Context, ownerID string) ([]Account, error)
+	AccountLayout(ctx context.Context, ownerID string) (AccountLayout, error)
+	UpdateAccountLayout(ctx context.Context, ownerID string, request AccountLayoutUpdate) (AccountLayout, error)
 	IssuePairingToken(ctx context.Context, ownerID string, expiresInSeconds int) (PairingToken, error)
 	DisconnectAccount(ctx context.Context, ownerID string, accountID string) error
 	RemoveAccount(ctx context.Context, ownerID string, accountID string) error
@@ -42,6 +44,8 @@ func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
 
 func (h *Handler) Register(router fiber.Router) {
 	router.Get("/execution/accounts", h.requireAuth, h.listAccounts)
+	router.Get("/execution/account-layout", h.requireAuth, h.accountLayout)
+	router.Post("/execution/account-layout", h.requireAuth, h.updateAccountLayout)
 	router.Get("/execution/account-state", h.requireAuth, h.accountState)
 	router.Get("/execution/instruments", h.requireAuth, h.accountInstruments)
 	router.Post("/execution/accounts/:accountId/disconnect", h.requireAuth, h.disconnectAccount)
@@ -218,6 +222,54 @@ func (h *Handler) listAccounts(c fiber.Ctx) error {
 	return c.JSON(struct {
 		Accounts []Account `json:"accounts"`
 	}{Accounts: accounts})
+}
+
+func (h *Handler) accountLayout(c fiber.Ctx) error {
+	layout, err := h.gateway.AccountLayout(c.Context(), authenticatedUserID(c))
+	if err != nil {
+		return gatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(layout)
+}
+
+func (h *Handler) updateAccountLayout(c fiber.Ctx) error {
+	var request AccountLayoutUpdate
+	if err := decodeStrict(c.Body(), &request); err != nil ||
+		!validAccountLayout(request.ItemIDs) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	layout, err := h.gateway.UpdateAccountLayout(
+		c.Context(),
+		authenticatedUserID(c),
+		request,
+	)
+	if err != nil {
+		return gatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(layout)
+}
+
+func validAccountLayout(itemIDs []string) bool {
+	if len(itemIDs) > 129 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(itemIDs))
+	simulators := 0
+	for _, itemID := range itemIDs {
+		if !validExecutionIdentifier(itemID, 128) {
+			return false
+		}
+		if _, exists := seen[itemID]; exists {
+			return false
+		}
+		seen[itemID] = struct{}{}
+		if strings.HasPrefix(itemID, "simulator:") {
+			simulators++
+		}
+	}
+	return simulators <= 1
 }
 
 func (h *Handler) disconnectAccount(c fiber.Ctx) error {

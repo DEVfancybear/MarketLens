@@ -6,6 +6,12 @@ interface ExecutionAccountsResponse {
   accounts: ExecutionAccountSummary[];
 }
 
+export interface ExecutionAccountLayout {
+  itemIds: string[];
+  revision: number;
+  updatedAtMs: number;
+}
+
 export interface ExecutionPairingToken {
   token: string;
   expiresAtMs: number;
@@ -22,6 +28,21 @@ export async function getExecutionAccounts(): Promise<
   );
   return response.accounts;
 }
+
+export const getExecutionAccountLayout = (): Promise<ExecutionAccountLayout> =>
+  getJson<ExecutionAccountLayout>("execution/account-layout", {
+    retry: { limit: 1, methods: ["get"] },
+  });
+
+export const updateExecutionAccountLayout = (
+  itemIds: string[],
+  expectedRevision: number,
+): Promise<ExecutionAccountLayout> =>
+  postJson<ExecutionAccountLayout>(
+    "execution/account-layout",
+    { itemIds, expectedRevision },
+    { retry: { limit: 0 } },
+  );
 
 export const issueExecutionPairingToken = (
   expiresInSeconds = 300,

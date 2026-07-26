@@ -8,6 +8,27 @@ import type {
 
 /** Broker-neutral projection populated from the Rust execution API. */
 export const executionAccountsAtom = atom<ExecutionAccountSummary[]>([]);
+export interface ExecutionAccountLayoutState {
+  itemIds: string[];
+  revision: number;
+}
+export const executionAccountLayoutAtom = atom<ExecutionAccountLayoutState>({
+  itemIds: [],
+  revision: 0,
+});
+export const executionAccountLayoutPendingAtom = atom(false);
+export const applyExecutionAccountLayoutAtom = atom(
+  null,
+  (
+    get,
+    set,
+    layout: ExecutionAccountLayoutState,
+  ) => {
+    if (get(executionAccountLayoutPendingAtom)) return;
+    if (layout.revision < get(executionAccountLayoutAtom).revision) return;
+    set(executionAccountLayoutAtom, layout);
+  },
+);
 export const selectedExecutionAccountIdAtom = atom<string | null>(null);
 export const selectedExecutionAccountAtom = atom((get) => {
   const selectedId = get(selectedExecutionAccountIdAtom);

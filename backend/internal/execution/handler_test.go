@@ -15,6 +15,9 @@ import (
 
 type fakeGateway struct {
 	accountsOwner     string
+	layoutOwner       string
+	layoutUpdate      AccountLayoutUpdate
+	layoutUpdateCalls int
 	pairingOwner      string
 	pairingTTL        int
 	pairingCalls      int
@@ -88,6 +91,22 @@ func (f *fakeGateway) ListAccounts(_ context.Context, ownerID string) ([]Account
 	return []Account{{ID: "mt5_account", VenueKind: "metatrader5"}}, f.err
 }
 
+func (f *fakeGateway) AccountLayout(_ context.Context, ownerID string) (AccountLayout, error) {
+	f.layoutOwner = ownerID
+	return AccountLayout{ItemIDs: []string{"simulator:local", "mt5_account"}, Revision: 2}, f.err
+}
+
+func (f *fakeGateway) UpdateAccountLayout(
+	_ context.Context,
+	ownerID string,
+	request AccountLayoutUpdate,
+) (AccountLayout, error) {
+	f.layoutOwner = ownerID
+	f.layoutUpdate = request
+	f.layoutUpdateCalls++
+	return AccountLayout{ItemIDs: request.ItemIDs, Revision: request.ExpectedRevision + 1}, f.err
+}
+
 func (f *fakeGateway) IssuePairingToken(
 	_ context.Context,
 	ownerID string,
@@ -143,6 +162,75 @@ func TestListAccountsAlwaysUsesAuthenticatedOwner(t *testing.T) {
 	}
 	if gateway.accountsOwner != "11111111-1111-4111-8111-111111111111" {
 		t.Fatalf("gateway owner = %q", gateway.accountsOwner)
+	}
+}
+
+func TestAccountLayoutAlwaysUsesAuthenticatedOwner(t *testing.T) {
+	gateway := &fakeGateway{}
+	response, err := testApp(gateway).Test(
+		httptest.NewRequest(http.MethodGet, "/api/v1/execution/account-layout?ownerId=attacker", nil),
+	)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
+	}
+	if gateway.layoutOwner != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("gateway owner = %q", gateway.layoutOwner)
+	}
+}
+
+func TestUpdateAccountLayoutValidatesAndInjectsOwner(t *testing.T) {
+	gateway := &fakeGateway{}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/account-layout",
+		strings.NewReader(`{"itemIds":["mt5_account","simulator:local"],"expectedRevision":3}`),
+	)
+	request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	response, err := testApp(gateway).Test(request)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
+	}
+	if gateway.layoutOwner != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("gateway owner = %q", gateway.layoutOwner)
+	}
+	if gateway.layoutUpdate.ExpectedRevision != 3 ||
+		strings.Join(gateway.layoutUpdate.ItemIDs, ",") != "mt5_account,simulator:local" {
+		t.Fatalf("unexpected layout update: %#v", gateway.layoutUpdate)
+	}
+}
+
+func TestUpdateAccountLayoutRejectsDuplicatesAndClientOwner(t *testing.T) {
+	for _, body := range []string{
+		`{"itemIds":["mt5_account","mt5_account"],"expectedRevision":0}`,
+		`{"ownerId":"attacker","itemIds":["mt5_account"],"expectedRevision":0}`,
+		`{"itemIds":["simulator:a","simulator:b"],"expectedRevision":0}`,
+	} {
+		gateway := &fakeGateway{}
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/execution/account-layout",
+			strings.NewReader(body),
+		)
+		request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+		response, err := testApp(gateway).Test(request)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want 400", body, response.StatusCode)
+		}
+		if gateway.layoutUpdateCalls != 0 {
+			t.Fatalf("body %s: gateway must not be called", body)
+		}
 	}
 }
 

@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Synced execution-account drag/drop order (2026-07-27)
+- Added pointer-based drag/drop ordering for every account in the Trade rail,
+  including the synthetic Simulator entry and all MT5 broker accounts. The
+  grip also supports Arrow Up/Down for keyboard users and exposes an accessible
+  saved-state announcement.
+- Persisted the complete per-user order in PostgreSQL through the authenticated
+  Go BFF and loopback-only Rust admin API. New accounts append safely, removed
+  accounts are ignored, and the two-second registry refresh now synchronizes
+  order across tabs and devices.
+- Added optimistic UI with rollback/refetch, monotonic revisions to prevent
+  silent cross-device overwrites, strict identifier/duplicate/size validation,
+  owner-scoped broker-account authorization, and an audit event for every
+  successful layout update.
+- Added migration `0030_execution_account_layout`, Rust owner/revision tests,
+  Go BFF authentication/validation tests, and frontend merge/reorder tests.
+
 ### Improved - Progressive MT5 chart cold load (2026-07-27)
 - Replaced the blank, full-window wait on a previously unseen MT5
   symbol/timeframe with a bounded viewport seed followed by a full `countBack`

@@ -91,6 +91,25 @@ minimum is `1.22`; a missing, malformed, or older version is blocked before
 command creation. This additive wire field allows a future EA release to raise
 the minimum without introducing broker-specific protocol forks.
 
+### Account rail ordering
+
+The Trade account rail is user-owned workspace state, not execution authority.
+It stores an ordered list of opaque item IDs in
+`execution_account_layouts`, including the current `simulator:<id>` item and
+broker execution-account IDs. The frontend merges this list with the live
+registry: missing/deleted entries are discarded and newly connected accounts
+append without requiring a migration or broker-specific code.
+
+The browser reads and writes the layout only through authenticated
+`GET/POST /api/v1/execution/account-layout`. Go ignores any client owner
+identity, injects the authenticated user ID, and forwards to the loopback Rust
+admin surface. Rust validates bounds, uniqueness and identifiers, permits at
+most one simulator item, and verifies every broker account belongs to that
+owner. Full-list writes use `expectedRevision`; stale devices receive `409`
+instead of silently overwriting a newer order. Successful writes are
+transactional and recorded as `account.layout_updated` in the execution audit
+log.
+
 ## Order and copy-routing flow
 
 1. The browser builds one canonical order intent and explicitly selected target
