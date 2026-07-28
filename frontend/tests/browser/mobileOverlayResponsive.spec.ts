@@ -180,6 +180,7 @@ test("drawing toolbar palettes stay viewport-fixed and clear of their trigger", 
   expect(
     popoverBox!.y >= toolbarBox!.y + toolbarBox!.height + 4 ||
       popoverBox!.y + popoverBox!.height <= toolbarBox!.y - 4,
+    `color picker overlaps drawing toolbar: ${JSON.stringify({ toolbarBox, popoverBox })}`,
   ).toBe(true);
 });
 
@@ -254,8 +255,14 @@ test("adaptive dialog remains reachable at compact portrait and landscape sizes"
       expect(colorBox?.width).toBe(44);
       expect(colorBox?.height).toBe(44);
       await expect(popover).toHaveAttribute("data-color-popover", "true");
+      await expect(popover.locator("[data-color-option]")).toHaveCount(80);
       await expect(popover.locator("xpath=ancestor::*[@role='dialog']")).toHaveCount(0);
-      await popover.locator("[data-color-option]").first().click();
+      await popover.getByRole("button", { name: "Add custom color" }).click();
+      await expect(popover).toHaveAttribute("data-color-picker-view", "custom");
+      const customHex = popover.getByRole("textbox", { name: "Custom color hex" });
+      await customHex.fill("#123abc");
+      await popover.getByRole("button", { name: "Add", exact: true }).click();
+      await expect(popover).toHaveCount(0);
 
       await dialog.getByRole("button", { name: "Template", exact: true }).click();
       const templatePopover = dialog.locator(".mobile-popover:visible");

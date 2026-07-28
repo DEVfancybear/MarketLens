@@ -140,6 +140,30 @@ the memo guard decides whether a frame is actually painted.
   **interaction machine / refs**, NOT the store — it is committed to the store only on
   pointerup (via `updateDrawing` + a history command)
 
+## Common color-picker contract
+
+Every chart color control must use
+`components/ui/ColorPicker.tsx`; tool-specific palettes and native
+`<input type="color">` controls are not allowed. The shared primitive owns:
+
+- the 8-by-10 TradingView-style preset palette,
+- opacity range and percentage controls,
+- the `+` custom-color view (HEX, saturation/value plane, and hue rail),
+- viewport-clamped desktop placement and the mobile bottom-popover layout,
+- keyboard/ARIA behavior, and
+- the bounded local list of custom colors shared by drawings, positions, and
+  indicators.
+
+`colorPickerModel.ts` is the pure color boundary. When a field exposes a
+separate opacity property, the picker returns six-digit HEX and updates that
+property independently. Otherwise it preserves alpha in standard
+`#RRGGBBAA` form, which both CSS and Canvas 2D consume directly. This avoids
+inventing tool-specific opacity storage while keeping the UI identical.
+
+Creation defaults in `DrawingToolbar` and `MobileDrawingPalette`, selected
+object controls in `DrawingSettingsToolbar`, the full drawing and position
+dialogs, and indicator input/style fields all compose this same primitive.
+
 ### Mutable preview contract
 
 TradingView-style drawing needs pointer feedback to feel immediate. The interaction manager keeps

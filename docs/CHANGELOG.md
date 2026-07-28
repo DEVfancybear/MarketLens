@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - One TradingView-style color picker for every chart tool (2026-07-29)
+
+- Replaced the separate drawing, position, indicator, desktop, and mobile color
+  controls with one shared color-picker primitive.
+- Added the 80-swatch TradingView-style palette, opacity slider and percentage
+  field, plus a custom-color view with editable HEX, saturation/value plane,
+  and vertical hue rail.
+- Custom colors added through the `+` view are retained locally and immediately
+  become available to every tool that opens the common picker.
+- Preserved alpha for tools without a separate opacity field using standard
+  eight-digit CSS hex colors, while fields with an explicit opacity property
+  continue to store opacity separately.
+- Added palette, color normalization, HSV conversion, and alpha regression
+  coverage, plus mobile browser assertions for the common picker contract.
+
 ### Fixed - Deterministic MT5 coalesced-waiter CI coverage (2026-07-29)
 
 - Removed a scheduler-dependent race from the canceled coalesced history

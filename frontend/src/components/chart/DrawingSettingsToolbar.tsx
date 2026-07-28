@@ -36,17 +36,8 @@ import { cn } from "@/utils/cn";
 import { useDrawingBulkActions } from "./drawing/bulk/useDrawingBulkActions";
 import { ChartPopupSurface } from "./ChartPopupSurface";
 import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+import { ColorPickerPopover } from "@/components/ui/ColorPicker";
 
-const COLORS = [
-  "#2962ff",
-  "#26a69a",
-  "#ef5350",
-  "#ff9800",
-  "#ab47bc",
-  "#ffeb3b",
-  "#ffffff",
-  "#787b86",
-];
 const WIDTHS = [1, 2, 3, 4];
 const FONT_SIZES = [10, 11, 12, 14, 16, 20, 24, 28, 32, 40];
 const STYLES: { value: LineStyle; label: string; dash: string }[] = [
@@ -195,12 +186,11 @@ export function DrawingSettingsToolbar() {
         </span>
       </ToolbarButton>
       {menu === "color" && (
-        <ColorPopover
+        <ColorPickerPopover
           value={sharedColor}
-          onPick={(c) => {
-            if (c) applyPrimaryColor(c);
-            setMenu(null);
-          }}
+          onChange={applyPrimaryColor}
+          onClose={() => setMenu(null)}
+          dataDrawingToolbarPopover
         />
       )}
 
@@ -259,13 +249,14 @@ export function DrawingSettingsToolbar() {
             </span>
           </ToolbarButton>
           {menu === "fill" && (
-            <ColorPopover
+            <ColorPickerPopover
               value={sharedFillColor}
               allowNone
-              onPick={(c) => {
-                applyFillColor(c);
-                setMenu(null);
-              }}
+              noneLabel="No fill"
+              onChange={applyFillColor}
+              onClear={() => applyFillColor(null)}
+              onClose={() => setMenu(null)}
+              dataDrawingToolbarPopover
             />
           )}
         </>
@@ -559,58 +550,6 @@ function Popover({ children }: { children: React.ReactNode }) {
   return mobile && typeof document !== "undefined"
     ? createPortal(surface, document.body)
     : surface;
-}
-
-function ColorPopover({
-  value,
-  onPick,
-  allowNone,
-}: {
-  value?: string;
-  onPick: (c: string | null) => void;
-  allowNone?: boolean;
-}) {
-  return (
-    <Popover>
-      <div data-color-grid className="grid grid-cols-4 gap-1.5 p-1">
-        {COLORS.map((c) => (
-          <button
-            data-color-option
-            key={c}
-            onClick={() => onPick(c)}
-            className="relative h-5 w-5 rounded-full border border-terminal-border"
-            style={{ background: c }}
-          >
-            {value?.toLowerCase() === c.toLowerCase() && (
-              <Check
-                size={12}
-                className="absolute inset-0 m-auto text-black/70"
-              />
-            )}
-          </button>
-        ))}
-      </div>
-      <div className="mt-1 flex items-center gap-2 border-t border-terminal-border px-1 pt-1.5">
-        <label className="flex items-center gap-1.5 text-[10px] text-ink-muted">
-          <input
-            type="color"
-            value={/^#[0-9a-f]{6}$/i.test(value ?? "") ? value : "#2962ff"}
-            onChange={(e) => onPick(e.target.value)}
-            className="h-5 w-6 cursor-pointer rounded border border-terminal-border bg-transparent p-0"
-          />
-          Custom
-        </label>
-        {allowNone && (
-          <button
-            onClick={() => onPick(null)}
-            className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-terminal-hover"
-          >
-            No fill
-          </button>
-        )}
-      </div>
-    </Popover>
-  );
 }
 
 function commonValue<T>(values: readonly T[]): T | undefined {

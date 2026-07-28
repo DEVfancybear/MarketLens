@@ -1161,6 +1161,7 @@ body {
   .mobile-popover[data-color-popover] {
     width: 270px !important;
     max-width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)) - 252px) !important;
   }
 
   .platform-dialog [data-coordinate-editor] input {

@@ -42,17 +42,7 @@ import {
 import type { DrawingTool } from "@/types";
 import { cn } from "@/utils/cn";
 import { usePlatformDialog } from "@/components/ui/PlatformDialog";
-
-const DRAWING_COLORS = [
-  "#2962ff",
-  "#26a69a",
-  "#ef5350",
-  "#ff9800",
-  "#ab47bc",
-  "#ffeb3b",
-  "#ffffff",
-  "#787b86",
-] as const;
+import { ColorPickerPopover } from "@/components/ui/ColorPicker";
 
 const AVAILABLE_TOOLS = DRAWING_TOOL_MANIFEST.filter(
   (entry) => entry.preferredForCreation && isDrawingToolCreationEnabled(entry.id),
@@ -80,6 +70,7 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
   const [favorites, toggleFavorite] = useDrawingToolFavorites();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const { requestConfirm, dialog } = usePlatformDialog();
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -153,18 +144,39 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
           <span><Palette size={17} aria-hidden="true" /></span>
           <div><h3 id="drawing-style-title">Creation defaults</h3><p>Shared with the desktop drawing engine</p></div>
         </div>
-        <div className="mobile-color-row" role="group" aria-label="Drawing color">
-          {DRAWING_COLORS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              aria-label={`Drawing color ${item}`}
-              aria-pressed={color.toLowerCase() === item.toLowerCase()}
-              className={cn(color.toLowerCase() === item.toLowerCase() && "is-active")}
-              style={{ "--drawing-swatch": item } as React.CSSProperties}
-              onClick={() => setColor(item)}
-            ><span /></button>
-          ))}
+        <div className="relative mb-3">
+          <button
+            type="button"
+            aria-label="Drawing color"
+            aria-expanded={colorPickerOpen}
+            onClick={() => setColorPickerOpen((current) => !current)}
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-terminal-border-strong bg-terminal-panel-2 px-3 text-left text-sm font-semibold text-ink transition-colors active:bg-terminal-pressed focus-ring"
+          >
+            <span
+              className="h-6 w-6 shrink-0 rounded-md border border-terminal-border-strong"
+              style={{ backgroundColor: color }}
+            />
+            <span className="min-w-0 flex-1">
+              Drawing color
+              <small className="ml-2 font-mono text-[11px] font-medium uppercase text-ink-faint">
+                {color}
+              </small>
+            </span>
+            <ChevronDown
+              size={17}
+              className={cn(
+                "text-ink-faint transition-transform",
+                colorPickerOpen && "rotate-180",
+              )}
+            />
+          </button>
+          {colorPickerOpen && (
+            <ColorPickerPopover
+              value={color}
+              onChange={setColor}
+              onClose={() => setColorPickerOpen(false)}
+            />
+          )}
         </div>
         <div className="mobile-control-grid">
           <ControlToggle

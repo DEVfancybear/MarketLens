@@ -44,6 +44,7 @@ import {
 } from "@/services/indicatorStyle";
 import { useDraggableDialog } from "@/hooks/useDraggableDialog";
 import { cn } from "@/utils/cn";
+import { ColorPickerControl } from "@/components/ui/ColorPicker";
 
 type SettingsTab = "inputs" | "style" | "visibility";
 
@@ -115,7 +116,7 @@ function styleFieldKey(
 
 function hexColor(value: IndicatorInputValue | undefined, fallback: string) {
   const color = String(value ?? fallback);
-  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+  return /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(color) ? color : fallback;
 }
 
 function coerceFieldValue(
@@ -638,15 +639,12 @@ function StyleRow({
 
       <div className="flex items-center gap-2">
         {field.supportsColor && (
-          <label className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-md border border-terminal-border-strong bg-terminal-panel-2">
-            <input
-              type="color"
-              value={color}
-              onChange={(event) => onChange(colorKey, event.target.value)}
-              className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
-              aria-label={`${field.title} color`}
-            />
-          </label>
+          <ColorPickerControl
+            value={color}
+            onChange={(nextColor) => onChange(colorKey, nextColor)}
+            label={`${field.title} color`}
+            triggerClassName="h-[30px] w-[30px] bg-terminal-panel-2"
+          />
         )}
         {field.supportsLineWidth && (
           <select
@@ -783,15 +781,12 @@ function InputControl({
 
   if (field.kind === "color") {
     return (
-      <label className="flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-md border border-terminal-border-strong bg-terminal-panel-2">
-        <input
-          type="color"
-          value={hexColor(value, hexColor(field.defaultValue, "#2962ff"))}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
-          aria-label={field.title || field.key}
-        />
-      </label>
+      <ColorPickerControl
+        value={hexColor(value, hexColor(field.defaultValue, "#2962ff"))}
+        onChange={onChange}
+        label={field.title || field.key}
+        triggerClassName="bg-terminal-panel-2"
+      />
     );
   }
 

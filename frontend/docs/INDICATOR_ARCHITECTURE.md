@@ -145,6 +145,12 @@ create a scalar color field for those plots, and the compiler ignores stale
 single-color overrides from older persisted instances when the evaluated Pine
 color is a series. Static plot colors remain editable normally.
 
+Static indicator input and plot-style colors use the same
+`components/ui/ColorPicker.tsx` primitive as drawing tools. Do not add native
+color inputs or an indicator-only palette. Six-digit and alpha-bearing
+eight-digit HEX values are accepted; the runtime receives the persisted color
+string unchanged.
+
 Runtime requests also carry backend-catalog market metadata: ticker, asset
 class, minimum tick, and timezone. These values back Pine `syminfo.*`,
 `format.mintick`, and time formatting for both built-ins and saved source. They

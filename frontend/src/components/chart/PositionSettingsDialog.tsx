@@ -47,27 +47,11 @@ import {
 } from "./drawing/settings/drawingSettingsTransaction";
 import { DrawingIntervalVisibilityFields } from "./drawing/settings/DrawingIntervalVisibilityFields";
 import { DrawingCoordinatesFields } from "./drawing/settings/DrawingCoordinatesFields";
+import {
+  ColorPickerPopover,
+  ColorSwatchButton,
+} from "@/components/ui/ColorPicker";
 
-const COLORS = [
-  "#ffffff",
-  "#d1d4dc",
-  "#9598a1",
-  "#5d606b",
-  "#363a45",
-  "#000000",
-  "#f23645",
-  "#ff9800",
-  "#ffeb3b",
-  "#26a69a",
-  "#2962ff",
-  "#ab47bc",
-  "#e91e63",
-  "#ff5722",
-  "#cddc39",
-  "#089981",
-  "#0c3299",
-  "#673ab7",
-];
 const FONT_SIZES = [10, 11, 12, 14, 16, 18, 20, 24, 28, 32];
 
 type Tab = "inputs" | "style" | "coordinates" | "visibility";
@@ -236,56 +220,16 @@ function ColorButton({
   onPick: (color: string) => void;
 }) {
   return (
-    <div className="relative">
-      <button
-        aria-label="Choose color"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-        className="relative h-[34px] w-[34px] overflow-hidden rounded-md border border-terminal-border-strong"
-        style={{
-          backgroundImage:
-            "linear-gradient(45deg,#343434 25%,transparent 25%,transparent 75%,#343434 75%,#343434),linear-gradient(45deg,#343434 25%,transparent 25%,transparent 75%,#343434 75%,#343434)",
-          backgroundSize: "8px 8px",
-          backgroundPosition: "0 0,4px 4px",
-        }}
-      >
-        <span className="absolute inset-[5px] rounded-sm" style={{ background: color }} />
-      </button>
+    <>
+      <ColorSwatchButton color={color} onClick={onToggle} />
       {open && (
-        <div
-          className="mobile-popover absolute left-0 top-full z-30 mt-1 w-[184px] rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="grid grid-cols-6 gap-1.5">
-            {COLORS.map((c) => (
-              <button
-                data-color-option
-                aria-label={`Use ${c}`}
-                key={c}
-                onClick={() => onPick(c)}
-                className="relative h-5 w-5 rounded border border-terminal-border-strong"
-                style={{ background: c }}
-              >
-                {color.toLowerCase() === c.toLowerCase() && (
-                  <Check size={11} className="absolute inset-0 m-auto text-black/70" />
-                )}
-              </button>
-            ))}
-          </div>
-          <label className="mt-2 flex items-center gap-2 border-t border-terminal-border-strong pt-2 text-[11px] text-ink-faint">
-            <input
-              type="color"
-              value={/^#[0-9a-f]{6}$/i.test(color) ? color : "#089981"}
-              onChange={(e) => onPick(e.target.value)}
-              className="h-6 w-8 cursor-pointer rounded border border-terminal-border-strong bg-transparent p-0"
-            />
-            Custom
-          </label>
-        </div>
+        <ColorPickerPopover
+          value={color}
+          onChange={onPick}
+          onClose={onToggle}
+        />
       )}
-    </div>
+    </>
   );
 }
 

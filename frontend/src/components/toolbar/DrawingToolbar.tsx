@@ -43,6 +43,7 @@ import {
   formatDrawingToolShortcut,
   isDrawingToolCreationEnabled,
 } from "@/types/drawingToolManifest";
+import { ColorPickerPopover } from "@/components/ui/ColorPicker";
 
 // ---- Tool groups (TradingView pattern) ----
 
@@ -93,15 +94,6 @@ const TOOL_BY_ID = new Map<DrawingTool, ToolItem>();
 for (const g of GROUPS)
   for (const t of g.tools) if (!TOOL_BY_ID.has(t.tool)) TOOL_BY_ID.set(t.tool, t);
 
-const COLORS = [
-  "#2962ff",
-  "#26a69a",
-  "#ef5350",
-  "#ff9800",
-  "#ab47bc",
-  "#ffffff",
-];
-
 /** Track which tool is "last used" per group for the visible icon. */
 function useLastUsed(): Record<string, DrawingTool> {
   const activeTool = useAtomValue(activeToolAtom);
@@ -147,6 +139,7 @@ export function DrawingToolbar() {
   const [favorites, toggleFavorite] = useDrawingToolFavorites();
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [magnetMenuOpen, setMagnetMenuOpen] = useState(false);
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -309,20 +302,22 @@ export function DrawingToolbar() {
       <div className="my-1.5 h-px w-7 bg-terminal-border" />
 
       {/* Colour picker */}
-      <div className="group relative">
-        <IconButton label="Colour">
+      <div className="relative">
+        <IconButton
+          label="Colour"
+          active={colorPickerOpen}
+          onClick={() => setColorPickerOpen((current) => !current)}
+        >
           <Palette size={18} style={{ color: drawColor }} />
         </IconButton>
-        <div className="pointer-events-none absolute left-full top-0 z-50 ml-2 hidden grid-cols-3 gap-2 rounded-xl border border-terminal-border-strong bg-terminal-raised p-2.5 opacity-0 shadow-terminal group-hover:pointer-events-auto group-hover:grid group-hover:opacity-100">
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              onClick={() => setDrawColor(c)}
-              className="h-7 w-7 rounded-full border-2 border-terminal-border transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-brand"
-              style={{ background: c }}
-            />
-          ))}
-        </div>
+        {colorPickerOpen && (
+          <ColorPickerPopover
+            value={drawColor}
+            side="right"
+            onChange={setDrawColor}
+            onClose={() => setColorPickerOpen(false)}
+          />
+        )}
       </div>
 
       <IconButton
