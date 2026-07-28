@@ -30,6 +30,7 @@ import {
   applyExecutionAccountLayoutAtom,
   copyTargetsAtom,
   executionAccountsAtom,
+  resetExecutionRegistryAtom,
   selectedExecutionAccountAtom,
 } from "@/store/executionRegistryStore";
 import {
@@ -39,6 +40,7 @@ import {
   mt5PendingCommandsAtom,
   mt5PendingOrdersAtom,
   mt5PositionsAtom,
+  resetMt5SessionAtom,
   mt5StatusAtom,
   mt5SymbolInfoAtom,
 } from "@/store/mt5Store";
@@ -62,6 +64,8 @@ const STATE_REFRESH_INTERVAL_MS = 2_000;
 export function useExecutionRegistry() {
   const applyAccounts = useSetAtom(applyExecutionAccountsAtom);
   const applyAccountLayout = useSetAtom(applyExecutionAccountLayoutAtom);
+  const resetExecutionRegistry = useSetAtom(resetExecutionRegistryAtom);
+  const resetMt5Session = useSetAtom(resetMt5SessionAtom);
   const selected = useAtomValue(selectedExecutionAccountAtom);
   const selectedAccountId = selected?.id ?? null;
   const selectedVenueKind = selected?.venueKind ?? null;
@@ -75,7 +79,12 @@ export function useExecutionRegistry() {
   useEffect(() => {
     // Auth bootstrap and the execution registry mount together. Wait for the
     // httpOnly backend session instead of creating an avoidable initial 401.
-    if (!backendSessionResolved || !backendSession) return;
+    if (!backendSession) {
+      resetExecutionRegistry();
+      resetMt5Session();
+      return;
+    }
+    if (!backendSessionResolved) return;
     let cancelled = false;
     let running = false;
     const refresh = async () => {
@@ -114,10 +123,16 @@ export function useExecutionRegistry() {
     applyAccounts,
     backendSession,
     backendSessionResolved,
+    resetExecutionRegistry,
+    resetMt5Session,
   ]);
 
   useEffect(() => {
-    if (!selected || selected.venueKind !== "metatrader5") {
+    if (
+      !backendSession ||
+      !selected ||
+      selected.venueKind !== "metatrader5"
+    ) {
       setMt5Account(null);
       setMt5Status("disabled");
       setLastHeartbeat(null);

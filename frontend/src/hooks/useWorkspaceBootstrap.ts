@@ -33,7 +33,7 @@ import {
   resetChartWorkspaceToDefaultsAtom,
   setTimeframeAtom,
 } from "@/store/chartStore";
-import { resetTradeAtom } from "@/store/tradeStore";
+import { clearRemoteSimTradingAtom } from "@/store/tradeStore";
 import { resetNotificationsToDefaultsAtom } from "@/store/notificationStore";
 import {
   applyRemoteLayoutsAtom,
@@ -77,7 +77,7 @@ export function useWorkspaceBootstrap(): void {
   const hydrateChart = useSetAtom(hydrateChartAtom);
   const loadActiveDrawings = useSetAtom(loadActiveSymbolDrawingsAtom);
   const resetChartWorkspace = useSetAtom(resetChartWorkspaceToDefaultsAtom);
-  const resetTrade = useSetAtom(resetTradeAtom);
+  const clearRemoteSimTrading = useSetAtom(clearRemoteSimTradingAtom);
   const resetPushNotifications = useSetAtom(resetNotificationsToDefaultsAtom);
   const applyLayouts = useSetAtom(applyRemoteLayoutsAtom);
   const loadDefaultLayout = useSetAtom(loadDefaultLayoutAtom);
@@ -106,7 +106,7 @@ export function useWorkspaceBootstrap(): void {
           applyLayouts([]);
           resetChartLayout();
           resetChartWorkspace({ clearLocal: true });
-          resetTrade();
+          clearRemoteSimTrading();
           resetPushNotifications();
         } else {
           // Initial/offline anonymous sessions may use the local cache. The
@@ -233,7 +233,7 @@ export function useWorkspaceBootstrap(): void {
     resetChartWorkspace,
     resetPushNotifications,
     resetSmc,
-    resetTrade,
+    clearRemoteSimTrading,
     resetUI,
     setWorkspaceReady,
     setTimeframe,

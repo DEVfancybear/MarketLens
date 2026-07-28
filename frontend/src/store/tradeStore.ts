@@ -303,6 +303,8 @@ export const applyRemoteSimTradingAtom = atom(
 export const clearRemoteSimTradingAtom = atom(null, (_get, set) => {
   const account = _get(activeSimAccountAtom);
   if (account) cancelDebouncedSync(account.id);
+  set(startingEquityAtom, STARTING_EQUITY);
+  set(resetTradeAtom);
   set(activeSimAccountAtom, null);
   set(activeSimOwnerAtom, null);
   set(simTradingHydratedAtom, false);

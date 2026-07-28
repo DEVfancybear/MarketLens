@@ -39,6 +39,15 @@ export const selectedExecutionAccountAtom = atom((get) => {
 });
 export const copyTargetsAtom = atom<Record<string, CopyTargetDraft>>({});
 
+/** Clears every execution-registry projection owned by the current user. */
+export const resetExecutionRegistryAtom = atom(null, (_get, set) => {
+  set(executionAccountsAtom, []);
+  set(executionAccountLayoutAtom, { itemIds: [], revision: 0 });
+  set(executionAccountLayoutPendingAtom, false);
+  set(selectedExecutionAccountIdAtom, null);
+  set(copyTargetsAtom, {});
+});
+
 export const applyExecutionAccountsAtom = atom(
   null,
   (get, set, accounts: ExecutionAccountSummary[]) => {

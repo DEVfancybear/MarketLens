@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Clear user-owned Trade data on sign out (2026-07-28)
+- Invalidated the previous backend-session flag immediately when the Firebase
+  identity changes, closing the account-switch window before the new identity
+  finishes its own backend exchange.
+- Added explicit logout resets for the execution-account registry, selected
+  account, account-rail layout, copy targets, MT5 account/risk/portfolio
+  snapshots, instrument metadata, Activity history, pending commands and local
+  session state. A signed-out Trade workspace no longer renders broker, server
+  or equity data from the previous user.
+- Reset the remote Simulator identity, positions and equity to the anonymous
+  `$10,000` default. Added regressions proving identity switches invalidate the
+  old backend session and registry reset removes every previous-user account
+  projection.
+
 ### Fixed - Trade account-card drag/drop interaction (2026-07-28)
 - Made the full Trade account card start a reorder gesture, matching Watchlist
   rows, instead of limiting pointer drag to the small grip button.

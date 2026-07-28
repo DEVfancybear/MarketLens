@@ -39,6 +39,10 @@ export const setAuthUserAtom = atom(null, (get, set, user: AuthUser | null) => {
   if (get(authUserAtom)?.uid !== user?.uid) {
     set(workspaceReadyAtom, false);
     set(backendSessionResolvedAtom, user === null);
+    // A backend cookie belongs to the previous Firebase identity until the
+    // new identity completes its own exchange. Never let user-scoped stores
+    // treat that transition window as an authenticated backend session.
+    set(backendSessionAtom, false);
   }
   set(authUserAtom, user);
   set(authStatusAtom, user ? "authed" : "anonymous");

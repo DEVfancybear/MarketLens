@@ -58,6 +58,21 @@ const mt5LogClearCutoffAtom = atom<Record<string, number>>(
   loadExecutionActivityClearCutoffs(),
 );
 
+/** Clears all user/session-owned MT5 projections after logout or identity loss. */
+export const resetMt5SessionAtom = atom(null, (_get, set) => {
+  set(executionModeAtom, "simulator");
+  set(mt5StatusAtom, "disabled");
+  set(mt5AccountAtom, null);
+  set(mt5RiskSnapshotAtom, null);
+  set(mt5PositionsAtom, []);
+  set(mt5PendingOrdersAtom, []);
+  set(mt5SymbolInfoAtom, {});
+  set(mt5LastHeartbeatAtom, null);
+  set(mt5LastErrorAtom, null);
+  set(mt5CommandLogAtom, []);
+  set(mt5PendingCommandsAtom, []);
+});
+
 export const mt5ExecutionBlockReasonAtom = atom((get): string | null => {
   const account = get(selectedExecutionAccountAtom);
   if (!account || account.venueKind !== "metatrader5")

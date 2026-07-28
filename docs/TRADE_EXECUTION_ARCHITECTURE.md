@@ -38,6 +38,16 @@ The browser never receives the Rust admin token and never supplies an owner ID.
 Go derives the owner from the authenticated server session, validates the
 browser payload, and injects the owner only on the loopback call to Rust.
 
+Trade projections in the browser are session-scoped as well as server-owned.
+Logout or any Firebase identity change immediately invalidates the frontend
+backend-session flag and clears the account registry, selection/layout, copy
+targets, Simulator account/positions/equity, MT5 account/risk/portfolio and
+instrument snapshots, Activity history and pending commands. Polling is stopped
+before reset, and in-flight responses are cancellation-guarded, so an old
+identity cannot repopulate the signed-out or next-user workspace. Server owner
+checks remain the authoritative execution boundary; the frontend reset prevents
+previous-user metadata from remaining visible on a shared browser.
+
 The public EA surface and the loopback admin surface are separate listeners:
 
 | Surface | Default | Caller | Exposure |
