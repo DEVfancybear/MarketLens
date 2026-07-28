@@ -198,3 +198,17 @@ func (s *Service) RevokeAllSessions(ctx context.Context, userID string) error {
 func (s *Service) GetUser(ctx context.Context, userID string) (User, error) {
 	return s.users.GetUser(ctx, userID)
 }
+
+// VerifyUserIdentity requires a live Firebase proof for the exact backend user.
+// Passkey enrollment uses this second bearer proof so a copied backend cookie
+// alone cannot register an attacker's authenticator.
+func (s *Service) VerifyUserIdentity(ctx context.Context, idToken, userID string) (User, error) {
+	user, _, err := s.resolveGoogleUser(ctx, idToken)
+	if err != nil {
+		return User{}, err
+	}
+	if user.ID != userID {
+		return User{}, ErrUnauthorized
+	}
+	return user, nil
+}

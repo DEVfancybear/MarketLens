@@ -27,6 +27,8 @@ type Gateway interface {
 	QueueCommand(ctx context.Context, ownerID string, request CommandRequest) (json.RawMessage, error)
 }
 
+const tradeAuthorizationHeader = "X-Trade-Authorization"
+
 type Handler struct {
 	gateway              Gateway
 	requireAuth          fiber.Handler
@@ -207,8 +209,17 @@ func (h *Handler) accountState(c fiber.Ctx) error {
 func (h *Handler) queueCommand(c fiber.Ctx) error {
 	var request CommandRequest
 	if err := decodeStrict(c.Body(), &request); err != nil ||
-		len(request.Command) == 0 || !json.Valid(request.Command) {
+		len(request.Command) == 0 || !json.Valid(request.Command) ||
+		request.AuthorizationToken != "" || request.AuthorizationSessionID != "" {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	request.AuthorizationToken = strings.TrimSpace(c.Get(tradeAuthorizationHeader))
+	request.AuthorizationSessionID = authenticatedSessionID(c)
+	if !validTradeAuthorizationToken(request.AuthorizationToken) {
+		return fiber.NewError(
+			fiber.StatusPreconditionRequired,
+			"passkey authorization required",
+		)
 	}
 	response, err := h.gateway.QueueCommand(
 		c.Context(),
@@ -227,8 +238,17 @@ func (h *Handler) routeOrder(c fiber.Ctx) error {
 	var request OrderRequest
 	if err := decodeStrict(c.Body(), &request); err != nil ||
 		len(request.Intent) == 0 || len(request.Targets) == 0 ||
-		!json.Valid(request.Intent) || !json.Valid(request.Targets) {
+		!json.Valid(request.Intent) || !json.Valid(request.Targets) ||
+		request.AuthorizationToken != "" || request.AuthorizationSessionID != "" {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	request.AuthorizationToken = strings.TrimSpace(c.Get(tradeAuthorizationHeader))
+	request.AuthorizationSessionID = authenticatedSessionID(c)
+	if !validTradeAuthorizationToken(request.AuthorizationToken) {
+		return fiber.NewError(
+			fiber.StatusPreconditionRequired,
+			"passkey authorization required",
+		)
 	}
 	response, err := h.gateway.RouteOrder(
 		c.Context(),
@@ -386,6 +406,11 @@ func authenticatedUserID(c fiber.Ctx) string {
 	return id
 }
 
+func authenticatedSessionID(c fiber.Ctx) string {
+	sessionID, _ := c.Locals(auth.LocalSessionID).(string)
+	return sessionID
+}
+
 func validExecutionIdentifier(value string, maximum int) bool {
 	if value == "" || len(value) > maximum {
 		return false
@@ -415,10 +440,31 @@ func validSymbol(value string) bool {
 	return true
 }
 
+func validTradeAuthorizationToken(value string) bool {
+	if len(value) != 43 {
+		return false
+	}
+	for _, character := range []byte(value) {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func gatewayHTTPError(err error) error {
 	var gatewayErr *GatewayError
 	if errors.As(err, &gatewayErr) {
 		switch gatewayErr.Status {
+		case fiber.StatusForbidden:
+			return fiber.NewError(
+				fiber.StatusForbidden,
+				"passkey authorization was rejected",
+			)
 		case fiber.StatusNotFound:
 			return fiber.NewError(fiber.StatusNotFound, "execution account was not found")
 		case fiber.StatusTooManyRequests:

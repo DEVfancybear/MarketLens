@@ -265,14 +265,16 @@ struct SymbolMappingRequest {
     venue_symbol: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AdminCommandRequest {
     owner_id: String,
     command: EaCommand,
+    authorization_token: String,
+    authorization_session_id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AdminOrderTarget {
     account_id: AccountId,
@@ -287,6 +289,8 @@ struct AdminOrderRequest {
     owner_id: String,
     intent: OrderIntent,
     targets: Vec<AdminOrderTarget>,
+    authorization_token: String,
+    authorization_session_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1952,6 +1956,68 @@ impl GatewayState {
             .await
             .retain(|_, session| session.expires_at_ms > now);
     }
+
+    async fn consume_trade_authorization(
+        &self,
+        owner_uuid: Uuid,
+        session_uuid: Uuid,
+        operation: &str,
+        payload: serde_json::Value,
+        raw_token: &str,
+    ) -> Result<(), ApiError> {
+        if raw_token.len() != 43 {
+            return Err(trade_authorization_rejected());
+        }
+        let Some(database) = &self.inner.database else {
+            #[cfg(test)]
+            {
+                return Ok(());
+            }
+            #[cfg(not(test))]
+            {
+                return Err(ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "TRADE_AUTHORIZATION_STORE_UNAVAILABLE",
+                    "trade authorization store is unavailable",
+                ));
+            }
+        };
+        let token_hash = sha256(raw_token.as_bytes());
+        let consumed = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            UPDATE trade_authorizations
+            SET consumed_at = now()
+            WHERE token_hash = $1
+              AND user_id = $2
+              AND session_id = $3
+              AND operation = $4
+              AND payload = $5
+              AND consumed_at IS NULL
+              AND expires_at > now()
+              AND EXISTS (
+                SELECT 1
+                FROM sessions
+                WHERE id = $3
+                  AND user_id = $2
+                  AND revoked_at IS NULL
+                  AND expires_at > now()
+              )
+            RETURNING id
+            "#,
+        )
+        .bind(token_hash.to_vec())
+        .bind(owner_uuid)
+        .bind(session_uuid)
+        .bind(operation)
+        .bind(sqlx::types::Json(payload))
+        .fetch_optional(database)
+        .await
+        .map_err(|error| ApiError::database("consume trade authorization", error))?;
+        if consumed.is_none() {
+            return Err(trade_authorization_rejected());
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -3270,6 +3336,8 @@ async fn route_admin_order(
 ) -> Result<(StatusCode, Json<AdminOrderResponse>), ApiError> {
     require_admin(&state, &headers)?;
     let owner_uuid = parse_owner_id(&request.owner_id)?;
+    let session_uuid = Uuid::parse_str(&request.authorization_session_id)
+        .map_err(|_| trade_authorization_rejected())?;
     validate_admin_order_request(&request)?;
 
     let source_equity = state
@@ -3331,7 +3399,20 @@ async fn route_admin_order(
         }
     }
 
-    for result in route_order(&request.intent, source_equity, &contexts) {
+    let routed = route_order(&request.intent, source_equity, &contexts);
+    state
+        .consume_trade_authorization(
+            owner_uuid,
+            session_uuid,
+            "order",
+            strip_json_nulls(serde_json::json!({
+                "intent": &request.intent,
+                "targets": &request.targets,
+            })),
+            &request.authorization_token,
+        )
+        .await?;
+    for result in routed {
         match result {
             TargetRouteResult::Ready { account_id, order } => {
                 let order = *order;
@@ -3417,6 +3498,8 @@ async fn queue_command(
 ) -> Result<(StatusCode, Json<AcceptedView>), ApiError> {
     require_admin(&state, &headers)?;
     let owner_uuid = parse_owner_id(&request.owner_id)?;
+    let session_uuid = Uuid::parse_str(&request.authorization_session_id)
+        .map_err(|_| trade_authorization_rejected())?;
     validate_admin_command(&request.command)?;
     let account_id = command_target_account(&request.command)
         .cloned()
@@ -3461,6 +3544,15 @@ async fn queue_command(
         .validate_lifecycle_resource(owner_uuid, &request.command)
         .await?;
     state
+        .consume_trade_authorization(
+            owner_uuid,
+            session_uuid,
+            "command",
+            strip_json_nulls(serde_json::json!({ "command": &request.command })),
+            &request.authorization_token,
+        )
+        .await?;
+    state
         .enqueue(&account_id, request.command)
         .await
         .map_err(ApiError::from_adapter)?;
@@ -3501,6 +3593,32 @@ fn validate_admin_order_request(request: &AdminOrderRequest) -> Result<(), ApiEr
         }
     }
     Ok(())
+}
+
+fn trade_authorization_rejected() -> ApiError {
+    ApiError::new(
+        StatusCode::FORBIDDEN,
+        "TRADE_AUTHORIZATION_INVALID",
+        "trade authorization is missing, expired, already used, or does not match the payload",
+    )
+}
+
+fn strip_json_nulls(mut value: serde_json::Value) -> serde_json::Value {
+    match &mut value {
+        serde_json::Value::Object(object) => {
+            object.retain(|_, child| !child.is_null());
+            for child in object.values_mut() {
+                *child = strip_json_nulls(std::mem::take(child));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                *child = strip_json_nulls(std::mem::take(child));
+            }
+        }
+        _ => {}
+    }
+    value
 }
 
 fn validate_admin_command(command: &EaCommand) -> Result<(), ApiError> {
@@ -4490,6 +4608,8 @@ mod tests {
                 metadata: BTreeMap::new(),
             },
             targets,
+            authorization_token: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+            authorization_session_id: Uuid::new_v4().to_string(),
         }
     }
 
@@ -4662,6 +4782,36 @@ mod tests {
         assert!(
             !migration.contains("SET status = 'failed'"),
             "delivered commands must not be represented as broker failures"
+        );
+    }
+
+    #[test]
+    fn trade_authorization_migration_enforces_exact_one_time_payloads() {
+        let migration =
+            include_str!("../../../../migrations/0031_trade_passkey_authorization.up.sql");
+        assert!(migration.contains("payload               jsonb NOT NULL"));
+        assert!(migration.contains("token_hash            bytea NOT NULL UNIQUE"));
+        assert!(migration.contains("consumed_at"));
+        assert!(migration.contains("REFERENCES sessions(id) ON DELETE CASCADE"));
+    }
+
+    #[test]
+    fn authorization_payload_serialization_omits_optional_nulls() {
+        let normalized = strip_json_nulls(serde_json::json!({
+            "command": {
+                "type": "closePosition",
+                "optional": null,
+                "nested": [{"keep": "value", "drop": null}]
+            }
+        }));
+        assert_eq!(
+            normalized,
+            serde_json::json!({
+                "command": {
+                    "type": "closePosition",
+                    "nested": [{"keep": "value"}]
+                }
+            })
         );
     }
 
@@ -5175,6 +5325,8 @@ mod tests {
             Json(AdminCommandRequest {
                 owner_id: OWNER_B.into(),
                 command: close_command(session.account_id, "cmd-cross-owner"),
+                authorization_token: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+                authorization_session_id: Uuid::new_v4().to_string(),
             }),
         )
         .await

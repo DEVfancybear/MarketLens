@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Strict CSP and passkey-bound trade step-up (2026-07-28)
+
+- Added WebAuthn passkey enrollment and user-verification ceremonies for every live order and
+  execution command.
+- Added one-time 256-bit authorization tokens bound to the exact transaction payload, user,
+  active session, operation, and short expiry.
+- Made the Rust execution gateway atomically consume authorizations before enqueueing; payload
+  mutation, replay, expiry, revoked sessions, and unavailable authorization storage fail closed.
+- Added encrypted-at-rest WebAuthn credentials and ceremony state plus production configuration
+  validation for RP origins and encryption secrets.
+- Added an enforced per-request nonce CSP with production `strict-dynamic`, development-only
+  `unsafe-eval`, blocked script attributes/framing/objects, and a dedicated Firebase worker policy.
+
 ### Fixed - Clear user-owned Trade data on sign out (2026-07-28)
 - Invalidated the previous backend-session flag immediately when the Firebase
   identity changes, closing the account-switch window before the new identity

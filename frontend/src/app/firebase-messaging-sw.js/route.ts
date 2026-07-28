@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { firebaseWorkerContentSecurityPolicy } from "@/services/security/contentSecurityPolicy";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,8 @@ export function GET() {
       "Content-Type": "application/javascript; charset=utf-8",
       "Service-Worker-Allowed": "/",
       "Cache-Control": "no-store",
+      "Content-Security-Policy": firebaseWorkerContentSecurityPolicy,
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

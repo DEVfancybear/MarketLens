@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { connection } from 'next/server';
 import './globals.css';
 import { Providers } from './providers';
 
@@ -17,7 +18,9 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // A nonce is unique per request, so the root must not be statically cached.
+  await connection();
   return (
     <html lang="en" className="theme-dark" suppressHydrationWarning>
       <body>

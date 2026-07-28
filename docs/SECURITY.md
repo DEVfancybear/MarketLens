@@ -103,11 +103,14 @@ Set production secrets, verify `CORS_ALLOWED_ORIGINS` contains only the deployed
 confirm the runtime reports Go 1.26.5 or newer, and retain the scan output with the release evidence
 before exposing the service publicly.
 
-## Residual high-value transaction control
+## High-value transaction control
 
-The confirmation dialog is a safety affordance, not an independent authorization factor. The
-authoritative Rust gateway still binds identity, account ownership, exact command payload,
-idempotency, lifecycle resources, and risk policy at execution time. For stronger resistance to an
-already-compromised same-origin browser, add WebAuthn/passkey step-up authorization bound to the
-exact order payload, short expiry, and one-time challenge. A second ordinary API endpoint or another
-cookie-only confirmation would not provide meaningful protection from same-origin XSS.
+The confirmation dialog remains a safety affordance. Live orders and execution commands now also
+require WebAuthn user verification. Go issues a short-lived one-time token bound to the exact JSON
+payload, user, and active session; Rust atomically consumes it before enqueueing and fails closed on
+reuse, mutation, expiry, revocation, or unavailable database state. See
+[PASSKEY_TRANSACTION_AUTHORIZATION.md](PASSKEY_TRANSACTION_AUTHORIZATION.md).
+
+The frontend also enforces a per-request nonce CSP with production `strict-dynamic`, no script
+attributes, no `unsafe-eval`, no framing, and no object embedding. This substantially reduces XSS
+reach but does not make arbitrary same-origin compromise impossible.

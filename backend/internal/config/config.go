@@ -39,6 +39,11 @@ type Config struct {
 	AlertEvaluatorTimeout  time.Duration
 	AuthAccessTTL          time.Duration
 	AuthRefreshTTL         time.Duration
+	WebAuthnRPID           string
+	WebAuthnRPOrigins      []string
+	WebAuthnEncryptionKey  string
+	WebAuthnChallengeTTL   time.Duration
+	TradeAuthorizationTTL  time.Duration
 
 	FirebaseProjectID   string
 	FirebaseClientEmail string
@@ -121,6 +126,11 @@ func Load() (Config, error) {
 		AlertEvaluatorTimeout:  getEnvDuration("ALERT_EVALUATOR_TIMEOUT", 30*time.Second),
 		AuthAccessTTL:          getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
 		AuthRefreshTTL:         getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
+		WebAuthnRPID:           strings.TrimSpace(getEnv("WEBAUTHN_RP_ID", defaultWebAuthnRPID(corsAllowedOrigins))),
+		WebAuthnRPOrigins:      splitAndTrim(getEnv("WEBAUTHN_RP_ORIGINS", strings.Join(corsAllowedOrigins, ","))),
+		WebAuthnEncryptionKey:  strings.TrimSpace(os.Getenv("WEBAUTHN_ENCRYPTION_KEY")),
+		WebAuthnChallengeTTL:   getEnvDuration("WEBAUTHN_CHALLENGE_TTL", 2*time.Minute),
+		TradeAuthorizationTTL:  getEnvDuration("TRADE_AUTHORIZATION_TTL", 45*time.Second),
 		FirebaseProjectID:      os.Getenv("FIREBASE_PROJECT_ID"),
 		FirebaseClientEmail:    os.Getenv("FIREBASE_CLIENT_EMAIL"),
 		// The private key is stored \n-escaped (same as the frontend push key);
@@ -196,6 +206,9 @@ func (c Config) validate() error {
 		if c.AuthRefreshTTL <= c.AuthAccessTTL || c.AuthRefreshTTL > 90*24*time.Hour {
 			return fmt.Errorf("AUTH_REFRESH_TTL must be longer than AUTH_ACCESS_TTL and at most 2160h")
 		}
+		if err := validateWebAuthnConfig(c); err != nil {
+			return err
+		}
 	}
 	if strings.TrimSpace(c.ExecutionAdminToken) != "" {
 		if len(c.ExecutionAdminToken) < 32 {
@@ -206,6 +219,9 @@ func (c Config) validate() error {
 		}
 		if err := validateLoopbackServiceURL("EXECUTION_ADMIN_URL", c.ExecutionAdminURL); err != nil {
 			return err
+		}
+		if c.IsProduction() && len(c.WebAuthnEncryptionKey) < 32 {
+			return fmt.Errorf("WEBAUTHN_ENCRYPTION_KEY must contain at least 32 characters when execution is configured")
 		}
 	}
 
@@ -259,6 +275,43 @@ func (c Config) validate() error {
 	}
 	if !c.AuthCookiesSecure() {
 		return fmt.Errorf("AUTH_COOKIE_SECURE cannot be disabled in production")
+	}
+	return nil
+}
+
+func defaultWebAuthnRPID(origins []string) string {
+	for _, origin := range origins {
+		parsed, err := url.Parse(origin)
+		if err == nil && parsed.Hostname() != "" {
+			return strings.ToLower(parsed.Hostname())
+		}
+	}
+	return "localhost"
+}
+
+func validateWebAuthnConfig(c Config) error {
+	rpID := strings.ToLower(strings.TrimSpace(c.WebAuthnRPID))
+	if rpID == "" || strings.ContainsAny(rpID, "/:@") {
+		return fmt.Errorf("WEBAUTHN_RP_ID must be a hostname without scheme, port, or path")
+	}
+	if len(c.WebAuthnRPOrigins) == 0 {
+		return fmt.Errorf("WEBAUTHN_RP_ORIGINS must contain at least one origin")
+	}
+	for _, origin := range c.WebAuthnRPOrigins {
+		if err := validateCORSOrigin(origin); err != nil {
+			return fmt.Errorf("invalid WEBAUTHN_RP_ORIGINS value: %w", err)
+		}
+		parsed, _ := url.Parse(origin)
+		host := strings.ToLower(parsed.Hostname())
+		if host != rpID && !strings.HasSuffix(host, "."+rpID) {
+			return fmt.Errorf("WEBAUTHN_RP_ORIGINS host %q is outside RP ID %q", host, rpID)
+		}
+	}
+	if c.WebAuthnChallengeTTL < 30*time.Second || c.WebAuthnChallengeTTL > 5*time.Minute {
+		return fmt.Errorf("WEBAUTHN_CHALLENGE_TTL must be between 30s and 5m")
+	}
+	if c.TradeAuthorizationTTL < 10*time.Second || c.TradeAuthorizationTTL > 2*time.Minute {
+		return fmt.Errorf("TRADE_AUTHORIZATION_TTL must be between 10s and 2m")
 	}
 	return nil
 }

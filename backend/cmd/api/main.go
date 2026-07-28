@@ -28,6 +28,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/simtrading"
 	objectstorage "github.com/smc-trading-terminal/backend/internal/storage"
+	"github.com/smc-trading-terminal/backend/internal/tradeauth"
 	"github.com/smc-trading-terminal/backend/internal/users"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
@@ -90,6 +91,7 @@ func main() {
 	var journalHandler *journal.Handler
 	var simTradingHandler *simtrading.Handler
 	var executionHandler *execution.Handler
+	var tradeAuthHandler *tradeauth.Handler
 	var pineScriptsStore *pinescripts.Repo
 	var screenshotSigner objectstorage.Signer
 	if cfg.ObjectStorageConfigured() {
@@ -151,6 +153,15 @@ func main() {
 		journalHandler = journal.NewHandler(journal.NewRepo(pool.Pool), screenshotSigner, requireAuth)
 		simTradingHandler = simtrading.NewHandler(simtrading.NewRepo(pool.Pool), requireAuth)
 		if cfg.ExecutionAdminToken != "" {
+			tradeAuthService, tradeAuthErr := tradeauth.NewService(pool.Pool, svc, cfg)
+			if tradeAuthErr != nil {
+				stdlog.Fatalf("trade passkey init error: %v", tradeAuthErr)
+			}
+			tradeAuthHandler = tradeauth.NewHandler(
+				tradeAuthService,
+				requireAuth,
+				requireActiveSession,
+			)
 			executionClient, executionErr := execution.NewClient(
 				cfg.ExecutionAdminURL,
 				cfg.ExecutionAdminToken,
@@ -200,6 +211,7 @@ func main() {
 		journalHandler,
 		simTradingHandler,
 		executionHandler,
+		tradeAuthHandler,
 		replayHandler,
 		mt5Handler,
 		pineRuntimeHandler,

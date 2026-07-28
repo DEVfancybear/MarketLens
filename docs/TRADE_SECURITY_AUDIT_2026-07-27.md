@@ -92,14 +92,14 @@ unauthorized.
 - service clients reject redirects, bound bodies/responses, and use timeouts;
 - audit records cover pairing, mappings, routing, commands, rejects, and EA outcomes.
 
-## Residual risk and next security milestone
+## Follow-up milestone completed — 2026-07-28
 
-No static review can guarantee that a financial application is “unhackable.” The largest remaining
-application-level risk is a fully compromised same-origin browser (for example, successful XSS).
-Such code can act as the signed-in user even when cookies are HttpOnly.
+The recommended strict CSP and WebAuthn transaction step-up are implemented. Each authorization is
+bound to the exact `jsonb` payload, user, active session, operation, short expiry, and one-time
+token. The Rust execution boundary consumes it atomically before enqueueing. Passkey ceremonies
+require user verification, and their state and credential material are encrypted at rest.
 
-The next milestone should be a strict nonce/hash-based CSP followed by WebAuthn/passkey step-up
-authorization. Each challenge must bind the exact normalized order payload, owner, target accounts,
-short expiry, and one-time nonce, and the Rust execution boundary must consume it atomically. This
-requires a product-level UX and credential-enrolment flow; a second cookie-only confirmation API
-would not be an independent security factor.
+The frontend now uses a fresh nonce per document with production `strict-dynamic`; script
+attributes, object embedding, and framing are blocked, and `unsafe-eval` is development-only. See
+[PASSKEY_TRANSACTION_AUTHORIZATION.md](PASSKEY_TRANSACTION_AUTHORIZATION.md) for the protocol and
+rollout checklist.

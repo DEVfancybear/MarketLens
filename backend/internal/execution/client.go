@@ -85,12 +85,16 @@ type AccountLayoutUpdate struct {
 }
 
 type OrderRequest struct {
-	Intent  json.RawMessage `json:"intent"`
-	Targets json.RawMessage `json:"targets"`
+	Intent                 json.RawMessage `json:"intent"`
+	Targets                json.RawMessage `json:"targets"`
+	AuthorizationToken     string          `json:"authorizationToken"`
+	AuthorizationSessionID string          `json:"authorizationSessionId"`
 }
 
 type CommandRequest struct {
-	Command json.RawMessage `json:"command"`
+	Command                json.RawMessage `json:"command"`
+	AuthorizationToken     string          `json:"authorizationToken"`
+	AuthorizationSessionID string          `json:"authorizationSessionId"`
 }
 
 type SymbolMappingRequest struct {

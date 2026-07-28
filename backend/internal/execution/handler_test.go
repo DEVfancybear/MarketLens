@@ -14,27 +14,29 @@ import (
 )
 
 type fakeGateway struct {
-	accountsOwner     string
-	layoutOwner       string
-	layoutUpdate      AccountLayoutUpdate
-	layoutUpdateCalls int
-	pairingOwner      string
-	pairingTTL        int
-	pairingCalls      int
-	disconnectOwner   string
-	disconnectAccount string
-	removeOwner       string
-	removeAccount     string
-	orderOwner        string
-	stateOwner        string
-	stateAccount      string
-	commandOwner      string
-	commandCalls      int
-	instrumentOwner   string
-	instrumentAccount string
-	mappingOwner      string
-	mappingRequest    SymbolMappingRequest
-	err               error
+	accountsOwner        string
+	layoutOwner          string
+	layoutUpdate         AccountLayoutUpdate
+	layoutUpdateCalls    int
+	pairingOwner         string
+	pairingTTL           int
+	pairingCalls         int
+	disconnectOwner      string
+	disconnectAccount    string
+	removeOwner          string
+	removeAccount        string
+	orderOwner           string
+	orderAuthorization   OrderRequest
+	stateOwner           string
+	stateAccount         string
+	commandOwner         string
+	commandAuthorization CommandRequest
+	commandCalls         int
+	instrumentOwner      string
+	instrumentAccount    string
+	mappingOwner         string
+	mappingRequest       SymbolMappingRequest
+	err                  error
 }
 
 func (f *fakeGateway) AccountState(
@@ -50,9 +52,10 @@ func (f *fakeGateway) AccountState(
 func (f *fakeGateway) QueueCommand(
 	_ context.Context,
 	ownerID string,
-	_ CommandRequest,
+	request CommandRequest,
 ) (json.RawMessage, error) {
 	f.commandOwner = ownerID
+	f.commandAuthorization = request
 	f.commandCalls++
 	return json.RawMessage(`{"ok":true}`), f.err
 }
@@ -80,9 +83,10 @@ func (f *fakeGateway) UpsertSymbolMapping(
 func (f *fakeGateway) RouteOrder(
 	_ context.Context,
 	ownerID string,
-	_ OrderRequest,
+	request OrderRequest,
 ) (json.RawMessage, error) {
 	f.orderOwner = ownerID
+	f.orderAuthorization = request
 	return json.RawMessage(`{"commandId":"command-1","targets":[]}`), f.err
 }
 
@@ -143,10 +147,27 @@ func testApp(gateway Gateway) *fiber.App {
 	requireAuth := func(c fiber.Ctx) error {
 		c.Locals(auth.LocalUserID, "11111111-1111-4111-8111-111111111111")
 		c.Locals(auth.LocalSessionID, "22222222-2222-4222-8222-222222222222")
+		c.Request().Header.Set(
+			tradeAuthorizationHeader,
+			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		)
 		return c.Next()
 	}
 	requireActiveSession := func(c fiber.Ctx) error { return c.Next() }
 	NewHandler(gateway, requireAuth, requireActiveSession).Register(app.Group("/api/v1"))
+	return app
+}
+
+func testAppWithoutTradeAuthorization(gateway Gateway) *fiber.App {
+	app := fiber.New()
+	requireAuth := func(c fiber.Ctx) error {
+		c.Locals(auth.LocalUserID, "11111111-1111-4111-8111-111111111111")
+		c.Locals(auth.LocalSessionID, "22222222-2222-4222-8222-222222222222")
+		return c.Next()
+	}
+	NewHandler(gateway, requireAuth, func(c fiber.Ctx) error {
+		return c.Next()
+	}).Register(app.Group("/api/v1"))
 	return app
 }
 
@@ -470,6 +491,10 @@ func TestOrderOwnerAlwaysComesFromAuthenticatedSession(t *testing.T) {
 	if gateway.orderOwner != "11111111-1111-4111-8111-111111111111" {
 		t.Fatalf("gateway owner = %q", gateway.orderOwner)
 	}
+	if gateway.orderAuthorization.AuthorizationSessionID !=
+		"22222222-2222-4222-8222-222222222222" {
+		t.Fatalf("authorization session = %q", gateway.orderAuthorization.AuthorizationSessionID)
+	}
 
 	attackerRequest := httptest.NewRequest(
 		http.MethodPost,
@@ -486,6 +511,43 @@ func TestOrderOwnerAlwaysComesFromAuthenticatedSession(t *testing.T) {
 	defer attackerResponse.Body.Close()
 	if attackerResponse.StatusCode != http.StatusBadRequest {
 		t.Fatalf("attacker status = %d, want 400", attackerResponse.StatusCode)
+	}
+}
+
+func TestTradingRoutesFailClosedWithoutPasskeyAuthorization(t *testing.T) {
+	for _, testCase := range []struct {
+		path string
+		body string
+	}{
+		{
+			path: "/api/v1/execution/orders",
+			body: `{"intent":{"commandId":"command-1"},"targets":[{"accountId":"mt5_account"}]}`,
+		},
+		{
+			path: "/api/v1/execution/commands",
+			body: `{"command":{"type":"cancelOrder"}}`,
+		},
+	} {
+		t.Run(testCase.path, func(t *testing.T) {
+			gateway := &fakeGateway{}
+			request := httptest.NewRequest(
+				http.MethodPost,
+				testCase.path,
+				strings.NewReader(testCase.body),
+			)
+			request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+			response, err := testAppWithoutTradeAuthorization(gateway).Test(request)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusPreconditionRequired {
+				t.Fatalf("status = %d, want 428", response.StatusCode)
+			}
+			if gateway.orderOwner != "" || gateway.commandCalls != 0 {
+				t.Fatal("request without passkey authorization reached gateway")
+			}
+		})
 	}
 }
 

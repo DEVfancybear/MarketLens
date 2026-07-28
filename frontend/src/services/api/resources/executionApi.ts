@@ -1,6 +1,7 @@
 import { deleteJson, getJson, postJson } from "@/services/api/client";
 import type { ExecutionAccountSummary } from "@/types/execution";
 import type { ExecutionOrderWireRequest } from "@/services/execution/orderRouting";
+import { authorizeTradeTransaction } from "@/services/security/tradePasskey";
 
 interface ExecutionAccountsResponse {
   accounts: ExecutionAccountSummary[];
@@ -185,11 +186,16 @@ export const getExecutionAccountState = (
 
 export const submitExecutionCommand = (
   command: Record<string, unknown>,
-): Promise<{ ok: true }> =>
-  postJson<{ ok: true }>("execution/commands", { command }, {
-    retry: { limit: 0 },
-    timeout: 15_000,
-  });
+): Promise<{ ok: true }> => {
+  const payload = { command };
+  return authorizeTradeTransaction("command", payload).then((authorization) =>
+    postJson<{ ok: true }>("execution/commands", payload, {
+      headers: { "X-Trade-Authorization": authorization },
+      retry: { limit: 0 },
+      timeout: 15_000,
+    }),
+  );
+};
 
 export const getExecutionInstruments = (
   accountId: string,
@@ -211,7 +217,13 @@ export const upsertExecutionSymbolMapping = (input: {
 export const routeExecutionOrder = (
   request: ExecutionOrderWireRequest,
 ): Promise<ExecutionOrderResponse> =>
-  postJson<ExecutionOrderResponse>("execution/orders", request, {
-    retry: { limit: 0 },
-    timeout: 15_000,
-  });
+  authorizeTradeTransaction(
+    "order",
+    request as unknown as Record<string, unknown>,
+  ).then((authorization) =>
+    postJson<ExecutionOrderResponse>("execution/orders", request, {
+      headers: { "X-Trade-Authorization": authorization },
+      retry: { limit: 0 },
+      timeout: 15_000,
+    }),
+  );

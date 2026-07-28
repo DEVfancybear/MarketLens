@@ -28,6 +28,7 @@ import (
 	"github.com/smc-trading-terminal/backend/internal/settings"
 	"github.com/smc-trading-terminal/backend/internal/simtrading"
 	"github.com/smc-trading-terminal/backend/internal/timenavigation"
+	"github.com/smc-trading-terminal/backend/internal/tradeauth"
 	"github.com/smc-trading-terminal/backend/internal/watchlists"
 	"github.com/smc-trading-terminal/backend/internal/workspace"
 )
@@ -56,6 +57,7 @@ func New(
 	journalHandler *journal.Handler,
 	simTradingHandler *simtrading.Handler,
 	executionHandler *execution.Handler,
+	tradeAuthHandler *tradeauth.Handler,
 	replayHandler *replay.Handler,
 	mt5Handler *mt5stream.Handler,
 	pineRuntimeHandler *pineruntime.Handler,
@@ -94,6 +96,7 @@ func New(
 		AllowHeaders: []string{
 			fiber.HeaderContentType,
 			fiber.HeaderAuthorization,
+			"X-Trade-Authorization",
 		},
 	}))
 
@@ -145,6 +148,9 @@ func New(
 	}
 	if executionHandler != nil {
 		executionHandler.Register(api)
+	}
+	if tradeAuthHandler != nil {
+		tradeAuthHandler.Register(api)
 	}
 	if replayHandler != nil {
 		replayHandler.Register(api)
