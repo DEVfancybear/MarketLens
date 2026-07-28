@@ -70,6 +70,30 @@ func (q *Queries) GetSessionByHash(ctx context.Context, refreshTokenHash string)
 	return i, err
 }
 
+const isSessionActive = `-- name: IsSessionActive :one
+SELECT EXISTS (
+  SELECT 1
+  FROM sessions
+  WHERE id = $1
+    AND user_id = $2
+    AND revoked_at IS NULL
+    AND expires_at > $3
+)
+`
+
+type IsSessionActiveParams struct {
+	SessionID pgtype.UUID        `json:"session_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CheckedAt pgtype.Timestamptz `json:"checked_at"`
+}
+
+func (q *Queries) IsSessionActive(ctx context.Context, arg IsSessionActiveParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isSessionActive, arg.SessionID, arg.UserID, arg.CheckedAt)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec
 UPDATE sessions SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL

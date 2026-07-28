@@ -15,22 +15,28 @@ export function authUserInitials(user: AuthUser | null): string {
 
 export async function signOutFromTerminal() {
   try {
-    try {
-      await flushChartSettings();
-    } catch (error) {
-      reportFrontendError(error, {
-        title: "Chart preference sync failed",
-        logPrefix: "Chart preference sync failed before sign-out",
-      });
-    }
-    try {
-      await backendLogout();
-    } catch (error) {
-      reportFrontendError(error, {
-        title: "Backend sign-out failed",
-        logPrefix: "Backend sign-out failed",
-      });
-    }
+    await flushChartSettings();
+  } catch (error) {
+    reportFrontendError(error, {
+      title: "Chart preference sync failed",
+      logPrefix: "Chart preference sync failed before sign-out",
+    });
+  }
+
+  try {
+    // Fail closed: do not present the browser as signed out while its HttpOnly
+    // backend session may still authorize real execution. The user stays
+    // visibly signed in and can retry once the backend is reachable.
+    await backendLogout();
+  } catch (error) {
+    reportFrontendError(error, {
+      title: "Backend sign-out failed",
+      logPrefix: "Backend sign-out failed",
+    });
+    return;
+  }
+
+  try {
     await signOutUser();
   } catch (error) {
     reportFrontendError(error, {

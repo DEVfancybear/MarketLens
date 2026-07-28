@@ -22,6 +22,16 @@ prove the absence of every vulnerability.
   retryable `503`.
 - Refresh-token replacement is an atomic PostgreSQL lock/revoke/insert operation. Concurrent replay
   cannot mint two descendants, and disabled/deleted users cannot refresh.
+- Every execution request re-checks that the JWT `sid` and `sub` still identify the same active,
+  unexpired PostgreSQL session. Logout, refresh rotation, and server-side revocation therefore stop
+  account/position reads as well as new orders, commands, pairing, mappings, layout changes,
+  disconnects, and removals immediately; a session-store outage fails execution closed.
+- Execution requests are throttled per authenticated user before the active-session database read.
+  All mutations share a lower ceiling, orders/commands have a stricter ceiling, and pairing-token
+  issuance has the strictest ceiling. Keep Cloudflare/WAF limits enabled as the distributed outer
+  layer.
+- Frontend logout is fail-closed: Firebase sign-out is not presented as successful when the backend
+  could not revoke the HttpOnly execution session.
 - Auth establishment endpoints have a per-client in-process rate limit. Keep a Cloudflare/WAF rate
   limit enabled as the distributed outer layer.
 - Next push-device endpoints require a Firebase ID token. Device records are associated with the
@@ -92,3 +102,12 @@ govulncheck ./...
 Set production secrets, verify `CORS_ALLOWED_ORIGINS` contains only the deployed frontend origin,
 confirm the runtime reports Go 1.26.5 or newer, and retain the scan output with the release evidence
 before exposing the service publicly.
+
+## Residual high-value transaction control
+
+The confirmation dialog is a safety affordance, not an independent authorization factor. The
+authoritative Rust gateway still binds identity, account ownership, exact command payload,
+idempotency, lifecycle resources, and risk policy at execution time. For stronger resistance to an
+already-compromised same-origin browser, add WebAuthn/passkey step-up authorization bound to the
+exact order payload, short expiry, and one-time challenge. A second ordinary API endpoint or another
+cookie-only confirmation would not provide meaningful protection from same-origin XSS.

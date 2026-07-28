@@ -6,6 +6,16 @@ RETURNING *;
 -- name: GetSessionByHash :one
 SELECT * FROM sessions WHERE refresh_token_hash = $1;
 
+-- name: IsSessionActive :one
+SELECT EXISTS (
+  SELECT 1
+  FROM sessions
+  WHERE id = sqlc.arg(session_id)
+    AND user_id = sqlc.arg(user_id)
+    AND revoked_at IS NULL
+    AND expires_at > sqlc.arg(checked_at)
+);
+
 -- name: RotateSession :one
 WITH current_session AS (
   SELECT id, user_id

@@ -89,7 +89,9 @@ schema change.
 - **Access JWT** is stateless, signed with `AUTH_JWT_SECRET` (HS256) — required claims include
   `iss=tradingterminal-api`, `aud=tradingterminal-web`, `sub` (user id), `sid` (session id),
   `iat`, and `exp`. Tokens longer than 8 KiB are rejected before parsing. Access JWTs are never
-  stored in DB.
+  stored in DB. Because execution is financially sensitive, every execution request additionally
+  verifies that the exact `(sid, sub)` session row remains active and unexpired; logout and refresh
+  rotation therefore invalidate both Trade reads and mutations immediately.
 - **Refresh token** is a 256-bit random string. Only its SHA-256 hash is stored
   (`sessions.refresh_token_hash`), so a database leak cannot directly replay it. Rotation locks,
   revokes, and inserts the replacement in one PostgreSQL statement. Concurrent use therefore
@@ -163,13 +165,15 @@ internal/
     verify.go      # Firebase ID-token verification
     jwt.go         # mint/parse access JWTs
     cookies.go     # set/clear httpOnly cookies
-    middleware.go  # RequireAuth — validates access cookie, injects user id into ctx
+    middleware.go  # RequireAuth + active-session verification for sensitive routes
   users/
     repo.go        # sqlc-backed user + identity queries
 ```
 
 `RequireAuth` middleware validates the access cookie and stores `user_id` in the Fiber context
-`Locals`; every protected route group in `API.md` sits behind it.
+`Locals`; every protected route group in `API.md` sits behind it. Execution routes then run
+`RequireActiveSession`, which binds `session_id` and `user_id` to the live PostgreSQL row and fails
+closed if session state cannot be verified.
 
 ---
 
@@ -217,7 +221,8 @@ src/components/auth/
 - The application limiter is defense-in-depth for one API process. Keep a distributed Cloudflare
   WAF/rate-limit rule in front of production auth endpoints.
 - Firebase revocation is checked only when establishing/re-establishing a backend session, not on
-  every protected resource call. Backend access JWTs remain bounded by the short access TTL.
+  every protected resource call. Backend access JWTs remain bounded by the short access TTL, while
+  execution additionally checks backend session revocation on every request.
 
 ---
 

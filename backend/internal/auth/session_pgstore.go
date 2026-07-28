@@ -55,6 +55,27 @@ func (p *PgSessionStore) GetSessionByHash(ctx context.Context, refreshHash strin
 	return toDomainSession(row), nil
 }
 
+func (p *PgSessionStore) IsSessionActive(
+	ctx context.Context,
+	sessionID string,
+	userID string,
+	checkedAt time.Time,
+) (bool, error) {
+	sid, err := toPgUUID(sessionID)
+	if err != nil {
+		return false, err
+	}
+	uid, err := toPgUUID(userID)
+	if err != nil {
+		return false, err
+	}
+	return p.q.IsSessionActive(ctx, gen.IsSessionActiveParams{
+		SessionID: sid,
+		UserID:    uid,
+		CheckedAt: pgTimestamptz(checkedAt),
+	})
+}
+
 func (p *PgSessionStore) RotateSession(
 	ctx context.Context,
 	oldRefreshHash string,

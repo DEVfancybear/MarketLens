@@ -28,13 +28,42 @@ type Gateway interface {
 }
 
 type Handler struct {
-	gateway     Gateway
-	requireAuth fiber.Handler
-	eaProxy     *EAProxy
+	gateway              Gateway
+	requireAuth          fiber.Handler
+	requireActiveSession fiber.Handler
+	requestRateLimit     fiber.Handler
+	mutationRateLimit    fiber.Handler
+	tradingRateLimit     fiber.Handler
+	pairingRateLimit     fiber.Handler
+	eaProxy              *EAProxy
 }
 
-func NewHandler(gateway Gateway, requireAuth fiber.Handler) *Handler {
-	return &Handler{gateway: gateway, requireAuth: requireAuth}
+func NewHandler(
+	gateway Gateway,
+	requireAuth fiber.Handler,
+	requireActiveSession fiber.Handler,
+) *Handler {
+	return &Handler{
+		gateway:              gateway,
+		requireAuth:          requireAuth,
+		requireActiveSession: requireActiveSession,
+		requestRateLimit: newExecutionRateLimiter(
+			executionRequestRateLimitMax,
+			executionRequestRateLimitWindow,
+		),
+		mutationRateLimit: newExecutionRateLimiter(
+			executionMutationRateLimitMax,
+			executionMutationRateLimitWindow,
+		),
+		tradingRateLimit: newExecutionRateLimiter(
+			executionTradingRateLimitMax,
+			executionTradingRateLimitWindow,
+		),
+		pairingRateLimit: newExecutionRateLimiter(
+			executionPairingRateLimitMax,
+			executionPairingRateLimitWindow,
+		),
+	}
 }
 
 func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
@@ -43,17 +72,17 @@ func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
 }
 
 func (h *Handler) Register(router fiber.Router) {
-	router.Get("/execution/accounts", h.requireAuth, h.listAccounts)
-	router.Get("/execution/account-layout", h.requireAuth, h.accountLayout)
-	router.Post("/execution/account-layout", h.requireAuth, h.updateAccountLayout)
-	router.Get("/execution/account-state", h.requireAuth, h.accountState)
-	router.Get("/execution/instruments", h.requireAuth, h.accountInstruments)
-	router.Post("/execution/accounts/:accountId/disconnect", h.requireAuth, h.disconnectAccount)
-	router.Delete("/execution/accounts/:accountId", h.requireAuth, h.removeAccount)
-	router.Post("/execution/symbol-mappings", h.requireAuth, h.upsertSymbolMapping)
-	router.Post("/execution/pairing-tokens", h.requireAuth, h.issuePairingToken)
-	router.Post("/execution/orders", h.requireAuth, h.routeOrder)
-	router.Post("/execution/commands", h.requireAuth, h.queueCommand)
+	router.Get("/execution/accounts", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.listAccounts)
+	router.Get("/execution/account-layout", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.accountLayout)
+	router.Post("/execution/account-layout", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.updateAccountLayout)
+	router.Get("/execution/account-state", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.accountState)
+	router.Get("/execution/instruments", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.accountInstruments)
+	router.Post("/execution/accounts/:accountId/disconnect", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.disconnectAccount)
+	router.Delete("/execution/accounts/:accountId", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.removeAccount)
+	router.Post("/execution/symbol-mappings", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.upsertSymbolMapping)
+	router.Post("/execution/pairing-tokens", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.pairingRateLimit, h.issuePairingToken)
+	router.Post("/execution/orders", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.routeOrder)
+	router.Post("/execution/commands", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.queueCommand)
 }
 
 func (h *Handler) RegisterPublic(router fiber.Router) {

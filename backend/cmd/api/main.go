@@ -124,6 +124,7 @@ func main() {
 		authHandler = auth.NewHandler(svc, tokens, cfg)
 
 		requireAuth := auth.RequireAuth(tokens)
+		requireActiveSession := auth.RequireActiveSession(sessions)
 		settingsStore := settings.NewRepo(pool.Pool)
 		secretBox, secretErr := settings.NewSecretBox(cfg.AuthJWTSecret)
 		if secretErr != nil {
@@ -161,7 +162,11 @@ func main() {
 			if executionEAErr != nil {
 				stdlog.Fatalf("execution EA proxy init error: %v", executionEAErr)
 			}
-			executionHandler = execution.NewHandler(executionClient, requireAuth).
+			executionHandler = execution.NewHandler(
+				executionClient,
+				requireAuth,
+				requireActiveSession,
+			).
 				WithEAProxy(executionEAProxy)
 		} else {
 			log.Warn().Msg("execution API routes disabled: EXECUTION_ADMIN_TOKEN not configured")

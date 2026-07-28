@@ -43,6 +43,7 @@ type CreateSessionParams struct {
 type SessionStore interface {
 	CreateSession(ctx context.Context, p CreateSessionParams) (Session, error)
 	GetSessionByHash(ctx context.Context, refreshHash string) (Session, error)
+	IsSessionActive(ctx context.Context, sessionID, userID string, checkedAt time.Time) (bool, error)
 	RotateSession(
 		ctx context.Context,
 		oldRefreshHash string,
@@ -149,6 +150,17 @@ func (s *SessionService) Revoke(ctx context.Context, sessionID string) error {
 // RevokeAll revokes every active session for a user (sign out everywhere).
 func (s *SessionService) RevokeAll(ctx context.Context, userID string) error {
 	return s.store.RevokeAllUserSessions(ctx, userID)
+}
+
+// IsActive confirms that the signed access-token subject is still backed by
+// the same live server-side session. Sensitive operations use this check so a
+// logout, refresh rotation, or administrator revocation takes effect
+// immediately instead of waiting for the access JWT to expire.
+func (s *SessionService) IsActive(ctx context.Context, sessionID, userID string) (bool, error) {
+	if sessionID == "" || userID == "" {
+		return false, nil
+	}
+	return s.store.IsSessionActive(ctx, sessionID, userID, s.now())
 }
 
 func (s *SessionService) mint(ctx context.Context, userID, userAgent, ip string) (CreatedSession, error) {

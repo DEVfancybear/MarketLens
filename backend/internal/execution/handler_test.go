@@ -142,10 +142,110 @@ func testApp(gateway Gateway) *fiber.App {
 	app := fiber.New()
 	requireAuth := func(c fiber.Ctx) error {
 		c.Locals(auth.LocalUserID, "11111111-1111-4111-8111-111111111111")
+		c.Locals(auth.LocalSessionID, "22222222-2222-4222-8222-222222222222")
 		return c.Next()
 	}
-	NewHandler(gateway, requireAuth).Register(app.Group("/api/v1"))
+	requireActiveSession := func(c fiber.Ctx) error { return c.Next() }
+	NewHandler(gateway, requireAuth, requireActiveSession).Register(app.Group("/api/v1"))
 	return app
+}
+
+func TestEveryExecutionRouteRequiresActiveServerSession(t *testing.T) {
+	gateway := &fakeGateway{}
+	app := fiber.New()
+	requireAuth := func(c fiber.Ctx) error {
+		c.Locals(auth.LocalUserID, "11111111-1111-4111-8111-111111111111")
+		c.Locals(auth.LocalSessionID, "revoked-session")
+		return c.Next()
+	}
+	activeChecks := 0
+	requireActiveSession := func(c fiber.Ctx) error {
+		activeChecks++
+		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
+	}
+	NewHandler(gateway, requireAuth, requireActiveSession).
+		Register(app.Group("/api/v1"))
+
+	readResponse, err := app.Test(httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/execution/accounts",
+		nil,
+	))
+	if err != nil {
+		t.Fatalf("read request: %v", err)
+	}
+	readResponse.Body.Close()
+	if readResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("read status=%d, want 401", readResponse.StatusCode)
+	}
+	if activeChecks != 1 {
+		t.Fatalf("active checks after read=%d, want 1", activeChecks)
+	}
+	if gateway.accountsOwner != "" {
+		t.Fatal("revoked session must not read execution accounts")
+	}
+
+	body := strings.NewReader(
+		`{"intent":{"commandId":"command-1"},"targets":[{"accountId":"mt5_account"}]}`,
+	)
+	mutationRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/orders",
+		body,
+	)
+	mutationRequest.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	mutationResponse, err := app.Test(mutationRequest)
+	if err != nil {
+		t.Fatalf("mutation request: %v", err)
+	}
+	mutationResponse.Body.Close()
+	if mutationResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("mutation status=%d, want 401", mutationResponse.StatusCode)
+	}
+	if activeChecks != 2 {
+		t.Fatalf("active checks=%d, want 2", activeChecks)
+	}
+	if gateway.orderOwner != "" {
+		t.Fatal("revoked session must never reach the execution gateway")
+	}
+}
+
+func TestTradingMutationRateLimitIsScopedAfterAuthentication(t *testing.T) {
+	gateway := &fakeGateway{}
+	app := testApp(gateway)
+	orderBody := `{"intent":{"commandId":"command-1"},"targets":[{"accountId":"mt5_account"}]}`
+
+	for requestNumber := 0; requestNumber < executionTradingRateLimitMax; requestNumber++ {
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/execution/orders",
+			strings.NewReader(orderBody),
+		)
+		request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+		response, err := app.Test(request)
+		if err != nil {
+			t.Fatalf("request %d: %v", requestNumber+1, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusAccepted {
+			t.Fatalf("request %d status=%d, want 202", requestNumber+1, response.StatusCode)
+		}
+	}
+
+	blocked := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/orders",
+		strings.NewReader(orderBody),
+	)
+	blocked.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	response, err := app.Test(blocked)
+	if err != nil {
+		t.Fatalf("limited request: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("limited status=%d, want 429", response.StatusCode)
+	}
 }
 
 func TestListAccountsAlwaysUsesAuthenticatedOwner(t *testing.T) {

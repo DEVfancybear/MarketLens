@@ -52,6 +52,9 @@ poll rates and alert on sustained limiting.
 Before release, verify:
 
 - every browser execution route requires an authenticated session;
+- every browser execution request additionally verifies the exact user/session row is active and
+  unexpired; revoke or rotate the row and confirm the old access JWT can neither read execution data
+  nor create an execution mutation;
 - owner identity is taken from the server session, never a request body or
   query supplied by the browser;
 - cross-owner account IDs return a uniform not-found/rejected response;
@@ -69,6 +72,9 @@ Before release, verify:
   insufficient;
 - the reported EA version is `1.22` or newer before any Place or lifecycle
   command can be created.
+- authenticated mutation throttles return `429` after their configured per-user ceilings, while a
+  different user remains unaffected. Treat these in-process controls as defense in depth and keep
+  distributed reverse-proxy/WAF limits active.
 
 ## Risk and loss-prevention checks
 

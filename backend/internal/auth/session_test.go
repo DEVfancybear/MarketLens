@@ -54,6 +54,19 @@ func (f *fakeSessionStore) GetSessionByHash(_ context.Context, hash string) (Ses
 	return *f.byID[id], nil
 }
 
+func (f *fakeSessionStore) IsSessionActive(
+	_ context.Context,
+	sessionID string,
+	userID string,
+	checkedAt time.Time,
+) (bool, error) {
+	session, ok := f.byID[sessionID]
+	return ok &&
+		session.UserID == userID &&
+		session.RevokedAt == nil &&
+		session.ExpiresAt.After(checkedAt), nil
+}
+
 func (f *fakeSessionStore) RotateSession(
 	ctx context.Context,
 	oldRefreshHash string,
@@ -114,6 +127,36 @@ func TestSessionCreate(t *testing.T) {
 	}
 	if _, ok := store.byHash[hashToken(cs.RefreshToken)]; !ok {
 		t.Fatal("session should be stored under the token hash")
+	}
+}
+
+func TestSessionIsActiveRejectsRevokedExpiredAndWrongOwner(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestSessionService(store, time.Hour)
+	svc.now = func() time.Time { return time.Unix(10_000, 0) }
+
+	created, err := svc.Create(context.Background(), "user-1", "agent", "ip")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	active, err := svc.IsActive(context.Background(), created.SessionID, "user-1")
+	if err != nil || !active {
+		t.Fatalf("fresh session active=%v err=%v", active, err)
+	}
+	if active, _ := svc.IsActive(context.Background(), created.SessionID, "user-2"); active {
+		t.Fatal("session must be bound to its exact owner")
+	}
+
+	store.byID[created.SessionID].ExpiresAt = svc.now().Add(-time.Second)
+	if active, _ := svc.IsActive(context.Background(), created.SessionID, "user-1"); active {
+		t.Fatal("expired session must be inactive")
+	}
+
+	store.byID[created.SessionID].ExpiresAt = svc.now().Add(time.Hour)
+	revokedAt := svc.now()
+	store.byID[created.SessionID].RevokedAt = &revokedAt
+	if active, _ := svc.IsActive(context.Background(), created.SessionID, "user-1"); active {
+		t.Fatal("revoked session must be inactive")
 	}
 }
 
