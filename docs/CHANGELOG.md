@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Shared codebase knowledge graph for coding agents (2026-07-29)
+
+- Added a mandatory graph-first startup gate for coding agents: resolve the
+  matching repository/worktree, verify the index, and query task-relevant
+  architecture, symbols, and call paths before editing source.
+- Added a persistent `.codebase-memory/graph.db.zst` artifact with merge-safe
+  Git attributes so new agents and machines can bootstrap without a cold full
+  index.
+- Enabled local automatic indexing and file watching, persisted the
+  graph-first architecture decision, and documented Windows installation,
+  first-artifact export, integrity verification, maintenance, and graph UI
+  operation in `docs/CODEBASE_MEMORY.md`.
+
 ### Added - Complete English/Vietnamese terminal localization (2026-07-29)
 
 - Added a persisted English/Vietnamese selector to desktop and mobile, browser-language

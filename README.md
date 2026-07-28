@@ -13,6 +13,7 @@ simulation, journaling, analytics, and broker-neutral multi-account execution.
 | `backend/bridge/mt5_ea/` | One common MT5 EA for FTMO, Exness, and other MT5 brokers |
 | `backend/bridge/mt5_stream/` | Private Python MT5 market-data sidecar; it never executes orders |
 | `docs/` | Monorepo operations, security, and design documentation |
+| `.codebase-memory/` | Shared compressed code knowledge graph for coding agents |
 
 Trade is a top-level workspace and is not hosted in the resizable bottom panel.
 Each MT5 account runs in its own terminal and attaches the same EA. Demo and
@@ -43,6 +44,13 @@ go run ./cmd/api
 
 The Rust workspace lives at `backend/execution/Cargo.toml`. PostgreSQL and a
 32+ character `EXECUTION_ADMIN_TOKEN` are required for the durable gateway.
+
+## Agent codebase memory
+
+Coding agents must use the shared codebase-memory graph before changing code.
+The required startup gate is defined in [`AGENTS.md`](AGENTS.md), and installation,
+indexing, artifact export, UI, and recovery procedures are documented in
+[`docs/CODEBASE_MEMORY.md`](docs/CODEBASE_MEMORY.md).
 
 ## Production
 
