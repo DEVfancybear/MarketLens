@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
@@ -293,9 +294,30 @@ func (s *Service) FinishAuthorization(
 		return Authorization{}, fmt.Errorf("%w: invalid assertion response", ErrAuthorizationRejected)
 	}
 	credential, err := s.webAuthn.ValidateLogin(webUser, session, parsed)
-	if err != nil || !credential.Flags.UserPresent || !credential.Flags.UserVerified ||
-		credential.Authenticator.CloneWarning {
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("challenge_id", challengeID).
+			Msg("passkey assertion validation rejected")
 		return Authorization{}, fmt.Errorf("%w: passkey assertion failed", ErrAuthorizationRejected)
+	}
+	if !acceptableAssertionCredential(credential) {
+		log.Warn().
+			Str("challenge_id", challengeID).
+			Bool("user_present", credential.Flags.UserPresent).
+			Bool("user_verified", credential.Flags.UserVerified).
+			Bool("clone_warning", credential.Authenticator.CloneWarning).
+			Bool("backup_eligible", credential.Flags.BackupEligible).
+			Msg("passkey assertion did not meet the authorization policy")
+		return Authorization{}, fmt.Errorf("%w: passkey assertion failed", ErrAuthorizationRejected)
+	}
+	if credential.Authenticator.CloneWarning {
+		// Synced passkeys do not provide a reliable monotonic signature counter.
+		// The assertion signature, RP ID, origin, challenge, user presence, and
+		// user verification have already been validated above.
+		log.Warn().
+			Str("challenge_id", challengeID).
+			Msg("accepting synced passkey assertion with a counter anomaly")
 	}
 	rowID, ok := rows[base64.RawURLEncoding.EncodeToString(credential.ID)]
 	if !ok {
@@ -336,6 +358,15 @@ func (s *Service) FinishAuthorization(
 		return Authorization{}, err
 	}
 	return Authorization{Token: rawToken, ExpiresAtMS: expiresAt.UnixMilli()}, nil
+}
+
+func acceptableAssertionCredential(credential *webauthn.Credential) bool {
+	if credential == nil ||
+		!credential.Flags.UserPresent ||
+		!credential.Flags.UserVerified {
+		return false
+	}
+	return !credential.Authenticator.CloneWarning || credential.Flags.BackupEligible
 }
 
 func (s *Service) ListCredentials(ctx context.Context, userID string) ([]CredentialSummary, error) {

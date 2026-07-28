@@ -25,6 +25,7 @@ import {
   presentExecutionOutcome,
 } from "@/services/execution/outcomePresentation";
 import { setExecutionRuntimeHandlers } from "@/services/execution/runtime";
+import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import {
   applyExecutionAccountsAtom,
   applyExecutionAccountLayoutAtom,
@@ -514,7 +515,7 @@ export function useExecutionRegistry() {
               });
             }
           })
-          .catch(() => {
+          .catch((error: unknown) => {
             store.set(mt5PendingCommandsAtom, (commands) =>
               commands.map((command) =>
                 command.id === order.clientOrderId
@@ -524,8 +525,10 @@ export function useExecutionRegistry() {
             );
             store.set(pushToastAtom, {
               title: "Execution service unavailable",
-              message:
+              message: userFacingErrorMessage(
+                error,
                 "The order was not accepted by the durable execution queue.",
+              ),
               variant: "error",
             });
           });

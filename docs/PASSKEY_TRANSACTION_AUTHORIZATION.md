@@ -35,6 +35,18 @@ for the exact same backend user. The credential itself requires WebAuthn user
 verification. Credential public data and counters are encrypted at rest with
 AES-GCM; associated data binds the ciphertext to its user and credential ID.
 
+### Synced passkeys and signature counters
+
+Passkey providers may synchronize backup-eligible credentials across devices.
+Their signature counter is not guaranteed to remain monotonic, so a validated
+assertion with `cloneWarning` is accepted only when the credential is marked
+backup eligible. The assertion must still pass its cryptographic signature,
+RP-ID, origin, challenge, user-presence, and user-verification checks.
+
+A counter anomaly on a non-syncable, device-bound credential remains a hard
+failure. The backend records the validation category and challenge ID without
+logging the assertion, credential material, or authorization token.
+
 Production must set:
 
 ```env
@@ -88,6 +100,9 @@ Then verify on the deployed HTTPS hostname:
 
 - first trade enrolls a passkey and asks for user verification;
 - every subsequent order/close/cancel command asks for verification;
+- a backup-eligible synced passkey remains usable when its provider does not
+  maintain a monotonic signature counter;
+- a device-bound passkey with the same counter anomaly returns `403`;
 - cancelling the prompt does not enqueue anything;
 - replaying the authorization header returns `403`;
 - changing any approved payload field returns `403`;

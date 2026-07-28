@@ -119,6 +119,9 @@ function apiErrorMessage(error: ApiError): string {
     return "Your backend session expired. Sign in again to continue syncing your workspace.";
   }
   if (error.status === 403) {
+    if (error.message.toLowerCase().includes("passkey verification failed")) {
+      return "Passkey verification failed. Use the passkey saved for tradingterminal.io.vn on this device, then try again.";
+    }
     return "You do not have permission to perform this action.";
   }
   if (error.status === 404) {

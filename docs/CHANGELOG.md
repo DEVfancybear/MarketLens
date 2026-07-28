@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Synced passkey trade verification (2026-07-28)
+
+- Stopped rejecting an otherwise valid WebAuthn assertion solely because a
+  backup-eligible, synced passkey reported a non-monotonic signature counter.
+  Signature, RP ID, origin, challenge, user-presence, and user-verification
+  checks remain mandatory; the same counter anomaly on a device-bound passkey
+  still fails closed.
+- Added structured backend diagnostics for assertion-validation failures and
+  surfaced passkey-specific verification guidance in the Trade workspace
+  instead of replacing it with a generic execution-service error.
+
 ### Fixed - Go to restores the visible price range (2026-07-28)
 
 - Reset every chart pane to automatic price scaling after Go to and the shared

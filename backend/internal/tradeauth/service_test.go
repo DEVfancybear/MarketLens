@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -49,6 +50,45 @@ func TestPasskeyFailureDoesNotMasqueradeAsSessionExpiry(t *testing.T) {
 	}
 	if err.Code != fiber.StatusForbidden {
 		t.Fatalf("status = %d, want 403", err.Code)
+	}
+}
+
+func TestAcceptableAssertionCredentialAllowsSyncedCounterAnomaly(t *testing.T) {
+	valid := webauthn.Credential{
+		Flags: webauthn.CredentialFlags{
+			UserPresent:    true,
+			UserVerified:   true,
+			BackupEligible: true,
+		},
+		Authenticator: webauthn.Authenticator{CloneWarning: true},
+	}
+	if !acceptableAssertionCredential(&valid) {
+		t.Fatal("verified synced passkey with a counter anomaly was rejected")
+	}
+
+	invalid := []webauthn.Credential{
+		{
+			Flags: webauthn.CredentialFlags{
+				UserPresent:  true,
+				UserVerified: true,
+			},
+			Authenticator: webauthn.Authenticator{CloneWarning: true},
+		},
+		{
+			Flags: webauthn.CredentialFlags{
+				UserPresent: true,
+			},
+		},
+		{
+			Flags: webauthn.CredentialFlags{
+				UserVerified: true,
+			},
+		},
+	}
+	for index := range invalid {
+		if acceptableAssertionCredential(&invalid[index]) {
+			t.Fatalf("unsafe assertion %d was accepted", index)
+		}
 	}
 }
 
