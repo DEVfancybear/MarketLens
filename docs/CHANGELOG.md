@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Deterministic MT5 coalesced-waiter CI coverage (2026-07-29)
+
+- Removed a scheduler-dependent race from the canceled coalesced history
+  waiter regression by waiting until both callers have joined the same
+  in-flight request before canceling the first caller.
+- Added a bounded assertion for delivery to the remaining active waiter so a
+  regression fails promptly instead of consuming the full 60-second MT5
+  history timeout in GitHub Actions.
+
 ### Fixed - Drawing and Go-to labels follow the selected chart timezone (2026-07-29)
 
 - Kept backend candle, drawing, Replay, and Go-to coordinates as immutable Unix

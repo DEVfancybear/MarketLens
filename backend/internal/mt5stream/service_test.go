@@ -274,6 +274,25 @@ func waitForServiceConnection(t *testing.T, service *Service) {
 	t.Fatalf("service did not connect to bridge")
 }
 
+func waitForHistoryFlightWaiters(t *testing.T, service *Service, key string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		service.mu.RLock()
+		flight := service.historyFlights[key]
+		got := 0
+		if flight != nil {
+			got = flight.waiters
+		}
+		service.mu.RUnlock()
+		if got == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("history flight %q did not reach %d waiters", key, want)
+}
+
 func TestHistoryRequestsAreCoalesced(t *testing.T) {
 	bridge := newHistoryBridgeHarness(t)
 	service := NewService(Config{
@@ -858,6 +877,12 @@ func TestCanceledCoalescedWaiterDoesNotCancelActiveWaiter(t *testing.T) {
 	}()
 
 	request := <-bridge.requests
+	waitForHistoryFlightWaiters(
+		t,
+		service,
+		historyRequestKey("NZDJPY", "4H", 100, 0, 0, false),
+		2,
+	)
 	cancelFirst()
 	firstResult := <-firstDone
 	if firstResult.LastError == "" {
@@ -880,7 +905,12 @@ func TestCanceledCoalescedWaiterDoesNotCancelActiveWaiter(t *testing.T) {
 			{Time: 1800000000, Open: 93.1, High: 93.2, Low: 93.0, Close: 93.15, Volume: 10},
 		},
 	}
-	secondResult := <-secondDone
+	var secondResult HistorySnapshot
+	select {
+	case secondResult = <-secondDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("active coalesced waiter did not receive the bridge response")
+	}
 	if secondResult.LastError != "" || len(secondResult.Candles) != 1 {
 		t.Fatalf("unexpected active waiter result: %+v", secondResult)
 	}
