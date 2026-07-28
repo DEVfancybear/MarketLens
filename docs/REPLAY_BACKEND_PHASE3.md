@@ -5,10 +5,11 @@ _Implemented and environment-verified: 2026-07-10._
 ## Scope
 
 Phase 3 separates replay interval from chart timeframe and makes Go the data
-authority for revealed chart bars. Intraday tracks pin immutable `1m` MT5 rows;
-daily, weekly, and monthly tracks pin `1D` rows. Each command processes every
-source row through the target simulated-time barrier, progressively updates the
-chart candle, and never sends unrevealed source OHLC to the browser.
+authority for revealed chart bars. Replay tracks pin immutable MT5 rows at the
+resolved playback interval; daily, weekly, and monthly Auto sessions pin `1D`
+rows. Each command processes every source row through the target simulated-time
+barrier, progressively updates the chart candle, and never sends unrevealed
+source OHLC to the browser.
 
 Phase 3 still supports one `single_chart` track. Multi-layout synchronization
 belongs to Phase 5 and replay trading remains disabled until Phase 4.
@@ -33,15 +34,19 @@ rollback strategy until final cutover.
 
 ## Replay interval and source resolution
 
-- Intraday chart timeframes use `1m` source rows.
-- `1D`, `1W`, and `1M` charts use `1D` source rows.
+- Auto Replay uses source rows matching the chart interval from `1m` through
+  `4H`.
+- Synchronized layouts use their largest shared Auto interval as the source for
+  every track.
+- `1D`, `1W`, and `1M` Auto charts use `1D` source rows.
 - `auto` resolves to the chart interval for intraday/daily charts and `1D` for
   weekly/monthly charts.
 - Explicit intervals must be available from the pinned source and evenly build
   the chart timeframe. Invalid choices return
   `422 unsupported_replay_interval`.
 - `set_replay_interval` changes the interval without changing chart buckets or
-  exposing more data.
+  exposing more data; it cannot select an interval smaller than the immutable
+  source pinned when the session was created.
 
 One `step` advances `count × replayIntervalSeconds` of simulated market time.
 All base rows inside that span are processed sequentially. Known gaps advance

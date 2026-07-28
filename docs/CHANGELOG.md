@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay history retention across every chart timeframe (2026-07-27)
+- Stopped preparing every intraday Replay session from a fixed 5,000-row `1m`
+  dataset. Auto Replay now pins the shared playback resolution (`1m` through
+  `4H`, or `1D` for daily/weekly/monthly charts), so higher-timeframe charts no
+  longer lose most of their pre-cursor candle history when Replay starts.
+- Kept the server projection causal and immutable: candles after the Replay
+  cursor remain hidden, while the longer left-side context comes from the same
+  backend-owned dataset rather than merging live browser candles.
+- Added coverage for every supported chart timeframe and synchronized layouts,
+  including the reported `1H` regression.
+
 ### Added - Synced execution-account drag/drop order (2026-07-27)
 - Added pointer-based drag/drop ordering for every account in the Trade rail,
   including the synthetic Simulator entry and all MT5 broker accounts. The
@@ -262,7 +273,6 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added RSI 70/50/30 reference bands and background fill through ordinary Pine
   `hline()`/`fill()` output, plus runtime and frontend regression coverage for
   all presentation contracts.
-
 ### Fixed - Chart restore, pan stability, markers, and multi-pane ownership (2026-07-24)
 - Persisted the authenticated user's latest symbol in the backend chart settings
   slice, protected pending writes across refresh, flushed them before sign-out,

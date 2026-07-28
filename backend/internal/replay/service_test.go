@@ -279,6 +279,9 @@ func TestServiceCreatePinsSynchronizedLayoutAndResolvesSharedAutoInterval(t *tes
 		if track.Slot != slot || track.MarketCalendar == "" || !track.VisibleThrough.Equal(start) {
 			t.Fatalf("track %d is not aligned: %#v", slot, track)
 		}
+		if track.SourceTimeframe != "15m" || track.IntervalSeconds != 900 {
+			t.Fatalf("track %d did not use the shared 15m Replay resolution: %#v", slot, track)
+		}
 	}
 }
 
@@ -304,6 +307,65 @@ func TestAutoReplayIntervalMatchesChartResolutionForEveryTimeframe(t *testing.T)
 			}})
 			if err != nil || got != tt.want {
 				t.Fatalf("auto interval=%d want=%d err=%v", got, tt.want, err)
+			}
+		})
+	}
+}
+
+func TestServiceCreatePinsAutoReplayAtEveryChartResolutionToPreserveHistory(t *testing.T) {
+	tests := []struct {
+		chartTimeframe  string
+		sourceTimeframe string
+		sourceSeconds   int
+	}{
+		{"1m", "1m", 60},
+		{"3m", "3m", 180},
+		{"5m", "5m", 300},
+		{"15m", "15m", 900},
+		{"30m", "30m", 1_800},
+		{"1H", "1H", 3_600},
+		{"2H", "2H", 7_200},
+		{"4H", "4H", 14_400},
+		{"1D", "1D", 86_400},
+		{"1W", "1D", 86_400},
+		{"1M", "1D", 86_400},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.chartTimeframe, func(t *testing.T) {
+			step := time.Duration(tt.sourceSeconds) * time.Second
+			start := time.Unix(1_700_006_400, 0).UTC()
+			history := &fakeHistory{
+				snapshot: mt5stream.Snapshot{Symbols: []mt5stream.Symbol{{Name: "GBPUSD"}}},
+				result: mt5stream.HistorySnapshot{Source: "mt5", UpdatedAt: start, Candles: []mt5stream.Candle{
+					{Time: start.Add(-step).Unix(), Open: 1.30, High: 1.31, Low: 1.29, Close: 1.305, Volume: 10},
+					{Time: start.Unix(), Open: 1.305, High: 1.32, Low: 1.30, Close: 1.315, Volume: 11},
+					{Time: start.Add(step).Unix(), Open: 1.315, High: 1.33, Low: 1.31, Close: 1.325, Volume: 12},
+				}},
+			}
+			store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
+
+			_, err := NewService(store, history, 5_000).Create(context.Background(), "user", CreateSessionInput{
+				Start:          StartInput{Kind: "time", Time: start},
+				ReplayInterval: "auto",
+				Tracks:         []TrackInput{{Slot: 0, Symbol: "GBPUSD", ChartTimeframe: tt.chartTimeframe}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			track := store.prepared.Tracks[0]
+			if history.timeframe != tt.sourceTimeframe ||
+				track.SourceTimeframe != tt.sourceTimeframe ||
+				track.IntervalSeconds != tt.sourceSeconds {
+				t.Fatalf(
+					"Replay compressed %s history through the wrong source: history=%s track=%#v",
+					tt.chartTimeframe,
+					history.timeframe,
+					track,
+				)
+			}
+			if store.prepared.ReplayIntervalSeconds != int(tt.sourceSeconds) {
+				t.Fatalf("replay interval=%d want=%d", store.prepared.ReplayIntervalSeconds, tt.sourceSeconds)
 			}
 		})
 	}
@@ -364,12 +426,12 @@ func TestServiceCreateSelectsTheRevealedBarAtOrBeforeRequestedTime(t *testing.T)
 	}
 }
 
-func TestServiceCreateLoadsOneMinuteBaseAndResolvesExplicitReplayInterval(t *testing.T) {
+func TestServiceCreateLoadsReplayIntervalBaseAndResolvesExplicitReplayInterval(t *testing.T) {
 	start := time.Unix(1_700_000_100, 0).UTC().Truncate(time.Minute)
 	history := &fakeHistory{result: mt5stream.HistorySnapshot{Candles: []mt5stream.Candle{
-		{Time: start.Add(-time.Minute).Unix(), Open: 1, High: 2, Low: .5, Close: 1.2, Volume: 10},
+		{Time: start.Add(-5 * time.Minute).Unix(), Open: 1, High: 2, Low: .5, Close: 1.2, Volume: 10},
 		{Time: start.Unix(), Open: 1.2, High: 2, Low: 1, Close: 1.5, Volume: 11},
-		{Time: start.Add(time.Minute).Unix(), Open: 1.5, High: 2, Low: 1, Close: 1.8, Volume: 12},
+		{Time: start.Add(5 * time.Minute).Unix(), Open: 1.5, High: 2, Low: 1, Close: 1.8, Volume: 12},
 	}}}
 	store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
 	_, err := NewService(store, history, 100).Create(context.Background(), "user", CreateSessionInput{
@@ -379,7 +441,7 @@ func TestServiceCreateLoadsOneMinuteBaseAndResolvesExplicitReplayInterval(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if history.timeframe != "1m" || store.prepared.Tracks[0].SourceTimeframe != "1m" ||
+	if history.timeframe != "5m" || store.prepared.Tracks[0].SourceTimeframe != "5m" ||
 		store.prepared.Tracks[0].ChartTimeframe != "15m" || store.prepared.ReplayIntervalSeconds != 300 {
 		t.Fatalf("history=%s prepared=%#v", history.timeframe, store.prepared)
 	}

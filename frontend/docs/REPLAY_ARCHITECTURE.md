@@ -240,6 +240,11 @@ duplicate session/track snapshot reads, and four ledger snapshot reads. Active
 orders or positions still use deterministic row-by-row processing so fills and
 brackets cannot skip intermediate prices.
 
+Auto Replay pins source rows at the shared playback resolution (`1m` through
+`4H`, or `1D` for calendar charts), so the fixed dataset budget preserves the
+same order of historical chart bars instead of collapsing higher timeframes
+into a short M1 window.
+
 Discrete Play/Pause, Step, and Restart controls use a 24 ms trailing window, so
 they dispatch within the next browser frame while rapid presses still coalesce.
 The noisy speed slider retains a 300 ms latest-wins window. Step counts are
@@ -293,7 +298,8 @@ limits projection writes. ESLint applies matching restricted imports. See
 `../../docs/REPLAY_BACKEND_PHASE6.md` from the monorepo root for the deletion proof
 and full verification runbook.
 
-Regression coverage includes Auto interval selection, timeframe replacement,
+Regression coverage includes Auto interval/source selection across every
+supported timeframe, synchronized layout source resolution, timeframe replacement,
 speed batching and elapsed catch-up, immediate fast Play, ordered batch events,
 no-ledger fast path, projection batch merging, finalized-forming-bar overlap,
 OHLC interpolation bounds, normal-speed single append, and high-speed append.

@@ -118,6 +118,20 @@ func (s *Service) Create(ctx context.Context, userID string, input CreateSession
 	if err != nil {
 		return SessionSnapshot{}, err
 	}
+	// Pin source rows at the actual Replay step resolution. Using M1 for every
+	// intraday chart makes the fixed 5,000-row dataset collapse to only ~58
+	// visible H1 candles once the 70/30 history/future split is applied. The UI
+	// runs Replay at Auto (the chart/shared layout interval), so a matching
+	// provider timeframe preserves thousands of historical chart candles while
+	// retaining a causal, backend-owned projection at every playback step.
+	sourceTimeframe, sourceSeconds, ok := replaySourceTimeframe(replayInterval)
+	if !ok {
+		return SessionSnapshot{}, fmt.Errorf("%w: no source timeframe for %ds", ErrUnsupportedReplayInterval, replayInterval)
+	}
+	for i := range normalized {
+		normalized[i].sourceTimeframe = sourceTimeframe
+		normalized[i].sourceSeconds = sourceSeconds
+	}
 
 	preparedTracks := make([]PreparedTrack, 0, trackCount)
 	sharedStart := input.Start.Time.UTC()
@@ -404,6 +418,15 @@ func phase3SourceTimeframe(chartTimeframe string) (string, int) {
 		return "1D", 86400
 	}
 	return "1m", 60
+}
+
+func replaySourceTimeframe(replayIntervalSeconds int) (string, int, bool) {
+	for _, timeframe := range []string{"1m", "3m", "5m", "15m", "30m", "1H", "2H", "4H", "1D"} {
+		if timeframeSeconds[timeframe] == replayIntervalSeconds {
+			return timeframe, replayIntervalSeconds, true
+		}
+	}
+	return "", 0, false
 }
 
 func resolveReplayInterval(requested, chartTimeframe string, chartSeconds, sourceSeconds int) (int, error) {
