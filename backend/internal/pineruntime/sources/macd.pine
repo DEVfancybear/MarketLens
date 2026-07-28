@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("MACD", overlay = false)
 fastLength = input.int(12, "Fast Length", minval = 1, maxval = 500)
 slowLength = input.int(26, "Slow Length", minval = 1, maxval = 500)

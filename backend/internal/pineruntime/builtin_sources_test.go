@@ -22,8 +22,17 @@ func TestBuiltInPineCatalogIsCompleteAndHasParseableMetadata(t *testing.T) {
 		if !ok || (!strings.Contains(source, "indicator(") && !strings.Contains(source, "study(")) {
 			t.Fatalf("%s is not backed by Pine indicator source", indicatorType)
 		}
-		if meta := ExtractMeta(source); strings.TrimSpace(meta.Name) == "" {
+		meta := ExtractMeta(source)
+		if strings.TrimSpace(meta.Name) == "" {
 			t.Fatalf("%s source metadata has no name", indicatorType)
+		}
+		if meta.Version != 6 {
+			t.Fatalf("%s source version = %d, want Pine v6", indicatorType, meta.Version)
+		}
+		for _, legacy := range []string{"study(", "transp =", "type = input."} {
+			if strings.Contains(source, legacy) {
+				t.Fatalf("%s Pine v6 source retains legacy syntax %q", indicatorType, legacy)
+			}
 		}
 	}
 }

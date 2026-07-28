@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Shipped Pine indicator sources migrated to v6 (2026-07-28)
+
+- Migrated every embedded built-in Pine source from v4/v5 to
+  `//@version=6`, including typed-input and removed-`transp` conversion for VSA.
+- Updated FVG and Swing High/Low sources for Pine v6's non-nullable boolean
+  model and explicit pivot-presence conditions.
+- Added source invariants requiring all catalog indicators and full indicator
+  fixtures to remain on Pine v6 while preserving focused v5 compatibility
+  tests for saved user scripts.
+
 ### Extended - Pine v6 conformance foundation (2026-07-28)
 
 - Added `while`, `break`, `continue`, `for ... by`, modulo operators, generic

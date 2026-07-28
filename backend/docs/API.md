@@ -1112,7 +1112,7 @@ Compile request:
 ```json
 {
   "scriptId": "ind_abc",
-  "sourceCode": "//@version=5\nindicator(\"VSA\")\nplot(volume)",
+  "sourceCode": "//@version=6\nindicator(\"VSA\")\nplot(volume)",
   "timeframe": "15m",
   "symbol": "BTCUSD",
   "symbolType": "crypto",
@@ -1224,7 +1224,8 @@ evaluation for compatibility.
 
 The regression source
 `backend/internal/pineruntime/testdata/swing_high_low_luxalgo.pine` is the
-user-provided Pine v5 Swing Highs/Lows script. It exercises multiline string
+user-provided Swing Highs/Lows script migrated to Pine v6. It exercises
+typed inputs, explicit pivot-presence booleans, multiline string
 continuations/escaped newlines, grouped inputs, a `pattern` UDT and
 `pattern.new()`, positional/named UDT fields with declaration defaults, pivot
 confirmation/history, nullable UDT ternaries, and `label.new()`

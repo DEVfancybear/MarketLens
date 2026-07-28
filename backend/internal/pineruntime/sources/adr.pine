@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("ADR 50 SR Pro", overlay = true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
 
 adrPeriod = input.int(10, "ADR Period", options = [5, 10, 20], group = "Calculation")

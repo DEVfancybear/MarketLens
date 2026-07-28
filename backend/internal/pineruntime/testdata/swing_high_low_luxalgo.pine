@@ -1,16 +1,16 @@
 // This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
 // © LuxAlgo
 
-//@version=5
+//@version=6
 indicator("Swing Highs/Lows & Candle Patterns [LuxAlgo]", "LuxAlgo - Swing Highs/Lows & Candle Patterns", overlay = true, max_labels_count = 500)
 //------------------------------------------------------------------------------
 //Settings
 //-----------------------------------------------------------------------------{
-length = input(21)
+length = input.int(21, "Length", minval = 1)
 
 //Style
-swinghCss = input(color.red, 'Swing High', group = 'Style')
-swinglCss = input(color.teal, 'Swing Low', group = 'Style')
+swinghCss = input.color(color.red, 'Swing High', group = 'Style')
+swinglCss = input.color(color.teal, 'Swing Low', group = 'Style')
 
 //-----------------------------------------------------------------------------}
 //Descriptions
@@ -50,15 +50,17 @@ c = close[length]
 d = math.abs(c - o)
 ph = ta.pivothigh(length, length)
 pl = ta.pivotlow(length, length)
+hasPh = not na(ph)
+hasPl = not na(pl)
 
 //-----------------------------------------------------------------------------{
 //Patterns
 //-----------------------------------------------------------------------------}
-hammer   = pattern.new(pl and math.min(o,c) - l > d and h - math.max(c,o) < d, 'Hammer', hammer_)
-ihammer  = pattern.new(pl and h - math.max(c,o) > d and math.min(c,o) - l < d, 'Inverted Hammer', ihammer_)
+hammer   = pattern.new(hasPl and math.min(o,c) - l > d and h - math.max(c,o) < d, 'Hammer', hammer_)
+ihammer  = pattern.new(hasPl and h - math.max(c,o) > d and math.min(c,o) - l < d, 'Inverted Hammer', ihammer_)
 bulleng  = pattern.new(c > o and c[1] < o[1] and c > o[1] and o < c[1], 'Bullish Engulfing', bulleng_)
-hanging  = pattern.new(ph and math.min(c,o) - l > d and h - math.max(o,c) < d, 'Hanging Man', hanging_)
-shooting = pattern.new(ph and h - math.max(o,c) > d and math.min(c,o) - l < d, 'Shooting Star', shooting_)
+hanging  = pattern.new(hasPh and math.min(c,o) - l > d and h - math.max(o,c) < d, 'Hanging Man', hanging_)
+shooting = pattern.new(hasPh and h - math.max(o,c) > d and math.min(c,o) - l < d, 'Shooting Star', shooting_)
 beareng  = pattern.new(c > o and c[1] < o[1] and c > o[1] and o < c[1], 'Bearish Engulfing', beareng_)
 
 //-----------------------------------------------------------------------------}
@@ -74,7 +76,7 @@ pattern pattern_obj = hammer.condition ? hammer
   : beareng.condition ? beareng
   : na
 
-if ph
+if hasPh
     H = ph > phy ? 'HH' : 'LH'
 
     //Set label
@@ -87,7 +89,7 @@ if ph
 
     phy := ph
 
-else if pl
+else if hasPl
     L = pl < ply ? 'LL' : 'HL'
 
     //Set label

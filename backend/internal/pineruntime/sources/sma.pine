@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("Moving Average (SMA)", overlay = true)
 length = input.int(50, "Length", minval = 1, maxval = 500)
 lineColor = input.color(#2962ff, "Color")

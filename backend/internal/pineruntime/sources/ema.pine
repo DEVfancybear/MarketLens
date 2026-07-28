@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("Moving Average (EMA)", overlay = true)
 length = input.int(21, "Length", minval = 1, maxval = 500)
 lineColor = input.color(#ff6d00, "Color")

@@ -1,6 +1,7 @@
 # Pine Runtime Go Migration
 
-_Date: 2026-07-09. Updated 2026-07-26 for generic Pine v5/v6 source execution,
+_Date: 2026-07-09. Updated 2026-07-28 for Pine v6 catalog-source migration,
+generic Pine v5/v6 source execution,
 replay-causal evaluation, the submitted Swing Highs/Lows fixture, removal of
 the legacy `SWING_SR` catalog entry, shared Pine color-literal parsing, and
 named/defaulted UDT construction. The submitted Pivot Hilo R5.4 fixture is
@@ -55,7 +56,8 @@ Implemented on 2026-07-09:
 | Separate pane rendering | Native LWC panes in `frontend/src/components/chart/PriceChart.tsx` |
 | Script persistence | Backend Phase 9 `/api/v1/pine-scripts` |
 | Replay boundary | Backend `replayCutoff` normalization shared by catalog and user source |
-| Generic fixture parity | Pine v5 Swing Highs/Lows plus Pine v6 Pivot Hilo regression fixtures |
+| Catalog source version | Every shipped built-in indicator source declares Pine v6 |
+| Generic fixture parity | Pine v6 Swing Highs/Lows and Pivot Hilo regression fixtures |
 
 Frontend chart rendering now uses `frontend/src/services/pineRuntimeCache.ts`.
 CUSTOM indicators no longer call the compiler synchronously from
@@ -222,12 +224,14 @@ global declaration and the current chart-output executor accepts `indicator()`
 and legacy `study()` declarations. `strategy()` and `library()` are detected and
 fail closed because their distinct execution contracts are not implemented.
 The optional `//@version=N` annotation is exposed in metadata and is inherently
-part of the source/cache hash; v5 is the compatibility target for the submitted
-fixture. Missing and legacy pre-v5 annotations compile with an explicit
+part of the source/cache hash. Every shipped catalog source and full indicator
+fixture now declares v6; v5 remains a backward-compatibility path for saved
+user scripts and focused compatibility tests. Missing and legacy pre-v5
+annotations compile with an explicit
 compatibility warning, v6 compiles with a subset warning, and a version newer
-than v6 fails closed. Full version-gated v5/v6 behavior (for example boolean
-conversion, lazy logical operators, and dynamic-request differences) is not yet
-emulated.
+than v6 fails closed. Version-gated boolean conversion and lazy logical
+operators are implemented. Dynamic-request differences remain constrained by
+the injected current-symbol data context.
 
 Metadata extraction preserves literal or enum-valued named and positional
 declaration arguments using the documented `indicator()` signature: `title`,
@@ -284,16 +288,17 @@ and [repainting guidance](https://www.tradingview.com/pine-script-docs/concepts/
 
 `backend/internal/pineruntime/testdata/swing_high_low_luxalgo.pine` is a
 regression fixture copied from the user-provided `swing high low.pine.txt`.
-It is Pine v5 and intentionally exercises generic features rather than a
-catalog name:
+It is migrated to Pine v6 and intentionally exercises generic features rather
+than a catalog name:
 
-- `input()` values with `group` metadata and color overrides;
+- typed `input.int()` / `input.color()` values with `group` metadata and color
+  overrides;
 - multiline string concatenation and escaped newlines;
 - a `pattern` user-defined type with fields and `pattern.new()` construction;
 - positional or named UDT constructor fields, with omitted declarations using
   their field defaults and invalid field assignments failing closed;
 - `ta.pivothigh()` / `ta.pivotlow()` confirmation windows and history access;
-- numeric-to-boolean conditions used by Pine v5;
+- explicit `not na()` pivot-presence booleans required by Pine v6;
 - ternary selection of a nullable UDT;
 - persistent variables, back-referenced `bar_index`, and `label.new()` with
   transparent color, style, text color, and tooltip fields.
@@ -526,7 +531,7 @@ transport; it is not a separate formula runtime.
 }
 ```
 
-The embedded, attributed Pine v5 `Fair Value Gap [LuxAlgo]` catalog source
+The embedded, attributed Pine v6 `Fair Value Gap [LuxAlgo]` catalog source
 implements:
 
 - Bullish: `low > high[2]`, `close[1] > high[2]`, and the relative gap is
@@ -750,7 +755,10 @@ Backend tests:
 - Generic stateful fixtures cover identity-neutral UDT/tuple/array/object
   execution, independent security state, function-local `var`, fixed boxes,
   dynamic fills, tables, input-source pivots, and closed-bar history.
-- The submitted Swing Highs/Lows v5 fixture compiles through the generic path,
+- Every embedded built-in and full indicator fixture is pinned to Pine v6;
+  the catalog invariant rejects legacy `study()`, `transp`, and typed-input
+  compatibility syntax in shipped sources.
+- The submitted Swing Highs/Lows v6 fixture compiles through the generic path,
   preserves multiline descriptions and label properties, confirms pivots only
   after their right-hand window, and produces no future labels under replay.
 - The submitted Pivot Hilo R5.4 fixture compiles as Pine v6 through the same
@@ -786,7 +794,7 @@ Manual checks:
 - Add VSA, Better RSI, and ADR from Pine Editor.
 - Add 10-in-1 moving averages from Pine Editor and confirm the chart shows
   `10 in 1 MAs` with visible MA lines and horizontal Inputs rows.
-- Add the submitted Swing Highs/Lows v5 source from the Pine Editor; verify
+- Add the submitted Swing Highs/Lows v6 source from the Pine Editor; verify
   confirmed labels, multiline tooltips, style colors, and no labels beyond a
   selected Replay candle.
 - Change inputs and style values.

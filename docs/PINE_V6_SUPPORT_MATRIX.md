@@ -31,6 +31,7 @@ rollback and `varip` require a tick event engine and are not simulated.
 | Area | Status | Current contract |
 | --- | --- | --- |
 | Pine version | Supported | `//@version=6`; newer versions fail closed |
+| Shipped indicator sources | Supported | SMA, EMA, VWAP, VSA, RSI, MACD, ADR, FVG, Swing High/Low, and Pivot Hilo sources are migrated to v6 and covered by an invariant test |
 | Series execution | Supported | Closed-bar, bar-by-bar history and call-site-isolated state |
 | v6 booleans | Supported | Boolean conditions and lazy `and` / `or` |
 | Control flow | Supported | `if`, ternary, `for`, `for…in`, `for…by`, `while`, `break`, `continue` |

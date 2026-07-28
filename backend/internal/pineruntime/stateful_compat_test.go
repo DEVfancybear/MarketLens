@@ -19,6 +19,17 @@ var swingHighLowLuxAlgoSource string
 //go:embed testdata/pivot_hilo_r54_v6.pine
 var pivotHiloR54V6Source string
 
+func TestShippedStatefulFixturesDeclarePineV6(t *testing.T) {
+	for name, source := range map[string]string{
+		"swing-high-low": swingHighLowLuxAlgoSource,
+		"pivot-hilo":     pivotHiloR54V6Source,
+	} {
+		if meta := ExtractMeta(source); meta.Version != 6 {
+			t.Fatalf("%s fixture version = %d, want Pine v6", name, meta.Version)
+		}
+	}
+}
+
 func TestSubmittedSwingHighLowPineCompilesWithWrappedExpressions(t *testing.T) {
 	highs := []float64{1, 2, 5, 3, 2, 4, 6, 3, 2}
 	lows := []float64{0, -1, -3, -1, 0, -2, -1, -1, 0}
@@ -48,7 +59,7 @@ func TestSubmittedSwingHighLowPineCompilesWithWrappedExpressions(t *testing.T) {
 		response.Meta.ShortTitle != "LuxAlgo - Swing Highs/Lows & Candle Patterns" {
 		t.Fatalf("submitted source metadata = %+v", response.Meta)
 	}
-	if response.Meta.Version != 5 || response.Meta.Properties["max_labels_count"] != 500 {
+	if response.Meta.Version != 6 || response.Meta.Properties["max_labels_count"] != 500 {
 		t.Fatalf("submitted declaration metadata = %+v", response.Meta)
 	}
 	if len(response.Result.Labels) != 3 {

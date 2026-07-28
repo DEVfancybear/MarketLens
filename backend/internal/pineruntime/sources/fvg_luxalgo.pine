@@ -2,19 +2,19 @@
 // https://creativecommons.org/licenses/by-nc-sa/4.0/
 // © LuxAlgo
 
-//@version=5
+//@version=6
 indicator("Fair Value Gap [LuxAlgo]", "LuxAlgo - Fair Value Gap", overlay = true, max_lines_count = 500, max_boxes_count = 500)
 
 thresholdPer = input.float(0, "Threshold %", minval = 0, maxval = 100, step = .1, inline = "threshold")
-auto = input(false, "Auto", inline = "threshold")
+auto = input.bool(false, "Auto", inline = "threshold")
 showLast = input.int(0, "Unmitigated Levels", minval = 0)
 mitigationLevels = input.bool(false, "Mitigation Levels")
 tf = input.timeframe("", "Timeframe")
 extend = input.int(20, "Extend", minval = 0, inline = "extend", group = "Style")
-dynamic = input(false, "Dynamic", inline = "extend", group = "Style")
+dynamic = input.bool(false, "Dynamic", inline = "extend", group = "Style")
 bullCss = input.color(color.new(#089981, 70), "Bullish FVG", group = "Style")
 bearCss = input.color(color.new(#f23645, 70), "Bearish FVG", group = "Style")
-showDash = input(false, "Show Dashboard", group = "Dashboard")
+showDash = input.bool(false, "Show Dashboard", group = "Dashboard")
 dashLoc = input.string("Top Right", "Location", options = ["Top Right", "Bottom Right", "Bottom Left"], group = "Dashboard")
 textSize = input.string("Small", "Size", options = ["Tiny", "Small", "Normal"], group = "Dashboard")
 
@@ -29,7 +29,7 @@ n = bar_index
 method tosolid(color id) => color.rgb(color.r(id), color.g(id), color.b(id))
 
 detect() =>
-    var new_fvg = fvg.new(na, na, na, na)
+    var new_fvg = fvg.new(na, na, false, na)
     threshold = auto ? ta.cum((high - low) / low) / bar_index : thresholdPer / 100
     bull_fvg = low > high[2] and close[1] > high[2] and (low - high[2]) / high[2] > threshold
     bear_fvg = high < low[2] and close[1] < low[2] and (low[2] - high) / high > threshold

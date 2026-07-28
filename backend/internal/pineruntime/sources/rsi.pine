@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("Better RSI", overlay = false)
 myPeriod = input.int(14, "Period", minval = 1, maxval = 500)
 src = input.source(close, "Source")

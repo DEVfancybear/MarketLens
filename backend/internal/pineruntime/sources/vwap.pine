@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("VWAP", overlay = true)
 lineColor = input.color(#ab47bc, "Color")
 plot(ta.vwap(hlc3), "vwap", color = lineColor, linewidth = 2)
