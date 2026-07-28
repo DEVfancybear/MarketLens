@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  executionAccountDropEdge,
   mergeExecutionAccountLayout,
   moveExecutionAccountItem,
+  shouldActivateExecutionAccountDrag,
 } from "../../src/services/execution/accountLayout";
 
 test("persisted layout orders simulator and broker accounts", () => {
@@ -52,4 +54,16 @@ test("move helper handles both drop edges without losing items", () => {
     moveExecutionAccountItem(items, "mt5_a", "mt5_a", "before"),
     items,
   );
+});
+
+test("account drag uses the same two-axis threshold as Watchlist rows", () => {
+  assert.equal(shouldActivateExecutionAccountDrag(10, 20, 13, 24), false);
+  assert.equal(shouldActivateExecutionAccountDrag(10, 20, 16, 20), true);
+  assert.equal(shouldActivateExecutionAccountDrag(10, 20, 10, 26), true);
+});
+
+test("account row drop edge follows the final pointer half", () => {
+  assert.equal(executionAccountDropEdge(119, 100, 40), "before");
+  assert.equal(executionAccountDropEdge(120, 100, 40), "after");
+  assert.equal(executionAccountDropEdge(139, 100, 40), "after");
 });

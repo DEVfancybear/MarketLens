@@ -61,8 +61,10 @@ import { symbolAtom } from "@/store/chartStore";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
 import {
+  executionAccountDropEdge,
   mergeExecutionAccountLayout,
   moveExecutionAccountItem,
+  shouldActivateExecutionAccountDrag,
   type AccountDropEdge,
 } from "@/services/execution/accountLayout";
 import { pushToastAtom } from "@/store/toastStore";
@@ -202,9 +204,12 @@ function ExecutionAccountRail() {
   const dragSession = useRef<{
     pointerId: number;
     sourceId: string;
+    startX: number;
     startY: number;
     active: boolean;
   } | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const suppressNextAccountClickRef = useRef(false);
   const dropTargetRef = useRef<{
     id: string;
     edge: AccountDropEdge;
@@ -244,6 +249,14 @@ function ExecutionAccountRail() {
     accountLayout.itemIds,
   );
 
+  useEffect(
+    () => () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    },
+    [],
+  );
+
   const saveLayout = async (itemIds: string[]) => {
     if (layoutPending) return;
     const previous = accountLayout;
@@ -275,23 +288,132 @@ function ExecutionAccountRail() {
     }
   };
 
-  const finishDrag = (pointerId: number) => {
+  const resolveDropTarget = (
+    clientX: number,
+    clientY: number,
+    sourceId: string,
+  ) => {
+    const element = document
+      .elementFromPoint(clientX, clientY)
+      ?.closest<HTMLElement>("[data-execution-account-id]");
+    const targetId = element?.dataset.executionAccountId;
+    if (!element || !targetId || targetId === sourceId) return null;
+    const bounds = element.getBoundingClientRect();
+    return {
+      id: targetId,
+      edge: executionAccountDropEdge(clientY, bounds.top, bounds.height),
+    };
+  };
+
+  const finishDrag = (
+    pointerId: number,
+    commit: boolean,
+    finalPoint?: { x: number; y: number },
+  ) => {
     const session = dragSession.current;
     if (!session || session.pointerId !== pointerId) return;
-    const target = dropTargetRef.current;
-    if (session.active && target) {
+    const finalTarget =
+      commit && finalPoint
+        ? resolveDropTarget(finalPoint.x, finalPoint.y, session.sourceId) ??
+          dropTargetRef.current
+        : dropTargetRef.current;
+    if (commit && session.active && finalTarget) {
       const next = moveExecutionAccountItem(
         accounts.map((account) => account.id),
         session.sourceId,
-        target.id,
-        target.edge,
+        finalTarget.id,
+        finalTarget.edge,
       );
       void saveLayout(next);
     }
+    if (session.active) {
+      suppressNextAccountClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextAccountClickRef.current = false;
+      }, 0);
+    }
+    const cleanup = dragCleanupRef.current;
+    dragCleanupRef.current = null;
+    cleanup?.();
     dragSession.current = null;
     dropTargetRef.current = null;
     setDraggedId(null);
     setDropTarget(null);
+  };
+
+  const startAccountDrag = (
+    event: React.PointerEvent<HTMLDivElement>,
+    accountId: string,
+  ) => {
+    if (layoutPending || event.button !== 0) return;
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      target.closest("[data-execution-account-no-drag]")
+    ) {
+      return;
+    }
+
+    dragCleanupRef.current?.();
+    dragSession.current = {
+      pointerId: event.pointerId,
+      sourceId: accountId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+
+    const onPointerMove = (pointerEvent: PointerEvent) => {
+      const session = dragSession.current;
+      if (!session || session.pointerId !== pointerEvent.pointerId) return;
+      if (
+        !session.active &&
+        !shouldActivateExecutionAccountDrag(
+          session.startX,
+          session.startY,
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+        )
+      ) {
+        return;
+      }
+      if (!session.active) {
+        session.active = true;
+        setDraggedId(session.sourceId);
+      }
+      pointerEvent.preventDefault();
+      const nextTarget = resolveDropTarget(
+        pointerEvent.clientX,
+        pointerEvent.clientY,
+        session.sourceId,
+      );
+      dropTargetRef.current = nextTarget;
+      setDropTarget(nextTarget);
+    };
+    const onPointerUp = (pointerEvent: PointerEvent) => {
+      finishDrag(pointerEvent.pointerId, true, {
+        x: pointerEvent.clientX,
+        y: pointerEvent.clientY,
+      });
+    };
+    const onPointerCancel = (pointerEvent: PointerEvent) => {
+      finishDrag(pointerEvent.pointerId, false);
+    };
+    const onWindowBlur = () => {
+      const session = dragSession.current;
+      if (session) finishDrag(session.pointerId, false);
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+    dragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("blur", onWindowBlur);
   };
 
   const keyboardMove = (accountId: string, direction: -1 | 1) => {
@@ -478,8 +600,9 @@ function ExecutionAccountRail() {
             <div
               key={account.id}
               data-execution-account-id={account.id}
+              onPointerDown={(event) => startAccountDrag(event, account.id)}
               className={cn(
-                "relative w-full rounded-xl border transition-[border-color,background-color,opacity,transform]",
+                "relative w-full select-none rounded-xl border transition-[border-color,background-color,opacity,transform]",
                 active
                   ? "border-brand/50 bg-brand/10"
                   : "border-terminal-border bg-terminal-panel-2/45 hover:border-terminal-border-strong hover:bg-terminal-hover",
@@ -502,54 +625,16 @@ function ExecutionAccountRail() {
                   event.preventDefault();
                   keyboardMove(account.id, event.key === "ArrowUp" ? -1 : 1);
                 }}
-                onPointerDown={(event) => {
-                  if (layoutPending || event.button !== 0) return;
-                  event.preventDefault();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  dragSession.current = {
-                    pointerId: event.pointerId,
-                    sourceId: account.id,
-                    startY: event.clientY,
-                    active: false,
-                  };
-                  setDraggedId(account.id);
-                }}
-                onPointerMove={(event) => {
-                  const session = dragSession.current;
-                  if (!session || session.pointerId !== event.pointerId) return;
-                  if (!session.active && Math.abs(event.clientY - session.startY) < 4) {
-                    return;
-                  }
-                  session.active = true;
-                  const element = document
-                    .elementFromPoint(event.clientX, event.clientY)
-                    ?.closest<HTMLElement>("[data-execution-account-id]");
-                  const targetId = element?.dataset.executionAccountId;
-                  if (!element || !targetId || targetId === session.sourceId) {
-                    dropTargetRef.current = null;
-                    setDropTarget(null);
-                    return;
-                  }
-                  const bounds = element.getBoundingClientRect();
-                  const target = {
-                    id: targetId,
-                    edge:
-                      event.clientY < bounds.top + bounds.height / 2
-                        ? ("before" as const)
-                        : ("after" as const),
-                  };
-                  dropTargetRef.current = target;
-                  setDropTarget(target);
-                }}
-                onPointerUp={(event) => finishDrag(event.pointerId)}
-                onPointerCancel={(event) => finishDrag(event.pointerId)}
-                className="absolute left-1 top-1/2 z-10 flex h-8 w-6 -translate-y-1/2 touch-none items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink disabled:cursor-wait disabled:opacity-40 focus-ring cursor-grab active:cursor-grabbing"
+                className="absolute left-1 top-1/2 z-10 flex h-8 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink active:cursor-grabbing disabled:cursor-wait disabled:opacity-40 focus-ring"
               >
                 <GripVertical size={13} aria-hidden="true" />
               </button>
               <button
                 type="button"
-                onClick={() => select(account)}
+                onClick={() => {
+                  if (suppressNextAccountClickRef.current) return;
+                  select(account);
+                }}
                 aria-pressed={active}
                 className={cn(
                   "w-full py-3 pl-8 pr-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
@@ -603,6 +688,7 @@ function ExecutionAccountRail() {
                 <button
                   type="button"
                   onClick={() => setManagedAccount(account)}
+                  data-execution-account-no-drag
                   aria-label={`Quản lý ${account.label}`}
                   title="Quản lý account"
                   className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-ring"

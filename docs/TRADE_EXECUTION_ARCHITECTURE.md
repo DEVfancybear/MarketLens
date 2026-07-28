@@ -100,6 +100,14 @@ broker execution-account IDs. The frontend merges this list with the live
 registry: missing/deleted entries are discarded and newly connected accounts
 append without requiring a migration or broker-specific code.
 
+Pointer reordering starts from the full account card, consistent with Watchlist
+rows, while the management button is explicitly excluded. Once movement crosses
+the shared two-axis threshold, window-level pointer listeners own the gesture so
+leaving the source card cannot lose the drop. Pointer cancel or window blur
+aborts without persistence; a valid release resolves the final row half and
+writes the complete order. The visible grip remains a keyboard reorder control
+with Arrow Up/Down and an accessible saved-state announcement.
+
 The browser reads and writes the layout only through authenticated
 `GET/POST /api/v1/execution/account-layout`. Go ignores any client owner
 identity, injects the authenticated user ID, and forwards to the loopback Rust

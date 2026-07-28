@@ -1,5 +1,27 @@
 export type AccountDropEdge = "before" | "after";
 
+export const EXECUTION_ACCOUNT_DRAG_THRESHOLD_PX = 5;
+
+/** Matches the row-level pointer threshold used by the Watchlist. */
+export function shouldActivateExecutionAccountDrag(
+  startX: number,
+  startY: number,
+  pointerX: number,
+  pointerY: number,
+  threshold = EXECUTION_ACCOUNT_DRAG_THRESHOLD_PX,
+): boolean {
+  return Math.hypot(pointerX - startX, pointerY - startY) > threshold;
+}
+
+/** Resolve whether a pointer is targeting the top or bottom half of a row. */
+export function executionAccountDropEdge(
+  pointerY: number,
+  targetTop: number,
+  targetHeight: number,
+): AccountDropEdge {
+  return pointerY < targetTop + targetHeight / 2 ? "before" : "after";
+}
+
 export function mergeExecutionAccountLayout<T extends { id: string }>(
   accounts: readonly T[],
   persistedItemIds: readonly string[],

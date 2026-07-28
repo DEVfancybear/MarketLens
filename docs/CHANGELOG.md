@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Trade account-card drag/drop interaction (2026-07-28)
+- Made the full Trade account card start a reorder gesture, matching Watchlist
+  rows, instead of limiting pointer drag to the small grip button.
+- Moved active gesture tracking to window-level pointer listeners so dragging
+  remains stable after the pointer leaves the grip or source card. The final
+  pointer position now determines the drop edge, pointer cancellation/blur
+  aborts safely, and a completed drag cannot accidentally select the source
+  account.
+- Kept the management action outside the drag surface and retained Arrow
+  Up/Down reordering on the grip. Added regressions for the shared two-axis drag
+  threshold and row-half drop resolution.
+
 ### Fixed - Near-instant warm Replay activation (2026-07-27)
 - Reused the backend's already-loaded latest chart window when it contains the
   selected Replay bar and at least one playable future interval. Selecting a bar
