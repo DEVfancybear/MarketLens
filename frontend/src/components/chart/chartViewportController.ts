@@ -105,6 +105,7 @@ export class ChartViewportController {
     const current = this.chart.timeScale().getVisibleLogicalRange();
     const logicalRange = range as LogicalRange;
     if (rangesEqual(current, logicalRange)) {
+      this.resetPriceScaleForTimeNavigation(cause);
       this.publish(cause, false, current);
       this.startSettling(cause);
       return false;
@@ -160,12 +161,19 @@ export class ChartViewportController {
     this.applying = true;
     try {
       mutation();
+      this.resetPriceScaleForTimeNavigation(cause);
     } finally {
       this.applying = false;
     }
     this.publish(cause, true, this.chart.timeScale().getVisibleLogicalRange());
     this.startSettling(cause);
     return true;
+  }
+
+  private resetPriceScaleForTimeNavigation(cause: ChartViewportCause) {
+    if (cause === "time-navigation") {
+      resetPriceScalePan(this.chart);
+    }
   }
 
   private startSettling(cause: ChartViewportCause) {

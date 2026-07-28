@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Go to restores the visible price range (2026-07-28)
+
+- Reset every chart pane to automatic price scaling after Go to and the shared
+  time-range shortcuts change the visible time window, so candles at a
+  materially different historical price no longer render outside the viewport.
+- Kept history-prepend viewport restoration independent from price scaling so
+  ordinary background history loads still preserve intentional manual scaling.
+
 ### Changed - Shipped Pine indicator sources migrated to v6 (2026-07-28)
 
 - Migrated every embedded built-in Pine source from v4/v5 to

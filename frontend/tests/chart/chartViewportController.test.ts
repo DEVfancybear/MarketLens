@@ -8,6 +8,7 @@ function fakeChart(initial: LogicalRange = { from: 10, to: 40 } as LogicalRange)
   let handler: ((range: LogicalRange | null) => void) | null = null;
   let writes = 0;
   let resetCalls = 0;
+  let priceScaleResetCalls = 0;
   const timeScale = {
     getVisibleLogicalRange: () => range,
     subscribeVisibleLogicalRangeChange: (next: typeof handler) => { handler = next; },
@@ -30,7 +31,11 @@ function fakeChart(initial: LogicalRange = { from: 10, to: 40 } as LogicalRange)
   const chart = {
     timeScale: () => timeScale,
     panes: () => [{ getHTMLElement: () => null }],
-    priceScale: () => ({ setAutoScale: () => {} }),
+    priceScale: () => ({
+      setAutoScale: (enabled: boolean) => {
+        if (enabled) priceScaleResetCalls += 1;
+      },
+    }),
   } as unknown as IChartApi;
   return {
     chart,
@@ -40,6 +45,7 @@ function fakeChart(initial: LogicalRange = { from: 10, to: 40 } as LogicalRange)
     },
     writes: () => writes,
     resetCalls: () => resetCalls,
+    priceScaleResetCalls: () => priceScaleResetCalls,
   };
 }
 
@@ -52,8 +58,34 @@ test("viewport controller skips value-equal programmatic ranges", () => {
     false,
   );
   assert.equal(fake.writes(), 0);
+  assert.equal(fake.priceScaleResetCalls(), 1);
   assert.equal(controller.snapshot().programmaticWrites, 0);
   assert.equal(controller.snapshot().cause, "time-navigation");
+  controller.destroy();
+});
+
+test("time navigation restores price auto-scale for every viewport operation", () => {
+  const fake = fakeChart();
+  const controller = new ChartViewportController(fake.chart);
+
+  controller.setLogicalRange({ from: 20, to: 50 } as LogicalRange, "time-navigation");
+  controller.setTimeRange(
+    { from: 1, to: 2 } as Parameters<ChartViewportController["setTimeRange"]>[0],
+    "time-navigation",
+  );
+  controller.fitContent("time-navigation");
+
+  assert.equal(fake.priceScaleResetCalls(), 3);
+  controller.destroy();
+});
+
+test("history restores preserve a manually adjusted price scale", () => {
+  const fake = fakeChart();
+  const controller = new ChartViewportController(fake.chart);
+
+  controller.setLogicalRange({ from: 20, to: 50 } as LogicalRange, "history-prepend");
+
+  assert.equal(fake.priceScaleResetCalls(), 0);
   controller.destroy();
 });
 
@@ -119,6 +151,7 @@ test("viewport reset is one controller transaction", () => {
   assert.equal(controller.snapshot().cause, "reset");
   assert.equal(controller.snapshot().programmaticWrites, 1);
   assert.equal(fake.resetCalls(), 2);
+  assert.equal(fake.priceScaleResetCalls(), 1);
   controller.destroy();
 });
 
