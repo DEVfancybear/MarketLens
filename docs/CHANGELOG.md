@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Complete English/Vietnamese terminal localization (2026-07-29)
+
+- Added a persisted English/Vietnamese selector to desktop and mobile, browser-language
+  first-run detection, and the matching HTML language metadata.
+- Localized the current desktop, mobile, chart, drawing, Replay, indicator, watchlist,
+  alert, journal, analytics, Pine, authentication, settings, and trade UI copy while
+  excluding market data and user-authored content.
+- Mapped every drawing tool and group by stable manifest ID to TradingView's official
+  Vietnamese terminology; saved drawings, favorites, templates, and alerts keep their
+  existing identifiers.
+- Added a bounded compatibility catalog for legacy English UI and older Vietnamese trade
+  setup screens, plus regression coverage for all drawing labels, typed keys, count
+  interpolation, and both translation directions.
+
 ### Changed - One TradingView-style color picker for every chart tool (2026-07-29)
 
 - Replaced the separate drawing, position, indicator, desktop, and mobile color

@@ -40,6 +40,7 @@
     "test:chart": "npm run test:build && node --test .test-build/tests/chart/*.test.js",
     "test:chart-browser": "playwright test",
     "test:ui": "npm run test:build && node --test .test-build/tests/ui/*.test.js",
+    "check:i18n": "npm run test:build && node --test .test-build/tests/ui/localization.test.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "type-check": "tsc --noEmit"

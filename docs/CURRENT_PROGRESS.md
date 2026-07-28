@@ -1,5 +1,11 @@
 # Current Progress
 
+- English/Vietnamese localization (2026-07-29): desktop and mobile now share a persisted locale,
+  every drawing tool/group uses stable-ID localization with official TradingView Vietnamese
+  terminology, and a bounded compatibility catalog covers existing UI/accessibility copy in both
+  directions without translating symbols, timestamps, backend payloads, or user content. See
+  `frontend/docs/LOCALIZATION_ARCHITECTURE.md`.
+
 - Deferred offline MT5 copy (2026-07-28): an offline FTMO/Exness target can remain selected and
   enters a PostgreSQL-backed `waiting` state for five minutes. Reconnection alone is not enough:
   the target EA must publish a fresh authenticated account/instrument snapshot, after which Rust

@@ -19,13 +19,14 @@ import { JournalPanel } from "@/components/journal/JournalPanel";
 import { AnalyticsPanel } from "@/components/analytics/AnalyticsPanel";
 import { PineEditor } from "@/components/pine/PineEditor";
 import { Activity, BookOpen, Bot, ChartNoAxesCombined, ScrollText, type LucideIcon } from "lucide-react";
+import { useI18n } from "@/hooks/useI18n";
 
-const TABS: { key: BottomTab; label: string; icon: LucideIcon }[] = [
-  { key: "replay", label: "Replay", icon: Activity },
-  { key: "journal", label: "Journal", icon: BookOpen },
-  { key: "analytics", label: "Analytics", icon: ChartNoAxesCombined },
-  { key: "pine", label: "Pine Editor", icon: Bot },
-  { key: "logs", label: "Logs", icon: ScrollText },
+const TABS: { key: BottomTab; icon: LucideIcon }[] = [
+  { key: "replay", icon: Activity },
+  { key: "journal", icon: BookOpen },
+  { key: "analytics", icon: ChartNoAxesCombined },
+  { key: "pine", icon: Bot },
+  { key: "logs", icon: ScrollText },
 ];
 
 /**
@@ -33,11 +34,16 @@ const TABS: { key: BottomTab; label: string; icon: LucideIcon }[] = [
  * on the active tab — no background fill, no rounded pills. Compact 32px bar.
  */
 export function BottomPanel() {
+  const { t } = useI18n();
   const bottomTab = useAtomValue(bottomTabAtom);
   const authStatus = useAtomValue(authStatusAtom);
   const setRawBottomTab = useSetAtom(bottomTabAtom);
   const setBottomTab = useSetAtom(setBottomTabAtom);
-  const visibleTabs = visibleBottomPanelTabs(TABS, authStatus);
+  const localizedTabs = TABS.map((tab) => ({
+    ...tab,
+    label: t(`panel.${tab.key}`),
+  }));
+  const visibleTabs = visibleBottomPanelTabs(localizedTabs, authStatus);
   const effectiveTab = fallbackBottomTabForAuth(bottomTab, authStatus);
 
   useEffect(() => {
@@ -85,11 +91,12 @@ export function BottomPanel() {
 }
 
 function LogsView() {
+  const { t } = useI18n();
   const logs = useAtomValue(logsAtom);
   return (
     <div className="h-full overflow-auto p-2 font-mono text-2xs">
       {logs.length === 0 && (
-        <div className="p-3 text-ink-faint">No events yet.</div>
+        <div className="p-3 text-ink-faint">{t("panel.noEvents")}</div>
       )}
       {logs.map((l) => (
         <div key={l.id} className="flex gap-2 py-0.5">

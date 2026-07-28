@@ -15,6 +15,10 @@ import { AppSettingsDialog } from "@/components/settings/AppSettingsDialog";
 import { DrawingAlertDialog } from "@/components/chart/drawing/alerts/DrawingAlertDialog";
 import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
 import { TradeSecurityDialog } from "@/components/security/TradeSecurityDialog";
+import { useEffect } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
+import { appLanguageAtom, hydrateAppLanguageAtom } from "@/store/localeStore";
+import { useDocumentLocalization } from "@/i18n/documentLocalization";
 
 const DesktopTerminal = dynamic(
   () => import("@/components/desktop/DesktopTerminal").then((module) => module.DesktopTerminal),
@@ -35,7 +39,14 @@ const MobileTerminal = dynamic(
 export function Terminal() {
   const hydrated = useStoreHydration();
   const platform = useTerminalPlatform();
+  const language = useAtomValue(appLanguageAtom);
+  const hydrateLanguage = useSetAtom(hydrateAppLanguageAtom);
   useHotkeys();
+  useDocumentLocalization(language);
+
+  useEffect(() => {
+    hydrateLanguage();
+  }, [hydrateLanguage]);
 
   if (!hydrated) return <Splash />;
 

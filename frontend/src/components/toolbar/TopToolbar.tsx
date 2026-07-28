@@ -77,8 +77,11 @@ import {
 } from "@/store/layoutStore";
 import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import { usePlatformDialog } from "@/components/ui/PlatformDialog";
+import { LanguageMenu } from "@/components/settings/LanguageMenu";
+import { useI18n } from "@/hooks/useI18n";
 
 export function TopToolbar() {
+  const { t } = useI18n();
   // Atomic selectors: `candles` is intentionally NOT subscribed here — it mutates
   // on every realtime tick and would re-render the whole toolbar. Its length is
   // read lazily in `toggleReplay` via getState(). `timeframe`/`setTimeframe` only
@@ -232,7 +235,7 @@ export function TopToolbar() {
         </div>
         <div className="hidden min-w-0 xl:block">
           <div className="text-[13px] font-bold leading-4 tracking-[-0.02em] text-ink">SMC Terminal</div>
-          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-faint">Live workspace</div>
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{t("workspace.live")}</div>
         </div>
       </div>
 
@@ -252,7 +255,7 @@ export function TopToolbar() {
           )}
         >
           <ChartCandlestick size={14} />
-          Chart
+          {t("workspace.chart")}
         </button>
         <button
           type="button"
@@ -266,7 +269,7 @@ export function TopToolbar() {
           )}
         >
           <WalletCards size={14} />
-          Trade
+          {t("workspace.trade")}
         </button>
       </nav>
 
@@ -305,7 +308,7 @@ export function TopToolbar() {
         )}
       >
         <PlayCircle size={14} />
-        {replaySelection !== "idle" ? "Cancel select" : "Replay"}
+        {replaySelection !== "idle" ? t("toolbar.cancelSelect") : t("toolbar.replay")}
       </button>
 
       {/* Persisted layouts plus visual chart presets. */}
@@ -316,11 +319,11 @@ export function TopToolbar() {
             type="button"
             aria-haspopup="menu"
             aria-expanded={open}
-            aria-label={activeLayout?.name ? `Layout: ${activeLayout.name}` : "Layout"}
+            aria-label={activeLayout?.name ? `${t("toolbar.layout")}: ${activeLayout.name}` : t("toolbar.layout")}
             className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70"
           >
             <LayoutIcon size={14} />
-            {activeLayout?.name ?? "Layout"}
+            {activeLayout?.name ?? t("toolbar.layout")}
           </button>
         )}
       >
@@ -475,8 +478,8 @@ export function TopToolbar() {
         <button
           onClick={toggleAlertCenter}
           className="relative flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
-          title="Alerts"
-          aria-label="Alerts"
+          title={t("toolbar.alerts")}
+          aria-label={t("toolbar.alerts")}
         >
           <Bell size={15} />
           {alertCount > 0 && (
@@ -491,7 +494,7 @@ export function TopToolbar() {
               align="right"
               width={238}
               trigger={(open) => (
-                <IconButton label="Take a snapshot" active={open}>
+                <IconButton label={t("toolbar.snapshot")} active={open}>
                   <Camera size={15} />
                 </IconButton>
               )}
@@ -499,7 +502,7 @@ export function TopToolbar() {
               {(close) => (
                 <div className="py-1">
                   <div className="px-3 pb-1 pt-1 text-[11px] font-semibold text-ink-muted">
-                    Take a snapshot
+                    {t("toolbar.snapshot")}
                   </div>
                   <MenuItem
                     onClick={() => {
@@ -554,10 +557,11 @@ export function TopToolbar() {
             </IconButton>
           </>
         )}
-        <IconButton label="Theme" onClick={toggleTheme}>
+        <LanguageMenu compact />
+        <IconButton label={theme === "dark" ? t("toolbar.theme.light") : t("toolbar.theme.dark")} onClick={toggleTheme}>
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>
-        <IconButton label="Fullscreen" onClick={toggleFullscreen}>
+        <IconButton label={fullscreen ? t("toolbar.fullscreen.exit") : t("toolbar.fullscreen.enter")} onClick={toggleFullscreen}>
           {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </IconButton>
         <div className="h-5 w-px bg-terminal-border" />

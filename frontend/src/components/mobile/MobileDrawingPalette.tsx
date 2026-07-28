@@ -43,6 +43,7 @@ import type { DrawingTool } from "@/types";
 import { cn } from "@/utils/cn";
 import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 import { ColorPickerPopover } from "@/components/ui/ColorPicker";
+import { useI18n } from "@/hooks/useI18n";
 
 const AVAILABLE_TOOLS = DRAWING_TOOL_MANIFEST.filter(
   (entry) => entry.preferredForCreation && isDrawingToolCreationEnabled(entry.id),
@@ -53,6 +54,13 @@ const AVAILABLE_TOOLS = DRAWING_TOOL_MANIFEST.filter(
  * component, so desktop and mobile automatically expose the same catalog.
  */
 export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
+  const {
+    t,
+    drawingToolName,
+    drawingGroupName,
+    drawingSectionName,
+    drawingSyncModeText,
+  } = useI18n();
   const chartCtx = useChartCtx();
   const active = useAtomValue(activeToolAtom);
   const color = useAtomValue(drawColorAtom);
@@ -74,23 +82,41 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
   const { requestConfirm, dialog } = usePlatformDialog();
 
   const normalizedQuery = query.trim().toLowerCase();
+  const localizedTools = useMemo(
+    () =>
+      AVAILABLE_TOOLS.map((entry) => ({
+        ...entry,
+        displayName: drawingToolName(entry.id, entry.displayName),
+        section: drawingSectionName(entry.section),
+      })),
+    [drawingSectionName, drawingToolName],
+  );
   const groups = useMemo(
     () =>
       DRAWING_TOOL_GROUPS.map((group) => ({
         ...group,
-        tools: AVAILABLE_TOOLS.filter(
+        label: drawingGroupName(group.id, group.label),
+        tools: localizedTools.filter(
           (entry) =>
             entry.group === group.id &&
             (!normalizedQuery ||
               entry.displayName.toLowerCase().includes(normalizedQuery) ||
+              AVAILABLE_TOOLS.find((source) => source.id === entry.id)
+                ?.displayName.toLowerCase().includes(normalizedQuery) ||
               entry.section?.toLowerCase().includes(normalizedQuery)),
         ),
       })).filter((group) => group.tools.length > 0),
-    [normalizedQuery],
+    [drawingGroupName, localizedTools, normalizedQuery],
   );
-  const favoriteTools = AVAILABLE_TOOLS.filter(
-    (entry) => favorites.has(entry.id) && groups.some((group) => group.tools.includes(entry)),
+  const favoriteTools = localizedTools.filter(
+    (entry) =>
+      favorites.has(entry.id) &&
+      groups.some((group) => group.tools.some((tool) => tool.id === entry.id)),
   );
+  const localizedSyncOptions = DRAWING_SYNC_MODE_OPTIONS.map((option) => ({
+    ...option,
+    ...drawingSyncModeText(option.id, option),
+  }));
 
   const chooseTool = (tool: DrawingTool) => {
     select(tool);
@@ -116,9 +142,9 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
     const count = bulk.drawings.length;
     if (!count) return;
     void requestConfirm({
-      title: `Remove all ${count} drawings?`,
-      description: "This cannot be undone from the current chart view.",
-      confirmLabel: "Remove drawings",
+      title: t("drawing.removeConfirm", { count }),
+      description: t("drawing.removeWarning"),
+      confirmLabel: t("drawing.removeDrawings"),
       tone: "danger",
     }).then((accepted) => {
       if (accepted) bulk.remove({ kind: "all" });
@@ -133,21 +159,21 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search all drawing tools"
+          placeholder={t("drawing.search")}
           inputMode="search"
-          aria-label="Search drawing tools"
+          aria-label={t("drawing.searchAria")}
         />
       </label>
 
       <section className="mobile-drawing-controls" aria-labelledby="drawing-style-title">
         <div className="mobile-workspace-section-heading">
           <span><Palette size={17} aria-hidden="true" /></span>
-          <div><h3 id="drawing-style-title">Creation defaults</h3><p>Shared with the desktop drawing engine</p></div>
+          <div><h3 id="drawing-style-title">{t("drawing.creationDefaults")}</h3><p>{t("drawing.sharedEngine")}</p></div>
         </div>
         <div className="relative mb-3">
           <button
             type="button"
-            aria-label="Drawing color"
+            aria-label={t("drawing.color")}
             aria-expanded={colorPickerOpen}
             onClick={() => setColorPickerOpen((current) => !current)}
             className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-terminal-border-strong bg-terminal-panel-2 px-3 text-left text-sm font-semibold text-ink transition-colors active:bg-terminal-pressed focus-ring"
@@ -157,7 +183,7 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
               style={{ backgroundColor: color }}
             />
             <span className="min-w-0 flex-1">
-              Drawing color
+              {t("drawing.color")}
               <small className="ml-2 font-mono text-[11px] font-medium uppercase text-ink-faint">
                 {color}
               </small>
@@ -181,19 +207,19 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
         <div className="mobile-control-grid">
           <ControlToggle
             icon={<Repeat2 />}
-            title="Keep drawing"
-            subtitle="Create consecutive objects"
+            title={t("drawing.keepDrawing")}
+            subtitle={t("drawing.keepDrawingHelp")}
             active={keepDrawing}
             onClick={() => setKeepDrawing(!keepDrawing)}
           />
           <div className="mobile-control-card">
-            <div><Magnet size={18} /><span><strong>Magnet</strong><small>Snap anchors to OHLC or overlay indicators</small></span></div>
-            <div className="mobile-choice-row" role="group" aria-label="Magnet mode">
+            <div><Magnet size={18} /><span><strong>{t("drawing.magnet")}</strong><small>{t("drawing.magnetHelp")}</small></span></div>
+            <div className="mobile-choice-row" role="group" aria-label={t("drawing.magnetMode")}>
               {(["off", "weak", "strong"] as const).map((mode) => {
                 const selected = mode === "off"
                   ? !preferences.magnetEnabled
                   : preferences.magnetEnabled && preferences.magnetMode === mode;
-                return <button key={mode} type="button" aria-pressed={selected} className={cn(selected && "is-active")} onClick={() => chooseMagnet(mode)}>{mode}</button>;
+                return <button key={mode} type="button" aria-pressed={selected} className={cn(selected && "is-active")} onClick={() => chooseMagnet(mode)}>{t(`drawing.magnet.${mode}`)}</button>;
               })}
               <button
                 type="button"
@@ -201,13 +227,13 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
                 disabled={(chartCtx?.indicatorPoints?.length ?? 0) === 0}
                 className={cn(preferences.snapToIndicators && "is-active")}
                 onClick={() => setSnapToIndicators(!preferences.snapToIndicators)}
-              >indicators</button>
+              >{t("drawing.indicators")}</button>
             </div>
           </div>
           <div className="mobile-control-card mobile-control-card--wide">
-            <div><Globe2 size={18} /><span><strong>New drawing scope</strong><small>Choose where new objects are synchronized</small></span></div>
-            <div className="mobile-choice-stack" role="radiogroup" aria-label="New drawing synchronization">
-              {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
+            <div><Globe2 size={18} /><span><strong>{t("drawing.newScope")}</strong><small>{t("drawing.newScopeHelp")}</small></span></div>
+            <div className="mobile-choice-stack" role="radiogroup" aria-label={t("drawing.newSync")}>
+              {localizedSyncOptions.map((option) => (
                 <button key={option.id} type="button" role="radio" aria-checked={syncMode === option.id} className={cn(syncMode === option.id && "is-active")} onClick={() => setSyncMode(option.id)}>
                   <span><strong>{option.label}</strong><small>{option.description}</small></span>
                   <span className="mobile-radio-dot" />
@@ -221,7 +247,7 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
       {favoriteTools.length > 0 && (
         <ToolSection
           id="favorites"
-          label="Favorites"
+          label={t("drawing.favorites")}
           icon={<Star size={18} fill="currentColor" />}
           tools={favoriteTools}
           active={active}
@@ -272,13 +298,13 @@ export function MobileDrawingPalette({ onDone }: { onDone: () => void }) {
       })}
 
       {groups.length === 0 && (
-        <div className="mobile-empty-state"><strong>No drawing tools found</strong><span>Try another name or category.</span></div>
+        <div className="mobile-empty-state"><strong>{t("drawing.noResults")}</strong><span>{t("drawing.tryAnother")}</span></div>
       )}
 
-      <section className="mobile-drawing-bulk" aria-label="Manage all drawings">
-        <button type="button" disabled={!bulk.drawings.length} aria-pressed={allLocked} onClick={() => bulk.toggleLock({ kind: "all" })}><Lock size={18} /><span>{allLocked ? "Unlock all" : "Lock all"}</span></button>
-        <button type="button" disabled={!bulk.drawings.length} aria-pressed={allHidden} onClick={() => bulk.toggleVisibility({ kind: "all" })}><EyeOff size={18} /><span>{allHidden ? "Show all" : "Hide all"}</span></button>
-        <button type="button" className="is-danger" disabled={!bulk.drawings.length} onClick={removeAllDrawings}><Trash2 size={18} /><span>Remove all</span></button>
+      <section className="mobile-drawing-bulk" aria-label={t("drawing.manageAll")}>
+        <button type="button" disabled={!bulk.drawings.length} aria-pressed={allLocked} onClick={() => bulk.toggleLock({ kind: "all" })}><Lock size={18} /><span>{allLocked ? t("drawing.unlockAll") : t("drawing.lockAll")}</span></button>
+        <button type="button" disabled={!bulk.drawings.length} aria-pressed={allHidden} onClick={() => bulk.toggleVisibility({ kind: "all" })}><EyeOff size={18} /><span>{allHidden ? t("drawing.showAll") : t("drawing.hideAll")}</span></button>
+        <button type="button" className="is-danger" disabled={!bulk.drawings.length} onClick={removeAllDrawings}><Trash2 size={18} /><span>{t("drawing.removeAll")}</span></button>
       </section>
       {dialog}
     </div>
@@ -323,13 +349,14 @@ function ToolCard({
   onChoose: () => void;
   onFavorite: () => void;
 }) {
+  const { t } = useI18n();
   return <div className={cn("mobile-tool-card", active && "is-active")}>
     <button type="button" className="mobile-tool-select" aria-label={tool.displayName} aria-pressed={active} onClick={onChoose}>
       <span><DrawingToolIcon iconKey={tool.iconKey} size={20} /></span>
       <strong>{tool.displayName}</strong>
       {tool.section && <small>{tool.section}</small>}
     </button>
-    {tool.favoriteEligible && <button type="button" className={cn("mobile-tool-favorite", favorite && "is-active")} aria-label={`${favorite ? "Remove" : "Add"} ${tool.displayName} ${favorite ? "from" : "to"} favorites`} aria-pressed={favorite} onClick={onFavorite}><Star size={16} fill={favorite ? "currentColor" : "none"} /></button>}
+    {tool.favoriteEligible && <button type="button" className={cn("mobile-tool-favorite", favorite && "is-active")} aria-label={favorite ? t("drawing.removeFavorite", { tool: tool.displayName }) : t("drawing.addFavorite", { tool: tool.displayName })} aria-pressed={favorite} onClick={onFavorite}><Star size={16} fill={favorite ? "currentColor" : "none"} /></button>}
   </div>;
 }
 

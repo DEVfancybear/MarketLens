@@ -44,6 +44,7 @@ import {
   isDrawingToolCreationEnabled,
 } from "@/types/drawingToolManifest";
 import { ColorPickerPopover } from "@/components/ui/ColorPicker";
+import { useI18n } from "@/hooks/useI18n";
 
 // ---- Tool groups (TradingView pattern) ----
 
@@ -120,6 +121,13 @@ function useLastUsed(): Record<string, DrawingTool> {
 }
 
 export function DrawingToolbar() {
+  const {
+    t: tr,
+    drawingToolName,
+    drawingGroupName,
+    drawingSectionName,
+    drawingSyncModeText,
+  } = useI18n();
   const chartCtx = useChartCtx();
   const activeTool = useAtomValue(activeToolAtom);
   const setActiveTool = useSetAtom(setActiveToolAtom);
@@ -143,6 +151,23 @@ export function DrawingToolbar() {
   const [magnetMenuOpen, setMagnetMenuOpen] = useState(false);
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const btnRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const localizedGroups = GROUPS.map((group) => ({
+    ...group,
+    label: drawingGroupName(group.id as Parameters<typeof drawingGroupName>[0], group.label),
+    tools: group.tools.map((item) => ({
+      ...item,
+      label: drawingToolName(item.tool, item.label),
+      section: drawingSectionName(item.section),
+    })),
+  }));
+  const localizedToolById = new Map<DrawingTool, ToolItem>();
+  for (const group of localizedGroups) {
+    for (const tool of group.tools) localizedToolById.set(tool.tool, tool);
+  }
+  const localizedSyncOptions = DRAWING_SYNC_MODE_OPTIONS.map((option) => ({
+    ...option,
+    ...drawingSyncModeText(option.id, option),
+  }));
 
   // Favorited tools (in the order they were starred) for the floating chart
   // toolbar. TradingView does not insert favorited tools into the left rail.
@@ -161,7 +186,7 @@ export function DrawingToolbar() {
   return (
     <div data-drawing-toolbar className="flex h-full flex-col items-center gap-1 overflow-y-auto bg-terminal-panel px-1.5 py-2">
       <FavoriteToolsPopup
-        tools={favList.map((tool) => TOOL_BY_ID.get(tool)!)}
+        tools={favList.map((tool) => localizedToolById.get(tool)!)}
         activeTool={activeTool}
         onSelect={(tool) => {
           setActiveTool(tool);
@@ -169,7 +194,7 @@ export function DrawingToolbar() {
         }}
         onRemove={toggleFavorite}
       />
-      {GROUPS.map((group, gi) => {
+      {localizedGroups.map((group, gi) => {
         const visibleTool = lastUsed[group.id] ?? group.defaultTool;
         const visibleIcon =
           group.tools.find((t) => t.tool === visibleTool)?.icon ?? group.icon;
@@ -268,7 +293,9 @@ export function DrawingToolbar() {
                               <span
                                 role="button"
                                 aria-label={
-                                  fav ? "Remove favorite" : "Add favorite"
+                                  fav
+                                    ? tr("drawing.removeFavorite", { tool: t.label })
+                                    : tr("drawing.addFavorite", { tool: t.label })
                                 }
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -304,7 +331,7 @@ export function DrawingToolbar() {
       {/* Colour picker */}
       <div className="relative">
         <IconButton
-          label="Colour"
+          label={tr("drawing.color")}
           active={colorPickerOpen}
           onClick={() => setColorPickerOpen((current) => !current)}
         >
@@ -321,7 +348,7 @@ export function DrawingToolbar() {
       </div>
 
       <IconButton
-        label="Keep drawing"
+        label={tr("drawing.keepDrawing")}
         active={keepDrawing}
         onClick={() => setKeepDrawing(!keepDrawing)}
       >
@@ -330,7 +357,7 @@ export function DrawingToolbar() {
 
       <div className="relative">
         <IconButton
-          label={`Magnet: ${drawingPreferences.magnetEnabled ? `${drawingPreferences.magnetMode}${drawingPreferences.snapToIndicators ? " + indicators" : ""}` : "off"}`}
+          label={`${tr("drawing.magnet")}: ${drawingPreferences.magnetEnabled ? `${tr(`drawing.magnet.${drawingPreferences.magnetMode}`)}${drawingPreferences.snapToIndicators ? ` + ${tr("drawing.indicators").toLowerCase()}` : ""}` : tr("drawing.magnet.off")}`}
           active={drawingPreferences.magnetEnabled}
           onClick={() => setMagnetEnabled(!drawingPreferences.magnetEnabled)}
         >
@@ -338,7 +365,7 @@ export function DrawingToolbar() {
         </IconButton>
         <button
           type="button"
-          aria-label="Magnet mode menu"
+          aria-label={tr("drawing.magnetMode")}
           onClick={() => setMagnetMenuOpen((open) => !open)}
           className="absolute bottom-0 right-0 flex h-4 w-4 items-center justify-center rounded-full border border-terminal-border bg-terminal-panel-2 text-ink-faint hover:bg-terminal-hover hover:text-ink"
         >
@@ -364,9 +391,7 @@ export function DrawingToolbar() {
                     : "text-ink",
                 )}
               >
-                {mode === "weak"
-                  ? "Weak magnet"
-                  : "Strong magnet"}
+                {tr(`drawing.magnet.${mode}`)} {tr("drawing.magnet").toLowerCase()}
               </button>
             ))}
             <div className="my-1 h-px bg-terminal-border" />
@@ -381,10 +406,10 @@ export function DrawingToolbar() {
                 !hasIndicatorMagnets && "cursor-not-allowed opacity-40",
               )}
             >
-              Snap to indicators
+              {tr("drawing.snapIndicators")}
             </button>
             <div className="px-2 pb-1 pt-1.5 text-[9px] text-ink-faint">
-              Ctrl/Cmd temporarily toggles
+              {tr("drawing.ctrlToggle")}
             </div>
           </div>
         )}
@@ -392,7 +417,7 @@ export function DrawingToolbar() {
 
       <div className="relative">
         <IconButton
-          label={`New drawings: ${DRAWING_SYNC_MODE_OPTIONS.find((option) => option.id === newDrawingSyncMode)?.label}`}
+          label={`${tr("drawing.newDrawings")}: ${localizedSyncOptions.find((option) => option.id === newDrawingSyncMode)?.label}`}
           active={newDrawingSyncMode !== "chart-only"}
           onClick={() => setSyncMenuOpen((open) => !open)}
         >
@@ -400,8 +425,8 @@ export function DrawingToolbar() {
         </IconButton>
         {syncMenuOpen && (
           <div data-chart-ui className="absolute left-full top-0 z-50 ml-2 w-52 rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-terminal">
-            <div className="px-2 pb-1 pt-1 text-[9px] font-semibold uppercase tracking-wide text-ink-faint">New drawings</div>
-            {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
+            <div className="px-2 pb-1 pt-1 text-[9px] font-semibold uppercase tracking-wide text-ink-faint">{tr("drawing.newDrawings")}</div>
+            {localizedSyncOptions.map((option) => (
               <button
                 key={option.id}
                 type="button"
@@ -421,7 +446,7 @@ export function DrawingToolbar() {
       </div>
 
       <IconButton
-        label="Lock all drawings"
+        label={tr("drawing.lockAllFull")}
         active={bulk.drawings.length > 0 && bulk.drawings.every((drawing) => drawing.locked)}
         disabled={bulk.drawings.length === 0}
         onClick={() => bulk.toggleLock({ kind: "all" })}
@@ -430,7 +455,7 @@ export function DrawingToolbar() {
       </IconButton>
 
       <IconButton
-        label="Hide all drawings"
+        label={tr("drawing.hideAllFull")}
         active={bulk.drawings.length > 0 && bulk.drawings.every((drawing) => drawing.visible === false)}
         disabled={bulk.drawings.length === 0}
         onClick={() => bulk.toggleVisibility({ kind: "all" })}
@@ -438,7 +463,7 @@ export function DrawingToolbar() {
         <EyeOff size={18} />
       </IconButton>
 
-      <IconButton label="Remove all drawings" disabled={bulk.drawings.length === 0} onClick={() => bulk.remove({ kind: "all" })}>
+      <IconButton label={tr("drawing.removeAllFull")} disabled={bulk.drawings.length === 0} onClick={() => bulk.remove({ kind: "all" })}>
         <Trash2 size={18} />
       </IconButton>
     </div>
@@ -456,6 +481,7 @@ function FavoriteToolsPopup({
   onSelect: (tool: DrawingTool) => void;
   onRemove: (tool: DrawingTool) => void;
 }) {
+  const { t } = useI18n();
   // Keep this callback stable. `useDraggableDialog` remeasures when
   // `initialPosition` changes; an inline function here causes a render/effect
   // loop as soon as the first favorite makes the portal mount.
@@ -483,8 +509,8 @@ function FavoriteToolsPopup({
           "flex h-7 w-4 shrink-0 items-center justify-center rounded-sm text-ink-faint hover:bg-terminal-hover hover:text-ink",
           dragHandleClassName,
         )}
-        title="Move favorites toolbar"
-        aria-label="Move favorites toolbar"
+        title={t("drawing.moveFavorites")}
+        aria-label={t("drawing.moveFavorites")}
       >
         <GripVertical size={14} />
       </div>
@@ -493,7 +519,7 @@ function FavoriteToolsPopup({
           <button
             key={`floating-fav-${tool.tool}`}
             type="button"
-            title={`${tool.label} (right-click to remove from favorites)`}
+            title={`${tool.label} (${t("drawing.rightClickRemove")})`}
             aria-label={tool.label}
             onClick={() => onSelect(tool.tool)}
             onContextMenu={(event) => {

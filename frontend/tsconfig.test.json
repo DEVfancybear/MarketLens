@@ -18,6 +18,12 @@
   },
   "include": [
     "tests/**/*.ts",
+    "src/i18n/*.ts",
+    "src/types/drawingToolManifest.ts",
+    "src/types/drawing.ts",
+    "src/types/gann.ts",
+    "src/types/regressionTrend.ts",
+    "src/types/volumeProfile.ts",
     "src/hooks/useDraggableDialog.ts",
     "src/components/settings/integrationSettingsDraft.ts",
     "src/platform/platformPolicy.ts",
