@@ -137,6 +137,51 @@ func TestClientForwardsOrderAuthorizationContext(t *testing.T) {
 	}
 }
 
+func TestClientForwardsCommandAuthorizationContext(t *testing.T) {
+	const token = "admin-token-with-at-least-32-characters"
+	const owner = "11111111-1111-4111-8111-111111111111"
+	const authorization = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+	const session = "22222222-2222-4222-8222-222222222222"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/admin/commands" {
+			t.Errorf("unexpected gateway path: %s", request.URL.Path)
+		}
+		var body struct {
+			OwnerID                string          `json:"ownerId"`
+			Command                json.RawMessage `json:"command"`
+			AuthorizationToken     string          `json:"authorizationToken"`
+			AuthorizationSessionID string          `json:"authorizationSessionId"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.OwnerID != owner ||
+			body.AuthorizationToken != authorization ||
+			body.AuthorizationSessionID != session {
+			t.Errorf("unexpected command authorization context: %+v", body)
+		}
+		if string(body.Command) != `{"type":"cancelOrder"}` {
+			t.Errorf("unexpected command payload: %s", body.Command)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = client.QueueCommand(t.Context(), owner, CommandRequest{
+		Command:                json.RawMessage(`{"type":"cancelOrder"}`),
+		AuthorizationToken:     authorization,
+		AuthorizationSessionID: session,
+	})
+	if err != nil {
+		t.Fatalf("QueueCommand: %v", err)
+	}
+}
+
 func TestClientRejectsInvalidAccountActionAcknowledgement(t *testing.T) {
 	const token = "admin-token-with-at-least-32-characters"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -400,11 +400,15 @@ func (c *Client) QueueCommand(
 	request CommandRequest,
 ) (json.RawMessage, error) {
 	body := struct {
-		OwnerID string          `json:"ownerId"`
-		Command json.RawMessage `json:"command"`
+		OwnerID                string          `json:"ownerId"`
+		Command                json.RawMessage `json:"command"`
+		AuthorizationToken     string          `json:"authorizationToken"`
+		AuthorizationSessionID string          `json:"authorizationSessionId"`
 	}{
-		OwnerID: ownerID,
-		Command: request.Command,
+		OwnerID:                ownerID,
+		Command:                request.Command,
+		AuthorizationToken:     request.AuthorizationToken,
+		AuthorizationSessionID: request.AuthorizationSessionID,
 	}
 	var response json.RawMessage
 	err := c.doJSON(

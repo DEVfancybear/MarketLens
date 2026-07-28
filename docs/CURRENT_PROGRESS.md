@@ -4,9 +4,10 @@
   once per browser trade session and shared across tabs through a hardened, server-backed session
   cookie. One-time authorizations remain bound to the exact JSON payload, user, active session,
   operation, and short expiry, then atomically consumed by Rust before enqueue. The public Go
-  order client now forwards both the authorization token and authenticated session ID in the
-  internal gateway envelope; a regression prevents valid orders from failing gateway decode with
-  `422`. See `TRADE_PASSWORD_AUTHORIZATION.md`.
+  execution client now forwards both the authorization token and authenticated session ID in the
+  internal gateway envelopes for routed orders and lifecycle commands. Regressions prevent valid
+  orders from failing gateway decode with `422` and prevent cancel, close, or modify from being
+  rejected before the durable queue. See `TRADE_PASSWORD_AUTHORIZATION.md`.
 
 > Trade execution update (2026-07-27): legacy MT5 verification/Connector
 > milestones below are historical. Current implementation and remaining native
