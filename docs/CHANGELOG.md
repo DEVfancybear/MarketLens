@@ -7,6 +7,10 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 ### Fixed - Trade account-card drag/drop interaction (2026-07-28)
 - Made the full Trade account card start a reorder gesture, matching Watchlist
   rows, instead of limiting pointer drag to the small grip button.
+- Made the complete source card lift above the rail and follow the pointer
+  vertically during an active reorder, while its original layout slot remains
+  reserved. Pointer hit-testing passes through the floating card so the row
+  underneath still receives an accurate before/after drop preview.
 - Moved active gesture tracking to window-level pointer listeners so dragging
   remains stable after the pointer leaves the grip or source card. The final
   pointer position now determines the drop edge, pointer cancellation/blur

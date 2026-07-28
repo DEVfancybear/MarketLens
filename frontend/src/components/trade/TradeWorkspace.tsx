@@ -215,6 +215,7 @@ function ExecutionAccountRail() {
     edge: AccountDropEdge;
   } | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
   const [dropTarget, setDropTarget] = useState<{
     id: string;
     edge: AccountDropEdge;
@@ -338,6 +339,7 @@ function ExecutionAccountRail() {
     dragSession.current = null;
     dropTargetRef.current = null;
     setDraggedId(null);
+    setDragOffsetY(0);
     setDropTarget(null);
   };
 
@@ -382,6 +384,7 @@ function ExecutionAccountRail() {
         setDraggedId(session.sourceId);
       }
       pointerEvent.preventDefault();
+      setDragOffsetY(pointerEvent.clientY - session.startY);
       const nextTarget = resolveDropTarget(
         pointerEvent.clientX,
         pointerEvent.clientY,
@@ -596,17 +599,26 @@ function ExecutionAccountRail() {
             account.venueKind === "simulator"
               ? executionMode === "simulator"
               : executionMode === "mt5" && account.id === selectedGatewayId;
+          const dragging = draggedId === account.id;
           return (
             <div
               key={account.id}
               data-execution-account-id={account.id}
               onPointerDown={(event) => startAccountDrag(event, account.id)}
+              style={
+                dragging
+                  ? {
+                      transform: `translate3d(0, ${dragOffsetY}px, 0)`,
+                    }
+                  : undefined
+              }
               className={cn(
                 "relative w-full select-none rounded-xl border transition-[border-color,background-color,opacity,transform]",
                 active
                   ? "border-brand/50 bg-brand/10"
                   : "border-terminal-border bg-terminal-panel-2/45 hover:border-terminal-border-strong hover:bg-terminal-hover",
-                draggedId === account.id && "scale-[0.99] opacity-50",
+                dragging &&
+                  "pointer-events-none z-30 cursor-grabbing border-brand/70 bg-terminal-panel shadow-[0_14px_32px_rgb(0_0_0/0.42),0_0_0_1px_rgb(var(--accent-rgb)/0.28)] transition-none",
                 dropTarget?.id === account.id &&
                   dropTarget.edge === "before" &&
                   "before:absolute before:-top-1 before:left-2 before:right-2 before:z-10 before:h-0.5 before:rounded-full before:bg-brand",
