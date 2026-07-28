@@ -1,5 +1,5 @@
 #property copyright "SMC Trading Terminal"
-#property version   "1.22"
+#property version   "1.23"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
@@ -10,7 +10,7 @@ input int    HttpTimeoutMs    = 5000;
 input long   MagicNumber      = 26072026;
 
 const int PROTOCOL_VERSION = 1;
-const string EA_VERSION = "1.22";
+const string EA_VERSION = "1.23";
 const int MAX_BUFFERED_EVENTS = 128;
 const int MAX_JOURNAL_COMMANDS = 4096;
 const int MAX_INSTRUMENTS_PER_HEARTBEAT = 32;
@@ -32,8 +32,13 @@ bool g_request_in_flight = false;
 int g_instrument_cursor = 0;
 ulong g_gateway_time_at_sync_ms = 0;
 ulong g_gateway_time_sync_tick_ms = 0;
-int g_flush_failure_count = 0;
-ulong g_next_flush_retry_at = 0;
+int g_portfolio_failure_count = 0;
+int g_event_failure_count = 0;
+int g_instrument_failure_count = 0;
+ulong g_next_portfolio_retry_at = 0;
+ulong g_next_event_retry_at = 0;
+ulong g_next_instrument_retry_at = 0;
+ulong g_last_instrument_snapshot_at = 0;
 
 int OnInit()
 {
@@ -139,10 +144,17 @@ void OnTimer()
    // An empty event batch is also the account heartbeat. This keeps account
    // identity and equity fresh without running HTTP inside trade callbacks.
    ulong monotonic_now = GetTickCount64();
-   if(monotonic_now >= g_next_flush_retry_at &&
-      (ArraySize(g_events) > 0 ||
-       monotonic_now - g_last_snapshot_at >= 10000))
-      FlushEvents();
+   bool portfolio_due =
+      ArraySize(g_events) > 0 ||
+      monotonic_now - g_last_snapshot_at >= 10000;
+   if(portfolio_due && monotonic_now >= g_next_portfolio_retry_at)
+      FlushPortfolioSnapshot();
+   if(ArraySize(g_events) > 0 &&
+      monotonic_now >= g_next_event_retry_at)
+      FlushBufferedEvents();
+   if(monotonic_now - g_last_instrument_snapshot_at >= 10000 &&
+      monotonic_now >= g_next_instrument_retry_at)
+      FlushInstrumentSnapshots();
    g_request_in_flight = false;
 }
 
@@ -621,52 +633,115 @@ void ExecuteCancelOrderCommand(const string command)
    SubmitDirectCommand(command_id, request);
 }
 
-void FlushEvents()
+string BufferedEventsJson()
 {
-   string events_json = "[";
+   string output = "[";
    int event_count = ArraySize(g_events);
    for(int index = 0; index < event_count; index++)
    {
       if(index > 0)
-         events_json += ",";
-      events_json += g_events[index];
+         output += ",";
+      output += g_events[index];
    }
-   events_json += "]";
-   string instruments_json = InstrumentSnapshotsJson();
+   output += "]";
+   return output;
+}
+
+int PostEventBatch(const string operation,
+                   const string instruments_json,
+                   const string positions_json,
+                   const string pending_orders_json,
+                   const bool portfolio_complete,
+                   const string events_json)
+{
+   string body = StringFormat(
+      "{\"protocolVersion\":%d,\"account\":%s,"
+      "\"instruments\":%s,\"positions\":%s,\"pendingOrders\":%s,"
+      "\"portfolioSnapshotComplete\":%s,\"events\":%s}",
+      PROTOCOL_VERSION, AccountSnapshotJson(), instruments_json,
+      positions_json, pending_orders_json,
+      portfolio_complete ? "true" : "false", events_json);
+   string response;
+   int status = HttpJson("POST", "/v1/ea/events", body, g_session_token, response);
+   if(status == 401)
+   {
+      ResetSession("session expired while sending " + operation);
+      return status;
+   }
+   if(status < 200 || status >= 300)
+      LogHttpFailure(operation, status, response);
+   return status;
+}
+
+ulong RetryDelayMs(const int failure_count)
+{
+   int exponent = MathMin(MathMax(failure_count - 1, 0), 5);
+   return (ulong)(1000 * (1 << exponent));
+}
+
+void FlushPortfolioSnapshot()
+{
    string positions_json = PositionSnapshotsJson();
    string pending_orders_json = PendingOrderSnapshotsJson();
    bool portfolio_complete =
       PositionsTotal() <= MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT &&
       OrdersTotal() <= MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT;
-
-   string body = StringFormat(
-       "{\"protocolVersion\":%d,\"account\":%s,"
-       "\"instruments\":%s,\"positions\":%s,\"pendingOrders\":%s,"
-       "\"portfolioSnapshotComplete\":%s,\"events\":%s}",
-       PROTOCOL_VERSION, AccountSnapshotJson(), instruments_json,
-       positions_json, pending_orders_json,
-       portfolio_complete ? "true" : "false", events_json);
-   string response;
-   int status = HttpJson("POST", "/v1/ea/events", body, g_session_token, response);
+   int status = PostEventBatch(
+      "portfolio sync", "[]", positions_json, pending_orders_json,
+      portfolio_complete, "[]");
    if(status == 401)
-   {
-      ResetSession("session expired while sending events");
       return;
-   }
    if(status < 200 || status >= 300)
    {
-      g_flush_failure_count++;
-      int exponent = MathMin(g_flush_failure_count - 1, 5);
-      ulong retry_delay_ms = (ulong)(1000 * (1 << exponent));
-      g_next_flush_retry_at = GetTickCount64() + retry_delay_ms;
-      LogHttpFailure("event flush", status, response);
+      g_portfolio_failure_count++;
+      g_next_portfolio_retry_at =
+         GetTickCount64() + RetryDelayMs(g_portfolio_failure_count);
       return;
    }
-
-   ArrayResize(g_events, 0);
    g_last_snapshot_at = GetTickCount64();
-   g_flush_failure_count = 0;
-   g_next_flush_retry_at = 0;
+   g_portfolio_failure_count = 0;
+   g_next_portfolio_retry_at = 0;
+}
+
+void FlushBufferedEvents()
+{
+   int event_count = ArraySize(g_events);
+   if(event_count == 0)
+      return;
+   int status = PostEventBatch(
+      "command event sync", "[]", "[]", "[]", false,
+      BufferedEventsJson());
+   if(status == 401)
+      return;
+   if(status < 200 || status >= 300)
+   {
+      g_event_failure_count++;
+      g_next_event_retry_at =
+         GetTickCount64() + RetryDelayMs(g_event_failure_count);
+      return;
+   }
+   ArrayResize(g_events, 0);
+   g_event_failure_count = 0;
+   g_next_event_retry_at = 0;
+}
+
+void FlushInstrumentSnapshots()
+{
+   int status = PostEventBatch(
+      "instrument sync", InstrumentSnapshotsJson(), "[]", "[]",
+      false, "[]");
+   if(status == 401)
+      return;
+   if(status < 200 || status >= 300)
+   {
+      g_instrument_failure_count++;
+      g_next_instrument_retry_at =
+         GetTickCount64() + RetryDelayMs(g_instrument_failure_count);
+      return;
+   }
+   g_last_instrument_snapshot_at = GetTickCount64();
+   g_instrument_failure_count = 0;
+   g_next_instrument_retry_at = 0;
 }
 
 string PositionSnapshotsJson()
@@ -1224,8 +1299,14 @@ void ResetSession(const string reason)
    g_account_id = "";
    g_gateway_time_at_sync_ms = 0;
    g_gateway_time_sync_tick_ms = 0;
-   g_flush_failure_count = 0;
-   g_next_flush_retry_at = 0;
+   g_portfolio_failure_count = 0;
+   g_event_failure_count = 0;
+   g_instrument_failure_count = 0;
+   g_next_portfolio_retry_at = 0;
+   g_next_event_retry_at = 0;
+   g_next_instrument_retry_at = 0;
+   g_last_snapshot_at = 0;
+   g_last_instrument_snapshot_at = 0;
    FileDelete(SessionCacheFile(), 0);
 }
 

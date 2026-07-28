@@ -490,7 +490,7 @@ function ExecutionAccountRail() {
                   SMCExecutionEA.ex5
                 </strong>
                 <span className="block text-[8px] text-ink-faint">
-                  One common EA for all MT5 brokers
+                  Version {eaDistribution.releaseVersion} · all MT5 brokers
                 </span>
               </span>
             </div>

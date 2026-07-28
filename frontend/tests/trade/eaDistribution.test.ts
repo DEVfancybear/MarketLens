@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  EXECUTION_EA_RELEASE_VERSION,
   resolveExecutionEaChecksumUrl,
   resolveExecutionEaDownloadUrl,
   resolveExecutionEaGatewayUrl,
   resolveExecutionEaWebRequestOrigin,
 } from "../../src/services/execution/eaDistribution";
+
+test("EA distribution advertises the compiled portfolio-sync release", () => {
+  assert.equal(EXECUTION_EA_RELEASE_VERSION, "1.23");
+});
 
 test("EA release uses same-origin public assets by default", () => {
   assert.equal(

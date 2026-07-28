@@ -29,15 +29,19 @@ gateway derives a stable account ID from `server + login`.
 - Pairing tokens are single-use. The resulting revocable session is cached in
   the MT5 terminal sandbox, is bound to `login + server + GatewayUrl`, and is
   restored after a terminal restart.
+- EA 1.23 sends portfolio, command outcomes, and instrument discovery through
+  independent retry lanes. A rejected symbol metadata record or command event
+  cannot roll back valid open positions and pending orders.
 - HTTP is never called from `OnTradeTransaction`; that callback only appends to
   a bounded in-memory buffer.
 - Event timestamps use the Rust gateway UTC clock returned by session and poll
   responses. Broker-local MT5 time is normalized before portfolio data is sent.
 - During rollout, the gateway normalizes bounded future timestamps from older
   EA builds while rejecting extreme clock skew.
-- Exact duplicate terminal events are idempotent. Failed event uploads use
-  bounded exponential backoff and include the gateway error code/message in the
-  MT5 Experts log without logging session credentials.
+- Exact duplicate terminal events are idempotent. Failed portfolio, command
+  event, and instrument uploads each use bounded exponential backoff and include
+  the failing lane plus gateway error code/message in the MT5 Experts log
+  without logging session credentials.
 - Commands, per-target outcomes, account snapshots, and audit events are stored
   durably in PostgreSQL. Ambiguous broker outcomes are reconciled from terminal
   state and are never blindly submitted a second time.

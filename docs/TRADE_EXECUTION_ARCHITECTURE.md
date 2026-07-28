@@ -101,6 +101,13 @@ minimum is `1.22`; a missing, malformed, or older version is blocked before
 command creation. This additive wire field allows a future EA release to raise
 the minimum without introducing broker-specific protocol forks.
 
+Portfolio synchronization is isolated from auxiliary telemetry. Rust commits
+validated open positions and pending orders before it validates/persists
+instrument discovery and command events, so an unrelated metadata failure
+cannot roll back user-visible money state. EA 1.23 additionally sends those
+three lanes as separate requests with independent bounded backoff; the
+server-side ordering preserves the same guarantee for EA 1.22 during rollout.
+
 ### Account rail ordering
 
 The Trade account rail is user-owned workspace state, not execution authority.

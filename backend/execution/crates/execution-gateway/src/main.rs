@@ -2553,23 +2553,46 @@ async fn accept_events(
             "normalized legacy MT5 broker clock skew"
         );
     }
-    validate_event_batch(&batch)?;
-    let events = normalize_events(batch.events)?;
+    validate_event_batch_envelope(&batch)?;
     let instruments = batch.instruments;
     let positions = batch.positions;
     let pending_orders = batch.pending_orders;
+    let portfolio_snapshot_complete = batch.portfolio_snapshot_complete;
+    let raw_events = batch.events;
+    for position in &positions {
+        validate_position_snapshot(position)?;
+    }
+    for order in &pending_orders {
+        validate_pending_order_snapshot(order)?;
+    }
     state
         .touch_account(&session.owner_id, &session.account_id, batch.account)
         .await?;
+    // Portfolio is the user-visible, money-sensitive state. Commit it before
+    // auxiliary instrument metadata or command telemetry so one bad symbol or
+    // event cannot roll back otherwise valid positions and pending orders.
     state
         .persist_database_payload(
             &session,
-            &instruments,
+            &[],
             &positions,
             &pending_orders,
-            batch.portfolio_snapshot_complete,
-            &events,
+            portfolio_snapshot_complete,
+            &[],
         )
+        .await?;
+    for instrument in &instruments {
+        validate_instrument_snapshot(instrument)?;
+    }
+    state
+        .persist_database_payload(&session, &instruments, &[], &[], false, &[])
+        .await?;
+    for event in &raw_events {
+        validate_ea_event(event)?;
+    }
+    let events = normalize_events(raw_events)?;
+    state
+        .persist_database_payload(&session, &[], &[], &[], false, &events)
         .await?;
     let completed_command_ids: Vec<String> = events
         .iter()
@@ -3886,7 +3909,7 @@ fn validate_account_snapshot(account: &EaAccountSnapshot) -> Result<(), ApiError
     Ok(())
 }
 
-fn validate_event_batch(batch: &EaEventBatch) -> Result<(), ApiError> {
+fn validate_event_batch_envelope(batch: &EaEventBatch) -> Result<(), ApiError> {
     validate_account_snapshot(&batch.account)?;
     if batch.instruments.len() > 64
         || batch.positions.len() > 500
@@ -3899,6 +3922,12 @@ fn validate_event_batch(batch: &EaEventBatch) -> Result<(), ApiError> {
             "EA heartbeat exceeds the per-batch item limit",
         ));
     }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_event_batch(batch: &EaEventBatch) -> Result<(), ApiError> {
+    validate_event_batch_envelope(batch)?;
     for instrument in &batch.instruments {
         validate_instrument_snapshot(instrument)?;
     }
@@ -4979,6 +5008,31 @@ mod tests {
         };
         let error = validate_event_batch(&batch).expect_err("future clock must fail closed");
         assert_eq!(error.body.code, "INSTRUMENT_TIME_INVALID");
+    }
+
+    #[test]
+    fn heartbeat_envelope_allows_money_state_to_commit_before_auxiliary_validation() {
+        let mut instrument = instrument_snapshot();
+        instrument.observed_at_ms = now_ms() + 120_000;
+        let batch = EaEventBatch {
+            protocol_version: EXECUTION_PROTOCOL_VERSION,
+            account: snapshot("123456", "Broker-Live"),
+            instruments: vec![instrument],
+            positions: Vec::new(),
+            pending_orders: Vec::new(),
+            portfolio_snapshot_complete: true,
+            events: Vec::new(),
+        };
+
+        validate_event_batch_envelope(&batch)
+            .expect("valid envelope must not couple portfolio to auxiliary metadata");
+        assert_eq!(
+            validate_event_batch(&batch)
+                .expect_err("invalid instrument lane must still fail closed")
+                .body
+                .code,
+            "INSTRUMENT_TIME_INVALID"
+        );
     }
 
     #[test]

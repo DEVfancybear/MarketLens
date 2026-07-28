@@ -1,6 +1,7 @@
 const DEFAULT_DOWNLOAD_URL = "/downloads/SMCExecutionEA.ex5";
 const DEFAULT_CHECKSUM_URL = "/downloads/SMCExecutionEA.sha256.txt";
 const LOCAL_API_ORIGIN = "http://localhost:8080";
+export const EXECUTION_EA_RELEASE_VERSION = "1.23";
 
 function safeHttpUrl(
   value: string,
@@ -74,6 +75,7 @@ export function executionEaDistribution() {
   });
 
   return {
+    releaseVersion: EXECUTION_EA_RELEASE_VERSION,
     downloadUrl: resolveExecutionEaDownloadUrl(
       process.env.NEXT_PUBLIC_EXECUTION_EA_DOWNLOAD_URL,
     ),

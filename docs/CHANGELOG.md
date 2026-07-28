@@ -4,6 +4,22 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 open-position and pending-order synchronization (2026-07-28)
+- Fixed valid MT5 positions and pending Limit/Stop orders remaining empty in
+  the Trade workspace when an unrelated instrument metadata record or command
+  event failed validation in the same EA heartbeat transaction.
+- Rust now commits the money-sensitive portfolio lane before independently
+  validating and persisting instrument discovery and command telemetry. This
+  also protects existing EA 1.22 terminals during a rolling deployment.
+- Released `SMCExecutionEA 1.23` with independent portfolio, command-event, and
+  instrument retry/backoff lanes. Portfolio snapshots are sent first, and EA
+  logs now identify the exact failing lane without exposing credentials.
+- Recompiled and verified the downloadable `.ex5` with MetaEditor reporting
+  zero errors and zero warnings; refreshed the SHA-256 checksum and signed
+  source/binary release manifest.
+- Added a Rust regression proving auxiliary metadata validation remains
+  fail-closed without coupling it to the valid portfolio envelope.
+
 ### Added - Strict CSP and passkey-bound trade step-up (2026-07-28)
 
 - Added WebAuthn passkey enrollment and user-verification ceremonies for every live order and
@@ -72,7 +88,6 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   backend-owned dataset rather than merging live browser candles.
 - Added coverage for every supported chart timeframe and synchronized layouts,
   including the reported `1H` regression.
-
 ### Added - Synced execution-account drag/drop order (2026-07-27)
 - Added pointer-based drag/drop ordering for every account in the Trade rail,
   including the synthetic Simulator entry and all MT5 broker accounts. The
